@@ -852,6 +852,8 @@ Complete milestone M4 "HTTP API" exactly as specified in docs/PLAN.md §10 and d
     training and explicit bounded backfill authorize only their own user/feed scope.
   - Per-feed image `allow` persists and overrides global block for this reader only; `inherit`
     returns to global behavior, and image policy never changes inference eligibility.
+  - Unsubscribing cancels that feed's pending/running analysis requests and keeps completed ones,
+    whose frozen results still serve learning.
 - **T5:**
   - Every card and label endpoint maps to its lifecycle action; a changed id is returned.
   - `POST /articles/:id/labels` never changes cards (asserted).
@@ -1193,7 +1195,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | 2026-09-25 | Moved from FeedIt.sk's `docs/next-gen/` to this repository's `docs/`; repository references updated, no behaviour changed |
 | 2026-09-25 | Renamed the product from FeedIt Next Gen to Bantoozi: product name, `feedit` identifiers (packages, database and roles, env vars, header, user agent, URNs, compose projects) and the `fi_sid` cookie. References to the FeedIt.sk predecessor are unchanged |
 | 2026-09-25 | Review fixes: `eval.sample` rows are versioned and runs record their dataset version, so older runs stay replayable; a creator's account erasure keeps card-publication audit records, anonymized; invite email is sent synchronously after commit and reports failure; publisher language hints outside the detector whitelist are kept; feeds keep their original fetch URL; settled spend reservations are purged with call audits; `engine.prefilter_enabled` and `engine.laya` are admin-settable |
-| 2026-09-25 | More review fixes: reader and ranker windows use the subscribed carrier's arrival time; the engine router tries a configured Laya checkpoint before returning `no_key`; Laya enrich work has its own registered queue; account erasure also removes waitlist rows and invite emails (the deletion ledger carries a keyed email hash); the shared DB-backed rate limiter is defined; a missing Jev credential falls through to the enabled fallbacks; cluster merges remap `mute_story` rules; jittered fetch delays stay within MAX |
+| 2026-09-25 | More review fixes: reader and ranker windows use the subscribed carrier's arrival time; the engine router tries a configured Laya checkpoint before returning `no_key`; Laya enrich work has its own registered queue; account erasure also removes waitlist rows and invite emails (the deletion ledger carries a keyed email hash); the shared DB-backed rate limiter is defined; a missing Jev credential falls through to the enabled fallbacks; cluster merges remap `mute_story` rules; jittered fetch delays stay within MAX; article retention follows the latest carrier arrival; unsubscribing keeps completed analysis requests |
 
 ## 17. Owner decisions and implementation gates
 

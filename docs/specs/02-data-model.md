@@ -985,7 +985,7 @@ CREATE TABLE user_feed_preferences (
 CREATE TABLE analysis_requests (                  -- explicit selected-article training demand
   id                  uuid PRIMARY KEY,          -- server-generated, receipt binds client idempotency key
   user_id             uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  feed_id             bigint NOT NULL,
+  feed_id             bigint NOT NULL REFERENCES feeds(id) ON DELETE RESTRICT, -- outlives the subscription: unsubscribe cancels only pending/running rows (spec 08 §4)
   article_id          bigint NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
   article_revision    bigint NOT NULL CHECK (article_revision > 0),
   inference_version   bigint NOT NULL CHECK (inference_version >= 0),
@@ -1002,7 +1002,6 @@ CREATE TABLE analysis_requests (                  -- explicit selected-article t
   last_error_code     text NULL,
   created_at          timestamptz NOT NULL DEFAULT now(),
   completed_at        timestamptz NULL,
-  FOREIGN KEY (user_id, feed_id) REFERENCES subscriptions(user_id, feed_id) ON DELETE CASCADE,
   CHECK ((result_snapshot IS NULL) = (result_sha IS NULL)),
   CHECK (status <> 'complete' OR result_snapshot IS NOT NULL),
   CHECK ((lease_token IS NULL) = (lease_until IS NULL)),

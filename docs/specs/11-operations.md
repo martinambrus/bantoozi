@@ -162,7 +162,7 @@ backup immediately increases exposure and must alert rather than being reported 
 
 | Data | Kept |
 |---|---|
-| `articles` (+ feed_items, facets, answers) | 90 days after `first_seen_at`, **unless** any user has bookmarked, rated or labelled it (then kept while that user exists) |
+| `articles` (+ feed_items, facets, answers) | 90 days after the latest carrier arrival (`max(feed_items.first_seen_at)`, the clock the reader window uses), **unless** any user has bookmarked, rated or labelled it (then kept while that user exists) |
 | unprotected hot `article_bodies.body_text` / `body_html` | 30 days; clear only after bookmarked content has a durable snapshot, and never clear content needed by a pending capture; `body_lead` remains |
 | `article_snapshots` full saved text/HTML | indefinitely while at least one live bookmark references that immutable snapshot; cold after 30 days, never shortened or replaced by a lead |
 | `article_translations` | with the article |
@@ -306,7 +306,7 @@ retention must not erase still-owned private cards or snapshots while publishing
 | `house.purge-auth` | `20 * * * *` | expired login codes, sessions and rate-limit buckets per §5 |
 | `house.reconcile` | `*/10 * * * *` | bounded repair of still-authorized inference, due pending/expired-lease `analysis_requests`, pending bookmark capture/outbox/match work and orphaned leases; enqueue rank for due `user_article.next_rank_at`; nightly UTC window also refreshes feed subscribers/cards, cluster counts and `lang_hint` with persistent progress cursors |
 | `house.archive` | `15 3 * * *` | archive unprotected read items older than 31 days and enforce the shared-article unread-cap rules in §5 |
-| `house.purge-articles` | `30 3 * * *` | delete unreferenced articles older than 90 days (§5), in batches of 5,000. Articles referenced from `eval.*` are never purged |
+| `house.purge-articles` | `30 3 * * *` | delete unreferenced articles whose latest carrier arrival is older than 90 days (§5), in batches of 5,000. Articles referenced from `eval.*` are never purged |
 | `house.purge-bodies` | `45 3 * * *` | §5.2: preserve/verify owned full snapshots, mark eligible snapshots cold, clear redundant unprotected hot text/HTML after 30 days, and collect snapshots unreferenced for 7 days; never erase pending capture inputs |
 | `house.purge-engine-calls` | `0 4 * * *` | delete `engine_calls`, settled `engine_reservations` and expired terminal `analysis_requests` older than 180 days, and `feedback_events` older than 365 days; clean delivered outbox rows and invoke bounded queue-history maintenance per §5 |
 | `house.retire-cards` | `30 4 * * *` | set `retired_at` on cards with `visibility <> 'public'` (library and promoted cards are never retired) that have no holders (`user_cards`/`user_labels`) and are not referenced by `eval.rater_cards`; delete their `card_answers` 30 days later |
