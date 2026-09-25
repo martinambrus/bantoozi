@@ -345,7 +345,9 @@ text_hash = sha256Hex(canonicalJson({ kind, interest: norm(interest), not_for: n
   Every change to text or examples creates, or reuses by `text_hash`, **another** card row. So
   `card_answers` for a `card_id` always describe exactly that text.
 - The only in-place updates are:
-  - `retired_at` (a card reused while retired is un-retired)
+  - `retired_at` (a card reused while retired is un-retired). Reuse locks the card row, and
+    `house.retire-cards` takes the same lock and rechecks holders before it retires or deletes a
+    card, so a concurrent reuse is never lost (spec 11 §6)
   - admin library fields (`title` only for `kind=interest`, `topic_ids`, `i18n`, `slug`, `visibility`
     on promotion from shared to public). A label title is semantic content and is never edited in place
   - derived translations `interest_en`/`not_for_en`: initial fill when null, or an **explicit audited
@@ -396,7 +398,7 @@ returns **effects** `{ refreshFeedIds: string[], backfill?: {cardIds, feedIds?},
 | **Rename** (`PATCH /cards/:id {title}`) | Set `user_cards.title_override`. No card change, no model calls |
 | **Change strength** | Update `user_cards.strength`. Effect: rank full. No model calls |
 | **Change scope** | Validate the new feed subscription, update scope, refresh the union of old/new feeds, backfill already-authorized articles in newly included feeds (including feed A → feed B); do not authorize historical/off-feed work, rank full |
-| **Delete** | Delete the `user_cards` row. Effects: refresh, rank full. Card rows are never deleted by the API; `house.retire-cards` retires unheld non-library cards (spec 11 §6) |
+| **Delete** | Delete the `user_cards` row. Effects: refresh, rank full. Card rows are never deleted by the API; `house.retire-cards` retires unheld non-library cards and later deletes unreferenced ones (spec 11 §6) |
 | **Create a label** (`POST /labels`) | As Create with `kind='label'` (the hash includes the title). Insert `user_labels (card_id, name = title, color)` |
 | **Assign or unassign a label on an article** | **Does not touch cards.** It only updates `user_article.label_ids`/`label_suggestions` and records `label`/`unlabel`; labels are neutral organization and never personal-interest training evidence (spec 08 §5.3) |
 | **Add or remove a label example** (`POST /labels/:id/examples`) | Fork the label (as for interest cards). Re-point `user_labels`. In the same transaction, `UPDATE user_article SET label_ids = array_replace(label_ids, old, new), label_suggestions = array_replace(label_suggestions, old, new) WHERE user_id = me`. Effects: refresh, backfill, `labelIdChange` |
@@ -711,11 +713,14 @@ Expired leases recover after a crash; queue throttling alone does not replace th
    where each option's criteria is `{what: card.interest, not_for?: card.not_for}`.
 6. If no candidate exists, skip (a one-option Choice is invalid). If `none` wins, insert nothing.
    Otherwise insert up to 3 non-none options with probability ≥0.15, ordered deterministically.
-   Dedupe active `(user, card)` suggestions and recheck held/dismissed state on commit. Choice
-   probabilities are relative to this candidate list, not absolute relevance probabilities.
-   Each run also deletes the user's `card_suggestions` rows for cards they now hold, from an
-   inactive suggest set or from an older model pin; the API already hides those (spec 08 §7). New
-   rows record the active set and `engine.model_pin`.
+   Each insert is an upsert on `(user_id, card_id)` that refreshes `score`, `question_set_id`,
+   `model_pin` and `created_at` and clears `dismissed_at`, but only where the existing row has no
+   dismissal or one older than 90 days; recheck held state on commit. Choice probabilities are
+   relative to this candidate list, not absolute relevance probabilities.
+   Each run also deletes the user's undismissed `card_suggestions` rows for cards they now hold,
+   from an inactive suggest set or from an older model pin (the API already hides those, spec 08 §7),
+   and their dismissals older than 90 days. A dismissal less than 90 days old stays whatever its set
+   or pin, so step 3 keeps excluding that card. New rows record the active set and `engine.model_pin`.
 7. Engine `kind: 'suggest'`, `priority: 'bulk'`, `userId` set.
 
 ---
