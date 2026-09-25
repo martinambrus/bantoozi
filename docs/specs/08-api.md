@@ -617,7 +617,7 @@ client must replace its cached id.
 | `POST /library/:id/updates/:newId/apply` | `{expectedCurrentCardId}` | Explicitly accept a validated successor for an unchanged held library card; replace the holding, retain strength/scope/display override, refresh authorized demand and invalidate answers by new identity → `200 {card,idChange}`. Custom/private forks require the explicit editor; never overwrite their examples |
 | `GET /cards/publication-requests` | — | Requests addressed to this original creator, with exact card text, proposed title/translations/topics, payload digest, version and status |
 | `POST /cards/publication-requests/:id/respond` | `{decision:'approve'\|'decline',expectedVersion}` | Creator-only CAS approval/rejection of the exact publication payload; no public publication yet → `200 {request}` |
-| `GET /cards/suggestions` | — | `[{card, score}]`: not dismissed, produced by the active `suggest` set under the current model pin, and never a card the user currently holds as an interest card or label (for example after adopting it from the library or creating it again) |
+| `GET /cards/suggestions` | — | `[{card, score}]`: not dismissed, produced by the active `suggest` set under the current model pin (its suggest-model fingerprint, which includes the LLM fallback models), and never a card the user currently holds as an interest card or label (for example after adopting it from the library or creating it again) |
 | `POST /cards/suggestions/:cardId/dismiss` | — | `204` |
 | `GET /labels` | — | `Label[]` |
 | `POST /labels` | `{name, definition, notFor?, color?}` | Create or reuse a label card (kind `label`; the hash includes the name) plus `user_labels` → `201 {label}`. Quota `maxLabels` |

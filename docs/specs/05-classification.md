@@ -138,8 +138,9 @@ in the same outbox transaction. This makes an inaugural rating learnable when sl
   changes, and a model-pin change for both, apply prospectively as a versioned boundary: story
   memberships are deduplication decisions that `mute_story` rules point at, not a current-result
   cache, so each keeps its `articles.cluster_set_id` until its article ages out while new calls use
-  the new set and model. Suggestions carry `question_set_id` and `model_pin`; only rows from the
-  active set and current pin are listed, and `user.suggest` deletes the rest. Store exact set/model/input
+  the new set and model. Suggestions carry `question_set_id` and `model_pin` (a fingerprint of the
+  Jev and LLM fallback models, §7); only rows from the active set and current pin are listed, and
+  `user.suggest` deletes the rest. Store exact set/model/input
   provenance with golden runs; changing a set does not mutate frozen runs.
 
 ---
@@ -733,7 +734,9 @@ Expired leases recover after a crash; queue throttling alone does not replace th
    Each run also deletes the user's undismissed `card_suggestions` rows for cards they now hold,
    from an inactive suggest set or from an older model pin (the API already hides those, spec 08 §7),
    and their dismissals older than 90 days. A dismissal less than 90 days old stays whatever its set
-   or pin, so step 3 keeps excluding that card. New rows record the active set and `engine.model_pin`.
+   or pin, so step 3 keeps excluding that card. New rows record the active set and the suggest-model
+   fingerprint of `engine.model_pin` (its `model` and `llm` fields, spec 02), so an Ollama fallback
+   model change hides old rows as a Jev model change does.
 7. Engine `kind: 'suggest'`, `priority: 'bulk'`, `userId` set.
 
 ---
