@@ -573,7 +573,7 @@ fetching non-HTML media.
 - The safe client uses one shared PostgreSQL-backed per-origin throttle across API discovery,
   worker feed fetch, robots and page extraction: at most **2 concurrent** requests and **1 s between
   starts**. Short transactions on an `origin_fetch_state` row reserve start time and expiring request
-  leases; never hold that transaction while making HTTP requests. All redirects reserve against
+  leases and set `last_used_at`; never hold that transaction while making HTTP requests. All redirects reserve against
   their destination origin too. Lease expiry exceeds the total request deadline and is reclaimed
   after a crashed process. Production scaling to two workers must not double these limits.
 - 429 or 503 with `Retry-After` persists an origin cooldown (parse seconds or HTTP-date, ignore

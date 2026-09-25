@@ -182,6 +182,8 @@ backup immediately increases exposure and must alert rather than being reported 
 | completed/failed pg-boss jobs | 7/30 days respectively using pinned pg-boss maintenance settings; failures counted before removal |
 | `login_codes` | 1 day after expiry |
 | `rate_limit_buckets` | 1 day after the bucket's window ends |
+| `origin_fetch_state` | 7 days after `last_used_at`, and only once `next_start_at`, any `blocked_until` cooldown and every lease have passed; the next fetch of that origin recreates it |
+| `story_clusters` | until the cluster has no member article and no `mute_story` rule names it (those rules expire within 30 days) |
 | `api_mutations` idempotency/undo receipts | until `expires_at` (at least 7 days after creation) |
 | `sessions` | 30 days after expiry or revocation |
 | deleted users | hard-deleted 7 days after `DELETE /me`; encrypted historic backups age out within 6 months and are never served directly |
@@ -210,7 +212,10 @@ All purge jobs use short committed batches with keyset pagination and a per-run 
 unfinished work continues next run. Recheck protection with article row locks before deleting. User
 bookmark/rating/label mutations lock the same article row, so a concurrent save cannot lose its
 article after reporting success. Count and alert on persistent FK failures rather than skipping them
-forever. Cluster sizes/representatives, feed counts and ranking caches are reconciled after deletes.
+forever. Cluster sizes/representatives, feed counts and ranking caches are reconciled after deletes;
+a cluster left without members is deleted once no `mute_story` rule names it. Delete it under its
+row lock after rechecking both conditions; clustering only joins a member's existing cluster, so an
+empty one never gains members.
 
 ### 5.1 Account erasure and restore safety
 
@@ -310,10 +315,10 @@ retention must not erase still-owned private cards or snapshots while publishing
 | `feed.schedule` | every minute | spec 03 §3 |
 | `house.rescore-degraded` | `*/10 * * * *` | recover the supported 14-day horizon (`RANK_WINDOW_DAYS`, spec 06 §11) fairly with persisted cursors/budget limits (spec 04 §5), including eligible deferred/exhausted match work and fallback answers; reuse current Call A, and reset terminal attempts only after their blocker changes |
 | `house.expire-rules` | `5 * * * *` | delete expired rules; `user.rank {full}` for the affected users |
-| `house.purge-auth` | `20 * * * *` | expired login codes, sessions, rate-limit buckets and `api_mutations` receipts per §5, in bounded batches |
+| `house.purge-auth` | `20 * * * *` | expired login codes, sessions, rate-limit buckets, idle `origin_fetch_state` rows and `api_mutations` receipts per §5, in bounded batches |
 | `house.reconcile` | `*/10 * * * *` | bounded repair of still-authorized inference, due pending/expired-lease `analysis_requests`, pending bookmark capture/outbox/match work and orphaned leases; enqueue rank for due `user_article.next_rank_at`; nightly UTC window also refreshes feed subscribers/cards, cluster counts and `lang_hint` with persistent progress cursors |
 | `house.archive` | `15 3 * * *` | archive unprotected read items whose latest carrier arrival is older than 31 days and enforce the shared-article unread-cap rules in §5 |
-| `house.purge-articles` | `30 3 * * *` | delete unreferenced articles whose latest carrier arrival is older than 90 days (§5), in batches of 5,000. Articles referenced from `eval.*` are never purged |
+| `house.purge-articles` | `30 3 * * *` | delete unreferenced articles whose latest carrier arrival is older than 90 days (§5), in batches of 5,000. Articles referenced from `eval.*` are never purged. Then delete member-less `story_clusters` that no `mute_story` rule names (§5) |
 | `house.purge-bodies` | `45 3 * * *` | §5.2: preserve/verify owned full snapshots, mark eligible snapshots cold, clear redundant unprotected hot text/HTML after 30 days, and collect snapshots unreferenced for 7 days; never erase pending capture inputs |
 | `house.purge-engine-calls` | `0 4 * * *` | delete `engine_calls`, settled `engine_reservations` and expired terminal `analysis_requests` older than 180 days, and `feedback_events` older than 365 days; clean delivered outbox rows and invoke bounded queue-history maintenance per §5 |
 | `house.retire-cards` | `30 4 * * *` | set `retired_at` on cards with `visibility <> 'public'` (library and promoted cards are never retired) that have no holders (`user_cards`/`user_labels`) and are not referenced by `eval.rater_cards`; delete their `card_answers` 30 days later |

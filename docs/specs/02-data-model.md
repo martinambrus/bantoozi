@@ -354,6 +354,7 @@ CREATE TABLE origin_fetch_state (                 -- shared safe-fetch coordinat
   next_start_at timestamptz NOT NULL DEFAULT now(),
   blocked_until timestamptz NULL,
   leases        jsonb NOT NULL DEFAULT '[]',       -- [{token: uuid, expires_at: iso}], at most two
+  last_used_at  timestamptz NOT NULL DEFAULT now(), -- set by every reservation; idle rows purged (spec 11 §5)
   CHECK (jsonb_typeof(leases) = 'array' AND jsonb_array_length(leases) <= 2)
 );
 
