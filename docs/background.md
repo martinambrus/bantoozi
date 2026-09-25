@@ -71,7 +71,7 @@ Five ideas carry most of the design:
 
 ## 2. What we learned from the two predecessors
 
-### 2.1 FeedIt.sk (this repo): keep the UX, drop the scoring engine
+### 2.1 [FeedIt.sk](https://github.com/martinambrus/feedit.sk): keep the UX, drop the scoring engine
 
 **Worth keeping**
 
@@ -282,9 +282,9 @@ training or the golden set without the explicit opt-in specified in spec 10.
 
 ## 4. Sources
 
-- This repo (FeedIt.sk prototype): `cron/links-trainer.php`, `functions/functions-score-global.php`,
-  `functions/functions-training.php`, `functions/functions-content.php`, `cron/tiers-training-check.php`,
-  `cron/auto-archive.php`, `todo.txt`.
+- [FeedIt.sk](https://github.com/martinambrus/feedit.sk) prototype: `cron/links-trainer.php`,
+  `functions/functions-score-global.php`, `functions/functions-training.php`,
+  `functions/functions-content.php`, `cron/tiers-training-check.php`, `cron/auto-archive.php`, `todo.txt`.
 - DreamCatcher: `PLAN.md`, `infrastructure/postgre/init/sql_init.sql`, `workers/*`, `gpt.txt`, `ui/index.html`.
 - [elvisun/newsjack](https://github.com/elvisun/newsjack): `apps/cli/cmd/newsjack/coarse_filter.go`,
   `coarse_filter_questions.json`, `demos/news-desk-dealer/src/engine/*`, `docs/2026-09-18-jev-coarse-filter-plan.md`.

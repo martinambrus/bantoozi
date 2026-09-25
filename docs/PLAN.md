@@ -5,7 +5,7 @@
 > of a hand-tuned word-scoring engine. It is written so that Claude Code can execute it milestone by
 > milestone as `/goal`s, with minimal interpretation.
 >
-> **Document set** (copy the whole folder into the new repository's `docs/`):
+> **Document set** (this repository's `docs/`):
 >
 > | File | Role |
 > |---|---|
@@ -56,11 +56,11 @@ limit, a blocked prerequisite or a clean Git status as proof of feature completi
 
 ### 0.2 Procedure for each milestone
 
-1. **Start a fresh Claude Code session** in the new repository. A goal is session-scoped, one per
+1. **Start a fresh Claude Code session** in this repository. A goal is session-scoped, one per
    session.
 2. Switch to **auto mode** so goal turns run unattended (a goal does not change permission mode).
 3. Create the milestone branch, e.g. `git switch -c m1-ingestion`. Parallel milestones use separate
-   **git worktrees** (`git worktree add ../feedit-ng-m2 -b m2-classification`), one session each.
+   **git worktrees** (`git worktree add ../bantoozi-m2 -b m2-classification`), one session each.
 4. Paste the milestone's goal text after `/goal `.
 5. Claude then:
    - reads this milestone section and the referenced spec sections
@@ -146,8 +146,8 @@ D-3 (M1-T6): … / none
 - **Honest evidence:** `passed`, `failed`, `blocked`, `not run` and `not applicable` are distinct.
   Report the exact commit, config/fixture versions and commands. A blocked task may end an agent
   session but does not complete its milestone or satisfy a downstream dependency.
-- **Scope:** implementation is in the new repository described by spec 01. This documentation review
-  does not authorize deploying over the existing PHP/MongoDB app or migrating its data.
+- **Scope:** implementation is in this repository, laid out as spec 01 describes. This documentation
+  review does not authorize deploying over the existing FeedIt.sk PHP/MongoDB app or migrating its data.
 
 ---
 
@@ -1163,7 +1163,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | Item | Trigger | Where specified |
 |---|---|---|
 | **Laya engine** for SK/CZ enrichment | G1 set `laya_track_recommended = true`, or Jev availability or cost becomes a problem | spec 04 §9; [`laya-multilingual.md`](./laya-multilingual.md) (fine-tuning happens on free Kaggle GPUs, outside the server) |
-| **Image proxy** for feed images (privacy, HTTPS) | after launch | FeedIt todo; spec 11 §7 note |
+| **Image proxy** for feed images (privacy, HTTPS) | after launch | FeedIt.sk `todo.txt`; spec 11 §7 note |
 | **Opted-in anonymized feedback** to grow the golden set | after launch, with a privacy-policy update | spec 10 §8 |
 | **Search over my archive** (Postgres FTS; later hybrid search as in DreamCatcher) | user demand | background §2.2 |
 | **Open signup and plans** | when costs and moderation are understood | spec 08 §2, §6 |
@@ -1179,6 +1179,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | 2026-09-25 | Cross-spec review: transactional outbox and leases, content/answer/rank freshness, private-card isolation, lossless identity merges, atomic spend reservations, auth/offline mutation safety, held-out evaluation, recovery and launch gates; task dependencies and owner decisions made explicit |
 | 2026-09-25 | Owner answers applied: per-feed inference modes, slow selected-article training, permanent bookmark snapshots, per-feed media overrides, encrypted admin-managed credentials, active-author consent, opt-in library upgrades, neutral labels and a single-human evaluation pilot |
 | 2026-09-25 | Final owner decisions: explicit prospective feed activation, public-card eligibility after 30 days of creator inactivity, owner-pilot PASS accepted for initial beta, and text/HTML bookmark archives without media |
+| 2026-09-25 | Moved from FeedIt.sk's `docs/next-gen/` to this repository's `docs/`; repository references updated, no behaviour changed |
 
 ## 17. Owner decisions and implementation gates
 

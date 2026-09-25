@@ -48,12 +48,13 @@ M3b and before launch, without requiring live calls in CI.
 
 ## 2. Repository layout
 
-The next-gen app lives in its **own repository** (working name `feedit-ng`). The paths below are
-relative to that repository's root. M0 starts from an empty repository that contains only this plan,
-copied to `docs/` (`docs/PLAN.md`, `docs/specs/`, `docs/background.md`, `docs/laya-multilingual.md`).
+The next-gen app lives in its **own repository**: this one, `bantoozi` (earlier working name
+`feedit-ng`). The paths below are relative to its root. M0 starts from a repository that contains
+only this plan in `docs/` (`docs/PLAN.md`, `docs/specs/`, `docs/background.md`,
+`docs/laya-multilingual.md`), plus the initial `README.md` and `LICENSE`.
 
 ```
-feedit-ng/
+bantoozi/
 ├── apps/
 │   ├── api/                      # Fastify HTTP API (spec 08)
 │   │   ├── src/
@@ -384,7 +385,7 @@ the owner.
 
 ---
 
-## 10. `CLAUDE.md` for the new repository (created in M0)
+## 10. `CLAUDE.md` for this repository (created in M0)
 
 M0 writes this file verbatim, and later milestones append to its "Current state" section:
 
