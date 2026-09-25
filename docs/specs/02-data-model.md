@@ -985,7 +985,7 @@ CREATE TABLE user_feed_preferences (
 CREATE TABLE analysis_requests (                  -- explicit selected-article training demand
   id                  uuid PRIMARY KEY,          -- server-generated, receipt binds client idempotency key
   user_id             uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  feed_id             bigint NOT NULL REFERENCES feeds(id) ON DELETE RESTRICT, -- outlives the subscription: unsubscribe cancels only pending/running rows (spec 08 §4)
+  feed_id             bigint NOT NULL REFERENCES feeds(id) ON DELETE RESTRICT, -- outlives the subscription; after unsubscribe the worker cancels only pending/running rows (spec 08 §4)
   article_id          bigint NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
   article_revision    bigint NOT NULL CHECK (article_revision > 0),
   inference_version   bigint NOT NULL CHECK (inference_version >= 0),
@@ -1446,7 +1446,9 @@ only after the administrator explicitly requests Validate. Activation requires t
 validation result no older than 24 hours; disable
 preserves a tombstone. Worker validation CAS includes candidate version and lease token. Keyring
 cryptography is application-side, not a PostgreSQL decryption function. No generic SQL setter or
-ciphertext SELECT privilege is granted to the API role.
+ciphertext SELECT privilege is granted to the API role. The five functions above are SECURITY
+DEFINER with a fixed trusted search path, PUBLIC execute revoked and execute granted to
+`bantoozi_app` only; each still enforces `admin_context_allowed()`.
 
 **Publication consent functions (M0/M4).** Supply admin-only request/list/promote functions and
 `respond_card_publication(p_request_id bigint, p_expected_version bigint, p_approve boolean)` for the
@@ -1462,7 +1464,10 @@ soft/hard-deleted creator, explicit veto, insufficient inactivity, expiry or sta
 conflict/hold. Admin eligibility listings are advisory and never a substitute for this final check.
 The functions preserve rejection/publication audit evidence, and no new request can erase a veto.
 Admin listing uses the function rather than bypassing tenant RLS. Library semantic update helpers
-write the next immutable revision but never migrate other readers' holdings.
+write the next immutable revision but never migrate other readers' holdings. These functions are
+SECURITY DEFINER with a fixed trusted search path, PUBLIC execute revoked and execute granted to
+`bantoozi_app`; the admin ones enforce `admin_context_allowed()` and `respond_card_publication`
+the authenticated original author.
 
 **Callers:**
 - **The refresh functions** are called by the API **in the same transaction** as the change that
