@@ -218,7 +218,7 @@ identify secret variable names/paths, never their supplied contents or a seriali
 | `EVAL_INGEST_ONLY` | `false` | worker | M3a: stop the pipeline after extract (spec 10 §2.1) |
 | `EVAL_PUBLIC_URL` | `http://localhost:5180` | eval | base URL printed in rater links (spec 10 §2.2) |
 | `EVAL_CACHE_DIR` | `~/.cache/bantoozi-eval` | eval | engine-call cache shared by all worktrees (spec 10 §3) |
-| `WORKER_QUEUES` | `*` | worker | comma list of queue names this process consumes |
+| `WORKER_QUEUES` | `*` | worker | comma list of queue names this process consumes; `*` means every queue except `article.enrich.laya` (spec 03 §2) |
 | `LOG_LEVEL` | `info` | all | |
 | `METRICS_TOKEN` | — | api, worker, scripts | bearer token for `/metrics` and `POST /admin/ops-event` |
 | `WORKER_METRICS_PORT` | `9101` | worker | |

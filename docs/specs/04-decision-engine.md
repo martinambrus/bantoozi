@@ -406,8 +406,10 @@ bounded by the job deadline, cancellation works while queued, and aging prevents
 **Fallback chain** in `EngineRouter.ask(req)`:
 
 1. Validate the request and its live demand (§1.1). Resolve the active Jev credential (§1.2); if
-   unavailable return `no_key` without inference (unless an injected test engine exists). Missing
-   provider setup is a supported application state, not a reason to fail reader startup.
+   unavailable, send a request eligible for a configured Laya checkpoint (step 4, §9) to
+   LayaEngine, and otherwise return `no_key` without inference (unless an injected test engine
+   exists). Missing provider setup is a supported application state, not a reason to fail reader
+   startup.
 2. Check breaker and reserve the selected provider's estimated spend (§6) before each send.
 3. TypeSafe breaker closed or half-open → TypeSafeEngine. On success, return.
 4. If TypeSafe failed or its breaker is open:
@@ -572,7 +574,8 @@ property per question key. Every probability has `minimum: 0, maximum: 1`.
 - Loads a fine-tuned **Laya-multilingual** ONNX checkpoint through the Jev-compatible Node port
   `receptron/laya` (`Laya.load({subfolder})` → `laya.systemOne(state, questions)`).
 - Runs in-process in a dedicated worker (`WORKER_QUEUES=article.enrich.laya`), because it needs
-  about 2 GB of RAM.
+  about 2 GB of RAM. Enrich work for the languages in `settings['engine.laya']` goes to that queue
+  instead of `article.enrich` (spec 03 §2), and only this worker consumes it.
 - Enabled only for the kinds and languages configured in `settings['engine.laya']`, e.g.
   `{"enrich": ["sk","cs"]}`.
 - Limits: ≤ 20 options per Choice. Topic questions must use the two-level walk (spec 05 §3.2).

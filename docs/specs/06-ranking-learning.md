@@ -281,9 +281,10 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
    - `bm25`: document frequencies over **all inference-eligible** window articles, not just the dirty
      ones (§9); off/nonselected items remain neutral without running a keyword fallback
 2. **Dirty set** (SQL, window `RankerConfig.windowDays` = 14; **5,000 is a batch size, not a total
-   eligibility cap**). Iterate by stable `(first_seen_at, id)` keyset until every eligible item is
+   eligibility cap**). Iterate by stable `(arrival, id)` keyset until every eligible item is
    considered; use one captured `now` for the run. Articles
-   from the user's subscriptions with `first_seen_at ≥ now − 14 days`, not archived for the user,
+   from the user's subscriptions with arrival `≥ now − 14 days` (the latest subscribed carrier
+   `feed_items.first_seen_at`, as in spec 08 §5.1), not archived for the user,
    where any of these holds:
    - no `user_article` row
    - `ua.score_version != current score_version` or `ua.rank_revision != users.rank_revision`

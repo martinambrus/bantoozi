@@ -95,6 +95,7 @@ schema, `createQueue` options and typed enqueue helpers (`enqueueFetch`, `enqueu
 | `article.capture-bookmark` | `{articleId}` | bookmark action, explicit capture retry | 4 | 2, backoff 30 s | `stately`, key `capture-bookmark:<id>`; coalesced local capture, requester generations rechecked; never model inference |
 | `article.translate` | `{articleId, forceTier2?: boolean}` | extract, `user.rank` (spec 07 §3) | 4 | 1 | `stately`, key `translate:<id>` |
 | `article.enrich` | `{articleId, priority?: 'interactive'\|'bulk'}` | extract/translate, rescore, reenrich | 8 (shares the engine semaphore) | 1 | `stately`, key `enrich:<id>` |
+| `article.enrich.laya` | `{articleId, priority?: 'interactive'\|'bulk'}` | the `article.enrich` producers, instead of that queue, when `settings['engine.laya'].enrich` lists the article's language (M9) | 1, only in the dedicated Laya worker | 1 | `stately`, key `enrich-laya:<id>`; same handler and router order as `article.enrich` (spec 04 §4, §9); `WORKER_QUEUES=*` excludes it |
 | `article.cluster` | `{articleId}` | enrich | 4 | 1 | `stately`, key `cluster:<id>` |
 | `article.match` | `{articleId}` | enrich, `card.backfill`, itself (when rows remain) | 8 | 1 | `stately`, key `match:<id>`; drains all queued cards for the article |
 | `card.backfill` | `{userId, cardIds: string[], feedIds?: string[], snapshotAt?: iso, cursor?: {firstSeenAt: iso, articleId: string}, processedCount?: int}` | API (card or subscription change) | 2 | 2 | `standard` |

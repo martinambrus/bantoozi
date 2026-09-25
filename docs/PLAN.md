@@ -861,6 +861,8 @@ Complete milestone M4 "HTTP API" exactly as specified in docs/PLAN.md §10 and d
   - Lanes and statuses filter correctly, with folding applied before filtering (the mixed
     `allow_duplicates` case is tested).
   - Bookmarks default to `status=all` and ignore the window.
+  - The window uses the subscribed carrier's arrival: an article first seen globally more than 14
+    days ago but newly carried by a subscribed feed is listed.
   - Each sort order follows the declared cursor/snapshot contract under reranking, new arrivals,
     expired cursors, account/filter mismatch and equal sort keys (property/integration tests).
   - The counts agree with the list totals and include `scored` and `total`.
@@ -954,7 +956,8 @@ Complete milestone M5 "Ranking and lanes" exactly as specified in docs/PLAN.md �
   including `staleDislikes90d`.
 - **T4:**
   - The dirty-set SQL covers every freshness trigger in spec 06 §7, including time, undo, model,
-    translated card text and subscription changes (a test each).
+    translated card text and subscription changes (a test each), and windows by subscribed carrier
+    arrival rather than global first-seen time.
   - `full` re-ranks the window, and is never swallowed by a pending incremental job (tested through
     `jobs.ts`).
   - Reader-state columns are never modified (asserted).
@@ -1186,6 +1189,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | 2026-09-25 | Moved from FeedIt.sk's `docs/next-gen/` to this repository's `docs/`; repository references updated, no behaviour changed |
 | 2026-09-25 | Renamed the product from FeedIt Next Gen to Bantoozi: product name, `feedit` identifiers (packages, database and roles, env vars, header, user agent, URNs, compose projects) and the `fi_sid` cookie. References to the FeedIt.sk predecessor are unchanged |
 | 2026-09-25 | Review fixes: `eval.sample` rows are versioned and runs record their dataset version, so older runs stay replayable; a creator's account erasure keeps card-publication audit records, anonymized; invite email is sent synchronously after commit and reports failure; publisher language hints outside the detector whitelist are kept; feeds keep their original fetch URL; settled spend reservations are purged with call audits; `engine.prefilter_enabled` and `engine.laya` are admin-settable |
+| 2026-09-25 | More review fixes: reader and ranker windows use the subscribed carrier's arrival time; the engine router tries a configured Laya checkpoint before returning `no_key`; Laya enrich work has its own registered queue |
 
 ## 17. Owner decisions and implementation gates
 

@@ -321,7 +321,10 @@ does not cause the bookmark capture/export path to download or archive them.
 
 **Semantics, in this order:**
 1. **Candidate set:** distinct articles carried by the user's subscriptions (excluding `hidden`
-   feeds unless `feedId` is given) with `first_seen_at ≥ asOf − 14 days AND first_seen_at ≤ asOf`.
+   feeds unless `feedId` is given) whose **arrival** is `≥ asOf − 14 days AND ≤ asOf`. Arrival is the
+   latest `feed_items.first_seen_at` among the user's subscribed carriers in the view's feed/folder
+   scope, not the global `articles.first_seen_at`, so an older deduplicated article newly carried by
+   a subscribed feed still appears.
    Apply `feedId`/`folder`/`labelId` scope **before folding**, using EXISTS predicates rather than
    fan-out joins. A feed/folder intersection with no owned subscription is empty. For
    `lane = bookmarks`: every personally bookmarked article, without window/subscription requirement;
