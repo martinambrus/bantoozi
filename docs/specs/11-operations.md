@@ -162,7 +162,7 @@ backup immediately increases exposure and must alert rather than being reported 
 
 | Data | Kept |
 |---|---|
-| `articles` (+ feed_items, facets, answers) | 90 days after the latest carrier arrival (`max(feed_items.first_seen_at)`, the clock the reader window uses), **unless** any user has bookmarked, rated or labelled it (then kept while that user exists) |
+| `articles` (+ feed_items, facets, answers) | 90 days after the latest carrier arrival (`max(feed_items.first_seen_at)`, the clock the reader window uses), **unless** any user has bookmarked, rated or labelled it (then kept while that user exists) or an `analysis_requests` row for it is still within its 180-day retention |
 | unprotected hot `article_bodies.body_text` / `body_html` | 30 days; clear only after bookmarked content has a durable snapshot, and never clear content needed by a pending capture; `body_lead` remains |
 | `article_snapshots` full saved text/HTML | indefinitely while at least one live bookmark references that immutable snapshot; cold after 30 days, never shortened or replaced by a lead |
 | `article_translations` | with the article |
@@ -176,6 +176,7 @@ backup immediately increases exposure and must alert rather than being reported 
 | completed/failed pg-boss jobs | 7/30 days respectively using pinned pg-boss maintenance settings; failures counted before removal |
 | `login_codes` | 1 day after expiry |
 | `rate_limit_buckets` | 1 day after the bucket's window ends |
+| `api_mutations` idempotency/undo receipts | until `expires_at` (at least 7 days after creation) |
 | `sessions` | 30 days after expiry or revocation |
 | deleted users | hard-deleted 7 days after `DELETE /me`; encrypted historic backups age out within 6 months and are never served directly |
 | `eval` schema | while needed as the golden set, subject to rater erasure (§5.1) |
@@ -303,7 +304,7 @@ retention must not erase still-owned private cards or snapshots while publishing
 | `feed.schedule` | every minute | spec 03 §3 |
 | `house.rescore-degraded` | `*/10 * * * *` | recover the supported 14-day horizon fairly with persisted cursors/budget limits (spec 04 §5), including eligible deferred/exhausted match work and fallback answers; reuse current Call A, and reset terminal attempts only after their blocker changes |
 | `house.expire-rules` | `5 * * * *` | delete expired rules; `user.rank {full}` for the affected users |
-| `house.purge-auth` | `20 * * * *` | expired login codes, sessions and rate-limit buckets per §5 |
+| `house.purge-auth` | `20 * * * *` | expired login codes, sessions, rate-limit buckets and `api_mutations` receipts per §5, in bounded batches |
 | `house.reconcile` | `*/10 * * * *` | bounded repair of still-authorized inference, due pending/expired-lease `analysis_requests`, pending bookmark capture/outbox/match work and orphaned leases; enqueue rank for due `user_article.next_rank_at`; nightly UTC window also refreshes feed subscribers/cards, cluster counts and `lang_hint` with persistent progress cursors |
 | `house.archive` | `15 3 * * *` | archive unprotected read items older than 31 days and enforce the shared-article unread-cap rules in §5 |
 | `house.purge-articles` | `30 3 * * *` | delete unreferenced articles whose latest carrier arrival is older than 90 days (§5), in batches of 5,000. Articles referenced from `eval.*` are never purged |
