@@ -97,7 +97,9 @@ rankArticle(ctx, item, now):
   3. if a never-card has p ≥ never.hide (§4.2)       → RETURN 'hidden' (fire never:<id>)
   4. base probability P:
        a. compatible active model (§8.1), complete matchCoverage AND item.facets present AND pipelineState ∉ {'degraded','failed'}
-          AND item.facetsEngine ≠ 'llm' AND no applicable interest answer has engine 'llm'
+          AND item.facetsEngine and every applicable interest answer come from the model's engine
+          family (§8.1: 'typesafe' under FEATURE_SPEC_V1, so never 'llm' or 'laya'; a 'prefilter'
+          answer is an unknown, not another engine)
                                                      → P = model(x), source 'model' (§8)
        b. else, some applicable positive card has a usable answer → P = cardScore (§4), source 'cards';
           apply quality demotions (§5); remember the deciding card
@@ -373,10 +375,13 @@ immediately disables model scoring until a compatible model is trained; position
 never silently bind to different cards.
 
 Only validated current-revision answers from the **same pinned engine family/version and question
-manifest** are used. `prefilter` is unknown, not a probability. If any applicable interest-card answer
-or facet came from `llm`, the item is left out of training and follows the cards path until compatible
-answers exist. Label-card engines do not affect interest-model eligibility. Laya/Jev feature families
-must not be mixed without a new evaluated feature spec. Facet unknowns need masks just like cards.
+manifest** are used. `prefilter` is unknown, not a probability. `FEATURE_SPEC_V1`'s engine family is
+`typesafe` (Jev). If any applicable interest-card answer or facet came from another engine (`llm` or
+`laya`), the item is left out of training and scoring and follows the cards path until compatible
+answers exist. In M9 this covers a Laya-enriched article, whose facets come from Laya while its card
+answers come from Jev. Label-card engines do not affect interest-model eligibility. Laya/Jev feature
+families must not be mixed without a new evaluated feature spec. Facet unknowns need masks just like
+cards.
 Raw article/card text is not duplicated into feedback-event feature snapshots; selected analysis
 requests keep the bounded private frozen input required for reproducibility under the same RLS.
 

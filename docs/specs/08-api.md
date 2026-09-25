@@ -114,16 +114,18 @@ Every per-user query runs under row-level security, and every limit that bounds 
 | `GET /auth/sessions` | — | The user's active sessions `[{id, userAgent, ip, createdAt, lastSeenAt, current}]` |
 | `DELETE /auth/sessions/:id` | — | Revoke one session → `204` |
 
-**`request-code` decision table:**
+**`request-code` decision table.** "Mode" is the effective signup mode: `settings['signup_mode']` if
+set, otherwise `SIGNUP_MODE` (spec 02 §2). It is read on every request, so an admin change applies
+to the next one, and no row reads the environment value alone.
 
 | Situation | Email sent |
 |---|---|
 | a `users` row exists (active, or soft-deleted and not yet purged) | login code (verifying restores a soft-deleted account) |
 | unknown email listed in `ADMIN_EMAILS`, mode ≠ `closed` | signup code (**admin bootstrap**: the first admin needs no invite) |
-| unknown email, `SIGNUP_MODE=open` | signup code |
-| unknown email, `SIGNUP_MODE=invite`, valid invite (unused, unexpired, email-bound invites must match) | signup code (invite remembered on the code row) |
-| unknown email, `SIGNUP_MODE=invite`, no or invalid invite | "Bantoozi is invite-only" email with a waitlist link |
-| `SIGNUP_MODE=closed`, unknown email | nothing |
+| unknown email, mode `open` | signup code |
+| unknown email, mode `invite`, valid invite (unused, unexpired, email-bound invites must match) | signup code (invite remembered on the code row) |
+| unknown email, mode `invite`, no or invalid invite | "Bantoozi is invite-only" email with a waitlist link |
+| unknown email, mode `closed` | nothing |
 
 **Codes:**
 - Trim and case-normalize emails consistently with `citext`; validate syntax/length without
@@ -152,7 +154,9 @@ Every per-user query runs under row-level security, and every limit that bounds 
   Bound response timing independently of account existence. A per-email throttled request retains the same 202;
   IP abuse can return 429 without an account-existence signal.
 
-**The signup mode** is `settings['signup_mode']` if set, otherwise `SIGNUP_MODE` (spec 02 §2).
+**The signup mode** is the effective mode above. Verification rechecks signup eligibility under
+the mode in effect at that moment, so a signup code issued before a switch to `closed` creates no
+account.
 
 **On signup:**
 - insert `users`:

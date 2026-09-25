@@ -17,7 +17,7 @@ export type InferenceAuthorization =
   | { type: 'article'; articleId: string; articleRevision: string;
       witnesses: Array<{kind:'automatic'; userId:string; feedId:string; inferenceVersion:string}
                      | {kind:'manual'; analysisRequestId:string}> }
-  | { type: 'suggest'; userId:string; eligibleArticleIds:string[] }
+  | { type: 'suggest'; userId:string; eligibleArticleIds:string[]; leaseToken:string } // spec 05 §7
   | { type: 'credential_probe'; provider:'typesafe'|'ollama'; candidateVersion:string }
   | { type: 'eval'; runId:string }; // separately authorized eval; never inferred from a feed fetch
 export type CallStatus = 'ok' | 'error' | 'timeout' | 'rate_limited' | 'invalid_request' | 'invalid_response' | 'auth_error';
@@ -187,6 +187,9 @@ any retry/fallback, the caller and router verify server-produced `InferenceAutho
   witnesses, user identifiers or credential metadata as model input.
 - **Suggestions:** use only the user's previously authorized manual/active article evidence and
   currently eligible interest scope. Off-feed bookmark/rating activity alone does not grant inference.
+  The authorization also carries the `user.suggest` lease token: `reserveSpend` locks the user row,
+  admits the call only while that token holds a live lease, and stamps `last_suggested_at` with the
+  logical request's first reservation (spec 05 §7), so a worker that lost its lease sends nothing.
 - **Eval and credential probes:** explicit, separate admin/evaluation actions with their own bounded
   request purpose. Their synthetic/evaluation inputs are not a way to bypass production feed gates.
 
@@ -605,6 +608,9 @@ property per question key. Every probability has `minimum: 0, maximum: 1`.
 - Limits: ≤ 20 options per Choice. Topic questions must use the two-level walk (spec 05 §3.2).
 - Per-question-type temperature calibration (fitted in the fine-tuning notebook) is applied in
   `normalize()`. Calibration version and checkpoint hash are part of the answer provenance.
+- Under `FEATURE_SPEC_V1` the personal model never scores a Laya-enriched article: its facets are
+  Laya's while its card answers stay Jev's, so it ranks on the cards path (spec 06 §8.1) until a
+  new evaluated feature spec covers Laya facets.
 - Background and the go/no-go criteria: [`../laya-multilingual.md`](../laya-multilingual.md).
 
 ---

@@ -712,11 +712,15 @@ into unrelated off feeds merely to create cluster context.
 
 **Trigger:** after `user.learn`, and by a nightly cron. In a short transaction lock the user row and
 claim `suggest_lease_token`/`suggest_lease_until` only if no live lease and `last_suggested_at` is null
-or ≥24h old. Recheck ownership before sending, then stamp `last_suggested_at` immediately before
-the first wire attempt, atomically with its successful spend reservation; unsuccessful provider
-attempts still consume this 24h opportunity. Renew the lease for the bounded logical request and release it with a token predicate. No eligible
-candidates or a budget deferral before sending releases the lease without consuming the opportunity.
-Expired leases recover after a crash; queue throttling alone does not replace this durable claim.
+or ≥24h old. The spend reservation is the ownership fence: the handler passes its lease token in the
+`suggest` authorization (spec 04 §1.1), and `reserveSpend` locks the user row and admits the call
+only while that token still holds a live lease. The first reservation of the logical request stamps
+`last_suggested_at` in the same transaction, immediately before the first wire attempt; a worker
+whose lease expired or was reclaimed gets no reservation and sends nothing. Unsuccessful provider
+attempts still consume this 24h opportunity. Renew the lease for the bounded logical request and
+release it with a token predicate. No eligible candidates or a budget deferral before sending
+releases the lease without consuming the opportunity. Expired leases recover after a crash; queue
+throttling alone does not replace this durable claim.
 
 1. Recheck that the user has active inference or explicitly selected training demand. An off-only
    user receives no suggestion call. Candidate source articles must be currently authorized for that
