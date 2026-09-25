@@ -1,0 +1,30 @@
+{
+  "name": "@bantoozi/testing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Fixtures, factories, per-worktree test databases, fixture/fake servers",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "bantoozi-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b && tsc -p tsconfig.test.json",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "test:int": "vitest run --config vitest.int.config.ts --passWithNoTests"
+  },
+  "dependencies": {
+    "@bantoozi/shared": "workspace:*",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "eslint": "10.11.0"
+  }
+}

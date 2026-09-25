@@ -1,0 +1,18 @@
+node_modules/
+dist/
+coverage/
+.turbo/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+# Vite / Playwright
+apps/web/dev-dist/
+apps/web/test-results/
+apps/web/playwright-report/
+# Eval: generated reports are ignored; committed decision reports are whitelisted by name (spec 01 §2)
+apps/eval/reports/*
+!apps/eval/reports/.gitkeep
+!apps/eval/reports/*-decision.md

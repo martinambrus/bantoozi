@@ -1,0 +1,43 @@
+{
+  "name": "bantoozi",
+  "private": true,
+  "type": "module",
+  "description": "Feed reader with a taste",
+  "license": "MIT",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=22.22.2 <23"
+  },
+  "scripts": {
+    "dev": "turbo run dev --filter=@bantoozi/api --filter=@bantoozi/worker --filter=@bantoozi/web",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "lint:root": "eslint --max-warnings=0 *.js *.ts && prettier --check .",
+    "test": "turbo run test",
+    "test:int": "turbo run test:int",
+    "e2e": "pnpm --filter @bantoozi/web e2e",
+    "db:migrate": "pnpm --filter @bantoozi/db migrate",
+    "db:seed": "pnpm --filter @bantoozi/worker seed",
+    "evaluate": "pnpm --filter @bantoozi/eval cli",
+    "worker-cli": "pnpm --filter @bantoozi/worker cli",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@eslint-community/eslint-plugin-eslint-comments": "4.8.1",
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.4",
+    "@vitest/coverage-v8": "5.0.2",
+    "eslint": "10.11.0",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-boundaries": "7.2.0",
+    "globals": "17.12.0",
+    "prettier": "3.9.9",
+    "tsx": "4.23.15",
+    "turbo": "2.11.4",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.1",
+    "vite": "8.3.1",
+    "vitest": "5.0.2"
+  }
+}

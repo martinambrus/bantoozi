@@ -1,0 +1,16 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/shared" },
+    { "path": "packages/db" },
+    { "path": "packages/feeds" },
+    { "path": "packages/engine" },
+    { "path": "packages/questions" },
+    { "path": "packages/translate" },
+    { "path": "packages/ranker" },
+    { "path": "packages/testing" },
+    { "path": "apps/api" },
+    { "path": "apps/worker" },
+    { "path": "apps/eval" }
+  ]
+}

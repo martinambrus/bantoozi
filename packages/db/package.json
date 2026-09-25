@@ -1,0 +1,35 @@
+{
+  "name": "@bantoozi/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Drizzle schema, migrations, repositories and RLS helpers (spec 02)",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "bantoozi-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b && tsc -p tsconfig.test.json",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "test:int": "vitest run --config vitest.int.config.ts --passWithNoTests",
+    "migrate": "tsx --conditions=bantoozi-source src/migrate/main.ts"
+  },
+  "dependencies": {
+    "@bantoozi/shared": "workspace:*",
+    "drizzle-orm": "0.45.3",
+    "pg": "8.23.0",
+    "pg-boss": "10.4.2"
+  },
+  "devDependencies": {
+    "@bantoozi/testing": "workspace:*",
+    "@types/pg": "8.23.1",
+    "drizzle-kit": "0.31.11",
+    "tsx": "4.23.15"
+  }
+}
