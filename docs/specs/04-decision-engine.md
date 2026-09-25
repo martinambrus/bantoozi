@@ -575,10 +575,12 @@ property per question key. Every probability has `minimum: 0, maximum: 1`.
   `receptron/laya` (`Laya.load({subfolder})` → `laya.systemOne(state, questions)`).
 - Runs in-process in a dedicated worker (the `worker-laya` Compose service, spec 11 §2, with
   `WORKER_QUEUES=article.enrich.laya,analysis.process.laya`), because it needs about 2 GB of RAM.
-  Only that worker loads the checkpoint; routers in every other process treat Laya as not
-  configured. Laya-eligible work for the languages in
-  `settings['engine.laya']` goes to the dedicated queues instead of `article.enrich` and
-  `analysis.process` (spec 03 §2), keeping a selected request's frozen identity.
+  Only that worker loads the checkpoint for production work; routers in every other production
+  process treat Laya as not configured. Outside production, an eval router pinned to Laya (E5 and
+  the replay required before enabling it, spec 10 §3, §6) may load it in the eval CLI.
+  Laya-eligible work for the languages in `settings['engine.laya']` goes to the dedicated queues
+  instead of `article.enrich` and `analysis.process` (spec 03 §2), keeping a selected request's
+  frozen identity.
 - Enabled only for the kinds and languages configured in `settings['engine.laya']`, e.g.
   `{"enrich": ["sk","cs"]}`.
 - Limits: ≤ 20 options per Choice. Topic questions must use the two-level walk (spec 05 §3.2).
