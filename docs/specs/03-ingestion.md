@@ -635,8 +635,12 @@ and keep both identities; golden labels must not be silently rewritten.
 - For each user, move a source-only `user_article` row. On a collision: union explicit `label_ids`;
   keep a bookmark if either is bookmarked (earliest timestamp); keep latest opened/read timestamps;
   select rating/reason by latest `rated_at` (target wins ties); keep maximum dwell; unarchive if
-  either copy is unarchived. Clear cached ranking/explanation and enqueue a full rank for affected
-  active users. These rules preserve current positive state; feedback history is also retained.
+  either copy is unarchived. The surviving row's `state_version` becomes one more than the larger
+  of both input versions (an absent row counts as 0), also when a source-only row is moved, so an
+  offline action prepared against either pre-merge version gets `STALE_STATE` (spec 08 §1.1)
+  instead of overwriting the merged state. Clear cached ranking/explanation and enqueue a full
+  rank for affected active users. These rules preserve current positive state; feedback history is
+  also retained.
 - Repoint **all** `feedback_events` to the survivor without dropping events. Learning collapses
   explicit labels by current article identity and latest event; a merged story must not become two
   training examples. Repoint `analysis_requests.article_id` before deleting the source article so
