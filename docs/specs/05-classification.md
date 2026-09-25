@@ -135,7 +135,10 @@ in the same outbox transaction. This makes an inaugural rating learnable when sl
   `translate` (spec 07 §1), and matching follows enrichment as usual. That translation job carries
   `modeChange`, so an already enriched or matched article is not held back as a late duplicate:
   when its effective model input changes under the new mode, the translation is installed through
-  `resetArticleAnswers`, which re-enriches it (spec 07 §3). A language added to or
+  `resetArticleAnswers`, which re-enriches it (spec 07 §3). In the other direction (`translate` →
+  `native`) no translation job runs, so `house.reenrich` itself calls `resetArticleAnswers` for an
+  article whose current facets have `state_variant = 'translated'`, before enriching it; translated
+  card answers, ranking inputs and cluster membership are invalidated the same way (§5.6). A language added to or
   removed from `engine.laya`, or a new Laya checkpoint or calibration, re-enriches the affected
   languages the same way (spec 04 §9). Old incompatible answers
   cannot satisfy current cache lookups while replacement is pending. `cluster` and `suggest` set
@@ -588,7 +591,8 @@ changes even when no `answered_at` changed.
 ### 5.6 `resetArticleAnswers(articleId)`
 
 Used whenever classification inputs change: title/excerpt/body update, canonical publisher metadata,
-language correction or a selected translation replacing the previous variant (specs 03 and 07).
+language correction, a selected translation replacing the previous variant (specs 03 and 07), or a
+language-mode change that switches the effective variant in either direction (§2).
 In one transaction:
 
 1. Increment `articles.content_revision` (decimal bigint) and invalidate current `article_facets`,

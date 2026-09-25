@@ -405,6 +405,10 @@ bounded by the job deadline, cancellation works while queued, and aging prevents
 
 **Fallback chain** in `EngineRouter.ask(req)`:
 
+0. (M9) In the Laya worker, a request from a `.laya` queue (enrichment or selected analysis for a
+   language in `settings['engine.laya']`, spec 03 §2) goes to LayaEngine (§9) first, after the
+   step-1 checks, because Laya is that language's selected enrich engine. Only if Laya fails does it
+   continue with steps 2–5 like any other request. Other processes treat Laya as not configured.
 1. Validate the request and its live demand (§1.1). Resolve the active Jev credential (§1.2); if it
    is unavailable, skip steps 2–3 and go to step 4. Missing provider setup is a supported
    application state, not a reason to fail reader startup.
@@ -418,7 +422,8 @@ bounded by the job deadline, cancellation works while queued, and aging prevents
      router may split a Jev pack into smaller LLM subrequests, reusing the same immutable state; it
      returns ok only after every original key has one valid answer, otherwise callers keep the work
      pending. Each subrequest/attempt is separately reserved and logged
-   - (M9) if a fine-tuned Laya checkpoint is configured for `req.kind` → LayaEngine (§9)
+   - (M9) a `.laya` request reaches this point only after its step-0 Laya attempt failed, and does
+     not retry Laya here
 5. Otherwise return `no_key` when Jev has no credential and no fallback was eligible (unless an
    injected test engine exists), or `budget`, `circuit_open` or `error` with a retry time when known. Never route an
    invalid request into another provider. Optional Laya has an explicit eligible-kind/language and
@@ -585,7 +590,8 @@ property per question key. Every probability has `minimum: 0, maximum: 1`.
   instead of `article.enrich` and `analysis.process` (spec 03 §2), keeping a selected request's
   frozen identity.
 - Enabled only for the kinds and languages configured in `settings['engine.laya']`, e.g.
-  `{"enrich": ["sk","cs"]}`. Removing a language stops new routing at once. A queued `.laya` job
+  `{"enrich": ["sk","cs"]}`. For those, Laya is the first engine the router tries (§5 step 0), with
+  Jev and the LLM fallback behind it. Removing a language stops new routing at once. A queued `.laya` job
   whose language is no longer listed never calls an engine: before claiming any lease, its handler
   sends the job to the ordinary queue (`article.enrich` or `analysis.process`, for the same article
   or frozen request) and completes, so the Laya queues drain after a disable even while Jev is
@@ -634,6 +640,8 @@ property per question key. Every probability has `minimum: 0, maximum: 1`.
   queue without an engine call, with Jev unavailable too
 - (M9) adding or removing a language, or a new checkpoint or calibration, re-enriches the affected
   languages' window once
+- (M9) a `.laya` request is answered by Laya while Jev is healthy, and falls back to Jev only when
+  Laya fails
 - encrypted-key stage/validate/activate/revoke; admin and DB role isolation; no secret echo/logs/receipts;
   tampered AAD/tag, wrong master key, missing keyring, revocation versus in-flight probe and rotation
 - no environment fallback after DB tombstone; two workers observe hot rotation; old-version auth error
