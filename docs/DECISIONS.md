@@ -16,3 +16,7 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   log email codes"), non-`https` `PUBLIC_BASE_URL`/`TYPESAFE_BASE_URL`/`OLLAMA_BASE_URL` (spec 04
   §1.2 sends keys only to HTTPS origins), an unpinned `TYPESAFE_MODEL` ("always a pinned version in
   production"), and a `SESSION_PEPPER`/`METRICS_TOKEN` shorter than 32 characters. Spec 01 §3 updated.
+- D-3: 2026-09-25 M0-T3 — new compose-only variable `LT_DEV_PORT` (default 5000): the host port of the
+  dev LibreTranslate in `infra/compose.dev.yml`. Spec 11 §2 requires Compose host ports to come from
+  the environment, but spec 01 §3 listed only `PG_DEV_PORT`/`PG_TEST_PORT`. Dev and test ports are
+  published on 127.0.0.1 only. Spec 01 §3 table updated; `.env.example` and the config registry list it.

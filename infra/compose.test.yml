@@ -1,0 +1,50 @@
+# Postgres for integration tests (spec 01 §6, spec 02 §1.1): the production image and init.sh, with
+# the data directory on tmpfs and durability switched off for speed.
+#
+# Every worktree shares this project, so start it only with `--no-recreate`:
+#   pnpm db:test:up   # = docker compose -f infra/compose.test.yml up -d --no-recreate --wait
+# Tests connect as the superuser through TEST_ADMIN_DATABASE_URL (default
+# postgres://postgres:postgres@localhost:${PG_TEST_PORT}/postgres) and create their own template and
+# per-run databases from it (spec 02 §1.1). The passwords below are test-only defaults that the
+# packages/testing helpers rely on; never reuse them outside local tests.
+name: bantoozi-test
+
+services:
+  postgres:
+    image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+    command:
+      - postgres
+      - -c
+      - fsync=off
+      - -c
+      - synchronous_commit=off
+      - -c
+      - full_page_writes=off
+      - -c
+      - max_connections=200
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      BANTOOZI_OWNER_PASSWORD: ${BANTOOZI_OWNER_PASSWORD:-bantoozi_owner}
+      BANTOOZI_APP_PASSWORD: ${BANTOOZI_APP_PASSWORD:-bantoozi_app}
+      BANTOOZI_WORKER_PASSWORD: ${BANTOOZI_WORKER_PASSWORD:-bantoozi_worker}
+    ports:
+      # Loopback only: published ports bypass host firewalls, and these credentials are public.
+      - '127.0.0.1:${PG_TEST_PORT:-5433}:5432'
+    volumes:
+      - ./postgres/init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      # Over TCP on purpose: while init.sh runs, the entrypoint's temporary server listens only on
+      # the unix socket, so this passes (and `up --wait` returns) only once init.sh has created the
+      # database and the real server accepts connections. pg_isready alone does not check -d.
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, postgres, -d, bantoozi]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: '5'

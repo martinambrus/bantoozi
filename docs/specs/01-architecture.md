@@ -185,6 +185,7 @@ identify secret variable names/paths, never their supplied contents or a seriali
 | `TEST_ADMIN_DATABASE_URL` | `postgres://postgres:postgres@localhost:${PG_TEST_PORT}/postgres` | test, eval | superuser connection used only to create template, test, E2E and dry-run databases (spec 02 §1.1) |
 | `PG_TEST_PORT` | `5433` | compose.test.yml, test | host port of the test Postgres |
 | `PG_DEV_PORT` | `5432` | compose.dev.yml | host port of the dev Postgres |
+| `LT_DEV_PORT` | `5000` | compose.dev.yml | host port of the dev LibreTranslate (`--profile translate`); dev apps then use `LIBRETRANSLATE_URL=http://localhost:5000` (D-3) |
 | `POSTGRES_PASSWORD`, `BANTOOZI_OWNER_PASSWORD`, `BANTOOZI_APP_PASSWORD`, `BANTOOZI_WORKER_PASSWORD` | — | compose / `init.sh` | database bootstrap only; never read by the apps |
 | `PUBLIC_BASE_URL` | `http://localhost:5173` | api, worker, eval | used in links, the CSRF `Origin` check (spec 08 §1) and the fetcher User-Agent |
 | `API_PORT` | `3000` | api | |

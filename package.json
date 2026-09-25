@@ -19,6 +19,8 @@
     "e2e": "pnpm --filter @bantoozi/web e2e",
     "db:migrate": "pnpm --filter @bantoozi/db migrate",
     "db:seed": "pnpm --filter @bantoozi/worker seed",
+    "db:dev:up": "docker compose -f infra/compose.dev.yml up -d --no-recreate --wait postgres",
+    "db:test:up": "docker compose -f infra/compose.test.yml up -d --no-recreate --wait",
     "evaluate": "pnpm --filter @bantoozi/eval cli",
     "worker-cli": "pnpm --filter @bantoozi/worker cli",
     "format": "prettier --write ."

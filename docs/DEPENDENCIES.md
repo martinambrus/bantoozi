@@ -61,6 +61,14 @@ pin exact versions (`save-exact`). Update this file in the same commit as any ve
 | @vitejs/plugin-react | 6.1.1 |
 | @playwright/test | 1.56.1 — matches the Chromium build 1194 preinstalled in the development container (M6) |
 
+## Container images (pinned by multi-arch index digest)
+
+| Image | Digest | Used by |
+|---|---|---|
+| `postgres:16` (16.15) | `sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54` | `infra/compose.dev.yml`, `infra/compose.test.yml`; production compose (M8) |
+| `libretranslate/libretranslate:latest` (pushed 2026-09-03) | `sha256:7e7b72b0983c9d5f1e041ddac962ebfc1c20595e04366689cadff72069040027` | `infra/compose.dev.yml` (`translate` profile) |
+| `caddy:2` (v2.11.4) | `sha256:0c994536bddb66445885237f1a5dcc1916bccea922661c76b4e9fc24061f9b52` | production compose (M8); `infra/caddy/Caddyfile` validated with it |
+
 ## Workspace resolution
 
 Library packages publish `dist/` (built by `tsc -b`) and also expose a `bantoozi-source` export
