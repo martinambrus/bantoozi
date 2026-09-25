@@ -39,6 +39,7 @@ interface RankItem {
   feedIds: string[];               // all article carriers ∩ user's subscriptions (manual rules)
   inferenceFeedIds: string[];      // only carriers authorized for this user/article revision (§2)
   inferenceEligible: boolean;     // inferenceFeedIds is non-empty; not global cache availability
+  explicitSelection: boolean;     // a current selected analysis request authorizes this revision (spec 05 §1.1)
   domain: string; author: string | null;
   titleNorm: string; excerptNorm: string; translatedTitleNorm?: string; translatedExcerptNorm?: string;
   firstSeenAt: Date; publishedAt?: Date; contentRevision: string; wordCount: number | null; hasImage: boolean; lang: string;
@@ -88,7 +89,11 @@ rankArticle(ctx, item, now):
   1. if a hide rule matches (§3.1)                   → RETURN 'hidden' (fire its code)
   1b. if NOT item.inferenceEligible                  → RETURN 'new', P null, source 'none',
                                                         fire 'inference_not_requested'
-  2. if item.pipelineState == 'stale'                → RETURN lane 'new', P null, source 'none'
+  2. if item.pipelineState == 'stale' AND NOT item.explicitSelection
+                                                     → RETURN lane 'new', P null, source 'none'
+                                                        (stale articles are never processed
+                                                        automatically; a current explicit
+                                                        selection still ranks from its answers)
   3. if a never-card has p ≥ never.hide (§4.2)       → RETURN 'hidden' (fire never:<id>)
   4. base probability P:
        a. compatible active model (§8.1), complete matchCoverage AND item.facets present AND pipelineState ∉ {'degraded','failed'}

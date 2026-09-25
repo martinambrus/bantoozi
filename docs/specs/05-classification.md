@@ -132,7 +132,10 @@ in the same outbox transaction. This makes an inaugural rating learnable when sl
   (spec 11 §8). A `language_modes` change
   enqueues `house.reenrich {since, lang}` for each changed language: its admitted window articles
   re-enter at `pipeline.after('extracted', …)`, which translates first when the language is now
-  `translate` (spec 07 §1), and matching follows enrichment as usual. A language added to or
+  `translate` (spec 07 §1), and matching follows enrichment as usual. That translation job carries
+  `modeChange`, so an already enriched or matched article is not held back as a late duplicate:
+  when its effective model input changes under the new mode, the translation is installed through
+  `resetArticleAnswers`, which re-enriches it (spec 07 §3). A language added to or
   removed from `engine.laya`, or a new Laya checkpoint or calibration, re-enriches the affected
   languages the same way (spec 04 §9). Old incompatible answers
   cannot satisfy current cache lookups while replacement is pending. `cluster` and `suggest` set
