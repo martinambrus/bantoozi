@@ -582,19 +582,23 @@ Signature: `detectLanguage(text, { hint?, minLength? = 40 })`.
 
 1. If the text is shorter than `minLength` chars: `lang = hint ?? 'und'`, confidence 0. For articles, the
    hint is `feed.lang_hint`; for card texts, it is the user's locale, with `minLength: 10` (spec 07 §5).
-2. Otherwise run `francAll(text, { only: [eng, slk, ces, deu, pol, hun, fra, spa, ita, por, nld, ukr, rus], minLength: Math.min(20, minLength) })`.
-3. `francAll` returns `[iso639_3, score]` tuples. Read the best two valid tuples explicitly and
+2. Normalize a BCP 47 hint such as `sv-SE` to its base language. If it is a valid ISO 639-1 code
+   outside the whitelist in step 3 (for example a feed's `<language>sv</language>`), use it:
+   `lang = hint`, confidence 0, without running the detector. The restricted detector cannot return
+   that language, so its confidence never overrides the publisher; spec 07 treats it as unsupported.
+3. Otherwise run `francAll(text, { only: [eng, slk, ces, deu, pol, hun, fra, spa, ita, por, nld, ukr, rus], minLength: Math.min(20, minLength) })`.
+4. `francAll` returns `[iso639_3, score]` tuples. Read the best two valid tuples explicitly and
    handle `und`/an empty or single-result list. `conf = top[1] - second[1]` (0 if no comparison).
    This is a relative separation score, **not** calibrated probability of correctness. Normalize
    BCP 47 hints such as `sk-SK`/`cs_CZ` to base language before matching.
-4. If `conf < 0.05` and a hint is set, use the hint.
-5. **Slovak/Czech tie-break:** if the top two are {slk, ces} and `conf < 0.15`, use the hint when it is
+5. If `conf < 0.05` and a hint is set, use the hint.
+6. **Slovak/Czech tie-break:** if the top two are {slk, ces} and `conf < 0.15`, use the hint when it is
    `sk` or `cs`. Otherwise keep `top`.
-6. Map ISO 639-3 to 639-1 (eng→en, slk→sk, ces→cs, …). If nothing matches, `lang = 'und'`.
+7. Map ISO 639-3 to 639-1 (eng→en, slk→sk, ces→cs, …). If nothing matches, `lang = 'und'`.
 
 A language outside this detector whitelist can be misidentified as a supported language. The beta
 must expose `und`/unsupported results without silently translating as English; preserve publisher
-language hints outside the whitelist and use native/degraded handling (spec 07). Broader language
+language hints outside the whitelist (step 2) and use native/degraded handling (spec 07). Broader language
 coverage requires detector fixtures and a G1 decision, not just adding a translation mode.
 
 `feeds.lang_hint`:

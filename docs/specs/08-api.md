@@ -187,8 +187,13 @@ email never hits the unique constraint through the signup path.
 | Endpoint | Body | Behaviour |
 |---|---|---|
 | `GET /invites` | — | My invites `[{code, email, createdAt, expiresAt, usedAt, url}]` and `invitesLeft` |
-| `POST /invites` | `{email?, note?}` | Atomically requires/decrements `invites_left > 0` under the user lock. Creates a CSPRNG code (10 chars, Crockford base32, expires in 30 days; retry unique collisions), and queues email if `email` is given → `201 {code, url: PUBLIC_BASE_URL + '/join?code=' + code}` |
+| `POST /invites` | `{email?, note?}` | Atomically requires/decrements `invites_left > 0` under the user lock. Creates a CSPRNG code (10 chars, Crockford base32, expires in 30 days; retry unique collisions). If `email` is given, sends the invite email after commit (below) → `201 {code, url: PUBLIC_BASE_URL + '/join?code=' + code, emailSent?: boolean}` |
 | `POST /waitlist` | `{email, locale?, note?}` | Public. Upsert → `202`. Rate-limited per IP |
+
+**Invite email** follows the auth-mail pattern of §2.1: there is no mail queue, and the invite code
+never enters an outbox payload. After the invite commits, attempt bounded synchronous SMTP delivery.
+A failure keeps the invite and returns `emailSent: false`, so the inviter can share the link from the
+response or `GET /invites`. `POST /admin/waitlist/:id/invite` sends and reports the same way.
 
 ---
 
@@ -655,7 +660,7 @@ nor grants permission to analyze other articles.
 | `POST /admin/library/promote` | `{requestId,expectedVersion}`. Require shared card with ≥3 holders and either exact creator approval or audited ≥30-day creator inactivity (§9.2); recheck under lock and publish preserving unchanged text/id/answers. Decline, recent unapproved activity or missing/deleted provenance → `409 CONFLICT` |
 | `GET /admin/users?q=` / `PATCH /admin/users/:id` | Role, plan, `invites_left` |
 | `GET /admin/invites?status=unused\|used\|expired` / `POST /admin/invites` | List all invites; create `{count ≤ 50, email?, note?, expiresDays ≤ 90}` → codes |
-| `GET /admin/waitlist` / `POST /admin/waitlist/:id/invite` | Create an invite and email it |
+| `GET /admin/waitlist` / `POST /admin/waitlist/:id/invite` | Create an invite and email it (§2.2 invite email; returns `emailSent`) |
 | `POST /admin/ops-event` | `{kind: 'backup_ok' \| 'backup_failed' \| 'restore_ok' \| 'restore_failed' \| 'host_health', detail?}`. `host_health` uses spec 11's bounded structured disk/inode/heartbeat payload. Authenticated with the `METRICS_TOKEN` bearer and exempt from the CSRF header (§1); used by the host scripts in spec 11 §4. It appends to `settings['ops.events']` (the last 50 kept), which `house.alerts` reads |
 
 **Admin write constraints:** validate every field with the shared schemas; no arbitrary JSON-to-SQL

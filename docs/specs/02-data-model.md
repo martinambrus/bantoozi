@@ -923,6 +923,12 @@ invalidate an old proposal approval and require a new version/authorization chec
 content remains a separately reviewed source, never a way to relabel user-created material to bypass
 these rules.
 
+The creator's account erasure keeps this audit trail, including the evidence of already public cards.
+`card_publication_requests.user_id` is set to NULL, and erasure sets `creatorUserId` in the evidence to
+null (the union allows null for this case). That is the sole exception to evidence immutability, as
+creator FK clearing is for `interest_cards`; every other field stays. A request whose creator was
+erased can never be approved or promoted.
+
 `library_card_versions` is an immutable semantic chain for a stable library slug; enforce consecutive
 versions and predecessor belonging to the same slug in the repository/constraint trigger. A semantic
 change creates a new card and version. Only the newest version may own `interest_cards.slug` as a
@@ -940,7 +946,8 @@ positive/negative ranking or training label, or enable inference for an untraine
 ## 4. Per-user tables (RLS enforced)
 
 Every table in this section has `user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE` and the
-policy from §5.
+policy from §5. The one exception is `card_publication_requests`, whose `user_id` is set to NULL on
+the creator's erasure so the publication audit survives (§3.6); such rows match no tenant.
 
 ```sql
 CREATE TABLE subscriptions (
@@ -1001,7 +1008,7 @@ CREATE INDEX analysis_requests_user_article_idx ON analysis_requests (user_id, a
 
 CREATE TABLE card_publication_requests (           -- exact proposal, genuine responses and publication basis
   id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  user_id             uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id             uuid NULL REFERENCES users(id) ON DELETE SET NULL, -- original creator; NULL after erasure (§3.6)
   card_id             bigint NOT NULL REFERENCES interest_cards(id) ON DELETE CASCADE,
   requested_by        uuid NULL REFERENCES users(id) ON DELETE SET NULL,
   status              text NOT NULL DEFAULT 'pending'
@@ -1251,7 +1258,8 @@ CREATE POLICY job_outbox_requester ON job_outbox FOR INSERT TO bantoozi_app
 The API has no SELECT policy/grant on outbox. Server-side helpers insert without `RETURNING`; the
 requester's UUID is not a queue target authorization mechanism. Anonymous auth email is the explicit exception: commit the short-lived challenge, then perform
 bounded synchronous SMTP delivery; failure leaves no delivery guarantee and the user can request a
-replacement code (spec 08). Never invent a tenant or grant an API-wide BYPASSRLS role for mail. Codes,
+replacement code (spec 08). Invite email follows the same pattern after the invite commits; on
+failure the inviter shares the returned link (spec 08 §2.2). Never invent a tenant or grant an API-wide BYPASSRLS role for mail. Codes,
 SMTP credentials and session secrets never enter generic outbox payloads or logs.
 
 ### 5.2 Required integrity triggers and repositories
@@ -1490,11 +1498,13 @@ CREATE TABLE eval.ratings (rater_id bigint REFERENCES eval.raters(id) ON DELETE 
 CREATE TABLE eval.facet_labels (labeler text NOT NULL, article_id bigint REFERENCES articles(id) ON DELETE RESTRICT,
   question_key text NOT NULL, value text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (article_id, question_key, labeler));
-CREATE TABLE eval.sample (article_id bigint PRIMARY KEY REFERENCES articles(id) ON DELETE RESTRICT, lang text NOT NULL,
+CREATE TABLE eval.sample (dataset_version text NOT NULL, -- e.g. golden-v1; every version keeps its own rows
+  article_id bigint NOT NULL REFERENCES articles(id) ON DELETE RESTRICT, lang text NOT NULL,
   snapshot jsonb NOT NULL, snapshot_sha text NOT NULL,
   split text NOT NULL CHECK (split IN ('dev','test')),
-  created_at timestamptz NOT NULL DEFAULT now());
+  created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (dataset_version, article_id));
 CREATE TABLE eval.runs (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, experiment text NOT NULL,
+  dataset_version text NOT NULL, -- the eval.sample version this run read
   config jsonb NOT NULL, git_sha text NOT NULL, started_at timestamptz NOT NULL DEFAULT now(),
   finished_at timestamptz NULL, results jsonb NULL);
 CREATE TABLE eval.run_answers (run_id bigint NOT NULL REFERENCES eval.runs(id) ON DELETE CASCADE,
@@ -1511,6 +1521,10 @@ ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA eval GRANT USAGE, SEL
 ```
 
 - The `eval` schema is accessed only by `apps/eval`, through `DATABASE_URL_WORKER`.
+- Dataset versions are append-only. A new version (after a rating correction, a late duplicate or
+  an addition, spec 10 §2.1) inserts its own `eval.sample` rows, copying unchanged snapshots, and
+  never updates or deletes an earlier version's rows. A run reads only its `dataset_version`, so older
+  runs keep their exact snapshots and split membership for replay.
 - Evaluation uses a separate database with synthetic/consented card definitions. Never pin a
   production user's private fork against account erasure; remove such personal eval references before
   deletion if they exist. Frozen benchmark data does not override a personal-data deletion request.
@@ -1543,7 +1557,8 @@ parity. A generated migration is not complete until these pass with actual role 
    changes reader fields; an old rank revision cannot overwrite a newer score.
 7. Eval retries cannot duplicate answers (including rows with NULL card IDs); protected eval
    articles/cards/feeds survive retention and merge attempts, and frozen snapshots do not change when
-   live source articles are edited.
+   live source articles are edited. Creating a new dataset version leaves an older version's
+   snapshots and split membership intact, so its runs replay unchanged.
 
 
 8. A new/off feed can fetch and display while producing zero translation/enrich/match/cluster calls.
@@ -1562,7 +1577,9 @@ parity. A generated migration is not complete until these pass with actual role 
     or verified 30-day creator inactivity, records the correct evidence and never fakes a response.
     Test just below/exactly at 720 hours, null last-active with known creator creation, activity racing
     promotion, deleted/missing creator, changed hashes/version, and a decline followed by a fresh admin
-    request: a veto remains effective until later affirmative creator approval. Library semantic
+    request: a veto remains effective until later affirmative creator approval. Hard-deleting a
+    creator keeps their request rows, including promoted evidence, with `user_id` and `creatorUserId`
+    cleared, and none of them can be promoted afterwards. Library semantic
     updates preserve old holdings/examples until opt-in; labels remain ranking/training neutral.
 12. Multiple topic personas belonging to one `participant_key` remain one human. The owner's multi-topic
     pilot may satisfy the limited invite-only beta gate; no additional independent-rater count is

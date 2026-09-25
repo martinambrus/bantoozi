@@ -212,7 +212,8 @@ and test the deletion graph: subscriptions/cards/labels/rules, reader state/even
 private-card answers/examples, bookmark capture state/snapshot references/Undo pins, per-feed media settings,
 sessions/codes, user-specific outbox/jobs and cost attribution. Remove a snapshot only after its last
 bookmark owner releases it; another user's preserved copy must survive this user's deletion. Remove
-user holdings before private cards with RESTRICT references. Shared public feed/article rows remain.
+user holdings before private cards with RESTRICT references. Shared public feed/article rows remain,
+and card publication requests stay as anonymized audit records (spec 02 §3.6).
 
 Before erasing the account, write an encrypted off-site deletion ledger entry `{userId, deletedAt}`
 that survives database restore; do not store email or content in the ledger. Use an idempotent entry

@@ -347,8 +347,9 @@ Complete milestone M0 "Foundations" exactly as specified in docs/PLAN.md §5, fo
     - `canonicalJson` and `sha256Hex` (key-order stability)
     - `cardTextHash` per spec 05 §5.1: the label title is included, the owner only for private cards
     - `detectLanguage` per spec 03 §8.3, with ≥ 30 labelled samples (10 each EN/SK/CZ) at ≥ 90 %
-      accuracy, the SK/CZ tie-break with a hint, and the short-text hint path (`minLength: 10` for
-      card texts)
+      accuracy, the SK/CZ tie-break with a hint, the short-text hint path (`minLength: 10` for
+      card texts), and a publisher hint outside the whitelist (e.g. `sv`) kept over a confident
+      detector result
 - **T3:**
   - `infra/compose.dev.yml` (`name: bantoozi-dev`) runs postgres, and libretranslate under the
     `translate` profile.
@@ -834,6 +835,7 @@ Complete milestone M4 "HTTP API" exactly as specified in docs/PLAN.md §10 and d
   - Restore on verify refreshes the feeds and ranks.
   - Cookie attributes, session sliding and revocation.
   - The waitlist upsert.
+  - An invite email that fails to send still returns the invite, with `emailSent: false`.
 - **T3:** the preferences deep-merge is validated, including the new fields (`theme`, `folderOrder`,
   `onboardingCompletedAt`); the export contains every section; delete calls the refresh functions (the
   deleted user's feeds lose them as a subscriber); a login within 7 days restores.
@@ -1181,6 +1183,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | 2026-09-25 | Final owner decisions: explicit prospective feed activation, public-card eligibility after 30 days of creator inactivity, owner-pilot PASS accepted for initial beta, and text/HTML bookmark archives without media |
 | 2026-09-25 | Moved from FeedIt.sk's `docs/next-gen/` to this repository's `docs/`; repository references updated, no behaviour changed |
 | 2026-09-25 | Renamed the product from FeedIt Next Gen to Bantoozi: product name, `feedit` identifiers (packages, database and roles, env vars, header, user agent, URNs, compose projects) and the `fi_sid` cookie. References to the FeedIt.sk predecessor are unchanged |
+| 2026-09-25 | Review fixes: `eval.sample` rows are versioned and runs record their dataset version, so older runs stay replayable; a creator's account erasure keeps card-publication audit records, anonymized; invite email is sent synchronously after commit and reports failure; publisher language hints outside the detector whitelist are kept |
 
 ## 17. Owner decisions and implementation gates
 

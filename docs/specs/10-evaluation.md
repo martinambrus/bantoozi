@@ -99,12 +99,14 @@ settings, regardless of profile.
   request state/question manifests are frozen with the run, including failures and engine/version.
 - **Split before looking at outputs:** deterministic 70% development / 30% test, stratified by
   language and grouped by story (all duplicates and all raters' copies of a story stay together).
-  Persist `eval.sample.split` and a split-manifest hash. Unclustered duplicates found later require a
-  new split/version before G1; do not move selected difficult items across the split.
+  Persist `eval.sample.split` per `dataset_version` and a split-manifest hash. Unclustered duplicates
+  found later require a new split/version before G1; do not move selected difficult items across the
+  split.
 - Once frozen, additions, rating corrections or card edits create a new version manifest; they do
-  not silently mutate a run's ground truth. `eval.runs.config` captures dataset/split hashes plus the
-  exact rating/card snapshot used. Source rows may stay linked for browsing, but they are not the
-  reproducibility boundary.
+  not silently mutate a run's ground truth. A new version inserts its own `eval.sample` rows and
+  leaves earlier versions untouched (spec 02 §7). `eval.runs` records its `dataset_version`, and
+  `eval.runs.config` captures dataset/split hashes plus the exact rating/card snapshot used. Source
+  rows may stay linked for browsing, but they are not the reproducibility boundary.
 - **Status (`eval status`):** per-language sample counts, then per rater: cards written, feeds picked,
   assigned, rated, skipped. Also facet-label counts per language.
 
@@ -182,7 +184,7 @@ settings, regardless of profile.
 ## 3. Experiments (`eval run --experiment <id> [--langs] [--raters]`)
 
 Each run:
-- writes `eval.runs` (config, git sha, dataset/split/config hashes, seed, provider/model, question and
+- writes `eval.runs` (dataset version, config, git sha, dataset/split/config hashes, seed, provider/model, question and
   translation manifests, runtime/dependency versions) and `eval.run_answers`; answer keys are unique
   per run/article/card/question (variant is fixed by the run), so resume/upsert never duplicates results
 - caches each **successful validated** engine/translation call in
@@ -402,7 +404,8 @@ by `apply-g1` and the normal production settings flow (§1); owner-pilot scope r
 
 `eval replay --against <runId> [--model jev-x.y.z] [--question-set enrich-v2] [--thresholds file.json]`
 
-- Re-runs the G1 variant with the proposed change on `golden-v1`, cached where possible.
+- Re-runs the G1 variant with the proposed change on the `dataset_version` of the run it compares
+  against (`golden-v1` for the G1 runs), cached where possible.
 - **Reports:** ΔAUC per rater and language (with CIs), the mean |Δp| per question key, and the share of
   items changing lane.
 - **Required** before:
