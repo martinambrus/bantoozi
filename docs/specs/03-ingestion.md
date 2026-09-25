@@ -439,7 +439,7 @@ For one fetch, in **one transaction per item**, so one bad item doesn't roll bac
        `resetArticleAnswers` contract once to increment `content_revision` and invalidate old
        body/translation/active facet and match derivatives (spec 05 §5.6), and record extraction work for the new revision.
        Excerpt-only, category and author corrections also count. Preserve bookmarks, ratings,
-       explicit labels and their immutable saved snapshots; source updates never rewrite saved content. A stale article stays stale unless an explicit reprocess requests otherwise.
+       explicit labels and their immutable saved snapshots; source updates never rewrite saved content. A stale article stays stale unless an explicit reprocess requests otherwise: the reset uses its stale-preserving form (spec 05 §5.6).
      - Multiple feeds may publish different summaries of one URL. The source is the earliest
        `feed_items.first_seen_at` (tie: feed ID); only that feed updates shared title/excerpt/author
        inputs. A later syndicated excerpt must not repeatedly invalidate the article. Extraction

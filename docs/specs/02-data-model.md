@@ -428,7 +428,7 @@ CREATE TABLE articles (
   content_hash     text NOT NULL,                  -- spec 03 §6.2
   content_revision bigint NOT NULL DEFAULT 1 CHECK (content_revision > 0),
   story_cluster_id bigint NULL REFERENCES story_clusters(id) ON DELETE SET NULL,
-  cluster_set_id   bigint NULL REFERENCES question_sets(id), -- cluster set whose call placed it; NULL if unclustered or placed by mute-story (spec 05 §2)
+  cluster_set_id   bigint NULL,                    -- cluster set whose call placed it; NULL if unclustered or placed by mute-story (spec 05 §2). FK added after question_sets exists
   pipeline_state   text NOT NULL DEFAULT 'ingested'
                      CHECK (pipeline_state IN ('ingested','stale','extracted','translated','enriched',
                                                'matched','degraded','failed')),
@@ -533,6 +533,8 @@ CREATE TABLE question_sets (
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 -- settings key 'question_sets.active': IDs are decimal strings, validated against kind + question_sets
+ALTER TABLE articles ADD CONSTRAINT articles_cluster_set_fk
+  FOREIGN KEY (cluster_set_id) REFERENCES question_sets(id);
 
 CREATE TABLE engine_reservations (
   id              uuid PRIMARY KEY,              -- one reservation per outbound wire attempt

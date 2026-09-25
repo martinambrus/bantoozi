@@ -591,6 +591,12 @@ In one transaction:
    rerank intents in `job_outbox`. Matching
    waits for current facets; it must not race ahead merely because queue rows already exist.
 
+**Stale articles.** When the article is `stale` and the caller is not an explicit reprocess (spec 03
+§7), the reset still performs step 1 and records the rerank intents, but keeps
+`pipeline_state='stale'`, upserts no `match_queue` rows and records no extract/enrich intents: a
+publisher correction must not start automatic inference on an old article. Explicitly selected
+training requests keep their own frozen snapshots (spec 03 §2.2).
+
 All producers use this one invalidation contract. Content equality/fingerprints avoid resetting on
 identical fetches. Workers cannot resurrect deleted users/cards/articles during stale completion.
 
