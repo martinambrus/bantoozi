@@ -608,8 +608,8 @@ identical fetches. Workers cannot resurrect deleted users/cards/articles during 
 ## 6. Story clustering (`article.cluster {articleId}`)
 
 Require current article-level demand (§1.1) before candidate/model work. Only compare candidates
-that already have compatible authorized classification; do not expand paid inference into unrelated
-off feeds merely to create cluster context.
+that are authorized and already classified at their current revision; do not expand paid inference
+into unrelated off feeds merely to create cluster context.
 
 1. **Candidates** (SQL):
 
@@ -622,7 +622,7 @@ off feeds merely to create cluster context.
      JOIN feed_items fi ON fi.article_id = a.id
      JOIN feeds f ON f.id = fi.feed_id
      JOIN article_facets af ON af.article_id = a.id AND af.question_set_id = $4::bigint  -- active enrich set
-                           AND af.article_revision = a.content_revision               -- compatible, current
+                           AND af.article_revision = a.content_revision               -- classified at this revision
      WHERE a.id <> $1
        AND a.title_norm % $3::text
        AND a.first_seen_at BETWEEN $2::timestamptz - interval '72 hours' AND $2::timestamptz + interval '1 hour'
@@ -644,7 +644,12 @@ off feeds merely to create cluster context.
    LIMIT 20;
    ```
 
-   `$4` is the active enrich set. The facet join and the authorization witness (an active carrier
+   `$4` is the active enrich set. The facet join is an eligibility witness, not a cache read: it
+   shows the candidate was classified at its current revision, and the cluster call never reads
+   candidate facets (step 3 sends only title, excerpt, feed and time). A facet row from an older
+   model or language mode that `house.reenrich` has not replaced yet therefore still qualifies, as
+   clustering applies model-pin changes prospectively (§2); spec 02 §3.3's cache identity governs
+   reusing answers, not this check. The facet join and the authorization witness (an active carrier
    for that arrival, or a current selected request at the current revision, §1.1) run before the
    `LIMIT`, so off or unselected articles never reach the provider or take candidate slots, and the
    `feed` title sent is always an authorized carrier's.
