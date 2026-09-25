@@ -572,9 +572,11 @@ property per question key. Every probability has `minimum: 0, maximum: 1`.
   integration target, not evidence that an untested checkpoint is deployable.
 - Loads a fine-tuned **Laya-multilingual** ONNX checkpoint through the Jev-compatible Node port
   `receptron/laya` (`Laya.load({subfolder})` → `laya.systemOne(state, questions)`).
-- Runs in-process in a dedicated worker (`WORKER_QUEUES=article.enrich.laya`), because it needs
-  about 2 GB of RAM. Enrich work for the languages in `settings['engine.laya']` goes to that queue
-  instead of `article.enrich` (spec 03 §2), and only this worker consumes it.
+- Runs in-process in a dedicated worker (`WORKER_QUEUES=article.enrich.laya,analysis.process.laya`),
+  because it needs about 2 GB of RAM. Only that worker loads the checkpoint; routers in every other
+  process treat Laya as not configured. Laya-eligible work for the languages in
+  `settings['engine.laya']` goes to the dedicated queues instead of `article.enrich` and
+  `analysis.process` (spec 03 §2), keeping a selected request's frozen identity.
 - Enabled only for the kinds and languages configured in `settings['engine.laya']`, e.g.
   `{"enrich": ["sk","cs"]}`.
 - Limits: ≤ 20 options per Choice. Topic questions must use the two-level walk (spec 05 §3.2).
