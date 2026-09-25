@@ -673,6 +673,8 @@ Expired leases recover after a crash; queue throttling alone does not replace th
    Otherwise insert up to 3 non-none options with probability ≥0.15, ordered deterministically.
    Dedupe active `(user, card)` suggestions and recheck held/dismissed state on commit. Choice
    probabilities are relative to this candidate list, not absolute relevance probabilities.
+   Each run also deletes the user's `card_suggestions` rows for cards they now hold; the API
+   already hides those (spec 08 §7).
 7. Engine `kind: 'suggest'`, `priority: 'bulk'`, `userId` set.
 
 ---
