@@ -8,3 +8,5 @@ pnpm-lock.yaml
 # Generated files
 apps/web/src/routeTree.gen.ts
 packages/db/drizzle/meta/
+# Verbatim from spec 01 §10; must not be reformatted.
+CLAUDE.md

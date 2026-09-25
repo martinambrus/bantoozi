@@ -14,7 +14,7 @@
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "lint:root": "eslint --max-warnings=0 *.js *.ts && prettier --check .",
-    "test": "turbo run test",
+    "test": "turbo run test --",
     "test:int": "turbo run test:int",
     "e2e": "pnpm --filter @bantoozi/web e2e",
     "db:migrate": "pnpm --filter @bantoozi/db migrate",
