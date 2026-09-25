@@ -333,7 +333,7 @@ retention must not erase still-owned private cards or snapshots while publishing
 | `house.nightly-learn` | `0 1 * * *` | enqueue `user.learn` when the effective training-input hash changed since the last **attempt** (implicit signals, undo/unrate, context and 180-day expiry included); `user.suggest` for active users, per spec 06 (**built in M7-T4**) |
 | `house.metrics` | `10 0 * * *` | online metrics (spec 10 §7) |
 | `house.alerts` | `*/5 * * * *` | evaluate the alert rules (§6.1) and send **all** operational emails. Other components only record state: `engine.circuit`, `engine.budget_alerts`, `ops.events` |
-| `house.reenrich` | on demand (admin changes the active enrich set or a language mode, or the model pin changes, §8) | re-enqueue still-demanded articles whose eligible carrier arrival is within `RANK_WINDOW_DAYS` (spec 06 §11), newest first, batches of 200 within budget; never opt users in or treat a model upgrade as permission for bulk untrained-feed inference |
+| `house.reenrich` | on demand (admin changes the active enrich set, a language mode or `engine.laya`, or the model pin changes, §8) | re-enqueue still-demanded articles whose eligible carrier arrival is within `RANK_WINDOW_DAYS` (spec 06 §11), newest first, batches of 200 within budget; never opt users in or treat a model upgrade as permission for bulk untrained-feed inference |
 | `house.rematch` | on demand (match set, card text mode, prefilter setting or model pin changed; a library card's topics corrected) | spec 05 §2: re-enqueue admitted pairs in `RANK_WINDOW_DAYS` whose answer is incompatible or a `prefilter` marker (one card's pairs for `{cardId}`), newest first, batches of 200 within budget; full reranks for users active in 7 days; never opts users in |
 | `house.translate-cards` | on demand (`card_text_mode` switched to `english`) | spec 07 §5 |
 | `house.retranslate-skipped` | on demand (`POST /admin/translations/reprocess`, after the Ollama key, cap or budget is restored) | spec 07 §3: for still-demanded articles whose eligible carrier arrival is within `RANK_WINDOW_DAYS` and whose current-revision `ollama` row was skipped for a listed reason, send `article.translate {forceTier2, replaceSkipped}`, newest first, batches of 200 within the tier-2 cap and budget; items skipped again stay skipped until the next reprocess; never opts users in |
@@ -409,8 +409,8 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
 
 ## 8. Model and question-set upgrades
 
-1. Run `eval replay` with the new `TYPESAFE_MODEL`, question set or, while `LLM_FALLBACK_ENABLED`,
-   Ollama fallback models (spec 10 §6). It must pass.
+1. Run `eval replay` with the new `TYPESAFE_MODEL`, question set, Laya checkpoint or calibration
+   or, while `LLM_FALLBACK_ENABLED`, Ollama fallback models (spec 10 §6). It must pass.
 2. Set the env or settings value, then restart the worker.
 3. New answers carry the new model id. Old answers no longer satisfy current cache lookups (spec 02
    §3.3). The first worker that starts with a new `TYPESAFE_MODEL`, or with `LLM_FALLBACK_ENABLED`
@@ -418,7 +418,9 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
    under a row lock and enqueues `house.reenrich` and `house.rematch` once, so the `RANK_WINDOW_DAYS`
    window is rebuilt within budget (spec 05 §2), through the fallback when Jev is still unavailable.
    Translation rows are not rebuilt: they stay valid for their article revision whatever model made
-   them (spec 07 §3), so re-enrichment reuses the selected translation.
+   them (spec 07 §3), so re-enrichment reuses the selected translation. In M9 the Laya worker records
+   its checkpoint hash and calibration version the same way and enqueues `house.reenrich {lang}`
+   once for each language in `engine.laya` (spec 04 §9).
 4. Verify whether feature meanings and answer vocabulary remain compatible. If `feature_spec_sha`
    changes, deactivate incompatible user models and rerank with cards/degraded scoring until retrained;
    a stable feature name alone does not establish compatible semantics. Publish the new active set

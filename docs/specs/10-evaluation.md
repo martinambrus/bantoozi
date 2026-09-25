@@ -423,7 +423,7 @@ by `apply-g1` and the normal production settings flow (§1); owner-pilot scope r
   - changing `TYPESAFE_MODEL`
   - activating a new question set
   - changing `ranker.thresholds`
-  - enabling Laya for a kind or language
+  - enabling Laya for a kind or language, or replacing its checkpoint or calibration
   - enabling `LLM_FALLBACK_ENABLED`, or changing `OLLAMA_MODEL_FAST`/`OLLAMA_MODEL_STRONG` while it
     is enabled: `--engine llm` replays the fallback classifier (enrich and match answers) with the
     proposed model, against the replay of the current fallback configuration, or against the B1

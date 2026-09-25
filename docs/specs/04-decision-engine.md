@@ -590,6 +590,12 @@ property per question key. Every probability has `minimum: 0, maximum: 1`.
   sends the job to the ordinary queue (`article.enrich` or `analysis.process`, for the same article
   or frozen request) and completes, so the Laya queues drain after a disable even while Jev is
   unavailable (spec 03 §2).
+- Adding or removing a language changes that language's enrich engine, so it also enqueues
+  `house.reenrich {lang}` (spec 08 §9): the ordinary engine rebuilds a removed language's window
+  instead of leaving its Laya facets incompatible. At startup the Laya worker compares its
+  checkpoint hash and calibration version with `settings['engine.model_pin'].laya`; after the
+  required replay (spec 10 §6), a change is recorded under the row lock and enqueues
+  `house.reenrich {lang}` once for each language in `engine.laya` (spec 11 §8).
 - Limits: ≤ 20 options per Choice. Topic questions must use the two-level walk (spec 05 §3.2).
 - Per-question-type temperature calibration (fitted in the fine-tuning notebook) is applied in
   `normalize()`. Calibration version and checkpoint hash are part of the answer provenance.
@@ -626,6 +632,8 @@ property per question key. Every probability has `minimum: 0, maximum: 1`.
   activation is prospective; disabling during queued work cancels it; shared eligible-cache reuse
 - (M9) a queued `.laya` job whose language was removed from `engine.laya` moves to the ordinary
   queue without an engine call, with Jev unavailable too
+- (M9) adding or removing a language, or a new checkpoint or calibration, re-enriches the affected
+  languages' window once
 - encrypted-key stage/validate/activate/revoke; admin and DB role isolation; no secret echo/logs/receipts;
   tampered AAD/tag, wrong master key, missing keyring, revocation versus in-flight probe and rotation
 - no environment fallback after DB tombstone; two workers observe hot rotation; old-version auth error

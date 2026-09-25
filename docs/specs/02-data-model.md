@@ -327,7 +327,7 @@ through `PATCH /admin/settings`.
 | `engine.circuit` | `{typesafe: Breaker, llm: Breaker, resetRequested: {typesafe?: iso, llm?: iso}}` with `Breaker = {state: 'closed'\|'open'\|'half_open'\|'auth', openedAt?, openUntil?, reopenCount, probeToken?: uuid, probeUntil?: iso}` | all closed | worker routers (state); admin (reset request only) |
 | `engine.budget_alerts` | `{day: 'YYYY-MM-DD', p80At?: iso, p100At?: iso}` | — | worker router (records crossings only; spec 04 §6) |
 | `engine.laya` | `{enrich?: string[]}` (language codes) | `{}` | admin (M9) |
-| `engine.model_pin` | `{model: string, llm?: {fast: string, strong: string}, since: iso}` (`llm` only while `LLM_FALLBACK_ENABLED`) | — | the first worker that starts with a different `TYPESAFE_MODEL`, or with the LLM fallback enabled and a different `OLLAMA_MODEL_FAST`/`OLLAMA_MODEL_STRONG`, which also enqueues the rebuild (spec 11 §8) |
+| `engine.model_pin` | `{model: string, llm?: {fast: string, strong: string}, laya?: {checkpointSha: string, calibrationVersion: string}, since: iso}` (`llm` only while `LLM_FALLBACK_ENABLED`; `laya` only in M9) | — | the first worker that starts with a different `TYPESAFE_MODEL`, or with the LLM fallback enabled and a different `OLLAMA_MODEL_FAST`/`OLLAMA_MODEL_STRONG`, which also enqueues the rebuild; for `laya`, the Laya worker when its checkpoint or calibration differs (spec 11 §8) |
 | `language_modes` | `{[lang]: 'native'\|'translate'}` | env `LANGUAGE_MODES` (only before the seed stores it) | seed (only when missing), admin, `apply-g1` |
 | `card_text_mode` | `'as_written'\|'english'` | `'as_written'` | admin, `apply-g1` |
 | `translate.tier2_daily_cap` | int | 300 | admin, `apply-g1` |
