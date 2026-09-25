@@ -828,6 +828,7 @@ Complete milestone M4 "HTTP API" exactly as specified in docs/PLAN.md §10 and d
   - Unauthenticated → 401. A mutation without `X-Bantoozi-Client` → 403, but a `METRICS_TOKEN` bearer is
     exempt.
   - Rate-limit headers are present, and limits are off only when `RATE_LIMITS_ENABLED=false` in test.
+    Two API instances share one DB-backed bucket, and a restart keeps its count.
 - **T2:**
   - Every row of the `request-code` decision table is tested, including the admin bootstrap with an
     empty `invites` table and a soft-deleted user.
@@ -1145,7 +1146,9 @@ Complete milestone M8 "Operations and launch readiness" exactly as specified in 
 - **T5:** `backup.sh` and `restore-test.sh` run successfully against the local stack (output shown),
   including restoring retained bookmarks and decrypting provider envelopes with separately recovered keys;
   post `ops-event`s, meet accepted RPO/RTO and test retention with fake dates. Lossless compression
-  round-trips snapshots; cold cleanup cannot delete a retained bookmark.
+  round-trips snapshots; cold cleanup cannot delete a retained bookmark. Replaying an erasure after a
+  restore removes the user's waitlist row and email-bound invites, via `emailHmac` for a backup taken
+  before signup.
 - **T6:** `docs/SECURITY-CHECK.md` lists each item with how it was verified and the result;
   `pnpm audit --prod --audit-level high` passes.
 - **T7:** `/privacy` exists in en and sk; every starter-bundle feed fetches (report shown).
@@ -1189,7 +1192,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | 2026-09-25 | Moved from FeedIt.sk's `docs/next-gen/` to this repository's `docs/`; repository references updated, no behaviour changed |
 | 2026-09-25 | Renamed the product from FeedIt Next Gen to Bantoozi: product name, `feedit` identifiers (packages, database and roles, env vars, header, user agent, URNs, compose projects) and the `fi_sid` cookie. References to the FeedIt.sk predecessor are unchanged |
 | 2026-09-25 | Review fixes: `eval.sample` rows are versioned and runs record their dataset version, so older runs stay replayable; a creator's account erasure keeps card-publication audit records, anonymized; invite email is sent synchronously after commit and reports failure; publisher language hints outside the detector whitelist are kept; feeds keep their original fetch URL; settled spend reservations are purged with call audits; `engine.prefilter_enabled` and `engine.laya` are admin-settable |
-| 2026-09-25 | More review fixes: reader and ranker windows use the subscribed carrier's arrival time; the engine router tries a configured Laya checkpoint before returning `no_key`; Laya enrich work has its own registered queue |
+| 2026-09-25 | More review fixes: reader and ranker windows use the subscribed carrier's arrival time; the engine router tries a configured Laya checkpoint before returning `no_key`; Laya enrich work has its own registered queue; account erasure also removes waitlist rows and invite emails (the deletion ledger carries a keyed email hash); the shared DB-backed rate limiter is defined |
 
 ## 17. Owner decisions and implementation gates
 

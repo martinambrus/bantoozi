@@ -175,6 +175,7 @@ backup immediately increases exposure and must alert rather than being reported 
 | delivered `job_outbox` rows | 7 days; pending/failed intents remain until resolved or their domain entity is deleted |
 | completed/failed pg-boss jobs | 7/30 days respectively using pinned pg-boss maintenance settings; failures counted before removal |
 | `login_codes` | 1 day after expiry |
+| `rate_limit_buckets` | 1 day after the bucket's window ends |
 | `sessions` | 30 days after expiry or revocation |
 | deleted users | hard-deleted 7 days after `DELETE /me`; encrypted historic backups age out within 6 months and are never served directly |
 | `eval` schema | while needed as the golden set, subject to rater erasure (§5.1) |
@@ -211,17 +212,23 @@ mail; the 7-day undo via re-authentication is documented in the UI/privacy page.
 the user and rechecks `deleted_at` so a concurrent restore cannot be deleted accidentally. Enumerate
 and test the deletion graph: subscriptions/cards/labels/rules, reader state/events/models/suggestions,
 private-card answers/examples, bookmark capture state/snapshot references/Undo pins, per-feed media settings,
-sessions/codes, user-specific outbox/jobs and cost attribution. Remove a snapshot only after its last
+sessions/codes, user-specific outbox/jobs and cost attribution, and pre-account records that have no
+user FK: delete the `waitlist` row with the user's email, clear `email`/`note` on invites the user
+consumed, and delete unused invites bound to that email (clearing their email would unbind them).
+Remove a snapshot only after its last
 bookmark owner releases it; another user's preserved copy must survive this user's deletion. Remove
 user holdings before private cards with RESTRICT references. Shared public feed/article rows remain,
 and card publication requests stay as anonymized audit records (spec 02 §3.6).
 
-Before erasing the account, write an encrypted off-site deletion ledger entry `{userId, deletedAt}`
-that survives database restore; do not store email or content in the ledger. Use an idempotent entry
+Before erasing the account, write an encrypted off-site deletion ledger entry
+`{userId, deletedAt, emailHmac}` that survives database restore. `emailHmac` is an HMAC of the
+normalized email under a key kept with the ledger, outside the database, so a replay can find
+pre-account rows in a backup taken before signup; do not store the email itself or content in the ledger. Use an idempotent entry
 key and retain it through the longest backup lifetime plus 7 days. Failure defers hard deletion and
 alerts the operator; a committed user purge must never lack its recovery tombstone. Account restore
 and ledger creation are serialized by the same per-user lock. Recovery replays ledger entries before
-public access, deletes personal rows again and clears restored queued work. Ledger storage access is
+public access, deletes personal rows again (including the waitlist rows and email-bound invites
+matching `emailHmac`, handled as above) and clears restored queued work. Ledger storage access is
 operator-only and is included in the restore drill.
 
 Null user attribution in engine audit rows, remove personal prompt text/examples from any retained
@@ -296,7 +303,7 @@ retention must not erase still-owned private cards or snapshots while publishing
 | `feed.schedule` | every minute | spec 03 §3 |
 | `house.rescore-degraded` | `*/10 * * * *` | recover the supported 14-day horizon fairly with persisted cursors/budget limits (spec 04 §5), including eligible deferred/exhausted match work and fallback answers; reuse current Call A, and reset terminal attempts only after their blocker changes |
 | `house.expire-rules` | `5 * * * *` | delete expired rules; `user.rank {full}` for the affected users |
-| `house.purge-auth` | `20 * * * *` | expired login codes and sessions per §5 |
+| `house.purge-auth` | `20 * * * *` | expired login codes, sessions and rate-limit buckets per §5 |
 | `house.reconcile` | `*/10 * * * *` | bounded repair of still-authorized inference, due pending/expired-lease `analysis_requests`, pending bookmark capture/outbox/match work and orphaned leases; enqueue rank for due `user_article.next_rank_at`; nightly UTC window also refreshes feed subscribers/cards, cluster counts and `lang_hint` with persistent progress cursors |
 | `house.archive` | `15 3 * * *` | archive unprotected read items older than 31 days and enforce the shared-article unread-cap rules in §5 |
 | `house.purge-articles` | `30 3 * * *` | delete unreferenced articles older than 90 days (§5), in batches of 5,000. Articles referenced from `eval.*` are never purged |

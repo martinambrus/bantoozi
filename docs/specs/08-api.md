@@ -770,8 +770,9 @@ authorship policy, not a forged user approval.
 All limits are enforced unless `RATE_LIMITS_ENABLED=false` (spec 01 §3). Only E2E and load-test
 environments with `NODE_ENV=test` set it to false. Config validation rejects `false` in production.
 Only Caddy's known internal proxy address/network is trusted for forwarded IP headers; never
-`trustProxy: true` for arbitrary clients. Limits must be shared across API processes/restarts via
-the DB-backed limiter, or deployment must enforce the documented single-API-instance limit.
+`trustProxy: true` for arbitrary clients. Limits are shared across API processes and restarts through
+the DB-backed limiter: `rate_limit_hit()` over `rate_limit_buckets` (spec 02 §6), cleaned up by
+`house.purge-auth`.
 Send `Retry-After` for 429. Public waitlist upserts never expose whether an address already exists.
 
 ---

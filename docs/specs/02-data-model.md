@@ -242,7 +242,7 @@ CREATE INDEX sessions_user_idx ON sessions (user_id);
 CREATE TABLE invites (
   code        text PRIMARY KEY,                   -- 10 chars, Crockford base32
   created_by  uuid NULL REFERENCES users(id) ON DELETE SET NULL,
-  email       citext NULL,                        -- optional: bound to one address
+  email       citext NULL,                        -- optional: bound to one address; on that person's erasure, cleared once used, else the invite is deleted (spec 11 §5.1)
   note        text NULL,
   created_at  timestamptz NOT NULL DEFAULT now(),
   expires_at  timestamptz NOT NULL,
@@ -250,7 +250,7 @@ CREATE TABLE invites (
   used_at     timestamptz NULL
 );
 
-CREATE TABLE waitlist (
+CREATE TABLE waitlist (                           -- no user FK: erasure deletes the row matching the email (spec 11 §5.1)
   id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   email        citext NOT NULL UNIQUE,
   locale       text NOT NULL DEFAULT 'en' CHECK (locale IN ('en','sk')),
@@ -258,6 +258,12 @@ CREATE TABLE waitlist (
   created_at   timestamptz NOT NULL DEFAULT now(),
   invited_at   timestamptz NULL,
   invite_code  text NULL REFERENCES invites(code) ON DELETE SET NULL
+);
+
+CREATE TABLE rate_limit_buckets (                 -- shared API rate limiter (spec 08 §11); the API reaches it only through rate_limit_hit() (§6)
+  key           text PRIMARY KEY,                 -- route group + subject; an email appears only as a keyed hash
+  window_start  timestamptz NOT NULL,
+  hits          int NOT NULL CHECK (hits > 0)
 );
 ```
 
@@ -1394,6 +1400,13 @@ REVOKE EXECUTE ON FUNCTION refresh_feed_cards(bigint[]), refresh_feed_subscriber
 GRANT EXECUTE ON FUNCTION refresh_feed_cards(bigint[]), refresh_feed_subscribers(bigint[], jsonb),
   admin_card_holders(bigint[]), admin_usage_attribution(int) TO bantoozi_app, bantoozi_worker;
 ```
+
+**Shared rate limiter.** The M0 migration also supplies `rate_limit_hit(p_key text, p_window_s int,
+p_max int)` as SECURITY DEFINER with a fixed trusted search path, explicit revoke from PUBLIC and
+execute only for `bantoozi_app`. One atomic upsert starts a new window when the old one has ended,
+otherwise increments `hits`, and returns `(allowed boolean, retry_after_s int)`. It backs the
+`@fastify/rate-limit` store, so limits hold across API processes and restarts. Keys never contain a
+plaintext email: per-email limits use an HMAC of the normalized address with `SESSION_PEPPER`.
 
 **Narrow API accounting helper.** The M0 hand-written migration also supplies
 `record_card_translation(p_logical_request_id uuid, p_attempt int, p_latency_ms int, p_status text,
