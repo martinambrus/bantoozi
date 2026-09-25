@@ -127,8 +127,9 @@ in the same outbox transaction. This makes an inaugural rating learnable when sl
   translation already exists; `house.translate-cards` translates the missing ones and rematches
   them as they publish (spec 07 §5). A model-pin change is detected by the first worker that starts
   with a new `TYPESAFE_MODEL` or a different LLM fallback state (switched on or off, or new Ollama
-  fallback models while on; their answers are cache entries too): under a row lock it records `settings['engine.model_pin']`
-  and enqueues both `house.reenrich` and `house.rematch` once (spec 11 §8). A `language_modes` change
+  fallback models while on; their answers are cache entries too): under a row lock it records
+  `settings['engine.model_pin']` and enqueues both `house.reenrich` and `house.rematch` once
+  (spec 11 §8). A `language_modes` change
   enqueues `house.reenrich {since, lang}` for each changed language: its admitted window articles
   re-enter at `pipeline.after('extracted', …)`, which translates first when the language is now
   `translate` (spec 07 §1), and matching follows enrichment as usual. A language added to or
