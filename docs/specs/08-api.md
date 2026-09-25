@@ -340,7 +340,8 @@ does not cause the bookmark capture/export path to download or archive them.
    `analysis.status='not_requested'`, suppress inferred card/demotion/label-suggestion effects and
    semantic-cluster folding; keep explicit read/rating/bookmark/manual-label/hide/mute state. Global
    view may use an eligible carrier; direct off-feed A stays neutral even if the user also has active
-   feed B carrying the same article. A different user's authorization never qualifies. Counts,
+   feed B carrying the same article. A feed/folder view that keeps at least one eligible carrier
+   shows the cached global score (spec 06 §6.4). A different user's authorization never qualifies. Counts,
    filtering and detail apply this same pure projection without starting model work (spec 06).
 2. **Cluster folding**, applied to the scoped candidate set before the lane filter:
    - An article is foldable if **any** subscription carrying it has `allow_duplicates = false`.

@@ -74,8 +74,9 @@ source `none`, no inferred label suggestions, with `inference_not_requested` in 
 
 Before evaluation, discard answers for a different content revision, state/question manifest or
 inactive card. Apply scope to **all** card operations (including never, must, explanations, BM25 and
-training): only cards whose `scopeFeedId` is absent or in `item.inferenceFeedIds` are applicable. A `prefilter`
-result is a provisional non-match, not negative evidence; it does not count as an answered card.
+training): only cards whose `scopeFeedId` is absent or in `item.inferenceFeedIds` (all authorized
+carriers, whichever view lists the item, §6.4) are applicable. A `prefilter` result is a provisional
+non-match, not negative evidence; it does not count as an answered card.
 `matchCoverage` is derived from the applicable cards' work status (spec 05), never inferred solely
 from the global article pipeline state. With no applicable positive cards, return `new` after explicit
 hide checks. Incomplete positives must not quietly fall into Everything because unanswered ≠ no.
@@ -250,9 +251,13 @@ Before folding, lane/tier filters and counts, intersect the row's authorized `in
 the view's permitted feed set. If none remain, recompute only the explicit local hide/mute rules and
 project `lane='new'`, `pLike/tier=null`, `scoreSource='none'`, no model/never-card/must-card result or
 inferred label suggestions; explain `inference_not_requested`. Preserve manual read/rating/bookmark/
-label state. Do not apply model-derived semantic story folding to this neutral projection. Global
-views with at least one eligible carrier use the cached global score; bookmark-only retained rows
-without a current authorized subscription are neutral too. Detail navigation carries `feedId`/view
+label state. Do not apply model-derived semantic story folding to this neutral projection. Any view
+(global, feed or folder) with at least one remaining authorized carrier uses the cached global
+score. The view decides only whether inference may be shown, not which authorized evidence counts:
+card scope and the model's source feature are evaluated over all of the row's authorized carriers
+(§2, §8.1), because the article is carried by each of them. A card scoped to authorized feed C
+therefore still applies when the article is listed under authorized feed B. Bookmark-only retained
+rows without a current authorized subscription are neutral too. Detail navigation carries `feedId`/view
 context so it does not unexpectedly reveal a different score. Counts and list pagination apply the
 same projection. This requires no provider work and never overwrites another view's global cache.
 

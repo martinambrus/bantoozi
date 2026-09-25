@@ -112,12 +112,14 @@ in the same outbox transaction. This makes an inaugural rating learnable when sl
     bumping the version (`enrich-v2`).
   - It sets `settings['question_sets.active'][kind]` **only when that kind is absent**.
 - **Switching sets:** `settings['question_sets.active']` names the active set per kind. Switching
-  `enrich` to a new set (`PATCH /admin/settings`) enqueues `house.reenrich {since: now − 7 days}`,
-  which re-enqueues `article.enrich` only for those articles still admitted by §1.1, in batches within
-  the budget. A match-set,
-  card-text-mode or model-pin change similarly queues bounded rematching and full reranks. Old
-  incompatible answers cannot satisfy current cache lookups while replacement is pending. Store
-  exact set/model/input provenance with golden runs; changing a set does not mutate frozen runs.
+  `enrich` to a new set (`PATCH /admin/settings`) enqueues
+  `house.reenrich {since: now − RANK_WINDOW_DAYS}` (the whole reader/ranker window, spec 06 §11).
+  It re-enqueues `article.enrich` only for articles still admitted by §1.1 whose eligible carrier
+  arrival (the latest authorized `feed_items.first_seen_at`) is in that window, newest first, in
+  batches within the budget. A match-set, card-text-mode or model-pin change similarly queues
+  bounded rematching and full reranks. Old incompatible answers cannot satisfy current cache lookups
+  while replacement is pending. Store exact set/model/input provenance with golden runs; changing a
+  set does not mutate frozen runs.
 
 ---
 

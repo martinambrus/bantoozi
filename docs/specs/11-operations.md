@@ -321,7 +321,7 @@ retention must not erase still-owned private cards or snapshots while publishing
 | `house.nightly-learn` | `0 1 * * *` | enqueue `user.learn` when the effective training-input hash changed since the last **attempt** (implicit signals, undo/unrate, context and 180-day expiry included); `user.suggest` for active users, per spec 06 (**built in M7-T4**) |
 | `house.metrics` | `10 0 * * *` | online metrics (spec 10 §7) |
 | `house.alerts` | `*/5 * * * *` | evaluate the alert rules (§6.1) and send **all** operational emails. Other components only record state: `engine.circuit`, `engine.budget_alerts`, `ops.events` |
-| `house.reenrich` | on demand (admin changes the active enrich set) | re-enqueue still-demanded articles first seen in the last 7 days, batches of 200 within budget; never opt users in or treat a model upgrade as permission for bulk untrained-feed inference |
+| `house.reenrich` | on demand (admin changes the active enrich set) | re-enqueue still-demanded articles whose eligible carrier arrival is within `RANK_WINDOW_DAYS` (spec 06 §11), newest first, batches of 200 within budget; never opt users in or treat a model upgrade as permission for bulk untrained-feed inference |
 | `house.translate-cards` | on demand (`card_text_mode` switched to `english`) | spec 07 §5 |
 
 Every job is idempotent, logs `{job, durationMs, affected, remaining}`, and exposes a counter. Persist
@@ -402,8 +402,8 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
    changes, deactivate incompatible user models and rerank with cards/degraded scoring until retrained;
    a stable feature name alone does not establish compatible semantics. Publish the new active set
    and its outbox work atomically; in-flight old-set answers cannot become active after the switch.
-5. A new **enrich** question set triggers `house.reenrich` for still-authorized demand in the last
-   7 days, within budget. New model availability never implicitly enables an untrained feed.
+5. A new **enrich** question set triggers `house.reenrich` for still-authorized demand whose carrier
+   arrival is within the 14-day `RANK_WINDOW_DAYS`, within budget. New model availability never implicitly enables an untrained feed.
 
 ---
 
