@@ -460,13 +460,21 @@ For one fetch, in **one transaction per item**, so one bad item doesn't roll bac
    only after successful page extraction. No early skip/error discards a valid feed body.
 
 **A feed newly carrying an already-processed article** applies to found articles in steps 2–3, and to the extract
-merge (§8.1 step 4) and feed merge (§9) whenever a `feed_items` row is **newly inserted** for an
-article whose `pipeline_state` is `enriched`, `matched` or `degraded`. In the same transaction:
-- resolve eligible demand for this **new association**, including activation-time/generation
-  checks; `feed_cards` alone cannot authorize historical arrivals or disabled users
-- upsert `match_queue` only for that eligible card union, with `article_revision = $currentRevision`
-- record `article.match` work only when authorized pairs need current answers; reuse valid answers
-- enqueue an incremental `user.rank` for the feed's subscribers
+merge (§8.1 step 4) and feed merge (§9) whenever a `feed_items` row is **newly inserted**. In the
+same transaction, resolve eligible demand for this **new association**, including
+activation-time/generation checks (`feed_cards` alone cannot authorize historical arrivals or
+disabled users), then continue from the article's `pipeline_state`:
+- `enriched` or `matched`: upsert `match_queue` only for that eligible card union, with
+  `article_revision = $currentRevision`, and record `article.match` work only when authorized pairs
+  need current answers; reuse valid answers
+- `extracted` or `translated` (it stopped at the demand gate): when the association creates eligible
+  demand, record the next stage through `pipeline.after` (translate when required, otherwise enrich)
+- `degraded`: when the association creates eligible demand, record `article.enrich` as
+  `house.rescore-degraded` would; never send a degraded article straight to matching
+- `ingested`, `stale` or `failed`: nothing extra; extraction applies the demand gate itself, and
+  stale or failed articles are not processed automatically
+- in every state, enqueue an incremental `user.rank` for the feed's subscribers (stale and failed
+  articles need no paid stage to become readable)
 
 Otherwise readers who follow only this feed (typical for Google-News-style aggregators) would never
 get answers for the article.

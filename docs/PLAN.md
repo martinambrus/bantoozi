@@ -485,9 +485,11 @@ Complete milestone M1 "Ingestion core" exactly as specified in docs/PLAN.md §6,
     immutable retained snapshot and exposes capture status; capture never needs model inference.
   - Off subscriptions and unselected training articles create no translate/enrich/match/cluster
     demand; another eligible reader may independently cause shared work.
-  - A **newly inserted `feed_items` row** for an already enriched, matched or degraded article queues
-    that feed's `feed_cards` into `match_queue`, enqueues `article.match`, and enqueues an incremental
-    rank for the feed's subscribers (spec 03 §7), including on the extract merge and the feed merge.
+  - A **newly inserted `feed_items` row** for an already processed article continues from its state
+    (spec 03 §7): the new association's eligible demand queues match work for enriched/matched
+    articles, the next stage for articles that stopped at the demand gate, and enrichment (never
+    matching) for degraded ones, plus an incremental rank for the feed's subscribers, including on
+    the extract merge and the feed merge.
 - **T8:** `ingestion.e2e.test.ts` uses the fixture server: 3 feeds (RSS, Atom, JSON Feed) where 2 share
   an article, plus article pages. It asserts:
   - the articles are unique and `feed_items` link both feeds
@@ -497,6 +499,8 @@ Complete milestone M1 "Ingestion core" exactly as specified in docs/PLAN.md §6,
   - stale items are not extracted
   - a second eligible active feed newly carrying an already-matched article gets only its
     demanded applicable cards queued in `match_queue`; off feeds add no provider demand
+  - an active feed newly carrying an article that stopped at extraction (only off feeds carried it
+    before) records its enrichment
   - merging preserves ratings/bookmarks/labels/read state for both users; old jobs resolve survivor
     aliases; out-of-order fetch/extraction results cannot overwrite a newer revision
 - **T9:** the CLI commands work against the dev DB. The output is shown for a fixture feed, including
@@ -1199,7 +1203,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | 2026-09-25 | Moved from FeedIt.sk's `docs/next-gen/` to this repository's `docs/`; repository references updated, no behaviour changed |
 | 2026-09-25 | Renamed the product from FeedIt Next Gen to Bantoozi: product name, `feedit` identifiers (packages, database and roles, env vars, header, user agent, URNs, compose projects) and the `fi_sid` cookie. References to the FeedIt.sk predecessor are unchanged |
 | 2026-09-25 | Review fixes: `eval.sample` rows are versioned and runs record their dataset version, so older runs stay replayable; a creator's account erasure keeps card-publication audit records, anonymized; invite email is sent synchronously after commit and reports failure; publisher language hints outside the detector whitelist are kept; feeds keep their original fetch URL; settled spend reservations are purged with call audits; `engine.prefilter_enabled` and `engine.laya` are admin-settable |
-| 2026-09-25 | More review fixes: reader and ranker windows use the subscribed carrier's arrival time; the engine router tries a configured Laya checkpoint before returning `no_key`; Laya enrich work has its own registered queue; account erasure also removes waitlist rows and invite emails (the deletion ledger carries a keyed email hash); the shared DB-backed rate limiter is defined; a missing Jev credential falls through to the enabled fallbacks; cluster merges remap `mute_story` rules; jittered fetch delays stay within MAX; article retention follows the latest carrier arrival; unsubscribing keeps completed analysis requests; retained analysis requests protect their article from purge; expired idempotency receipts are purged; each eval run freezes its facet labels; folded rows report only the accessible cluster size; post-freeze eval top-ups create a new dataset version; archive, unread-cap eviction and mark-read cutoffs use carrier arrival |
+| 2026-09-25 | More review fixes: reader and ranker windows use the subscribed carrier's arrival time; the engine router tries a configured Laya checkpoint before returning `no_key`; Laya enrich work has its own registered queue; account erasure also removes waitlist rows and invite emails (the deletion ledger carries a keyed email hash); the shared DB-backed rate limiter is defined; a missing Jev credential falls through to the enabled fallbacks; cluster merges remap `mute_story` rules; jittered fetch delays stay within MAX; article retention follows the latest carrier arrival; unsubscribing keeps completed analysis requests; retained analysis requests protect their article from purge; expired idempotency receipts are purged; each eval run freezes its facet labels; folded rows report only the accessible cluster size; post-freeze eval top-ups create a new dataset version; archive, unread-cap eviction and mark-read cutoffs use carrier arrival; a newly carried article continues from its pipeline state (enrichment for gate-stopped or degraded articles) |
 
 ## 17. Owner decisions and implementation gates
 
