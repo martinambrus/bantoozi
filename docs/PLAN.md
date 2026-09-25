@@ -476,6 +476,8 @@ Complete milestone M1 "Ingestion core" exactly as specified in docs/PLAN.md §6,
     change increments the input revision and calls `resetArticleAnswers`.
   - They implement the §9 feed updates, including the permanent-redirect merge (subscriptions,
     `feed_items`, scopes and rule values moved; a full rank enqueued).
+  - A feed subscribed through a signed URL whose signature covers a tracking parameter is fetched
+    with `feeds.fetch_url`, while `feeds.url` stays its canonical identity.
   - `article.extract` performs the redirect and `rel=canonical` alias/merge, then calls
     `pipeline.after('extract')`.
   - `lang_hint` is set per §8.3.
@@ -1183,7 +1185,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | 2026-09-25 | Final owner decisions: explicit prospective feed activation, public-card eligibility after 30 days of creator inactivity, owner-pilot PASS accepted for initial beta, and text/HTML bookmark archives without media |
 | 2026-09-25 | Moved from FeedIt.sk's `docs/next-gen/` to this repository's `docs/`; repository references updated, no behaviour changed |
 | 2026-09-25 | Renamed the product from FeedIt Next Gen to Bantoozi: product name, `feedit` identifiers (packages, database and roles, env vars, header, user agent, URNs, compose projects) and the `fi_sid` cookie. References to the FeedIt.sk predecessor are unchanged |
-| 2026-09-25 | Review fixes: `eval.sample` rows are versioned and runs record their dataset version, so older runs stay replayable; a creator's account erasure keeps card-publication audit records, anonymized; invite email is sent synchronously after commit and reports failure; publisher language hints outside the detector whitelist are kept |
+| 2026-09-25 | Review fixes: `eval.sample` rows are versioned and runs record their dataset version, so older runs stay replayable; a creator's account erasure keeps card-publication audit records, anonymized; invite email is sent synchronously after commit and reports failure; publisher language hints outside the detector whitelist are kept; feeds keep their original fetch URL; settled spend reservations are purged with call audits; `engine.prefilter_enabled` and `engine.laya` are admin-settable |
 
 ## 17. Owner decisions and implementation gates
 

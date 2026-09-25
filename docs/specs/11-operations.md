@@ -167,6 +167,7 @@ backup immediately increases exposure and must alert rather than being reported 
 | `article_snapshots` full saved text/HTML | indefinitely while at least one live bookmark references that immutable snapshot; cold after 30 days, never shortened or replaced by a lead |
 | `article_translations` | with the article |
 | `engine_calls` | 180 days (aggregated into `usage_daily` live) |
+| `engine_reservations` | settled: 180 days, purged with their `engine_calls`; `reserved`/`uncertain`: until settled or reconciled |
 | `usage_daily` | aggregate totals forever; user attribution is removed on hard deletion (§5.1) |
 | `user_article` reader state | while both user and article exist; unprotected articles expire after 90 days. Read items archived after 31 days; unread cap 1,000 per user per feed, subject to protected-state rules below |
 | `analysis_requests` frozen inputs/results | 180 days from creation, covering the matching learning window; terminal/cancelled requests beyond that window are purged after dependent training/receipt references are handled |
@@ -300,7 +301,7 @@ retention must not erase still-owned private cards or snapshots while publishing
 | `house.archive` | `15 3 * * *` | archive unprotected read items older than 31 days and enforce the shared-article unread-cap rules in §5 |
 | `house.purge-articles` | `30 3 * * *` | delete unreferenced articles older than 90 days (§5), in batches of 5,000. Articles referenced from `eval.*` are never purged |
 | `house.purge-bodies` | `45 3 * * *` | §5.2: preserve/verify owned full snapshots, mark eligible snapshots cold, clear redundant unprotected hot text/HTML after 30 days, and collect snapshots unreferenced for 7 days; never erase pending capture inputs |
-| `house.purge-engine-calls` | `0 4 * * *` | delete `engine_calls` and expired terminal `analysis_requests` older than 180 days, and `feedback_events` older than 365 days; clean delivered outbox rows and invoke bounded queue-history maintenance per §5 |
+| `house.purge-engine-calls` | `0 4 * * *` | delete `engine_calls`, settled `engine_reservations` and expired terminal `analysis_requests` older than 180 days, and `feedback_events` older than 365 days; clean delivered outbox rows and invoke bounded queue-history maintenance per §5 |
 | `house.retire-cards` | `30 4 * * *` | set `retired_at` on cards with `visibility <> 'public'` (library and promoted cards are never retired) that have no holders (`user_cards`/`user_labels`) and are not referenced by `eval.rater_cards`; delete their `card_answers` 30 days later |
 | `house.purge-users` | `0 5 * * *` | hard-delete users past the 7-day grace period |
 | `house.nightly-learn` | `0 1 * * *` | enqueue `user.learn` when the effective training-input hash changed since the last **attempt** (implicit signals, undo/unrate, context and 180-day expiry included); `user.suggest` for active users, per spec 06 (**built in M7-T4**) |

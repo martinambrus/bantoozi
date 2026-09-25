@@ -335,7 +335,8 @@ Feed is UTF-8. The lenient XML pass may repair syntax but must not change the ch
    are unified only by a validated redirect/canonical relationship, not by assumption. Feed identity
    uses this same conservative normalization. Never strip arbitrary `id`, `page`, `ref` or `source`
    parameters. Keep the original fetch URL separately so removing a tracking parameter does not
-   invalidate a signed request.
+   invalidate a signed request: a new feed row stores the validated discovery URL as
+   `feeds.fetch_url`, every feed fetch requests that URL, and `feeds.url` stays the identity.
 8. **Linkless items** have `articles.url = NULL` and
    `canonical_url = url_key = 'urn:bantoozi:' + feedId + ':' + sha256Hex(identity)`, where `identity` is
    the full nonempty GUID/Atom ID/JSON Feed ID, or canonical JSON of `[title, published_at, excerpt]`
@@ -761,7 +762,8 @@ never installs its validators (otherwise a broken body can be hidden forever beh
 A feed with no prior new-item timestamp uses the 24-hour MAX until it has actually been quiet 30 days.
 
 **Permanent redirect of the feed URL** (301/308 on the feed fetch):
-- If no other feed has the new canonical URL, update `feeds.url`.
+- If no other feed has the new canonical URL, update `feeds.url`, and set `feeds.fetch_url` to the
+  redirect target.
 - If another feed has it, **merge** into the surviving feed in one transaction (as `bantoozi_worker`):
   - lock feed IDs in ascending order and recheck the target; move subscriptions and feed items
   - create target subscriptions before repointing scoped cards, then remove source subscriptions

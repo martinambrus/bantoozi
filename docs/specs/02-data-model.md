@@ -353,7 +353,8 @@ CREATE TABLE origin_fetch_state (                 -- shared safe-fetch coordinat
 
 CREATE TABLE feeds (
   id                 bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  url                text NOT NULL UNIQUE,        -- canonical feed URL (spec 03 §5)
+  url                text NOT NULL UNIQUE,        -- canonical feed URL (spec 03 §5), the feed's identity
+  fetch_url          text NOT NULL,               -- original URL that feed.fetch requests, tracking params kept (spec 03 §5)
   merged_into_id     bigint NULL REFERENCES feeds(id) ON DELETE RESTRICT, -- retired feed identity
   site_url           text NULL,
   title              text NULL,
