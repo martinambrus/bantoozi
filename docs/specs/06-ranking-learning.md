@@ -307,9 +307,13 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
    - BM25 corpus membership changed: rerank all degraded items, not just the newly arrived article
    - the payload says `full: true`, which re-ranks the whole window
 
-   Stale articles (`pipeline_state = 'stale'`) are ranked as `new` without a score.
+   Stale articles (`pipeline_state = 'stale'`) are ranked as `new` without a score unless a current
+   explicit selection covers them (`explicitSelection`, §2 step 2); the handler still passes them to
+   `rankArticle`, which applies that rule.
 3. **Batch-load** facets, card answers (the user's cards and labels), translations, clusters, the
-   user's `label_ids`, the feed ids (intersected with the subscriptions), and the domain (via `tldts`).
+   user's `label_ids`, the feed ids (intersected with the subscriptions), the domain (via `tldts`) and
+   the user's current selected analysis requests, which set `inferenceFeedIds` and
+   `explicitSelection` (§2).
 4. Run `rankArticle` for each item.
 5. **Upsert** the ranking columns of `user_article` in batches of 500:
    `lane, tier, p_like, score_source, rules_fired, explain, label_suggestions, score_version,
