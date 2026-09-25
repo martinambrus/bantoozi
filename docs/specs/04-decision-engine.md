@@ -405,14 +405,12 @@ bounded by the job deadline, cancellation works while queued, and aging prevents
 
 **Fallback chain** in `EngineRouter.ask(req)`:
 
-1. Validate the request and its live demand (§1.1). Resolve the active Jev credential (§1.2); if
-   unavailable, send a request eligible for a configured Laya checkpoint (step 4, §9) to
-   LayaEngine, and otherwise return `no_key` without inference (unless an injected test engine
-   exists). Missing provider setup is a supported application state, not a reason to fail reader
-   startup.
+1. Validate the request and its live demand (§1.1). Resolve the active Jev credential (§1.2); if it
+   is unavailable, skip steps 2–3 and go to step 4. Missing provider setup is a supported
+   application state, not a reason to fail reader startup.
 2. Check breaker and reserve the selected provider's estimated spend (§6) before each send.
 3. TypeSafe breaker closed or half-open → TypeSafeEngine. On success, return.
-4. If TypeSafe failed or its breaker is open:
+4. If TypeSafe has no active credential, failed or its breaker is open:
    - if `LLM_FALLBACK_ENABLED` **and** `req.priority === 'interactive'` **and** the LLM daily call cap
      (`settings['engine.llm_daily_cap']`, default 200) is not reached **and** the LLM breaker is
      closed or an acquired half-open probe → LlmFallbackEngine (§8). Reserve LLM input plus bounded
@@ -421,7 +419,8 @@ bounded by the job deadline, cancellation works while queued, and aging prevents
      returns ok only after every original key has one valid answer, otherwise callers keep the work
      pending. Each subrequest/attempt is separately reserved and logged
    - (M9) if a fine-tuned Laya checkpoint is configured for `req.kind` → LayaEngine (§9)
-5. Otherwise return `budget`, `circuit_open` or `error` with a retry time when known. Never route an
+5. Otherwise return `no_key` when Jev has no credential and no fallback was eligible (unless an
+   injected test engine exists), or `budget`, `circuit_open` or `error` with a retry time when known. Never route an
    invalid request into another provider. Optional Laya has an explicit eligible-kind/language and
    engine-precedence policy; paid-provider budget exhaustion must not disable eligible local inference.
 

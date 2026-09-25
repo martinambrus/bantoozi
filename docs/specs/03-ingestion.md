@@ -734,7 +734,7 @@ on success (a successfully parsed HTTP 200, or a valid conditional 304):
       G = median(recent_gaps_s)
       interval = min(interval, max(MIN, G / 2))          # a daily feed stays ≤ ~12 h
   interval = clamp(round_to_60(max(interval, hint)), MIN, MAX)
-  next_fetch_at = now + max(MIN, hint, interval * (1 + jitter))          # jitter ∈ [-0.1, 0.1], deterministic from hash(feed.id, now_day)
+  next_fetch_at = now + min(MAX, max(MIN, hint, interval * (1 + jitter)))   # jitter ∈ [-0.1, 0.1], deterministic from hash(feed.id, now_day); clamped after jitter
 
 on error:
   consecutive_errors += 1; total_errors += 1; first_error_at ??= now
@@ -885,7 +885,8 @@ are found.
 - Two worker processes plus API discovery share origin limits; 429 cooldown survives restart.
   Robots network error is not allow-all; compressed bombs and slow redirects hit the same deadline.
 - A feed returns invalid XML with an ETag, then recovers; stale validators do not trap recovery. A
-  410 stays dead, quarantine caps at 16 days, and jitter cannot fetch before MIN/server Retry-After.
+  410 stays dead, quarantine caps at 16 days, and jitter cannot fetch before MIN/server Retry-After
+  or schedule a successful fetch later than MAX.
 - Backup/recovery checks in spec 11 resume the same pipeline without replaying deleted-user work.
 
 Follow-up acceptance cases:

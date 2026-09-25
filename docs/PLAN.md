@@ -568,7 +568,7 @@ Complete milestone M2 "Decision engine and classification" exactly as specified 
   - Crossings recorded in `engine.budget_alerts` without sending email.
 - **T4:** bounded JSON prompt/validation tests for noul/choice/score; post-processing normalizes; a malformed-JSON
   fixture → `error`; router tests prove it is used only when enabled, interactive, under the daily cap
-  and with its own breaker closed.
+  and with its own breaker closed, including when Jev has no active credential.
 - **T5:**
   - Hash stability across key order.
   - The template sha of each dynamic set equals its stored definition's sha.
@@ -606,7 +606,8 @@ Complete milestone M2 "Decision engine and classification" exactly as specified 
     and guarded completion. Exhausted rows remain recoverable; incomplete coverage is per reader.
   - Enrich outcomes: engine unavailable → `degraded` plus rank enqueued for all subscribers;
     `invalid_request` → `failed`.
-  - The cluster candidate SQL of spec 05 §6, with the per-feed rule in code.
+  - The cluster candidate SQL of spec 05 §6, with the per-feed rule in code. Merging two clusters
+    remaps `mute_story` rules to the survivor and records full-rank intents for the affected users.
   - Backfill inserts queue rows with priorities 2/6 in pages of 500, skipping only current answered
     pairs and persisting continuation until the complete eligible window is covered.
   - `pipeline.after` runs extract → (translate) → enrich → cluster + match.
@@ -1192,7 +1193,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | 2026-09-25 | Moved from FeedIt.sk's `docs/next-gen/` to this repository's `docs/`; repository references updated, no behaviour changed |
 | 2026-09-25 | Renamed the product from FeedIt Next Gen to Bantoozi: product name, `feedit` identifiers (packages, database and roles, env vars, header, user agent, URNs, compose projects) and the `fi_sid` cookie. References to the FeedIt.sk predecessor are unchanged |
 | 2026-09-25 | Review fixes: `eval.sample` rows are versioned and runs record their dataset version, so older runs stay replayable; a creator's account erasure keeps card-publication audit records, anonymized; invite email is sent synchronously after commit and reports failure; publisher language hints outside the detector whitelist are kept; feeds keep their original fetch URL; settled spend reservations are purged with call audits; `engine.prefilter_enabled` and `engine.laya` are admin-settable |
-| 2026-09-25 | More review fixes: reader and ranker windows use the subscribed carrier's arrival time; the engine router tries a configured Laya checkpoint before returning `no_key`; Laya enrich work has its own registered queue; account erasure also removes waitlist rows and invite emails (the deletion ledger carries a keyed email hash); the shared DB-backed rate limiter is defined |
+| 2026-09-25 | More review fixes: reader and ranker windows use the subscribed carrier's arrival time; the engine router tries a configured Laya checkpoint before returning `no_key`; Laya enrich work has its own registered queue; account erasure also removes waitlist rows and invite emails (the deletion ledger carries a keyed email hash); the shared DB-backed rate limiter is defined; a missing Jev credential falls through to the enabled fallbacks; cluster merges remap `mute_story` rules; jittered fetch delays stay within MAX |
 
 ## 17. Owner decisions and implementation gates
 

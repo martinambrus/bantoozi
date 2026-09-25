@@ -630,7 +630,10 @@ off feeds merely to create cluster context.
      loops or racing A→B/B→A clusters
    - repeated delivery is idempotent: increment `size` only on new membership, or recompute it from
      members; choose the oldest `(first_seen_at,id)` as representative. Merge two existing clusters
-     only under the same locking rule, reassigning all members and recomputing size
+     only under the same locking rule, reassigning all members and recomputing size. In the same
+     transaction, remap `mute_story` rule values from the losing cluster to the survivor (a user who
+     muted both keeps the later `expires_at`) and record `user.rank {full}` intents for the
+     affected users, so a muted story stays hidden
 
    Otherwise leave it unclustered.
 6. Engine not ok → skip without blocking ingestion; record a metric. Clustering is best-effort.
