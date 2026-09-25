@@ -193,13 +193,13 @@ identify secret variable names/paths, never their supplied contents or a seriali
 | `MAIL_FROM` | `Bantoozi <no-reply@localhost>` | api, worker | |
 | `SIGNUP_MODE` | `invite` | api | `invite` / `open` / `closed`; `settings['signup_mode']` overrides it |
 | `RATE_LIMITS_ENABLED` | `true` | api | `false` only for E2E/load tests with `NODE_ENV=test`; refused in production |
-| `TYPESAFE_API_KEY` | — | worker, eval | optional bootstrap Jev key, used only if no DB credential row exists; DB configuration/revocation takes precedence (spec 04 §1.2) |
+| `TYPESAFE_API_KEY` | — | worker, eval | optional bootstrap Jev key, used only if no DB credential row exists; DB configuration/revocation takes precedence (spec 04 §1.2). Workers report only its presence in `worker.heartbeat`, so the admin status can show `source: 'env'` |
 | `TYPESAFE_MODEL` | `jev-1.13.0` | worker, eval | always a pinned version in production |
 | `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` | worker, eval | |
 | `TYPESAFE_PRICE_PER_MTOK_USD` | `0.042` | worker, eval | cost accounting (without it, eval's `--max-usd` could never trigger) |
 | `ENGINE_CONCURRENCY` | `8` | worker, eval | max in-flight Jev calls per process |
 | `DAILY_BUDGET_USD` | `2.00` | worker | spend guard ([spec 04 §6](./04-decision-engine.md)) |
-| `OLLAMA_API_KEY` | — | worker, eval | optional bootstrap Ollama key, used only if no DB credential row exists; no fallback to it after DB disable/revoke |
+| `OLLAMA_API_KEY` | — | worker, eval | optional bootstrap Ollama key, used only if no DB credential row exists; no fallback to it after DB disable/revoke. Its presence is reported like `TYPESAFE_API_KEY`'s |
 | `PROVIDER_MASTER_KEY_ID` | — | api, worker, eval | id of the active wrapping key in the host-only keyring; required for DB credential writes and production credential management |
 | `PROVIDER_MASTER_KEYS` | — | api, worker, eval | JSON map of key id to base64-encoded random 32-byte AES key; injected from a protected host secret, never DB/settings/browser/build args; include old ids during rotation only |
 | `OLLAMA_BASE_URL` | `https://ollama.com` | worker, eval | |

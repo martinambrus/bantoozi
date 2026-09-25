@@ -338,7 +338,7 @@ through `PATCH /admin/settings`.
 | `house.progress` | `{[job]: {cursor?: JsonValue, updatedAt: iso, version: int, completedAt?: iso}}`; per-job cursor schema registered in shared jobs; `completedAt` advances only after a full successful pass | `{}` | housekeeping jobs; startup catch-up (spec 11 §6) |
 | `alerts.state` | `{[alertKey]: {firstAt, lastSentAt, active}}` | `{}` | `house.alerts` |
 | `metrics.daily.<YYYY-MM-DD>` | metrics JSON (spec 10 §7) | — | `house.metrics` |
-| `worker.heartbeat` | `{[processId]: {at: iso, queues: string[], evalIngestOnly: boolean}}` | `{}` | every worker process, every 30 s (entries older than 1 h are pruned). `eval ingest-sample` needs an entry younger than 90 s with `evalIngestOnly = true` (spec 10 §2.1) |
+| `worker.heartbeat` | `{[processId]: {at: iso, queues: string[], evalIngestOnly: boolean, envCredentials: ('typesafe'\|'ollama')[]}}` | `{}` | every worker process, every 30 s (entries older than 1 h are pruned). `envCredentials` lists the providers with a non-empty bootstrap env key, presence only, never key material or length (spec 08 §9.1). `eval ingest-sample` needs an entry younger than 90 s with `evalIngestOnly = true` (spec 10 §2.1) |
 
 `pnpm db:seed` inserts **only** `card_text_mode` and `question_sets.active = {}` when they are missing.
 Keys with an env fallback are never seeded, so the env default stays effective until an admin sets a

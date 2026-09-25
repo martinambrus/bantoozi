@@ -454,6 +454,9 @@ pending/unavailable pairs in spec 05 §5.5 and stays bounded; it does not repeat
   once, not both its outstanding estimate and settled call cost. Lease expiry alone must
   not refund a request that may already have reached the provider. Reconcile uncertain spend from
   provider usage or retain it for that budget day; the next UTC day has a separate allowance.
+  Housekeeping turns an expired `reserved` row into `uncertain` and settles a still-uncertain one at
+  its reserved amount 7 days after its day (spec 11 §6), so every reservation eventually settles and
+  follows audit retention.
   Attribute an attempt and its usage to `reservation.day` (UTC at send/admission), even if settlement
   crosses midnight. `engine_calls.created_at` is the send timestamp, not completion time; reserve
   each retry on its own actual UTC send day. Budget queries join reservation day, avoiding charges

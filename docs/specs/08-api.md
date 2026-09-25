@@ -698,6 +698,10 @@ CredentialStatus = {
 }
 ```
 
+`source` is `db` when the provider has a credential row (a disabled tombstone included). Otherwise it
+is `env` when a `settings['worker.heartbeat']` entry younger than 90 s lists the provider in
+`envCredentials`, else `none`. The API never receives the env keys themselves (spec 01 §3).
+
 Provider keys belong to the administrator's actual Jev/Ollama accounts; no separate organization
 account is required. These are deployment credentials, not per-reader keys. The encrypted DB store,
 keyring recovery and validation/rotation contract are in specs 01/02/04. API credentials endpoints
