@@ -172,7 +172,13 @@ settings, regardless of profile.
 - Generate ≥128-bit random rater tokens and store only a cryptographic hash. Exchange the link token
   for an HttpOnly, SameSite cookie, then redirect to a token-free URL; Secure on the HTTPS tunnel.
   Set `Referrer-Policy: no-referrer`, no external resources/analytics, redact token-bearing URLs in
-  logs, and rate-limit token exchange. Allow revocation and expiry. Every read/write is scoped to that
+  logs, and rate-limit token exchange. Link tokens expire (`token_expires_at`, default 30 days,
+  `eval rater add --token-days <n>`). `eval rater revoke <id>` sets `token_revoked_at` and deletes
+  the rater's `eval.rater_sessions`; `eval rater token <id>` issues a new token and expiry and clears
+  the revocation. Neither touches assignments, ratings or cards, which deleting the rater would
+  cascade. Exchange accepts only an unexpired, unrevoked token and creates a session row whose random
+  cookie value is stored hashed and whose expiry never exceeds the token's. Every request rechecks
+  the session's expiry and the token's revocation. Every read/write is scoped to that
   rater's assignment; the worker DB role makes application-level ownership checks essential.
 - Uses `DATABASE_URL_WORKER`.
 - Not deployed to production. It runs **on the dev box** (the same DB as M3b), exposed to raters

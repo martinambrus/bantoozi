@@ -412,9 +412,10 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
 1. Run `eval replay` with the new `TYPESAFE_MODEL` or question set (spec 10 §6). It must pass.
 2. Set the env or settings value, then restart the worker.
 3. New answers carry the new model id. Old answers no longer satisfy current cache lookups (spec 02
-   §3.3). The first worker that starts with a new `TYPESAFE_MODEL` records it in
-   `settings['engine.model_pin']` under a row lock and enqueues `house.reenrich` and `house.rematch`
-   once, so the `RANK_WINDOW_DAYS` window is rebuilt within budget (spec 05 §2).
+   §3.3). The first worker that starts with a new `TYPESAFE_MODEL`, or with `LLM_FALLBACK_ENABLED`
+   and a new `OLLAMA_MODEL_FAST`/`OLLAMA_MODEL_STRONG`, records them in `settings['engine.model_pin']`
+   under a row lock and enqueues `house.reenrich` and `house.rematch` once, so the `RANK_WINDOW_DAYS`
+   window is rebuilt within budget (spec 05 §2), through the fallback when Jev is still unavailable.
 4. Verify whether feature meanings and answer vocabulary remain compatible. If `feature_spec_sha`
    changes, deactivate incompatible user models and rerank with cards/degraded scoring until retrained;
    a stable feature name alone does not establish compatible semantics. Publish the new active set

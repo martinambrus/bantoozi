@@ -327,7 +327,7 @@ through `PATCH /admin/settings`.
 | `engine.circuit` | `{typesafe: Breaker, llm: Breaker, resetRequested: {typesafe?: iso, llm?: iso}}` with `Breaker = {state: 'closed'\|'open'\|'half_open'\|'auth', openedAt?, openUntil?, reopenCount, probeToken?: uuid, probeUntil?: iso}` | all closed | worker routers (state); admin (reset request only) |
 | `engine.budget_alerts` | `{day: 'YYYY-MM-DD', p80At?: iso, p100At?: iso}` | — | worker router (records crossings only; spec 04 §6) |
 | `engine.laya` | `{enrich?: string[]}` (language codes) | `{}` | admin (M9) |
-| `engine.model_pin` | `{model: string, since: iso}` | — | the first worker that starts with a different `TYPESAFE_MODEL`, which also enqueues the rebuild (spec 11 §8) |
+| `engine.model_pin` | `{model: string, llm?: {fast: string, strong: string}, since: iso}` (`llm` only while `LLM_FALLBACK_ENABLED`) | — | the first worker that starts with a different `TYPESAFE_MODEL`, or with the LLM fallback enabled and a different `OLLAMA_MODEL_FAST`/`OLLAMA_MODEL_STRONG`, which also enqueues the rebuild (spec 11 §8) |
 | `language_modes` | `{[lang]: 'native'\|'translate'}` | env `LANGUAGE_MODES` (only before the seed stores it) | seed (only when missing), admin, `apply-g1` |
 | `card_text_mode` | `'as_written'\|'english'` | `'as_written'` | admin, `apply-g1` |
 | `translate.tier2_daily_cap` | int | 300 | admin, `apply-g1` |
@@ -1512,7 +1512,11 @@ changes, proving both materialized feed caches equal a fresh source-table aggreg
 CREATE SCHEMA eval;
 CREATE TABLE eval.raters (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, name text NOT NULL,
   participant_key uuid NOT NULL, context_name text NULL, -- same human keeps one key across topic personas
-  token_hash text NOT NULL UNIQUE, langs text[] NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+  token_hash text NOT NULL UNIQUE, token_expires_at timestamptz NOT NULL, token_revoked_at timestamptz NULL,
+  langs text[] NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE eval.rater_sessions (session_hash text PRIMARY KEY, -- hash of the random cookie value
+  rater_id bigint NOT NULL REFERENCES eval.raters(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(), expires_at timestamptz NOT NULL);
 CREATE TABLE eval.rater_cards (rater_id bigint REFERENCES eval.raters(id) ON DELETE CASCADE,
   card_id bigint REFERENCES interest_cards(id) ON DELETE RESTRICT,
   strength text NOT NULL CHECK (strength IN ('must','love','like','never')), PRIMARY KEY (rater_id, card_id));

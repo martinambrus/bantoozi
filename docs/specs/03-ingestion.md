@@ -790,8 +790,12 @@ A feed with no prior new-item timestamp uses the 24-hour MAX until it has actual
     user data rather than relying on arbitrary `ON CONFLICT DO NOTHING`
   - on duplicate inference settings use the more restrictive mode (`off`, then `training`, then
     `active`); if both remain active use the later activation timestamp. Advance `inference_version`
-    beyond both prior versions. A source-only subscription retains its mode/activation boundary
-    with a new version; merging cannot implicitly enable or backfill inference
+    beyond both prior versions. A source-only subscription keeps its mode with a new version, but
+    an `active` one gets a new activation boundary at the merge time: the target's earlier items
+    never arrived on that subscription, and a kept boundary would let them pass the automatic-demand
+    predicate (spec 05 §1.1). Moved source items that arrived before the merge become history too;
+    their existing answers stay, and only an explicit selection authorizes new work for them.
+    Merging cannot implicitly enable or backfill inference
   - move selected `analysis_requests` before deleting the source subscription, preserving completed
     training history; cancel old pending/running generations and rebuild automatic work only from
     current eligibility. An explicit fresh selection is required to reauthorize cancelled manual work
