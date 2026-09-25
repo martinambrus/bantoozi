@@ -92,9 +92,10 @@ Every per-user query runs under row-level security, and every limit that bounds 
 - Reader writes use `user_article.state_version` (a decimal string in JSON). Clients submit the
   expected version for each target; zero denotes an absent row. Update reader state and increment
   the version atomically, or return `409 STALE_STATE` with the current readable item. Ranking-only
-  writes never increment this version. Return the committed item(s), version(s) and `mutationId`.
-  Bulk reader writes are all-or-nothing, including version checks. A stale offline write is surfaced
-  for review; it must never silently overwrite a newer action from another device.
+  writes never increment this version; the worker's automatic archive does (spec 11 §6). Return the
+  committed item(s), version(s) and `mutationId`. Bulk reader writes are all-or-nothing, including
+  version checks. A stale offline write is surfaced for review; it must never silently overwrite a
+  newer action from another device.
 - Preference PATCHes merge only supplied leaves under the user-row lock; arrays are replaced, not
   concatenated. Other PATCHes update only supplied columns. Missing means unchanged; `null` clears
   only explicitly nullable fields. Empty PATCHes and unauthorized nested ids fail validation.
