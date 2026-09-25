@@ -183,7 +183,7 @@ backup immediately increases exposure and must alert rather than being reported 
 | `metrics.daily` settings | 90 days of aggregate snapshot metrics (spec 10) |
 
 **Retention precedence:** bookmarks, their retained snapshots/unexpired Undo pins, current non-null
-ratings, explicit labels and golden-set references protect an article from the 90-day purge; historic undone feedback does not. Retention
+ratings, explicit labels, retained analysis requests and golden-set references protect an article from the 90-day purge; historic undone feedback does not. Retention
 windows are maxima, not promises that child rows survive deletion of their parent. Extraction after
 30 days does not run solely to repopulate deliberately purged unbookmarked full bodies. An explicit
 bookmark capture/retry may fetch missing content; a saved snapshot never depends on refetch. `body_lead` and translated
@@ -191,8 +191,8 @@ lead remain while the article exists. Rate/label examples needed for future trai
 `user_article` truth; they must not depend on an event older than the event-retention window.
 
 Archive is reversible presentation state, not deletion. Exclude bookmarked/rated/explicitly labelled
-rows from automatic archive. Count distinct unread article IDs per subscribed feed, newest by
-`coalesce(published_at, first_seen_at), id`; archive only rows that lie beyond 1,000 in **every** feed
+rows from automatic archive. Count distinct unread article IDs per subscribed feed, newest by that
+feed's arrival (`feed_items.first_seen_at`, then `id`); archive only rows that lie beyond 1,000 in **every** feed
 through which that user receives them. Since archive state is per article, applying each feed's cap
 independently would wrongly hide a newer item in another feed. Protected rows may exceed the cap.
 
@@ -306,7 +306,7 @@ retention must not erase still-owned private cards or snapshots while publishing
 | `house.expire-rules` | `5 * * * *` | delete expired rules; `user.rank {full}` for the affected users |
 | `house.purge-auth` | `20 * * * *` | expired login codes, sessions, rate-limit buckets and `api_mutations` receipts per §5, in bounded batches |
 | `house.reconcile` | `*/10 * * * *` | bounded repair of still-authorized inference, due pending/expired-lease `analysis_requests`, pending bookmark capture/outbox/match work and orphaned leases; enqueue rank for due `user_article.next_rank_at`; nightly UTC window also refreshes feed subscribers/cards, cluster counts and `lang_hint` with persistent progress cursors |
-| `house.archive` | `15 3 * * *` | archive unprotected read items older than 31 days and enforce the shared-article unread-cap rules in §5 |
+| `house.archive` | `15 3 * * *` | archive unprotected read items whose latest carrier arrival is older than 31 days and enforce the shared-article unread-cap rules in §5 |
 | `house.purge-articles` | `30 3 * * *` | delete unreferenced articles whose latest carrier arrival is older than 90 days (§5), in batches of 5,000. Articles referenced from `eval.*` are never purged |
 | `house.purge-bodies` | `45 3 * * *` | §5.2: preserve/verify owned full snapshots, mark eligible snapshots cold, clear redundant unprotected hot text/HTML after 30 days, and collect snapshots unreferenced for 7 days; never erase pending capture inputs |
 | `house.purge-engine-calls` | `0 4 * * *` | delete `engine_calls`, settled `engine_reservations` and expired terminal `analysis_requests` older than 180 days, and `feedback_events` older than 365 days; clean delivered outbox rows and invoke bounded queue-history maintenance per §5 |

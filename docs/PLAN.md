@@ -688,7 +688,8 @@ Complete milestone M3a "Evaluation tooling and golden-set collection" exactly as
   - Integration tests cover:
     - the card-writing gate (no rating before ≥ 5 cards)
     - feed picking (≥ 10)
-    - the assignment algorithm (equal language split, top-up, deterministic shuffle)
+    - the assignment algorithm (equal language split, top-up, deterministic shuffle); a top-up after
+      the first model run creates a new dataset version and leaves the frozen one unchanged
     - the blind page (no model fields in the HTML)
     - keyboard handlers, and rating persistence and change
   - Token-cookie auth, one-time URL exchange/redaction, rater-scoped access and revocation.
@@ -1143,7 +1144,8 @@ Complete milestone M8 "Operations and launch readiness" exactly as specified in 
 - **T2:** each listed job exists and is scheduled (or triggered on demand), and has an idempotency test
   (run twice → same result) and a retention test at the day boundaries. `eval.*` references are exempt
   from purge and retire (tested). An article with a retained analysis request is not purged, and
-  expired `api_mutations` receipts are (tested).
+  expired `api_mutations` receipts are (tested). The unread-cap eviction and 31-day archive use each
+  feed's carrier arrival, so a newly carried older article is not archived on arrival (tested).
 - **T3:** each alert rule of spec 11 §6.1 fires in a test and is de-duplicated for 6 h; a resolved
   condition re-arms it; the "no `backup_ok` in 26 h" rule works.
 - **T4:** the metrics JSON is stored per day in `settings`; the admin overview shows the like-rate per
@@ -1197,7 +1199,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | 2026-09-25 | Moved from FeedIt.sk's `docs/next-gen/` to this repository's `docs/`; repository references updated, no behaviour changed |
 | 2026-09-25 | Renamed the product from FeedIt Next Gen to Bantoozi: product name, `feedit` identifiers (packages, database and roles, env vars, header, user agent, URNs, compose projects) and the `fi_sid` cookie. References to the FeedIt.sk predecessor are unchanged |
 | 2026-09-25 | Review fixes: `eval.sample` rows are versioned and runs record their dataset version, so older runs stay replayable; a creator's account erasure keeps card-publication audit records, anonymized; invite email is sent synchronously after commit and reports failure; publisher language hints outside the detector whitelist are kept; feeds keep their original fetch URL; settled spend reservations are purged with call audits; `engine.prefilter_enabled` and `engine.laya` are admin-settable |
-| 2026-09-25 | More review fixes: reader and ranker windows use the subscribed carrier's arrival time; the engine router tries a configured Laya checkpoint before returning `no_key`; Laya enrich work has its own registered queue; account erasure also removes waitlist rows and invite emails (the deletion ledger carries a keyed email hash); the shared DB-backed rate limiter is defined; a missing Jev credential falls through to the enabled fallbacks; cluster merges remap `mute_story` rules; jittered fetch delays stay within MAX; article retention follows the latest carrier arrival; unsubscribing keeps completed analysis requests; retained analysis requests protect their article from purge; expired idempotency receipts are purged; each eval run freezes its facet labels; folded rows report only the accessible cluster size |
+| 2026-09-25 | More review fixes: reader and ranker windows use the subscribed carrier's arrival time; the engine router tries a configured Laya checkpoint before returning `no_key`; Laya enrich work has its own registered queue; account erasure also removes waitlist rows and invite emails (the deletion ledger carries a keyed email hash); the shared DB-backed rate limiter is defined; a missing Jev credential falls through to the enabled fallbacks; cluster merges remap `mute_story` rules; jittered fetch delays stay within MAX; article retention follows the latest carrier arrival; unsubscribing keeps completed analysis requests; retained analysis requests protect their article from purge; expired idempotency receipts are purged; each eval run freezes its facet labels; folded rows report only the accessible cluster size; post-freeze eval top-ups create a new dataset version; archive, unread-cap eviction and mark-read cutoffs use carrier arrival |
 
 ## 17. Owner decisions and implementation gates
 

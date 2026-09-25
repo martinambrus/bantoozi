@@ -137,6 +137,9 @@ settings, regardless of profile.
     others
   - if the sample has fewer than 300 for these feeds, all of them are assigned, topped up from
     non-sampled recent articles of the rater's feeds (which are then added to `eval.sample`)
+  - top-ups join the dataset version being built until its first model run freezes it; after that,
+    a top-up creates the next version (spec 02 §7) with a recomputed manifest hash and never
+    changes the frozen one
   - every top-up receives the same frozen snapshot and story-group split before assignment
   - shuffled deterministically (seeded by the rater id)
   - **Blind:** no model output is shown.
