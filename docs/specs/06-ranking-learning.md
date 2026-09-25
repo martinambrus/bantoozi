@@ -102,9 +102,9 @@ rankArticle(ctx, item, now):
                                                         (label suggestions are still computed)
      Steps 5–8 run only when P is set.
   5. lane = laneFromP(P) (§6.1)
-  6. precedence of modifiers, the first that applies wins:
+  6. precedence of modifiers: only the first that applies changes the lane; later ones are skipped
        i.   seen_story: the item's cluster is in readClusterIds → lane = min(lane, 'everything')
-       ii.  source 'degraded'                              → lane = 'maybe' (floors are ignored)
+       ii.  source 'degraded' (so never after a seen_story cap) → lane = 'maybe' (floors are ignored)
        iii. floor: a 'must' card with p ≥ mustFloor, or a boost_feed/boost_domain rule
                                                        → lane = 'for_you' and P = max(P, lanes.forYou)
        iv.  caps (both may apply): a never-card with never.soft ≤ p < never.hide → lane = min(lane, 'maybe');
@@ -618,7 +618,7 @@ The implementation derives all examples/tables above from these defaults, not du
 - truth tables for every rule kind, and for never/must/boost interplay
 - the lane and tier boundaries
 - demotion activation (auto vs on vs off)
-- `seen_story`
+- `seen_story`, including a degraded (BM25) item of a read story, which stays in Everything
 - cards-only monotonicity (property test with `fast-check`): raising a positive card's p never
   lowers the base card score with everything else fixed. This is **not** guaranteed for a learned
   model with negative coefficients or for lane changes from a deciding-engine tie break

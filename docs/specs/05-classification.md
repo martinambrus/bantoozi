@@ -47,7 +47,9 @@ request result to rank a current article additionally requires the same current 
 pending/running selections and disables classification use; returning to training requires selection
 again. A mode/version change invalidates leases/commits for obsolete user demand, not another user's
 still-authorized shared work. An explicit current completed selection permits use of its answers;
-new content requires current authorization rather than silently analyzing a later revision.
+new content requires current authorization rather than silently analyzing a later revision. A
+selected request authorizes only inside its 180-day retention window (`created_at` within 180 days,
+spec 11 §5), whether or not housekeeping has cancelled or purged it yet.
 
 Compute the union of authorized **article/card** pairs, not user×article calls. Enrichment, L2 and
 translation are shared prerequisites for at least one admitted pair; cache-compatible existing
@@ -637,6 +639,7 @@ into unrelated off feeds merely to create cluster context.
                        JOIN users u ON u.id = r.user_id AND u.deleted_at IS NULL
                        WHERE r.article_id = a.id AND r.feed_id = fi.feed_id
                          AND r.article_revision = a.content_revision
+                         AND r.created_at > now() - interval '180 days'      -- retention window
                          AND r.status IN ('pending','running','complete')))  -- current selection (§1.1)
        -- explicit casts: node-postgres sends parameters untyped
      ORDER BY a.id, fi.first_seen_at, f.id
@@ -645,15 +648,16 @@ into unrelated off feeds merely to create cluster context.
    LIMIT 20;
    ```
 
-   `$4` is the active enrich set. The facet join is an eligibility witness, not a cache read: it
-   shows the candidate was classified at its current revision, and the cluster call never reads
-   candidate facets (step 3 sends only title, excerpt, feed and time). A facet row from an older
-   model or language mode that `house.reenrich` has not replaced yet therefore still qualifies, as
-   clustering applies model-pin changes prospectively (§2); spec 02 §3.3's cache identity governs
-   reusing answers, not this check. The facet join and the authorization witness (an active carrier
-   for that arrival, or a current selected request at the current revision, §1.1) run before the
-   `LIMIT`, so off or unselected articles never reach the provider or take candidate slots, and the
-   `feed` title sent is always an authorized carrier's.
+   `$4` is the active enrich set. A selected request counts only inside its 180-day retention
+   window (§1.1), even before housekeeping reaches it. The facet join is an eligibility witness, not
+   a cache read: it shows the candidate was classified at its current revision, and the cluster call
+   never reads candidate facets (step 3 sends only title, excerpt, feed and time). A facet row from
+   an older model or language mode that `house.reenrich` has not replaced yet therefore still
+   qualifies, as clustering applies model-pin changes prospectively (§2); spec 02 §3.3's cache
+   identity governs reusing answers, not this check. The facet join and the authorization witness
+   (an active carrier for that arrival, or a current selected request at the current revision,
+   §1.1) run before the `LIMIT`, so off or unselected articles never reach the provider or take
+   candidate slots, and the `feed` title sent is always an authorized carrier's.
    Then, in code: walk the 20 by similarity, skip a candidate once 2 from the same `feed_id` have been
    kept, and stop at 5.
 2. No candidates → done (the article is a singleton, `story_cluster_id` stays null).
