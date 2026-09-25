@@ -1,0 +1,1629 @@
+# Spec 02: Data model (PostgreSQL 16)
+
+Status: **binding**. **Intent:** the shared article layer (feeds, articles, model answers) is global and
+paid for once. Reader state is tenant data protected by row-level security; auth/control-plane
+exceptions are explicit in §1.2. Normalized model answers are retained within the data-retention window
+so changing a ranking threshold does not itself require a new model call.
+
+Conventions: `snake_case`; `bigint GENERATED ALWAYS AS IDENTITY` primary keys (users use UUID v7);
+`timestamptz` everywhere, defaulting to `now()`. Enumerations are `text` columns with `CHECK`
+constraints, not Postgres enums, so they are easy to migrate. Every foreign key states its `ON DELETE`
+behaviour.
+
+**Wire types and update semantics.** Every `bigint`/identity/UUID is a string in JavaScript DTOs;
+never pass a database ID through `Number`. SQL timestamps use UTC; display timezone is a preference.
+`DEFAULT now()` applies only on insert: each owning repository explicitly sets its `updated_at` or
+`answered_at` on update. JSON objects have shared zod schemas, with finite numeric values, size limits
+and unknown-key rejection on writes; SQL checks below are the database floor, not a replacement.
+
+The Drizzle schema in `packages/db/src/schema/*.ts` must produce exactly this DDL. RLS policies,
+grants, functions and trigram indexes are hand-written SQL migrations. The database, roles and
+extensions come from `infra/postgres/init.sh` (§1.1).
+
+**Schema parity test.** `packages/db/test/schema-parity.int.test.ts` reads the migrated catalog and
+compares it with the checked-in `packages/db/test/expected-schema.json`:
+- tables, columns, types, nullability, defaults
+- check constraints, indexes, foreign keys with their `ON DELETE`
+- RLS policies, grants, functions, constraint triggers and generated identity properties
+
+The JSON is written once, by hand, from this spec. Any later schema change updates it in the same
+commit.
+
+---
+
+## 1. Bootstrap, roles and privileges
+
+### 1.1 Cluster bootstrap (`infra/postgres/init.sh`)
+
+The official `postgres:16` image runs `*.sh` files from `/docker-entrypoint-initdb.d/` as the `postgres`
+superuser on first start. (The shell wrapper supplies environment values as psql variables.) The script takes the
+role passwords from the env vars `BANTOOZI_OWNER_PASSWORD`, `BANTOOZI_APP_PASSWORD` and
+`BANTOOZI_WORKER_PASSWORD` and runs:
+
+```bash
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" \
+     -v owner_pw="$BANTOOZI_OWNER_PASSWORD" -v app_pw="$BANTOOZI_APP_PASSWORD" -v worker_pw="$BANTOOZI_WORKER_PASSWORD" <<'SQL'
+CREATE ROLE bantoozi_owner  LOGIN PASSWORD :'owner_pw'  BYPASSRLS;  -- runs migrations; owns every object and the SECURITY DEFINER functions (§6)
+CREATE ROLE bantoozi_app    LOGIN PASSWORD :'app_pw';               -- API; RLS enforced
+CREATE ROLE bantoozi_worker LOGIN PASSWORD :'worker_pw' BYPASSRLS;  -- worker, eval CLI, housekeeping
+CREATE DATABASE bantoozi OWNER bantoozi_owner;
+\connect bantoozi
+CREATE EXTENSION IF NOT EXISTS citext;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+ALTER SCHEMA public OWNER TO bantoozi_owner;
+REVOKE ALL ON DATABASE bantoozi FROM PUBLIC;
+GRANT CONNECT ON DATABASE bantoozi TO bantoozi_app, bantoozi_worker;
+SQL
+```
+
+`bantoozi_owner` must have `BYPASSRLS`. The SECURITY DEFINER functions in §6 run as the owner and must
+see every tenant's rows. `FORCE ROW LEVEL SECURITY` would otherwise apply to the owner too.
+
+**Test databases** (`infra/compose.test.yml` runs the same `init.sh`). The helper in
+`packages/testing` connects with `TEST_ADMIN_DATABASE_URL` (the superuser):
+
+1. **Template per schema version:** `bantoozi_template_<h>`, where `h` = the first 12 hex digits of
+   `sha256(sorted migration paths + their bytes + journal bytes + pinned pg-boss version)`. A changed migration therefore yields a new
+   template, and parallel branches with different migrations never share one.
+2. **Creation** runs under `pg_advisory_lock(hashtext('bantoozi_template'))`, so parallel test runs never
+   race. If the template is missing:
+   - `CREATE DATABASE bantoozi_template_<h> OWNER bantoozi_owner`
+   - as the superuser, run three statements: `CREATE EXTENSION IF NOT EXISTS citext;`,
+     `CREATE EXTENSION IF NOT EXISTS pg_trgm;`, `CREATE EXTENSION IF NOT EXISTS pgcrypto;`, then
+     apply the same schema ownership, database ACL and `public` CREATE revocation as production
+   - the full **migrate job** as `bantoozi_owner`: Drizzle migrations, the pg-boss schema and the queues
+     (§1.2)
+3. **Per worktree and package:** `bantoozi_test_<worktree-hash>_<package>_<run-id>`, created with
+   `CREATE DATABASE … TEMPLATE bantoozi_template_<h> OWNER bantoozi_owner` (dropped and recreated per run).
+4. **E2E and eval dry-run databases** are created the same way, from the template for the current
+   journal, and are then **seeded** (`pnpm db:seed`) before any process uses them.
+
+The template lock is held on a dedicated live connection across creation and migration; `CREATE
+DATABASE` runs outside a transaction. Disconnect every template connection before cloning. Publish a
+ready marker only after successful migration; delete an incomplete template before retrying. Names
+are sanitized, bounded to PostgreSQL's 63-byte identifier limit and quoted as identifiers. Cleanup may
+drop only databases created by this test run. Parallel sessions/packages never share a database.
+
+### 1.2 Privileges (first migration, run as `bantoozi_owner`)
+
+**Defaults**, which cover every later migration automatically:
+
+```sql
+GRANT USAGE ON SCHEMA public TO bantoozi_app, bantoozi_worker;
+-- No default table privileges for bantoozi_app: every new API-visible table is reviewed explicitly.
+ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO bantoozi_worker;
+ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO bantoozi_worker;
+ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+```
+
+**Explicit SELECT allowlist for `bantoozi_app`:** `users`, `settings`, `login_codes`, `sessions`,
+`invites`, `waitlist`, `origin_fetch_state`, `feeds`, `story_clusters`, `articles`, `feed_items`, `article_aliases`,
+`article_bodies`, `article_snapshots`, `article_translations`, `question_sets`, `article_facets`, `topics`, `interest_cards`,
+`card_answers`, `article_topics_l2`, `library_card_versions`, `usage_daily`, and the tables in §4. Add grants only after the
+corresponding table and its required RLS policies exist, in the same migration transaction. The API
+has no direct read/write access to `provider_credentials`, `engine_calls`, `engine_reservations`,
+`match_queue` or `feed_cards`;
+admin summaries use the approved SQL functions/aggregates. No sensitive prompt text goes in logs.
+
+Grant `USAGE` on identity sequences only for tables the API may insert into below; new worker-only
+sequences have no default API grant.
+
+**Explicit write privileges for `bantoozi_app`.** Every migration that adds a table appends its row here
+(and to the migration):
+
+| Table | `bantoozi_app` may | Needed for |
+|---|---|---|
+| `users` | `INSERT, UPDATE` | signup, `PATCH /me`, soft delete, `invites_left`, `last_active_at`, admin edits |
+| `settings` | `INSERT, UPDATE` | admin settings, breaker reset request, alert state |
+| `login_codes`, `sessions`, `invites`, `waitlist` | `INSERT, UPDATE, DELETE` | auth, invites |
+| `origin_fetch_state` | `INSERT, UPDATE` | safeFetch repository alone coordinates per-origin limits; never exposed by API |
+| `feeds` | `INSERT`; `UPDATE (min_interval_s, fetch_options, status, consecutive_errors, first_error_at, quarantined_until, quarantine_count, next_fetch_at, subscriber_count, updated_at)` | subscribe, admin reset |
+| `story_clusters` | `INSERT, UPDATE` | mute-story creates a cluster |
+| `articles` | `UPDATE (story_cluster_id)` | mute-story |
+| `interest_cards` | `INSERT`; `UPDATE (retired_at, title, topic_ids, i18n, slug)` | card create/reuse (un-retire), admin library and promotion (`shared` → `public`). **Never** the text or examples: cards are immutable (spec 05 §5.1) |
+| `feedback_events` | `INSERT` | reader actions (append-only; rows disappear only through `ON DELETE CASCADE` when the worker purges a user) |
+| `subscriptions`, `user_feed_preferences`, `user_cards`, `user_labels`, `user_rules`, `api_mutations` | `INSERT, UPDATE, DELETE` | RLS applies; idempotency records are repository-internal |
+| `user_article` | `INSERT (user_id, article_id, opened_at, read_at, rating, reason, rated_at, dwell_ms, bookmarked_at, archived_at, label_ids, feedback_prompted_at, state_version)`; `UPDATE` on those reader-state columns except the primary key, plus `label_suggestions` | rating/read/bookmark actions; ranking columns are worker-only |
+| `card_suggestions` | `UPDATE (dismissed_at)` | dismiss suggestion |
+| `user_models` | no writes | worker alone trains and activates models |
+| `bookmark_snapshot_pins` | `INSERT` only | vetted bookmark/undo repository pins original snapshot through the ten-minute undo deadline |
+| `analysis_requests` | `INSERT (id, user_id, feed_id, article_id, article_revision, inference_version, input_snapshot, input_sha)` only | exact selected-article manual authorization; validated immutable snapshot, worker owns completion |
+| `card_publication_requests`, `provider_credentials`, `article_snapshots`, `library_card_versions` | no direct writes | narrow consent/admin/bookmark functions below; worker maintains lifecycle |
+| `job_outbox` | `INSERT` only | durable job intent; requester RLS (§5), no API relay privileges |
+| `drizzle.__drizzle_migrations` | `SELECT` (with `USAGE ON SCHEMA drizzle`) | `/readyz` |
+
+**pg-boss** (pg-boss 10; the schema is created by a migration and never by a running process):
+
+```sql
+-- migration: execute the construction plans for the pinned pg-boss version as bantoozi_owner, then:
+GRANT USAGE ON SCHEMA pgboss TO bantoozi_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA pgboss TO bantoozi_worker;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA pgboss TO bantoozi_worker;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgboss TO bantoozi_worker;
+ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA pgboss
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO bantoozi_worker;
+ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA pgboss
+  GRANT USAGE, SELECT ON SEQUENCES TO bantoozi_worker;
+ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA pgboss
+  GRANT EXECUTE ON FUNCTIONS TO bantoozi_worker;
+```
+
+The API writes `job_outbox`, never pg-boss tables or queue payloads. Readiness/backlog queries use a
+restricted SECURITY DEFINER function returning only queue name and aggregate state counts, implemented
+against the pinned pg-boss catalog at M0 and covered by parity tests; no job payload leaves it.
+
+**Queues:**
+- Created by the migrate job (as the owner) with `createQueue(name, options)` for every entry of
+  `packages/shared/src/jobs.ts` (spec 03 §2), so per-queue partitions are owned by `bantoozi_owner` and
+  covered by the default privileges.
+- The worker starts pg-boss with `migrate: false`, supervises and runs cron schedules plus the
+  outbox relay. The API has no pg-boss client or credentials beyond its own database role.
+- If the pinned pg-boss version differs in these mechanics, keep the requirement: the owner creates the
+  schema and queues, the API can only write authorized outbox intents and read aggregate counts, and
+  the worker alone relays, consumes and supervises jobs. Log
+  the adaptation (spec 01 §9).
+
+The API is a trusted server, not a database client exposed to browsers. Auth/bootstrap tables
+(`users`, `login_codes`, `sessions`, `invites`, `waitlist`) and control-plane tables (`settings`,
+`usage_daily`) intentionally have no tenant RLS: login must resolve a token before a tenant exists.
+Only named auth/admin repositories can access them, with explicit ownership/role checks and DTO
+allowlists. This is an exception to the per-user RLS claim, not permission to use generic CRUD.
+Neither a request body nor arbitrary SQL may supply `app.user_id`; derive it from the verified session.
+`bantoozi_app`/`bantoozi_worker` are never members of `bantoozi_owner` and cannot create roles or databases.
+
+## 2. Settings and accounts
+
+```sql
+CREATE TABLE settings (
+  key         text PRIMARY KEY,               -- see the key registry below
+  value       jsonb NOT NULL,
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  updated_by  uuid NULL
+);
+
+CREATE TABLE users (
+  id              uuid PRIMARY KEY,           -- UUID v7, generated in code
+  email           citext NOT NULL UNIQUE,
+  display_name    text NULL,
+  locale          text NOT NULL DEFAULT 'en' CHECK (locale IN ('en','sk')),
+  timezone        text NOT NULL DEFAULT 'Europe/Bratislava',
+  role            text NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')),
+  plan            text NOT NULL DEFAULT 'beta',   -- key into the plan table in spec 08 §6
+  invites_left    int  NOT NULL DEFAULT 3 CHECK (invites_left >= 0),
+  rank_revision   bigint NOT NULL DEFAULT 0 CHECK (rank_revision >= 0),
+  suggest_lease_token uuid NULL,
+  suggest_lease_until timestamptz NULL,
+  last_suggested_at timestamptz NULL,              -- last admitted attempt, not only success
+  preferences     jsonb NOT NULL DEFAULT '{}',    -- schema: spec 08 §3.1
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  last_active_at  timestamptz NULL,
+  deleted_at      timestamptz NULL,               -- soft delete for 7 days, then hard delete (spec 11)
+  CHECK ((suggest_lease_token IS NULL) = (suggest_lease_until IS NULL))
+);
+
+ALTER TABLE settings ADD CONSTRAINT settings_updated_by_fk
+  FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL;
+
+CREATE TABLE login_codes (
+  id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  email         citext NOT NULL,
+  challenge_nonce uuid NOT NULL UNIQUE,            -- random UUID generated before hashing/inserting
+  code_hash     text NOT NULL,                    -- HMAC-SHA256(pepper, canonical nonce/email/code tuple); spec 08
+  purpose       text NOT NULL CHECK (purpose IN ('login','signup')),
+  login_user_id uuid NULL REFERENCES users(id) ON DELETE CASCADE,
+  invite_code   text NULL,
+  locale        text NULL,                        -- locale requested at signup
+  expires_at    timestamptz NOT NULL,
+  attempts      int NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 5),
+  consumed_at   timestamptz NULL,
+  requested_ip  inet NULL,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  CHECK ((purpose = 'login') = (login_user_id IS NOT NULL)),
+  CHECK (expires_at > created_at)
+);
+CREATE INDEX login_codes_email_idx ON login_codes (email, created_at DESC);
+CREATE UNIQUE INDEX login_codes_active_email_idx ON login_codes (email) WHERE consumed_at IS NULL;
+
+CREATE TABLE sessions (
+  id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id       uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash    text NOT NULL UNIQUE,             -- sha256 of the 32-byte random token
+  user_agent    text NULL,
+  ip            inet NULL,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  last_seen_at  timestamptz NOT NULL DEFAULT now(),
+  expires_at    timestamptz NOT NULL,
+  revoked_at    timestamptz NULL
+);
+CREATE INDEX sessions_user_idx ON sessions (user_id);
+
+CREATE TABLE invites (
+  code        text PRIMARY KEY,                   -- 10 chars, Crockford base32
+  created_by  uuid NULL REFERENCES users(id) ON DELETE SET NULL,
+  email       citext NULL,                        -- optional: bound to one address; on that person's erasure, cleared once used, else the invite is deleted (spec 11 §5.1)
+  note        text NULL,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  expires_at  timestamptz NOT NULL,
+  used_by     uuid NULL REFERENCES users(id) ON DELETE SET NULL,
+  used_at     timestamptz NULL
+);
+
+CREATE TABLE waitlist (                           -- no user FK: erasure deletes the row matching the email (spec 11 §5.1)
+  id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  email        citext NOT NULL UNIQUE,
+  locale       text NOT NULL DEFAULT 'en' CHECK (locale IN ('en','sk')),
+  note         text NULL,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  invited_at   timestamptz NULL,
+  invite_code  text NULL REFERENCES invites(code) ON DELETE SET NULL
+);
+
+CREATE TABLE rate_limit_buckets (                 -- shared API rate limiter (spec 08 §11); the API reaches it only through rate_limit_hit() (§6)
+  key           text PRIMARY KEY,                 -- route group + subject; an email appears only as a keyed hash
+  window_start  timestamptz NOT NULL,
+  hits          int NOT NULL CHECK (hits > 0)
+);
+```
+
+
+### 2.1 Provider credentials (encrypted at rest)
+
+```sql
+CREATE TABLE provider_credentials (
+  provider              text PRIMARY KEY CHECK (provider IN ('typesafe','ollama')),
+  revision              bigint NOT NULL DEFAULT 0 CHECK (revision >= 0),
+  enabled               boolean NOT NULL DEFAULT false,
+  active_version        bigint NULL CHECK (active_version > 0),
+  active_envelope       jsonb NULL,
+  candidate_version     bigint NULL CHECK (candidate_version > 0),
+  candidate_envelope    jsonb NULL,
+  candidate_status      text NULL CHECK (candidate_status IN ('pending','validating','valid','invalid')),
+  candidate_validation  jsonb NOT NULL DEFAULT '{}', -- allowlisted non-secret health/capability metadata
+  validation_token      uuid NULL,
+  validation_until      timestamptz NULL,
+  updated_at            timestamptz NOT NULL DEFAULT now(),
+  updated_by            uuid NULL REFERENCES users(id) ON DELETE SET NULL,
+  activated_at          timestamptz NULL,
+  validated_at          timestamptz NULL,
+  last_error_code       text NULL,
+  CHECK ((active_version IS NULL) = (active_envelope IS NULL)),
+  CHECK ((candidate_version IS NULL) = (candidate_envelope IS NULL)),
+  CHECK ((candidate_version IS NULL) = (candidate_status IS NULL)),
+  CHECK ((validation_token IS NULL) = (validation_until IS NULL)),
+  CHECK (coalesce(candidate_status = 'validating', false) = (validation_token IS NOT NULL)),
+  CHECK (NOT enabled OR active_version IS NOT NULL),
+  CHECK (active_version IS NULL OR active_version <= revision),
+  CHECK (candidate_version IS NULL OR candidate_version <= revision)
+);
+```
+
+One row represents the service operator's provider account; personal Jev/Ollama accounts are allowed.
+It is not an end-user BYOK feature. Envelope format and key rotation are binding in specs 01/04: a
+random per-secret data key encrypts the credential using AES-256-GCM; an externally configured master
+key wraps that data key. Versioned envelope JSON contains key ID, nonce, tag, ciphertext and wrapped-key
+nonce/tag/ciphertext, never plaintext; authenticated data binds provider, secret version, envelope
+version and purpose. Master keys exist only in deployment secrets, never SQL/settings/backups beside
+the encrypted database. Validate envelope shape and byte lengths before storage.
+
+The API uses narrow admin functions (§6), not SELECT access to encrypted credentials. Stage a candidate
+with optimistic `revision`, retain the working active version, explicitly request validation via a
+worker job carrying only provider/candidateVersion, then activate that exact validated candidate under CAS. A failed/stale validation
+cannot replace the active secret. `enabled=false` is a durable disabled state, never a request to fall
+back silently to an environment credential. Worker leases and decrypted caches bind provider+version;
+rotation/disable invalidates caches, with no credentials in responses, errors, logs or queue payloads.
+
+
+**Settings key registry.** Every key has a zod schema in `packages/shared/src/settings.ts`. Readers
+fall back to the listed default when the row is missing. Only the keys marked *admin* can be written
+through `PATCH /admin/settings`.
+
+| Key | Value | Default when missing | Written by |
+|---|---|---|---|
+| `engine.daily_budget_usd` | number | env `DAILY_BUDGET_USD` | admin, `eval apply-g1` |
+| `engine.llm_daily_cap` | int | 200 | admin |
+| `engine.prefilter_enabled` | boolean | false | admin, only after G1 recall validation |
+| `engine.circuit` | `{typesafe: Breaker, llm: Breaker, resetRequested: {typesafe?: iso, llm?: iso}}` with `Breaker = {state: 'closed'\|'open'\|'half_open'\|'auth', openedAt?, openUntil?, reopenCount, probeToken?: uuid, probeUntil?: iso}` | all closed | worker routers (state); admin (reset request only) |
+| `engine.budget_alerts` | `{day: 'YYYY-MM-DD', p80At?: iso, p100At?: iso}` | — | worker router (records crossings only; spec 04 §6) |
+| `engine.laya` | `{enrich?: string[]}` (language codes) | `{}` | admin (M9) |
+| `engine.model_pin` | `{model: string, llm?: {fast: string, strong: string}, laya?: {checkpointSha: string, calibrationVersion: string}, since: iso}` (`llm` only while `LLM_FALLBACK_ENABLED`; `laya` only in M9) | — | the first worker that starts with a different `TYPESAFE_MODEL` or LLM fallback state (`LLM_FALLBACK_ENABLED` switched either way, or a different `OLLAMA_MODEL_FAST`/`OLLAMA_MODEL_STRONG` while it is on), which also enqueues the rebuild; for `laya`, the Laya worker when its checkpoint or calibration differs (spec 11 §8) |
+| `language_modes` | `{[lang]: 'native'\|'translate'}` | env `LANGUAGE_MODES` (only before the seed stores it) | seed (only when missing), admin, `apply-g1` |
+| `card_text_mode` | `'as_written'\|'english'` | `'as_written'` | admin, `apply-g1` |
+| `translate.tier2_daily_cap` | int | 300 | admin, `apply-g1` |
+| `ranker.thresholds` | deep partial of `RankerConfig` (spec 06 §11) | `{}` | admin, `apply-g1` |
+| `ranker.settings_version` | int | 0 | bumped by the API on ranking-relevant settings changes, and by `eval apply-g1` (spec 06 §7) |
+| `question_sets.active` | `{enrich?: stringId, match?: stringId, cluster?: stringId, suggest?: stringId}` | `{}` | seed (only when a kind is absent), admin |
+| `signup_mode` | `'invite'\|'open'\|'closed'` | env `SIGNUP_MODE` | admin |
+| `ops.events` | `[{kind, detail, at}]`, the last 50 | `[]` | `POST /admin/ops-event` |
+| `house.progress` | `{[job]: {cursor?: JsonValue, updatedAt: iso, version: int, completedAt?: iso}}`; per-job cursor schema registered in shared jobs; `completedAt` advances only after a full successful pass | `{}` | housekeeping jobs; startup catch-up (spec 11 §6) |
+| `alerts.state` | `{[alertKey]: {firstAt, lastSentAt, active}}` | `{}` | `house.alerts` |
+| `metrics.daily.<YYYY-MM-DD>` | metrics JSON (spec 10 §7) | — | `house.metrics` |
+| `worker.heartbeat` | `{[processId]: {at: iso, queues: string[], evalIngestOnly: boolean, envCredentials: ('typesafe'\|'ollama')[]}}` | `{}` | every worker process, every 30 s (entries older than 1 h are pruned). `envCredentials` lists the providers with a non-empty bootstrap env key, presence only, never key material or length (spec 08 §9.1). `eval ingest-sample` needs an entry younger than 90 s with `evalIngestOnly = true` (spec 10 §2.1) |
+
+`pnpm db:seed` inserts **only** `card_text_mode`, `question_sets.active = {}` and `language_modes`
+(from `LANGUAGE_MODES`) when they are missing. Deploys run the seed before starting the services, so
+the API compares a `language_modes` change against the modes the workers actually use and enqueues
+its re-enrichment (spec 08 §9). Other keys with an env fallback are never seeded, so their env
+default stays effective until an admin sets a value.
+
+---
+
+## 3. Shared article layer (private card exceptions use RLS)
+
+```sql
+CREATE TABLE origin_fetch_state (                 -- shared safe-fetch coordination, spec 03
+  origin        text PRIMARY KEY,                 -- normalized scheme://host:port
+  next_start_at timestamptz NOT NULL DEFAULT now(),
+  blocked_until timestamptz NULL,
+  leases        jsonb NOT NULL DEFAULT '[]',       -- [{token: uuid, expires_at: iso}], at most two
+  last_used_at  timestamptz NOT NULL DEFAULT now(), -- set by every reservation; idle rows purged (spec 11 §5)
+  CHECK (jsonb_typeof(leases) = 'array' AND jsonb_array_length(leases) <= 2)
+);
+
+CREATE TABLE feeds (
+  id                 bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  url                text NOT NULL UNIQUE,        -- canonical feed URL (spec 03 §5), the feed's identity
+  fetch_url          text NOT NULL,               -- original URL that feed.fetch requests, tracking params kept (spec 03 §5)
+  merged_into_id     bigint NULL REFERENCES feeds(id) ON DELETE RESTRICT, -- retired feed identity
+  site_url           text NULL,
+  title              text NULL,
+  description        text NULL,
+  icon_url           text NULL,
+  lang_hint          text NULL,                   -- ISO 639-1, from <language> or majority of detected items
+  status             text NOT NULL DEFAULT 'active'
+                       CHECK (status IN ('active','quarantined','dead','paused')),
+  etag               text NULL,
+  last_modified      text NULL,
+  fetch_interval_s   int  NOT NULL DEFAULT 900 CHECK (fetch_interval_s > 0),
+  min_interval_s     int  NOT NULL DEFAULT 900 CHECK (min_interval_s > 0),   -- min over subscribers' plans (spec 08 §6)
+  next_fetch_at      timestamptz NOT NULL DEFAULT now(),
+  last_fetch_at      timestamptz NULL,
+  last_success_at    timestamptz NULL,
+  last_new_item_at   timestamptz NULL,
+  consecutive_errors int NOT NULL DEFAULT 0,
+  consecutive_empty  int NOT NULL DEFAULT 0,
+  quarantine_count   int NOT NULL DEFAULT 0,
+  total_fetches      int NOT NULL DEFAULT 0,
+  total_errors       int NOT NULL DEFAULT 0,
+  total_empty        int NOT NULL DEFAULT 0,
+  last_error_code    text NULL,
+  last_error         text NULL,
+  last_error_at      timestamptz NULL,
+  first_error_at     timestamptz NULL,            -- start of the current error streak
+  quarantined_until  timestamptz NULL,
+  subscriber_count   int NOT NULL DEFAULT 0 CHECK (subscriber_count >= 0),
+  unsubscribed_at    timestamptz NULL DEFAULT now(), -- without subscribers since; cleared while subscribed, reset when subscriber_count returns to 0; idle feeds are purged (spec 11 §5)
+  publish_stats      jsonb NOT NULL DEFAULT '{}', -- {recent_gaps_s: int[≤20], items_7d: int}
+  fetch_options      jsonb NOT NULL DEFAULT '{}', -- {user_agent?: string, translate_strong?: boolean}
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  updated_at         timestamptz NOT NULL DEFAULT now(),
+  CHECK (merged_into_id IS NULL OR (merged_into_id <> id AND status = 'dead'))
+);
+CREATE INDEX feeds_due_idx ON feeds (next_fetch_at) WHERE subscriber_count > 0 AND status IN ('active','quarantined');
+
+CREATE TABLE story_clusters (
+  id                         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  representative_article_id  bigint NULL,          -- FK added after articles exists
+  size                       int NOT NULL DEFAULT 1 CHECK (size >= 0),
+  created_at                 timestamptz NOT NULL DEFAULT now(),
+  updated_at                 timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE articles (
+  id               bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  url              text NULL,                      -- navigable HTTP(S) best link; null for linkless items
+  canonical_url    text NOT NULL,                  -- spec 03 §5
+  url_key          text NOT NULL UNIQUE,           -- canonical_url WITH scheme; stable urn:bantoozi:<feed_id>:<sha256(identity)> if linkless
+  title            text NOT NULL,
+  title_norm       text NOT NULL,                  -- spec 03 §6.1
+  author           text NULL,
+  categories       text[] NOT NULL DEFAULT '{}',
+  excerpt          text NULL,                      -- plain text, ≤ 2,000 chars
+  excerpt_html     text NULL,                      -- sanitized, ≤ 10,000 chars
+  image_url        text NULL,
+  published_at     timestamptz NULL,
+  first_seen_at    timestamptz NOT NULL DEFAULT now(),
+  lang             text NULL,                      -- ISO 639-1 or 'und'
+  lang_confidence  real NULL CHECK (lang_confidence BETWEEN 0 AND 1),
+  word_count       int NULL CHECK (word_count >= 0),
+  content_hash     text NOT NULL,                  -- spec 03 §6.2
+  content_revision bigint NOT NULL DEFAULT 1 CHECK (content_revision > 0),
+  story_cluster_id bigint NULL REFERENCES story_clusters(id) ON DELETE SET NULL,
+  cluster_set_id   bigint NULL,                    -- cluster set whose call placed it; NULL if unclustered or placed by mute-story (spec 05 §2). FK added after question_sets exists
+  pipeline_state   text NOT NULL DEFAULT 'ingested'
+                     CHECK (pipeline_state IN ('ingested','stale','extracted','translated','enriched',
+                                               'matched','degraded','failed')),
+  enrich_engine    text NULL,                      -- engine that produced the active facets
+  updated_at       timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE story_clusters ADD CONSTRAINT story_clusters_rep_fk
+  FOREIGN KEY (representative_article_id) REFERENCES articles(id) ON DELETE SET NULL;
+CREATE INDEX articles_first_seen_idx ON articles (first_seen_at DESC);
+CREATE INDEX articles_title_trgm_idx ON articles USING gin (title_norm gin_trgm_ops);
+CREATE INDEX articles_cluster_idx ON articles (story_cluster_id) WHERE story_cluster_id IS NOT NULL;
+CREATE INDEX articles_state_idx ON articles (pipeline_state, first_seen_at);
+
+CREATE TABLE feed_items (                          -- which feeds carried which article
+  feed_id        bigint NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+  article_id     bigint NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  guid           text NULL,
+  first_seen_at  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (feed_id, article_id)
+);
+CREATE INDEX feed_items_article_idx ON feed_items (article_id);
+CREATE INDEX feed_items_feed_time_idx ON feed_items (feed_id, first_seen_at DESC);
+CREATE UNIQUE INDEX feed_items_guid_idx ON feed_items (feed_id, guid) WHERE guid IS NOT NULL;
+
+CREATE TABLE article_aliases (                     -- other URLs that resolve to the same article
+  url_key     text PRIMARY KEY,
+  article_id  bigint NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  source      text NOT NULL CHECK (source IN ('feed_link','redirect','rel_canonical','near_duplicate'))
+);
+
+CREATE TABLE article_bodies (
+  article_id         bigint PRIMARY KEY REFERENCES articles(id) ON DELETE CASCADE,
+  article_revision   bigint NOT NULL CHECK (article_revision > 0),
+  resolved_url       text NULL,
+  status             text NOT NULL CHECK (status IN ('ok','skipped','failed','blocked','too_large','not_html')),
+  http_status        int NULL,
+  body_text          text NULL,                    -- available extracted source, not model-truncated
+  body_html          text NULL,                    -- sanitized available source; no scripts/unsafe embeds
+  completeness       text NOT NULL DEFAULT 'partial' CHECK (completeness IN ('complete','partial')),
+  completeness_reason text NULL,                   -- e.g. excerpt_only/paywall/truncated/extraction_failed
+  body_lead          text NULL,                    -- ≤ 1,500 chars; kept
+  extractor_version  text NOT NULL,
+  error              text NULL,
+  extracted_at       timestamptz NOT NULL DEFAULT now(),
+  CHECK (coalesce(octet_length(body_text), 0) + coalesce(octet_length(body_html), 0) <= 10485760)
+);
+
+
+CREATE TABLE article_snapshots (                   -- immutable bookmark archive, not inference input
+  id                 bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  article_id         bigint NOT NULL REFERENCES articles(id) ON DELETE RESTRICT,
+  source_revision    bigint NOT NULL CHECK (source_revision > 0),
+  captured_at        timestamptz NOT NULL DEFAULT now(),
+  source_url         text NULL,
+  title              text NOT NULL,
+  author             text NULL,                   -- snapshot metadata, never read from later live article
+  published_at       timestamptz NULL,
+  body_text          text NOT NULL DEFAULT '',
+  body_html          text NULL,
+  content_sha256     text NOT NULL,                -- canonical exact stored title/author/date/source/text/HTML
+  completeness       text NOT NULL CHECK (completeness IN ('complete','partial')),
+  completeness_reason text NULL,
+  source             text NOT NULL CHECK (source IN ('feed','page')),
+  extractor_version  text NOT NULL,
+  cold_at            timestamptz NULL,             -- cold lifecycle marker after 30 days; never a TTL
+  unreferenced_at    timestamptz NULL,             -- set on final bookmark/pin release; clear on attach
+  CHECK (coalesce(octet_length(body_text), 0) + coalesce(octet_length(body_html), 0) <= 10485760),
+  UNIQUE (article_id, source_revision, content_sha256)
+);
+ALTER TABLE article_snapshots ALTER COLUMN body_text SET STORAGE EXTENDED;
+ALTER TABLE article_snapshots ALTER COLUMN body_html SET STORAGE EXTENDED;
+ALTER TABLE article_snapshots ALTER COLUMN body_text SET COMPRESSION pglz;
+ALTER TABLE article_snapshots ALTER COLUMN body_html SET COMPRESSION pglz;
+
+CREATE TABLE article_translations (
+  article_id   bigint NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  article_revision bigint NOT NULL CHECK (article_revision > 0),
+  source_sha256 text NOT NULL,                     -- exact source text sent to translation
+  target_lang  text NOT NULL DEFAULT 'en',
+  engine       text NOT NULL CHECK (engine IN ('libretranslate','ollama')),
+  model        text NULL,
+  source_lang  text NOT NULL,
+  title        text NULL,
+  excerpt      text NULL,
+  body_lead    text NULL,
+  quality      text NOT NULL CHECK (quality IN ('ok','weak','fail')),
+  quality_detail jsonb NOT NULL DEFAULT '{}',
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (article_id, target_lang, engine)
+);
+```
+
+### 3.1 Model answers (versioned caches and immutable call audit)
+
+```sql
+CREATE TABLE question_sets (
+  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  kind        text NOT NULL CHECK (kind IN ('enrich','match','cluster','suggest')),
+  version     text NOT NULL UNIQUE,              -- e.g. 'enrich-v1'; never reuse for new wording
+  sha256      text NOT NULL UNIQUE,              -- of the canonical JSON definition (spec 05 §2)
+  definition  jsonb NOT NULL,                    -- static part; match sets store the builder template
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+-- settings key 'question_sets.active': IDs are decimal strings, validated against kind + question_sets
+ALTER TABLE articles ADD CONSTRAINT articles_cluster_set_fk
+  FOREIGN KEY (cluster_set_id) REFERENCES question_sets(id);
+
+CREATE TABLE engine_reservations (
+  id              uuid PRIMARY KEY,              -- one reservation per outbound wire attempt
+  day             date NOT NULL,                 -- UTC budget day
+  engine          text NOT NULL,
+  kind            text NOT NULL,
+  user_id         uuid NULL REFERENCES users(id) ON DELETE SET NULL,
+  reserved_usd    numeric(14,8) NOT NULL CHECK (reserved_usd >= 0),
+  reserved_calls  int NOT NULL DEFAULT 1 CHECK (reserved_calls > 0),
+  status          text NOT NULL CHECK (status IN ('reserved','settled','uncertain')),
+  actual_usd      numeric(14,8) NULL CHECK (actual_usd >= 0),
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  settled_at      timestamptz NULL,
+  expires_at      timestamptz NOT NULL,
+  CHECK ((status = 'settled') = (settled_at IS NOT NULL))
+);
+CREATE INDEX engine_reservations_day_idx ON engine_reservations (day, status);
+
+CREATE TABLE engine_calls (
+  id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  engine          text NOT NULL CHECK (engine IN ('typesafe','llm','laya','libretranslate')),
+  kind            text NOT NULL CHECK (kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval')),
+  model           text NULL,
+  article_id      bigint NULL REFERENCES articles(id) ON DELETE SET NULL,
+  question_set_id bigint NULL REFERENCES question_sets(id) ON DELETE RESTRICT,
+  reservation_id  uuid NULL UNIQUE REFERENCES engine_reservations(id) ON DELETE SET NULL,
+  logical_request_id uuid NOT NULL,
+  credential_version bigint NULL CHECK (credential_version > 0),
+  article_revision bigint NULL CHECK (article_revision > 0),
+  state_sha256    text NULL,
+  card_ids        bigint[] NULL,
+  user_id         uuid NULL REFERENCES users(id) ON DELETE SET NULL, -- cost attribution only
+  n_questions     int NOT NULL DEFAULT 0 CHECK (n_questions >= 0),
+  input_tokens    int NOT NULL DEFAULT 0 CHECK (input_tokens >= 0),
+  output_tokens   int NOT NULL DEFAULT 0 CHECK (output_tokens >= 0),
+  cost_usd        numeric(12,8) NOT NULL DEFAULT 0 CHECK (cost_usd >= 0),
+  billing         text NOT NULL DEFAULT 'known' CHECK (billing IN ('known','uncertain')),
+  latency_ms      int NULL CHECK (latency_ms >= 0),
+  attempts        int NOT NULL DEFAULT 1 CHECK (attempts > 0), -- per-engine ordinal within logical request
+  status          text NOT NULL CHECK (status IN ('ok','error','timeout','rate_limited','invalid_request',
+                                                  'invalid_response','auth_error')),
+  error           text NULL,
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX engine_calls_created_idx ON engine_calls (created_at);
+CREATE INDEX engine_calls_article_idx ON engine_calls (article_id);
+CREATE UNIQUE INDEX engine_calls_attempt_idx ON engine_calls (logical_request_id, engine, attempts);
+
+CREATE TABLE article_facets (                     -- Call A answers
+  article_id       bigint NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  question_set_id  bigint NOT NULL REFERENCES question_sets(id) ON DELETE RESTRICT,
+  article_revision bigint NOT NULL CHECK (article_revision > 0),
+  state_sha256     text NOT NULL,
+  engine           text NOT NULL,
+  model            text NULL,
+  state_variant    text NOT NULL CHECK (state_variant IN ('native','translated')),
+  answers          jsonb NOT NULL,               -- normalized answers (spec 04 §2)
+  features         jsonb NOT NULL,               -- flattened numeric features (spec 05 §3.4)
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now(),   -- bumped whenever answers or features change (e.g. L2 topics arrive)
+  PRIMARY KEY (article_id, question_set_id)
+);
+
+CREATE TABLE topics (                             -- taxonomy (spec 05 §3.2), seeded
+  id           text PRIMARY KEY,                  -- 'technology' or 'technology.ai_ml'
+  parent_id    text NULL REFERENCES topics(id) ON DELETE RESTRICT,
+  level        smallint NOT NULL CHECK (level IN (1,2)),
+  name_en      text NOT NULL,
+  name_sk      text NOT NULL,
+  description  text NOT NULL,
+  sort         int NOT NULL DEFAULT 0,
+  CHECK ((level = 1 AND parent_id IS NULL) OR (level = 2 AND parent_id IS NOT NULL)),
+  CHECK (parent_id IS NULL OR parent_id <> id)
+);
+
+CREATE TABLE interest_cards (
+  id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  kind            text NOT NULL CHECK (kind IN ('interest','label')),
+  slug            text NULL UNIQUE,               -- library cards only; stable seed identity (spec 05 §8)
+  title           text NOT NULL,                  -- default display name (≤ 60 chars); per-user override in user_cards.title_override
+  body            jsonb NOT NULL,                 -- {interest, not_for?, interest_en?, not_for_en?, examples_yes?: string[], examples_no?: string[]}
+  text_hash       text NOT NULL UNIQUE,           -- spec 05 §5.1
+  lang            text NOT NULL DEFAULT 'en',
+  topic_ids       text[] NOT NULL DEFAULT '{}',   -- topics(id) values; used for prefiltering and suggestions
+  origin          text NOT NULL CHECK (origin IN ('library','user','fork')),
+  visibility      text NOT NULL CHECK (visibility IN ('public','shared','private')),
+  parent_card_id  bigint NULL REFERENCES interest_cards(id) ON DELETE SET NULL,
+  owner_user_id   uuid NULL REFERENCES users(id) ON DELETE CASCADE,  -- access owner, private forks only
+  creator_user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL, -- original author; never a holder count
+  publication_veto_at timestamptz NULL,            -- only original-creator response function may set/clear
+  i18n            jsonb NOT NULL DEFAULT '{}',    -- {"sk": {"title": "…", "interest": "…"}} for library cards
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  retired_at      timestamptz NULL,
+  CHECK ((visibility = 'private') = (owner_user_id IS NOT NULL))
+);
+CREATE INDEX interest_cards_topics_idx ON interest_cards USING gin (topic_ids);
+
+
+CREATE TABLE library_card_versions (
+  library_slug      text NOT NULL,
+  version           int NOT NULL CHECK (version > 0),
+  card_id           bigint NOT NULL UNIQUE REFERENCES interest_cards(id) ON DELETE RESTRICT,
+  previous_card_id  bigint NULL REFERENCES interest_cards(id) ON DELETE RESTRICT,
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (library_slug, version),
+  CHECK (previous_card_id IS NULL OR previous_card_id <> card_id)
+);
+
+CREATE TABLE card_answers (                       -- Call B answers
+  article_id        bigint NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  card_id           bigint NOT NULL REFERENCES interest_cards(id) ON DELETE CASCADE,
+  p                 real NOT NULL CHECK (p >= 0 AND p <= 1),
+  engine            text NOT NULL CHECK (engine IN ('typesafe','llm','laya','prefilter')),
+  model             text NULL,
+  question_set_sha  text NOT NULL REFERENCES question_sets(sha256) ON DELETE RESTRICT,
+  article_revision  bigint NOT NULL CHECK (article_revision > 0),
+  state_sha256      text NOT NULL,
+  card_input_sha256 text NOT NULL,
+  state_variant     text NOT NULL CHECK (state_variant IN ('native','translated')),
+  answered_at       timestamptz NOT NULL DEFAULT now(),   -- set to now() on every insert AND upsert
+  PRIMARY KEY (article_id, card_id)
+);
+CREATE INDEX card_answers_card_idx ON card_answers (card_id);
+
+CREATE TABLE article_topics_l2 (                  -- Call B side-questions: level-2 topic answers
+  article_id  bigint NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  l1_id       text NOT NULL REFERENCES topics(id) ON DELETE RESTRICT,
+  article_revision bigint NOT NULL CHECK (article_revision > 0),
+  question_set_sha text NOT NULL REFERENCES question_sets(sha256) ON DELETE RESTRICT,
+  state_sha256 text NOT NULL,
+  engine      text NOT NULL,
+  model       text NULL,
+  state_variant text NOT NULL CHECK (state_variant IN ('native','translated')),
+  answer      jsonb NOT NULL,                     -- normalized Choice answer over the L1's children
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (article_id, l1_id)
+);
+
+CREATE TABLE match_queue (                        -- pending (article, card) questions; coalesced per article
+  article_id   bigint NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  card_id      bigint NOT NULL REFERENCES interest_cards(id) ON DELETE CASCADE,
+  article_revision bigint NOT NULL CHECK (article_revision > 0),
+  lease_token  uuid NULL,
+  lease_until  timestamptz NULL,
+  next_attempt_at timestamptz NOT NULL DEFAULT now(),
+  last_error   text NULL,
+  priority     smallint NOT NULL DEFAULT 5 CHECK (priority BETWEEN 1 AND 9),       -- 1 = interactive … 9 = bulk
+  user_id      uuid NULL REFERENCES users(id) ON DELETE SET NULL, -- backfill cost attribution
+  attempts     smallint NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  enqueued_at  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (article_id, card_id),
+  CHECK ((lease_token IS NULL) = (lease_until IS NULL))
+);
+CREATE INDEX match_queue_order_idx ON match_queue (priority, enqueued_at);
+
+CREATE TABLE feed_cards (                         -- which cards to ask for articles of a feed
+  feed_id  bigint NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+  card_id  bigint NOT NULL REFERENCES interest_cards(id) ON DELETE CASCADE,
+  holders  int NOT NULL CHECK (holders > 0),
+  PRIMARY KEY (feed_id, card_id)
+);
+
+CREATE TABLE usage_daily (                        -- cost attribution rollup (spec 04 §7)
+  day            date NOT NULL,
+  user_id        uuid NOT NULL,                   -- '00000000-0000-0000-0000-000000000000' = platform
+  engine         text NOT NULL,
+  kind           text NOT NULL,
+  calls          int NOT NULL DEFAULT 0 CHECK (calls >= 0),
+  input_tokens   bigint NOT NULL DEFAULT 0 CHECK (input_tokens >= 0),
+  output_tokens  bigint NOT NULL DEFAULT 0 CHECK (output_tokens >= 0),
+  cost_usd       numeric(14,8) NOT NULL DEFAULT 0 CHECK (cost_usd >= 0),
+  PRIMARY KEY (day, user_id, engine, kind)
+);
+```
+
+
+### 3.2 Durable asynchronous work
+
+```sql
+CREATE TABLE job_outbox (
+  id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue         text NOT NULL,                   -- shared jobs registry; no arbitrary queue names
+  payload       jsonb NOT NULL,
+  dedupe_key    text NULL,                       -- includes revision + every semantic payload option
+  user_id       uuid NULL REFERENCES users(id) ON DELETE SET NULL, -- requester; null for worker work
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  available_at  timestamptz NOT NULL DEFAULT now(),
+  delivered_at  timestamptz NULL,
+  attempts      int NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  lease_token   uuid NULL,
+  lease_until   timestamptz NULL,
+  last_error    text NULL,
+  CHECK ((lease_token IS NULL) = (lease_until IS NULL)),
+  CHECK (jsonb_typeof(payload) = 'object')
+);
+CREATE INDEX job_outbox_pending_idx ON job_outbox (available_at, id) WHERE delivered_at IS NULL;
+CREATE UNIQUE INDEX job_outbox_dedupe_idx ON job_outbox (queue, dedupe_key)
+  WHERE delivered_at IS NULL AND dedupe_key IS NOT NULL;
+```
+
+- The state change and required job intent commit together, using the same `TenantTx`/worker
+  transaction. API validation authorizes the actual target user, feeds and cards before insertion;
+  RLS authenticates the requester but cannot infer authorization from arbitrary JSON. Only typed
+  enqueue helpers can construct an intent. Required follow-on jobs from workers also use the outbox.
+- `dedupe_key` may collapse **identical pending work only**; use a fingerprint of the complete
+  validated payload and revision. A full rank or force-tier2 request cannot be consumed by a weaker
+  request. NULL is allowed where coalescing is unnecessary. Lease/in-flight work cannot swallow a
+  later revision; serialize the producer's conflict handling and relay completion on the outbox row.
+- A worker relay claims due rows in a short `FOR UPDATE SKIP LOCKED` transaction, writes a random
+  token and expiry, commits, sends the job, then marks delivered **only with that token**. Expired
+  leases are reclaimable; no database transaction spans network/queue waiting. Failed sends retain
+  their intent with bounded exponential backoff and an operational alert, never silent deletion.
+- Crash after send and before marking delivered means duplicate delivery: consumers are idempotent
+  and use revision/fencing checks (§3.3). A broker singleton conflict counts as delivery only when the
+  broker contract proves equivalent work is pending; otherwise retain and retry the intent.
+- Relay interval ≤ 1 second while work exists. Purge delivered intents after 7 days; never purge
+  undelivered work merely because it is old. Redact/purge user identifiers in job payloads on account
+  erasure; consumed stale jobs must check that their target user/article still exists and is active.
+
+### 3.3 Cache identity, leases and consistency
+
+The model audit is append-only during its retention period. `article_facets`, `card_answers`,
+`article_topics_l2`, `article_bodies` and `article_translations` are **current-result caches**, which
+may be replaced; they are not an unlimited historical archive. Question-set definitions are immutable.
+
+- `articles.content_revision` is a monotonically increasing fencing token. A change to the actual
+  article source, selected extracted text or selected translation increments it in the same transaction as invalidation and
+  the new outbox intent. Preserve the source text hash separately. Any extraction/translation row
+  retained across that transaction is deliberately stamped with the new revision only when it is
+  still the valid input; do not accidentally make the just-selected translation immediately stale.
+- Every async handler captures the input revision and selected question set/model/card mode before
+  leaving the transaction. On completion it locks/rechecks the article and writes outputs only when
+  the revision still matches and the claimed lease token is still owned. Discard stale results
+  (keeping billed-call audit); schedule the current revision if not already pending. Cluster results
+  also recheck all candidate revisions and membership under ordered row locks.
+- Cache reads require matching `article_revision`, question-set identity, selected model/engine
+  policy and `state_sha256 = sha256(canonicalJson(actual model state))`. Card answers additionally
+  require `card_input_sha256` over the exact rendered question, card text mode, derived translations,
+  label title and examples. SQL existence alone is never proof of a current answer. `source_sha256`
+  in translation rows fingerprints actual submitted source fields. Never hash secrets into metadata.
+- A reset removes old current facets, L2 topics and matches (or renders them ineligible by revision),
+  replaces pending match rows at the new revision, clears their leases/attempts and records the next
+  pipeline intent atomically. A delayed old worker cannot delete a new queue row: completion includes
+  `(article_id, card_id, article_revision, lease_token)` predicates.
+- `match_queue` claims commit before model calls. Select due rows with `attempts < 5`, acquire a
+  token/expiry, renew while live and release only rows with that token. Exhausted rows remain with
+  `last_error` for bounded operator/housekeeping recovery; missing answers affect only the relevant
+  user-card pair, not all readers of an article. Lease expiry alone does not prove an upstream call
+  was unbilled. Failed claims and budget deferrals have distinct retry accounting (spec 05).
+- Spend admission serializes reservations under a UTC-day transaction advisory lock before every
+  billed attempt; settle call audit, usage rollup and reservation once in one transaction. A UNIQUE
+  reservation ID prevents double settlement. `reserved`/`uncertain` amounts continue to consume the
+  day budget; a timeout/crash does not release a possibly billed reservation. Spec 04 defines cost
+  estimates, retry accounting and evaluation isolation. `usage_daily`'s zero UUID is a platform
+  sentinel, intentionally without a user FK; purge/reassign personal rows on account erasure.
+- `user.suggest` admission atomically locks/updates the user row: active user, last admitted attempt
+  older than 24 hours (or null), and lease absent/expired. Claim a fresh token/expiry; after candidate
+  selection and budget admission, stamp the attempt time under that token **before the first wire
+  call**. No candidates or budget denial releases the lease without advancing the timestamp.
+  Completion/renewal must match the token and recheck the
+  user's input revision; duplicate jobs cannot bypass the 24-hour admission limit. A crash may forgo
+  that day's suggestion, but never creates an unbounded retry bill. Clear only the owned lease.
+- JSON settings read/modify/write locks the setting row (or performs a single conditional SQL
+  update); concurrent breaker resets, heartbeat keys, counters and setting-version increments must
+  not overwrite each other. For a missing key, insert default `ON CONFLICT DO NOTHING` before locking.
+- Cluster `size` is the actual count of current members, not an increment-only counter. Update it and
+  the representative after merges/deletes in the same transaction; a representative must belong to
+  the cluster. Feed merge pointers form an acyclic chain; lock both feed IDs in ascending order and
+  resolve to the live root before changing subscriptions. See spec 03 for full merge semantics.
+- Global canonical URL/alias identity is serialized under sorted transaction advisory locks keyed by
+  the exact `url_key`, followed by rechecking **both** identity tables; uniqueness in either table
+  alone cannot prevent cross-table duplicates. Feed items retain the first non-null GUID per pair;
+  alternate GUIDs that arrive with the same URL do not replace that stable identifier.
+
+
+
+### 3.4 Inference authorization is separate from ingestion
+
+Every new subscription is `off`. Fetching/parsing/extracting for reading or bookmark capture remains
+allowed; article translation, enrichment, matching and model-based clustering need a live inference
+authorization even when the provider is free/local. In particular, a global article's existing enriched
+state is not permission to expand inference for every subscribed reader.
+
+- `off`: no automated inference. An explicit selected-article training action creates immutable
+  `analysis_requests` and may move the subscription to `training` in the same authorized transaction.
+- `training`: only the exact manually selected articles can trigger inference; no feed-wide backfill,
+  neighboring article expansion, subscription scan or ordinary label/bookmark action creates demand.
+- `active`: automated inference is allowed when `feed_items.first_seen_at` for that exact carrier
+  is **at/after** this subscription's
+  `inference_activated_at`, with the current `inference_version`. Enabling does not silently analyze
+  history. Existing older articles can still be explicitly selected for manual analysis.
+
+Mode changes lock the subscription, check the client's expected version, increment
+`inference_version`, set `inference_activated_at` to the activation transaction time only when entering
+active (null when leaving), invalidate old authorization and refresh affected `feed_cards`. Reapplying
+the same mode is an idempotent no-op. Only explicit user enablement activates automatic inference
+for new arrivals; there is no automatic graduation from accumulated ratings or historical backfill.
+
+`feed_cards` materializes cards/labels of **active subscriptions only**. It is a candidate demand cache,
+not an authorization proof: a worker must recheck live user/subscription, article carrier+activation
+cutoff and scope before each external attempt and before publishing user effects. Manual analysis
+uses the specific `analysis_requests.id` instead, never broadening the feed union. Coalesced shared
+calls retain all contributing live authorizations; removing one reader's demand cannot cancel another
+reader's authorized work. If all demand disappears, stop new attempts; already billed work is audited.
+
+Selected-article request creation verifies the article belongs to the specified live subscription,
+locks/reads the exact source and input manifest, stores the pre-feedback snapshot and hash, then writes
+an `analysis.process {analysisRequestId}` outbox intent in the same transaction. The worker
+claims pending or expired-running requests in a short transaction, records a fresh lease token/expiry,
+and completes/renews/retries/cancels only with that token. Clear the lease when leaving `running`.
+Crash recovery reuses the immutable input and never silently creates a fresh grant. Store bounded
+sanitized `last_error_code`, retry due time and attempt accounting; no DB transaction spans inference. A request contains no provider secret. Its
+snapshot freezes article/card/question/model context independently of later feedback. Completion saves
+`result_snapshot`/`result_sha`; if the live article changed, these historical features may still serve
+that recorded training event, but cannot overwrite current shared caches. A changed subscription
+version, deletion or cancellation revokes further attempts. Feedback references the request ID rather
+than treating unavailable features as zero or mixing future context into an old rating.
+
+### 3.5 Permanent bookmark archives and image preferences
+
+`article_snapshots` stores the exact available readable text and sanitized HTML, with provenance and a
+checksum; source safety limits still apply and paywalls/truncation/extraction errors are explicitly
+partial. Bookmark preservation is text and sanitized HTML only: no images or media bytes are mirrored,
+embedded as data URLs, or cached as archive assets. Model input length limits apply only to
+model views, never destructively shorten archived source content. Snapshot content/provenance is
+immutable; only lifecycle fields `cold_at`/`unreferenced_at` and a vetted article-merge FK relocation may
+change in place. A corrected or more complete capture is another row.
+
+Bookmarking atomically binds a snapshot of any body already present **before** a concurrent source
+edit or body purge can replace it. A vetted helper (§6) copies trusted stored content; ordinary API
+callers cannot submit archive HTML or arbitrary snapshot IDs. Missing/partial content schedules capture
+without inference. Completion compares `bookmark_capture_generation`, current bookmark presence and
+requested capture revision; stale unbookmark/rebookmark jobs cannot reattach old content. Preserve a
+complete saved snapshot if a later fetch fails or returns less content. An intentional replacement
+must explicitly create/bind a new snapshot rather than mutate the old payload.
+
+Snapshots and the owning article survive unsubscribe, source deletion/404, normal body/article TTLs
+and feed errors while any bookmark or valid undo pin refers to them. `bookmark_snapshot_pins` stores
+FK-backed references through the ten-minute undo deadline; exact undo restores the original binding,
+not a new fetch. Garbage collection checks both bookmark references and unexpired pins under locks;
+delete expired pins first, then snapshots unreferenced for at least seven days, and only then eligible
+articles. Set/clear `unreferenced_at` under the same lock when final references detach/new references
+attach; the seven-day GC delay is never a bookmark expiry. Hard
+account deletion releases that user's references; another user's saved copy remains.
+
+TOAST provides transparent lossless compression of larger text values from first write. `pglz` above
+works on PostgreSQL 16; `lz4` is an optional deployment-tested substitution only when compiled support
+exists. After 30 days set `cold_at` and remove redundant hot body storage only after verifying the
+archive binding/checksum. This is a storage lifecycle change, not an expiry or a promise that tiny or
+incompressible strings shrink. Restore testing includes saved text/HTML and checksums.
+
+`user_feed_preferences.image_policy` is tenant data independent of subscription lifetime. Its
+`inherit|allow|block` value remains available for saved items after unsubscribe, via
+`bookmark_origin_feed_id`; all reader/card/expanded/saved rendering consults spec 08/09's effective
+policy before any image URL is fetched. A feed identity merge remaps these preferences and bookmark
+origins in the merge transaction; conflicting settings preserve `block` until the user chooses
+otherwise. No inference mode switch changes an image preference. An explicit `allow` or `block` row
+keeps its feed from the idle-feed purge (spec 11 §5), so unsubscribing and later re-adding the same
+URL finds the same choice; only `inherit` rows are deleted with a purged feed.
+
+### 3.6 Authorship, publication consent and opt-in library versions
+
+Internal reuse of a shared card is allowed and does not publish it in the public library.
+`creator_user_id` records the original author independently of private access ownership and current
+holders; deduplication/re-adoption never changes it. User/fork inserts derive it from the authenticated
+creator. A user's erasure clears it rather than assigning authorship to a later holder.
+
+Public promotion remains an explicit administrator action for an eligible shared card (at least three
+holders, per spec 05), recorded through `card_publication_requests` for its original creator. It needs
+one of two distinct authorization bases:
+
+- `creator_approval`: that creator affirmatively approves the exact card text and proposed publication
+  metadata hash/version. Only the creator can approve/decline; the administrator cannot impersonate
+  a response.
+- `creator_inactive_30d`: the known, non-deleted original creator has been continuously inactive for
+  at least 30 days and there is no outstanding explicit publication veto. This authorizes publication
+  under the owner's policy; it is **not** affirmative creator consent. Leave `responded_at` null when
+  the creator never responded, do not manufacture an `approved` transition, and record the inactivity
+  evidence separately on the `promoted` row.
+
+At actual promotion, lock the original creator, card and request in the established order and verify
+identity, non-deleted state, proposal hashes, expected version and any request expiry. Read the creator's
+current `last_active_at`; only when that is null may the same known creator's trusted `created_at` be
+used. Compare this anchor with a publication timestamp captured **after** locking: at least 720 hours
+must have elapsed for the inactivity route. Never use card creation, request creation, another holder's
+activity, or an assumed date for a missing author. Any new activity resets the inactivity countdown;
+a prior eligibility display or a 30-day-old pending request is not sufficient evidence.
+
+Missing, ambiguous or deleted creator provenance stays pending/shared. A decline sets
+`interest_cards.publication_veto_at`; creating another request, changing metadata or waiting longer
+cannot clear it. Only a later affirmative decision by the original creator for the exact proposed
+publication can clear that veto, with the earlier rejection retained in the audit history. There is
+no automatic background publisher and no change to candidate eligibility or the admin promotion step.
+
+`authorization_kind`, immutable `authorization_evidence`, `promoted_at` and `promoted_by` are written
+atomically with public visibility. Evidence has a shared zod union: both branches include policyVersion
+(1), creatorUserId, cardTextHash, publicationSha and requestVersion; approval includes respondedAt and
+the approved version, while inactivity includes anchorSource (`last_active_at` or `created_at`),
+anchorAt and checkedAt. The timestamp difference proves the full 30-day interval. Metadata changes
+invalidate an old proposal approval and require a new version/authorization check. Seeded library
+content remains a separately reviewed source, never a way to relabel user-created material to bypass
+these rules.
+
+The creator's account erasure keeps this audit trail, including the evidence of already public cards.
+`card_publication_requests.user_id` is set to NULL, and erasure sets `creatorUserId` in the evidence to
+null (the union allows null for this case). That is the sole exception to evidence immutability, as
+creator FK clearing is for `interest_cards`; every other field stays. A request whose creator was
+erased can never be approved or promoted.
+
+`library_card_versions` is an immutable semantic chain for a stable library slug; enforce consecutive
+versions and predecessor belonging to the same slug in the repository/constraint trigger. A semantic
+change creates a new card and version. Only the newest version may own `interest_cards.slug` as a
+lookup alias; older held cards retain their identity and text. No seed/admin update may repoint
+`user_cards`/`user_labels` automatically. The holder explicitly applies a new version or requests a
+private fork/adaptation, preserving scopes, strengths and examples as specified in spec 05. Concurrent
+apply uses the expected current holding and user revision. Display-only metadata corrections follow
+the limited policy in spec 05, never smuggling semantic changes into existing model identities.
+Labels remain neutral organization metadata: their existence/assignment cannot itself create a
+positive/negative ranking or training label, or enable inference for an untrained subscription.
+
+
+---
+
+## 4. Per-user tables (RLS enforced)
+
+Every table in this section has `user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE` and the
+policy from §5. The one exception is `card_publication_requests`, whose `user_id` is set to NULL on
+the creator's erasure so the publication audit survives (§3.6); such rows match no tenant.
+
+```sql
+CREATE TABLE subscriptions (
+  user_id           uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  feed_id           bigint NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+  title_override    text NULL,
+  folder            text NULL,
+  allow_duplicates  boolean NOT NULL DEFAULT false,  -- false = fold story clusters (spec 08 §5.1)
+  hidden            boolean NOT NULL DEFAULT false,  -- hide feed from sidebar, keep ranking
+  inference_mode    text NOT NULL DEFAULT 'off' CHECK (inference_mode IN ('off','training','active')),
+  inference_version bigint NOT NULL DEFAULT 0 CHECK (inference_version >= 0),
+  inference_activated_at timestamptz NULL,
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, feed_id),
+  CHECK ((inference_mode = 'active') = (inference_activated_at IS NOT NULL))
+);
+CREATE INDEX subscriptions_feed_idx ON subscriptions (feed_id);
+
+
+CREATE TABLE user_feed_preferences (
+  user_id      uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  feed_id      bigint NOT NULL REFERENCES feeds(id) ON DELETE RESTRICT,
+  image_policy text NOT NULL DEFAULT 'inherit' CHECK (image_policy IN ('inherit','allow','block')),
+  updated_at   timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, feed_id)
+);
+
+CREATE TABLE analysis_requests (                  -- explicit selected-article training demand
+  id                  uuid PRIMARY KEY,          -- server-generated, receipt binds client idempotency key
+  user_id             uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  feed_id             bigint NOT NULL REFERENCES feeds(id) ON DELETE RESTRICT, -- outlives the subscription; after unsubscribe the worker cancels only pending/running rows (spec 08 §4)
+  article_id          bigint NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  article_revision    bigint NOT NULL CHECK (article_revision > 0),
+  inference_version   bigint NOT NULL CHECK (inference_version >= 0),
+  input_snapshot      jsonb NOT NULL,             -- immutable pre-feedback article/card/question context
+  input_sha           text NOT NULL,
+  result_snapshot     jsonb NULL,                 -- features/answers of frozen input, never future feedback
+  result_sha          text NULL,
+  status              text NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','running','complete','failed','cancelled')),
+  lease_token         uuid NULL,
+  lease_until         timestamptz NULL,
+  attempts            int NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  next_attempt_at     timestamptz NOT NULL DEFAULT now(),
+  last_error_code     text NULL,
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  completed_at        timestamptz NULL,
+  CHECK ((result_snapshot IS NULL) = (result_sha IS NULL)),
+  CHECK (status <> 'complete' OR result_snapshot IS NOT NULL),
+  CHECK ((lease_token IS NULL) = (lease_until IS NULL)),
+  CHECK ((status = 'running') = (lease_token IS NOT NULL)),
+  CHECK ((status IN ('complete','failed','cancelled')) = (completed_at IS NOT NULL))
+);
+CREATE INDEX analysis_requests_pending_idx ON analysis_requests (next_attempt_at, created_at)
+  WHERE status IN ('pending','running');
+CREATE INDEX analysis_requests_user_article_idx ON analysis_requests (user_id, article_id, created_at DESC);
+
+CREATE TABLE card_publication_requests (           -- exact proposal, genuine responses and publication basis
+  id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id             uuid NULL REFERENCES users(id) ON DELETE SET NULL, -- original creator; NULL after erasure (§3.6)
+  card_id             bigint NOT NULL REFERENCES interest_cards(id) ON DELETE CASCADE,
+  requested_by        uuid NULL REFERENCES users(id) ON DELETE SET NULL,
+  status              text NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','approved','rejected','expired','promoted')),
+  card_text_hash      text NOT NULL,
+  publication_payload jsonb NOT NULL,             -- exact proposed slug/title/topics/i18n/version metadata
+  publication_sha    text NOT NULL,
+  version             bigint NOT NULL DEFAULT 1 CHECK (version > 0),
+  requested_at        timestamptz NOT NULL DEFAULT now(),
+  expires_at          timestamptz NULL,            -- optional proposal expiry, not the inactivity clock
+  responded_at        timestamptz NULL,            -- genuine creator response only
+  authorization_kind text NULL CHECK (authorization_kind IN ('creator_approval','creator_inactive_30d')),
+  authorization_evidence jsonb NULL,              -- immutable versioned union described in §3.6
+  promoted_at         timestamptz NULL,
+  promoted_by         uuid NULL REFERENCES users(id) ON DELETE SET NULL,
+  CHECK (expires_at IS NULL OR expires_at > requested_at),
+  CHECK ((authorization_kind IS NULL) = (authorization_evidence IS NULL)),
+  CHECK ((status = 'promoted') = (promoted_at IS NOT NULL)),
+  CHECK ((status = 'promoted') = (authorization_kind IS NOT NULL)),
+  CHECK (status NOT IN ('approved','rejected') OR responded_at IS NOT NULL),
+  CHECK (authorization_kind <> 'creator_approval' OR responded_at IS NOT NULL)
+);
+CREATE UNIQUE INDEX card_publication_pending_idx ON card_publication_requests (card_id)
+  WHERE status IN ('pending','approved');
+
+CREATE TABLE user_cards (
+  user_id        uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  card_id        bigint NOT NULL REFERENCES interest_cards(id) ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED,
+  strength       text NOT NULL CHECK (strength IN ('must','love','like','never')),
+  scope_feed_id  bigint NULL,                     -- composite FK below prevents scope outside subscriptions
+  title_override text NULL,                        -- the user's own name for the card (cards are shared and immutable)
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  updated_at     timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, card_id),
+  FOREIGN KEY (user_id, scope_feed_id) REFERENCES subscriptions(user_id, feed_id) ON DELETE CASCADE
+);
+CREATE INDEX user_cards_card_idx ON user_cards (card_id);
+
+CREATE TABLE user_labels (
+  user_id     uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  card_id     bigint NOT NULL REFERENCES interest_cards(id) ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED,  -- kind = 'label'
+  name        text NOT NULL,
+  color       text NOT NULL DEFAULT 'slate',
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, card_id)
+);
+
+CREATE TABLE user_rules (
+  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id     uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind        text NOT NULL CHECK (kind IN ('mute_keyword','mute_story','block_feed','block_domain',
+                                            'block_author','boost_feed','boost_domain')),
+  value       text NOT NULL,                     -- keyword / cluster id / feed id / domain / author
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  expires_at  timestamptz NULL,
+  CHECK (kind <> 'mute_story' OR expires_at IS NOT NULL) -- a muted story always expires (spec 11 §5)
+);
+CREATE INDEX user_rules_user_idx ON user_rules (user_id);
+
+CREATE TABLE user_article (
+  user_id            uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  article_id         bigint NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  -- ranking cache (written by user.rank; spec 06)
+  lane               text NOT NULL DEFAULT 'new'
+                       CHECK (lane IN ('new','for_you','maybe','everything','hidden')),
+  tier               smallint NULL CHECK (tier BETWEEN 1 AND 5),
+  p_like             real NULL CHECK (p_like BETWEEN 0 AND 1),
+  score_source       text NOT NULL DEFAULT 'none'
+                       CHECK (score_source IN ('none','cards','model','degraded')),
+  rules_fired        text[] NOT NULL DEFAULT '{}',
+  explain            jsonb NULL,                  -- spec 06 §6
+  label_suggestions  bigint[] NOT NULL DEFAULT '{}',
+  score_version      text NOT NULL DEFAULT '0:0', -- rankerVersion:settingsVersion; spec 06
+  rank_revision      bigint NOT NULL DEFAULT 0 CHECK (rank_revision >= 0),
+  next_rank_at       timestamptz NULL,
+  scored_at          timestamptz NULL,
+  -- reader state (written by the API)
+  state_version      bigint NOT NULL DEFAULT 0 CHECK (state_version >= 0),
+  opened_at          timestamptz NULL,
+  read_at            timestamptz NULL,
+  rating             smallint NULL CHECK (rating IN (-1, 1)),
+  reason             text NULL CHECK (reason IN ('off_topic','clickbait','seen','shallow','promo','other')),
+  rated_at           timestamptz NULL,
+  dwell_ms           int NULL CHECK (dwell_ms >= 0),
+  bookmarked_at      timestamptz NULL,
+  bookmark_snapshot_id bigint NULL REFERENCES article_snapshots(id) ON DELETE RESTRICT,
+  bookmark_origin_feed_id bigint NULL REFERENCES feeds(id) ON DELETE SET NULL,
+  bookmark_capture_generation bigint NOT NULL DEFAULT 0 CHECK (bookmark_capture_generation >= 0),
+  bookmark_capture_status text NULL CHECK (bookmark_capture_status IN ('pending','saved','partial','failed')),
+  bookmark_capture_error_code text NULL,
+  archived_at        timestamptz NULL,
+  label_ids          bigint[] NOT NULL DEFAULT '{}',
+  feedback_prompted_at timestamptz NULL,
+  CHECK ((bookmarked_at IS NULL) = (bookmark_capture_status IS NULL)),
+  CHECK (bookmarked_at IS NOT NULL OR
+    (bookmark_snapshot_id IS NULL AND bookmark_capture_status IS NULL AND bookmark_origin_feed_id IS NULL)),
+  CHECK (bookmark_capture_status NOT IN ('saved','partial') OR bookmark_snapshot_id IS NOT NULL),
+  CHECK ((rating IS NULL) = (rated_at IS NULL)),
+  CHECK (reason IS NULL OR (rating IS NOT NULL AND rating = -1)),
+  PRIMARY KEY (user_id, article_id)
+);
+CREATE INDEX user_article_lane_idx ON user_article (user_id, lane, p_like DESC NULLS LAST, article_id DESC)
+  WHERE archived_at IS NULL AND read_at IS NULL;
+CREATE INDEX user_article_bookmarks_idx ON user_article (user_id, bookmarked_at DESC)
+  WHERE bookmarked_at IS NOT NULL;
+
+CREATE TABLE feedback_events (                    -- append-only training log
+  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id     uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  article_id  bigint NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  kind        text NOT NULL CHECK (kind IN ('rate','unrate','open','read','unread','dwell','prompt_answer',
+                                            'bookmark','unbookmark','label','unlabel','mark_read','hide','unhide','undo')),
+  value       jsonb NOT NULL DEFAULT '{}',        -- spec 06 §8: server-derived consent/origin + eligible feature snapshot
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX feedback_events_user_idx ON feedback_events (user_id, created_at DESC);
+
+CREATE TABLE user_models (
+  user_id            uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  version            int NOT NULL,
+  feature_spec_sha   text NOT NULL,
+  n_labels           int NOT NULL,
+  n_pos              int NOT NULL,
+  n_neg              int NOT NULL,
+  weights            jsonb NOT NULL,             -- {feature_name: weight}
+  intercept          real NOT NULL,
+  scaler             jsonb NOT NULL,             -- {feature_name: [mean, std]}
+  calibration        jsonb NOT NULL,             -- {a, b} Platt parameters
+  metrics            jsonb NOT NULL,             -- {cv_auc, cv_logloss, baseline_auc}
+  active             boolean NOT NULL DEFAULT false,
+  trained_at         timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, version)
+);
+CREATE UNIQUE INDEX user_models_active_idx ON user_models (user_id) WHERE active;
+
+CREATE TABLE api_mutations (                      -- idempotency/undo; spec 08
+  user_id      uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  id           uuid NOT NULL,                     -- client's Idempotency-Key
+  request_hash text NOT NULL,                     -- method + route + canonical validated body
+  route        text NOT NULL,
+  status       int NOT NULL CHECK (status BETWEEN 200 AND 499),
+  response     jsonb NOT NULL,
+  undo         jsonb NULL,                        -- allowlisted prior fields + expected versions
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  expires_at   timestamptz NOT NULL,
+  PRIMARY KEY (user_id, id),
+  CHECK (expires_at >= created_at + interval '7 days')
+);
+CREATE INDEX api_mutations_expiry_idx ON api_mutations (expires_at);
+
+
+CREATE TABLE bookmark_snapshot_pins (               -- exact undo roots; no JSON-only GC references
+  user_id      uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  mutation_id  uuid NOT NULL,
+  snapshot_id  bigint NOT NULL REFERENCES article_snapshots(id) ON DELETE RESTRICT,
+  expires_at   timestamptz NOT NULL,
+  PRIMARY KEY (user_id, mutation_id, snapshot_id),
+  FOREIGN KEY (user_id, mutation_id) REFERENCES api_mutations(user_id, id) ON DELETE CASCADE
+);
+CREATE INDEX bookmark_snapshot_pins_expiry_idx ON bookmark_snapshot_pins (expires_at);
+
+CREATE TABLE card_suggestions (
+  user_id       uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  card_id       bigint NOT NULL REFERENCES interest_cards(id) ON DELETE CASCADE,
+  question_set_id bigint NOT NULL REFERENCES question_sets(id), -- suggest set that produced it; only the active set's rows are listed (spec 08 §7)
+  model_pin     text NOT NULL,                  -- settings['engine.model_pin'].model when produced: suggest calls are bulk, so they use Jev only (the LLM fallback serves interactive requests, spec 04 §5); rows from another model are not listed
+  score         real NOT NULL CHECK (score BETWEEN 0 AND 1),
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  dismissed_at  timestamptz NULL,
+  PRIMARY KEY (user_id, card_id)
+);
+```
+
+---
+
+## 5. Row-level security
+
+For each per-user table `t` in §4:
+
+```sql
+ALTER TABLE t ENABLE ROW LEVEL SECURITY;
+ALTER TABLE t FORCE ROW LEVEL SECURITY;
+CREATE POLICY t_tenant ON t
+  USING      (user_id = nullif(current_setting('app.user_id', true), '')::uuid)
+  WITH CHECK (user_id = nullif(current_setting('app.user_id', true), '')::uuid);
+```
+
+- The API runs **every authenticated request** inside a transaction that first executes
+  `SELECT set_config('app.user_id', $1, true)`. `packages/db` exposes
+  `withTenant(db, userId, async (tx) => …)`, and repositories for per-user tables accept only a `tx`
+  created that way (a branded `TenantTx` type).
+- Without `app.user_id`, per-user tables return no rows. An integration test asserts this for every
+  table in §4.
+- `bantoozi_worker` bypasses RLS. It is used only by worker handlers, the eval CLI and housekeeping, and
+  the API never holds its credentials. Cross-tenant reads that the API needs (feed-level refreshes,
+  admin statistics) go through the SECURITY DEFINER functions of §6, which run as the BYPASSRLS owner.
+- Shared tables that contain private-card material are not exempt from tenant isolation. Apply the
+  policies below; repository DTO checks remain defense in depth. Private forks are visible only to
+  their owner, including on admin card-list routes. `feed_cards` and `match_queue` stay worker-only.
+
+
+### 5.1 Private cards, saved snapshots and durable intents
+
+```sql
+ALTER TABLE interest_cards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE interest_cards FORCE ROW LEVEL SECURITY;
+CREATE POLICY interest_cards_read ON interest_cards FOR SELECT TO bantoozi_app
+  USING (visibility IN ('public','shared') OR
+         owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid);
+CREATE POLICY interest_cards_create ON interest_cards FOR INSERT TO bantoozi_app
+  WITH CHECK (nullif(current_setting('app.user_id', true), '') IS NOT NULL AND
+    ((visibility = 'shared' AND origin = 'user' AND owner_user_id IS NULL
+      AND creator_user_id = nullif(current_setting('app.user_id', true), '')::uuid) OR
+     (visibility = 'private' AND origin = 'fork' AND
+      creator_user_id = nullif(current_setting('app.user_id', true), '')::uuid AND
+      owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid) OR
+     (visibility = 'public' AND origin = 'library' AND EXISTS
+       (SELECT 1 FROM users WHERE id = nullif(current_setting('app.user_id', true), '')::uuid
+          AND role = 'admin' AND deleted_at IS NULL))));
+CREATE POLICY interest_cards_update ON interest_cards FOR UPDATE TO bantoozi_app
+  USING (visibility IN ('public','shared') OR
+         owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)
+  WITH CHECK (visibility IN ('public','shared') OR
+              owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid);
+
+ALTER TABLE card_answers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE card_answers FORCE ROW LEVEL SECURITY;
+CREATE POLICY card_answers_read ON card_answers FOR SELECT TO bantoozi_app
+  USING (EXISTS (SELECT 1 FROM interest_cards c WHERE c.id = card_id));
+
+ALTER TABLE article_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE article_snapshots FORCE ROW LEVEL SECURITY;
+CREATE POLICY article_snapshots_saved_read ON article_snapshots FOR SELECT TO bantoozi_app
+  USING (EXISTS (
+      SELECT 1 FROM user_article ua WHERE ua.bookmark_snapshot_id = article_snapshots.id
+        AND ua.bookmarked_at IS NOT NULL
+        AND ua.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+    ) OR EXISTS (
+      SELECT 1 FROM bookmark_snapshot_pins p WHERE p.snapshot_id = article_snapshots.id
+        AND p.expires_at > now()
+        AND p.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+    ));
+
+ALTER TABLE job_outbox ENABLE ROW LEVEL SECURITY;
+ALTER TABLE job_outbox FORCE ROW LEVEL SECURITY;
+CREATE POLICY job_outbox_requester ON job_outbox FOR INSERT TO bantoozi_app
+  WITH CHECK (user_id = nullif(current_setting('app.user_id', true), '')::uuid);
+```
+
+The API has no SELECT policy/grant on outbox. Server-side helpers insert without `RETURNING`; the
+requester's UUID is not a queue target authorization mechanism. Anonymous auth email is the explicit exception: commit the short-lived challenge, then perform
+bounded synchronous SMTP delivery; failure leaves no delivery guarantee and the user can request a
+replacement code (spec 08). Invite email follows the same pattern after the invite commits; on
+failure the inviter shares the returned link (spec 08 §2.2). Never invent a tenant or grant an API-wide BYPASSRLS role for mail. Codes,
+SMTP credentials and session secrets never enter generic outbox payloads or logs.
+
+### 5.2 Required integrity triggers and repositories
+
+These are part of the M0 hand-written migrations and schema parity snapshot, even where Drizzle
+cannot express them. PostgreSQL FKs bypass RLS, and array/JSON elements are not FKs, so API validation
+alone does not satisfy these requirements.
+
+| Invariant | Database enforcement and repository behavior |
+|---|---|
+| Card holdings cannot attach another tenant's private card | BEFORE INSERT/UPDATE trigger on `user_cards`, `user_labels`, `card_suggestions`: the referenced card exists, is public/shared or owned by `NEW.user_id`, and has kind `interest`, `label`, `interest` respectively. Check actual card ownership even for worker writes; raise generic constraint failure without private values |
+| Immutable card identity | BEFORE UPDATE on `interest_cards`: reject changes to `kind`, `text_hash`, `lang`, creator identity, ownership or base `body` text/examples. Creator FK clearing during verified account erasure is the sole authorship exception. `interest_en`/`not_for_en` permit initial validated pair fill, or an explicit authorized/audited full-pair retranslation/reset that updates the card-input fingerprint and invalidates only admitted dependent answers (specs 05/07). Partial or silent overwrites are forbidden. Label `title` cannot change because it is hashed. Private forks cannot be promoted. Shared→public metadata promotion requires admin plus exact creator approval or a recorded valid 30-day inactivity authorization, with no outstanding creator veto; non-admin API writes can only un-retire an otherwise identical accessible row. Worker/owner metadata maintenance does not bypass identity invariants |
+| Label assignment integrity | DEFERRABLE INITIALLY DEFERRED constraint triggers on changed `user_article.label_ids`/`label_suggestions` and `user_labels` removals/repointing validate the **final row state**: distinct non-null IDs, each present in that user's `user_labels`, and suggestions exclude assigned labels. Label deletion removes its IDs from both arrays in the same transaction; fork replacement uses deduplicated arrays. Serialize label changes and assignments on the owning user row |
+| Scope owns a subscription | Composite FK on `(user_id, scope_feed_id)` removes a scoped holding when that subscription is deleted; it never silently widens it to every feed. Capture affected cards/feeds before deletion for cache refresh and outbox work |
+| Topic references | Taxonomy seeding validates each level-2 parent is level 1 and every `interest_cards.topic_ids` entry exists. BEFORE INSERT/UPDATE trigger enforces this on admin/runtime card changes; seeded taxonomy IDs are never deleted while used by arrays or model definitions |
+| Reader state and feedback agree | Lock the current `user_article` row (or conflict-safe insert), apply patch, increment `state_version`, append event and idempotency receipt, and write outbox intents in one transaction. Workers update only ranking-cache columns, except `house.archive`, whose `archived_at` write locks the row, rechecks, increments `state_version` and appends no event (spec 11 §6), and the article merge, which advances the surviving row's `state_version` past both inputs (spec 03 §8.4). Reject rating reasons unless the rating is -1 |
+| One active personal model | Lock the `users` row before allocating a model version or switching `active`; deactivate old and activate new in one transaction. Partial unique index rejects dual activation; stale training input revision cannot activate a model |
+| Inference gate generation | Subscription BEFORE UPDATE validates mode/timestamp/version transition. Manual request BEFORE INSERT checks active tenant, live subscription/version, actual feed carrier and frozen input hash; its input snapshot/hash is immutable after insert. Vetted feed/article identity merges may relocate only operational FKs while preserving recorded source identity in the snapshot; cancel and clear leases for pending/running old-identity requests. Completed manual results are worker-only. No label action or shared card adoption may bypass this gate |
+| Bookmark binding | Snapshot BEFORE UPDATE rejects payload/provenance edits; lifecycle/approved merge changes only. Binding helper checks snapshot article identity and completeness, increments capture generation, and maintains `unreferenced_at` plus undo pins under locks. Ordinary API writes cannot choose snapshot IDs or saved status |
+| Original-author publication | Request creation derives `user_id` from the immutable creator. Response functions alone maintain the durable publication veto. Promote locks/rechecks creator activity/provenance, veto, version and hashes and stores genuine-approval or 30-day-inactivity evidence; public visibility updates fail without that transaction or a reviewed initial-library seed. Published authorization evidence is immutable |
+| Library revision chain | Validate predecessor slug/version and immutable `library_card_versions` mapping. Semantic updates cannot re-point holdings except explicit recipient acceptance. Never mutate immutable label title |
+| Retention and account erasure | Gather user feed IDs and private card IDs, delete/rewrite personal derived references and receipts, clear arrays, then delete the account, refresh feeds and commit. Deferred card FKs allow the user's cascading holds/forks to disappear in either FK execution order; another user's hold of a private fork is impossible. Revoke live sessions at soft deletion |
+
+A tenant GUC is a trusted server context, not cryptographic authentication. RLS protects against missing
+repository filters; it cannot protect a database role allowed to run arbitrary `SET app.user_id` SQL.
+All values are bound parameters and no user can execute SQL or select the server's database role.
+
+
+---
+
+## 6. SQL functions (SECURITY DEFINER, owned by the BYPASSRLS `bantoozi_owner`)
+
+```sql
+-- Recompute feed_cards for the given feeds: cards and labels of active-inference, non-deleted subscribers,
+-- respecting card scope.
+CREATE FUNCTION refresh_feed_cards(p_feed_ids bigint[]) RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  -- Serialize overlapping feed refreshes; new snapshots after the wait see committed subscribers.
+  PERFORM f.id FROM feeds f WHERE f.id = ANY(p_feed_ids) ORDER BY f.id FOR NO KEY UPDATE;
+  DELETE FROM feed_cards WHERE feed_id = ANY(p_feed_ids);
+  INSERT INTO feed_cards (feed_id, card_id, holders)
+  SELECT s.feed_id, x.card_id, count(DISTINCT s.user_id)
+  FROM subscriptions s
+  JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
+  JOIN (
+    SELECT user_id, card_id, scope_feed_id FROM user_cards
+    UNION ALL
+    SELECT user_id, card_id, NULL::bigint FROM user_labels
+  ) x ON x.user_id = s.user_id AND (x.scope_feed_id IS NULL OR x.scope_feed_id = s.feed_id)
+  JOIN interest_cards c ON c.id = x.card_id AND c.retired_at IS NULL
+  WHERE s.feed_id = ANY(p_feed_ids) AND s.inference_mode = 'active'
+  GROUP BY s.feed_id, x.card_id;
+END;
+$$;
+
+-- Keep feeds.subscriber_count and feeds.min_interval_s in sync.
+-- p_plan_min_interval = {"beta": 900, "admin": 300}, built from packages/shared/src/plans.ts.
+CREATE FUNCTION refresh_feed_subscribers(p_feed_ids bigint[], p_plan_min_interval jsonb) RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  PERFORM f.id FROM feeds f WHERE f.id = ANY(p_feed_ids) ORDER BY f.id FOR NO KEY UPDATE;
+  UPDATE feeds f
+     SET subscriber_count = coalesce(x.cnt, 0),
+         unsubscribed_at  = CASE WHEN coalesce(x.cnt, 0) = 0 THEN coalesce(f.unsubscribed_at, now()) END,
+         min_interval_s   = coalesce(x.min_iv, 900),
+         updated_at       = now()
+    FROM (SELECT DISTINCT unnest(p_feed_ids) AS feed_id) ids
+    LEFT JOIN (
+      SELECT s.feed_id, count(*) AS cnt,
+             min(coalesce((p_plan_min_interval ->> u.plan)::int, 900)) AS min_iv
+      FROM subscriptions s JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
+      WHERE s.feed_id = ANY(p_feed_ids)
+      GROUP BY s.feed_id) x ON x.feed_id = ids.feed_id
+   WHERE f.id = ids.feed_id;
+END;
+$$;
+
+-- True only for an active administrator session or an operational login.
+-- session_user preserves the real login inside SECURITY DEFINER; test role connections separately.
+CREATE FUNCTION admin_context_allowed() RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT session_user IN ('bantoozi_owner','bantoozi_worker') OR EXISTS (
+    SELECT 1 FROM users u WHERE u.id = nullif(current_setting('app.user_id', true), '')::uuid
+      AND u.role = 'admin' AND u.deleted_at IS NULL
+  );
+$$;
+REVOKE EXECUTE ON FUNCTION admin_context_allowed() FROM PUBLIC;
+
+-- Admin statistics: how many active users hold each card (as interest or label).
+CREATE FUNCTION admin_card_holders(p_card_ids bigint[]) RETURNS TABLE (card_id bigint, holders int)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT c.id,
+         ((SELECT count(*) FROM user_cards uc JOIN users u ON u.id = uc.user_id
+             WHERE uc.card_id = c.id AND u.deleted_at IS NULL)
+        + (SELECT count(*) FROM user_labels ul JOIN users u ON u.id = ul.user_id
+             WHERE ul.card_id = c.id AND u.deleted_at IS NULL))::int
+  FROM unnest(p_card_ids) AS c(id) WHERE admin_context_allowed();
+$$;
+
+-- Admin usage: per-user attributed cost over the last p_days UTC days.
+-- direct = user-attributed usage_daily rows (backfills, suggestions, fork questions);
+-- shared = platform 'match' cost × (Σ over the user's (feed, card) holdings of 1/holders) / count(feed_cards).
+CREATE FUNCTION admin_usage_attribution(p_days int)
+RETURNS TABLE (user_id uuid, direct_usd numeric, shared_usd numeric)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  WITH win AS (SELECT * FROM usage_daily WHERE day > (now() AT TIME ZONE 'UTC')::date - p_days
+               AND day <= (now() AT TIME ZONE 'UTC')::date AND p_days BETWEEN 1 AND 366),
+  direct AS (SELECT w.user_id, sum(w.cost_usd) AS usd FROM win w
+             WHERE w.user_id <> '00000000-0000-0000-0000-000000000000' GROUP BY w.user_id),
+  m AS (SELECT coalesce(sum(cost_usd), 0) AS usd FROM win
+        WHERE user_id = '00000000-0000-0000-0000-000000000000' AND kind = 'match'),
+  tot AS (SELECT greatest(count(*), 1) AS n FROM feed_cards),
+  holding AS (
+    SELECT DISTINCT s.user_id, fc.feed_id, fc.card_id, fc.holders
+    FROM feed_cards fc
+    JOIN subscriptions s ON s.feed_id = fc.feed_id AND s.inference_mode = 'active'
+    JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
+    JOIN (SELECT user_id, card_id, scope_feed_id FROM user_cards
+          UNION ALL SELECT user_id, card_id, NULL::bigint FROM user_labels) x
+      ON x.user_id = s.user_id AND x.card_id = fc.card_id
+     AND (x.scope_feed_id IS NULL OR x.scope_feed_id = fc.feed_id)),
+  shared AS (SELECT h.user_id, sum(1.0 / h.holders) AS share FROM holding h GROUP BY h.user_id)
+  SELECT coalesce(d.user_id, sh.user_id), coalesce(d.usd, 0),
+         coalesce(sh.share, 0) * (SELECT usd FROM m) / (SELECT n FROM tot)
+  FROM direct d FULL JOIN shared sh ON sh.user_id = d.user_id
+  WHERE admin_context_allowed();
+$$;
+
+REVOKE EXECUTE ON FUNCTION refresh_feed_cards(bigint[]), refresh_feed_subscribers(bigint[], jsonb),
+  admin_card_holders(bigint[]), admin_usage_attribution(int) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION refresh_feed_cards(bigint[]), refresh_feed_subscribers(bigint[], jsonb),
+  admin_card_holders(bigint[]), admin_usage_attribution(int) TO bantoozi_app, bantoozi_worker;
+```
+
+**Shared rate limiter.** The M0 migration also supplies `rate_limit_hit(p_key text, p_window_s int,
+p_max int)` as SECURITY DEFINER with a fixed trusted search path, explicit revoke from PUBLIC and
+execute only for `bantoozi_app`. One atomic upsert starts a new window when the old one has ended,
+otherwise increments `hits`, and returns `(allowed boolean, retry_after_s int)`. It backs the
+`@fastify/rate-limit` store, so limits hold across API processes and restarts. Keys never contain a
+plaintext email: per-email limits use an HMAC of the normalized address with `SESSION_PEPPER`.
+
+**Narrow API accounting helper.** The M0 hand-written migration also supplies
+`record_card_translation(p_logical_request_id uuid, p_attempt int, p_latency_ms int, p_status text,
+p_error_code text)` as SECURITY DEFINER with a fixed trusted search path, explicit revoke from PUBLIC
+and execute only for `bantoozi_app`/`bantoozi_worker`. Require an active `app.user_id`; derive attribution
+from it, hard-code `engine='libretranslate'`, `kind='translate'`, `cost_usd=0`, and omit article/card IDs
+until a card exists. Validate the status/attempt/latency and a bounded error-code allowlist, never accept
+raw text. Insert at most once per logical request/engine/attempt and increment zero-cost usage in the same
+transaction. The API may use this only for its free tier-1 card translation (spec 07); paid reservation
+and settlement remain worker-only. Record metadata, never translated private text, in audit rows.
+
+**Bookmark archive functions (M0/M4).** `capture_bookmark_snapshot(p_article_id bigint,
+p_origin_feed_id bigint)` and `clear_bookmark_snapshot(p_article_id bigint)` run as SECURITY DEFINER,
+with PUBLIC execute revoked and API execute explicitly granted. Each derives the authenticated active
+tenant, verifies article access (current subscribed carrier or owned bookmark), and acquires the
+owning user/article/reader rows in the documented lock order. Capture copies only stored trusted
+current source into a checksummed snapshot, sets/retains `bookmarked_at`, advances capture generation,
+binds any available content and writes capture intent when absent/partial. Clear advances generation,
+clears binding/status/origin/bookmarked_at, and records final-reference lifecycle state. No helper
+increments reader `state_version` or appends feedback on its own: the enclosing idempotent action
+transaction does so exactly once. Snapshot completion is worker-only and generation-fenced.
+`restore_bookmark_snapshot(p_article_id bigint, p_mutation_id uuid)` accepts no caller-supplied snapshot
+ID: it verifies the caller's unexpired undo receipt/pin and expected reader version, restores its exact
+snapshot/origin, and advances generation to invalidate old capture jobs. Pins survive through the undo
+deadline; restoration never relies on a refetch. Tests exercise these helpers as the real API role.
+
+**Credential admin functions (M0/M4).** Supply `admin_provider_credentials_metadata()`,
+`admin_stage_provider_credential(p_provider text, p_expected_revision bigint, p_envelope jsonb)`,
+`admin_activate_provider_credential(p_provider text, p_expected_revision bigint,
+p_candidate_version bigint)` and `admin_set_provider_enabled(p_provider text,
+p_expected_revision bigint, p_enabled boolean)`. Every function enforces `admin_context_allowed()`
+and an active session for request attribution, validates arguments, and locks the provider row.
+Metadata returns only version/status/timestamps/sanitized health, never envelopes. Staging stores an
+already encrypted envelope for the exact next revision without making a provider call or queueing a validation probe. A separate
+`admin_validate_provider_credential(p_provider text, p_candidate_version bigint,
+p_expected_revision bigint)` transaction enqueues `provider.validate {provider,candidateVersion}`
+only after the administrator explicitly requests Validate. Activation requires the same valid candidate, current revision/configuration fingerprint and a
+validation result no older than 24 hours; disable
+preserves a tombstone. Worker validation CAS includes candidate version and lease token. Keyring
+cryptography is application-side, not a PostgreSQL decryption function. No generic SQL setter or
+ciphertext SELECT privilege is granted to the API role. The five functions above are SECURITY
+DEFINER with a fixed trusted search path, PUBLIC execute revoked and execute granted to
+`bantoozi_app` only; each still enforces `admin_context_allowed()`.
+
+**Publication consent functions (M0/M4).** Supply admin-only request/list/promote functions and
+`respond_card_publication(p_request_id bigint, p_expected_version bigint, p_approve boolean)` for the
+authenticated original author. Request derives the author from the card, stores exact hashes and
+exposes the proposed metadata for informed consent; inactivity does not prevent requesting a response.
+Response checks caller ownership and pending state under creator/card/request locks, records a genuine
+approved/rejected response, sets/clears the durable creator veto as §3.6 allows and bumps version.
+Promotion rechecks candidate eligibility, live creator identity/activity, veto, request status/version
+and exact hashes under those locks. It uses genuine approval when valid; otherwise only the 30-day
+inactivity rule may authorize it. Record the chosen authorization evidence and mark promoted/public in
+one transaction. No-response inactivity publication leaves `responded_at` null. Missing provenance,
+soft/hard-deleted creator, explicit veto, insufficient inactivity, expiry or stale proposal returns a
+conflict/hold. Admin eligibility listings are advisory and never a substitute for this final check.
+The functions preserve rejection/publication audit evidence, and no new request can erase a veto.
+Admin listing uses the function rather than bypassing tenant RLS. Library semantic update helpers
+write the next immutable revision but never migrate other readers' holdings. These functions are
+SECURITY DEFINER with a fixed trusted search path, PUBLIC execute revoked and execute granted to
+`bantoozi_app`; the admin ones enforce `admin_context_allowed()` and `respond_card_publication`
+the authenticated original author.
+
+**Callers:**
+- **The refresh functions** are called by the API **in the same transaction** as the change that
+  affects them: subscribe/unsubscribe, card add/remove/scope change, label add/remove, account delete
+  and restore. `house.reconcile` (spec 11) also runs them nightly for all feeds.
+- **The `admin_*` functions** are called only from admin routes, after the role check (spec 08 §9),
+  and enforce the active admin context again in SQL. Invalid `p_days` is rejected by the API; direct
+  SQL calls return no usage rows. Cost allocation is an estimate based on **current** holders, not
+  historical billing; soft-deleted users and duplicate holdings never inflate the total.
+- Mutations use READ COMMITTED and acquire all affected user rows in UUID order, then feed rows in
+  numeric order (`FOR NO KEY UPDATE`), before changing subscriptions/holdings. Both refresh functions
+  also acquire those feed locks defensively and keep them to commit. Call both with the complete
+  affected feed set, including the old scope. This avoids duplicate inserts/lost counters in parallel
+  subscribe/unsubscribe, and shared labels are counted once per user. Functions use a fixed trusted
+  search path, bind arguments, and never interpolate dynamic SQL.
+
+**Tests** (M0-T5). Both refresh functions give correct rows when called:
+- (a) as `bantoozi_app` inside `withTenant(A)`, with users A and B both subscribed and holding different
+  cards
+- (b) as `bantoozi_worker` with no `app.user_id`
+
+Neither may drop B's rows. Add two-connection tests for concurrent subscribe/unsubscribe and scope
+changes, proving both materialized feed caches equal a fresh source-table aggregation at commit.
+
+---
+
+## 7. Evaluation schema (`eval`, created in M3)
+
+```sql
+CREATE SCHEMA eval;
+CREATE TABLE eval.raters (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, name text NOT NULL,
+  participant_key uuid NOT NULL, context_name text NULL, -- same human keeps one key across topic personas
+  token_hash text NOT NULL UNIQUE, token_expires_at timestamptz NOT NULL, token_revoked_at timestamptz NULL,
+  langs text[] NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE eval.rater_sessions (session_hash text PRIMARY KEY, -- hash of the random cookie value
+  rater_id bigint NOT NULL REFERENCES eval.raters(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(), expires_at timestamptz NOT NULL);
+CREATE TABLE eval.rater_cards (rater_id bigint REFERENCES eval.raters(id) ON DELETE CASCADE,
+  card_id bigint REFERENCES interest_cards(id) ON DELETE RESTRICT,
+  strength text NOT NULL CHECK (strength IN ('must','love','like','never')), PRIMARY KEY (rater_id, card_id));
+CREATE TABLE eval.rater_feeds (rater_id bigint REFERENCES eval.raters(id) ON DELETE CASCADE,
+  feed_id bigint REFERENCES feeds(id) ON DELETE RESTRICT, PRIMARY KEY (rater_id, feed_id));
+CREATE TABLE eval.assignments (rater_id bigint REFERENCES eval.raters(id) ON DELETE CASCADE,
+  article_id bigint REFERENCES articles(id) ON DELETE RESTRICT, position int NOT NULL CHECK (position >= 0),
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','rated','skipped')),
+  PRIMARY KEY (rater_id, article_id), UNIQUE (rater_id, position));
+CREATE TABLE eval.ratings (rater_id bigint REFERENCES eval.raters(id) ON DELETE CASCADE,
+  article_id bigint REFERENCES articles(id) ON DELETE RESTRICT, rating smallint NOT NULL CHECK (rating IN (-1, 1)),
+  reason text NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (rater_id, article_id));
+CREATE TABLE eval.facet_labels (labeler text NOT NULL, article_id bigint REFERENCES articles(id) ON DELETE RESTRICT,
+  question_key text NOT NULL, value text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (article_id, question_key, labeler));
+CREATE TABLE eval.sample (dataset_version text NOT NULL, -- e.g. golden-v1; every version keeps its own rows
+  article_id bigint NOT NULL REFERENCES articles(id) ON DELETE RESTRICT, lang text NOT NULL,
+  snapshot jsonb NOT NULL, snapshot_sha text NOT NULL,
+  split text NOT NULL CHECK (split IN ('dev','test')),
+  created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (dataset_version, article_id));
+CREATE TABLE eval.runs (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, experiment text NOT NULL,
+  dataset_version text NOT NULL, -- the eval.sample version this run read
+  config jsonb NOT NULL, git_sha text NOT NULL, started_at timestamptz NOT NULL DEFAULT now(),
+  finished_at timestamptz NULL, results jsonb NULL);
+CREATE TABLE eval.run_answers (run_id bigint NOT NULL REFERENCES eval.runs(id) ON DELETE CASCADE,
+  article_id bigint NOT NULL REFERENCES articles(id) ON DELETE RESTRICT,
+  card_id bigint NULL REFERENCES interest_cards(id) ON DELETE RESTRICT,
+  question_key text NOT NULL, answer jsonb NOT NULL,
+  UNIQUE NULLS NOT DISTINCT (run_id, article_id, card_id, question_key));
+CREATE INDEX run_answers_run_idx ON eval.run_answers (run_id, article_id);
+GRANT USAGE ON SCHEMA eval TO bantoozi_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA eval TO bantoozi_worker;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA eval TO bantoozi_worker;
+ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA eval GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO bantoozi_worker;
+ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA eval GRANT USAGE, SELECT ON SEQUENCES TO bantoozi_worker;
+```
+
+- The `eval` schema is accessed only by `apps/eval`, through `DATABASE_URL_WORKER`.
+- Dataset versions are append-only. A new version (after a rating correction, a late duplicate or
+  an addition, spec 10 §2.1) inserts its own `eval.sample` rows, copying unchanged snapshots, and
+  never updates or deletes an earlier version's rows. A run reads only its `dataset_version`, so older
+  runs keep their exact snapshots and split membership for replay. `eval.ratings` and
+  `eval.facet_labels` hold the current ground truth; each run freezes the exact ratings, cards and
+  facet labels it used in `eval.runs.config` (spec 10 §2.1), so corrections never alter older runs.
+- Evaluation uses a separate database with synthetic/consented card definitions. Never pin a
+  production user's private fork against account erasure; remove such personal eval references before
+  deletion if they exist. Frozen benchmark data does not override a personal-data deletion request.
+- Rows referenced from `eval.*` (articles in `eval.sample`/`assignments`/`ratings`/`facet_labels`, and
+  cards in `eval.rater_cards`/`run_answers`, and feeds in `eval.rater_feeds`) are exempt from purging and retiring (spec 11 §5–6).
+
+
+## 8. Database acceptance cases (M0; eval-specific cases in M3a)
+
+These are behavioral integration tests against the pinned PostgreSQL 16 image, in addition to schema
+parity. A generated migration is not complete until these pass with actual role logins:
+
+1. Fresh production bootstrap and migration, then upgrade/re-run, contain every table, explicit FK
+   action, index, grant, function and integrity trigger. Template cloning works with two parallel runs
+   and a changed migration file whose journal filename did not change.
+2. Each tenant table fails closed with no context and across a reused pool connection. Tenant A cannot
+   select, attach, mutate, infer a private fork through a join, or assign a label belonging to B.
+   Non-admin shared-card updates cannot change another reader's text or promote a card. No API query
+   can read worker-only queues, audit metadata or outbox payloads.
+3. Concurrent subscription/card mutations preserve both users' `feed_cards` and subscriber counts.
+   Account purge with a held private fork succeeds without FK-order dependence. Scope deletion,
+   label replacement and user restoration satisfy the final-state invariants.
+4. Crash before/after commit and before/after broker send preserves every required intent; duplicate
+   delivery produces one logical mutation. A late lease holder cannot clear new work or publish stale
+   source/model results. Exhausted match rows stay inspectable and budget deferrals do not lose work.
+5. Concurrent budget reservations cannot pass a daily cap, retries each reserve, duplicate settlement
+   cannot double usage, and timeout uncertainty remains charged against availability until resolved.
+6. Concurrent reader patches, duplicate `Idempotency-Key`, conflicting request hashes, label edits,
+   model activation and exact undo preserve versions, ownership and one active model. Ranking never
+   changes reader fields; an old rank revision cannot overwrite a newer score.
+7. Eval retries cannot duplicate answers (including rows with NULL card IDs); protected eval
+   articles/cards/feeds survive retention and merge attempts, and frozen snapshots do not change when
+   live source articles are edited. Creating a new dataset version leaves an older version's
+   snapshots and split membership intact, so its runs replay unchanged.
+
+
+8. A new/off feed can fetch and display while producing zero translation/enrich/match/cluster calls.
+   A selected request authorizes exactly its frozen article/context; active enablement admits only new
+   carrier arrivals. Mode changes, unsubscribe, shared multi-user demand and process crashes cannot
+   expand authorization. Completed frozen training features never overwrite newer live caches.
+9. Bookmark full/partial source capture survives source edits, 404, unsubscribe, 30-day compression,
+   restoration and account isolation. Rebookmark/old-worker races, pinned exact undo and last-reference
+   GC preserve the correct text/HTML/author/date and reject guessed snapshot IDs. Blocked feed images
+   cause zero image requests in every saved/list/detail surface.
+10. Ciphertext-only credential storage passes real API-role privilege tests; metadata/errors/outbox
+    contain no secret. Saving a candidate makes no provider request, explicit validation is bounded,
+    stale validation/activation cannot overwrite a newer version, disable cannot revive an env key,
+    and restore with the matching external keyring decrypts while the database alone cannot.
+11. Shared adoption does not publish or transfer authorship. Promotion accepts genuine exact approval
+    or verified 30-day creator inactivity, records the correct evidence and never fakes a response.
+    Test just below/exactly at 720 hours, null last-active with known creator creation, activity racing
+    promotion, deleted/missing creator, changed hashes/version, and a decline followed by a fresh admin
+    request: a veto remains effective until later affirmative creator approval. Hard-deleting a
+    creator keeps their request rows, including promoted evidence, with `user_id` and `creatorUserId`
+    cleared, and none of them can be promoted afterwards. Library semantic
+    updates preserve old holdings/examples until opt-in; labels remain ranking/training neutral.
+12. Multiple topic personas belonging to one `participant_key` remain one human. The owner's multi-topic
+    pilot may satisfy the limited invite-only beta gate; no additional independent-rater count is
+    required, and reports must describe the sample as one person's evidence. Bookmark archives contain
+    text/sanitized HTML, never cached image/media bytes or image data URLs.
+
+Implementation references: PostgreSQL 16 [row security](https://www.postgresql.org/docs/16/ddl-rowsecurity.html),
+[constraints](https://www.postgresql.org/docs/16/ddl-constraints.html),
+[function visibility](https://www.postgresql.org/docs/16/spi-visibility.html).
