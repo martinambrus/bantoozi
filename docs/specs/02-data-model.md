@@ -391,6 +391,7 @@ CREATE TABLE feeds (
   first_error_at     timestamptz NULL,            -- start of the current error streak
   quarantined_until  timestamptz NULL,
   subscriber_count   int NOT NULL DEFAULT 0 CHECK (subscriber_count >= 0),
+  unsubscribed_at    timestamptz NULL DEFAULT now(), -- without subscribers since; cleared while subscribed, reset when subscriber_count returns to 0; idle feeds are purged (spec 11 §5)
   publish_stats      jsonb NOT NULL DEFAULT '{}', -- {recent_gaps_s: int[≤20], items_7d: int}
   fetch_options      jsonb NOT NULL DEFAULT '{}', -- {user_agent?: string, translate_strong?: boolean}
   created_at         timestamptz NOT NULL DEFAULT now(),
@@ -1333,6 +1334,7 @@ BEGIN
   PERFORM f.id FROM feeds f WHERE f.id = ANY(p_feed_ids) ORDER BY f.id FOR NO KEY UPDATE;
   UPDATE feeds f
      SET subscriber_count = coalesce(x.cnt, 0),
+         unsubscribed_at  = CASE WHEN coalesce(x.cnt, 0) = 0 THEN coalesce(f.unsubscribed_at, now()) END,
          min_interval_s   = coalesce(x.min_iv, 900),
          updated_at       = now()
     FROM (SELECT DISTINCT unnest(p_feed_ids) AS feed_id) ids
