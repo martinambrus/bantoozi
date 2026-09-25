@@ -130,10 +130,11 @@ in the same outbox transaction. This makes an inaugural rating learnable when sl
   re-enter at `pipeline.after('extracted', …)`, which translates first when the language is now
   `translate` (spec 07 §1), and matching follows enrichment as usual. Old incompatible answers
   cannot satisfy current cache lookups while replacement is pending. `cluster` and `suggest` set
-  changes apply prospectively, as a versioned boundary: story memberships are deduplication
-  decisions that `mute_story` rules point at, not a current-result cache, so each keeps its
-  `articles.cluster_set_id` until its article ages out while new calls use the new set. Suggestions
-  carry `question_set_id`; only the active set's rows are listed, and `user.suggest` deletes the rest. Store exact set/model/input
+  changes, and a model-pin change for both, apply prospectively as a versioned boundary: story
+  memberships are deduplication decisions that `mute_story` rules point at, not a current-result
+  cache, so each keeps its `articles.cluster_set_id` until its article ages out while new calls use
+  the new set and model. Suggestions carry `question_set_id` and `model_pin`; only rows from the
+  active set and current pin are listed, and `user.suggest` deletes the rest. Store exact set/model/input
   provenance with golden runs; changing a set does not mutate frozen runs.
 
 ---
@@ -695,8 +696,9 @@ Expired leases recover after a crash; queue throttling alone does not replace th
    Otherwise insert up to 3 non-none options with probability ≥0.15, ordered deterministically.
    Dedupe active `(user, card)` suggestions and recheck held/dismissed state on commit. Choice
    probabilities are relative to this candidate list, not absolute relevance probabilities.
-   Each run also deletes the user's `card_suggestions` rows for cards they now hold or from an
-   inactive suggest set; the API already hides those (spec 08 §7). New rows record the active set.
+   Each run also deletes the user's `card_suggestions` rows for cards they now hold, from an
+   inactive suggest set or from an older model pin; the API already hides those (spec 08 §7). New
+   rows record the active set and `engine.model_pin`.
 7. Engine `kind: 'suggest'`, `priority: 'bulk'`, `userId` set.
 
 ---
