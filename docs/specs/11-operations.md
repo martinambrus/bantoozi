@@ -181,7 +181,7 @@ backup immediately increases exposure and must alert rather than being reported 
 | delivered `job_outbox` rows | 7 days; pending/failed intents remain until resolved or their domain entity is deleted |
 | completed/failed pg-boss jobs | 7/30 days respectively using pinned pg-boss maintenance settings; failures counted before removal |
 | `login_codes` | 1 day after expiry |
-| `invites` | unused: 30 days after `expires_at` (a linked `waitlist.invite_code` becomes null); used: kept for invite accounting while the accounts exist, subject to erasure (§5.1) |
+| `invites` | unused: 30 days after `expires_at` (a linked `waitlist.invite_code` becomes null); used: kept for invite accounting while either account exists, subject to erasure (§5.1), and deleted once both `created_by` and `used_by` are null |
 | `waitlist` | deleted at signup (spec 08 §2.1); otherwise 365 days after `created_at`, including rows whose invite expired unused |
 | `rate_limit_buckets` | 1 day after the bucket's window ends |
 | `origin_fetch_state` | 7 days after `last_used_at`, and only once `next_start_at`, any `blocked_until` cooldown and every lease have passed; the next fetch of that origin recreates it |
@@ -318,7 +318,7 @@ retention must not erase still-owned private cards or snapshots while publishing
 | `feed.schedule` | every minute | spec 03 §3 |
 | `house.rescore-degraded` | `*/10 * * * *` | recover the supported 14-day horizon (`RANK_WINDOW_DAYS`, spec 06 §11) fairly with persisted cursors/budget limits (spec 04 §5), including eligible deferred/exhausted match work and fallback answers; reuse current Call A, and reset terminal attempts only after their blocker changes |
 | `house.expire-rules` | `5 * * * *` | delete expired rules; `user.rank {full}` for the affected users |
-| `house.purge-auth` | `20 * * * *` | expired login codes, sessions, rate-limit buckets, idle `origin_fetch_state` rows, unused invites 30 days past expiry, waitlist rows older than 365 days and `api_mutations` receipts per §5, in bounded batches |
+| `house.purge-auth` | `20 * * * *` | expired login codes, sessions, rate-limit buckets, idle `origin_fetch_state` rows, unused invites 30 days past expiry, used invites whose inviter and invitee accounts are both gone, waitlist rows older than 365 days and `api_mutations` receipts per §5, in bounded batches |
 | `house.reconcile` | `*/10 * * * *` | bounded repair of still-authorized inference, due pending/expired-lease `analysis_requests` within their 180-day retention, pending bookmark capture/outbox/match work and orphaned leases; expired `reserved` spend reservations become `uncertain` (§5); enqueue rank for due `user_article.next_rank_at`; nightly UTC window also refreshes feed subscribers/cards, cluster counts and `lang_hint` with persistent progress cursors |
 | `house.archive` | `15 3 * * *` | archive unprotected read items whose latest carrier arrival is older than 31 days and enforce the shared-article unread-cap rules in §5 |
 | `house.purge-articles` | `30 3 * * *` | delete unreferenced articles whose latest carrier arrival is older than 90 days (§5), in batches of 5,000. Articles referenced from `eval.*` are never purged. Then delete member-less `story_clusters` that no `mute_story` rule names, and idle unreferenced `feeds` (§5), each under its row lock after rechecking the conditions |
