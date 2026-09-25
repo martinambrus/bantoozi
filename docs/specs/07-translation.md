@@ -121,8 +121,9 @@ card translations and workers; a busy container must not exhaust all API connect
 5. For the initial pipeline, atomically set `pipeline_state = 'translated'` and persist the enrich
    job intent in the outbox. A late duplicate never moves an already enriched/matched article
    backwards. Re-translation uses the separate rules below, and so does a language-mode rebuild
-   (`modeChange`, spec 05 §2): when the effective model input changes under the new mode, it
-   installs the translation through `resetArticleAnswers`.
+   (`modeChange`, spec 05 §2). Its job has its own queue key, so a pending plain job never absorbs
+   it (spec 03 §2): when the effective model input changes under the mode in effect when it runs,
+   it installs the translation through `resetArticleAnswers`.
 
 **Re-translation of weak items** (triggered by `user.rank`, spec 06 §7 step 6):
 - `article.translate {forceTier2: true}` runs step 3 only after revalidating live manual/active demand.

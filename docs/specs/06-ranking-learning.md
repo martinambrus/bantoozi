@@ -333,8 +333,9 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
    completion is recorded only after the last batch, and a crash resumes safely.
 6. **Weak-translation escalation** (spec 07 §3): for items newly placed in `maybe` whose best
    translation is a tier-1 `weak` one **and** that have no `ollama` translation row yet (a skipped
-   attempt also leaves a row), enqueue `article.translate {forceTier2: true}`. This happens once per
-   article.
+   attempt also leaves a row), enqueue `article.translate {forceTier2: true}` under its own queue
+   key (`translate-t2:<id>`, spec 03 §2), so a pending plain translation job cannot absorb it. This
+   happens once per article.
 
 **Enqueued by** (incremental runs are debounced; full runs use their own key, spec 03 §2):
 

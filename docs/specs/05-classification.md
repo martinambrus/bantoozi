@@ -133,7 +133,9 @@ in the same outbox transaction. This makes an inaugural rating learnable when sl
   enqueues `house.reenrich {since, lang}` for each changed language: its admitted window articles
   re-enter at `pipeline.after('extracted', …)`, which translates first when the language is now
   `translate` (spec 07 §1), and matching follows enrichment as usual. That translation job carries
-  `modeChange`, so an already enriched or matched article is not held back as a late duplicate:
+  `modeChange` under its own queue key (`translate-mode:<id>`, spec 03 §2), so a pending ordinary
+  translation cannot absorb it, and an already enriched or matched article is not held back as a
+  late duplicate:
   when its effective model input changes under the new mode, the translation is installed through
   `resetArticleAnswers`, which re-enriches it (spec 07 §3). In the other direction (`translate` →
   `native`) no translation job runs, so `house.reenrich` itself calls `resetArticleAnswers` for an
