@@ -20,3 +20,15 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   dev LibreTranslate in `infra/compose.dev.yml`. Spec 11 §2 requires Compose host ports to come from
   the environment, but spec 01 §3 listed only `PG_DEV_PORT`/`PG_TEST_PORT`. Dev and test ports are
   published on 127.0.0.1 only. Spec 01 §3 table updated; `.env.example` and the config registry list it.
+- D-4: 2026-09-25 M0-T5 — clarification of an unspecified hash: `analysis_requests.input_sha` and
+  `card_publication_requests.publication_sha` are the hex SHA-256 of the stored `jsonb` value's
+  PostgreSQL text rendering (`encode(sha256(convert_to(x::text, 'UTF8')), 'hex')`), not of
+  `canonicalJson`. `jsonb` normalizes key order and number spelling itself, so the database can compute
+  and verify the hash exactly (the §5.2 triggers reject a mismatch), which a JavaScript canonical form
+  cannot guarantee for every number. Spec 02 §3.4 updated; it also names the §1.2 aggregate
+  `queue_state_counts()`.
+- D-5: 2026-09-25 M0-T5 — `admin_usage_attribution` ends with `WHERE admin_context_allowed() AND
+  p_days BETWEEN 1 AND 366`. The §6 text filtered only the usage window by `p_days`, so an invalid
+  value still returned one zero-cost row per current holder through the `shared` CTE, contradicting
+  §6 "Callers" ("direct SQL calls return no usage rows"). Found by the M0 function tests; spec 02 §6
+  updated.

@@ -151,7 +151,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA pgboss
 ```
 
 The API writes `job_outbox`, never pg-boss tables or queue payloads. Readiness/backlog queries use a
-restricted SECURITY DEFINER function returning only queue name and aggregate state counts, implemented
+restricted SECURITY DEFINER function, `queue_state_counts()`, returning only queue name and aggregate state counts, implemented
 against the pinned pg-boss catalog at M0 and covered by parity tests; no job payload leaves it.
 
 **Queues:**
@@ -853,7 +853,10 @@ snapshot freezes article/card/question/model context independently of later feed
 `result_snapshot`/`result_sha`; if the live article changed, these historical features may still serve
 that recorded training event, but cannot overwrite current shared caches. A changed subscription
 version, deletion or cancellation revokes further attempts. Feedback references the request ID rather
-than treating unavailable features as zero or mixing future context into an old rating.
+than treating unavailable features as zero or mixing future context into an old rating. `input_sha` (like `card_publication_requests.publication_sha` for
+`publication_payload`) is the hex SHA-256 of the stored `jsonb` value's PostgreSQL text rendering,
+`encode(sha256(convert_to(x::text, 'UTF8')), 'hex')`, not of the client's JSON: repositories let the
+database compute it in the inserting statement and the integrity triggers (§5.2) verify it (D-4).
 
 ### 3.5 Permanent bookmark archives and image preferences
 
@@ -1405,7 +1408,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
   SELECT coalesce(d.user_id, sh.user_id), coalesce(d.usd, 0),
          coalesce(sh.share, 0) * (SELECT usd FROM m) / (SELECT n FROM tot)
   FROM direct d FULL JOIN shared sh ON sh.user_id = d.user_id
-  WHERE admin_context_allowed();
+  WHERE admin_context_allowed() AND p_days BETWEEN 1 AND 366;
 $$;
 
 REVOKE EXECUTE ON FUNCTION refresh_feed_cards(bigint[]), refresh_feed_subscribers(bigint[], jsonb),

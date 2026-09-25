@@ -13,6 +13,7 @@ import {
 
 export const PACKAGE_NAME = '@bantoozi/testing';
 
+export * from './factories.js';
 export * from './fixture-server.js';
 export * from './test-db/template-hash.js';
 export * from './test-db/test-db.js';

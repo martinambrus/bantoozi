@@ -18,7 +18,7 @@
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "test:int": "vitest run --config vitest.int.config.ts --passWithNoTests",
-    "migrate": "tsx --conditions=bantoozi-source src/migrate/main.ts"
+    "migrate": "tsx --conditions=bantoozi-source --env-file-if-exists=../../.env src/migrate/main.ts"
   },
   "dependencies": {
     "@bantoozi/shared": "workspace:*",
