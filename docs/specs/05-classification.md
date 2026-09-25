@@ -619,9 +619,22 @@ off feeds merely to create cluster context.
      FROM articles a
      JOIN feed_items fi ON fi.article_id = a.id
      JOIN feeds f ON f.id = fi.feed_id
+     JOIN article_facets af ON af.article_id = a.id AND af.question_set_id = $4::bigint  -- active enrich set
+                           AND af.article_revision = a.content_revision               -- compatible, current
      WHERE a.id <> $1
        AND a.title_norm % $3::text
        AND a.first_seen_at BETWEEN $2::timestamptz - interval '72 hours' AND $2::timestamptz + interval '1 hour'
+       AND (EXISTS (SELECT 1 FROM subscriptions s JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
+                    WHERE s.feed_id = fi.feed_id AND s.inference_mode = 'active'
+                      AND s.inference_activated_at <= fi.first_seen_at)         -- authorized carrier
+            OR EXISTS (SELECT 1 FROM analysis_requests r
+                       JOIN subscriptions s ON s.user_id = r.user_id AND s.feed_id = r.feed_id
+                        AND s.inference_mode IN ('training','active')
+                        AND s.inference_version = r.inference_version
+                       JOIN users u ON u.id = r.user_id AND u.deleted_at IS NULL
+                       WHERE r.article_id = a.id AND r.feed_id = fi.feed_id
+                         AND r.article_revision = a.content_revision
+                         AND r.status IN ('pending','running','complete')))  -- current selection (§1.1)
        -- explicit casts: node-postgres sends parameters untyped
      ORDER BY a.id, fi.first_seen_at, f.id
    ) c
@@ -629,6 +642,10 @@ off feeds merely to create cluster context.
    LIMIT 20;
    ```
 
+   `$4` is the active enrich set. The facet join and the authorization witness (an active carrier
+   for that arrival, or a current selected request at the current revision, §1.1) run before the
+   `LIMIT`, so off or unselected articles never reach the provider or take candidate slots, and the
+   `feed` title sent is always an authorized carrier's.
    Then, in code: walk the 20 by similarity, skip a candidate once 2 from the same `feed_id` have been
    kept, and stop at 5.
 2. No candidates → done (the article is a singleton, `story_cluster_id` stays null).
