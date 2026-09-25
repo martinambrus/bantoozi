@@ -294,8 +294,10 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
    eligibility cap**). Iterate by stable `(arrival, id)` keyset until every eligible item is
    considered; use one captured `now` for the run. Articles
    from the user's subscriptions with arrival `≥ now − 14 days` (the latest subscribed carrier
-   `feed_items.first_seen_at`, as in spec 08 §5.1), not archived for the user,
-   where any of these holds:
+   `feed_items.first_seen_at`, as in spec 08 §5.1), not archived for the user, plus, whatever
+   their arrival, articles the user explicitly selected whose request completed at the current
+   revision within its 180-day window (spec 05 §1.1), so an older selected article also reaches
+   `rankArticle`; in both cases where any of these holds:
    - no `user_article` row
    - `ua.score_version != current score_version` or `ua.rank_revision != users.rank_revision`
    - `ua.next_rank_at ≤ now` or article content revision no longer matches `explain.inputs`
