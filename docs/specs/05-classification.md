@@ -738,7 +738,11 @@ Expired leases recover after a crash; queue throttling alone does not replace th
    Each run also deletes the user's undismissed `card_suggestions` rows for cards they now hold,
    from an inactive suggest set or from an older model pin (the API already hides those, spec 08 §7),
    and their dismissals older than 90 days. A dismissal less than 90 days old stays whatever its set
-   or pin, so step 3 keeps excluding that card. New rows record the active set and the suggest-model
+   or pin, so step 3 keeps excluding that card. Each run's outcome also replaces the user's
+   undismissed suggestions, so they always reflect the latest evidence: when its Choice completes
+   (a `none` win included), the commit deletes the undismissed rows it did not insert, and a run
+   that stops at step 1 or finds no candidate deletes them all, because their 30-day evidence is
+   gone. A budget deferral or failed call leaves them in place. New rows record the active set and the suggest-model
    fingerprint of `engine.model_pin` (its `model` and `llm` fields, spec 02), so an Ollama fallback
    model change hides old rows as a Jev model change does.
 7. Engine `kind: 'suggest'`, `priority: 'bulk'`, `userId` set.
