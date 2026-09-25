@@ -893,7 +893,9 @@ incompressible strings shrink. Restore testing includes saved text/HTML and chec
 `bookmark_origin_feed_id`; all reader/card/expanded/saved rendering consults spec 08/09's effective
 policy before any image URL is fetched. A feed identity merge remaps these preferences and bookmark
 origins in the merge transaction; conflicting settings preserve `block` until the user chooses
-otherwise. No inference mode switch changes an image preference.
+otherwise. No inference mode switch changes an image preference. An explicit `allow` or `block` row
+keeps its feed from the idle-feed purge (spec 11 §5), so unsubscribing and later re-adding the same
+URL finds the same choice; only `inherit` rows are deleted with a purged feed.
 
 ### 3.6 Authorship, publication consent and opt-in library versions
 
