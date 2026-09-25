@@ -174,12 +174,13 @@ settings, regardless of profile.
   Set `Referrer-Policy: no-referrer`, no external resources/analytics, redact token-bearing URLs in
   logs, and rate-limit token exchange. Link tokens expire (`token_expires_at`, default 30 days,
   `eval rater add --token-days <n>`). `eval rater revoke <id>` sets `token_revoked_at` and deletes
-  the rater's `eval.rater_sessions`; `eval rater token <id>` issues a new token and expiry and clears
-  the revocation. Neither touches assignments, ratings or cards, which deleting the rater would
-  cascade. Exchange accepts only an unexpired, unrevoked token and creates a session row whose random
-  cookie value is stored hashed and whose expiry never exceeds the token's. Every request rechecks
-  the session's expiry and the token's revocation. Every read/write is scoped to that
-  rater's assignment; the worker DB role makes application-level ownership checks essential.
+  the rater's `eval.rater_sessions`; `eval rater token <id>` issues a new token and expiry, clears
+  the revocation and also deletes those sessions, so no session from the old token survives.
+  Neither touches assignments, ratings or cards, which deleting the rater would cascade. Exchange
+  accepts only an unexpired, unrevoked token and creates a session row whose random cookie value is
+  stored hashed and whose expiry never exceeds the token's. Every request rechecks the session's
+  expiry and the token's revocation. Every read/write is scoped to that rater's assignment; the
+  worker DB role makes application-level ownership checks essential.
 - Uses `DATABASE_URL_WORKER`.
 - Not deployed to production. It runs **on the dev box** (the same DB as M3b), exposed to raters
   through an authenticated HTTPS tunnel. Bind the service to loopback; only the rating routes are
@@ -412,7 +413,7 @@ by `apply-g1` and the normal production settings flow (§1); owner-pilot scope r
 
 ## 6. Replay (after G1, required before risky changes)
 
-`eval replay --against <runId> [--model jev-x.y.z] [--question-set enrich-v2] [--thresholds file.json]`
+`eval replay --against <runId> [--model jev-x.y.z] [--engine llm --llm-model <model>] [--question-set enrich-v2] [--thresholds file.json]`
 
 - Re-runs the G1 variant with the proposed change on the `dataset_version` of the run it compares
   against (`golden-v1` for the G1 runs), cached where possible.
@@ -423,6 +424,11 @@ by `apply-g1` and the normal production settings flow (§1); owner-pilot scope r
   - activating a new question set
   - changing `ranker.thresholds`
   - enabling Laya for a kind or language
+  - enabling `LLM_FALLBACK_ENABLED`, or changing `OLLAMA_MODEL_FAST`/`OLLAMA_MODEL_STRONG` while it
+    is enabled: `--engine llm` replays the fallback classifier (enrich and match answers) with the
+    proposed model, against the replay of the current fallback configuration, or against the B1
+    keyword baseline for a first enablement. E4 measures Ollama only as a translator, so it does
+    not count
 - **Pass rule:** on the identical frozen cohort, no eligible rater/language AUC drops by more than
   0.03 and macro AUC does not drop. Threshold-only changes cannot be assessed by AUC (it is unchanged):
   also require no increase in hard-hide false-negative rate, no fall in For You precision >0.03,

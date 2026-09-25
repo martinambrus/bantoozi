@@ -64,7 +64,10 @@ card translations and workers; a busy container must not exhaust all API connect
 1. Load `title`, `excerpt` (first 600 chars) and `body_lead` (≤ 1,500) plus `lang` and
    `content_revision` plus the server-produced inference authorization. Off/untrained demand is a
    no-op, not a failed translation. Manual requests use exactly their frozen source fields/hash.
-   Translation rows are valid only for that revision. Replayed jobs reuse a
+   Translation rows are valid only for that revision. The engine version or model that produced a
+   row is provenance, not part of its validity, so a LibreTranslate package or Ollama model change
+   applies to new translations only, and a model-pin rebuild re-enriches from the existing selected
+   translation (spec 11 §8). Replayed jobs reuse a
    completed current-revision row; an article edit makes earlier rows ineligible. A late result may
    only enter a shared article cache if the article still has the revision read at dispatch (spec 02).
    A still-authorized manual request may instead complete its own frozen result when the live article
