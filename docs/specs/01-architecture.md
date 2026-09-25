@@ -170,6 +170,9 @@ Bootstrap and host-secret configuration comes from environment variables, parsed
 `loadConfig({ process: 'api' | 'worker' | 'eval' | 'migrate' | 'test' })` in
 `packages/shared/src/config.ts` with zod. "Required" in the table means required **for the processes
 listed under "Used by"**. An invalid config makes the process exit with a readable error.
+With `NODE_ENV=production`, `loadConfig` also refuses `MAIL_TRANSPORT=log` (it would print login
+codes), non-`https` `PUBLIC_BASE_URL`/`TYPESAFE_BASE_URL`/`OLLAMA_BASE_URL`, an unpinned
+`TYPESAFE_MODEL`, and a `SESSION_PEPPER` or `METRICS_TOKEN` shorter than 32 characters (D-2).
 `.env.example` lists every variable with a comment and placeholder values only. Validation errors
 identify secret variable names/paths, never their supplied contents or a serialized config object.
 
@@ -271,7 +274,10 @@ limits whose combined maximum leaves headroom under Postgres `max_connections`.
 ## 5. Coding conventions
 
 - **Modules:** named exports only. One public `index.ts` per package. Internal files are not imported
-  from outside the package.
+  from outside the package. `packages/shared` additionally exposes two Node-only public entries,
+  `@bantoozi/shared/server` (config, logger, mailer, hashing, language detection) and
+  `@bantoozi/shared/server/credential-crypto` (§3), so its main entry stays browser-safe for the web
+  client (D-1).
 - **Naming:** files `kebab-case.ts`; types and classes `PascalCase`; functions and variables `camelCase`;
   DB columns `snake_case` (Drizzle maps to camelCase properties); queue names `dot.case`.
 - **IDs:** users use UUID v7 (`uuidv7` package); other identifiers follow spec 02 (identity,
