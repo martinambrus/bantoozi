@@ -184,6 +184,12 @@ inserting a new card row:
   manual/active inference demand, after rechecking that demand at dispatch and commit. The source
   language must be known, non-English and supported by the installed tier-1 model; skip `en`, `und`
   and unsupported languages without a provider request. Off/untrained holdings alone are ineligible.
+- Cards that job skipped are translated once they gain demand. While `card_text_mode = 'english'`,
+  each event that gives a user's cards new authorized demand (activating a feed, selecting articles,
+  or a card or scope change that backfills) also enqueues `house.translate-cards {userId}`. It runs
+  the same checks for that user's held cards and rematches each card as its pair publishes. A
+  failed card is retried only on such a user event, which keeps attempts bounded; a selected
+  request keeps its frozen card text.
   These derived fields are the only mutable part of the card body (spec 05 §5.1); the worker may
   also replace them through the explicit audited retranslation flow below, under the same demand
   and supported-language checks. Original card text/hash remain immutable.

@@ -422,7 +422,8 @@ The builder uses a complete valid translated interest/not-for pair when availabl
 original pair; never mix a translated interest with a failed untranslated exclusion. Examples and
 semantic label titles remain as written in v1 and are explicitly tested at G1. The fingerprint
 captures those choices. Users always see what they wrote. Existing cards are
-translated by the one-off `house.translate-cards` job when the mode is switched on (spec 07 §5).
+translated by `house.translate-cards` when the mode is switched on, and a card it skipped for lack
+of demand is translated when its holder's demand appears (spec 07 §5).
 
 ### 5.2 Question builders
 
