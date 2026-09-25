@@ -1188,7 +1188,7 @@ CREATE TABLE card_suggestions (
   user_id       uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   card_id       bigint NOT NULL REFERENCES interest_cards(id) ON DELETE CASCADE,
   question_set_id bigint NOT NULL REFERENCES question_sets(id), -- suggest set that produced it; only the active set's rows are listed (spec 08 §7)
-  model_pin     text NOT NULL,                  -- suggest-model fingerprint when produced: sha256(canonicalJson({model, llm})) of settings['engine.model_pin'], covering Jev and the LLM fallback a suggest call can use; rows with another fingerprint are not listed
+  model_pin     text NOT NULL,                  -- settings['engine.model_pin'].model when produced: suggest calls are bulk, so they use Jev only (the LLM fallback serves interactive requests, spec 04 §5); rows from another model are not listed
   score         real NOT NULL CHECK (score BETWEEN 0 AND 1),
   created_at    timestamptz NOT NULL DEFAULT now(),
   dismissed_at  timestamptz NULL,

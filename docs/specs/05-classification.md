@@ -142,9 +142,9 @@ in the same outbox transaction. This makes an inaugural rating learnable when sl
   changes, and a model-pin change for both, apply prospectively as a versioned boundary: story
   memberships are deduplication decisions that `mute_story` rules point at, not a current-result
   cache, so each keeps its `articles.cluster_set_id` until its article ages out while new calls use
-  the new set and model. Suggestions carry `question_set_id` and `model_pin` (a fingerprint of the
-  Jev and LLM fallback models, §7); only rows from the active set and current pin are listed, and
-  `user.suggest` deletes the rest. Store exact set/model/input
+  the new set and model. Suggestions carry `question_set_id` and `model_pin` (the Jev model, since
+  suggest calls never use the LLM fallback, §7); only rows from the active set and current pin are
+  listed, and `user.suggest` deletes the rest. Store exact set/model/input
   provenance with golden runs; changing a set does not mutate frozen runs.
 
 ---
@@ -742,10 +742,11 @@ Expired leases recover after a crash; queue throttling alone does not replace th
    undismissed suggestions, so they always reflect the latest evidence: when its Choice completes
    (a `none` win included), the commit deletes the undismissed rows it did not insert, and a run
    that stops at step 1 or finds no candidate deletes them all, because their 30-day evidence is
-   gone. A budget deferral or failed call leaves them in place. New rows record the active set and the suggest-model
-   fingerprint of `engine.model_pin` (its `model` and `llm` fields, spec 02), so an Ollama fallback
-   model change hides old rows as a Jev model change does.
-7. Engine `kind: 'suggest'`, `priority: 'bulk'`, `userId` set.
+   gone. A budget deferral or failed call leaves them in place. New rows record the active set and
+   the Jev model `engine.model_pin.model`.
+7. Engine `kind: 'suggest'`, `priority: 'bulk'`, `userId` set. Bulk calls never use the LLM fallback
+   (spec 04 §5), so suggestions come from Jev only. When Jev is unavailable the router makes no wire
+   attempt, and the run releases its lease like a budget deferral.
 
 ---
 
