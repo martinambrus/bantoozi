@@ -645,7 +645,7 @@ nor grants permission to analyze other articles.
 | Endpoint | Body | Behaviour |
 |---|---|---|
 | `GET /rules` | — | `[{id, kind, value, displayValue, createdAt, expiresAt}]` |
-| `POST /rules` | `{kind, value, expiresInDays?}` | Validate `value` per kind (feed id owned by a subscription, domain syntax, keyword 2–100 chars). Quota `maxRules`. Enqueue `user.rank {full}` → `201` |
+| `POST /rules` | `{kind, value, expiresInDays?}` | Validate `value` per kind (feed id owned by a subscription, domain syntax, keyword 2–100 chars). `mute_story` requires `expiresInDays` ∈ {1, 3, 7, 30}, as `/articles/:id/mute-story` does; other kinds may omit it. Quota `maxRules`. Enqueue `user.rank {full}` → `201` |
 | `DELETE /rules/:id` | — | Delete, rank full → `204` |
 
 ---

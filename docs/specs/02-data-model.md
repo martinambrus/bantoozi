@@ -1070,7 +1070,8 @@ CREATE TABLE user_rules (
                                             'block_author','boost_feed','boost_domain')),
   value       text NOT NULL,                     -- keyword / cluster id / feed id / domain / author
   created_at  timestamptz NOT NULL DEFAULT now(),
-  expires_at  timestamptz NULL
+  expires_at  timestamptz NULL,
+  CHECK (kind <> 'mute_story' OR expires_at IS NOT NULL) -- a muted story always expires (spec 11 §5)
 );
 CREATE INDEX user_rules_user_idx ON user_rules (user_id);
 

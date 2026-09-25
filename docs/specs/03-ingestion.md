@@ -172,9 +172,11 @@ new-arrival work continues through the article pipeline; a manual request has it
 
 The handler claims a due pending request, or reclaims an expired running lease, under a row lock;
 sets `status='running'`, a fresh lease token and bounded expiry; commits before external work. Recheck
-active user/subscription, `inference_version`, explicit request eligibility and frozen manifest/hash
-before every provider admission. Cancellation/revocation invalidates the token. Renew the lease while
-live; queue expiration exceeds the bounded end-to-end stages and cannot allow two current owners.
+active user/subscription, `inference_version`, explicit request eligibility, frozen manifest/hash and
+that the request is still inside its 180-day retention window (spec 11 §5) before every provider
+admission; a request past that window is cancelled as `retention_expired` instead.
+Cancellation/revocation invalidates the token. Renew the lease while live; queue
+expiration exceeds the bounded end-to-end stages and cannot allow two current owners.
 
 Execute the frozen input's required translation/enrichment/matching stages under the declared
 question/card/model context (spec05), reusing exact snapshot-state cache results and shared in-flight
@@ -194,8 +196,10 @@ Transient failures release the lease and set `next_attempt_at` with bounded back
 invalid input becomes terminal and does not loop through reconciliation. An opt-out marks cancelled
 and cannot be changed to complete by a late worker; still-account for any upstream spend. Duplicate
 jobs after completion are no-ops. `house.reconcile` resumes due pending/expired running requests from
-their immutable snapshots without applying the automatic feed-arrival age cutoff. Request retention
-is spec11; no completed selection creates continuing authorization for sibling or future articles.
+their immutable snapshots without applying the automatic feed-arrival age cutoff, but never past
+their 180-day retention window: `house.purge-engine-calls` cancels those instead (spec 11 §6).
+Request retention is spec11; no completed selection creates continuing authorization for sibling or
+future articles.
 
 ---
 
