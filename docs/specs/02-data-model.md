@@ -328,7 +328,7 @@ through `PATCH /admin/settings`.
 | `engine.budget_alerts` | `{day: 'YYYY-MM-DD', p80At?: iso, p100At?: iso}` | — | worker router (records crossings only; spec 04 §6) |
 | `engine.laya` | `{enrich?: string[]}` (language codes) | `{}` | admin (M9) |
 | `engine.model_pin` | `{model: string, since: iso}` | — | the first worker that starts with a different `TYPESAFE_MODEL`, which also enqueues the rebuild (spec 11 §8) |
-| `language_modes` | `{[lang]: 'native'\|'translate'}` | env `LANGUAGE_MODES` | admin, `apply-g1` |
+| `language_modes` | `{[lang]: 'native'\|'translate'}` | env `LANGUAGE_MODES` (only before the seed stores it) | seed (only when missing), admin, `apply-g1` |
 | `card_text_mode` | `'as_written'\|'english'` | `'as_written'` | admin, `apply-g1` |
 | `translate.tier2_daily_cap` | int | 300 | admin, `apply-g1` |
 | `ranker.thresholds` | deep partial of `RankerConfig` (spec 06 §11) | `{}` | admin, `apply-g1` |
@@ -341,9 +341,11 @@ through `PATCH /admin/settings`.
 | `metrics.daily.<YYYY-MM-DD>` | metrics JSON (spec 10 §7) | — | `house.metrics` |
 | `worker.heartbeat` | `{[processId]: {at: iso, queues: string[], evalIngestOnly: boolean, envCredentials: ('typesafe'\|'ollama')[]}}` | `{}` | every worker process, every 30 s (entries older than 1 h are pruned). `envCredentials` lists the providers with a non-empty bootstrap env key, presence only, never key material or length (spec 08 §9.1). `eval ingest-sample` needs an entry younger than 90 s with `evalIngestOnly = true` (spec 10 §2.1) |
 
-`pnpm db:seed` inserts **only** `card_text_mode` and `question_sets.active = {}` when they are missing.
-Keys with an env fallback are never seeded, so the env default stays effective until an admin sets a
-value.
+`pnpm db:seed` inserts **only** `card_text_mode`, `question_sets.active = {}` and `language_modes`
+(from `LANGUAGE_MODES`) when they are missing. Deploys run the seed before starting the services, so
+the API compares a `language_modes` change against the modes the workers actually use and enqueues
+its re-enrichment (spec 08 §9). Other keys with an env fallback are never seeded, so their env
+default stays effective until an admin sets a value.
 
 ---
 

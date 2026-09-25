@@ -9,7 +9,8 @@ Claude is not used, for cost reasons (a locked decision).
 
 ## 1. When translation runs
 
-- `settings['language_modes']` (default from `LANGUAGE_MODES` env): a map `lang → 'native' | 'translate'`.
+- `settings['language_modes']` (seeded from the `LANGUAGE_MODES` env when missing, spec 02 §2): a map
+  `lang → 'native' | 'translate'`.
   The default is `native` for everything until G1 decides.
 - Article translation requires both `modes[article.lang] === 'translate'` and current manual/active
   inference authorization (spec 04 §1.1). With eligible demand, native mode proceeds to enrich. With

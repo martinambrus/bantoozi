@@ -26,7 +26,7 @@ when something needs a human, before users notice.
 | `migrate` | dedicated migration target, command `pnpm db:migrate` | 512 MB | includes migration CLI + SQL artifacts; runs once per deploy with restart `"no"`; `api`/`worker`/`worker-laya` depend on successful completion |
 | `api` | built from `apps/api` | 768 MB | healthcheck `GET /api/v1/readyz` on its internal port |
 | `worker` | built from `apps/worker` | 1.5 GB | `WORKER_QUEUES=*` (every queue except the `.laya` ones); healthcheck on its metrics port |
-| `worker-laya` | the `worker` image | 3.5 GB | Compose profile `laya` (M9): enable it before setting `engine.laya`, which requires its heartbeat (spec 08 §9). Keep it while that setting lists a language and, after the setting is cleared, while **Laya work is outstanding**: a created, retrying or active job in either `.laya` queue, or an undelivered (pending or leased) `job_outbox` row for one, which the relay could still publish. `WORKER_QUEUES=article.enrich.laya,analysis.process.laya`; the only process that loads the checkpoint (spec 04 §9), from pinned, checksummed files on a read-only model volume. Own heartbeat and healthcheck on its metrics port |
+| `worker-laya` | the `worker` image | 3.5 GB | Compose profile `laya` (M9): enable it before setting `engine.laya`, which requires its heartbeat (spec 08 §9). Keep it while that setting lists a language and, after the setting is cleared, while **Laya work is outstanding**: a created, retrying or active job in either `.laya` queue, or an undelivered (pending or leased) `job_outbox` row for one, which the relay could still publish. Once a language is removed, each such job moves to the ordinary queue without an engine call (spec 04 §9), so this drains. `WORKER_QUEUES=article.enrich.laya,analysis.process.laya`; the only process that loads the checkpoint (spec 04 §9), from pinned, checksummed files on a read-only model volume. Own heartbeat and healthcheck on its metrics port |
 | `libretranslate` | `libretranslate/libretranslate:latest` (pin a digest) | 3 GB | `LT_LOAD_ONLY=en,sk,cs`, `LT_DISABLE_WEB_UI=true`. Compose profile `translate`: enable it before setting a language mode to `translate` or `card_text_mode` to `english` (the API refuses those settings unless LibreTranslate answers its health probe, spec 08 §9), and keep it while such a setting is on |
 | `caddy` | `caddy:2` | 256 MB | TLS (Let's Encrypt), serves `apps/web/dist`, reverse-proxies `/api/*` → `api:3000`, security headers (§7) |
 
@@ -76,8 +76,9 @@ when something needs a human, before users notice.
    compatible** with the previous release: expand/contract, never drop a column in the release that
    stops using it. Failure stops deployment before application replacement. Run the seed command
    with its explicitly scoped role; runtime images must contain the command/artifacts they invoke.
-   Seeding is idempotent: insert missing topics/question sets/library cards, but never overwrite
-   admin settings or switch an existing active question set merely because a release was deployed.
+   Seeding is idempotent: insert missing topics/question sets/library cards and a missing
+   `language_modes` row (from the worker's `LANGUAGE_MODES`, spec 02 §2), but never overwrite admin
+   settings or switch an existing active question set merely because a release was deployed.
 4. Stop consumption and outbox claiming in the old workers, drain bounded in-flight work, then replace
    application containers. On SIGTERM API stops accepting requests, workers stop claiming new jobs,
    and both close pools after drain. Compose `stop_grace_period` exceeds the documented longest
@@ -85,8 +86,8 @@ when something needs a human, before users notice.
    completion. Start the translation profile when required, then API/worker/Caddy, and `worker-laya`
    when the `laya` profile is enabled. Step 2 fails if `engine.laya` lists a language, or Laya work
    is outstanding (§2), without that profile, so no work waits on a queue nothing consumes. It
-   likewise fails if a language mode is `translate` or `card_text_mode` is `english` without the
-   `translate` profile.
+   likewise fails if a language mode (the stored one, or `LANGUAGE_MODES` before the seed stores it)
+   is `translate` or `card_text_mode` is `english` without the `translate` profile.
 5. Verify `/api/v1/readyz`, static asset routing, login-page delivery, worker heartbeat, outbox
    dispatch and one fixture-backed queue traversal. Wait up to 120 s for readiness. Record release
    SHA/digests and smoke results in the deploy log. The single-host beta allows a brief maintenance

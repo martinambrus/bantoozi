@@ -585,7 +585,11 @@ property per question key. Every probability has `minimum: 0, maximum: 1`.
   instead of `article.enrich` and `analysis.process` (spec 03 §2), keeping a selected request's
   frozen identity.
 - Enabled only for the kinds and languages configured in `settings['engine.laya']`, e.g.
-  `{"enrich": ["sk","cs"]}`.
+  `{"enrich": ["sk","cs"]}`. Removing a language stops new routing at once. A queued `.laya` job
+  whose language is no longer listed never calls an engine: before claiming any lease, its handler
+  sends the job to the ordinary queue (`article.enrich` or `analysis.process`, for the same article
+  or frozen request) and completes, so the Laya queues drain after a disable even while Jev is
+  unavailable (spec 03 §2).
 - Limits: ≤ 20 options per Choice. Topic questions must use the two-level walk (spec 05 §3.2).
 - Per-question-type temperature calibration (fitted in the fine-tuning notebook) is applied in
   `normalize()`. Calibration version and checkpoint hash are part of the answer provenance.
@@ -620,6 +624,8 @@ property per question key. Every probability has `minimum: 0, maximum: 1`.
 - shared breaker lost-update, probe lease expiry and reset across process instances
 - off/untrained feeds make zero inference calls; one manual request covers only its selected snapshot;
   activation is prospective; disabling during queued work cancels it; shared eligible-cache reuse
+- (M9) a queued `.laya` job whose language was removed from `engine.laya` moves to the ordinary
+  queue without an engine call, with Jev unavailable too
 - encrypted-key stage/validate/activate/revoke; admin and DB role isolation; no secret echo/logs/receipts;
   tampered AAD/tag, wrong master key, missing keyring, revocation versus in-flight probe and rotation
 - no environment fallback after DB tombstone; two workers observe hot rotation; old-version auth error

@@ -160,7 +160,7 @@ type Variant = 'native' | 'translated';
 // plus  original_title: string  and  language: "Slovak (machine-translated to English)"
 ```
 
-- The variant is chosen per article from `settings['language_modes'][article.lang]` (env default
+- The variant is chosen per article from `settings['language_modes'][article.lang]` (seeded from
   `LANGUAGE_MODES`; spec 07 §1). An unknown
   language uses `'native'`.
 - If the mode is `translate` but no usable translation exists (both tiers failed), the builder falls

@@ -208,7 +208,7 @@ identify secret variable names/paths, never their supplied contents or a seriali
 | `OLLAMA_MAX_CONCURRENCY` | `1` | worker, eval | match the Ollama plan (Free 1, Pro 3, Max 10) |
 | `LLM_FALLBACK_ENABLED` | `false` | worker | enables `LlmFallbackEngine` in the fallback chain |
 | `LIBRETRANSLATE_URL` | `http://libretranslate:5000` | api, worker, eval | tier-1 translation (the API translates card texts, spec 07 §5) |
-| `LANGUAGE_MODES` | `{"en":"native","sk":"native","cs":"native"}` | worker | JSON; per-language classification mode, set from the G1 result ([spec 07 §1](./07-translation.md)) |
+| `LANGUAGE_MODES` | `{"en":"native","sk":"native","cs":"native"}` | worker | JSON; the initial per-language classification mode ([spec 07 §1](./07-translation.md)). `pnpm db:seed` stores it as `settings['language_modes']` when that row is missing, so the API and workers read one effective value; later changes (such as the G1 result) go through `PATCH /admin/settings` or `apply-g1`, which enqueue the re-enrichment. Changing the env var afterwards has no effect |
 | `FETCH_USER_AGENT` | `BantooziBot/1.0 (+${PUBLIC_BASE_URL}/bot)` | api, worker, eval | honest UA; per-feed override allowed |
 | `FETCH_MAX_BYTES` | `5242880` | api, worker, eval | 5 MB for feeds and pages |
 | `FETCH_TIMEOUT_MS` | `20000` | api, worker, eval | (the API fetches during discovery, the first fetch and OPML import) |
