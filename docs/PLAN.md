@@ -867,8 +867,9 @@ Complete milestone M4 "HTTP API" exactly as specified in docs/PLAN.md §10 and d
     path (fake LibreTranslate); editing an off-feed card must not trigger unattended inference.
   - Library localization (sk); suggestions dismiss.
 - **T6:**
-  - Lanes and statuses filter correctly, with folding applied before filtering (the mixed
-    `allow_duplicates` case is tested).
+  - Lanes and statuses filter correctly, with folding applied before the lane filter (the mixed
+    `allow_duplicates` case is tested). In the unread view, a cluster whose best member is read is
+    listed through its best unread member, and filter mark-read marks that member.
   - Bookmarks default to `status=all` and ignore the window.
   - The window uses the subscribed carrier's arrival: an article first seen globally more than 14
     days ago but newly carried by a subscribed feed is listed.
@@ -948,7 +949,8 @@ Complete milestone M5 "Ranking and lanes" exactly as specified in docs/PLAN.md �
 
 - **T1:** defaults exactly as spec 06 §11; settings overrides validated, malformed persisted settings
   fail visibly rather than silently changing ranking; the handler computes the composite version
-  and per-user rank revision specified in spec 06 §7.
+  and per-user rank revision specified in spec 06 §7. An override containing `windowDays` is
+  rejected; the list window, dirty set, BM25 corpus and degraded recovery all use `RANK_WINDOW_DAYS`.
 - **T2:**
   - Every step of the spec 06 §2 algorithm has a test.
   - Every rule code in spec 06 §3.2 is produced by at least one test.
@@ -1183,7 +1185,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 
 | Item | Trigger | Where specified |
 |---|---|---|
-| **Laya engine** for SK/CZ enrichment | G1 set `laya_track_recommended = true`, or Jev availability or cost becomes a problem | spec 04 §9; [`laya-multilingual.md`](./laya-multilingual.md) (fine-tuning happens on free Kaggle GPUs, outside the server) |
+| **Laya engine** for SK/CZ enrichment | G1 set `laya_track_recommended = true`, or Jev availability or cost becomes a problem | spec 04 §9; spec 11 §2 (the `worker-laya` service, running before `engine.laya` is set); [`laya-multilingual.md`](./laya-multilingual.md) (fine-tuning happens on free Kaggle GPUs, outside the server) |
 | **Image proxy** for feed images (privacy, HTTPS) | after launch | FeedIt.sk `todo.txt`; spec 11 §7 note |
 | **Opted-in anonymized feedback** to grow the golden set | after launch, with a privacy-policy update | spec 10 §8 |
 | **Search over my archive** (Postgres FTS; later hybrid search as in DreamCatcher) | user demand | background §2.2 |
@@ -1203,7 +1205,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | 2026-09-25 | Moved from FeedIt.sk's `docs/next-gen/` to this repository's `docs/`; repository references updated, no behaviour changed |
 | 2026-09-25 | Renamed the product from FeedIt Next Gen to Bantoozi: product name, `feedit` identifiers (packages, database and roles, env vars, header, user agent, URNs, compose projects) and the `fi_sid` cookie. References to the FeedIt.sk predecessor are unchanged |
 | 2026-09-25 | Review fixes: `eval.sample` rows are versioned and runs record their dataset version, so older runs stay replayable; a creator's account erasure keeps card-publication audit records, anonymized; invite email is sent synchronously after commit and reports failure; publisher language hints outside the detector whitelist are kept; feeds keep their original fetch URL; settled spend reservations are purged with call audits; `engine.prefilter_enabled` and `engine.laya` are admin-settable |
-| 2026-09-25 | More review fixes: reader and ranker windows use the subscribed carrier's arrival time; the engine router tries a configured Laya checkpoint before returning `no_key`; Laya enrich work has its own registered queue; account erasure also removes waitlist rows and invite emails (the deletion ledger carries a keyed email hash); the shared DB-backed rate limiter is defined; a missing Jev credential falls through to the enabled fallbacks; cluster merges remap `mute_story` rules; jittered fetch delays stay within MAX; article retention follows the latest carrier arrival; unsubscribing keeps completed analysis requests; retained analysis requests protect their article from purge; expired idempotency receipts are purged; each eval run freezes its facet labels; folded rows report only the accessible cluster size; post-freeze eval top-ups create a new dataset version; archive, unread-cap eviction and mark-read cutoffs use carrier arrival; a newly carried article continues from its pipeline state (enrichment for gate-stopped or degraded articles); only the dedicated Laya worker loads Laya, and selected-article analysis gets its own Laya queue; credential and publication-consent functions get explicit API execute grants; the worker cancels analysis requests orphaned by unsubscribe |
+| 2026-09-25 | More review fixes: reader and ranker windows use the subscribed carrier's arrival time; the engine router tries a configured Laya checkpoint before returning `no_key`; Laya enrich work has its own registered queue; account erasure also removes waitlist rows and invite emails (the deletion ledger carries a keyed email hash); the shared DB-backed rate limiter is defined; a missing Jev credential falls through to the enabled fallbacks; cluster merges remap `mute_story` rules; jittered fetch delays stay within MAX; article retention follows the latest carrier arrival; unsubscribing keeps completed analysis requests; retained analysis requests protect their article from purge; expired idempotency receipts are purged; each eval run freezes its facet labels; folded rows report only the accessible cluster size; post-freeze eval top-ups create a new dataset version; archive, unread-cap eviction and mark-read cutoffs use carrier arrival; a newly carried article continues from its pipeline state (enrichment for gate-stopped or degraded articles); only the dedicated Laya worker loads Laya, and selected-article analysis gets its own Laya queue; credential and publication-consent functions get explicit API execute grants; the worker cancels analysis requests orphaned by unsubscribe; the unread view represents a folded story by its best unread member; the 14-day window is a fixed constant shared by the list, ranker and degraded recovery; the dedicated Laya worker is a Compose service that must be running before Laya is enabled |
 
 ## 17. Owner decisions and implementation gates
 

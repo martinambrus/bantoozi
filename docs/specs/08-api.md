@@ -321,10 +321,11 @@ does not cause the bookmark capture/export path to download or archive them.
 
 **Semantics, in this order:**
 1. **Candidate set:** distinct articles carried by the user's subscriptions (excluding `hidden`
-   feeds unless `feedId` is given) whose **arrival** is `≥ asOf − 14 days AND ≤ asOf`. Arrival is the
-   latest `feed_items.first_seen_at` among the user's subscribed carriers in the view's feed/folder
-   scope, not the global `articles.first_seen_at`, so an older deduplicated article newly carried by
-   a subscribed feed still appears.
+   feeds unless `feedId` is given) whose **arrival** is `≥ asOf − 14 days AND ≤ asOf` (the fixed
+   `RANK_WINDOW_DAYS` the ranker also uses, spec 06 §11). Arrival is the latest
+   `feed_items.first_seen_at` among the user's subscribed carriers in the view's feed/folder scope,
+   not the global `articles.first_seen_at`, so an older deduplicated article newly carried by a
+   subscribed feed still appears.
    Apply `feedId`/`folder`/`labelId` scope **before folding**, using EXISTS predicates rather than
    fan-out joins. A feed/folder intersection with no owned subscription is empty. For
    `lane = bookmarks`: every personally bookmarked article, without window/subscription requirement;
@@ -341,13 +342,16 @@ does not cause the bookmark capture/export path to download or archive them.
    view may use an eligible carrier; direct off-feed A stays neutral even if the user also has active
    feed B carrying the same article. A different user's authorization never qualifies. Counts,
    filtering and detail apply this same pure projection without starting model work (spec 06).
-2. **Cluster folding**, applied to the scoped candidate set before lane/status filtering:
+2. **Cluster folding**, applied to the scoped candidate set before the lane filter:
    - An article is foldable if **any** subscription carrying it has `allow_duplicates = false`.
    - Foldable articles sharing a `story_cluster_id` collapse into one row: the member with the highest
      `p_like`, then the earliest `first_seen_at`, computed with
      `row_number() OVER (PARTITION BY story_cluster_id ORDER BY p_like DESC NULLS LAST,
      first_seen_at ASC, id ASC) = 1`. Hidden/archived articles are excluded before choosing a
      representative (except in bookmarks/hidden), so a hidden sibling cannot suppress visible stories.
+     With `status=unread`, read members are excluded the same way, so a read sibling cannot hide
+     unread ones: the best unread member represents the cluster, and spec 06's seen-story rule
+     still caps a scored one at `everything`.
    - That row reports `cluster.size` as the number of the cluster's **accessible** members in this
      view's scoped candidate set (never the global `story_clusters.size`), and the other accessible
      members' feed titles. Hidden subscriptions and unrelated subscribers' private feed names are
@@ -515,7 +519,7 @@ but cannot itself cause inference.
 | `/articles/:id/labels` | `{labelId}` | Add to `label_ids`, remove from `label_suggestions`, record neutral organization only; no positive/negative preference-learning signal. **Cards are not changed** (spec 05 §5.1). Label examples are explicit (§7) |
 | `DELETE /articles/:id/labels/:labelId` | — | Remove it, record `unlabel` |
 | `/articles/:id/mute-story` | `{days: 1\|3\|7\|30}` | Create a cluster for the article if it has none, create a `mute_story` rule with `expires_at`, enqueue `user.rank {full}` → `201 {rule}` |
-| `/articles/mark-read` | `{targets: [{id, stateVersion, contentRevision}]}` **or** `{filter: {lane, feedId?, folder?, labelId?, minTier?, olderThan}, datasetVersion}` | Explicit targets ≤500; filter uses §5.1 query semantics and an inclusive arrival cutoff (§5.1) captured when confirming. Materialize/lock the displayed representatives once; no later arrivals. Maximum 5,000 targets; reject an oversized set rather than silently truncate. A changed dataset returns `STALE_STATE`. → `200 {count, mutationId}` |
+| `/articles/mark-read` | `{targets: [{id, stateVersion, contentRevision}]}` **or** `{filter: {lane, feedId?, folder?, labelId?, minTier?, olderThan}, datasetVersion}` | Explicit targets ≤500; filter uses §5.1 query semantics with `status=unread` and an inclusive arrival cutoff (§5.1) captured when confirming. Materialize/lock the displayed representatives once; no later arrivals. Maximum 5,000 targets; reject an oversized set rather than silently truncate. A changed dataset returns `STALE_STATE`. → `200 {count, mutationId}` |
 | `/articles/rate-bulk` | `{targets: [{id, stateVersion, contentRevision, analysisRequestId?}][1..200], rating: 1 \| -1 \| null}` | One transaction using single-rating semantics, per-item feedback snapshots and one coalesced learn/rank intent → `200 {count, mutationId, items}`. Explicit un-rate is supported; exact undo uses the endpoint below |
 | `/articles/undo` | `{mutationId}` | Restore the original mutation's captured reader fields (§5.4) → `200 {count, mutationId, items}` |
 
@@ -651,7 +655,7 @@ nor grants permission to analyze other articles.
 |---|---|
 | `GET /admin/overview` | users (total, active 7 d), feeds by status, articles ingested today, pipeline backlog per queue, engine status (breakers, spend today vs budget, LLM calls today), translation stats |
 | `GET /admin/usage?days=30` | platform $/day by engine and kind (from `usage_daily`), and the top 20 users by attributed cost via `admin_usage_attribution(days)` (spec 02 §6, spec 04 §7) |
-| `GET /admin/settings` / `PATCH /admin/settings` | Allow-listed keys only (spec 02 §2 registry): `engine.daily_budget_usd`, `engine.llm_daily_cap`, `engine.prefilter_enabled`, `engine.laya`, `language_modes`, `card_text_mode`, `ranker.thresholds`, `translate.tier2_daily_cap`, `question_sets.active`, `signup_mode`. Each key is validated by its zod schema. **Side effects:** `ranker.thresholds` bumps `ranker.settings_version` and enqueues `user.rank {full}` for users active in the last 7 days; `question_sets.active.enrich` enqueues `house.reenrich`; `card_text_mode = 'english'` enqueues `house.translate-cards`; `language_modes` applies to new articles only; `engine.prefilter_enabled` and `engine.laya` apply to new match/enrich jobs only, and are set only after the recall validation (spec 05 §5.5) or replay (spec 10 §6) they require |
+| `GET /admin/settings` / `PATCH /admin/settings` | Allow-listed keys only (spec 02 §2 registry): `engine.daily_budget_usd`, `engine.llm_daily_cap`, `engine.prefilter_enabled`, `engine.laya`, `language_modes`, `card_text_mode`, `ranker.thresholds`, `translate.tier2_daily_cap`, `question_sets.active`, `signup_mode`. Each key is validated by its zod schema. **Side effects:** `ranker.thresholds` bumps `ranker.settings_version` and enqueues `user.rank {full}` for users active in the last 7 days; `question_sets.active.enrich` enqueues `house.reenrich`; `card_text_mode = 'english'` enqueues `house.translate-cards`; `language_modes` applies to new articles only; `engine.prefilter_enabled` and `engine.laya` apply to new match/enrich jobs only, and are set only after the recall validation (spec 05 §5.5) or replay (spec 10 §6) they require; a non-empty `engine.laya` is also refused unless `settings['worker.heartbeat']` has an entry younger than 90 s consuming both `.laya` queues, so producers never route work that nothing consumes (spec 11 §2) |
 | `POST /admin/engine/reset-breaker` | `{engine}`: writes `engine.circuit.resetRequested[engine] = now`. Worker routers close that breaker (including auth mode) within 10 s (spec 04 §5) |
 | `GET /admin/engine/credentials` | Metadata-only configuration status for `typesafe` (Jev) and `ollama`: `CredentialStatus[]`; never plaintext, ciphertext, key suffix or reversible secret material |
 | `PUT /admin/engine/credentials/:provider` | `{apiKey,expectedRevision}`. Encrypt and stage a candidate, preserving the active credential; save alone makes no provider call → `200 {credential:CredentialStatus}` |

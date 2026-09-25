@@ -280,7 +280,7 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
    - `readClusterIds`: clusters with any member read by the user in the window
    - `bm25`: document frequencies over **all inference-eligible** window articles, not just the dirty
      ones (§9); off/nonselected items remain neutral without running a keyword fallback
-2. **Dirty set** (SQL, window `RankerConfig.windowDays` = 14; **5,000 is a batch size, not a total
+2. **Dirty set** (SQL, window `RANK_WINDOW_DAYS` = 14, §11; **5,000 is a batch size, not a total
    eligibility cap**). Iterate by stable `(arrival, id)` keyset until every eligible item is
    considered; use one captured `now` for the run. Articles
    from the user's subscriptions with arrival `≥ now − 14 days` (the latest subscribed carrier
@@ -524,8 +524,9 @@ baseline (spec 10).
 - **Query:** applicable card `interest`, using `interest_en` only with an English document; do not
   compare translated English documents to untranslated Slovak/Czech queries. Without a matching
   query translation, use the original document/query pair and report this in eval.
-- **Corpus statistics:** document frequencies over **all** articles in the user's rank window (14 days
-  of their authorized subscriptions/selections, using §1.1 admission from spec 05). They are computed once per `user.rank` run, so scores don't depend on how
+- **Corpus statistics:** document frequencies over **all** articles in the user's rank window
+  (`RANK_WINDOW_DAYS` = 14 days of their authorized subscriptions/selections, using §1.1 admission
+  from spec 05). They are computed once per `user.rank` run, so scores don't depend on how
   many items happen to be dirty. IDF uses +0.5 smoothing. `k1 = 1.2`, `b = 0.75`. The eval builds the
   corpus from the rater's assigned frozen articles (no rating information enters the corpus).
   Exact IDF is `ln(1 + (N-df+0.5)/(df+0.5))`; term contribution is
@@ -587,17 +588,21 @@ export const DEFAULT_RANKER_CONFIG = {
   demotion: { factor: 0.6, clickbait: 0.8, promotional: 0.8, shallowDepth: 0.25,
               staleTimeSensitive: 0.7, staleAgeHours: 72, autoMinDislikes: 3, autoWindowDays: 90 },
   labelSuggest: 0.8,
-  windowDays: 14,
   model: { lambda: 1.0, minExplicit: 30, minEachClass: 5, minCvAuc: 0.60, maxBaselineDrop: 0.02,
            retrainEvery: 10, historyDays: 180, keepVersions: 3 },
   bm25: { k1: 1.2, b: 0.75, scale: 3 },
 } as const;
+
+// Not a setting: the API list window (spec 08 §5.1), the rank dirty set and BM25 corpus (§7, §9)
+// and degraded recovery (spec 04 §5, spec 11 §6) must share it, so only a release changes it.
+export const RANK_WINDOW_DAYS = 14;
 ```
 
 Validate the fully merged config: all numbers finite; `0 ≤ lanes.maybe < lanes.forYou ≤ 1`;
 `tiers` exactly four strictly increasing values in (0,1); `0 ≤ never.soft < never.hide ≤ 1`;
 all probabilities/weights/factors in [0,1]; window/history/count fields positive integers with
-implementation bounds; BM25 scale/k1 positive and b in [0,1]. Reject invalid admin updates atomically.
+implementation bounds; BM25 scale/k1 positive and b in [0,1]. Reject invalid admin updates atomically,
+including unknown keys such as `windowDays`: the window is the fixed `RANK_WINDOW_DAYS`.
 The implementation derives all examples/tables above from these defaults, not duplicated literals.
 
 ---

@@ -23,9 +23,10 @@ when something needs a human, before users notice.
 | Service | Image | Memory limit | Notes |
 |---|---|---|---|
 | `postgres` | `postgres:16` | 6 GB | volume `pgdata`; `infra/postgres/init.sh` mounted into `/docker-entrypoint-initdb.d/` (spec 02 §1.1) with `POSTGRES_PASSWORD` and `BANTOOZI_{OWNER,APP,WORKER}_PASSWORD` from `.env`. Config: `shared_buffers=1536MB`, `work_mem=8MB`, `maintenance_work_mem=256MB`, `max_connections=100`, `wal_compression=on`. Not published to the host network |
-| `migrate` | dedicated migration target, command `pnpm db:migrate` | 512 MB | includes migration CLI + SQL artifacts; runs once per deploy with restart `"no"`; `api`/`worker` depend on successful completion |
+| `migrate` | dedicated migration target, command `pnpm db:migrate` | 512 MB | includes migration CLI + SQL artifacts; runs once per deploy with restart `"no"`; `api`/`worker`/`worker-laya` depend on successful completion |
 | `api` | built from `apps/api` | 768 MB | healthcheck `GET /api/v1/readyz` on its internal port |
-| `worker` | built from `apps/worker` | 1.5 GB (3.5 GB once Laya is enabled) | healthcheck on its metrics port |
+| `worker` | built from `apps/worker` | 1.5 GB | `WORKER_QUEUES=*` (every queue except the `.laya` ones); healthcheck on its metrics port |
+| `worker-laya` | the `worker` image | 3.5 GB | Compose profile `laya` (M9): enable it before setting `engine.laya`, which requires its heartbeat (spec 08 §9), and keep it while that setting lists a language. `WORKER_QUEUES=article.enrich.laya,analysis.process.laya`; the only process that loads the checkpoint (spec 04 §9), from pinned, checksummed files on a read-only model volume. Own heartbeat and healthcheck on its metrics port |
 | `libretranslate` | `libretranslate/libretranslate:latest` (pin a digest) | 3 GB | `LT_LOAD_ONLY=en,sk,cs`, `LT_DISABLE_WEB_UI=true`. Compose profile `translate`, started only when some language mode is `translate` or `card_text_mode = english` |
 | `caddy` | `caddy:2` | 256 MB | TLS (Let's Encrypt), serves `apps/web/dist`, reverse-proxies `/api/*` → `api:3000`, security headers (§7) |
 
@@ -34,14 +35,17 @@ when something needs a human, before users notice.
   every production image by digest and retain the previous release's image digests.
 - **Resources:** `work_mem` is per sort/hash operation, not a per-server cap. Reserve ≥ 3 GB for host,
   filesystem cache and deploy/backup overhead; prove the enabled profile fits 16 GB. Two workers plus
-  translation/Laya require the 32 GB profile or reduced limits. Each API pool starts at max 10,
-  each worker at max 24 (including its feed-lock connections); account separately for pg-boss and
-  migration/backup connections and keep their **combined** maximum below 80. Add an explicit total
-  pool budget before enabling a second worker. No long-lived job lock may exhaust the query pool.
-- **Persistence:** named volumes for Postgres, Caddy `/data` and `/config` (certificates), and pinned
-  translation models. Healthchecks gate dependency startup; readiness includes migrations, DB and
-  worker queue/outbox initialization, not successful external model calls. Run app containers as
-  non-root, with a read-only filesystem except explicit tmp/model volumes, and no Docker socket.
+  translation/Laya require the 32 GB profile or reduced limits; `worker-laya` counts as a second
+  worker. Each API pool starts at max 10, each worker at max 24 (including its feed-lock
+  connections), and `worker-laya`, whose two queues run at concurrency 1, at max 6. Account
+  separately for pg-boss and migration/backup connections and keep their **combined** maximum below
+  80. Add an explicit total pool budget before enabling a second worker. No long-lived job lock may
+  exhaust the query pool.
+- **Persistence:** named volumes for Postgres, Caddy `/data` and `/config` (certificates), pinned
+  translation models and the Laya checkpoint. Healthchecks gate dependency startup; readiness
+  includes migrations, DB and worker queue/outbox initialization, not successful external model
+  calls. Run app containers as non-root, with a read-only filesystem except explicit tmp/model
+  volumes, and no Docker socket.
 - **Compose project name:** every compose file sets a top-level `name:` (`bantoozi-prod`, `bantoozi-dev`,
   `bantoozi-test`), and host ports come from env, so stacks never replace each other's containers.
 - **Secrets:** protected host secret files/environment (mode 600) contain database-role passwords,
@@ -74,11 +78,13 @@ when something needs a human, before users notice.
    with its explicitly scoped role; runtime images must contain the command/artifacts they invoke.
    Seeding is idempotent: insert missing topics/question sets/library cards, but never overwrite
    admin settings or switch an existing active question set merely because a release was deployed.
-4. Stop consumption and outbox claiming in the old worker, drain bounded in-flight work, then replace
+4. Stop consumption and outbox claiming in the old workers, drain bounded in-flight work, then replace
    application containers. On SIGTERM API stops accepting requests, workers stop claiming new jobs,
    and both close pools after drain. Compose `stop_grace_period` exceeds the documented longest
    graceful deadline; forced shutdown relies on leases/idempotency, never on assumed exactly-once
-   completion. Start the translation profile when required, then API/worker/Caddy.
+   completion. Start the translation profile when required, then API/worker/Caddy, and `worker-laya`
+   when the `laya` profile is enabled. Step 2 fails if `engine.laya` lists a language without that
+   profile, so producers never route work to queues nothing consumes.
 5. Verify `/api/v1/readyz`, static asset routing, login-page delivery, worker heartbeat, outbox
    dispatch and one fixture-backed queue traversal. Wait up to 120 s for readiness. Record release
    SHA/digests and smoke results in the deploy log. The single-host beta allows a brief maintenance
@@ -302,7 +308,7 @@ retention must not erase still-owned private cards or snapshots while publishing
 | Job | Schedule | Does |
 |---|---|---|
 | `feed.schedule` | every minute | spec 03 §3 |
-| `house.rescore-degraded` | `*/10 * * * *` | recover the supported 14-day horizon fairly with persisted cursors/budget limits (spec 04 §5), including eligible deferred/exhausted match work and fallback answers; reuse current Call A, and reset terminal attempts only after their blocker changes |
+| `house.rescore-degraded` | `*/10 * * * *` | recover the supported 14-day horizon (`RANK_WINDOW_DAYS`, spec 06 §11) fairly with persisted cursors/budget limits (spec 04 §5), including eligible deferred/exhausted match work and fallback answers; reuse current Call A, and reset terminal attempts only after their blocker changes |
 | `house.expire-rules` | `5 * * * *` | delete expired rules; `user.rank {full}` for the affected users |
 | `house.purge-auth` | `20 * * * *` | expired login codes, sessions, rate-limit buckets and `api_mutations` receipts per §5, in bounded batches |
 | `house.reconcile` | `*/10 * * * *` | bounded repair of still-authorized inference, due pending/expired-lease `analysis_requests`, pending bookmark capture/outbox/match work and orphaned leases; enqueue rank for due `user_article.next_rank_at`; nightly UTC window also refreshes feed subscribers/cards, cluster counts and `lang_hint` with persistent progress cursors |
@@ -342,7 +348,7 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
 | Engine breaker open | `settings['engine.circuit'].typesafe` is `open` with `openedAt` more than 30 min ago, or it is `auth` (immediately) |
 | Budget | `settings['engine.budget_alerts']` has `p80At` or `p100At` for today (spec 04 §6) |
 | Pipeline backlog | any queue > 5,000 due waiting jobs, oldest due job > 30 min, pending outbox > 5 min, or rising terminal failures; intentional future cooldown jobs are excluded |
-| Service health | missing worker/housekeeping heartbeat, repeated OOM/restarts, exhausted DB pool, or external readiness failure; external monitor covers full-host failure |
+| Service health | missing worker/housekeeping heartbeat (including `worker-laya` while `engine.laya` lists a language), repeated OOM/restarts, exhausted DB pool, or external readiness failure; external monitor covers full-host failure |
 | Degraded share | more than 20 % of the last hour's new articles degraded |
 | Feed failures | more than 10 % of active subscribed feeds errored in the last 24 h |
 | Disk | filesystem containing Postgres or backup staging > 80 % full, < 10 GB free, or inode exhaustion; host script reports structured `host_health` capacity/heartbeat events via the bounded ops-event channel, without mounting PGDATA into an app container |

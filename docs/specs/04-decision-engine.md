@@ -426,8 +426,9 @@ bounded by the job deadline, cancellation works while queued, and aging prevents
 
 **Degraded handling is the caller's job** (spec 03 §1, spec 05, spec 06).
 `house.rescore-degraded` (every 10 min, spec 11 §6) re-enqueues `article.enrich` for articles with
-`pipeline_state = 'degraded'` within the full supported **14-day** ranking/backfill window, using
-feed membership time for newly subscribed/deduplicated items, while the primary engine is available
+`pipeline_state = 'degraded'` within the full supported **14-day** ranking/backfill window
+(`RANK_WINDOW_DAYS`, spec 06 §11), using feed membership time for newly subscribed/deduplicated
+items, while the primary engine is available
 and the budget allows **and a current automatic/manual demand remains authorized**. Use persisted keyset cursors and bounded pages with priority aging, so new
 arrivals do not starve older recoverable work. Answers produced by the LLM fallback are **replaced** by Jev answers
 when the article is re-processed, because personal models must learn from one engine
@@ -572,9 +573,10 @@ property per question key. Every probability has `minimum: 0, maximum: 1`.
   integration target, not evidence that an untested checkpoint is deployable.
 - Loads a fine-tuned **Laya-multilingual** ONNX checkpoint through the Jev-compatible Node port
   `receptron/laya` (`Laya.load({subfolder})` → `laya.systemOne(state, questions)`).
-- Runs in-process in a dedicated worker (`WORKER_QUEUES=article.enrich.laya,analysis.process.laya`),
-  because it needs about 2 GB of RAM. Only that worker loads the checkpoint; routers in every other
-  process treat Laya as not configured. Laya-eligible work for the languages in
+- Runs in-process in a dedicated worker (the `worker-laya` Compose service, spec 11 §2, with
+  `WORKER_QUEUES=article.enrich.laya,analysis.process.laya`), because it needs about 2 GB of RAM.
+  Only that worker loads the checkpoint; routers in every other process treat Laya as not
+  configured. Laya-eligible work for the languages in
   `settings['engine.laya']` goes to the dedicated queues instead of `article.enrich` and
   `analysis.process` (spec 03 §2), keeping a selected request's frozen identity.
 - Enabled only for the kinds and languages configured in `settings['engine.laya']`, e.g.
