@@ -26,7 +26,7 @@ when something needs a human, before users notice.
 | `migrate` | dedicated migration target, command `pnpm db:migrate` | 512 MB | includes migration CLI + SQL artifacts; runs once per deploy with restart `"no"`; `api`/`worker`/`worker-laya` depend on successful completion |
 | `api` | built from `apps/api` | 768 MB | healthcheck `GET /api/v1/readyz` on its internal port |
 | `worker` | built from `apps/worker` | 1.5 GB | `WORKER_QUEUES=*` (every queue except the `.laya` ones); healthcheck on its metrics port |
-| `worker-laya` | the `worker` image | 3.5 GB | Compose profile `laya` (M9): enable it before setting `engine.laya`, which requires its heartbeat (spec 08 §9), and keep it while that setting lists a language. `WORKER_QUEUES=article.enrich.laya,analysis.process.laya`; the only process that loads the checkpoint (spec 04 §9), from pinned, checksummed files on a read-only model volume. Own heartbeat and healthcheck on its metrics port |
+| `worker-laya` | the `worker` image | 3.5 GB | Compose profile `laya` (M9): enable it before setting `engine.laya`, which requires its heartbeat (spec 08 §9). Keep it while that setting lists a language and, after the setting is cleared, until both `.laya` queues are empty. `WORKER_QUEUES=article.enrich.laya,analysis.process.laya`; the only process that loads the checkpoint (spec 04 §9), from pinned, checksummed files on a read-only model volume. Own heartbeat and healthcheck on its metrics port |
 | `libretranslate` | `libretranslate/libretranslate:latest` (pin a digest) | 3 GB | `LT_LOAD_ONLY=en,sk,cs`, `LT_DISABLE_WEB_UI=true`. Compose profile `translate`, started only when some language mode is `translate` or `card_text_mode = english` |
 | `caddy` | `caddy:2` | 256 MB | TLS (Let's Encrypt), serves `apps/web/dist`, reverse-proxies `/api/*` → `api:3000`, security headers (§7) |
 
@@ -83,8 +83,8 @@ when something needs a human, before users notice.
    and both close pools after drain. Compose `stop_grace_period` exceeds the documented longest
    graceful deadline; forced shutdown relies on leases/idempotency, never on assumed exactly-once
    completion. Start the translation profile when required, then API/worker/Caddy, and `worker-laya`
-   when the `laya` profile is enabled. Step 2 fails if `engine.laya` lists a language without that
-   profile, so producers never route work to queues nothing consumes.
+   when the `laya` profile is enabled. Step 2 fails if `engine.laya` lists a language, or a `.laya`
+   queue still holds jobs, without that profile, so no work waits on a queue nothing consumes.
 5. Verify `/api/v1/readyz`, static asset routing, login-page delivery, worker heartbeat, outbox
    dispatch and one fixture-backed queue traversal. Wait up to 120 s for readiness. Record release
    SHA/digests and smoke results in the deploy log. The single-host beta allows a brief maintenance
@@ -348,7 +348,7 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
 | Engine breaker open | `settings['engine.circuit'].typesafe` is `open` with `openedAt` more than 30 min ago, or it is `auth` (immediately) |
 | Budget | `settings['engine.budget_alerts']` has `p80At` or `p100At` for today (spec 04 §6) |
 | Pipeline backlog | any queue > 5,000 due waiting jobs, oldest due job > 30 min, pending outbox > 5 min, or rising terminal failures; intentional future cooldown jobs are excluded |
-| Service health | missing worker/housekeeping heartbeat (including `worker-laya` while `engine.laya` lists a language), repeated OOM/restarts, exhausted DB pool, or external readiness failure; external monitor covers full-host failure |
+| Service health | missing worker/housekeeping heartbeat (including `worker-laya` while `engine.laya` lists a language or a `.laya` queue holds jobs), repeated OOM/restarts, exhausted DB pool, or external readiness failure; external monitor covers full-host failure |
 | Degraded share | more than 20 % of the last hour's new articles degraded |
 | Feed failures | more than 10 % of active subscribed feeds errored in the last 24 h |
 | Disk | filesystem containing Postgres or backup staging > 80 % full, < 10 GB free, or inode exhaustion; host script reports structured `host_health` capacity/heartbeat events via the bounded ops-event channel, without mounting PGDATA into an app container |
