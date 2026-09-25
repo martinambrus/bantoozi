@@ -1537,7 +1537,9 @@ ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA eval GRANT USAGE, SEL
 - Dataset versions are append-only. A new version (after a rating correction, a late duplicate or
   an addition, spec 10 §2.1) inserts its own `eval.sample` rows, copying unchanged snapshots, and
   never updates or deletes an earlier version's rows. A run reads only its `dataset_version`, so older
-  runs keep their exact snapshots and split membership for replay.
+  runs keep their exact snapshots and split membership for replay. `eval.ratings` and
+  `eval.facet_labels` hold the current ground truth; each run freezes the exact ratings, cards and
+  facet labels it used in `eval.runs.config` (spec 10 §2.1), so corrections never alter older runs.
 - Evaluation uses a separate database with synthetic/consented card definitions. Never pin a
   production user's private fork against account erasure; remove such personal eval references before
   deletion if they exist. Frozen benchmark data does not override a personal-data deletion request.

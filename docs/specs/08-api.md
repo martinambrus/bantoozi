@@ -348,8 +348,10 @@ does not cause the bookmark capture/export path to download or archive them.
      `row_number() OVER (PARTITION BY story_cluster_id ORDER BY p_like DESC NULLS LAST,
      first_seen_at ASC, id ASC) = 1`. Hidden/archived articles are excluded before choosing a
      representative (except in bookmarks/hidden), so a hidden sibling cannot suppress visible stories.
-   - That row reports `cluster.size` and the other **accessible** members' feed titles. Hidden
-     subscriptions and unrelated subscribers' private feed names are never returned.
+   - That row reports `cluster.size` as the number of the cluster's **accessible** members in this
+     view's scoped candidate set (never the global `story_clusters.size`), and the other accessible
+     members' feed titles. Hidden subscriptions and unrelated subscribers' private feed names are
+     never returned.
    - Non-foldable and unclustered articles are their own rows.
 3. **Filters:**
    - lane = `coalesce(ua.lane, 'new')`, where `all` means every lane except `hidden`; `hidden` is

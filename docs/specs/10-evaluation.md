@@ -105,8 +105,9 @@ settings, regardless of profile.
 - Once frozen, additions, rating corrections or card edits create a new version manifest; they do
   not silently mutate a run's ground truth. A new version inserts its own `eval.sample` rows and
   leaves earlier versions untouched (spec 02 §7). `eval.runs` records its `dataset_version`, and
-  `eval.runs.config` captures dataset/split hashes plus the exact rating/card snapshot used. Source
-  rows may stay linked for browsing, but they are not the reproducibility boundary.
+  `eval.runs.config` captures dataset/split hashes plus the exact rating, card and facet-label
+  snapshot used, so a later label correction or adjudication never changes an earlier run's ground
+  truth. Source rows may stay linked for browsing, but they are not the reproducibility boundary.
 - **Status (`eval status`):** per-language sample counts, then per rater: cards written, feeds picked,
   assigned, rated, skipped. Also facet-label counts per language.
 
@@ -474,7 +475,8 @@ until a separate schema/API/retention/consent design and privacy notice are appr
 
 ## 9. Required evaluation tests
 
-- Frozen article/card snapshots survive live content edits, purges and a full backup/restore.
+- Frozen article/card snapshots survive live content edits, purges and a full backup/restore. A
+  facet-label correction after a run leaves that run's replayed enrichment metrics unchanged.
 - Story groups and rater copies never cross dev/test; test labels cannot be read during selection.
 - Cache identity changes on provider/model/schema/state/questions/translation settings; failed calls
   do not poison cache and retries/resume do not duplicate answer rows or billing attribution.
