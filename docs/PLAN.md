@@ -1159,11 +1159,11 @@ Complete milestone M8 "Operations and launch readiness" exactly as specified in 
   expired `api_mutations` receipts are (tested). The unread-cap eviction and 31-day archive use each
   feed's carrier arrival, so a newly carried older article is not archived on arrival (tested).
   `house.reenrich` re-enqueues an admitted article whose carrier arrival was 10 days ago (tested).
-  `house.rematch` re-enqueues pairs made incompatible by a match-set change, a switch to
-  `as_written` (a switch to `english` rematches through `house.translate-cards`), a prefilter change
-  in either direction or a model-pin change, including `prefilter` markers, and runs card-scoped
-  after a library topic correction; a worker starting with a new `TYPESAFE_MODEL` records
-  `engine.model_pin` and enqueues the rebuild once (tested).
+  `house.rematch` re-enqueues pairs made incompatible by a match-set change, a card-text-mode change
+  in either direction (english → as_written → english rematches already-translated cards), a
+  prefilter change in either direction or a model-pin change, including `prefilter` markers, and
+  runs card-scoped after a library topic correction; a worker starting with a new `TYPESAFE_MODEL`
+  records `engine.model_pin` and enqueues the rebuild once (tested).
   An idle `origin_fetch_state` row is purged only after its cooldown and leases have passed, and a
   cluster whose last member was purged is deleted once no `mute_story` rule names it (tested). A
   pending analysis request older than 180 days is cancelled as `retention_expired` and never resumed

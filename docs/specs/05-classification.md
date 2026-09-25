@@ -116,18 +116,18 @@ in the same outbox transaction. This makes an inaugural rating learnable when sl
   `house.reenrich {since: now − RANK_WINDOW_DAYS}` (the whole reader/ranker window, spec 06 §11).
   It re-enqueues `article.enrich` only for articles still admitted by §1.1 whose eligible carrier
   arrival (the latest authorized `feed_items.first_seen_at`) is in that window, newest first, in
-  batches within the budget. A match-set change, switching `card_text_mode` to `as_written`, any
-  `engine.prefilter_enabled` change (either direction) and a model-pin change enqueue
+  batches within the budget. A match-set change, any `card_text_mode` change, any
+  `engine.prefilter_enabled` change (each in either direction) and a model-pin change enqueue
   `house.rematch {since: now − RANK_WINDOW_DAYS}`. It re-enqueues `match_queue` rows for admitted
   (article, held card) pairs in that window whose current answer is incompatible or is a `prefilter`
   marker, newest first within budget, and records `user.rank {full}` for affected users active in
-  the last 7 days (others catch up lazily, spec 06 §7). Switching to `english` rematches through
-  `house.translate-cards` as translations publish (spec 07 §5). A model-pin change is detected by
-  the first worker that starts with a new `TYPESAFE_MODEL`: under a row lock it records
-  `settings['engine.model_pin']` and enqueues both `house.reenrich` and `house.rematch` once
-  (spec 11 §8). Old incompatible answers cannot satisfy current cache lookups while replacement is
-  pending. Store exact set/model/input provenance with golden runs; changing a set does not mutate
-  frozen runs.
+  the last 7 days (others catch up lazily, spec 06 §7). Switching to `english` rematches cards whose
+  translation already exists; `house.translate-cards` translates the missing ones and rematches
+  them as they publish (spec 07 §5). A model-pin change is detected by the first worker that starts
+  with a new `TYPESAFE_MODEL`: under a row lock it records `settings['engine.model_pin']` and
+  enqueues both `house.reenrich` and `house.rematch` once (spec 11 §8). Old incompatible answers
+  cannot satisfy current cache lookups while replacement is pending. Store exact set/model/input
+  provenance with golden runs; changing a set does not mutate frozen runs.
 
 ---
 
