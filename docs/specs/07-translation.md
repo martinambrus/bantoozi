@@ -213,7 +213,7 @@ Library cards already ship with English text (`lang = 'en'`).
   failures preserve reading and never leak keys in errors, outbox or accounting.
 - A card mode/text-digest change rematches only authorized eligible pairs and invalidates model compatibility;
   unchanged translated text does not trigger unnecessary work. API card-call accounting works as
-  `feedit_app` without worker credentials.
+  `bantoozi_app` without worker credentials.
 
 Capability references (checked 2026-09-25):
 [LibreTranslate language pairs](https://docs.libretranslate.com/guides/supported_languages/) and

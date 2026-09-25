@@ -1,6 +1,6 @@
 # Spec 01: Architecture, repository layout and conventions
 
-Status: **binding**. Everything built for FeedIt Next Gen follows this spec unless a later spec
+Status: **binding**. Everything built for Bantoozi follows this spec unless a later spec
 explicitly overrides a point. Deviations are allowed only through the process in §9.
 
 ---
@@ -48,10 +48,10 @@ M3b and before launch, without requiring live calls in CI.
 
 ## 2. Repository layout
 
-The next-gen app lives in its **own repository**: this one, `bantoozi` (earlier working name
-`feedit-ng`). The paths below are relative to its root. M0 starts from a repository that contains
-only this plan in `docs/` (`docs/PLAN.md`, `docs/specs/`, `docs/background.md`,
-`docs/laya-multilingual.md`), plus the initial `README.md` and `LICENSE`.
+The next-gen app lives in its **own repository**: this one, `bantoozi`. The paths below are relative
+to its root. M0 starts from a repository that contains only this plan in `docs/` (`docs/PLAN.md`,
+`docs/specs/`, `docs/background.md`, `docs/laya-multilingual.md`), plus the initial `README.md` and
+`LICENSE`.
 
 ```
 bantoozi/
@@ -126,18 +126,18 @@ bantoozi/
 └── CLAUDE.md                     # agent working agreement (§10)
 ```
 
-**Package names** are `@feedit/<directory>` (`@feedit/api`, `@feedit/shared`, `@feedit/web`, …). The
+**Package names** are `@bantoozi/<directory>` (`@bantoozi/api`, `@bantoozi/shared`, `@bantoozi/web`, …). The
 root `package.json` defines these shortcut scripts, and every doc uses them:
 
 | Root script | Runs |
 |---|---|
-| `pnpm dev` | `turbo run dev --filter=@feedit/api --filter=@feedit/worker --filter=@feedit/web` |
+| `pnpm dev` | `turbo run dev --filter=@bantoozi/api --filter=@bantoozi/worker --filter=@bantoozi/web` |
 | `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm test:int`, `pnpm build` | `turbo run <task>` |
-| `pnpm e2e` | `pnpm --filter @feedit/web e2e` (Playwright, spec 09 §9) |
-| `pnpm db:migrate` | `pnpm --filter @feedit/db migrate` |
-| `pnpm db:seed` | `pnpm --filter @feedit/worker seed` |
-| `pnpm evaluate <command> …` | `pnpm --filter @feedit/eval cli <command> …` (spec 10) |
-| `pnpm worker-cli <command> …` | `pnpm --filter @feedit/worker cli <command> …` (M1-T9) |
+| `pnpm e2e` | `pnpm --filter @bantoozi/web e2e` (Playwright, spec 09 §9) |
+| `pnpm db:migrate` | `pnpm --filter @bantoozi/db migrate` |
+| `pnpm db:seed` | `pnpm --filter @bantoozi/worker seed` |
+| `pnpm evaluate <command> …` | `pnpm --filter @bantoozi/eval cli <command> …` (spec 10) |
+| `pnpm worker-cli <command> …` | `pnpm --filter @bantoozi/worker cli <command> …` (M1-T9) |
 
 **Dependency rules** (enforced with `eslint-plugin-boundaries` or `dependency-cruiser` in CI):
 
@@ -152,7 +152,7 @@ root `package.json` defines these shortcut scripts, and every doc uses them:
   all inputs passed in.
 - `packages/testing` may import any package (it is only used by tests).
 - **Exception for the migrate job:** `packages/db/src/migrate/` may import `pg-boss` and
-  `@feedit/shared` (`jobs.ts`), because the migrate job creates the pg-boss schema and queues
+  `@bantoozi/shared` (`jobs.ts`), because the migrate job creates the pg-boss schema and queues
   (spec 02 §1.2). The "no pg-boss in `packages/db`" rule applies to everything else in
   `packages/db/src/**`.
 - **Repositories persist effects, apps relay jobs.** `packages/db` never imports pg-boss outside
@@ -176,21 +176,21 @@ identify secret variable names/paths, never their supplied contents or a seriali
 | Variable | Default | Used by | Meaning |
 |---|---|---|---|
 | `NODE_ENV` | `development` | all | `development` / `test` / `production` |
-| `DATABASE_URL` | — (required) | api, test | connection as role `feedit_app` (RLS enforced) |
-| `DATABASE_URL_WORKER` | — (required) | worker, eval | connection as role `feedit_worker` (BYPASSRLS) |
-| `DATABASE_URL_MIGRATE` | — (required) | migrate | connection as role `feedit_owner` |
+| `DATABASE_URL` | — (required) | api, test | connection as role `bantoozi_app` (RLS enforced) |
+| `DATABASE_URL_WORKER` | — (required) | worker, eval | connection as role `bantoozi_worker` (BYPASSRLS) |
+| `DATABASE_URL_MIGRATE` | — (required) | migrate | connection as role `bantoozi_owner` |
 | `TEST_ADMIN_DATABASE_URL` | `postgres://postgres:postgres@localhost:${PG_TEST_PORT}/postgres` | test, eval | superuser connection used only to create template, test, E2E and dry-run databases (spec 02 §1.1) |
 | `PG_TEST_PORT` | `5433` | compose.test.yml, test | host port of the test Postgres |
 | `PG_DEV_PORT` | `5432` | compose.dev.yml | host port of the dev Postgres |
-| `POSTGRES_PASSWORD`, `FEEDIT_OWNER_PASSWORD`, `FEEDIT_APP_PASSWORD`, `FEEDIT_WORKER_PASSWORD` | — | compose / `init.sh` | database bootstrap only; never read by the apps |
+| `POSTGRES_PASSWORD`, `BANTOOZI_OWNER_PASSWORD`, `BANTOOZI_APP_PASSWORD`, `BANTOOZI_WORKER_PASSWORD` | — | compose / `init.sh` | database bootstrap only; never read by the apps |
 | `PUBLIC_BASE_URL` | `http://localhost:5173` | api, worker, eval | used in links, the CSRF `Origin` check (spec 08 §1) and the fetcher User-Agent |
 | `API_PORT` | `3000` | api | |
-| `SESSION_COOKIE_NAME` | `fi_sid` | api | |
+| `SESSION_COOKIE_NAME` | `bantoozi_sid` | api | |
 | `SESSION_TTL_DAYS` | `60` | api | sliding expiry |
 | `SESSION_PEPPER` | — (required) | api | secret mixed into login-code hashes |
 | `MAIL_TRANSPORT` | `smtp` (`log` in development/test) | api, worker | `log` writes emails to the console and keeps the last one for the test-only endpoint |
 | `SMTP_URL` | — (required in production) | api, worker | `smtp://user:pass@host:587` (the worker sends alerts, spec 11 §6.1) |
-| `MAIL_FROM` | `FeedIt <no-reply@localhost>` | api, worker | |
+| `MAIL_FROM` | `Bantoozi <no-reply@localhost>` | api, worker | |
 | `SIGNUP_MODE` | `invite` | api | `invite` / `open` / `closed`; `settings['signup_mode']` overrides it |
 | `RATE_LIMITS_ENABLED` | `true` | api | `false` only for E2E/load tests with `NODE_ENV=test`; refused in production |
 | `TYPESAFE_API_KEY` | — | worker, eval | optional bootstrap Jev key, used only if no DB credential row exists; DB configuration/revocation takes precedence (spec 04 §1.2) |
@@ -209,7 +209,7 @@ identify secret variable names/paths, never their supplied contents or a seriali
 | `LLM_FALLBACK_ENABLED` | `false` | worker | enables `LlmFallbackEngine` in the fallback chain |
 | `LIBRETRANSLATE_URL` | `http://libretranslate:5000` | api, worker, eval | tier-1 translation (the API translates card texts, spec 07 §5) |
 | `LANGUAGE_MODES` | `{"en":"native","sk":"native","cs":"native"}` | worker | JSON; per-language classification mode, set from the G1 result ([spec 07 §1](./07-translation.md)) |
-| `FETCH_USER_AGENT` | `FeedItBot/1.0 (+${PUBLIC_BASE_URL}/bot)` | api, worker, eval | honest UA; per-feed override allowed |
+| `FETCH_USER_AGENT` | `BantooziBot/1.0 (+${PUBLIC_BASE_URL}/bot)` | api, worker, eval | honest UA; per-feed override allowed |
 | `FETCH_MAX_BYTES` | `5242880` | api, worker, eval | 5 MB for feeds and pages |
 | `FETCH_TIMEOUT_MS` | `20000` | api, worker, eval | (the API fetches during discovery, the first fetch and OPML import) |
 | `FETCH_ALLOW_PRIVATE` | `false` | api, worker, eval | tests only; refused when `NODE_ENV=production` (spec 03 §4) |
@@ -217,7 +217,7 @@ identify secret variable names/paths, never their supplied contents or a seriali
 | `PREFILTER_MIN_CARDS` | `60` | worker | spec 05 §5.5 |
 | `EVAL_INGEST_ONLY` | `false` | worker | M3a: stop the pipeline after extract (spec 10 §2.1) |
 | `EVAL_PUBLIC_URL` | `http://localhost:5180` | eval | base URL printed in rater links (spec 10 §2.2) |
-| `EVAL_CACHE_DIR` | `~/.cache/feedit-eval` | eval | engine-call cache shared by all worktrees (spec 10 §3) |
+| `EVAL_CACHE_DIR` | `~/.cache/bantoozi-eval` | eval | engine-call cache shared by all worktrees (spec 10 §3) |
 | `WORKER_QUEUES` | `*` | worker | comma list of queue names this process consumes |
 | `LOG_LEVEL` | `info` | all | |
 | `METRICS_TOKEN` | — | api, worker, scripts | bearer token for `/metrics` and `POST /admin/ops-event` |
@@ -235,7 +235,7 @@ key or a successful external probe. The selected personal Jev and Ollama account
 capability validation and budget limits still apply.
 
 **Credential code boundary:** put AEAD envelope helpers in a Node-only shared server subpath
-(`@feedit/shared/server/credential-crypto`), with an ESLint boundary forbidding web imports. The
+(`@bantoozi/shared/server/credential-crypto`), with an ESLint boundary forbidding web imports. The
 API encrypts supplied keys; the worker/eval credential resolver alone reads/decrypts stored
 envelopes. DB repositories handle encrypted blobs/metadata only. No encryption keys are available
 to SQL functions, Vite, the browser, migration reports or generic settings serialization. A
@@ -313,7 +313,7 @@ limits whose combined maximum leaves headroom under Postgres `max_connections`.
 | Eval | `pnpm evaluate …` | — | live Jev calls against the golden set | M3b, and any change to questions, thresholds or model |
 
 **Integration isolation:**
-- Each package's `test:int` uses its own database, `feedit_test_<worktree-hash>_<package>_<run-id>`, created from
+- Each package's `test:int` uses its own database, `bantoozi_test_<worktree-hash>_<package>_<run-id>`, created from
   the migrated template (spec 02 §1.1). Parallel worktrees and packages never share data.
 - Inside one package, Vitest runs with `fileParallelism: false` for `test:int`.
 - `turbo.json` sets `"test:int": { "cache": false }`.
@@ -390,7 +390,7 @@ the owner.
 M0 writes this file verbatim, and later milestones append to its "Current state" section:
 
 ```markdown
-# FeedIt Next Gen — working agreement
+# Bantoozi — working agreement
 
 - Source of truth: docs/PLAN.md (goals, tasks, order) and docs/specs/*.md (behaviour). Read the spec
   sections a task references before writing code.

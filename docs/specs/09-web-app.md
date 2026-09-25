@@ -14,13 +14,13 @@ mobile-first, installable, works in English and Slovak, and never makes the read
   `sk.json`, plus `src/i18n/common.{en,sk}.json`. Parallel work on different features never edits the
   same file. A test asserts key parity between `en` and `sk` for every namespace.
 - The API client is generated from the zod DTOs in `packages/shared` (a thin typed `fetch` wrapper).
-  It sends same-origin credentials and `X-FeedIt-Client: web`; authenticated mutations carry the
+  It sends same-origin credentials and `X-Bantoozi-Client: web`; authenticated mutations carry the
   durable `Idempotency-Key` and reader `stateVersion` required by spec 08. Validate response DTOs
   at the boundary. All query keys include the account id and normalized reader filters.
 - Optimistic updates for every reader action (read, rate, bookmark, label), rolled back on error with
   a toast ("Couldn't save — retry"). This is FeedIt's "undo on failure" todo.
 - **PWA (vite-plugin-pwa):**
-  - manifest (name "FeedIt", theme colour, icons)
+  - manifest (name "Bantoozi", theme colour, icons)
   - service worker precaches versioned, public app-shell assets only
   - private offline storage requires an explicit device-local choice (default disabled on a new
     browser), explaining shared-device access and the 24-hour limit. With it disabled the shell
@@ -279,7 +279,7 @@ When the page becomes visible again after `/open`:
    - "Never show me…" chips (anti-interests, optional)
    - at least 1 interest is recommended; a skip is allowed with a warning
 4. **Calibration round:**
-   - "Choose articles to teach FeedIt" (spec 06 §10). Present local feed titles for explicit selection;
+   - "Choose articles to teach Bantoozi" (spec 06 §10). Present local feed titles for explicit selection;
      only the ids the user confirms go to `/subscriptions/:feedId/analyze`. Changing to Training or
      simply rendering this screen does not submit any analysis requests
    - after selection, show real request completion plus "38 scored of 120 available" from counts
@@ -332,7 +332,7 @@ When the page becomes visible again after `/open`:
     including text, translated title and topics; offer Approve / Decline. Explain internal reuse
     separately from public listing. Approval of one version does not authorize later semantic edits;
     no response is not approval. Explain that an administrator may publish after at least 30 days
-    of creator inactivity unless the creator has declined; a return to FeedIt resets that activity
+    of creator inactivity unless the creator has declined; a return to Bantoozi resets that activity
     clock. Do not show request age as an automatic publication countdown
 - **Card editor:**
   - title (optional), "I want to read about…" (interest), "…but not about" (not_for), strength, scope
@@ -399,8 +399,8 @@ Plain tables and forms, no polish needed:
 
 **Environment** (`apps/web/playwright.config.ts`). Playwright starts the `webServer` entries **before**
 `globalSetup`, so preparation happens in the first entry. The entries are, in order:
-1. `pnpm --filter @feedit/testing e2e:prepare && pnpm --filter @feedit/testing fixtures:serve`.
-   `e2e:prepare` creates `feedit_e2e_<runId>` from the current template (spec 02 §1.1) and runs
+1. `pnpm --filter @bantoozi/testing e2e:prepare && pnpm --filter @bantoozi/testing fixtures:serve`.
+   `e2e:prepare` creates `bantoozi_e2e_<runId>` from the current template (spec 02 §1.1) and runs
    `pnpm db:seed` against it. `fixtures:serve` then serves 3 feeds and their article pages, plus the
    **fake TypeSafe server** (spec 04 §10, `latencyMs: 50`) on fixed test ports.
 2. `apps/api` and 3. `apps/worker`, each with:
@@ -409,8 +409,8 @@ Plain tables and forms, no polish needed:
    - `TYPESAFE_API_KEY=test`, `TYPESAFE_BASE_URL=<fake server URL>`
    - `PUBLIC_BASE_URL=http://localhost:<preview port>`, so the browser's `Origin` passes the CSRF check
      (spec 08 §1)
-   - `DATABASE_URL*` for `feedit_e2e_<runId>`
-4. `pnpm --filter @feedit/web exec vite build && pnpm --filter @feedit/web exec vite preview --port <preview port>`,
+   - `DATABASE_URL*` for `bantoozi_e2e_<runId>`
+4. `pnpm --filter @bantoozi/web exec vite build && pnpm --filter @bantoozi/web exec vite preview --port <preview port>`,
    with the preview server proxying `/api` to the API.
 
 Test files are named `*.pw.ts` so Vitest never picks them up (spec 01 §6).

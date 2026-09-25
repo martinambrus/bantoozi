@@ -1,13 +1,13 @@
 # Laya: an open-weights Jev alternative for EN + SK + CZ?
 
 This is a companion to [`PLAN.md`](./PLAN.md), researched in September 2026. The question: Jev is English-first
-and many FeedIt feeds are Slovak or Czech. Could we use **Laya**, the open-source "Jev-compatible" model, and
+and many Bantoozi feeds are Slovak or Czech. Could we use **Laya**, the open-source "Jev-compatible" model, and
 fine-tune it on EN + SK + CZ instead?
 
 > **Status:** optional M9 research, not a launch dependency or a verified implementation recipe.
-> The figures below are source-reported, dated measurements, not FeedIt acceptance evidence.
+> The figures below are source-reported, dated measurements, not Bantoozi acceptance evidence.
 > Before M9, pin the exact checkpoint, license, tokenizer and runtime revisions; validate the actual
-> input/output contract and benchmark on the target CPU and held-out FeedIt data. A compatible
+> input/output contract and benchmark on the target CPU and held-out Bantoozi data. A compatible
 > method name does not establish compatible probability calibration or context limits. Follow
 > specs 04, 06 and 10 for capability, budget, cache/version and leakage controls.
 
@@ -75,7 +75,7 @@ A possible later plan is a **hybrid**, conditional on evaluation:
 
 ---
 
-## 2. How Laya fits the FeedIt design
+## 2. How Laya fits the Bantoozi design
 
 | Plan component | Needs | Jev | Laya (base) | Laya (fine-tuned on our data) |
 |---|---|---|---|---|

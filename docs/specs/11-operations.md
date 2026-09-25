@@ -22,7 +22,7 @@ when something needs a human, before users notice.
 
 | Service | Image | Memory limit | Notes |
 |---|---|---|---|
-| `postgres` | `postgres:16` | 6 GB | volume `pgdata`; `infra/postgres/init.sh` mounted into `/docker-entrypoint-initdb.d/` (spec 02 §1.1) with `POSTGRES_PASSWORD` and `FEEDIT_{OWNER,APP,WORKER}_PASSWORD` from `.env`. Config: `shared_buffers=1536MB`, `work_mem=8MB`, `maintenance_work_mem=256MB`, `max_connections=100`, `wal_compression=on`. Not published to the host network |
+| `postgres` | `postgres:16` | 6 GB | volume `pgdata`; `infra/postgres/init.sh` mounted into `/docker-entrypoint-initdb.d/` (spec 02 §1.1) with `POSTGRES_PASSWORD` and `BANTOOZI_{OWNER,APP,WORKER}_PASSWORD` from `.env`. Config: `shared_buffers=1536MB`, `work_mem=8MB`, `maintenance_work_mem=256MB`, `max_connections=100`, `wal_compression=on`. Not published to the host network |
 | `migrate` | dedicated migration target, command `pnpm db:migrate` | 512 MB | includes migration CLI + SQL artifacts; runs once per deploy with restart `"no"`; `api`/`worker` depend on successful completion |
 | `api` | built from `apps/api` | 768 MB | healthcheck `GET /api/v1/readyz` on its internal port |
 | `worker` | built from `apps/worker` | 1.5 GB (3.5 GB once Laya is enabled) | healthcheck on its metrics port |
@@ -42,8 +42,8 @@ when something needs a human, before users notice.
   translation models. Healthchecks gate dependency startup; readiness includes migrations, DB and
   worker queue/outbox initialization, not successful external model calls. Run app containers as
   non-root, with a read-only filesystem except explicit tmp/model volumes, and no Docker socket.
-- **Compose project name:** every compose file sets a top-level `name:` (`feedit-prod`, `feedit-dev`,
-  `feedit-test`), and host ports come from env, so stacks never replace each other's containers.
+- **Compose project name:** every compose file sets a top-level `name:` (`bantoozi-prod`, `bantoozi-dev`,
+  `bantoozi-test`), and host ports come from env, so stacks never replace each other's containers.
 - **Secrets:** protected host secret files/environment (mode 600) contain database-role passwords,
   SMTP/session/metrics secrets, backup encryption/bucket settings and the provider master-key ring
   `PROVIDER_MASTER_KEY_ID` / `PROVIDER_MASTER_KEYS` (specs01/04). Provider API keys are encrypted in
@@ -102,7 +102,7 @@ require WAL archiving/PITR and is not provided by a daily dump. Benchmark restor
 retained-bookmark corpus, since saved full content persists beyond the ordinary article-body window. A healthy daily backup meets the stated recovery target; a missed
 backup immediately increases exposure and must alert rather than being reported as covered.
 
-- Under a host lock, use `pg_dump -U postgres -Fc feedit` with a PostgreSQL 16 client and superuser
+- Under a host lock, use `pg_dump -U postgres -Fc bantoozi` with a PostgreSQL 16 client and superuser
   access, preserving every schema and all RLS-protected rows (`pgboss` and `eval` included). Capture
   `pg_dumpall --globals-only --no-role-passwords` as well: a single-database dump does not include
   cluster roles. Restore role passwords from the separately encrypted deployment secrets.
@@ -365,7 +365,7 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
   `dangerouslySetInnerHTML` except with sanitized fields, and those are sanitized **again** client-side
   with DOMPurify.
 - **Database:**
-  - the API uses the `feedit_app` role (RLS)
+  - the API uses the `bantoozi_app` role (RLS)
   - the worker's BYPASSRLS role is never used by the API
   - the RLS isolation suite passes (spec 08 §12)
 - **Logs:** no secrets, codes, tokens, raw URL queries, provider prompt/response text, login/email

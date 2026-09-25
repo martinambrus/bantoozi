@@ -1,6 +1,6 @@
-# FeedIt Next Gen: execution plan
+# Bantoozi: execution plan
 
-> **What this is.** The build plan for FeedIt Next Gen, an RSS reader that classifies articles with
+> **What this is.** The build plan for Bantoozi, an RSS reader that classifies articles with
 > TypeSafe's **Jev** decision model against each reader's plain-language **interest cards**, instead
 > of a hand-tuned word-scoring engine. It is written so that Claude Code can execute it milestone by
 > milestone as `/goal`s, with minimal interpretation.
@@ -350,18 +350,18 @@ Complete milestone M0 "Foundations" exactly as specified in docs/PLAN.md §5, fo
       accuracy, the SK/CZ tie-break with a hint, and the short-text hint path (`minLength: 10` for
       card texts)
 - **T3:**
-  - `infra/compose.dev.yml` (`name: feedit-dev`) runs postgres, and libretranslate under the
+  - `infra/compose.dev.yml` (`name: bantoozi-dev`) runs postgres, and libretranslate under the
     `translate` profile.
-  - `infra/compose.test.yml` (`name: feedit-test`, port from `PG_TEST_PORT`).
+  - `infra/compose.test.yml` (`name: bantoozi-test`, port from `PG_TEST_PORT`).
   - `infra/postgres/init.sh` per spec 02 §1.1.
   - `docker compose -f infra/compose.test.yml up -d --no-recreate` works. A `psql` check lists the
-    database `feedit` owned by `feedit_owner`, the three roles (the owner and the worker with
+    database `bantoozi` owned by `bantoozi_owner`, the three roles (the owner and the worker with
     BYPASSRLS), and the extensions.
   - Dev/test docs and scripts use `--no-recreate` for shared containers. Production deploys follow
     spec 11 and must actually replace changed application images.
 - **T4:**
   - The test-DB helper implements spec 02 §1.1:
-    - templates `feedit_template_<journal-hash>`, created under an advisory lock with the extensions
+    - templates `bantoozi_template_<journal-hash>`, created under an advisory lock with the extensions
       and the full migrate job
     - a database per worktree and package
   - Tests show:
@@ -396,7 +396,7 @@ Complete milestone M0 "Foundations" exactly as specified in docs/PLAN.md §5, fo
     `after(stage, …)` with the stage order of spec 03 §1. The worker runs the outbox relay and
     tests prove crash-after-send replay, guarded lease completion and unavailable-stage retention.
   - `apps/web`: a Vite + React + TanStack Router + Tailwind + i18next shell rendering a localized
-    "FeedIt" page, with the per-feature i18n layout.
+    "Bantoozi" page, with the per-feature i18n layout.
   - `apps/eval`: a commander CLI with `--help`.
   - `pnpm dev` starts api, worker and web (logs shown).
 - **T8:** `.github/workflows/ci.yml` per spec 01 §7, without the E2E step (M6 adds it); `CLAUDE.md` with
@@ -664,7 +664,7 @@ Complete milestone M3a "Evaluation tooling and golden-set collection" exactly as
 | M3a-T5 | Metrics library | — | C | 10 §4 |
 | M3a-T6 | Experiment runner (eval router with `budgetOverrideUsd`, `ignoreDailyCaps`, `kind:'eval'`, `EVAL_CACHE_DIR` cache, estimate, `--yes`/`--max-usd`); experiments B0, B1, B1-T, E1, E2, E3, E3b, E4 (E5 stub); `eval replay` | T1, T2 | D | 10 §3, §6 |
 | M3a-T7 | Report generator, decision rules, `apps/eval/config/g1.json` schema, `apply-g1` with the field → settings mapping | T2, T5, T6 | C | 10 §1, §5 |
-| M3a-T8 | `eval dry-run` in the separate `feedit_eval_dryrun` database: simulated raters and the fake engine → full report | T3–T7 | D | 10 all |
+| M3a-T8 | `eval dry-run` in the separate `bantoozi_eval_dryrun` database: simulated raters and the fake engine → full report | T3–T7 | D | 10 all |
 | M3a-T9 | Real sample ingested and the rater onboarding kit | T2, T3 | A | 10 §2 |
 
 **Done when:**
@@ -711,7 +711,7 @@ Complete milestone M3a "Evaluation tooling and golden-set collection" exactly as
   - `apps/eval/config/g1.json` validates against a zod schema.
   - `apply-g1` writes exactly the settings in the spec 10 §1 mapping table.
 - **T8:**
-  - `eval dry-run` creates `feedit_eval_dryrun` from the template.
+  - `eval dry-run` creates `bantoozi_eval_dryrun` from the template.
   - It generates 4 synthetic raters whose ratings follow a hidden per-rater interest model, and uses
     the fake TypeSafe server.
   - It runs every experiment and writes `reports/DRYRUN-<date>.md` and `.g1.json` (both git-ignored).
@@ -797,7 +797,7 @@ and the learn trigger), spec 03 §10–11, spec 07 §5 (card text translation).
 **Goal text:**
 
 ```
-Complete milestone M4 "HTTP API" exactly as specified in docs/PLAN.md §10 and docs/specs/08-api.md, using the existing packages (shared, db, questions, feeds, translate, ranker types) and the conventions of docs/specs/01-architecture.md. Read PLAN.md §0, §2, §10 and the referenced specs first, create one task per row of the M4 task table, and implement them in dependency order, using subagents for independent lanes under the parallel-work rules of PLAN.md §0.3. Commit each task as "<task-id>: <summary>". Constraints: every tenant-owned query runs through req.withTx/TenantTx under RLS as feedit_app; auth/control-plane repositories follow spec 02 explicit exceptions; state and async intents commit atomically through the outbox; its relay enqueues via packages/shared/src/jobs.ts; no live third-party calls in tests (emails use MAIL_TRANSPORT=log); locked decisions unchanged; deviations logged in docs/DECISIONS.md with the spec updated. The goal is met only when the transcript shows (1) a final "M4 report" in the format of PLAN.md §0.4 listing M4-T1…M4-T11 each with ✓, commit hash and evidence, and every M4 "Done when" item checked with evidence, (2) the output of `pnpm typecheck && pnpm lint && pnpm test && pnpm test:int` run after the last commit, ending with exit code 0, plus the result lines of the named tests api-rls-isolation.int.test.ts and api-operations.test.ts, and (3) `git status --short` printing nothing. Or stop after 220 turns and print the report with the unfinished items.
+Complete milestone M4 "HTTP API" exactly as specified in docs/PLAN.md §10 and docs/specs/08-api.md, using the existing packages (shared, db, questions, feeds, translate, ranker types) and the conventions of docs/specs/01-architecture.md. Read PLAN.md §0, §2, §10 and the referenced specs first, create one task per row of the M4 task table, and implement them in dependency order, using subagents for independent lanes under the parallel-work rules of PLAN.md §0.3. Commit each task as "<task-id>: <summary>". Constraints: every tenant-owned query runs through req.withTx/TenantTx under RLS as bantoozi_app; auth/control-plane repositories follow spec 02 explicit exceptions; state and async intents commit atomically through the outbox; its relay enqueues via packages/shared/src/jobs.ts; no live third-party calls in tests (emails use MAIL_TRANSPORT=log); locked decisions unchanged; deviations logged in docs/DECISIONS.md with the spec updated. The goal is met only when the transcript shows (1) a final "M4 report" in the format of PLAN.md §0.4 listing M4-T1…M4-T11 each with ✓, commit hash and evidence, and every M4 "Done when" item checked with evidence, (2) the output of `pnpm typecheck && pnpm lint && pnpm test && pnpm test:int` run after the last commit, ending with exit code 0, plus the result lines of the named tests api-rls-isolation.int.test.ts and api-operations.test.ts, and (3) `git status --short` printing nothing. Or stop after 220 turns and print the report with the unfinished items.
 ```
 
 **Tasks**
@@ -822,7 +822,7 @@ Complete milestone M4 "HTTP API" exactly as specified in docs/PLAN.md §10 and d
   - The error mapping table is tested.
   - A request that never touches per-user data opens no transaction (a spy); `app.user_id` is set
     inside `withTx` (integration).
-  - Unauthenticated → 401. A mutation without `X-FeedIt-Client` → 403, but a `METRICS_TOKEN` bearer is
+  - Unauthenticated → 401. A mutation without `X-Bantoozi-Client` → 403, but a `METRICS_TOKEN` bearer is
     exempt.
   - Rate-limit headers are present, and limits are off only when `RATE_LIMITS_ENABLED=false` in test.
 - **T2:**
@@ -893,7 +893,7 @@ Complete milestone M4 "HTTP API" exactly as specified in docs/PLAN.md §10 and d
 - **T11:**
   - `api-rls-isolation.int.test.ts` calls **every** GET endpoint as user A with B's data seeded (shared
     cards with B's private fork, B's labels, rules, bookmarks) and asserts no leakage.
-  - Every mutation endpoint passes as `feedit_app` (grants).
+  - Every mutation endpoint passes as `bantoozi_app` (grants).
   - Transactional outbox rollback/restart and relay duplicate-delivery tests pass.
   - The OpenAPI snapshot is committed.
   - `api-operations.test.ts` asserts that the OpenAPI operations equal
@@ -1180,6 +1180,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | 2026-09-25 | Owner answers applied: per-feed inference modes, slow selected-article training, permanent bookmark snapshots, per-feed media overrides, encrypted admin-managed credentials, active-author consent, opt-in library upgrades, neutral labels and a single-human evaluation pilot |
 | 2026-09-25 | Final owner decisions: explicit prospective feed activation, public-card eligibility after 30 days of creator inactivity, owner-pilot PASS accepted for initial beta, and text/HTML bookmark archives without media |
 | 2026-09-25 | Moved from FeedIt.sk's `docs/next-gen/` to this repository's `docs/`; repository references updated, no behaviour changed |
+| 2026-09-25 | Renamed the product from FeedIt Next Gen to Bantoozi: product name, `feedit` identifiers (packages, database and roles, env vars, header, user agent, URNs, compose projects) and the `fi_sid` cookie. References to the FeedIt.sk predecessor are unchanged |
 
 ## 17. Owner decisions and implementation gates
 

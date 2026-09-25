@@ -105,7 +105,7 @@ in the same outbox transaction. This makes an inaugural rating learnable when sl
     generated from the old wording. Card ids are immutable source content (§5.1).
   - A placeholder snapshot is a regression test, not proof that all builder paths are unchanged.
     Version builders explicitly and test each optional-field/language/example path.
-- **Seeding:** `pnpm db:seed` (root script → `pnpm --filter @feedit/worker seed`, i.e.
+- **Seeding:** `pnpm db:seed` (root script → `pnpm --filter @bantoozi/worker seed`, i.e.
   `apps/worker/src/seed.ts`, because only apps may import every package) upserts every set into
   `question_sets`. The worker also checks this at startup.
   - It **fails** if a `version` already exists with a different `sha256`. Changing wording requires
@@ -676,7 +676,7 @@ Expired leases recover after a crash; queue throttling alone does not replace th
 
 - One file per L1. Each entry:
   `{ slug, title, title_sk, interest, interest_sk?, not_for?, topic_ids: string[], examples_yes?: string[≤3], examples_no?: string[≤2] }`.
-- **`pnpm db:seed`** (`apps/worker/src/seed.ts`, running as `feedit_worker`) upserts by `slug` into
+- **`pnpm db:seed`** (`apps/worker/src/seed.ts`, running as `bantoozi_worker`) upserts by `slug` into
   `interest_cards` (`origin='library', visibility='public'`, `i18n.sk` from the `*_sk` fields):
   - **Unchanged text** (same `text_hash`): update `title`, `topic_ids`, `i18n` in place.
   - **Changed semantic text:** create/reuse a new immutable public library version, move the

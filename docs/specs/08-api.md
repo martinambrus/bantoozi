@@ -59,7 +59,7 @@ Every per-user query runs under row-level security, and every limit that bounds 
   subscription/bookmark/card/label. Foreign or inaccessible ids return `404` without revealing
   existence; mixed-access bulk requests fail atomically. UUID/bigint strings are validated losslessly.
 - **CSRF:**
-  - Every non-GET request must carry the header `X-FeedIt-Client: web`. Browsers cannot send a custom
+  - Every non-GET request must carry the header `X-Bantoozi-Client: web`. Browsers cannot send a custom
     header cross-site without a CORS preflight, and preflights are refused.
   - If an `Origin` header is present, it must equal `new URL(PUBLIC_BASE_URL).origin`; `null` and
     malformed origins fail. Reject `Sec-Fetch-Site: cross-site`. GET/HEAD/OPTIONS never mutate user
@@ -121,7 +121,7 @@ Every per-user query runs under row-level security, and every limit that bounds 
 | unknown email listed in `ADMIN_EMAILS`, mode ≠ `closed` | signup code (**admin bootstrap**: the first admin needs no invite) |
 | unknown email, `SIGNUP_MODE=open` | signup code |
 | unknown email, `SIGNUP_MODE=invite`, valid invite (unused, unexpired, email-bound invites must match) | signup code (invite remembered on the code row) |
-| unknown email, `SIGNUP_MODE=invite`, no or invalid invite | "FeedIt is invite-only" email with a waitlist link |
+| unknown email, `SIGNUP_MODE=invite`, no or invalid invite | "Bantoozi is invite-only" email with a waitlist link |
 | `SIGNUP_MODE=closed`, unknown email | nothing |
 
 **Codes:**
@@ -172,7 +172,7 @@ Every per-user query runs under row-level security, and every limit that bounds 
 A soft-deleted account keeps its `users` row until `house.purge-users` removes it after 7 days, so an
 email never hits the unique constraint through the signup path.
 
-**Session cookie:** `fi_sid` = 32 random bytes, base64url, stored hashed.
+**Session cookie:** `bantoozi_sid` = 32 random bytes, base64url, stored hashed.
 - Attributes: `HttpOnly`, `Secure` (production), `SameSite=Lax`, `Path=/`, `Max-Age = SESSION_TTL_DAYS`.
 - Sliding: `sessions.last_seen_at`, `sessions.expires_at` **and `users.last_active_at`** are refreshed
   at most every 5 minutes, with a matching refreshed cookie Max-Age. "Active in the last N days"
@@ -777,14 +777,14 @@ Send `Retry-After` for 429. Public waitlist upserts never expose whether an addr
 - **The RLS isolation suite:** seed users A and B, then call **every** GET endpoint as A and assert
   that nothing of B's appears. This includes cards (shared rows with private forks), labels, rules,
   bookmarks and exports.
-- **CSRF:** a mutation without `X-FeedIt-Client` returns `403`.
+- **CSRF:** a mutation without `X-Bantoozi-Client` returns `403`.
 - **Snapshots:** the OpenAPI document (a breaking change fails CI unless the snapshot is updated in
   the same commit).
 - **Operation list:** `apps/api/test/expected-operations.txt` lists every `METHOD /path` of this spec
   (one per line, written by hand from §2–§10). A test asserts that the OpenAPI document contains exactly
   these operations, plus nothing undocumented.
 - **Write-path grants:** every mutation endpoint succeeds against a database where the API connects as
-  `feedit_app`. This catches missing grants (spec 02 §1.2).
+  `bantoozi_app`. This catches missing grants (spec 02 §1.2).
 - **Enqueue:** an integration test proves the API role can persist its job intent and the relay can
   deliver it to pg-boss, and that the admin
   bootstrap row of the §2.1 decision table works with an empty `invites` table.

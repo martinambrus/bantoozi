@@ -66,7 +66,7 @@ export interface EngineStore {                 // implemented in packages/db
 }
 
 // ── packages/engine/src/types.ts ──
-export type { EngineName, CallKind, CallStatus, EngineCallRow, UsageRow, ExternalCall, EngineStore } from '@feedit/shared';
+export type { EngineName, CallKind, CallStatus, EngineCallRow, UsageRow, ExternalCall, EngineStore } from '@bantoozi/shared';
 export type Priority = 'interactive' | 'bulk';
 
 export type Criteria = string | JsonObject | JsonArray | null;          // TypeSafe "EntryType"

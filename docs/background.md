@@ -1,4 +1,4 @@
-# FeedIt Next Gen: background and rationale
+# Bantoozi: background and rationale
 
 > This file explains *why* the plan looks the way it does. It covers lessons from the two earlier
 > prototypes, what the Jev demos and docs taught us, and the risks. It is reference material. The
@@ -6,7 +6,7 @@
 > Nothing here overrides a spec. If they disagree, the spec wins.
 >
 > **Review note (2026-09-25):** provider benchmarks, prices, limits and community-model claims below
-> are dated research inputs, not measured FeedIt results. The specs require capability preflight,
+> are dated research inputs, not measured Bantoozi results. The specs require capability preflight,
 > workload-based cost measurement and held-out evaluation. Owner decisions are tracked in PLAN §17.
 > The owner's follow-up makes inference opt-in per feed, bookmarks durable full-content snapshots,
 > library upgrades opt-in and labels neutral. Final decisions allow publication after 30 days of creator
@@ -275,7 +275,7 @@ public feeds; private/authenticated feeds need a different isolation design (PLA
 card criteria and example titles may reach the configured decision/translation providers. Verify
 the actual account's retention and processing terms before launch and describe those data flows
 accurately. Another gateway's policy or an enterprise-only promise does not establish the policy
-of FeedIt's configured direct API accounts. No production feedback is reused for cross-user model
+of Bantoozi's configured direct API accounts. No production feedback is reused for cross-user model
 training or the golden set without the explicit opt-in specified in spec 10.
 
 ---

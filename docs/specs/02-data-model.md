@@ -37,46 +37,46 @@ commit.
 
 The official `postgres:16` image runs `*.sh` files from `/docker-entrypoint-initdb.d/` as the `postgres`
 superuser on first start. (The shell wrapper supplies environment values as psql variables.) The script takes the
-role passwords from the env vars `FEEDIT_OWNER_PASSWORD`, `FEEDIT_APP_PASSWORD` and
-`FEEDIT_WORKER_PASSWORD` and runs:
+role passwords from the env vars `BANTOOZI_OWNER_PASSWORD`, `BANTOOZI_APP_PASSWORD` and
+`BANTOOZI_WORKER_PASSWORD` and runs:
 
 ```bash
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" \
-     -v owner_pw="$FEEDIT_OWNER_PASSWORD" -v app_pw="$FEEDIT_APP_PASSWORD" -v worker_pw="$FEEDIT_WORKER_PASSWORD" <<'SQL'
-CREATE ROLE feedit_owner  LOGIN PASSWORD :'owner_pw'  BYPASSRLS;  -- runs migrations; owns every object and the SECURITY DEFINER functions (§6)
-CREATE ROLE feedit_app    LOGIN PASSWORD :'app_pw';               -- API; RLS enforced
-CREATE ROLE feedit_worker LOGIN PASSWORD :'worker_pw' BYPASSRLS;  -- worker, eval CLI, housekeeping
-CREATE DATABASE feedit OWNER feedit_owner;
-\connect feedit
+     -v owner_pw="$BANTOOZI_OWNER_PASSWORD" -v app_pw="$BANTOOZI_APP_PASSWORD" -v worker_pw="$BANTOOZI_WORKER_PASSWORD" <<'SQL'
+CREATE ROLE bantoozi_owner  LOGIN PASSWORD :'owner_pw'  BYPASSRLS;  -- runs migrations; owns every object and the SECURITY DEFINER functions (§6)
+CREATE ROLE bantoozi_app    LOGIN PASSWORD :'app_pw';               -- API; RLS enforced
+CREATE ROLE bantoozi_worker LOGIN PASSWORD :'worker_pw' BYPASSRLS;  -- worker, eval CLI, housekeeping
+CREATE DATABASE bantoozi OWNER bantoozi_owner;
+\connect bantoozi
 CREATE EXTENSION IF NOT EXISTS citext;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-ALTER SCHEMA public OWNER TO feedit_owner;
-REVOKE ALL ON DATABASE feedit FROM PUBLIC;
-GRANT CONNECT ON DATABASE feedit TO feedit_app, feedit_worker;
+ALTER SCHEMA public OWNER TO bantoozi_owner;
+REVOKE ALL ON DATABASE bantoozi FROM PUBLIC;
+GRANT CONNECT ON DATABASE bantoozi TO bantoozi_app, bantoozi_worker;
 SQL
 ```
 
-`feedit_owner` must have `BYPASSRLS`. The SECURITY DEFINER functions in §6 run as the owner and must
+`bantoozi_owner` must have `BYPASSRLS`. The SECURITY DEFINER functions in §6 run as the owner and must
 see every tenant's rows. `FORCE ROW LEVEL SECURITY` would otherwise apply to the owner too.
 
 **Test databases** (`infra/compose.test.yml` runs the same `init.sh`). The helper in
 `packages/testing` connects with `TEST_ADMIN_DATABASE_URL` (the superuser):
 
-1. **Template per schema version:** `feedit_template_<h>`, where `h` = the first 12 hex digits of
+1. **Template per schema version:** `bantoozi_template_<h>`, where `h` = the first 12 hex digits of
    `sha256(sorted migration paths + their bytes + journal bytes + pinned pg-boss version)`. A changed migration therefore yields a new
    template, and parallel branches with different migrations never share one.
-2. **Creation** runs under `pg_advisory_lock(hashtext('feedit_template'))`, so parallel test runs never
+2. **Creation** runs under `pg_advisory_lock(hashtext('bantoozi_template'))`, so parallel test runs never
    race. If the template is missing:
-   - `CREATE DATABASE feedit_template_<h> OWNER feedit_owner`
+   - `CREATE DATABASE bantoozi_template_<h> OWNER bantoozi_owner`
    - as the superuser, run three statements: `CREATE EXTENSION IF NOT EXISTS citext;`,
      `CREATE EXTENSION IF NOT EXISTS pg_trgm;`, `CREATE EXTENSION IF NOT EXISTS pgcrypto;`, then
      apply the same schema ownership, database ACL and `public` CREATE revocation as production
-   - the full **migrate job** as `feedit_owner`: Drizzle migrations, the pg-boss schema and the queues
+   - the full **migrate job** as `bantoozi_owner`: Drizzle migrations, the pg-boss schema and the queues
      (§1.2)
-3. **Per worktree and package:** `feedit_test_<worktree-hash>_<package>_<run-id>`, created with
-   `CREATE DATABASE … TEMPLATE feedit_template_<h> OWNER feedit_owner` (dropped and recreated per run).
+3. **Per worktree and package:** `bantoozi_test_<worktree-hash>_<package>_<run-id>`, created with
+   `CREATE DATABASE … TEMPLATE bantoozi_template_<h> OWNER bantoozi_owner` (dropped and recreated per run).
 4. **E2E and eval dry-run databases** are created the same way, from the template for the current
    journal, and are then **seeded** (`pnpm db:seed`) before any process uses them.
 
@@ -86,19 +86,19 @@ ready marker only after successful migration; delete an incomplete template befo
 are sanitized, bounded to PostgreSQL's 63-byte identifier limit and quoted as identifiers. Cleanup may
 drop only databases created by this test run. Parallel sessions/packages never share a database.
 
-### 1.2 Privileges (first migration, run as `feedit_owner`)
+### 1.2 Privileges (first migration, run as `bantoozi_owner`)
 
 **Defaults**, which cover every later migration automatically:
 
 ```sql
-GRANT USAGE ON SCHEMA public TO feedit_app, feedit_worker;
--- No default table privileges for feedit_app: every new API-visible table is reviewed explicitly.
-ALTER DEFAULT PRIVILEGES FOR ROLE feedit_owner IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO feedit_worker;
-ALTER DEFAULT PRIVILEGES FOR ROLE feedit_owner IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO feedit_worker;
-ALTER DEFAULT PRIVILEGES FOR ROLE feedit_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+GRANT USAGE ON SCHEMA public TO bantoozi_app, bantoozi_worker;
+-- No default table privileges for bantoozi_app: every new API-visible table is reviewed explicitly.
+ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO bantoozi_worker;
+ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO bantoozi_worker;
+ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 ```
 
-**Explicit SELECT allowlist for `feedit_app`:** `users`, `settings`, `login_codes`, `sessions`,
+**Explicit SELECT allowlist for `bantoozi_app`:** `users`, `settings`, `login_codes`, `sessions`,
 `invites`, `waitlist`, `origin_fetch_state`, `feeds`, `story_clusters`, `articles`, `feed_items`, `article_aliases`,
 `article_bodies`, `article_snapshots`, `article_translations`, `question_sets`, `article_facets`, `topics`, `interest_cards`,
 `card_answers`, `article_topics_l2`, `library_card_versions`, `usage_daily`, and the tables in §4. Add grants only after the
@@ -110,10 +110,10 @@ admin summaries use the approved SQL functions/aggregates. No sensitive prompt t
 Grant `USAGE` on identity sequences only for tables the API may insert into below; new worker-only
 sequences have no default API grant.
 
-**Explicit write privileges for `feedit_app`.** Every migration that adds a table appends its row here
+**Explicit write privileges for `bantoozi_app`.** Every migration that adds a table appends its row here
 (and to the migration):
 
-| Table | `feedit_app` may | Needed for |
+| Table | `bantoozi_app` may | Needed for |
 |---|---|---|
 | `users` | `INSERT, UPDATE` | signup, `PATCH /me`, soft delete, `invites_left`, `last_active_at`, admin edits |
 | `settings` | `INSERT, UPDATE` | admin settings, breaker reset request, alert state |
@@ -137,17 +137,17 @@ sequences have no default API grant.
 **pg-boss** (pg-boss 10; the schema is created by a migration and never by a running process):
 
 ```sql
--- migration: execute the construction plans for the pinned pg-boss version as feedit_owner, then:
-GRANT USAGE ON SCHEMA pgboss TO feedit_worker;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA pgboss TO feedit_worker;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA pgboss TO feedit_worker;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgboss TO feedit_worker;
-ALTER DEFAULT PRIVILEGES FOR ROLE feedit_owner IN SCHEMA pgboss
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO feedit_worker;
-ALTER DEFAULT PRIVILEGES FOR ROLE feedit_owner IN SCHEMA pgboss
-  GRANT USAGE, SELECT ON SEQUENCES TO feedit_worker;
-ALTER DEFAULT PRIVILEGES FOR ROLE feedit_owner IN SCHEMA pgboss
-  GRANT EXECUTE ON FUNCTIONS TO feedit_worker;
+-- migration: execute the construction plans for the pinned pg-boss version as bantoozi_owner, then:
+GRANT USAGE ON SCHEMA pgboss TO bantoozi_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA pgboss TO bantoozi_worker;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA pgboss TO bantoozi_worker;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgboss TO bantoozi_worker;
+ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA pgboss
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO bantoozi_worker;
+ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA pgboss
+  GRANT USAGE, SELECT ON SEQUENCES TO bantoozi_worker;
+ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA pgboss
+  GRANT EXECUTE ON FUNCTIONS TO bantoozi_worker;
 ```
 
 The API writes `job_outbox`, never pg-boss tables or queue payloads. Readiness/backlog queries use a
@@ -156,7 +156,7 @@ against the pinned pg-boss catalog at M0 and covered by parity tests; no job pay
 
 **Queues:**
 - Created by the migrate job (as the owner) with `createQueue(name, options)` for every entry of
-  `packages/shared/src/jobs.ts` (spec 03 §2), so per-queue partitions are owned by `feedit_owner` and
+  `packages/shared/src/jobs.ts` (spec 03 §2), so per-queue partitions are owned by `bantoozi_owner` and
   covered by the default privileges.
 - The worker starts pg-boss with `migrate: false`, supervises and runs cron schedules plus the
   outbox relay. The API has no pg-boss client or credentials beyond its own database role.
@@ -171,7 +171,7 @@ The API is a trusted server, not a database client exposed to browsers. Auth/boo
 Only named auth/admin repositories can access them, with explicit ownership/role checks and DTO
 allowlists. This is an exception to the per-user RLS claim, not permission to use generic CRUD.
 Neither a request body nor arbitrary SQL may supply `app.user_id`; derive it from the verified session.
-`feedit_app`/`feedit_worker` are never members of `feedit_owner` and cannot create roles or databases.
+`bantoozi_app`/`bantoozi_worker` are never members of `bantoozi_owner` and cannot create roles or databases.
 
 ## 2. Settings and accounts
 
@@ -402,7 +402,7 @@ CREATE TABLE articles (
   id               bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   url              text NULL,                      -- navigable HTTP(S) best link; null for linkless items
   canonical_url    text NOT NULL,                  -- spec 03 §5
-  url_key          text NOT NULL UNIQUE,           -- canonical_url WITH scheme; stable urn:feedit:<feed_id>:<sha256(identity)> if linkless
+  url_key          text NOT NULL UNIQUE,           -- canonical_url WITH scheme; stable urn:bantoozi:<feed_id>:<sha256(identity)> if linkless
   title            text NOT NULL,
   title_norm       text NOT NULL,                  -- spec 03 §6.1
   author           text NULL,
@@ -1192,7 +1192,7 @@ CREATE POLICY t_tenant ON t
   created that way (a branded `TenantTx` type).
 - Without `app.user_id`, per-user tables return no rows. An integration test asserts this for every
   table in §4.
-- `feedit_worker` bypasses RLS. It is used only by worker handlers, the eval CLI and housekeeping, and
+- `bantoozi_worker` bypasses RLS. It is used only by worker handlers, the eval CLI and housekeeping, and
   the API never holds its credentials. Cross-tenant reads that the API needs (feed-level refreshes,
   admin statistics) go through the SECURITY DEFINER functions of §6, which run as the BYPASSRLS owner.
 - Shared tables that contain private-card material are not exempt from tenant isolation. Apply the
@@ -1205,10 +1205,10 @@ CREATE POLICY t_tenant ON t
 ```sql
 ALTER TABLE interest_cards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE interest_cards FORCE ROW LEVEL SECURITY;
-CREATE POLICY interest_cards_read ON interest_cards FOR SELECT TO feedit_app
+CREATE POLICY interest_cards_read ON interest_cards FOR SELECT TO bantoozi_app
   USING (visibility IN ('public','shared') OR
          owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid);
-CREATE POLICY interest_cards_create ON interest_cards FOR INSERT TO feedit_app
+CREATE POLICY interest_cards_create ON interest_cards FOR INSERT TO bantoozi_app
   WITH CHECK (nullif(current_setting('app.user_id', true), '') IS NOT NULL AND
     ((visibility = 'shared' AND origin = 'user' AND owner_user_id IS NULL
       AND creator_user_id = nullif(current_setting('app.user_id', true), '')::uuid) OR
@@ -1218,7 +1218,7 @@ CREATE POLICY interest_cards_create ON interest_cards FOR INSERT TO feedit_app
      (visibility = 'public' AND origin = 'library' AND EXISTS
        (SELECT 1 FROM users WHERE id = nullif(current_setting('app.user_id', true), '')::uuid
           AND role = 'admin' AND deleted_at IS NULL))));
-CREATE POLICY interest_cards_update ON interest_cards FOR UPDATE TO feedit_app
+CREATE POLICY interest_cards_update ON interest_cards FOR UPDATE TO bantoozi_app
   USING (visibility IN ('public','shared') OR
          owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)
   WITH CHECK (visibility IN ('public','shared') OR
@@ -1226,12 +1226,12 @@ CREATE POLICY interest_cards_update ON interest_cards FOR UPDATE TO feedit_app
 
 ALTER TABLE card_answers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE card_answers FORCE ROW LEVEL SECURITY;
-CREATE POLICY card_answers_read ON card_answers FOR SELECT TO feedit_app
+CREATE POLICY card_answers_read ON card_answers FOR SELECT TO bantoozi_app
   USING (EXISTS (SELECT 1 FROM interest_cards c WHERE c.id = card_id));
 
 ALTER TABLE article_snapshots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE article_snapshots FORCE ROW LEVEL SECURITY;
-CREATE POLICY article_snapshots_saved_read ON article_snapshots FOR SELECT TO feedit_app
+CREATE POLICY article_snapshots_saved_read ON article_snapshots FOR SELECT TO bantoozi_app
   USING (EXISTS (
       SELECT 1 FROM user_article ua WHERE ua.bookmark_snapshot_id = article_snapshots.id
         AND ua.bookmarked_at IS NOT NULL
@@ -1244,7 +1244,7 @@ CREATE POLICY article_snapshots_saved_read ON article_snapshots FOR SELECT TO fe
 
 ALTER TABLE job_outbox ENABLE ROW LEVEL SECURITY;
 ALTER TABLE job_outbox FORCE ROW LEVEL SECURITY;
-CREATE POLICY job_outbox_requester ON job_outbox FOR INSERT TO feedit_app
+CREATE POLICY job_outbox_requester ON job_outbox FOR INSERT TO bantoozi_app
   WITH CHECK (user_id = nullif(current_setting('app.user_id', true), '')::uuid);
 ```
 
@@ -1282,7 +1282,7 @@ All values are bound parameters and no user can execute SQL or select the server
 
 ---
 
-## 6. SQL functions (SECURITY DEFINER, owned by the BYPASSRLS `feedit_owner`)
+## 6. SQL functions (SECURITY DEFINER, owned by the BYPASSRLS `bantoozi_owner`)
 
 ```sql
 -- Recompute feed_cards for the given feeds: cards and labels of active-inference, non-deleted subscribers,
@@ -1333,7 +1333,7 @@ $$;
 -- session_user preserves the real login inside SECURITY DEFINER; test role connections separately.
 CREATE FUNCTION admin_context_allowed() RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
-  SELECT session_user IN ('feedit_owner','feedit_worker') OR EXISTS (
+  SELECT session_user IN ('bantoozi_owner','bantoozi_worker') OR EXISTS (
     SELECT 1 FROM users u WHERE u.id = nullif(current_setting('app.user_id', true), '')::uuid
       AND u.role = 'admin' AND u.deleted_at IS NULL
   );
@@ -1383,13 +1383,13 @@ $$;
 REVOKE EXECUTE ON FUNCTION refresh_feed_cards(bigint[]), refresh_feed_subscribers(bigint[], jsonb),
   admin_card_holders(bigint[]), admin_usage_attribution(int) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION refresh_feed_cards(bigint[]), refresh_feed_subscribers(bigint[], jsonb),
-  admin_card_holders(bigint[]), admin_usage_attribution(int) TO feedit_app, feedit_worker;
+  admin_card_holders(bigint[]), admin_usage_attribution(int) TO bantoozi_app, bantoozi_worker;
 ```
 
 **Narrow API accounting helper.** The M0 hand-written migration also supplies
 `record_card_translation(p_logical_request_id uuid, p_attempt int, p_latency_ms int, p_status text,
 p_error_code text)` as SECURITY DEFINER with a fixed trusted search path, explicit revoke from PUBLIC
-and execute only for `feedit_app`/`feedit_worker`. Require an active `app.user_id`; derive attribution
+and execute only for `bantoozi_app`/`bantoozi_worker`. Require an active `app.user_id`; derive attribution
 from it, hard-code `engine='libretranslate'`, `kind='translate'`, `cost_usd=0`, and omit article/card IDs
 until a card exists. Validate the status/attempt/latency and a bounded error-code allowlist, never accept
 raw text. Insert at most once per logical request/engine/attempt and increment zero-cost usage in the same
@@ -1459,9 +1459,9 @@ write the next immutable revision but never migrate other readers' holdings.
   search path, bind arguments, and never interpolate dynamic SQL.
 
 **Tests** (M0-T5). Both refresh functions give correct rows when called:
-- (a) as `feedit_app` inside `withTenant(A)`, with users A and B both subscribed and holding different
+- (a) as `bantoozi_app` inside `withTenant(A)`, with users A and B both subscribed and holding different
   cards
-- (b) as `feedit_worker` with no `app.user_id`
+- (b) as `bantoozi_worker` with no `app.user_id`
 
 Neither may drop B's rows. Add two-connection tests for concurrent subscribe/unsubscribe and scope
 changes, proving both materialized feed caches equal a fresh source-table aggregation at commit.
@@ -1503,11 +1503,11 @@ CREATE TABLE eval.run_answers (run_id bigint NOT NULL REFERENCES eval.runs(id) O
   question_key text NOT NULL, answer jsonb NOT NULL,
   UNIQUE NULLS NOT DISTINCT (run_id, article_id, card_id, question_key));
 CREATE INDEX run_answers_run_idx ON eval.run_answers (run_id, article_id);
-GRANT USAGE ON SCHEMA eval TO feedit_worker;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA eval TO feedit_worker;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA eval TO feedit_worker;
-ALTER DEFAULT PRIVILEGES FOR ROLE feedit_owner IN SCHEMA eval GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO feedit_worker;
-ALTER DEFAULT PRIVILEGES FOR ROLE feedit_owner IN SCHEMA eval GRANT USAGE, SELECT ON SEQUENCES TO feedit_worker;
+GRANT USAGE ON SCHEMA eval TO bantoozi_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA eval TO bantoozi_worker;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA eval TO bantoozi_worker;
+ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA eval GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO bantoozi_worker;
+ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA eval GRANT USAGE, SELECT ON SEQUENCES TO bantoozi_worker;
 ```
 
 - The `eval` schema is accessed only by `apps/eval`, through `DATABASE_URL_WORKER`.

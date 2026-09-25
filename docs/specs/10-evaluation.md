@@ -75,7 +75,7 @@ settings, regardless of profile.
   Czech. It mixes news, tech, science, sport, lifestyle, local and classifieds, and includes at least
   one Google News feed and one feed with poor excerpts.
 - **`eval ingest-sample --feeds apps/eval/data/feeds-golden.txt`:**
-  - creates or reuses the internal system user `eval@feedit.local` (role `user`, never logs in) and
+  - creates or reuses the internal system user `eval@bantoozi.local` (role `user`, never logs in) and
     subscribes it to the feeds
   - **requires a running worker** with `EVAL_INGEST_ONLY=true`: the command checks
     `settings['worker.heartbeat']` for an entry younger than 90 s with `evalIngestOnly = true` (spec 02
@@ -187,7 +187,7 @@ Each run:
   per run/article/card/question (variant is fixed by the run), so resume/upsert never duplicates results
 - caches each **successful validated** engine/translation call in
   `${EVAL_CACHE_DIR}/<sha256(canonical request manifest)>.json`
-  (default `~/.cache/feedit-eval`, outside the repository and shared by worktrees), so re-runs and
+  (default `~/.cache/bantoozi-eval`, outside the repository and shared by worktrees), so re-runs and
   report tweaks cost nothing. The canonical manifest includes provider, pinned model version,
   adapter/schema version, operation, exact state/questions/translation source and target, decoding
   settings and content revision; simple string concatenation is not a safe key. Writes are atomic,
@@ -242,7 +242,7 @@ invocation budget, retain completed answers, and resume explicitly; partial runs
 
 **Other commands:**
 - **`eval dry-run`:** runs the whole pipeline on synthetic data (M3a-T8) in a **separate database**
-  `feedit_eval_dryrun`, freshly created from the current template **and seeded** (spec 02 §1.1). The
+  `bantoozi_eval_dryrun`, freshly created from the current template **and seeded** (spec 02 §1.1). The
   eval process connects through `TEST_ADMIN_DATABASE_URL` only to create it. It writes
   `reports/DRYRUN-<date>.md` and `reports/DRYRUN-<date>.g1.json`, both git-ignored, and never touches
   the real `eval` tables.

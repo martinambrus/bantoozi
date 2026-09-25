@@ -337,7 +337,7 @@ Feed is UTF-8. The lenient XML pass may repair syntax but must not change the ch
    parameters. Keep the original fetch URL separately so removing a tracking parameter does not
    invalidate a signed request.
 8. **Linkless items** have `articles.url = NULL` and
-   `canonical_url = url_key = 'urn:feedit:' + feedId + ':' + sha256Hex(identity)`, where `identity` is
+   `canonical_url = url_key = 'urn:bantoozi:' + feedId + ':' + sha256Hex(identity)`, where `identity` is
    the full nonempty GUID/Atom ID/JSON Feed ID, or canonical JSON of `[title, published_at, excerpt]`
    if no identifier exists. Never substitute fetch time for missing publication time. Such items
    display feed content, skip page fetching and have no “open original” action. Editing all fields
@@ -511,7 +511,7 @@ fetching non-HTML media.
    - Fetch `/robots.txt` per origin through `safeFetch` and cache it in an in-memory LRU
      (5,000 origins, 24 h TTL).
    - Parse with `robots-parser`.
-   - If our UA (product token `FeedItBot`) is disallowed for the path, set status `blocked` and skip.
+   - If our UA (product token `BantooziBot`) is disallowed for the path, set status `blocked` and skip.
    - 404/410 and other unavailable 4xx count as allow-all; 401/403 are conservatively disallowed.
      429 observes the origin cooldown. Network/DNS/timeouts and 5xx are **unreachable**, not allow-all:
      use an unexpired cached rule or disallow this attempt. Cache temporary failures for 5 minutes,
@@ -758,7 +758,7 @@ A feed with no prior new-item timestamp uses the 24-hour MAX until it has actual
 
 **Permanent redirect of the feed URL** (301/308 on the feed fetch):
 - If no other feed has the new canonical URL, update `feeds.url`.
-- If another feed has it, **merge** into the surviving feed in one transaction (as `feedit_worker`):
+- If another feed has it, **merge** into the surviving feed in one transaction (as `bantoozi_worker`):
   - lock feed IDs in ascending order and recheck the target; move subscriptions and feed items
   - create target subscriptions before repointing scoped cards, then remove source subscriptions
     only after the `(user_id, scope_feed_id)` foreign key has been moved; otherwise ON DELETE CASCADE
