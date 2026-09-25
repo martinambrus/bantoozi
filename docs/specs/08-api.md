@@ -159,7 +159,7 @@ Every per-user query runs under row-level security, and every limit that bounds 
   - locale from `login_codes.locale`, else `Accept-Language`
   - `invites_left` from the plan
 - mark the invite used with a conditional `used_at IS NULL AND expires_at > now()` update
-- if the email is on the waitlist, set `waitlist.invited_at`
+- if the email is on the waitlist, delete that row in the same transaction: the account replaces it
 
 **On every successful verify:**
 - set `role = 'admin'` if the email is in `ADMIN_EMAILS`, so the list can be extended later
@@ -670,7 +670,7 @@ nor grants permission to analyze other articles.
 | `POST /admin/library/promote` | `{requestId,expectedVersion}`. Require shared card with ≥3 holders and either exact creator approval or audited ≥30-day creator inactivity (§9.2); recheck under lock and publish preserving unchanged text/id/answers. Decline, recent unapproved activity or missing/deleted provenance → `409 CONFLICT` |
 | `GET /admin/users?q=` / `PATCH /admin/users/:id` | Role, plan, `invites_left` |
 | `GET /admin/invites?status=unused\|used\|expired` / `POST /admin/invites` | List all invites; create `{count ≤ 50, email?, note?, expiresDays ≤ 90}` → codes |
-| `GET /admin/waitlist` / `POST /admin/waitlist/:id/invite` | Create an invite and email it (§2.2 invite email; returns `emailSent`) |
+| `GET /admin/waitlist` / `POST /admin/waitlist/:id/invite` | Create an invite bound to that email, set the row's `invited_at` and `invite_code`, and email it (§2.2 invite email; returns `emailSent`) |
 | `POST /admin/ops-event` | `{kind: 'backup_ok' \| 'backup_failed' \| 'restore_ok' \| 'restore_failed' \| 'host_health', detail?}`. `host_health` uses spec 11's bounded structured disk/inode/heartbeat payload. Authenticated with the `METRICS_TOKEN` bearer and exempt from the CSRF header (§1); used by the host scripts in spec 11 §4. It appends to `settings['ops.events']` (the last 50 kept), which `house.alerts` reads |
 
 **Admin write constraints:** validate every field with the shared schemas; no arbitrary JSON-to-SQL
