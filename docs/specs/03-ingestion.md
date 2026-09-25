@@ -105,7 +105,7 @@ schema, `createQueue` options and typed enqueue helpers (`enqueueFetch`, `enqueu
 | `user.suggest` | `{userId}` | learn, `house.nightly-learn` | 1 | 1 | `sendThrottled(…, 86,400 s, key suggest:<userId>)`: at most daily |
 | `house.rescore-degraded`, `house.expire-rules`, `house.purge-auth`, `house.reconcile`, `house.archive`, `house.purge-articles`, `house.purge-bodies`, `house.purge-engine-calls`, `house.retire-cards`, `house.purge-users`, `house.nightly-learn`, `house.metrics`, `house.alerts` | `{}` | cron (spec 11 §6) | 1 | 1 | `policy: 'singleton'` (never two runs at once) |
 | `provider.validate` | `{provider: 'typesafe'\|'ollama', candidateVersion: string}` | explicit admin validation | 1 | 0 implicit retries | `stately`, key `provider-validate:<provider>:<candidateVersion>`; bounded synthetic credential probe under spec04 budget, no secret in payload |
-| `house.reenrich`, `house.translate-cards` | `{since?: iso}` | admin action or model-pin change (spec 05 §2, spec 07 §5) | 1 | 1 | `singleton` |
+| `house.reenrich`, `house.translate-cards` | `{since?: iso, lang?: string}` (`lang` only for a language-mode change) | admin action or model-pin change (spec 05 §2, spec 07 §5) | 1 | 1 | `singleton` |
 | `house.rematch` | `{since?: iso, cardId?: string}` | match-affecting setting, model-pin change or library topic correction (spec 05 §2, §8) | 1 | 1 | `stately`, key `rematch:all` or `rematch:<cardId>` |
 
 **Rules:**

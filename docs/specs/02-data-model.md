@@ -428,6 +428,7 @@ CREATE TABLE articles (
   content_hash     text NOT NULL,                  -- spec 03 §6.2
   content_revision bigint NOT NULL DEFAULT 1 CHECK (content_revision > 0),
   story_cluster_id bigint NULL REFERENCES story_clusters(id) ON DELETE SET NULL,
+  cluster_set_id   bigint NULL REFERENCES question_sets(id), -- cluster set whose call placed it; NULL if unclustered or placed by mute-story (spec 05 §2)
   pipeline_state   text NOT NULL DEFAULT 'ingested'
                      CHECK (pipeline_state IN ('ingested','stale','extracted','translated','enriched',
                                                'matched','degraded','failed')),
@@ -1182,6 +1183,7 @@ CREATE INDEX bookmark_snapshot_pins_expiry_idx ON bookmark_snapshot_pins (expire
 CREATE TABLE card_suggestions (
   user_id       uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   card_id       bigint NOT NULL REFERENCES interest_cards(id) ON DELETE CASCADE,
+  question_set_id bigint NOT NULL REFERENCES question_sets(id), -- suggest set that produced it; only the active set's rows are listed (spec 08 §7)
   score         real NOT NULL CHECK (score BETWEEN 0 AND 1),
   created_at    timestamptz NOT NULL DEFAULT now(),
   dismissed_at  timestamptz NULL,

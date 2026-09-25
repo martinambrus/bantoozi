@@ -125,8 +125,15 @@ in the same outbox transaction. This makes an inaugural rating learnable when sl
   translation already exists; `house.translate-cards` translates the missing ones and rematches
   them as they publish (spec 07 §5). A model-pin change is detected by the first worker that starts
   with a new `TYPESAFE_MODEL`: under a row lock it records `settings['engine.model_pin']` and
-  enqueues both `house.reenrich` and `house.rematch` once (spec 11 §8). Old incompatible answers
-  cannot satisfy current cache lookups while replacement is pending. Store exact set/model/input
+  enqueues both `house.reenrich` and `house.rematch` once (spec 11 §8). A `language_modes` change
+  enqueues `house.reenrich {since, lang}` for each changed language: its admitted window articles
+  re-enter at `pipeline.after('extracted', …)`, which translates first when the language is now
+  `translate` (spec 07 §1), and matching follows enrichment as usual. Old incompatible answers
+  cannot satisfy current cache lookups while replacement is pending. `cluster` and `suggest` set
+  changes apply prospectively, as a versioned boundary: story memberships are deduplication
+  decisions that `mute_story` rules point at, not a current-result cache, so each keeps its
+  `articles.cluster_set_id` until its article ages out while new calls use the new set. Suggestions
+  carry `question_set_id`; only the active set's rows are listed, and `user.suggest` deletes the rest. Store exact set/model/input
   provenance with golden runs; changing a set does not mutate frozen runs.
 
 ---
@@ -635,6 +642,7 @@ off feeds merely to create cluster context.
    `is_followup < 0.5`:
    - put `new` in the chosen article's cluster
    - if that article has no cluster yet, create one with the older article as representative
+   - record the active cluster set in `cluster_set_id` of each article this decision places
    - perform membership changes in a short transaction with cluster/article rows locked in stable id
      order; reread both memberships after the model call, reject stale article revisions and avoid
      loops or racing A→B/B→A clusters
@@ -681,8 +689,8 @@ Expired leases recover after a crash; queue throttling alone does not replace th
    Otherwise insert up to 3 non-none options with probability ≥0.15, ordered deterministically.
    Dedupe active `(user, card)` suggestions and recheck held/dismissed state on commit. Choice
    probabilities are relative to this candidate list, not absolute relevance probabilities.
-   Each run also deletes the user's `card_suggestions` rows for cards they now hold; the API
-   already hides those (spec 08 §7).
+   Each run also deletes the user's `card_suggestions` rows for cards they now hold or from an
+   inactive suggest set; the API already hides those (spec 08 §7). New rows record the active set.
 7. Engine `kind: 'suggest'`, `priority: 'bulk'`, `userId` set.
 
 ---
