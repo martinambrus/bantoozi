@@ -105,8 +105,13 @@ card translations and workers; a busy container must not exhaust all API connect
    reservation; no nested package/job retry loops. A terminal provider failure stores `fail` and
    falls back to native text rather than blocking ingestion. Store an `engine='ollama'` row with its
    own quality, `article_revision`, `source_sha256`, model and translation-policy version (the latter
-   in `quality_detail`). A skipped row may be replaced
-   only by an explicit administrative reprocess, not by ordinary queue redelivery.
+   in `quality_detail`). A skipped row may be replaced only by the administrative reprocess, not by
+   ordinary queue redelivery: `POST /admin/translations/reprocess` (spec 08 §9) runs
+   `house.retranslate-skipped`, which sends `article.translate {forceTier2: true, replaceSkipped: true}`
+   for still-demanded window articles whose current-revision `ollama` row was skipped for a listed
+   reason. That job replaces only a skipped row (never a real attempt) and then follows the
+   re-translation rules below, so a changed effective input re-enriches the article through
+   `resetArticleAnswers`.
 4. **Best translation for state builders:** among current-revision rows, the highest quality
    (`ok` > `weak` > `fail`).
    Ties prefer `ollama`. If only `fail` rows exist, the state is built from native text.
@@ -124,8 +129,9 @@ card translations and workers; a busy container must not exhaust all API connect
   text is a no-op. Comparing quality grades alone would miss a different tie-winning translation.
 - Otherwise nothing else happens.
 - This runs once per article content revision: the current-revision `ollama` row, even a skipped
-  one, prevents repeats. Budget reset alone does not retry skipped items; an explicit reprocess or
-  new content revision may. This bounds costs even when many users place the same article in Maybe.
+  one, prevents repeats. Budget reset alone does not retry skipped items; the administrative
+  reprocess (step 3) or a new content revision may. This bounds costs even when many users place
+  the same article in Maybe.
 
 ---
 

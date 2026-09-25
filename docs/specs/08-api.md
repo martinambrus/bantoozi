@@ -491,11 +491,14 @@ snapshot access is authorized through the user's bookmark, never an unguessable 
 ### 5.3 Actions (all `POST` unless a method is shown)
 
 Single-article bodies additionally require `stateVersion` and `contentRevision` from the displayed
-item; DELETE actions carry them as query parameters. A changed article revision returns `STALE_STATE`
-rather than assigning feedback to content the reader did not see. Bulk target objects carry both
-versions too. All use §1.1 and return `200 {item: ArticleListItem, mutationId}` unless noted.
-Saved-snapshot actions additionally send `snapshotId`; validate that it is bound to the user's
-current bookmark and that its captured revision matches `contentRevision`. Record that snapshot
+item; DELETE actions carry them as query parameters. A `contentRevision` other than the article's
+current revision returns `STALE_STATE` rather than assigning feedback to content the reader did not
+see. Bulk target objects carry both versions too. All use §1.1 and return
+`200 {item: ArticleListItem, mutationId}` unless noted.
+Saved-snapshot actions are the one exception to that live-revision check: they additionally send
+`snapshotId` and are fenced against the snapshot instead. Validate that it is bound to the user's
+current bookmark and that its captured revision matches `contentRevision`; a newer live article
+revision then does not make the action stale (`stateVersion` is still checked). Record that snapshot
 identity in the feedback event. Never substitute current-article features for an older snapshot's
 text; unavailable matching features remain null and are excluded from training (spec 06).
 When feedback belongs to a selected training request, rating/prompt-answer bodies additionally send
@@ -657,6 +660,7 @@ nor grants permission to analyze other articles.
 | `GET /admin/overview` | users (total, active 7 d), feeds by status, articles ingested today, pipeline backlog per queue, engine status (breakers, spend today vs budget, LLM calls today), translation stats |
 | `GET /admin/usage?days=30` | platform $/day by engine and kind (from `usage_daily`), and the top 20 users by attributed cost via `admin_usage_attribution(days)` (spec 02 §6, spec 04 §7) |
 | `GET /admin/settings` / `PATCH /admin/settings` | Allow-listed keys only (spec 02 §2 registry): `engine.daily_budget_usd`, `engine.llm_daily_cap`, `engine.prefilter_enabled`, `engine.laya`, `language_modes`, `card_text_mode`, `ranker.thresholds`, `translate.tier2_daily_cap`, `question_sets.active`, `signup_mode`. Each key is validated by its zod schema. **Side effects:** `ranker.thresholds` bumps `ranker.settings_version` and enqueues `user.rank {full}` for users active in the last 7 days; `question_sets.active.enrich` enqueues `house.reenrich`; `question_sets.active.match`, any `card_text_mode` change and any `engine.prefilter_enabled` change enqueue `house.rematch` (spec 05 §2); `card_text_mode = 'english'` also enqueues `house.translate-cards`, which translates missing cards and rematches them as their translations publish; `language_modes` changes enqueue `house.reenrich {lang}` for each language whose stored mode changed (the seed stores the initial modes, spec 02 §2), and `question_sets.active.cluster`/`.suggest` apply prospectively (spec 05 §2); `engine.prefilter_enabled` and `engine.laya` apply to new match/enrich jobs only, and are set only after the recall validation (spec 05 §5.5) or replay (spec 10 §6) they require; a non-empty `engine.laya` is also refused unless `settings['worker.heartbeat']` has an entry younger than 90 s consuming both `.laya` queues, so producers never route work that nothing consumes (spec 11 §2). Likewise, a `language_modes` value of `translate` or `card_text_mode = 'english'` is refused unless a bounded API probe of `GET {LIBRETRANSLATE_URL}/languages` lists every language it needs (spec 11 §2) |
+| `POST /admin/translations/reprocess` | `{reasons?: ('no_key'\|'cap'\|'budget')[]}` (default all three): enqueue `house.retranslate-skipped` → `202 {queued: true}`. The only retry for a tier-2 translation skipped on an unchanged article revision, used after the Ollama key, cap or budget is restored (spec 07 §3) |
 | `POST /admin/engine/reset-breaker` | `{engine}`: writes `engine.circuit.resetRequested[engine] = now`. Worker routers close that breaker (including auth mode) within 10 s (spec 04 §5) |
 | `GET /admin/engine/credentials` | Metadata-only configuration status for `typesafe` (Jev) and `ollama`: `CredentialStatus[]`; never plaintext, ciphertext, key suffix or reversible secret material |
 | `PUT /admin/engine/credentials/:provider` | `{apiKey,expectedRevision}`. Encrypt and stage a candidate, preserving the active credential; save alone makes no provider call → `200 {credential:CredentialStatus}` |
