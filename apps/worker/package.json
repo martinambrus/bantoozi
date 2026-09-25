@@ -10,10 +10,10 @@
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "test:int": "vitest run --config vitest.int.config.ts --passWithNoTests",
-    "dev": "tsx --conditions=bantoozi-source watch src/main.ts",
+    "dev": "tsx watch --conditions=bantoozi-source --env-file-if-exists=../../.env src/main.ts",
     "start": "node dist/main.js",
-    "seed": "tsx --conditions=bantoozi-source src/seed.ts",
-    "cli": "tsx --conditions=bantoozi-source src/cli.ts"
+    "seed": "tsx --conditions=bantoozi-source --env-file-if-exists=../../.env src/seed.ts",
+    "cli": "tsx --conditions=bantoozi-source --env-file-if-exists=../../.env src/cli.ts"
   },
   "dependencies": {
     "@bantoozi/db": "workspace:*",
