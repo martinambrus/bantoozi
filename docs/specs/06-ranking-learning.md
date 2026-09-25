@@ -317,7 +317,10 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
 3. **Batch-load** facets, card answers (the user's cards and labels), translations, clusters, the
    user's `label_ids`, the feed ids (intersected with the subscriptions), the domain (via `tldts`) and
    the user's current selected analysis requests, which set `inferenceFeedIds` and
-   `explicitSelection` (§2).
+   `explicitSelection` (§2). A completed selection's answers are read from these same caches:
+   `analysis.process` publishes its result there whenever it still matches the current revision,
+   state and context (spec 03 §2.2), and the rebuild jobs refill them for current selections after
+   a context change (spec 05 §2), so a selected stale or older article has usable answers.
 4. Run `rankArticle` for each item.
 5. **Upsert** the ranking columns of `user_article` in batches of 500:
    `lane, tier, p_like, score_source, rules_fired, explain, label_suggestions, score_version,

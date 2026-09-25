@@ -117,11 +117,13 @@ in the same outbox transaction. This makes an inaugural rating learnable when sl
   `enrich` to a new set (`PATCH /admin/settings`) enqueues
   `house.reenrich {since: now − RANK_WINDOW_DAYS}` (the whole reader/ranker window, spec 06 §11).
   It re-enqueues `article.enrich` only for articles still admitted by §1.1 whose eligible carrier
-  arrival (the latest authorized `feed_items.first_seen_at`) is in that window, newest first, in
-  batches within the budget. A match-set change, any `card_text_mode` change, any
+  arrival (the latest authorized `feed_items.first_seen_at`) is in that window, plus articles with a
+  current completed explicit selection whatever their arrival (the rank handler ranks those too,
+  spec 06 §7), newest first, in batches within the budget. A match-set change, any `card_text_mode` change, any
   `engine.prefilter_enabled` change (each in either direction) and a model-pin change enqueue
   `house.rematch {since: now − RANK_WINDOW_DAYS}`. It re-enqueues `match_queue` rows for admitted
-  (article, held card) pairs in that window whose current answer is incompatible or is a `prefilter`
+  (article, held card) pairs in that window, or on such a selected article, whose current answer is
+  incompatible or is a `prefilter`
   marker, newest first within budget, and records `user.rank {full}` for affected users active in
   the last 7 days (others catch up lazily, spec 06 §7). Switching to `english` rematches cards whose
   translation already exists; `house.translate-cards` translates the missing ones and rematches

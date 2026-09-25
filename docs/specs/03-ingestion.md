@@ -192,8 +192,11 @@ Publish `result_snapshot`, `result_sha`, completion time/status and downstream l
 in one transaction guarded by request ID, lease token, current mode/version and unmodified input hash.
 Article content may have advanced since selection: retain this result for the selected historical
 training event, without overwriting current article facets/translations/card answers with it. A
-result may also populate a shared **current** cache only when every current revision/state/context
-check matches. Training feedback/result association is defined in specs05/06.
+result also fills the shared **current** caches (entries still missing or incompatible) in that
+transaction whenever every current revision/state/context check matches, and only then. This is how a selected article's answers reach
+ranking (spec 06 §7), including a stale or older article that automatic work never processes; a
+result that no longer matches is kept for training only. Training feedback/result association is
+defined in specs05/06.
 
 Transient failures release the lease and set `next_attempt_at` with bounded backoff; persistent
 invalid input becomes terminal and does not loop through reconciliation. An opt-out marks cancelled
