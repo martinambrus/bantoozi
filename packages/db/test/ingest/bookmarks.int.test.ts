@@ -500,6 +500,76 @@ describe('completeBookmarkCapture (spec 03 §8.5 steps 4–5)', () => {
     expect(await snapshotIds(other.article.id)).toHaveLength(2);
   });
 
+  it('binds a complete capture identical to a partial feed snapshot to its own complete row (D-19)', async () => {
+    // A linked item's full feed text is stored as a partial feed-v1 body until the page is read,
+    // so an API bookmark before extraction archives it as a partial snapshot.
+    const { users, feedId, article } = await readersOf(2);
+    const [first, second] = users as [UserFixture, UserFixture];
+    const text = 'The complete article text.\n\nSecond paragraph.';
+    const html = '<p>The complete article text.</p><p>Second paragraph.</p>';
+    await ctx.worker.transaction((tx) =>
+      upsertArticleBody(tx, article.id, '1', {
+        status: 'ok',
+        resolvedUrl: null,
+        httpStatus: null,
+        bodyText: text,
+        bodyHtml: html,
+        completeness: 'partial',
+        completenessReason: 'feed_content',
+        bodyLead: text,
+        extractorVersion: 'feed-v1',
+        error: null,
+      }),
+    );
+    const feedCapture = await bookmark(first.id, article.id);
+    expect(feedCapture.capture_status).toBe('pending');
+    expect((await bookmark(second.id, article.id)).snapshot_id).toBe(feedCapture.snapshot_id);
+    const partial = await snapshot(feedCapture.snapshot_id);
+    expect(partial).toMatchObject({ completeness: 'partial', source: 'feed', body_text: text });
+
+    // The page capture is byte-identical to the feed text, and complete.
+    const src = await source(article.id);
+    const page = content(src, { bodyText: text, bodyHtml: html });
+    expect(snapshotSha(page)).toBe(partial.content_sha256);
+    const firstPending = src.pending.filter((p) => p.userId === first.id);
+    expect(await complete(src, captured(page), firstPending)).toMatchObject({ bound: 1 });
+
+    const saved = await readerState(first.id, article.id);
+    expect(saved).toMatchObject({ status: 'saved' });
+    expect(saved.snapshot_id).not.toBe(partial.id);
+    expect(await snapshot(saved.snapshot_id!)).toMatchObject({
+      completeness: 'complete',
+      source: 'page',
+      content_sha256: partial.content_sha256,
+    });
+    // The other reader keeps the partial row until its own capture completes.
+    expect(await readerState(second.id, article.id)).toMatchObject({
+      status: 'pending',
+      snapshot_id: partial.id,
+    });
+    expect(await snapshotIds(article.id)).toEqual([partial.id, saved.snapshot_id]);
+
+    // A later API bookmark of the now complete source shares the complete row.
+    await ctx.worker.transaction((tx) =>
+      upsertArticleBody(tx, article.id, '1', {
+        status: 'ok',
+        resolvedUrl: src.url,
+        httpStatus: 200,
+        bodyText: text,
+        bodyHtml: html,
+        completeness: 'complete',
+        completenessReason: null,
+        bodyLead: text,
+        extractorVersion: 'readability-test',
+        error: null,
+      }),
+    );
+    const third = await createUser(ctx.owner);
+    await createSubscription(ctx.owner, { userId: third.id, feedId });
+    const rebound = await bookmark(third.id, article.id);
+    expect(rebound).toMatchObject({ capture_status: 'saved', snapshot_id: saved.snapshot_id });
+  });
+
   it('reattaches an unreferenced identical snapshot, clearing its marker', async () => {
     const { users, article } = await readersOf(2);
     const [a, b] = users as [UserFixture, UserFixture];

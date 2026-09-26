@@ -502,7 +502,7 @@ CREATE TABLE article_snapshots (                   -- immutable bookmark archive
   cold_at            timestamptz NULL,             -- cold lifecycle marker after 30 days; never a TTL
   unreferenced_at    timestamptz NULL,             -- set on final bookmark/pin release; clear on attach
   CHECK (coalesce(octet_length(body_text), 0) + coalesce(octet_length(body_html), 0) <= 10485760),
-  UNIQUE (article_id, source_revision, content_sha256)
+  UNIQUE (article_id, source_revision, content_sha256, completeness)  -- D-19: a complete twin of a partial row
 );
 ALTER TABLE article_snapshots ALTER COLUMN body_text SET STORAGE EXTENDED;
 ALTER TABLE article_snapshots ALTER COLUMN body_html SET STORAGE EXTENDED;

@@ -120,8 +120,8 @@ type EvalArticleTable = (typeof EVAL_ARTICLE_TABLES)[number];
  *   card, leases cleared; the reset keeps only the admitted union at the new revision, and the
  *   merged progress is then reapplied to the rows it kept (a reset alone would zero it).
  * - `article_snapshots` (RESTRICT): relocated to the survivor, content untouched, every binding
- *   and pin kept; a source snapshot whose (revision, checksum) the survivor already holds shares
- *   that identical row instead (references repointed, duplicate removed).
+ *   and pin kept; a source snapshot whose (revision, checksum, completeness) the survivor already
+ *   holds shares that identical row instead (references repointed, duplicate removed).
  * - `article_bodies`: a valid target body (status `ok` at its current revision) is kept; otherwise
  *   a valid source body is moved over (with its detected language and word count when its
  *   extraction completed). The survivor's revision first rises to at least the source's, so the
@@ -685,11 +685,12 @@ async function restoreQueueProgress(
 
 /**
  * Relocate the source's immutable snapshots (spec 02 §3.5: `article_id` is the one relocatable
- * column; the guard trigger rejects content/provenance edits). A source snapshot whose
- * `(source_revision, content_sha256)` the survivor already holds is byte-identical by checksum:
- * its bindings and pins move to that row (identical checksums share storage), which regains its
- * references, and the duplicate is removed. Snapshot rows are locked before references change, as
- * the capture functions and garbage collection do.
+ * column; the guard trigger rejects content/provenance edits). A source snapshot whose identity
+ * `(source_revision, content_sha256, completeness)` the survivor already holds is byte-identical by
+ * checksum: its bindings and pins move to that row (identical checksums share storage), which
+ * regains its references, and the duplicate is removed. A twin of other completeness is kept as its
+ * own row (D-19), so a complete binding never becomes a partial one. Snapshot rows are locked
+ * before references change, as the capture functions and garbage collection do.
  */
 async function relocateSnapshots(
   tx: Transaction,
@@ -702,6 +703,7 @@ async function relocateSnapshots(
       JOIN article_snapshots t ON t.article_id = ${targetId}::bigint
                               AND t.source_revision = s.source_revision
                               AND t.content_sha256 = s.content_sha256
+                              AND t.completeness = s.completeness
      WHERE s.article_id = ${sourceId}::bigint
      ORDER BY s.id
        FOR UPDATE OF s, t`);

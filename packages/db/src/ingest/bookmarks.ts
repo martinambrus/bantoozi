@@ -187,10 +187,12 @@ function captureErrorCode(code: string): string {
 
 /**
  * Insert the immutable snapshot, or reuse the identical row of this revision (`UNIQUE (article_id,
- * source_revision, content_sha256)`, so readers of one article share one row), with the same
- * canonical checksum as the API-side capture: `snapshot_content_sha256(title, author,
+ * source_revision, content_sha256, completeness)`, so readers of one article share one row), with
+ * the same canonical checksum as the API-side capture: `snapshot_content_sha256(title, author,
  * published_at, source_url, body_text, body_html)` over the exact stored values. Each value is
- * sent once. Returns the row's id and its stored completeness (a reused row keeps its own).
+ * sent once. Completeness is part of the identity (D-19): a complete capture of content identical
+ * to a partial snapshot binds a new complete row instead of the partial one (spec 03 §8.5 step 5).
+ * Returns the row's id and its completeness.
  */
 async function insertSnapshot(
   tx: Transaction,
@@ -220,7 +222,7 @@ async function insertSnapshot(
              h.body_text, h.body_html, h.sha, ${content.completeness},
              ${content.completenessReason}, ${content.source}, ${content.extractorVersion}
         FROM h
-      ON CONFLICT (article_id, source_revision, content_sha256) DO NOTHING
+      ON CONFLICT (article_id, source_revision, content_sha256, completeness) DO NOTHING
       RETURNING id, completeness)
     SELECT (SELECT id::text FROM ins) AS inserted_id,
            (SELECT completeness FROM ins) AS inserted_completeness, h.sha
@@ -235,7 +237,7 @@ async function insertSnapshot(
   const existing = await tx.execute<{ id: string; completeness: 'complete' | 'partial' }>(sql`
     SELECT id::text AS id, completeness FROM article_snapshots
      WHERE article_id = ${articleId}::bigint AND source_revision = ${content.sourceRevision}::bigint
-       AND content_sha256 = ${row.sha}`);
+       AND content_sha256 = ${row.sha} AND completeness = ${content.completeness}`);
   const reused = existing.rows[0];
   if (reused === undefined) throw new Error('conflicting snapshot row not found');
   return reused;

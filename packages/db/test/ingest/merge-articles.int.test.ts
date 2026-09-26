@@ -1053,6 +1053,45 @@ describe('mergeArticles (spec 03 §8.4)', () => {
     });
   });
 
+  it('keeps a complete twin of a partial snapshot as its own row (D-19)', async () => {
+    const { source, target } = await pair();
+    const v = await createUser(ctx.owner);
+    const w = await createUser(ctx.owner);
+    const full = await snapshot(source.id, { text: 'Twin text', revision: 1 });
+    const teaser = await snapshot(target.id, {
+      text: 'Twin text',
+      revision: 1,
+      completeness: 'partial',
+    });
+    expect(full.sha).toBe(teaser.sha);
+    await reader(v.id, source.id, {
+      bookmarked_at: minutesAgo(5),
+      bookmark_snapshot_id: full.id,
+      bookmark_capture_status: 'saved',
+    });
+    await reader(w.id, target.id, {
+      bookmarked_at: minutesAgo(6),
+      bookmark_snapshot_id: teaser.id,
+      bookmark_capture_status: 'partial',
+    });
+
+    expect(await merge(source.id, target.id)).toMatchObject({ status: 'merged' });
+    // Identical content, but a saved complete binding is never folded into the partial row.
+    expect(await readerRow(v.id, target.id)).toMatchObject({
+      snapshot_id: full.id,
+      capture_status: 'saved',
+    });
+    expect(await readerRow(w.id, target.id)).toMatchObject({ snapshot_id: teaser.id });
+    expect(await snapshotRow(full.id)).toMatchObject({
+      article_id: target.id,
+      unreferenced: false,
+    });
+    expect(await snapshotRow(teaser.id)).toMatchObject({
+      article_id: target.id,
+      unreferenced: false,
+    });
+  });
+
   it('defers when one user saved different snapshots of both articles', async () => {
     const { source, target } = await pair();
     const u = await createUser(ctx.owner);

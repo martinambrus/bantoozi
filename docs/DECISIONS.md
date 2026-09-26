@@ -124,3 +124,14 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   URL. The already implemented rule that a fetch whose item failed to ingest after its retries
   clears them too is now stated as well, since both follow the parse-error rule. Found by the Codex
   review of PR #5. Spec 03 §9 updated.
+- D-19: 2026-09-26 M1-T7 — completeness is part of a bookmark snapshot's identity:
+  `article_snapshots` is unique on `(article_id, source_revision, content_sha256, completeness)`
+  instead of `(article_id, source_revision, content_sha256)` (migration 0011). A linked item's feed
+  text is stored as a partial `feed-v1` body until page extraction replaces it, so a bookmark made
+  before extraction archives it as a partial snapshot. When the feed carries the full article, the
+  page capture can be byte-identical to it. Under the old key that complete capture reused the
+  immutable partial row, and the bookmark stayed `partial` for good. That contradicted spec 03 §8.5
+  step 5, which lets a later successful retry of a partial capture bind a new immutable snapshot
+  while other users keep theirs. `capture_bookmark_snapshot`, the worker's capture and the article
+  merge's snapshot relocation now match on completeness too, so a complete twin is never folded
+  into a partial row. Found by the Codex review of PR #5. Spec 02 `article_snapshots` updated.

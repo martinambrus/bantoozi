@@ -289,7 +289,14 @@ export const articleSnapshots = pgTable(
       'article_snapshots_size_check',
       sql`coalesce(octet_length(body_text), 0) + coalesce(octet_length(body_html), 0) <= 10485760`,
     ),
-    unique('article_snapshots_identity_key').on(t.articleId, t.sourceRevision, t.contentSha256),
+    // Completeness is part of the identity: a complete capture of content identical to a partial
+    // snapshot gets its own immutable row (D-19; spec 03 §8.5 step 5).
+    unique('article_snapshots_identity_key').on(
+      t.articleId,
+      t.sourceRevision,
+      t.contentSha256,
+      t.completeness,
+    ),
   ],
 );
 

@@ -421,9 +421,9 @@ Complete milestone M0 "Foundations" exactly as specified in docs/PLAN.md §5, fo
 including the media signals of revision R2 and the fixes from the Codex reviews of PR #5; the
 per-task commits are in the table below). The full check with coverage passed after the last commit
 (`packages/feeds` lines above 99 %), `ingestion.e2e.test.ts` passed, and `pnpm worker-cli` ran
-against the dev database with a local fixture site. Deviations: D-11…D-18 in `docs/DECISIONS.md`.
-Migrations 0009 (D-13…D-16) and 0010 (the R2 media columns of spec 02) are added, so migrations of
-a parallel M2 branch are numbered after them. Merge to `main` before M3a, M4 and M5 (§0.2).
+against the dev database with a local fixture site. Deviations: D-11…D-19 in `docs/DECISIONS.md`.
+Migrations 0009 (D-13…D-16), 0010 (the R2 media columns of spec 02) and 0011 (D-19) are added, so
+migrations of a parallel M2 branch are numbered after them. Merge to `main` before M3a, M4 and M5 (§0.2).
 
 **Outcome:** subscribed feeds are fetched safely on an adaptive schedule, and articles are stored
 once, deduplicated across feeds, with extracted text and detected language. The pipeline stops after

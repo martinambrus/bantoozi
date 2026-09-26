@@ -1277,7 +1277,7 @@
         }
       },
       "primaryKey": ["id"],
-      "unique": [["article_id", "source_revision", "content_sha256"]],
+      "unique": [["article_id", "source_revision", "content_sha256", "completeness"]],
       "checks": [
         "source_revision > 0",
         "completeness IN ('complete','partial')",
