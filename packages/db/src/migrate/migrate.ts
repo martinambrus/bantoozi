@@ -70,26 +70,38 @@ export async function runMigrations(options: MigrateOptions): Promise<MigrateRes
   await client.connect();
   try {
     await client.query(MIGRATE_LOCK_SQL);
+    let result: MigrateResult;
     try {
-      const pgBoss = await installPgBoss(client);
-      options.logger?.info({ pgBoss }, 'pg-boss schema ready');
-
-      const before = await appliedMigrationCount(client);
-      await drizzleMigrate(drizzle({ client }), {
-        migrationsFolder: options.migrationsFolder ?? MIGRATIONS_FOLDER,
-      });
-      const migrationsApplied = (await appliedMigrationCount(client)) - before;
-      options.logger?.info({ migrationsApplied }, 'migrations applied');
-
-      const queues = await createQueues(client);
-      options.logger?.info({ queues }, 'queues ready');
-      return { pgBoss, migrationsApplied, queues };
-    } finally {
-      await client.query(MIGRATE_UNLOCK_SQL);
+      result = await migrateLocked(client, options);
+    } catch (error) {
+      // A failed pg-boss plan leaves its own BEGIN aborted, so any further statement fails with
+      // 25P02: roll back and unlock best-effort, and report the original error (e.g. a timeout).
+      // Closing the connection releases the session lock in any case.
+      await client.query('ROLLBACK').catch(() => undefined);
+      await client.query(MIGRATE_UNLOCK_SQL).catch(() => undefined);
+      throw error;
     }
+    await client.query(MIGRATE_UNLOCK_SQL);
+    return result;
   } finally {
     await client.end();
   }
+}
+
+async function migrateLocked(client: pg.Client, options: MigrateOptions): Promise<MigrateResult> {
+  const pgBoss = await installPgBoss(client);
+  options.logger?.info({ pgBoss }, 'pg-boss schema ready');
+
+  const before = await appliedMigrationCount(client);
+  await drizzleMigrate(drizzle({ client }), {
+    migrationsFolder: options.migrationsFolder ?? MIGRATIONS_FOLDER,
+  });
+  const migrationsApplied = (await appliedMigrationCount(client)) - before;
+  options.logger?.info({ migrationsApplied }, 'migrations applied');
+
+  const queues = await createQueues(client);
+  options.logger?.info({ queues }, 'queues ready');
+  return { pgBoss, migrationsApplied, queues };
 }
 
 async function loadPgBoss() {

@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrationStatus, readMigrationJournal } from '../src/readiness.js';
 import {
   MIGRATIONS_FOLDER,
+  PG_BOSS_SCHEMA,
   PG_BOSS_SCHEMA_VERSION,
   PG_BOSS_VERSION,
   runMigrations,
@@ -159,5 +160,29 @@ describe('migrate job', () => {
     } finally {
       await rm(folder, { recursive: true, force: true });
     }
+  });
+
+  it('reports a timeout inside a pg-boss plan, not the aborted transaction it leaves', async () => {
+    // pg-boss runs each plan in its own BEGIN … COMMIT under this transaction advisory lock, so
+    // holding the lock stops the 23 → 24 upgrade plan at a statement timeout inside that BEGIN.
+    const bossLockKey = `('x' || encode(sha224((current_database() || '.pgboss.${PG_BOSS_SCHEMA}')::bytea), 'hex'))::bit(64)::bigint`;
+    const setVersion = `UPDATE ${PG_BOSS_SCHEMA}.version SET version = $1`;
+    await withConnection(ctx.owner, async (holder) => {
+      await holder.query(setVersion, [PG_BOSS_SCHEMA_VERSION - 1]);
+      await holder.query(`SELECT pg_advisory_lock(${bossLockKey})`);
+      try {
+        const run = runMigrations({ databaseUrl: ctx.testDb.urls.owner, statementTimeoutMs: 500 });
+        expect(await sqlStateOf(run)).toBe('57014');
+      } finally {
+        await holder.query(`SELECT pg_advisory_unlock(${bossLockKey})`);
+        await holder.query(setVersion, [PG_BOSS_SCHEMA_VERSION]);
+      }
+    });
+    // Nothing stayed locked or half-applied: the next run finds everything current.
+    await expect(runMigrations({ databaseUrl: ctx.testDb.urls.owner })).resolves.toEqual({
+      pgBoss: 'current',
+      migrationsApplied: 0,
+      queues: QUEUE_NAMES.length,
+    });
   });
 });
