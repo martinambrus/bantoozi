@@ -238,3 +238,46 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `{source_lang, title, excerpt, body_lead}` as sent, so the declared source language is part of the
   fingerprint: the same text submitted under another language is a different translation input. Spec
   02 said only "exact source text". Spec 02 `article_translations` updated.
+- D-35: 2026-09-26 M2-T8 — card and label effects. Creating, re-pointing (an example, a new name or
+  definition) and deleting a label record a full rank besides the refresh, backfill and
+  `labelIdChange` of spec 05 §5.1, because spec 06 §7 re-ranks fully whenever a card or label is
+  added, removed or changed. An interest-card rename only sets `title_override` and records nothing
+  (no refresh, rank or learn): it changes no card text, answer or model input, so spec 05's "`learn`
+  for every interest-card change" is read as every change of the held card, its strength or its
+  scope. A strength change records a full rank and `user.learn`. Spec 05 §5.1 updated.
+- D-36: 2026-09-26 M2-T8 — a label name that changes only in case or spacing updates `user_labels` in
+  place, like a colour, because the label hash uses the normalized title and the card stays the
+  same. Only a name whose normalized form changes, or a new definition, re-points to another label
+  card with `array_replace`. Spec 08 §7 said only "name or definition re-points". Spec 08 §7 updated.
+- D-37: 2026-09-26 M2-T8 — example forks. Removing the last example returns the holding to the shared
+  text-only card of the same text when one exists. Otherwise (for example a library card with its own
+  built-in examples) the user keeps a private fork with the remaining examples, even none. A holder
+  without a `title_override` keeps the title they saw before a re-point: when the new card's default
+  title differs, the old one is stored as the override. Spec 05 §5.1 did not cover either case. Spec
+  05 §5.1 updated.
+- D-38: 2026-09-26 M2-T8 — every re-point (edited text, an example fork, a library update, a label
+  re-point) applies the rule spec 05 §8 gives library updates: when the user already holds the target
+  card, identical settings (strength and scope; name and colour for a label) coalesce into that
+  holding, and different ones are `409 CONFLICT {reason: 'target_held'}` with nothing changed.
+  Quotas block only growth past the plan maximum: holdings kept over a reduced plan stay usable
+  (spec 08 §6) and a re-point is never a new holding. Spec 05 §5.1 named the conflict only for
+  creating a card that is already held. Spec 05 §5.1 updated.
+- D-39: 2026-09-26 M2-T8 — API details spec 08 §7 left open. Adopting a superseded library version is
+  `409 CONFLICT {reason: 'superseded'}` (the update offer names the successor), and adopt takes an
+  optional `scopeFeedId` like `POST /cards`. A card or example made from an article needs the article
+  to be carried by one of the user's subscriptions or to be on their reading list (otherwise `404`),
+  and an article without a usable title is `400 VALIDATION_FAILED {reason: 'no_title'}`. Spec 08 §7
+  updated.
+- D-40: 2026-09-26 M2-T8 — card language details. `interest_cards.lang` is `und` when the caller
+  detected no language, and a caller-supplied English pair is refused for `en` and `und` cards. A
+  reused card (same `text_hash`) keeps its stored pair, since the API role cannot write card bodies
+  and only the worker's one-time fill may add a missing one. Spec 07 §5 did not say what happens to a
+  pair offered for a card that already exists. Spec 07 §5 updated.
+- D-41: 2026-09-26 M2-T8 — a label re-point or delete increments `user_article.state_version` only on
+  rows whose `label_ids` change. Rows where only `label_suggestions` change keep their version,
+  because suggestions are ranking output and spec 08 §2 never increments the version for
+  ranking-only writes. Spec 08 §7 updated.
+- D-42: 2026-09-26 M2-T8 — a label created without a colour stores `#64748b` (slate), so every stored
+  colour is the validated hex value spec 08 §7 requires; the `user_labels.color` default `'slate'` of
+  spec 02 is not hex. The repository writes the value, so the column default is left unchanged and
+  unused. Spec 02 `user_labels` updated.

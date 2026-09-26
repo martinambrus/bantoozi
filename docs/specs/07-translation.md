@@ -189,6 +189,9 @@ inserting a new card row:
    The status is one of `translated`, `english`, `undetermined`, `unconfirmed` (only the locale hint,
    not the unhinted detector, says non-English: the original is kept and nothing is sent; `lang`
    still stores the hinted detection), `unsupported`, `weak` or `failed` (D-32).
+4. A language that could not be detected is stored as `und`, and a pair offered for an `en` or `und`
+   card is refused. A reused card (same `text_hash`) keeps its stored pair: the API role never
+   writes a card body, and only the worker fills a missing pair (below, D-40).
 
 **Switching the mode on later:**
 - `PATCH /admin/settings {card_text_mode: 'english'}` enqueues the one-off `house.translate-cards`.

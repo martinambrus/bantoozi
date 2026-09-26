@@ -619,7 +619,7 @@ client must replace its cached id.
 | `POST /cards/:id/examples/remove` | `{side, text}` | Remove an example (new fork id) → `{card}` |
 | `POST /cards/from-article` | `{articleId, interest, notFor?, title?, strength}` | Shared text card plus a private fork with the article title as `examples_yes` → `201 {card}`. Quotas `maxCards`, `maxForks` |
 | `GET /library` | `?topic=&q=` | Public cards (`visibility = 'public'`), localized, grouped by L1 topic |
-| `POST /library/:id/adopt` | `{strength}` | Hold a library card |
+| `POST /library/:id/adopt` | `{strength, scopeFeedId?}` | Hold a library card. A superseded library version is `409 CONFLICT {reason: 'superseded'}` (D-39) |
 | `GET /library/updates` | — | Available immutable semantic successors for the user's library holdings: `[{currentCardId,newCardId,librarySlug,fromVersion,toVersion,diff,hasPrivateCustomization}]`. Private forks receive advisory notices only |
 | `POST /library/:id/updates/:newId/apply` | `{expectedCurrentCardId}` | Explicitly accept a validated successor for an unchanged held library card; replace the holding, retain strength/scope/display override, refresh authorized demand and invalidate answers by new identity → `200 {card,idChange}`. Custom/private forks require the explicit editor; never overwrite their examples |
 | `GET /cards/publication-requests` | — | Requests addressed to this original creator, with exact card text, proposed title/translations/topics, payload digest, version and status |
@@ -628,7 +628,7 @@ client must replace its cached id.
 | `POST /cards/suggestions/:cardId/dismiss` | — | `204` |
 | `GET /labels` | — | `Label[]` |
 | `POST /labels` | `{name, definition, notFor?, color?}` | Create or reuse a label card (kind `label`; the hash includes the name) plus `user_labels` → `201 {label}`. Quota `maxLabels` |
-| `PATCH /labels/:id` | `{name?, definition?, notFor?, color?}` | `color` changes in place. Name or definition re-points to a new card id, and `label_ids`/`label_suggestions` are migrated with `array_replace` |
+| `PATCH /labels/:id` | `{name?, definition?, notFor?, color?}` | `color`, and a name that changes only in case or spacing, change in place (D-36). Otherwise a name or definition re-points to a new card id, and `label_ids`/`label_suggestions` are migrated with `array_replace` |
 | `POST /labels/:id/examples` | `{articleId, side: 'yes' \| 'no'}` | Add a label example (private label fork, new id, ids migrated). Not counted in `maxForks` |
 | `POST /labels/:id/examples/remove` | `{side, text}` | Remove one (new id, migrated) |
 | `DELETE /labels/:id` | — | Remove the label, and remove its id from the user's `label_ids`/`label_suggestions` |
@@ -639,7 +639,12 @@ PATCH/adopt/example routes return `200 {card}` or `200 {label}` with the final i
 return `idChange: {from, to} | null` so queued client references can be reconciled. A stale old id
 not currently held by the user returns `404`; it must not create another implicit holding. Quotas
 count resulting distinct holdings/forks, not historical retired rows. Label colour is a validated
-hex value, never arbitrary CSS; text/example length and count limits come from spec 05.
+hex value, never arbitrary CSS (`#64748b` when omitted, D-42); text/example length and count limits come from spec 05.
+An example or card made from an article needs the article to be carried by one of the user's
+subscriptions or to be on their reading list (otherwise `404`); an article without a usable title is
+`400 VALIDATION_FAILED {reason: 'no_title'}` (D-39). A label re-point or delete increments
+`user_article.state_version` only on rows whose `label_ids` change, never for `label_suggestions`
+alone (D-41).
 
 Shared text-only card deduplication is approved; it does not identify a later adopter as the original
 creator or disclose who holds the card. Public promotion is a separate consent flow (§9). A library

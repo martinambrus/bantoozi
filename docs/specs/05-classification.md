@@ -398,6 +398,10 @@ returns **effects** `{ refreshFeedIds: string[], backfill?: {cardIds, feedIds?},
   translations/network calls occur before opening it. Use `INSERT ... ON CONFLICT` for concurrent
   identical hashes, then select and verify the immutable row. Reusing an existing holder row is
   idempotent only when requested strength/scope agree; otherwise return a documented conflict.
+  Every re-point (edited text, an example fork, a library update, a label re-point) whose target the
+  user already holds follows the same rule: identical settings coalesce into that holding, different
+  ones are `409 CONFLICT {reason: 'target_held'}` with nothing changed. Quotas block only growth past
+  the plan maximum; a re-point is never a new holding (D-38).
 - Shared means reusable classification text, **not** public discovery: only public library rows and
   a user's own held/shared or owned/private rows are exposed through the API. Keep owner identities,
   holdings and examples private. Cross-tenant FK/kind rules are enforced in DB writes too. Never
@@ -413,16 +417,16 @@ returns **effects** `{ refreshFeedIds: string[], backfill?: {cardIds, feedIds?},
 | **Create** (text only; API `POST /cards`) | Compute `text_hash`. Reuse a `public`/`shared` card with that hash (un-retire it if retired), or insert `origin='user', visibility='shared', creator_user_id=me, title`. Insert `user_cards` (strength, scope; `title_override` = the given title if it differs from the card's). Effects: refresh, admitted-demand backfill only (§1.1), rank full |
 | **Adopt** a library card | Insert `user_cards`. Same effects |
 | **Make a card from an article** (`POST /cards/from-article`) | Create or reuse the shared text-only card for `{interest, not_for}`, then **fork** it with the article title in `examples_yes`. The user holds the fork |
-| **Add or remove an example** (interest card) | Build the new body: the current examples ± this one, newest 5 per side. Create or reuse the private fork with that body (hash includes the owner). Re-point the user's `user_cards` row to it (keep strength, scope, `title_override`). The previous fork, if any, is left for `house.retire-cards` |
+| **Add or remove an example** (interest card) | Build the new body: the current examples ± this one, newest 5 per side. Create or reuse the private fork with that body (hash includes the owner). Re-point the user's `user_cards` row to it (keep strength, scope, `title_override`; a holder without an override keeps the title shown before, stored as the override when the new card's default title differs). Removing the last example returns to the shared text-only card of the same text when one exists, otherwise the user keeps a private fork without examples (D-37). The previous fork, if any, is left for `house.retire-cards` |
 | **Edit text** (`PATCH /cards/:id` with `interest`/`not_for`) | As Create for the new text (a user with examples gets a fork of the new text carrying the same examples). Re-point `user_cards`. The old card keeps its answers for other holders |
-| **Rename** (`PATCH /cards/:id {title}`) | Set `user_cards.title_override`. No card change, no model calls |
-| **Change strength** | Update `user_cards.strength`. Effect: rank full. No model calls |
+| **Rename** (`PATCH /cards/:id {title}`) | Set `user_cards.title_override`. No card change, no model calls, no effects: no refresh, rank or learn (D-35) |
+| **Change strength** | Update `user_cards.strength`. Effects: rank full, learn. No model calls |
 | **Change scope** | Validate the new feed subscription, update scope, refresh the union of old/new feeds, backfill already-authorized articles in newly included feeds (including feed A → feed B); do not authorize historical/off-feed work, rank full |
 | **Delete** | Delete the `user_cards` row. Effects: refresh, rank full. Card rows are never deleted by the API; `house.retire-cards` retires unheld non-library cards and later deletes unreferenced ones (spec 11 §6) |
-| **Create a label** (`POST /labels`) | As Create with `kind='label'` (the hash includes the title). Insert `user_labels (card_id, name = title, color)` |
+| **Create a label** (`POST /labels`) | As Create with `kind='label'` (the hash includes the title). Insert `user_labels (card_id, name = title, color)`; an omitted colour stores `#64748b` (D-42) |
 | **Assign or unassign a label on an article** | **Does not touch cards.** It only updates `user_article.label_ids`/`label_suggestions` and records `label`/`unlabel`; labels are neutral organization and never personal-interest training evidence (spec 08 §5.3) |
-| **Add or remove a label example** (`POST /labels/:id/examples`) | Fork the label (as for interest cards). Re-point `user_labels`. In the same transaction, `UPDATE user_article SET label_ids = array_replace(label_ids, old, new), label_suggestions = array_replace(label_suggestions, old, new) WHERE user_id = me`. Effects: refresh, backfill, `labelIdChange` |
-| **Rename or redefine a label** (`PATCH /labels/:id`) | A new label card by hash, re-pointed with the same `array_replace` |
+| **Add or remove a label example** (`POST /labels/:id/examples`) | Fork the label (as for interest cards). Re-point `user_labels`. In the same transaction, `UPDATE user_article SET label_ids = array_replace(label_ids, old, new), label_suggestions = array_replace(label_suggestions, old, new) WHERE user_id = me`. Effects: refresh, backfill, rank full, `labelIdChange` (D-35) |
+| **Rename or redefine a label** (`PATCH /labels/:id`) | A new label card by hash, re-pointed with the same `array_replace` and effects. A name that changes only in case or spacing hashes the same, so it updates `user_labels` in place like a colour (D-36). Deleting a label also records a full rank |
 
 Explicit card authoring may still use the free tier-1 text translator; that user-requested card
 operation does not authorize article inference for any off/training feed.

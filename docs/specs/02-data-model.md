@@ -1075,7 +1075,7 @@ CREATE TABLE user_labels (
   user_id     uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   card_id     bigint NOT NULL REFERENCES interest_cards(id) ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED,  -- kind = 'label'
   name        text NOT NULL,
-  color       text NOT NULL DEFAULT 'slate',
+  color       text NOT NULL DEFAULT 'slate',        -- the repository always writes a validated hex colour, `#64748b` when omitted (spec 08 §7, D-42)
   created_at  timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, card_id)
 );
