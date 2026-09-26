@@ -177,7 +177,9 @@ type AttemptResult =
   | { kind: 'denied' }
   | { kind: 'eval_budget' }
   | { kind: 'cancelled' }
-  | { kind: 'deferred'; retryAt: Date; detail: string };
+  | { kind: 'deferred'; retryAt: Date; detail: string }
+  /** The probe lease was lost before sending and the fresh shared state denies the attempt. */
+  | { kind: 'circuit_open'; admission: Extract<BreakerAdmission, { ok: false }> };
 
 type PackResult =
   | { ok: true; attempt: SuccessAttempt }
@@ -603,6 +605,14 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
         }
         releases.push(slot.release);
       }
+      if (run.probeToken !== undefined && !(await breaker.renew(lane.name, run.probeToken))) {
+        // The probe lease was reclaimed after it expired, or the state moved on: never a second
+        // concurrent probe (spec 04 §5). Decide on the fresh shared state instead.
+        run.probeToken = undefined;
+        const admission = await breaker.admit(lane.name);
+        if (!admission.ok) return { kind: 'circuit_open', admission };
+        run.probeToken = admission.probeToken;
+      }
       return await withCredential(run, sub, ctx);
     } finally {
       for (const release of releases.reverse()) release();
@@ -778,6 +788,8 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
           return fail(failed('no_key', `${lane.provider}:${result.reason}`), 'neutral');
         case 'eval_budget':
           return fail(failed('budget', 'eval_budget'), 'neutral');
+        case 'circuit_open':
+          return fail(circuitOpen(lane.name, result.admission), n > 1 ? 'failure' : 'neutral');
         case 'denied': {
           const why = await denialReason(run, ctx);
           if (why === 'no_demand') return fail(failed('no_demand', 'demand_lost'), 'neutral');

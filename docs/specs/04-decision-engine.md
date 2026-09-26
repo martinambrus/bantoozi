@@ -424,6 +424,9 @@ bounded by the job deadline, cancellation works while queued, and aging prevents
 - **Half-open:** after `openUntil`, acquire one shared probe lease (`probeToken`, `probeUntil`) in
   that same transaction. A successful probe closes and resets doubling; a failed one reopens.
   Only the lease holder may complete that transition; an expired probe can be reclaimed after crash.
+  The holder renews the lease before every wire attempt of its logical request, so retries that
+  outlast one lease keep it; a holder whose renewal fails sends nothing more as the probe and
+  decides on the fresh shared state (D-82).
 - **Reset:** `POST /admin/engine/reset-breaker {engine}` records a timestamp and atomically closes
   that engine/reset counter; routers discard older local state within one poll. State changes and
   polling are bounded and tested across two router instances.

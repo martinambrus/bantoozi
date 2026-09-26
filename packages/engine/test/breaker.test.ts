@@ -14,6 +14,7 @@ import {
   FailureWindow,
   openDurationMs,
   releaseProbe,
+  renewProbe,
   tripBreaker,
   type BreakerCoordinator,
   type CircuitStore,
@@ -92,6 +93,24 @@ describe('breaker transitions (pure, spec 04 §5)', () => {
       openUntil: iso(2 * MIN),
       reopenCount: 1,
     });
+  });
+
+  it("renews only the lease holder's probe lease", () => {
+    const half: BreakerState = {
+      state: 'half_open',
+      openedAt: iso(0),
+      openUntil: iso(2 * MIN),
+      reopenCount: 1,
+      probeToken: 'a',
+      probeUntil: iso(2 * MIN + P.probeLeaseMs),
+    };
+    expect(renewProbe(half, 'a', at(4 * MIN), P)).toEqual({
+      ...half,
+      probeUntil: iso(4 * MIN + P.probeLeaseMs),
+    });
+    expect(renewProbe(half, 'b', at(4 * MIN), P)).toBeNull();
+    expect(renewProbe(releaseProbe(half, 'a')!, 'a', at(4 * MIN), P)).toBeNull();
+    expect(renewProbe({ state: 'closed', reopenCount: 0 }, 'a', at(4 * MIN), P)).toBeNull();
   });
 
   it('enters auth mode from any other state', () => {
@@ -267,6 +286,26 @@ describe('createBreakerCoordinator (shared state, spec 04 §5)', () => {
     await b.record('typesafe', 'success', reclaimed.ok ? reclaimed.probeToken : undefined);
     await a.record('typesafe', 'failure', crashed.ok ? crashed.probeToken : undefined);
     expect((await store.readCircuit()).typesafe).toEqual({ state: 'closed', reopenCount: 0 });
+  });
+
+  it('keeps a renewed probe lease from another router; a reclaimed one cannot be renewed', async () => {
+    const store = createMemoryCircuitStore();
+    const a = coordinator(store);
+    const b = coordinator(store);
+    await fail(a, 'typesafe', 5, 15);
+    vi.setSystemTime(T0 + 2 * MIN);
+    const probe = await a.admit('typesafe');
+    const token = probe.ok ? probe.probeToken! : '';
+    vi.setSystemTime(T0 + 2 * MIN + P.probeLeaseMs - 1_000);
+    expect(await a.renew('typesafe', token)).toBe(true);
+    vi.setSystemTime(T0 + 2 * MIN + P.probeLeaseMs + 1_000);
+    expect(await b.admit('typesafe')).toMatchObject({ ok: false, auth: false });
+    // Once the renewed lease expires too, another router reclaims it and the old holder's renewal
+    // fails, so it never sends a second concurrent probe.
+    vi.setSystemTime(T0 + 2 * MIN + 2 * P.probeLeaseMs);
+    const reclaimed = await b.admit('typesafe');
+    expect(reclaimed.ok && reclaimed.probeToken).toBeTruthy();
+    expect(await a.renew('typesafe', token)).toBe(false);
   });
 
   it('releases the probe lease for a neutral outcome', async () => {

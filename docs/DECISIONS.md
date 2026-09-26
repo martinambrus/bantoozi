@@ -538,3 +538,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   03 §2.2), so the article worker never asks them a second time from live inputs. When the fill is
   refused (the live article or a manifest changed), those pairs stay unanswered in the live caches
   until a card backfill or other demand queues them. Spec 05 §5.3 updated.
+- D-82: 2026-09-26 M2-T3 — the half-open probe lease (150 s) covers one wire attempt with the waits
+  before it, not a whole logical request: four Jev attempts with 60 s `Retry-After` waits take about
+  five minutes. The holder renews the lease right before every wire attempt (after its rate-limit and
+  concurrency waits). When the renewal fails (the lease expired and another router reclaimed it, or
+  the state moved on), the attempt is not sent: the router re-admits on the fresh shared state and
+  either continues (closed, or a free lease it now holds) or ends the request as `circuit_open`, so
+  two probes never run at once. Spec 04 §5 updated.

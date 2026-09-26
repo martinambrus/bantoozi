@@ -19,9 +19,10 @@ import type { EngineLogger } from './types.js';
  *   requests are not failures).
  * - `open` for 2 minutes, doubling per consecutive re-open (`reopenCount`), capped at 30 minutes.
  * - after `openUntil` one router acquires the single half-open probe lease (`probeToken`,
- *   `probeUntil`) in the same transaction as the state change; only that lease holder completes the
- *   transition (success closes and resets the doubling, failure re-opens). An expired lease can be
- *   reclaimed after a crash.
+ *   `probeUntil`) in the same transaction as the state change, and renews it before every wire
+ *   attempt of its logical request, so retries that outlast one lease keep it; only that lease
+ *   holder completes the transition (success closes and resets the doubling, failure re-opens). An
+ *   expired lease can be reclaimed after a crash, and a holder whose renewal fails sends nothing.
  * - a 401/403 of the credential version currently active sets `auth` until an explicit admin reset;
  *   a late 401 from a superseded credential version cannot disable its replacement.
  * - `resetRequested[engine]` newer than a router's last seen reset discards its local window and
@@ -46,7 +47,10 @@ export interface BreakerParams {
   baseOpenMs: number;
   /** Cap of the open duration. */
   maxOpenMs: number;
-  /** Half-open probe lease: must cover one logical request with its retries. */
+  /**
+   * Half-open probe lease: covers one wire attempt with the waits before it. The holder renews it
+   * before every attempt, so a logical request with its retries keeps it.
+   */
   probeLeaseMs: number;
   /** Shared state is re-read at most this often (and before paid attempts once stale). */
   pollMs: number;
@@ -149,6 +153,20 @@ export function completeProbe(
     openUntil: iso(at + openDurationMs(reopenCount, params)),
     reopenCount,
   };
+}
+
+/**
+ * Extend the holder's probe lease before its next wire attempt (retries can outlast one lease). Null
+ * when the lease is no longer this token's: reclaimed after it expired, completed or reset.
+ */
+export function renewProbe(
+  current: BreakerState,
+  token: string,
+  now: Date,
+  params: BreakerParams,
+): BreakerState | null {
+  if (current.state !== 'half_open' || current.probeToken !== token) return null;
+  return { ...current, probeUntil: iso(now.getTime() + params.probeLeaseMs) };
 }
 
 /** Give the probe lease back without a verdict (budget, cancellation, no demand). */
@@ -277,6 +295,8 @@ export type BreakerOutcome = 'success' | 'failure' | 'neutral';
 export interface BreakerCoordinator {
   /** Decide whether a paid attempt may be sent now (re-reading shared state once it is stale). */
   admit(engine: BreakerEngine): Promise<BreakerAdmission>;
+  /** Renew a held probe lease before a wire attempt; false once the lease is no longer this token's. */
+  renew(engine: BreakerEngine, probeToken: string): Promise<boolean>;
   /** Record the final outcome of one logical request (with the probe token when it was a probe). */
   record(engine: BreakerEngine, outcome: BreakerOutcome, probeToken?: string): Promise<void>;
   /** A 401/403 of `credential`: auth mode, unless that version was superseded meanwhile. */
@@ -408,6 +428,11 @@ export function createBreakerCoordinator(deps: BreakerCoordinatorDeps): BreakerC
           ? { retryAt: fresh.retryAt }
           : {}),
       };
+    },
+
+    async renew(engine, probeToken) {
+      const at = now();
+      return update(engine, (s) => renewProbe(s, probeToken, at, params));
     },
 
     async record(engine, outcome, probeToken) {

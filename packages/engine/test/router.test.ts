@@ -742,6 +742,56 @@ describe('EngineRouter: circuit breaker integration (spec 04 §5)', () => {
     });
   });
 
+  it('keeps its half-open probe lease through retries that outlast one lease', async () => {
+    const a = setup();
+    await tripJev(a);
+    await advance(120_000);
+    const b = setup({ circuit: a.circuit });
+    // Three slow 503s with a 60 s Retry-After, then an answer: about 4.5 minutes in all.
+    const slow = () => async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30_000));
+      return failure('error', { retryAfterMs: 60_000 });
+    };
+    a.typesafe!.script.push(slow(), slow(), slow(), 'ok');
+    const probe = a.router.ask(request());
+    // Past the first lease (150 s): the holder renewed it before each attempt.
+    await advance(200_000);
+    expect(await b.router.ask(request())).toMatchObject({ ok: false, reason: 'circuit_open' });
+    expect(b.typesafe!.calls).toHaveLength(0);
+    await advance(100_000);
+    expect(await probe).toMatchObject({ ok: true });
+    expect(a.typesafe!.calls).toHaveLength(24);
+    expect((await a.circuit.readCircuit()).typesafe).toEqual({ state: 'closed', reopenCount: 0 });
+  });
+
+  it('sends nothing more once another router reclaimed its expired probe lease', async () => {
+    const a = setup();
+    await tripJev(a);
+    await advance(120_000);
+    const b = setup({ circuit: a.circuit });
+    // A 100 s attempt and a 60 s Retry-After: the next renewal comes after the 150 s lease.
+    a.typesafe!.script.push(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100_000));
+      return failure('error', { retryAfterMs: 60_000 });
+    });
+    b.typesafe!.script.push(async (req) => {
+      await new Promise((resolve) => setTimeout(resolve, 30_000));
+      return success('typesafe', req);
+    });
+    const stale = a.router.ask(request());
+    await advance(155_000);
+    const reclaimed = b.router.ask(request());
+    await advance(31_000);
+    expect(await stale).toMatchObject({
+      ok: false,
+      reason: 'circuit_open',
+      detail: 'typesafe:open',
+    });
+    expect(a.typesafe!.calls).toHaveLength(21);
+    expect(await reclaimed).toMatchObject({ ok: true });
+    expect((await a.circuit.readCircuit()).typesafe).toEqual({ state: 'closed', reopenCount: 0 });
+  });
+
   it('shares the state between two routers within one poll interval', async () => {
     const a = setup();
     const b = setup({ circuit: a.circuit });
