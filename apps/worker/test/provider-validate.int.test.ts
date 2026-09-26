@@ -155,6 +155,7 @@ function handler(
     probeConfig?: Partial<TestConfig>;
     credentials?: WorkerCredentialResolver;
     engines?: ProviderValidateDeps['engines'];
+    leaseMs?: number;
   } = {},
 ) {
   const config = testConfig(options.config);
@@ -168,6 +169,7 @@ function handler(
     logger,
     random: () => 0,
     ...(options.engines === undefined ? {} : { engines: options.engines }),
+    ...(options.leaseMs === undefined ? {} : { leaseMs: options.leaseMs }),
   });
   return {
     router,
@@ -345,6 +347,45 @@ describe('provider.validate (spec 04 §1.2 step 2)', () => {
       recorded: true,
     });
     await expectNoPlaintext();
+  });
+
+  it('probes within a lease shorter than the abort margin', async () => {
+    const version = await stage('typesafe', JEV_KEY);
+    await handler({ leaseMs: 5_000 }).validate('typesafe', version);
+    expect(await metadata('typesafe')).toMatchObject({
+      candidateVersion: version,
+      candidateStatus: 'valid',
+      lastErrorCode: null,
+    });
+    expect(jev.requests).toHaveLength(1);
+  });
+
+  it('leaves the candidate pending when the lease margin cancels an attempt in flight', async () => {
+    const version = await stage('typesafe', JEV_KEY);
+    const untilCancelled: DecisionEngine = {
+      name: 'typesafe',
+      ask: (_request, signal) =>
+        new Promise((resolve) => {
+          signal.addEventListener('abort', () => {
+            resolve({
+              ok: false,
+              status: 'error',
+              retryable: false,
+              detail: 'cancelled',
+              billing: 'uncertain',
+            });
+          });
+        }),
+    };
+    await handler({ engines: { typesafe: untilCancelled }, leaseMs: 5_000 }).validate(
+      'typesafe',
+      version,
+    );
+    expect(await metadata('typesafe')).toMatchObject({
+      candidateStatus: 'pending',
+      lastErrorCode: 'timeout',
+    });
+    expect(await calls()).toMatchObject([{ status: 'error', credential_version: version }]);
   });
 
   it('records an authentication rejection as invalid without touching the breaker', async () => {

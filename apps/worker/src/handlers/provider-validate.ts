@@ -61,7 +61,10 @@ export const PROBE_MAX_OUTPUT_TOKENS = 512;
 export const DEFAULT_VALIDATION_LEASE_MS = 5 * 60_000;
 /** A server wait longer than this defers the validation instead of holding the lease. */
 export const MAX_PROBE_WAIT_MS = 10_000;
-/** In-flight attempts are cancelled this long before the lease expires. */
+/**
+ * In-flight attempts are cancelled this long before the lease expires; a lease shorter than four
+ * margins keeps a quarter of itself instead, so every accepted lease leaves time to probe.
+ */
 const LEASE_MARGIN_MS = 15_000;
 
 /** Synthetic probe content (never reader data). */
@@ -145,6 +148,7 @@ export function createProviderValidateHandler(
   if (!Number.isSafeInteger(leaseMs) || leaseMs < 5_000) {
     throw new RangeError('leaseMs must be at least 5 seconds');
   }
+  const abortAfterMs = leaseMs - Math.min(LEASE_MARGIN_MS, Math.floor(leaseMs / 4));
   const now = deps.now ?? (() => new Date());
   const random = deps.random ?? Math.random;
   const production = config.nodeEnv === 'production';
@@ -435,13 +439,14 @@ export function createProviderValidateHandler(
       if (attempt.status === 'invalid_request') {
         return result('invalid', 'request_rejected', base());
       }
+      // Cancelled at the lease margin: inconclusive, never a provider error.
+      if (signal.aborted) return result('pending', 'timeout', base());
       if (attempt.status === 'invalid_response') {
         invalidResponses += 1;
         if (invalidResponses > 1) break;
       } else if (!attempt.retryable) {
         return result('invalid', 'provider_error', base());
       }
-      if (signal.aborted) return result('pending', 'timeout', base());
     }
     return exhausted(last, base());
   }
@@ -457,7 +462,7 @@ export function createProviderValidateHandler(
       return;
     }
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), leaseMs - LEASE_MARGIN_MS);
+    const timer = setTimeout(() => controller.abort(), abortAfterMs);
     let outcome: ValidationResult | null;
     try {
       outcome = await probe(provider, candidateVersion, claim.validationToken, controller.signal);
