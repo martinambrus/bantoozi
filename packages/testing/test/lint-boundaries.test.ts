@@ -9,9 +9,12 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../
 
 let eslint: ESLint;
 
-beforeAll(() => {
+// The first lint loads the flat config, the boundaries plugin and the TypeScript resolver; under a
+// full parallel `pnpm test` that cold start can exceed a test's 5 s default, so it runs here once.
+beforeAll(async () => {
   eslint = new ESLint({ cwd: repoRoot });
-});
+  await eslint.lintText('export {};\n', { filePath: 'packages/ranker/src/probe.ts' });
+}, 60_000);
 
 async function ruleIds(filePath: string, code: string): Promise<string[]> {
   const [result] = await eslint.lintText(code, { filePath });

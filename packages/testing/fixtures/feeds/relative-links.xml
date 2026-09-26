@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel xml:base="issues/">
+<title>Relative Magazine</title>
+<link>../</link>
+<description>Links relative to the final feed URL and to xml:base.</description>
+<image><url>logo.png</url><title>Relative Magazine</title><link>../</link></image>
+<item>
+<title>Relative to the channel base</title>
+<link>42/cover-story.html</link>
+<description>&lt;p&gt;See &lt;a href="42/cover-story.html#part-2"&gt;part two&lt;/a&gt; and &lt;img src="42/cover.jpg" alt="Cover"&gt; the cover.&lt;/p&gt;</description>
+<pubDate>Sun, 20 Sep 2026 08:00:00 GMT</pubDate>
+</item>
+<item xml:base="https://cdn.example.net/archive/">
+<title>Item-level xml:base</title>
+<link>2026/09/letters.html</link>
+<description>&lt;p&gt;&lt;img src="//img.example.net/letters.png" alt="Letters"&gt; A protocol-relative image.&lt;/p&gt;</description>
+<pubDate>Sat, 19 Sep 2026 08:00:00 GMT</pubDate>
+</item>
+<item>
+<title>Root-relative link</title>
+<link>/about/contact</link>
+<description>A link starting with a slash.</description>
+<pubDate>Fri, 18 Sep 2026 08:00:00 GMT</pubDate>
+</item>
+<item>
+<title>Unusable link falls back to the permalink GUID</title>
+<link>javascript:void(0)</link>
+<guid>https://www.example.com/magazine/issues/43/</guid>
+<pubDate>Thu, 17 Sep 2026 08:00:00 GMT</pubDate>
+</item>
+</channel>
+</rss>

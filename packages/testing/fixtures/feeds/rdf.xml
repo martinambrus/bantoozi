@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF
+  xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+  xmlns="http://purl.org/rss/1.0/"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:sy="http://purl.org/rss/1.0/modules/syndication/"
+  xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel rdf:about="https://news.example.net/">
+    <title>Example Science News</title>
+    <link>https://news.example.net/</link>
+    <description>Daily science headlines.</description>
+    <dc:language>de-AT</dc:language>
+    <sy:updatePeriod>daily</sy:updatePeriod>
+    <sy:updateFrequency>4</sy:updateFrequency>
+    <image rdf:resource="https://news.example.net/logo.gif"/>
+    <items>
+      <rdf:Seq>
+        <rdf:li rdf:resource="https://news.example.net/2026/09/25/comet/"/>
+        <rdf:li rdf:resource="https://news.example.net/2026/09/24/soil/"/>
+      </rdf:Seq>
+    </items>
+  </channel>
+  <image rdf:about="https://news.example.net/logo.gif">
+    <title>Example Science News</title>
+    <url>https://news.example.net/logo.gif</url>
+    <link>https://news.example.net/</link>
+  </image>
+  <item rdf:about="https://news.example.net/2026/09/25/comet/">
+    <title>Comet C/2026 A1 brightens faster than expected</title>
+    <link>https://news.example.net/2026/09/25/comet/</link>
+    <description>Amateur astronomers report a sudden outburst.</description>
+    <dc:creator>Lukas Beispiel</dc:creator>
+    <dc:date>2026-09-25T21:10:00+02:00</dc:date>
+    <dc:subject>Astronomy</dc:subject>
+    <content:encoded><![CDATA[<p>Amateur astronomers report a sudden outburst of <em>Comet C/2026 A1</em>.</p>]]></content:encoded>
+  </item>
+  <item rdf:about="https://news.example.net/2026/09/24/soil/">
+    <title>Soil microbes store more carbon in cold winters</title>
+    <description>A ten-year field study in the Alps.</description>
+    <dc:creator>Eva Muster</dc:creator>
+    <dc:date>2026-09-24</dc:date>
+    <dc:subject>Ecology</dc:subject>
+    <dc:subject>Climate</dc:subject>
+  </item>
+</rdf:RDF>

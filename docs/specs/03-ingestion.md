@@ -231,10 +231,16 @@ LIMIT 300;
 
 Record `feed.fetch` intents for each ID. The handler uses a dedicated connection and a
 session advisory lock keyed by feed ID for the whole fetch; release it in `finally` (connection loss
-also releases it). Re-read `next_fetch_at`, status and subscriber count after acquiring the lock;
-a stale scheduled job is a no-op. Manual refresh carries an explicit force flag but still observes
-origin cooldowns. This lock is required across both worker processes; queue keys alone are not a
-business lock. Follow `merged_into_id` to a live feed before scheduling; detect corrupt cycles.
+also releases it). Every statement of the fetch runs on that session, so a transaction of it can
+commit only while the lock is held: once another process may be fetching the feed, nothing of this
+fetch commits, not even a transaction already under way. A lost lock also aborts the HTTP request
+and ends the fetch. Re-read `next_fetch_at`, status and subscriber count after acquiring the lock;
+a stale scheduled job (not yet due, `paused`, `dead` or without subscribers) is a no-op. Manual
+refresh carries an explicit force flag: it fetches the feed whatever its due time, status or
+subscriber count, still observes origin cooldowns, and its outcome never changes a `dead` or
+`paused` status, which only a reset does (D-23). This lock is required across both worker
+processes; queue keys alone are not a business lock. Follow `merged_into_id` to a live feed before
+scheduling; detect corrupt cycles.
 `paused` and `dead` feeds are never scheduled. A `quarantined` feed becomes due at `quarantined_until`
 (the fetch handler sets `next_fetch_at = quarantined_until`).
 
@@ -310,8 +316,13 @@ separate tenant-isolated design before support, not an exception to this fetcher
    It never throws for network or HTTP errors.
 8. **Error codes:** `FEED_BLOCKED_ADDRESS`, `FEED_DNS_ERROR`, `FEED_TIMEOUT`, `FEED_TLS_ERROR`,
    `FEED_CONNECTION_ERROR`, `FEED_TOO_LARGE`, `FEED_HTTP_<status>`, `FEED_TOO_MANY_REDIRECTS`,
-   `FEED_INVALID_URL`, `FEED_DECODE_ERROR`. A 304 is a successful bodyless result; HTTP failures retain
-   the bounded response headers needed for `Retry-After`, without retaining or logging error bodies.
+   `FEED_INVALID_URL`, `FEED_DECODE_ERROR`, and `FEED_ORIGIN_COOLDOWN` with `retryAt` when no request
+   was sent because the origin is cooling down after a 429/503 or its throttle (§8.2) cannot grant a
+   start before the deadline; callers defer the work rather than count a failure (D-12). A 304 to a
+   request that sent validators is a successful bodyless result; any other 304 (validators go to the
+   original URL only, so a redirect target or a robots.txt request never sends them) is
+   `FEED_HTTP_304` (D-18). HTTP failures retain the bounded response headers needed for
+   `Retry-After`, without retaining or logging error bodies.
 9. **Testing escape hatch:** `FETCH_ALLOW_PRIVATE=true` disables **both** the address checks and the
    port allow-list, so local fixture servers on random ports work (M1-T8, E2E). Config validation
    **rejects** this flag when `NODE_ENV=production`. SSRF tests always run with the hatch **off**, using
@@ -350,7 +361,9 @@ Feed is UTF-8. The lenient XML pass may repair syntax but must not change the ch
    publishers sign URLs or assign meaning to their order. Do not run an unrelated query through
    `URLSearchParams.toString()` merely to remove a tracking key. Drop an empty `?`.
 6. Preserve repeated slashes, trailing slashes, percent-encoded reserved characters and path case.
-7. `canonical_url` = the result; `url_key = canonical_url`, **including the scheme**. HTTP and HTTPS
+7. `canonical_url` = the result; `url_key = canonical_url`, **including the scheme**. A canonical
+   URL longer than 2,048 UTF-8 bytes uses `url_key = 'sha256:' + sha256Hex(canonical_url)` instead,
+   because the unique B-tree indexes on `url_key` cannot hold keys of about 2.7 KB (D-11). HTTP and HTTPS
    are unified only by a validated redirect/canonical relationship, not by assumption. Feed identity
    uses this same conservative normalization. Never strip arbitrary `id`, `page`, `ref` or `source`
    parameters. Keep the original fetch URL separately so removing a tracking parameter does not
@@ -393,7 +406,7 @@ because only `rel=canonical` fixes AMP), Google News wrappers and hash-bang URLs
 |---|---|
 | `title` | strip HTML, decode entities, collapse whitespace, trim. Fall back to the first 80 chars of the excerpt, else `"(untitled)"`. Max 500 chars |
 | `link` | RSS link → RSS guid only when `isPermaLink` is not false and it is an absolute http(s) URL; Atom `link[rel=alternate]` with HTML type (or omitted type); JSON Feed `url` then `external_url`. Resolve `xml:base` chains against the final feed URL. Enclosures/attachments are not article links |
-| `guid` | RSS guid / Atom id / JSON Feed id are opaque, case-sensitive identifiers scoped to this feed; preserve the complete string. Empty → null; > 4,096 chars → invalid item, never silently truncate identity |
+| `guid` | RSS guid / Atom id / JSON Feed id are opaque, case-sensitive identifiers scoped to this feed; preserve the complete string. A numeric JSON Feed id keeps its source text, so a number beyond 2^53 is never rounded into another item's id. Empty → null; > 4,096 chars → invalid item, never silently truncate identity |
 | `published_at` | RSS `isoDate` / `pubDate` / `dc:date`, Atom `published` then `updated`, JSON Feed `date_published` then `date_modified`; validate as a finite instant and normalize to UTC, otherwise null. Dates > 1 day ahead are treated as unknown (null), never advanced again on each poll |
 | `author` | `creator ?? author ?? dc:creator ?? itunes:author`, as text, max 200 chars |
 | `categories` | flattened strings, trimmed, deduplicated case-insensitively, max 16 entries of up to 64 chars each |
@@ -473,7 +486,10 @@ excerpt, the page outside Readability's result, or `image_url`. Count `<img>` el
 `articles.body_image_count` always describes the body currently stored in `article_bodies`, the same
 text `word_count` counts, and is written in the same transaction as that body (§7 step 6, §8.1
 step 6). It is null while no body is stored (excerpt only), so an excerpt never passes for a body
-without images.
+without images. When the 10 MiB limit cuts a body's text (§8.1 step 6; `feed_body_*` in §6), only
+the images the stored text covers count: those before the first image whose preceding source HTML,
+converted to text as the stored text was, is longer than the stored text (D-20). A cut of the HTML
+alone keeps the whole text, and every image counts.
 
 **Re-ranking.** A media signal can change without a `content_hash` change or a new `feed_items`
 row, for example when a publisher adds only a video enclosure, so neither `resetArticleAnswers` nor
@@ -501,7 +517,8 @@ For one fetch, in **one transaction per item**, so one bad item doesn't roll bac
 2. **Exact match:** look up `articles.url_key = url_key` or `article_aliases.url_key = url_key`.
    - **Found:**
      - Upsert `feed_items (feed_id, article_id, guid)`.
-     - If `content_hash` differs: update classification inputs and invoke the shared
+     - If `content_hash` differs, or the source's item declares or clears the audio/video
+       enclosure of its link (§8.1 step 1): update classification inputs and invoke the shared
        `resetArticleAnswers` contract once to increment `content_revision` and invalidate old
        body/translation/active facet and match derivatives (spec 05 §5.6), and record extraction work for the new revision.
        Excerpt-only, category and author corrections also count. Preserve bookmarks, ratings,
@@ -594,8 +611,17 @@ fetching non-HTML media.
      `facebook.com`, `tiktok.com`, `open.spotify.com`, `podcasts.apple.com`, `soundcloud.com`
    - paths ending in `.pdf`, `.mp3`, `.m4a`, `.mp4`, `.mov`, `.zip`, `.jpg`, `.png`, `.gif`, `.webp`
    - a chosen article URL that is itself an audio/video enclosure; a podcast entry with a normal
-     HTML page is still extractable. Match host suffixes on label boundaries and file extensions
-     case-insensitively on the pathname, not on query strings. Linkless entries use feed text
+     HTML page is still extractable. Ingestion stores the type of an audio/video enclosure,
+     attachment or `media:content` whose URL is the item's link as `articles.link_enclosure_type`,
+     a publisher input like the others of §7 step 2: the source feed's current item decides it for
+     the link it gave the article (the same url_key, so rotated tracking parameters do not matter),
+     also without a content change (a correction clears it), and other carriers never change it.
+     Declaring or clearing it changes whether the link is skipped, and so the body the article can
+     have: like a content change it runs `resetArticleAnswers` and records extraction for the new
+     revision, so a link skipped before a correction is extracted; another audio/video type is
+     stored without a reset. Extraction and bookmark capture pass it to the skip check (D-21).
+     Match host suffixes on label boundaries and file extensions case-insensitively on the
+     pathname, not on query strings. Linkless entries use feed text
 2. **robots.txt:**
    - Fetch `/robots.txt` per origin through `safeFetch` and cache it in an in-memory LRU
      (5,000 origins, 24 h TTL).
@@ -620,7 +646,10 @@ fetching non-HTML media.
    - `rel=canonical`: if the page declares `<link rel="canonical">` on the **same registrable domain**
      (use `tldts` with the private suffix list, and require exact host equality if no registrable
      domain exists), and it resolves to an allowed http(s) URL without credentials, apply §8.4 with
-     source `rel_canonical`. Reject multiple conflicting canonicals, home/list-page targets and
+     source `rel_canonical`. After a redirect merge (step 4) it applies to the survivor, whose page
+     it is, but only while the survivor is as it was when the request reached its URL (its revision
+     read at that hop equals the revision the merge locks); a survivor changed since then is left
+     to its own extraction. Reject multiple conflicting canonicals, home/list-page targets and
      known cross-article conflicts. A canonical is identity evidence, not permission to bypass
      `safeFetch`, robots or the fetch limits. Parse inertly: no scripts or automatic resource loads.
    - No result, or text shorter than 200 chars → status `failed` with error `no_content`.
@@ -643,7 +672,11 @@ fetching non-HTML media.
      excerpt only). Set `articles.has_video` to true on page video evidence; otherwise set it to
      false only if it is null and a page or feed body was examined. A skipped URL on a `VIDEO_HOSTS`
      host (step 1) is video evidence.
-7. **Language detection** (§8.3). Set `articles.lang` and `lang_confidence`. A genuinely changed
+7. **Language detection** (§8.3) on the title, the excerpt and the lead of the body the article
+   keeps (step 8): the stored body when it outranks the result (a result without content, or a
+   partial result beside a complete `ok` body of this revision, such as a paywall teaser beside the
+   publisher's full feed text), so a result that is not stored never sets the language. Set
+   `articles.lang` and `lang_confidence`. A genuinely changed
    body/language uses `resetArticleAnswers` once, installing that new body at the incremented revision
    and checking current demand before choosing enrichment/translation as the next stage (do not
    enqueue extraction recursively). No demand means successful local completion.
@@ -730,7 +763,10 @@ and keep both identities; golden labels must not be silently rewritten.
   independently saved **different** snapshots of both articles, defer the destructive merge and keep
   both article identities until a version-preserving merge UI/contract exists; never choose one
   snapshot arbitrarily and delete the other. Unexpired Undo snapshot pins also block any destructive
-  merge that would make exact Undo impossible. Identical snapshot checksums can share storage.
+  merge that would make exact Undo impossible; such a merge is retried once the last blocking pin
+  expires (the extraction job that found the evidence rolls back all its merges, including earlier
+  ones of a redirect-then-canonical chain, and re-queues itself for that time; the article stays
+  `ingested` until then). Identical snapshot checksums can share storage.
 - Keep the target's source metadata and any valid target body; take the source body only when the
   target lacks a successful extraction. `body_image_count` moves with the body kept; `has_video` is
   true if it is true on either article, otherwise false if false on either, otherwise null (§6.4). Use `resetArticleAnswers` once to increment the surviving
@@ -783,7 +819,9 @@ complete offline media copy.
    can try again after a terminal blocked/missing/partial result.
 4. Freeze the best available content before reporting a terminal capture outcome. A feed summary or
    paywall teaser remains a `partial` snapshot; a failed page fetch cannot replace an existing full
-   snapshot. A complete result means the available readable extraction was retained without a known
+   snapshot. A partial page result is the best available content only when it has more readable
+   text than the stored partial content (a body of the current revision, else the feed excerpt),
+   so a paywall teaser never displaces the publisher's longer feed text. A complete result means the available readable extraction was retained without a known
    omission, not a claim to content behind a paywall. On no readable content keep the bookmark and
    metadata with `failed`, never fabricate saved body text.
 5. In a short completion transaction lock the article then user rows, recheck bookmark existence and
@@ -851,19 +889,30 @@ on error:
   if now - first_error_at >= 30 days: status = 'dead'
 
 always: total_fetches += 1; last_fetch_at = now
-on parsed 200: replace etag/last_modified with returned values, clearing absent ones
-on valid 304: retain missing validators; update any returned ones; do not parse or ingest a body
+on parsed 200: replace etag/last_modified with returned values, clearing absent ones; clear both
+  instead when the response did not come from the feed's fetch_url or an item failed to ingest
+on valid 304 (only the conditional request to fetch_url can get one, §4): retain missing
+  validators; update any returned ones; do not parse or ingest a body
 ```
 
 `sy_period_s` is period duration divided by valid positive frequency; ignore invalid/negative TTL,
 frequency and cache hints. Compute publication gaps from distinct valid dates, excluding zero/negative
 gaps. A 304 without previously established validators is retried once unconditionally. A parse error
 never installs its validators (otherwise a broken body can be hidden forever behind 304 responses).
+Validators belong to the request URL that returned them, and the client sends them to `fetch_url`
+only (§4.3). A response from any other URL therefore installs none: a temporary redirect target,
+a permanent redirect target that is not adopted, or a target that is not the merge survivor's
+`fetch_url`. That URL could otherwise answer the foreign ETag or date with 304 and hide the target's
+updates. An adopted permanent redirect makes the target the new `fetch_url`, so its validators are
+kept (D-18). A fetch in which an item failed to ingest after its retries installs none either, so
+the next poll is unconditional and offers the item again.
 A feed with no prior new-item timestamp uses the 24-hour MAX until it has actually been quiet 30 days.
 
 **Permanent redirect of the feed URL** (301/308 on the feed fetch):
 - If no other feed has the new canonical URL, update `feeds.url`, and set `feeds.fetch_url` to the
-  redirect target.
+  redirect target. A new `fetch_url` clears `etag` and `last_modified` in the same update, since they
+  belong to the old URL (D-18); the fetch that followed the redirect stores the target's own when it
+  records its outcome.
 - If another feed has it, **merge** into the surviving feed in one transaction (as `bantoozi_worker`):
   - lock feed IDs in ascending order and recheck the target; move subscriptions and feed items
   - create target subscriptions before repointing scoped cards, then remove source subscriptions
@@ -892,8 +941,14 @@ A feed with no prior new-item timestamp uses the 24-hour MAX until it has actual
   - refresh feed subscribers/cards for both IDs and record a full rank for every affected subscriber
   - if a feed GUID collision points to different articles, retain both feed associations with only
     the established GUID mapping, and report the conflict rather than deleting an article
+  - linkless identities are feed-scoped (§5 step 8): before the items move, every
+    `urn:bantoozi:<old id>:<hash>` key of the old feed's articles gets the alias
+    `urn:bantoozi:<survivor id>:<hash>` under the url_key locks of §7, unless an article already owns
+    that key, so the survivor's next fetch of a guidless linkless item finds the moved article
+    instead of inserting a duplicate (D-17)
 
-`dead` feeds without a merge target are shown with a banner (spec 09) and may be reset by an admin.
+`dead` feeds without a merge target are shown with a banner (spec 09) and may be reset by an admin;
+a new subscription, whose first fetch has just validated the feed, revives it too (§10 step 6, D-22).
 A merged tombstone cannot be revived independently; admin requests resolve to its survivor.
 
 Unit tests cover every branch, including a simulated 60-day sequence for four archetypes: a busy news
@@ -920,7 +975,10 @@ site, a daily blog, a weekly podcast, and a feed that breaks and recovers.
    probes and redirects), at most 10 total HTTP requests and 2 concurrent probes. Fetch and parse the
    chosen candidate to validate it; use that result for the title rather than downloading it a second
    time synchronously. Recheck the user's remaining quota inside the subscription transaction, then
-   atomically insert the subscription, refresh materializations and record `feed.fetch` work. Item
+   atomically insert the subscription, refresh materializations and record `feed.fetch` work. A
+   reused `dead` feed is revived in that transaction, since this fetch has just validated it:
+   `status = 'active'`, its error and quarantine state cleared and `next_fetch_at = now()` (D-22;
+   a merged tombstone resolves to its survivor first). A `paused` feed stays paused. Item
    ingestion runs in the worker. HTTPS-to-HTTP fallback is allowed only for transport failure, never
    to bypass TLS certificate errors or address policy. Candidate count is capped at 20, deduplicated
    and every selected URL is revalidated; HTML `rel=alternate` alone is not proof of a valid feed.

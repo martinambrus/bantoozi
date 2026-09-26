@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="ISO-8859-2"?>
+<rss version="2.0">
+<channel>
+<title>Zprávy z Brna</title>
+<link>https://www.brno-zpravy.example/</link>
+<description>Denní zpravodajství z jižní Moravy</description>
+<language>cs</language>
+<item>
+<title>Řidiči v Brně budou od pondělí platit za parkování v centru</title>
+<link>https://www.brno-zpravy.example/doprava/parkovani</link>
+<description>Město zavádí zóny placeného stání. Týká se to i ulic Údolní a Úvoz; poplatek činí 40 Kč za hodinu.</description>
+<pubDate>Thu, 24 Sep 2026 15:00:00 +0200</pubDate>
+<guid>https://www.brno-zpravy.example/doprava/parkovani</guid>
+</item>
+<item>
+<title>Česká národní banka ponechala úrokové sazby beze změny</title>
+<link>https://www.brno-zpravy.example/ekonomika/cnb-sazby</link>
+<description>Bankovní rada hlasovala poměrem 5:2. Příští zasedání bude v listopadu.</description>
+<pubDate>Wed, 23 Sep 2026 14:45:00 +0200</pubDate>
+<guid>https://www.brno-zpravy.example/ekonomika/cnb-sazby</guid>
+</item>
+</channel>
+</rss>

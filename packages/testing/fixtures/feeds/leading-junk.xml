@@ -1,0 +1,17 @@
+<br />
+<b>Deprecated</b>:  Function create_function() is deprecated in <b>/var/www/html/wp-content/plugins/old-widget/widget.php</b> on line <b>12</b><br />
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>Legacy WordPress Site</title>
+<link>https://legacy-wp.example.com/</link>
+<description>A PHP warning precedes the XML declaration.</description>
+<item>
+<title>Still readable after the warning</title>
+<link>https://legacy-wp.example.com/2026/09/still-readable/</link>
+<description>The lenient pass removes bounded leading junk before the root.</description>
+<pubDate>Thu, 24 Sep 2026 10:00:00 +0000</pubDate>
+<guid isPermaLink="false">https://legacy-wp.example.com/?p=77</guid>
+</item>
+</channel>
+</rss>

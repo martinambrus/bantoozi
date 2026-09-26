@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+ <link rel="self" href="http://www.youtube.com/feeds/videos.xml?channel_id=UCq7Wk3vXkS0mW9pT8b2Qx1A"/>
+ <id>yt:channel:q7Wk3vXkS0mW9pT8b2Qx1A</id>
+ <yt:channelId>q7Wk3vXkS0mW9pT8b2Qx1A</yt:channelId>
+ <title>Tram Restoration Workshop</title>
+ <link rel="alternate" href="https://www.youtube.com/channel/UCq7Wk3vXkS0mW9pT8b2Qx1A"/>
+ <author>
+  <name>Tram Restoration Workshop</name>
+  <uri>https://www.youtube.com/channel/UCq7Wk3vXkS0mW9pT8b2Qx1A</uri>
+ </author>
+ <published>2019-03-02T09:14:31+00:00</published>
+ <entry>
+  <id>yt:video:tr4mR3st0r3</id>
+  <yt:videoId>tr4mR3st0r3</yt:videoId>
+  <yt:channelId>UCq7Wk3vXkS0mW9pT8b2Qx1A</yt:channelId>
+  <title>Restoring the 1912 tram, part 4: the bogies</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=tr4mR3st0r3"/>
+  <author>
+   <name>Tram Restoration Workshop</name>
+   <uri>https://www.youtube.com/channel/UCq7Wk3vXkS0mW9pT8b2Qx1A</uri>
+  </author>
+  <published>2026-09-25T15:00:06+00:00</published>
+  <updated>2026-09-26T02:13:44+00:00</updated>
+  <media:group>
+   <media:title>Restoring the 1912 tram, part 4: the bogies</media:title>
+   <media:content url="https://www.youtube.com/v/tr4mR3st0r3?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i2.ytimg.com/vi/tr4mR3st0r3/hqdefault.jpg" width="480" height="360"/>
+   <media:description>We lift the body off the bogies and find out how bad the axle boxes really are.
+
+Chapters:
+00:00 Intro
+03:12 Lifting the body
+11:40 The axle boxes</media:description>
+   <media:community>
+    <media:starRating count="1843" average="5.00" min="1" max="5"/>
+    <media:statistics views="48211"/>
+   </media:community>
+  </media:group>
+ </entry>
+ <entry>
+  <id>yt:video:Sh0rtCl1p42</id>
+  <yt:videoId>Sh0rtCl1p42</yt:videoId>
+  <yt:channelId>UCq7Wk3vXkS0mW9pT8b2Qx1A</yt:channelId>
+  <title>One rivet, sixty seconds #shorts</title>
+  <link rel="alternate" href="https://www.youtube.com/shorts/Sh0rtCl1p42"/>
+  <author>
+   <name>Tram Restoration Workshop</name>
+   <uri>https://www.youtube.com/channel/UCq7Wk3vXkS0mW9pT8b2Qx1A</uri>
+  </author>
+  <published>2026-09-23T17:30:00+00:00</published>
+  <updated>2026-09-23T17:31:12+00:00</updated>
+  <media:group>
+   <media:title>One rivet, sixty seconds #shorts</media:title>
+   <media:content url="https://www.youtube.com/v/Sh0rtCl1p42?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i1.ytimg.com/vi/Sh0rtCl1p42/hqdefault.jpg" width="480" height="360"/>
+   <media:description>Hot riveting a patch plate, start to finish.</media:description>
+   <media:community>
+    <media:starRating count="912" average="5.00" min="1" max="5"/>
+    <media:statistics views="20377"/>
+   </media:community>
+  </media:group>
+ </entry>
+</feed>

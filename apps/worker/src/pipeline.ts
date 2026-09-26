@@ -40,7 +40,20 @@ export type StageOutcome =
   | { status: 'degraded'; revision: string }
   | { status: 'invalid_request'; revision: string };
 
-/** Demand and routing facts the later milestones implement against the database (specs 03, 05, 07). */
+/** The demand a newly inserted `feed_items` association creates (spec 03 §7). */
+export interface NewCarrierDemand {
+  /** The article's current `content_revision` and `pipeline_state`. */
+  revision: string;
+  pipelineState: string;
+  /** An active subscription of this feed admits automatic inference for the new association. */
+  createsDemand: boolean;
+  /** Cards admitted through this carrier that still lack a current primary answer. */
+  missingCardIds: readonly string[];
+  /** The feed's subscribers: each gets an incremental rank. */
+  subscriberIds: readonly string[];
+}
+
+/** Demand and routing facts, answered from the database inside the handler's transaction. */
 export interface PipelineGate {
   /** `eligibleInferenceDemand(articleId, tx)` (spec 03 §1.1): no demand stops at the local stage. */
   hasInferenceDemand(articleId: string): Promise<boolean>;
@@ -52,6 +65,10 @@ export interface PipelineGate {
    * story cluster.
    */
   usersToRank(articleId: string, after: 'enrich' | 'match' | 'cluster'): Promise<readonly string[]>;
+  /** The demand of a newly inserted association of `articleId` with `feedId`; null when gone. */
+  newCarrierDemand(articleId: string, feedId: string): Promise<NewCarrierDemand | null>;
+  /** Queue the current questions of `cardIds` at `revision` (`match_queue`, spec 05 §5.3). */
+  queueMatch(articleId: string, revision: string, cardIds: readonly string[]): Promise<void>;
 }
 
 export interface PipelineContext {
@@ -123,6 +140,53 @@ export async function after(
       }
       return;
     case 'rank':
+      return;
+  }
+}
+
+/**
+ * A feed newly carrying an article (spec 03 §7): a newly inserted `feed_items` row, from ingestion,
+ * the extraction merge or the feed merge. The feed's subscribers always get an incremental rank
+ * (stale and failed articles need no paid stage to become readable); then the article continues
+ * from its state for the new association's own eligible demand only (activation time and
+ * generation checked; `feed_cards` alone never authorizes a historical arrival):
+ * - enriched/matched: queue the admitted cards that lack current answers, then match them;
+ * - extracted/translated (it stopped at the demand gate): the next stage through `after`;
+ * - degraded: enrichment, as `house.rescore-degraded` would — never straight to matching;
+ * - ingested/stale/failed: nothing more (extraction applies the demand gate itself; stale and
+ *   failed articles are not processed automatically).
+ */
+export async function afterNewCarrier(
+  articleId: string,
+  feedId: string,
+  context: PipelineContext,
+): Promise<void> {
+  const { sender, gate } = context;
+  const demand = await gate.newCarrierDemand(articleId, feedId);
+  if (demand === null) return;
+  for (const userId of demand.subscriberIds) {
+    await enqueueRank(sender, { userId, reason: 'ingest' });
+  }
+  const ok: StageOutcome = { status: 'ok', revision: demand.revision };
+  switch (demand.pipelineState) {
+    case 'enriched':
+    case 'matched':
+      if (demand.missingCardIds.length === 0) return;
+      await gate.queueMatch(articleId, demand.revision, demand.missingCardIds);
+      await enqueueMatch(sender, { articleId }, { revision: demand.revision });
+      return;
+    case 'extracted':
+      if (demand.createsDemand) await after('extract', articleId, ok, context);
+      return;
+    case 'translated':
+      if (demand.createsDemand) await after('translate', articleId, ok, context);
+      return;
+    case 'degraded':
+      if (demand.createsDemand) {
+        await enqueueEnrich(sender, { articleId }, { revision: demand.revision });
+      }
+      return;
+    default:
       return;
   }
 }

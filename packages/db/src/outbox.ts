@@ -23,15 +23,35 @@ async function insertIntent(tx: Executor, intent: JobIntent, requester: string |
     ON CONFLICT DO NOTHING`);
 }
 
+/** A worker intent that becomes due only at `availableAt` (the relay skips it until then). */
+async function insertDelayedIntent(tx: Executor, intent: JobIntent, availableAt: Date) {
+  await tx.execute(sql`
+    INSERT INTO job_outbox (queue, payload, dedupe_key, user_id, available_at)
+    VALUES (${intent.queue}, ${JSON.stringify(intent.payload)}::jsonb, ${intent.dedupeKey}, NULL,
+            greatest(now(), ${availableAt.toISOString()}::timestamptz))
+    ON CONFLICT DO NOTHING`);
+}
+
 /** The API's outbox writer: the requester is the transaction's tenant (RLS `job_outbox_requester`). */
 export function tenantOutbox(tx: TenantTx): JobSender {
   const requester = tenantUserId(tx);
   return { enqueue: (intent) => insertIntent(tx, intent, requester) };
 }
 
-/** A worker transaction's outbox writer (follow-on jobs; no requester). */
-export function workerOutbox(tx: Transaction): JobSender {
-  return { enqueue: (intent) => insertIntent(tx, intent, null) };
+/**
+ * A worker transaction's outbox writer (follow-on jobs; no requester). With `availableAt`, every
+ * intent it writes is delayed until then: a job deferred by a publisher cooldown or a known retry
+ * time records such an intent instead of sleeping inside a worker (spec 03 §8.2). An identical
+ * pending intent still coalesces it (the earlier one wins).
+ */
+export function workerOutbox(tx: Transaction, options: { availableAt?: Date } = {}): JobSender {
+  const { availableAt } = options;
+  return {
+    enqueue: (intent) =>
+      availableAt === undefined
+        ? insertIntent(tx, intent, null)
+        : insertDelayedIntent(tx, intent, availableAt),
+  };
 }
 
 export interface ClaimedIntent {
@@ -145,10 +165,18 @@ export async function hasPendingEquivalentJob(
   return result.rows.length > 0;
 }
 
-/** Age in seconds of the oldest undelivered intent (the relay alerts above 5 minutes). */
+/**
+ * Age in seconds of the oldest due, undelivered intent (the relay warns above 5 minutes; spec 11
+ * §6.1 "Pipeline backlog"). An intent delayed on purpose (an origin cooldown, a merge retry after
+ * an Undo pin) is not backlog before its `available_at` and counts from then. A failed send counts
+ * from its creation, also during its backoff: the backoff moves `available_at`, and a send that
+ * keeps failing is exactly the backlog this reports.
+ */
 export async function oldestPendingOutboxAgeSeconds(db: Executor): Promise<number | null> {
   const result = await db.execute<{ age: number | null }>(sql`
-    SELECT extract(epoch FROM now() - min(created_at))::float8 AS age
-      FROM job_outbox WHERE delivered_at IS NULL`);
+    SELECT extract(epoch FROM now() - min(CASE WHEN last_error IS NULL THEN available_at
+                                               ELSE created_at END))::float8 AS age
+      FROM job_outbox
+     WHERE delivered_at IS NULL AND (last_error IS NOT NULL OR available_at <= now())`);
   return result.rows[0]?.age ?? null;
 }

@@ -22,12 +22,20 @@
   "dependencies": {
     "@bantoozi/shared": "workspace:*",
     "@mozilla/readability": "0.6.0",
+    "chardet": "2.2.0",
+    "fast-xml-parser": "5.11.1",
+    "iconv-lite": "0.7.3",
+    "ipaddr.js": "2.5.0",
     "linkedom": "0.18.13",
+    "robots-parser": "3.0.1",
     "rss-parser": "3.13.0",
     "sanitize-html": "2.17.7",
-    "undici": "8.11.2"
+    "tldts": "7.4.15",
+    "undici": "8.11.2",
+    "zod": "4.6.5"
   },
   "devDependencies": {
+    "@bantoozi/testing": "workspace:*",
     "@types/sanitize-html": "2.16.1"
   }
 }

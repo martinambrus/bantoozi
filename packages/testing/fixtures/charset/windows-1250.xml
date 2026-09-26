@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="windows-1250"?>
+<rss version="2.0">
+<channel>
+<title>Slovenské správy</title>
+<link>https://example.sk/</link>
+<description>Žltý kôň úpäl ďábelské ódy</description>
+<item>
+<title>Žltý kôň úpäl ďábelské ódy</title>
+<link>https://example.sk/clanok/1</link>
+<description>Ľúbostné šťastie, ťava a žaba: čučoriedky, ňufák, ôsmy. Ďakujeme!</description>
+</item>
+</channel>
+</rss>

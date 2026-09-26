@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+  xmlns:media="http://search.yahoo.com/mrss/"
+  xmlns:content="http://purl.org/rss/1.0/modules/content/"
+  xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <channel>
+    <title>Workshop TV</title>
+    <link>https://tv.example.com/</link>
+    <description>Woodworking videos, and an audio edition for the car.</description>
+    <language>en</language>
+    <item>
+      <title>Episode 12: Cutting dovetails by hand</title>
+      <link>https://tv.example.com/episodes/12-dovetails/</link>
+      <guid isPermaLink="false">workshop-tv-episode-12</guid>
+      <pubDate>Fri, 25 Sep 2026 16:00:00 GMT</pubDate>
+      <description>A full episode on marking, sawing and chopping through dovetails.</description>
+      <enclosure url="https://cdn.example.com/workshop/episode-12-1080p.mp4" length="734003200" type="video/mp4"/>
+    </item>
+    <item>
+      <title>Behind the scenes: the new studio</title>
+      <link>https://tv.example.com/blog/new-studio/</link>
+      <guid isPermaLink="false">workshop-tv-studio</guid>
+      <pubDate>Thu, 24 Sep 2026 10:30:00 GMT</pubDate>
+      <description>&lt;p&gt;We moved the workshop to a bigger space. Here is how it came together.&lt;/p&gt;</description>
+      <media:group>
+        <media:content url="https://cdn.example.com/workshop/studio-1080.webm" type="video/webm; codecs=&quot;vp9&quot;" height="1080" isDefault="true"/>
+        <media:content url="https://cdn.example.com/workshop/studio-720.mp4" medium="video" height="720"/>
+        <media:thumbnail url="https://cdn.example.com/workshop/studio-poster.jpg" width="1280" height="720"/>
+      </media:group>
+    </item>
+    <item>
+      <title>Shop tour: every tool on the wall</title>
+      <link>https://tv.example.com/blog/shop-tour/</link>
+      <guid isPermaLink="false">workshop-tv-shop-tour</guid>
+      <pubDate>Wed, 23 Sep 2026 18:15:00 GMT</pubDate>
+      <content:encoded><![CDATA[<p>A walk along the tool wall, from the marking gauges to the old jointer plane.</p>
+<figure class="wp-block-embed is-type-video is-provider-vimeo"><div class="wp-block-embed__wrapper"><iframe title="Shop tour" src="https://player.vimeo.com/video/912345678?h=4f2a1c&amp;dnt=1" width="640" height="360" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe></div></figure>
+<p>The full list of tools is in the <a href="/blog/shop-tour/#tools">show notes</a>.</p>]]></content:encoded>
+    </item>
+    <item>
+      <title>Audio edition: tool chest questions</title>
+      <link>https://tv.example.com/audio/tool-chest/</link>
+      <guid isPermaLink="false">workshop-tv-audio-7</guid>
+      <pubDate>Tue, 22 Sep 2026 06:00:00 GMT</pubDate>
+      <description>Listener questions about tool chests, answered in 25 minutes.</description>
+      <itunes:duration>25:14</itunes:duration>
+      <enclosure url="https://cdn.example.com/workshop/audio-7.mp3" length="24117248" type="audio/mpeg"/>
+      <media:content url="https://cdn.example.com/workshop/audio-7.m4a" medium="audio" type="audio/mp4"/>
+    </item>
+  </channel>
+</rss>

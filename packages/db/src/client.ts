@@ -32,3 +32,8 @@ export function createPool(options: CreatePoolOptions): pg.Pool {
 export function createDatabase(pool: pg.Pool): Database {
   return drizzle({ client: pool, schema });
 }
+
+/** Drizzle over one checked-out connection: every statement and transaction runs on its session. */
+export function createSessionDatabase(client: pg.PoolClient): Database {
+  return drizzle({ client, schema });
+}

@@ -13,6 +13,11 @@ export const FEED_ERROR_CODES = [
   'FEED_DECODE_ERROR',
   'FEED_NOT_A_FEED',
   'FEED_PARSE_ERROR',
+  /**
+   * No request was sent: the origin is cooling down after a 429/503, or its politeness throttle
+   * cannot grant a start before the request deadline (spec 03 §4, §8.2). Callers defer the work.
+   */
+  'FEED_ORIGIN_COOLDOWN',
 ] as const;
 
 /** `FEED_HTTP_<status>` carries the upstream HTTP status (spec 03 §4). */
@@ -82,6 +87,7 @@ const STATUS_BY_CODE: Record<(typeof APP_ERROR_CODES)[number], number> = {
   FEED_DECODE_ERROR: 422,
   FEED_NOT_A_FEED: 422,
   FEED_PARSE_ERROR: 422,
+  FEED_ORIGIN_COOLDOWN: 422,
 };
 
 /** The single code → HTTP status mapping used by `apps/api/src/plugins/errors.ts` (spec 08 §1). */

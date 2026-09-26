@@ -1,0 +1,56 @@
+{
+  "version": "https://jsonfeed.org/version/1.1",
+  "title": "Example Microblog",
+  "home_page_url": "https://micro.example.com/",
+  "feed_url": "https://micro.example.com/feed.json",
+  "description": "Short posts & links.",
+  "icon": "https://micro.example.com/icon-512.png",
+  "favicon": "https://micro.example.com/favicon.ico",
+  "language": "sk-SK",
+  "authors": [{ "name": "Peter Príklad", "url": "https://micro.example.com/about" }],
+  "items": [
+    {
+      "id": "https://micro.example.com/2026/09/25/html-post",
+      "url": "https://micro.example.com/2026/09/25/html-post",
+      "title": "HTML content with an image",
+      "content_html": "<p>Ranný <strong>beh</strong> po nábreží Dunaja.</p><p><img src=\"/uploads/2026/09/danube.jpg\" alt=\"Dunaj\"></p><script>track()</script>",
+      "summary": "Ranný beh.",
+      "date_published": "2026-09-25T06:45:00+02:00",
+      "tags": ["beh", "Bratislava", "Beh", 42],
+      "authors": [{ "name": "Peter Príklad" }]
+    },
+    {
+      "id": 1027,
+      "url": "https://micro.example.com/2026/09/24/text-post",
+      "content_text": "A post without a title.\n\nIt has two paragraphs & a <tag> that stays text.",
+      "date_published": "2026-09-24T18:00:00Z",
+      "date_modified": "2026-09-24T19:00:00Z"
+    },
+    {
+      "id": "linkblog-88",
+      "external_url": "https://other.example.net/interesting-article",
+      "title": "Linked: an interesting article elsewhere",
+      "content_html": "<p>Worth reading.</p>",
+      "date_modified": "2026-09-23T12:00:00Z",
+      "image": "https://micro.example.com/cards/linked.png"
+    },
+    {
+      "id": "episode-12",
+      "url": "https://micro.example.com/podcast/12",
+      "title": "Podcast 12: attachments are not links",
+      "summary": "Audio and a cover image.",
+      "date_published": "2026-09-22T08:00:00Z",
+      "attachments": [
+        { "url": "https://cdn.example.com/podcast/12.mp3", "mime_type": "audio/mpeg", "size_in_bytes": 23405123 },
+        { "url": "https://cdn.example.com/podcast/12-cover.jpg", "mime_type": "image/jpeg" }
+      ],
+      "banner_image": "https://micro.example.com/banners/12.png"
+    },
+    "not an item object",
+    {
+      "id": "undated-note",
+      "title": 7,
+      "content_text": "An undated note; it sorts after the dated items and its title falls back to this excerpt text."
+    }
+  ]
+}
