@@ -498,18 +498,37 @@ export function truncateHtml(
   return { html: output.trimEnd(), truncated: true };
 }
 
+/** Text conversions {@link sourceCoveredByText} may spend locating the cut among the images. */
+const COVERED_SOURCE_MAX_CONVERSIONS = 12;
+const IMG_TAG = /<img\b/gi;
+
 /**
- * The part of a body's source HTML whose images count toward the stored body (spec 03 §6.4): all
- * of it while the stored text is the whole text. When a size cap cut the text, only the source
- * prefix of as many characters as the stored text has: a tag becomes at most a shorter line break
- * and an entity decodes to fewer characters, so the prefix's text is a prefix of the stored text
- * and none of its images lies after the cut (images just before the cut may be left out).
+ * The part of a body's source HTML whose images count toward the stored body (spec 03 §6.4, D-20):
+ * all of it while the stored text is the whole text. When a size cap cut the text, the source up to
+ * the first image whose preceding source, converted by `toText` as the stored text was, has more
+ * text than was stored. That text only grows with the prefix, so a binary search over the image
+ * tags finds the image; one within the first `storedText` characters of source needs no conversion,
+ * because a prefix never has more text than characters. Should the search run out of conversions,
+ * the undecided images are left out, so an image after the cut never counts.
  */
 export function sourceCoveredByText(
   sourceHtml: string,
   fullText: string,
   storedText: string,
+  toText: (html: string) => string,
 ): string {
   if (storedText.length >= fullText.length) return sourceHtml;
-  return truncateHtml(sourceHtml, charLength(storedText)).html;
+  const stored = charLength(storedText);
+  const tags = Array.from(sourceHtml.matchAll(IMG_TAG), (match) => match.index);
+  const after = (i: number) => charLength(toText(sourceHtml.slice(0, tags[i]))) > stored;
+  // The images before `low` are stored; those from `high` on lie after the cut.
+  let low = tags.findIndex((index) => index > stored);
+  if (low < 0) return sourceHtml;
+  let high = tags.length;
+  for (let spent = 0; low < high && spent < COVERED_SOURCE_MAX_CONVERSIONS; spent += 1) {
+    const middle = (low + high) >>> 1;
+    if (after(middle)) high = middle;
+    else low = middle + 1;
+  }
+  return low < tags.length ? sourceHtml.slice(0, tags[low]) : sourceHtml;
 }

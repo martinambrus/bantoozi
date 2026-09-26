@@ -252,17 +252,29 @@ describe('sourceCoveredByText (spec 03 §6.4)', () => {
   const text = htmlToText(source);
 
   it('is the whole source while the stored text is the whole text', () => {
-    expect(sourceCoveredByText(source, text, text)).toBe(source);
+    expect(sourceCoveredByText(source, text, text, htmlToText)).toBe(source);
   });
 
   it('keeps only the images before the cut when the stored text was cut', () => {
     // The stored text ends in the middle of the second paragraph: the image after it is left out.
     const stored = text.slice(0, text.indexOf('b') + 60);
-    const covered = sourceCoveredByText(source, text, stored);
+    const covered = sourceCoveredByText(source, text, stored, htmlToText);
     expect(covered).toContain('/one.jpg');
     expect(covered).not.toContain('/two.jpg');
     expect(text.startsWith(htmlToText(covered))).toBe(true);
-    expect(htmlToText(covered).length).toBeLessThanOrEqual(stored.length);
+  });
+
+  it('finds the cut by the converted text, however much markup precedes an image', () => {
+    // The first image's attributes alone are longer than the stored text.
+    const alt = 'A long description of the photo. '.repeat(20);
+    const marked = source.replace('<img src="/one.jpg">', `<img alt="${alt}" src="/one.jpg">`);
+    const stored = text.slice(0, text.indexOf('b') + 60);
+    const covered = sourceCoveredByText(marked, text, stored, htmlToText);
+    expect(covered).toContain('/one.jpg');
+    expect(covered).not.toContain('/two.jpg');
+    // Every image stays when the cut falls after the last one.
+    const late = text.slice(0, text.indexOf('c') + 10);
+    expect(sourceCoveredByText(marked, text, late, htmlToText)).toBe(marked);
   });
 });
 

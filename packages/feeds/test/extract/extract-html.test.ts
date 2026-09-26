@@ -487,8 +487,10 @@ describe('spec 03 §8.1 step 6 the 10 MiB text + HTML cap', () => {
   });
 
   it('counts only the images of the stored text when the cap cuts the text', () => {
+    // Each photo's markup is longer than a paragraph: the cut is found by text, not by markup.
+    const caption = 'The new tram line on its first morning, seen from the bridge. '.repeat(15);
     const photo = (n: number) =>
-      ` <img src="https://news.example.com/photos/${n}.jpg" width="800" height="600" alt="Photo ${n}">`;
+      ` <img src="https://news.example.com/photos/${n}.jpg" width="800" height="600" alt="${caption}${n}">`;
     const long = Array.from({ length: 10 }, () => PARAGRAPHS[2]).join(' ');
     const paragraphs = [PARAGRAPHS[0], PARAGRAPHS[1], long, PARAGRAPHS[3], PARAGRAPHS[4]].map(
       (text, i) => `${text}${photo(i + 1)}`,

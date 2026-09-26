@@ -141,12 +141,14 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   the binding to a complete snapshot over a partial one of identical content before it compares
   bookmark times. Found by the Codex review of PR #5. Spec 02 `article_snapshots` updated.
 - D-20: 2026-09-26 M1-T5 — the image count of a body whose text the 10 MiB limit cut covers only
-  the stored text: the images in the prefix of the source HTML (the Readability fragment or the
-  feed content) that has as many characters as the stored text. Spec 03 §6.4 says the count
-  describes the stored body, the same text `word_count` counts, but the images were counted in the
-  whole source before the cap, so images after the cut counted too. An exact map from the capped
-  text back to source positions would need another parse of up to 10 MiB. The prefix bound is cheap
-  and never counts an image after the cut, since the prefix's text is never longer than the stored
-  text; it may miss images just before the cut, because the prefix also spends characters on
-  markup. A cut of the HTML alone stores the whole text and still counts every image. Found by the
-  Codex review of PR #5. Spec 03 §6.4 updated.
+  the stored text. Spec 03 §6.4 says the count describes the stored body, the same text
+  `word_count` counts, but the images were counted in the whole source (the Readability fragment
+  or the feed content) before the cap, so images after the cut counted too. The count now stops at
+  the first image whose preceding source, converted to text as the stored text was, is longer than
+  the stored text. That text only grows with the prefix, so a binary search over the image tags
+  finds the image with at most 12 conversions (one conversion of a 5 MiB body takes about half a
+  second, and only a body whose text was cut needs any); an image within the first as many source
+  characters as the stored text has needs none, since a prefix never has more text than characters.
+  Should the search run out of conversions, the undecided images are left out, so an image after
+  the cut never counts. A cut of the HTML alone stores the whole text and still counts every image.
+  Found by the Codex review of PR #5. Spec 03 §6.4 updated.

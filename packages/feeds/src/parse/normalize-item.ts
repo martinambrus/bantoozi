@@ -190,7 +190,9 @@ function processContent(content: RawFeedItem['content']): ItemContent {
     text = sanitizedHtmlToText(html);
     truncated = true;
     // Images after the cut are not part of the stored body (spec 03 §6.4).
-    bodySourceHtml = sourceCoveredByText(source, whole, text);
+    bodySourceHtml = sourceCoveredByText(source, whole, text, (prefix) =>
+      sanitizedHtmlToText(sanitizeContent(prefix, content.base).html),
+    );
   }
   const excerptHtml = truncateHtml(html, PARSE_LIMITS.excerptHtmlChars).html;
   const excerpt = truncateChars(

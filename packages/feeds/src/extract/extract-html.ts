@@ -80,7 +80,7 @@ export function extractFromHtml(
     const media = mediaSignals({
       link: null,
       html: [contentHtml],
-      bodyHtml: sourceCoveredByText(contentHtml, text, capped.text),
+      bodyHtml: sourceCoveredByText(contentHtml, text, capped.text, htmlToText),
       baseUrl,
     });
     const reason = capped.truncated

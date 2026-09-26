@@ -481,10 +481,9 @@ excerpt, the page outside Readability's result, or `image_url`. Count `<img>` el
 text `word_count` counts, and is written in the same transaction as that body (§7 step 6, §8.1
 step 6). It is null while no body is stored (excerpt only), so an excerpt never passes for a body
 without images. When the 10 MiB limit cuts a body's text (§8.1 step 6; `feed_body_*` in §6), only
-the images the stored text covers count: those in the prefix of the body's source HTML that has as
-many characters as the stored text (D-20). A tag becomes at most a shorter line break and an entity
-decodes to fewer characters, so that prefix never reaches past the cut; an image just before the
-cut may be missed. A cut of the HTML alone keeps the whole text, and every image counts.
+the images the stored text covers count: those before the first image whose preceding source HTML,
+converted to text as the stored text was, is longer than the stored text (D-20). A cut of the HTML
+alone keeps the whole text, and every image counts.
 
 **Re-ranking.** A media signal can change without a `content_hash` change or a new `feed_items`
 row, for example when a publisher adds only a video enclosure, so neither `resetArticleAnswers` nor
