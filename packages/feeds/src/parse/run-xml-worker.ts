@@ -103,26 +103,31 @@ export function runXmlWorker(
       }
       settle(() => resolve(message.output));
     });
+    // An error is only recorded here: its event can arrive before a `started` message the worker
+    // posted just before it crashed, while Node drains the worker's messages before `exit`, the
+    // final event of every worker. Deciding on `exit` sees whether parsing had started.
+    let crash: Error | undefined;
     worker.on('error', (error: unknown) => {
-      settle(() => {
-        if (!started) {
-          reject(error instanceof Error ? error : new Error(String(error)));
-          return;
-        }
-        resolve({
-          ok: false,
-          code: 'XML_RESOURCES',
-          message: 'The XML parser exceeded its resource limits',
-        });
-      });
+      crash ??= error instanceof Error ? error : new Error(String(error));
     });
     worker.on('exit', (exitCode: number) => {
       settle(() => {
         if (!started) {
-          reject(new Error(`The XML parser worker exited with code ${exitCode} before starting`));
+          reject(
+            crash ??
+              new Error(`The XML parser worker exited with code ${exitCode} before starting`),
+          );
           return;
         }
-        resolve({ ok: false, code: 'XML_RESOURCES', message: 'The XML parser worker exited' });
+        resolve(
+          crash === undefined
+            ? { ok: false, code: 'XML_RESOURCES', message: 'The XML parser worker exited' }
+            : {
+                ok: false,
+                code: 'XML_RESOURCES',
+                message: 'The XML parser exceeded its resource limits',
+              },
+        );
       });
     });
   });
