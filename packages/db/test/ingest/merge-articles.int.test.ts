@@ -531,6 +531,7 @@ describe('mergeArticles (spec 03 §8.4)', () => {
       survivorId: target.id,
       sourceId: source.id,
       revision: '2',
+      previousRevision: '1',
       movedFeedIds: [fSource.id],
       affectedUserIds: [a.id, b.id, c.id, d.id, f.id].sort(),
     });

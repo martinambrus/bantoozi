@@ -36,6 +36,11 @@ export type MergeArticlesResult =
       /** The survivor's content_revision after the reset. */
       revision: string;
       /**
+       * The survivor's content_revision as this merge locked it, before the reset: evidence read
+       * from the survivor's page still applies when it equals the revision seen with that page.
+       */
+      previousRevision: string;
+      /**
        * Feeds whose feed_items association was newly created on the survivor (the caller runs the
        * §7 new-carrier continuation for each).
        */
@@ -234,6 +239,7 @@ export async function mergeArticles(
     survivorId: targetId,
     sourceId,
     revision: reset.revision,
+    previousRevision: target.revision,
     movedFeedIds,
     affectedUserIds,
   };

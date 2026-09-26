@@ -636,7 +636,10 @@ fetching non-HTML media.
    - `rel=canonical`: if the page declares `<link rel="canonical">` on the **same registrable domain**
      (use `tldts` with the private suffix list, and require exact host equality if no registrable
      domain exists), and it resolves to an allowed http(s) URL without credentials, apply §8.4 with
-     source `rel_canonical`. Reject multiple conflicting canonicals, home/list-page targets and
+     source `rel_canonical`. After a redirect merge (step 4) it applies to the survivor, whose page
+     it is, but only while the survivor is as it was when the request reached its URL (its revision
+     read at that hop equals the revision the merge locks); a survivor changed since then is left
+     to its own extraction. Reject multiple conflicting canonicals, home/list-page targets and
      known cross-article conflicts. A canonical is identity evidence, not permission to bypass
      `safeFetch`, robots or the fetch limits. Parse inertly: no scripts or automatic resource loads.
    - No result, or text shorter than 200 chars → status `failed` with error `no_content`.

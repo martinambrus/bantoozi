@@ -1123,6 +1123,77 @@ describe('article.extract (M1-T7)', () => {
     }
   });
 
+  it("leaves a redirect survivor that changed during the fetch to its own page's evidence", async () => {
+    const canonicalUrl = server.url('/survivor-fence/canonical.html');
+    const targetUrl = server.url('/survivor-fence/target.html');
+    const goUrl = server.url('/survivor-fence/go');
+    server.route('/survivor-fence/canonical.html', html(articlePage('Survivor canonical')));
+    server.route(
+      '/survivor-fence/target.html',
+      html(articlePage('Survivor target', { canonical: canonicalUrl })),
+    );
+    server.redirect('/survivor-fence/go', targetUrl, 301);
+    const feedOf = async (path: string, guid: string, title: string, link: string) => {
+      server.route(
+        path,
+        rssRoute(() => rss(path, rssItem(guid, title, link))),
+      );
+      return addFeed(path, [{ user: reader, mode: 'off' }]);
+    };
+    await fetchFeed(
+      await feedOf('/survivor-fence/canonical.rss', 'sf-c', 'Survivor canonical', canonicalUrl),
+    );
+    await fetchFeed(
+      await feedOf('/survivor-fence/target.rss', 'sf-t', 'Survivor target', targetUrl),
+    );
+    await fetchFeed(await feedOf('/survivor-fence/go.rss', 'sf-g', 'Survivor go', goUrl));
+    const canonical = await articleIdByUrl(canonicalUrl);
+    const target = await articleIdByUrl(targetUrl);
+    const go = await articleIdByUrl(goUrl);
+    const ids = [canonical, target, go];
+    const deliver = () =>
+      owner.query(
+        `UPDATE job_outbox SET delivered_at = now()
+          WHERE delivered_at IS NULL AND payload->>'articleId' = ANY($1::text[])`,
+        [ids],
+      );
+    // Only the go article's extraction runs below.
+    await deliver();
+    // The target's source revises it while go's page request is answered by the target's page.
+    let revised: Promise<unknown> = Promise.resolve();
+    server.route('/survivor-fence/target.html', () => {
+      revised = owner.query(
+        'UPDATE articles SET content_revision = content_revision + 1 WHERE id = $1',
+        [target],
+      );
+      return { ...html(articlePage('Survivor target', { canonical: canonicalUrl })), delayMs: 300 };
+    });
+
+    try {
+      await dispatch(
+        handlers,
+        'article.extract',
+        { articleId: go },
+        { queue: 'article.extract', jobId: 'survivor-fence' },
+      );
+      await revised;
+      // The redirect still merges go into the target, but the older page's canonical does not
+      // merge the revised target: its own extraction reads its page again.
+      const left = await owner.query<{ id: string }>(
+        'SELECT id::text AS id FROM articles WHERE id = ANY($1::bigint[])',
+        [ids],
+      );
+      expect(left.rows.map((row) => row.id).sort()).toEqual([canonical, target].sort());
+      const aliases = await owner.query<{ article_id: string }>(
+        'SELECT article_id::text AS article_id FROM article_aliases WHERE url_key = $1',
+        [keyOf(canonicalUrl)],
+      );
+      expect(aliases.rows).toEqual([]);
+    } finally {
+      await deliver();
+    }
+  });
+
   it('drops the redirect evidence of a revision that a source update replaced during the fetch', async () => {
     const targetUrl = server.url('/fence/target.html');
     server.route('/fence/target.html', html(articlePage('Fenced target')));

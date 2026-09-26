@@ -4,6 +4,7 @@ import {
   mergeArticles,
   retryTransaction,
   saveExtractionResult,
+  urlKeyOwnerRevision,
   workerOutbox,
   type ArticleBodyInput,
   type ArticleForExtraction,
@@ -17,6 +18,7 @@ import {
   countWords,
   extractArticle,
   urlKey,
+  type ExtractDeps,
   type ExtractResult,
 } from '@bantoozi/feeds';
 import { enqueueExtract, type JobSender } from '@bantoozi/shared';
@@ -29,6 +31,9 @@ import { hasRetriesLeft, isTransientPageFailure, TransientPageError } from './tr
 
 /** How long after an Undo pin's expiry a merge it deferred is retried. */
 const UNDO_RETRY_MARGIN_MS = 5_000;
+
+/** The article owning a URL key, and its revision, when the page request reached that URL. */
+type ObservedOwners = Map<string, { articleId: string; revision: string }>;
 
 /** Rolls back an extraction whose merge an Undo pin deferred; the job runs again at `retryAt`. */
 class UndoPinDeferral extends Error {
@@ -57,10 +62,11 @@ export function createArticleExtractHandler(deps: WorkerDeps): QueueHandler<'art
     if (article === null || article.pipelineState !== 'ingested') return;
 
     // A link that is itself an audio/video enclosure is skipped without a request (§8.1 step 1).
+    const observed: ObservedOwners = new Map();
     const result =
       article.url === null
         ? null
-        : await extractArticle(article.url, extractDeps(deps), {
+        : await extractArticle(article.url, observingExtractDeps(deps, observed), {
             enclosureType: article.linkEnclosureType,
           });
     if (result !== null && isTransientPageFailure(result) && hasRetriesLeft(context)) {
@@ -72,7 +78,7 @@ export function createArticleExtractHandler(deps: WorkerDeps): QueueHandler<'art
     }
 
     try {
-      await extractInTransaction(deps, article, result);
+      await extractInTransaction(deps, article, result, observed);
     } catch (error) {
       if (!(error instanceof UndoPinDeferral)) throw error;
       // An Undo pin defers a merge for a few minutes only: nothing of this job is kept (not even
@@ -80,6 +86,32 @@ export function createArticleExtractHandler(deps: WorkerDeps): QueueHandler<'art
       // the pin has expired instead of leaving a duplicate.
       await deferExtraction(deps, article, error.retryAt);
     }
+  };
+}
+
+/**
+ * Extraction deps whose page request records, for every URL it reaches, the article owning that
+ * URL's key and its revision at that moment (see {@link applyIdentityEvidence}).
+ */
+function observingExtractDeps(deps: WorkerDeps, observed: ObservedOwners): ExtractDeps {
+  const base = extractDeps(deps);
+  return {
+    ...base,
+    fetch: (url, options) =>
+      base.fetch(url, {
+        ...options,
+        beforeRequest: async (next, hop) => {
+          const verdict = await options.beforeRequest(next, hop);
+          const canonical = canonicalizeUrl(next.href);
+          if (verdict === true && canonical.ok) {
+            const key = urlKey(canonical.url);
+            const owner = await urlKeyOwnerRevision(deps.db, key);
+            if (owner === null) observed.delete(key);
+            else observed.set(key, owner);
+          }
+          return verdict;
+        },
+      }),
   };
 }
 
@@ -106,12 +138,13 @@ async function extractInTransaction(
   deps: WorkerDeps,
   article: ArticleForExtraction,
   result: ExtractResult | null,
+  observed: ObservedOwners,
 ): Promise<void> {
   const articleId = article.id;
   await retryTransaction(deps.db, async (tx) => {
     const sender = workerOutbox(tx);
     if (result !== null) {
-      const identity = await applyIdentityEvidence(deps, tx, sender, article, result);
+      const identity = await applyIdentityEvidence(deps, tx, sender, article, result, observed);
       if (identity.kind === 'retry') throw new UndoPinDeferral(identity.at);
       // A merge ends this article's job; so does a revision replaced while the page was
       // fetched, whose evidence is dropped like its result (the new revision has its own job).
@@ -152,7 +185,10 @@ async function extractInTransaction(
  * survivor, because the fetched page is the survivor's page too and the survivor's own extraction
  * may be long done: a redirect to one article whose page names another as canonical merges all
  * three. The page belongs to the revision this job loaded, so every alias check of the article
- * itself fences on it (spec 03 §2.1): a newer revision is `stale` and nothing is written. `merged`
+ * itself fences on it (spec 03 §2.1): a newer revision is `stale` and nothing is written. For a
+ * survivor, the page belongs to the survivor's revision when the request reached the URL that
+ * merged into it (`observed`): later evidence fences on that revision, and a survivor that changed
+ * since then, or whose revision then is unknown, is left to its own extraction. `merged`
  * means this article no longer exists; the last survivor then continues from its own state, and
  * the carriers new to it get the new-carrier continuation. Any merge of the chain that an
  * unexpired Undo pin defers is `retry` at the pin's expiry, and the caller rolls the whole
@@ -165,12 +201,15 @@ async function applyIdentityEvidence(
   sender: JobSender,
   article: ArticleForExtraction,
   result: ExtractResult,
+  observed: ObservedOwners,
 ): Promise<{ kind: 'kept' | 'merged' | 'stale' } | { kind: 'retry'; at: Date }> {
   const evidence: Array<{ url: string | null; source: 'redirect' | 'rel_canonical' }> = [
     { url: result.resolvedUrl, source: 'redirect' },
     { url: result.canonicalUrl, source: 'rel_canonical' },
   ];
   let current: Pick<ArticleForExtraction, 'id' | 'urlKey'> = article;
+  // The revision of `current` the page's evidence belongs to; null: unknown, apply no more.
+  let fence: string | null = article.revision;
   // The feeds new to the current survivor: a later merge moves them on, reporting those it adds.
   let newCarrierFeedIds: readonly string[] = [];
   for (const { url, source } of evidence) {
@@ -179,14 +218,13 @@ async function applyIdentityEvidence(
     if (!canonical.ok) continue;
     const key = urlKey(canonical.url);
     if (key === current.urlKey) continue;
-    const alias = await addArticleAlias(
-      tx,
-      current.id,
-      key,
-      source,
-      current.id === article.id ? { expectedRevision: article.revision } : {},
-    );
-    if (alias.status === 'stale_revision') return { kind: 'stale' };
+    if (fence === null) break;
+    const alias = await addArticleAlias(tx, current.id, key, source, { expectedRevision: fence });
+    if (alias.status === 'stale_revision') {
+      if (current.id === article.id) return { kind: 'stale' };
+      // The survivor changed after its page was requested: its own extraction takes over.
+      break;
+    }
     if (alias.status !== 'owned_by_other') continue;
     const merged = await mergeArticles(tx, sender, current.id, alias.ownerId, { reason: source });
     if (merged.status === 'deferred' && merged.retryAt !== undefined) {
@@ -198,6 +236,14 @@ async function applyIdentityEvidence(
       throw new Error(`article ${merged.survivorId} vanished inside its merge transaction`);
     }
     current = survivor;
+    // The survivor's page evidence applies while the survivor is as it was when the request
+    // reached this URL; the merge's own reset is this transaction's, so the fence moves with it.
+    const seen = observed.get(key);
+    const unchanged =
+      seen !== undefined &&
+      seen.articleId === survivor.id &&
+      seen.revision === merged.previousRevision;
+    fence = unchanged ? merged.revision : null;
     newCarrierFeedIds = merged.movedFeedIds;
   }
   if (current.id === article.id) return { kind: 'kept' };

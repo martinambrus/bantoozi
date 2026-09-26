@@ -56,6 +56,25 @@ export async function findUrlKeyOwner(db: Executor, urlKey: string): Promise<Url
 }
 
 /**
+ * The article owning a URL key (its own key or an alias) with its `content_revision` now, or null.
+ * An extraction reads it when its page request reaches a URL: evidence of that page belongs to the
+ * owner's revision at that moment (spec 03 §2.1, §8.1 steps 4–5).
+ */
+export async function urlKeyOwnerRevision(
+  db: Executor,
+  urlKey: string,
+): Promise<{ articleId: string; revision: string } | null> {
+  const result = await db.execute<{ id: string; revision: string }>(sql`
+    SELECT a.id::text AS id, a.content_revision::text AS revision
+      FROM articles a
+     WHERE a.url_key = ${urlKey}
+        OR a.id = (SELECT al.article_id FROM article_aliases al WHERE al.url_key = ${urlKey})
+     LIMIT 1`);
+  const row = result.rows[0];
+  return row === undefined ? null : { articleId: row.id, revision: row.revision };
+}
+
+/**
  * The article's source feed (spec 03 §7 step 2): the carrier with the earliest
  * `feed_items.first_seen_at`, ties broken by the lower feed id. Only this feed updates the shared
  * publisher inputs; spec 05 §3.1 picks the article's canonical feed the same way. `null` when the

@@ -9,6 +9,7 @@ import type { Transaction } from '../../src/client.js';
 import {
   articleSourceFeedId,
   findUrlKeyOwner,
+  urlKeyOwnerRevision,
   ingestItem,
   lockUrlKeys,
   type IngestItemInput,
@@ -1059,5 +1060,10 @@ describe('lockUrlKeys and findUrlKeyOwner (spec 02 §3.3)', () => {
       articleId,
       via: 'alias',
     });
+    // With the owner's current revision, which a page's evidence is fenced on.
+    const revision = { articleId, revision: '1' };
+    expect(await urlKeyOwnerRevision(ctx.worker, input.urlKey)).toEqual(revision);
+    expect(await urlKeyOwnerRevision(ctx.worker, `${input.urlKey}/amp`)).toEqual(revision);
+    expect(await urlKeyOwnerRevision(ctx.worker, `${input.urlKey}/unknown`)).toBeNull();
   });
 });
