@@ -307,7 +307,8 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
    - `ua.score_version != current score_version` or `ua.rank_revision != users.rank_revision`
    - `ua.next_rank_at ≤ now` or article content revision no longer matches `explain.inputs`
    - `ua.scored_at` is older than the newest of `article_facets.updated_at`,
-     `card_answers.answered_at` (for the user's cards and labels) and `article_translations.created_at`
+     `card_answers.answered_at` (for the user's cards and labels), `article_translations.created_at`
+     and `articles.media_changed_at` (media signals, spec 03 §6.4)
    - changes to cluster membership, read/unread/undo state, matching coverage, translations, or
      applicable feed membership since the previous input snapshot; these enqueue a full rank and
      increment `rank_revision`, so deleting evidence is detected too
@@ -347,7 +348,7 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
 
 | Event | `full`? |
 |---|---|
-| match finished; enrich degraded | no |
+| match finished; enrich degraded; an article's media signals changed (spec 03 §6.4, subscribers of its carriers) | no |
 | a read, mark-read, open, unread or undo affecting a cluster | yes (invalidate both addition and removal of seen evidence) |
 | card or label added/removed/strength/scope changed | yes |
 | rule created/deleted, or expired (hourly `house.expire-rules`) | yes |

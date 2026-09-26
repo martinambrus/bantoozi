@@ -107,7 +107,7 @@ schema, `createQueue` options and typed enqueue helpers (`enqueueFetch`, `enqueu
 | `article.cluster` | `{articleId}` | enrich | 4 | 1 | `stately`, key `cluster:<id>` |
 | `article.match` | `{articleId}` | enrich, `card.backfill`, itself (when rows remain) | 8 | 1 | `stately`, key `match:<id>`; drains all queued cards for the article |
 | `card.backfill` | `{userId, cardIds: string[], feedIds?: string[], snapshotAt?: iso, cursor?: {firstSeenAt: iso, articleId: string}, processedCount?: int}` | API (card or subscription change) | 2 | 2 | `standard` |
-| `user.rank` | `{userId, reason, full?: boolean}` | match, cluster (membership changed, `full`), enrich (degraded), ingest, API, learn | 4 | 2 | queue `policy: 'stately'`. Incremental: `sendDebounced('user.rank', data, {}, 3, 'rank:<userId>')`. Full: `send('user.rank', {…, full: true}, {singletonKey: 'rank-full:<userId>'})`. Different keys mean a full request is never swallowed by a pending incremental one, while equivalent duplicates of each are suppressed; durable dirty state preserves later changes (spec 06 §7) |
+| `user.rank` | `{userId, reason, full?: boolean}` | match, cluster (membership changed, `full`), enrich (degraded), ingest, extract (media signals changed, §6.4), API, learn | 4 | 2 | queue `policy: 'stately'`. Incremental: `sendDebounced('user.rank', data, {}, 3, 'rank:<userId>')`. Full: `send('user.rank', {…, full: true}, {singletonKey: 'rank-full:<userId>'})`. Different keys mean a full request is never swallowed by a pending incremental one, while equivalent duplicates of each are suppressed; durable dirty state preserves later changes (spec 06 §7) |
 | `user.learn` | `{userId}` | API (ratings), `house.nightly-learn` | 2 | 1 | `sendDebounced(…, 60 s, key learn:<userId>)` |
 | `user.suggest` | `{userId}` | learn, `house.nightly-learn` | 1 | 1 | `stately`, key `suggest:<userId>` (deduplicates without throttling). The durable `last_suggested_at` lease/timestamp gate (spec 05 §7) enforces at most one admitted attempt per 24 h, so a run that sends nothing never blocks a later trigger |
 | `house.rescore-degraded`, `house.expire-rules`, `house.purge-auth`, `house.reconcile`, `house.archive`, `house.purge-articles`, `house.purge-bodies`, `house.purge-engine-calls`, `house.retire-cards`, `house.purge-users`, `house.nightly-learn`, `house.metrics`, `house.alerts` | `{}` | cron (spec 11 §6) | 1 | 1 | `policy: 'singleton'` (never two runs at once) |
@@ -464,15 +464,25 @@ result for a page, or `feed_body_html` for a publisher body from the feed. Never
 excerpt, the page outside Readability's result, or `image_url`. Count `<img>` elements (a
 `<picture>` counts once through its `<img>`) after these exclusions:
 - tracking pixels, by the §6.3 rule (either known dimension ≤ 2);
-- an image without a usable http(s) URL. For lazy loading, take the URL from `src`, else
-  `data-src`, `data-lazy-src`, `data-original`, else the first `srcset`/`data-srcset` candidate;
-  a `data:` placeholder is not a URL;
+- an image without a usable http(s) URL. Its URL is the first usable http(s) value, in this order,
+  among `src`, `data-src`, `data-lazy-src`, `data-original`, then the `srcset` and `data-srcset`
+  candidates. A `data:` placeholder or any other non-http(s) value is skipped and the search goes
+  on, so the common lazy-loading form `<img src="data:…" data-src="https://…">` counts;
 - a repeat of an already counted resolved URL, so a `<noscript>` fallback of a lazy image counts once.
 
 `articles.body_image_count` always describes the body currently stored in `article_bodies`, the same
 text `word_count` counts, and is written in the same transaction as that body (§7 step 6, §8.1
 step 6). It is null while no body is stored (excerpt only), so an excerpt never passes for a body
 without images.
+
+**Re-ranking.** A media signal can change without a `content_hash` change or a new `feed_items`
+row, for example when a publisher adds only a video enclosure, so neither `resetArticleAnswers` nor
+the new-carrier fan-out (§7) would re-rank the article. Every write that changes `has_video` or
+`body_image_count` to a different value (`IS DISTINCT FROM`, so null → false counts) therefore also
+sets `articles.media_changed_at = now()` and, in the same transaction through the outbox, records an
+incremental `user.rank` for the subscribers of every current carrier of the article. Spec 06 §7
+treats a `user_article` row scored before `media_changed_at` as dirty, so a debounced or later run
+still picks the change up. A write that stores the same values changes neither.
 
 Readability removes `<iframe>`, `<embed>` and `<object>` elements unless an attribute matches its
 video allow-list, whose default covers only some of these hosts. Pass a regex built from
