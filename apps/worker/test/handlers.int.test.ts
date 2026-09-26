@@ -770,6 +770,52 @@ describe('transient page failures and permanent feed redirects (M1-T7)', () => {
     expect(trackedHits()).toBe(before); // the next poll requests the redirect target directly
   });
 
+  it('stores no validators when an item failed to ingest, so the next poll is unconditional', async () => {
+    const conditionalHeaders: Array<string | undefined> = [];
+    server.route('/partial/feed.rss', (request) => {
+      const tag = request.headers['if-none-match'];
+      conditionalHeaders.push(typeof tag === 'string' ? tag : undefined);
+      return rssRoute(
+        () =>
+          rss(
+            'Partial',
+            rssItem('p-1', 'First partial item', server.url('/partial/1.html')) +
+              rssItem('p-2', 'Second partial item', server.url('/partial/2.html')),
+          ),
+        { etag: '"partial-v1"' },
+      )();
+    });
+    const feedId = await addFeed('/partial/feed.rss', [{ user: reader, mode: 'off' }]);
+    // The first item transaction fails with a non-retryable error (its retries exhausted).
+    let transactions = 0;
+    const failingDb = new Proxy(db, {
+      get(target, property, receiver) {
+        if (property !== 'transaction') return Reflect.get(target, property, receiver) as unknown;
+        return (...args: Parameters<Database['transaction']>) => {
+          transactions += 1;
+          if (transactions === 1) return Promise.reject(new Error('item transaction failed'));
+          return target.transaction(...args);
+        };
+      },
+    });
+    const failing = createHandlers({
+      ...workerDeps(createMemoryOriginLimiter({ spacingMs: 0 })),
+      db: failingDb,
+    });
+
+    await fetchFeed(feedId, failing);
+    const afterFailure = await feedRow(feedId);
+    expect(afterFailure).toMatchObject({ total_fetches: 1, etag: null });
+    const stored = await owner.query('SELECT 1 FROM feed_items WHERE feed_id = $1', [feedId]);
+    expect(stored.rowCount).toBe(1);
+
+    await fetchFeed(feedId);
+    expect(conditionalHeaders).toEqual([undefined, undefined]); // no If-None-Match either time
+    const all = await owner.query('SELECT 1 FROM feed_items WHERE feed_id = $1', [feedId]);
+    expect(all.rowCount).toBe(2);
+    expect((await feedRow(feedId)).etag).toBe('"partial-v1"');
+  });
+
   it('does not adopt a permanent redirect target that carries a credential parameter', async () => {
     const plain = server.url('/leaky/feed.rss');
     server.route('/leaky/feed.rss', (request) =>

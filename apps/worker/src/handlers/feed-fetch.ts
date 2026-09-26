@@ -193,13 +193,17 @@ async function fetchFeed(deps: WorkerDeps, feedId: string, force: boolean): Prom
   const target = targetId === feedId ? feed : ((await loadFeedForFetch(deps.db, targetId)) ?? feed);
   const gaps = recentGapsS(await feedRecentPublishedAt(deps.db, targetId));
   const items7d = await feedItems7d(deps.db, targetId);
+  // An item that failed to ingest (its retries exhausted) must be offered again: keeping this
+  // response's validators would let the next conditional request answer 304 and hide it for good,
+  // so the fetch stores none and the next poll is unconditional.
+  const keepValidators = failed === 0;
   const schedule = nextSchedule(
     scheduleFeed(target, gaps),
     {
       kind: 'success',
       nNew,
-      etag: result.headers['etag'] ?? null,
-      lastModified: result.headers['last-modified'] ?? null,
+      etag: keepValidators ? (result.headers['etag'] ?? null) : null,
+      lastModified: keepValidators ? (result.headers['last-modified'] ?? null) : null,
     },
     now,
     scheduleHints(parsed, result),
