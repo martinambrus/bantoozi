@@ -18,12 +18,17 @@ function robotsTxt(body: string, finalUrl = 'https://example.com/robots.txt'): S
   };
 }
 
-function httpFailure(status: number, retryAt?: Date): SafeFetchResult {
+function httpFailure(
+  status: number,
+  retryAt?: Date,
+  headers: Record<string, string> = {},
+): SafeFetchResult {
   return {
     ok: false,
     code: `FEED_HTTP_${status}`,
     status,
     message: `HTTP ${status}`,
+    headers,
     ...(retryAt === undefined ? {} : { retryAt }),
   };
 }
@@ -177,7 +182,9 @@ describe('spec 03 §8.1 step 2 robots.txt (RFC 9309)', () => {
       retryAt: new Date(65_000),
     });
 
-    const unavailable = harness(() => httpFailure(503, new Date(2 * HOUR)));
+    const unavailable = harness(() =>
+      httpFailure(503, new Date(2 * HOUR), { 'retry-after': String(2 * 3600) }),
+    );
     await expect(unavailable.check('https://example.com/a')).resolves.toMatchObject({
       reason: 'cooldown',
       retryAt: new Date(2 * HOUR),
@@ -209,7 +216,8 @@ describe('spec 03 §8.1 step 2 robots.txt (RFC 9309)', () => {
   it.each<[string, () => SafeFetchResult]>([
     ['HTTP 500', () => httpFailure(500)],
     ['HTTP 502', () => httpFailure(502)],
-    ['HTTP 503 without Retry-After', () => httpFailure(503)],
+    // The safe client gives a bare 503 its 60 s origin cooldown as `retryAt`: still a 5xx.
+    ['HTTP 503 without Retry-After', () => httpFailure(503, new Date(60_000))],
     ['a timeout', () => failure('FEED_TIMEOUT')],
     ['a DNS error', () => failure('FEED_DNS_ERROR')],
     ['a connection error', () => failure('FEED_CONNECTION_ERROR')],
@@ -263,6 +271,29 @@ describe('spec 03 §8.1 step 2 robots.txt (RFC 9309)', () => {
       reason: 'unreachable',
     });
     expect(calls).toHaveLength(3);
+  });
+
+  it('keeps deciding with stale cached rules through a bare 503', async () => {
+    const { clock, calls, check } = harness((_url, call) =>
+      call === 1
+        ? robotsTxt('User-agent: *\nDisallow: /x')
+        : httpFailure(503, new Date(clock.now + 60_000)),
+    );
+    await expect(check('https://example.com/a')).resolves.toMatchObject({ allowed: true });
+    // The stale rules keep deciding: the safe client's fallback `retryAt` is no cooldown request.
+    clock.now = 25 * HOUR;
+    await expect(check('https://example.com/a')).resolves.toEqual({
+      allowed: true,
+      reason: 'allowed',
+    });
+    await expect(check('https://example.com/x')).resolves.toEqual({
+      allowed: false,
+      reason: 'disallowed',
+    });
+    // The failure is cached for 5 minutes: no robots.txt request every minute.
+    clock.now += 4 * MINUTE;
+    await expect(check('https://example.com/a')).resolves.toMatchObject({ allowed: true });
+    expect(calls).toHaveLength(2);
   });
 
   it('honours maxStaleMs, ttlMs and failureTtlMs overrides', async () => {

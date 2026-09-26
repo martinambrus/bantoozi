@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 
-import { DEFAULT_COOLDOWN_MS, type SafeFetchResult } from '../http/index.js';
+import { DEFAULT_COOLDOWN_MS, parseRetryAfter, type SafeFetchResult } from '../http/index.js';
 
 /** The product token our crawler matches in robots.txt `User-agent` lines (spec 03 §8.1 step 2). */
 export const ROBOTS_PRODUCT_TOKEN = 'BantooziBot';
@@ -86,8 +86,9 @@ interface RobotsEntry {
  * - 2xx: the parsed rules; 404, 410 and other unavailable 4xx: allow all; 401/403: disallow all
  *   (conservative); more than the allowed redirects: unavailable, so allow all (RFC 9309 §2.3.1.2);
  *   a robots.txt beyond the fetch size cap: disallow all;
- * - 429, or any failure that carries a `retryAt` (a 503 with `Retry-After`, an origin cooldown):
- *   `cooldown` until then, without refetching before it ends;
+ * - 429, a 503 with a valid `Retry-After`, or the origin's own cooldown (`FEED_ORIGIN_COOLDOWN`):
+ *   `cooldown` until then, without refetching before it ends. A bare 503 is an unreachable 5xx:
+ *   the `retryAt` the safe client gives it is only its 60 s origin cooldown (spec 03 §8.2);
  * - network, DNS, TLS and timeout failures and 5xx are **unreachable**, never allow-all: an
  *   unexpired cached rule set (fresh, or stale by at most `maxStaleMs`) keeps deciding, otherwise
  *   this attempt is disallowed; the failure is cached for `failureTtlMs` (5 minutes), not 24 h;
@@ -136,7 +137,7 @@ export function createRobotsChecker(options: RobotsCheckerOptions): RobotsChecke
     const at = now();
     let outcome: FetchOutcome;
     try {
-      outcome = classify(result, robotsUrl);
+      outcome = classify(result, robotsUrl, at);
     } catch {
       outcome = { kind: 'unreachable' };
     }
@@ -193,7 +194,7 @@ type FetchOutcome =
   | { kind: 'unreachable' };
 
 /** Maps a robots.txt fetch result to a policy or a temporary failure (RFC 9309 §2.3.1). */
-function classify(result: SafeFetchResult, robotsUrl: string): FetchOutcome {
+function classify(result: SafeFetchResult, robotsUrl: string, at: number): FetchOutcome {
   if (result.ok) {
     if (result.status < 200 || result.status > 299) {
       return { kind: 'policy', policy: { kind: 'allow_all' } };
@@ -201,12 +202,13 @@ function classify(result: SafeFetchResult, robotsUrl: string): FetchOutcome {
     const text = new TextDecoder('utf-8').decode(result.bodyBytes);
     return { kind: 'policy', policy: { kind: 'rules', rules: robotsParser(robotsUrl, text) } };
   }
-  if (result.retryAt !== undefined || result.code === 'FEED_ORIGIN_COOLDOWN') {
-    return { kind: 'cooldown', retryAt: result.retryAt };
-  }
+  if (result.code === 'FEED_ORIGIN_COOLDOWN') return { kind: 'cooldown', retryAt: result.retryAt };
   const status = result.status ?? httpStatusOf(result.code);
   if (status !== undefined) {
-    if (status === 429) return { kind: 'cooldown', retryAt: undefined };
+    const askedToWait = parseRetryAfter(result.headers?.['retry-after'], at) !== undefined;
+    if (status === 429 || (status === 503 && askedToWait)) {
+      return { kind: 'cooldown', retryAt: result.retryAt };
+    }
     if (status === 401 || status === 403) {
       return { kind: 'policy', policy: { kind: 'disallow_all' } };
     }
