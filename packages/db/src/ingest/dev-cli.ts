@@ -54,6 +54,23 @@ export async function subscribeToFeed(
     if (live === null) throw new Error(`feed ${row.id} has a missing or cyclic merge chain`);
     feedId = live;
   }
+  // Hold the live feed against a concurrent merge before subscribing (users → feeds, the merge's
+  // own order): the subscription's foreign-key lock does not conflict with the merge's
+  // `FOR NO KEY UPDATE`, so without this the insert could land on a feed the merge retires after
+  // moving its subscriptions. A merge that committed while this waited is followed to its survivor.
+  for (let attempt = 1; ; attempt += 1) {
+    const locked = await tx.execute<{ merged_into_id: string | null }>(sql`
+      SELECT merged_into_id::text AS merged_into_id FROM feeds
+       WHERE id = ${feedId}::bigint FOR SHARE`);
+    const current = locked.rows[0];
+    if (current === undefined) throw new Error(`feed ${feedId} disappeared during subscribe`);
+    if (current.merged_into_id === null) break;
+    const survivor = await resolveLiveFeedId(tx, feedId);
+    if (survivor === null || attempt >= 5) {
+      throw new Error(`feed ${feedId} has no stable live root to subscribe to`);
+    }
+    feedId = survivor;
+  }
   const subscribed = await tx.execute(sql`
     INSERT INTO subscriptions (user_id, feed_id) VALUES (${input.userId}::uuid, ${feedId}::bigint)
     ON CONFLICT (user_id, feed_id) DO NOTHING`);

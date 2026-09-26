@@ -80,4 +80,48 @@ describe('ensureDevUser and subscribeToFeed (M1-T9)', () => {
     expect(sub).toMatchObject({ feedId: c.id, createdFeed: false, createdSubscription: true });
     expect(await subscriptionFeeds(sub.user.id)).toEqual([c.id]);
   });
+
+  it('waits for a running merge of the resolved feed and subscribes to its survivor', async () => {
+    const source = await createFeed(ctx.owner, { url: 'https://dev-cli.example.test/racing.xml' });
+    const survivor = await createFeed(ctx.owner, {
+      url: 'https://dev-cli.example.test/survivor.xml',
+    });
+    const merging = await ctx.owner.connect();
+    try {
+      // A merge holds the source row as mergeFeeds does, then retires it.
+      await merging.query('BEGIN');
+      await merging.query('SELECT 1 FROM feeds WHERE id = $1 FOR NO KEY UPDATE', [source.id]);
+      const pending = subscribe('racer@localhost', source.url);
+      await untilLockWait();
+      await merging.query(`UPDATE feeds SET status = 'dead', merged_into_id = $2 WHERE id = $1`, [
+        source.id,
+        survivor.id,
+      ]);
+      await merging.query('COMMIT');
+
+      const sub = await pending;
+      expect(sub).toMatchObject({
+        feedId: survivor.id,
+        createdFeed: false,
+        createdSubscription: true,
+      });
+      expect(await subscriptionFeeds(sub.user.id)).toEqual([survivor.id]);
+    } finally {
+      await merging.query('ROLLBACK').catch(() => undefined);
+      merging.release();
+    }
+  });
 });
+
+/** Resolve once some session of this database waits for a lock (fails after ~5 s). */
+async function untilLockWait(): Promise<void> {
+  for (let i = 0; i < 250; i += 1) {
+    const waiting = await ctx.adminPool.query(
+      `SELECT 1 FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+    );
+    if ((waiting.rowCount ?? 0) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error('no session started waiting for a lock');
+}
