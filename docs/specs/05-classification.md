@@ -188,7 +188,12 @@ type Variant = 'native' | 'translated';
   relevance); age and price comparison logic happens in code (spec 06).
 - Use shared publisher metadata, never a subscriber's feed-title override, folder, identity or rating.
   For a multi-feed article pick its canonical feed deterministically (oldest `feed_items.first_seen_at`,
-  then feed id); hash that concrete state. Bound title, author, category and feed-field lengths too.
+  then feed id); hash that concrete state. Bound title, author, category and feed-field lengths too:
+  title 300, author 120, each category 60 (at most 8, deduplicated), feed title 120 and site 100
+  characters. Text is NFC-normalized with whitespace collapsed; a cut lands on a word boundary
+  within its last 80 code points, without an ellipsis. An unknown language is named `Unknown`. The
+  translated variant needs a translated title; `effectiveStateVariant` falls back to `native`
+  otherwise (D-45).
 - Truncated body excerpts cannot prove whole-article depth or absence of a topic. Golden evaluation
   must include long articles whose relevant content appears after the lead, paywall teasers and
   missing-body cases; mark source completeness for explanations rather than promising full reading.
@@ -295,6 +300,8 @@ means "yes, the named thing". There are no negated instructions, no arithmetic, 
 | `scope.<option>` | `local_scope` probabilities (4) |
 | `tone` | `score / 4` |
 
+`flattenFacets` throws on a missing or mistyped enrich answer rather than emitting partial
+features, and a `none_of_these` L2 answer yields only `t2_asked.<l1> = 1` (D-48).
 `features` is recomputed (and the row updated) when L2 answers arrive after Call B. Include the
 feature-builder version in the model feature-schema fingerprint; changing L2 semantics invalidates
 personal-model compatibility. Do not combine L2 from an old revision/set/state with current facets.
@@ -343,6 +350,7 @@ A card's `body`:
 - `interest`: 3–300 chars
 - `not_for`: ≤ 300 chars
 - examples: ≤ 5 per side, each ≤ 200 chars
+- derived `interest_en`/`not_for_en`: ≤ 600 chars, twice the source limit (D-43)
 - kind `label` uses the same body, where `interest` is the label definition
 
 **`text_hash`:**
@@ -464,7 +472,8 @@ export function cardQuestion(card: CardBody, mode: CardTextMode): NoulQuestion {
 export function labelQuestion(card: CardRow, mode: CardTextMode): NoulQuestion {
   // same shape with question: 'Does `article` fit this label?', label: card.title (the shared card's
   // title, which is part of the label's text_hash), definition: interest, not_for, examples as for cards.
-  // user_labels.name is display-only and never sent to the model.
+  // user_labels.name is display-only and never sent to the model. The true criterion is "The
+  // article's main subject falls within `definition`"; false is worded as for cards (D-46).
 }
 ```
 
@@ -472,18 +481,21 @@ export function labelQuestion(card: CardRow, mode: CardTextMode): NoulQuestion {
   inverted only in the ranker.
 - **Keys:** `c<cardId>` for cards and labels, `t2_<l1>` for L2 topics.
 
-**Packing** (`packRequests(stateTokens, questions)`, pure):
-- Estimate tokens per question (spec 04 §6.1).
+**Packing** (`packRequests(state, items, limits = DEFAULT_PACK_LIMITS)`, pure, D-44):
+- Estimate tokens per question (spec 04 §6.1): the state costs `conservativeTokens(state) + 20`
+  (the request envelope) and each question `conservativeTokens({[key]: question})`.
 - Partition shared/public questions from private questions, with one private owner per batch; put L2
   only in the shared batch. Opaque correlation keys must not contain user identities. An LLM must
   never receive multiple tenants' private examples in one context.
-- Within each partition fill requests greedily in deterministic priority order (labels, interactive
-  cards, then the rest; tie-break by queue time/card id), subject to:
+- Within each partition fill requests greedily (next-fit) in deterministic priority order (labels,
+  interactive cards, then the rest; tie-break by queue time, then card id with L2 items first, then
+  key), partitions in order of first appearance, subject to:
   - `stateTokens + Σ questionTokens ≤ 48,000`
   - `stateTokens + max(questionTokens) ≤ 28,000`
   - `count ≤ 200`
 - Include serialization overhead and the estimator safety factor (spec 04 §6.1). A question/state
-  that cannot fit alone returns a typed overflow error; never emit an empty pack or silently omit it.
+  that cannot fit alone returns a typed overflow error (`PackOverflowError`, naming the key, or
+  none when the state alone does not fit); never emit an empty pack or silently omit it.
 - One state per article, so every request repeats the same state. Repack for the selected fallback
   engine's smaller context/output limits rather than blindly forwarding a 200-question Jev pack.
 
@@ -692,7 +704,8 @@ into unrelated off feeds merely to create cluster context.
 3. **State:**
    `{ new: {title, excerpt≤300, feed, published}, candidates: [{id: 'c1'…'c5', title, excerpt≤300, feed, published}] }`.
    `published` is a coarse string ("2 hours before `new`"), computed in code, so no date arithmetic is
-   left to the model.
+   left to the model: `new` reads "reference time", candidates "within an hour of `new`", "N hour(s)
+   before/after `new`" under 48 hours and "N day(s) before/after `new`" beyond (D-46).
 4. **Questions** (`cluster-v1`):
 
    ```ts
@@ -747,10 +760,13 @@ throttling alone does not replace this durable claim.
    zero positive cards, onboarding supplies suggestions instead. Stop if fewer than 3 eligible items.
 2. Pick the L1 with the highest summed current `t1.*` (excluding `other`, ties by id); then choose
    up to 5 eligible articles relevant to that branch. Do not ask what unrelated likes have in common.
+   A like is relevant when the branch is among its `selectL2Branches(t1)` (§4); likes without current
+   `t1` are skipped, and a like with no applicable positive card counts as unexplained (D-47).
 3. **Options:** library cards whose `topic_ids` intersect that L1, excluding cards the user holds or
-   dismissed in the last 90 days. At most 60, plus `none: 'None of these describe what the articles have in common'`.
+   dismissed in the last 90 days. At most 60 (the lowest card ids), keyed `c<cardId>`, plus
+   `none: 'None of these describe what the articles have in common'`.
 4. **State:** `{ liked_articles: [≤ 5 × {title, excerpt ≤ 300}] }`, the most recent first.
-5. **Question** (`suggest-v1`):
+5. **Question** (`suggest-v1`, key `common_interest`):
    `choice({ question: 'Which interest best describes what `liked_articles` have in common?' }, options)`,
    where each option's criteria is `{what: card.interest, not_for?: card.not_for}`.
 6. If no candidate exists, skip (a one-option Choice is invalid). If `none` wins, insert nothing.

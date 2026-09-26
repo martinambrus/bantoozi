@@ -281,3 +281,34 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   colour is the validated hex value spec 08 §7 requires; the `user_labels.color` default `'slate'` of
   spec 02 is not hex. The repository writes the value, so the column default is left unchanged and
   unused. Spec 02 `user_labels` updated.
+- D-43: 2026-09-26 M2-T5 — `packages/questions` validates card bodies and library entries with
+  plain validators (`validateCardBody`, `validateCardTitle`, `CARD_LIMITS`) instead of zod, which the
+  package does not depend on (as D-29 for the translators), and bounds a derived
+  `interest_en`/`not_for_en` at 600 characters, twice the source limit, which spec 05 §5.1 left open.
+  Spec 01 §5 and spec 05 §5.1 updated.
+- D-44: 2026-09-26 M2-T5 — packing takes the state and the items, `packRequests(state, items, limits
+  = DEFAULT_PACK_LIMITS)`, instead of `packRequests(stateTokens, questions)`. The state costs
+  `conservativeTokens(state) + 20` for the request envelope and each question
+  `conservativeTokens({[key]: question})`; `PackOverflowError` names the key that cannot fit (none
+  when the state alone does not fit). Items are ordered labels first, then interactive items, queue
+  time, card id (L2 items first) and key; partitions come out in order of first appearance and are
+  filled next-fit. Spec 05 §5.2 said "greedily" without these details. Spec 05 §5.2 updated.
+- D-45: 2026-09-26 M2-T5 — article state bounds that spec 05 §3.1 asked for without numbers: title
+  300, author 120, each category 60 (at most 8, deduplicated), feed title 120 and site 100
+  characters. Text is NFC-normalized with whitespace collapsed, and a cut lands on a word boundary
+  within its last 80 code points, without an ellipsis; an unknown language is named `Unknown`. The
+  translated variant requires a translated title, and `effectiveStateVariant` returns `native`
+  otherwise, the fallback §3.1 describes. Spec 05 §3.1 updated.
+- D-46: 2026-09-26 M2-T5 — wording spec 05 left open. The label question's true criterion is "The
+  article's main subject falls within `definition`", and its false criterion is the card's. Cluster
+  times read "reference time" for `new`, and "within an hour of `new`", "N hour(s) before/after
+  `new`" under 48 hours and "N day(s) before/after `new`" beyond for candidates. Spec 05 §5.2 and §6
+  step 3 updated.
+- D-47: 2026-09-26 M2-T5 — suggestion details spec 05 §7 left open. A like is relevant to the chosen
+  L1 when that branch is among its `selectL2Branches(t1)` (§4); likes without current `t1` are
+  skipped, and a like with no applicable positive card counts as unexplained. The options are the
+  first 60 matching library cards by numeric id, keyed `c<cardId>`, plus `none`, and the question
+  key is `common_interest`. Spec 05 §7 updated.
+- D-48: 2026-09-26 M2-T5 — `flattenFacets` throws on a missing or mistyped enrich answer rather than
+  emitting partial features, and a `none_of_these` L2 answer yields only `t2_asked.<l1> = 1` with no
+  `t2.<l1>.*` value. Spec 05 §3.4 did not say. Spec 05 §3.4 updated.

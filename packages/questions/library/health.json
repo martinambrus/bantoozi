@@ -1,0 +1,81 @@
+[
+  {
+    "slug": "medical-breakthroughs",
+    "title": "Medical breakthroughs",
+    "title_sk": "Prelomové objavy v medicíne",
+    "interest": "New treatments, drug approvals and clinical trial results for serious diseases such as cancer",
+    "interest_sk": "Nové liečby, schválenia liekov a výsledky klinických štúdií pri vážnych ochoreniach, napríklad pri rakovine",
+    "not_for": "Miracle-cure advertising",
+    "topic_ids": ["health.medicine"],
+    "examples_yes": ["Phase 3 trial shows new drug slows Alzheimer's decline"],
+    "examples_no": ["This fruit cures inflammation, say influencers"]
+  },
+  {
+    "slug": "running",
+    "title": "Running",
+    "title_sk": "Beh",
+    "interest": "Running training, races and running gear, from a first 5K plan to marathon preparation",
+    "interest_sk": "Bežecký tréning, preteky a bežecká výbava, od plánu na prvých 5 km po prípravu na maratón",
+    "not_for": "Running for political office",
+    "topic_ids": ["health.fitness_exercise", "sports.other_sports"],
+    "examples_yes": ["A 12-week plan for your first half marathon"],
+    "examples_no": ["Mayor announces he is running for re-election"]
+  },
+  {
+    "slug": "strength-training",
+    "title": "Strength training",
+    "title_sk": "Silový tréning",
+    "interest": "Strength training and gym workouts: programmes, technique and the science of building muscle",
+    "interest_sk": "Silový tréning a cvičenie v posilňovni: tréningové plány, technika a veda o budovaní svalov",
+    "not_for": "Supplement advertising",
+    "topic_ids": ["health.fitness_exercise"]
+  },
+  {
+    "slug": "nutrition-science",
+    "title": "Nutrition science",
+    "title_sk": "Veda o výžive",
+    "interest": "Evidence-based nutrition: what studies say about diets, foods and eating habits",
+    "interest_sk": "Výživa podložená dôkazmi: čo hovoria štúdie o diétach, potravinách a stravovacích návykoch",
+    "not_for": "Recipes; fad diet promotions",
+    "topic_ids": ["health.nutrition"],
+    "examples_yes": ["Large study links ultra-processed food to higher heart risk"],
+    "examples_no": ["Five quick recipes with lentils"]
+  },
+  {
+    "slug": "mental-health",
+    "title": "Mental health",
+    "title_sk": "Duševné zdravie",
+    "interest": "Mental health research and practical help: anxiety, depression, burnout, therapy and support",
+    "interest_sk": "Výskum a praktická pomoc v oblasti duševného zdravia: úzkosť, depresia, vyhorenie, terapia a podpora",
+    "not_for": "Celebrity gossip",
+    "topic_ids": ["health.mental_health"],
+    "examples_yes": ["How to recognise burnout before it hits"]
+  },
+  {
+    "slug": "sleep",
+    "title": "Sleep",
+    "title_sk": "Spánok",
+    "interest": "Sleep science and practical advice for sleeping better, including insomnia and sleep disorders",
+    "interest_sk": "Veda o spánku a praktické rady pre lepší spánok vrátane nespavosti a porúch spánku",
+    "not_for": "Mattress deals",
+    "topic_ids": ["health.medicine", "health.mental_health"]
+  },
+  {
+    "slug": "epidemics-vaccines",
+    "title": "Epidemics and vaccines",
+    "title_sk": "Epidémie a očkovanie",
+    "interest": "Infectious disease outbreaks, vaccination campaigns and public health responses",
+    "interest_sk": "Ohniská infekčných chorôb, očkovacie kampane a reakcie verejného zdravotníctva",
+    "not_for": "Home remedies for colds",
+    "topic_ids": ["health.public_health"]
+  },
+  {
+    "slug": "sk-healthcare",
+    "title": "Slovak healthcare system",
+    "title_sk": "Slovenské zdravotníctvo",
+    "interest": "The Slovak healthcare system: hospitals, waiting lists, doctors' pay and health insurance companies",
+    "interest_sk": "Slovenský zdravotný systém: nemocnice, čakacie lehoty, platy lekárov a zdravotné poisťovne",
+    "not_for": "Medical research results",
+    "topic_ids": ["health.public_health", "local.slovakia"]
+  }
+]

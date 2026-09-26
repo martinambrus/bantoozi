@@ -293,7 +293,8 @@ limits whose combined maximum leaves headroom under Postgres `max_connections`.
   parsed with zod at the boundary. Types are inferred from the schemas (`z.infer`), not duplicated.
   `packages/translate` has no zod dependency: it checks provider JSON with strict hand-written
   own-property guards (exact keys, types and bounds, no inherited or `__proto__` keys) covered by
-  hostile-input tests (D-29).
+  hostile-input tests (D-29). `packages/questions` validates card bodies and library entries with
+  plain validators the same way (D-43).
 - **Logging:** `logger.child({ component, jobId, userId, articleId })`. Never log secrets, email
   codes, session tokens, or full article bodies.
 - **SQL:** prefer Drizzle query builders. Use raw SQL (`sql```) for window functions, `pg_trgm`, and

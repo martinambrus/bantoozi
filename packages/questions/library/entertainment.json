@@ -1,0 +1,68 @@
+[
+  {
+    "slug": "streaming-services",
+    "title": "Streaming services",
+    "title_sk": "Streamovacie služby",
+    "interest": "Netflix, Disney+, HBO Max and other streaming services: prices, new releases and industry changes",
+    "interest_sk": "Netflix, Disney+, HBO Max a ďalšie streamovacie služby: ceny, novinky a zmeny v odvetví",
+    "not_for": "Gamers live-streaming on Twitch",
+    "topic_ids": ["entertainment.streaming_video"],
+    "examples_yes": ["Netflix raises its prices in Slovakia"]
+  },
+  {
+    "slug": "creators",
+    "title": "YouTube and creators",
+    "title_sk": "YouTube a tvorcovia",
+    "interest": "YouTube, TikTok and the creator economy: popular creators, platform rules and how creators earn",
+    "interest_sk": "YouTube, TikTok a ekonomika tvorcov: populárni tvorcovia, pravidlá platforiem a ako tvorcovia zarábajú",
+    "not_for": "Social media privacy settings",
+    "topic_ids": ["entertainment.streaming_video", "technology.internet_platforms"]
+  },
+  {
+    "slug": "music-festivals",
+    "title": "Music festivals",
+    "title_sk": "Hudobné festivaly",
+    "interest": "Music festivals and concerts: line-ups, tickets and festival reports, such as Pohoda and Colours of Ostrava",
+    "interest_sk": "Hudobné festivaly a koncerty: zostavy účinkujúcich, vstupenky a reportáže, napríklad z Pohody či Colours of Ostrava",
+    "not_for": "Film festivals",
+    "topic_ids": ["entertainment.events_festivals", "culture.music"],
+    "examples_yes": ["Pohoda announces its first headliners"],
+    "examples_no": ["Karlovy Vary film festival opens"]
+  },
+  {
+    "slug": "celebrities",
+    "title": "Celebrities",
+    "title_sk": "Celebrity",
+    "interest": "Celebrity news: famous people's lives, relationships and red-carpet events",
+    "interest_sk": "Správy o celebritách: životy slávnych ľudí, ich vzťahy a udalosti na červenom koberci",
+    "not_for": "Political leaders' policies",
+    "topic_ids": ["entertainment.celebrities"]
+  },
+  {
+    "slug": "comedy",
+    "title": "Comedy and humour",
+    "title_sk": "Humor a komédia",
+    "interest": "Stand-up comedy, satirical shows and funny viral videos",
+    "interest_sk": "Stand-up komédia, satirické relácie a vtipné virálne videá",
+    "not_for": "Serious news about comedians",
+    "topic_ids": ["entertainment.humor_viral"]
+  },
+  {
+    "slug": "reality-tv",
+    "title": "Reality TV",
+    "title_sk": "Reality šou",
+    "interest": "Reality shows and TV competitions such as talent shows and dating shows",
+    "interest_sk": "Reality šou a televízne súťaže, napríklad talentové a zoznamovacie relácie",
+    "not_for": "Documentaries",
+    "topic_ids": ["entertainment.celebrities", "culture.film_tv"]
+  },
+  {
+    "slug": "anime-manga",
+    "title": "Anime and manga",
+    "title_sk": "Anime a manga",
+    "interest": "Anime series, manga and Japanese pop culture events",
+    "interest_sk": "Anime seriály, manga a podujatia japonskej popkultúry",
+    "not_for": "Cartoons for small children",
+    "topic_ids": ["entertainment.streaming_video", "culture.books"]
+  }
+]

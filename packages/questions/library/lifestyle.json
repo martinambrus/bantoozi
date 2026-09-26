@@ -1,0 +1,101 @@
+[
+  {
+    "slug": "tatras-hiking",
+    "title": "Hiking in the Tatras",
+    "title_sk": "Turistika v Tatrách",
+    "interest": "Hiking routes, trail conditions and mountain safety in the High and Low Tatras",
+    "interest_sk": "Turistické trasy, stav chodníkov a bezpečnosť v horách vo Vysokých a Nízkych Tatrách",
+    "not_for": "General travel deals",
+    "topic_ids": ["lifestyle.travel", "local.slovakia"]
+  },
+  {
+    "slug": "home-cooking",
+    "title": "Home cooking",
+    "title_sk": "Varenie doma",
+    "interest": "Recipes and cooking techniques for everyday home cooking",
+    "interest_sk": "Recepty a kuchárske postupy na každodenné varenie doma",
+    "not_for": "Restaurant business news",
+    "topic_ids": ["lifestyle.food_cooking"],
+    "examples_yes": ["Five weeknight pasta recipes under 30 minutes"],
+    "examples_no": ["Restaurant chain opens ten new branches"]
+  },
+  {
+    "slug": "sk-cz-cuisine",
+    "title": "Slovak and Czech cuisine",
+    "title_sk": "Slovenská a česká kuchyňa",
+    "interest": "Traditional Slovak and Czech dishes and recipes, from bryndzové halušky to svíčková",
+    "interest_sk": "Tradičné slovenské a české jedlá a recepty, od bryndzových halušiek po sviečkovú",
+    "not_for": "Restaurant reviews abroad",
+    "topic_ids": ["lifestyle.food_cooking", "local.slovakia", "local.czechia"],
+    "examples_yes": ["How to make proper bryndzové halušky at home"]
+  },
+  {
+    "slug": "coffee",
+    "title": "Coffee",
+    "title_sk": "Káva",
+    "interest": "Specialty coffee: brewing methods, beans, espresso machines and cafés",
+    "interest_sk": "Výberová káva: spôsoby prípravy, zrná, espresso kávovary a kaviarne",
+    "not_for": "Coffee commodity prices",
+    "topic_ids": ["lifestyle.food_cooking"],
+    "examples_yes": ["V60 or AeroPress? A beginner's guide to filter coffee"],
+    "examples_no": ["Coffee futures hit a record high"]
+  },
+  {
+    "slug": "europe-travel",
+    "title": "Travel in Europe",
+    "title_sk": "Cestovanie po Európe",
+    "interest": "Travel tips and destination guides for trips around Europe, including city breaks and train travel",
+    "interest_sk": "Cestovateľské tipy a sprievodcovia destináciami pre výlety po Európe vrátane víkendov v mestách a ciest vlakom",
+    "not_for": "Airline business news",
+    "topic_ids": ["lifestyle.travel"],
+    "examples_yes": ["Three days in Vienna by train: an itinerary"]
+  },
+  {
+    "slug": "gardening",
+    "title": "Gardening",
+    "title_sk": "Záhradkárčenie",
+    "interest": "Growing vegetables, fruit and flowers: practical gardening advice through the seasons",
+    "interest_sk": "Pestovanie zeleniny, ovocia a kvetov: praktické záhradkárske rady počas celého roka",
+    "not_for": "Garden furniture deals",
+    "topic_ids": ["lifestyle.home_garden"],
+    "examples_yes": ["When to plant garlic for next summer's harvest"]
+  },
+  {
+    "slug": "parenting",
+    "title": "Parenting",
+    "title_sk": "Výchova detí",
+    "interest": "Raising children: parenting advice, child development and family life",
+    "interest_sk": "Výchova detí: rady pre rodičov, vývin dieťaťa a rodinný život",
+    "not_for": "School policy debates",
+    "topic_ids": ["lifestyle.family_parenting"],
+    "examples_yes": ["How to handle toddler tantrums calmly"]
+  },
+  {
+    "slug": "fashion",
+    "title": "Fashion",
+    "title_sk": "Móda",
+    "interest": "Fashion trends, designers, fashion weeks and clothing brands",
+    "interest_sk": "Módne trendy, návrhári, módne týždne a značky oblečenia",
+    "not_for": "Earnings of retail companies",
+    "topic_ids": ["lifestyle.fashion_beauty"]
+  },
+  {
+    "slug": "relationships",
+    "title": "Relationships",
+    "title_sk": "Vzťahy",
+    "interest": "Advice and research on dating, partnerships and friendships",
+    "interest_sk": "Rady a výskumy o randení, partnerských vzťahoch a priateľstvách",
+    "not_for": "Celebrity breakups",
+    "topic_ids": ["lifestyle.relationships"]
+  },
+  {
+    "slug": "sk-cz-trips",
+    "title": "Trips in Slovakia and Czechia",
+    "title_sk": "Výlety po Slovensku a Česku",
+    "interest": "Weekend trips, castles, spas and hidden places worth visiting in Slovakia and Czechia",
+    "interest_sk": "Víkendové výlety, hrady, kúpele a skryté miesta, ktoré sa oplatí navštíviť na Slovensku a v Česku",
+    "not_for": "Foreign holiday deals",
+    "topic_ids": ["lifestyle.travel", "local.slovakia", "local.czechia"],
+    "examples_yes": ["Ten castles in Slovakia worth a weekend trip"]
+  }
+]

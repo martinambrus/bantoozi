@@ -1,0 +1,79 @@
+[
+  {
+    "slug": "czechoslovak-history",
+    "title": "Czechoslovak history",
+    "title_sk": "Dejiny Československa",
+    "interest": "History of Czechoslovakia: the First Republic, the Second World War, communism and the Velvet Revolution",
+    "interest_sk": "Dejiny Československa: prvá republika, druhá svetová vojna, komunizmus a Nežná revolúcia",
+    "not_for": "Current Czech or Slovak politics",
+    "topic_ids": ["society.history", "local.slovakia", "local.czechia"],
+    "examples_yes": ["What really happened on 17 November 1989"]
+  },
+  {
+    "slug": "history",
+    "title": "History",
+    "title_sk": "História",
+    "interest": "History stories and new historical research on events and people from antiquity to the Cold War",
+    "interest_sk": "Historické príbehy a nový historický výskum o udalostiach a ľuďoch od staroveku po studenú vojnu",
+    "not_for": "Current political news",
+    "topic_ids": ["society.history"]
+  },
+  {
+    "slug": "crime-investigations",
+    "title": "Crime and investigations",
+    "title_sk": "Kriminalita a vyšetrovania",
+    "interest": "Major crime cases, police investigations and criminal trials",
+    "interest_sk": "Závažné trestné prípady, policajné vyšetrovania a trestné procesy",
+    "not_for": "Crime fiction and films",
+    "topic_ids": ["society.crime_safety"],
+    "examples_yes": ["Police arrest a suspect in an unsolved 2019 murder"],
+    "examples_no": ["Review: the new Nordic crime series"]
+  },
+  {
+    "slug": "media-journalism",
+    "title": "Media and journalism",
+    "title_sk": "Médiá a žurnalistika",
+    "interest": "The news media and journalism: press freedom, public broadcasters, media ownership and misinformation",
+    "interest_sk": "Spravodajské médiá a žurnalistika: sloboda tlače, verejnoprávne médiá, vlastníctvo médií a dezinformácie",
+    "not_for": "Social media app features",
+    "topic_ids": ["society.media_journalism"],
+    "examples_yes": ["Public broadcaster's board replaced under a new law"]
+  },
+  {
+    "slug": "religion",
+    "title": "Religion",
+    "title_sk": "Náboženstvo",
+    "interest": "Religion and faith: churches, religious leaders, the Vatican and the role of religion in society",
+    "interest_sk": "Náboženstvo a viera: cirkvi, náboženskí lídri, Vatikán a úloha náboženstva v spoločnosti",
+    "not_for": "Recipes for religious holidays",
+    "topic_ids": ["society.religion"]
+  },
+  {
+    "slug": "inequality-social-policy",
+    "title": "Inequality and social policy",
+    "title_sk": "Nerovnosť a sociálna politika",
+    "interest": "Poverty, inequality, housing affordability and social benefits, and the policies meant to address them",
+    "interest_sk": "Chudoba, nerovnosť, dostupnosť bývania a sociálne dávky a politiky, ktoré ich majú riešiť",
+    "not_for": "Celebrity charity events",
+    "topic_ids": ["society.social_issues"]
+  },
+  {
+    "slug": "disinformation",
+    "title": "Disinformation",
+    "title_sk": "Dezinformácie",
+    "interest": "Disinformation and propaganda: fact-checks, influence campaigns and how false stories spread online",
+    "interest_sk": "Dezinformácie a propaganda: overovanie faktov, vplyvové kampane a šírenie nepravdivých správ na internete",
+    "not_for": "Satire",
+    "topic_ids": ["society.media_journalism", "technology.internet_platforms"],
+    "examples_yes": ["Fact-check: the viral flood video is real"]
+  },
+  {
+    "slug": "demographics",
+    "title": "Demographics",
+    "title_sk": "Demografia",
+    "interest": "Population trends such as birth rates, ageing and emigration, and their effects on society and pensions",
+    "interest_sk": "Populačné trendy ako pôrodnosť, starnutie a vysťahovalectvo a ich vplyv na spoločnosť a dôchodky",
+    "not_for": "Personal family stories",
+    "topic_ids": ["society.social_issues", "economy.labor_market"]
+  }
+]

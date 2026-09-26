@@ -1,0 +1,87 @@
+[
+  {
+    "slug": "space-launches",
+    "title": "Space launches",
+    "title_sk": "Kozmické štarty",
+    "interest": "Rocket launches, spacecraft missions and launch-industry news",
+    "interest_sk": "Štarty rakiet, misie kozmických lodí a novinky z odvetvia kozmických štartov",
+    "not_for": "Astrology; sci-fi films",
+    "topic_ids": ["science.space"]
+  },
+  {
+    "slug": "astronomy",
+    "title": "Astronomy discoveries",
+    "title_sk": "Objavy v astronómii",
+    "interest": "Discoveries about planets, stars, galaxies and exoplanets from telescopes and observatories",
+    "interest_sk": "Objavy o planétach, hviezdach, galaxiách a exoplanétach z ďalekohľadov a observatórií",
+    "not_for": "Horoscopes",
+    "topic_ids": ["science.space", "science.research_academia"],
+    "examples_yes": ["Telescope spots water vapour on a distant exoplanet"],
+    "examples_no": ["Your horoscope for the week ahead"]
+  },
+  {
+    "slug": "physics-research",
+    "title": "Physics breakthroughs",
+    "title_sk": "Objavy vo fyzike",
+    "interest": "New results in physics: particle physics, quantum experiments, new materials and fusion research",
+    "interest_sk": "Nové výsledky vo fyzike: časticová fyzika, kvantové experimenty, nové materiály a výskum jadrovej fúzie",
+    "not_for": "Pop-science listicles without new results",
+    "topic_ids": ["science.physics_chemistry"]
+  },
+  {
+    "slug": "quantum-computing",
+    "title": "Quantum computing",
+    "title_sk": "Kvantové počítače",
+    "interest": "Quantum computers and quantum algorithms: hardware progress, error correction and real benchmarks",
+    "interest_sk": "Kvantové počítače a kvantové algoritmy: pokrok v hardvéri, korekcia chýb a skutočné testy výkonu",
+    "not_for": "Quantum-themed marketing or mysticism",
+    "topic_ids": ["science.physics_chemistry", "technology.hardware_gadgets"],
+    "examples_yes": ["Quantum chip keeps errors below the threshold for the first time"]
+  },
+  {
+    "slug": "genetics",
+    "title": "Genetics and biology",
+    "title_sk": "Genetika a biológia",
+    "interest": "Discoveries in genetics, evolution and cell biology, including gene editing such as CRISPR",
+    "interest_sk": "Objavy v genetike, evolúcii a bunkovej biológii vrátane génových úprav, napríklad metódou CRISPR",
+    "not_for": "Consumer DNA test advertising",
+    "topic_ids": ["science.life_sciences"],
+    "examples_yes": ["CRISPR therapy corrects the gene behind an inherited form of blindness"]
+  },
+  {
+    "slug": "climate-science",
+    "title": "Climate science",
+    "title_sk": "Klimatická veda",
+    "interest": "Scientific research on climate change: measurements, climate models, links to extreme weather and new studies",
+    "interest_sk": "Vedecký výskum klimatickej zmeny: merania, klimatické modely, súvislosť s extrémnym počasím a nové štúdie",
+    "not_for": "Climate policy negotiations",
+    "topic_ids": ["science.earth_science", "environment.climate_policy"]
+  },
+  {
+    "slug": "earthquakes-volcanoes",
+    "title": "Earthquakes and volcanoes",
+    "title_sk": "Zemetrasenia a sopky",
+    "interest": "Earthquakes, volcanic eruptions and the geology behind them, including research on forecasting them",
+    "interest_sk": "Zemetrasenia, sopečné erupcie a geológia v ich pozadí vrátane výskumu ich predpovedania",
+    "not_for": "Disaster relief fundraising",
+    "topic_ids": ["science.earth_science"]
+  },
+  {
+    "slug": "archaeology",
+    "title": "Archaeology",
+    "title_sk": "Archeológia",
+    "interest": "Archaeological finds and excavations that reveal how people lived in ancient times",
+    "interest_sk": "Archeologické nálezy a vykopávky, ktoré odhaľujú, ako žili ľudia v dávnych časoch",
+    "not_for": "Treasure-hunting TV shows",
+    "topic_ids": ["science.research_academia", "society.history"]
+  },
+  {
+    "slug": "science-funding",
+    "title": "Science policy and funding",
+    "title_sk": "Financovanie vedy",
+    "interest": "Research funding and science policy, including EU programmes such as Horizon Europe and the state of university research",
+    "interest_sk": "Financovanie výskumu a vedecká politika vrátane programov EÚ ako Horizont Európa a stav výskumu na univerzitách",
+    "not_for": "Individual study results",
+    "topic_ids": ["science.research_academia", "politics.policy_regulation"]
+  }
+]

@@ -1,0 +1,121 @@
+[
+  {
+    "slug": "nhl-slovaks",
+    "title": "Slovaks in the NHL",
+    "title_sk": "Slováci v NHL",
+    "interest": "Slovak and Czech players in the NHL: games, trades and stats",
+    "interest_sk": "Slovenskí a českí hráči v NHL: zápasy, výmeny a štatistiky",
+    "not_for": "Other leagues",
+    "topic_ids": ["sports.ice_hockey"]
+  },
+  {
+    "slug": "sk-football-league",
+    "title": "Slovak football league",
+    "title_sk": "Slovenská futbalová liga",
+    "interest": "The Slovak football league: matches, results, transfers and clubs such as Slovan Bratislava and Spartak Trnava",
+    "interest_sk": "Slovenská futbalová liga: zápasy, výsledky, prestupy a kluby ako Slovan Bratislava či Spartak Trnava",
+    "not_for": "Foreign football leagues",
+    "topic_ids": ["sports.football", "local.slovakia"],
+    "examples_yes": ["Slovan Bratislava win the derby against Spartak Trnava"],
+    "examples_no": ["Real Madrid sign a new striker"]
+  },
+  {
+    "slug": "champions-league",
+    "title": "Champions League",
+    "title_sk": "Liga majstrov",
+    "interest": "UEFA Champions League football: matches, results and analysis",
+    "interest_sk": "Futbalová Liga majstrov UEFA: zápasy, výsledky a analýzy",
+    "not_for": "Domestic lower leagues",
+    "topic_ids": ["sports.football"],
+    "examples_yes": ["Champions League draw: a tough group for the Slovak champions"]
+  },
+  {
+    "slug": "premier-league",
+    "title": "Premier League",
+    "title_sk": "Premier League",
+    "interest": "English Premier League football: matches, transfers, managers and analysis",
+    "interest_sk": "Anglická Premier League: zápasy, prestupy, tréneri a analýzy",
+    "not_for": "Other sports in England",
+    "topic_ids": ["sports.football"]
+  },
+  {
+    "slug": "sk-national-football",
+    "title": "Slovak national football team",
+    "title_sk": "Slovenská futbalová reprezentácia",
+    "interest": "Slovakia's national football team: qualifiers, tournaments, squad news and results",
+    "interest_sk": "Slovenská futbalová reprezentácia: kvalifikácie, turnaje, nominácie a výsledky",
+    "not_for": "Club football",
+    "topic_ids": ["sports.football", "local.slovakia"]
+  },
+  {
+    "slug": "hockey-world-championship",
+    "title": "Ice hockey world championship",
+    "title_sk": "Majstrovstvá sveta v hokeji",
+    "interest": "The Ice Hockey World Championship and Olympic hockey, especially Slovakia's and Czechia's national teams",
+    "interest_sk": "Majstrovstvá sveta v ľadovom hokeji a olympijský hokej, najmä slovenská a česká reprezentácia",
+    "not_for": "NHL regular season",
+    "topic_ids": ["sports.ice_hockey", "local.slovakia", "local.czechia"]
+  },
+  {
+    "slug": "cz-extraliga",
+    "title": "Czech hockey Extraliga",
+    "title_sk": "Česká hokejová extraliga",
+    "interest": "The Czech ice hockey Extraliga: matches, playoffs, clubs and players",
+    "interest_sk": "Česká hokejová extraliga: zápasy, play-off, kluby a hráči",
+    "not_for": "NHL",
+    "topic_ids": ["sports.ice_hockey", "local.czechia"]
+  },
+  {
+    "slug": "tennis",
+    "title": "Tennis",
+    "title_sk": "Tenis",
+    "interest": "Professional tennis: Grand Slams, ATP and WTA tournaments and players",
+    "interest_sk": "Profesionálny tenis: grandslamy, turnaje ATP a WTA a hráči",
+    "not_for": "Table tennis",
+    "topic_ids": ["sports.tennis"],
+    "examples_yes": ["Wimbledon final ends in a five-set thriller"],
+    "examples_no": ["Table tennis European championship results"]
+  },
+  {
+    "slug": "formula-1",
+    "title": "Formula 1",
+    "title_sk": "Formula 1",
+    "interest": "Formula 1 races, teams, drivers and technical regulations",
+    "interest_sk": "Preteky formuly 1, tímy, jazdci a technické pravidlá",
+    "not_for": "Road car reviews",
+    "topic_ids": ["sports.motorsport"],
+    "examples_yes": ["Title fight tightens after a chaotic race in Monza"],
+    "examples_no": ["Review: the new electric sports car"]
+  },
+  {
+    "slug": "pro-cycling",
+    "title": "Pro cycling",
+    "title_sk": "Profesionálna cyklistika",
+    "interest": "Professional road cycling: the Tour de France, the Giro d'Italia, the spring classics and their riders",
+    "interest_sk": "Profesionálna cestná cyklistika: Tour de France, Giro d'Italia, jarné klasiky a ich jazdci",
+    "not_for": "Commuter cycling",
+    "topic_ids": ["sports.cycling_sport"]
+  },
+  {
+    "slug": "alpine-skiing",
+    "title": "Alpine skiing",
+    "title_sk": "Zjazdové lyžovanie",
+    "interest": "Alpine skiing World Cup races and athletes, including Petra Vlhová",
+    "interest_sk": "Preteky Svetového pohára v zjazdovom lyžovaní a lyžiari vrátane Petry Vlhovej",
+    "not_for": "Ski resort deals",
+    "topic_ids": ["sports.winter_sports"],
+    "examples_yes": ["Vlhová wins the slalom in Levi"],
+    "examples_no": ["Best ski resort deals this winter"]
+  },
+  {
+    "slug": "olympics",
+    "title": "Olympic Games",
+    "title_sk": "Olympijské hry",
+    "interest": "The Summer and Winter Olympic Games: events, athletes, medal results and preparations",
+    "interest_sk": "Letné a zimné olympijské hry: disciplíny, športovci, medailové výsledky a prípravy",
+    "not_for": "Olympiads in mathematics and other school subjects",
+    "topic_ids": ["sports.other_sports", "sports.winter_sports"],
+    "examples_yes": ["Slovakia's medal hopes for the Winter Olympics"],
+    "examples_no": ["Pupils win medals at the International Mathematical Olympiad"]
+  }
+]

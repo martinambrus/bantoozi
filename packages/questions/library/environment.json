@@ -1,0 +1,82 @@
+[
+  {
+    "slug": "renewable-energy",
+    "title": "Renewable energy",
+    "title_sk": "Obnoviteľné zdroje energie",
+    "interest": "Solar, wind and other renewable energy: new projects, technology and the growth of green power",
+    "interest_sk": "Solárna, veterná a ďalšia obnoviteľná energia: nové projekty, technológie a rast zelenej energie",
+    "not_for": "Oil and gas company earnings",
+    "topic_ids": ["environment.energy"],
+    "examples_yes": ["Europe's largest floating solar farm connects to the grid"],
+    "examples_no": ["Oil major reports a record profit"]
+  },
+  {
+    "slug": "nuclear-power",
+    "title": "Nuclear power",
+    "title_sk": "Jadrová energetika",
+    "interest": "Nuclear power plants and new reactor technology, including Mochovce, Temelín and small modular reactors",
+    "interest_sk": "Jadrové elektrárne a nové reaktorové technológie vrátane Mochoviec, Temelína a malých modulárnych reaktorov",
+    "not_for": "Nuclear weapons",
+    "topic_ids": ["environment.energy"],
+    "examples_yes": ["Mochovce's fourth unit starts supplying power"],
+    "examples_no": ["Talks on a nuclear weapons treaty stall"]
+  },
+  {
+    "slug": "climate-policy",
+    "title": "Climate policy",
+    "title_sk": "Klimatická politika",
+    "interest": "Climate policy and targets: the EU Green Deal, emissions trading and UN climate summits",
+    "interest_sk": "Klimatická politika a ciele: Európska zelená dohoda, obchodovanie s emisiami a klimatické summity OSN",
+    "not_for": "Weather forecasts",
+    "topic_ids": ["environment.climate_policy"]
+  },
+  {
+    "slug": "wildlife-nature",
+    "title": "Wildlife and nature",
+    "title_sk": "Divá príroda",
+    "interest": "Wild animals, nature protection and national parks, including bears, wolves and forests in Slovakia",
+    "interest_sk": "Divé zvieratá, ochrana prírody a národné parky vrátane medveďov, vlkov a lesov na Slovensku",
+    "not_for": "Pets",
+    "topic_ids": ["environment.nature"],
+    "examples_yes": ["What the new count shows about brown bears in Slovakia"],
+    "examples_no": ["How to teach your dog to walk on a leash"]
+  },
+  {
+    "slug": "pollution-waste",
+    "title": "Pollution and waste",
+    "title_sk": "Znečistenie a odpad",
+    "interest": "Air and water pollution, plastic waste and recycling, and efforts to clean them up",
+    "interest_sk": "Znečistenie ovzdušia a vody, plastový odpad a recyklácia a snahy o nápravu",
+    "not_for": "Household cleaning tips",
+    "topic_ids": ["environment.pollution_waste"]
+  },
+  {
+    "slug": "energy-prices",
+    "title": "Energy prices",
+    "title_sk": "Ceny energií",
+    "interest": "Electricity and gas prices for households and businesses, and the energy markets behind them",
+    "interest_sk": "Ceny elektriny a plynu pre domácnosti a firmy a energetické trhy v ich pozadí",
+    "not_for": "Fuel-saving driving tips",
+    "topic_ids": ["environment.energy", "economy.macro"],
+    "examples_yes": ["Wholesale electricity prices drop as wind output surges"]
+  },
+  {
+    "slug": "home-energy",
+    "title": "Home energy efficiency",
+    "title_sk": "Úspory energie doma",
+    "interest": "Heat pumps, insulation, rooftop solar and other ways to cut a home's energy use, including subsidies",
+    "interest_sk": "Tepelné čerpadlá, zatepľovanie, strešná fotovoltika a ďalšie spôsoby, ako znížiť spotrebu energie v domácnosti, vrátane dotácií",
+    "not_for": "Earnings of energy companies",
+    "topic_ids": ["environment.energy", "lifestyle.home_garden"],
+    "examples_yes": ["Is a heat pump worth it in an older house?"]
+  },
+  {
+    "slug": "extreme-weather",
+    "title": "Extreme weather",
+    "title_sk": "Extrémne počasie",
+    "interest": "Floods, heatwaves, droughts and storms: their impacts and how communities adapt",
+    "interest_sk": "Povodne, horúčavy, suchá a búrky: ich dopady a ako sa im spoločnosti prispôsobujú",
+    "not_for": "Daily weather forecasts",
+    "topic_ids": ["environment.climate_policy", "science.earth_science"]
+  }
+]

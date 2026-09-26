@@ -1,0 +1,70 @@
+[
+  {
+    "slug": "inflation-ecb",
+    "title": "Inflation and the ECB",
+    "title_sk": "Inflácia a ECB",
+    "interest": "Inflation in the euro area and European Central Bank decisions on interest rates",
+    "interest_sk": "Inflácia v eurozóne a rozhodnutia Európskej centrálnej banky o úrokových sadzbách",
+    "not_for": "Price comparisons of individual shops",
+    "topic_ids": ["economy.monetary_policy"],
+    "examples_yes": ["ECB holds rates as eurozone inflation cools"],
+    "examples_no": ["Where to buy the cheapest butter this week"]
+  },
+  {
+    "slug": "world-economy",
+    "title": "World economy",
+    "title_sk": "Svetová ekonomika",
+    "interest": "The state of the world economy: growth forecasts, recessions and major economies such as the US, China and Germany",
+    "interest_sk": "Stav svetovej ekonomiky: prognózy rastu, recesie a veľké ekonomiky ako USA, Čína a Nemecko",
+    "not_for": "Single company news",
+    "topic_ids": ["economy.macro"]
+  },
+  {
+    "slug": "trade-tariffs",
+    "title": "Trade and tariffs",
+    "title_sk": "Obchod a clá",
+    "interest": "International trade disputes, tariffs, sanctions and trade agreements, and their effects on businesses",
+    "interest_sk": "Medzinárodné obchodné spory, clá, sankcie a obchodné dohody a ich vplyv na firmy",
+    "not_for": "Stock trading",
+    "topic_ids": ["economy.trade"],
+    "examples_yes": ["US raises tariffs on European cars"],
+    "examples_no": ["Stock trading app adds new features"]
+  },
+  {
+    "slug": "sk-public-finance",
+    "title": "Slovak public finances",
+    "title_sk": "Slovenské verejné financie",
+    "interest": "Slovakia's state budget, deficit, taxes and consolidation measures",
+    "interest_sk": "Štátny rozpočet Slovenska, deficit, dane a konsolidačné opatrenia",
+    "not_for": "Household budgeting tips",
+    "topic_ids": ["economy.public_finance", "local.slovakia"],
+    "examples_yes": ["Government proposes a higher VAT rate to cut the deficit"]
+  },
+  {
+    "slug": "jobs-wages",
+    "title": "Jobs and wages",
+    "title_sk": "Zamestnanosť a mzdy",
+    "interest": "Unemployment, wages and labour shortages, including data on the Slovak and Czech labour markets",
+    "interest_sk": "Nezamestnanosť, mzdy a nedostatok pracovníkov vrátane údajov o slovenskom a českom trhu práce",
+    "not_for": "Job postings",
+    "topic_ids": ["economy.labor_market"]
+  },
+  {
+    "slug": "economics-explained",
+    "title": "Economics explained",
+    "title_sk": "Ekonómia zrozumiteľne",
+    "interest": "Explainers on how the economy works: inflation, interest rates, GDP and economic policy debates",
+    "interest_sk": "Vysvetlenia, ako funguje ekonomika: inflácia, úrokové sadzby, HDP a debaty o hospodárskej politike",
+    "not_for": "Breaking market news",
+    "topic_ids": ["economy.macro", "education.learning_skills"]
+  },
+  {
+    "slug": "eu-funds",
+    "title": "EU funds",
+    "title_sk": "Eurofondy",
+    "interest": "EU funds and budgets: cohesion funding, the recovery plan and how the money is spent",
+    "interest_sk": "Eurofondy a rozpočet EÚ: kohézne financovanie, plán obnovy a to, ako sa peniaze míňajú",
+    "not_for": "EU foreign policy",
+    "topic_ids": ["economy.public_finance", "world.europe"]
+  }
+]

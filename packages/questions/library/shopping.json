@@ -1,0 +1,64 @@
+[
+  {
+    "slug": "tech-deals",
+    "title": "Tech deals",
+    "title_sk": "Zľavy na elektroniku",
+    "interest": "Discounts and sales on electronics, gadgets and software",
+    "interest_sk": "Zľavy a výpredaje elektroniky, technických vychytávok a softvéru",
+    "not_for": "Product reviews without a price drop",
+    "topic_ids": ["shopping.deals", "technology.hardware_gadgets"],
+    "examples_yes": ["Black Friday: the best laptop deals so far"],
+    "examples_no": ["Review: the new flagship phone"]
+  },
+  {
+    "slug": "sk-grocery-deals",
+    "title": "Grocery deals in Slovakia",
+    "title_sk": "Akcie v supermarketoch",
+    "interest": "Supermarket discounts and grocery price comparisons in Slovakia",
+    "interest_sk": "Zľavy v supermarketoch a porovnania cien potravín na Slovensku",
+    "not_for": "Recipes",
+    "topic_ids": ["shopping.deals", "local.slovakia"],
+    "examples_yes": ["Where butter is cheapest this week in Slovak supermarkets"]
+  },
+  {
+    "slug": "buying-guides",
+    "title": "Buying guides",
+    "title_sk": "Nákupné rady",
+    "interest": "Buying guides and product comparisons that help choose appliances, electronics and household goods",
+    "interest_sk": "Nákupné rady a porovnania produktov, ktoré pomáhajú vybrať spotrebiče, elektroniku a potreby do domácnosti",
+    "not_for": "Sponsored ads for a single product",
+    "topic_ids": ["shopping.buying_guides"],
+    "examples_yes": ["The best robot vacuums of the year, tested"]
+  },
+  {
+    "slug": "second-hand",
+    "title": "Second-hand and bazaars",
+    "title_sk": "Bazár a second hand",
+    "interest": "Buying and selling used goods: second-hand marketplaces, bazaars and tips for safe deals",
+    "interest_sk": "Nákup a predaj použitého tovaru: bazárové portály, bazáre a tipy na bezpečné obchody",
+    "not_for": "New product launches",
+    "topic_ids": ["shopping.classifieds"],
+    "examples_yes": ["How to avoid scams when selling on bazaar sites"]
+  },
+  {
+    "slug": "consumer-rights",
+    "title": "Consumer rights",
+    "title_sk": "Práva spotrebiteľov",
+    "interest": "Consumer protection: warranties, returns, scams and product recalls",
+    "interest_sk": "Ochrana spotrebiteľa: záruky, vrátenie tovaru, podvody a sťahovanie výrobkov z trhu",
+    "not_for": "Store opening announcements",
+    "topic_ids": ["shopping.buying_guides", "politics.policy_regulation"],
+    "examples_yes": ["Retailer recalls a children's toy over choking risk"]
+  },
+  {
+    "slug": "travel-deals",
+    "title": "Travel deals",
+    "title_sk": "Zľavy na cestovanie",
+    "interest": "Cheap flights, holiday packages and hotel deals",
+    "interest_sk": "Lacné letenky, zájazdy a zľavy na hotely",
+    "not_for": "Destination travel guides",
+    "topic_ids": ["shopping.deals", "lifestyle.travel"],
+    "examples_yes": ["Flights to Barcelona from €29 this autumn"],
+    "examples_no": ["Barcelona travel guide: what to see"]
+  }
+]

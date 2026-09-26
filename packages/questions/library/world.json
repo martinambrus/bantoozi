@@ -1,0 +1,79 @@
+[
+  {
+    "slug": "ukraine-war",
+    "title": "War in Ukraine",
+    "title_sk": "Vojna na Ukrajine",
+    "interest": "Russia's war against Ukraine: the front line, military aid and peace efforts",
+    "interest_sk": "Ruská vojna proti Ukrajine: situácia na fronte, vojenská pomoc a mierové snahy",
+    "not_for": "Ukrainian culture and recipes",
+    "topic_ids": ["world.conflicts", "world.europe"],
+    "examples_yes": ["Ukraine receives new air-defence systems from its allies"],
+    "examples_no": ["Traditional Ukrainian borscht recipe"]
+  },
+  {
+    "slug": "middle-east",
+    "title": "Middle East",
+    "title_sk": "Blízky východ",
+    "interest": "Politics and conflicts in the Middle East, including Israel, Gaza, Iran and the Gulf states",
+    "interest_sk": "Politika a konflikty na Blízkom východe vrátane Izraela, Gazy, Iránu a štátov Perzského zálivu",
+    "not_for": "Oil price moves",
+    "topic_ids": ["world.middle_east_africa", "world.conflicts"]
+  },
+  {
+    "slug": "china",
+    "title": "China",
+    "title_sk": "Čína",
+    "interest": "China's politics, economy and foreign relations, including tensions over Taiwan",
+    "interest_sk": "Politika, ekonomika a zahraničné vzťahy Číny vrátane napätia okolo Taiwanu",
+    "not_for": "Chinese cooking",
+    "topic_ids": ["world.asia_pacific"],
+    "examples_yes": ["Beijing holds military drills around Taiwan"],
+    "examples_no": ["How to make dumplings at home"]
+  },
+  {
+    "slug": "slovak-neighbours",
+    "title": "Neighbours: Hungary, Poland, Austria",
+    "title_sk": "Susedia: Maďarsko, Poľsko, Rakúsko",
+    "interest": "Politics and major events in Hungary, Poland and Austria, Slovakia's neighbouring countries",
+    "interest_sk": "Politika a dôležité udalosti v Maďarsku, Poľsku a Rakúsku, susedných krajinách Slovenska",
+    "not_for": "Holiday travel tips",
+    "topic_ids": ["world.europe"]
+  },
+  {
+    "slug": "latin-america",
+    "title": "Latin America",
+    "title_sk": "Latinská Amerika",
+    "interest": "News from Latin America: elections, economies and social movements in Brazil, Argentina, Mexico and beyond",
+    "interest_sk": "Správy z Latinskej Ameriky: voľby, ekonomiky a spoločenské hnutia v Brazílii, Argentíne, Mexiku a inde",
+    "not_for": "Latin music",
+    "topic_ids": ["world.americas"]
+  },
+  {
+    "slug": "africa",
+    "title": "Africa",
+    "title_sk": "Afrika",
+    "interest": "Politics, economies and societies of African countries, beyond the crisis headlines",
+    "interest_sk": "Politika, ekonomiky a spoločnosti afrických krajín aj nad rámec krízových titulkov",
+    "not_for": "Safari holidays",
+    "topic_ids": ["world.middle_east_africa"]
+  },
+  {
+    "slug": "nato-defence",
+    "title": "NATO and defence",
+    "title_sk": "NATO a obrana",
+    "interest": "NATO, European defence spending, armed forces and arms procurement",
+    "interest_sk": "NATO, výdavky európskych krajín na obranu, ozbrojené sily a nákupy zbraní",
+    "not_for": "Warfare in video games",
+    "topic_ids": ["world.conflicts", "politics.international_relations"],
+    "examples_yes": ["NATO members agree to raise the defence spending target"]
+  },
+  {
+    "slug": "humanitarian-crises",
+    "title": "Humanitarian crises",
+    "title_sk": "Humanitárne krízy",
+    "interest": "Humanitarian crises and disasters worldwide: famine, refugees and aid efforts",
+    "interest_sk": "Humanitárne krízy a katastrofy vo svete: hladomor, utečenci a pomoc",
+    "not_for": "Charity marketing",
+    "topic_ids": ["world.conflicts", "society.social_issues"]
+  }
+]

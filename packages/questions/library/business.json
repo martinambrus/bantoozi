@@ -1,0 +1,93 @@
+[
+  {
+    "slug": "personal-finance-eu",
+    "title": "Personal finance (EU)",
+    "title_sk": "Osobné financie (EÚ)",
+    "interest": "Saving, investing and pensions for individuals in the EU, especially Slovakia and Czechia",
+    "interest_sk": "Sporenie, investovanie a dôchodky pre jednotlivcov v EÚ, najmä na Slovensku a v Česku",
+    "not_for": "Corporate earnings",
+    "topic_ids": ["business.personal_finance"]
+  },
+  {
+    "slug": "startup-funding",
+    "title": "Startup funding",
+    "title_sk": "Financovanie startupov",
+    "interest": "Startup funding rounds, venture capital deals and how young tech companies grow",
+    "interest_sk": "Investičné kolá startupov, obchody rizikového kapitálu a rast mladých technologických firiem",
+    "not_for": "Established corporations' results",
+    "topic_ids": ["business.startups"],
+    "examples_yes": ["Bratislava startup raises €5 million to expand into Germany"]
+  },
+  {
+    "slug": "stock-markets",
+    "title": "Stock markets",
+    "title_sk": "Akciové trhy",
+    "interest": "Stock market moves and what drives them: indices, earnings seasons and the shares of major companies",
+    "interest_sk": "Pohyby na akciových trhoch a ich príčiny: indexy, sezóna hospodárskych výsledkov a akcie veľkých firiem",
+    "not_for": "Crypto prices",
+    "topic_ids": ["business.markets_investing"]
+  },
+  {
+    "slug": "index-investing",
+    "title": "Index fund investing",
+    "title_sk": "Investovanie do ETF",
+    "interest": "Long-term investing with ETFs and index funds: costs, strategies and building a portfolio as an individual",
+    "interest_sk": "Dlhodobé investovanie cez ETF a indexové fondy: poplatky, stratégie a tvorba vlastného portfólia",
+    "not_for": "Day trading and meme stocks",
+    "topic_ids": ["business.markets_investing", "business.personal_finance"],
+    "examples_yes": ["Why low fees matter more than picking the best fund"],
+    "examples_no": ["Meme stock soars 80% in one day"]
+  },
+  {
+    "slug": "housing-market",
+    "title": "Housing market",
+    "title_sk": "Trh s bývaním",
+    "interest": "Housing prices, rents and mortgages, and what moves the property market",
+    "interest_sk": "Ceny bytov a domov, nájmy a hypotéky a to, čo hýbe trhom s nehnuteľnosťami",
+    "not_for": "Interior design",
+    "topic_ids": ["business.real_estate"],
+    "examples_yes": ["Mortgage rates fall for the third month in a row"],
+    "examples_no": ["Ten ideas for a cosy living room"]
+  },
+  {
+    "slug": "remote-work",
+    "title": "Remote and hybrid work",
+    "title_sk": "Práca na diaľku",
+    "interest": "Remote and hybrid work: company policies, productivity research and tips for working from home",
+    "interest_sk": "Práca na diaľku a hybridná práca: firemné pravidlá, výskumy produktivity a tipy na prácu z domu",
+    "not_for": "Job listings",
+    "topic_ids": ["business.careers_work"]
+  },
+  {
+    "slug": "career-development",
+    "title": "Career development",
+    "title_sk": "Kariérny rast",
+    "interest": "Career advice: job searching, salary negotiation, interviews and changing careers",
+    "interest_sk": "Rady do kariéry: hľadanie práce, vyjednávanie o plate, pracovné pohovory a zmena kariéry",
+    "not_for": "Individual job postings",
+    "topic_ids": ["business.careers_work", "education.learning_skills"],
+    "examples_yes": ["How to negotiate a higher salary in your first job offer"]
+  },
+  {
+    "slug": "crypto",
+    "title": "Crypto markets",
+    "title_sk": "Kryptomeny",
+    "interest": "Bitcoin, Ethereum and other cryptocurrencies: prices, regulation and major industry events",
+    "interest_sk": "Bitcoin, Ethereum a ďalšie kryptomeny: ceny, regulácia a dôležité udalosti v odvetví",
+    "not_for": "Blockchain buzzwords in unrelated products",
+    "topic_ids": ["business.crypto"],
+    "examples_yes": ["Bitcoin climbs to a record high after strong ETF inflows"],
+    "examples_no": ["Coffee chain launches blockchain loyalty points"]
+  },
+  {
+    "slug": "car-industry",
+    "title": "Automotive industry",
+    "title_sk": "Automobilový priemysel",
+    "interest": "The car-making industry: carmakers' plants, production, jobs and supplier chains in Europe",
+    "interest_sk": "Automobilový priemysel: továrne automobiliek, výroba, pracovné miesta a dodávateľské reťazce v Európe",
+    "not_for": "Car reviews",
+    "topic_ids": ["business.companies", "transport.cars"],
+    "examples_yes": ["Carmaker to build a new plant in eastern Slovakia"],
+    "examples_no": ["Test drive: the new family SUV"]
+  }
+]
