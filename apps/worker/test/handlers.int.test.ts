@@ -1474,6 +1474,67 @@ describe('article.capture-bookmark (M1-T7)', () => {
     }
   });
 
+  it('keeps a longer stored partial over a shorter partial page, and takes a longer one', async () => {
+    // A paywall teaser: readable, but marked partial (spec 03 §8.1 step 6).
+    const paywalled = (sentences: number) =>
+      html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Locked</title>
+<meta property="article:content_tier" content="locked"></head><body><article><h1>Locked</h1><p>${Array.from(
+        { length: sentences },
+        (_, i) =>
+          `Sentence ${i + 1} of the teaser explains why the council approved the new tram line.`,
+      ).join(' ')}</p></article></body></html>`);
+    server.route('/capture/teaser.html', paywalled(4));
+    server.route('/capture/longer.html', paywalled(12));
+    // The publisher's full text in the feed: a partial feed body, since the item has a page.
+    const fullText = Array.from(
+      { length: 20 },
+      (_, i) =>
+        `Paragraph ${i + 1} of the publisher's own text covers the tram line in full detail.`,
+    ).join(' ');
+    server.route('/capture/full.json', () => ({
+      status: 200,
+      headers: { 'content-type': 'application/feed+json' },
+      body: JSON.stringify({
+        version: 'https://jsonfeed.org/version/1.1',
+        title: 'Full text',
+        items: [
+          {
+            id: 'full-1',
+            url: server.url('/capture/teaser.html'),
+            title: 'Full story',
+            content_html: `<p>${fullText}</p>`,
+            date_published: new Date(Date.now() - 3_600_000).toISOString(),
+          },
+        ],
+      }),
+    }));
+    await fetchFeed(await addFeed('/capture/full.json', [{ user: reader, mode: 'off' }]));
+    const full = await articleIdByUrl(server.url('/capture/teaser.html'));
+    expect(await bookmark(reader, full)).toBe('pending');
+    await run('article.capture-bookmark');
+    expect(server.requests.filter((r) => r.path === '/capture/teaser.html')).toHaveLength(1);
+    const kept = await capture(reader, full);
+    expect(kept).toMatchObject({ status: 'partial', completeness: 'partial', source: 'feed' });
+    expect(kept.text).toContain('Paragraph 20 of');
+
+    // Only a short feed summary is stored: the longer partial page is the best available content.
+    const summary = await ingestOne(
+      '/capture/summary.rss',
+      'Summary story',
+      server.url('/capture/longer.html'),
+    );
+    expect(await bookmark(reader, summary)).toBe('pending');
+    await run('article.capture-bookmark');
+    const taken = await capture(reader, summary);
+    expect(taken).toMatchObject({
+      status: 'partial',
+      completeness: 'partial',
+      reason: 'paywall',
+      source: 'page',
+    });
+    expect(taken.text).toContain('Sentence 12 of');
+  });
+
   it('keeps the feed text as a terminal partial snapshot when the page cannot be read', async () => {
     server.route('/capture/gone.html', { status: 404, body: 'gone' });
     const id = await ingestOne('/capture/gone.rss', 'Gone story', server.url('/capture/gone.html'));

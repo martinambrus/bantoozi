@@ -20,7 +20,10 @@ import { hasRetriesLeft, isTransientPageFailure, TransientPageError } from './tr
  * of the current revision; otherwise runs the same safe local extraction as `article.extract`
  * (robots, SSRF, size, timeout and politeness limits), once for all coalesced requests, and never
  * creates model demand. The best available content is frozen: a teaser or feed summary stays a
- * partial snapshot; no readable content keeps the bookmark as `failed`. A transient page failure
+ * partial snapshot, and a partial page replaces the stored partial content (a body of this
+ * revision, else the feed excerpt) only when it has more readable text, so a paywall teaser never
+ * displaces a longer feed body; no readable content keeps the bookmark as `failed`. A transient
+ * page failure
  * throws while the queue has retries left (bounded automatic retries, spec 03 §8.5 step 3), so the
  * capture stays pending until the last attempt. Completion binds only the still-pending
  * generations at the observed revision; a changed revision retries from the current source
@@ -49,6 +52,16 @@ export function createCaptureBookmarkHandler(
   };
 }
 
+/** Snapshot content before it is frozen with the source's metadata. */
+interface Content {
+  text: string;
+  html: string | null;
+  completeness: 'complete' | 'partial';
+  reason: string | null;
+  source: 'feed' | 'page';
+  extractor: string;
+}
+
 async function capture(
   deps: WorkerDeps,
   source: CaptureSource,
@@ -68,6 +81,7 @@ async function capture(
       });
     }
   }
+  const stored = storedContent(source, current);
   if (source.url !== null) {
     const result = await extractArticle(source.url, extractDeps(deps), {
       enclosureType: source.linkEnclosureType,
@@ -87,51 +101,55 @@ async function capture(
       return 'deferred';
     }
     if (result.status === 'ok' && result.bodyText !== null) {
-      return captured(source, {
-        text: result.bodyText,
-        html: result.bodyHtml,
-        completeness: result.completeness,
-        reason: result.completenessReason,
-        source: 'page',
-        extractor: EXTRACTOR_VERSION,
-      });
+      // A partial page is the best available content only when it improves on the stored
+      // partial content: a paywall teaser never displaces a longer feed body (spec 03 §8.5 step 4).
+      const page = result.bodyText;
+      if (result.completeness === 'complete' || stored === null || moreText(page, stored.text)) {
+        return captured(source, {
+          text: page,
+          html: result.bodyHtml,
+          completeness: result.completeness,
+          reason: result.completenessReason,
+          source: 'page',
+          extractor: EXTRACTOR_VERSION,
+        });
+      }
     }
   }
-  // The best stored content: a partial body of this revision, then the feed excerpt.
+  return stored === null ? { status: 'failed', errorCode: 'no_content' } : captured(source, stored);
+}
+
+/** The best stored partial content: a body of this revision with text, then the feed excerpt. */
+function storedContent(source: CaptureSource, current: CaptureSource['body']): Content | null {
   if (current !== null && current.bodyText !== null) {
-    return captured(source, {
+    return {
       text: current.bodyText,
       html: current.bodyHtml,
       completeness: 'partial',
       reason: current.completenessReason ?? 'extraction_failed',
       source: current.extractorVersion === 'feed-v1' ? 'feed' : 'page',
       extractor: current.extractorVersion,
-    });
+    };
   }
   if (source.excerpt !== null && source.excerpt.trim() !== '') {
-    return captured(source, {
+    return {
       text: source.excerpt,
       html: source.excerptHtml,
       completeness: 'partial',
       reason: 'excerpt_only',
       source: 'feed',
       extractor: 'feed',
-    });
+    };
   }
-  return { status: 'failed', errorCode: 'no_content' };
+  return null;
 }
 
-function captured(
-  source: CaptureSource,
-  content: {
-    text: string;
-    html: string | null;
-    completeness: 'complete' | 'partial';
-    reason: string | null;
-    source: 'feed' | 'page';
-    extractor: string;
-  },
-): CaptureOutcome {
+/** Whether `text` has more readable text than `than`, ignoring surrounding whitespace. */
+function moreText(text: string, than: string): boolean {
+  return text.trim().length > than.trim().length;
+}
+
+function captured(source: CaptureSource, content: Content): CaptureOutcome {
   const frozen: CapturedContent = {
     sourceRevision: source.revision,
     sourceUrl: source.url,

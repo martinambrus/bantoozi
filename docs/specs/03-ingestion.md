@@ -819,7 +819,9 @@ complete offline media copy.
    can try again after a terminal blocked/missing/partial result.
 4. Freeze the best available content before reporting a terminal capture outcome. A feed summary or
    paywall teaser remains a `partial` snapshot; a failed page fetch cannot replace an existing full
-   snapshot. A complete result means the available readable extraction was retained without a known
+   snapshot. A partial page result is the best available content only when it has more readable
+   text than the stored partial content (a body of the current revision, else the feed excerpt),
+   so a paywall teaser never displaces the publisher's longer feed text. A complete result means the available readable extraction was retained without a known
    omission, not a claim to content behind a paywall. On no readable content keep the bookmark and
    metadata with `failed`, never fabricate saved body text.
 5. In a short completion transaction lock the article then user rows, recheck bookmark existence and
