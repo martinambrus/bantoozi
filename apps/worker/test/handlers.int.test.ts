@@ -868,6 +868,123 @@ describe('article.extract (M1-T7)', () => {
     }
   });
 
+  it('rolls back and retries a merge chain when an Undo pin defers its canonical merge', async () => {
+    const canonicalUrl = server.url('/undo-chain/canonical.html');
+    const targetUrl = server.url('/undo-chain/target.html');
+    const goUrl = server.url('/undo-chain/go');
+    server.route('/undo-chain/canonical.html', html(articlePage('Chain canonical')));
+    server.route(
+      '/undo-chain/target.html',
+      html(articlePage('Chain target', { canonical: canonicalUrl })),
+    );
+    server.redirect('/undo-chain/go', targetUrl, 301);
+    const feedOf = async (path: string, guid: string, title: string, link: string) => {
+      server.route(
+        path,
+        rssRoute(() => rss(path, rssItem(guid, title, link))),
+      );
+      return addFeed(path, [{ user: reader, mode: 'off' }]);
+    };
+    await fetchFeed(
+      await feedOf('/undo-chain/canonical.rss', 'uc-c', 'Chain canonical', canonicalUrl),
+    );
+    await fetchFeed(await feedOf('/undo-chain/target.rss', 'uc-t', 'Chain target', targetUrl));
+    await fetchFeed(await feedOf('/undo-chain/go.rss', 'uc-g', 'Chain go', goUrl));
+    const canonical = await articleIdByUrl(canonicalUrl);
+    const target = await articleIdByUrl(targetUrl);
+    const go = await articleIdByUrl(goUrl);
+    const ids = [canonical, target, go];
+    const deliver = (queues: string[]) =>
+      owner.query(
+        `UPDATE job_outbox SET delivered_at = now()
+          WHERE delivered_at IS NULL AND queue = ANY($1::text[])
+            AND payload->>'articleId' = ANY($2::text[])`,
+        [queues, ids],
+      );
+    // Only the go article's extraction runs below, so the target stays apart from the canonical.
+    await deliver(['article.extract']);
+    // A reader's Undo pins a snapshot of the target: the target cannot merge into the canonical.
+    expect(await bookmark(reader, target)).toBe('pending');
+    const bound = await owner.query<{ id: string }>(
+      `SELECT bookmark_snapshot_id::text AS id FROM user_article
+        WHERE user_id = $1 AND article_id = $2`,
+      [reader.id, target],
+    );
+    const mutationId = randomUUID();
+    await owner.query(
+      `INSERT INTO api_mutations (user_id, id, request_hash, route, status, response, expires_at)
+       VALUES ($1, $2, 'hash', 'DELETE /articles/:id/bookmark', 200, '{}', now() + interval '7 days')`,
+      [reader.id, mutationId],
+    );
+    const pinned = await owner.query<{ expires_at: Date }>(
+      `INSERT INTO bookmark_snapshot_pins (user_id, mutation_id, snapshot_id, expires_at)
+       VALUES ($1, $2, $3, now() + interval '10 minutes') RETURNING expires_at`,
+      [reader.id, mutationId, bound.rows[0]!.id],
+    );
+    const extractGo = async () => {
+      const due = await owner.query<{ id: string }>(
+        `UPDATE job_outbox SET delivered_at = now()
+          WHERE queue = 'article.extract' AND delivered_at IS NULL AND payload->>'articleId' = $1
+          RETURNING id::text AS id`,
+        [go],
+      );
+      await dispatch(
+        handlers,
+        'article.extract',
+        { articleId: go },
+        { queue: 'article.extract', jobId: due.rows[0]?.id ?? 'undo-chain' },
+      );
+    };
+    const left = async () => {
+      const rows = await owner.query<{ id: string }>(
+        'SELECT id::text AS id FROM articles WHERE id = ANY($1::bigint[])',
+        [ids],
+      );
+      return rows.rows.map((row) => row.id).sort();
+    };
+
+    try {
+      await extractGo();
+
+      // The merge of go into the target is rolled back with the deferred canonical merge: all
+      // three articles remain, and go waits, still ingested, for a retry after the pin.
+      expect(await left()).toEqual([...ids].sort());
+      const state = await owner.query<{ pipeline_state: string }>(
+        'SELECT pipeline_state FROM articles WHERE id = $1',
+        [go],
+      );
+      expect(state.rows).toEqual([{ pipeline_state: 'ingested' }]);
+      const retries = await owner.query<{ available_at: Date }>(
+        `SELECT available_at FROM job_outbox
+          WHERE queue = 'article.extract' AND delivered_at IS NULL AND payload->>'articleId' = $1`,
+        [go],
+      );
+      expect(retries.rows).toHaveLength(1);
+      expect(retries.rows[0]!.available_at.getTime()).toBeGreaterThan(
+        pinned.rows[0]!.expires_at.getTime(),
+      );
+
+      // Once the pin has expired, the retry merges the whole chain into the canonical article.
+      await owner.query(
+        `UPDATE bookmark_snapshot_pins SET expires_at = now() - interval '1 second'
+          WHERE mutation_id = $1`,
+        [mutationId],
+      );
+      await extractGo();
+      expect(await left()).toEqual([canonical]);
+      const aliases = await owner.query<{ url_key: string }>(
+        'SELECT url_key FROM article_aliases WHERE article_id = $1',
+        [canonical],
+      );
+      expect(aliases.rows.map((row) => row.url_key)).toEqual(
+        expect.arrayContaining([keyOf(goUrl), keyOf(targetUrl)]),
+      );
+    } finally {
+      await owner.query('DELETE FROM bookmark_snapshot_pins WHERE mutation_id = $1', [mutationId]);
+      await deliver(['article.extract', 'article.capture-bookmark']);
+    }
+  });
+
   it('drops the redirect evidence of a revision that a source update replaced during the fetch', async () => {
     const targetUrl = server.url('/fence/target.html');
     server.route('/fence/target.html', html(articlePage('Fenced target')));

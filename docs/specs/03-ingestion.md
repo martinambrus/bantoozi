@@ -742,8 +742,9 @@ and keep both identities; golden labels must not be silently rewritten.
   both article identities until a version-preserving merge UI/contract exists; never choose one
   snapshot arbitrarily and delete the other. Unexpired Undo snapshot pins also block any destructive
   merge that would make exact Undo impossible; such a merge is retried once the last blocking pin
-  expires (the extraction job that found the evidence re-queues itself for that time, and the
-  article stays `ingested` until then). Identical snapshot checksums can share storage.
+  expires (the extraction job that found the evidence rolls back all its merges, including earlier
+  ones of a redirect-then-canonical chain, and re-queues itself for that time; the article stays
+  `ingested` until then). Identical snapshot checksums can share storage.
 - Keep the target's source metadata and any valid target body; take the source body only when the
   target lacks a successful extraction. `body_image_count` moves with the body kept; `has_video` is
   true if it is true on either article, otherwise false if false on either, otherwise null (§6.4). Use `resetArticleAnswers` once to increment the surviving

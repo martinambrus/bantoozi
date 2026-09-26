@@ -30,6 +30,14 @@ import { hasRetriesLeft, isTransientPageFailure, TransientPageError } from './tr
 /** How long after an Undo pin's expiry a merge it deferred is retried. */
 const UNDO_RETRY_MARGIN_MS = 5_000;
 
+/** Rolls back an extraction whose merge an Undo pin deferred; the job runs again at `retryAt`. */
+class UndoPinDeferral extends Error {
+  constructor(readonly retryAt: Date) {
+    super('an Undo pin deferred a merge');
+    this.name = 'UndoPinDeferral';
+  }
+}
+
 /**
  * `article.extract {articleId}` (spec 03 §8.1). Re-reads the article: a missing (merged or purged)
  * article, one no longer awaiting extraction for its revision, or a stale one is a successful
@@ -39,7 +47,9 @@ const UNDO_RETRY_MARGIN_MS = 5_000;
  * not_html, failed, …) stores its body row, detects the language on the available text and
  * advances through `pipeline.after('extract')` in the same transaction; an origin cooldown defers
  * the job with a delayed outbox intent instead of failing it (spec 03 §8.2), and a transient page
- * failure throws while the queue has retries left, so only the last attempt stores it.
+ * failure throws while the queue has retries left, so only the last attempt stores it. A merge
+ * that an Undo pin defers rolls the whole transaction back and defers the job to the pin's expiry
+ * the same way (spec 03 §8.4).
  */
 export function createArticleExtractHandler(deps: WorkerDeps): QueueHandler<'article.extract'> {
   return async ({ articleId }, context) => {
@@ -52,62 +62,82 @@ export function createArticleExtractHandler(deps: WorkerDeps): QueueHandler<'art
       throw new TransientPageError(result.error ?? 'unknown');
     }
     if (result?.deferUntil) {
-      const until = result.deferUntil;
-      await deps.db.transaction((tx) =>
-        enqueueExtract(
-          workerOutbox(tx, { availableAt: until }),
-          { articleId },
-          { revision: article.revision },
-        ),
-      );
+      await deferExtraction(deps, article, result.deferUntil);
       return;
     }
 
-    await retryTransaction(deps.db, async (tx) => {
-      const sender = workerOutbox(tx);
-      if (result !== null) {
-        const identity = await applyIdentityEvidence(deps, tx, sender, article, result);
-        if (identity.kind === 'retry') {
-          // An Undo pin defers the merge only for a few minutes: the article stays `ingested`
-          // and extraction runs again once the pin has expired, instead of leaving a duplicate.
-          await enqueueExtract(
-            workerOutbox(tx, { availableAt: identity.at }),
-            { articleId },
-            { revision: article.revision },
-          );
-          return;
-        }
-        // A merge ends this article's job; so does a revision replaced while the page was
-        // fetched, whose evidence is dropped like its result (the new revision has its own job).
-        if (identity.kind !== 'kept') return;
-      }
-      const body = bodyInput(article, result);
-      const text = body.bodyText;
-      // A result without text keeps the stored body (feed text or an earlier extraction), which
-      // then stays the article's text for language detection (spec 03 §8.1 step 8).
-      const lead = body.bodyLead ?? article.body?.bodyLead ?? '';
-      const lang = detectLanguage(
-        `${article.title} ${article.excerpt ?? ''} ${lead.slice(0, 1000)}`,
-        article.carrierLangHints[0] === undefined ? {} : { hint: article.carrierLangHints[0] },
-      );
-      const saved = await saveExtractionResult(tx, sender, {
-        articleId,
-        expectedRevision: article.revision,
-        body,
-        lang: { lang: lang.lang, confidence: lang.confidence },
-        wordCount: countWords(text ?? article.excerpt ?? ''),
-        media: extractionMedia(result),
-      });
-      if (saved.status === 'saved' && saved.advanced) {
-        await after(
-          'extract',
-          articleId,
-          { status: body.status === 'ok' ? 'ok' : 'failed', revision: saved.revision },
-          pipelineContext(deps, tx, sender),
-        );
-      }
-    });
+    try {
+      await extractInTransaction(deps, article, result);
+    } catch (error) {
+      if (!(error instanceof UndoPinDeferral)) throw error;
+      // An Undo pin defers a merge for a few minutes only: nothing of this job is kept (not even
+      // an earlier merge of the chain), the article stays `ingested`, and the job runs again once
+      // the pin has expired instead of leaving a duplicate.
+      await deferExtraction(deps, article, error.retryAt);
+    }
   };
+}
+
+/** Re-queue the article's extraction for `until` with a delayed outbox intent (spec 03 §8.2). */
+async function deferExtraction(
+  deps: WorkerDeps,
+  article: ArticleForExtraction,
+  until: Date,
+): Promise<void> {
+  await deps.db.transaction((tx) =>
+    enqueueExtract(
+      workerOutbox(tx, { availableAt: until }),
+      { articleId: article.id },
+      { revision: article.revision },
+    ),
+  );
+}
+
+/**
+ * Identity evidence, the body row, the language and the pipeline continuation of one extraction,
+ * in one transaction. Throws {@link UndoPinDeferral} when an Undo pin defers a merge.
+ */
+async function extractInTransaction(
+  deps: WorkerDeps,
+  article: ArticleForExtraction,
+  result: ExtractResult | null,
+): Promise<void> {
+  const articleId = article.id;
+  await retryTransaction(deps.db, async (tx) => {
+    const sender = workerOutbox(tx);
+    if (result !== null) {
+      const identity = await applyIdentityEvidence(deps, tx, sender, article, result);
+      if (identity.kind === 'retry') throw new UndoPinDeferral(identity.at);
+      // A merge ends this article's job; so does a revision replaced while the page was
+      // fetched, whose evidence is dropped like its result (the new revision has its own job).
+      if (identity.kind !== 'kept') return;
+    }
+    const body = bodyInput(article, result);
+    const text = body.bodyText;
+    // A result without text keeps the stored body (feed text or an earlier extraction), which
+    // then stays the article's text for language detection (spec 03 §8.1 step 8).
+    const lead = body.bodyLead ?? article.body?.bodyLead ?? '';
+    const lang = detectLanguage(
+      `${article.title} ${article.excerpt ?? ''} ${lead.slice(0, 1000)}`,
+      article.carrierLangHints[0] === undefined ? {} : { hint: article.carrierLangHints[0] },
+    );
+    const saved = await saveExtractionResult(tx, sender, {
+      articleId,
+      expectedRevision: article.revision,
+      body,
+      lang: { lang: lang.lang, confidence: lang.confidence },
+      wordCount: countWords(text ?? article.excerpt ?? ''),
+      media: extractionMedia(result),
+    });
+    if (saved.status === 'saved' && saved.advanced) {
+      await after(
+        'extract',
+        articleId,
+        { status: body.status === 'ok' ? 'ok' : 'failed', revision: saved.revision },
+        pipelineContext(deps, tx, sender),
+      );
+    }
+  });
 }
 
 /**
@@ -119,9 +149,10 @@ export function createArticleExtractHandler(deps: WorkerDeps): QueueHandler<'art
  * three. The page belongs to the revision this job loaded, so every alias check of the article
  * itself fences on it (spec 03 §2.1): a newer revision is `stale` and nothing is written. `merged`
  * means this article no longer exists; the last survivor then continues from its own state, and
- * the carriers new to it get the new-carrier continuation. A merge of this article that an
- * unexpired Undo pin defers is `retry` at the pin's expiry (other deferrals are lasting: the
- * identities stay apart). Otherwise the article is `kept`.
+ * the carriers new to it get the new-carrier continuation. Any merge of the chain that an
+ * unexpired Undo pin defers is `retry` at the pin's expiry, and the caller rolls the whole
+ * transaction back, earlier merges included (other deferrals are lasting: the identities stay
+ * apart). Otherwise the article is `kept`.
  */
 async function applyIdentityEvidence(
   deps: WorkerDeps,
@@ -153,7 +184,7 @@ async function applyIdentityEvidence(
     if (alias.status === 'stale_revision') return { kind: 'stale' };
     if (alias.status !== 'owned_by_other') continue;
     const merged = await mergeArticles(tx, sender, current.id, alias.ownerId, { reason: source });
-    if (merged.status === 'deferred' && merged.retryAt !== undefined && current.id === article.id) {
+    if (merged.status === 'deferred' && merged.retryAt !== undefined) {
       return { kind: 'retry', at: new Date(merged.retryAt.getTime() + UNDO_RETRY_MARGIN_MS) };
     }
     if (merged.status !== 'merged') continue;
