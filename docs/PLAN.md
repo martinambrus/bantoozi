@@ -417,7 +417,7 @@ Complete milestone M0 "Foundations" exactly as specified in docs/PLAN.md §5, fo
 
 ## 6. M1: Ingestion core
 
-**Status: done 2026-09-26** on branch `claude/confident-ritchie-4h136b` (commits `50373a3`…`6b2eea2`;
+**Status: done 2026-09-26** on branch `claude/confident-ritchie-4h136b` (commits `50373a3`…`dd02c22`;
 the per-task commits are in the table below). The full check with coverage passed after the last
 commit (`packages/feeds` lines 99.2 %), `ingestion.e2e.test.ts` passed, and `pnpm worker-cli` ran
 against the dev database with a local fixture site. Deviations: D-11…D-16 in `docs/DECISIONS.md`;
@@ -446,7 +446,7 @@ Complete milestone M1 "Ingestion core" exactly as specified in docs/PLAN.md §6,
 | M1-T4 | `nextSchedule` adaptive interval, with simulations | — | C | 03 §9 | ✓ `66e999f` |
 | M1-T5 | Extraction: skip list, robots, Readability, body lead, canonical detection, politeness limiter | T1 | A | 03 §8 | ✓ `b971298` |
 | M1-T6 | Feed discovery and OPML parse/export | T1, T3 | A | 03 §10–11 | ✓ `afa0514` |
-| M1-T7 | Worker handlers: `feed.schedule`, `feed.fetch` (ingest §7, redirect merge §9), `article.extract` (alias/merge), `feeds.lang_hint` upkeep, `resetArticleAnswers`, inference eligibility and durable bookmark capture | T1–T5 | D | 03 §1–3, §7–9; 05 §5.6 | ✓ `e81e18a` |
+| M1-T7 | Worker handlers: `feed.schedule`, `feed.fetch` (ingest §7, redirect merge §9), `article.extract` (alias/merge), `feeds.lang_hint` upkeep, `resetArticleAnswers`, inference eligibility and durable bookmark capture | T1–T5 | D | 03 §1–3, §7–9; 05 §5.6 | ✓ `e81e18a`, `dd02c22` |
 | M1-T8 | End-to-end ingestion integration test | T7 | D | 03 all | ✓ `03f7741` |
 | M1-T9 | Dev CLI (`apps/worker/src/cli.ts`, run as `pnpm worker-cli …`): `feeds:add <url> [--user dev@localhost]`, `feeds:fetch-now <feedId>`, `feeds:show <feedId>` | T6, T7 | D | 03 §10 | ✓ `6b2eea2` |
 
