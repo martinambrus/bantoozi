@@ -897,6 +897,11 @@ A feed with no prior new-item timestamp uses the 24-hour MAX until it has actual
   - refresh feed subscribers/cards for both IDs and record a full rank for every affected subscriber
   - if a feed GUID collision points to different articles, retain both feed associations with only
     the established GUID mapping, and report the conflict rather than deleting an article
+  - linkless identities are feed-scoped (§5 step 8): before the items move, every
+    `urn:bantoozi:<old id>:<hash>` key of the old feed's articles gets the alias
+    `urn:bantoozi:<survivor id>:<hash>` under the url_key locks of §7, unless an article already owns
+    that key, so the survivor's next fetch of a guidless linkless item finds the moved article
+    instead of inserting a duplicate (D-17)
 
 `dead` feeds without a merge target are shown with a banner (spec 09) and may be reset by an admin.
 A merged tombstone cannot be revived independently; admin requests resolve to its survivor.

@@ -726,6 +726,51 @@ describe('applyPermanentRedirect onto an existing feed: the identity merge (spec
   });
 });
 
+describe('mergeFeeds linkless identities (spec 03 §5 step 8, §9)', () => {
+  it('aliases every linkless key of the retired feed under the survivor, unless another article owns it', async () => {
+    const source = await createFeed(ctx.owner);
+    const survivor = await createFeed(ctx.owner);
+    const hashA = 'a'.repeat(64);
+    const hashB = 'b'.repeat(64);
+    const hashC = 'c'.repeat(64);
+    // A guidless linkless article of the retired feed, one with an extra linkless alias, and a
+    // linked article (never aliased).
+    const plain = await createArticle(ctx.owner, { url: `urn:bantoozi:${source.id}:${hashA}` });
+    const aliased = await createArticle(ctx.owner, { url: `urn:bantoozi:${source.id}:${hashB}` });
+    await ctx.owner.query(
+      `INSERT INTO article_aliases (url_key, article_id, source) VALUES ($1, $2, 'feed_link')`,
+      [`urn:bantoozi:${source.id}:${hashC}`, aliased.id],
+    );
+    const linked = await createArticle(ctx.owner);
+    // The survivor already carries the same item as B separately: its key stays with that article.
+    const survivorsOwn = await createArticle(ctx.owner, {
+      url: `urn:bantoozi:${survivor.id}:${hashB}`,
+    });
+    for (const article of [plain, aliased, linked]) {
+      await carry(source.id, article.id, null, hoursAgo(2));
+    }
+    await carry(survivor.id, survivorsOwn.id, null, hoursAgo(1));
+
+    await merge(source.id, survivor.id);
+
+    const aliases = await ctx.owner.query<{ url_key: string; article_id: string }>(
+      `SELECT url_key, article_id::text AS article_id FROM article_aliases
+        WHERE url_key LIKE $1 ORDER BY url_key`,
+      [`urn:bantoozi:${survivor.id}:%`],
+    );
+    expect(aliases.rows).toEqual([
+      { url_key: `urn:bantoozi:${survivor.id}:${hashA}`, article_id: plain.id },
+      { url_key: `urn:bantoozi:${survivor.id}:${hashC}`, article_id: aliased.id },
+    ]);
+    // Nothing else changed identity: the survivor's own article keeps its key.
+    const owner = await ctx.owner.query('SELECT 1 FROM articles WHERE id = $1 AND url_key = $2', [
+      survivorsOwn.id,
+      `urn:bantoozi:${survivor.id}:${hashB}`,
+    ]);
+    expect(owner.rowCount).toBe(1);
+  });
+});
+
 describe('mergeFeeds chains and guards (spec 03 §9, spec 02 §3.3)', () => {
   it('merges into the live root of a retired owner of the URL', async () => {
     const feed = await createFeed(ctx.owner);

@@ -104,3 +104,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   item, partial for a linked one until page extraction replaces it; spec 03 §6, §7), and the M0
   function labelled every stored body as page content, contradicting the page-versus-feed provenance
   of spec 03 §8.1 step 6 and §8.5. Migration 0009 (only that assignment changes); spec 02 §6 updated.
+- D-17: 2026-09-26 M1-T7 — a feed identity merge gives every linkless key of the retired feed
+  (`urn:bantoozi:<old id>:<hash>`, spec 03 §5 step 8) a survivor-scoped alias
+  (`urn:bantoozi:<survivor id>:<hash>`), taken under the ingestion url_key locks before the items
+  move, unless an article already owns that key. Linkless identities are scoped to their feed, so a
+  guidless linkless item fetched from the survivor after the merge (including from the redirect
+  response itself) got a new key, found nothing, and was inserted again as a duplicate article;
+  items with a GUID already matched through their moved feed-scoped GUID. Spec 03 §9 listed no rule
+  for this (found by the Codex review of PR #5). No migration; spec 03 §9 updated.

@@ -3,9 +3,17 @@ import { sql } from 'drizzle-orm';
 
 import type { Executor, Transaction } from '../client.js';
 import { sqlState } from '../errors.js';
+import { lockUrlKeys } from './articles.js';
 import { activeSubscriberIds } from './demand.js';
 import { resolveLiveFeedId } from './feeds.js';
 import { recordRankIntents } from './rank-intents.js';
+
+/**
+ * The scheme of a linkless item's `url_key` (spec 03 §5 step 8, `LINKLESS_URL_KEY_PREFIX` in
+ * `packages/feeds`): `urn:bantoozi:<feedId>:<sha256 of the item identity>`. Only the feed segment
+ * depends on the carrier; the hash covers the item alone.
+ */
+const LINKLESS_KEY_PREFIX = 'urn:bantoozi:';
 
 /**
  * Permanent feed redirects and feed identity merges (spec 03 §9 "Permanent redirect of the feed
@@ -249,6 +257,12 @@ export async function mergeFeeds(
     UPDATE user_cards SET scope_feed_id = ${dst}, updated_at = now() WHERE scope_feed_id = ${src}`);
   await tx.execute(sql`DELETE FROM subscriptions WHERE feed_id = ${src}`);
 
+  // 5a. Linkless identities are scoped to their feed: give every such key of the retired feed a
+  //     survivor-scoped alias, so the survivor's next fetch of a guidless linkless item finds the
+  //     moved article instead of inserting a duplicate (an item with a GUID also matches through
+  //     its moved feed-scoped GUID). Taken before the items move, under the ingestion url key locks.
+  await aliasLinklessKeys(tx, sourceId, survivorId);
+
   // 5. Feed items. A GUID conflict is what the per-feed unique index (feed_id, md5(guid)) sees
   //    (D-15), so a moved or adopted GUID never violates it.
   const conflicts = await tx.execute<{
@@ -353,6 +367,45 @@ export async function mergeFeeds(
 }
 
 /** The idempotent result for a source that is already a tombstone: nothing is recreated. */
+/**
+ * Survivor-scoped aliases for the linkless keys (spec 03 §5 step 8) of the articles the retired
+ * feed carries, whether the key is the article's `url_key` or one of its aliases: the same item
+ * hash under the survivor's feed id. The keys are locked in the sorted ingestion order before both
+ * identity tables are rechecked (spec 03 §7 "Concurrency"); a key that already names an article
+ * (the survivor carried the same item as its own article) is left to that article.
+ */
+async function aliasLinklessKeys(
+  tx: Transaction,
+  sourceId: string,
+  survivorId: string,
+): Promise<void> {
+  const prefix = `${LINKLESS_KEY_PREFIX}${sourceId}:`;
+  const keys = await tx.execute<{ url_key: string; article_id: string }>(sql`
+    SELECT a.url_key, a.id::text AS article_id
+      FROM feed_items fi JOIN articles a ON a.id = fi.article_id
+     WHERE fi.feed_id = ${sourceId}::bigint AND starts_with(a.url_key, ${prefix})
+    UNION
+    SELECT al.url_key, al.article_id::text
+      FROM feed_items fi JOIN article_aliases al ON al.article_id = fi.article_id
+     WHERE fi.feed_id = ${sourceId}::bigint AND starts_with(al.url_key, ${prefix})`);
+  if (keys.rows.length === 0) return;
+  const aliases = keys.rows.map((row) => ({
+    articleId: row.article_id,
+    key: `${LINKLESS_KEY_PREFIX}${survivorId}:${row.url_key.slice(prefix.length)}`,
+  }));
+  await lockUrlKeys(
+    tx,
+    aliases.map((alias) => alias.key),
+  );
+  for (const { articleId, key } of aliases) {
+    await tx.execute(sql`
+      INSERT INTO article_aliases (url_key, article_id, source)
+      SELECT ${key}, ${articleId}::bigint, 'feed_link'
+       WHERE NOT EXISTS (SELECT 1 FROM articles WHERE url_key = ${key})
+      ON CONFLICT (url_key) DO NOTHING`);
+  }
+}
+
 async function alreadyMerged(tx: Executor, sourceId: string): Promise<FeedMergeResult> {
   const survivorId = await resolveLiveFeedId(tx, sourceId);
   if (survivorId === null) throw new Error(`feed ${sourceId} has a cyclic merge chain`);

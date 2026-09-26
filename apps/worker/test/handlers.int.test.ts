@@ -497,6 +497,42 @@ describe('feed.schedule and feed.fetch (M1-T7)', () => {
     expect(await articleIdByUrl(server.url('/busy/2.html'))).toBeTruthy();
   });
 
+  it('keeps a guidless linkless item one article when its feed merges into another', async () => {
+    const note =
+      `<item><title>Merged weekly note</title><pubDate>${rfc822(1)}</pubDate>` +
+      '<description>The grid ran on renewable electricity for more than half of all hours ' +
+      'this week, a record for the season.</description></item>';
+    server.route(
+      '/linkless/old.rss',
+      rssRoute(() => rss('Old notes', note)),
+    );
+    server.route(
+      '/linkless/new.rss',
+      rssRoute(() => rss('New notes', note)),
+    );
+    const target = await addFeed('/linkless/new.rss', [{ user: reader, mode: 'off' }]);
+    const source = await addFeed('/linkless/old.rss', [{ user: reader, mode: 'off' }]);
+    const notes = async () =>
+      (
+        await owner.query<{ id: string }>(
+          `SELECT id::text AS id FROM articles WHERE title = 'Merged weekly note'`,
+        )
+      ).rows.map((row) => row.id);
+    await fetchFeed(source);
+    const [article] = await notes();
+
+    // The old URL now redirects to the survivor, which serves the same guidless item.
+    server.redirect('/linkless/old.rss', server.url('/linkless/new.rss'), 301);
+    await fetchFeed(source);
+    await fetchFeed(target);
+    expect(await notes()).toEqual([article]);
+    const carriers = await owner.query<{ feed_id: string }>(
+      'SELECT feed_id::text AS feed_id FROM feed_items WHERE article_id = $1',
+      [article],
+    );
+    expect(carriers.rows).toEqual([{ feed_id: target }]);
+  });
+
   it('sets lang_hint from <language>, else from ≥ 70 % of 20 detected articles', async () => {
     server.route(
       '/lang/sk.rss',
