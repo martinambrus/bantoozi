@@ -30,7 +30,7 @@ export interface CardTranslationFillInput {
 
 function checkedText(value: string, field: string): string {
   const trimmed = value.trim();
-  if (trimmed === '' || codePointLength(trimmed) > CARD_TEXT_LIMITS.translationMax) {
+  if (trimmed === '' || codePointLength(trimmed) > CARD_TEXT_LIMITS.translatedMax) {
     throw new RangeError(`invalid ${field}`);
   }
   return trimmed;

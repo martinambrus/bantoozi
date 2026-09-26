@@ -1,4 +1,4 @@
-import type { CardTextMode } from '@bantoozi/shared';
+import { CARD_LIMITS, type CardTextMode } from '@bantoozi/shared';
 import { canonicalSha256 } from '@bantoozi/shared/server';
 
 import { choice, noul, type OptionCriteria } from './builders.js';
@@ -184,18 +184,8 @@ export function selectL2Branches(t1: Readonly<Record<string, number>>): string[]
 
 // ── Card body validation (spec 05 §5.1) ─────────────────────────────────────────────────────────
 
-/** Card text limits in code points (spec 05 §5.1). */
-export const CARD_LIMITS = {
-  titleMin: 1,
-  titleMax: 60,
-  interestMin: 3,
-  interestMax: 300,
-  notForMax: 300,
-  examplesPerSide: 5,
-  exampleMax: 200,
-  /** Sanity bound of a derived translation (`interest_en`, `not_for_en`): twice the original's. */
-  translatedMax: 600,
-} as const;
+/** Card text limits in code points (spec 05 §5.1), defined in `@bantoozi/shared`. */
+export { CARD_LIMITS };
 
 const BODY_KEYS = new Set([
   'interest',

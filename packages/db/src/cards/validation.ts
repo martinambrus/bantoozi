@@ -1,4 +1,4 @@
-import { AppError, isBigIntString } from '@bantoozi/shared';
+import { AppError, CARD_LIMITS, isBigIntString } from '@bantoozi/shared';
 
 /**
  * Card and label input validation (spec 05 §5.1, spec 08 §7). The API validates request shapes with
@@ -7,17 +7,12 @@ import { AppError, isBigIntString } from '@bantoozi/shared';
  * `.max()` sees, so anything the API accepts passes here too).
  */
 
-/** Text limits of spec 05 §5.1 (label names use the title limit; definitions the interest limits). */
-export const CARD_TEXT_LIMITS = {
-  titleMax: 60,
-  interestMin: 3,
-  interestMax: 300,
-  notForMax: 300,
-  examplesPerSide: 5,
-  exampleMax: 200,
-  /** A caller-supplied English pair (spec 07 §5); twice the source limit allows for expansion. */
-  translationMax: 600,
-} as const;
+/**
+ * Text limits of spec 05 §5.1 (`CARD_LIMITS` of `@bantoozi/shared`, as the question builders use):
+ * label names use the title limit, definitions the interest limits, and a caller-supplied English
+ * pair (spec 07 §5) the derived-translation limit.
+ */
+export const CARD_TEXT_LIMITS = CARD_LIMITS;
 
 export const CARD_STRENGTHS = ['must', 'love', 'like', 'never'] as const;
 export type CardStrength = (typeof CARD_STRENGTHS)[number];
@@ -151,7 +146,7 @@ export function validateCardTranslation(
     value.interestEn,
     'translation.interestEn',
     1,
-    CARD_TEXT_LIMITS.translationMax,
+    CARD_TEXT_LIMITS.translatedMax,
   );
   if (notFor === null) {
     const extra: unknown = value.notForEn;
@@ -168,7 +163,7 @@ export function validateCardTranslation(
     value.notForEn,
     'translation.notForEn',
     1,
-    CARD_TEXT_LIMITS.translationMax,
+    CARD_TEXT_LIMITS.translatedMax,
   );
   return { interestEn, notForEn };
 }
