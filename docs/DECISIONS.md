@@ -65,3 +65,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   transaction assigning a label and one removing it could each pass against its own snapshot and
   leave `label_ids` or `label_suggestions` naming a label the user no longer holds (found by the PR #2
   review). Migration 0008; spec 02 §5.2 updated.
+- D-11: 2026-09-26 M1-T2 — a canonical URL longer than 2,048 UTF-8 bytes is not its own `url_key`:
+  its key is `'sha256:' + sha256Hex(canonical_url)`. Spec 03 §5 step 7 made `url_key` the canonical
+  URL itself, but `articles.url_key` and `article_aliases.url_key` are unique B-tree keys, and
+  PostgreSQL rejects index entries of about 2.7 KB, so one overlong publisher link would fail its
+  item on every fetch. The hash keeps the identity global and deterministic (the same overlong URL
+  from two feeds is still one article), `canonical_url` keeps the full URL, and `safeFetch` already
+  rejects URLs above 8,192 bytes. Spec 03 §5 step 7 updated.

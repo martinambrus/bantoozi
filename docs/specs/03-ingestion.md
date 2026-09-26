@@ -350,7 +350,9 @@ Feed is UTF-8. The lenient XML pass may repair syntax but must not change the ch
    publishers sign URLs or assign meaning to their order. Do not run an unrelated query through
    `URLSearchParams.toString()` merely to remove a tracking key. Drop an empty `?`.
 6. Preserve repeated slashes, trailing slashes, percent-encoded reserved characters and path case.
-7. `canonical_url` = the result; `url_key = canonical_url`, **including the scheme**. HTTP and HTTPS
+7. `canonical_url` = the result; `url_key = canonical_url`, **including the scheme**. A canonical
+   URL longer than 2,048 UTF-8 bytes uses `url_key = 'sha256:' + sha256Hex(canonical_url)` instead,
+   because the unique B-tree indexes on `url_key` cannot hold keys of about 2.7 KB (D-11). HTTP and HTTPS
    are unified only by a validated redirect/canonical relationship, not by assumption. Feed identity
    uses this same conservative normalization. Never strip arbitrary `id`, `page`, `ref` or `source`
    parameters. Keep the original fetch URL separately so removing a tracking parameter does not
