@@ -1,7 +1,7 @@
 import { Readability } from '@mozilla/readability';
 
 import { mediaSignals, videoEmbedRegex } from '../media/index.js';
-import { htmlToText, sanitizeHtml } from '../parse/index.js';
+import { htmlToText, sanitizeHtml, sourceCoveredByText } from '../parse/index.js';
 import { detectCanonicalUrl } from './canonical-link.js';
 import { hasPaywallMarkers, looksLikeTeaser } from './completeness.js';
 import { type DomDocument, parseDocument } from './dom.js';
@@ -29,13 +29,15 @@ const ALLOWED_VIDEO_REGEX = videoEmbedRegex();
  *    result, or readable text shorter than 200 characters → `failed` with error `no_content`
  *    (reason `paywall` when the page is marked as paywalled, else `no_content`) and no canonical: a
  *    page without an article is not identity evidence for one.
- * 4. Media signals (spec 03 §6.4) of the Readability fragment, read before sanitizing removes the
- *    media: `videoEvidence` whenever Readability returned a fragment, `bodyImageCount` only when
- *    the body is stored (status `ok`). Nothing outside the fragment is examined or counted.
- * 5. `bodyText`: the full readable text with paragraph boundaries (`htmlToText` of the Readability
+ * 4. `bodyText`: the full readable text with paragraph boundaries (`htmlToText` of the Readability
  *    fragment: blank lines between blocks); `bodyHtml`: the full fragment through `sanitizeHtml`
  *    (spec 03 §6.3); both together capped at `maxOutputBytes` (10 MiB) with well-formed truncation
  *    (`capOutput`).
+ * 5. Media signals (spec 03 §6.4) of the Readability fragment, read before sanitizing removes the
+ *    media: `videoEvidence` whenever Readability returned a fragment, `bodyImageCount` only when
+ *    the body is stored (status `ok`), of the part of the fragment the stored text covers (all of
+ *    it unless the cap cut the text, `sourceCoveredByText`). Nothing outside the fragment is
+ *    examined or counted.
  * 6. Completeness: `partial` with reason `truncated` (the cap cut the output), else `paywall`
  *    (known markers), else `teaser` (short text or a "read more"/ellipsis ending); otherwise
  *    `complete`, meaning no known omission, never a claim about content behind a paywall.
@@ -58,15 +60,10 @@ export function extractFromHtml(
     }).parse();
     const contentHtml = article?.content ?? '';
     const text = contentHtml === '' ? '' : htmlToText(contentHtml);
-    const stored = hasAtLeastChars(text, MIN_ARTICLE_CHARS);
-    // Before sanitizing, which removes images, iframes and <video>; the page link is not examined.
-    const media = mediaSignals({
-      link: null,
-      html: [contentHtml],
-      bodyHtml: stored ? contentHtml : null,
-      baseUrl,
-    });
-    if (!stored) {
+    // Media signals read the fragment before sanitizing, which removes images, iframes and
+    // <video>; the page link is not examined.
+    if (!hasAtLeastChars(text, MIN_ARTICLE_CHARS)) {
+      const media = mediaSignals({ link: null, html: [contentHtml], bodyHtml: null, baseUrl });
       return {
         ...emptyBody(paywalled ? 'paywall' : 'no_content', 'no_content'),
         canonicalUrl: null,
@@ -80,6 +77,12 @@ export function extractFromHtml(
       sanitizeHtml(contentHtml, baseUrl),
       options.maxOutputBytes ?? EXTRACT_MAX_OUTPUT_BYTES,
     );
+    const media = mediaSignals({
+      link: null,
+      html: [contentHtml],
+      bodyHtml: sourceCoveredByText(contentHtml, text, capped.text),
+      baseUrl,
+    });
     const reason = capped.truncated
       ? 'truncated'
       : paywalled

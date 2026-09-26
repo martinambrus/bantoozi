@@ -497,3 +497,19 @@ export function truncateHtml(
   } while (output !== previous);
   return { html: output.trimEnd(), truncated: true };
 }
+
+/**
+ * The part of a body's source HTML whose images count toward the stored body (spec 03 §6.4): all
+ * of it while the stored text is the whole text. When a size cap cut the text, only the source
+ * prefix of as many characters as the stored text has: a tag becomes at most a shorter line break
+ * and an entity decodes to fewer characters, so the prefix's text is a prefix of the stored text
+ * and none of its images lies after the cut (images just before the cut may be left out).
+ */
+export function sourceCoveredByText(
+  sourceHtml: string,
+  fullText: string,
+  storedText: string,
+): string {
+  if (storedText.length >= fullText.length) return sourceHtml;
+  return truncateHtml(sourceHtml, charLength(storedText)).html;
+}

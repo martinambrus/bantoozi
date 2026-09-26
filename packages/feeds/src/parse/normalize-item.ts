@@ -4,7 +4,13 @@ import { type MediaObject, mediaSignals } from '../media/index.js';
 import { computeContentHash } from './content-hash.js';
 import { parseFeedDate } from './dates.js';
 import { PARSE_LIMITS } from './limits.js';
-import { htmlToText, sanitizeContent, sanitizedHtmlToText, truncateHtml } from './sanitize.js';
+import {
+  htmlToText,
+  sanitizeContent,
+  sanitizedHtmlToText,
+  sourceCoveredByText,
+  truncateHtml,
+} from './sanitize.js';
 import { charLength, cleanText, stripControlChars, truncateChars, utf8Length } from './text.js';
 import type { ItemErrorCode, NormalizedItem } from './types.js';
 import { resolveHttpUrl } from './urls.js';
@@ -138,6 +144,8 @@ function selectCategories(candidates: readonly string[]): string[] {
 interface ItemContent {
   /** The bounded source HTML that was sanitized, with its base URL (examined for media, §6.4). */
   source: { html: string; base: string } | null;
+  /** The part of `source` the body's text covers, whose images count; `null` exactly without body. */
+  bodySourceHtml: string | null;
   bodyHtml: string | null;
   bodyText: string | null;
   bodyTruncated: boolean;
@@ -154,6 +162,7 @@ interface ItemContent {
 function processContent(content: RawFeedItem['content']): ItemContent {
   const empty: ItemContent = {
     source: null,
+    bodySourceHtml: null,
     bodyHtml: null,
     bodyText: null,
     bodyTruncated: false,
@@ -173,11 +182,15 @@ function processContent(content: RawFeedItem['content']): ItemContent {
   let html = sanitized.html;
   let text = sanitizedHtmlToText(html);
   if (text === '') return { ...empty, source: bounded, imageUrl: sanitized.firstImageUrl };
+  let bodySourceHtml = source;
   if (utf8Length(html) + utf8Length(text) > PARSE_LIMITS.bodyBytes) {
     // Plain text is never longer than its HTML, so half the budget each keeps the sum in bounds.
+    const whole = text;
     html = truncateHtml(html, PARSE_LIMITS.bodyBytes / 2, 'utf8').html;
     text = sanitizedHtmlToText(html);
     truncated = true;
+    // Images after the cut are not part of the stored body (spec 03 §6.4).
+    bodySourceHtml = sourceCoveredByText(source, whole, text);
   }
   const excerptHtml = truncateHtml(html, PARSE_LIMITS.excerptHtmlChars).html;
   const excerpt = truncateChars(
@@ -186,6 +199,7 @@ function processContent(content: RawFeedItem['content']): ItemContent {
   ).trim();
   return {
     source: bounded,
+    bodySourceHtml,
     bodyHtml: html,
     bodyText: text,
     bodyTruncated: truncated,
@@ -199,7 +213,8 @@ function processContent(content: RawFeedItem['content']): ItemContent {
  * The spec 03 §6.4 media signals of an item: its media objects, its selected link, and the source
  * HTML of its content read before sanitizing. That one content is the source of both the excerpt
  * and the body, so it is the examined HTML; its images are counted only when it became the feed
- * body (`feedBodyImageCount` is `null` exactly when `feedBodyHtml` is).
+ * body (`feedBodyImageCount` is `null` exactly when `feedBodyHtml` is), and only in the part the
+ * stored body text covers.
  */
 function itemMediaSignals(
   raw: RawFeedItem,
@@ -211,7 +226,7 @@ function itemMediaSignals(
     link,
     media: raw.media,
     html: source === null ? [] : [source.html],
-    bodyHtml: source === null || content.bodyHtml === null ? null : source.html,
+    bodyHtml: content.bodySourceHtml,
     // Without source HTML nothing is resolved; the link is absolute already.
     baseUrl: source?.base ?? link ?? '',
   });

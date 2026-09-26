@@ -140,3 +140,13 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   into a partial row. When one reader's bookmarks of both merged articles collide, the merge keeps
   the binding to a complete snapshot over a partial one of identical content before it compares
   bookmark times. Found by the Codex review of PR #5. Spec 02 `article_snapshots` updated.
+- D-20: 2026-09-26 M1-T5 — the image count of a body whose text the 10 MiB limit cut covers only
+  the stored text: the images in the prefix of the source HTML (the Readability fragment or the
+  feed content) that has as many characters as the stored text. Spec 03 §6.4 says the count
+  describes the stored body, the same text `word_count` counts, but the images were counted in the
+  whole source before the cap, so images after the cut counted too. An exact map from the capped
+  text back to source positions would need another parse of up to 10 MiB. The prefix bound is cheap
+  and never counts an image after the cut, since the prefix's text is never longer than the stored
+  text; it may miss images just before the cut, because the prefix also spends characters on
+  markup. A cut of the HTML alone stores the whole text and still counts every image. Found by the
+  Codex review of PR #5. Spec 03 §6.4 updated.

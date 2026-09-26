@@ -17,6 +17,7 @@ export {
   isTrackingPixel,
   SANITIZED_LINK_REL,
   sanitizeHtml,
+  sourceCoveredByText,
   truncateHtml,
   type HtmlLengthUnit,
   type SanitizeHtmlOptions,

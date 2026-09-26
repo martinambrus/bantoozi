@@ -277,6 +277,20 @@ describe('normalizeItem (spec 03 §6)', () => {
       expect(item.feedBodyHtml?.endsWith('</p>')).toBe(true);
     }, 30_000);
 
+    it('counts only the images of the stored text when the limit cuts the body', () => {
+      // Each paragraph escapes to 2 MiB of HTML: the body keeps the first two and part of the third.
+      const paragraph = (n: number) =>
+        `<p><img src="/p${n}.jpg">${'&'.repeat(0.4 * 1024 * 1024)}</p>`;
+      const html = [1, 2, 3, 4, 5].map(paragraph).join('');
+      const item = normalized({ content: { html, base: BASE } });
+      expect(item.feedBodyTruncated).toBe(true);
+      const paragraphs = item.feedBodyText?.split('\n\n') ?? [];
+      expect(paragraphs).toHaveLength(3);
+      expect(paragraphs[2]!.length).toBeLessThan(0.4 * 1024 * 1024);
+      // The photos of the fourth and fifth paragraphs lie after the cut.
+      expect(item.feedBodyImageCount).toBe(3);
+    }, 30_000);
+
     it('has no body or excerpt when the content has no text', () => {
       const item = normalized({ content: { html: '<p><img src="/only.jpg"></p>', base: BASE } });
       expect(item).toMatchObject({

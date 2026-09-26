@@ -486,6 +486,36 @@ describe('spec 03 §8.1 step 6 the 10 MiB text + HTML cap', () => {
     expect(result.wordCount).toBe(text.split(/\s+/).length);
   });
 
+  it('counts only the images of the stored text when the cap cuts the text', () => {
+    const photo = (n: number) =>
+      ` <img src="https://news.example.com/photos/${n}.jpg" width="800" height="600" alt="Photo ${n}">`;
+    const long = Array.from({ length: 10 }, () => PARAGRAPHS[2]).join(' ');
+    const paragraphs = [PARAGRAPHS[0], PARAGRAPHS[1], long, PARAGRAPHS[3], PARAGRAPHS[4]].map(
+      (text, i) => `${text}${photo(i + 1)}`,
+    );
+    const page = articlePage({ paragraphs });
+    const whole = extractFromHtml(page, PAGE_URL);
+    expect(whole).toMatchObject({ status: 'ok', completeness: 'complete', bodyImageCount: 5 });
+    // Only the HTML is cut: the whole text is stored, so every image still counts.
+    const htmlCut = extractFromHtml(page, PAGE_URL, {
+      maxOutputBytes: bytes(whole.bodyText) + 200,
+    });
+    expect(htmlCut).toMatchObject({
+      completenessReason: 'truncated',
+      bodyText: whole.bodyText,
+      bodyImageCount: 5,
+    });
+    // The text is cut inside the long third paragraph: its photo and the later ones are not stored.
+    const textCut = extractFromHtml(page, PAGE_URL, { maxOutputBytes: 1500 });
+    expect(textCut).toMatchObject({
+      completenessReason: 'truncated',
+      bodyHtml: null,
+      bodyImageCount: 2,
+    });
+    expect(textCut.bodyText).toContain(PARAGRAPHS[1]);
+    expect(textCut.bodyText).not.toContain(PARAGRAPHS[3]);
+  });
+
   it('never splits a character when cutting multi-byte text', () => {
     const emoji = Array.from({ length: 6 }, () => `<p>${'😀 ľšč '.repeat(80)}</p>`).join('');
     const html = `<html><head><title>e</title></head><body><article>${emoji}</article></body></html>`;

@@ -5,6 +5,7 @@ import {
   htmlToText,
   isTrackingPixel,
   sanitizeHtml,
+  sourceCoveredByText,
   truncateHtml,
 } from '../../src/parse/index.js';
 import { sanitizeContent, textToHtml } from '../../src/parse/sanitize.js';
@@ -241,6 +242,27 @@ describe('truncateHtml', () => {
 
   it('ignores stray closing tags', () => {
     expect(truncateHtml('</i><p>abc def ghi</p>', 14).html).toBe('<p>abc def</p>');
+  });
+});
+
+describe('sourceCoveredByText (spec 03 §6.4)', () => {
+  const source =
+    `<p>${'a'.repeat(100)}</p><img src="/one.jpg">` +
+    `<p>${'b'.repeat(100)}</p><img src="/two.jpg"><p>${'c'.repeat(100)}</p>`;
+  const text = htmlToText(source);
+
+  it('is the whole source while the stored text is the whole text', () => {
+    expect(sourceCoveredByText(source, text, text)).toBe(source);
+  });
+
+  it('keeps only the images before the cut when the stored text was cut', () => {
+    // The stored text ends in the middle of the second paragraph: the image after it is left out.
+    const stored = text.slice(0, text.indexOf('b') + 60);
+    const covered = sourceCoveredByText(source, text, stored);
+    expect(covered).toContain('/one.jpg');
+    expect(covered).not.toContain('/two.jpg');
+    expect(text.startsWith(htmlToText(covered))).toBe(true);
+    expect(htmlToText(covered).length).toBeLessThanOrEqual(stored.length);
   });
 });
 
