@@ -7,4 +7,5 @@ export const PACKAGE_NAME = '@bantoozi/feeds';
 
 export * from './canonical/index.js';
 export * from './http/index.js';
+export * from './parse/index.js';
 export * from './schedule/index.js';
