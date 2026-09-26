@@ -402,6 +402,53 @@ describe('feed.schedule and feed.fetch (M1-T7)', () => {
     expect(server.requests.length).toBe(before);
   });
 
+  it('merges a feed redirected permanently to another feed and continues its moved articles', async () => {
+    server.route('/merge/x.html', html(articlePage('Merged story')));
+    server.route(
+      '/merge/old.rss',
+      rssRoute(() => rss('Old', rssItem('x-1', 'Merged story', server.url('/merge/x.html')))),
+    );
+    server.route(
+      '/merge/new.rss',
+      rssRoute(() => rss('New', rssItem('y-1', 'Target story', server.url('/merge/y.html')))),
+    );
+    const activeReader = await createUser(owner);
+    const target = await addFeed('/merge/new.rss', [{ user: activeReader, mode: 'active' }]);
+    const source = await addFeed('/merge/old.rss', [{ user: reader, mode: 'off' }]);
+    await fetchFeed(source);
+    const moved = await articleIdByUrl(server.url('/merge/x.html'));
+    await run('article.extract');
+    expect(await intents('article.enrich', moved)).toEqual([]); // only an off reader so far
+
+    // The old feed URL now redirects permanently to the feed that already owns the new URL.
+    server.redirect('/merge/old.rss', server.url('/merge/new.rss'), 301);
+    await fetchFeed(source);
+
+    const rows = await owner.query<{ id: string; merged_into_id: string | null; status: string }>(
+      `SELECT id::text AS id, merged_into_id::text AS merged_into_id, status
+         FROM feeds WHERE id = ANY($1::bigint[])`,
+      [[source, target]],
+    );
+    const byId = new Map(rows.rows.map((r) => [r.id, r]));
+    expect(byId.get(source)).toMatchObject({ merged_into_id: target, status: 'dead' });
+    expect(byId.get(target)).toMatchObject({ merged_into_id: null, status: 'active' });
+    const carriers = await owner.query<{ feed_id: string }>(
+      'SELECT feed_id::text AS feed_id FROM feed_items WHERE article_id = $1',
+      [moved],
+    );
+    expect(carriers.rows).toEqual([{ feed_id: target }]);
+    const subscriptions = await owner.query<{ feed_id: string }>(
+      'SELECT feed_id::text AS feed_id FROM subscriptions WHERE user_id = $1 AND feed_id = ANY($2::bigint[])',
+      [reader.id, [source, target]],
+    );
+    expect(subscriptions.rows).toEqual([{ feed_id: target }]);
+    // The new association's active reader creates the demand the off reader never did, and the
+    // survivor's subscribers are ranked; the same fetch ingested the survivor's own items.
+    expect(await intents('article.enrich', moved)).toHaveLength(1);
+    expect((await intents('user.rank')).map((p) => p['userId'])).toContain(activeReader.id);
+    expect(await articleIdByUrl(server.url('/merge/y.html'))).toBeTruthy();
+  });
+
   it('sets lang_hint from <language>, else from ≥ 70 % of 20 detected articles', async () => {
     server.route(
       '/lang/sk.rss',
