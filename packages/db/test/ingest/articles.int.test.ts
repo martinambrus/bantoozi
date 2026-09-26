@@ -758,6 +758,12 @@ describe('ingestItem: a link that is its own audio/video enclosure (spec 03 §8.
     );
     return rows.rows[0]?.type;
   };
+  /** The article's extraction of its current revision is done. */
+  const extracted = async (articleId: string) => {
+    await ctx.owner.query(`UPDATE articles SET pipeline_state = 'extracted' WHERE id = $1`, [
+      articleId,
+    ]);
+  };
 
   it('stores the type with a new article, for extraction to skip the link', async () => {
     const feed = await createFeed(ctx.owner);
@@ -781,15 +787,43 @@ describe('ingestItem: a link that is its own audio/video enclosure (spec 03 §8.
       guid: `pod-${next()}`,
       linkEnclosureType: 'audio/mpeg',
     });
-    expect(await ingest(pod)).toMatchObject({ articleId: first.articleId, outcome: 'existing' });
-    expect(await typeOf(first.articleId)).toBeNull();
-    // The source declares the enclosure, then corrects it, both without a content change.
-    const declared = carry(plain, { linkEnclosureType: 'audio/mpeg' });
-    expect(await ingest(declared)).toMatchObject({ contentChanged: false });
-    expect(await typeOf(first.articleId)).toBe('audio/mpeg');
-    expect(await ingest(carry(plain, { linkEnclosureType: null }))).toMatchObject({
+    expect(await ingest(pod)).toMatchObject({
+      articleId: first.articleId,
+      outcome: 'existing',
       contentChanged: false,
+      revision: '1',
     });
+    expect(await typeOf(first.articleId)).toBeNull();
+    // The source declares the enclosure without a content change: extraction now skips the link,
+    // so the extracted article is reset and extracted again.
+    await extracted(first.articleId);
+    const declared = carry(plain, { linkEnclosureType: 'audio/mpeg' });
+    expect(await ingest(declared)).toMatchObject({
+      contentChanged: true,
+      revision: '2',
+      pipelineState: 'ingested',
+      needsExtraction: true,
+    });
+    expect(await typeOf(first.articleId)).toBe('audio/mpeg');
+    // Another media type keeps the link skipped: stored without a reset.
+    await extracted(first.articleId);
+    expect(await ingest(carry(plain, { linkEnclosureType: 'audio/mp4' }))).toMatchObject({
+      contentChanged: false,
+      revision: '2',
+      needsExtraction: false,
+    });
+    expect(await typeOf(first.articleId)).toBe('audio/mp4');
+    // The correction clears it: the skipped link is extracted at a new revision.
+    expect(await ingest(carry(plain, { linkEnclosureType: null }))).toMatchObject({
+      contentChanged: true,
+      revision: '3',
+      pipelineState: 'ingested',
+      needsExtraction: true,
+    });
+    expect(await typeOf(first.articleId)).toBeNull();
+    // Another carrier clearing or declaring it later changes nothing.
+    await extracted(first.articleId);
+    expect(await ingest(pod)).toMatchObject({ contentChanged: false, revision: '3' });
     expect(await typeOf(first.articleId)).toBeNull();
     // With a content change the source's current declaration applies too, and so does its removal.
     await ingest(carry(plain, { title: 'Now a podcast', linkEnclosureType: 'video/mp4' }));

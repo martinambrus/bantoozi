@@ -161,6 +161,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `normalizeItem` reports the link's enclosure type, and ingestion stores it as a publisher input
   (spec 03 §7 step 2): the source feed's current item decides it for the link it gave the article,
   also without a content change, so a correction clears it; other carriers, and a URL that only
-  becomes an alias, never change it. `article.extract` and `article.capture-bookmark` pass it to the
-  skip check. Spec 02 listed no such column. Found by the Codex review of PR #5. Spec 02 `articles`
+  becomes an alias, never change it. Declaring or clearing it changes whether extraction skips the
+  link, so it resets the article like a content change (`resetArticleAnswers`, extraction recorded
+  for the new revision): a link skipped before the correction is then extracted. Another
+  audio/video type keeps the skip and is stored without a reset. `article.extract` and
+  `article.capture-bookmark` pass it to the skip check. Spec 02 listed no such column. Found by the Codex review of PR #5. Spec 02 `articles`
   and spec 03 §8.1 step 1 updated.

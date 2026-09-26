@@ -172,7 +172,8 @@ export interface IngestItemResult {
    */
   newAssociation: boolean;
   /**
-   * This feed is the article's source and the item's classification inputs changed:
+   * This feed is the article's source and the item's classification inputs changed (its
+   * `content_hash`, or whether extraction skips the article's link, spec 03 §8.1 step 1):
    * `resetArticleAnswers` ran (in its stale-preserving form for a stale article).
    */
   contentChanged: boolean;
@@ -198,6 +199,8 @@ interface LockedArticle {
   revision: string;
   pipelineState: string;
   contentHash: string;
+  url: string | null;
+  linkEnclosureType: string | null;
 }
 
 /**
@@ -222,10 +225,14 @@ interface LockedArticle {
  *    if missing (`newAssociation`); a pair keeps its first non-null GUID, and a GUID another
  *    article of this feed owns is never taken.
  * 3. Only the source feed ({@link articleSourceFeedId}) updates the shared title, `title_norm`,
- *    author, categories, excerpts, image, publication time and `content_hash`. When its
- *    `content_hash` differs, those columns are updated and `resetArticleAnswers` runs once
- *    (installing the carried feed body at the new revision); a stale article stays stale. A
- *    non-source feed's different summary is never stored and never invalidates the article.
+ *    author, categories, excerpts, image, publication time, `content_hash` and
+ *    `link_enclosure_type`. When its `content_hash` differs, or its item for the article's link
+ *    changes whether extraction skips that link (an audio/video enclosure type declared or
+ *    cleared, spec 03 §8.1 step 1), those columns are updated and `resetArticleAnswers` runs once
+ *    (installing the carried feed body at the new revision), so the article is extracted again;
+ *    a stale article stays stale. Another media type for a skipped link is stored without a
+ *    reset. A non-source feed's different summary or enclosure is never stored and never
+ *    invalidates the article.
  * 4. Media signals (spec 03 §6.4, §7 step 6):
  *    - a new article starts with `has_video` true on video evidence, else false when the item's
  *      publisher body was examined (`feedBodyImageCount` non-null), else null (unknown), and with
@@ -305,13 +312,22 @@ async function lockArticle(tx: Transaction, articleId: string): Promise<LockedAr
     revision: string;
     pipeline_state: string;
     content_hash: string;
+    url: string | null;
+    link_enclosure_type: string | null;
   }>(sql`
-    SELECT content_revision::text AS revision, pipeline_state, content_hash
+    SELECT content_revision::text AS revision, pipeline_state, content_hash, url,
+           link_enclosure_type
       FROM articles WHERE id = ${articleId}::bigint FOR UPDATE`);
   const row = result.rows[0];
   return row === undefined
     ? null
-    : { revision: row.revision, pipelineState: row.pipeline_state, contentHash: row.content_hash };
+    : {
+        revision: row.revision,
+        pipelineState: row.pipeline_state,
+        contentHash: row.content_hash,
+        url: row.url,
+        linkEnclosureType: row.link_enclosure_type,
+      };
 }
 
 /**
@@ -419,13 +435,21 @@ async function ingestFound(
     contentChanged: false,
     needsExtraction: false,
   };
+  // Whether the link is an audio/video enclosure (spec 03 §8.1 step 1) is a publisher input: the
+  // source's current item decides it for the link it gave the article, also without a content
+  // change, and other carriers never change it (§7 step 2). Declaring or clearing it changes
+  // whether extraction skips the link, and so the body the article can have: that resets the
+  // article like a content change, so a skipped link is extracted once corrected.
+  const skipChanged =
+    input.url !== null &&
+    input.url === article.url &&
+    (input.linkEnclosureType === null) !== (article.linkEnclosureType === null);
   if (
-    article.contentHash === input.contentHash ||
+    (article.contentHash === input.contentHash && !skipChanged) ||
     (await articleSourceFeedId(tx, articleId)) !== input.feedId
   ) {
-    // Whether the link is an audio/video enclosure (spec 03 §8.1 step 1) is a publisher input:
-    // the source's current item decides it for the link it gave the article, also without a
-    // content change, so a correction clears it; other carriers never change it (§7 step 2).
+    // The source's type for its link changed without changing the skip (another audio/video
+    // type): stored without a reset. Other carriers never change it.
     if (input.url !== null) {
       await tx.execute(sql`
         UPDATE articles a SET link_enclosure_type = ${input.linkEnclosureType}::text

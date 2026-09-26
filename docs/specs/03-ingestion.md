@@ -514,7 +514,8 @@ For one fetch, in **one transaction per item**, so one bad item doesn't roll bac
 2. **Exact match:** look up `articles.url_key = url_key` or `article_aliases.url_key = url_key`.
    - **Found:**
      - Upsert `feed_items (feed_id, article_id, guid)`.
-     - If `content_hash` differs: update classification inputs and invoke the shared
+     - If `content_hash` differs, or the source's item declares or clears the audio/video
+       enclosure of its link (§8.1 step 1): update classification inputs and invoke the shared
        `resetArticleAnswers` contract once to increment `content_revision` and invalidate old
        body/translation/active facet and match derivatives (spec 05 §5.6), and record extraction work for the new revision.
        Excerpt-only, category and author corrections also count. Preserve bookmarks, ratings,
@@ -611,8 +612,11 @@ fetching non-HTML media.
      attachment or `media:content` whose URL is the item's link as `articles.link_enclosure_type`,
      a publisher input like the others of §7 step 2: the source feed's current item decides it for
      the link it gave the article, also without a content change (a correction clears it), and
-     other carriers never change it. Extraction and bookmark capture pass it to the skip check
-     (D-21). Match host suffixes on label boundaries and file extensions
+     other carriers never change it. Declaring or clearing it changes whether the link is skipped,
+     and so the body the article can have: like a content change it runs `resetArticleAnswers` and
+     records extraction for the new revision, so a link skipped before a correction is extracted;
+     another audio/video type is stored without a reset. Extraction and bookmark capture pass it to
+     the skip check (D-21). Match host suffixes on label boundaries and file extensions
      case-insensitively on the pathname, not on query strings. Linkless entries use feed text
 2. **robots.txt:**
    - Fetch `/robots.txt` per origin through `safeFetch` and cache it in an in-memory LRU

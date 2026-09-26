@@ -905,6 +905,53 @@ describe('article.extract (M1-T7)', () => {
     expect(server.requests.filter((request) => request.path === mediaPath)).toEqual([]);
   });
 
+  it('extracts a skipped link once the source clears its audio enclosure', async () => {
+    // The publisher declares its article page as the item's audio enclosure, then corrects only
+    // that: the article is reset and its page extracted at the new revision (spec 03 §8.1 step 1).
+    const pagePath = '/pod/notes/4712';
+    const link = server.url(pagePath);
+    server.route(pagePath, html(articlePage('Episode notes')));
+    let declared = true;
+    const path = '/pod/corrected.rss';
+    server.route(
+      path,
+      rssRoute(() =>
+        rss(
+          'Pod',
+          `<item><title>Episode 4712</title><link>${link}</link><guid>pod-4712</guid>
+<pubDate>${rfc822(1)}</pubDate>${
+            declared ? `<enclosure url="${link}" type="audio/mpeg" length="3"/>` : ''
+          }</item>`,
+        ),
+      ),
+    );
+    const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    await fetchFeed(feedId);
+    const articleId = await articleIdByUrl(link);
+    await run('article.extract');
+    const bodyRows = async () =>
+      (
+        await owner.query<{ status: string; article_revision: string }>(
+          `SELECT status, article_revision::text AS article_revision
+             FROM article_bodies WHERE article_id = $1`,
+          [articleId],
+        )
+      ).rows;
+    expect(await bodyRows()).toEqual([{ status: 'skipped', article_revision: '1' }]);
+    expect(server.requests.filter((request) => request.path === pagePath)).toEqual([]);
+
+    declared = false;
+    await fetchFeed(feedId);
+    await run('article.extract');
+    expect(await bodyRows()).toEqual([{ status: 'ok', article_revision: '2' }]);
+    expect(server.requests.filter((request) => request.path === pagePath)).toHaveLength(1);
+    const article = await owner.query<{ link_enclosure_type: string | null; state: string }>(
+      'SELECT link_enclosure_type, pipeline_state AS state FROM articles WHERE id = $1',
+      [articleId],
+    );
+    expect(article.rows).toEqual([{ link_enclosure_type: null, state: 'extracted' }]);
+  });
+
   it('retries a merge that an Undo pin deferred once the pin has expired', async () => {
     const targetUrl = server.url('/undo/target.html');
     server.route('/undo/target.html', html(articlePage('Undo target')));
