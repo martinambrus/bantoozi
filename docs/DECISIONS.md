@@ -137,4 +137,6 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   step 5, which lets a later successful retry of a partial capture bind a new immutable snapshot
   while other users keep theirs. `capture_bookmark_snapshot`, the worker's capture and the article
   merge's snapshot relocation now match on completeness too, so a complete twin is never folded
-  into a partial row. Found by the Codex review of PR #5. Spec 02 `article_snapshots` updated.
+  into a partial row. When one reader's bookmarks of both merged articles collide, the merge keeps
+  the binding to a complete snapshot over a partial one of identical content before it compares
+  bookmark times. Found by the Codex review of PR #5. Spec 02 `article_snapshots` updated.

@@ -1024,6 +1024,44 @@ describe('mergeArticles (spec 03 §8.4)', () => {
     expect(await snapshotRow(late.id)).toMatchObject({ article_id: target.id, unreferenced: true });
   });
 
+  it('keeps the complete binding over an earlier partial one of identical content (D-19)', async () => {
+    const ago = clock();
+    const { source, target } = await pair();
+    const u = await createUser(ctx.owner);
+    const teaser = await snapshot(source.id, {
+      text: 'Same story',
+      revision: 1,
+      completeness: 'partial',
+    });
+    const full = await snapshot(target.id, { text: 'Same story', revision: 1 });
+    expect(teaser.sha).toBe(full.sha);
+    await reader(u.id, source.id, {
+      state_version: 1,
+      bookmarked_at: ago(50),
+      bookmark_snapshot_id: teaser.id,
+      bookmark_capture_status: 'partial',
+    });
+    await reader(u.id, target.id, {
+      state_version: 1,
+      bookmarked_at: ago(20),
+      bookmark_snapshot_id: full.id,
+      bookmark_capture_status: 'saved',
+    });
+
+    expect(await merge(source.id, target.id)).toMatchObject({ status: 'merged' });
+    // The earliest bookmark time survives, but the binding stays the saved full archive.
+    expect(await readerRow(u.id, target.id)).toMatchObject({
+      bookmarked_at: ago(50),
+      snapshot_id: full.id,
+      capture_status: 'saved',
+    });
+    expect(await snapshotRow(full.id)).toMatchObject({ unreferenced: false });
+    expect(await snapshotRow(teaser.id)).toMatchObject({
+      article_id: target.id,
+      unreferenced: true,
+    });
+  });
+
   it('shares storage for identical snapshots of the same revision', async () => {
     const { source, target } = await pair();
     const v = await createUser(ctx.owner);

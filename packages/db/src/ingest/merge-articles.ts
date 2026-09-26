@@ -106,12 +106,13 @@ type EvalArticleTable = (typeof EVAL_ARTICLE_TABLES)[number];
  *   the source key aborts the merge: a key never names the survivor and another article.
  * - `user_article`: a source-only row moves; a collision unions labels, keeps the earliest
  *   bookmark time, one coherent binding (snapshot, origin, capture status/error — the side with a
- *   bound snapshot, else the earlier bookmark, the target on ties), the latest open/read times,
- *   the rating/reason of the later `rated_at` (target on ties), the maximum dwell, the earliest
- *   feedback prompt, and unarchives if either copy is unarchived; suggestions are the union minus
- *   assigned labels. The surviving row's `state_version` and `bookmark_capture_generation` become
- *   one more than the larger input (an absent row counts as 0), for moved rows too, so offline
- *   actions and capture completions prepared against either pre-merge row are fenced. Every
+ *   bound snapshot, then the side whose bound snapshot is complete, else the earlier bookmark, the
+ *   target on ties), the latest open/read times, the rating/reason of the later `rated_at` (target
+ *   on ties), the maximum dwell, the earliest feedback prompt, and unarchives if either copy is
+ *   unarchived; suggestions are the union minus assigned labels. The surviving row's
+ *   `state_version` and `bookmark_capture_generation` become one more than the larger input (an
+ *   absent row counts as 0), for moved rows too, so offline actions and capture completions
+ *   prepared against either pre-merge row are fenced. Every
  *   survivor row's ranking cache returns to its defaults (a target-only row changes nothing else).
  * - `feedback_events`: all repointed, none dropped.
  * - `analysis_requests`: repointed (input/result stay immutable, spec 02 §5.2); pending/running
@@ -491,7 +492,9 @@ async function mergeReaderRows(
                         WHERE t.user_id = ua.user_id AND t.article_id = ${targetId}::bigint)`);
 
   // Collisions: the target row takes the merged state. One bookmark binding is taken whole from one
-  // side (never mixed): the side with a bound snapshot, else the earlier bookmark, target on ties.
+  // side (never mixed): the side with a bound snapshot, then the side whose bound snapshot is
+  // complete (identical checksums can differ in completeness, D-19; a saved full archive is never
+  // traded for a partial one), else the earlier bookmark, target on ties.
   const merged = await tx.execute<{ dropped_snapshot_id: string | null }>(sql`
     WITH pair AS (
       SELECT s.user_id, s.opened_at, s.read_at, s.rating, s.reason, s.rated_at, s.dwell_ms,
@@ -509,6 +512,8 @@ async function mergeReaderRows(
                     WHERE x <> ALL (l.labels) GROUP BY x ORDER BY min(n)) AS suggestions
         FROM user_article s
         JOIN user_article t ON t.user_id = s.user_id AND t.article_id = ${targetId}::bigint
+        LEFT JOIN article_snapshots ss ON ss.id = s.bookmark_snapshot_id
+        LEFT JOIN article_snapshots st ON st.id = t.bookmark_snapshot_id
         CROSS JOIN LATERAL (
           SELECT CASE
                    WHEN s.bookmarked_at IS NULL AND t.bookmarked_at IS NULL THEN NULL
@@ -516,6 +521,8 @@ async function mergeReaderRows(
                    WHEN s.bookmarked_at IS NULL THEN 't'
                    WHEN s.bookmark_snapshot_id IS NOT NULL AND t.bookmark_snapshot_id IS NULL THEN 's'
                    WHEN t.bookmark_snapshot_id IS NOT NULL AND s.bookmark_snapshot_id IS NULL THEN 't'
+                   WHEN ss.completeness = 'complete' AND st.completeness = 'partial' THEN 's'
+                   WHEN st.completeness = 'complete' AND ss.completeness = 'partial' THEN 't'
                    WHEN s.bookmarked_at < t.bookmarked_at THEN 's'
                    ELSE 't'
                  END AS side) b
