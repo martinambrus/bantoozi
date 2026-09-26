@@ -952,6 +952,71 @@ describe('article.extract (M1-T7)', () => {
     expect(article.rows).toEqual([{ link_enclosure_type: null, state: 'extracted' }]);
   });
 
+  it('detects the language on the complete feed body it keeps, not on a paywall teaser', async () => {
+    // The source drops the item's link but carries its full English text: a complete feed body at
+    // the new revision, while the article keeps its page URL. The page is a German paywall teaser,
+    // which the complete body outranks, so it must not decide the language (spec 03 §8.1 step 8).
+    const teaserPath = '/lang/teaser.html';
+    const paragraphs = Array.from(
+      { length: 8 },
+      (_, i) =>
+        `<p>Teil ${i + 1}: Der Stadtrat hat die neue Straßenbahnlinie nach einer langen ` +
+        'öffentlichen Anhörung genehmigt, und die Bauarbeiten beginnen im nächsten Frühjahr im ' +
+        'nördlichen Abschnitt.</p>',
+    ).join('\n');
+    server.route(
+      teaserPath,
+      html(`<!doctype html><html lang="de"><head><meta charset="utf-8"><title>Straßenbahn</title>
+<meta property="article:content_tier" content="locked"></head>
+<body><article><h1>Straßenbahn</h1>${paragraphs}</article></body></html>`),
+    );
+    const link = server.url(teaserPath);
+    let linked = true;
+    server.route('/lang/dropped.json', () => ({
+      status: 200,
+      headers: { 'content-type': 'application/feed+json' },
+      body: JSON.stringify({
+        version: 'https://jsonfeed.org/version/1.1',
+        title: 'Dropped links',
+        items: [
+          {
+            id: 'dropped-1',
+            ...(linked ? { url: link } : {}),
+            title: 'Tram line approved',
+            content_html:
+              '<p>The city council approved the new tram line after a long public consultation.</p>',
+            date_published: new Date(Date.now() - 3_600_000).toISOString(),
+          },
+        ],
+      }),
+    }));
+    const feedId = await addFeed('/lang/dropped.json', [{ user: reader, mode: 'off' }]);
+    await fetchFeed(feedId);
+    const articleId = await articleIdByUrl(link);
+    linked = false;
+    await fetchFeed(feedId);
+    await run('article.extract');
+
+    expect(server.requests.filter((request) => request.path === teaserPath)).toHaveLength(1);
+    const body = await owner.query<{
+      extractor_version: string;
+      completeness: string;
+      article_revision: string;
+    }>(
+      `SELECT extractor_version, completeness, article_revision::text AS article_revision
+         FROM article_bodies WHERE article_id = $1`,
+      [articleId],
+    );
+    expect(body.rows).toEqual([
+      { extractor_version: 'feed-v1', completeness: 'complete', article_revision: '2' },
+    ]);
+    const article = await owner.query<{ lang: string; state: string }>(
+      'SELECT lang, pipeline_state AS state FROM articles WHERE id = $1',
+      [articleId],
+    );
+    expect(article.rows).toEqual([{ lang: 'en', state: 'extracted' }]);
+  });
+
   it('retries a merge that an Undo pin deferred once the pin has expired', async () => {
     const targetUrl = server.url('/undo/target.html');
     server.route('/undo/target.html', html(articlePage('Undo target')));

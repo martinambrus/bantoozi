@@ -291,6 +291,20 @@ function keepsStoredBody(
   );
 }
 
+/**
+ * The body the pending extraction of `revision` leaves the article with (spec 03 §8.1 step 8):
+ * the stored body when {@link saveExtractionResult} keeps it instead of the result `next`, else
+ * `next`. The caller detects the language on this body, so a result that is not stored, such as a
+ * paywall teaser beside the publisher's complete feed body, never decides the article's language.
+ */
+export function retainedExtractionBody(
+  stored: StoredArticleBody | null,
+  revision: string,
+  next: ArticleBodyInput,
+): ArticleBodyInput {
+  return stored !== null && keepsStoredBody(stored, revision, next) ? stored : next;
+}
+
 async function setLanguage(
   tx: Transaction,
   articleId: string,

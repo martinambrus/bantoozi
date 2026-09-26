@@ -16,6 +16,7 @@ import {
   getArticleBody,
   loadArticleForExtraction,
   resetArticleAnswers,
+  retainedExtractionBody,
   saveExtractionResult,
   upsertArticleBody,
   type ArticleBodyInput,
@@ -353,6 +354,9 @@ describe('saveExtractionResult (spec 03 §8.1 steps 6–8, §2.1)', () => {
       completeness: 'partial',
       completenessReason: 'paywall',
     });
+    // The body the save keeps, on which the caller detects the language.
+    const stored = await getArticleBody(ctx.worker, complete.id);
+    expect(retainedExtractionBody(stored, '1', teaser)).toBe(stored);
     expect(await save(outcome(complete, { body: teaser, wordCount: 3 }))).toMatchObject({
       status: 'saved',
       advanced: true,
@@ -366,6 +370,10 @@ describe('saveExtractionResult (spec 03 §8.1 steps 6–8, §2.1)', () => {
     // A partial feed body is replaced by the page extraction.
     const partial = await createArticle(ctx.owner);
     await storeBody(partial.id, '1', feedBody({ completeness: 'partial' }));
+    const partialStored = await getArticleBody(ctx.worker, partial.id);
+    expect(retainedExtractionBody(partialStored, '1', teaser)).toBe(teaser);
+    // A result without content keeps any stored body with content, of any revision.
+    expect(retainedExtractionBody(partialStored, '2', empty('failed'))).toBe(partialStored);
     await save(outcome(partial, { body: teaser, wordCount: 3 }));
     expect(await getArticleBody(ctx.worker, partial.id)).toMatchObject({
       extractorVersion: 'readability-v1',

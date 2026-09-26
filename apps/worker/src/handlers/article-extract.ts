@@ -2,6 +2,7 @@ import {
   addArticleAlias,
   loadArticleForExtraction,
   mergeArticles,
+  retainedExtractionBody,
   retryTransaction,
   saveExtractionResult,
   urlKeyOwnerRevision,
@@ -151,10 +152,11 @@ async function extractInTransaction(
       if (identity.kind !== 'kept') return;
     }
     const body = bodyInput(article, result);
-    const text = body.bodyText;
-    // A result without text keeps the stored body (feed text or an earlier extraction), which
-    // then stays the article's text for language detection (spec 03 §8.1 step 8).
-    const lead = body.bodyLead ?? article.body?.bodyLead ?? '';
+    // The language is detected on the body the article keeps (spec 03 §8.1 step 8): a stored body
+    // (feed text or an earlier extraction) kept instead of a result without text, or instead of a
+    // partial page beside a complete body of this revision, stays the article's text.
+    const retained = retainedExtractionBody(article.body, article.revision, body);
+    const lead = retained.bodyLead ?? '';
     const lang = detectLanguage(
       `${article.title} ${article.excerpt ?? ''} ${lead.slice(0, 1000)}`,
       article.carrierLangHints[0] === undefined ? {} : { hint: article.carrierLangHints[0] },
@@ -164,7 +166,7 @@ async function extractInTransaction(
       expectedRevision: article.revision,
       body,
       lang: { lang: lang.lang, confidence: lang.confidence },
-      wordCount: countWords(text ?? article.excerpt ?? ''),
+      wordCount: countWords(body.bodyText ?? article.excerpt ?? ''),
       media: extractionMedia(result),
     });
     if (saved.status === 'saved' && saved.advanced) {

@@ -668,7 +668,11 @@ fetching non-HTML media.
      excerpt only). Set `articles.has_video` to true on page video evidence; otherwise set it to
      false only if it is null and a page or feed body was examined. A skipped URL on a `VIDEO_HOSTS`
      host (step 1) is video evidence.
-7. **Language detection** (§8.3). Set `articles.lang` and `lang_confidence`. A genuinely changed
+7. **Language detection** (§8.3) on the title, the excerpt and the lead of the body the article
+   keeps (step 8): the stored body when it outranks the result (a result without content, or a
+   partial result beside a complete `ok` body of this revision, such as a paywall teaser beside the
+   publisher's full feed text), so a result that is not stored never sets the language. Set
+   `articles.lang` and `lang_confidence`. A genuinely changed
    body/language uses `resetArticleAnswers` once, installing that new body at the incremented revision
    and checking current demand before choosing enrichment/translation as the next stage (do not
    enqueue extraction recursively). No demand means successful local completion.
