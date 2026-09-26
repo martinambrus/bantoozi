@@ -1,4 +1,7 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 import { QUEUE_NAMES, QUEUES } from '@bantoozi/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -10,7 +13,7 @@ import {
   PG_BOSS_VERSION,
   runMigrations,
 } from '../src/migrate/migrate.js';
-import { setupDbTest, sqlStateOf, type DbTestContext } from './support/test-db.js';
+import { setupDbTest, sqlStateOf, withConnection, type DbTestContext } from './support/test-db.js';
 
 let ctx: DbTestContext;
 
@@ -114,5 +117,47 @@ describe('migrate job', () => {
               has_schema_privilege('pgboss', 'CREATE') AS create`,
     );
     expect(privileges.rows[0]).toEqual({ usage: true, create: false });
+  });
+
+  it('fails with a lock timeout instead of waiting for a held migrate lock', async () => {
+    await withConnection(ctx.owner, async (holder) => {
+      await holder.query("SELECT pg_advisory_lock(hashtext('bantoozi_migrate'))");
+      try {
+        const run = runMigrations({ databaseUrl: ctx.testDb.urls.owner, lockTimeoutMs: 300 });
+        expect(await sqlStateOf(run)).toBe('55P03');
+      } finally {
+        await holder.query("SELECT pg_advisory_unlock(hashtext('bantoozi_migrate'))");
+      }
+    });
+  });
+
+  it('fails with a statement timeout and applies nothing when a migration hangs', async () => {
+    const journal = readMigrationJournal(MIGRATIONS_FOLDER);
+    const folder = await mkdtemp(path.join(tmpdir(), 'bantoozi-migrate-'));
+    try {
+      const tag = '9999_hanging';
+      await mkdir(path.join(folder, 'meta'));
+      await writeFile(path.join(folder, `${tag}.sql`), 'SELECT pg_sleep(30);');
+      await writeFile(
+        path.join(folder, 'meta', '_journal.json'),
+        JSON.stringify({
+          version: '7',
+          dialect: 'postgresql',
+          entries: [{ idx: 0, version: '7', when: journal.latestWhen + 1, tag, breakpoints: true }],
+        }),
+      );
+      const run = runMigrations({
+        databaseUrl: ctx.testDb.urls.owner,
+        migrationsFolder: folder,
+        statementTimeoutMs: 500,
+      });
+      expect(await sqlStateOf(run)).toBe('57014');
+      const applied = await ctx.owner.query<{ n: number }>(
+        'SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations',
+      );
+      expect(applied.rows[0]?.n).toBe(journal.count);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
   });
 });

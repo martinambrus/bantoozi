@@ -16,7 +16,9 @@ import pg from 'pg';
  *    `updateQueue`, so changed options converge), so the per-queue partitions are owner-created.
  *
  * Every step is idempotent and the whole job holds a session advisory lock, so concurrent or repeated
- * runs converge. pg-boss is loaded lazily, so importing `@bantoozi/db` never loads it (spec 01 §2).
+ * runs converge. Every wait is bounded (spec 11 §3): a held lock or a hung statement fails the job
+ * with SQLSTATE 55P03 or 57014 instead of blocking the deploy. pg-boss is loaded lazily, so importing
+ * `@bantoozi/db` never loads it (spec 01 §2).
  */
 
 /** Pinned pg-boss release (docs/DEPENDENCIES.md); part of the test-template hash (spec 02 §1.1). */
@@ -31,6 +33,11 @@ export const MIGRATIONS_FOLDER = fileURLToPath(new URL('../../drizzle/', import.
 const MIGRATE_LOCK_SQL = "SELECT pg_advisory_lock(hashtext('bantoozi_migrate'))";
 const MIGRATE_UNLOCK_SQL = "SELECT pg_advisory_unlock(hashtext('bantoozi_migrate'))";
 
+/** Longest wait for any lock, the migrate advisory lock included (pg-boss uses the same 30 s). */
+export const MIGRATE_LOCK_TIMEOUT_MS = 30_000;
+/** Longest single statement of a migration or pg-boss plan. */
+export const MIGRATE_STATEMENT_TIMEOUT_MS = 300_000;
+
 export interface MigrateLogger {
   info(obj: object, msg: string): void;
 }
@@ -40,6 +47,10 @@ export interface MigrateOptions {
   databaseUrl: string;
   migrationsFolder?: string;
   logger?: MigrateLogger;
+  /** Session `lock_timeout` in ms (default `MIGRATE_LOCK_TIMEOUT_MS`). */
+  lockTimeoutMs?: number;
+  /** Session `statement_timeout` in ms (default `MIGRATE_STATEMENT_TIMEOUT_MS`). */
+  statementTimeoutMs?: number;
 }
 
 export interface MigrateResult {
@@ -49,9 +60,12 @@ export interface MigrateResult {
 }
 
 export async function runMigrations(options: MigrateOptions): Promise<MigrateResult> {
+  // Startup parameters, so both bounds are in force before the advisory lock is requested.
   const client = new pg.Client({
     connectionString: options.databaseUrl,
     application_name: 'bantoozi-migrate',
+    lock_timeout: options.lockTimeoutMs ?? MIGRATE_LOCK_TIMEOUT_MS,
+    statement_timeout: options.statementTimeoutMs ?? MIGRATE_STATEMENT_TIMEOUT_MS,
   });
   await client.connect();
   try {

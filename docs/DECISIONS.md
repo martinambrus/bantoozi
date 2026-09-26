@@ -38,3 +38,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   although its introduction requires every foreign key to state one; every other `question_sets`
   reference already uses `RESTRICT`, and question sets are never deleted while referenced. Migration
   0006; spec 02 §3 and §4 updated.
+- D-7: 2026-09-26 M0-T5 — clarification of unspecified values: the migrate job opens its connection
+  with `lock_timeout` 30 s (pg-boss's own lock bound) and `statement_timeout` 5 min as startup
+  parameters, so both also bound the wait for the migrate advisory lock. A held lock or a hung
+  statement fails the job with SQLSTATE 55P03 or 57014; the interrupted transaction rolls back (all
+  pending Drizzle migrations share one), so deployment stops before application replacement and a
+  re-run converges. Spec 11 §3 required bounded timeouts without values, and the first migrate job
+  set none (found by the PR #2 review). Spec 11 §3 updated.

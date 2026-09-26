@@ -2,6 +2,7 @@ import { dropCreatedTestDatabases, setupTestDatabase, type TestDatabase } from '
 import pg from 'pg';
 
 import { createDatabase, type Database } from '../../src/client.js';
+import { sqlState } from '../../src/errors.js';
 import { MIGRATIONS_FOLDER, PG_BOSS_VERSION, runMigrations } from '../../src/migrate/migrate.js';
 
 /**
@@ -88,13 +89,13 @@ export async function asTenant<T>(
   });
 }
 
-/** The SQLSTATE a promise rejects with (fails the test when it resolves). */
+/** The SQLSTATE a promise rejects with, also when wrapped (fails the test when it resolves). */
 export async function sqlStateOf(promise: Promise<unknown>): Promise<string> {
   try {
     await promise;
   } catch (error) {
-    const code = (error as { code?: unknown }).code;
-    if (typeof code === 'string') return code;
+    const code = sqlState(error);
+    if (code !== undefined) return code;
     throw error;
   }
   throw new Error('expected a database error');
