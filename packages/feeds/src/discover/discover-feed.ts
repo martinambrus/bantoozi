@@ -151,8 +151,9 @@ export type DiscoverResult = DiscoverySuccess | DiscoveryFailure;
  *
  * All requests share one deadline (`deadlineMs`, 20 s) and a budget of `maxRequests` (10) HTTP
  * requests; each fetch counts 1 plus the redirect hops it reports and may follow at most the hops
- * left in the budget. Candidates and probes run at most `maxConcurrentProbes` (2) at a time; a
- * probe that can no longer win is aborted.
+ * left in the budget and not reserved by fetches in flight, so concurrent probes can never exceed
+ * it together. Candidates and probes run at most `maxConcurrentProbes` (2) at a time; a probe that
+ * can no longer win is aborted.
  */
 export async function discoverFeed(input: string, deps: DiscoverDeps): Promise<DiscoverResult> {
   try {
@@ -194,6 +195,14 @@ class Discovery {
   private readonly concurrency: number;
   private readonly allowPrivate: boolean;
   private requests = 0;
+  /**
+   * Redirect hops reserved by fetches in flight: each fetch reserves its hop allowance before it
+   * starts, so concurrent fetches can never follow more redirects together than the budget has.
+   * A finished fetch charges the hops it followed and releases the rest.
+   */
+  private reserved = 0;
+  /** Wakes probes waiting for a fetch in flight to release its reserved hops. */
+  private released: Array<() => void> = [];
   private deadlineReached = false;
   private budgetExhausted = false;
   private cancelled = false;
@@ -288,7 +297,13 @@ class Discovery {
       for (;;) {
         const index = next;
         const item = queue[index];
-        if (item === undefined || index > winner || !this.canStart()) return;
+        if (item === undefined || index > winner) return;
+        if (this.reservedOut()) {
+          // Only hops reserved by a fetch in flight block this start: wait until it finishes.
+          await new Promise<void>((resolve) => this.released.push(resolve));
+          continue;
+        }
+        if (!this.canStart()) return;
         next += 1;
         const controller = new AbortController();
         inFlight.set(index, controller);
@@ -406,26 +421,46 @@ class Discovery {
     return true;
   }
 
+  /**
+   * Whether the budget left after the requests sent is fully reserved by fetches in flight: a new
+   * request must wait for one of them to release its unused hops (it is not exhausted yet).
+   */
+  private reservedOut(): boolean {
+    return (
+      this.reserved > 0 &&
+      this.requests < this.maxRequests &&
+      this.requests + this.reserved >= this.maxRequests
+    );
+  }
+
   /** One budgeted fetch; the caller has checked {@link canStart}. */
   private async fetch(
     url: string,
     purpose: DiscoveryFetchOptions['purpose'],
     signal?: AbortSignal,
   ): Promise<SafeFetchResult> {
+    // The request itself, then as many redirect hops as the unreserved budget still allows.
     this.requests += 1;
+    const hops = Math.max(
+      0,
+      Math.min(MAX_REDIRECTS_PER_FETCH, this.maxRequests - this.requests - this.reserved),
+    );
+    this.reserved += hops;
     const options: DiscoveryFetchOptions = {
       purpose,
       timeoutMs: Math.max(1, this.deadline - this.now()),
-      maxRedirects: Math.max(
-        0,
-        Math.min(MAX_REDIRECTS_PER_FETCH, this.maxRequests - this.requests),
-      ),
+      maxRedirects: hops,
     };
     const combined = anySignal(signal, this.deps.signal);
     if (combined !== undefined) options.signal = combined;
-    const result = await this.deps.fetch(url, options);
-    this.requests += result.redirects?.length ?? 0;
-    return result;
+    try {
+      const result = await this.deps.fetch(url, options);
+      this.requests += Math.min(hops, result.redirects?.length ?? 0);
+      return result;
+    } finally {
+      this.reserved -= hops;
+      for (const wake of this.released.splice(0)) wake();
+    }
   }
 
   /** `parseFeed` with the response's final URL as the base for relative links. */

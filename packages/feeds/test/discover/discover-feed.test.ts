@@ -435,10 +435,29 @@ describe('discoverFeed: request budget, deadline and concurrency', () => {
     expect(result.candidates.map((candidate) => candidate.title)).toEqual(
       Array.from({ length: 9 }, (_, i) => `Feed ${i}`),
     );
-    // Each fetch may follow only the redirect hops left in the budget.
+    // Each fetch may follow only the redirect hops left in the budget after the hops reserved by
+    // the probe running beside it (the page first, then two probes at a time).
     expect(web.calls.map((call) => call.options.maxRedirects)).toEqual([
-      5, 5, 5, 5, 5, 4, 3, 2, 1, 0,
+      5, 5, 2, 4, 1, 3, 0, 2, 1, 0,
     ]);
+  });
+
+  it('never lets concurrent probes follow more redirects together than the budget has', async () => {
+    const web = manyAlternates(12, new FakeWeb());
+    // A worst-case site: every candidate follows as many redirects as it is allowed.
+    let followed = 0;
+    for (let i = 0; i < 12; i += 1) {
+      web.route(`${SITE}/feed-${i}`, (call) => {
+        const hops = call.options.maxRedirects ?? 0;
+        followed += hops;
+        return { body: rss(`Feed ${i}`), finalUrl: `${SITE}/feed-${i}/final`, hops, delayMs: 1 };
+      });
+    }
+    success(await discoverFeed(`${SITE}/`, web.deps()));
+    // Requests sent: every fetch plus every redirect hop it followed.
+    expect(web.calls.length + followed).toBeLessThanOrEqual(DISCOVERY_MAX_REQUESTS);
+    expect(followed).toBeGreaterThan(0);
+    expect(web.maxInFlight).toBe(2);
   });
 
   it('counts redirect hops against the budget', async () => {
