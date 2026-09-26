@@ -731,6 +731,81 @@ describe('article.extract (M1-T7)', () => {
       [targetFeed, canonicalFeed, goFeed].sort(),
     );
   });
+
+  it('drops the redirect evidence of a revision that a source update replaced during the fetch', async () => {
+    const targetUrl = server.url('/fence/target.html');
+    server.route('/fence/target.html', html(articlePage('Fenced target')));
+    server.redirect('/fence/old', targetUrl, 301);
+    const feedOf = async (path: string, guid: string, title: string, link: string) => {
+      server.route(
+        path,
+        rssRoute(() => rss(path, rssItem(guid, title, link))),
+      );
+      return addFeed(path, [{ user: reader, mode: 'off' }]);
+    };
+    const targetFeed = await feedOf('/fence/target.rss', 'fence-t', 'Fenced target', targetUrl);
+    const storyFeed = await feedOf(
+      '/fence/story.rss',
+      'fence-s',
+      'Fenced story',
+      server.url('/fence/old'),
+    );
+    await fetchFeed(targetFeed);
+    await fetchFeed(storyFeed);
+    const target = await articleIdByUrl(targetUrl);
+    const story = await articleIdByUrl(server.url('/fence/old'));
+    // The source feed updates the story (a new revision) while its page request is in flight.
+    const memory = createMemoryOriginLimiter({ spacingMs: 0 });
+    let updated = false;
+    const limiter: OriginLimiter = {
+      reserve: async (origin, options) => {
+        if (!updated) {
+          updated = true;
+          await owner.query(
+            'UPDATE articles SET content_revision = content_revision + 1 WHERE id = $1',
+            [story],
+          );
+        }
+        return memory.reserve(origin, options);
+      },
+      release: (origin, token) => memory.release(origin, token),
+      block: (origin, until) => memory.block(origin, until),
+    };
+    await dispatch(
+      createHandlers(workerDeps(limiter)),
+      'article.extract',
+      { articleId: story },
+      { queue: 'article.extract', jobId: 'fence' },
+    );
+
+    // The revision-1 page neither merged the story into the redirect target nor aliased it; the
+    // new revision waits for its own extraction.
+    expect(updated).toBe(true);
+    const rows = await owner.query<{ id: string; revision: string; pipeline_state: string }>(
+      `SELECT id::text AS id, content_revision::text AS revision, pipeline_state
+         FROM articles WHERE id = ANY($1::bigint[]) ORDER BY id`,
+      [[target, story]],
+    );
+    expect(rows.rows).toEqual([
+      { id: target, revision: '1', pipeline_state: 'ingested' },
+      { id: story, revision: '2', pipeline_state: 'ingested' },
+    ]);
+    const aliases = await owner.query(
+      'SELECT 1 FROM article_aliases WHERE url_key = $1 OR article_id = ANY($2::bigint[])',
+      [keyOf(targetUrl), [target, story]],
+    );
+    expect(aliases.rowCount).toBe(0);
+    const carriers = await owner.query<{ feed_id: string }>(
+      'SELECT feed_id::text AS feed_id FROM feed_items WHERE article_id = $1',
+      [target],
+    );
+    expect(carriers.rows).toEqual([{ feed_id: targetFeed }]);
+    await owner.query(
+      `UPDATE job_outbox SET delivered_at = now()
+        WHERE queue = 'article.extract' AND payload->>'articleId' = ANY($1::text[])`,
+      [[target, story]],
+    );
+  });
 });
 
 describe('article.capture-bookmark (M1-T7)', () => {

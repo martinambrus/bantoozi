@@ -417,6 +417,8 @@ export async function saveExtractionResult(
 export type AliasResult =
   | { status: 'added' | 'exists' }
   | { status: 'owned_by_other'; ownerId: string }
+  /** `content_revision` is not the expected revision: nothing was written. */
+  | { status: 'stale_revision'; revision: string }
   /** The article no longer exists (merged away or deleted): nothing was written. */
   | { status: 'missing' };
 
@@ -450,16 +452,27 @@ async function urlKeyOwner(tx: Transaction, urlKey: string): Promise<string | nu
  * in the same transaction. A merge still takes its user locks after this row lock, which can
  * deadlock with a concurrent reader action (PostgreSQL detects it, 40P01, and `retryTransaction`
  * re-runs the transaction).
+ *
+ * `expectedRevision` fences the evidence like {@link saveExtractionResult} fences a result (spec
+ * 03 §2.1): the revision whose page produced it. Under the row lock, a different
+ * `content_revision` is `stale_revision` and nothing is written, so a page fetched for a revision
+ * that a source update replaced meanwhile never aliases or merges the article's newer identity.
+ * The row lock is held until the transaction ends, so a later merge in it sees the same revision.
  */
 export async function addArticleAlias(
   tx: Transaction,
   articleId: string,
   urlKey: string,
   source: 'redirect' | 'rel_canonical',
+  options: { expectedRevision?: string } = {},
 ): Promise<AliasResult> {
   if (!DECIMAL_ID.test(articleId)) throw new TypeError('articleId must be a decimal string');
   if (typeof urlKey !== 'string' || urlKey.length === 0) {
     throw new TypeError('urlKey must be a non-empty string');
+  }
+  const { expectedRevision } = options;
+  if (expectedRevision !== undefined && !DECIMAL_ID.test(expectedRevision)) {
+    throw new TypeError('expectedRevision must be a positive decimal string');
   }
   const identity = await tx.execute<{ url_key: string }>(sql`
     SELECT url_key FROM articles WHERE id = ${articleId}::bigint
@@ -471,10 +484,15 @@ export async function addArticleAlias(
       sql`SELECT pg_advisory_xact_lock(hashtextextended('url_key:' || ${key}::text, 0))`,
     );
   }
-  const article = await tx.execute(
-    sql`SELECT 1 FROM articles WHERE id = ${articleId}::bigint FOR UPDATE`,
+  const article = await tx.execute<{ revision: string }>(
+    sql`SELECT content_revision::text AS revision FROM articles
+         WHERE id = ${articleId}::bigint FOR UPDATE`,
   );
-  if (article.rows.length === 0) return { status: 'missing' };
+  const row = article.rows[0];
+  if (row === undefined) return { status: 'missing' };
+  if (expectedRevision !== undefined && row.revision !== expectedRevision) {
+    return { status: 'stale_revision', revision: row.revision };
+  }
 
   const owner = await urlKeyOwner(tx, urlKey);
   if (owner !== null) {

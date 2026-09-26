@@ -62,7 +62,14 @@ export function createArticleExtractHandler(deps: WorkerDeps): QueueHandler<'art
 
     await retryTransaction(deps.db, async (tx) => {
       const sender = workerOutbox(tx);
-      if (result !== null && (await mergedAway(deps, tx, sender, article, result))) return;
+      // A merge ends this article's job; so does a revision replaced while the page was fetched,
+      // whose evidence is dropped like its result (the new revision has its own extraction job).
+      if (
+        result !== null &&
+        (await applyIdentityEvidence(deps, tx, sender, article, result)) !== 'kept'
+      ) {
+        return;
+      }
       const body = bodyInput(article, result);
       const text = body.bodyText;
       // A result without text keeps the stored body (feed text or an earlier extraction), which
@@ -98,16 +105,18 @@ export function createArticleExtractHandler(deps: WorkerDeps): QueueHandler<'art
  * current article into it (the owner survives). The remaining evidence then applies to that
  * survivor, because the fetched page is the survivor's page too and the survivor's own extraction
  * may be long done: a redirect to one article whose page names another as canonical merges all
- * three. Returns true when this article no longer exists (merged); the last survivor then
- * continues from its own state, and the carriers new to it get the new-carrier continuation.
+ * three. The page belongs to the revision this job loaded, so every alias check of the article
+ * itself fences on it (spec 03 §2.1): a newer revision is `stale` and nothing is written. `merged`
+ * means this article no longer exists; the last survivor then continues from its own state, and
+ * the carriers new to it get the new-carrier continuation. Otherwise the article is `kept`.
  */
-async function mergedAway(
+async function applyIdentityEvidence(
   deps: WorkerDeps,
   tx: Transaction,
   sender: JobSender,
   article: ArticleForExtraction,
   result: ExtractResult,
-): Promise<boolean> {
+): Promise<'kept' | 'merged' | 'stale'> {
   const evidence: Array<{ url: string | null; source: 'redirect' | 'rel_canonical' }> = [
     { url: result.resolvedUrl, source: 'redirect' },
     { url: result.canonicalUrl, source: 'rel_canonical' },
@@ -121,7 +130,14 @@ async function mergedAway(
     if (!canonical.ok) continue;
     const key = urlKey(canonical.url);
     if (key === current.urlKey) continue;
-    const alias = await addArticleAlias(tx, current.id, key, source);
+    const alias = await addArticleAlias(
+      tx,
+      current.id,
+      key,
+      source,
+      current.id === article.id ? { expectedRevision: article.revision } : {},
+    );
+    if (alias.status === 'stale_revision') return 'stale';
     if (alias.status !== 'owned_by_other') continue;
     const merged = await mergeArticles(tx, sender, current.id, alias.ownerId, { reason: source });
     if (merged.status !== 'merged') continue;
@@ -132,7 +148,7 @@ async function mergedAway(
     current = survivor;
     newCarrierFeedIds = merged.movedFeedIds;
   }
-  if (current.id === article.id) return false;
+  if (current.id === article.id) return 'kept';
 
   const context = pipelineContext(deps, tx, sender);
   for (const feedId of newCarrierFeedIds) {
@@ -144,7 +160,7 @@ async function mergedAway(
   } else if (survivor !== null && survivor.pipelineState === 'extracted') {
     await after('extract', survivor.id, { status: 'ok', revision: survivor.revision }, context);
   }
-  return true;
+  return 'merged';
 }
 
 /**

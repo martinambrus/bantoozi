@@ -632,6 +632,23 @@ describe('addArticleAlias (spec 03 §7 "Concurrency", §8.1 steps 4–5)', () =>
     expect(await crossTableConflicts()).toBe(0);
   });
 
+  it('fences the evidence on the revision whose page produced it', async () => {
+    const a = await createArticle(ctx.owner, { contentRevision: 2 });
+    const b = await createArticle(ctx.owner);
+    const redirected = key('fenced');
+    const fenced = (urlKey: string, expectedRevision: string) =>
+      ctx.worker.transaction((tx) =>
+        addArticleAlias(tx, a.id, urlKey, 'redirect', { expectedRevision }),
+      );
+    // A page fetched for revision 1 neither aliases nor reports an owner to merge into.
+    expect(await fenced(redirected, '1')).toEqual({ status: 'stale_revision', revision: '2' });
+    expect(await fenced(b.urlKey, '1')).toEqual({ status: 'stale_revision', revision: '2' });
+    expect(await aliasRows(a.id)).toEqual([]);
+    expect(await fenced(redirected, '2')).toEqual({ status: 'added' });
+    expect(await fenced(b.urlKey, '2')).toEqual({ status: 'owned_by_other', ownerId: b.id });
+    await expect(fenced(key('bad'), 'two')).rejects.toThrow(TypeError);
+  });
+
   /** Wait until some backend waits for an advisory lock (the url_key lock). */
   async function untilAdvisoryWait(): Promise<void> {
     for (let i = 0; i < 200; i += 1) {
