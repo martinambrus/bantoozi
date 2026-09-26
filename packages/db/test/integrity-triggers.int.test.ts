@@ -1252,6 +1252,39 @@ describe('user_labels_removal_check (deferred to COMMIT)', () => {
   });
 });
 
+// Both deferred checks first lock the owning users row (spec 02 §5.2, migration 0008), so of an
+// assignment and a removal of the same label, the one committing second waits and then fails.
+describe('concurrent label assignment and removal', () => {
+  const UNHOLD = 'DELETE FROM user_labels WHERE user_id = $1 AND card_id = $2';
+  /** Runs the pending deferred checks now: the first writer keeps their lock until it commits. */
+  const CHECK_NOW = 'SET CONSTRAINTS ALL IMMEDIATE';
+
+  it('a removal committing after an assignment of the label fails', async () => {
+    const f = await labelFixture();
+    const failure = await secondWriterAfterFirstCommits(
+      async (first) => {
+        await first.query(ASSIGN, [f.user, f.article, [f.held[0]]]);
+        await first.query(CHECK_NOW);
+      },
+      (second) => second.query(UNHOLD, [f.user, f.held[0]]),
+    );
+    expect(failure).toMatchObject({ code: '23514', constraint: 'user_labels_removal_check' });
+    expect(await articleLabels(f)).toEqual({ label_ids: [f.held[0]], label_suggestions: [] });
+  });
+
+  it('an assignment committing after a removal of the label fails', async () => {
+    const f = await labelFixture();
+    const failure = await secondWriterAfterFirstCommits(
+      async (first) => {
+        await first.query(UNHOLD, [f.user, f.held[0]]);
+        await first.query(CHECK_NOW);
+      },
+      (second) => second.query(ASSIGN, [f.user, f.article, [f.held[0]]]),
+    );
+    expect(failure).toMatchObject({ code: '23514', constraint: 'user_article_labels_check' });
+  });
+});
+
 describe('account purge with held private cards and labels (spec 02 §8 item 3)', () => {
   for (const role of ['worker', 'owner'] as const) {
     it(`deletes the account as the ${role}, whatever the FK order`, async () => {
@@ -1306,6 +1339,49 @@ describe('account purge with held private cards and labels (spec 02 §8 item 3)'
       ).toEqual({ n: 0 });
     });
   }
+});
+
+describe('card holding foreign keys (NO ACTION, deferred to COMMIT)', () => {
+  it('reject deleting a card that user_cards or user_labels still hold', async () => {
+    const user = await newUser();
+    const interest = await newCard();
+    const label = await newCard({ kind: 'label' });
+    await execute(
+      ctx.workerPool,
+      `INSERT INTO user_cards (user_id, card_id, strength) VALUES ($1, $2, 'like')`,
+      [user, interest],
+    );
+    await execute(
+      ctx.workerPool,
+      `INSERT INTO user_labels (user_id, card_id, name) VALUES ($1, $2, 'Mine')`,
+      [user, label],
+    );
+    for (const [card, constraint] of [
+      [interest, 'user_cards_card_fk'],
+      [label, 'user_labels_card_fk'],
+    ] as const) {
+      const failure = await execute(ctx.workerPool, 'DELETE FROM interest_cards WHERE id = $1', [
+        card,
+      ]).then(
+        () => null,
+        (error: unknown) => error as DbFailure,
+      );
+      expect(failure, constraint).toMatchObject({ code: '23503', constraint });
+    }
+    // Deferred: the same transaction may remove the holding after the card.
+    await inTx(ctx.workerPool, {}, async (client) => {
+      await client.query('DELETE FROM interest_cards WHERE id = $1', [interest]);
+      await client.query('DELETE FROM user_cards WHERE user_id = $1 AND card_id = $2', [
+        user,
+        interest,
+      ]);
+    });
+    expect(
+      await ownerRow<{ n: number }>('SELECT count(*)::int AS n FROM interest_cards WHERE id = $1', [
+        interest,
+      ]),
+    ).toEqual({ n: 0 });
+  });
 });
 
 // ── Inference gate generation ───────────────────────────────────────────────────────────────────

@@ -59,3 +59,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   change of its parent) could both pass their READ COMMITTED checks and commit a dangling reference,
   which no foreign key repairs because `topic_ids` is an array (found by the PR #2 review). Migration
   0007; spec 02 §5.2 updated.
+- D-10: 2026-09-26 M0-T5 — both deferred label checks (`user_article_labels_check`,
+  `user_labels_removal_check`) first lock the owning `users` row `FOR NO KEY UPDATE`, the row spec 02
+  §5.2 already serializes label changes and assignments on. Both run at COMMIT, so without the lock a
+  transaction assigning a label and one removing it could each pass against its own snapshot and
+  leave `label_ids` or `label_suggestions` naming a label the user no longer holds (found by the PR #2
+  review). Migration 0008; spec 02 §5.2 updated.

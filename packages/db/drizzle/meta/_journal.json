@@ -57,6 +57,13 @@
       "when": 1790410040733,
       "tag": "0007_topic_reference_locks",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790410664448,
+      "tag": "0008_label_assignment_locks",
+      "breakpoints": true
     }
   ]
 }
