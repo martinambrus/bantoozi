@@ -37,4 +37,4 @@ export {
   type SafeFetchResult,
   type SafeFetchSuccess,
 } from './safe-fetch.js';
-export { MAX_URL_BYTES, originOf, redactUrl } from './url.js';
+export { MAX_URL_BYTES, originOf, redactUrl, sameRequestUrl } from './url.js';

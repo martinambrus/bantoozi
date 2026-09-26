@@ -10,6 +10,7 @@ import {
   parseUrl,
   redactUrl,
   requestKey,
+  sameRequestUrl,
 } from '../../src/http/url.js';
 
 const NOW = Date.UTC(2026, 8, 26, 12, 0, 0);
@@ -70,6 +71,16 @@ describe('spec 03 §4.1 URL checks', () => {
   it('requestKey ignores the fragment, which is never sent', () => {
     expect(requestKey(new URL('http://a.example/x?y=1#top'))).toBe('http://a.example/x?y=1');
     expect(requestKey(new URL('http://a.example/x#'))).toBe('http://a.example/x');
+  });
+
+  it('sameRequestUrl compares request identities: the fragment is ignored, nothing else', () => {
+    expect(sameRequestUrl('https://a.example/feed', 'https://a.example/feed#top')).toBe(true);
+    expect(sameRequestUrl('https://A.example:443/feed', 'https://a.example/feed')).toBe(true);
+    expect(sameRequestUrl('https://a.example', 'https://a.example/')).toBe(true);
+    expect(sameRequestUrl('https://a.example/feed?x=1', 'https://a.example/feed')).toBe(false);
+    expect(sameRequestUrl('http://a.example/feed', 'https://a.example/feed')).toBe(false);
+    expect(sameRequestUrl('https://a.example/Feed', 'https://a.example/feed')).toBe(false);
+    expect(sameRequestUrl('not a url', 'not a url')).toBe(false);
   });
 
   it('redactUrl never exposes queries, fragments or credentials (log-safe)', () => {

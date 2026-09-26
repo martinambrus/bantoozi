@@ -856,14 +856,23 @@ on error:
   if now - first_error_at >= 30 days: status = 'dead'
 
 always: total_fetches += 1; last_fetch_at = now
-on parsed 200: replace etag/last_modified with returned values, clearing absent ones
-on valid 304: retain missing validators; update any returned ones; do not parse or ingest a body
+on parsed 200: replace etag/last_modified with returned values, clearing absent ones; clear both
+  instead when the response did not come from the feed's fetch_url or an item failed to ingest
+on valid 304: retain missing validators; update any returned ones (a 304 from fetch_url only); do
+  not parse or ingest a body
 ```
 
 `sy_period_s` is period duration divided by valid positive frequency; ignore invalid/negative TTL,
 frequency and cache hints. Compute publication gaps from distinct valid dates, excluding zero/negative
 gaps. A 304 without previously established validators is retried once unconditionally. A parse error
 never installs its validators (otherwise a broken body can be hidden forever behind 304 responses).
+Validators belong to the request URL that returned them, and the client sends them to `fetch_url`
+only (§4.3). A response from any other URL therefore installs none: a temporary redirect target,
+a permanent redirect target that is not adopted, or a target that is not the merge survivor's
+`fetch_url`. That URL could otherwise answer the foreign ETag or date with 304 and hide the target's
+updates. An adopted permanent redirect makes the target the new `fetch_url`, so its validators are
+kept (D-18). A fetch in which an item failed to ingest after its retries installs none either, so
+the next poll is unconditional and offers the item again.
 A feed with no prior new-item timestamp uses the 24-hour MAX until it has actually been quiet 30 days.
 
 **Permanent redirect of the feed URL** (301/308 on the feed fetch):

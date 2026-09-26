@@ -829,8 +829,9 @@ describe('transient page failures and permanent feed redirects (M1-T7)', () => {
     server.route('/clean/feed.rss', (request) =>
       request.path.includes('utm_source=')
         ? { status: 301, headers: { location: clean } }
-        : rssRoute(() =>
-            rss('Clean', rssItem('clean-1', 'Clean item', server.url('/clean/1.html'))),
+        : rssRoute(
+            () => rss('Clean', rssItem('clean-1', 'Clean item', server.url('/clean/1.html'))),
+            { etag: '"clean-v1"' },
           )(),
     );
     const inserted = await owner.query<{ id: string }>(
@@ -845,12 +846,22 @@ describe('transient page failures and permanent feed redirects (M1-T7)', () => {
     ]);
 
     await fetchFeed(feedId);
-    expect(await feedRow(feedId)).toMatchObject({ url: clean, fetch_url: clean, total_fetches: 1 });
+    // The target is the new fetch_url, so its validators are the feed's.
+    expect(await feedRow(feedId)).toMatchObject({
+      url: clean,
+      fetch_url: clean,
+      total_fetches: 1,
+      etag: '"clean-v1"',
+    });
     const trackedHits = () =>
       server.requests.filter((r) => r.path === '/clean/feed.rss?utm_source=partner').length;
     const before = trackedHits();
     await fetchFeed(feedId);
     expect(trackedHits()).toBe(before); // the next poll requests the redirect target directly
+    expect(server.requests.at(-1)).toMatchObject({
+      path: '/clean/feed.rss',
+      headers: { 'if-none-match': '"clean-v1"' },
+    });
   });
 
   it('stores no validators when an item failed to ingest, so the next poll is unconditional', async () => {
@@ -903,22 +914,113 @@ describe('transient page failures and permanent feed redirects (M1-T7)', () => {
     const plain = server.url('/leaky/feed.rss');
     server.route('/leaky/feed.rss', (request) =>
       request.path.includes('token=')
-        ? rssRoute(() =>
-            rss('Leaky', rssItem('leaky-1', 'Leaky item', server.url('/leaky/1.html'))),
+        ? rssRoute(
+            () => rss('Leaky', rssItem('leaky-1', 'Leaky item', server.url('/leaky/1.html'))),
+            { etag: '"leaky-v1"' },
           )()
         : { status: 301, headers: { location: server.url('/leaky/feed.rss?token=secret') } },
     );
     const feedId = await addFeed('/leaky/feed.rss', [{ user: reader, mode: 'off' }]);
 
     await fetchFeed(feedId);
-    // The fetch itself succeeded, but the credential-bearing URL never becomes the feed's URL.
+    // The fetch itself succeeded, but the credential-bearing URL never becomes the feed's URL,
+    // and its validators, which the feed URL never returned, are not stored either.
     expect(await feedRow(feedId)).toMatchObject({
       url: plain,
       fetch_url: plain,
       total_fetches: 1,
       consecutive_errors: 0,
+      etag: null,
     });
     expect(await articleIdByUrl(server.url('/leaky/1.html'))).toBeTruthy();
+  });
+
+  async function validators(feedId: string) {
+    const result = await owner.query<{ etag: string | null; last_modified: string | null }>(
+      'SELECT etag, last_modified FROM feeds WHERE id = $1',
+      [feedId],
+    );
+    return result.rows[0]!;
+  }
+
+  it('stores no validators from a temporary redirect target, which the next poll never requests', async () => {
+    server.redirect('/moving/feed.rss', server.url('/moving/today.rss'), 302);
+    server.route(
+      '/moving/today.rss',
+      rssRoute(() => rss('Moving', rssItem('m-1', 'Moving item', server.url('/moving/1.html'))), {
+        etag: '"today-v1"',
+        'last-modified': 'Fri, 25 Sep 2026 10:00:00 GMT',
+      }),
+    );
+    const feedId = await addFeed('/moving/feed.rss', [{ user: reader, mode: 'off' }]);
+
+    await fetchFeed(feedId);
+    expect(await feedRow(feedId)).toMatchObject({
+      fetch_url: server.url('/moving/feed.rss'),
+      total_fetches: 1,
+      consecutive_errors: 0,
+    });
+    expect(await validators(feedId)).toEqual({ etag: null, last_modified: null });
+    expect(await articleIdByUrl(server.url('/moving/1.html'))).toBeTruthy();
+
+    // The feed URL is polled unconditionally again: it never sees the target's validators.
+    await fetchFeed(feedId);
+    const polls = server.requests.filter((r) => r.path === '/moving/feed.rss');
+    expect(polls).toHaveLength(2);
+    for (const poll of polls) {
+      expect(poll.headers['if-none-match']).toBeUndefined();
+      expect(poll.headers['if-modified-since']).toBeUndefined();
+    }
+  });
+
+  it('keeps the stored validators when the 304 comes from a redirect target', async () => {
+    server.redirect('/detour/feed.rss', server.url('/detour/elsewhere.rss'), 307);
+    server.route('/detour/elsewhere.rss', { status: 304, headers: { etag: '"elsewhere-v1"' } });
+    const feedId = await addFeed('/detour/feed.rss', [{ user: reader, mode: 'off' }]);
+    await owner.query(`UPDATE feeds SET etag = '"own-v1"' WHERE id = $1`, [feedId]);
+
+    await fetchFeed(feedId);
+    expect(await feedRow(feedId)).toMatchObject({ total_fetches: 1, consecutive_errors: 0 });
+    expect(await validators(feedId)).toEqual({ etag: '"own-v1"', last_modified: null });
+  });
+
+  it('clears the validators of a merge survivor that polls another URL than the redirect target', async () => {
+    const joined = server.url('/joined/feed.rss');
+    server.route(
+      '/joined/feed.rss',
+      rssRoute(() => rss('Joined', rssItem('j-1', 'Joined item', server.url('/joined/1.html'))), {
+        etag: '"joined-v1"',
+      }),
+    );
+    // The survivor owns the canonical URL but polls it with a tracking parameter.
+    const inserted = await owner.query<{ id: string }>(
+      `INSERT INTO feeds (url, fetch_url, etag) VALUES ($1, $2, '"survivor-v1"')
+       RETURNING id::text AS id`,
+      [joined, `${joined}?utm_source=partner`],
+    );
+    const survivorId = inserted.rows[0]!.id;
+    await createSubscription(owner, { userId: reader.id, feedId: survivorId, mode: 'off' });
+    await owner.query('SELECT refresh_feed_subscribers($1::bigint[], $2::jsonb)', [
+      [survivorId],
+      JSON.stringify({ beta: 900, admin: 300 }),
+    ]);
+    server.redirect('/joined/old.rss', joined, 301);
+    const oldId = await addFeed('/joined/old.rss', [{ user: reader, mode: 'off' }]);
+
+    await fetchFeed(oldId);
+    const merged = await owner.query<{ merged_into_id: string | null }>(
+      'SELECT merged_into_id::text AS merged_into_id FROM feeds WHERE id = $1',
+      [oldId],
+    );
+    expect(merged.rows[0]!.merged_into_id).toBe(survivorId);
+    expect(await articleIdByUrl(server.url('/joined/1.html'))).toBeTruthy();
+    // The response came from the target, not from the survivor's fetch_url: no validators, so
+    // the survivor's next poll is unconditional.
+    expect(await feedRow(survivorId)).toMatchObject({
+      fetch_url: `${joined}?utm_source=partner`,
+      total_fetches: 1,
+    });
+    expect(await validators(survivorId)).toEqual({ etag: null, last_modified: null });
   });
 });
 

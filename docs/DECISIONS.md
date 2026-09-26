@@ -112,3 +112,13 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   response itself) got a new key, found nothing, and was inserted again as a duplicate article;
   items with a GUID already matched through their moved feed-scoped GUID. Spec 03 §9 listed no rule
   for this (found by the Codex review of PR #5). No migration; spec 03 §9 updated.
+- D-18: 2026-09-26 M1-T7 — feed validators are stored only for the URL that returned them. Spec 03
+  §9 said a parsed 200 replaces `etag`/`last_modified` with the returned values. But the client
+  sends validators to `fetch_url` only (§4.3), so after a temporary redirect, a rejected permanent
+  redirect, or a merge into a survivor that polls another URL, the stored values came from a URL
+  that the next poll does not request. That URL could answer the foreign ETag or date with 304 and
+  hide the target's new items. Such a 200 now clears both validators, and such a 304 leaves them
+  unchanged; after an adopted permanent redirect the target is the new `fetch_url` and keeps its
+  validators. The already implemented rule that a fetch whose item failed to ingest after its
+  retries clears them too is now stated as well, since both follow the parse-error rule. Found by
+  the Codex review of PR #5. Spec 03 §9 updated.

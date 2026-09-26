@@ -121,3 +121,14 @@ export function requestKey(url: URL): string {
   copy.hash = '';
   return copy.href;
 }
+
+/**
+ * Whether two absolute URLs name the same request ({@link requestKey}): conditional validators
+ * belong to the request URL that returned them, which is the only URL they are sent to (spec 03
+ * §4.3). An unparsable URL matches nothing.
+ */
+export function sameRequestUrl(a: string, b: string): boolean {
+  const left = URL.parse(a);
+  const right = URL.parse(b);
+  return left !== null && right !== null && requestKey(left) === requestKey(right);
+}

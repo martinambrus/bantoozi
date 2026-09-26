@@ -27,6 +27,7 @@ import {
   parseCacheMaxAge,
   parseFeed,
   recentGapsS,
+  sameRequestUrl,
   urlKey,
   validateFeedUrl,
   type FetchOutcome,
@@ -112,16 +113,18 @@ async function fetchFeed(
       );
       return;
     }
+    // Only a 304 from `fetch_url` itself updates the validators (see `keepValidators` below).
+    const returned = sameRequestUrl(result.finalUrl, feed.fetchUrl) ? result.headers : {};
     await recordOutcome(
       deps,
       feed,
       feedId,
       {
         kind: 'not_modified',
-        ...(result.headers['etag'] === undefined ? {} : { etag: result.headers['etag'] }),
-        ...(result.headers['last-modified'] === undefined
+        ...(returned['etag'] === undefined ? {} : { etag: returned['etag'] }),
+        ...(returned['last-modified'] === undefined
           ? {}
-          : { lastModified: result.headers['last-modified'] }),
+          : { lastModified: returned['last-modified'] }),
       },
       now,
       result.headers['cache-control'],
@@ -199,13 +202,20 @@ async function fetchFeed(
     }
   }
 
-  const target = targetId === feedId ? feed : ((await loadFeedForFetch(deps.db, targetId)) ?? feed);
+  // After a permanent redirect, the renamed feed or the survivor as it is now (its `fetch_url`).
+  const target = result.permanentRedirect
+    ? ((await loadFeedForFetch(deps.db, targetId)) ?? feed)
+    : feed;
   const gaps = recentGapsS(await feedRecentPublishedAt(deps.db, targetId));
   const items7d = await feedItems7d(deps.db, targetId);
-  // An item that failed to ingest (its retries exhausted) must be offered again: keeping this
-  // response's validators would let the next conditional request answer 304 and hide it for good,
-  // so the fetch stores none and the next poll is unconditional.
-  const keepValidators = failed === 0;
+  // Validators are stored only where the next poll sends them back (spec 03 §9, D-18): safeFetch
+  // sends them to `fetch_url` alone, so a response from any other URL (a temporary redirect
+  // target, a rejected permanent one, or a URL that is not the survivor's `fetch_url`) installs
+  // none, since that URL could answer a foreign ETag or date with 304 and hide the new updates.
+  // Nor does a fetch in which an item failed to ingest (its retries exhausted): the item must be
+  // offered again, and a conditional request could answer 304 and hide it for good. Without
+  // validators the next poll is unconditional.
+  const keepValidators = failed === 0 && sameRequestUrl(result.finalUrl, target.fetchUrl);
   const schedule = nextSchedule(
     scheduleFeed(target, gaps),
     {
