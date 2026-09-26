@@ -372,7 +372,7 @@ because only `rel=canonical` fixes AMP), Google News wrappers and hash-bang URLs
 
 **Parsing:**
 - `rss-parser` handles RSS 0.9x/1.0/2.0 and Atom. Custom fields: `media:content`, `media:thumbnail`,
-  `dc:creator`, `dc:date`, `content:encoded`, `sy:updatePeriod`, `sy:updateFrequency`.
+  `dc:creator`, `dc:date`, `content:encoded`, `media:group`, `sy:updatePeriod`, `sy:updateFrequency`.
 - JSON Feed 1.0/1.1 is detected by the `version` URL. It uses a zod-validated in-house parser.
 - Feed-level fields: title, `link` (site_url), description, language (→ `lang_hint`), image/icon,
   `ttl`, `sy:*`.
@@ -401,6 +401,8 @@ because only `rel=canonical` fixes AMP), Google News wrappers and hash-bang URLs
 | `excerpt` | plain text of the excerpt HTML, whitespace-collapsed, max 2,000 chars |
 | `feed_body_text`, `feed_body_html` | full readable publisher text and sanitized HTML before excerpt/model truncation, within the 10 MiB combined extraction-output safety limit; preserve completeness/provenance for bookmark capture, never active HTML |
 | `image_url` | the first of: enclosure with `image/*` type → `media:content` (medium=image) → `media:thumbnail` → the first `<img src>` in the content. Resolved and must be http(s) |
+| `video_evidence` | boolean from the item's media: true when §6.4's feed rules find a video, otherwise false |
+| `feed_body_image_count` | §6.4 in-body image count of `feed_body_html`, computed before sanitizing; null when the item carries no publisher body |
 
 Each fetch processes at most **200 valid items**, newest first by `published_at` (unknown dates keep
 publisher order and sort last). A per-item error is counted and skipped, not a whole-feed failure.
@@ -436,6 +438,39 @@ Additional rules:
 - Embedded images are removed from the stored display HTML for the beta. Keep at most the selected
   safe `image_url` as metadata; the UI's media policy (spec 11 §7) controls whether it is requested.
   This prevents an excerpt from causing uncontrolled third-party requests or hidden tracking pixels.
+- Because sanitizing removes images, iframes and `<video>`, the §6.4 media signals are read from the
+  same parsed fragment **before** it is sanitized. They cannot be recomputed from stored HTML.
+
+### 6.4 Media signals (`mediaSignals`, pure)
+
+Two ranking features (spec 06 §8.1) describe the media in an article. Both are computed locally from
+already-parsed markup, with no network access, no resource loading and no model call.
+
+**Video evidence** is true when any of these holds:
+- the feed item has an enclosure, JSON Feed attachment or `media:content` (including one inside
+  `media:group`) whose type is `video/*` or whose `medium` is `video`. Audio does not count;
+- the article link's host is a video host (label-boundary suffix match on `VIDEO_HOSTS`, below);
+- the examined HTML (the feed excerpt/body HTML, or the extracted page fragment) contains a
+  `<video>` element, or an `<iframe>`, `<embed>` or `<object>` whose resolved `src`/`data` host
+  matches `VIDEO_EMBED_HOSTS`.
+
+`VIDEO_HOSTS` = `youtube.com`, `youtu.be`, `vimeo.com`, `dailymotion.com`, `dai.ly`, `twitch.tv`,
+`tiktok.com`, `rumble.com`. `VIDEO_EMBED_HOSTS` adds `youtube-nocookie.com`, `player.vimeo.com` and
+`facebook.com` only with the path prefix `/plugins/video`. Both lists are constants in
+`packages/feeds`; adding a host is a code change with a fixture, not configuration.
+
+**In-body image count** is the number of distinct images in the main body fragment: the Readability
+result for a page, or `feed_body_html` for a publisher body from the feed. Never count the feed
+excerpt, the page outside Readability's result, or `image_url`. Count `<img>` elements (a
+`<picture>` counts once through its `<img>`) after these exclusions:
+- tracking pixels, by the §6.3 rule (either known dimension ≤ 2);
+- an image without a usable http(s) URL. For lazy loading, take the URL from `src`, else
+  `data-src`, `data-lazy-src`, `data-original`, else the first `srcset`/`data-srcset` candidate;
+  a `data:` placeholder is not a URL;
+- a repeat of an already counted resolved URL, so a `<noscript>` fallback of a lazy image counts once.
+
+Readability drops iframes and embeds that its video allow-list does not match, so configure it
+(its `allowedVideoRegex` option) to keep the `VIDEO_EMBED_HOSTS` embeds before reading the fragment.
 
 ---
 
@@ -472,7 +507,14 @@ For one fetch, in **one transaction per item**, so one bad item doesn't roll bac
      Stored and visible; automatic inference is skipped. An explicitly selected training request may
      process a retained older article under spec 05's interactive demand contract.
    - Otherwise `'ingested'`, and the article is new.
-6. Insert `feed_items`. If a new/current source item supplies publisher body content, store its full
+6. **Media signals** (§6.4): if the item's `video_evidence` is true, set `articles.has_video = true`,
+   for a found or a new article, from any carrier. The flag is monotonic: nothing in ingestion or
+   extraction sets it from true back to false, because a stale true costs one weak feature on one
+   article, while an unset one hides a video from every carrier. A new article whose item has no
+   evidence starts at null (unknown) unless its feed body was examined, which makes it false. When
+   the source item's publisher body becomes the stored fallback body below, store its
+   `feed_body_image_count` as `articles.body_image_count`.
+7. Insert `feed_items`. If a new/current source item supplies publisher body content, store its full
    readable text, sanitized HTML, completeness/provenance and bounded model lead as the revisioned
    fallback in `article_bodies` (`extractor_version = 'feed-v1'`, status `ok`). Linkless items advance extraction without HTTP; linked items may replace this body
    only after successful page extraction. No early skip/error discards a valid feed body.
@@ -575,6 +617,12 @@ fetching non-HTML media.
    - `body_lead` = the first 1,500 chars, cut at the last sentence end (`. ! ? …`) after char 1,000 if
      there is one.
    - `word_count` = whitespace token count of `body_text`, or of the excerpt if there is no body.
+   - Media signals (§6.4), from the pre-sanitize fragment: `articles.body_image_count` = the page
+     fragment's in-body image count when this extraction stores the page body; the feed body's
+     count when the stored body is the feed fallback; null when only an excerpt exists, so the count
+     and `word_count` always describe the same text. Set `articles.has_video` to true on page video
+     evidence; otherwise set it to false only if it is null and a page or feed body was examined.
+     A skipped video-host URL (step 1) is video evidence.
 7. **Language detection** (§8.3). Set `articles.lang` and `lang_confidence`. A genuinely changed
    body/language uses `resetArticleAnswers` once, installing that new body at the incremented revision
    and checking current demand before choosing enrichment/translation as the next stage (do not
@@ -890,6 +938,8 @@ At least:
 - a feed with unescaped `&`
 - relative links and images
 - `media:*` images
+- a video enclosure, a `media:group` video, and a YouTube channel feed (video evidence)
+- a full-content item with images, a tracking pixel and a lazy-loaded image (in-body count)
 - future dates and missing dates
 - a Google News RSS sample
 - a huge feed (> 5 MB, for the size cap)
@@ -901,6 +951,9 @@ HTML page fixtures:
 - an AMP page with `rel=canonical`
 - a page declaring windows-1250 in `<meta>`
 - a non-article (a list page)
+- an article with an embedded YouTube iframe, and one with a `<video>` element (video evidence)
+- an article whose body has lazy-loaded images with `<noscript>` fallbacks, a tracking pixel and a
+  related-articles block outside the Readability result (in-body count)
 
 The old FeedIt prototype's hard cases (it "parses even the most impossible feeds") belong here as they
 are found.

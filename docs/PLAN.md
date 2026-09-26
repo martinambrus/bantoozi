@@ -435,11 +435,11 @@ Complete milestone M1 "Ingestion core" exactly as specified in docs/PLAN.md §6,
 |---|---|---|---|---|
 | M1-T1 | `safeFetch`: IP-literal and DNS address checks, injectable resolver, manual redirects, limits, charset decoding | — | A | 03 §4 |
 | M1-T2 | `canonicalizeUrl`, `url_key`, tracking-param list | — | B | 03 §5 |
-| M1-T3 | `parseFeed`, `normalizeItem`, sanitizing, `title_norm`, `content_hash`, feed fixtures | — | B | 03 §6, §12 |
+| M1-T3 | `parseFeed`, `normalizeItem`, sanitizing, `title_norm`, `content_hash`, media signals (`mediaSignals`), feed fixtures | — | B | 03 §6, §12 |
 | M1-T4 | `nextSchedule` adaptive interval, with simulations | — | C | 03 §9 |
-| M1-T5 | Extraction: skip list, robots, Readability, body lead, canonical detection, politeness limiter | T1 | A | 03 §8 |
+| M1-T5 | Extraction: skip list, robots, Readability, body lead, media signals of the page body, canonical detection, politeness limiter | T1, T3 | A | 03 §6.4, §8 |
 | M1-T6 | Feed discovery and OPML parse/export | T1, T3 | A | 03 §10–11 |
-| M1-T7 | Worker handlers: `feed.schedule`, `feed.fetch` (ingest §7, redirect merge §9), `article.extract` (alias/merge), `feeds.lang_hint` upkeep, `resetArticleAnswers`, inference eligibility and durable bookmark capture | T1–T5 | D | 03 §1–3, §7–9; 05 §5.6 |
+| M1-T7 | Migration for `articles.has_video` and `body_image_count`; worker handlers: `feed.schedule`, `feed.fetch` (ingest §7, redirect merge §9), `article.extract` (alias/merge), `feeds.lang_hint` upkeep, `resetArticleAnswers`, inference eligibility and durable bookmark capture | T1–T5 | D | 03 §1–3, §7–9; 05 §5.6 |
 | M1-T8 | End-to-end ingestion integration test | T7 | D | 03 all |
 | M1-T9 | Dev CLI (`apps/worker/src/cli.ts`, run as `pnpm worker-cli …`): `feeds:add <url> [--user dev@localhost]`, `feeds:fetch-now <feedId>`, `feeds:show <feedId>` | T6, T7 | D | 03 §10 |
 
@@ -461,6 +461,10 @@ Complete milestone M1 "Ingestion core" exactly as specified in docs/PLAN.md §6,
   - Every fixture in spec 03 §12 parses to the expected `NormalizedItem`s (snapshots).
   - The lenient XML retry fixes the unescaped-`&` fixture.
   - Sanitizer tests pass: scripts stripped, links rewritten, pixels removed.
+  - `mediaSignals` unit tests cover each video rule of spec 03 §6.4 (video enclosure, `media:group`
+    video, video-host link, iframe/`<video>` in HTML, audio enclosure → false) and the image-count
+    exclusions (pixel, `data:` placeholder with `data-src`, `<noscript>` repeat, `<picture>`); the
+    feed fixtures snapshot `video_evidence` and `feed_body_image_count`.
 - **T4:**
   - Unit tests cover every branch of spec 03 §9.
   - The 60-day simulations assert `fetch_interval_s` **before jitter**: a busy feed stays ≤ 1,800 s, a
@@ -470,6 +474,8 @@ Complete milestone M1 "Ingestion core" exactly as specified in docs/PLAN.md §6,
   - HTML fixtures: normal article, paywall teaser, AMP with `rel=canonical`, windows-1250 meta, list
     page (→ `no_content`). Each produces the expected status, `body_lead` (≤ 1,500 chars,
     sentence-cut) and word count.
+  - The media fixtures of spec 03 §12 give the expected video evidence and in-body image count,
+    counted before sanitizing; images outside the Readability result are not counted.
   - A robots.txt disallow → `blocked`.
   - A limiter test with fake timers proves ≤ 2 concurrent requests and ≥ 1 s spacing per origin.
 - **T6:**
@@ -491,6 +497,9 @@ Complete milestone M1 "Ingestion core" exactly as specified in docs/PLAN.md §6,
   - `article.extract` performs the redirect and `rel=canonical` alias/merge, then calls
     `pipeline.after('extract')`.
   - `lang_hint` is set per §8.3.
+  - `has_video` and `body_image_count` follow spec 03 §6.4, §7 step 6 and §8.1 step 6: video
+    evidence from any carrier or the page sets true and nothing sets it back to false; the image
+    count comes from the same body as `word_count`, and is null for an excerpt-only article.
   - Bookmark capture reuses valid extracted full text or safely fetches/extracts it, persists an
     immutable retained snapshot and exposes capture status; capture never needs model inference.
   - Off subscriptions and unselected training articles create no translate/enrich/match/cluster
@@ -1121,7 +1130,9 @@ Complete milestone M7 "Personal learning and suggestions" exactly as specified i
 
 **Done when:**
 
-- **T1:** a feature-vector snapshot for a seeded item; the murmur3 test vectors; the sha changes when
+- **T1:** a feature-vector snapshot for a seeded item; the murmur3 test vectors; the media inputs
+  (`has_video` with its mask, and every `img.*` bucket boundary, including the 500-word floor and
+  null counts); the sha changes when
   the spec changes (a test). Card groups, masks, `matched_log` and `cardscore` are computed from a
   snapshot card list, including a later strength change and partial never coverage.
 - **T2:** the signal table of spec 06 §8.2 is implemented, and "the latest explicit signal wins" is
@@ -1301,6 +1312,8 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | 2026-09-26 | M0 Foundations done: status markers in §4 and §5 and a line in `CLAUDE.md` "Current state"; implementation decisions I1–I3 recorded in §17.3 and applied to specs 02 and 08 (D-6) |
 | 2026-09-26 | Personal-model revision R1 (§17.4): card inputs grouped by strength, plus own card inputs once a card has enough rated matches, instead of one input for each of the first 30 cards; ratings survive card edits (rating fingerprint and model context); ridge on the summed loss with λ chosen by cross-validation; card example suggestions after ratings; informational G1 experiment E6. Specs 05–10 and `RankerConfig`/preferences in `packages/shared` updated |
 
+| 2026-09-26 | Media signals R2 (§17.4): the personal model gains `has_video` and a bucketed in-body image density per 500 words, both detected at ingestion and extraction before sanitizing removes the media. Specs 02, 03 and 06 updated; plan: M1-T3, T5, T7 and M7-T1 |
+
 ## 17. Owner decisions and implementation gates
 
 Answers received **2026-09-25**, including the final follow-up decisions Q11–Q14. All fourteen
@@ -1352,3 +1365,4 @@ exceed spending caps or represent an owner pilot as multi-person validation.
 | ID | Problem | Owner answer | Binding implementation |
 |---|---|---|---|
 | R1 | The personal model had one input for each of the first 30 positive cards (by card id) and for every never-card, more than 30 ratings can support, and its fingerprint covered every card, so any card change, including adding an example from the Why-this drawer, discarded all stored ratings. Its ridge penalty on the mean loss also kept every weight small however many ratings accumulated. | Adopt the proposed revision with the review's refinements. | Spec 06: card groups by strength plus own card inputs once a card has enough rated matches (§8.1); a rating fingerprint that card changes do not touch and a model context that covers only the model's own inputs (§8.1, §8.2, §8.4); ridge on the summed loss with λ chosen from `model.lambdaGrid` (§8.3, §11); card example suggestions after ratings (§10; spec 08 §3.1 and §5.3; spec 09 §3.3). Specs 05 §5.1 and §8 and 07 §5 follow; spec 10 adds the informational experiment E6. `RankerConfig` and the preferences schema in `packages/shared` carry the new keys. Plan: M3a-T6, M3b-T2, M4-T7, M6-T3, M7-T1, T3, T4, T5 and T7. |
+| R2 | The personal model had no input for media beyond `has_image` (a thumbnail exists). `ct.media` marks only pieces that are mostly video, so a normal article with an embedded video looked like any other, and nothing distinguished an image-padded piece from an illustrated long read. | Add both signals; measure images against length, in coarse buckets, counting only the extracted main body. | Spec 03 §6.4: `mediaSignals` detects video (video enclosures and `media:content`, video-host links, `<video>` and known player embeds) and counts distinct in-body images (pixels, placeholders and repeats excluded), both read before sanitizing removes the media; §7 step 6 and §8.1 step 6 store them. Spec 02: `articles.has_video` (nullable, monotonic) and `body_image_count` (same text as `word_count`). Spec 06 §8.1: `has_video` with a mask and one-hot `img.none/light/moderate/heavy/unknown` from images × 500 / max(words, 500). `FEATURE_SPEC_V1` is extended in place because no model or feature snapshot exists yet. Plan: M1-T3, T5, T7 and M7-T1. |

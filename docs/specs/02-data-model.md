@@ -427,6 +427,8 @@ CREATE TABLE articles (
   lang             text NULL,                      -- ISO 639-1 or 'und'
   lang_confidence  real NULL CHECK (lang_confidence BETWEEN 0 AND 1),
   word_count       int NULL CHECK (word_count >= 0),
+  has_video        boolean NULL,                   -- spec 03 §6.4; null = unknown, never true → false
+  body_image_count int NULL CHECK (body_image_count >= 0), -- spec 03 §6.4; same text as word_count, null = unknown
   content_hash     text NOT NULL,                  -- spec 03 §6.2
   content_revision bigint NOT NULL DEFAULT 1 CHECK (content_revision > 0),
   story_cluster_id bigint NULL REFERENCES story_clusters(id) ON DELETE SET NULL,
