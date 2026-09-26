@@ -79,6 +79,8 @@ describe('parseFeedDate (spec 03 §6 published_at)', () => {
     ['2026/02/30 10:00:00 +0000'],
     ['Sep 24 2026 24:00 GMT'],
     ['September 24, 2026 13:00 PM GMT'],
+    ['February 28, 2026 10:00 GMT+9999'],
+    ['September 24, 2026 08:00 +0075'],
     ['x'.repeat(200)],
   ])('%s → null', (input) => {
     expect(parseFeedDate(input)).toBeNull();

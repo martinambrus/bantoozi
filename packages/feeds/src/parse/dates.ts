@@ -228,6 +228,8 @@ function parseWithExplicitZone(value: string): number | null {
   const spelled = spelledDateTime(value);
   if (spelled === null) return null;
   const offset = /([+-])(\d{2}):?(\d{2})\b/.exec(value);
+  // An impossible offset (+9999) is malformed, like on the strict paths: V8 would normalize it.
+  if (offset !== null && (Number(offset[2]) > 23 || Number(offset[3]) > 59)) return null;
   const offsetMinutes =
     offset === null
       ? 0
