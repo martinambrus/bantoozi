@@ -5,6 +5,7 @@ import {
   ensureDevUser,
   feedArticlesAwaitingExtraction,
   feedOverview,
+  resolveLiveFeedId,
   subscribeToFeed,
   workerOutbox,
   type Database,
@@ -151,12 +152,16 @@ program
         throw new Error('ingestion handlers are not implemented');
       }
       await fetch.handle({ feedId, force: true }, context);
-      const pending = await feedArticlesAwaitingExtraction(db, feedId);
+      // `feedId` may name a retired feed, or this fetch may have merged it into another feed (a
+      // permanent redirect): extract and show the live survivor that now carries the articles.
+      const liveId = (await resolveLiveFeedId(db, feedId)) ?? feedId;
+      const pending = await feedArticlesAwaitingExtraction(db, liveId);
       for (const articleId of pending) {
         await extract.handle({ articleId }, { jobId: 'worker-cli', queue: 'article.extract' });
       }
-      process.stdout.write(`fetched feed ${feedId}; extracted ${pending.length} article(s)\n`);
-      const overview = await feedOverview(db, feedId);
+      const shown = liveId === feedId ? feedId : `${feedId} (merged into ${liveId})`;
+      process.stdout.write(`fetched feed ${shown}; extracted ${pending.length} article(s)\n`);
+      const overview = await feedOverview(db, liveId);
       if (overview !== null) printOverview(overview);
     });
   });
