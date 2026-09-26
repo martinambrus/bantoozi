@@ -229,9 +229,19 @@ Each run:
 | **E3b** LT + EN cards | translated with LibreTranslate | English | both |
 | **E4** GLM | translated with Ollama `glm-5.3-flash` | global card mode selected on development (§5) | measured alternative for the fallback translation (SK/CZ only) |
 | **E5** Laya zero-shot (optional) | native | as written | measured M9 baseline without assuming an outcome. Skip if `laya` is not installed |
+| **E6** card examples (informational) | native | as written, plus examples chosen by spec 06 §10 | does a rating-derived example improve Jev's card answers? Development only; never a gate input |
+
+**E6** splits each context's development story groups by the time of their first rating into an
+earlier and a later half. It applies spec 06 §10's suggestion rule to the earlier half's E1 answers
+and ratings in rating order, without the frequency limits, preference or fork quota, and accepts every
+suggestion within the example limits of spec 05 §5.1. It then reruns Call B for the later half with
+the resulting cards and reports the paired, group-aware AUC change against E1 on those articles and
+the number of examples added per card. E6 uses no test data, shares the invocation budget and never
+changes selection, thresholds or the G1 decision; M3b runs it after the gate experiments when the
+remaining budget covers its estimate.
 
 **Completeness:** a gate experiment pins its intended engine; an LLM fallback must not silently
-become an E1–E4 Jev answer. Record unavailable cases and retry/resume within budget. Compare all
+become an E1–E4 or E6 Jev answer. Record unavailable cases and retry/resume within budget. Compare all
 variants on the identical assigned/rated cohort; require ≥95% valid scoring coverage per language
 and rater, and include conservative missing-output sensitivity (missing model score behaves as
 unknown/degraded). Below that coverage the result is `needs_more_data`, not a pass on easy items only.
@@ -273,8 +283,9 @@ invocation budget, retain completed answers, and resume explicitly; partial runs
   them as eval data, never inject them into production feedback snapshots. Hold feature/card
   definitions fixed before the simulated feedback stream.
   Report eligible sample counts, activation/insufficient-data state, cards baseline, model AUC and
-  logloss. Under activation minimums report cards-only plus an optional clearly marked research fit;
-  do not pretend a production model exists after ten ratings. G1 test outcomes must not tune this
+  logloss, and the number of own card inputs in each model (spec 06 §8.1). Under activation
+  minimums report cards-only plus an optional clearly marked research fit; do not pretend a
+  production model exists after ten ratings. G1 test outcomes must not tune this
   learner; a proposed adjustment requires another holdout/version.
 
 ---
@@ -349,7 +360,8 @@ additional ≥3-person requirement or unresolved owner waiver for this initial l
 
 1. Choose the better keyword baseline B1/B1-T by development macro AUC (ties choose native B1).
    Select E* from E1/E2/E3/E3b by development macro AUC; ties choose the cheaper native variant.
-   E4/E5 are diagnostics/translation fallback evidence, not all-language core candidates.
+   E4/E5 are diagnostics/translation fallback evidence and E6 is informational; none is an
+   all-language core candidate.
 2. Choose global card text mode: `english` if its paired development gain on non-English-card
    participant-contexts is ≥0.02 in the selected state family; otherwise `as_written`. If no eligible non-English
    card cohort exists, retain `as_written` and mark that decision unmeasured.

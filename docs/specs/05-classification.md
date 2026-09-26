@@ -369,10 +369,11 @@ text_hash = sha256Hex(canonicalJson({ kind, interest: norm(interest), not_for: n
     on promotion from shared to public). A label title is semantic content and is never edited in place
   - derived translations `interest_en`/`not_for_en`: initial fill when null, or an **explicit audited
     retranslation** by the trusted worker (spec 07 §5). Replace the complete validated pair atomically,
-    record old/new digests plus translator version, invalidate/rematch affected card answers and
-    rerank holders in the same transaction/outbox. Do not change the original text/hash or silently
-    overwrite a valid translation during seed/ordinary retries. Effective translated content is
-    part of `card_input_sha256`; incompatible personal models remain inactive until retrained
+    record old/new digests plus translator version, invalidate/rematch affected card answers, rerank
+    holders and record their `user.learn` in the same transaction/outbox. Do not change the original
+    text/hash or silently overwrite a valid translation during seed/ordinary retries. Effective
+    translated content is part of `card_input_sha256`, so a holder's personal model with an own input
+    for that card stops scoring until it retrains from the stored ratings (spec 06 §8.1)
 - `interest_cards.title` is only a default name. Each holder's own name lives in
   `user_cards.title_override`.
 - For **labels**, the title is part of the label's meaning: `text_hash` includes `title` for
@@ -386,10 +387,12 @@ text_hash = sha256Hex(canonicalJson({ kind, interest: norm(interest), not_for: n
 - Interest-card forks count toward `maxForks`. Label forks do not; they are bounded by `maxLabels`.
 
 **Lifecycle** (`packages/db` card repository). Each function runs in the caller's `TenantTx` and
-returns **effects** `{ refreshFeedIds: string[], backfill?: {cardIds, feedIds?}, rankFull: boolean, labelIdChange?: {from, to} }`:
+returns **effects** `{ refreshFeedIds: string[], backfill?: {cardIds, feedIds?}, rankFull: boolean, learn: boolean, labelIdChange?: {from, to} }`:
 - The repository runs `refresh_feed_cards` itself, inside the transaction.
-- The repository/service records required backfill/rank job intents in `job_outbox` in the same
-  transaction as the mutation. The dispatcher publishes after commit; retries are idempotent.
+- The repository/service records required backfill/rank/learn job intents in `job_outbox` in the same
+  transaction as the mutation. `learn` is true for every interest-card change and false for labels,
+  which never train the interest model (spec 06 §8.4). The dispatcher publishes after commit; retries
+  are idempotent.
   Reconciliation is a repair mechanism, not the only protection against losing a committed edit.
 - Revalidate ownership, card kind, subscription scope and quotas inside the locked transaction;
   translations/network calls occur before opening it. Use `INSERT ... ON CONFLICT` for concurrent
@@ -795,9 +798,10 @@ throttling alone does not replace this durable claim.
       rules apply to the user's submitted text/examples. Do not auto-merge upstream wording into a
       fork or silently drop/copy its private examples. Applying a shared update to a private current
       holding returns a conflict until the user explicitly edits it or removes/adopts a chosen card.
-    - on accepted change: refresh active-demand membership, invalidate that user's compatible model
-      context, enqueue admitted-demand backfill and full rerank via the outbox. Other holders, their
-      scores and their selected old version remain unchanged.
+    - on accepted change: refresh active-demand membership and enqueue admitted-demand backfill, a
+      full rerank and `user.learn` via the outbox. The user's ratings stay usable; only a personal
+      model with an own input for the old card retrains (spec 06 §8.1). Other holders, their scores
+      and their selected old version remain unchanged.
     - ignoring an update means keeping the existing version indefinitely while held; no timeout,
       deployment or background seed interprets silence as acceptance. A later library update is a
       new explicit old→new offer, not permission to skip the user's choice.

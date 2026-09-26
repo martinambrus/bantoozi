@@ -19,7 +19,7 @@ type Reason = 'clickbait' | 'promo' | 'shallow' | 'seen' | 'off_topic' | 'other'
 interface UserRankContext {
   userId: string;
   rankRevision: string;                 // bigint decimal; invalidates user-specific ranking inputs
-  modelContextSha: string;              // canonical manifest hash (§8.1)
+  modelContextSha: string;              // model context for the active model's inputs (§8.1)
   config: RankerConfig;                 // fully validated shared defaults + settings overrides
   cards: { cardId: string; title: string; strength: Strength; scopeFeedId?: string;
            interest: string; interestEn?: string }[];                    // texts are needed by BM25 (§9)
@@ -282,6 +282,8 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
   them. The constant is bumped whenever the ranking semantics change.
 - The API bumps `ranker.settings_version` on every change to `ranker.thresholds` (and to any future
   ranking-relevant key), and then enqueues `user.rank {full: true}` for users active in the last 7 days.
+  A change to `strengthWeights` or `model` also records `user.learn` for users with an active model
+  (§8.4).
 - Inactive users catch up on their next visit: `GET /articles` enqueues a full rank if **any** eligible
   row is missing/outdated, has an old rank revision, or has `next_rank_at ≤ now`. A MAX/newest-version
   check is insufficient after partial runs.
@@ -362,7 +364,8 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
 
 | Group | Features |
 |---|---|
-| Cards | `card.<id>` = p for the first 30 positive cards in the user manifest (numeric id order; fixed across items), with paired `known.<id>` masks. `never.<id>` plus known masks for never-cards. `other_cardmax` covers positive cards beyond 30; `cardmax` covers all positives. Missing values are 0 only with a 0 known mask; scope-excluded cards are missing |
+| Card groups | For each strength s (`must`, `love`, `like`, `never`): `best.<s>` = the highest p among the user's applicable cards of that strength, with a `known.best.<s>` mask. `matched_log = ln(1 + n)`, where n counts applicable positive cards with p ≥ `model.cardMatchP`. `cardscore` = the cards-only score of §4.1 under the model's `strengthWeights` |
+| Own card inputs | `card.<id>` = p with a `known.card.<id>` mask, only for held cards that pass the evidence rule below. Their number grows with the user's ratings, not with their cards |
 | Facets | `ct.*` (12), `t1.*` (20), `depth`, `depth_conf`, `clickbait`, `promotional`, `time_sensitive`, `evergreen`, `paywall_teaser`, `tone`, `scope.*` (4) |
 | Length | one-hot `len.short/medium/long/very_long/unknown`, boundaries from spec 05 §3.1 (<150 / <600 / <1500 / ≥1500 / null words) |
 | Freshness | one-hot `age.lt6h/lt24h/lt72h/older`: disjoint [0,6h), [6h,24h), [24h,72h), [72h,∞), using age at snapshot for training and now for scoring (§5) |
@@ -370,13 +373,43 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
 | Other | `has_image`, `cluster_log = ln(1 + clusterSize)` |
 | Source | `feed.h<k>`, one-hot with k = murmur3(feedId) mod 32, using the lowest numeric id in `item.inferenceFeedIds`. `author.h<k>`, one-hot with k = murmur3(`normalizeText(author)`) mod 16 (none if there is no author). murmur3 = **MurmurHash3 x86 32-bit, seed 0, over the UTF-8 bytes** of the decimal id string or the normalized author |
 
-`feature_spec_sha` hashes the canonical feature algorithm and ordered feature names. In addition,
-`metrics.context_sha` hashes the complete per-user input manifest: all interest card ids, strength
-and scope (including cards outside the first 30), both behavioral-consent flags, feature spec, active
-question/state/translation manifests, ranking config and model engine/version. Display-only card
-renames and ordinary subscription additions are excluded (source hash vocabulary is fixed). Store the manifest, scaler and dropped columns with the model. A mismatch
-immediately disables model scoring until a compatible model is trained; positional vectors must
-never silently bind to different cards.
+Scoring computes the card inputs from the item's current answers and the user's current strengths.
+Training computes them from each sample's card list (§8.2), with every card's p and its strength
+when the rating was given, so a later strength change does not rewrite old samples. Scope-excluded
+cards are missing. A missing value is 0 with a 0 mask: a strength group with no applicable card, the
+never group while any applicable never-card lacks a usable answer, and an own input whose card did
+not apply or had no usable answer. The positive-card inputs need complete positive coverage, as
+scoring does (§2 step 4a), so a sample without it is not trained on (§8.2).
+
+The group inputs pool every rating into a few weights that mirror the cards-only score, and a new
+card counts through its group straight away. An **own card input** adjusts one card on top of its
+group. A held card (positive or never) gets one when, among a training partition's explicit samples,
+at least `model.cardMinMatched` (8) had that card applicable with p ≥ `model.cardMatchP` (0.5),
+including at least one like and one dislike. The rule runs on each training partition, never on its
+validation samples (§8.3). Own inputs are keyed by card id: an edit that creates a new card id (text,
+examples, an accepted library update) starts that card's evidence again, because its answers
+changed; until then the card counts through its group.
+
+`feature_spec_sha` hashes the canonical feature algorithm: the fixed feature names and the group and
+evidence rules. Compatibility is checked at two levels:
+
+- **Rating fingerprint** (`rating_sha`): the feature spec, the model engine/version and the active
+  question/state/translation manifests, including language modes and the card text mode, that is,
+  whatever changes the meaning of every answer. A feedback snapshot is used for training only while
+  its fingerprint equals the current one (§8.2). Card ids, strengths and scopes are not part of it.
+- **Model context** (`metrics.context_sha`): the rating fingerprint, the `strengthWeights` and
+  `model` config the model was trained with, both behavioral-consent flags, and for each own card
+  input its card id, strength, scope and current question hash (`card_input_sha256`, spec 05 §2). The
+  model scores only while the context computed from the current state equals the stored one. A
+  mismatch stops model scoring at once and enqueues `user.learn` (§8.4). The ratings stay usable, so
+  the retrained model can activate from the same history without new feedback.
+
+A card change that touches no own input (adding, deleting, re-weighting, rescoping or editing a
+card, or adding an example) changes neither level: the model keeps scoring, and a new card counts
+through its strength group. Display-only card renames, lane/tier thresholds and ordinary
+subscription additions are excluded (source hash vocabulary is fixed). Store the manifest
+(fingerprint, context, own inputs and chosen λ), scaler and dropped columns with the model. Inputs
+are named, never positional, so a weight can never silently bind to a different card.
 
 Only validated current-revision answers from the **same pinned engine family/version and question
 manifest** are used. `prefilter` is unknown, not a probability. `FEATURE_SPEC_V1`'s engine family is
@@ -441,9 +474,12 @@ archive operations are housekeeping, never stand-alone dislike evidence.
 **`feedback_events.value` v1:** every feedback mutation stores the signal payload and an immutable
 `before` snapshot `{lane,pLike,tier,scoreVersion,rankRevision,scoredAt}` from the ranking seen before
 that action, plus `staleAtFeedback` (boolean or null). Learning-relevant actions additionally record
-`features: {specSha,contextSha,values,sourceManifest,snapshotAt}` when valid inputs exist. Build it
-before applying the action, under the same content revision as the displayed score. Features include
-known masks, all values needed for the cards-only baseline, and the story-group id at that time.
+`features: {specSha,ratingSha,cards,values,sourceManifest,snapshotAt}` when valid inputs exist. Build
+it before applying the action, under the same content revision as the displayed score. `cards` lists
+every interest card (positive or never) the user held that applied to the item as `{id, strength, p}`,
+with the strength at that moment and `p = null` when the card had no usable answer; the card inputs
+and the cards-only baseline are derived from it at training time (§8.1). `values` holds the other
+inputs with their known masks, and the story-group id at that time.
 For selected slow training, capture or reference `analysisRequestId`, immutable `input_sha` and the
 pre-feedback input snapshot before committing the first rating (spec 05 §1.1). `features` may be null
 while analysis is pending; once complete, a separate immutable derived feature snapshot may be
@@ -454,7 +490,9 @@ new question/model manifest cannot be substituted. Record processing time separa
 time. A current cache with identical pinned inputs may satisfy the request without a new call.
 
 If inputs are absent/stale and no authorized frozen request exists, retain the rating but omit it
-from training until a new compatible event; do not infer permission from the rating alone. Saved
+from training until a new compatible event; do not infer permission from the rating alone. The same
+applies when an applicable positive card had no usable answer yet: training, like scoring, needs
+complete positive coverage (§8.1). Saved
 bookmark actions may reference an older `snapshotId/contentRevision` (spec 08). Bookmark archives
 retain text and sanitized HTML (Q14), without capturing image or other media binaries. Harmless safe
 URL references may remain under the image-preference policy; they are not permanently archived media
@@ -475,9 +513,13 @@ retained explicit feedback is private history, not permission to reclassify arbi
 Q11 is resolved: enable inference explicitly per feed; only new arrivals are automatic afterward.
 Older articles require explicit selection, and no learned-model threshold changes that mode.
 
-Only surviving samples with snapshot and feedback timestamps within the last **180 days** are used.
-The current `context_sha` must match; changing card definitions/strengths/scopes may therefore return
-the user to cards-only ranking until enough compatible feedback exists.
+Only surviving samples with snapshot and feedback timestamps within the last **180 days** whose
+`specSha` and `ratingSha` match the current feature spec and rating fingerprint (§8.1) are used.
+Card changes never discard samples: a sample keeps the card answers and strengths it was captured
+with, so adding, removing, re-weighting, rescoping or editing a card, adding an example or accepting
+a library update keeps the user's training history. A new engine version, question set, translation
+setting or card text mode changes the meaning of every answer, so it returns the user to cards-only
+ranking until enough compatible feedback exists.
 
 ### 8.3 Training (`trainUserModel(samples, now)`, pure)
 
@@ -488,31 +530,41 @@ the user to cards-only ranking until enough compatible feedback exists.
   `k = min(5, minority explicit-class group count)`, at least 3; reduce k if needed. Every validation
   fold and its training partition must contain both explicit classes. If impossible, record
   `insufficient_validation` and do not activate. Implicit samples from a held-out group are also held
-  out. Fit standardization and zero-variance dropping **inside each training fold**.
-- **Objective:** minimize weighted mean logistic negative log-likelihood plus
-  `lambda/2 * sum(w_i²)`; intercept unregularized. λ defaults to 1.0. Fit by damped Newton/IRLS,
-  at most 25 iterations, stopping at loss change < 1e-6. Use stable sigmoid/log-sum-exp, positive
-  ridge on singular Hessians and backtracking if loss rises. Nonfinite/nonconverged fits are rejected,
-  never serialized as active models.
+  out. Fit the own-card-input rule (§8.1), standardization and zero-variance dropping **inside each
+  training partition**, outer and inner folds alike, never on its validation samples.
+- **Objective:** minimize the weighted **sum** of logistic negative log-likelihoods (sample weights
+  from §8.2) plus `lambda/2 * sum(w_i²)`; intercept unregularized. The penalty stays the same as
+  ratings accumulate, so an input the ratings support earns its weight while thin evidence stays
+  near zero. A mean loss would multiply the penalty by the number of ratings and keep every weight
+  small however much evidence accumulates. Fit by damped Newton/IRLS, at most 25 iterations,
+  stopping at loss change < 1e-6. Use stable sigmoid/log-sum-exp, positive ridge on singular Hessians and backtracking
+  if loss rises. Nonfinite/nonconverged fits are rejected, never serialized as active models.
+- **Choosing λ** from `model.lambdaGrid`: fit every grid value on the same grouped folds, fit a Platt
+  calibrator (below) on each value's out-of-fold explicit logits, and take the value with the lowest
+  calibrated out-of-fold logloss, ties to the larger λ. If those folds cannot be formed, take the
+  largest value. Each outer training partition chooses its own λ with inner folds; the final model
+  chooses with the outer folds and records its λ in the manifest.
 - **Metrics:** out-of-fold `cv_auc` and `cv_logloss` use explicit examples only, one per article.
   `baseline_auc` and `baseline_logloss` use cards-only scores on exactly those snapshots and folds;
   report grouped bootstrap confidence intervals, class counts and skipped-sample reasons. Single-
   class AUC is null, never 0.5 or zero.
-- **Calibration (Platt):** fit `P = sigmoid(a*z+b)` on out-of-fold explicit logits with a weak λ=0.01
-  prior toward a=1,b=0 and constrain a>0. Calibration reporting uses nested folds: each outer
-  validation fold uses a calibrator fitted only on inner out-of-fold predictions of its training
-  partition. If inner data lacks both classes, use identity calibration for that fold. Fit the final
-  calibrator on all out-of-fold logits and the final scaler/weights on all eligible training samples.
+- **Calibration (Platt):** fit `P = sigmoid(a*z+b)` on out-of-fold explicit logits with a weak prior
+  (strength 0.01) toward a=1,b=0 and constrain a>0. Calibration reporting uses nested folds: each
+  outer validation fold uses a calibrator fitted only on inner out-of-fold predictions of its training
+  partition, at that partition's λ. If inner data lacks both classes, use identity calibration for
+  that fold. Fit the final calibrator on all out-of-fold logits at the final λ, and the final
+  scaler/weights on all eligible training samples.
 - **Activation** requires `n_explicit ≥ 30`, explicit positives ≥5 and negatives ≥5, valid grouped
   CV, `cv_auc ≥ 0.60`, `cv_auc ≥ baseline_auc − 0.02`, and calibrated `cv_logloss` no worse than
   `baseline_logloss`. An uncalibrated card score is a baseline, not ground truth probability.
-  A failed candidate leaves the previous compatible active model in place, unless deletion/undo or
-  context changes invalidated its training evidence. Activation and deactivation are one transaction
-  under a user lock; the unique-active index must never transiently conflict.
+  A failed candidate leaves the previous active model in place while it is still compatible (§8.1)
+  and deletion/undo has not invalidated its training evidence. Activation and deactivation are one
+  transaction under a user lock; the unique-active index must never transiently conflict.
 - **Contributions:** explain `a*w_i*x_scaled_i`, top 3 by absolute value (stable feature-name tie
-  break). Explain these as associations in this model, not causal reasons. Hash collisions make
-  `feed.h*` mean "source group", not uniquely "this source". Include the calibrated intercept
-  separately if needed; top three need not sum to the full score.
+  break). Label a group input by its strength ("your Love interests") and an own card input by the
+  card's current display title. Explain these as associations in this model, not causal reasons.
+  Hash collisions make `feed.h*` mean "source group", not uniquely "this source". Include the
+  calibrated intercept separately if needed; top three need not sum to the full score.
 - **Retention:** keep the active version plus the 3 newest other versions. Store attempt cutoff and
   rejection reason even when activation fails; no change repeatedly retrains the same data.
 
@@ -522,17 +574,23 @@ the user to cards-only ranking until enough compatible feedback exists.
   feedback changes since the last processed cutoff, including a bulk operation that crosses the
   boundary. Do not use `n % 10 == 0`; it misses batches and concurrent updates. Count event ids with
   deterministic effective-state reduction, not only current non-null `rated_at` rows.
-- Undo/unrate/deletion or a context change invalidates affected models immediately and enqueues learn
-  even below ten. Changes to implicit evidence, preferences and 180-day retention also participate in
-  the nightly trigger. No revoked evidence may remain silently active in a stored model.
+- Undo/unrate/deletion invalidates affected models immediately and enqueues learn even below ten.
+  So does a model-context mismatch (§8.1). Every interest-card change, every behavioral-consent change
+  and, for users with an active model, a `ranker.thresholds` change to `strengthWeights` or `model`
+  records a debounced `user.learn` in the same outbox transaction. The handler trains only when the
+  model context or the eligible samples differ from the last attempt, and it reuses the stored
+  ratings, so a card edit never waits for new feedback. Changes to implicit evidence, preferences and
+  180-day retention also participate in the nightly trigger. No revoked evidence may remain silently
+  active in a stored model.
 - A selected analysis request completing valid features for already-recorded feedback also enqueues
   learning; the earlier pending rating must not be stranded below a stale training watermark.
 - `house.nightly-learn` enqueues users whose effective input manifest differs from the last attempt,
   including implicit-only changes and expiry; users with no changed inputs do not retrain.
-- Handler: under per-user serialization capture a committed feedback cutoff/context hash → build
-  samples → train → compare current cutoff/context before activation → store candidate and attempt
-  metadata → activate if eligible. If newer invalidating input appeared, keep the attempt inactive
-  and enqueue another run. Activation/deactivation increments rank_revision, enqueues a full rank;
+- Handler: under per-user serialization capture a committed feedback cutoff, rating fingerprint and
+  card manifest → build samples → train → compare the current cutoff, fingerprint and model context
+  before activation → store candidate and attempt metadata → activate if eligible. If newer
+  invalidating input appeared, keep the attempt inactive and enqueue another run.
+  Activation/deactivation increments rank_revision, enqueues a full rank;
   activation also enqueues `user.suggest`. A failure to train must not suppress future retries after
   new evidence arrives.
 
@@ -593,6 +651,26 @@ baseline (spec 10).
   - when the preference is `never`, no prompt is shown at all, even for Maybe items
   - checking and setting `feedback_prompted_at` is atomic; retries/concurrent dwell requests cannot
     issue two prompts or repeatedly roll the sampling probability
+- **Card example suggestions** (`suggestExample`, pure, in `packages/ranker`; the rating endpoint
+  calls it, spec 08 §5.3). An example changes Jev's own answer for every later article of that card,
+  so it helps before any personal model exists. Use the item's stored `explain` only when its
+  `inputs.contentRevision` is the rated revision and its source is `cards` or `model`. Among its
+  positive cards with a `typesafe` answer, take the one with the highest p (ties: lowest numeric id):
+  - a dislike with reason `off_topic` and p ≥ `lanes.maybe` → `{cardId, side: 'no'}`. Other reasons,
+    or none, never suggest: the card may have matched correctly, and a "not this" example would
+    teach Jev to reject the topic itself
+  - a like with `lanes.maybe` ≤ p < `lanes.forYou` → `{cardId, side: 'yes'}`. A like that every card
+    scored below `lanes.maybe` is an unexplained like, handled by card suggestions (spec 05 §7) and
+    "make a card from this" (spec 09 §3.5)
+  - nothing otherwise. Never-cards are not suggested, because their examples change what gets hidden
+    (the Why-this drawer still offers them), and neither bulk ratings, prompt answers, un-rating,
+    bookmarks nor implicit signals produce a suggestion
+  - no suggestion when `prefs.exampleSuggestions` is false, the article title is already an example
+    on that side, the card is not yet a private fork and the user already holds `maxForks` forks, the
+    same card was suggested in the last 7 days, or 3 suggestions were made in the last 24 hours,
+    counted from earlier rating events that carried one (spec 08 §5.3)
+  - a suggestion is only an offer: nothing changes until the user accepts it through
+    `POST /cards/:id/examples`
 
 ---
 
@@ -613,8 +691,9 @@ export const DEFAULT_RANKER_CONFIG = {
   demotion: { factor: 0.6, clickbait: 0.8, promotional: 0.8, shallowDepth: 0.25,
               staleTimeSensitive: 0.7, staleAgeHours: 72, autoMinDislikes: 3, autoWindowDays: 90 },
   labelSuggest: 0.8,
-  model: { lambda: 1.0, minExplicit: 30, minEachClass: 5, minCvAuc: 0.60, maxBaselineDrop: 0.02,
-           retrainEvery: 10, historyDays: 180, keepVersions: 3 },
+  model: { lambdaGrid: [1, 3, 10, 30, 100], minExplicit: 30, minEachClass: 5, minCvAuc: 0.60,
+           maxBaselineDrop: 0.02, retrainEvery: 10, historyDays: 180, keepVersions: 3,
+           cardMatchP: 0.5, cardMinMatched: 8 },
   bm25: { k1: 1.2, b: 0.75, scale: 3 },
 } as const;
 
@@ -626,7 +705,9 @@ export const RANK_WINDOW_DAYS = 14;
 Validate the fully merged config: all numbers finite; `0 ≤ lanes.maybe < lanes.forYou ≤ 1`;
 `tiers` exactly four strictly increasing values in (0,1); `0 ≤ never.soft < never.hide ≤ 1`;
 all probabilities/weights/factors in [0,1]; window/history/count fields positive integers with
-implementation bounds; BM25 scale/k1 positive and b in [0,1]. Reject invalid admin updates atomically,
+implementation bounds; BM25 scale/k1 positive and b in [0,1]; `model.lambdaGrid` 1–10 strictly
+increasing positive values (an override replaces the whole list, like `tiers`); `model.cardMatchP`
+in (0,1]. Reject invalid admin updates atomically,
 including unknown keys such as `windowDays`: the window is the fixed `RANK_WINDOW_DAYS`.
 The implementation derives all examples/tables above from these defaults, not duplicated literals.
 
@@ -643,6 +724,15 @@ The implementation derives all examples/tables above from these defaults, not du
   lowers the base card score with everything else fixed. This is **not** guaranteed for a learned
   model with negative coefficients or for lane changes from a deciding-engine tie break
 - logistic regression recovers the signs of known weights on synthetic data and reaches AUC ≥ 0.9
+- card inputs from a snapshot card list: group maxima and masks, `matched_log`, `cardscore`, a
+  strength change after the snapshot (the snapshot strength counts) and partial never coverage
+  (unknown)
+- the own-card-input rule at its boundaries (7 vs 8 matches, one class only) and inside each training
+  partition; λ chosen by the folds, ties to the larger value
+- with the summed-loss penalty, a predictive own card input's weight grows from 30 to 1,000
+  synthetic ratings, while a card without signal stays near zero
+- `suggestExample`: reasons, the p bands, never-cards, content revision and source, the 7-day and
+  24-hour limits, `maxForks`, duplicate examples and the preference
 - Platt scaling reduces ECE on synthetic over-confident scores
 - the activation rule
 - BM25 ordering on a hand-made corpus
@@ -657,6 +747,10 @@ The implementation derives all examples/tables above from these defaults, not du
 - clock-only freshness and 90-day auto-demotion changes become visible without new articles
 - partial/prefilter answers and scope-excluded never/must cards never produce false negative hides
 - fold-local scalers, story grouping, nested calibration, single-class folds and nonconvergence
+- a card change without an own input keeps the active model scoring and every sample usable;
+  editing, re-weighting, rescoping or removing a card with an own input stops model scoring at once,
+  and a retrain from the stored samples reactivates a model without new feedback; a new engine
+  version or question set still returns the user to cards-only
 - event/request input snapshot predates rating; deferred features use that frozen input only;
   repeated dwell/rate/undo adds no duplicate sample; bulk 9→12 explicit ratings
   schedules training; revoked evidence cannot survive in an active model

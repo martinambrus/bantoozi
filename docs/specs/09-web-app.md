@@ -201,6 +201,12 @@ login without leaking the previous account's UI. Slow classification leaves arti
   previous rating/read/archive state with `rating:null`. If a newer device action prevents undo,
   refresh and show that conflict. A failed optimistic update restores only that action's changes,
   not an old whole-query snapshot that could overwrite subsequent successful actions.
+- **Example suggestion:** when a rating response carries `exampleSuggestion` (spec 06 §10), the undo
+  toast stays 8 s and adds one action, "Teach *EV battery tech*: this is it" (side `yes`) or "Teach
+  *EV battery tech*: not this" (side `no`), plus "Stop suggesting", which sets
+  `exampleSuggestions=false`. The action calls `POST /cards/:id/examples {articleId, side}`, swaps
+  the cached card id and shows the same confirmation as the Why-this drawer. Ignoring it changes
+  nothing. Responses to replayed offline actions never show a suggestion.
 
 ### 3.4 Keyboard shortcuts (desktop; `?` shows the overlay)
 
@@ -242,7 +248,7 @@ Rendered from `explain` (spec 06 §6.2):
 4. **Rules applied:** the codes rendered as sentences, each with an "undo" (delete the rule / reset
    the preference).
 5. **Personal model** (if any): the top 3 contributing factors in plain language ("You often like
-   articles from this source").
+   articles from this source", "Matches for your Love interests", "Your card *EV battery tech*").
 6. **Actions:** make a card from this (prefilled editor, §6), boost/block source, block author, mute
    keyword (select a word from the title).
 

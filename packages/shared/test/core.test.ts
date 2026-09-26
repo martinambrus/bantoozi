@@ -143,7 +143,9 @@ describe('UserPreferences (spec 08 §3.1)', () => {
     expect(read).not.toHaveProperty('legacy');
     expect(DEFAULT_USER_PREFERENCES.loadRemoteImages).toBe(false);
     expect(DEFAULT_USER_PREFERENCES.implicitFeedback).toBe(false);
+    expect(DEFAULT_USER_PREFERENCES.exampleSuggestions).toBe(true);
     expect(DEFAULT_USER_PREFERENCES.swipe).toEqual({ left: 'dislike', right: 'like' });
+    expect(readUserPreferences({ exampleSuggestions: 'no' }).exampleSuggestions).toBe(true);
   });
 
   it('merges only supplied leaves and replaces arrays', () => {
@@ -161,6 +163,11 @@ describe('UserPreferences (spec 08 §3.1)', () => {
     });
     expect(next.folderOrder).toEqual(['c']);
     expect(current.demote.stale).toBe('auto');
+    const quiet = mergeUserPreferences(
+      current,
+      UserPreferencesPatchSchema.parse({ exampleSuggestions: false }),
+    );
+    expect(quiet.exampleSuggestions).toBe(false);
   });
 
   it('rejects unknown keys and empty patches', () => {
