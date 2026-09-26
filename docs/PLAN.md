@@ -443,11 +443,11 @@ Complete milestone M1 "Ingestion core" exactly as specified in docs/PLAN.md §6,
 |---|---|---|---|---|---|
 | M1-T1 | `safeFetch`: IP-literal and DNS address checks, injectable resolver, manual redirects, limits, charset decoding | — | A | 03 §4 | ✓ `59f334d` |
 | M1-T2 | `canonicalizeUrl`, `url_key`, tracking-param list | — | B | 03 §5 | ✓ `50373a3` |
-| M1-T3 | `parseFeed`, `normalizeItem`, sanitizing, `title_norm`, `content_hash`, media signals (`mediaSignals`), feed fixtures | — | B | 03 §6, §12 | ✓ `4d7c731`, `fbb989a`, `d52acdb` |
+| M1-T3 | `parseFeed`, `normalizeItem`, sanitizing, `title_norm`, `content_hash`, media signals (`mediaSignals`), feed fixtures | — | B | 03 §6, §12 | ✓ `4d7c731`, `fbb989a`, `d52acdb` and the JSON Feed id fix |
 | M1-T4 | `nextSchedule` adaptive interval, with simulations | — | C | 03 §9 | ✓ `66e999f` |
 | M1-T5 | Extraction: skip list, robots, Readability, body lead, media signals of the page body, canonical detection, politeness limiter | T1, T3 | A | 03 §6.4, §8 | ✓ `b971298`, `5408064` and the robots.txt rejection and capped image count fixes |
 | M1-T6 | Feed discovery and OPML parse/export | T1, T3 | A | 03 §10–11 | ✓ `afa0514`, `390bfd3` |
-| M1-T7 | Migration for `articles.has_video`, `body_image_count` and `media_revision`; worker handlers: `feed.schedule`, `feed.fetch` (ingest §7, redirect merge §9), `article.extract` (alias/merge), `feeds.lang_hint` upkeep, `resetArticleAnswers`, inference eligibility and durable bookmark capture | T1–T5 | D | 03 §1–3, §7–9; 05 §5.6 | ✓ `e81e18a`, `dd02c22`, `eb68fff`, `965655b`, `64ad9ff`, `8cbf0be`, `6750847`, `28f4517`, `3ac8a85`, the canonical-after-redirect fix and the Undo-pin merge retry |
+| M1-T7 | Migration for `articles.has_video`, `body_image_count` and `media_revision`; worker handlers: `feed.schedule`, `feed.fetch` (ingest §7, redirect merge §9), `article.extract` (alias/merge), `feeds.lang_hint` upkeep, `resetArticleAnswers`, inference eligibility and durable bookmark capture | T1–T5 | D | 03 §1–3, §7–9; 05 §5.6 | ✓ `e81e18a`, `dd02c22`, `eb68fff`, `965655b`, `64ad9ff`, `8cbf0be`, `6750847`, `28f4517`, `3ac8a85`, the canonical-after-redirect fix, the Undo-pin merge retry and the lost fetch lock stop |
 | M1-T8 | End-to-end ingestion integration test | T7 | D | 03 all | ✓ `03f7741` |
 | M1-T9 | Dev CLI (`apps/worker/src/cli.ts`, run as `pnpm worker-cli …`): `feeds:add <url> [--user dev@localhost]`, `feeds:fetch-now <feedId>`, `feeds:show <feedId>` | T6, T7 | D | 03 §10 | ✓ `6b2eea2`, `6026689`, `8d591aa` |
 
