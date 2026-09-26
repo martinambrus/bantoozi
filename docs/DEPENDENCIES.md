@@ -28,7 +28,7 @@ pin exact versions (`save-exact`). Update this file in the same commit as any ve
 
 | Concern | Package | Version | Used by |
 |---|---|---|---|
-| Validation / DTOs | zod | 4.6.5 | shared, api |
+| Validation / DTOs | zod | 4.6.5 | shared, api, feeds (JSON Feed validation) |
 | IDs | uuidv7 | 1.2.1 | shared |
 | Logging | pino / pino-pretty (dev) | 10.3.1 / 13.1.3 | shared, api, worker |
 | Email | nodemailer | 10.0.10 (+ @types/nodemailer 8.0.2) | shared |
@@ -45,6 +45,11 @@ pin exact versions (`save-exact`). Update this file in the same commit as any ve
 | Feed parsing | rss-parser | 3.13.0 | feeds |
 | Extraction | @mozilla/readability / linkedom | 0.6.0 / 0.18.13 | feeds |
 | Sanitizing | sanitize-html | 2.17.7 (+ @types/sanitize-html 2.16.1) | feeds |
+| Address classification | ipaddr.js | 2.5.0 | feeds (SSRF address policy, spec 03 §4) |
+| Charset detection / decoding | chardet / iconv-lite | 2.2.0 / 0.7.3 | feeds (response decoding, spec 03 §4) |
+| XML parsing | fast-xml-parser | 5.11.1 | feeds (bounded raw-markup pass in feed parsing, OPML; spec 03 §6, §11) |
+| robots.txt | robots-parser | 3.0.1 | feeds (robots.txt checks, spec 03 §8.1) |
+| Public suffix list | tldts | 7.4.15 | feeds (registrable domains, spec 03 §8.1) |
 | CLI | commander | 15.0.0 | worker, eval |
 
 ## Web client (spec 01 §1, spec 09)

@@ -72,3 +72,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   item on every fetch. The hash keeps the identity global and deterministic (the same overlong URL
   from two feeds is still one article), `canonical_url` keeps the full URL, and `safeFetch` already
   rejects URLs above 8,192 bytes. Spec 03 §5 step 7 updated.
+- D-12: 2026-09-26 M1-T1 — new safe-client error code `FEED_ORIGIN_COOLDOWN` (with `retryAt`): no
+  request was sent because the origin is in a persisted 429/503 cooldown (§8.2), or because its
+  politeness throttle (two concurrent leases, one second between starts) cannot grant a start before
+  the request deadline. Spec 03 §4 item 8 listed no code for this case, but §8.2 requires jobs to
+  defer (delayed outbox intents, or the feed's next fetch time) instead of sleeping in a worker or
+  counting a transient cooldown as a feed or extraction failure, so callers must tell it apart from
+  `FEED_TIMEOUT`. The API maps it like every `FEED_*` code (422, spec 08 §1). Spec 03 §4 updated;
+  `packages/shared` errors list it.

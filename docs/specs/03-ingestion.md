@@ -310,8 +310,11 @@ separate tenant-isolated design before support, not an exception to this fetcher
    It never throws for network or HTTP errors.
 8. **Error codes:** `FEED_BLOCKED_ADDRESS`, `FEED_DNS_ERROR`, `FEED_TIMEOUT`, `FEED_TLS_ERROR`,
    `FEED_CONNECTION_ERROR`, `FEED_TOO_LARGE`, `FEED_HTTP_<status>`, `FEED_TOO_MANY_REDIRECTS`,
-   `FEED_INVALID_URL`, `FEED_DECODE_ERROR`. A 304 is a successful bodyless result; HTTP failures retain
-   the bounded response headers needed for `Retry-After`, without retaining or logging error bodies.
+   `FEED_INVALID_URL`, `FEED_DECODE_ERROR`, and `FEED_ORIGIN_COOLDOWN` with `retryAt` when no request
+   was sent because the origin is cooling down after a 429/503 or its throttle (§8.2) cannot grant a
+   start before the deadline; callers defer the work rather than count a failure (D-12). A 304 is a
+   successful bodyless result; HTTP failures retain the bounded response headers needed for
+   `Retry-After`, without retaining or logging error bodies.
 9. **Testing escape hatch:** `FETCH_ALLOW_PRIVATE=true` disables **both** the address checks and the
    port allow-list, so local fixture servers on random ports work (M1-T8, E2E). Config validation
    **rejects** this flag when `NODE_ENV=production`. SSRF tests always run with the hatch **off**, using

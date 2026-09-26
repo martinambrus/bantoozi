@@ -5,6 +5,8 @@ pnpm-lock.yaml
 **/coverage/
 **/.turbo/
 **/node_modules/
+# Test fixtures are byte-exact inputs (encodings, malformed markup), never reformatted.
+packages/testing/fixtures/
 # Generated files
 apps/web/src/routeTree.gen.ts
 packages/db/drizzle/meta/
