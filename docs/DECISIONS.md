@@ -121,9 +121,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   unchanged; after an adopted permanent redirect the target is the new `fetch_url` and keeps its
   validators. The rename that changes `fetch_url` clears the old URL's validators in the same
   update, so a worker that stops before the fetch records its outcome never sends them to the new
-  URL. The already implemented rule that a fetch whose item failed to ingest after its retries
-  clears them too is now stated as well, since both follow the parse-error rule. Found by the Codex
-  review of PR #5. Spec 03 §9 updated.
+  URL. The safe client reports a 304 as success only for a request that sent validators; a 304 to
+  one that sent none (a redirect target, robots.txt) is `FEED_HTTP_304`, so it can neither count as
+  "not modified" nor read as an allow-all robots.txt (spec 03 §4 item 8). The already implemented
+  rule that a fetch whose item failed to ingest after its retries clears them too is now stated as
+  well, since both follow the parse-error rule. Found by the Codex review of PR #5. Spec 03 §4 and
+  §9 updated.
 - D-19: 2026-09-26 M1-T7 — completeness is part of a bookmark snapshot's identity:
   `article_snapshots` is unique on `(article_id, source_revision, content_sha256, completeness)`
   instead of `(article_id, source_revision, content_sha256)` (migration 0011). A linked item's feed

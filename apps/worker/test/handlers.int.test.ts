@@ -1173,15 +1173,35 @@ describe('transient page failures and permanent feed redirects (M1-T7)', () => {
     }
   });
 
-  it('keeps the stored validators when the 304 comes from a redirect target', async () => {
+  it('records a 304 from a redirect target as an HTTP failure and keeps the stored validators', async () => {
     server.redirect('/detour/feed.rss', server.url('/detour/elsewhere.rss'), 307);
     server.route('/detour/elsewhere.rss', { status: 304, headers: { etag: '"elsewhere-v1"' } });
     const feedId = await addFeed('/detour/feed.rss', [{ user: reader, mode: 'off' }]);
     await owner.query(`UPDATE feeds SET etag = '"own-v1"' WHERE id = $1`, [feedId]);
 
+    // The target got no validators, so its 304 cannot mean "not modified".
     await fetchFeed(feedId);
-    expect(await feedRow(feedId)).toMatchObject({ total_fetches: 1, consecutive_errors: 0 });
+    expect(await feedRow(feedId)).toMatchObject({
+      total_fetches: 1,
+      consecutive_errors: 1,
+      last_error_code: 'FEED_HTTP_304',
+    });
     expect(await validators(feedId)).toEqual({ etag: '"own-v1"', last_modified: null });
+  });
+
+  it('retries a 304 to an unconditional request once, then records FEED_HTTP_304', async () => {
+    server.route('/bogus304/feed.rss', { status: 304 });
+    const feedId = await addFeed('/bogus304/feed.rss', [{ user: reader, mode: 'off' }]);
+    const polls = () => server.requests.filter((r) => r.path === '/bogus304/feed.rss').length;
+
+    await fetchFeed(feedId);
+    expect(polls()).toBe(2);
+    expect(await feedRow(feedId)).toMatchObject({
+      total_fetches: 1,
+      consecutive_errors: 1,
+      last_error_code: 'FEED_HTTP_304',
+      etag: null,
+    });
   });
 
   it('clears the validators of a merge survivor that polls another URL than the redirect target', async () => {

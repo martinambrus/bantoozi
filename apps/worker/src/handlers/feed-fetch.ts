@@ -87,7 +87,9 @@ async function fetchFeed(
 
   const hadValidators = feed.etag !== null || feed.lastModified !== null;
   let result = await fetchFeedBody(deps, feed, hadValidators);
-  if (result.ok && result.status === 304 && !hadValidators) {
+  // A 304 to a request without validators is FEED_HTTP_304; without established validators it is
+  // retried once unconditionally before it counts as an error (spec 03 §9).
+  if (!hadValidators && !result.ok && result.status === 304) {
     result = await fetchFeedBody(deps, feed, false);
   }
 
@@ -103,28 +105,18 @@ async function fetchFeed(
     return;
   }
   if (result.status === 304) {
-    if (!hadValidators) {
-      await recordOutcome(
-        deps,
-        feed,
-        feedId,
-        { kind: 'error', code: 'FEED_HTTP_304', message: 'unconditional 304', httpStatus: 304 },
-        now,
-      );
-      return;
-    }
-    // Only a 304 from `fetch_url` itself updates the validators (see `keepValidators` below).
-    const returned = sameRequestUrl(result.finalUrl, feed.fetchUrl) ? result.headers : {};
+    // safeFetch reports a 304 only for the conditional request, which went to `fetch_url`, so its
+    // validators belong there (a 304 from a redirect target is FEED_HTTP_304, handled above).
     await recordOutcome(
       deps,
       feed,
       feedId,
       {
         kind: 'not_modified',
-        ...(returned['etag'] === undefined ? {} : { etag: returned['etag'] }),
-        ...(returned['last-modified'] === undefined
+        ...(result.headers['etag'] === undefined ? {} : { etag: result.headers['etag'] }),
+        ...(result.headers['last-modified'] === undefined
           ? {}
-          : { lastModified: returned['last-modified'] }),
+          : { lastModified: result.headers['last-modified'] }),
       },
       now,
       result.headers['cache-control'],

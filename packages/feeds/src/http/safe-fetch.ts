@@ -420,13 +420,14 @@ const done = (result: SafeFetchResult): HopStep => ({ kind: 'result', result });
  */
 async function sendHop(chain: Chain, url: URL): Promise<HopStep> {
   const { settings } = chain;
+  const sent = requestHeaders(chain, url);
   let response: Dispatcher.ResponseData;
   try {
     response = await chain.agent.request({
       origin: url.origin,
       path: `${url.pathname}${url.search}`,
       method: 'GET',
-      headers: requestHeaders(chain, url),
+      headers: sent,
       signal: chain.signal,
     });
   } catch (error) {
@@ -469,6 +470,23 @@ async function sendHop(chain: Chain, url: URL): Promise<HopStep> {
     }
     if (statusCode === 304) {
       discard();
+      // A 304 answers a conditional request only. Validators go to the original URL alone, so a
+      // 304 to a hop that sent none (a redirect target, robots.txt) is an HTTP failure, never a
+      // "not modified" that could hide the resource's updates.
+      if (sent['if-none-match'] === undefined && sent['if-modified-since'] === undefined) {
+        return done(
+          failure(
+            chain,
+            url,
+            feedHttpErrorCode(statusCode),
+            'a 304 to a request without validators',
+            {
+              status: statusCode,
+              headers,
+            },
+          ),
+        );
+      }
       return done(success(chain, url, statusCode, headers, EMPTY_BODY));
     }
     if (statusCode >= 200 && statusCode < 300) {
@@ -668,8 +686,9 @@ export async function safeFetchWithInternals(
  * - One deadline covers DNS, limiter waits, every hop, the body and decompression; the body is
  *   capped at `maxBytes` compressed AND decompressed (gzip, deflate, br decoded here); headers are
  *   capped at 32 KiB; TLS is always verified; no environment proxy is ever used.
- * - 2xx → body; 304 → bodyless success; other statuses → `FEED_HTTP_<status>` with the response
- *   headers; 429/503 also persist an origin cooldown through the limiter and return `retryAt`.
+ * - 2xx → body; 304 to a request that sent validators → bodyless success (any other 304 is
+ *   `FEED_HTTP_304`); other statuses → `FEED_HTTP_<status>` with the response headers; 429/503
+ *   also persist an origin cooldown through the limiter and return `retryAt`.
  *
  * Never rejects for network, HTTP or URL errors: those become `{ ok: false, code }`. It rejects
  * only for programming or infrastructure errors: invalid options, a throwing `limiter.reserve` or

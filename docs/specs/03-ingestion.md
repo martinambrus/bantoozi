@@ -312,8 +312,10 @@ separate tenant-isolated design before support, not an exception to this fetcher
    `FEED_CONNECTION_ERROR`, `FEED_TOO_LARGE`, `FEED_HTTP_<status>`, `FEED_TOO_MANY_REDIRECTS`,
    `FEED_INVALID_URL`, `FEED_DECODE_ERROR`, and `FEED_ORIGIN_COOLDOWN` with `retryAt` when no request
    was sent because the origin is cooling down after a 429/503 or its throttle (§8.2) cannot grant a
-   start before the deadline; callers defer the work rather than count a failure (D-12). A 304 is a
-   successful bodyless result; HTTP failures retain the bounded response headers needed for
+   start before the deadline; callers defer the work rather than count a failure (D-12). A 304 to a
+   request that sent validators is a successful bodyless result; any other 304 (validators go to the
+   original URL only, so a redirect target or a robots.txt request never sends them) is
+   `FEED_HTTP_304` (D-18). HTTP failures retain the bounded response headers needed for
    `Retry-After`, without retaining or logging error bodies.
 9. **Testing escape hatch:** `FETCH_ALLOW_PRIVATE=true` disables **both** the address checks and the
    port allow-list, so local fixture servers on random ports work (M1-T8, E2E). Config validation
@@ -858,8 +860,8 @@ on error:
 always: total_fetches += 1; last_fetch_at = now
 on parsed 200: replace etag/last_modified with returned values, clearing absent ones; clear both
   instead when the response did not come from the feed's fetch_url or an item failed to ingest
-on valid 304: retain missing validators; update any returned ones (a 304 from fetch_url only); do
-  not parse or ingest a body
+on valid 304 (only the conditional request to fetch_url can get one, §4): retain missing
+  validators; update any returned ones; do not parse or ingest a body
 ```
 
 `sy_period_s` is period duration divided by valid positive frequency; ignore invalid/negative TTL,

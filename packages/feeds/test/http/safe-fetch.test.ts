@@ -520,6 +520,27 @@ describe('spec 03 §4 safeFetch', () => {
       expect(result.bodyBytes).toHaveLength(0);
     });
 
+    it('a 304 to a hop that sent no validators is FEED_HTTP_304, never a success', async () => {
+      // No validators at all (robots.txt, discovery, a feed without stored ones).
+      fixture.route('/bare', { status: 304, headers: { etag: '"v1"' } });
+      expect(expectFailure(await local('/bare'))).toMatchObject({
+        code: 'FEED_HTTP_304',
+        status: 304,
+      });
+      // Validators go to the original URL only: the redirect target answered 304 to none.
+      fixture.redirect('/moved', '/target', 302);
+      fixture.route('/target', { status: 304 });
+      expect(expectFailure(await local('/moved', { conditional: { etag: '"v1"' } }))).toMatchObject(
+        { code: 'FEED_HTTP_304', status: 304 },
+      );
+      expect(fixture.requests.find((r) => r.path === '/moved')?.headers['if-none-match']).toBe(
+        '"v1"',
+      );
+      expect(
+        fixture.requests.find((r) => r.path === '/target')?.headers['if-none-match'],
+      ).toBeUndefined();
+    });
+
     it.each([400, 401, 403, 404, 410, 500, 502])(
       'HTTP %i → FEED_HTTP_<status> with the response headers, no body',
       async (status) => {
