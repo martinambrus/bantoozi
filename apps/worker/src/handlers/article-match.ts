@@ -117,7 +117,7 @@ interface MatchJob {
  *    only under article demand), re-asking provisional fallback answers only in bulk packs;
  * 5. packs per owner partition and asks each pack, rechecking demand and renewing the lease first;
  * 6. applies an ok pack in a short transaction guarded by revision, configuration, demand and lease;
- *    every other write derived from the snapshot (steps 2, 3 and 8) has the same configuration
+ *    every other write derived from the snapshot (steps 2, 3, 7 and 8) has the same configuration
  *    fence, and a job that finds the configuration changed stops asking (D-85);
  * 7. releases failed rows as deferred, failed or exhausted without a hot loop; a failed level-2-only
  *    pack, which has no queue row, records a delayed retry job under the same rules instead;
@@ -564,6 +564,9 @@ async function failPack(
     return;
   }
   await retryTransaction(deps.db, async (tx) => {
+    // The failure answered the snapshot's questions: under a changed configuration the rows go to
+    // current work unanswered instead of counting it, or being exhausted by it (D-85).
+    if (!(await revisionHolds(tx, job)) || !(await configHolds(tx, job))) return;
     if (release === 'drop') {
       // Revoked demand: drop only the pairs that no longer have it, quietly.
       const demanded = new Set(
@@ -676,7 +679,7 @@ async function retryL2(job: MatchJob, disposition: FailureDisposition): Promise<
       break;
   }
   await retryTransaction(deps.db, async (tx) => {
-    if (!(await revisionHolds(tx, job))) return;
+    if (!(await revisionHolds(tx, job)) || !(await configHolds(tx, job))) return;
     await enqueueMatch(
       workerOutbox(tx, { availableAt: at }),
       { articleId: article.id, l2Attempts: attempts },

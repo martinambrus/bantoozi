@@ -594,8 +594,10 @@ from that request can satisfy this worker only when every current input fingerpr
    current work; its already incurred cost is still logged. The compared settings are read under
    share locks, so a switch either waits for the completion to commit or is seen by it (D-84). The
    same fence guards every other write derived from the job snapshot: deleting satisfied rows (step
-   2), prefilter markers (step 3) and the article state (step 8). A job that finds the configuration
-   changed releases the rows it holds, enqueues current work and sends no further pack (D-85). Otherwise upsert only the returned pack's
+   2), prefilter markers (step 3), releasing a failed pack's rows or scheduling its level-2 retry
+   (step 7) and the article state (step 8). A job that finds the configuration changed releases the
+   rows it holds unanswered and without an attempt, enqueues current work and sends no further pack
+   (D-85). Otherwise upsert only the returned pack's
    answers and L2 rows with full provenance, rebuild compatible features, and delete only the rows
    leased and answered by this pack. A newer/primary answer cannot be overwritten by an older or
    fallback result for the same input. Do not delete rows another worker reclaimed.

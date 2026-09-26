@@ -238,6 +238,37 @@ describe('article.enrich outcomes (spec 05 §3, spec 04 §5)', () => {
     }
   });
 
+  it('a language-mode switch committing while an invalid request is recorded sends the job again', async () => {
+    const feedId = await h.feed();
+    const userId = await h.user();
+    await h.subscribe(userId, feedId, 'active');
+    const articleId = await h.article({ feedIds: [feedId], lang: 'sk' });
+    const modes = (await h.setting('language_modes')) as Record<string, string>;
+    let write: Promise<SettingWrite> | undefined;
+    h.router.respond = async (ask) => {
+      if (ask.kind !== 'enrich') return undefined;
+      write ??= h.openSettingWrite('language_modes', { ...modes, sk: 'translate' });
+      await write;
+      return failure('invalid_request');
+    };
+    const since = await h.mark();
+    try {
+      const run = h.dispatch('article.enrich', { articleId });
+      expect(await waitFor(() => write !== undefined, 10_000)).toBe(true);
+      await (await write!).commit();
+      await run;
+      // The old request's rejection does not fail the article: the job asks again.
+      expect(await h.articleRow(articleId)).toMatchObject({ state: 'extracted' });
+      expect(await h.payloads('article.enrich', since)).toEqual([
+        { articleId, priority: 'interactive' },
+      ]);
+    } finally {
+      h.router.respond = undefined;
+      (await write)?.close();
+      await h.setSetting('language_modes', modes);
+    }
+  });
+
   it('an invalid request fails the article; a failed recovery never downgrades an enriched one', async () => {
     const s = await scenario();
     h.router.respond = () => failure('invalid_request');
@@ -530,6 +561,66 @@ describe('article.match completion fence (spec 05 §5.5 step 6)', () => {
         [false, 0, true],
       ]);
       expect(await h.payloads('article.match', since)).toEqual([{ articleId: s.articleId }]);
+    } finally {
+      h.router.respond = undefined;
+      (await write)?.close();
+      await h.setSetting('card_text_mode', 'as_written');
+    }
+  });
+
+  it('a configuration switch committing while a rejected pack is released keeps its rows for current work', async () => {
+    const s = await scenario({ cards: 2 });
+    await h.enrichDirect(s.articleId, { topics: NO_BRANCH_TOPICS });
+    await h.queue(s.articleId, s.cardIds);
+    let write: Promise<SettingWrite> | undefined;
+    h.router.respond = async () => {
+      write ??= h.openSettingWrite('card_text_mode', 'english');
+      await write;
+      return failure('invalid_request');
+    };
+    try {
+      const since = await h.mark();
+      const run = h.dispatch('article.match', { articleId: s.articleId });
+      expect(await waitFor(() => write !== undefined, 10_000)).toBe(true);
+      await (await write!).commit();
+      await run;
+      // Not exhausted by the old questions' rejection: due again, without an attempt.
+      const rows = await h.queueRows(s.articleId);
+      expect(rows.map((row) => [row.leased, row.attempts, row.due, row.lastError])).toEqual([
+        [false, 0, true, null],
+        [false, 0, true, null],
+      ]);
+      expect(await h.payloads('article.match', since)).toEqual([{ articleId: s.articleId }]);
+    } finally {
+      h.router.respond = undefined;
+      (await write)?.close();
+      await h.setSetting('card_text_mode', 'as_written');
+    }
+  });
+
+  it('a configuration switch committing while a failed level-2 pack schedules its retry leaves it to current work', async () => {
+    const feedId = await h.feed();
+    const userId = await h.user();
+    await h.subscribe(userId, feedId, 'active');
+    const articleId = await h.article({ feedIds: [feedId] });
+    await h.dispatch('article.enrich', { articleId });
+    await h.clearOutbox();
+    let write: Promise<SettingWrite> | undefined;
+    h.router.respond = async () => {
+      write ??= h.openSettingWrite('card_text_mode', 'english');
+      await write;
+      return failure('error');
+    };
+    try {
+      const since = await h.mark();
+      const run = h.dispatch('article.match', { articleId });
+      expect(await waitFor(() => write !== undefined, 10_000)).toBe(true);
+      await (await write!).commit();
+      await run;
+      // No delayed retry counting the old questions' failure: one current job, due now.
+      const intents = await h.intents('article.match', { since });
+      expect(intents.map((intent) => intent.payload)).toEqual([{ articleId }]);
+      expect(intents[0]?.availableAt.getTime()).toBeLessThanOrEqual(Date.now());
     } finally {
       h.router.respond = undefined;
       (await write)?.close();

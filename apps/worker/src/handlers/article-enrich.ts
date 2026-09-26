@@ -47,7 +47,8 @@ const ENRICHED_STATES: readonly string[] = ['enriched', 'matched'];
  * guard (a fallback never replaces a primary answer of the same input), moves the article to
  * `enriched` and continues through `pipeline.after`. An unavailable engine degrades an article
  * that has no facets yet, an invalid request fails it, and neither ever downgrades an article that
- * already has facets (a recovery retry of LLM answers leaves them in place).
+ * already has facets (a recovery retry of LLM answers leaves them in place). Every one of these
+ * writes first rechecks the configuration: after a switch the job runs again instead (D-85).
  *
  * Without `priority` the job is interactive, so the LLM fallback may serve new arrivals while Jev
  * is unavailable; recovery and re-enrichment send `bulk` (spec 04 §5).
@@ -110,15 +111,7 @@ export function createArticleEnrichHandler(
         const locked = await lockArticleRevision(tx, articleId, 'update');
         // A reset replaced the input meanwhile: its own intents enrich the new revision.
         if (locked === null || locked.revision !== article.revision) return;
-        const current = await loadClassificationConfig(tx, deps.settingsEnv, { lock: true });
-        if (!sameEnrichConfig(config, current, article.lang)) {
-          await enqueueEnrich(
-            workerOutbox(tx),
-            { articleId, priority },
-            { revision: article.revision },
-          );
-          return;
-        }
+        if (!(await configHolds(tx, deps, config, article, priority))) return;
         await writeFacets(
           tx,
           {
@@ -176,6 +169,9 @@ export function createArticleEnrichHandler(
     await retryTransaction(deps.db, async (tx) => {
       const locked = await lockArticleRevision(tx, articleId, 'update');
       if (locked === null || locked.revision !== article.revision) return;
+      // The failure answered the snapshot's request: under a changed configuration the job runs
+      // again instead of failing or degrading the article.
+      if (!(await configHolds(tx, deps, config, article, priority))) return;
       // Only an article without facets changes state; a degraded one is not ranked again, and an
       // enriched one (a recovery retry) keeps its answers.
       const changed = await transitionPipelineState(tx, {
@@ -213,15 +209,7 @@ async function continueFromCache(
     const locked = await lockArticleRevision(tx, article.id, 'update');
     if (locked === null || locked.revision !== article.revision) return;
     if (ENRICHED_STATES.includes(locked.pipelineState)) return;
-    const current = await loadClassificationConfig(tx, deps.settingsEnv, { lock: true });
-    if (!sameEnrichConfig(config, current, article.lang)) {
-      await enqueueEnrich(
-        workerOutbox(tx),
-        { articleId: article.id, priority },
-        { revision: article.revision },
-      );
-      return;
-    }
+    if (!(await configHolds(tx, deps, config, article, priority))) return;
     const changed = await transitionPipelineState(tx, {
       articleId: article.id,
       revision: article.revision,
@@ -238,6 +226,28 @@ async function continueFromCache(
       pipelineContext(deps, tx, workerOutbox(tx)),
     );
   });
+}
+
+/**
+ * The configuration fence of every write derived from the job's snapshot (D-84, D-85): the compared
+ * settings, re-read under share locks, must still be the snapshot's. Otherwise the job is enqueued
+ * again at the article's revision in the same transaction, and the caller writes nothing.
+ */
+async function configHolds(
+  tx: Transaction,
+  deps: WorkerDeps,
+  snapshot: ClassificationConfig,
+  article: ClassificationArticle,
+  priority: 'interactive' | 'bulk',
+): Promise<boolean> {
+  const current = await loadClassificationConfig(tx, deps.settingsEnv, { lock: true });
+  if (sameEnrichConfig(snapshot, current, article.lang)) return true;
+  await enqueueEnrich(
+    workerOutbox(tx),
+    { articleId: article.id, priority },
+    { revision: article.revision },
+  );
+  return false;
 }
 
 /** Features of new Call A answers with the current L2 answers of the branches they select. */
