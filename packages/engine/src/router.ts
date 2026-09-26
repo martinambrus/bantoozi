@@ -182,7 +182,8 @@ type AttemptResult =
   | { kind: 'circuit_open'; admission: Extract<BreakerAdmission, { ok: false }> };
 
 type PackResult =
-  | { ok: true; attempt: SuccessAttempt }
+  /** `overrun`: the answer cost more than its reservation, so no further call may follow. */
+  | { ok: true; attempt: SuccessAttempt; overrun: boolean }
   | { ok: false; outcome: FailedOutcome; breaker: BreakerOutcome };
 
 type LaneResult = { ok: true; outcome: SuccessOutcome } | { ok: false; outcome: FailedOutcome };
@@ -801,7 +802,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
       }
       const { overrun } = await settle(run, sub, ctx, result);
       const attempt = result.attempt;
-      if (attempt.ok) return { ok: true, attempt };
+      if (attempt.ok) return { ok: true, attempt, overrun };
       if (ctx.signal.aborted) return fail(cancelledOutcome(), 'neutral');
       if (attempt.status === 'auth_error') {
         // Auth mode (spec 04 §5), unless this credential version was superseded meanwhile.
@@ -861,7 +862,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
       const answers: Array<[string, Answer]> = [];
       let latencyMs = 0;
       let model = lane.model;
-      for (const pack of packs) {
+      for (const [index, pack] of packs.entries()) {
         const result = await runPack(run, pack, ctx);
         if (!result.ok) {
           verdict = result.breaker;
@@ -870,6 +871,12 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
         answers.push(...Object.entries(result.attempt.answers));
         latencyMs += result.attempt.latencyMs;
         model = result.attempt.model;
+        if (result.overrun && index < packs.length - 1) {
+          // Spec 04 §6: usage above a reserve stops further calls of the request, answered
+          // subpacks included. The provider itself answered, so its breaker records a success.
+          verdict = 'success';
+          return { ok: false, outcome: failed('error', `${lane.name}:cost_overrun`) };
+        }
       }
       const merged = Object.fromEntries(answers);
       if (!Object.keys(ctx.req.questions).every((key) => Object.hasOwn(merged, key))) {

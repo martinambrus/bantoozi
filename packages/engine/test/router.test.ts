@@ -658,6 +658,32 @@ describe('EngineRouter.ask: LLM fallback (spec 04 §5 step 4)', () => {
     );
   });
 
+  it('sends no further subpack once a successful one cost more than its reservation', async () => {
+    const cap = estimateLlmOutputTokens({ q1: QUESTIONS.q1!, q2: QUESTIONS.q2! });
+    const firstReserve = llmEstimate(
+      request({ questions: { q1: QUESTIONS.q1!, q2: QUESTIONS.q2! } }),
+      cap,
+    );
+    const llm = scriptedEngine('llm', [
+      (req) => ({ ...success('llm', req), costUsd: firstReserve * 2 }),
+    ]);
+    const { router, store, logger } = setup({
+      typesafe: null,
+      llm,
+      credentials: noJev(),
+      config: { llmFallbackEnabled: true, ollama: { ...baseOllama(), maxOutputTokens: cap } },
+    });
+    const outcome = await drive(router.ask(request()), advance);
+    // The fallback stopped, so the primary's reason stands; the overrun is still charged.
+    expect(outcome).toMatchObject({ ok: false, reason: 'no_key' });
+    expect(llm.calls.map((c) => Object.keys(c.req.questions))).toEqual([['q1', 'q2']]);
+    expect(store.calls.map((c) => c.status)).toEqual(['ok']);
+    expect(store.calls[0]!.costUsd).toBeCloseTo(firstReserve * 2, 12);
+    expect(logger.entries.map((e) => e.msg)).toContain(
+      'engine attempt cost exceeded its reservation',
+    );
+  });
+
   it('is ok only when every original key has an answer', async () => {
     const cap = estimateLlmOutputTokens({ q1: QUESTIONS.q1!, q2: QUESTIONS.q2! });
     const llm = scriptedEngine('llm', ['ok', failure('invalid_request', { retryable: false })]);
