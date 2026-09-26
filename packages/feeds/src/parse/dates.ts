@@ -186,6 +186,7 @@ function spelledDateTime(value: string): {
   day: number;
   hour: number;
   minute: number;
+  second: number;
 } | null {
   let date: [number, number, number] | undefined;
   const ymd = YEAR_MONTH_DAY.exec(value);
@@ -211,14 +212,15 @@ function spelledDateTime(value: string): {
     hour = (hour % 12) + (meridiem === 'p' ? 12 : 0);
   }
   const [year, month, day] = date;
-  return { year, month, day, hour, minute: Number(clock[2]) };
+  return { year, month, day, hour, minute: Number(clock[2]), second: Number(clock[3] ?? '0') };
 }
 
 /**
  * V8 fallback, only for strings with a four-digit year, a time and an explicit zone. `Date.parse`
- * rolls impossible fields over (30 February → 2 March, 24:00 → the next day) instead of rejecting
- * them, so the instant must show, in the string's zone, the date and time the string spells; a
- * string whose date or time cannot be read that way is unknown too.
+ * rolls impossible fields over (30 February → 2 March, 24:00 → the next day) or drops them
+ * (10:00:99 → 10:00:00) instead of rejecting them, so the instant must show, in the string's zone,
+ * the date and time the string spells, to the second; a string whose date or time cannot be read
+ * that way is unknown too.
  */
 function parseWithExplicitZone(value: string): number | null {
   if (!/\d{4}/.test(value) || !/\d{1,2}:\d{2}/.test(value)) return null;
@@ -240,7 +242,8 @@ function parseWithExplicitZone(value: string): number | null {
     wall.getUTCMonth() === spelled.month &&
     wall.getUTCDate() === spelled.day &&
     wall.getUTCHours() === spelled.hour &&
-    wall.getUTCMinutes() === spelled.minute;
+    wall.getUTCMinutes() === spelled.minute &&
+    wall.getUTCSeconds() === spelled.second;
   return matches ? time : null;
 }
 

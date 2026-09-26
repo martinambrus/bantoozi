@@ -49,6 +49,7 @@ describe('parseFeedDate (spec 03 §6 published_at)', () => {
     ['September 24, 2026 08:00 GMT', '2026-09-24T08:00:00.000Z'],
     ['September 24, 2026 10:00 AM GMT+0200', '2026-09-24T08:00:00.000Z'],
     ['September 24, 2026 8:30 PM UTC', '2026-09-24T20:30:00.000Z'],
+    ['September 24, 2026 8:30:15 PM UTC', '2026-09-24T20:30:15.000Z'],
     ['2026/09/24 08:00:00 -0500', '2026-09-24T13:00:00.000Z'],
     ['09/24/2026 08:00 GMT', '2026-09-24T08:00:00.000Z'],
     ['2026-09-24 08:00 GMT+0200', '2026-09-24T06:00:00.000Z'],
@@ -80,6 +81,8 @@ describe('parseFeedDate (spec 03 §6 published_at)', () => {
     ['Sep 24 2026 24:00 GMT'],
     ['September 24, 2026 13:00 PM GMT'],
     ['February 28, 2026 10:00 GMT+9999'],
+    ['February 28, 2026 10:00:99 GMT'],
+    ['September 24, 2026 08:00:60 GMT'],
     ['September 24, 2026 08:00 +0075'],
     ['x'.repeat(200)],
   ])('%s → null', (input) => {
