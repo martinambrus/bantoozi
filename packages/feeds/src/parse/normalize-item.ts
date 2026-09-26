@@ -1,5 +1,6 @@
 import { normalizeText } from '@bantoozi/shared';
 
+import { type MediaObject, mediaSignals } from '../media/index.js';
 import { computeContentHash } from './content-hash.js';
 import { parseFeedDate } from './dates.js';
 import { PARSE_LIMITS } from './limits.js';
@@ -38,6 +39,11 @@ export interface RawFeedItem {
   content: { html: string; base: string } | null;
   /** Image candidates (enclosure, `media:content`, `media:thumbnail`) in priority order. */
   images: RawUrl[];
+  /**
+   * Every media object of the item, for video evidence (spec 03 §6.4): RSS enclosures, Atom
+   * `link rel="enclosure"`, JSON Feed attachments and `media:content` (also inside `media:group`).
+   */
+  media: MediaObject[];
 }
 
 export interface NormalizeItemContext {
@@ -130,6 +136,8 @@ function selectCategories(candidates: readonly string[]): string[] {
 }
 
 interface ItemContent {
+  /** The bounded source HTML that was sanitized, with its base URL (examined for media, §6.4). */
+  source: { html: string; base: string } | null;
   bodyHtml: string | null;
   bodyText: string | null;
   bodyTruncated: boolean;
@@ -145,6 +153,7 @@ interface ItemContent {
  */
 function processContent(content: RawFeedItem['content']): ItemContent {
   const empty: ItemContent = {
+    source: null,
     bodyHtml: null,
     bodyText: null,
     bodyTruncated: false,
@@ -160,9 +169,10 @@ function processContent(content: RawFeedItem['content']): ItemContent {
     truncated = true;
   }
   const sanitized = sanitizeContent(source, content.base);
+  const bounded = { html: source, base: content.base };
   let html = sanitized.html;
   let text = sanitizedHtmlToText(html);
-  if (text === '') return { ...empty, imageUrl: sanitized.firstImageUrl };
+  if (text === '') return { ...empty, source: bounded, imageUrl: sanitized.firstImageUrl };
   if (utf8Length(html) + utf8Length(text) > PARSE_LIMITS.bodyBytes) {
     // Plain text is never longer than its HTML, so half the budget each keeps the sum in bounds.
     html = truncateHtml(html, PARSE_LIMITS.bodyBytes / 2, 'utf8').html;
@@ -175,6 +185,7 @@ function processContent(content: RawFeedItem['content']): ItemContent {
     PARSE_LIMITS.excerptChars,
   ).trim();
   return {
+    source: bounded,
     bodyHtml: html,
     bodyText: text,
     bodyTruncated: truncated,
@@ -182,6 +193,29 @@ function processContent(content: RawFeedItem['content']): ItemContent {
     excerpt: excerpt === '' ? null : excerpt,
     imageUrl: sanitized.firstImageUrl,
   };
+}
+
+/**
+ * The spec 03 §6.4 media signals of an item: its media objects, its selected link, and the source
+ * HTML of its content read before sanitizing. That one content is the source of both the excerpt
+ * and the body, so it is the examined HTML; its images are counted only when it became the feed
+ * body (`feedBodyImageCount` is `null` exactly when `feedBodyHtml` is).
+ */
+function itemMediaSignals(
+  raw: RawFeedItem,
+  link: string | null,
+  content: ItemContent,
+): { videoEvidence: boolean; feedBodyImageCount: number | null } {
+  const { source } = content;
+  const signals = mediaSignals({
+    link,
+    media: raw.media,
+    html: source === null ? [] : [source.html],
+    bodyHtml: source === null || content.bodyHtml === null ? null : source.html,
+    // Without source HTML nothing is resolved; the link is absolute already.
+    baseUrl: source?.base ?? link ?? '',
+  });
+  return { videoEvidence: signals.videoEvidence, feedBodyImageCount: signals.bodyImageCount };
 }
 
 /**
@@ -206,7 +240,10 @@ export function prepareItem(
   return { ok: true, prepared: { raw, guid, publishedAt: selectDate(raw.dates, context.now) } };
 }
 
-/** Phase 2 of {@link normalizeItem}: content, title, link, author, categories, image and hash. */
+/**
+ * Phase 2 of {@link normalizeItem}: content, title, link, author, categories, image, media signals
+ * and hash.
+ */
 export function finishItem(prepared: PreparedItem): NormalizeItemResult {
   const { raw, guid, publishedAt } = prepared;
   const content = processContent(raw.content);
@@ -223,6 +260,7 @@ export function finishItem(prepared: PreparedItem): NormalizeItemResult {
     sourceTitle !== '' ? sourceTitle : fallbackTitle !== '' ? fallbackTitle : '(untitled)';
   const author = selectAuthor(raw.authors);
   const categories = selectCategories(raw.categories);
+  const media = itemMediaSignals(raw, link, content);
   const item: NormalizedItem = {
     sourceIndex: raw.sourceIndex,
     title,
@@ -238,6 +276,9 @@ export function finishItem(prepared: PreparedItem): NormalizeItemResult {
     feedBodyHtml: content.bodyHtml,
     feedBodyTruncated: content.bodyTruncated,
     imageUrl: selectUrl(raw.images) ?? content.imageUrl,
+    videoEvidence: media.videoEvidence,
+    feedBodyImageCount: media.feedBodyImageCount,
+    // Media signals are not model text inputs: they never enter the hash (spec 03 §6.2).
     contentHash: computeContentHash({
       title,
       excerpt: content.excerpt,
@@ -252,8 +293,9 @@ export function finishItem(prepared: PreparedItem): NormalizeItemResult {
 
 /**
  * Applies the spec 03 §6 per-item rules to one mapped source item (title, link, guid,
- * published_at, author, categories, excerpt/excerpt HTML, feed body, image, `title_norm` §6.1 and
- * `content_hash` §6.2). A failure is a per-item error code, never an exception.
+ * published_at, author, categories, excerpt/excerpt HTML, feed body, image, `title_norm` §6.1,
+ * `content_hash` §6.2 and the media signals `video_evidence`/`feed_body_image_count` §6.4). A
+ * failure is a per-item error code, never an exception.
  */
 export function normalizeItem(
   raw: RawFeedItem,

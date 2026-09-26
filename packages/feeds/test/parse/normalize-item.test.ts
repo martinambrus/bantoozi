@@ -18,6 +18,7 @@ function raw(overrides: Partial<RawFeedItem> = {}): RawFeedItem {
     categories: [],
     content: { html: '<p>Body text.</p>', base: BASE },
     images: [],
+    media: [],
     ...overrides,
   };
 }
@@ -46,6 +47,8 @@ describe('normalizeItem (spec 03 §6)', () => {
       feedBodyHtml: '<p>Body text.</p>',
       feedBodyTruncated: false,
       imageUrl: null,
+      videoEvidence: false,
+      feedBodyImageCount: 0,
       contentHash: computeContentHash({
         title: 'A title',
         excerpt: 'Body text.',
@@ -254,10 +257,13 @@ describe('normalizeItem (spec 03 §6)', () => {
     });
 
     it('bounds the source HTML before sanitizing and marks the body truncated', () => {
-      const html = `<p>${'a'.repeat(PARSE_LIMITS.contentInputChars)}</p><p>tail</p>`;
+      const html = `<p><img src="/before.jpg">${'a'.repeat(PARSE_LIMITS.contentInputChars)}</p><p><img src="/after.jpg">tail</p><video></video>`;
       const item = normalized({ content: { html, base: BASE } });
       expect(item.feedBodyTruncated).toBe(true);
       expect(item.feedBodyText).not.toContain('tail');
+      // Media signals read the same bounded input the body is built from.
+      expect(item.feedBodyImageCount).toBe(1);
+      expect(item.videoEvidence).toBe(false);
     });
 
     it('keeps text + HTML within the 10 MiB body limit', () => {
@@ -278,6 +284,7 @@ describe('normalizeItem (spec 03 §6)', () => {
         excerpt: null,
         feedBodyHtml: null,
         feedBodyText: null,
+        feedBodyImageCount: null,
         imageUrl: 'https://feed.example/only.jpg',
       });
     });
@@ -296,6 +303,77 @@ describe('normalizeItem (spec 03 §6)', () => {
         }).imageUrl,
       ).toBe('https://feed.example/articles/meta.jpg');
       expect(normalized({ content }).imageUrl).toBe('https://feed.example/articles/inline.jpg');
+    });
+  });
+
+  describe('media signals (spec 03 §6.4)', () => {
+    it('video evidence from a video media object, never from audio', () => {
+      expect(normalized({ media: [{ type: 'video/mp4', medium: null }] }).videoEvidence).toBe(true);
+      expect(normalized({ media: [{ type: null, medium: 'video' }] }).videoEvidence).toBe(true);
+      expect(normalized({ media: [{ type: 'audio/mpeg', medium: null }] }).videoEvidence).toBe(
+        false,
+      );
+    });
+
+    it('video evidence from the selected link on a video host', () => {
+      expect(
+        normalized({ links: [{ href: 'https://www.youtube.com/watch?v=tr4mR3st0r3' }] })
+          .videoEvidence,
+      ).toBe(true);
+      // Only the selected link counts, not a later link candidate.
+      expect(
+        normalized({
+          links: [{ href: 'story', base: BASE }, { href: 'https://www.youtube.com/watch?v=x' }],
+        }).videoEvidence,
+      ).toBe(false);
+    });
+
+    it('video evidence from the content HTML read before sanitizing', () => {
+      const html =
+        '<p>Watch the restoration.</p><iframe src="https://www.youtube-nocookie.com/embed/tr4mR3st0r3"></iframe>';
+      const item = normalized({ content: { html, base: BASE } });
+      expect(item.videoEvidence).toBe(true);
+      expect(item.feedBodyHtml).toBe('<p>Watch the restoration.</p>');
+      // A content with an embed only still has video evidence, but no body to count images in.
+      const embedOnly = normalized({
+        content: { html: '<video src="clip.mp4" poster="poster.jpg"></video>', base: BASE },
+      });
+      expect(embedOnly).toMatchObject({
+        videoEvidence: true,
+        feedBodyHtml: null,
+        feedBodyImageCount: null,
+      });
+    });
+
+    it('counts in-body images before sanitizing removes them, resolving against the content base', () => {
+      const html = [
+        '<p>Seed library opens.</p>',
+        '<img src="/a.jpg" width="1024" height="683">',
+        '<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" data-src="b.jpg"><noscript><img src="https://feed.example/articles/b.jpg"></noscript>',
+        '<img src="https://stats.example.net/p.gif" width="1" height="1">',
+      ].join('');
+      const item = normalized({ content: { html, base: BASE } });
+      expect(item.feedBodyHtml).toBe('<p>Seed library opens.</p>');
+      expect(item.feedBodyImageCount).toBe(2);
+    });
+
+    it('keeps content_hash independent of media', () => {
+      const plain = normalized();
+      const withVideo = normalized({ media: [{ type: 'video/mp4' }] });
+      expect(withVideo.videoEvidence).toBe(true);
+      expect(withVideo.contentHash).toBe(plain.contentHash);
+      const withImages = normalized({
+        content: { html: '<p>Body text.</p><img src="/a.jpg"><video></video>', base: BASE },
+      });
+      expect(withImages).toMatchObject({ videoEvidence: true, feedBodyImageCount: 1 });
+      expect(withImages.contentHash).toBe(plain.contentHash);
+    });
+
+    it('has no video evidence and no count without content or media', () => {
+      expect(normalized({ content: null, media: [] })).toMatchObject({
+        videoEvidence: false,
+        feedBodyImageCount: null,
+      });
     });
   });
 

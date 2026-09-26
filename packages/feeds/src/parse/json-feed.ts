@@ -107,6 +107,10 @@ function mapItem(
       item.image,
       item.banner_image,
     ]),
+    // Attachments are the media objects of spec 03 §6.4 (a video/* attachment is video evidence).
+    media: (item.attachments ?? []).map((attachment) => ({
+      type: attachment.mime_type?.trim().toLowerCase() || null,
+    })),
   };
   return { ok: true, raw };
 }

@@ -1,3 +1,4 @@
+import type { MediaObject } from '../media/index.js';
 import type { RawFeedMeta } from './feed-meta.js';
 import { embeddedMarkupToHtml, xhtmlToHtml } from './markup.js';
 import type { RawFeedItem, RawTitle, RawUrl } from './normalize-item.js';
@@ -72,13 +73,38 @@ function isImageMediaContent(element: unknown): boolean {
   return hasImagePath(attributeOf(element, 'url') ?? '');
 }
 
+/** Every `media:content` of an item: its own, then those inside its `media:group`s. */
+function mediaContents(item: Record<string, unknown>): unknown[] {
+  return [
+    ...asArray(item['media:content']),
+    ...asArray(item['bzMediaGroup'])
+      .filter(isRecord)
+      .flatMap((group) => asArray(group['media:content'])),
+  ];
+}
+
+/** The declared MIME type (lower-case, without parameters) and `medium` of a media element. */
+function mediaObject(element: unknown): MediaObject {
+  const medium = attributeOf(element, 'medium')?.trim().toLowerCase() ?? '';
+  const type = mediaType(element);
+  return { type: type === '' ? null : type, medium: medium === '' ? null : medium };
+}
+
+/**
+ * The item's media objects for video evidence (spec 03 §6.4): its enclosures (RSS `enclosure`,
+ * Atom `link rel="enclosure"`) and every `media:content`, including those inside `media:group`.
+ */
+function mediaObjects(
+  item: Record<string, unknown>,
+  enclosures: readonly unknown[],
+): MediaObject[] {
+  return [...enclosures, ...mediaContents(item)].map(mediaObject);
+}
+
 /** Image candidates after enclosures: image `media:content`, then any `media:thumbnail`. */
 function mediaImages(item: Record<string, unknown>, base: string): RawUrl[] {
   const groups = asArray(item['bzMediaGroup']).filter(isRecord);
-  const contents = [
-    ...asArray(item['media:content']),
-    ...groups.flatMap((group) => asArray(group['media:content'])),
-  ];
+  const contents = mediaContents(item);
   const thumbnails = [
     ...asArray(item['media:thumbnail']),
     ...groups.flatMap((group) => asArray(group['media:thumbnail'])),
@@ -152,7 +178,8 @@ function mapRssItem(
     content = { html: description, base: elementBase(base, descriptionElement) };
   }
 
-  const enclosures = asArray(item['bzEnclosure']).filter((enclosure) =>
+  const enclosures = asArray(item['bzEnclosure']);
+  const imageEnclosures = enclosures.filter((enclosure) =>
     mediaType(enclosure).startsWith('image/'),
   );
   return {
@@ -175,12 +202,13 @@ function mapRssItem(
     ]),
     content,
     images: [
-      ...enclosures.flatMap((enclosure) => {
+      ...imageEnclosures.flatMap((enclosure) => {
         const href = attributeOf(enclosure, 'url');
         return href === undefined ? [] : [{ href, base: elementBase(base, enclosure) }];
       }),
       ...mediaImages(item, base),
     ],
+    media: mediaObjects(item, enclosures),
   };
 }
 
@@ -241,9 +269,8 @@ function mapAtomEntry(
 ): RawFeedItem {
   const base = ownXmlBase(feedBase, item['bzAttrs']);
   const links = asArray(item['bzLink']);
-  const enclosures = links.filter(
-    (link) => linkRel(link) === 'enclosure' && mediaType(link).startsWith('image/'),
-  );
+  const enclosures = links.filter((link) => linkRel(link) === 'enclosure');
+  const imageEnclosures = enclosures.filter((link) => mediaType(link).startsWith('image/'));
   return {
     sourceIndex,
     title: atomTitle(first(item['bzTitle']), raw?.title),
@@ -267,12 +294,13 @@ function mapAtomEntry(
       atomContent(first(item['bzContent']), raw?.content, item['content'], base) ??
       atomContent(first(item['bzSummary']), raw?.summary, item['summary'], base),
     images: [
-      ...enclosures.flatMap((link) => {
+      ...imageEnclosures.flatMap((link) => {
         const href = attributeOf(link, 'href');
         return href === undefined ? [] : [{ href, base: elementBase(base, link) }];
       }),
       ...mediaImages(item, base),
     ],
+    media: mediaObjects(item, enclosures),
   };
 }
 

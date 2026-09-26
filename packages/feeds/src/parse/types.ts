@@ -56,6 +56,20 @@ export interface NormalizedItem {
   feedBodyTruncated: boolean;
   /** Selected http(s) image URL (metadata only; embedded images are never kept in the HTML). */
   imageUrl: string | null;
+  /**
+   * `video_evidence` (spec 03 §6.4): the item has a video enclosure, attachment or `media:content`
+   * (also inside `media:group`), its `link` is on a video host, or its content HTML — the source of
+   * the excerpt and body, read before sanitizing — contains a `<video>` element or a known player
+   * embed. Never part of `contentHash`.
+   */
+  videoEvidence: boolean;
+  /**
+   * `feed_body_image_count` (spec 03 §6.4): distinct in-body images of the content that became
+   * `feedBodyHtml`, counted in the same bounded source HTML before sanitizing (tracking pixels,
+   * images without a usable http(s) URL and repeated URLs excluded). `null` exactly when
+   * `feedBodyHtml` is `null`. Never part of `contentHash`.
+   */
+  feedBodyImageCount: number | null;
   /** `content_hash` (spec 03 §6.2). */
   contentHash: string;
 }

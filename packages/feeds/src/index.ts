@@ -9,6 +9,7 @@ export * from './canonical/index.js';
 export * from './discover/index.js';
 export * from './extract/index.js';
 export * from './http/index.js';
+export * from './media/index.js';
 export * from './opml/index.js';
 export * from './parse/index.js';
 export * from './schedule/index.js';

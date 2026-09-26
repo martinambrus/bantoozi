@@ -130,6 +130,68 @@ describe('RSS/Atom mapping (spec 03 §6)', () => {
   });
 });
 
+describe('media objects for video evidence (spec 03 §6.4)', () => {
+  const MEDIA = 'xmlns:media="http://search.yahoo.com/mrss/"';
+
+  it('maps RSS enclosures and media:content, also inside media:group', async () => {
+    const evidence = (
+      await items(
+        rss(
+          `<item><title>enclosure</title><link>/1</link><enclosure url="/1.mov" type="Video/QuickTime" length="1"/></item>` +
+            `<item><title>group</title><link>/2</link><media:group ${MEDIA}><media:content url="/2.mp4" medium="video"/></media:group></item>` +
+            `<item><title>typed group</title><link>/3</link><media:group ${MEDIA}><media:content url="/3.webm" type="video/webm"/><media:content url="/3.jpg" medium="image"/></media:group></item>` +
+            `<item><title>audio</title><link>/4</link><enclosure url="/4.mp3" type="audio/mpeg"/><media:content ${MEDIA} url="/4.m4a" medium="audio"/></item>` +
+            `<item><title>untyped</title><link>/5</link><enclosure url="/5.mp4"/><media:content ${MEDIA} url="/5.mp4"/></item>`,
+        ),
+      )
+    ).map((item) => item.videoEvidence);
+    expect(evidence).toEqual([true, true, true, false, false]);
+  });
+
+  it('maps Atom link rel="enclosure" and media:group; alternate links are never media', async () => {
+    const evidence = (
+      await items(
+        atom(
+          '<entry><id>1</id><title>v</title><link href="/1"/><link rel="enclosure" type="video/mp4" href="/1.mp4"/></entry>' +
+            '<entry><id>2</id><title>a</title><link href="/2"/><link rel="enclosure" type="audio/mpeg" href="/2.mp3"/></entry>' +
+            `<entry><id>3</id><title>g</title><link href="/3"/><media:group ${MEDIA}><media:content url="/3.mp4" type="video/mp4"/></media:group></entry>` +
+            '<entry><id>4</id><title>alt</title><link rel="alternate" type="video/mp4" href="/4.mp4"/><link href="/4"/></entry>',
+        ),
+      )
+    ).map((item) => item.videoEvidence);
+    expect(evidence).toEqual([true, false, true, false]);
+  });
+
+  it('maps JSON Feed attachments by mime_type', async () => {
+    const text = JSON.stringify({
+      version: 'https://jsonfeed.org/version/1.1',
+      items: [
+        {
+          id: 'v',
+          url: 'https://j.example/v',
+          content_text: 'Video post',
+          attachments: [{ url: 'https://cdn.example/v.mp4', mime_type: 'VIDEO/MP4' }],
+        },
+        {
+          id: 'a',
+          url: 'https://j.example/a',
+          content_text: 'Audio post',
+          attachments: [
+            { url: 'https://cdn.example/a.mp3', mime_type: 'audio/mpeg' },
+            { url: 'x' },
+          ],
+        },
+      ],
+    });
+    const result = await parseFeed(text, { url: 'https://j.example/feed.json', now: NOW });
+    if (!result.ok) throw new Error(result.message);
+    expect(result.items.map((item) => [item.guid, item.videoEvidence])).toEqual([
+      ['v', true],
+      ['a', false],
+    ]);
+  });
+});
+
 describe('xml2js value accessors', () => {
   it('read text, arrays and attributes of any shape', () => {
     expect(textOf({ _: 'text', $: { a: '1' } })).toBe('text');

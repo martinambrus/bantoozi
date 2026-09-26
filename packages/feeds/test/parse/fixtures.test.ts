@@ -31,6 +31,12 @@ const FIXTURES: FixtureCase[] = [
   { name: 'unescaped-ampersand.xml', url: 'https://fans.example.com/rss' },
   { name: 'relative-links.xml', url: 'https://www.example.com/magazine/feed.xml' },
   { name: 'media-images.xml', url: 'https://media.example.com/feed' },
+  { name: 'video-enclosures.xml', url: 'https://tv.example.com/feed/' },
+  {
+    name: 'youtube-channel.xml',
+    url: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCq7Wk3vXkS0mW9pT8b2Qx1A',
+  },
+  { name: 'full-content-images.xml', url: 'https://garden.example.org/feed/' },
   { name: 'dates.xml', url: 'https://dates.example.com/feed' },
   { name: 'google-news.xml', url: 'https://news.google.com/rss/search?q=Slovensko&hl=sk' },
   { name: 'linkless.xml', url: 'https://status.example.com/rss' },
@@ -78,10 +84,13 @@ describe('fixture expectations', () => {
     );
     expect(release?.author).toBe('releases@example.com (Release Team)');
     expect(release?.imageUrl).toBe('https://blog.example.com/media/release-4-2-cover.jpg');
-    // An audio enclosure is neither the link nor the image.
+    // An audio enclosure is neither the link nor the image, nor video evidence.
     expect(podcast?.link).toBe('https://blog.example.com/podcast/31/');
     expect(podcast?.imageUrl).toBeNull();
     expect(podcast?.publishedAt?.toISOString()).toBe('2026-09-21T04:30:00.000Z');
+    expect(podcast?.videoEvidence).toBe(false);
+    // The figure image of the full content is an in-body image; the plain-text bodies have none.
+    expect([queue, release, podcast].map((item) => item?.feedBodyImageCount)).toEqual([1, 0, 0]);
   });
 
   it('Atom: xml:base chains, alternate vs enclosure links, type text/html/xhtml, src content', async () => {
@@ -263,6 +272,85 @@ describe('fixture expectations', () => {
       'https://media.example.com/img/5-inline.jpg',
       'https://media.example.com/img/6-thumb.jpg',
     ]);
+  });
+
+  it('video evidence: a video enclosure, a media:group video and a player embed, not audio', async () => {
+    const items = await parsedItems('video-enclosures.xml');
+    expect(items.map((item) => [item.link, item.videoEvidence, item.feedBodyImageCount])).toEqual([
+      ['https://tv.example.com/episodes/12-dovetails/', true, 0],
+      ['https://tv.example.com/blog/new-studio/', true, 0],
+      ['https://tv.example.com/blog/shop-tour/', true, 0],
+      ['https://tv.example.com/audio/tool-chest/', false, 0],
+    ]);
+    const [episode, studio, tour] = items;
+    // A video enclosure is neither the article link nor its image.
+    expect(episode?.imageUrl).toBeNull();
+    expect(studio?.imageUrl).toBe('https://cdn.example.com/workshop/studio-poster.jpg');
+    // The player embed is read before sanitizing; the stored HTML never contains it.
+    expect(tour?.feedBodyHtml).not.toContain('iframe');
+    expect(tour?.feedBodyHtml).toContain('href="https://tv.example.com/blog/shop-tour/#tools"');
+  });
+
+  it('video evidence: every entry of a YouTube channel feed links to a video host', async () => {
+    const result = await parseFixture(
+      FIXTURES.find((fixture) => fixture.name === 'youtube-channel.xml')!,
+    );
+    if (!result.ok) throw new Error(result.message);
+    expect(result.kind).toBe('atom');
+    expect(result.feed).toMatchObject({
+      title: 'Tram Restoration Workshop',
+      siteUrl: 'https://www.youtube.com/channel/UCq7Wk3vXkS0mW9pT8b2Qx1A',
+    });
+    expect(
+      result.items.map((item) => [item.guid, item.link, item.videoEvidence, item.imageUrl]),
+    ).toEqual([
+      [
+        'yt:video:tr4mR3st0r3',
+        'https://www.youtube.com/watch?v=tr4mR3st0r3',
+        true,
+        'https://i2.ytimg.com/vi/tr4mR3st0r3/hqdefault.jpg',
+      ],
+      [
+        'yt:video:Sh0rtCl1p42',
+        'https://www.youtube.com/shorts/Sh0rtCl1p42',
+        true,
+        'https://i1.ytimg.com/vi/Sh0rtCl1p42/hqdefault.jpg',
+      ],
+    ]);
+    // Entries carry no content, so there is no feed body to count images in.
+    expect(result.items.map((item) => item.feedBodyImageCount)).toEqual([null, null]);
+  });
+
+  it('in-body image count of a full-content item: pixel, lazy repeat and picture rules', async () => {
+    const [library, photo] = await parsedItems('full-content-images.xml');
+    // seed-library, volunteers (lazy data-src and its <noscript> fallback once) and the <picture>
+    // map; the 1×1 statistics pixel is excluded. The description (the teaser) is not counted.
+    expect(library?.feedBodyImageCount).toBe(3);
+    expect(library?.videoEvidence).toBe(false);
+    expect(library?.feedBodyHtml).not.toContain('<img');
+    expect(library?.imageUrl).toBe(
+      'https://garden.example.org/wp-content/uploads/2026/09/seed-library-1024x683.jpg',
+    );
+    // An image without text is no feed body, so there is no count, only the item image.
+    expect(photo).toMatchObject({
+      feedBodyHtml: null,
+      feedBodyImageCount: null,
+      imageUrl: 'https://garden.example.org/wp-content/uploads/2026/09/first-frost.jpg',
+    });
+  });
+
+  it('video evidence of media:content videos in the image-selection fixture', async () => {
+    const items = await parsedItems('media-images.xml');
+    expect(items.map((item) => item.videoEvidence)).toEqual([
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+    ]);
+    // The first inline image after a pixel, a data: image and a hidden image is the only one.
+    expect(items[4]?.feedBodyImageCount).toBe(1);
   });
 
   it('orders newest first; future, missing and malformed dates are unknown and sort last', async () => {
