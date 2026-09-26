@@ -117,6 +117,11 @@ export interface IngestItemInput {
   feedBody: ArticleBodyInput | null;
   /** The item's media signals (spec 03 §6.4); see {@link ingestItem} for how they are stored. */
   media: ItemMediaSignals;
+  /**
+   * The MIME type of an audio/video enclosure whose URL is the item's link itself, else null:
+   * stored as `articles.link_enclosure_type`, so extraction skips that link (spec 03 §8.1 step 1).
+   */
+  linkEnclosureType: string | null;
 }
 
 export interface IngestItemOptions {
@@ -306,7 +311,7 @@ async function insertArticle(
   const inserted = await tx.execute<{ id: string; revision: string; pipeline_state: string }>(sql`
     INSERT INTO articles (url, canonical_url, url_key, title, title_norm, author, categories,
                           excerpt, excerpt_html, image_url, published_at, content_hash,
-                          pipeline_state, has_video, body_image_count)
+                          pipeline_state, has_video, body_image_count, link_enclosure_type)
     VALUES (${input.url}, ${input.canonicalUrl}, ${input.urlKey}, ${input.title},
             ${input.titleNorm}, ${input.author}, ${sql.param([...input.categories])}::text[],
             ${input.excerpt}, ${input.excerptHtml}, ${input.imageUrl},
@@ -314,7 +319,7 @@ async function insertArticle(
             CASE WHEN ${input.publishedAt}::timestamptz
                       < now() - make_interval(days => ${options.maxAgeDays}::int)
                  THEN 'stale' ELSE 'ingested' END,
-            ${hasVideo}::boolean, ${bodyImageCount}::int)
+            ${hasVideo}::boolean, ${bodyImageCount}::int, ${input.linkEnclosureType}::text)
     RETURNING id::text AS id, content_revision::text AS revision, pipeline_state`);
   const article = inserted.rows[0];
   if (article === undefined) throw new Error('ingestItem: the article insert returned no row');
@@ -398,13 +403,28 @@ async function ingestFound(
     article.contentHash === input.contentHash ||
     (await articleSourceFeedId(tx, articleId)) !== input.feedId
   ) {
+    // Any carrier that declares this article's link an audio/video enclosure marks it for
+    // extraction to skip (spec 03 §8.1 step 1); a link that is only an alias of it does not.
+    if (input.linkEnclosureType !== null) {
+      await tx.execute(sql`
+        UPDATE articles SET link_enclosure_type = ${input.linkEnclosureType}::text
+         WHERE id = ${articleId}::bigint AND link_enclosure_type IS NULL
+           AND canonical_url = ${input.canonicalUrl}`);
+    }
     await applyItemMedia(tx, sender, articleId, evidence);
     return unchanged;
   }
 
+  // The source's new link replaces `url`, and its enclosure type goes with it; an unchanged link
+  // keeps a type another carrier declared.
   await tx.execute(sql`
     UPDATE articles
        SET url = coalesce(${input.url}, url),
+           link_enclosure_type = CASE
+             WHEN ${input.url}::text IS NULL THEN link_enclosure_type
+             WHEN url = ${input.url}::text
+               THEN coalesce(link_enclosure_type, ${input.linkEnclosureType}::text)
+             ELSE ${input.linkEnclosureType}::text END,
            title = ${input.title}, title_norm = ${input.titleNorm}, author = ${input.author},
            categories = ${sql.param([...input.categories])}::text[], excerpt = ${input.excerpt},
            excerpt_html = ${input.excerptHtml}, image_url = ${input.imageUrl},

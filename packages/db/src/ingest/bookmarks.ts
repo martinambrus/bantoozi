@@ -42,6 +42,8 @@ export interface CaptureSource {
   excerptHtml: string | null;
   /** The stored body row, whatever its revision: only a row at `revision` is current content. */
   body: StoredArticleBody | null;
+  /** `link_enclosure_type`: the link is an audio/video enclosure, skipped (spec 03 §8.1 step 1). */
+  linkEnclosureType: string | null;
   pending: PendingCapture[];
 }
 
@@ -63,9 +65,10 @@ export async function loadCaptureSource(
     published_at: Date | null;
     excerpt: string | null;
     excerpt_html: string | null;
+    link_enclosure_type: string | null;
   }>(sql`
     SELECT content_revision::text AS revision, url, title, author, published_at, excerpt,
-           excerpt_html
+           excerpt_html, link_enclosure_type
       FROM articles WHERE id = ${articleId}::bigint`);
   const article = articles.rows[0];
   if (article === undefined) return null;
@@ -95,6 +98,7 @@ export async function loadCaptureSource(
     excerpt: article.excerpt,
     excerptHtml: article.excerpt_html,
     body: await getArticleBody(db, articleId),
+    linkEnclosureType: article.link_enclosure_type,
     pending: pending.rows.map((row) => ({
       userId: row.user_id,
       generation: row.generation,

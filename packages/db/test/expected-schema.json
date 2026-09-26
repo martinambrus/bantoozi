@@ -966,6 +966,11 @@
           "type": "bigint",
           "nullable": false,
           "default": "0"
+        },
+        "link_enclosure_type": {
+          "type": "text",
+          "nullable": true,
+          "default": null
         }
       },
       "primaryKey": ["id"],

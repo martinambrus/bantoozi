@@ -113,6 +113,25 @@ function selectUrl(candidates: readonly RawUrl[]): string | null {
   return null;
 }
 
+const MEDIA_TYPE = /^(?:audio|video)\//;
+
+/**
+ * The type of an audio/video media object whose URL is the chosen link (spec 03 §8.1 step 1: that
+ * link is media itself, not an article page), or `null`. Media objects are never links themselves.
+ */
+function linkEnclosureType(link: string | null, media: readonly MediaObject[]): string | null {
+  if (link === null) return null;
+  for (const object of media) {
+    if (object.href === undefined || object.href === null) continue;
+    if (resolveHttpUrl(object.href, object.base) !== link) continue;
+    if (object.type !== undefined && object.type !== null && MEDIA_TYPE.test(object.type)) {
+      return object.type;
+    }
+    if (object.medium === 'audio' || object.medium === 'video') return `${object.medium}/*`;
+  }
+  return null;
+}
+
 function selectAuthor(candidates: readonly string[]): string | null {
   for (const candidate of candidates) {
     const author = truncateChars(
@@ -295,6 +314,7 @@ export function finishItem(prepared: PreparedItem): NormalizeItemResult {
     imageUrl: selectUrl(raw.images) ?? content.imageUrl,
     videoEvidence: media.videoEvidence,
     feedBodyImageCount: media.feedBodyImageCount,
+    linkEnclosureType: linkEnclosureType(link, raw.media),
     // Media signals are not model text inputs: they never enter the hash (spec 03 §6.2).
     contentHash: computeContentHash({
       title,

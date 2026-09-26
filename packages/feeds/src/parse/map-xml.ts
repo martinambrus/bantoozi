@@ -83,11 +83,19 @@ function mediaContents(item: Record<string, unknown>): unknown[] {
   ];
 }
 
-/** The declared MIME type (lower-case, without parameters) and `medium` of a media element. */
-function mediaObject(element: unknown): MediaObject {
+/**
+ * The declared MIME type (lower-case, without parameters), `medium` and URL (`url`, or an Atom
+ * link's `href`) of a media element.
+ */
+function mediaObject(element: unknown, base: string): MediaObject {
   const medium = attributeOf(element, 'medium')?.trim().toLowerCase() ?? '';
   const type = mediaType(element);
-  return { type: type === '' ? null : type, medium: medium === '' ? null : medium };
+  return {
+    type: type === '' ? null : type,
+    medium: medium === '' ? null : medium,
+    href: attributeOf(element, 'url') ?? attributeOf(element, 'href') ?? null,
+    base: elementBase(base, element),
+  };
 }
 
 /**
@@ -97,8 +105,9 @@ function mediaObject(element: unknown): MediaObject {
 function mediaObjects(
   item: Record<string, unknown>,
   enclosures: readonly unknown[],
+  base: string,
 ): MediaObject[] {
-  return [...enclosures, ...mediaContents(item)].map(mediaObject);
+  return [...enclosures, ...mediaContents(item)].map((element) => mediaObject(element, base));
 }
 
 /** Image candidates after enclosures: image `media:content`, then any `media:thumbnail`. */
@@ -208,7 +217,7 @@ function mapRssItem(
       }),
       ...mediaImages(item, base),
     ],
-    media: mediaObjects(item, enclosures),
+    media: mediaObjects(item, enclosures, base),
   };
 }
 
@@ -300,7 +309,7 @@ function mapAtomEntry(
       }),
       ...mediaImages(item, base),
     ],
-    media: mediaObjects(item, enclosures),
+    media: mediaObjects(item, enclosures, base),
   };
 }
 

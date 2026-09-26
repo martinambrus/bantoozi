@@ -49,6 +49,7 @@ describe('normalizeItem (spec 03 §6)', () => {
       imageUrl: null,
       videoEvidence: false,
       feedBodyImageCount: 0,
+      linkEnclosureType: null,
       contentHash: computeContentHash({
         title: 'A title',
         excerpt: 'Body text.',
@@ -317,6 +318,34 @@ describe('normalizeItem (spec 03 §6)', () => {
         }).imageUrl,
       ).toBe('https://feed.example/articles/meta.jpg');
       expect(normalized({ content }).imageUrl).toBe('https://feed.example/articles/inline.jpg');
+    });
+  });
+
+  describe('a link that is itself an audio/video enclosure (spec 03 §8.1 step 1)', () => {
+    it('records the enclosure type when a media object has the link as its URL', () => {
+      const link = [{ href: 'https://cdn.example/episodes/4711', base: BASE }];
+      const audio = {
+        type: 'audio/mpeg',
+        medium: null,
+        href: '/episodes/4711',
+        base: 'https://cdn.example/',
+      };
+      expect(normalized({ links: link, media: [audio] }).linkEnclosureType).toBe('audio/mpeg');
+      // A declared medium alone is enough.
+      const video = { type: null, medium: 'video', href: 'https://cdn.example/episodes/4711' };
+      expect(normalized({ links: link, media: [video] }).linkEnclosureType).toBe('video/*');
+    });
+
+    it('records nothing for another URL, an image, or a media object without a URL', () => {
+      const link = [{ href: 'https://cdn.example/episodes/4711', base: BASE }];
+      const other = { type: 'audio/mpeg', href: 'https://cdn.example/episodes/4711.mp3' };
+      const image = { type: 'image/jpeg', href: 'https://cdn.example/episodes/4711' };
+      const bare = { type: 'audio/mpeg', medium: null };
+      for (const media of [[other], [image], [bare]]) {
+        expect(normalized({ links: link, media }).linkEnclosureType).toBeNull();
+      }
+      // A podcast entry with a normal HTML page stays an article.
+      expect(normalized({ media: [other] }).linkEnclosureType).toBeNull();
     });
   });
 

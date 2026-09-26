@@ -70,6 +70,12 @@ export interface NormalizedItem {
    * `feedBodyHtml` is `null`. Never part of `contentHash`.
    */
   feedBodyImageCount: number | null;
+  /**
+   * The MIME type of an audio/video enclosure, attachment or `media:content` whose URL is `link`
+   * itself (`<medium>/*` when only a medium is declared), else `null`: extraction skips such a
+   * link without a request (spec 03 §8.1 step 1). Never part of `contentHash`.
+   */
+  linkEnclosureType: string | null;
   /** `content_hash` (spec 03 §6.2). */
   contentHash: string;
 }

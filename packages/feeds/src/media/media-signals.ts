@@ -7,6 +7,12 @@ export interface MediaObject {
   type?: string | null;
   /** `media:content` `medium` (`video`, `image`, `audio`, …) when declared. */
   medium?: string | null;
+  /**
+   * The object's URL as written, and the base it resolves against: an article link equal to an
+   * audio/video object's URL is itself media (spec 03 §8.1 step 1). Not a media signal.
+   */
+  href?: string | null;
+  base?: string | undefined;
 }
 
 export interface MediaSignalsInput {

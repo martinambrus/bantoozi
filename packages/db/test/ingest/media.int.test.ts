@@ -216,6 +216,7 @@ function item(feedId: string, overrides: Partial<IngestItemInput> = {}): IngestI
     publishedAt: hoursAgo(1),
     feedBody: null,
     media: NO_MEDIA,
+    linkEnclosureType: null,
     ...overrides,
   };
   return { ...fields, contentHash: contentHashOf(fields) };

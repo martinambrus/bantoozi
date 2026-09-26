@@ -287,6 +287,37 @@ describe('parseFeed documents and errors', () => {
     });
   });
 
+  it('marks an item link that is its own audio/video enclosure, in RSS, Atom and JSON Feed', async () => {
+    const media = 'https://cdn.example/episodes/4711';
+    const rss = `<?xml version="1.0"?><rss version="2.0"><channel><title>Pod</title>
+<item><title>Episode</title><link>${media}</link><guid>e-1</guid>
+<enclosure url="${media}" type="audio/mpeg" length="1"/></item>
+<item><title>Show notes</title><link>https://pod.example/e-2</link><guid>e-2</guid>
+<enclosure url="https://cdn.example/episodes/4712" type="audio/mpeg" length="1"/></item>
+</channel></rss>`;
+    expect(await parseFeed(rss, { url: URL, now: NOW })).toMatchObject({
+      ok: true,
+      items: [{ linkEnclosureType: 'audio/mpeg' }, { linkEnclosureType: null }],
+    });
+    const atom = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><title>Pod</title>
+<entry><title>Episode</title><id>e-1</id><updated>2026-09-25T08:00:00Z</updated>
+<link rel="alternate" href="${media}"/><link rel="enclosure" type="video/mp4" href="${media}"/></entry>
+</feed>`;
+    expect(await parseFeed(atom, { url: URL, now: NOW })).toMatchObject({
+      ok: true,
+      items: [{ linkEnclosureType: 'video/mp4' }],
+    });
+    const json = JSON.stringify({
+      version: 'https://jsonfeed.org/version/1.1',
+      title: 'Pod',
+      items: [{ id: 'e-1', url: media, attachments: [{ url: media, mime_type: 'audio/mpeg' }] }],
+    });
+    expect(await parseFeed(json, { url: URL, now: NOW })).toMatchObject({
+      ok: true,
+      items: [{ linkEnclosureType: 'audio/mpeg' }],
+    });
+  });
+
   it('keeps numeric JSON Feed ids exact beyond 2^53, so distinct items keep distinct GUIDs', async () => {
     const text = `{"version": "https://jsonfeed.org/version/1.1", "title": "Big ids", "items": [
       {"id": 9007199254740992, "url": "https://feed.example/a", "content_text": "A"},

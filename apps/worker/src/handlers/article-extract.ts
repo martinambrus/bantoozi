@@ -56,8 +56,13 @@ export function createArticleExtractHandler(deps: WorkerDeps): QueueHandler<'art
     const article = await loadArticleForExtraction(deps.db, articleId);
     if (article === null || article.pipelineState !== 'ingested') return;
 
+    // A link that is itself an audio/video enclosure is skipped without a request (§8.1 step 1).
     const result =
-      article.url === null ? null : await extractArticle(article.url, extractDeps(deps));
+      article.url === null
+        ? null
+        : await extractArticle(article.url, extractDeps(deps), {
+            enclosureType: article.linkEnclosureType,
+          });
     if (result !== null && isTransientPageFailure(result) && hasRetriesLeft(context)) {
       throw new TransientPageError(result.error ?? 'unknown');
     }

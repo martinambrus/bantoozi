@@ -868,6 +868,43 @@ describe('article.extract (M1-T7)', () => {
     );
   });
 
+  it('skips an item link that is its own audio enclosure, without a request', async () => {
+    // An opaque media path: only the feed's enclosure says it is audio (spec 03 §8.1 step 1).
+    const mediaPath = '/pod/episode/4711';
+    const media = server.url(mediaPath);
+    server.route(mediaPath, {
+      status: 200,
+      headers: { 'content-type': 'audio/mpeg' },
+      body: 'ID3',
+    });
+    const path = '/pod/feed.rss';
+    server.route(
+      path,
+      rssRoute(() =>
+        rss(
+          'Pod',
+          `<item><title>Episode 4711</title><link>${media}</link><guid>pod-4711</guid>
+<pubDate>${rfc822(1)}</pubDate><enclosure url="${media}" type="audio/mpeg" length="3"/></item>`,
+        ),
+      ),
+    );
+    await fetchFeed(await addFeed(path, [{ user: reader, mode: 'off' }]));
+    const articleId = await articleIdByUrl(media);
+    const stored = await owner.query<{ link_enclosure_type: string | null }>(
+      'SELECT link_enclosure_type FROM articles WHERE id = $1',
+      [articleId],
+    );
+    expect(stored.rows).toEqual([{ link_enclosure_type: 'audio/mpeg' }]);
+
+    await run('article.extract');
+    const body = await owner.query<{ status: string; completeness_reason: string | null }>(
+      'SELECT status, completeness_reason FROM article_bodies WHERE article_id = $1',
+      [articleId],
+    );
+    expect(body.rows).toEqual([{ status: 'skipped', completeness_reason: 'skip_media' }]);
+    expect(server.requests.filter((request) => request.path === mediaPath)).toEqual([]);
+  });
+
   it('retries a merge that an Undo pin deferred once the pin has expired', async () => {
     const targetUrl = server.url('/undo/target.html');
     server.route('/undo/target.html', html(articlePage('Undo target')));

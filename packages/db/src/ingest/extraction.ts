@@ -55,6 +55,8 @@ export interface ArticleForExtraction {
   carrierLangHints: string[];
   /** The stored body row, whatever its revision (feed-v1 fallback or a previous extraction). */
   body: StoredArticleBody | null;
+  /** `link_enclosure_type`: the link is an audio/video enclosure, skipped (spec 03 §8.1 step 1). */
+  linkEnclosureType: string | null;
 }
 
 /**
@@ -80,11 +82,12 @@ export async function loadArticleForExtraction(
     published_at: Date | null;
     lang: string | null;
     lang_confidence: number | null;
+    link_enclosure_type: string | null;
     carrier_lang_hints: string[];
   }>(sql`
     SELECT a.id::text AS id, a.url, a.canonical_url, a.url_key,
            a.content_revision::text AS revision, a.pipeline_state, a.title, a.excerpt, a.author,
-           a.published_at, a.lang, a.lang_confidence,
+           a.published_at, a.lang, a.lang_confidence, a.link_enclosure_type,
            array(SELECT h.lang_hint
                    FROM (SELECT DISTINCT ON (f.lang_hint) f.lang_hint, fi.first_seen_at, fi.feed_id
                            FROM feed_items fi JOIN feeds f ON f.id = fi.feed_id
@@ -111,6 +114,7 @@ export async function loadArticleForExtraction(
     langConfidence: row.lang_confidence,
     carrierLangHints: row.carrier_lang_hints,
     body: await getArticleBody(db, articleId),
+    linkEnclosureType: row.link_enclosure_type,
   };
 }
 

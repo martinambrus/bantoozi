@@ -19,6 +19,7 @@ import {
   getArticleBody,
   type ArticleBodyInput,
 } from '../../src/ingest/bodies.js';
+import { loadArticleForExtraction } from '../../src/ingest/extraction.js';
 import { retryTransaction } from '../../src/ingest/retry.js';
 import { workerOutbox } from '../../src/outbox.js';
 import { setupDbTest, type DbTestContext } from '../support/test-db.js';
@@ -93,6 +94,7 @@ function item(feedId: string, overrides: Partial<IngestItemInput> = {}): IngestI
     imageUrl: null,
     publishedAt: hoursAgo(1),
     feedBody: null,
+    linkEnclosureType: null,
     ...overrides,
     // No video evidence; a carried publisher body was examined and has no images (spec 03 §6.4).
     media: overrides.media ?? {
@@ -744,6 +746,70 @@ describe('ingestItem: feed-scoped GUID identity (spec 03 §7 step 3)', () => {
     expect(await associations(articleId)).toEqual([{ feed: feed.id, guid: first }]);
     const alternate = await ctx.owner.query('SELECT 1 FROM feed_items WHERE guid = $1', [second]);
     expect(alternate.rowCount).toBe(0);
+  });
+});
+
+describe('ingestItem: a link that is its own audio/video enclosure (spec 03 §8.1 step 1)', () => {
+  const typeOf = async (articleId: string) => {
+    const rows = await ctx.owner.query<{ type: string | null }>(
+      'SELECT link_enclosure_type AS type FROM articles WHERE id = $1',
+      [articleId],
+    );
+    return rows.rows[0]?.type;
+  };
+
+  it('stores the type with a new article, for extraction to skip the link', async () => {
+    const feed = await createFeed(ctx.owner);
+    const first = await ingest(item(feed.id, { linkEnclosureType: 'audio/mpeg' }));
+    expect(await typeOf(first.articleId)).toBe('audio/mpeg');
+    const loaded = await loadArticleForExtraction(ctx.worker, first.articleId);
+    expect(loaded?.linkEnclosureType).toBe('audio/mpeg');
+    const plain = await ingest(item(feed.id));
+    expect(await typeOf(plain.articleId)).toBeNull();
+  });
+
+  it('takes the type from any carrier of the same link', async () => {
+    const x = await createFeed(ctx.owner);
+    const y = await createFeed(ctx.owner);
+    const plain = item(x.id);
+    const first = await ingest(plain);
+    expect(await typeOf(first.articleId)).toBeNull();
+    // Another feed declares the same link as its audio enclosure; no content change is needed.
+    const pod = carry(plain, {
+      feedId: y.id,
+      guid: `pod-${next()}`,
+      linkEnclosureType: 'audio/mpeg',
+    });
+    expect(await ingest(pod)).toMatchObject({ articleId: first.articleId, outcome: 'existing' });
+    expect(await typeOf(first.articleId)).toBe('audio/mpeg');
+    // A carrier without the enclosure does not clear it: the link is still that media file.
+    await ingest(carry(plain, { title: 'Retitled' }));
+    expect(await typeOf(first.articleId)).toBe('audio/mpeg');
+  });
+
+  it("follows the source's link: a new link brings its own type, an alias never does", async () => {
+    const x = await createFeed(ctx.owner);
+    const original = item(x.id, { guid: `moving-${next()}`, linkEnclosureType: 'audio/mpeg' });
+    const first = await ingest(original);
+    expect(await typeOf(first.articleId)).toBe('audio/mpeg');
+    // The source moves the item to an HTML page (a content change): its type leaves with the link.
+    const page = {
+      ...moved(original, `https://news.example.test/pages/${next()}`),
+      linkEnclosureType: null,
+    };
+    expect(await ingest(page)).toMatchObject({ articleId: first.articleId, outcome: 'guid_alias' });
+    expect(await typeOf(first.articleId)).toBeNull();
+    // Unchanged content at a media URL only adds an alias: the article's link is still the page.
+    const alias = {
+      ...moved(page, `https://cdn.example.test/media/${next()}`, true),
+      linkEnclosureType: 'video/mp4',
+    };
+    expect(await ingest(alias)).toMatchObject({
+      articleId: first.articleId,
+      outcome: 'guid_alias',
+      contentChanged: false,
+    });
+    expect(await typeOf(first.articleId)).toBeNull();
   });
 });
 

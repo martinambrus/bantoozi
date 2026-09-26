@@ -430,6 +430,7 @@ CREATE TABLE articles (
   has_video        boolean NULL,                   -- spec 03 §6.4; null = unknown, never true → false
   body_image_count int NULL CHECK (body_image_count >= 0), -- spec 03 §6.4; same text as word_count, null = unknown
   media_revision   bigint NOT NULL DEFAULT 0 CHECK (media_revision >= 0), -- +1 per has_video/body_image_count change (spec 03 §6.4)
+  link_enclosure_type text NULL,                   -- MIME type of an audio/video enclosure that is `url` itself; extraction skips it (spec 03 §8.1 step 1, D-21)
   content_hash     text NOT NULL,                  -- spec 03 §6.2
   content_revision bigint NOT NULL DEFAULT 1 CHECK (content_revision > 0),
   story_cluster_id bigint NULL REFERENCES story_clusters(id) ON DELETE SET NULL,

@@ -188,6 +188,7 @@ describe('loadArticleForExtraction (spec 03 §8.1)', () => {
         articleRevision: '1',
         extractorVersion: FEED_BODY_EXTRACTOR,
       }),
+      linkEnclosureType: null,
     });
     expect(await loadArticleForExtraction(ctx.worker, '999999999')).toBeNull();
     const bare = await createArticle(ctx.owner);

@@ -403,6 +403,7 @@ export function ingestInput(feedId: string, item: NormalizedItem): IngestItemInp
         : item.contentHash,
     feedBody: feedBody(item, linked),
     media: { videoEvidence: item.videoEvidence, feedBodyImageCount: item.feedBodyImageCount },
+    linkEnclosureType: linked ? item.linkEnclosureType : null,
   };
 }
 

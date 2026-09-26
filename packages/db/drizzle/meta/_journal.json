@@ -85,6 +85,13 @@
       "when": 1790433094496,
       "tag": "0011_snapshot_completeness_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790441532700,
+      "tag": "0012_link_enclosure_type",
+      "breakpoints": true
     }
   ]
 }

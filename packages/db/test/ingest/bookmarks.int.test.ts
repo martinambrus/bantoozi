@@ -249,6 +249,7 @@ describe('loadCaptureSource (spec 03 §8.5 step 3)', () => {
       excerpt: 'The teaser.',
       excerptHtml: null,
       body: null,
+      linkEnclosureType: null,
       pending: [
         {
           userId: pending.id,

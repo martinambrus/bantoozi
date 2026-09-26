@@ -69,7 +69,9 @@ async function capture(
     }
   }
   if (source.url !== null) {
-    const result = await extractArticle(source.url, extractDeps(deps));
+    const result = await extractArticle(source.url, extractDeps(deps), {
+      enclosureType: source.linkEnclosureType,
+    });
     if (isTransientPageFailure(result) && hasRetriesLeft(context)) {
       throw new TransientPageError(result.error ?? 'unknown');
     }

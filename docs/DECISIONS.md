@@ -152,3 +152,14 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   Should the search run out of conversions, the undecided images are left out, so an image after
   the cut never counts. A cut of the HTML alone stores the whole text and still counts every image.
   Found by the Codex review of PR #5. Spec 03 §6.4 updated.
+- D-21: 2026-09-26 M1-T7 — `articles.link_enclosure_type` (text, null; migration 0012) records the
+  MIME type of an audio/video enclosure, JSON Feed attachment or `media:content` whose URL is the
+  article's link itself. Spec 03 §8.1 step 1 skips such a link without a request, and the extractor
+  already took the enclosure type as an option, but the parser kept no enclosure URLs and nothing
+  stored the fact, so the worker could not pass it: an opaque media link was downloaded up to the
+  fetch cap and stored as `not_html` or `too_large`. The parser now keeps each media object's URL,
+  `normalizeItem` reports the link's enclosure type, and ingestion stores it (any carrier of the
+  same link may declare it; a new link from the source replaces it with its own, and a URL that only
+  becomes an alias never sets it). `article.extract` and `article.capture-bookmark` pass it to the
+  skip check. Spec 02 listed no such column. Found by the Codex review of PR #5. Spec 02 `articles`
+  and spec 03 §8.1 step 1 updated.

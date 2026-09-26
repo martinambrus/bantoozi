@@ -148,6 +148,7 @@ export const articles = pgTable(
     mediaRevision: int8('media_revision')
       .notNull()
       .default(sql`0`),
+    linkEnclosureType: text('link_enclosure_type'),
     contentHash: text('content_hash').notNull(),
     contentRevision: int8('content_revision')
       .notNull()
