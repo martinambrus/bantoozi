@@ -14,10 +14,14 @@ const authorSchema = z.object({ name: optionalString });
 
 const attachmentSchema = z.object({ url: optionalString, mime_type: optionalString });
 
-/** One JSON Feed 1.0/1.1 item; members of the wrong type are dropped, not fatal. */
+/**
+ * One JSON Feed 1.0/1.1 item; members of the wrong type are dropped, not fatal. A numeric `id`
+ * arrives as its source text ({@link reviveNumericId}); a number that is still a number here (a
+ * runtime without the source text) counts only while it is a safe integer.
+ */
 const itemSchema = z.object({
   id: z
-    .union([z.string(), z.number()])
+    .union([z.string(), z.number().int().safe()])
     .transform((id) => String(id))
     .optional()
     .catch(undefined),
@@ -56,6 +60,17 @@ export type JsonFeedDocument =
   | { ok: false; code: 'FEED_PARSE_ERROR' | 'FEED_NOT_A_FEED'; message: string };
 
 const MENTIONS_JSON_FEED = /jsonfeed\.org\\?\/version/;
+
+/**
+ * `JSON.parse` reviver that keeps a numeric `id` exactly as written. Readers coerce a non-string
+ * id to a string, but a JSON number beyond 2^53 loses digits as a double, so distinct publisher
+ * ids (9007199254740992 and 9007199254740993) would become one GUID and merge their items.
+ */
+function reviveNumericId(key: string, value: unknown, context?: { source?: string }): unknown {
+  return key === 'id' && typeof value === 'number' && context?.source !== undefined
+    ? context.source
+    : value;
+}
 
 /** Author names of a JSON Feed object: 1.1 `authors`, then the 1.0 `author`. */
 function authorNames(value: {
@@ -130,7 +145,7 @@ export function parseJsonFeedDocument(
 ): JsonFeedDocument {
   let data: unknown;
   try {
-    data = JSON.parse(text.replace(/^\uFEFF/, ''));
+    data = JSON.parse(text.replace(/^\uFEFF/, ''), reviveNumericId);
   } catch {
     return MENTIONS_JSON_FEED.test(text)
       ? { ok: false, code: 'FEED_PARSE_ERROR', message: 'Malformed JSON Feed' }

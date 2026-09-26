@@ -287,6 +287,17 @@ describe('parseFeed documents and errors', () => {
     });
   });
 
+  it('keeps numeric JSON Feed ids exact beyond 2^53, so distinct items keep distinct GUIDs', async () => {
+    const text = `{"version": "https://jsonfeed.org/version/1.1", "title": "Big ids", "items": [
+      {"id": 9007199254740992, "url": "https://feed.example/a", "content_text": "A"},
+      {"id": 9007199254740993, "url": "https://feed.example/b", "content_text": "B"},
+      {"id": 42, "url": "https://feed.example/c", "content_text": "C"}]}`;
+    expect(await parseFeed(text, { url: URL, now: NOW })).toMatchObject({
+      ok: true,
+      items: [{ guid: '9007199254740992' }, { guid: '9007199254740993' }, { guid: '42' }],
+    });
+  });
+
   it('validates its options', async () => {
     await expect(parseFeed('<rss/>', { url: 'not a url' })).rejects.toThrow(TypeError);
     await expect(parseFeed('<rss/>', { url: URL, now: new Date(Number.NaN) })).rejects.toThrow(

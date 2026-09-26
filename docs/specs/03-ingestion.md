@@ -400,7 +400,7 @@ because only `rel=canonical` fixes AMP), Google News wrappers and hash-bang URLs
 |---|---|
 | `title` | strip HTML, decode entities, collapse whitespace, trim. Fall back to the first 80 chars of the excerpt, else `"(untitled)"`. Max 500 chars |
 | `link` | RSS link → RSS guid only when `isPermaLink` is not false and it is an absolute http(s) URL; Atom `link[rel=alternate]` with HTML type (or omitted type); JSON Feed `url` then `external_url`. Resolve `xml:base` chains against the final feed URL. Enclosures/attachments are not article links |
-| `guid` | RSS guid / Atom id / JSON Feed id are opaque, case-sensitive identifiers scoped to this feed; preserve the complete string. Empty → null; > 4,096 chars → invalid item, never silently truncate identity |
+| `guid` | RSS guid / Atom id / JSON Feed id are opaque, case-sensitive identifiers scoped to this feed; preserve the complete string. A numeric JSON Feed id keeps its source text, so a number beyond 2^53 is never rounded into another item's id. Empty → null; > 4,096 chars → invalid item, never silently truncate identity |
 | `published_at` | RSS `isoDate` / `pubDate` / `dc:date`, Atom `published` then `updated`, JSON Feed `date_published` then `date_modified`; validate as a finite instant and normalize to UTC, otherwise null. Dates > 1 day ahead are treated as unknown (null), never advanced again on each poll |
 | `author` | `creator ?? author ?? dc:creator ?? itunes:author`, as text, max 200 chars |
 | `categories` | flattened strings, trimmed, deduplicated case-insensitively, max 16 entries of up to 64 chars each |
