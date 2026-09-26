@@ -294,16 +294,21 @@ Crypto implementation reference: [Node 22 crypto](https://nodejs.org/docs/latest
 Every engine converts its raw output into the `Answer` union above and validates it:
 
 - Validate outbound keys, shapes, nonempty questions, option/level counts and configured request byte
-  limits before spending. All numeric answers and usage counts must be finite; token counts must
+  limits before spending (defaults: 200 questions, 255 options, 10 levels, 1 MiB of serialized
+  `{state, questions}` and JSON nesting of at most 64 levels; D-54). All numeric answers and usage counts must be finite; token counts must
   be nonnegative integers. All probabilities and confidence values must be within [0,1].
 - Exactly the requested keys are present, with the requested `type`. Missing, additional or mistyped
   keys make the whole response `invalid_response`. Use own-property-safe maps for untrusted JSON.
+  Fields inside one Jev answer beyond those §3 documents (such as `legend`) are ignored; LLM answers
+  are exactly `{p}` or `{probabilities}` (D-53).
 - `noul.p ∈ [0, 1]`.
 - Choice `probabilities` has exactly the option keys, and the values sum to 1 ± 0.02. Renormalize
   within tolerance, reject outside it. `choice` is the argmax; ties use the request's stable option order.
 - Score `probabilities` is an array of length `levels` (converted from TypeSafe's string-keyed object).
   Validate the same bounds and sum tolerance as Choice. `score = Σ i·p_i` is recomputed and must
-  match TypeSafe's value within 0.02; keys must be exactly `0` through `levels − 1`.
+  match TypeSafe's value within 0.02, computed from either the probabilities as sent or the
+  renormalized ones; the stored score is the recomputed one (D-53). Keys must be exactly `0` through
+  `levels − 1`.
 - `confidence` comes from the engine when provided (Jev). Otherwise
   `confidence = 1 − H(p) / ln(k)`, using `0·ln(0) = 0`. This is our proxy, not a claim that it is
   Jev's confidence formula. Confidence is not a probability of correctness; calibrate engines separately.
@@ -322,7 +327,7 @@ The normalized answers are what is stored in `article_facets.answers`, `card_ans
 { "model": "jev-1.13.0", "state": <state>, "questions": { "<key>": { "type": "noul|choice|score", "instructions": …, "criteria": … } } }
 ```
 
-**Response** (documented shape, validated with zod):
+**Response** (documented shape, validated with strict own-property guards, D-52):
 
 ```json
 { "model": "jev-1.13.0",

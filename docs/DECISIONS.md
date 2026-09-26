@@ -332,3 +332,18 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   also reports a set that was never seeded, a stored definition with a wrong hash and an active set
   the code does not know or of another kind. Spec 05 §2 said only "the worker also checks this at
   startup". Spec 05 §2 updated.
+- D-52: 2026-09-26 M2-T1 — `packages/engine` validates Jev and Ollama responses with strict
+  hand-written own-property guards (exact key sets and types, finite numbers within their bounds, no
+  inherited or `__proto__` keys, bounded JSON depth) instead of zod, which the package does not
+  depend on (as D-29 and D-43). Spec 01 §5 and spec 04 §3 ("validated with zod") updated.
+- D-53: 2026-09-26 M2-T1 — answer normalization details spec 04 §2 left open. Fields inside one Jev
+  answer beyond the ones §3 documents (such as `legend`) are ignored; the set of answer keys stays
+  exact, and LLM answers stay exactly `{p}` or `{probabilities}` (their schema is closed). A reported
+  Jev `score` may match Σ i·p of either the probabilities as sent or the renormalized ones within
+  0.02 (the engine may compute it before or after rounding); the stored score is always recomputed
+  from the renormalized distribution. Spec 04 §2 updated.
+- D-54: 2026-09-26 M2-T1 — default outbound request limits, which spec 04 §2 called "configured"
+  without values: at most 200 questions (the packing count limit of spec 05 §5.2), 255 Choice options,
+  10 Score levels and 1 MiB of serialized `{state, questions}`; JSON nested deeper than 64 levels is
+  rejected as a builder bug. Callers may lower or raise them per router (`limits`). Spec 04 §2
+  updated.
