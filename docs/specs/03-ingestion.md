@@ -401,7 +401,7 @@ because only `rel=canonical` fixes AMP), Google News wrappers and hash-bang URLs
 | `excerpt` | plain text of the excerpt HTML, whitespace-collapsed, max 2,000 chars |
 | `feed_body_text`, `feed_body_html` | full readable publisher text and sanitized HTML before excerpt/model truncation, within the 10 MiB combined extraction-output safety limit; preserve completeness/provenance for bookmark capture, never active HTML |
 | `image_url` | the first of: enclosure with `image/*` type → `media:content` (medium=image) → `media:thumbnail` → the first `<img src>` in the content. Resolved and must be http(s) |
-| `video_evidence` | boolean from the item's media: true when §6.4's feed rules find a video, otherwise false |
+| `video_evidence` | true when a §6.4 video rule holds for the item: a video enclosure, attachment or `media:content`, a video-host link, or a `<video>` element or player embed in its excerpt or body HTML (read before sanitizing); otherwise false |
 | `feed_body_image_count` | §6.4 in-body image count of `feed_body_html`, computed before sanitizing; null when the item carries no publisher body |
 
 Each fetch processes at most **200 valid items**, newest first by `published_at` (unknown dates keep
@@ -469,8 +469,14 @@ excerpt, the page outside Readability's result, or `image_url`. Count `<img>` el
   a `data:` placeholder is not a URL;
 - a repeat of an already counted resolved URL, so a `<noscript>` fallback of a lazy image counts once.
 
-Readability drops iframes and embeds that its video allow-list does not match, so configure it
-(its `allowedVideoRegex` option) to keep the `VIDEO_EMBED_HOSTS` embeds before reading the fragment.
+`articles.body_image_count` always describes the body currently stored in `article_bodies`, the same
+text `word_count` counts, and is written in the same transaction as that body (§7 step 6, §8.1
+step 6). It is null while no body is stored (excerpt only), so an excerpt never passes for a body
+without images.
+
+Readability removes `<iframe>`, `<embed>` and `<object>` elements unless an attribute matches its
+video allow-list, whose default covers only some of these hosts. Pass a regex built from
+`VIDEO_EMBED_HOSTS` as its `allowedVideoRegex` option so those embeds survive into the fragment.
 
 ---
 
@@ -596,7 +602,8 @@ fetching non-HTML media.
        article merely after moving `feed_items`
    - Otherwise add an alias with source `redirect`.
 5. **Parse:**
-   - `linkedom` `parseHTML`, then `new Readability(document, { charThreshold: 200 }).parse()`.
+   - `linkedom` `parseHTML`, then `new Readability(document, { charThreshold: 200, allowedVideoRegex })
+     .parse()`, where `allowedVideoRegex` is built from `VIDEO_EMBED_HOSTS` (§6.4).
    - `rel=canonical`: if the page declares `<link rel="canonical">` on the **same registrable domain**
      (use `tldts` with the private suffix list, and require exact host equality if no registrable
      domain exists), and it resolves to an allowed http(s) URL without credentials, apply §8.4 with
@@ -617,12 +624,12 @@ fetching non-HTML media.
    - `body_lead` = the first 1,500 chars, cut at the last sentence end (`. ! ? …`) after char 1,000 if
      there is one.
    - `word_count` = whitespace token count of `body_text`, or of the excerpt if there is no body.
-   - Media signals (§6.4), from the pre-sanitize fragment: `articles.body_image_count` = the page
-     fragment's in-body image count when this extraction stores the page body; the feed body's
-     count when the stored body is the feed fallback; null when only an excerpt exists, so the count
-     and `word_count` always describe the same text. Set `articles.has_video` to true on page video
-     evidence; otherwise set it to false only if it is null and a page or feed body was examined.
-     A skipped video-host URL (step 1) is video evidence.
+   - Media signals (§6.4), from the pre-sanitize fragment: when this extraction stores the page
+     body, set `articles.body_image_count` to that fragment's in-body image count; otherwise leave
+     the value that belongs to the body still stored (the feed fallback's count, or null for an
+     excerpt only). Set `articles.has_video` to true on page video evidence; otherwise set it to
+     false only if it is null and a page or feed body was examined. A skipped URL on a `VIDEO_HOSTS`
+     host (step 1) is video evidence.
 7. **Language detection** (§8.3). Set `articles.lang` and `lang_confidence`. A genuinely changed
    body/language uses `resetArticleAnswers` once, installing that new body at the incremented revision
    and checking current demand before choosing enrichment/translation as the next stage (do not
@@ -712,7 +719,8 @@ and keep both identities; golden labels must not be silently rewritten.
   snapshot arbitrarily and delete the other. Unexpired Undo snapshot pins also block any destructive
   merge that would make exact Undo impossible. Identical snapshot checksums can share storage.
 - Keep the target's source metadata and any valid target body; take the source body only when the
-  target lacks a successful extraction. Use `resetArticleAnswers` once to increment the surviving
+  target lacks a successful extraction. `body_image_count` moves with the body kept; `has_video` is
+  true if it is true on either article, otherwise false if false on either, otherwise null (§6.4). Use `resetArticleAnswers` once to increment the surviving
   content revision, retain the chosen body at that revision, clear incompatible translations/active
   answers/features, and schedule current-revision enrichment/matching only for eligible demand. Provider
   audit rows remain audit rows; no stale cached result becomes active by virtue of the merge.

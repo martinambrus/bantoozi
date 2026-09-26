@@ -371,7 +371,7 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
 | Length | one-hot `len.short/medium/long/very_long/unknown`, boundaries from spec 05 §3.1 (<150 / <600 / <1500 / ≥1500 / null words) |
 | Freshness | one-hot `age.lt6h/lt24h/lt72h/older`: disjoint [0,6h), [6h,24h), [24h,72h), [72h,∞), using age at snapshot for training and now for scoring (§5) |
 | Language | one-hot `lang.en/sk/cs/other` |
-| Media | `has_video` with a `known.has_video` mask (null is unknown). One-hot `img.none/light/moderate/heavy/unknown` from the in-body image density d = `bodyImageCount` × 500 / max(`wordCount`, 500): `none` when the count is 0, `light` for d < 1, `moderate` for 1 ≤ d < 3, `heavy` for d ≥ 3, `unknown` when either value is null |
+| Media | `has_video` with a `known.has_video` mask (null is unknown). One-hot `img.none/light/moderate/heavy/unknown` from the in-body image density d = `bodyImageCount` × 500 / max(`wordCount`, 500): `unknown` when either value is null, otherwise `none` when the count is 0, `light` for d < 1, `moderate` for 1 ≤ d < 3 and `heavy` for d ≥ 3 |
 | Other | `has_image`, `cluster_log = ln(1 + clusterSize)` |
 | Source | `feed.h<k>`, one-hot with k = murmur3(feedId) mod 32, using the lowest numeric id in `item.inferenceFeedIds`. `author.h<k>`, one-hot with k = murmur3(`normalizeText(author)`) mod 16 (none if there is no author). murmur3 = **MurmurHash3 x86 32-bit, seed 0, over the UTF-8 bytes** of the decimal id string or the normalized author |
 
