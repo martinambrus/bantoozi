@@ -423,8 +423,8 @@ per-task commits are in the table below). The full check with coverage passed af
 (`packages/feeds` lines above 99 %), `ingestion.e2e.test.ts` passed, and `pnpm worker-cli` ran
 against the dev database with a local fixture site. Deviations: D-11…D-23 in `docs/DECISIONS.md`.
 Migrations 0009 (D-13…D-16), 0010 (the R2 media columns of spec 02), 0011 (D-19) and 0012 (D-21)
-are added, so migrations of a parallel M2 branch are numbered after them. Merge to `main` before M3a,
-M4 and M5 (§0.2).
+are added, so migrations of a parallel M2 branch are numbered after them. Merged to `main` on
+2026-09-26 through PR #5 (merge commit `7d111f2`), so M3a, M4 and M5 can start (§0.2).
 
 **Outcome:** subscribed feeds are fetched safely on an adaptive schedule, and articles are stored
 once, deduplicated across feeds, with extracted text and detected language. The pipeline stops after
@@ -444,13 +444,13 @@ Complete milestone M1 "Ingestion core" exactly as specified in docs/PLAN.md §6,
 |---|---|---|---|---|---|
 | M1-T1 | `safeFetch`: IP-literal and DNS address checks, injectable resolver, manual redirects, limits, charset decoding | — | A | 03 §4 | ✓ `59f334d` |
 | M1-T2 | `canonicalizeUrl`, `url_key`, tracking-param list | — | B | 03 §5 | ✓ `50373a3` |
-| M1-T3 | `parseFeed`, `normalizeItem`, sanitizing, `title_norm`, `content_hash`, media signals (`mediaSignals`), feed fixtures | — | B | 03 §6, §12 | ✓ `4d7c731`, `fbb989a`, `d52acdb` and the JSON Feed id fix |
+| M1-T3 | `parseFeed`, `normalizeItem`, sanitizing, `title_norm`, `content_hash`, media signals (`mediaSignals`), feed fixtures | — | B | 03 §6, §12 | ✓ `4d7c731`, `fbb989a`, `d52acdb`, the JSON Feed id fix and the V8 date fallback checks (`489e7db`, `3c7eab5`, `7f4d245`) |
 | M1-T4 | `nextSchedule` adaptive interval, with simulations | — | C | 03 §9 | ✓ `66e999f` |
-| M1-T5 | Extraction: skip list, robots, Readability, body lead, media signals of the page body, canonical detection, politeness limiter | T1, T3 | A | 03 §6.4, §8 | ✓ `b971298`, `5408064` and the robots.txt rejection and capped image count fixes |
+| M1-T5 | Extraction: skip list, robots, Readability, body lead, media signals of the page body, canonical detection, politeness limiter | T1, T3 | A | 03 §6.4, §8 | ✓ `b971298`, `5408064` and the robots.txt rejection, robots.txt status (`f57adf4`, `63e06b2`) and capped image count fixes |
 | M1-T6 | Feed discovery and OPML parse/export | T1, T3 | A | 03 §10–11 | ✓ `afa0514`, `390bfd3` |
-| M1-T7 | Migration for `articles.has_video`, `body_image_count` and `media_revision`; worker handlers: `feed.schedule`, `feed.fetch` (ingest §7, redirect merge §9), `article.extract` (alias/merge), `feeds.lang_hint` upkeep, `resetArticleAnswers`, inference eligibility and durable bookmark capture | T1–T5 | D | 03 §1–3, §7–9; 05 §5.6 | ✓ `e81e18a`, `dd02c22`, `eb68fff`, `965655b`, `64ad9ff`, `8cbf0be`, `6750847`, `28f4517`, `3ac8a85`, the canonical-after-redirect fix, the Undo-pin merge retry and the lost fetch lock stop |
+| M1-T7 | Migration for `articles.has_video`, `body_image_count` and `media_revision`; worker handlers: `feed.schedule`, `feed.fetch` (ingest §7, redirect merge §9), `article.extract` (alias/merge), `feeds.lang_hint` upkeep, `resetArticleAnswers`, inference eligibility and durable bookmark capture | T1–T5 | D | 03 §1–3, §7–9; 05 §5.6 | ✓ `e81e18a`, `dd02c22`, `eb68fff`, `965655b`, `64ad9ff`, `8cbf0be`, `6750847`, `28f4517`, `3ac8a85` and the review fixes: redirect and canonical evidence (applied to the merge survivor, fenced by revision), validators cleared on a `fetch_url` rename, `lang_hint` on 304 polls, bookmark snapshots (completeness in their identity, D-19; the complete binding kept in merges; the longer partial kept in capture), the Undo-pin merge retry and chain rollback, the outbox backlog age, the lost fetch lock stop, a link that is its own audio/video enclosure (D-21), language detected on the kept body and forced fetches (D-23) |
 | M1-T8 | End-to-end ingestion integration test | T7 | D | 03 all | ✓ `03f7741` |
-| M1-T9 | Dev CLI (`apps/worker/src/cli.ts`, run as `pnpm worker-cli …`): `feeds:add <url> [--user dev@localhost]`, `feeds:fetch-now <feedId>`, `feeds:show <feedId>` | T6, T7 | D | 03 §10 | ✓ `6b2eea2`, `6026689`, `8d591aa` |
+| M1-T9 | Dev CLI (`apps/worker/src/cli.ts`, run as `pnpm worker-cli …`): `feeds:add <url> [--user dev@localhost]`, `feeds:fetch-now <feedId>`, `feeds:show <feedId>` | T6, T7 | D | 03 §10 | ✓ `6b2eea2`, `6026689`, `8d591aa`, `6b6b406` and the dead-feed revival (`874febe`, D-22) |
 
 **Done when:**
 
