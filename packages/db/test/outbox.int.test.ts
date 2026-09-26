@@ -331,7 +331,7 @@ describe('relay primitives (worker role)', () => {
     }
   });
 
-  it('reports the age of the oldest undelivered intent', async () => {
+  it('reports the age of the oldest due undelivered intent', async () => {
     await drain();
     expect(await oldestPendingOutboxAgeSeconds(ctx.worker)).toBeNull();
     await ctx.worker.transaction(async (tx) => {
@@ -340,9 +340,39 @@ describe('relay primitives (worker role)', () => {
       );
     });
     await ctx.owner.query(
-      "UPDATE job_outbox SET created_at = now() - interval '6 minutes' WHERE delivered_at IS NULL",
+      `UPDATE job_outbox SET created_at = now() - interval '6 minutes',
+                             available_at = now() - interval '6 minutes'
+        WHERE delivered_at IS NULL`,
     );
     expect(await oldestPendingOutboxAgeSeconds(ctx.worker)).toBeGreaterThan(300);
+  });
+
+  it('leaves an intentional delay out of the backlog age until the intent is due', async () => {
+    await drain();
+    // Created an hour ago and deferred for two more hours (an origin cooldown): not backlog.
+    await ctx.worker.transaction(async (tx) => {
+      await workerOutbox(tx, { availableAt: new Date(Date.now() + 2 * 3_600_000) }).enqueue(
+        buildJobIntent('article.extract', { articleId: '12' }, { revision: '1' }),
+      );
+    });
+    await ctx.owner.query(
+      "UPDATE job_outbox SET created_at = now() - interval '1 hour' WHERE delivered_at IS NULL",
+    );
+    expect(await oldestPendingOutboxAgeSeconds(ctx.worker)).toBeNull();
+    // Once due, it counts from its `available_at`, not from its creation.
+    await ctx.owner.query(
+      "UPDATE job_outbox SET available_at = now() - interval '1 minute' WHERE delivered_at IS NULL",
+    );
+    const due = await oldestPendingOutboxAgeSeconds(ctx.worker);
+    expect(due).toBeGreaterThanOrEqual(60);
+    expect(due).toBeLessThan(300);
+    // A failed send counts from its creation, also while its backoff moves `available_at`.
+    await ctx.owner.query(
+      `UPDATE job_outbox SET last_error = 'Error', available_at = now() + interval '15 minutes'
+        WHERE delivered_at IS NULL`,
+    );
+    expect(await oldestPendingOutboxAgeSeconds(ctx.worker)).toBeGreaterThan(3_000);
+    await drain();
   });
 
   it('bounds the retry backoff', () => {

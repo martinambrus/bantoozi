@@ -165,10 +165,18 @@ export async function hasPendingEquivalentJob(
   return result.rows.length > 0;
 }
 
-/** Age in seconds of the oldest undelivered intent (the relay alerts above 5 minutes). */
+/**
+ * Age in seconds of the oldest due, undelivered intent (the relay warns above 5 minutes; spec 11
+ * §6.1 "Pipeline backlog"). An intent delayed on purpose (an origin cooldown, a merge retry after
+ * an Undo pin) is not backlog before its `available_at` and counts from then. A failed send counts
+ * from its creation, also during its backoff: the backoff moves `available_at`, and a send that
+ * keeps failing is exactly the backlog this reports.
+ */
 export async function oldestPendingOutboxAgeSeconds(db: Executor): Promise<number | null> {
   const result = await db.execute<{ age: number | null }>(sql`
-    SELECT extract(epoch FROM now() - min(created_at))::float8 AS age
-      FROM job_outbox WHERE delivered_at IS NULL`);
+    SELECT extract(epoch FROM now() - min(CASE WHEN last_error IS NULL THEN available_at
+                                               ELSE created_at END))::float8 AS age
+      FROM job_outbox
+     WHERE delivered_at IS NULL AND (last_error IS NOT NULL OR available_at <= now())`);
   return result.rows[0]?.age ?? null;
 }
