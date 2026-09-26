@@ -52,14 +52,18 @@ export async function registerHandlers(
       continue;
     }
     for (let i = 0; i < QUEUES[queue].concurrency; i += 1) {
-      await boss.work<unknown>(queue, { batchSize: 1 }, async (jobs) => {
+      await boss.work<unknown>(queue, { batchSize: 1, includeMetadata: true }, async (jobs) => {
         for (const job of jobs) {
           const parsed = safeParseJobPayload(queue, job.data);
           if (!parsed.success) {
             logger.error({ queue, jobId: job.id }, 'dropping a job with an invalid payload');
             continue;
           }
-          await dispatch(handlers, queue, parsed.data, { queue, jobId: job.id });
+          await dispatch(handlers, queue, parsed.data, {
+            queue,
+            jobId: job.id,
+            retry: { count: job.retryCount, limit: job.retryLimit },
+          });
         }
       });
     }

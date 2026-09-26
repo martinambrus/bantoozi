@@ -11,7 +11,8 @@ import { EXTRACTOR_VERSION, extractArticle } from '@bantoozi/feeds';
 import { enqueueCaptureBookmark } from '@bantoozi/shared';
 
 import { extractDeps, type WorkerDeps } from './deps.js';
-import type { QueueHandler } from './index.js';
+import type { JobContext, QueueHandler } from './index.js';
+import { hasRetriesLeft, isTransientPageFailure, TransientPageError } from './transient.js';
 
 /**
  * `article.capture-bookmark {articleId}` (spec 03 §8.5): retain the full available readable text
@@ -19,18 +20,20 @@ import type { QueueHandler } from './index.js';
  * of the current revision; otherwise runs the same safe local extraction as `article.extract`
  * (robots, SSRF, size, timeout and politeness limits), once for all coalesced requests, and never
  * creates model demand. The best available content is frozen: a teaser or feed summary stays a
- * partial snapshot; no readable content keeps the bookmark as `failed`. Completion binds only the
- * still-pending generations at the observed revision; a changed revision retries from the current
- * source instead of mislabeling stale input.
+ * partial snapshot; no readable content keeps the bookmark as `failed`. A transient page failure
+ * throws while the queue has retries left (bounded automatic retries, spec 03 §8.5 step 3), so the
+ * capture stays pending until the last attempt. Completion binds only the still-pending
+ * generations at the observed revision; a changed revision retries from the current source
+ * instead of mislabeling stale input.
  */
 export function createCaptureBookmarkHandler(
   deps: WorkerDeps,
 ): QueueHandler<'article.capture-bookmark'> {
-  return async ({ articleId }) => {
+  return async ({ articleId }, context) => {
     const source = await loadCaptureSource(deps.db, articleId);
     if (source === null || source.pending.length === 0) return;
 
-    const outcome = await capture(deps, source);
+    const outcome = await capture(deps, source, context);
     if (outcome === 'deferred') return;
     const done = await retryTransaction(deps.db, (tx) =>
       completeBookmarkCapture(tx, {
@@ -49,6 +52,7 @@ export function createCaptureBookmarkHandler(
 async function capture(
   deps: WorkerDeps,
   source: CaptureSource,
+  context: JobContext,
 ): Promise<CaptureOutcome | 'deferred'> {
   const body = source.body;
   const current = body !== null && body.articleRevision === source.revision ? body : null;
@@ -66,6 +70,9 @@ async function capture(
   }
   if (source.url !== null) {
     const result = await extractArticle(source.url, extractDeps(deps));
+    if (isTransientPageFailure(result) && hasRetriesLeft(context)) {
+      throw new TransientPageError(result.error ?? 'unknown');
+    }
     if (result.deferUntil !== null) {
       const until = result.deferUntil;
       await deps.db.transaction((tx) =>

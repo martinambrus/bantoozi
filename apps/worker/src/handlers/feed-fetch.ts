@@ -27,6 +27,7 @@ import {
   parseFeed,
   recentGapsS,
   urlKey,
+  validateFeedUrl,
   type FetchOutcome,
   type NormalizedItem,
   type ParsedFeed,
@@ -272,19 +273,34 @@ function errorOutcome(result: Extract<SafeFetchResult, { ok: false }>, now: Date
   };
 }
 
+/**
+ * A permanent redirect of the feed URL (spec 03 §9): the target becomes `fetch_url`, and its
+ * canonical form the feed's identity (a rename, or a merge into the feed that owns it), even when
+ * that identity is unchanged, so later polls stop following the redirect. The target must pass the
+ * same public-feed checks as a subscribed URL (`validateFeedUrl`: no credentials or credential
+ * parameters, a canonical identity of at most 2,048 bytes, D-11); a rejected target is not
+ * adopted and the feed keeps its URLs.
+ */
 async function followPermanentRedirect(
   deps: WorkerDeps,
   feedId: string,
   feed: FeedForFetch,
   finalUrl: string,
 ): Promise<string> {
-  const canonical = canonicalizeUrl(finalUrl);
-  if (!canonical.ok || canonical.url === feed.url) return feedId;
+  const target = validateFeedUrl(finalUrl, { allowPrivate: deps.fetch.allowPrivate });
+  if (!target.ok) {
+    deps.logger.warn(
+      { feedId, reason: target.reason },
+      'permanent feed redirect target rejected; the feed keeps its URLs',
+    );
+    return feedId;
+  }
+  if (target.canonicalUrl === feed.url && target.fetchUrl === feed.fetchUrl) return feedId;
   return retryTransaction(deps.db, async (tx) => {
     const sender = workerOutbox(tx);
     const redirect = await applyPermanentRedirect(tx, sender, feedId, {
-      canonicalUrl: canonical.url,
-      fetchUrl: finalUrl,
+      canonicalUrl: target.canonicalUrl,
+      fetchUrl: target.fetchUrl,
     });
     if (redirect.kind !== 'merged') return feedId;
     const context = pipelineContext(deps, tx, sender);

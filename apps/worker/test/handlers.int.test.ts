@@ -31,6 +31,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createWorkerDeps, fetchWith, type WorkerDeps } from '../src/handlers/deps.js';
 import { createHandlers, dispatch, type HandlerMap } from '../src/handlers/index.js';
+import { TransientPageError } from '../src/handlers/transient.js';
 
 /**
  * M1-T7 handler integration (spec 03 §3–§4, §7–§10): the real `feed.schedule`, `feed.fetch`,
@@ -661,5 +662,133 @@ describe('article.capture-bookmark (M1-T7)', () => {
       source: 'feed',
       text: 'Gone story: the summary from the feed.',
     });
+  });
+});
+
+describe('transient page failures and permanent feed redirects (M1-T7)', () => {
+  const firstAttempt = { count: 0, limit: 2 };
+  const lastAttempt = { count: 2, limit: 2 };
+
+  async function ingestLinked(path: string, title: string, page: string): Promise<string> {
+    server.route(
+      path,
+      rssRoute(() => rss(title, rssItem(`${path}-1`, title, server.url(page)))),
+    );
+    const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    await fetchFeed(feedId);
+    return articleIdByUrl(server.url(page));
+  }
+
+  async function pipelineState(articleId: string): Promise<string> {
+    const result = await owner.query<{ pipeline_state: string }>(
+      'SELECT pipeline_state FROM articles WHERE id = $1',
+      [articleId],
+    );
+    return result.rows[0]!.pipeline_state;
+  }
+
+  it('retries a transient page failure while attempts remain, then stores the terminal outcome', async () => {
+    let hits = 0;
+    server.route('/flaky/story.html', () => {
+      hits += 1;
+      return { status: 500, body: 'try later' };
+    });
+    const id = await ingestLinked('/flaky/feed.rss', 'Flaky story', '/flaky/story.html');
+    const extract = (retry: { count: number; limit: number }) =>
+      dispatch(
+        handlers,
+        'article.extract',
+        { articleId: id },
+        { queue: 'article.extract', jobId: 'flaky', retry },
+      );
+
+    await expect(extract(firstAttempt)).rejects.toThrow(TransientPageError);
+    expect(await pipelineState(id)).toBe('ingested');
+    await extract(lastAttempt);
+    expect(hits).toBe(2);
+    // The last attempt advances; the feed text stays the stored body over the empty page result.
+    expect(await pipelineState(id)).toBe('extracted');
+  });
+
+  it('stores a definite page failure at once, even with retries left', async () => {
+    server.route('/gone/story.html', { status: 404, body: 'gone' });
+    const id = await ingestLinked('/gone/feed.rss', 'Gone for good', '/gone/story.html');
+    await dispatch(
+      handlers,
+      'article.extract',
+      { articleId: id },
+      { queue: 'article.extract', jobId: 'gone', retry: firstAttempt },
+    );
+    expect(await pipelineState(id)).toBe('extracted');
+  });
+
+  it('keeps a bookmark capture pending across a transient page failure until the last attempt', async () => {
+    server.route('/flaky/saved.html', { status: 502, body: 'bad gateway' });
+    const id = await ingestLinked('/flaky/saved.rss', 'Saved flaky story', '/flaky/saved.html');
+    expect(await bookmark(reader, id)).toBe('pending');
+    const captureJob = (retry: { count: number; limit: number }) =>
+      dispatch(
+        handlers,
+        'article.capture-bookmark',
+        { articleId: id },
+        { queue: 'article.capture-bookmark', jobId: 'flaky-capture', retry },
+      );
+
+    await expect(captureJob(firstAttempt)).rejects.toThrow(TransientPageError);
+    expect(await capture(reader, id)).toMatchObject({ status: 'pending' });
+    await captureJob(lastAttempt);
+    expect(await capture(reader, id)).toMatchObject({ status: 'partial', completeness: 'partial' });
+  });
+
+  it('adopts a permanent redirect that keeps the canonical identity as the new fetch_url', async () => {
+    const clean = server.url('/clean/feed.rss');
+    const tracked = server.url('/clean/feed.rss?utm_source=partner');
+    server.route('/clean/feed.rss', (request) =>
+      request.path.includes('utm_source=')
+        ? { status: 301, headers: { location: clean } }
+        : rssRoute(() =>
+            rss('Clean', rssItem('clean-1', 'Clean item', server.url('/clean/1.html'))),
+          )(),
+    );
+    const inserted = await owner.query<{ id: string }>(
+      'INSERT INTO feeds (url, fetch_url) VALUES ($1, $2) RETURNING id::text AS id',
+      [clean, tracked],
+    );
+    const feedId = inserted.rows[0]!.id;
+    await createSubscription(owner, { userId: reader.id, feedId, mode: 'off' });
+    await owner.query('SELECT refresh_feed_subscribers($1::bigint[], $2::jsonb)', [
+      [feedId],
+      JSON.stringify({ beta: 900, admin: 300 }),
+    ]);
+
+    await fetchFeed(feedId);
+    expect(await feedRow(feedId)).toMatchObject({ url: clean, fetch_url: clean, total_fetches: 1 });
+    const trackedHits = () =>
+      server.requests.filter((r) => r.path === '/clean/feed.rss?utm_source=partner').length;
+    const before = trackedHits();
+    await fetchFeed(feedId);
+    expect(trackedHits()).toBe(before); // the next poll requests the redirect target directly
+  });
+
+  it('does not adopt a permanent redirect target that carries a credential parameter', async () => {
+    const plain = server.url('/leaky/feed.rss');
+    server.route('/leaky/feed.rss', (request) =>
+      request.path.includes('token=')
+        ? rssRoute(() =>
+            rss('Leaky', rssItem('leaky-1', 'Leaky item', server.url('/leaky/1.html'))),
+          )()
+        : { status: 301, headers: { location: server.url('/leaky/feed.rss?token=secret') } },
+    );
+    const feedId = await addFeed('/leaky/feed.rss', [{ user: reader, mode: 'off' }]);
+
+    await fetchFeed(feedId);
+    // The fetch itself succeeded, but the credential-bearing URL never becomes the feed's URL.
+    expect(await feedRow(feedId)).toMatchObject({
+      url: plain,
+      fetch_url: plain,
+      total_fetches: 1,
+      consecutive_errors: 0,
+    });
+    expect(await articleIdByUrl(server.url('/leaky/1.html'))).toBeTruthy();
   });
 });

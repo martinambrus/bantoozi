@@ -16,6 +16,11 @@ import { createFeedScheduleHandler } from './feed-schedule.js';
 export interface JobContext {
   queue: QueueName;
   jobId: string;
+  /**
+   * The queue's retries of this job (pg-boss `retryCount`/`retryLimit`). Absent when a handler runs
+   * outside pg-boss (the dev CLI, tests): that run is its only attempt.
+   */
+  retry?: { count: number; limit: number };
 }
 
 export type QueueHandler<Q extends QueueName> = (

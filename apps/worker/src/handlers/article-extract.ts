@@ -24,6 +24,7 @@ import { detectLanguage } from '@bantoozi/shared/server';
 import { after, afterNewCarrier } from '../pipeline.js';
 import { extractDeps, pipelineContext, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
+import { hasRetriesLeft, isTransientPageFailure, TransientPageError } from './transient.js';
 
 /**
  * `article.extract {articleId}` (spec 03 §8.1). Re-reads the article: a missing (merged or purged)
@@ -33,15 +34,19 @@ import type { QueueHandler } from './index.js';
  * merges into the article that already owns that URL. Every terminal status (skipped, blocked,
  * not_html, failed, …) stores its body row, detects the language on the available text and
  * advances through `pipeline.after('extract')` in the same transaction; an origin cooldown defers
- * the job with a delayed outbox intent instead of failing it (spec 03 §8.2).
+ * the job with a delayed outbox intent instead of failing it (spec 03 §8.2), and a transient page
+ * failure throws while the queue has retries left, so only the last attempt stores it.
  */
 export function createArticleExtractHandler(deps: WorkerDeps): QueueHandler<'article.extract'> {
-  return async ({ articleId }) => {
+  return async ({ articleId }, context) => {
     const article = await loadArticleForExtraction(deps.db, articleId);
     if (article === null || article.pipelineState !== 'ingested') return;
 
     const result =
       article.url === null ? null : await extractArticle(article.url, extractDeps(deps));
+    if (result !== null && isTransientPageFailure(result) && hasRetriesLeft(context)) {
+      throw new TransientPageError(result.error ?? 'unknown');
+    }
     if (result?.deferUntil) {
       const until = result.deferUntil;
       await deps.db.transaction((tx) =>
