@@ -408,7 +408,8 @@ function requestHeaders(chain: Chain, url: URL): Record<string, string> {
 }
 
 type HopStep =
-  | { kind: 'result'; result: SafeFetchResult }
+  /** `cooldownUntil`: a 429/503 asked the origin to cool down until then (spec 03 §8.2). */
+  | { kind: 'result'; result: SafeFetchResult; cooldownUntil?: Date }
   | { kind: 'redirect'; status: number; location: string };
 
 const done = (result: SafeFetchResult): HopStep => ({ kind: 'result', result });
@@ -417,7 +418,7 @@ const done = (result: SafeFetchResult): HopStep => ({ kind: 'result', result });
  * Sends one request and turns its response into a result or a redirect (spec 03 §4.3–4.4, §4.7).
  * Every response body that is not consumed is destroyed; error bodies are never read.
  */
-async function sendHop(chain: Chain, url: URL, origin: string): Promise<HopStep> {
+async function sendHop(chain: Chain, url: URL): Promise<HopStep> {
   const { settings } = chain;
   let response: Dispatcher.ResponseData;
   try {
@@ -489,26 +490,22 @@ async function sendHop(chain: Chain, url: URL, origin: string): Promise<HopStep>
     if (statusCode !== 429 && statusCode !== 503) {
       return done(failure(chain, url, code, `HTTP ${statusCode}`, { status: statusCode, headers }));
     }
-    // Spec 03 §8.2: persist the origin cooldown the server asked for (at least 60 s without a
-    // usable Retry-After, at most 24 h). No jitter here, so the server's delay is never shortened.
+    // Spec 03 §8.2: the origin cooldown the server asked for (at least 60 s without a usable
+    // Retry-After, at most 24 h), persisted by the caller outside this catch. No jitter here, so
+    // the server's delay is never shortened.
     const nowMs = settings.now();
     const until =
       parseRetryAfter(firstHeader(response.headers['retry-after']), nowMs) ??
       new Date(nowMs + DEFAULT_COOLDOWN_MS);
-    const { limiter } = settings;
-    if (limiter !== undefined) {
-      await untilAborted(
-        quietly(() => limiter.block(origin, until)),
-        chain.signal,
-      );
-    }
-    return done(
-      failure(chain, url, code, `HTTP ${statusCode}`, {
+    return {
+      kind: 'result',
+      result: failure(chain, url, code, `HTTP ${statusCode}`, {
         status: statusCode,
         headers,
         retryAt: until,
       }),
-    );
+      cooldownUntil: until,
+    };
   } catch (error) {
     discard();
     return done(networkFailure(chain, url, error));
@@ -542,7 +539,14 @@ async function followChain(chain: Chain, start: URL): Promise<SafeFetchResult> {
     if (!slot.ok) return slot.result;
     let step: HopStep;
     try {
-      step = await sendHop(chain, current, origin);
+      step = await sendHop(chain, current);
+      const { limiter } = settings;
+      if (step.kind === 'result' && step.cooldownUntil !== undefined && limiter !== undefined) {
+        // Stored before the lease is released. Unlike lease cleanup this is no best-effort step:
+        // every other fetch of the origin relies on it, so a failing `block` rejects the fetch like
+        // a failing `reserve` (an infrastructure failure, not the origin's).
+        await untilAborted(limiter.block(origin, step.cooldownUntil), chain.signal);
+      }
     } finally {
       const { limiter } = settings;
       const { token } = slot;
@@ -664,8 +668,10 @@ export async function safeFetchWithInternals(
  *   headers; 429/503 also persist an origin cooldown through the limiter and return `retryAt`.
  *
  * Never rejects for network, HTTP or URL errors: those become `{ ok: false, code }`. It rejects
- * only for programming or infrastructure errors: invalid options, or a throwing `limiter.reserve`
- * or `beforeRequest` (nothing was fetched, and a database outage must not count against a feed).
+ * only for programming or infrastructure errors: invalid options, a throwing `limiter.reserve` or
+ * `beforeRequest` (nothing was fetched, and a database outage must not count against a feed), or a
+ * throwing `limiter.block` (a 429/503 cooldown that other fetches of the origin rely on was not
+ * stored).
  */
 export function safeFetch(url: string, options: SafeFetchOptions): Promise<SafeFetchResult> {
   return safeFetchWithInternals(url, options, {});

@@ -226,13 +226,11 @@ describe('spec 03 §8.2 politeness through the injected OriginLimiter', () => {
       );
     });
 
-    it('a failing release or block never changes the result', async () => {
+    it('a failing release never changes the result', async () => {
       const limiter: OriginLimiter = {
         reserve: () => Promise.resolve({ status: 'granted', token: 't' }),
         release: () => Promise.reject(new Error('db down')),
-        block: () => {
-          throw new Error('db down');
-        },
+        block: () => Promise.resolve(),
       };
       harness.fixture.route('/feed', { body: 'x' });
       expectOk(await harness.fetch('http://public.example/feed', { limiter }));
@@ -241,6 +239,29 @@ describe('spec 03 §8.2 politeness through the injected OriginLimiter', () => {
         code: 'FEED_HTTP_429',
         retryAt: new Date(NOW + 10_000),
       });
+    });
+
+    it('a failing block rejects the fetch: other fetches rely on the cooldown it did not store', async () => {
+      const failures: Array<OriginLimiter['block']> = [
+        () => Promise.reject(new Error('db down')),
+        () => {
+          throw new Error('db down');
+        },
+      ];
+      for (const block of failures) {
+        const release = vi.fn(() => Promise.resolve());
+        const limiter: OriginLimiter = {
+          reserve: () => Promise.resolve({ status: 'granted', token: 't' }),
+          release,
+          block,
+        };
+        harness.fixture.route('/feed', { status: 503, headers: { 'retry-after': '10' } });
+        await expect(harness.fetch('http://public.example/feed', { limiter, now })).rejects.toThrow(
+          'db down',
+        );
+        // The lease is still handed back.
+        expect(release).toHaveBeenCalledWith('http://public.example:80', 't');
+      }
     });
 
     it('a failing reserve rejects the fetch (infrastructure error) and sends nothing', async () => {
