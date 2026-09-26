@@ -913,7 +913,7 @@ Complete milestone M4 "HTTP API" exactly as specified in docs/PLAN.md §10 and d
   - Training captures immutable article/card context before applying the rating; delayed analysis
     may populate features only from that frozen context. First ratings on unanalyzed articles are
     not lost. Retraining counts effective explicit ratings, never organizational label changes.
-  - A rating's feature snapshot lists every applicable card with its answer and snapshot-time
+  - A rating's feature snapshot lists every applicable interest card with its answer and snapshot-time
     strength (spec 06 §8.2). Interest-card changes record `user.learn`; label changes do not.
   - The rating response carries `exampleSuggestion` per spec 06 §10 (the `suggestExample` truth
     table is tested), stores it in the `rate` event and respects the 7-day and 24-hour limits.

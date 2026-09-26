@@ -282,6 +282,8 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
   them. The constant is bumped whenever the ranking semantics change.
 - The API bumps `ranker.settings_version` on every change to `ranker.thresholds` (and to any future
   ranking-relevant key), and then enqueues `user.rank {full: true}` for users active in the last 7 days.
+  A change to `strengthWeights` or `model` also records `user.learn` for users with an active model
+  (§8.4).
 - Inactive users catch up on their next visit: `GET /articles` enqueues a full rank if **any** eligible
   row is missing/outdated, has an old rank revision, or has `next_rank_at ≤ now`. A MAX/newest-version
   check is insufficient after partial runs.
@@ -474,10 +476,10 @@ archive operations are housekeeping, never stand-alone dislike evidence.
 that action, plus `staleAtFeedback` (boolean or null). Learning-relevant actions additionally record
 `features: {specSha,ratingSha,cards,values,sourceManifest,snapshotAt}` when valid inputs exist. Build
 it before applying the action, under the same content revision as the displayed score. `cards` lists
-every card the user held that applied to the item as `{id, strength, p}`, with the strength at that
-moment and `p = null` when the card had no usable answer; the card inputs and the cards-only baseline
-are derived from it at training time (§8.1). `values` holds the other inputs with their known masks,
-and the story-group id at that time.
+every interest card (positive or never) the user held that applied to the item as `{id, strength, p}`,
+with the strength at that moment and `p = null` when the card had no usable answer; the card inputs
+and the cards-only baseline are derived from it at training time (§8.1). `values` holds the other
+inputs with their known masks, and the story-group id at that time.
 For selected slow training, capture or reference `analysisRequestId`, immutable `input_sha` and the
 pre-feedback input snapshot before committing the first rating (spec 05 §1.1). `features` may be null
 while analysis is pending; once complete, a separate immutable derived feature snapshot may be
