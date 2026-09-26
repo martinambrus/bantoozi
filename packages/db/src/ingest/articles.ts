@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 
 import type { Executor, Transaction } from '../client.js';
 import { upsertArticleBody, type ArticleBodyInput } from './bodies.js';
+import { applyMediaSignals, assertImageCount, type MediaSignalUpdate } from './media.js';
 import { resetArticleAnswers } from './reset.js';
 
 /**
@@ -70,6 +71,23 @@ export async function articleSourceFeedId(db: Executor, articleId: string): Prom
   return result.rows[0]?.feed_id ?? null;
 }
 
+/** The media signals of one feed item (spec 03 §6.4, §7 step 6), read before sanitizing. */
+export interface ItemMediaSignals {
+  /**
+   * `video_evidence`: a §6.4 video rule holds for the item (a video enclosure, JSON Feed
+   * attachment or `media:content`, a video-host link, or a `<video>` element or player embed in its
+   * excerpt or body HTML).
+   */
+  videoEvidence: boolean;
+  /**
+   * `feed_body_image_count`: the §6.4 in-body image count of the item's publisher body
+   * (`feed_body_html`). Non-null exactly when the item carries a publisher body, which also means
+   * that body was examined for video evidence; it becomes `articles.body_image_count` only while
+   * that body is the article's stored fallback body.
+   */
+  feedBodyImageCount: number | null;
+}
+
 /** One normalized item of a feed fetch (spec 03 §6), with its identity keys (spec 03 §5). */
 export interface IngestItemInput {
   feedId: string;
@@ -97,6 +115,8 @@ export interface IngestItemInput {
    * `article_bodies` row with extractor `feed-v1` (`FEED_BODY_EXTRACTOR`), status `ok`.
    */
   feedBody: ArticleBodyInput | null;
+  /** The item's media signals (spec 03 §6.4); see {@link ingestItem} for how they are stored. */
+  media: ItemMediaSignals;
 }
 
 export interface IngestItemOptions {
@@ -181,10 +201,24 @@ interface LockedArticle {
  *    `content_hash` differs, those columns are updated and `resetArticleAnswers` runs once
  *    (installing the carried feed body at the new revision); a stale article stays stale. A
  *    non-source feed's different summary is never stored and never invalidates the article.
+ * 4. Media signals (spec 03 §6.4, §7 step 6):
+ *    - a new article starts with `has_video` true on video evidence, else false when the item's
+ *      publisher body was examined (`feedBodyImageCount` non-null), else null (unknown), and with
+ *      `body_image_count` = `feedBodyImageCount` when that body is stored as its `feed-v1`
+ *      fallback, else null (excerpt only); `media_revision` stays 0 and no media rank is recorded
+ *      (the new-carrier continuation ranks the feed's subscribers);
+ *    - a found article, from any carrier and also when its `content_hash` is unchanged, gets
+ *      `has_video = true` on video evidence; without evidence `has_video` is left as it is, and
+ *      nothing sets it from true back to false;
+ *    - a source update that installs the item's publisher body stores that item's
+ *      `feedBodyImageCount` with it; a source update without a body keeps the stored body (at its
+ *      old revision) and so its count.
+ *    Changes go through {@link applyMediaSignals}, once per item: `media_revision` + 1 and an
+ *    incremental rank for the subscribers of every current carrier.
  *
  * No stage work is recorded here (`apps/worker/src/pipeline.ts` decides): the result says whether
  * extraction is needed and whether the new-carrier continuation must run. The only intents written
- * are the reset's rank intents.
+ * are the reset's and the media writer's rank intents.
  */
 export async function ingestItem(
   tx: Transaction,
@@ -195,6 +229,10 @@ export async function ingestItem(
   if (!Number.isInteger(options.maxAgeDays) || options.maxAgeDays < 1) {
     throw new RangeError('ingestItem: maxAgeDays must be a positive integer');
   }
+  if (typeof input.media.videoEvidence !== 'boolean') {
+    throw new TypeError('ingestItem: media.videoEvidence must be a boolean');
+  }
+  assertImageCount('ingestItem: media.feedBodyImageCount', input.media.feedBodyImageCount);
   await lockUrlKeys(tx, [input.urlKey]);
   for (let attempt = 1; ; attempt += 1) {
     const identity = await resolveIdentity(tx, input);
@@ -260,17 +298,23 @@ async function insertArticle(
   input: IngestItemInput,
   options: IngestItemOptions,
 ): Promise<IngestItemResult> {
+  const { videoEvidence, feedBodyImageCount } = input.media;
+  // Spec 03 §7 step 6: an examined publisher body without evidence makes it false, else unknown.
+  const hasVideo = videoEvidence ? true : feedBodyImageCount !== null ? false : null;
+  // The count describes the stored body only (spec 03 §6.4): null for an excerpt-only article.
+  const bodyImageCount = input.feedBody === null ? null : feedBodyImageCount;
   const inserted = await tx.execute<{ id: string; revision: string; pipeline_state: string }>(sql`
     INSERT INTO articles (url, canonical_url, url_key, title, title_norm, author, categories,
                           excerpt, excerpt_html, image_url, published_at, content_hash,
-                          pipeline_state)
+                          pipeline_state, has_video, body_image_count)
     VALUES (${input.url}, ${input.canonicalUrl}, ${input.urlKey}, ${input.title},
             ${input.titleNorm}, ${input.author}, ${sql.param([...input.categories])}::text[],
             ${input.excerpt}, ${input.excerptHtml}, ${input.imageUrl},
             ${input.publishedAt}::timestamptz, ${input.contentHash},
             CASE WHEN ${input.publishedAt}::timestamptz
                       < now() - make_interval(days => ${options.maxAgeDays}::int)
-                 THEN 'stale' ELSE 'ingested' END)
+                 THEN 'stale' ELSE 'ingested' END,
+            ${hasVideo}::boolean, ${bodyImageCount}::int)
     RETURNING id::text AS id, content_revision::text AS revision, pipeline_state`);
   const article = inserted.rows[0];
   if (article === undefined) throw new Error('ingestItem: the article insert returned no row');
@@ -338,6 +382,9 @@ async function ingestFound(
          AND guid IS NULL`);
   }
 
+  // Video evidence from any carrier counts, also without a content change (spec 03 §7 step 6);
+  // without evidence `has_video` is left as it is.
+  const evidence: MediaSignalUpdate = input.media.videoEvidence ? { hasVideo: true } : {};
   const unchanged: IngestItemResult = {
     articleId,
     outcome,
@@ -347,8 +394,13 @@ async function ingestFound(
     contentChanged: false,
     needsExtraction: false,
   };
-  if (article.contentHash === input.contentHash) return unchanged;
-  if ((await articleSourceFeedId(tx, articleId)) !== input.feedId) return unchanged;
+  if (
+    article.contentHash === input.contentHash ||
+    (await articleSourceFeedId(tx, articleId)) !== input.feedId
+  ) {
+    await applyItemMedia(tx, sender, articleId, evidence);
+    return unchanged;
+  }
 
   await tx.execute(sql`
     UPDATE articles
@@ -368,6 +420,15 @@ async function ingestFound(
     // Unreachable: the row is locked by this transaction and no revision is expected.
     throw new Error(`ingestItem: resetArticleAnswers returned ${reset.status}`);
   }
+  // The installed publisher body brings its own count; without one the stored body is kept.
+  await applyItemMedia(
+    tx,
+    sender,
+    articleId,
+    input.feedBody === null
+      ? evidence
+      : { ...evidence, bodyImageCount: input.media.feedBodyImageCount },
+  );
   return {
     articleId,
     outcome,
@@ -377,4 +438,15 @@ async function ingestFound(
     contentChanged: true,
     needsExtraction: !reset.stale,
   };
+}
+
+/** Write the item's media-signal changes of a found article (spec 03 §6.4), if it has any. */
+async function applyItemMedia(
+  tx: Transaction,
+  sender: JobSender,
+  articleId: string,
+  update: MediaSignalUpdate,
+): Promise<void> {
+  if (update.hasVideo === undefined && update.bodyImageCount === undefined) return;
+  await applyMediaSignals(tx, sender, articleId, update);
 }

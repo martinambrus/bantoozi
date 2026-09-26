@@ -94,6 +94,11 @@ function item(feedId: string, overrides: Partial<IngestItemInput> = {}): IngestI
     publishedAt: hoursAgo(1),
     feedBody: null,
     ...overrides,
+    // No video evidence; a carried publisher body was examined and has no images (spec 03 §6.4).
+    media: overrides.media ?? {
+      videoEvidence: false,
+      feedBodyImageCount: (overrides.feedBody ?? null) === null ? null : 0,
+    },
   };
   return { ...fields, contentHash: overrides.contentHash ?? contentHashOf(fields) };
 }

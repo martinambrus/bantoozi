@@ -642,6 +642,7 @@ describe('ingestion end to end (M1-T8)', () => {
         },
         lang: { lang: 'en', confidence: 0.9 },
         wordCount: 3,
+        media: { videoEvidence: false, bodyImageCount: 0, pageBodyExamined: true },
       }),
     );
     expect(late).toEqual({ status: 'stale_revision', revision: after.content_revision });

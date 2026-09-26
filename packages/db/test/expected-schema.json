@@ -951,6 +951,21 @@
           "type": "timestamp with time zone",
           "nullable": false,
           "default": "now()"
+        },
+        "has_video": {
+          "type": "boolean",
+          "nullable": true,
+          "default": null
+        },
+        "body_image_count": {
+          "type": "integer",
+          "nullable": true,
+          "default": null
+        },
+        "media_revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": "0"
         }
       },
       "primaryKey": ["id"],
@@ -958,6 +973,8 @@
       "checks": [
         "lang_confidence BETWEEN 0 AND 1",
         "word_count >= 0",
+        "body_image_count >= 0",
+        "media_revision >= 0",
         "content_revision > 0",
         "pipeline_state IN ('ingested','stale','extracted','translated','enriched', 'matched','degraded','failed')"
       ],

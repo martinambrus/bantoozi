@@ -885,3 +885,71 @@ describe('transient page failures and permanent feed redirects (M1-T7)', () => {
     expect(await articleIdByUrl(server.url('/leaky/1.html'))).toBeTruthy();
   });
 });
+
+describe('media signals (M1-T7, revision R2)', () => {
+  async function mediaRow(articleId: string) {
+    const result = await owner.query<{
+      has_video: boolean | null;
+      body_image_count: number | null;
+      media_revision: string;
+    }>(
+      `SELECT has_video, body_image_count, media_revision::text AS media_revision
+         FROM articles WHERE id = $1`,
+      [articleId],
+    );
+    return result.rows[0]!;
+  }
+
+  async function pendingMediaRanks(): Promise<string[]> {
+    const result = await owner.query<{ user_id: string }>(
+      `SELECT payload->>'userId' AS user_id FROM job_outbox
+        WHERE queue = 'user.rank' AND payload->>'reason' = 'media' AND delivered_at IS NULL
+        ORDER BY 1`,
+    );
+    return result.rows.map((row) => row.user_id);
+  }
+
+  it('a repeat fetch adding only a video enclosure bumps media_revision and ranks every carrier; the same values again record neither', async () => {
+    let withVideo = false;
+    const launch = server.url('/media/launch.html');
+    server.route(
+      '/media/a.rss',
+      rssRoute(() =>
+        rss(
+          'Media A',
+          `<item><title>Launch day</title><link>${launch}</link><guid>launch-a</guid>
+<pubDate>${rfc822(1)}</pubDate><description>Launch day summary.</description>${
+            withVideo
+              ? `<enclosure url="${server.url('/media/launch.mp4')}" type="video/mp4" length="1000"/>`
+              : ''
+          }</item>`,
+        ),
+      ),
+    );
+    server.route(
+      '/media/b.rss',
+      rssRoute(() => rss('Media B', rssItem('launch-b', 'Launch day', launch))),
+    );
+    const other = await createUser(owner);
+    const feedA = await addFeed('/media/a.rss', [{ user: reader, mode: 'off' }]);
+    const feedB = await addFeed('/media/b.rss', [{ user: other, mode: 'off' }]);
+    await fetchFeed(feedA);
+    await fetchFeed(feedB);
+    const id = await articleIdByUrl(launch);
+    // The item's publisher text was examined and has no video: false, not unknown.
+    expect(await mediaRow(id)).toMatchObject({ has_video: false, media_revision: '0' });
+    await owner.query(`UPDATE job_outbox SET delivered_at = now() WHERE delivered_at IS NULL`);
+
+    // Only a video enclosure is added: same content_hash, no new feed_items row.
+    withVideo = true;
+    await fetchFeed(feedA);
+    expect(await mediaRow(id)).toMatchObject({ has_video: true, media_revision: '1' });
+    expect(await pendingMediaRanks()).toEqual([reader.id, other.id].sort());
+    await owner.query(`UPDATE job_outbox SET delivered_at = now() WHERE delivered_at IS NULL`);
+
+    // The same values again change nothing and rank nobody.
+    await fetchFeed(feedA);
+    expect(await mediaRow(id)).toMatchObject({ has_video: true, media_revision: '1' });
+    expect(await pendingMediaRanks()).toEqual([]);
+  });
+});

@@ -7,6 +7,7 @@ import {
   workerOutbox,
   type ArticleBodyInput,
   type ArticleForExtraction,
+  type ExtractionMediaSignals,
   type Transaction,
 } from '@bantoozi/db';
 import {
@@ -77,6 +78,7 @@ export function createArticleExtractHandler(deps: WorkerDeps): QueueHandler<'art
         body,
         lang: { lang: lang.lang, confidence: lang.confidence },
         wordCount: countWords(text ?? article.excerpt ?? ''),
+        media: extractionMedia(result),
       });
       if (saved.status === 'saved' && saved.advanced) {
         await after(
@@ -130,6 +132,21 @@ async function mergedAway(
     return true;
   }
   return false;
+}
+
+/**
+ * The §6.4 media signals of this extraction (spec 03 §8.1 step 6): the page's video evidence (or a
+ * skipped video-host URL) and the in-body image count of a stored readable page body. A linkless
+ * article's feed text was examined at ingest, so it brings none here.
+ */
+function extractionMedia(result: ExtractResult | null): ExtractionMediaSignals {
+  if (result === null)
+    return { videoEvidence: false, bodyImageCount: null, pageBodyExamined: false };
+  return {
+    videoEvidence: result.videoEvidence,
+    bodyImageCount: result.bodyImageCount,
+    pageBodyExamined: result.bodyImageCount !== null,
+  };
 }
 
 /**

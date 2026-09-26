@@ -90,6 +90,8 @@ const outcome = (
   body: body(),
   lang: { lang: 'en', confidence: 0.5 },
   wordCount: 7,
+  // Neutral media signals: no evidence and no examined fragment (media tests pass their own).
+  media: { videoEvidence: false, bodyImageCount: null, pageBodyExamined: false },
   ...overrides,
 });
 

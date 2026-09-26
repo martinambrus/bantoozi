@@ -9,6 +9,13 @@ import {
   type ArticleBodyInput,
   type StoredArticleBody,
 } from './bodies.js';
+import {
+  applyMediaSignals,
+  assertImageCount,
+  isFeedMediaBody,
+  isMediaBody,
+  type MediaSignalUpdate,
+} from './media.js';
 import { resetArticleAnswers } from './reset.js';
 
 /**
@@ -107,6 +114,26 @@ export async function loadArticleForExtraction(
   };
 }
 
+/** The media signals of an extraction result (spec 03 §6.4, §8.1 step 6), read before sanitizing. */
+export interface ExtractionMediaSignals {
+  /**
+   * Page video evidence (a `<video>` element or a player embed in the Readability fragment), or a
+   * URL skipped for its `VIDEO_HOSTS` host (§8.1 step 1).
+   */
+  videoEvidence: boolean;
+  /**
+   * The §6.4 in-body image count of the Readability fragment when `body` carries a readable page
+   * body; otherwise null.
+   */
+  bodyImageCount: number | null;
+  /**
+   * A Readability fragment was examined for media. False for a result without a parsed page
+   * (skipped, blocked, not_html, a failed fetch, no Readability result, a linkless article's feed
+   * text).
+   */
+  pageBodyExamined: boolean;
+}
+
 export interface ExtractionOutcome {
   articleId: string;
   /**
@@ -133,6 +160,11 @@ export interface ExtractionOutcome {
    * count of the kept text is stored.
    */
   wordCount: number | null;
+  /**
+   * The result's media signals; see {@link saveExtractionResult} for how they are stored with the
+   * body.
+   */
+  media: ExtractionMediaSignals;
   /**
    * An explicitly requested re-extraction of an already processed revision (an extractor upgrade
    * or an admin reprocess). Without it, a result for a revision that no longer awaits extraction
@@ -192,6 +224,45 @@ function assertOutcome(outcome: ExtractionOutcome): void {
   if (words !== null && (!Number.isSafeInteger(words) || words < 0)) {
     throw new RangeError('wordCount must be a non-negative integer or null');
   }
+  const { media } = outcome;
+  if (typeof media.videoEvidence !== 'boolean' || typeof media.pageBodyExamined !== 'boolean') {
+    throw new TypeError('media.videoEvidence and media.pageBodyExamined must be booleans');
+  }
+  assertImageCount('media.bodyImageCount', media.bodyImageCount);
+  if (media.bodyImageCount !== null && !media.pageBodyExamined) {
+    throw new RangeError('media.bodyImageCount is counted on an examined Readability fragment');
+  }
+}
+
+/**
+ * The media-signal write of an extraction that stores or keeps a body (spec 03 §6.4, §8.1 step 6).
+ * `stored` says which row `article_bodies` holds once this call commits: `'result'` when the
+ * result's body was stored or installed, `'kept'` when the stored row `kept` stays instead.
+ * - `body_image_count`: a stored page body with content brings the fragment's count; while no body
+ *   with content is stored (none, no content, or only a linkless article's excerpt) it is null; a
+ *   kept body, or a re-stored publisher feed body, keeps the count that already describes it.
+ * - `has_video`: true on video evidence; otherwise false only while it is null and a page body was
+ *   examined or a publisher feed body (examined at ingestion) is the stored body; never true →
+ *   false.
+ */
+function extractionMedia(
+  outcome: ExtractionOutcome,
+  stored: 'result' | 'kept',
+  kept: StoredArticleBody | null,
+): MediaSignalUpdate {
+  const after = stored === 'result' ? outcome.body : kept;
+  const update: MediaSignalUpdate = {};
+  if (after === null || !isMediaBody(after)) {
+    update.bodyImageCount = null;
+  } else if (stored === 'result' && after.extractorVersion !== FEED_BODY_EXTRACTOR) {
+    update.bodyImageCount = outcome.media.bodyImageCount;
+  }
+  if (outcome.media.videoEvidence) {
+    update.hasVideo = true;
+  } else if (outcome.media.pageBodyExamined || (after !== null && isFeedMediaBody(after))) {
+    update.hasVideo = false;
+  }
+  return update;
 }
 
 /**
@@ -254,6 +325,14 @@ async function setLanguage(
  *   language → `saved` with `reset: true` and `advanced` unless the article is stale. An empty or
  *   partial upgrade that keeps the stored body is `unchanged` too, whatever language it detected
  *   without that body.
+ * Every `saved` result also writes the media signals (spec 03 §6.4, §8.1 step 6) through
+ * {@link applyMediaSignals}, in the same transaction as the body: a stored page body with content
+ * brings its fragment's `body_image_count`, a stored result without a body (no content, or only the
+ * excerpt of a linkless article) sets it to null, and a kept body or a re-stored publisher feed
+ * body keeps its count; `has_video` becomes true on video evidence, or false while it is null and
+ * a page body was examined or a publisher feed body is stored. A change increments
+ * `media_revision` and ranks the carriers' subscribers; `missing`, `stale_revision` and
+ * `unchanged` write no media signals.
  * The caller runs `pipeline.after('extract')` (the demand gate) when `advanced`; extraction is
  * never re-enqueued from here.
  */
@@ -293,6 +372,12 @@ export async function saveExtractionResult(
       keep && stored !== null && stored.articleRevision === revision ? stored.bodyText : null;
     const wordCount = keptText === null ? outcome.wordCount : countWords(keptText);
     await setLanguage(tx, articleId, outcome, wordCount, !stale);
+    await applyMediaSignals(
+      tx,
+      sender,
+      articleId,
+      extractionMedia(outcome, keep ? 'kept' : 'result', stored),
+    );
     return { status: 'saved', revision, advanced: !stale, reset: false };
   }
 
@@ -317,6 +402,12 @@ export async function saveExtractionResult(
     throw new Error(`article ${articleId} changed under its row lock (${reset.status})`);
   }
   await setLanguage(tx, articleId, outcome, outcome.wordCount, false);
+  await applyMediaSignals(
+    tx,
+    sender,
+    articleId,
+    extractionMedia(outcome, bodyChanged ? 'result' : 'kept', stored),
+  );
   return { status: 'saved', revision: reset.revision, advanced: !reset.stale, reset: true };
 }
 

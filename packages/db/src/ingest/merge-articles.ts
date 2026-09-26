@@ -4,6 +4,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import type { Transaction } from '../client.js';
 import { lockUrlKeys } from './articles.js';
 import { reconcileClusters } from './clusters.js';
+import { applyMediaSignals, EXCERPT_ONLY_REASON, type MediaSignalUpdate } from './media.js';
 import { recordRankIntents } from './rank-intents.js';
 import { resetArticleAnswers, type ResetNextState } from './reset.js';
 
@@ -126,6 +127,11 @@ type EvalArticleTable = (typeof EVAL_ARTICLE_TABLES)[number];
  *   extraction completed). The survivor's revision first rises to at least the source's, so the
  *   reset's increment exceeds every revision either identity published (relocated snapshots,
  *   repointed selections and queued work never coincide with a later survivor revision).
+ * - Media signals (spec 03 §6.4): `body_image_count` moves with the body kept (the source's when
+ *   its body is taken, else the target's, whose own row stays; null when the kept row has no
+ *   body with content); `has_video` is true if true on either article, otherwise false if false on
+ *   either, otherwise null. They are written through `applyMediaSignals`, so a change increments
+ *   the survivor's `media_revision` and records incremental ranks next to the merge's full ones.
  * - One `resetArticleAnswers(survivor, {reason: 'merge'})` keeps the chosen body at the new
  *   revision (`extracted` when its owner's extraction had completed, else `ingested`; a stale
  *   survivor stays stale), clears facets/answers/L2 topics/translations, re-queues the admitted
@@ -190,6 +196,10 @@ export async function mergeArticles(
     throw new Error(`mergeArticles: resetArticleAnswers returned ${reset.status}`);
   }
   await restoreQueueProgress(tx, targetId, queueProgress);
+  await applyMediaSignals(tx, sender, targetId, {
+    ...mergedVideo(source, target),
+    bodyImageCount: survivorBody.bodyImageCount,
+  });
 
   await deleteSource(tx, sourceId);
   await addSourceKeyAlias(tx, source.urlKey, targetId, options.reason);
@@ -279,6 +289,8 @@ interface LockedArticle {
   pipelineState: string;
   clusterId: string | null;
   urlKey: string;
+  hasVideo: boolean | null;
+  bodyImageCount: number | null;
 }
 
 /** Lock the articles `FOR UPDATE` in ascending id order (spec 03 §7 "Concurrency"). */
@@ -292,9 +304,11 @@ async function lockArticles(
     pipeline_state: string;
     story_cluster_id: string | null;
     url_key: string;
+    has_video: boolean | null;
+    body_image_count: number | null;
   }>(sql`
     SELECT id::text AS id, content_revision::text AS revision, pipeline_state,
-           story_cluster_id::text AS story_cluster_id, url_key
+           story_cluster_id::text AS story_cluster_id, url_key, has_video, body_image_count
       FROM articles WHERE id = ANY(${sql.param([...articleIds])}::bigint[])
      ORDER BY id FOR UPDATE`);
   return new Map(
@@ -306,6 +320,8 @@ async function lockArticles(
         pipelineState: row.pipeline_state,
         clusterId: row.story_cluster_id,
         urlKey: row.url_key,
+        hasVideo: row.has_video,
+        bodyImageCount: row.body_image_count,
       },
     ]),
   );
@@ -729,14 +745,25 @@ async function relocateSnapshots(
  * survivor's revision (and the chosen body's) first rises to the larger of both revisions, so the
  * reset's increment exceeds every revision either identity used. `nextState` is `extracted` when
  * the chosen body's article had completed extraction, else `ingested` (extraction runs again).
+ * `bodyImageCount` is the survivor's in-body image count (spec 03 §6.4): that of the article whose
+ * row the survivor keeps (the source's when its body is moved over, else the target's own row,
+ * valid or not), or null when that row holds no body with content (none, blank, or excerpt only).
  */
 async function prepareSurvivorBody(
   tx: Transaction,
   source: LockedArticle,
   target: LockedArticle,
-): Promise<{ keepBody: boolean; nextState: ResetNextState }> {
-  const bodies = await tx.execute<{ article_id: string; revision: string; status: string }>(sql`
-    SELECT article_id::text AS article_id, article_revision::text AS revision, status
+): Promise<{ keepBody: boolean; nextState: ResetNextState; bodyImageCount: number | null }> {
+  const bodies = await tx.execute<{
+    article_id: string;
+    revision: string;
+    status: string;
+    media_body: boolean;
+  }>(sql`
+    SELECT article_id::text AS article_id, article_revision::text AS revision, status,
+           (coalesce(body_text ~ '[^[:space:]]', false)
+            OR coalesce(body_html ~ '[^[:space:]]', false))
+           AND completeness_reason IS DISTINCT FROM ${EXCERPT_ONLY_REASON}::text AS media_body
       FROM article_bodies
      WHERE article_id IN (${source.id}::bigint, ${target.id}::bigint)`);
   const valid = (article: LockedArticle): boolean =>
@@ -774,7 +801,25 @@ async function prepareSurvivorBody(
         FROM articles s
        WHERE t.id = ${target.id}::bigint AND s.id = ${source.id}::bigint`);
   }
-  return { keepBody: owner !== null, nextState: extracted ? 'extracted' : 'ingested' };
+  // The count moves with the body kept; the source's row goes with the source otherwise.
+  const kept = owner === source ? source : target;
+  const keptIsBody = bodies.rows.some((row) => row.article_id === kept.id && row.media_body);
+  return {
+    keepBody: owner !== null,
+    nextState: extracted ? 'extracted' : 'ingested',
+    bodyImageCount: keptIsBody ? kept.bodyImageCount : null,
+  };
+}
+
+/**
+ * The survivor's `has_video` (spec 03 §8.4, §6.4) as a media-signal write: true if it is true on
+ * either article, otherwise false if it is false on either (the writer turns only an unknown value
+ * into false), otherwise left unknown.
+ */
+function mergedVideo(source: LockedArticle, target: LockedArticle): MediaSignalUpdate {
+  if (source.hasVideo === true || target.hasVideo === true) return { hasVideo: true };
+  if (source.hasVideo === false || target.hasVideo === false) return { hasVideo: false };
+  return {};
 }
 
 // ── Completion ───────────────────────────────────────────────────────────────────────────────

@@ -289,6 +289,7 @@ describe('newCarrierDemand (spec 03 §7, spec 05 §5.3)', () => {
       publishedAt: hoursAgo(2),
       contentHash: sha(url),
       feedBody: null,
+      media: { videoEvidence: false, feedBodyImageCount: null },
     };
     const first = await ctx.worker.transaction((tx) =>
       ingestItem(tx, workerOutbox(tx), input, { maxAgeDays: 14 }),
