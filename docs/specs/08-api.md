@@ -565,7 +565,9 @@ reasons, read state and SHIFT-hide correctly. Undo of a bulk mutation is one ato
 hundreds of independent requests. Receipts themselves are private, excluded from ordinary exports,
 purged after their retention and inaccessible to other users.
 Bookmark undo also restores the prior snapshot binding/origin where still retained and advances the
-capture generation; late capture jobs cannot attach to an undone save. Snapshot GC retains pins
+capture generation; late capture jobs cannot attach to an undone save. The unbookmark mutation pins
+exactly the snapshot that `clear_bookmark_snapshot` returned in the same transaction (spec 02 §6); no
+client or route supplies a snapshot ID. Snapshot GC retains pins
 needed by still-valid undo receipts, so undo does not refer to content already deleted.
 
 ---

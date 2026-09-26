@@ -1,0 +1,63 @@
+# Caddy 2 skeleton for the production stack (spec 01 §4; spec 11 §2, §3, §7). M8 finalizes it
+# together with infra/compose.yml and deploy.sh; this file fixes the routing contract.
+#
+# Image for the M8 production compose, pinned by its multi-arch index digest
+# (caddy:2 = v2.11.4 on 2026-09-25):
+#   caddy:2@sha256:0c994536bddb66445885237f1a5dcc1916bccea922661c76b4e9fc24061f9b52
+#
+# PUBLIC_HOST is the site address: a domain name gets Let's Encrypt certificates, the default
+# localhost uses Caddy's internal CA. The web build (apps/web/dist) is baked into the Caddy image at
+# /srv/web (spec 11 §3).
+#
+# Left for M8: the ACME account email, access logs (spec 11 §7 keeps raw URL queries out of logs)
+# and whether /api/v1/metrics is reachable from outside (spec 11 §3: internal by default).
+
+# Security headers (spec 11 §7). `defer` applies them as the response is written, replacing any
+# value the API sets itself.
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		# Placeholder: the policy listed in spec 11 §7; M8-T6 finalizes it against the built app.
+		Content-Security-Policy "default-src 'self'; img-src 'self' https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		defer
+	}
+}
+
+{$PUBLIC_HOST:localhost} {
+	root * /srv/web
+	import security_headers
+
+	# The API keeps its /api/v1 prefix: `handle`, never `handle_path` (which would strip it).
+	# Unknown API paths get the API's own 404, never the SPA's index.html.
+	@api path /api /api/*
+	handle @api {
+		reverse_proxy api:3000
+	}
+
+	# Content-hashed build output, cached for a year. A missing file is a 404, never index.html.
+	handle /assets/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		encode zstd gzip
+		file_server
+	}
+
+	# Everything else: index.html (also the SPA fallback for client-side routes), the service worker
+	# /sw.js and other unhashed files, all revalidated on every use.
+	handle {
+		header Cache-Control "no-cache"
+		encode zstd gzip
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Errors Caddy itself produces (a missing asset, the API unreachable): plain text that is never
+	# cached (it replaces the immutable header of /assets/*) and carries the same security headers.
+	handle_errors {
+		import security_headers
+		header Cache-Control "no-store"
+		respond "{err.status_code} {err.status_text}"
+	}
+}

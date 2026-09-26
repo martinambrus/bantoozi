@@ -1,0 +1,38 @@
+{
+  "name": "@bantoozi/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bantoozi PWA (spec 09)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "test:int": "vitest run --config vitest.int.config.ts --passWithNoTests",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@bantoozi/shared": "workspace:*",
+    "@tanstack/react-query": "5.103.2",
+    "@tanstack/react-router": "1.170.39",
+    "@use-gesture/react": "10.3.1",
+    "i18next": "26.4.2",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-i18next": "17.0.15"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@tailwindcss/vite": "4.3.3",
+    "@tanstack/router-plugin": "1.168.40",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "tailwindcss": "4.3.3",
+    "vite": "8.3.1",
+    "vite-plugin-pwa": "1.3.0"
+  }
+}

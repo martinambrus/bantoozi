@@ -1,0 +1,4440 @@
+{
+  "$comment": "Hand-written schema parity snapshot of spec 02 §1.2–§7 for M0 (tables transcribed from the spec text; policies from §5/§5.1; grants from §1.2; functions from §6 and the §5.2 integrity triggers). schema-parity.int.test.ts compares the migrated catalog with it.",
+  "extensions": ["citext", "pg_trgm", "pgcrypto", "plpgsql"],
+  "tables": {
+    "settings": {
+      "columns": {
+        "key": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "value": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "updated_by": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        }
+      },
+      "primaryKey": ["key"],
+      "unique": [],
+      "checks": [],
+      "foreignKeys": [
+        {
+          "columns": ["updated_by"],
+          "references": "users(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": false
+    },
+    "users": {
+      "columns": {
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "email": {
+          "type": "citext",
+          "nullable": false,
+          "default": null
+        },
+        "display_name": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "locale": {
+          "type": "text",
+          "nullable": false,
+          "default": "'en'"
+        },
+        "timezone": {
+          "type": "text",
+          "nullable": false,
+          "default": "'Europe/Bratislava'"
+        },
+        "role": {
+          "type": "text",
+          "nullable": false,
+          "default": "'user'"
+        },
+        "plan": {
+          "type": "text",
+          "nullable": false,
+          "default": "'beta'"
+        },
+        "invites_left": {
+          "type": "integer",
+          "nullable": false,
+          "default": "3"
+        },
+        "rank_revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": "0"
+        },
+        "suggest_lease_token": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "suggest_lease_until": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "last_suggested_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "preferences": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'"
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "last_active_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "deleted_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [["email"]],
+      "checks": [
+        "locale IN ('en','sk')",
+        "role IN ('user','admin')",
+        "invites_left >= 0",
+        "rank_revision >= 0",
+        "(suggest_lease_token IS NULL) = (suggest_lease_until IS NULL)"
+      ],
+      "foreignKeys": [],
+      "indexes": {},
+      "rls": false
+    },
+    "login_codes": {
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "identity": "always"
+        },
+        "email": {
+          "type": "citext",
+          "nullable": false,
+          "default": null
+        },
+        "challenge_nonce": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "code_hash": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "purpose": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "login_user_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "invite_code": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "locale": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "expires_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        "attempts": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        "consumed_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "requested_ip": {
+          "type": "inet",
+          "nullable": true,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [["challenge_nonce"]],
+      "checks": [
+        "purpose IN ('login','signup')",
+        "attempts BETWEEN 0 AND 5",
+        "(purpose = 'login') = (login_user_id IS NOT NULL)",
+        "expires_at > created_at"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["login_user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "login_codes_email_idx": {
+          "unique": false,
+          "definition": "(email, created_at DESC)"
+        },
+        "login_codes_active_email_idx": {
+          "unique": true,
+          "definition": "(email) WHERE consumed_at IS NULL"
+        }
+      },
+      "rls": false
+    },
+    "sessions": {
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "identity": "always"
+        },
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "token_hash": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "user_agent": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "ip": {
+          "type": "inet",
+          "nullable": true,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "last_seen_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "expires_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        "revoked_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [["token_hash"]],
+      "checks": [],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "sessions_user_idx": {
+          "unique": false,
+          "definition": "(user_id)"
+        }
+      },
+      "rls": false
+    },
+    "invites": {
+      "columns": {
+        "code": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "created_by": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "email": {
+          "type": "citext",
+          "nullable": true,
+          "default": null
+        },
+        "note": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "expires_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        "used_by": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "used_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        }
+      },
+      "primaryKey": ["code"],
+      "unique": [],
+      "checks": [],
+      "foreignKeys": [
+        {
+          "columns": ["created_by"],
+          "references": "users(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        },
+        {
+          "columns": ["used_by"],
+          "references": "users(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": false
+    },
+    "waitlist": {
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "identity": "always"
+        },
+        "email": {
+          "type": "citext",
+          "nullable": false,
+          "default": null
+        },
+        "locale": {
+          "type": "text",
+          "nullable": false,
+          "default": "'en'"
+        },
+        "note": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "invited_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "invite_code": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [["email"]],
+      "checks": ["locale IN ('en','sk')"],
+      "foreignKeys": [
+        {
+          "columns": ["invite_code"],
+          "references": "invites(code)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": false
+    },
+    "rate_limit_buckets": {
+      "columns": {
+        "key": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "window_start": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        "hits": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        }
+      },
+      "primaryKey": ["key"],
+      "unique": [],
+      "checks": ["hits > 0"],
+      "foreignKeys": [],
+      "indexes": {},
+      "rls": false
+    },
+    "provider_credentials": {
+      "columns": {
+        "provider": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": "0"
+        },
+        "enabled": {
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        "active_version": {
+          "type": "bigint",
+          "nullable": true,
+          "default": null
+        },
+        "active_envelope": {
+          "type": "jsonb",
+          "nullable": true,
+          "default": null
+        },
+        "candidate_version": {
+          "type": "bigint",
+          "nullable": true,
+          "default": null
+        },
+        "candidate_envelope": {
+          "type": "jsonb",
+          "nullable": true,
+          "default": null
+        },
+        "candidate_status": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "candidate_validation": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'"
+        },
+        "validation_token": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "validation_until": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "updated_by": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "activated_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "validated_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "last_error_code": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        }
+      },
+      "primaryKey": ["provider"],
+      "unique": [],
+      "checks": [
+        "provider IN ('typesafe','ollama')",
+        "revision >= 0",
+        "active_version > 0",
+        "candidate_version > 0",
+        "candidate_status IN ('pending','validating','valid','invalid')",
+        "(active_version IS NULL) = (active_envelope IS NULL)",
+        "(candidate_version IS NULL) = (candidate_envelope IS NULL)",
+        "(candidate_version IS NULL) = (candidate_status IS NULL)",
+        "(validation_token IS NULL) = (validation_until IS NULL)",
+        "coalesce(candidate_status = 'validating', false) = (validation_token IS NOT NULL)",
+        "NOT enabled OR active_version IS NOT NULL",
+        "active_version IS NULL OR active_version <= revision",
+        "candidate_version IS NULL OR candidate_version <= revision"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["updated_by"],
+          "references": "users(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": false
+    },
+    "origin_fetch_state": {
+      "columns": {
+        "origin": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "next_start_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "blocked_until": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "leases": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'"
+        },
+        "last_used_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["origin"],
+      "unique": [],
+      "checks": ["jsonb_typeof(leases) = 'array' AND jsonb_array_length(leases) <= 2"],
+      "foreignKeys": [],
+      "indexes": {},
+      "rls": false
+    },
+    "feeds": {
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "identity": "always"
+        },
+        "url": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "fetch_url": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "merged_into_id": {
+          "type": "bigint",
+          "nullable": true,
+          "default": null
+        },
+        "site_url": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "title": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "description": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "icon_url": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "lang_hint": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": "'active'"
+        },
+        "etag": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "last_modified": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "fetch_interval_s": {
+          "type": "integer",
+          "nullable": false,
+          "default": "900"
+        },
+        "min_interval_s": {
+          "type": "integer",
+          "nullable": false,
+          "default": "900"
+        },
+        "next_fetch_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "last_fetch_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "last_success_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "last_new_item_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "consecutive_errors": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        "consecutive_empty": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        "quarantine_count": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        "total_fetches": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        "total_errors": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        "total_empty": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        "last_error_code": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "last_error": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "last_error_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "first_error_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "quarantined_until": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "subscriber_count": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        "unsubscribed_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": "now()"
+        },
+        "publish_stats": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'"
+        },
+        "fetch_options": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'"
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [["url"]],
+      "checks": [
+        "status IN ('active','quarantined','dead','paused')",
+        "fetch_interval_s > 0",
+        "min_interval_s > 0",
+        "subscriber_count >= 0",
+        "merged_into_id IS NULL OR (merged_into_id <> id AND status = 'dead')"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["merged_into_id"],
+          "references": "feeds(id)",
+          "onDelete": "RESTRICT",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "feeds_due_idx": {
+          "unique": false,
+          "definition": "(next_fetch_at) WHERE subscriber_count > 0 AND status IN ('active','quarantined')"
+        }
+      },
+      "rls": false
+    },
+    "story_clusters": {
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "identity": "always"
+        },
+        "representative_article_id": {
+          "type": "bigint",
+          "nullable": true,
+          "default": null
+        },
+        "size": {
+          "type": "integer",
+          "nullable": false,
+          "default": "1"
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [],
+      "checks": ["size >= 0"],
+      "foreignKeys": [
+        {
+          "columns": ["representative_article_id"],
+          "references": "articles(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": false
+    },
+    "articles": {
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "identity": "always"
+        },
+        "url": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "canonical_url": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "url_key": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "title": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "title_norm": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "author": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "categories": {
+          "type": "text[]",
+          "nullable": false,
+          "default": "'{}'"
+        },
+        "excerpt": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "excerpt_html": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "image_url": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "published_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "first_seen_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "lang": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "lang_confidence": {
+          "type": "real",
+          "nullable": true,
+          "default": null
+        },
+        "word_count": {
+          "type": "integer",
+          "nullable": true,
+          "default": null
+        },
+        "content_hash": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "content_revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        "story_cluster_id": {
+          "type": "bigint",
+          "nullable": true,
+          "default": null
+        },
+        "cluster_set_id": {
+          "type": "bigint",
+          "nullable": true,
+          "default": null
+        },
+        "pipeline_state": {
+          "type": "text",
+          "nullable": false,
+          "default": "'ingested'"
+        },
+        "enrich_engine": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [["url_key"]],
+      "checks": [
+        "lang_confidence BETWEEN 0 AND 1",
+        "word_count >= 0",
+        "content_revision > 0",
+        "pipeline_state IN ('ingested','stale','extracted','translated','enriched', 'matched','degraded','failed')"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["story_cluster_id"],
+          "references": "story_clusters(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        },
+        {
+          "columns": ["cluster_set_id"],
+          "references": "question_sets(id)",
+          "onDelete": "RESTRICT",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "articles_first_seen_idx": {
+          "unique": false,
+          "definition": "(first_seen_at DESC)"
+        },
+        "articles_title_trgm_idx": {
+          "unique": false,
+          "definition": "USING gin (title_norm gin_trgm_ops)"
+        },
+        "articles_cluster_idx": {
+          "unique": false,
+          "definition": "(story_cluster_id) WHERE story_cluster_id IS NOT NULL"
+        },
+        "articles_state_idx": {
+          "unique": false,
+          "definition": "(pipeline_state, first_seen_at)"
+        }
+      },
+      "rls": false
+    },
+    "feed_items": {
+      "columns": {
+        "feed_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "article_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "guid": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "first_seen_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["feed_id", "article_id"],
+      "unique": [],
+      "checks": [],
+      "foreignKeys": [
+        {
+          "columns": ["feed_id"],
+          "references": "feeds(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["article_id"],
+          "references": "articles(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "feed_items_article_idx": {
+          "unique": false,
+          "definition": "(article_id)"
+        },
+        "feed_items_feed_time_idx": {
+          "unique": false,
+          "definition": "(feed_id, first_seen_at DESC)"
+        },
+        "feed_items_guid_idx": {
+          "unique": true,
+          "definition": "(feed_id, guid) WHERE guid IS NOT NULL"
+        }
+      },
+      "rls": false
+    },
+    "article_aliases": {
+      "columns": {
+        "url_key": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "article_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "source": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        }
+      },
+      "primaryKey": ["url_key"],
+      "unique": [],
+      "checks": ["source IN ('feed_link','redirect','rel_canonical','near_duplicate')"],
+      "foreignKeys": [
+        {
+          "columns": ["article_id"],
+          "references": "articles(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": false
+    },
+    "article_bodies": {
+      "columns": {
+        "article_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "article_revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "resolved_url": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "http_status": {
+          "type": "integer",
+          "nullable": true,
+          "default": null
+        },
+        "body_text": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "body_html": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "completeness": {
+          "type": "text",
+          "nullable": false,
+          "default": "'partial'"
+        },
+        "completeness_reason": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "body_lead": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "extractor_version": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "error": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "extracted_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["article_id"],
+      "unique": [],
+      "checks": [
+        "article_revision > 0",
+        "status IN ('ok','skipped','failed','blocked','too_large','not_html')",
+        "completeness IN ('complete','partial')",
+        "coalesce(octet_length(body_text), 0) + coalesce(octet_length(body_html), 0) <= 10485760"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["article_id"],
+          "references": "articles(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": false
+    },
+    "article_snapshots": {
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "identity": "always"
+        },
+        "article_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "source_revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "captured_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "source_url": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "title": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "author": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "published_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "body_text": {
+          "type": "text",
+          "nullable": false,
+          "default": "''"
+        },
+        "body_html": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "content_sha256": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "completeness": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "completeness_reason": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "source": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "extractor_version": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "cold_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "unreferenced_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [["article_id", "source_revision", "content_sha256"]],
+      "checks": [
+        "source_revision > 0",
+        "completeness IN ('complete','partial')",
+        "source IN ('feed','page')",
+        "coalesce(octet_length(body_text), 0) + coalesce(octet_length(body_html), 0) <= 10485760"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["article_id"],
+          "references": "articles(id)",
+          "onDelete": "RESTRICT",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": {
+        "forced": true
+      },
+      "storage": {
+        "body_text": {
+          "storage": "EXTENDED",
+          "compression": "pglz"
+        },
+        "body_html": {
+          "storage": "EXTENDED",
+          "compression": "pglz"
+        }
+      }
+    },
+    "article_translations": {
+      "columns": {
+        "article_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "article_revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "source_sha256": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "target_lang": {
+          "type": "text",
+          "nullable": false,
+          "default": "'en'"
+        },
+        "engine": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "model": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "source_lang": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "title": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "excerpt": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "body_lead": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "quality": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "quality_detail": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'"
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["article_id", "target_lang", "engine"],
+      "unique": [],
+      "checks": [
+        "article_revision > 0",
+        "engine IN ('libretranslate','ollama')",
+        "quality IN ('ok','weak','fail')"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["article_id"],
+          "references": "articles(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": false
+    },
+    "question_sets": {
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "identity": "always"
+        },
+        "kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "version": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "sha256": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "definition": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [["version"], ["sha256"]],
+      "checks": ["kind IN ('enrich','match','cluster','suggest')"],
+      "foreignKeys": [],
+      "indexes": {},
+      "rls": false
+    },
+    "engine_reservations": {
+      "columns": {
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "day": {
+          "type": "date",
+          "nullable": false,
+          "default": null
+        },
+        "engine": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "user_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "reserved_usd": {
+          "type": "numeric(14,8)",
+          "nullable": false,
+          "default": null
+        },
+        "reserved_calls": {
+          "type": "integer",
+          "nullable": false,
+          "default": "1"
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "actual_usd": {
+          "type": "numeric(14,8)",
+          "nullable": true,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "settled_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "expires_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [],
+      "checks": [
+        "reserved_usd >= 0",
+        "reserved_calls > 0",
+        "status IN ('reserved','settled','uncertain')",
+        "actual_usd >= 0",
+        "(status = 'settled') = (settled_at IS NOT NULL)"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "engine_reservations_day_idx": {
+          "unique": false,
+          "definition": "(day, status)"
+        }
+      },
+      "rls": false
+    },
+    "engine_calls": {
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "identity": "always"
+        },
+        "engine": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "model": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "article_id": {
+          "type": "bigint",
+          "nullable": true,
+          "default": null
+        },
+        "question_set_id": {
+          "type": "bigint",
+          "nullable": true,
+          "default": null
+        },
+        "reservation_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "logical_request_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "credential_version": {
+          "type": "bigint",
+          "nullable": true,
+          "default": null
+        },
+        "article_revision": {
+          "type": "bigint",
+          "nullable": true,
+          "default": null
+        },
+        "state_sha256": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "card_ids": {
+          "type": "bigint[]",
+          "nullable": true,
+          "default": null
+        },
+        "user_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "n_questions": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        "input_tokens": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        "output_tokens": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        "cost_usd": {
+          "type": "numeric(12,8)",
+          "nullable": false,
+          "default": "0"
+        },
+        "billing": {
+          "type": "text",
+          "nullable": false,
+          "default": "'known'"
+        },
+        "latency_ms": {
+          "type": "integer",
+          "nullable": true,
+          "default": null
+        },
+        "attempts": {
+          "type": "integer",
+          "nullable": false,
+          "default": "1"
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "error": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [["reservation_id"]],
+      "checks": [
+        "engine IN ('typesafe','llm','laya','libretranslate')",
+        "kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval')",
+        "credential_version > 0",
+        "article_revision > 0",
+        "n_questions >= 0",
+        "input_tokens >= 0",
+        "output_tokens >= 0",
+        "cost_usd >= 0",
+        "billing IN ('known','uncertain')",
+        "latency_ms >= 0",
+        "attempts > 0",
+        "status IN ('ok','error','timeout','rate_limited','invalid_request', 'invalid_response','auth_error')"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["article_id"],
+          "references": "articles(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        },
+        {
+          "columns": ["question_set_id"],
+          "references": "question_sets(id)",
+          "onDelete": "RESTRICT",
+          "deferrable": false
+        },
+        {
+          "columns": ["reservation_id"],
+          "references": "engine_reservations(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        },
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "engine_calls_created_idx": {
+          "unique": false,
+          "definition": "(created_at)"
+        },
+        "engine_calls_article_idx": {
+          "unique": false,
+          "definition": "(article_id)"
+        },
+        "engine_calls_attempt_idx": {
+          "unique": true,
+          "definition": "(logical_request_id, engine, attempts)"
+        }
+      },
+      "rls": false
+    },
+    "article_facets": {
+      "columns": {
+        "article_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "question_set_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "article_revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "state_sha256": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "engine": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "model": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "state_variant": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "answers": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        "features": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["article_id", "question_set_id"],
+      "unique": [],
+      "checks": ["article_revision > 0", "state_variant IN ('native','translated')"],
+      "foreignKeys": [
+        {
+          "columns": ["article_id"],
+          "references": "articles(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["question_set_id"],
+          "references": "question_sets(id)",
+          "onDelete": "RESTRICT",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": false
+    },
+    "topics": {
+      "columns": {
+        "id": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "parent_id": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "level": {
+          "type": "smallint",
+          "nullable": false,
+          "default": null
+        },
+        "name_en": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "name_sk": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "description": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "sort": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [],
+      "checks": [
+        "level IN (1,2)",
+        "(level = 1 AND parent_id IS NULL) OR (level = 2 AND parent_id IS NOT NULL)",
+        "parent_id IS NULL OR parent_id <> id"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["parent_id"],
+          "references": "topics(id)",
+          "onDelete": "RESTRICT",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": false
+    },
+    "interest_cards": {
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "identity": "always"
+        },
+        "kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "slug": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "title": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "body": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        "text_hash": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "lang": {
+          "type": "text",
+          "nullable": false,
+          "default": "'en'"
+        },
+        "topic_ids": {
+          "type": "text[]",
+          "nullable": false,
+          "default": "'{}'"
+        },
+        "origin": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "visibility": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "parent_card_id": {
+          "type": "bigint",
+          "nullable": true,
+          "default": null
+        },
+        "owner_user_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "creator_user_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "publication_veto_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "i18n": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'"
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "retired_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [["slug"], ["text_hash"]],
+      "checks": [
+        "kind IN ('interest','label')",
+        "origin IN ('library','user','fork')",
+        "visibility IN ('public','shared','private')",
+        "(visibility = 'private') = (owner_user_id IS NOT NULL)"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["parent_card_id"],
+          "references": "interest_cards(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        },
+        {
+          "columns": ["owner_user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["creator_user_id"],
+          "references": "users(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "interest_cards_topics_idx": {
+          "unique": false,
+          "definition": "USING gin (topic_ids)"
+        }
+      },
+      "rls": {
+        "forced": true
+      }
+    },
+    "library_card_versions": {
+      "columns": {
+        "library_slug": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "version": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "card_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "previous_card_id": {
+          "type": "bigint",
+          "nullable": true,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["library_slug", "version"],
+      "unique": [["card_id"]],
+      "checks": ["version > 0", "previous_card_id IS NULL OR previous_card_id <> card_id"],
+      "foreignKeys": [
+        {
+          "columns": ["card_id"],
+          "references": "interest_cards(id)",
+          "onDelete": "RESTRICT",
+          "deferrable": false
+        },
+        {
+          "columns": ["previous_card_id"],
+          "references": "interest_cards(id)",
+          "onDelete": "RESTRICT",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": false
+    },
+    "card_answers": {
+      "columns": {
+        "article_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "card_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "p": {
+          "type": "real",
+          "nullable": false,
+          "default": null
+        },
+        "engine": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "model": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "question_set_sha": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "article_revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "state_sha256": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "card_input_sha256": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "state_variant": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "answered_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["article_id", "card_id"],
+      "unique": [],
+      "checks": [
+        "p >= 0 AND p <= 1",
+        "engine IN ('typesafe','llm','laya','prefilter')",
+        "article_revision > 0",
+        "state_variant IN ('native','translated')"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["article_id"],
+          "references": "articles(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["card_id"],
+          "references": "interest_cards(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["question_set_sha"],
+          "references": "question_sets(sha256)",
+          "onDelete": "RESTRICT",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "card_answers_card_idx": {
+          "unique": false,
+          "definition": "(card_id)"
+        }
+      },
+      "rls": {
+        "forced": true
+      }
+    },
+    "article_topics_l2": {
+      "columns": {
+        "article_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "l1_id": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "article_revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "question_set_sha": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "state_sha256": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "engine": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "model": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "state_variant": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "answer": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["article_id", "l1_id"],
+      "unique": [],
+      "checks": ["article_revision > 0", "state_variant IN ('native','translated')"],
+      "foreignKeys": [
+        {
+          "columns": ["article_id"],
+          "references": "articles(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["l1_id"],
+          "references": "topics(id)",
+          "onDelete": "RESTRICT",
+          "deferrable": false
+        },
+        {
+          "columns": ["question_set_sha"],
+          "references": "question_sets(sha256)",
+          "onDelete": "RESTRICT",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": false
+    },
+    "match_queue": {
+      "columns": {
+        "article_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "card_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "article_revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "lease_token": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "lease_until": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "next_attempt_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "last_error": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "priority": {
+          "type": "smallint",
+          "nullable": false,
+          "default": "5"
+        },
+        "user_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "attempts": {
+          "type": "smallint",
+          "nullable": false,
+          "default": "0"
+        },
+        "enqueued_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["article_id", "card_id"],
+      "unique": [],
+      "checks": [
+        "article_revision > 0",
+        "priority BETWEEN 1 AND 9",
+        "attempts >= 0",
+        "(lease_token IS NULL) = (lease_until IS NULL)"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["article_id"],
+          "references": "articles(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["card_id"],
+          "references": "interest_cards(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "match_queue_order_idx": {
+          "unique": false,
+          "definition": "(priority, enqueued_at)"
+        }
+      },
+      "rls": false
+    },
+    "feed_cards": {
+      "columns": {
+        "feed_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "card_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "holders": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        }
+      },
+      "primaryKey": ["feed_id", "card_id"],
+      "unique": [],
+      "checks": ["holders > 0"],
+      "foreignKeys": [
+        {
+          "columns": ["feed_id"],
+          "references": "feeds(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["card_id"],
+          "references": "interest_cards(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": false
+    },
+    "usage_daily": {
+      "columns": {
+        "day": {
+          "type": "date",
+          "nullable": false,
+          "default": null
+        },
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "engine": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "calls": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        "input_tokens": {
+          "type": "bigint",
+          "nullable": false,
+          "default": "0"
+        },
+        "output_tokens": {
+          "type": "bigint",
+          "nullable": false,
+          "default": "0"
+        },
+        "cost_usd": {
+          "type": "numeric(14,8)",
+          "nullable": false,
+          "default": "0"
+        }
+      },
+      "primaryKey": ["day", "user_id", "engine", "kind"],
+      "unique": [],
+      "checks": ["calls >= 0", "input_tokens >= 0", "output_tokens >= 0", "cost_usd >= 0"],
+      "foreignKeys": [],
+      "indexes": {},
+      "rls": false
+    },
+    "job_outbox": {
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "identity": "always"
+        },
+        "queue": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "payload": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        "dedupe_key": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "user_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "available_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "delivered_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "attempts": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        "lease_token": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "lease_until": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "last_error": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [],
+      "checks": [
+        "attempts >= 0",
+        "(lease_token IS NULL) = (lease_until IS NULL)",
+        "jsonb_typeof(payload) = 'object'"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "job_outbox_pending_idx": {
+          "unique": false,
+          "definition": "(available_at, id) WHERE delivered_at IS NULL"
+        },
+        "job_outbox_dedupe_idx": {
+          "unique": true,
+          "definition": "(queue, dedupe_key) WHERE delivered_at IS NULL AND dedupe_key IS NOT NULL"
+        }
+      },
+      "rls": {
+        "forced": true
+      }
+    },
+    "subscriptions": {
+      "columns": {
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "feed_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "title_override": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "folder": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "allow_duplicates": {
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        "hidden": {
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        "inference_mode": {
+          "type": "text",
+          "nullable": false,
+          "default": "'off'"
+        },
+        "inference_version": {
+          "type": "bigint",
+          "nullable": false,
+          "default": "0"
+        },
+        "inference_activated_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["user_id", "feed_id"],
+      "unique": [],
+      "checks": [
+        "inference_mode IN ('off','training','active')",
+        "inference_version >= 0",
+        "(inference_mode = 'active') = (inference_activated_at IS NOT NULL)"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["feed_id"],
+          "references": "feeds(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "subscriptions_feed_idx": {
+          "unique": false,
+          "definition": "(feed_id)"
+        }
+      },
+      "rls": {
+        "forced": true
+      }
+    },
+    "user_feed_preferences": {
+      "columns": {
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "feed_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "image_policy": {
+          "type": "text",
+          "nullable": false,
+          "default": "'inherit'"
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["user_id", "feed_id"],
+      "unique": [],
+      "checks": ["image_policy IN ('inherit','allow','block')"],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["feed_id"],
+          "references": "feeds(id)",
+          "onDelete": "RESTRICT",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": {
+        "forced": true
+      }
+    },
+    "analysis_requests": {
+      "columns": {
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "feed_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "article_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "article_revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "inference_version": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "input_snapshot": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        "input_sha": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "result_snapshot": {
+          "type": "jsonb",
+          "nullable": true,
+          "default": null
+        },
+        "result_sha": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": "'pending'"
+        },
+        "lease_token": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "lease_until": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "attempts": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        "next_attempt_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "last_error_code": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "completed_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [],
+      "checks": [
+        "article_revision > 0",
+        "inference_version >= 0",
+        "status IN ('pending','running','complete','failed','cancelled')",
+        "attempts >= 0",
+        "(result_snapshot IS NULL) = (result_sha IS NULL)",
+        "status <> 'complete' OR result_snapshot IS NOT NULL",
+        "(lease_token IS NULL) = (lease_until IS NULL)",
+        "(status = 'running') = (lease_token IS NOT NULL)",
+        "(status IN ('complete','failed','cancelled')) = (completed_at IS NOT NULL)"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["feed_id"],
+          "references": "feeds(id)",
+          "onDelete": "RESTRICT",
+          "deferrable": false
+        },
+        {
+          "columns": ["article_id"],
+          "references": "articles(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "analysis_requests_pending_idx": {
+          "unique": false,
+          "definition": "(next_attempt_at, created_at) WHERE status IN ('pending','running')"
+        },
+        "analysis_requests_user_article_idx": {
+          "unique": false,
+          "definition": "(user_id, article_id, created_at DESC)"
+        }
+      },
+      "rls": {
+        "forced": true
+      }
+    },
+    "card_publication_requests": {
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "identity": "always"
+        },
+        "user_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "card_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "requested_by": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": "'pending'"
+        },
+        "card_text_hash": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "publication_payload": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        "publication_sha": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "version": {
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        "requested_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "expires_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "responded_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "authorization_kind": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "authorization_evidence": {
+          "type": "jsonb",
+          "nullable": true,
+          "default": null
+        },
+        "promoted_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "promoted_by": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [],
+      "checks": [
+        "status IN ('pending','approved','rejected','expired','promoted')",
+        "version > 0",
+        "authorization_kind IN ('creator_approval','creator_inactive_30d')",
+        "expires_at IS NULL OR expires_at > requested_at",
+        "(authorization_kind IS NULL) = (authorization_evidence IS NULL)",
+        "(status = 'promoted') = (promoted_at IS NOT NULL)",
+        "(status = 'promoted') = (authorization_kind IS NOT NULL)",
+        "status NOT IN ('approved','rejected') OR responded_at IS NOT NULL",
+        "authorization_kind <> 'creator_approval' OR responded_at IS NOT NULL"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        },
+        {
+          "columns": ["card_id"],
+          "references": "interest_cards(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["requested_by"],
+          "references": "users(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        },
+        {
+          "columns": ["promoted_by"],
+          "references": "users(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "card_publication_pending_idx": {
+          "unique": true,
+          "definition": "(card_id) WHERE status IN ('pending','approved')"
+        }
+      },
+      "rls": {
+        "forced": true
+      }
+    },
+    "user_cards": {
+      "columns": {
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "card_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "strength": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "scope_feed_id": {
+          "type": "bigint",
+          "nullable": true,
+          "default": null
+        },
+        "title_override": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["user_id", "card_id"],
+      "unique": [],
+      "checks": ["strength IN ('must','love','like','never')"],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["card_id"],
+          "references": "interest_cards(id)",
+          "onDelete": "NO ACTION",
+          "deferrable": "INITIALLY DEFERRED"
+        },
+        {
+          "columns": ["user_id", "scope_feed_id"],
+          "references": "subscriptions(user_id, feed_id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "user_cards_card_idx": {
+          "unique": false,
+          "definition": "(card_id)"
+        }
+      },
+      "rls": {
+        "forced": true
+      }
+    },
+    "user_labels": {
+      "columns": {
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "card_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "name": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "color": {
+          "type": "text",
+          "nullable": false,
+          "default": "'slate'"
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["user_id", "card_id"],
+      "unique": [],
+      "checks": [],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["card_id"],
+          "references": "interest_cards(id)",
+          "onDelete": "NO ACTION",
+          "deferrable": "INITIALLY DEFERRED"
+        }
+      ],
+      "indexes": {},
+      "rls": {
+        "forced": true
+      }
+    },
+    "user_rules": {
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "identity": "always"
+        },
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "value": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "expires_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [],
+      "checks": [
+        "kind IN ('mute_keyword','mute_story','block_feed','block_domain', 'block_author','boost_feed','boost_domain')",
+        "kind <> 'mute_story' OR expires_at IS NOT NULL"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "user_rules_user_idx": {
+          "unique": false,
+          "definition": "(user_id)"
+        }
+      },
+      "rls": {
+        "forced": true
+      }
+    },
+    "user_article": {
+      "columns": {
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "article_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "lane": {
+          "type": "text",
+          "nullable": false,
+          "default": "'new'"
+        },
+        "tier": {
+          "type": "smallint",
+          "nullable": true,
+          "default": null
+        },
+        "p_like": {
+          "type": "real",
+          "nullable": true,
+          "default": null
+        },
+        "score_source": {
+          "type": "text",
+          "nullable": false,
+          "default": "'none'"
+        },
+        "rules_fired": {
+          "type": "text[]",
+          "nullable": false,
+          "default": "'{}'"
+        },
+        "explain": {
+          "type": "jsonb",
+          "nullable": true,
+          "default": null
+        },
+        "label_suggestions": {
+          "type": "bigint[]",
+          "nullable": false,
+          "default": "'{}'"
+        },
+        "score_version": {
+          "type": "text",
+          "nullable": false,
+          "default": "'0:0'"
+        },
+        "rank_revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": "0"
+        },
+        "next_rank_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "scored_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "state_version": {
+          "type": "bigint",
+          "nullable": false,
+          "default": "0"
+        },
+        "opened_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "read_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "rating": {
+          "type": "smallint",
+          "nullable": true,
+          "default": null
+        },
+        "reason": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "rated_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "dwell_ms": {
+          "type": "integer",
+          "nullable": true,
+          "default": null
+        },
+        "bookmarked_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "bookmark_snapshot_id": {
+          "type": "bigint",
+          "nullable": true,
+          "default": null
+        },
+        "bookmark_origin_feed_id": {
+          "type": "bigint",
+          "nullable": true,
+          "default": null
+        },
+        "bookmark_capture_generation": {
+          "type": "bigint",
+          "nullable": false,
+          "default": "0"
+        },
+        "bookmark_capture_status": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "bookmark_capture_error_code": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "archived_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "label_ids": {
+          "type": "bigint[]",
+          "nullable": false,
+          "default": "'{}'"
+        },
+        "feedback_prompted_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        }
+      },
+      "primaryKey": ["user_id", "article_id"],
+      "unique": [],
+      "checks": [
+        "lane IN ('new','for_you','maybe','everything','hidden')",
+        "tier BETWEEN 1 AND 5",
+        "p_like BETWEEN 0 AND 1",
+        "score_source IN ('none','cards','model','degraded')",
+        "rank_revision >= 0",
+        "state_version >= 0",
+        "rating IN (-1, 1)",
+        "reason IN ('off_topic','clickbait','seen','shallow','promo','other')",
+        "dwell_ms >= 0",
+        "bookmark_capture_generation >= 0",
+        "bookmark_capture_status IN ('pending','saved','partial','failed')",
+        "(bookmarked_at IS NULL) = (bookmark_capture_status IS NULL)",
+        "bookmarked_at IS NOT NULL OR (bookmark_snapshot_id IS NULL AND bookmark_capture_status IS NULL AND bookmark_origin_feed_id IS NULL)",
+        "bookmark_capture_status NOT IN ('saved','partial') OR bookmark_snapshot_id IS NOT NULL",
+        "(rating IS NULL) = (rated_at IS NULL)",
+        "reason IS NULL OR (rating IS NOT NULL AND rating = -1)"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["article_id"],
+          "references": "articles(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["bookmark_snapshot_id"],
+          "references": "article_snapshots(id)",
+          "onDelete": "RESTRICT",
+          "deferrable": false
+        },
+        {
+          "columns": ["bookmark_origin_feed_id"],
+          "references": "feeds(id)",
+          "onDelete": "SET NULL",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "user_article_lane_idx": {
+          "unique": false,
+          "definition": "(user_id, lane, p_like DESC NULLS LAST, article_id DESC) WHERE archived_at IS NULL AND read_at IS NULL"
+        },
+        "user_article_bookmarks_idx": {
+          "unique": false,
+          "definition": "(user_id, bookmarked_at DESC) WHERE bookmarked_at IS NOT NULL"
+        }
+      },
+      "rls": {
+        "forced": true
+      }
+    },
+    "feedback_events": {
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "identity": "always"
+        },
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "article_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "value": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'"
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [],
+      "checks": [
+        "kind IN ('rate','unrate','open','read','unread','dwell','prompt_answer', 'bookmark','unbookmark','label','unlabel','mark_read','hide','unhide','undo')"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["article_id"],
+          "references": "articles(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "feedback_events_user_idx": {
+          "unique": false,
+          "definition": "(user_id, created_at DESC)"
+        }
+      },
+      "rls": {
+        "forced": true
+      }
+    },
+    "user_models": {
+      "columns": {
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "version": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "feature_spec_sha": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "n_labels": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "n_pos": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "n_neg": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "weights": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        "intercept": {
+          "type": "real",
+          "nullable": false,
+          "default": null
+        },
+        "scaler": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        "calibration": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        "metrics": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        "active": {
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        "trained_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["user_id", "version"],
+      "unique": [],
+      "checks": [],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "user_models_active_idx": {
+          "unique": true,
+          "definition": "(user_id) WHERE active"
+        }
+      },
+      "rls": {
+        "forced": true
+      }
+    },
+    "api_mutations": {
+      "columns": {
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "request_hash": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "route": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "status": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "response": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        "undo": {
+          "type": "jsonb",
+          "nullable": true,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "expires_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        }
+      },
+      "primaryKey": ["user_id", "id"],
+      "unique": [],
+      "checks": ["status BETWEEN 200 AND 499", "expires_at >= created_at + interval '7 days'"],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "api_mutations_expiry_idx": {
+          "unique": false,
+          "definition": "(expires_at)"
+        }
+      },
+      "rls": {
+        "forced": true
+      }
+    },
+    "bookmark_snapshot_pins": {
+      "columns": {
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "mutation_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "snapshot_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "expires_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        }
+      },
+      "primaryKey": ["user_id", "mutation_id", "snapshot_id"],
+      "unique": [],
+      "checks": [],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["snapshot_id"],
+          "references": "article_snapshots(id)",
+          "onDelete": "RESTRICT",
+          "deferrable": false
+        },
+        {
+          "columns": ["user_id", "mutation_id"],
+          "references": "api_mutations(user_id, id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "bookmark_snapshot_pins_expiry_idx": {
+          "unique": false,
+          "definition": "(expires_at)"
+        }
+      },
+      "rls": {
+        "forced": true
+      }
+    },
+    "card_suggestions": {
+      "columns": {
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "card_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "question_set_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "model_pin": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "score": {
+          "type": "real",
+          "nullable": false,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "dismissed_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        }
+      },
+      "primaryKey": ["user_id", "card_id"],
+      "unique": [],
+      "checks": ["score BETWEEN 0 AND 1"],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["card_id"],
+          "references": "interest_cards(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        },
+        {
+          "columns": ["question_set_id"],
+          "references": "question_sets(id)",
+          "onDelete": "RESTRICT",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": {
+        "forced": true
+      }
+    }
+  },
+  "policies": [
+    {
+      "table": "subscriptions",
+      "name": "subscriptions_tenant",
+      "command": "ALL",
+      "roles": ["public"],
+      "using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
+      "table": "user_feed_preferences",
+      "name": "user_feed_preferences_tenant",
+      "command": "ALL",
+      "roles": ["public"],
+      "using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
+      "table": "analysis_requests",
+      "name": "analysis_requests_tenant",
+      "command": "ALL",
+      "roles": ["public"],
+      "using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
+      "table": "card_publication_requests",
+      "name": "card_publication_requests_tenant",
+      "command": "ALL",
+      "roles": ["public"],
+      "using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
+      "table": "user_cards",
+      "name": "user_cards_tenant",
+      "command": "ALL",
+      "roles": ["public"],
+      "using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
+      "table": "user_labels",
+      "name": "user_labels_tenant",
+      "command": "ALL",
+      "roles": ["public"],
+      "using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
+      "table": "user_rules",
+      "name": "user_rules_tenant",
+      "command": "ALL",
+      "roles": ["public"],
+      "using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
+      "table": "user_article",
+      "name": "user_article_tenant",
+      "command": "ALL",
+      "roles": ["public"],
+      "using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
+      "table": "feedback_events",
+      "name": "feedback_events_tenant",
+      "command": "ALL",
+      "roles": ["public"],
+      "using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
+      "table": "user_models",
+      "name": "user_models_tenant",
+      "command": "ALL",
+      "roles": ["public"],
+      "using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
+      "table": "api_mutations",
+      "name": "api_mutations_tenant",
+      "command": "ALL",
+      "roles": ["public"],
+      "using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
+      "table": "bookmark_snapshot_pins",
+      "name": "bookmark_snapshot_pins_tenant",
+      "command": "ALL",
+      "roles": ["public"],
+      "using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
+      "table": "card_suggestions",
+      "name": "card_suggestions_tenant",
+      "command": "ALL",
+      "roles": ["public"],
+      "using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
+      "table": "interest_cards",
+      "name": "interest_cards_read",
+      "command": "SELECT",
+      "roles": ["bantoozi_app"],
+      "using": "visibility IN ('public','shared') OR owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": null
+    },
+    {
+      "table": "interest_cards",
+      "name": "interest_cards_create",
+      "command": "INSERT",
+      "roles": ["bantoozi_app"],
+      "using": null,
+      "withCheck": "nullif(current_setting('app.user_id', true), '') IS NOT NULL AND ((visibility = 'shared' AND origin = 'user' AND owner_user_id IS NULL AND creator_user_id = nullif(current_setting('app.user_id', true), '')::uuid) OR (visibility = 'private' AND origin = 'fork' AND creator_user_id = nullif(current_setting('app.user_id', true), '')::uuid AND owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid) OR (visibility = 'public' AND origin = 'library' AND EXISTS (SELECT 1 FROM users WHERE id = nullif(current_setting('app.user_id', true), '')::uuid AND role = 'admin' AND deleted_at IS NULL)))"
+    },
+    {
+      "table": "interest_cards",
+      "name": "interest_cards_update",
+      "command": "UPDATE",
+      "roles": ["bantoozi_app"],
+      "using": "visibility IN ('public','shared') OR owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "visibility IN ('public','shared') OR owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
+      "table": "card_answers",
+      "name": "card_answers_read",
+      "command": "SELECT",
+      "roles": ["bantoozi_app"],
+      "using": "EXISTS (SELECT 1 FROM interest_cards c WHERE c.id = card_id)",
+      "withCheck": null
+    },
+    {
+      "table": "article_snapshots",
+      "name": "article_snapshots_saved_read",
+      "command": "SELECT",
+      "roles": ["bantoozi_app"],
+      "using": "EXISTS ( SELECT 1 FROM user_article ua WHERE ua.bookmark_snapshot_id = article_snapshots.id AND ua.bookmarked_at IS NOT NULL AND ua.user_id = nullif(current_setting('app.user_id', true), '')::uuid ) OR EXISTS ( SELECT 1 FROM bookmark_snapshot_pins p WHERE p.snapshot_id = article_snapshots.id AND p.expires_at > now() AND p.user_id = nullif(current_setting('app.user_id', true), '')::uuid )",
+      "withCheck": null
+    },
+    {
+      "table": "job_outbox",
+      "name": "job_outbox_requester",
+      "command": "INSERT",
+      "roles": ["bantoozi_app"],
+      "using": null,
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    }
+  ],
+  "privileges": {
+    "bantoozi_app": {
+      "schemas": {
+        "public": ["USAGE"],
+        "drizzle": ["USAGE"],
+        "pgboss": []
+      },
+      "tables": {
+        "analysis_requests": ["SELECT"],
+        "api_mutations": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+        "article_aliases": ["SELECT"],
+        "article_bodies": ["SELECT"],
+        "article_facets": ["SELECT"],
+        "article_snapshots": ["SELECT"],
+        "article_topics_l2": ["SELECT"],
+        "article_translations": ["SELECT"],
+        "articles": ["SELECT"],
+        "bookmark_snapshot_pins": ["SELECT", "INSERT"],
+        "card_answers": ["SELECT"],
+        "card_publication_requests": ["SELECT"],
+        "card_suggestions": ["SELECT"],
+        "engine_calls": [],
+        "engine_reservations": [],
+        "feed_cards": [],
+        "feed_items": ["SELECT"],
+        "feedback_events": ["SELECT", "INSERT"],
+        "feeds": ["SELECT", "INSERT"],
+        "interest_cards": ["SELECT", "INSERT"],
+        "invites": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+        "job_outbox": ["INSERT"],
+        "library_card_versions": ["SELECT"],
+        "login_codes": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+        "match_queue": [],
+        "origin_fetch_state": ["SELECT", "INSERT", "UPDATE"],
+        "provider_credentials": [],
+        "question_sets": ["SELECT"],
+        "rate_limit_buckets": [],
+        "sessions": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+        "settings": ["SELECT", "INSERT", "UPDATE"],
+        "story_clusters": ["SELECT", "INSERT", "UPDATE"],
+        "subscriptions": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+        "topics": ["SELECT"],
+        "usage_daily": ["SELECT"],
+        "user_article": ["SELECT"],
+        "user_cards": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+        "user_feed_preferences": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+        "user_labels": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+        "user_models": ["SELECT"],
+        "user_rules": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+        "users": ["SELECT", "INSERT", "UPDATE"],
+        "waitlist": ["SELECT", "INSERT", "UPDATE", "DELETE"]
+      },
+      "columns": {
+        "analysis_requests": {
+          "INSERT": [
+            "id",
+            "user_id",
+            "feed_id",
+            "article_id",
+            "article_revision",
+            "inference_version",
+            "input_snapshot",
+            "input_sha"
+          ]
+        },
+        "articles": {
+          "UPDATE": ["story_cluster_id"]
+        },
+        "card_suggestions": {
+          "UPDATE": ["dismissed_at"]
+        },
+        "feeds": {
+          "UPDATE": [
+            "min_interval_s",
+            "fetch_options",
+            "status",
+            "consecutive_errors",
+            "first_error_at",
+            "quarantined_until",
+            "quarantine_count",
+            "next_fetch_at",
+            "subscriber_count",
+            "updated_at"
+          ]
+        },
+        "interest_cards": {
+          "UPDATE": ["retired_at", "title", "topic_ids", "i18n", "slug"]
+        },
+        "user_article": {
+          "INSERT": [
+            "user_id",
+            "article_id",
+            "opened_at",
+            "read_at",
+            "rating",
+            "reason",
+            "rated_at",
+            "dwell_ms",
+            "bookmarked_at",
+            "archived_at",
+            "label_ids",
+            "feedback_prompted_at",
+            "state_version"
+          ],
+          "UPDATE": [
+            "opened_at",
+            "read_at",
+            "rating",
+            "reason",
+            "rated_at",
+            "dwell_ms",
+            "bookmarked_at",
+            "archived_at",
+            "label_ids",
+            "feedback_prompted_at",
+            "state_version",
+            "label_suggestions"
+          ]
+        }
+      },
+      "sequences": [
+        "feeds_id_seq",
+        "feedback_events_id_seq",
+        "interest_cards_id_seq",
+        "job_outbox_id_seq",
+        "login_codes_id_seq",
+        "sessions_id_seq",
+        "story_clusters_id_seq",
+        "user_rules_id_seq",
+        "waitlist_id_seq"
+      ],
+      "drizzleMigrations": ["SELECT"]
+    },
+    "bantoozi_worker": {
+      "schemas": {
+        "public": ["USAGE"],
+        "pgboss": ["USAGE"]
+      },
+      "allTables": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+      "allSequences": ["SELECT", "USAGE"],
+      "pgbossTables": ["SELECT", "INSERT", "UPDATE", "DELETE"]
+    },
+    "public": {
+      "tables": [],
+      "functions": []
+    }
+  },
+  "functions": {
+    "active_tenant": {
+      "args": "",
+      "result": "uuid",
+      "language": "plpgsql",
+      "volatility": "s",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "admin_activate_provider_credential": {
+      "args": "p_provider text, p_expected_revision bigint, p_candidate_version bigint",
+      "result": "TABLE(revision bigint, active_version bigint)",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
+    "admin_card_holders": {
+      "args": "p_card_ids bigint[]",
+      "result": "TABLE(card_id bigint, holders integer)",
+      "language": "sql",
+      "volatility": "s",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app", "bantoozi_worker"]
+    },
+    "admin_context_allowed": {
+      "args": "",
+      "result": "boolean",
+      "language": "sql",
+      "volatility": "s",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "admin_list_card_publication_requests": {
+      "args": "p_status text",
+      "result": "TABLE(id bigint, card_id bigint, card_title text, card_text_hash text, status text, version bigint, requested_at timestamp with time zone, expires_at timestamp with time zone, responded_at timestamp with time zone, publication_payload jsonb, publication_sha text, creator_known boolean, creator_last_active_at timestamp with time zone, holders integer, vetoed boolean, authorization_kind text, promoted_at timestamp with time zone)",
+      "language": "plpgsql",
+      "volatility": "s",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
+    "admin_promote_card": {
+      "args": "p_request_id bigint, p_expected_version bigint",
+      "result": "TABLE(card_id bigint, authorization_kind text)",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
+    "admin_provider_credentials_metadata": {
+      "args": "",
+      "result": "TABLE(provider text, revision bigint, enabled boolean, active_version bigint, candidate_version bigint, candidate_status text, candidate_validation jsonb, updated_at timestamp with time zone, activated_at timestamp with time zone, validated_at timestamp with time zone, last_error_code text)",
+      "language": "plpgsql",
+      "volatility": "s",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
+    "admin_publish_library_card_version": {
+      "args": "p_slug text, p_card_id bigint, p_expected_version integer",
+      "result": "integer",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
+    "admin_request_card_publication": {
+      "args": "p_card_id bigint, p_payload jsonb, p_expires_at timestamp with time zone",
+      "result": "TABLE(request_id bigint, version bigint)",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
+    "admin_set_provider_enabled": {
+      "args": "p_provider text, p_expected_revision bigint, p_enabled boolean",
+      "result": "TABLE(revision bigint, enabled boolean)",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
+    "admin_stage_provider_credential": {
+      "args": "p_provider text, p_expected_revision bigint, p_envelope jsonb",
+      "result": "TABLE(revision bigint, candidate_version bigint)",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
+    "admin_usage_attribution": {
+      "args": "p_days integer",
+      "result": "TABLE(user_id uuid, direct_usd numeric, shared_usd numeric)",
+      "language": "sql",
+      "volatility": "s",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app", "bantoozi_worker"]
+    },
+    "admin_validate_provider_credential": {
+      "args": "p_provider text, p_candidate_version bigint, p_expected_revision bigint",
+      "result": "void",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
+    "analysis_requests_insert_check": {
+      "args": "",
+      "result": "trigger",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "analysis_requests_update_check": {
+      "args": "",
+      "result": "trigger",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": false,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "article_snapshots_guard": {
+      "args": "",
+      "result": "trigger",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": false,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "bookmark_snapshot_pins_attach": {
+      "args": "",
+      "result": "trigger",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "capture_bookmark_snapshot": {
+      "args": "p_article_id bigint, p_origin_feed_id bigint",
+      "result": "TABLE(snapshot_id bigint, capture_status text, capture_generation bigint)",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
+    "card_en_pair_state": {
+      "args": "p_body jsonb",
+      "result": "text",
+      "language": "sql",
+      "volatility": "i",
+      "securityDefiner": false,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app", "bantoozi_worker"]
+    },
+    "card_holding_check": {
+      "args": "",
+      "result": "trigger",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "card_publication_requests_guard": {
+      "args": "",
+      "result": "trigger",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "check_credential_provider": {
+      "args": "p_provider text",
+      "result": "void",
+      "language": "plpgsql",
+      "volatility": "i",
+      "securityDefiner": false,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "clear_bookmark_snapshot": {
+      "args": "p_article_id bigint",
+      "result": "TABLE(previous_snapshot_id bigint, capture_generation bigint)",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
+    "interest_cards_content_check": {
+      "args": "",
+      "result": "trigger",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "interest_cards_guard": {
+      "args": "",
+      "result": "trigger",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": false,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "library_card_versions_guard": {
+      "args": "",
+      "result": "trigger",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "mark_snapshot_if_unreferenced": {
+      "args": "p_snapshot_id bigint",
+      "result": "void",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "queue_state_counts": {
+      "args": "",
+      "result": "TABLE(queue text, created bigint, retry bigint, active bigint, completed bigint, cancelled bigint, failed bigint)",
+      "language": "sql",
+      "volatility": "s",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app", "bantoozi_worker"]
+    },
+    "rate_limit_hit": {
+      "args": "p_key text, p_window_s integer, p_max integer",
+      "result": "TABLE(allowed boolean, retry_after_s integer)",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
+    "record_card_translation": {
+      "args": "p_logical_request_id uuid, p_attempt integer, p_latency_ms integer, p_status text, p_error_code text",
+      "result": "void",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app", "bantoozi_worker"]
+    },
+    "refresh_feed_cards": {
+      "args": "p_feed_ids bigint[]",
+      "result": "void",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app", "bantoozi_worker"]
+    },
+    "refresh_feed_subscribers": {
+      "args": "p_feed_ids bigint[], p_plan_min_interval jsonb",
+      "result": "void",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app", "bantoozi_worker"]
+    },
+    "require_admin_session": {
+      "args": "",
+      "result": "uuid",
+      "language": "plpgsql",
+      "volatility": "s",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "respond_card_publication": {
+      "args": "p_request_id bigint, p_expected_version bigint, p_approve boolean",
+      "result": "TABLE(status text, version bigint)",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
+    "restore_bookmark_snapshot": {
+      "args": "p_article_id bigint, p_mutation_id uuid",
+      "result": "TABLE(snapshot_id bigint, capture_status text, capture_generation bigint)",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
+    "snapshot_content_sha256": {
+      "args": "p_title text, p_author text, p_published_at timestamp with time zone, p_source_url text, p_body_text text, p_body_html text",
+      "result": "text",
+      "language": "sql",
+      "volatility": "i",
+      "securityDefiner": false,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "subscriptions_inference_guard": {
+      "args": "",
+      "result": "trigger",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": false,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "topics_parent_check": {
+      "args": "",
+      "result": "trigger",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "topics_reference_check": {
+      "args": "",
+      "result": "trigger",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "user_article_labels_check": {
+      "args": "",
+      "result": "trigger",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "user_labels_removal_check": {
+      "args": "",
+      "result": "trigger",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "valid_credential_envelope": {
+      "args": "p_envelope jsonb",
+      "result": "boolean",
+      "language": "plpgsql",
+      "volatility": "i",
+      "securityDefiner": false,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    }
+  },
+  "triggers": {
+    "analysis_requests_insert_check": {
+      "table": "analysis_requests",
+      "timing": "BEFORE",
+      "events": ["INSERT"],
+      "columns": [],
+      "function": "analysis_requests_insert_check",
+      "args": [],
+      "constraint": null,
+      "when": null
+    },
+    "analysis_requests_update_check": {
+      "table": "analysis_requests",
+      "timing": "BEFORE",
+      "events": ["UPDATE"],
+      "columns": [],
+      "function": "analysis_requests_update_check",
+      "args": [],
+      "constraint": null,
+      "when": null
+    },
+    "article_snapshots_guard": {
+      "table": "article_snapshots",
+      "timing": "BEFORE",
+      "events": ["UPDATE"],
+      "columns": [
+        "id",
+        "source_revision",
+        "captured_at",
+        "source_url",
+        "title",
+        "author",
+        "published_at",
+        "body_text",
+        "body_html",
+        "content_sha256",
+        "completeness",
+        "completeness_reason",
+        "source",
+        "extractor_version"
+      ],
+      "function": "article_snapshots_guard",
+      "args": [],
+      "constraint": null,
+      "when": null
+    },
+    "bookmark_snapshot_pins_attach": {
+      "table": "bookmark_snapshot_pins",
+      "timing": "AFTER",
+      "events": ["INSERT"],
+      "columns": [],
+      "function": "bookmark_snapshot_pins_attach",
+      "args": [],
+      "constraint": null,
+      "when": null
+    },
+    "card_publication_requests_guard": {
+      "table": "card_publication_requests",
+      "timing": "BEFORE",
+      "events": ["INSERT", "UPDATE"],
+      "columns": [],
+      "function": "card_publication_requests_guard",
+      "args": [],
+      "constraint": null,
+      "when": null
+    },
+    "card_suggestions_card_check": {
+      "table": "card_suggestions",
+      "timing": "BEFORE",
+      "events": ["INSERT", "UPDATE"],
+      "columns": ["user_id", "card_id"],
+      "function": "card_holding_check",
+      "args": ["interest"],
+      "constraint": null,
+      "when": null
+    },
+    "interest_cards_content_check": {
+      "table": "interest_cards",
+      "timing": "BEFORE",
+      "events": ["INSERT", "UPDATE"],
+      "columns": ["body", "topic_ids"],
+      "function": "interest_cards_content_check",
+      "args": [],
+      "constraint": null,
+      "when": null
+    },
+    "interest_cards_guard": {
+      "table": "interest_cards",
+      "timing": "BEFORE",
+      "events": ["UPDATE"],
+      "columns": [],
+      "function": "interest_cards_guard",
+      "args": [],
+      "constraint": null,
+      "when": null
+    },
+    "library_card_versions_guard": {
+      "table": "library_card_versions",
+      "timing": "BEFORE",
+      "events": ["INSERT", "DELETE", "UPDATE"],
+      "columns": [],
+      "function": "library_card_versions_guard",
+      "args": [],
+      "constraint": null,
+      "when": null
+    },
+    "subscriptions_inference_guard": {
+      "table": "subscriptions",
+      "timing": "BEFORE",
+      "events": ["INSERT", "UPDATE"],
+      "columns": [],
+      "function": "subscriptions_inference_guard",
+      "args": [],
+      "constraint": null,
+      "when": null
+    },
+    "topics_parent_check": {
+      "table": "topics",
+      "timing": "AFTER",
+      "events": ["INSERT", "UPDATE"],
+      "columns": ["parent_id", "level"],
+      "function": "topics_parent_check",
+      "args": [],
+      "constraint": null,
+      "when": null
+    },
+    "topics_reference_check": {
+      "table": "topics",
+      "timing": "BEFORE",
+      "events": ["DELETE", "UPDATE"],
+      "columns": ["id"],
+      "function": "topics_reference_check",
+      "args": [],
+      "constraint": null,
+      "when": null
+    },
+    "user_article_labels_check": {
+      "table": "user_article",
+      "timing": "AFTER",
+      "events": ["INSERT", "UPDATE"],
+      "columns": ["label_suggestions", "label_ids"],
+      "function": "user_article_labels_check",
+      "args": [],
+      "constraint": "DEFERRABLE INITIALLY DEFERRED",
+      "when": "((cardinality(new.label_ids) + cardinality(new.label_suggestions)) > 0)"
+    },
+    "user_cards_card_check": {
+      "table": "user_cards",
+      "timing": "BEFORE",
+      "events": ["INSERT", "UPDATE"],
+      "columns": ["user_id", "card_id"],
+      "function": "card_holding_check",
+      "args": ["interest"],
+      "constraint": null,
+      "when": null
+    },
+    "user_labels_card_check": {
+      "table": "user_labels",
+      "timing": "BEFORE",
+      "events": ["INSERT", "UPDATE"],
+      "columns": ["user_id", "card_id"],
+      "function": "card_holding_check",
+      "args": ["label"],
+      "constraint": null,
+      "when": null
+    },
+    "user_labels_removal_check": {
+      "table": "user_labels",
+      "timing": "AFTER",
+      "events": ["DELETE", "UPDATE"],
+      "columns": ["user_id", "card_id"],
+      "function": "user_labels_removal_check",
+      "args": [],
+      "constraint": "DEFERRABLE INITIALLY DEFERRED",
+      "when": null
+    }
+  },
+  "pgBoss": {
+    "version": "10.4.2",
+    "schemaVersion": 24,
+    "queues": "every queue of packages/shared jobs.ts"
+  }
+}

@@ -72,10 +72,13 @@ when something needs a human, before users notice.
 2. Validate required secrets and the enabled profiles, check free disk/connection budget, and record
    the previous image digests, schema version and a fresh successful encrypted pre-deploy backup.
 3. Start healthy Postgres, then run the one-off migration image. Migrations acquire a database
-   advisory lock and use bounded `lock_timeout`/`statement_timeout`. They must be **backward
-   compatible** with the previous release: expand/contract, never drop a column in the release that
-   stops using it. Failure stops deployment before application replacement. Run the seed command
-   with its explicitly scoped role; runtime images must contain the command/artifacts they invoke.
+   advisory lock and use bounded `lock_timeout`/`statement_timeout` (30 s and 5 min, set when the
+   connection opens, so they also bound the wait for the advisory lock; a timeout fails the job with
+   SQLSTATE 55P03/57014, the interrupted transaction rolls back and a re-run converges). They must
+   be **backward compatible** with the previous release: expand/contract, never drop a column in the
+   release that stops using it. Failure stops deployment before application replacement. Run the
+   seed command with its explicitly scoped role; runtime images must contain the command/artifacts
+   they invoke.
    Seeding is idempotent: insert missing topics/question sets/library cards and a missing
    `language_modes` row (from the worker's `LANGUAGE_MODES`, spec 02 §2), but never overwrite admin
    settings or switch an existing active question set merely because a release was deployed.

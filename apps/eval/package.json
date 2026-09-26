@@ -1,0 +1,31 @@
+{
+  "name": "@bantoozi/eval",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Evaluation CLI and rating pages (spec 10)",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b && tsc -p tsconfig.test.json",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "test:int": "vitest run --config vitest.int.config.ts --passWithNoTests",
+    "cli": "tsx --conditions=bantoozi-source --env-file-if-exists=../../.env src/cli.ts"
+  },
+  "dependencies": {
+    "@bantoozi/db": "workspace:*",
+    "@bantoozi/engine": "workspace:*",
+    "@bantoozi/questions": "workspace:*",
+    "@bantoozi/ranker": "workspace:*",
+    "@bantoozi/shared": "workspace:*",
+    "@bantoozi/translate": "workspace:*",
+    "commander": "15.0.0",
+    "fastify": "5.12.5",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@bantoozi/testing": "workspace:*",
+    "@types/pg": "8.23.1",
+    "tsx": "4.23.15"
+  }
+}

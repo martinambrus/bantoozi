@@ -1,0 +1,27 @@
+{
+  "name": "@bantoozi/ranker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Rules, lanes, BM25 baseline, features, logistic model, calibration (spec 06)",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "bantoozi-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b && tsc -p tsconfig.test.json",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "test:int": "vitest run --config vitest.int.config.ts --passWithNoTests"
+  },
+  "dependencies": {
+    "@bantoozi/questions": "workspace:*",
+    "@bantoozi/shared": "workspace:*"
+  },
+  "devDependencies": {}
+}

@@ -1,0 +1,89 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "stream",
+  "globalDependencies": ["tsconfig.base.json", "vitest.shared.ts", "eslint.config.js", ".nvmrc"],
+  "globalPassThroughEnv": [
+    "ADMIN_EMAILS",
+    "API_PORT",
+    "BANTOOZI_APP_PASSWORD",
+    "BANTOOZI_OWNER_PASSWORD",
+    "BANTOOZI_WORKER_PASSWORD",
+    "DAILY_BUDGET_USD",
+    "DATABASE_URL",
+    "DATABASE_URL_MIGRATE",
+    "DATABASE_URL_WORKER",
+    "ENGINE_CONCURRENCY",
+    "EVAL_CACHE_DIR",
+    "EVAL_INGEST_ONLY",
+    "EVAL_PUBLIC_URL",
+    "FETCH_ALLOW_PRIVATE",
+    "FETCH_MAX_BYTES",
+    "FETCH_TIMEOUT_MS",
+    "FETCH_USER_AGENT",
+    "INGEST_MAX_AGE_DAYS",
+    "LANGUAGE_MODES",
+    "LIBRETRANSLATE_URL",
+    "LLM_FALLBACK_ENABLED",
+    "LOG_LEVEL",
+    "LT_DEV_PORT",
+    "MAIL_FROM",
+    "MAIL_TRANSPORT",
+    "METRICS_TOKEN",
+    "NODE_ENV",
+    "OLLAMA_API_KEY",
+    "OLLAMA_BASE_URL",
+    "OLLAMA_MAX_CONCURRENCY",
+    "OLLAMA_MODEL_FAST",
+    "OLLAMA_MODEL_STRONG",
+    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    "PG_DEV_PORT",
+    "PG_TEST_PORT",
+    "POSTGRES_PASSWORD",
+    "PREFILTER_MIN_CARDS",
+    "PROVIDER_MASTER_KEYS",
+    "PROVIDER_MASTER_KEY_ID",
+    "PUBLIC_BASE_URL",
+    "RATE_LIMITS_ENABLED",
+    "SESSION_COOKIE_NAME",
+    "SESSION_PEPPER",
+    "SESSION_TTL_DAYS",
+    "SIGNUP_MODE",
+    "SMTP_URL",
+    "TEST_ADMIN_DATABASE_URL",
+    "TYPESAFE_API_KEY",
+    "TYPESAFE_BASE_URL",
+    "TYPESAFE_MODEL",
+    "TYPESAFE_PRICE_PER_MTOK_USD",
+    "WORKER_METRICS_PORT",
+    "WORKER_QUEUES"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "outputs": ["dist/**"]
+    },
+    "//#lint:root": {
+      "cache": false
+    },
+    "lint": {
+      "dependsOn": ["//#lint:root"]
+    },
+    "test": {
+      "outputs": ["coverage/**"]
+    },
+    "test:int": {
+      "cache": false
+    },
+    "e2e": {
+      "cache": false
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

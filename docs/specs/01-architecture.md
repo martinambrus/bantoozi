@@ -170,6 +170,9 @@ Bootstrap and host-secret configuration comes from environment variables, parsed
 `loadConfig({ process: 'api' | 'worker' | 'eval' | 'migrate' | 'test' })` in
 `packages/shared/src/config.ts` with zod. "Required" in the table means required **for the processes
 listed under "Used by"**. An invalid config makes the process exit with a readable error.
+With `NODE_ENV=production`, `loadConfig` also refuses `MAIL_TRANSPORT=log` (it would print login
+codes), non-`https` `PUBLIC_BASE_URL`/`TYPESAFE_BASE_URL`/`OLLAMA_BASE_URL`, an unpinned
+`TYPESAFE_MODEL`, and a `SESSION_PEPPER` or `METRICS_TOKEN` shorter than 32 characters (D-2).
 `.env.example` lists every variable with a comment and placeholder values only. Validation errors
 identify secret variable names/paths, never their supplied contents or a serialized config object.
 
@@ -182,6 +185,7 @@ identify secret variable names/paths, never their supplied contents or a seriali
 | `TEST_ADMIN_DATABASE_URL` | `postgres://postgres:postgres@localhost:${PG_TEST_PORT}/postgres` | test, eval | superuser connection used only to create template, test, E2E and dry-run databases (spec 02 §1.1) |
 | `PG_TEST_PORT` | `5433` | compose.test.yml, test | host port of the test Postgres |
 | `PG_DEV_PORT` | `5432` | compose.dev.yml | host port of the dev Postgres |
+| `LT_DEV_PORT` | `5000` | compose.dev.yml | host port of the dev LibreTranslate (`--profile translate`); dev apps then use `LIBRETRANSLATE_URL=http://localhost:5000` (D-3) |
 | `POSTGRES_PASSWORD`, `BANTOOZI_OWNER_PASSWORD`, `BANTOOZI_APP_PASSWORD`, `BANTOOZI_WORKER_PASSWORD` | — | compose / `init.sh` | database bootstrap only; never read by the apps |
 | `PUBLIC_BASE_URL` | `http://localhost:5173` | api, worker, eval | used in links, the CSRF `Origin` check (spec 08 §1) and the fetcher User-Agent |
 | `API_PORT` | `3000` | api | |
@@ -271,7 +275,10 @@ limits whose combined maximum leaves headroom under Postgres `max_connections`.
 ## 5. Coding conventions
 
 - **Modules:** named exports only. One public `index.ts` per package. Internal files are not imported
-  from outside the package.
+  from outside the package. `packages/shared` additionally exposes two Node-only public entries,
+  `@bantoozi/shared/server` (config, logger, mailer, hashing, language detection) and
+  `@bantoozi/shared/server/credential-crypto` (§3), so its main entry stays browser-safe for the web
+  client (D-1).
 - **Naming:** files `kebab-case.ts`; types and classes `PascalCase`; functions and variables `camelCase`;
   DB columns `snake_case` (Drizzle maps to camelCase properties); queue names `dot.case`.
 - **IDs:** users use UUID v7 (`uuidv7` package); other identifiers follow spec 02 (identity,

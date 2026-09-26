@@ -1,0 +1,28 @@
+{
+  "name": "@bantoozi/engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Decision engine router, TypeSafe/LLM/Laya engines, breaker, budget (spec 04)",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "bantoozi-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b && tsc -p tsconfig.test.json",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "test:int": "vitest run --config vitest.int.config.ts --passWithNoTests"
+  },
+  "dependencies": {
+    "@bantoozi/questions": "workspace:*",
+    "@bantoozi/shared": "workspace:*",
+    "undici": "8.11.2"
+  },
+  "devDependencies": {}
+}

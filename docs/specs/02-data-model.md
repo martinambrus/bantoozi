@@ -128,7 +128,7 @@ sequences have no default API grant.
 | `user_article` | `INSERT (user_id, article_id, opened_at, read_at, rating, reason, rated_at, dwell_ms, bookmarked_at, archived_at, label_ids, feedback_prompted_at, state_version)`; `UPDATE` on those reader-state columns except the primary key, plus `label_suggestions` | rating/read/bookmark actions; ranking columns are worker-only |
 | `card_suggestions` | `UPDATE (dismissed_at)` | dismiss suggestion |
 | `user_models` | no writes | worker alone trains and activates models |
-| `bookmark_snapshot_pins` | `INSERT` only | vetted bookmark/undo repository pins original snapshot through the ten-minute undo deadline |
+| `bookmark_snapshot_pins` | `INSERT` only | vetted bookmark/undo repository pins original snapshot through the ten-minute undo deadline: only the `previous_snapshot_id` that `clear_bookmark_snapshot` returned in the same transaction, never a caller-chosen snapshot |
 | `analysis_requests` | `INSERT (id, user_id, feed_id, article_id, article_revision, inference_version, input_snapshot, input_sha)` only | exact selected-article manual authorization; validated immutable snapshot, worker owns completion |
 | `card_publication_requests`, `provider_credentials`, `article_snapshots`, `library_card_versions` | no direct writes | narrow consent/admin/bookmark functions below; worker maintains lifecycle |
 | `job_outbox` | `INSERT` only | durable job intent; requester RLS (§5), no API relay privileges |
@@ -151,7 +151,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA pgboss
 ```
 
 The API writes `job_outbox`, never pg-boss tables or queue payloads. Readiness/backlog queries use a
-restricted SECURITY DEFINER function returning only queue name and aggregate state counts, implemented
+restricted SECURITY DEFINER function, `queue_state_counts()`, returning only queue name and aggregate state counts, implemented
 against the pinned pg-boss catalog at M0 and covered by parity tests; no job payload leaves it.
 
 **Queues:**
@@ -536,7 +536,7 @@ CREATE TABLE question_sets (
 );
 -- settings key 'question_sets.active': IDs are decimal strings, validated against kind + question_sets
 ALTER TABLE articles ADD CONSTRAINT articles_cluster_set_fk
-  FOREIGN KEY (cluster_set_id) REFERENCES question_sets(id);
+  FOREIGN KEY (cluster_set_id) REFERENCES question_sets(id) ON DELETE RESTRICT;
 
 CREATE TABLE engine_reservations (
   id              uuid PRIMARY KEY,              -- one reservation per outbound wire attempt
@@ -853,7 +853,10 @@ snapshot freezes article/card/question/model context independently of later feed
 `result_snapshot`/`result_sha`; if the live article changed, these historical features may still serve
 that recorded training event, but cannot overwrite current shared caches. A changed subscription
 version, deletion or cancellation revokes further attempts. Feedback references the request ID rather
-than treating unavailable features as zero or mixing future context into an old rating.
+than treating unavailable features as zero or mixing future context into an old rating. `input_sha` (like `card_publication_requests.publication_sha` for
+`publication_payload`) is the hex SHA-256 of the stored `jsonb` value's PostgreSQL text rendering,
+`encode(sha256(convert_to(x::text, 'UTF8')), 'hex')`, not of the client's JSON: repositories let the
+database compute it in the inserting statement and the integrity triggers (§5.2) verify it (D-4).
 
 ### 3.5 Permanent bookmark archives and image preferences
 
@@ -1189,7 +1192,7 @@ CREATE INDEX bookmark_snapshot_pins_expiry_idx ON bookmark_snapshot_pins (expire
 CREATE TABLE card_suggestions (
   user_id       uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   card_id       bigint NOT NULL REFERENCES interest_cards(id) ON DELETE CASCADE,
-  question_set_id bigint NOT NULL REFERENCES question_sets(id), -- suggest set that produced it; only the active set's rows are listed (spec 08 §7)
+  question_set_id bigint NOT NULL REFERENCES question_sets(id) ON DELETE RESTRICT, -- suggest set that produced it; only the active set's rows are listed (spec 08 §7)
   model_pin     text NOT NULL,                  -- settings['engine.model_pin'].model when produced: suggest calls are bulk, so they use Jev only (the LLM fallback serves interactive requests, spec 04 §5); rows from another model are not listed
   score         real NOT NULL CHECK (score BETWEEN 0 AND 1),
   created_at    timestamptz NOT NULL DEFAULT now(),
@@ -1291,9 +1294,9 @@ alone does not satisfy these requirements.
 |---|---|
 | Card holdings cannot attach another tenant's private card | BEFORE INSERT/UPDATE trigger on `user_cards`, `user_labels`, `card_suggestions`: the referenced card exists, is public/shared or owned by `NEW.user_id`, and has kind `interest`, `label`, `interest` respectively. Check actual card ownership even for worker writes; raise generic constraint failure without private values |
 | Immutable card identity | BEFORE UPDATE on `interest_cards`: reject changes to `kind`, `text_hash`, `lang`, creator identity, ownership or base `body` text/examples. Creator FK clearing during verified account erasure is the sole authorship exception. `interest_en`/`not_for_en` permit initial validated pair fill, or an explicit authorized/audited full-pair retranslation/reset that updates the card-input fingerprint and invalidates only admitted dependent answers (specs 05/07). Partial or silent overwrites are forbidden. Label `title` cannot change because it is hashed. Private forks cannot be promoted. Shared→public metadata promotion requires admin plus exact creator approval or a recorded valid 30-day inactivity authorization, with no outstanding creator veto; non-admin API writes can only un-retire an otherwise identical accessible row. Worker/owner metadata maintenance does not bypass identity invariants |
-| Label assignment integrity | DEFERRABLE INITIALLY DEFERRED constraint triggers on changed `user_article.label_ids`/`label_suggestions` and `user_labels` removals/repointing validate the **final row state**: distinct non-null IDs, each present in that user's `user_labels`, and suggestions exclude assigned labels. Label deletion removes its IDs from both arrays in the same transaction; fork replacement uses deduplicated arrays. Serialize label changes and assignments on the owning user row |
+| Label assignment integrity | DEFERRABLE INITIALLY DEFERRED constraint triggers on changed `user_article.label_ids`/`label_suggestions` and `user_labels` removals/repointing validate the **final row state**: distinct non-null IDs, each present in that user's `user_labels`, and suggestions exclude assigned labels. Label deletion removes its IDs from both arrays in the same transaction; fork replacement uses deduplicated arrays. Serialize label changes and assignments on the owning user row: both deferred checks lock it `FOR NO KEY UPDATE` before validating, so of two transactions that assign and remove the same label the one committing second waits and then fails |
 | Scope owns a subscription | Composite FK on `(user_id, scope_feed_id)` removes a scoped holding when that subscription is deleted; it never silently widens it to every feed. Capture affected cards/feeds before deletion for cache refresh and outbox work |
-| Topic references | Taxonomy seeding validates each level-2 parent is level 1 and every `interest_cards.topic_ids` entry exists. BEFORE INSERT/UPDATE trigger enforces this on admin/runtime card changes; seeded taxonomy IDs are never deleted while used by arrays or model definitions |
+| Topic references | Taxonomy seeding validates each level-2 parent is level 1 and every `interest_cards.topic_ids` entry exists. BEFORE INSERT/UPDATE trigger enforces this on admin/runtime card changes; seeded taxonomy IDs are never deleted while used by arrays or model definitions. Like a foreign-key check, the card trigger locks every referenced topic `FOR KEY SHARE` and a level-2 topic locks its parent `FOR SHARE`, so a concurrent topic delete, id change or level change waits for that writer and then fails against the committed reference instead of both committing |
 | Reader state and feedback agree | Lock the current `user_article` row (or conflict-safe insert), apply patch, increment `state_version`, append event and idempotency receipt, and write outbox intents in one transaction. Workers update only ranking-cache columns, except `house.archive`, whose `archived_at` write locks the row, rechecks, increments `state_version` and appends no event (spec 11 §6), and the article merge, which advances the surviving row's `state_version` past both inputs (spec 03 §8.4). Reject rating reasons unless the rating is -1 |
 | One active personal model | Lock the `users` row before allocating a model version or switching `active`; deactivate old and activate new in one transaction. Partial unique index rejects dual activation; stale training input revision cannot activate a model |
 | Inference gate generation | Subscription BEFORE UPDATE validates mode/timestamp/version transition. Manual request BEFORE INSERT checks active tenant, live subscription/version, actual feed carrier and frozen input hash; its input snapshot/hash is immutable after insert. Vetted feed/article identity merges may relocate only operational FKs while preserving recorded source identity in the snapshot; cancel and clear leases for pending/running old-identity requests. Completed manual results are worker-only. No label action or shared card adoption may bypass this gate |
@@ -1405,7 +1408,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
   SELECT coalesce(d.user_id, sh.user_id), coalesce(d.usd, 0),
          coalesce(sh.share, 0) * (SELECT usd FROM m) / (SELECT n FROM tot)
   FROM direct d FULL JOIN shared sh ON sh.user_id = d.user_id
-  WHERE admin_context_allowed();
+  WHERE admin_context_allowed() AND p_days BETWEEN 1 AND 366;
 $$;
 
 REVOKE EXECUTE ON FUNCTION refresh_feed_cards(bigint[]), refresh_feed_subscribers(bigint[], jsonb),
@@ -1438,7 +1441,10 @@ tenant, verifies article access (current subscribed carrier or owned bookmark), 
 owning user/article/reader rows in the documented lock order. Capture copies only stored trusted
 current source into a checksummed snapshot, sets/retains `bookmarked_at`, advances capture generation,
 binds any available content and writes capture intent when absent/partial. Clear advances generation,
-clears binding/status/origin/bookmarked_at, and records final-reference lifecycle state. No helper
+clears binding/status/origin/bookmarked_at, and records final-reference lifecycle state. The unbookmark
+transaction then writes its undo receipt and pins exactly the `previous_snapshot_id` that clear
+returned, never any other snapshot ID; attaching the pin clears that snapshot's `unreferenced_at`
+again until the pin expires. No helper
 increments reader `state_version` or appends feedback on its own: the enclosing idempotent action
 transaction does so exactly once. Snapshot completion is worker-only and generation-fenced.
 `restore_bookmark_snapshot(p_article_id bigint, p_mutation_id uuid)` accepts no caller-supplied snapshot
@@ -1488,8 +1494,10 @@ the authenticated original author.
   affects them: subscribe/unsubscribe, card add/remove/scope change, label add/remove, account delete
   and restore. `house.reconcile` (spec 11) also runs them nightly for all feeds.
 - **The `admin_*` functions** are called only from admin routes, after the role check (spec 08 §9),
-  and enforce the active admin context again in SQL. Invalid `p_days` is rejected by the API; direct
-  SQL calls return no usage rows. Cost allocation is an estimate based on **current** holders, not
+  and enforce the active admin context again in SQL. Admin card lists pass `admin_card_holders` only
+  card IDs the admin session can read under RLS (public and shared cards, and the admin's own forks),
+  so another user's private fork never appears with a holder count (§5). Invalid `p_days` is rejected
+  by the API; direct SQL calls return no usage rows. Cost allocation is an estimate based on **current** holders, not
   historical billing; soft-deleted users and duplicate holdings never inflate the total.
 - Mutations use READ COMMITTED and acquire all affected user rows in UUID order, then feed rows in
   numeric order (`FOR NO KEY UPDATE`), before changing subscriptions/holdings. Both refresh functions

@@ -1,0 +1,12 @@
+# Authored plan and specs are not reformatted by tooling.
+docs/
+pnpm-lock.yaml
+**/dist/
+**/coverage/
+**/.turbo/
+**/node_modules/
+# Generated files
+apps/web/src/routeTree.gen.ts
+packages/db/drizzle/meta/
+# Verbatim from spec 01 §10; must not be reformatted.
+CLAUDE.md

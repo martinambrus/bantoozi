@@ -1,0 +1,33 @@
+{
+  "name": "@bantoozi/feeds",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SSRF-safe fetch, parse, canonicalize, dedup keys, extract, OPML (spec 03)",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "bantoozi-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b && tsc -p tsconfig.test.json",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "test:int": "vitest run --config vitest.int.config.ts --passWithNoTests"
+  },
+  "dependencies": {
+    "@bantoozi/shared": "workspace:*",
+    "@mozilla/readability": "0.6.0",
+    "linkedom": "0.18.13",
+    "rss-parser": "3.13.0",
+    "sanitize-html": "2.17.7",
+    "undici": "8.11.2"
+  },
+  "devDependencies": {
+    "@types/sanitize-html": "2.16.1"
+  }
+}

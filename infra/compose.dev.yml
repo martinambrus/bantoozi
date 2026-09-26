@@ -1,0 +1,63 @@
+# Local development services (spec 01 §8): Postgres, plus LibreTranslate under the `translate`
+# profile. The apps (api, worker, web) are not containers here; they run on the host via `pnpm dev`.
+#
+# Every worktree shares this project, so start it only with `--no-recreate`:
+#   pnpm db:dev:up   # = docker compose -f infra/compose.dev.yml up -d --no-recreate --wait postgres
+#   docker compose -f infra/compose.dev.yml --profile translate up -d --no-recreate --wait
+# A plain `up -d` from another worktree (a different init.sh bind-mount path) would recreate the
+# containers under running sessions. Production deploys follow spec 11 instead.
+#
+# The passwords below are local-development defaults; override them through the environment.
+name: bantoozi-dev
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 20m
+    max-file: '5'
+
+services:
+  postgres:
+    image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      BANTOOZI_OWNER_PASSWORD: ${BANTOOZI_OWNER_PASSWORD:-bantoozi_owner}
+      BANTOOZI_APP_PASSWORD: ${BANTOOZI_APP_PASSWORD:-bantoozi_app}
+      BANTOOZI_WORKER_PASSWORD: ${BANTOOZI_WORKER_PASSWORD:-bantoozi_worker}
+    ports:
+      # Loopback only: published ports bypass host firewalls, and these credentials are public.
+      - '127.0.0.1:${PG_DEV_PORT:-5432}:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Runs only when the pgdata volume is empty (first start).
+      - ./postgres/init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+    healthcheck:
+      # Over TCP on purpose: while init.sh runs, the entrypoint's temporary server listens only on
+      # the unix socket, so this passes (and `up --wait` returns) only once init.sh has created the
+      # database and the real server accepts connections. pg_isready alone does not check -d.
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, postgres, -d, bantoozi]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    logging: *logging
+
+  # Tier-1 machine translation (spec 07). The apps run on the host, so they reach it at
+  # http://localhost:${LT_DEV_PORT:-5000}: set LIBRETRANSLATE_URL to that in development. Inside
+  # the production stack (infra/compose.yml, M8) it is http://libretranslate:5000, the spec 01 §3
+  # default. The first start downloads the en/sk/cs models into the lt-models volume (slow).
+  libretranslate:
+    image: libretranslate/libretranslate:latest@sha256:7e7b72b0983c9d5f1e041ddac962ebfc1c20595e04366689cadff72069040027
+    profiles: [translate]
+    environment:
+      LT_LOAD_ONLY: en,sk,cs
+      LT_DISABLE_WEB_UI: 'true'
+    ports:
+      - '127.0.0.1:${LT_DEV_PORT:-5000}:5000'
+    volumes:
+      - lt-models:/home/libretranslate/.local
+    logging: *logging
+
+volumes:
+  pgdata:
+  lt-models:
