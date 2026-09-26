@@ -2,6 +2,7 @@ import { eligibleInferenceDemand, loadClassificationArticle } from '@bantoozi/db
 import type { CredentialResolver } from '@bantoozi/shared/server';
 import {
   createFeed,
+  fakeOllamaResponse,
   fixturePath,
   pseudoTranslate,
   startFakeLibreTranslate,
@@ -462,6 +463,32 @@ describe('tier-2 attempts (spec 07 §3 step 3)', () => {
       reason: 'server_error',
     });
     expect(ollamaCalls()).toBe(4);
+  });
+
+  it('makes no repair call after invalid output that cost more than its reserve (spec 04 §6)', async () => {
+    const s = await slovak();
+    const job = await tier2Job(s.articleId);
+    ollama.setOptions({
+      // Invalid output whose reported usage is far above the attempt's estimate.
+      statusOverride: (body) => {
+        const response = fakeOllamaResponse(body, { mode: 'malformed' }) as Record<string, unknown>;
+        return { status: 200, body: { ...response, prompt_eval_count: 50_000_000 } };
+      },
+    });
+    const outcome = await runTier2(h.deps.db, h.router, translation, job, LLM_MODEL);
+    expect(ollamaCalls()).toBe(1);
+    expect(h.router.reservations).toHaveLength(1);
+    expect(h.router.external.map((e) => e.call)).toEqual([
+      expect.objectContaining({
+        status: 'invalid_response',
+        billing: 'known',
+        inputTokens: 50_000_000,
+      }),
+    ]);
+    expect(outcome).toMatchObject({
+      kind: 'row',
+      row: { engine: 'ollama', quality: 'fail', qualityDetail: { failure: 'invalid_response' } },
+    });
   });
 });
 

@@ -177,9 +177,10 @@ export async function runTier1(
 /**
  * Tier 2 (spec 07 §3 step 3), once per content revision: without an enabled active Ollama key, or
  * when the reservation is refused for the daily cap or the budget, a skipped `fail` row records
- * the attempt; otherwise one attempt, plus one repair attempt after invalid output, each under its
- * own reservation and recorded with its actual usage. A translation is graded; invalid output after
- * the repair and a terminal provider failure (auth, request, model) become a `fail` row. A
+ * the attempt; otherwise one attempt, plus one repair attempt after invalid output that stayed
+ * within its reserve (spec 04 §6), each under its own reservation and recorded with its actual
+ * usage. A translation is graded; invalid output after the repair (or without one after a cost
+ * overrun) and a terminal provider failure (auth, request, model) become a `fail` row. A
  * transport failure (429, 5xx, timeout, network) or a cancellation stores no row: it is transient,
  * with the server's retry time when known, and the job's own retry runs tier 2 again (D-74), never
  * a second in-process attempt as well. `no_demand` when the authorization lapsed.
@@ -261,7 +262,7 @@ export async function runTier2(
       );
       throw error;
     }
-    await router.recordExternalCall(
+    const { overrun } = await router.recordExternalCall(
       toExternalCall(result.attempt, {
         logicalRequestId,
         articleId: job.articleId,
@@ -270,8 +271,9 @@ export async function runTier2(
       reservationId,
     );
     last = result;
-    // Only invalid output earns the repair attempt.
-    if (result.ok || result.reason !== 'invalid_response') break;
+    // Only invalid output earns the repair attempt, and never after an attempt that cost more than
+    // its reserve (spec 04 §6): the invalid output then stands.
+    if (overrun || result.ok || result.reason !== 'invalid_response') break;
   }
   if (last === undefined) return skipped('budget');
   if (last.ok) {

@@ -113,8 +113,9 @@ card translations and workers; a busy container must not exhaust all API connect
    values are untrusted text, never instructions: no tools, URL following or executable output.
    Require exactly the three string keys, bound each output length and the HTTP response bytes, and
    reject malformed or extra fields. One bounded repair retry after invalid output is allowed under
-   a new budget reservation; a transport failure (429, 5xx, timeout, network) is transient (step 2),
-   so there are no nested package/job retry loops. A terminal provider failure stores `fail` and
+   a new budget reservation, unless the invalid attempt cost more than its reserve: then the invalid
+   output stands (spec 04 §6, D-86). A transport failure (429, 5xx, timeout, network) is transient
+   (step 2), so there are no nested package/job retry loops. A terminal provider failure stores `fail` and
    falls back to native text rather than blocking ingestion. Store an `engine='ollama'` row with its
    own quality, `article_revision`, `source_sha256`, model and translation-policy version (the latter
    in `quality_detail`). A skipped row may be replaced only by the administrative reprocess, not by
