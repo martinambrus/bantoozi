@@ -325,7 +325,7 @@ describe('spec 03 §8.1 step 2 robots.txt (RFC 9309)', () => {
     });
   });
 
-  it('treats a non-2xx success as unavailable and never throws', async () => {
+  it('treats a non-2xx success as unavailable and a malformed result as unreachable', async () => {
     const notModified = harness(() => ({
       ...robotsTxt('User-agent: *\nDisallow: /'),
       status: 304,
@@ -343,18 +343,57 @@ describe('spec 03 §8.1 step 2 robots.txt (RFC 9309)', () => {
       reason: 'unreachable',
     });
 
-    const throwing = harness(() => {
-      throw new Error('boom');
-    });
-    await expect(throwing.check('https://example.com/a')).resolves.toMatchObject({
-      reason: 'unreachable',
-    });
-
     const other = harness(() => robotsTxt(''));
     await expect(other.check('ftp://example.com/a')).resolves.toEqual({
       allowed: false,
       reason: 'disallowed',
     });
     expect(other.calls).toHaveLength(0);
+  });
+
+  it('rejects with a rejected fetch (an infrastructure failure) and caches nothing', async () => {
+    const outage = new Error('origin limiter unavailable');
+    let down = true;
+    const robots = harness(() => {
+      if (down) throw outage;
+      return robotsTxt(RULES);
+    });
+    // Concurrent checks of the origin share the one request, and its rejection.
+    const settled = await Promise.allSettled([
+      robots.check('https://example.com/members/a'),
+      robots.check('https://example.com/b'),
+    ]);
+    expect(settled).toEqual([
+      { status: 'rejected', reason: outage },
+      { status: 'rejected', reason: outage },
+    ]);
+    expect(robots.calls).toHaveLength(1);
+
+    // No cached `unreachable`: the retry, well within the 5-minute failure TTL, asks again.
+    down = false;
+    robots.clock.now += 30_000;
+    await expect(robots.check('https://example.com/members/a')).resolves.toEqual({
+      allowed: false,
+      reason: 'disallowed',
+    });
+    expect(robots.calls).toHaveLength(2);
+  });
+
+  it('leaves a stale cached rule set as it was when its refresh rejects', async () => {
+    let down = false;
+    const robots = harness(() => {
+      if (down) throw new Error('origin limiter unavailable');
+      return robotsTxt(RULES);
+    });
+    await expect(robots.check('https://example.com/b')).resolves.toMatchObject({ allowed: true });
+    down = true;
+    robots.clock.now += 25 * HOUR; // stale, but usable while robots.txt is unreachable
+    await expect(robots.check('https://example.com/b')).rejects.toThrow('origin limiter');
+    down = false;
+    await expect(robots.check('https://example.com/members/a')).resolves.toMatchObject({
+      allowed: false,
+      reason: 'disallowed',
+    });
+    expect(robots.calls).toHaveLength(3);
   });
 });

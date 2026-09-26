@@ -805,6 +805,42 @@ describe('transient page failures and permanent feed redirects (M1-T7)', () => {
     expect(await pipelineState(id)).toBe('extracted');
   });
 
+  it('retries a robots.txt fetch the origin limiter failed on instead of caching it as unreachable', async () => {
+    server.route('/outage/story.html', html(articlePage('Limiter outage story')));
+    const id = await ingestLinked('/outage/feed.rss', 'Limiter outage story', '/outage/story.html');
+    // The limiter's database is down for the first attempt; this worker's robots cache is empty.
+    const memory = createMemoryOriginLimiter({ spacingMs: 0 });
+    let down = true;
+    const limiter: OriginLimiter = {
+      reserve: (origin, options) =>
+        down
+          ? Promise.reject(new Error('limiter database unavailable'))
+          : memory.reserve(origin, options),
+      release: (origin, token) => memory.release(origin, token),
+      block: (origin, until) => memory.block(origin, until),
+    };
+    const outage = createHandlers(workerDeps(limiter));
+    const extract = () =>
+      dispatch(
+        outage,
+        'article.extract',
+        { articleId: id },
+        { queue: 'article.extract', jobId: 'outage', retry: firstAttempt },
+      );
+
+    await expect(extract()).rejects.toThrow('limiter database unavailable');
+    expect(await pipelineState(id)).toBe('ingested');
+    // The queue's retry, well within the 5-minute robots failure TTL, reads robots.txt afresh.
+    down = false;
+    await extract();
+    expect(await pipelineState(id)).toBe('extracted');
+    const body = await owner.query<{ status: string; extractor_version: string }>(
+      'SELECT status, extractor_version FROM article_bodies WHERE article_id = $1',
+      [id],
+    );
+    expect(body.rows).toEqual([{ status: 'ok', extractor_version: 'readability-v1' }]);
+  });
+
   it('keeps a bookmark capture pending across a transient page failure until the last attempt', async () => {
     server.route('/flaky/saved.html', { status: 502, body: 'bad gateway' });
     const id = await ingestLinked('/flaky/saved.rss', 'Saved flaky story', '/flaky/saved.html');

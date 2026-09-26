@@ -27,7 +27,10 @@ export interface RobotsDecision {
 }
 
 export interface RobotsChecker {
-  /** Decides whether {@link ROBOTS_PRODUCT_TOKEN} may fetch `url`; never throws. */
+  /**
+   * Decides whether {@link ROBOTS_PRODUCT_TOKEN} may fetch `url`. Rejects only when the injected
+   * fetch rejects: an infrastructure failure, which is never cached.
+   */
   check(url: URL): Promise<RobotsDecision>;
 }
 
@@ -87,9 +90,12 @@ interface RobotsEntry {
  *   `cooldown` until then, without refetching before it ends;
  * - network, DNS, TLS and timeout failures and 5xx are **unreachable**, never allow-all: an
  *   unexpired cached rule set (fresh, or stale by at most `maxStaleMs`) keeps deciding, otherwise
- *   this attempt is disallowed; the failure is cached for `failureTtlMs` (5 minutes), not 24 h.
+ *   this attempt is disallowed; the failure is cached for `failureTtlMs` (5 minutes), not 24 h;
+ * - a rejected fetch is no answer from the origin but an infrastructure failure (for example, the
+ *   PostgreSQL origin limiter is unavailable): the check rejects with it and nothing is cached, so
+ *   the caller's job retries with a fresh request instead of a cached `unreachable`.
  *
- * Concurrent checks of one origin share a single robots.txt request.
+ * Concurrent checks of one origin share a single robots.txt request, and its rejection.
  */
 export function createRobotsChecker(options: RobotsCheckerOptions): RobotsChecker {
   const now = options.now ?? Date.now;
@@ -125,12 +131,8 @@ export function createRobotsChecker(options: RobotsCheckerOptions): RobotsChecke
   const refresh = async (origin: string): Promise<RobotsEntry> => {
     const robotsUrl = `${origin}/robots.txt`;
     const previous = cache.get(origin) ?? null;
-    let result: SafeFetchResult;
-    try {
-      result = await options.fetch(robotsUrl, 'robots');
-    } catch {
-      result = { ok: false, code: 'FEED_CONNECTION_ERROR', message: 'robots.txt fetch threw' };
-    }
+    // A rejection propagates before anything is cached (see above).
+    const result = await options.fetch(robotsUrl, 'robots');
     const at = now();
     let outcome: FetchOutcome;
     try {
