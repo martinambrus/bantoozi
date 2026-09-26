@@ -102,6 +102,8 @@ interface MatchJob {
   questions: Map<string, BuiltCardQuestion>;
   /** Another worker reclaimed the lease: stop sending, never touch its rows. */
   lost: boolean;
+  /** The compared configuration changed: current work was enqueued, so stop sending. */
+  stale: boolean;
   /** The job budget ran out with packs left: a follow-up job asks them. */
   yielded: boolean;
 }
@@ -115,6 +117,8 @@ interface MatchJob {
  *    only under article demand), re-asking provisional fallback answers only in bulk packs;
  * 5. packs per owner partition and asks each pack, rechecking demand and renewing the lease first;
  * 6. applies an ok pack in a short transaction guarded by revision, configuration, demand and lease;
+ *    every other write derived from the snapshot (steps 2, 3 and 8) has the same configuration
+ *    fence, and a job that finds the configuration changed stops asking (D-85);
  * 7. releases failed rows as deferred, failed or exhausted without a hot loop; a failed level-2-only
  *    pack, which has no queue row, records a delayed retry job under the same rules instead;
  * 8. marks the article `matched` only when every demanded pair and selected branch is complete;
@@ -175,14 +179,15 @@ export function createArticleMatchHandler(
       held,
       questions: new Map(),
       lost: false,
+      stale: false,
       yielded: false,
     };
 
     const cards = await prepareCards(job);
-    await prefilter(job, facets, cards);
-    const packs = await buildPacks(job, facets, cards);
+    if (!job.stale) await prefilter(job, facets, cards);
+    const packs = job.stale ? [] : await buildPacks(job, facets, cards);
     for (const [index, pack] of packs.entries()) {
-      if (job.lost) break;
+      if (job.lost || job.stale) break;
       if (index > 0 && nowOf(deps).getTime() - started >= classification.jobBudgetMs) {
         // Spec 03 §2.1: the rest runs in a follow-up job, inside its own queue expiration.
         job.yielded = true;
@@ -231,7 +236,7 @@ async function prepareCards(job: MatchJob): Promise<Map<string, CardInput>> {
     .map((answer) => answer.cardId);
   if (satisfied.length > 0) {
     await retryTransaction(deps.db, async (tx) => {
-      if (!(await revisionHolds(tx, job))) return;
+      if (!(await revisionHolds(tx, job)) || !(await configHolds(tx, job))) return;
       await completeRows(tx, job, satisfied);
     });
   }
@@ -267,7 +272,7 @@ async function prefilter(
   });
   if (skipped.length === 0) return;
   await retryTransaction(job.deps.db, async (tx) => {
-    if (!(await revisionHolds(tx, job))) return;
+    if (!(await revisionHolds(tx, job)) || !(await configHolds(tx, job))) return;
     const held = await heldRows(tx, job, skipped);
     const rows = held.flatMap((id) => {
       const built = job.questions.get(id);
@@ -446,10 +451,11 @@ async function askPack(job: MatchJob, pack: Pack): Promise<void> {
 
 /**
  * Steps 6 and 9: apply an ok pack in a short transaction. A changed revision discards everything
- * (the reset re-queued current work); a changed configuration discards and re-enqueues; pairs whose
- * demand disappeared are dropped unanswered; answers are written only for rows this lease still
- * holds, with the precedence guard; features are rebuilt from the current L2 rows, and the affected
- * users' rank intents are recorded with the answers. Returns the asked branches left unanswered.
+ * (the reset re-queued current work); a changed configuration discards and re-enqueues
+ * ({@link configHolds}); pairs whose demand disappeared are dropped unanswered; answers are written
+ * only for rows this lease still holds, with the precedence guard; features are rebuilt from the
+ * current L2 rows, and the affected users' rank intents are recorded with the answers. Returns the
+ * asked branches left unanswered.
  */
 async function applyPack(
   job: MatchJob,
@@ -459,17 +465,7 @@ async function applyPack(
 ): Promise<string[]> {
   const { deps, article, classification } = job;
   return retryTransaction(deps.db, async (tx) => {
-    if (!(await revisionHolds(tx, job))) return [];
-    const current = await loadClassificationConfig(tx, deps.settingsEnv, { lock: true });
-    if (!sameMatchConfig(job.config, current, article.lang)) {
-      await releaseHeld(tx, job, askCards, { kind: 'release' });
-      await enqueueMatch(
-        workerOutbox(tx),
-        { articleId: article.id },
-        { revision: article.revision },
-      );
-      return [];
-    }
+    if (!(await revisionHolds(tx, job)) || !(await configHolds(tx, job))) return [];
     const held = await heldRows(tx, job, askCards);
     const demanded = new Set((await cardPairDemand(tx, article.id, held)).map((d) => d.cardId));
     await dropHeld(
@@ -593,13 +589,16 @@ async function failPack(
 /**
  * Steps 8–9: in one transaction, mark the article `matched` when its classification is complete
  * (or back to `enriched` when new demand arrived), rank the affected users when the state changed,
- * and enqueue a follow-up job while due rows remain or the job budget left packs unasked.
+ * and enqueue a follow-up job while due rows remain or the job budget left packs unasked. Under a
+ * changed configuration the current job enqueued instead decides the state.
  */
 async function finish(job: MatchJob): Promise<void> {
   const { deps, article } = job;
+  if (job.stale) return;
   await retryTransaction(deps.db, async (tx) => {
     const locked = await lockArticleRevision(tx, article.id, 'update');
     if (locked === null || locked.revision !== article.revision) return;
+    if (!(await configHolds(tx, job))) return;
     if (locked.pipelineState === 'enriched' || locked.pipelineState === 'matched') {
       const complete = await classificationComplete(tx, {
         articleId: article.id,
@@ -730,6 +729,25 @@ function cardAnswer(
 async function revisionHolds(tx: Transaction, job: MatchJob): Promise<boolean> {
   const locked = await lockArticleRevision(tx, job.article.id, 'share');
   return locked !== null && locked.revision === job.article.revision;
+}
+
+/**
+ * The configuration fence of every write derived from the job's snapshot (step 6, D-84, D-85): the
+ * compared settings, re-read under share locks, must still be the snapshot's. Otherwise the rows
+ * this job still holds are released unanswered, current work is enqueued in the same transaction,
+ * the job stops sending (`stale`) and the caller writes nothing.
+ */
+async function configHolds(tx: Transaction, job: MatchJob): Promise<boolean> {
+  const current = await loadClassificationConfig(tx, job.deps.settingsEnv, { lock: true });
+  if (sameMatchConfig(job.config, current, job.article.lang)) return true;
+  await releaseHeld(tx, job, [...job.held.keys()], { kind: 'release' });
+  await enqueueMatch(
+    workerOutbox(tx),
+    { articleId: job.article.id },
+    { revision: job.article.revision },
+  );
+  job.stale = true;
+  return false;
 }
 
 /** The given claimed rows this lease still holds, locked (another worker's rows are never touched). */

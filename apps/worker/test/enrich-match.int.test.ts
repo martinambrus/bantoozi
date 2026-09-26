@@ -211,6 +211,33 @@ describe('article.enrich outcomes (spec 05 §3, spec 04 §5)', () => {
     }
   });
 
+  it('a language-mode switch committing while a cached Call A continues sends the job again', async () => {
+    const feedId = await h.feed();
+    const userId = await h.user();
+    await h.subscribe(userId, feedId, 'active');
+    const articleId = await h.article({ feedIds: [feedId], lang: 'sk' });
+    // A cache fill left current primary facets of the native input.
+    await h.enrichDirect(articleId, { state: 'extracted' });
+    const modes = (await h.setting('language_modes')) as Record<string, string>;
+    // Written but not committed: the job's snapshot still reads the native mode.
+    const write = await h.openSettingWrite('language_modes', { ...modes, sk: 'translate' });
+    const since = await h.mark();
+    try {
+      const run = h.dispatch('article.enrich', { articleId });
+      await write.commit();
+      await run;
+      expect(h.router.asks).toEqual([]);
+      expect(await h.articleRow(articleId)).toMatchObject({ state: 'extracted' });
+      expect(await h.payloads('article.enrich', since)).toEqual([
+        { articleId, priority: 'interactive' },
+      ]);
+      expect(await h.payloads('article.match', since)).toEqual([]);
+    } finally {
+      write.close();
+      await h.setSetting('language_modes', modes);
+    }
+  });
+
   it('an invalid request fails the article; a failed recovery never downgrades an enriched one', async () => {
     const s = await scenario();
     h.router.respond = () => failure('invalid_request');
@@ -508,6 +535,90 @@ describe('article.match completion fence (spec 05 §5.5 step 6)', () => {
       (await write)?.close();
       await h.setSetting('card_text_mode', 'as_written');
     }
+  });
+
+  it('a configuration switch committing while satisfied rows complete keeps them queued for current work', async () => {
+    const s = await scenario({ cards: 2 });
+    await h.enrichDirect(s.articleId, { topics: NO_BRANCH_TOPICS });
+    await h.queue(s.articleId, s.cardIds);
+    // A cache fill already answered both pairs for this input.
+    for (const cardId of s.cardIds) {
+      await h.answerCard(s.articleId, cardId, { engine: 'typesafe' });
+    }
+    const answers = await h.cardAnswers(s.articleId);
+    // Written but not committed: the job's snapshot still finds both pairs satisfied.
+    const write = await h.openSettingWrite('card_text_mode', 'english');
+    try {
+      const since = await h.mark();
+      const run = h.dispatch('article.match', { articleId: s.articleId });
+      await write.commit();
+      await run;
+      expect(h.router.asksFor(s.articleId, 'match')).toEqual([]);
+      expect(await h.cardAnswers(s.articleId)).toEqual(answers);
+      const rows = await h.queueRows(s.articleId);
+      expect(rows.map((row) => [row.leased, row.attempts, row.due])).toEqual([
+        [false, 0, true],
+        [false, 0, true],
+      ]);
+      expect(await h.payloads('article.match', since)).toEqual([{ articleId: s.articleId }]);
+      expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'enriched' });
+    } finally {
+      write.close();
+      await h.setSetting('card_text_mode', 'as_written');
+    }
+  });
+
+  it('a prefilter switch committing while its markers are written discards them and asks nothing', async () => {
+    await h.setSetting('engine.prefilter_enabled', true);
+    let write: SettingWrite | undefined;
+    try {
+      const feedId = await h.feed();
+      const userId = await h.user();
+      await h.subscribe(userId, feedId, 'active');
+      const cardIds: string[] = [];
+      for (let i = 0; i <= PREFILTER_MIN_CARDS; i += 1) {
+        cardIds.push(await h.heldCard(userId, { topicIds: ['sports.football'] }));
+      }
+      const articleId = await h.article({ feedIds: [feedId] });
+      await h.enrichDirect(articleId, { topics: NO_BRANCH_TOPICS });
+      await h.queue(articleId, cardIds);
+      // Written but not committed: the job's snapshot still has the prefilter enabled.
+      write = await h.openSettingWrite('engine.prefilter_enabled', false);
+      const since = await h.mark();
+      const run = h.dispatch('article.match', { articleId });
+      await write.commit();
+      await run;
+      expect(await h.cardAnswers(articleId)).toEqual([]);
+      expect(h.router.asksFor(articleId, 'match')).toEqual([]);
+      const rows = await h.queueRows(articleId);
+      expect(rows).toHaveLength(cardIds.length);
+      expect(rows.every((row) => !row.leased && row.attempts === 0 && row.due)).toBe(true);
+      expect(await h.payloads('article.match', since)).toEqual([{ articleId }]);
+    } finally {
+      write?.close();
+      await h.setSetting('engine.prefilter_enabled', false);
+    }
+  });
+
+  it('a configuration switch committing before the article state is written leaves it to current work', async () => {
+    const s = await scenario({ cards: 0 });
+    await h.enrichDirect(s.articleId, { topics: NO_BRANCH_TOPICS });
+    const write = await h.openSettingWrite('card_text_mode', 'english');
+    try {
+      const since = await h.mark();
+      const run = h.dispatch('article.match', { articleId: s.articleId });
+      await write.commit();
+      await run;
+      expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'enriched' });
+      expect(await h.payloads('article.match', since)).toEqual([{ articleId: s.articleId }]);
+      expect(await h.payloads('user.rank', since)).toEqual([]);
+    } finally {
+      write.close();
+      await h.setSetting('card_text_mode', 'as_written');
+    }
+    // The current job decides the state.
+    await h.run('article.match', forArticles(s.articleId));
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'matched' });
   });
 });
 

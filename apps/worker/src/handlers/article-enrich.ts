@@ -82,7 +82,7 @@ export function createArticleEnrichHandler(
       stored.stateSha256 === enrichState.sha256 &&
       isPrimaryAnswer(stored, classification.primaryModel)
     ) {
-      await continueFromCache(deps, article, stored);
+      await continueFromCache(deps, config, article, stored, priority);
       return;
     }
 
@@ -198,17 +198,30 @@ export function createArticleEnrichHandler(
 /**
  * A current primary Call A for this exact input exists (a selected request filled the cache, or the
  * job is a duplicate). No call: an article that has not continued yet continues now; one already
- * enriched or matched at this revision is a late duplicate.
+ * enriched or matched at this revision is a late duplicate. The input was judged current under the
+ * job's configuration snapshot, so the continuation has the completion's fence (D-84, D-85): a
+ * switch committed meanwhile re-enqueues the job instead.
  */
 async function continueFromCache(
   deps: WorkerDeps,
+  config: ClassificationConfig,
   article: ClassificationArticle,
   stored: FacetRow,
+  priority: 'interactive' | 'bulk',
 ): Promise<void> {
   await retryTransaction(deps.db, async (tx) => {
     const locked = await lockArticleRevision(tx, article.id, 'update');
     if (locked === null || locked.revision !== article.revision) return;
     if (ENRICHED_STATES.includes(locked.pipelineState)) return;
+    const current = await loadClassificationConfig(tx, deps.settingsEnv, { lock: true });
+    if (!sameEnrichConfig(config, current, article.lang)) {
+      await enqueueEnrich(
+        workerOutbox(tx),
+        { articleId: article.id, priority },
+        { revision: article.revision },
+      );
+      return;
+    }
     const changed = await transitionPipelineState(tx, {
       articleId: article.id,
       revision: article.revision,

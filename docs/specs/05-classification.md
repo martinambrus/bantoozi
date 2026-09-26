@@ -592,7 +592,10 @@ from that request can satisfy this worker only when every current input fingerpr
 6. **On ok**, in a short transaction compare current article revision, active set/mode/model policy,
    concrete input fingerprints, current inference demand/version and lease token. If any changed, discard outputs and durably enqueue
    current work; its already incurred cost is still logged. The compared settings are read under
-   share locks, so a switch either waits for the completion to commit or is seen by it (D-84). Otherwise upsert only the returned pack's
+   share locks, so a switch either waits for the completion to commit or is seen by it (D-84). The
+   same fence guards every other write derived from the job snapshot: deleting satisfied rows (step
+   2), prefilter markers (step 3) and the article state (step 8). A job that finds the configuration
+   changed releases the rows it holds, enqueues current work and sends no further pack (D-85). Otherwise upsert only the returned pack's
    answers and L2 rows with full provenance, rebuild compatible features, and delete only the rows
    leased and answered by this pack. A newer/primary answer cannot be overwritten by an older or
    fallback result for the same input. Do not delete rows another worker reclaimed.

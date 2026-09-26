@@ -558,3 +558,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `FOR SHARE` on those `settings` rows, in key order: a switch waits for the completion to commit, and
   one already written is waited for and then read, so the completion discards its result and queues
   current work. Spec 05 §5.5 updated.
+- D-85: 2026-09-26 M2-T9 — the D-84 fence covers every write an article job derives from its
+  configuration snapshot, not only a model result: the enrich job's continuation from a cached Call A,
+  and the match job's deletion of already satisfied rows (spec 05 §5.5 step 2), its prefilter markers
+  (step 3), its pack answers (step 6) and the article state it sets (step 8). A match job that finds
+  the compared settings changed releases every row it still holds unanswered, enqueues current work in
+  the same transaction and sends no further pack; the enrich job enqueues itself again. Spec 05 §5.5
+  and spec 03 §2 updated.
