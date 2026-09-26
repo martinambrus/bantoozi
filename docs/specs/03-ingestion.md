@@ -608,9 +608,11 @@ fetching non-HTML media.
    - paths ending in `.pdf`, `.mp3`, `.m4a`, `.mp4`, `.mov`, `.zip`, `.jpg`, `.png`, `.gif`, `.webp`
    - a chosen article URL that is itself an audio/video enclosure; a podcast entry with a normal
      HTML page is still extractable. Ingestion stores the type of an audio/video enclosure,
-     attachment or `media:content` whose URL is the item's link as `articles.link_enclosure_type`
-     (any carrier may declare it; a new link from the source brings its own), and extraction and
-     bookmark capture pass it to the skip check (D-21). Match host suffixes on label boundaries and file extensions
+     attachment or `media:content` whose URL is the item's link as `articles.link_enclosure_type`,
+     a publisher input like the others of §7 step 2: the source feed's current item decides it for
+     the link it gave the article, also without a content change (a correction clears it), and
+     other carriers never change it. Extraction and bookmark capture pass it to the skip check
+     (D-21). Match host suffixes on label boundaries and file extensions
      case-insensitively on the pathname, not on query strings. Linkless entries use feed text
 2. **robots.txt:**
    - Fetch `/robots.txt` per origin through `safeFetch` and cache it in an in-memory LRU

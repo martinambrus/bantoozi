@@ -158,8 +158,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   already took the enclosure type as an option, but the parser kept no enclosure URLs and nothing
   stored the fact, so the worker could not pass it: an opaque media link was downloaded up to the
   fetch cap and stored as `not_html` or `too_large`. The parser now keeps each media object's URL,
-  `normalizeItem` reports the link's enclosure type, and ingestion stores it (any carrier of the
-  same link may declare it; a new link from the source replaces it with its own, and a URL that only
-  becomes an alias never sets it). `article.extract` and `article.capture-bookmark` pass it to the
+  `normalizeItem` reports the link's enclosure type, and ingestion stores it as a publisher input
+  (spec 03 §7 step 2): the source feed's current item decides it for the link it gave the article,
+  also without a content change, so a correction clears it; other carriers, and a URL that only
+  becomes an alias, never change it. `article.extract` and `article.capture-bookmark` pass it to the
   skip check. Spec 02 listed no such column. Found by the Codex review of PR #5. Spec 02 `articles`
   and spec 03 §8.1 step 1 updated.

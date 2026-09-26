@@ -138,7 +138,8 @@ export interface IngestItemInput {
   media: ItemMediaSignals;
   /**
    * The MIME type of an audio/video enclosure whose URL is the item's link itself, else null:
-   * stored as `articles.link_enclosure_type`, so extraction skips that link (spec 03 §8.1 step 1).
+   * the source feed's value is stored as `articles.link_enclosure_type`, so extraction skips that
+   * link (spec 03 §8.1 step 1).
    */
   linkEnclosureType: string | null;
 }
@@ -422,28 +423,28 @@ async function ingestFound(
     article.contentHash === input.contentHash ||
     (await articleSourceFeedId(tx, articleId)) !== input.feedId
   ) {
-    // Any carrier that declares this article's link an audio/video enclosure marks it for
-    // extraction to skip (spec 03 §8.1 step 1); a link that is only an alias of it does not.
-    if (input.linkEnclosureType !== null) {
+    // Whether the link is an audio/video enclosure (spec 03 §8.1 step 1) is a publisher input:
+    // the source's current item decides it for the link it gave the article, also without a
+    // content change, so a correction clears it; other carriers never change it (§7 step 2).
+    if (input.url !== null) {
       await tx.execute(sql`
-        UPDATE articles SET link_enclosure_type = ${input.linkEnclosureType}::text
-         WHERE id = ${articleId}::bigint AND link_enclosure_type IS NULL
-           AND canonical_url = ${input.canonicalUrl}`);
+        UPDATE articles a SET link_enclosure_type = ${input.linkEnclosureType}::text
+         WHERE a.id = ${articleId}::bigint AND a.url = ${input.url}::text
+           AND a.link_enclosure_type IS DISTINCT FROM ${input.linkEnclosureType}::text
+           AND ${input.feedId}::bigint = (
+                 SELECT fi.feed_id FROM feed_items fi WHERE fi.article_id = a.id
+                  ORDER BY fi.first_seen_at, fi.feed_id LIMIT 1)`);
     }
     await applyItemMedia(tx, sender, articleId, evidence);
     return unchanged;
   }
 
-  // The source's new link replaces `url`, and its enclosure type goes with it; an unchanged link
-  // keeps a type another carrier declared.
+  // The source's link replaces `url`, and its current enclosure type goes with it.
   await tx.execute(sql`
     UPDATE articles
        SET url = coalesce(${input.url}, url),
-           link_enclosure_type = CASE
-             WHEN ${input.url}::text IS NULL THEN link_enclosure_type
-             WHEN url = ${input.url}::text
-               THEN coalesce(link_enclosure_type, ${input.linkEnclosureType}::text)
-             ELSE ${input.linkEnclosureType}::text END,
+           link_enclosure_type = CASE WHEN ${input.url}::text IS NULL THEN link_enclosure_type
+                                      ELSE ${input.linkEnclosureType}::text END,
            title = ${input.title}, title_norm = ${input.titleNorm}, author = ${input.author},
            categories = ${sql.param([...input.categories])}::text[], excerpt = ${input.excerpt},
            excerpt_html = ${input.excerptHtml}, image_url = ${input.imageUrl},

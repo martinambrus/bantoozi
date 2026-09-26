@@ -769,23 +769,34 @@ describe('ingestItem: a link that is its own audio/video enclosure (spec 03 §8.
     expect(await typeOf(plain.articleId)).toBeNull();
   });
 
-  it('takes the type from any carrier of the same link', async () => {
+  it("lets the source feed's current item decide it, so a correction clears it", async () => {
     const x = await createFeed(ctx.owner);
     const y = await createFeed(ctx.owner);
     const plain = item(x.id);
     const first = await ingest(plain);
     expect(await typeOf(first.articleId)).toBeNull();
-    // Another feed declares the same link as its audio enclosure; no content change is needed.
+    // Another carrier's declaration does not change the source's publisher input.
     const pod = carry(plain, {
       feedId: y.id,
       guid: `pod-${next()}`,
       linkEnclosureType: 'audio/mpeg',
     });
     expect(await ingest(pod)).toMatchObject({ articleId: first.articleId, outcome: 'existing' });
+    expect(await typeOf(first.articleId)).toBeNull();
+    // The source declares the enclosure, then corrects it, both without a content change.
+    const declared = carry(plain, { linkEnclosureType: 'audio/mpeg' });
+    expect(await ingest(declared)).toMatchObject({ contentChanged: false });
     expect(await typeOf(first.articleId)).toBe('audio/mpeg');
-    // A carrier without the enclosure does not clear it: the link is still that media file.
-    await ingest(carry(plain, { title: 'Retitled' }));
-    expect(await typeOf(first.articleId)).toBe('audio/mpeg');
+    expect(await ingest(carry(plain, { linkEnclosureType: null }))).toMatchObject({
+      contentChanged: false,
+    });
+    expect(await typeOf(first.articleId)).toBeNull();
+    // With a content change the source's current declaration applies too, and so does its removal.
+    await ingest(carry(plain, { title: 'Now a podcast', linkEnclosureType: 'video/mp4' }));
+    expect(await typeOf(first.articleId)).toBe('video/mp4');
+    const corrected = await ingest(carry(plain, { title: 'An article after all' }));
+    expect(corrected).toMatchObject({ contentChanged: true });
+    expect(await typeOf(first.articleId)).toBeNull();
   });
 
   it("follows the source's link: a new link brings its own type, an alias never does", async () => {
