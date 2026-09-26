@@ -369,6 +369,54 @@ describe('article.cluster membership (spec 05 §6 steps 4–5)', () => {
     }
   });
 
+  it('discards a fold decided under a set that switched during the call and queues the article again', async () => {
+    const title = 'River ferry resumes service after the spring floods recede';
+    const reader = await readerFeed('Valley news');
+    const p1 = await classified([reader.feedId], title, ago(3 * HOUR));
+    const p2 = await classified([reader.feedId], title, ago(2 * HOUR));
+    const v2 = dynamicQuestionSet({
+      kind: 'cluster',
+      version: CLUSTER_V2_VERSION,
+      questions: clusterQuestions(CLUSTER_MAX_CANDIDATES),
+      note: 'second cluster set of the cluster integration test',
+    });
+    await h.owner.query(
+      `INSERT INTO question_sets (kind, version, sha256, definition)
+       VALUES ('cluster', $1, $2, $3::jsonb) ON CONFLICT DO NOTHING`,
+      [v2.version, v2.sha256, JSON.stringify(v2.definition)],
+    );
+    const found = await h.owner.query<{ id: string }>(
+      `SELECT id::text AS id FROM question_sets WHERE kind = 'cluster' AND version = $1`,
+      [v2.version],
+    );
+    const v2Id = found.rows[0]?.id as string;
+    const active = (await h.setting('question_sets.active')) as Record<string, string>;
+    h.router.respond = async (ask) => {
+      if (ask.kind === 'cluster') {
+        await h.setSetting('question_sets.active', { ...active, cluster: v2Id });
+      }
+      return undefined;
+    };
+    const since = await h.mark();
+    try {
+      await h.dispatch('article.cluster', { articleId: p2 });
+      expect(clusterAsk(p2)?.request).toMatchObject({ questionSetId: h.sets.cluster });
+      for (const id of [p1, p2]) expect((await h.articleRow(id)).clusterId).toBeNull();
+      expect(await h.payloads('article.cluster', since)).toEqual([{ articleId: p2 }]);
+      expect(await h.payloads('user.rank', since)).toEqual([]);
+
+      // The next delivery asks with the new set, which decides the membership.
+      h.router.respond = undefined;
+      await h.dispatch('article.cluster', { articleId: p2 });
+      expect(clusterAsk(p2)?.request).toMatchObject({ questionSetId: v2Id });
+      expect(await h.articleRow(p2)).toMatchObject({ clusterSetId: v2Id });
+      expect((await h.articleRow(p2)).clusterId).not.toBeNull();
+    } finally {
+      h.router.respond = undefined;
+      await h.setSetting('question_sets.active', active);
+    }
+  });
+
   it('an unavailable engine or a weak decision leaves the article unclustered', async () => {
     const title = 'Harvest festival draws record crowds to the old town square';
     const reader = await readerFeed('Town paper');

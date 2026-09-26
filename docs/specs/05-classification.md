@@ -740,7 +740,9 @@ into unrelated off feeds merely to create cluster context.
    - record the active cluster set in `cluster_set_id` of each article this decision places
    - perform membership changes in a short transaction with cluster/article rows locked in stable id
      order; reread both memberships after the model call, reject stale article revisions and avoid
-     loops or racing A→B/B→A clusters
+     loops or racing A→B/B→A clusters. Apply the decision only while the enrich and cluster sets it
+     was made with are still active; otherwise discard it and queue `article.cluster` again, so the
+     new sets decide (D-83)
    - repeated delivery is idempotent: increment `size` only on new membership, or recompute it from
      members; choose the oldest `(first_seen_at,id)` as representative. Merge two existing clusters
      only under the same locking rule, reassigning all members and recomputing size; the lower (older)

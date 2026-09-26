@@ -545,3 +545,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   the state moved on), the attempt is not sent: the router re-admits on the fresh shared state and
   either continues (closed, or a free lease it now holds) or ends the request as `circuit_open`, so
   two probes never run at once. Spec 04 §5 updated.
+- D-83: 2026-09-26 M2-T9 — `article.cluster` applies a fold only while the enrich and cluster sets it
+  was decided with are still active, rechecked in the fold's transaction. A switch during the call
+  discards the decision and queues `article.cluster` again at the article's revision: candidates were
+  eligible through facets of the old enrich set, and the cluster set is recorded as the membership's
+  provenance. Spec 05 §6 updated.

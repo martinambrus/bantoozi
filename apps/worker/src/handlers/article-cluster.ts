@@ -14,8 +14,9 @@ import {
   selectClusterCandidates,
   stateSha256,
 } from '@bantoozi/questions';
+import { enqueueCluster } from '@bantoozi/shared';
 
-import { loadClassificationConfig, requireSet } from '../classify/config.js';
+import { loadClassificationConfig, requireSet, sameClusterConfig } from '../classify/config.js';
 import { after } from '../pipeline.js';
 import { nowOf, pipelineContext, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
@@ -27,8 +28,10 @@ import type { QueueHandler } from './index.js';
  * selections, classified at their current revision) and the per-feed rule in code; the state names
  * only authorized carriers' feed titles. A positive fold decision is applied under stable-order locks
  * with stale revisions rejected (`applyClusterFold`, which also remaps `mute_story` rules on a merge),
- * and a changed membership re-ranks the story's readers through `pipeline.after('cluster')`. An
- * engine that is not ok leaves the article unclustered.
+ * and a changed membership re-ranks the story's readers through `pipeline.after('cluster')`. A
+ * decision is applied only while the enrich and cluster sets it was made with are still active;
+ * otherwise it is discarded and the article is queued again for the new sets. An engine that is not
+ * ok leaves the article unclustered.
  */
 export function createArticleClusterHandler(
   deps: WorkerDeps,
@@ -101,6 +104,12 @@ export function createArticleClusterHandler(
 
     await retryTransaction(deps.db, async (tx) => {
       const sender = workerOutbox(tx);
+      if (!sameClusterConfig(config, await loadClassificationConfig(tx, deps.settingsEnv))) {
+        // A set switched during the call: the decision used questions or candidates no longer
+        // active, so the new sets decide on the next delivery.
+        await enqueueCluster(sender, { articleId }, { revision: article.revision });
+        return;
+      }
       const result = await applyClusterFold(tx, sender, {
         articleId,
         articleRevision: article.revision,

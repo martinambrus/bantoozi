@@ -135,6 +135,22 @@ export function sameEnrichConfig(
   );
 }
 
+/**
+ * Whether a cluster fold decided under `snapshot` may still be applied (spec 05 §6): the candidates
+ * were eligible by their current facets of the enrich set, and the decision answered the cluster set.
+ */
+export function sameClusterConfig(
+  snapshot: ClassificationConfig,
+  current: ClassificationConfig,
+): boolean {
+  return (
+    snapshot.enrich?.sha256 === current.enrich?.sha256 &&
+    snapshot.enrich?.id === current.enrich?.id &&
+    snapshot.cluster?.sha256 === current.cluster?.sha256 &&
+    snapshot.cluster?.id === current.cluster?.id
+  );
+}
+
 /** Whether a completion may still apply a Call B result read under `snapshot`. */
 export function sameMatchConfig(
   snapshot: ClassificationConfig,
