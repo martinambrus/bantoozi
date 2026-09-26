@@ -544,8 +544,12 @@ async function followChain(chain: Chain, start: URL): Promise<SafeFetchResult> {
       if (step.kind === 'result' && step.cooldownUntil !== undefined && limiter !== undefined) {
         // Stored before the lease is released. Unlike lease cleanup this is no best-effort step:
         // every other fetch of the origin relies on it, so a failing `block` rejects the fetch like
-        // a failing `reserve` (an infrastructure failure, not the origin's).
-        await untilAborted(limiter.block(origin, step.cooldownUntil), chain.signal);
+        // a failing `reserve` (an infrastructure failure, not the origin's). So does a write still
+        // pending at the deadline: whether the cooldown was stored is then unknown.
+        const stored = await untilAborted(limiter.block(origin, step.cooldownUntil), chain.signal);
+        if (stored === ABORTED) {
+          throw new Error('safeFetch: the origin cooldown was not stored before the deadline');
+        }
       }
     } finally {
       const { limiter } = settings;
@@ -670,8 +674,8 @@ export async function safeFetchWithInternals(
  * Never rejects for network, HTTP or URL errors: those become `{ ok: false, code }`. It rejects
  * only for programming or infrastructure errors: invalid options, a throwing `limiter.reserve` or
  * `beforeRequest` (nothing was fetched, and a database outage must not count against a feed), or a
- * throwing `limiter.block` (a 429/503 cooldown that other fetches of the origin rely on was not
- * stored).
+ * throwing `limiter.block` or one still pending at the deadline (a 429/503 cooldown that other
+ * fetches of the origin rely on was not stored, or not known to be).
  */
 export function safeFetch(url: string, options: SafeFetchOptions): Promise<SafeFetchResult> {
   return safeFetchWithInternals(url, options, {});

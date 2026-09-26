@@ -264,6 +264,28 @@ describe('spec 03 §8.2 politeness through the injected OriginLimiter', () => {
       }
     });
 
+    it('a cooldown write still pending at the deadline rejects the fetch', async () => {
+      const release = vi.fn(() => Promise.resolve());
+      let finish!: () => void;
+      const limiter: OriginLimiter = {
+        reserve: () => Promise.resolve({ status: 'granted', token: 't' }),
+        release,
+        block: () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      };
+      harness.fixture.route('/feed', { status: 503, headers: { 'retry-after': '10' } });
+      // Unknown whether the cooldown was stored: never reported as a plain HTTP failure.
+      await expect(
+        harness.fetch('http://public.example/feed', { limiter, now, timeoutMs: 200 }),
+      ).rejects.toThrow('the origin cooldown was not stored before the deadline');
+      await vi.waitFor(() => {
+        expect(release).toHaveBeenCalledWith('http://public.example:80', 't');
+      });
+      finish();
+    });
+
     it('a failing reserve rejects the fetch (infrastructure error) and sends nothing', async () => {
       const limiter: OriginLimiter = {
         reserve: () => Promise.reject(new Error('db down')),
