@@ -277,6 +277,65 @@ afterAll(async () => {
 });
 
 describe('feed.schedule and feed.fetch (M1-T7)', () => {
+  it('lets no item transaction commit once the fetch lock is lost, not even one under way', async () => {
+    const applicationName = `feed-fetch-fence-${process.pid}`;
+    const doomed = new pg.Pool({
+      connectionString: testDb.urls.worker,
+      max: 1,
+      application_name: applicationName,
+    });
+    doomed.on('error', () => undefined);
+    const admin = new pg.Pool({ connectionString: testDb.urls.admin, max: 1 });
+    const path = '/lock-fence/feed.rss';
+    server.route(
+      path,
+      rssRoute(() =>
+        rss(path, rssItem('fence-1', 'Fenced item', server.url('/lock-fence/1.html'))),
+      ),
+    );
+    const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    // The item's transaction pauses inside its insert while the lock's session is terminated.
+    await owner.query(`
+      CREATE FUNCTION test_pause_fenced_item() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.guid = 'fence-1' THEN PERFORM pg_sleep(2); END IF;
+        RETURN NEW;
+      END $$`);
+    await owner.query(`
+      CREATE TRIGGER test_pause_fenced_item BEFORE INSERT ON feed_items
+        FOR EACH ROW EXECUTE FUNCTION test_pause_fenced_item()`);
+    const fence = createHandlers({
+      ...workerDeps(createMemoryOriginLimiter({ spacingMs: 0 })),
+      lockPool: doomed,
+    });
+    try {
+      const fetching = fetchFeed(feedId, fence);
+      fetching.catch(() => undefined);
+      for (let i = 0; i < 250; i += 1) {
+        const sleeping = await admin.query(
+          `SELECT 1 FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event = 'PgSleep'`,
+        );
+        if ((sleeping.rowCount ?? 0) > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      await admin.query(
+        `SELECT pg_terminate_backend(pid, 5000) FROM pg_stat_activity WHERE application_name = $1`,
+        [applicationName],
+      );
+
+      await expect(fetching).rejects.toBeInstanceOf(FeedFetchLockLostError);
+      const items = await owner.query('SELECT 1 FROM feed_items WHERE feed_id = $1', [feedId]);
+      expect(items.rowCount).toBe(0);
+      expect(await feedRow(feedId)).toMatchObject({ total_fetches: 0 });
+    } finally {
+      await owner.query('DROP TRIGGER IF EXISTS test_pause_fenced_item ON feed_items');
+      await owner.query('DROP FUNCTION IF EXISTS test_pause_fenced_item()');
+      await doomed.end();
+      await admin.end();
+    }
+  });
+
   it('stops a fetch whose lock connection fails, and records nothing for it', async () => {
     const applicationName = `feed-fetch-lock-${process.pid}`;
     const doomed = new pg.Pool({
@@ -1342,24 +1401,22 @@ describe('transient page failures and permanent feed redirects (M1-T7)', () => {
       )();
     });
     const feedId = await addFeed('/partial/feed.rss', [{ user: reader, mode: 'off' }]);
-    // The first item transaction fails with a non-retryable error (its retries exhausted).
-    let transactions = 0;
-    const failingDb = new Proxy(db, {
-      get(target, property, receiver) {
-        if (property !== 'transaction') return Reflect.get(target, property, receiver) as unknown;
-        return (...args: Parameters<Database['transaction']>) => {
-          transactions += 1;
-          if (transactions === 1) return Promise.reject(new Error('item transaction failed'));
-          return target.transaction(...args);
-        };
-      },
-    });
-    const failing = createHandlers({
-      ...workerDeps(createMemoryOriginLimiter({ spacingMs: 0 })),
-      db: failingDb,
-    });
-
-    await fetchFeed(feedId, failing);
+    // The first item's transaction fails with a non-retryable error (its retries exhausted).
+    await owner.query(`
+      CREATE FUNCTION test_fail_partial_item() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.guid = 'p-1' THEN RAISE EXCEPTION 'item transaction failed'; END IF;
+        RETURN NEW;
+      END $$`);
+    await owner.query(`
+      CREATE TRIGGER test_fail_partial_item BEFORE INSERT ON feed_items
+        FOR EACH ROW EXECUTE FUNCTION test_fail_partial_item()`);
+    try {
+      await fetchFeed(feedId);
+    } finally {
+      await owner.query('DROP TRIGGER test_fail_partial_item ON feed_items');
+      await owner.query('DROP FUNCTION test_fail_partial_item()');
+    }
     const afterFailure = await feedRow(feedId);
     expect(afterFailure).toMatchObject({ total_fetches: 1, etag: null });
     const stored = await owner.query('SELECT 1 FROM feed_items WHERE feed_id = $1', [feedId]);

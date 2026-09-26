@@ -35,8 +35,8 @@ export interface WorkerDeps {
   db: Database;
   /**
    * A separate worker-role pool for the per-feed fetch locks (spec 03 §3): each fetch pins one
-   * connection for its whole duration, so they never compete with the item transactions of `db`.
-   * Size it to the `feed.fetch` concurrency.
+   * connection for its whole duration and runs all of its statements on it, so the lock fences
+   * every commit of the fetch. Size it to the `feed.fetch` concurrency.
    */
   lockPool: pg.Pool;
   fetch: FetchSettings;

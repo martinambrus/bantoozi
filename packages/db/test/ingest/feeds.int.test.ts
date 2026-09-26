@@ -1,4 +1,5 @@
 import { createArticle, createFeed } from '@bantoozi/testing';
+import { sql } from 'drizzle-orm';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -171,26 +172,28 @@ describe('tryLockFeedForFetch (spec 03 §3)', () => {
     expect(ctx.workerPool.totalCount - ctx.workerPool.idleCount).toBe(0);
   });
 
-  it('confirms in PostgreSQL that it holds every key, and fails once released', async () => {
-    // Advisory keys are signed hashes: take one feed id of each sign.
-    const ids = await ctx.adminPool.query<{ negative: string; positive: string }>(
-      `SELECT (SELECT id::text FROM generate_series(1, 1000) AS id
-                WHERE hashtextextended('feed.fetch:' || id::text, 0) < 0 LIMIT 1) AS negative,
-              (SELECT id::text FROM generate_series(1, 1000) AS id
-                WHERE hashtextextended('feed.fetch:' || id::text, 0) > 0 LIMIT 1) AS positive`,
-    );
-    const { negative, positive } = ids.rows[0]!;
-    const lock = await tryLockFeedForFetch(ctx.workerPool, negative);
+  it('runs database work on its own session, and reports a released lock', async () => {
+    const feed = await feedWith({});
+    const lock = await tryLockFeedForFetch(ctx.workerPool, feed);
     expect(lock).not.toBeNull();
-    expect(await lock!.tryExtend(positive)).toBe(true);
-    await expect(ctx.worker.transaction((tx) => lock!.assertHeld(tx))).resolves.toBeUndefined();
-    await expect(lock!.assertHeld()).resolves.toBeUndefined();
+    // The session that holds the advisory lock (pg_locks shows the key's high and low halves) is
+    // the one `db` runs on, also inside a transaction.
+    const holder = await ctx.adminPool.query<{ pid: number }>(
+      `SELECT pid FROM pg_locks
+        WHERE locktype = 'advisory' AND granted AND objsubid = 1
+          AND classid = ((hashtextextended('feed.fetch:' || $1, 0) >> 32) & 4294967295)::oid
+          AND objid = (hashtextextended('feed.fetch:' || $1, 0) & 4294967295)::oid`,
+      [feed],
+    );
+    const own = await lock!.db.transaction((tx) =>
+      tx.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`),
+    );
+    expect(holder.rows).toHaveLength(1);
+    expect(own.rows).toEqual(holder.rows);
+    expect(() => lock!.assertHeld()).not.toThrow();
     expect(lock!.signal.aborted).toBe(false);
     await lock!.release();
-    await expect(lock!.assertHeld()).rejects.toBeInstanceOf(FeedFetchLockLostError);
-    await expect(ctx.worker.transaction((tx) => lock!.assertHeld(tx))).rejects.toBeInstanceOf(
-      FeedFetchLockLostError,
-    );
+    expect(() => lock!.assertHeld()).toThrow(FeedFetchLockLostError);
   });
 
   it('is released when its connection dies, without crashing the holder', async () => {
@@ -212,16 +215,14 @@ describe('tryLockFeedForFetch (spec 03 §3)', () => {
         [applicationName],
       );
       expect(killed.rows).toEqual([{ ok: true }]);
-      // Nothing may be written for the fetch any more: PostgreSQL itself no longer grants the lock,
-      // and the connection failure aborts the lock's signal.
-      await expect(ctx.worker.transaction((tx) => lock!.assertHeld(tx))).rejects.toBeInstanceOf(
-        FeedFetchLockLostError,
-      );
+      // No statement of the fetch can run on the lost session any more, let alone commit, and the
+      // connection failure aborts the lock's signal.
+      await expect(lock!.db.transaction((tx) => tx.execute(sql`SELECT 1`))).rejects.toThrow();
       for (let i = 0; i < 100 && !lock!.signal.aborted; i += 1) {
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
       expect(lock!.signal.aborted).toBe(true);
-      await expect(lock!.assertHeld()).rejects.toBeInstanceOf(FeedFetchLockLostError);
+      expect(() => lock!.assertHeld()).toThrow(FeedFetchLockLostError);
       const after = await tryLockFeedForFetch(ctx.workerPool, feed);
       expect(after).not.toBeNull();
       await after?.release();

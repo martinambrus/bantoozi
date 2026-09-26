@@ -1,5 +1,6 @@
 import {
   FEED_BODY_EXTRACTOR,
+  FeedFetchLockLostError,
   applyPermanentRedirect,
   deferFeedFetch,
   feedItems7d,
@@ -46,10 +47,10 @@ import type { QueueHandler } from './index.js';
  * - Resolves a merged feed to its live survivor; holds the per-feed session advisory lock on a
  *   dedicated connection for the whole fetch (another process fetching it makes this a no-op) and
  *   re-reads the feed after acquiring it: a paused, dead, unsubscribed or not-yet-due feed is a
- *   no-op unless `force` (a manual refresh still observes origin cooldowns). A lost lock stops the
- *   fetch: its connection failure aborts the HTTP request, every item checks the lock first, and
- *   every transaction that records the fetch checks it in PostgreSQL, so nothing is written for a
- *   feed that another process may be fetching (`FeedFetchLockLostError`).
+ *   no-op unless `force` (a manual refresh still observes origin cooldowns). Every statement of the
+ *   fetch runs on the lock's own session, so no write commits once the lock is lost; the failure
+ *   also aborts the HTTP request and stops the fetch before its next item or transaction
+ *   (`FeedFetchLockLostError`).
  * - Conditional GET with the stored validators on `fetch_url`; a 304 without established
  *   validators is retried once unconditionally.
  * - Each item is ingested in its own short transaction (retried on identity races), which also
@@ -69,7 +70,14 @@ export function createFeedFetchHandler(deps: WorkerDeps): QueueHandler<'feed.fet
     const lock = await tryLockFeedForFetch(deps.lockPool, liveId);
     if (lock === null) return;
     try {
-      await fetchFeed(deps, liveId, force === true, lock);
+      // A transaction on the lock's session commits only while the lock is held.
+      await fetchFeed({ ...deps, db: lock.db }, liveId, force === true, lock);
+    } catch (error) {
+      // A statement on a failed lock session reports its connection error: the lock is gone.
+      if (!(error instanceof FeedFetchLockLostError) && !(await lock.stillHeld())) {
+        throw new FeedFetchLockLostError(liveId, { cause: error });
+      }
+      throw error;
     } finally {
       await lock.release();
     }
@@ -99,10 +107,10 @@ async function fetchFeed(
   if (!result.ok) {
     if (result.code === 'FEED_ORIGIN_COOLDOWN') {
       // Our own politeness deferral, not a feed error: fetch again when the origin is free.
-      await deps.db.transaction(async (tx) => {
-        await lock.assertHeld(tx);
-        await deferFeedFetch(tx, feedId, result.retryAt ?? new Date(now.getTime() + 60_000));
-      });
+      lock.assertHeld();
+      await deps.db.transaction((tx) =>
+        deferFeedFetch(tx, feedId, result.retryAt ?? new Date(now.getTime() + 60_000)),
+      );
       return;
     }
     await recordOutcome(deps, lock, feed, feedId, errorOutcome(result, now), now);
@@ -172,7 +180,7 @@ async function fetchFeed(
   let nNew = 0;
   let failed = 0;
   for (const item of parsed.items) {
-    await lock.assertHeld();
+    lock.assertHeld();
     const input = ingestInput(targetId, item);
     try {
       const outcome = await retryTransaction(deps.db, async (tx) => {
@@ -194,6 +202,9 @@ async function fetchFeed(
         );
       }
     } catch (error) {
+      // An item fails alone, unless it failed with the lock's session: then nothing more commits.
+      if (!(await lock.stillHeld()))
+        throw new FeedFetchLockLostError(lock.feedId, { cause: error });
       failed += 1;
       deps.logger.error(
         { feedId: targetId, itemIndex: item.sourceIndex, code: errorCode(error) },
@@ -227,8 +238,8 @@ async function fetchFeed(
     now,
     scheduleHints(parsed, result),
   );
+  lock.assertHeld();
   await deps.db.transaction(async (tx) => {
-    await lock.assertHeld(tx);
     await recordFeedFetch(tx, targetId, {
       schedule,
       meta: {
@@ -288,8 +299,8 @@ async function recordOutcome(
   const schedule = nextSchedule(scheduleFeed(feed, feed.recentGapsS), outcome, now, {
     cacheMaxAgeS: parseCacheMaxAge(cacheControl),
   });
+  lock.assertHeld();
   await deps.db.transaction(async (tx) => {
-    await lock.assertHeld(tx);
     await recordFeedFetch(tx, feedId, { schedule });
     if (outcome.kind === 'not_modified' && feed.langHint === null) {
       await refreshFeedLangHint(tx, feedId);
@@ -335,8 +346,8 @@ async function followPermanentRedirect(
     return feedId;
   }
   if (target.canonicalUrl === feed.url && target.fetchUrl === feed.fetchUrl) return feedId;
+  lock.assertHeld();
   return retryTransaction(deps.db, async (tx) => {
-    await lock.assertHeld(tx);
     const sender = workerOutbox(tx);
     const redirect = await applyPermanentRedirect(tx, sender, feedId, {
       canonicalUrl: target.canonicalUrl,

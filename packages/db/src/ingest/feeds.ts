@@ -1,7 +1,12 @@
 import { sql, type SQL } from 'drizzle-orm';
 import type { Pool, PoolClient } from 'pg';
 
-import type { Executor, Transaction } from '../client.js';
+import {
+  createSessionDatabase,
+  type Database,
+  type Executor,
+  type Transaction,
+} from '../client.js';
 
 /**
  * Feed scheduling and fetch bookkeeping (spec 03 §3, §7 "After all items", §8.3, §9). The worker's
@@ -80,16 +85,25 @@ export class FeedFetchLockLostError extends Error {
 export interface FeedFetchLock {
   readonly feedId: string;
   /**
+   * The database on the lock's own session; run every statement of the fetch through it. A
+   * transaction can then commit only while that session, and with it the lock, is alive: when the
+   * lock is lost, no write of this fetch commits, not even one already under way. Do not use it
+   * after `release`, which returns the connection to the pool.
+   */
+  readonly db: Database;
+  /**
    * Aborted as soon as the lock's connection fails. PostgreSQL has then released the lock and
    * another process may be fetching the feed, so the fetch must stop: pass it to the HTTP request.
    */
   readonly signal: AbortSignal;
+  /** Throws {@link FeedFetchLockLostError} once the connection failed or the lock was released. */
+  assertHeld(): void;
   /**
-   * Throws {@link FeedFetchLockLostError} unless the lock is still held. With `tx` it also asks
-   * PostgreSQL whether this session still holds every key, so a connection that died unnoticed
-   * cannot let a write through: call it in each transaction that records the fetch.
+   * Whether the lock is still held, asking its session: `false` (and `signal` aborted) once the
+   * connection failed or the lock was released. Ask it after a failed statement, whose own error
+   * can arrive before the connection's.
    */
-  assertHeld(tx?: Executor): Promise<void>;
+  stillHeld(): Promise<boolean>;
   /**
    * Also take another feed's fetch lock, non-blocking, on this lock's session connection (no
    * second pool connection): after a permanent redirect merged this feed into a survivor, the rest
@@ -118,8 +132,9 @@ const FETCH_LOCK_KEY = `hashtextextended('feed.fetch:' || ($1::bigint)::text, 0)
  * processes; queue singleton keys alone are not a business lock. Non-blocking: `null` when another
  * session holds it (the caller skips this job). Re-read the feed (`loadFeedForFetch`) after
  * acquiring it; a stale scheduled job is a no-op. Release it in `finally`; losing the connection
- * also releases it. A connection error while it is held does not crash the process: it aborts
- * `signal`, and `assertHeld` throws from then on, so the fetch stops instead of writing unlocked.
+ * also releases it. The fetch's statements run on the same session (`db`), so no write of it can
+ * commit without the lock. A connection error while it is held does not crash the process: it
+ * aborts `signal`, and `assertHeld` throws from then on, so the fetch stops early.
  */
 export async function tryLockFeedForFetch(
   pool: Pool,
@@ -143,14 +158,12 @@ export async function tryLockFeedForFetch(
     client.release(broken);
   };
   let locked: boolean;
-  let pid: number;
   try {
-    const result = await client.query<{ locked: boolean; pid: number }>(
-      `SELECT pg_try_advisory_lock(${FETCH_LOCK_KEY}) AS locked, pg_backend_pid() AS pid`,
+    const result = await client.query<{ locked: boolean }>(
+      `SELECT pg_try_advisory_lock(${FETCH_LOCK_KEY}) AS locked`,
       [feedId],
     );
     locked = result.rows[0]?.locked === true;
-    pid = result.rows[0]?.pid ?? 0;
   } catch (error) {
     fail(error);
     giveBack();
@@ -165,23 +178,20 @@ export async function tryLockFeedForFetch(
   return {
     feedId,
     signal: controller.signal,
-    async assertHeld(tx) {
+    db: createSessionDatabase(client),
+    assertHeld() {
       if (released || broken !== undefined) {
         throw new FeedFetchLockLostError(feedId, broken === undefined ? {} : { cause: broken });
       }
-      if (tx === undefined) return;
-      // pg_locks shows a bigint advisory key as its high half (classid) and low half (objid).
-      const result = await tx.execute<{ held: number }>(sql`
-        SELECT count(*)::int AS held
-          FROM unnest(${sql.param(held)}::bigint[]) AS f(id)
-          JOIN LATERAL (SELECT hashtextextended('feed.fetch:' || f.id::text, 0) AS k) AS key ON true
-          JOIN pg_locks l
-            ON l.locktype = 'advisory' AND l.granted AND l.pid = ${pid} AND l.objsubid = 1
-           AND l.classid = ((key.k >> 32) & 4294967295)::oid
-           AND l.objid = (key.k & 4294967295)::oid`);
-      if ((result.rows[0]?.held ?? 0) < held.length) {
-        fail(new Error('the fetch lock session no longer holds its advisory lock'));
-        throw new FeedFetchLockLostError(feedId, { cause: broken });
+    },
+    async stillHeld() {
+      if (released || broken !== undefined) return false;
+      try {
+        await client.query('SELECT 1');
+        return true;
+      } catch (error) {
+        fail(error);
+        return false;
       }
     },
     async tryExtend(otherId) {
