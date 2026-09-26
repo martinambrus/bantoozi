@@ -479,10 +479,13 @@ without images.
 row, for example when a publisher adds only a video enclosure, so neither `resetArticleAnswers` nor
 the new-carrier fan-out (§7) would re-rank the article. Every write that changes `has_video` or
 `body_image_count` to a different value (`IS DISTINCT FROM`, so null → false counts) therefore also
-sets `articles.media_changed_at = now()` and, in the same transaction through the outbox, records an
-incremental `user.rank` for the subscribers of every current carrier of the article. Spec 06 §7
-treats a `user_article` row scored before `media_changed_at` as dirty, so a debounced or later run
-still picks the change up. A write that stores the same values changes neither.
+increments `articles.media_revision` and, in the same transaction through the outbox, records an
+incremental `user.rank` for the subscribers of every current carrier of the article. A rank run
+records the media revision it read in `explain.inputs` (spec 06 §6.2), and spec 06 §7 treats a row
+whose recorded revision differs from the current one as dirty. A run that read the old values
+therefore leaves its row dirty even when it writes after the change commits, and the queued run
+re-ranks it; a timestamp comparison would miss that race. A write that stores the same values
+changes neither.
 
 Readability removes `<iframe>`, `<embed>` and `<object>` elements unless an attribute matches its
 video allow-list, whose default covers only some of these hosts. Pass a regex built from

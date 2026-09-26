@@ -241,7 +241,12 @@ describe('image policy (spec 08 §4.2)', () => {
 describe('Explain v1 (spec 06 §6.2)', () => {
   const explain = {
     v: 1,
-    inputs: { contentRevision: '3', rankRevision: '12', contextSha: 'a'.repeat(64) },
+    inputs: {
+      contentRevision: '3',
+      mediaRevision: '1',
+      rankRevision: '12',
+      contextSha: 'a'.repeat(64),
+    },
     source: 'cards',
     p: 0.82,
     lane: 'for_you',
@@ -263,5 +268,10 @@ describe('Explain v1 (spec 06 §6.2)', () => {
       }),
     ).toThrow();
     expect(() => ExplainSchema.parse({ ...explain, p: 1.2 })).toThrow();
+  });
+
+  it('requires the media revision the score used (spec 03 §6.4)', () => {
+    const { mediaRevision: _omitted, ...inputs } = explain.inputs;
+    expect(() => ExplainSchema.parse({ ...explain, inputs })).toThrow();
   });
 });

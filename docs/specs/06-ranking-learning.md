@@ -43,7 +43,7 @@ interface RankItem {
   domain: string; author: string | null;
   titleNorm: string; excerptNorm: string; translatedTitleNorm?: string; translatedExcerptNorm?: string;
   firstSeenAt: Date; publishedAt?: Date; contentRevision: string; wordCount: number | null; hasImage: boolean; lang: string;
-  hasVideo: boolean | null; bodyImageCount: number | null;   // articles.has_video / body_image_count (spec 03 §6.4)
+  hasVideo: boolean | null; bodyImageCount: number | null; mediaRevision: string;   // articles.has_video / body_image_count / media_revision (spec 03 §6.4)
   clusterId?: string; clusterSize: number;
   pipelineState: string;
   matchCoverage: 'complete'|'pending'|'unavailable'; // this user's applicable positives (§2)
@@ -227,7 +227,7 @@ All thresholds come from `RankerConfig` (§11), which gate G1 may override globa
 ```ts
 interface Explain {
   v: 1;
-  inputs: { contentRevision: string; rankRevision: string; contextSha: string };
+  inputs: { contentRevision: string; mediaRevision: string; rankRevision: string; contextSha: string };
   source: 'cards'|'model'|'degraded'|'none';
   p: number | null; lane: Lane; tier: number | null;
   decidingCardId?: string;                         // source 'cards': the card achieving cardScore (spec 08 §5.1 topReason)
@@ -305,10 +305,10 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
    `rankArticle`; in both cases where any of these holds:
    - no `user_article` row
    - `ua.score_version != current score_version` or `ua.rank_revision != users.rank_revision`
-   - `ua.next_rank_at ≤ now` or article content revision no longer matches `explain.inputs`
+   - `ua.next_rank_at ≤ now`, or the article's content revision or media revision (spec 03 §6.4) no
+     longer matches `explain.inputs`
    - `ua.scored_at` is older than the newest of `article_facets.updated_at`,
-     `card_answers.answered_at` (for the user's cards and labels), `article_translations.created_at`
-     and `articles.media_changed_at` (media signals, spec 03 §6.4)
+     `card_answers.answered_at` (for the user's cards and labels) and `article_translations.created_at`
    - changes to cluster membership, read/unread/undo state, matching coverage, translations, or
      applicable feed membership since the previous input snapshot; these enqueue a full rank and
      increment `rank_revision`, so deleting evidence is detected too
