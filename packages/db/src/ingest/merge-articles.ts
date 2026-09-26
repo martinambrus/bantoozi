@@ -24,6 +24,7 @@ export interface MergeArticlesOptions {
  * - `snapshot_conflict`: one user saved bookmark snapshots of both articles with different content
  *   (checksums); no snapshot is chosen arbitrarily while a version-preserving merge is missing.
  * - `undo_pin`: an unexpired Undo pin would lose its exact restore (see {@link mergeArticles}).
+ *   It is temporary: the result's `retryAt` is when the last blocking pin expires.
  */
 export type MergeDeferralReason = 'eval_reference' | 'snapshot_conflict' | 'undo_pin';
 
@@ -42,7 +43,14 @@ export type MergeArticlesResult =
       /** Users whose reader state or ranking changed (full rank recorded). */
       affectedUserIds: string[];
     }
-  | { status: 'deferred'; survivorId: string; sourceId: string; reason: MergeDeferralReason }
+  | {
+      status: 'deferred';
+      survivorId: string;
+      sourceId: string;
+      reason: MergeDeferralReason;
+      /** `undo_pin` only: when the last blocking pin expires, so the merge can be retried. */
+      retryAt?: Date;
+    }
   | { status: 'noop'; reason: 'same_article' | 'missing' };
 
 /** `analysis_requests.last_error_code` of a pending/running request cancelled by a merge. */
@@ -95,7 +103,7 @@ type EvalArticleTable = (typeof EVAL_ARTICLE_TABLES)[number];
  *   that row's `state_version`, so the receipt's resulting version no longer matches and the undo
  *   returns `STALE_STATE` (spec 08 §5.4).
  * A pin of a target-only reader stays restorable (the row, receipt and snapshot are unchanged), so
- * it does not defer the merge. Pins expire after ten minutes; the caller may retry after that.
+ * it does not defer the merge. Pins expire after ten minutes; `retryAt` says when to retry.
  *
  * **Policies** (spec 03 §8.4):
  * - `feed_items`: moved; a feed carrying both keeps one row with the earlier `first_seen_at` and
@@ -173,7 +181,13 @@ export async function mergeArticles(
 
   const deferral = await mergeDeferral(tx, sourceId, targetId);
   if (deferral !== null) {
-    return { status: 'deferred', survivorId: targetId, sourceId, reason: deferral };
+    return {
+      status: 'deferred',
+      survivorId: targetId,
+      sourceId,
+      reason: deferral.reason,
+      ...(deferral.retryAt === undefined ? {} : { retryAt: deferral.retryAt }),
+    };
   }
 
   const movedFeedIds = await moveFeedItems(tx, sourceId, targetId);
@@ -354,9 +368,12 @@ async function mergeDeferral(
   tx: Transaction,
   sourceId: string,
   targetId: string,
-): Promise<MergeDeferralReason | null> {
-  if (await referencedByEval(tx, [sourceId, targetId])) return 'eval_reference';
-  const conflicts = await tx.execute<{ snapshot_conflict: boolean; undo_pin: boolean }>(sql`
+): Promise<{ reason: MergeDeferralReason; retryAt?: Date } | null> {
+  if (await referencedByEval(tx, [sourceId, targetId])) return { reason: 'eval_reference' };
+  const conflicts = await tx.execute<{
+    snapshot_conflict: boolean;
+    undo_pin_until: Date | string | null;
+  }>(sql`
     SELECT EXISTS (
              SELECT 1 FROM user_article us
                JOIN user_article ut ON ut.user_id = us.user_id AND ut.article_id = ${targetId}::bigint
@@ -365,18 +382,19 @@ async function mergeDeferral(
               WHERE us.article_id = ${sourceId}::bigint
                 AND us.bookmarked_at IS NOT NULL AND ut.bookmarked_at IS NOT NULL
                 AND ss.content_sha256 <> st.content_sha256) AS snapshot_conflict,
-           EXISTS (
-             SELECT 1 FROM bookmark_snapshot_pins p
+           (SELECT max(p.expires_at) FROM bookmark_snapshot_pins p
                JOIN article_snapshots s ON s.id = p.snapshot_id
               WHERE p.expires_at > now()
                 AND (s.article_id = ${sourceId}::bigint
                      OR (s.article_id = ${targetId}::bigint
                          AND EXISTS (SELECT 1 FROM user_article ua
                                       WHERE ua.user_id = p.user_id
-                                        AND ua.article_id = ${sourceId}::bigint)))) AS undo_pin`);
+                                        AND ua.article_id = ${sourceId}::bigint)))) AS undo_pin_until`);
   const row = conflicts.rows[0];
-  if (row?.snapshot_conflict === true) return 'snapshot_conflict';
-  if (row?.undo_pin === true) return 'undo_pin';
+  if (row?.snapshot_conflict === true) return { reason: 'snapshot_conflict' };
+  if (row?.undo_pin_until != null) {
+    return { reason: 'undo_pin', retryAt: new Date(row.undo_pin_until) };
+  }
   return null;
 }
 

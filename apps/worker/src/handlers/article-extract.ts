@@ -27,6 +27,9 @@ import { extractDeps, pipelineContext, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
 import { hasRetriesLeft, isTransientPageFailure, TransientPageError } from './transient.js';
 
+/** How long after an Undo pin's expiry a merge it deferred is retried. */
+const UNDO_RETRY_MARGIN_MS = 5_000;
+
 /**
  * `article.extract {articleId}` (spec 03 §8.1). Re-reads the article: a missing (merged or purged)
  * article, one no longer awaiting extraction for its revision, or a stale one is a successful
@@ -62,13 +65,21 @@ export function createArticleExtractHandler(deps: WorkerDeps): QueueHandler<'art
 
     await retryTransaction(deps.db, async (tx) => {
       const sender = workerOutbox(tx);
-      // A merge ends this article's job; so does a revision replaced while the page was fetched,
-      // whose evidence is dropped like its result (the new revision has its own extraction job).
-      if (
-        result !== null &&
-        (await applyIdentityEvidence(deps, tx, sender, article, result)) !== 'kept'
-      ) {
-        return;
+      if (result !== null) {
+        const identity = await applyIdentityEvidence(deps, tx, sender, article, result);
+        if (identity.kind === 'retry') {
+          // An Undo pin defers the merge only for a few minutes: the article stays `ingested`
+          // and extraction runs again once the pin has expired, instead of leaving a duplicate.
+          await enqueueExtract(
+            workerOutbox(tx, { availableAt: identity.at }),
+            { articleId },
+            { revision: article.revision },
+          );
+          return;
+        }
+        // A merge ends this article's job; so does a revision replaced while the page was
+        // fetched, whose evidence is dropped like its result (the new revision has its own job).
+        if (identity.kind !== 'kept') return;
       }
       const body = bodyInput(article, result);
       const text = body.bodyText;
@@ -108,7 +119,9 @@ export function createArticleExtractHandler(deps: WorkerDeps): QueueHandler<'art
  * three. The page belongs to the revision this job loaded, so every alias check of the article
  * itself fences on it (spec 03 §2.1): a newer revision is `stale` and nothing is written. `merged`
  * means this article no longer exists; the last survivor then continues from its own state, and
- * the carriers new to it get the new-carrier continuation. Otherwise the article is `kept`.
+ * the carriers new to it get the new-carrier continuation. A merge of this article that an
+ * unexpired Undo pin defers is `retry` at the pin's expiry (other deferrals are lasting: the
+ * identities stay apart). Otherwise the article is `kept`.
  */
 async function applyIdentityEvidence(
   deps: WorkerDeps,
@@ -116,7 +129,7 @@ async function applyIdentityEvidence(
   sender: JobSender,
   article: ArticleForExtraction,
   result: ExtractResult,
-): Promise<'kept' | 'merged' | 'stale'> {
+): Promise<{ kind: 'kept' | 'merged' | 'stale' } | { kind: 'retry'; at: Date }> {
   const evidence: Array<{ url: string | null; source: 'redirect' | 'rel_canonical' }> = [
     { url: result.resolvedUrl, source: 'redirect' },
     { url: result.canonicalUrl, source: 'rel_canonical' },
@@ -137,9 +150,12 @@ async function applyIdentityEvidence(
       source,
       current.id === article.id ? { expectedRevision: article.revision } : {},
     );
-    if (alias.status === 'stale_revision') return 'stale';
+    if (alias.status === 'stale_revision') return { kind: 'stale' };
     if (alias.status !== 'owned_by_other') continue;
     const merged = await mergeArticles(tx, sender, current.id, alias.ownerId, { reason: source });
+    if (merged.status === 'deferred' && merged.retryAt !== undefined && current.id === article.id) {
+      return { kind: 'retry', at: new Date(merged.retryAt.getTime() + UNDO_RETRY_MARGIN_MS) };
+    }
     if (merged.status !== 'merged') continue;
     const survivor = await loadArticleForExtraction(tx, merged.survivorId);
     if (survivor === null) {
@@ -148,7 +164,7 @@ async function applyIdentityEvidence(
     current = survivor;
     newCarrierFeedIds = merged.movedFeedIds;
   }
-  if (current.id === article.id) return 'kept';
+  if (current.id === article.id) return { kind: 'kept' };
 
   const context = pipelineContext(deps, tx, sender);
   for (const feedId of newCarrierFeedIds) {
@@ -160,7 +176,7 @@ async function applyIdentityEvidence(
   } else if (survivor !== null && survivor.pipelineState === 'extracted') {
     await after('extract', survivor.id, { status: 'ok', revision: survivor.revision }, context);
   }
-  return 'merged';
+  return { kind: 'merged' };
 }
 
 /**

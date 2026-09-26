@@ -1206,12 +1206,18 @@ describe('mergeArticles (spec 03 §8.4)', () => {
       const u = await createUser(ctx.owner);
       await createSubscription(ctx.owner, { userId: u.id, feedId: fSource.id });
       const { mutationId, snapshotId } = await unbookmarkWithUndo(u.id, source.id);
+      const pin = await ctx.owner.query<{ expires_at: Date }>(
+        'SELECT expires_at FROM bookmark_snapshot_pins WHERE mutation_id = $1',
+        [mutationId],
+      );
 
+      // The deferral says when the pin expires, so the caller can retry the merge then.
       expect(await merge(source.id, target.id)).toEqual({
         status: 'deferred',
         survivorId: target.id,
         sourceId: source.id,
         reason: 'undo_pin',
+        retryAt: pin.rows[0]!.expires_at,
       });
       // Exact undo is still possible on the untouched source.
       const restoredEarly = await asTenant(ctx.appPool, u.id, async (client) => {

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import {
   MIGRATIONS_FOLDER,
   PG_BOSS_VERSION,
@@ -763,6 +765,107 @@ describe('article.extract (M1-T7)', () => {
     expect(carriers.rows.map((r) => r.feed_id).sort()).toEqual(
       [targetFeed, canonicalFeed, goFeed].sort(),
     );
+  });
+
+  it('retries a merge that an Undo pin deferred once the pin has expired', async () => {
+    const targetUrl = server.url('/undo/target.html');
+    server.route('/undo/target.html', html(articlePage('Undo target')));
+    server.redirect('/undo/old', targetUrl, 301);
+    const feedOf = async (path: string, guid: string, title: string, link: string) => {
+      server.route(
+        path,
+        rssRoute(() => rss(path, rssItem(guid, title, link))),
+      );
+      return addFeed(path, [{ user: reader, mode: 'off' }]);
+    };
+    await fetchFeed(await feedOf('/undo/target.rss', 'undo-t', 'Undo target', targetUrl));
+    await fetchFeed(
+      await feedOf('/undo/story.rss', 'undo-s', 'Undo story', server.url('/undo/old')),
+    );
+    const target = await articleIdByUrl(targetUrl);
+    const story = await articleIdByUrl(server.url('/undo/old'));
+    const deliver = (queues: string[]) =>
+      owner.query(
+        `UPDATE job_outbox SET delivered_at = now()
+          WHERE delivered_at IS NULL AND queue = ANY($1::text[])
+            AND payload->>'articleId' = ANY($2::text[])`,
+        [queues, [target, story]],
+      );
+    // The ingest intents are with the queue; the story's extraction runs below.
+    await deliver(['article.extract']);
+    // A reader's Undo of an unbookmark pins a snapshot of the story for ten minutes.
+    expect(await bookmark(reader, story)).toBe('pending');
+    const bound = await owner.query<{ id: string }>(
+      `SELECT bookmark_snapshot_id::text AS id FROM user_article
+        WHERE user_id = $1 AND article_id = $2`,
+      [reader.id, story],
+    );
+    const mutationId = randomUUID();
+    await owner.query(
+      `INSERT INTO api_mutations (user_id, id, request_hash, route, status, response, expires_at)
+       VALUES ($1, $2, 'hash', 'DELETE /articles/:id/bookmark', 200, '{}', now() + interval '7 days')`,
+      [reader.id, mutationId],
+    );
+    const pinned = await owner.query<{ expires_at: Date }>(
+      `INSERT INTO bookmark_snapshot_pins (user_id, mutation_id, snapshot_id, expires_at)
+       VALUES ($1, $2, $3, now() + interval '10 minutes') RETURNING expires_at`,
+      [reader.id, mutationId, bound.rows[0]!.id],
+    );
+    const extractStory = async () => {
+      const due = await owner.query<{ id: string }>(
+        `UPDATE job_outbox SET delivered_at = now()
+          WHERE queue = 'article.extract' AND delivered_at IS NULL AND payload->>'articleId' = $1
+          RETURNING id::text AS id`,
+        [story],
+      );
+      await dispatch(
+        handlers,
+        'article.extract',
+        { articleId: story },
+        { queue: 'article.extract', jobId: due.rows[0]?.id ?? 'undo' },
+      );
+    };
+
+    try {
+      await extractStory();
+
+      // Nothing merged or stored: the story waits, still ingested, for a retry after the pin.
+      const state = await owner.query<{ pipeline_state: string }>(
+        'SELECT pipeline_state FROM articles WHERE id = $1',
+        [story],
+      );
+      expect(state.rows).toEqual([{ pipeline_state: 'ingested' }]);
+      const retries = await owner.query<{ available_at: Date }>(
+        `SELECT available_at FROM job_outbox
+          WHERE queue = 'article.extract' AND delivered_at IS NULL AND payload->>'articleId' = $1`,
+        [story],
+      );
+      expect(retries.rows).toHaveLength(1);
+      expect(retries.rows[0]!.available_at.getTime()).toBeGreaterThan(
+        pinned.rows[0]!.expires_at.getTime(),
+      );
+
+      // Once the pin has expired, the retry merges the story into the redirect target.
+      await owner.query(
+        `UPDATE bookmark_snapshot_pins SET expires_at = now() - interval '1 second'
+          WHERE mutation_id = $1`,
+        [mutationId],
+      );
+      await extractStory();
+      const left = await owner.query<{ id: string }>(
+        'SELECT id::text AS id FROM articles WHERE id = ANY($1::bigint[])',
+        [[target, story]],
+      );
+      expect(left.rows).toEqual([{ id: target }]);
+      const alias = await owner.query<{ article_id: string }>(
+        'SELECT article_id::text AS article_id FROM article_aliases WHERE url_key = $1',
+        [keyOf(server.url('/undo/old'))],
+      );
+      expect(alias.rows).toEqual([{ article_id: target }]);
+    } finally {
+      await owner.query('DELETE FROM bookmark_snapshot_pins WHERE mutation_id = $1', [mutationId]);
+      await deliver(['article.extract', 'article.capture-bookmark']);
+    }
   });
 
   it('drops the redirect evidence of a revision that a source update replaced during the fetch', async () => {
