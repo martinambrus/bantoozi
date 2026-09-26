@@ -69,6 +69,38 @@ describe('createRateLimiter (spec 04 §3)', () => {
     expect(limiter.snapshot().tokens).toBeLessThan(0);
   });
 
+  it('serves a request bucket below one request at its refill rate, leaving a debt', async () => {
+    // A quarter share of 1 request/min holds a quarter of a request: one request every 4 minutes.
+    const limiter = createRateLimiter({ requestsPerMinute: 1, share: 0.25 });
+    const log: Array<[string, number, boolean]> = [];
+    track(limiter.acquire({ tokens: 1, priority: 'bulk' }), log, 'a');
+    track(limiter.acquire({ tokens: 1, priority: 'bulk' }), log, 'b');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(log).toEqual([['a', 0, true]]);
+    expect(limiter.snapshot().requests).toBeLessThan(0);
+    await vi.advanceTimersByTimeAsync(239_999);
+    expect(log).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(log).toEqual([
+      ['a', 0, true],
+      ['b', 240_000, true],
+    ]);
+  });
+
+  it('keeps serving at the penalized rate when a 429 leaves less than one request', async () => {
+    const limiter = createRateLimiter({ requestsPerMinute: 1, penaltyMs: 600_000 });
+    limiter.penalize();
+    const log: Array<[string, number, boolean]> = [];
+    track(limiter.acquire({ tokens: 1, priority: 'bulk' }), log, 'a');
+    track(limiter.acquire({ tokens: 1, priority: 'bulk' }), log, 'b');
+    await vi.advanceTimersByTimeAsync(180_000);
+    expect(log).toEqual([
+      ['a', 60_000, true],
+      ['b', 180_000, true],
+    ]);
+    expect(limiter.snapshot().penalized).toBe(true);
+  });
+
   it('refuses a wait that would pass the deadline, with the expected retry time', async () => {
     const limiter = createRateLimiter({ requestsPerMinute: 1 });
     await limiter.acquire({ tokens: 1, priority: 'bulk' });

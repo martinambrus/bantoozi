@@ -121,15 +121,19 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
   /** Earliest time (≥ t) at which a request of `need` tokens fits, at the current rates. */
   function readyAt(need: number, t: number): number {
     const cap = caps(t);
+    // A request bucket below one request (a small share, or a 429 penalty) waits for a full bucket.
+    const needRequests = Math.min(1, cap.requests);
     const needTokens = Math.min(need, cap.tokens);
-    const waitRequests = requests >= 1 ? 0 : ((1 - requests) * 60_000) / cap.requests;
+    const waitRequests =
+      requests >= needRequests ? 0 : ((needRequests - requests) * 60_000) / cap.requests;
     const waitTokens = tokens >= needTokens ? 0 : ((needTokens - tokens) * 1_000) / cap.tokens;
     return Math.max(t + waitRequests, t + waitTokens, blockedUntil);
   }
 
   function consume(need: number): void {
+    // A request above one bucket's capacity waits for a full bucket and leaves a debt behind, so
+    // the refill rate stays the long-run limit.
     requests -= 1;
-    // A request above one bucket's capacity waits for a full bucket and leaves a debt behind.
     tokens -= need;
   }
 
