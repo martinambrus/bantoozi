@@ -203,6 +203,12 @@ function classify(result: SafeFetchResult, robotsUrl: string, at: number): Fetch
     return { kind: 'policy', policy: { kind: 'rules', rules: robotsParser(robotsUrl, text) } };
   }
   if (result.code === 'FEED_ORIGIN_COOLDOWN') return { kind: 'cooldown', retryAt: result.retryAt };
+  // These codes decide before any status they carry: too many redirects come with the last 3xx,
+  // and a robots.txt behind them is unavailable, so allow all (RFC 9309 §2.3.1.2).
+  if (result.code === 'FEED_TOO_MANY_REDIRECTS') {
+    return { kind: 'policy', policy: { kind: 'allow_all' } };
+  }
+  if (result.code === 'FEED_TOO_LARGE') return { kind: 'policy', policy: { kind: 'disallow_all' } };
   const status = result.status ?? httpStatusOf(result.code);
   if (status !== undefined) {
     const askedToWait = parseRetryAfter(result.headers?.['retry-after'], at) !== undefined;
@@ -215,10 +221,6 @@ function classify(result: SafeFetchResult, robotsUrl: string, at: number): Fetch
     if (status >= 400 && status <= 499) return { kind: 'policy', policy: { kind: 'allow_all' } };
     return { kind: 'unreachable' };
   }
-  if (result.code === 'FEED_TOO_MANY_REDIRECTS') {
-    return { kind: 'policy', policy: { kind: 'allow_all' } };
-  }
-  if (result.code === 'FEED_TOO_LARGE') return { kind: 'policy', policy: { kind: 'disallow_all' } };
   return { kind: 'unreachable' };
 }
 

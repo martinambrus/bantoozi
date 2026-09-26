@@ -345,7 +345,8 @@ describe('spec 03 §8.1 step 2 robots.txt (RFC 9309)', () => {
   });
 
   it('allows everything after too many redirects and disallows an oversized robots.txt', async () => {
-    const redirects = harness(() => failure('FEED_TOO_MANY_REDIRECTS'));
+    // The safe client reports the redirect limit (or a loop) with the last 3xx status.
+    const redirects = harness(() => ({ ...failure('FEED_TOO_MANY_REDIRECTS'), status: 301 }));
     await expect(redirects.check('https://example.com/a')).resolves.toMatchObject({
       allowed: true,
     });
