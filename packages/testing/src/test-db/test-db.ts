@@ -136,6 +136,28 @@ async function withClient<T>(url: string, fn: (client: pg.Client) => Promise<T>)
   }
 }
 
+/**
+ * Wait (at most `timeoutMs`) until no other session is connected to `database`. A pool that was
+ * just ended closes its clients' sockets asynchronously; terminating one of them mid-close
+ * delivers a FATAL 57P01 to a client that no longer has an error listener, which surfaces as an
+ * unhandled error in the test run.
+ */
+async function waitForDisconnects(
+  admin: pg.Client,
+  database: string,
+  timeoutMs = 2_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const { rows } = await admin.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()',
+      [database],
+    );
+    if ((rows[0]?.n ?? 0) === 0 || Date.now() >= deadline) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 async function terminateConnections(admin: pg.Client, database: string): Promise<void> {
   await admin.query(
     'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()',
@@ -276,6 +298,8 @@ export async function createTestDatabase(
 export async function dropTestDatabase(name: string, env: TestDbEnv = testDbEnv()): Promise<void> {
   if (!created.has(name)) throw new Error(`refusing to drop ${name}: not created by this run`);
   await withClient(env.adminUrl, async (admin) => {
+    // Ended pools disconnect first; only what is still connected then is terminated.
+    await waitForDisconnects(admin, name);
     await terminateConnections(admin, name);
     await admin.query(`DROP DATABASE IF EXISTS ${quoteIdent(name)}`);
   });
