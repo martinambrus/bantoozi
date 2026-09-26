@@ -107,7 +107,7 @@ schema, `createQueue` options and typed enqueue helpers (`enqueueFetch`, `enqueu
 | `article.cluster` | `{articleId}` | enrich | 4 | 1 | `stately`, key `cluster:<id>` |
 | `article.match` | `{articleId}` | enrich, `card.backfill`, itself (when rows remain) | 8 | 1 | `stately`, key `match:<id>`; drains all queued cards for the article |
 | `card.backfill` | `{userId, cardIds: string[], feedIds?: string[], snapshotAt?: iso, cursor?: {firstSeenAt: iso, articleId: string}, processedCount?: int}` | API (card or subscription change) | 2 | 2 | `standard` |
-| `user.rank` | `{userId, reason, full?: boolean}` | match, cluster (membership changed, `full`), enrich (degraded), ingest, API, learn | 4 | 2 | queue `policy: 'stately'`. Incremental: `sendDebounced('user.rank', data, {}, 3, 'rank:<userId>')`. Full: `send('user.rank', {…, full: true}, {singletonKey: 'rank-full:<userId>'})`. Different keys mean a full request is never swallowed by a pending incremental one, while equivalent duplicates of each are suppressed; durable dirty state preserves later changes (spec 06 §7) |
+| `user.rank` | `{userId, reason, full?: boolean}` | match, cluster (membership changed, `full`), enrich (degraded), ingest, extract (media signals changed, §6.4), API, learn | 4 | 2 | queue `policy: 'stately'`. Incremental: `sendDebounced('user.rank', data, {}, 3, 'rank:<userId>')`. Full: `send('user.rank', {…, full: true}, {singletonKey: 'rank-full:<userId>'})`. Different keys mean a full request is never swallowed by a pending incremental one, while equivalent duplicates of each are suppressed; durable dirty state preserves later changes (spec 06 §7) |
 | `user.learn` | `{userId}` | API (ratings), `house.nightly-learn` | 2 | 1 | `sendDebounced(…, 60 s, key learn:<userId>)` |
 | `user.suggest` | `{userId}` | learn, `house.nightly-learn` | 1 | 1 | `stately`, key `suggest:<userId>` (deduplicates without throttling). The durable `last_suggested_at` lease/timestamp gate (spec 05 §7) enforces at most one admitted attempt per 24 h, so a run that sends nothing never blocks a later trigger |
 | `house.rescore-degraded`, `house.expire-rules`, `house.purge-auth`, `house.reconcile`, `house.archive`, `house.purge-articles`, `house.purge-bodies`, `house.purge-engine-calls`, `house.retire-cards`, `house.purge-users`, `house.nightly-learn`, `house.metrics`, `house.alerts` | `{}` | cron (spec 11 §6) | 1 | 1 | `policy: 'singleton'` (never two runs at once) |
@@ -372,7 +372,7 @@ because only `rel=canonical` fixes AMP), Google News wrappers and hash-bang URLs
 
 **Parsing:**
 - `rss-parser` handles RSS 0.9x/1.0/2.0 and Atom. Custom fields: `media:content`, `media:thumbnail`,
-  `dc:creator`, `dc:date`, `content:encoded`, `sy:updatePeriod`, `sy:updateFrequency`.
+  `dc:creator`, `dc:date`, `content:encoded`, `media:group`, `sy:updatePeriod`, `sy:updateFrequency`.
 - JSON Feed 1.0/1.1 is detected by the `version` URL. It uses a zod-validated in-house parser.
 - Feed-level fields: title, `link` (site_url), description, language (→ `lang_hint`), image/icon,
   `ttl`, `sy:*`.
@@ -401,6 +401,8 @@ because only `rel=canonical` fixes AMP), Google News wrappers and hash-bang URLs
 | `excerpt` | plain text of the excerpt HTML, whitespace-collapsed, max 2,000 chars |
 | `feed_body_text`, `feed_body_html` | full readable publisher text and sanitized HTML before excerpt/model truncation, within the 10 MiB combined extraction-output safety limit; preserve completeness/provenance for bookmark capture, never active HTML |
 | `image_url` | the first of: enclosure with `image/*` type → `media:content` (medium=image) → `media:thumbnail` → the first `<img src>` in the content. Resolved and must be http(s) |
+| `video_evidence` | true when a §6.4 video rule holds for the item: a video enclosure, attachment or `media:content`, a video-host link, or a `<video>` element or player embed in its excerpt or body HTML (read before sanitizing); otherwise false |
+| `feed_body_image_count` | §6.4 in-body image count of `feed_body_html`, computed before sanitizing; null when the item carries no publisher body |
 
 Each fetch processes at most **200 valid items**, newest first by `published_at` (unknown dates keep
 publisher order and sort last). A per-item error is counted and skipped, not a whole-feed failure.
@@ -436,6 +438,58 @@ Additional rules:
 - Embedded images are removed from the stored display HTML for the beta. Keep at most the selected
   safe `image_url` as metadata; the UI's media policy (spec 11 §7) controls whether it is requested.
   This prevents an excerpt from causing uncontrolled third-party requests or hidden tracking pixels.
+- Because sanitizing removes images, iframes and `<video>`, the §6.4 media signals are read from the
+  same parsed fragment **before** it is sanitized. They cannot be recomputed from stored HTML.
+
+### 6.4 Media signals (`mediaSignals`, pure)
+
+Two ranking features (spec 06 §8.1) describe the media in an article. Both are computed locally from
+already-parsed markup, with no network access, no resource loading and no model call.
+
+**Video evidence** is true when any of these holds:
+- the feed item has an enclosure, JSON Feed attachment or `media:content` (including one inside
+  `media:group`) whose type is `video/*` or whose `medium` is `video`. Audio does not count;
+- the article link's host is a video host (label-boundary suffix match on `VIDEO_HOSTS`, below);
+- the examined HTML (the feed excerpt/body HTML, or the extracted page fragment) contains a
+  `<video>` element, or an `<iframe>`, `<embed>` or `<object>` whose resolved `src`/`data` host
+  matches `VIDEO_EMBED_HOSTS`.
+
+`VIDEO_HOSTS` = `youtube.com`, `youtu.be`, `vimeo.com`, `dailymotion.com`, `dai.ly`, `twitch.tv`,
+`tiktok.com`, `rumble.com`. `VIDEO_EMBED_HOSTS` adds `youtube-nocookie.com`, `player.vimeo.com` and
+`facebook.com` only with the path prefix `/plugins/video`. Both lists are constants in
+`packages/feeds`; adding a host is a code change with a fixture, not configuration.
+
+**In-body image count** is the number of distinct images in the main body fragment: the Readability
+result for a page, or `feed_body_html` for a publisher body from the feed. Never count the feed
+excerpt, the page outside Readability's result, or `image_url`. Count `<img>` elements (a
+`<picture>` counts once through its `<img>`) after these exclusions:
+- tracking pixels, by the §6.3 rule (either known dimension ≤ 2);
+- an image without a usable http(s) URL. Its URL is the first usable http(s) value, in this order,
+  among `src`, `data-src`, `data-lazy-src`, `data-original`, then the `srcset` and `data-srcset`
+  candidates. A `data:` placeholder or any other non-http(s) value is skipped and the search goes
+  on, so the common lazy-loading form `<img src="data:…" data-src="https://…">` counts;
+- a repeat of an already counted resolved URL, so a `<noscript>` fallback of a lazy image counts once.
+
+`articles.body_image_count` always describes the body currently stored in `article_bodies`, the same
+text `word_count` counts, and is written in the same transaction as that body (§7 step 6, §8.1
+step 6). It is null while no body is stored (excerpt only), so an excerpt never passes for a body
+without images.
+
+**Re-ranking.** A media signal can change without a `content_hash` change or a new `feed_items`
+row, for example when a publisher adds only a video enclosure, so neither `resetArticleAnswers` nor
+the new-carrier fan-out (§7) would re-rank the article. Every write that changes `has_video` or
+`body_image_count` to a different value (`IS DISTINCT FROM`, so null → false counts) therefore also
+increments `articles.media_revision` and, in the same transaction through the outbox, records an
+incremental `user.rank` for the subscribers of every current carrier of the article. A rank run
+records the media revision it read in `explain.inputs` (spec 06 §6.2), and spec 06 §7 treats a row
+whose recorded revision differs from the current one as dirty. A run that read the old values
+therefore leaves its row dirty even when it writes after the change commits, and the queued run
+re-ranks it; a timestamp comparison would miss that race. A write that stores the same values
+changes neither.
+
+Readability removes `<iframe>`, `<embed>` and `<object>` elements unless an attribute matches its
+video allow-list, whose default covers only some of these hosts. Pass a regex built from
+`VIDEO_EMBED_HOSTS` as its `allowedVideoRegex` option so those embeds survive into the fragment.
 
 ---
 
@@ -472,7 +526,14 @@ For one fetch, in **one transaction per item**, so one bad item doesn't roll bac
      Stored and visible; automatic inference is skipped. An explicitly selected training request may
      process a retained older article under spec 05's interactive demand contract.
    - Otherwise `'ingested'`, and the article is new.
-6. Insert `feed_items`. If a new/current source item supplies publisher body content, store its full
+6. **Media signals** (§6.4): if the item's `video_evidence` is true, set `articles.has_video = true`,
+   for a found or a new article, from any carrier. The flag is monotonic: nothing in ingestion or
+   extraction sets it from true back to false, because a stale true costs one weak feature on one
+   article, while an unset one hides a video from every carrier. A new article whose item has no
+   evidence starts at null (unknown) unless its feed body was examined, which makes it false. When
+   the source item's publisher body becomes the stored fallback body below, store its
+   `feed_body_image_count` as `articles.body_image_count`.
+7. Insert `feed_items`. If a new/current source item supplies publisher body content, store its full
    readable text, sanitized HTML, completeness/provenance and bounded model lead as the revisioned
    fallback in `article_bodies` (`extractor_version = 'feed-v1'`, status `ok`). Linkless items advance extraction without HTTP; linked items may replace this body
    only after successful page extraction. No early skip/error discards a valid feed body.
@@ -554,7 +615,8 @@ fetching non-HTML media.
        article merely after moving `feed_items`
    - Otherwise add an alias with source `redirect`.
 5. **Parse:**
-   - `linkedom` `parseHTML`, then `new Readability(document, { charThreshold: 200 }).parse()`.
+   - `linkedom` `parseHTML`, then `new Readability(document, { charThreshold: 200, allowedVideoRegex })
+     .parse()`, where `allowedVideoRegex` is built from `VIDEO_EMBED_HOSTS` (§6.4).
    - `rel=canonical`: if the page declares `<link rel="canonical">` on the **same registrable domain**
      (use `tldts` with the private suffix list, and require exact host equality if no registrable
      domain exists), and it resolves to an allowed http(s) URL without credentials, apply §8.4 with
@@ -575,6 +637,12 @@ fetching non-HTML media.
    - `body_lead` = the first 1,500 chars, cut at the last sentence end (`. ! ? …`) after char 1,000 if
      there is one.
    - `word_count` = whitespace token count of `body_text`, or of the excerpt if there is no body.
+   - Media signals (§6.4), from the pre-sanitize fragment: when this extraction stores the page
+     body, set `articles.body_image_count` to that fragment's in-body image count; otherwise leave
+     the value that belongs to the body still stored (the feed fallback's count, or null for an
+     excerpt only). Set `articles.has_video` to true on page video evidence; otherwise set it to
+     false only if it is null and a page or feed body was examined. A skipped URL on a `VIDEO_HOSTS`
+     host (step 1) is video evidence.
 7. **Language detection** (§8.3). Set `articles.lang` and `lang_confidence`. A genuinely changed
    body/language uses `resetArticleAnswers` once, installing that new body at the incremented revision
    and checking current demand before choosing enrichment/translation as the next stage (do not
@@ -664,7 +732,8 @@ and keep both identities; golden labels must not be silently rewritten.
   snapshot arbitrarily and delete the other. Unexpired Undo snapshot pins also block any destructive
   merge that would make exact Undo impossible. Identical snapshot checksums can share storage.
 - Keep the target's source metadata and any valid target body; take the source body only when the
-  target lacks a successful extraction. Use `resetArticleAnswers` once to increment the surviving
+  target lacks a successful extraction. `body_image_count` moves with the body kept; `has_video` is
+  true if it is true on either article, otherwise false if false on either, otherwise null (§6.4). Use `resetArticleAnswers` once to increment the surviving
   content revision, retain the chosen body at that revision, clear incompatible translations/active
   answers/features, and schedule current-revision enrichment/matching only for eligible demand. Provider
   audit rows remain audit rows; no stale cached result becomes active by virtue of the merge.
@@ -890,6 +959,8 @@ At least:
 - a feed with unescaped `&`
 - relative links and images
 - `media:*` images
+- a video enclosure, a `media:group` video, and a YouTube channel feed (video evidence)
+- a full-content item with images, a tracking pixel and a lazy-loaded image (in-body count)
 - future dates and missing dates
 - a Google News RSS sample
 - a huge feed (> 5 MB, for the size cap)
@@ -901,6 +972,9 @@ HTML page fixtures:
 - an AMP page with `rel=canonical`
 - a page declaring windows-1250 in `<meta>`
 - a non-article (a list page)
+- an article with an embedded YouTube iframe, and one with a `<video>` element (video evidence)
+- an article whose body has lazy-loaded images with `<noscript>` fallbacks, a tracking pixel and a
+  related-articles block outside the Readability result (in-body count)
 
 The old FeedIt prototype's hard cases (it "parses even the most impossible feeds") belong here as they
 are found.

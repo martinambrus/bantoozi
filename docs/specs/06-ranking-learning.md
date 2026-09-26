@@ -43,6 +43,7 @@ interface RankItem {
   domain: string; author: string | null;
   titleNorm: string; excerptNorm: string; translatedTitleNorm?: string; translatedExcerptNorm?: string;
   firstSeenAt: Date; publishedAt?: Date; contentRevision: string; wordCount: number | null; hasImage: boolean; lang: string;
+  hasVideo: boolean | null; bodyImageCount: number | null; mediaRevision: string;   // articles.has_video / body_image_count / media_revision (spec 03 §6.4)
   clusterId?: string; clusterSize: number;
   pipelineState: string;
   matchCoverage: 'complete'|'pending'|'unavailable'; // this user's applicable positives (§2)
@@ -226,7 +227,7 @@ All thresholds come from `RankerConfig` (§11), which gate G1 may override globa
 ```ts
 interface Explain {
   v: 1;
-  inputs: { contentRevision: string; rankRevision: string; contextSha: string };
+  inputs: { contentRevision: string; mediaRevision: string; rankRevision: string; contextSha: string };
   source: 'cards'|'model'|'degraded'|'none';
   p: number | null; lane: Lane; tier: number | null;
   decidingCardId?: string;                         // source 'cards': the card achieving cardScore (spec 08 §5.1 topReason)
@@ -304,7 +305,8 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
    `rankArticle`; in both cases where any of these holds:
    - no `user_article` row
    - `ua.score_version != current score_version` or `ua.rank_revision != users.rank_revision`
-   - `ua.next_rank_at ≤ now` or article content revision no longer matches `explain.inputs`
+   - `ua.next_rank_at ≤ now`, or the article's content revision or media revision (spec 03 §6.4) no
+     longer matches `explain.inputs`
    - `ua.scored_at` is older than the newest of `article_facets.updated_at`,
      `card_answers.answered_at` (for the user's cards and labels) and `article_translations.created_at`
    - changes to cluster membership, read/unread/undo state, matching coverage, translations, or
@@ -346,7 +348,7 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
 
 | Event | `full`? |
 |---|---|
-| match finished; enrich degraded | no |
+| match finished; enrich degraded; an article's media signals changed (spec 03 §6.4, subscribers of its carriers) | no |
 | a read, mark-read, open, unread or undo affecting a cluster | yes (invalidate both addition and removal of seen evidence) |
 | card or label added/removed/strength/scope changed | yes |
 | rule created/deleted, or expired (hourly `house.expire-rules`) | yes |
@@ -370,8 +372,17 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
 | Length | one-hot `len.short/medium/long/very_long/unknown`, boundaries from spec 05 §3.1 (<150 / <600 / <1500 / ≥1500 / null words) |
 | Freshness | one-hot `age.lt6h/lt24h/lt72h/older`: disjoint [0,6h), [6h,24h), [24h,72h), [72h,∞), using age at snapshot for training and now for scoring (§5) |
 | Language | one-hot `lang.en/sk/cs/other` |
+| Media | `has_video` with a `known.has_video` mask (null is unknown). One-hot `img.none/light/moderate/heavy/unknown` from the in-body image density d = `bodyImageCount` × 500 / max(`wordCount`, 500): `unknown` when either value is null, otherwise `none` when the count is 0, `light` for d < 1, `moderate` for 1 ≤ d < 3 and `heavy` for d ≥ 3 |
 | Other | `has_image`, `cluster_log = ln(1 + clusterSize)` |
 | Source | `feed.h<k>`, one-hot with k = murmur3(feedId) mod 32, using the lowest numeric id in `item.inferenceFeedIds`. `author.h<k>`, one-hot with k = murmur3(`normalizeText(author)`) mod 16 (none if there is no author). murmur3 = **MurmurHash3 x86 32-bit, seed 0, over the UTF-8 bytes** of the decimal id string or the normalized author |
+
+The media inputs capture two reading preferences the facets miss. `ct.media` covers pieces that are
+mostly video, not a normal article with an embedded video, which readers who cannot play sound at
+work may skip. Image density separates an image-padded piece (10 images around 200 words, `heavy`)
+from an illustrated long read (10 images in 3,000 words, `moderate`); raw counts would conflate
+them. The 500-word floor in the denominator keeps a short brief with one lead photo out of `heavy`
+and bounds the density of very short texts; the length one-hot still tells them apart. Whether a
+user likes or avoids either is learned per user, like every other input.
 
 Scoring computes the card inputs from the item's current answers and the user's current strengths.
 Training computes them from each sample's card list (§8.2), with every card's p and its strength
@@ -496,9 +507,9 @@ complete positive coverage (§8.1). Saved
 bookmark actions may reference an older `snapshotId/contentRevision` (spec 08). Bookmark archives
 retain text and sanitized HTML (Q14), without capturing image or other media binaries. Harmless safe
 URL references may remain under the image-preference policy; they are not permanently archived media
-assets. A historical `has_image` feature may remain as an observed boolean in its immutable feature
-snapshot; it authorizes neither inference nor image download/retention, and must not be recomputed
-from the archive's media availability.
+assets. Historical `has_image`, `has_video` and `img.*` features may remain as observed values in
+their immutable feature snapshot; they authorize neither inference nor media download/retention,
+and must not be recomputed from the archive's media availability.
 Never borrow current
 features for that old content: use matching captured features/authorized frozen input or omit the
 sample. A changed rating supersedes its earlier label while keeping the exact source snapshot and

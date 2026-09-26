@@ -25,6 +25,8 @@ export const ExplainSchema = z
     inputs: z
       .object({
         contentRevision: BigIntStringSchema,
+        /** `articles.media_revision` the score used (spec 03 §6.4); a mismatch makes the row dirty. */
+        mediaRevision: BigIntStringSchema,
         rankRevision: BigIntStringSchema,
         contextSha: z.string().regex(/^[0-9a-f]{64}$/),
       })

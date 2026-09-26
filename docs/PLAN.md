@@ -435,11 +435,11 @@ Complete milestone M1 "Ingestion core" exactly as specified in docs/PLAN.md §6,
 |---|---|---|---|---|
 | M1-T1 | `safeFetch`: IP-literal and DNS address checks, injectable resolver, manual redirects, limits, charset decoding | — | A | 03 §4 |
 | M1-T2 | `canonicalizeUrl`, `url_key`, tracking-param list | — | B | 03 §5 |
-| M1-T3 | `parseFeed`, `normalizeItem`, sanitizing, `title_norm`, `content_hash`, feed fixtures | — | B | 03 §6, §12 |
+| M1-T3 | `parseFeed`, `normalizeItem`, sanitizing, `title_norm`, `content_hash`, media signals (`mediaSignals`), feed fixtures | — | B | 03 §6, §12 |
 | M1-T4 | `nextSchedule` adaptive interval, with simulations | — | C | 03 §9 |
-| M1-T5 | Extraction: skip list, robots, Readability, body lead, canonical detection, politeness limiter | T1 | A | 03 §8 |
+| M1-T5 | Extraction: skip list, robots, Readability, body lead, media signals of the page body, canonical detection, politeness limiter | T1, T3 | A | 03 §6.4, §8 |
 | M1-T6 | Feed discovery and OPML parse/export | T1, T3 | A | 03 §10–11 |
-| M1-T7 | Worker handlers: `feed.schedule`, `feed.fetch` (ingest §7, redirect merge §9), `article.extract` (alias/merge), `feeds.lang_hint` upkeep, `resetArticleAnswers`, inference eligibility and durable bookmark capture | T1–T5 | D | 03 §1–3, §7–9; 05 §5.6 |
+| M1-T7 | Migration for `articles.has_video`, `body_image_count` and `media_revision`; worker handlers: `feed.schedule`, `feed.fetch` (ingest §7, redirect merge §9), `article.extract` (alias/merge), `feeds.lang_hint` upkeep, `resetArticleAnswers`, inference eligibility and durable bookmark capture | T1–T5 | D | 03 §1–3, §7–9; 05 §5.6 |
 | M1-T8 | End-to-end ingestion integration test | T7 | D | 03 all |
 | M1-T9 | Dev CLI (`apps/worker/src/cli.ts`, run as `pnpm worker-cli …`): `feeds:add <url> [--user dev@localhost]`, `feeds:fetch-now <feedId>`, `feeds:show <feedId>` | T6, T7 | D | 03 §10 |
 
@@ -461,6 +461,11 @@ Complete milestone M1 "Ingestion core" exactly as specified in docs/PLAN.md §6,
   - Every fixture in spec 03 §12 parses to the expected `NormalizedItem`s (snapshots).
   - The lenient XML retry fixes the unescaped-`&` fixture.
   - Sanitizer tests pass: scripts stripped, links rewritten, pixels removed.
+  - `mediaSignals` unit tests cover each video rule of spec 03 §6.4 (video enclosure, `media:group`
+    video, video-host link, iframe/`<video>` in HTML, audio enclosure → false) and the image-count
+    rules (a pixel and a `<noscript>` repeat are excluded, a `<picture>` counts once, and a `data:`
+    placeholder in `src` with the real URL in `data-src` counts); the feed fixtures snapshot
+    `video_evidence` and `feed_body_image_count`.
 - **T4:**
   - Unit tests cover every branch of spec 03 §9.
   - The 60-day simulations assert `fetch_interval_s` **before jitter**: a busy feed stays ≤ 1,800 s, a
@@ -470,6 +475,8 @@ Complete milestone M1 "Ingestion core" exactly as specified in docs/PLAN.md §6,
   - HTML fixtures: normal article, paywall teaser, AMP with `rel=canonical`, windows-1250 meta, list
     page (→ `no_content`). Each produces the expected status, `body_lead` (≤ 1,500 chars,
     sentence-cut) and word count.
+  - The media fixtures of spec 03 §12 give the expected video evidence and in-body image count,
+    counted before sanitizing; images outside the Readability result are not counted.
   - A robots.txt disallow → `blocked`.
   - A limiter test with fake timers proves ≤ 2 concurrent requests and ≥ 1 s spacing per origin.
 - **T6:**
@@ -491,6 +498,12 @@ Complete milestone M1 "Ingestion core" exactly as specified in docs/PLAN.md §6,
   - `article.extract` performs the redirect and `rel=canonical` alias/merge, then calls
     `pipeline.after('extract')`.
   - `lang_hint` is set per §8.3.
+  - `has_video` and `body_image_count` follow spec 03 §6.4, §7 step 6 and §8.1 step 6: video
+    evidence from any carrier or the page sets true and nothing sets it back to false; the image
+    count comes from the same body as `word_count`, and is null for an excerpt-only article.
+  - A repeat fetch that adds only a video enclosure (same `content_hash`, no new `feed_items` row)
+    increments `media_revision` and records an incremental rank for the subscribers of every
+    carrier; a fetch that stores the same values records neither.
   - Bookmark capture reuses valid extracted full text or safely fetches/extracts it, persists an
     immutable retained snapshot and exposes capture status; capture never needs model inference.
   - Off subscriptions and unselected training articles create no translate/enrich/match/cluster
@@ -1007,10 +1020,12 @@ Complete milestone M5 "Ranking and lanes" exactly as specified in docs/PLAN.md �
   including `staleDislikes90d`.
 - **T4:**
   - The dirty-set SQL covers every freshness trigger in spec 06 §7, including time, undo, model,
-    translated card text and subscription changes (a test each), and windows by subscribed carrier
-    arrival rather than global first-seen time, while a completed explicit selection of an older
-    article is ranked outside that window, from the answers its request published to the current
-    caches; a model-pin rebuild refills those answers for it too.
+    translated card text, media signal (including one committed while a run is in flight, which
+    leaves the row dirty through `explain.inputs.mediaRevision`) and subscription changes (a test
+    each), and windows by subscribed carrier arrival rather than global first-seen time, while a
+    completed explicit selection of an older article is ranked outside that window, from the
+    answers its request published to the current caches; a model-pin rebuild refills those answers
+    for it too.
   - `full` re-ranks the window, and is never swallowed by a pending incremental job (tested through
     `jobs.ts`).
   - Reader-state columns are never modified (asserted).
@@ -1121,7 +1136,9 @@ Complete milestone M7 "Personal learning and suggestions" exactly as specified i
 
 **Done when:**
 
-- **T1:** a feature-vector snapshot for a seeded item; the murmur3 test vectors; the sha changes when
+- **T1:** a feature-vector snapshot for a seeded item; the murmur3 test vectors; the media inputs
+  (`has_video` with its mask, and every `img.*` bucket boundary, including the 500-word floor and
+  null counts); the sha changes when
   the spec changes (a test). Card groups, masks, `matched_log` and `cardscore` are computed from a
   snapshot card list, including a later strength change and partial never coverage.
 - **T2:** the signal table of spec 06 §8.2 is implemented, and "the latest explicit signal wins" is
@@ -1300,6 +1317,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | 2026-09-25 | More review fixes: reader and ranker windows use the subscribed carrier's arrival time; the engine router tries a configured Laya checkpoint before returning `no_key`; Laya enrich work has its own registered queue; account erasure also removes waitlist rows and invite emails (the deletion ledger carries a keyed email hash); the shared DB-backed rate limiter is defined; a missing Jev credential falls through to the enabled fallbacks; cluster merges remap `mute_story` rules; jittered fetch delays stay within MAX; article retention follows the latest carrier arrival; unsubscribing keeps completed analysis requests; retained analysis requests protect their article from purge; expired idempotency receipts are purged; each eval run freezes its facet labels; folded rows report only the accessible cluster size; post-freeze eval top-ups create a new dataset version; archive, unread-cap eviction and mark-read cutoffs use carrier arrival; a newly carried article continues from its pipeline state (enrichment for gate-stopped or degraded articles); only the dedicated Laya worker loads Laya, and selected-article analysis gets its own Laya queue; credential and publication-consent functions get explicit API execute grants; the worker cancels analysis requests orphaned by unsubscribe; the unread view represents a folded story by its best unread member; the 14-day window is a fixed constant shared by the list, ranker and degraded recovery; the dedicated Laya worker is a Compose service that must be running before Laya is enabled and until its queued and outbox work drains; a new enrich question set re-enriches the whole ranking window by carrier arrival; a feed or folder view that keeps any authorized carrier shows the global score, whose card scope uses all authorized carriers; idle origin-limiter rows and member-less story clusters are purged; analysis requests still pending after 180 days are cancelled; `mute_story` rules always carry an expiry; expired unused invites and stale waitlist rows are purged, and signup removes the waitlist row; stale spend reservations settle conservatively and then purge; workers report env-credential presence so the admin status can show `source: 'env'`; card suggestions hide cards the user already holds; every match-affecting setting, model-pin change or library topic correction rebuilds the ranking window through `house.rematch` (and `house.reenrich` for the model pin); feeds without subscribers or references are purged after 30 days; a language-mode change re-enriches that language's window, and cluster/suggest set changes apply prospectively with recorded provenance; a publisher correction to a stale article resets its answers but keeps it stale; suggestions record their model pin and old-pin rows are hidden; used invites are purged once both accounts are erased; clustering candidates must have current facets and an authorization witness before the limit; `user.suggest` deduplicates without a broker throttle; translate settings require a healthy LibreTranslate and the `translate` profile; a card dismissed more than 90 days ago can be suggested again; retired unheld cards without audit or eval references are deleted after 30 days; the seed stores `LANGUAGE_MODES` as the effective `language_modes`, so the API detects the first change; `.laya` jobs for a removed language move to the ordinary queue, so the Laya queues drain; saved-snapshot actions are checked against the snapshot's revision instead of the live one; an admin reprocess retries skipped tier-2 translations; the clustering facet join is an eligibility witness at the current revision, not a cache read, since the cluster call never reads candidate facets; an active subscription merged onto another feed restarts its activation boundary; Ollama fallback models are part of the model pin; rater tokens expire and can be revoked without deleting ratings; a selected request authorizes clustering only inside its 180-day window; the degraded Maybe lane never overrides a seen-story cap; translation rows are not model-pinned; a replay is required before changing the Ollama fallback models; reissuing a rater token ends the old sessions; the Laya checkpoint and calibration join the model pin, and adding or removing a Laya language re-enriches it; cards skipped by the English-mode translation job are translated once their holder gains demand; the automatic archive is a versioned reader-state write; suggestions come from Jev only (bulk calls never use the LLM fallback) and record its model pin; switching the LLM fallback on or off is a model-pin change; a stale article with a current explicit selection ranks from its answers (in `rankArticle` and the rank handler); a language switched to `translate` resets its already enriched articles; each suggestion run replaces the user's undismissed suggestions; the router tries Laya first for `.laya` requests; switching a language back to `native` resets its translated articles; an article merge advances the surviving reader-state version; explicitly selected older articles join the rank handler's dirty set; an explicit per-feed image preference keeps its feed from the idle-feed purge; the personal model scores only items whose facets and card answers come from its feature spec's engine family, so Laya-enriched articles use the cards path; every signup-mode branch uses the effective mode, including the stored admin setting; suggestion spend reservations are fenced by the lease token and stamp `last_suggested_at` in the same transaction; mode-change and forced tier-2 translation jobs get their own queue keys, so a pending plain translation job cannot absorb them; a selection result that still matches the current article is always published to the current caches, and rebuilds cover current selections outside the window, so a selected stale or older article ranks from its answers |
 | 2026-09-26 | M0 Foundations done: status markers in §4 and §5 and a line in `CLAUDE.md` "Current state"; implementation decisions I1–I3 recorded in §17.3 and applied to specs 02 and 08 (D-6) |
 | 2026-09-26 | Personal-model revision R1 (§17.4): card inputs grouped by strength, plus own card inputs once a card has enough rated matches, instead of one input for each of the first 30 cards; ratings survive card edits (rating fingerprint and model context); ridge on the summed loss with λ chosen by cross-validation; card example suggestions after ratings; informational G1 experiment E6. Specs 05–10 and `RankerConfig`/preferences in `packages/shared` updated |
+| 2026-09-26 | Media signals R2 (§17.4): the personal model gains `has_video` and a bucketed in-body image density per 500 words, both detected at ingestion and extraction before sanitizing removes the media. Specs 02, 03 and 06 and `ExplainSchema` in `packages/shared` updated; plan: M1-T3, T5, T7, M5-T4 and M7-T1 |
 
 ## 17. Owner decisions and implementation gates
 
@@ -1352,3 +1370,4 @@ exceed spending caps or represent an owner pilot as multi-person validation.
 | ID | Problem | Owner answer | Binding implementation |
 |---|---|---|---|
 | R1 | The personal model had one input for each of the first 30 positive cards (by card id) and for every never-card, more than 30 ratings can support, and its fingerprint covered every card, so any card change, including adding an example from the Why-this drawer, discarded all stored ratings. Its ridge penalty on the mean loss also kept every weight small however many ratings accumulated. | Adopt the proposed revision with the review's refinements. | Spec 06: card groups by strength plus own card inputs once a card has enough rated matches (§8.1); a rating fingerprint that card changes do not touch and a model context that covers only the model's own inputs (§8.1, §8.2, §8.4); ridge on the summed loss with λ chosen from `model.lambdaGrid` (§8.3, §11); card example suggestions after ratings (§10; spec 08 §3.1 and §5.3; spec 09 §3.3). Specs 05 §5.1 and §8 and 07 §5 follow; spec 10 adds the informational experiment E6. `RankerConfig` and the preferences schema in `packages/shared` carry the new keys. Plan: M3a-T6, M3b-T2, M4-T7, M6-T3, M7-T1, T3, T4, T5 and T7. |
+| R2 | The personal model had no input for media beyond `has_image` (a thumbnail exists). `ct.media` marks only pieces that are mostly video, so a normal article with an embedded video looked like any other, and nothing distinguished an image-padded piece from an illustrated long read. | Add both signals; measure images against length, in coarse buckets, counting only the extracted main body. | Spec 03 §6.4: `mediaSignals` detects video (video enclosures and `media:content`, video-host links, `<video>` and known player embeds) and counts distinct in-body images (pixels, placeholders and repeats excluded), both read before sanitizing removes the media; §7 step 6 and §8.1 step 6 store them. A change to either value increments `articles.media_revision`, which `Explain.inputs` records, and re-ranks the carriers' subscribers (spec 06 §6.2, §7). Spec 02: `articles.has_video` (nullable, monotonic), `body_image_count` (same text as `word_count`) and `media_revision`. `ExplainSchema` in `packages/shared` gains `inputs.mediaRevision`. Spec 06 §8.1: `has_video` with a mask and one-hot `img.none/light/moderate/heavy/unknown` from images × 500 / max(words, 500). `FEATURE_SPEC_V1` is extended in place because no model or feature snapshot exists yet. Plan: M1-T3, T5, T7, M5-T4 and M7-T1. |
