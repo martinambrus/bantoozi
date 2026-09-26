@@ -229,7 +229,9 @@ function carry(base: IngestItemInput, changes: Partial<IngestItemInput> = {}): I
 }
 
 const ingest = (input: IngestItemInput): Promise<IngestItemResult> =>
-  retryTransaction(ctx.worker, (tx) => ingestItem(tx, workerOutbox(tx), input, { maxAgeDays: 14 }));
+  retryTransaction(ctx.worker, (tx) =>
+    ingestItem(tx, workerOutbox(tx), input, { maxAgeDays: 14, linkKey: (url: string) => url }),
+  );
 
 async function feedItemCount(articleId: string): Promise<number> {
   const result = await ctx.owner.query<{ n: number }>(

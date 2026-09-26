@@ -50,6 +50,16 @@ const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000);
 const daysAgo = (d: number) => hoursAgo(d * 24);
 const sha = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
+/** A stand-in for spec 03 §5 canonicalization of a stored link: drops `utm_*` parameters. */
+function linkKey(url: string): string | null {
+  const parsed = URL.parse(url);
+  if (parsed === null) return null;
+  for (const name of [...parsed.searchParams.keys()]) {
+    if (name.startsWith('utm_')) parsed.searchParams.delete(name);
+  }
+  return parsed.href;
+}
+
 /** A stand-in for spec 03 §6.2: any change of these inputs changes the hash. */
 const contentHashOf = (i: Omit<IngestItemInput, 'contentHash'>) =>
   sha([
@@ -123,7 +133,9 @@ function moved(base: IngestItemInput, url: string, keepHash = false): IngestItem
 }
 
 const ingest = (input: IngestItemInput, maxAgeDays = 14): Promise<IngestItemResult> =>
-  retryTransaction(ctx.worker, (tx) => ingestItem(tx, workerOutbox(tx), input, { maxAgeDays }));
+  retryTransaction(ctx.worker, (tx) =>
+    ingestItem(tx, workerOutbox(tx), input, { maxAgeDays, linkKey }),
+  );
 
 interface ArticleRow {
   url: string | null;
@@ -257,7 +269,7 @@ function traced<T>(fn: (tx: Transaction) => Promise<T>): Traced<T> {
 }
 
 const tracedIngest = (input: IngestItemInput): Traced<IngestItemResult> =>
-  traced((tx) => ingestItem(tx, workerOutbox(tx), input, { maxAgeDays: 14 }));
+  traced((tx) => ingestItem(tx, workerOutbox(tx), input, { maxAgeDays: 14, linkKey }));
 
 /** Wait until backend `pid` is blocked on a heavyweight lock (advisory, row or transaction). */
 async function waitForLockWait(pid: Promise<number>): Promise<void> {
@@ -833,6 +845,58 @@ describe('ingestItem: a link that is its own audio/video enclosure (spec 03 §8.
     expect(await typeOf(first.articleId)).toBeNull();
   });
 
+  it('decides it for its link also when only the tracking parameters rotate', async () => {
+    const x = await createFeed(ctx.owner);
+    const page = `https://news.example.test/rotating/${next()}`;
+    // Canonically one link: the same url_key and, like spec 03 §6.2, the same content hash.
+    const polled = item(x.id, {
+      url: `${page}?utm_campaign=a`,
+      urlKey: page,
+      canonicalUrl: page,
+      linkEnclosureType: 'audio/mpeg',
+    });
+    const at = (campaign: string, linkEnclosureType: string | null) =>
+      carry(polled, {
+        url: `${page}?utm_campaign=${campaign}`,
+        linkEnclosureType,
+        contentHash: polled.contentHash,
+      });
+    const first = await ingest(polled);
+    await extracted(first.articleId);
+    // The correction arrives with other tracking parameters: the skipped link is extracted again.
+    expect(await ingest(at('b', null))).toMatchObject({
+      articleId: first.articleId,
+      contentChanged: true,
+      revision: '2',
+      needsExtraction: true,
+    });
+    expect(await typeOf(first.articleId)).toBeNull();
+    // A declaration of another link (an alias of the article) still changes nothing.
+    await extracted(first.articleId);
+    const other = `https://news.example.test/other/${next()}`;
+    await ctx.owner.query(
+      `INSERT INTO article_aliases (url_key, article_id, source) VALUES ($1, $2, 'redirect')`,
+      [other, first.articleId],
+    );
+    const alias = carry(polled, {
+      url: other,
+      urlKey: other,
+      canonicalUrl: other,
+      linkEnclosureType: 'video/mp4',
+      contentHash: polled.contentHash,
+    });
+    expect(await ingest(alias)).toMatchObject({ contentChanged: false, revision: '2' });
+    expect(await typeOf(first.articleId)).toBeNull();
+    // Another media type for the rotating link, while it is skipped, is stored without a reset.
+    await ingest(at('c', 'audio/mpeg'));
+    await extracted(first.articleId);
+    expect(await ingest(at('d', 'audio/mp4'))).toMatchObject({
+      contentChanged: false,
+      revision: '3',
+    });
+    expect(await typeOf(first.articleId)).toBe('audio/mp4');
+  });
+
   it("follows the source's link: a new link brings its own type, an alias never does", async () => {
     const x = await createFeed(ctx.owner);
     const original = item(x.id, { guid: `moving-${next()}`, linkEnclosureType: 'audio/mpeg' });
@@ -919,7 +983,7 @@ describe('ingestItem: concurrency (spec 03 §7 "Concurrency", §13)', () => {
         retryTransaction(ctx.worker, async (tx) => {
           await tx.execute(sql`SELECT 1`);
           await arrive();
-          return ingestItem(tx, workerOutbox(tx), input, { maxAgeDays: 14 });
+          return ingestItem(tx, workerOutbox(tx), input, { maxAgeDays: 14, linkKey });
         });
       const results = await Promise.all([run(original), run(other)]);
       expect(results.map((r) => r.outcome).sort()).toEqual(['existing', 'inserted']);
@@ -949,7 +1013,7 @@ describe('ingestItem: concurrency (spec 03 §7 "Concurrency", §13)', () => {
         retryTransaction(ctx.worker, async (tx) => {
           await tx.execute(sql`SELECT 1`);
           await arrive();
-          return ingestItem(tx, workerOutbox(tx), input, { maxAgeDays: 14 });
+          return ingestItem(tx, workerOutbox(tx), input, { maxAgeDays: 14, linkKey });
         });
       const [fromX, fromY] = await Promise.all([run(viaGuid), run(viaUrl)]);
       const rows = await keyRows(newUrl);

@@ -192,7 +192,10 @@ async function fetchFeed(
       const outcome = await retryTransaction(deps.db, async (tx) => {
         const sender = workerOutbox(tx);
         const context = pipelineContext(deps, tx, sender);
-        const r = await ingestItem(tx, sender, input, { maxAgeDays: deps.ingestMaxAgeDays });
+        const r = await ingestItem(tx, sender, input, {
+          maxAgeDays: deps.ingestMaxAgeDays,
+          linkKey: articleLinkKey,
+        });
         if (r.needsExtraction) {
           await after('fetch', r.articleId, { status: 'ok', revision: r.revision }, context);
         }
@@ -366,6 +369,12 @@ async function followPermanentRedirect(
     }
     return redirect.survivorId;
   });
+}
+
+/** The url_key of a stored article link (spec 03 §5), or null when it does not canonicalize. */
+function articleLinkKey(url: string): string | null {
+  const canonical = canonicalizeUrl(url);
+  return canonical.ok ? urlKey(canonical.url) : null;
 }
 
 /** One normalized item as the ingestion repository's input (identity keys per spec 03 §5). */

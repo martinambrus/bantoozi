@@ -941,27 +941,30 @@ describe('article.extract (M1-T7)', () => {
 
   it('extracts a skipped link once the source clears its audio enclosure', async () => {
     // The publisher declares its article page as the item's audio enclosure, then corrects only
-    // that: the article is reset and its page extracted at the new revision (spec 03 §8.1 step 1).
+    // that, in a poll whose link carries other tracking parameters: the article is reset and its
+    // page extracted at the new revision (spec 03 §8.1 step 1).
     const pagePath = '/pod/notes/4712';
-    const link = server.url(pagePath);
     server.route(pagePath, html(articlePage('Episode notes')));
     let declared = true;
+    const link = () => server.url(`${pagePath}?utm_campaign=${declared ? 'launch' : 'weekly'}`);
+    const pageRequests = () =>
+      server.requests.filter((request) => request.path.startsWith(pagePath));
     const path = '/pod/corrected.rss';
     server.route(
       path,
       rssRoute(() =>
         rss(
           'Pod',
-          `<item><title>Episode 4712</title><link>${link}</link><guid>pod-4712</guid>
+          `<item><title>Episode 4712</title><link>${link()}</link><guid>pod-4712</guid>
 <pubDate>${rfc822(1)}</pubDate>${
-            declared ? `<enclosure url="${link}" type="audio/mpeg" length="3"/>` : ''
+            declared ? `<enclosure url="${link()}" type="audio/mpeg" length="3"/>` : ''
           }</item>`,
         ),
       ),
     );
     const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
     await fetchFeed(feedId);
-    const articleId = await articleIdByUrl(link);
+    const articleId = await articleIdByUrl(link());
     await run('article.extract');
     const bodyRows = async () =>
       (
@@ -972,13 +975,13 @@ describe('article.extract (M1-T7)', () => {
         )
       ).rows;
     expect(await bodyRows()).toEqual([{ status: 'skipped', article_revision: '1' }]);
-    expect(server.requests.filter((request) => request.path === pagePath)).toEqual([]);
+    expect(pageRequests()).toEqual([]);
 
     declared = false;
     await fetchFeed(feedId);
     await run('article.extract');
     expect(await bodyRows()).toEqual([{ status: 'ok', article_revision: '2' }]);
-    expect(server.requests.filter((request) => request.path === pagePath)).toHaveLength(1);
+    expect(pageRequests()).toHaveLength(1);
     const article = await owner.query<{ link_enclosure_type: string | null; state: string }>(
       'SELECT link_enclosure_type, pipeline_state AS state FROM articles WHERE id = $1',
       [articleId],

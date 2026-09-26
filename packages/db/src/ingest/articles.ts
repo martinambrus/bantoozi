@@ -147,6 +147,12 @@ export interface IngestItemInput {
 export interface IngestItemOptions {
   /** `INGEST_MAX_AGE_DAYS` (default 14): an older `published_at` inserts the article as `stale`. */
   maxAgeDays: number;
+  /**
+   * The url_key of a stored article link (spec 03 §5: `urlKey(canonicalizeUrl(url))`), or null when
+   * it does not canonicalize. An item's link is the article's link when their keys are equal, so a
+   * publisher that rotates only tracking parameters still names the same link (§8.1 step 1).
+   */
+  linkKey: (url: string) => string | null;
 }
 
 /**
@@ -261,6 +267,9 @@ export async function ingestItem(
   if (!Number.isInteger(options.maxAgeDays) || options.maxAgeDays < 1) {
     throw new RangeError('ingestItem: maxAgeDays must be a positive integer');
   }
+  if (typeof options.linkKey !== 'function') {
+    throw new TypeError('ingestItem: linkKey must be a function');
+  }
   if (typeof input.media.videoEvidence !== 'boolean') {
     throw new TypeError('ingestItem: media.videoEvidence must be a boolean');
   }
@@ -270,7 +279,7 @@ export async function ingestItem(
     const identity = await resolveIdentity(tx, input);
     if (identity.kind === 'new') return insertArticle(tx, input, options);
     const article = await lockArticle(tx, identity.articleId);
-    if (article !== null) return ingestFound(tx, sender, input, identity, article);
+    if (article !== null) return ingestFound(tx, sender, input, identity, article, options);
     // The article was merged away after it was resolved: the survivor now owns its keys and GUIDs.
     if (attempt >= MAX_IDENTITY_ATTEMPTS) {
       throw new Error('ingestItem: the resolved article kept disappearing; retry the item later');
@@ -401,6 +410,7 @@ async function ingestFound(
   input: IngestItemInput,
   identity: Extract<ResolvedIdentity, { kind: 'found' }>,
   article: LockedArticle,
+  options: IngestItemOptions,
 ): Promise<IngestItemResult> {
   const { articleId, outcome } = identity;
   if (outcome === 'guid_alias') {
@@ -437,23 +447,27 @@ async function ingestFound(
   };
   // Whether the link is an audio/video enclosure (spec 03 §8.1 step 1) is a publisher input: the
   // source's current item decides it for the link it gave the article, also without a content
-  // change, and other carriers never change it (§7 step 2). Declaring or clearing it changes
-  // whether extraction skips the link, and so the body the article can have: that resets the
-  // article like a content change, so a skipped link is extracted once corrected.
-  const skipChanged =
+  // change, and other carriers never change it (§7 step 2). The item names that link when the
+  // canonical keys match (rotated tracking parameters included); the row lock keeps `url` as read.
+  // Declaring or clearing it changes whether extraction skips the link, and so the body the
+  // article can have: that resets the article like a content change, so a skipped link is
+  // extracted once corrected.
+  const sameLink =
     input.url !== null &&
-    input.url === article.url &&
-    (input.linkEnclosureType === null) !== (article.linkEnclosureType === null);
+    article.url !== null &&
+    (input.url === article.url || options.linkKey(article.url) === input.urlKey);
+  const skipChanged =
+    sameLink && (input.linkEnclosureType === null) !== (article.linkEnclosureType === null);
   if (
     (article.contentHash === input.contentHash && !skipChanged) ||
     (await articleSourceFeedId(tx, articleId)) !== input.feedId
   ) {
     // The source's type for its link changed without changing the skip (another audio/video
     // type): stored without a reset. Other carriers never change it.
-    if (input.url !== null) {
+    if (sameLink) {
       await tx.execute(sql`
         UPDATE articles a SET link_enclosure_type = ${input.linkEnclosureType}::text
-         WHERE a.id = ${articleId}::bigint AND a.url = ${input.url}::text
+         WHERE a.id = ${articleId}::bigint
            AND a.link_enclosure_type IS DISTINCT FROM ${input.linkEnclosureType}::text
            AND ${input.feedId}::bigint = (
                  SELECT fi.feed_id FROM feed_items fi WHERE fi.article_id = a.id

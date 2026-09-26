@@ -614,13 +614,14 @@ fetching non-HTML media.
      HTML page is still extractable. Ingestion stores the type of an audio/video enclosure,
      attachment or `media:content` whose URL is the item's link as `articles.link_enclosure_type`,
      a publisher input like the others of §7 step 2: the source feed's current item decides it for
-     the link it gave the article, also without a content change (a correction clears it), and
-     other carriers never change it. Declaring or clearing it changes whether the link is skipped,
-     and so the body the article can have: like a content change it runs `resetArticleAnswers` and
-     records extraction for the new revision, so a link skipped before a correction is extracted;
-     another audio/video type is stored without a reset. Extraction and bookmark capture pass it to
-     the skip check (D-21). Match host suffixes on label boundaries and file extensions
-     case-insensitively on the pathname, not on query strings. Linkless entries use feed text
+     the link it gave the article (the same url_key, so rotated tracking parameters do not matter),
+     also without a content change (a correction clears it), and other carriers never change it.
+     Declaring or clearing it changes whether the link is skipped, and so the body the article can
+     have: like a content change it runs `resetArticleAnswers` and records extraction for the new
+     revision, so a link skipped before a correction is extracted; another audio/video type is
+     stored without a reset. Extraction and bookmark capture pass it to the skip check (D-21).
+     Match host suffixes on label boundaries and file extensions case-insensitively on the
+     pathname, not on query strings. Linkless entries use feed text
 2. **robots.txt:**
    - Fetch `/robots.txt` per origin through `safeFetch` and cache it in an in-memory LRU
      (5,000 origins, 24 h TTL).

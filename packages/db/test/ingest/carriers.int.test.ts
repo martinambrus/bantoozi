@@ -293,7 +293,7 @@ describe('newCarrierDemand (spec 03 §7, spec 05 §5.3)', () => {
       linkEnclosureType: null,
     };
     const first = await ctx.worker.transaction((tx) =>
-      ingestItem(tx, workerOutbox(tx), input, { maxAgeDays: 14 }),
+      ingestItem(tx, workerOutbox(tx), input, { maxAgeDays: 14, linkKey: (url: string) => url }),
     );
     // Only the off feed carried it: it stopped at the demand gate earlier and was matched since.
     await setState(first.articleId, 'matched');
@@ -302,7 +302,7 @@ describe('newCarrierDemand (spec 03 §7, spec 05 §5.3)', () => {
         tx,
         workerOutbox(tx),
         { ...input, feedId: activeFeed.id, guid: null },
-        { maxAgeDays: 14 },
+        { maxAgeDays: 14, linkKey: (url: string) => url },
       );
       return {
         result: carried,
