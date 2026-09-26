@@ -22,4 +22,4 @@
 
 ## Current state
 (append one line per completed milestone: date, milestone, notes)
-- 2026-09-25 — M0 Foundations done on branch `claude/exciting-cray-rlrjzj` (`40a6700`…`84f6b02`, PR #2 review fixes `1e36c27`, `87d8e0e`, `82c51a4`; see PLAN.md §5): monorepo and CI, shared config/jobs/crypto/text utils, per-worktree test databases, the full spec 02 schema with RLS, functions, triggers and the pg-boss migrate job, seed, and api/worker/web/eval skeletons in which every queue is a `stage_unavailable` stub. Deviations D-1…D-8; decisions I1–I3 in PLAN.md §17.3. Merge to `main` before starting M1/M2.
+- 2026-09-25 — M0 Foundations done on branch `claude/exciting-cray-rlrjzj` (`40a6700`…`84f6b02`, PR #2 review fixes `1e36c27`, `87d8e0e`, `82c51a4`, `551acf5`; see PLAN.md §5): monorepo and CI, shared config/jobs/crypto/text utils, per-worktree test databases, the full spec 02 schema with RLS, functions, triggers and the pg-boss migrate job, seed, and api/worker/web/eval skeletons in which every queue is a `stage_unavailable` stub. Deviations D-1…D-9; decisions I1–I3 in PLAN.md §17.3. Merge to `main` before starting M1/M2.

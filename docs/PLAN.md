@@ -290,10 +290,10 @@ M7 task or other launch gate is outstanding.
 ## 5. M0: Foundations
 
 **Status: done 2026-09-25** on branch `claude/exciting-cray-rlrjzj` (commits `40a6700`…`84f6b02`,
-plus the PR #2 review fixes `1e36c27`, `87d8e0e` and `82c51a4` of 2026-09-26; the per-task commits
-are in the table below). The full check passed after the last task commit, and `pnpm dev` served
-`GET /api/v1/readyz → 200`. M1 and M2 start once this branch is merged to `main` (§0.2). Deviations:
-D-1…D-8 in `docs/DECISIONS.md`; follow-up decisions in §17.3.
+plus the PR #2 review fixes `1e36c27`, `87d8e0e`, `82c51a4` and `551acf5` of 2026-09-26; the
+per-task commits are in the table below). The full check passed after the last task commit, and
+`pnpm dev` served `GET /api/v1/readyz → 200`. M1 and M2 start once this branch is merged to `main`
+(§0.2). Deviations: D-1…D-9 in `docs/DECISIONS.md`; follow-up decisions in §17.3.
 
 **Outcome:** an empty repository becomes a working monorepo. It has tooling, CI, per-process config,
 the shared text utilities and job definitions, the full database schema with grants, RLS and
@@ -318,7 +318,7 @@ Complete milestone M0 "Foundations" exactly as specified in docs/PLAN.md §5, fo
 | M0-T2 | `packages/shared`: config, settings/credential metadata registry, server-only encryption helpers, jobs, inference-mode and image policies, DTOs incl. `Explain`, ports, errors, ids, clock, mailer and text utils | T1 | A | 01 §2–3, §5; 02 §2; 03 §2, §6.1, §8.3; 04 §1; 05 §2, §5.1; 06 §6.2; 08 §3.1, §6 | ✓ `07327f5` |
 | M0-T3 | Infra: compose files (named projects, env ports), `init.sh`, Caddy skeleton | T1 | B | 01 §4, §8; 02 §1.1; 11 §2 | ✓ `5530c6b` |
 | M0-T4 | `packages/testing` (part 1): per-worktree test databases from a template, fixture HTTP server | T1, T3 | B | 01 §6; 02 §1.1 | ✓ `d95780a` |
-| M0-T5 | `packages/db`: schema, grants, RLS, SQL functions, pg-boss schema and queues in the migrate job, `withTenant`, factories (testing part 2), schema parity and RLS tests | T2, T3, T4 | A | 02 all; 03 §2 | ✓ `a3b7ba6`, `84f6b02`, `1e36c27`, `82c51a4` |
+| M0-T5 | `packages/db`: schema, grants, RLS, SQL functions, pg-boss schema and queues in the migrate job, `withTenant`, factories (testing part 2), schema parity and RLS tests | T2, T3, T4 | A | 02 all; 03 §2 | ✓ `a3b7ba6`, `84f6b02`, `1e36c27`, `82c51a4`, `551acf5` |
 | M0-T6 | Seed runner (`apps/worker/src/seed.ts`) and settings defaults | T5 | A | 02 §2; 05 §2 (mechanism only) | ✓ `d894063` |
 | M0-T7 | App skeletons (api, worker, web, eval), durable outbox relay, handler map, `pipeline.ts` stubs | T2, T5 | C | 01 §2, §4; 03 §1–2; 08 §10 | ✓ `89278b4`, `87d8e0e` |
 | M0-T8 | CI workflow and `CLAUDE.md` | T1; verification after T5–T7 | C | 01 §6–7, §10 | ✓ `00fc6e0` |
