@@ -12,3 +12,5 @@ apps/web/src/routeTree.gen.ts
 packages/db/drizzle/meta/
 # Verbatim from spec 01 §10; must not be reformatted.
 CLAUDE.md
+# Claude Code's per-developer local settings (git-ignored), not project files.
+.claude/settings.local.json
