@@ -93,10 +93,13 @@ export function createArticleExtractHandler(deps: WorkerDeps): QueueHandler<'art
 }
 
 /**
- * Alias and merge by redirect and by same-site `rel=canonical` (spec 03 §8.1 steps 4–5): a new key
- * becomes an alias of this article; a key another article owns merges this one into it (the owner
- * survives). Returns true when this article no longer exists (merged); the survivor then
- * continues from its own state and the moved carriers get the new-carrier continuation.
+ * Alias and merge by redirect and by same-site `rel=canonical` (spec 03 §8.1 steps 4–5), in that
+ * order: a new key becomes an alias of the current article; a key another article owns merges the
+ * current article into it (the owner survives). The remaining evidence then applies to that
+ * survivor, because the fetched page is the survivor's page too and the survivor's own extraction
+ * may be long done: a redirect to one article whose page names another as canonical merges all
+ * three. Returns true when this article no longer exists (merged); the last survivor then
+ * continues from its own state, and the carriers new to it get the new-carrier continuation.
  */
 async function mergedAway(
   deps: WorkerDeps,
@@ -109,29 +112,39 @@ async function mergedAway(
     { url: result.resolvedUrl, source: 'redirect' },
     { url: result.canonicalUrl, source: 'rel_canonical' },
   ];
+  let current: Pick<ArticleForExtraction, 'id' | 'urlKey'> = article;
+  // The feeds new to the current survivor: a later merge moves them on, reporting those it adds.
+  let newCarrierFeedIds: readonly string[] = [];
   for (const { url, source } of evidence) {
     if (url === null) continue;
     const canonical = canonicalizeUrl(url);
     if (!canonical.ok) continue;
     const key = urlKey(canonical.url);
-    if (key === article.urlKey) continue;
-    const alias = await addArticleAlias(tx, article.id, key, source);
+    if (key === current.urlKey) continue;
+    const alias = await addArticleAlias(tx, current.id, key, source);
     if (alias.status !== 'owned_by_other') continue;
-    const merged = await mergeArticles(tx, sender, article.id, alias.ownerId, { reason: source });
+    const merged = await mergeArticles(tx, sender, current.id, alias.ownerId, { reason: source });
     if (merged.status !== 'merged') continue;
-    const context = pipelineContext(deps, tx, sender);
-    for (const feedId of merged.movedFeedIds) {
-      await afterNewCarrier(merged.survivorId, feedId, context);
-    }
     const survivor = await loadArticleForExtraction(tx, merged.survivorId);
-    if (survivor !== null && survivor.pipelineState === 'ingested') {
-      await after('fetch', survivor.id, { status: 'ok', revision: survivor.revision }, context);
-    } else if (survivor !== null && survivor.pipelineState === 'extracted') {
-      await after('extract', survivor.id, { status: 'ok', revision: survivor.revision }, context);
+    if (survivor === null) {
+      throw new Error(`article ${merged.survivorId} vanished inside its merge transaction`);
     }
-    return true;
+    current = survivor;
+    newCarrierFeedIds = merged.movedFeedIds;
   }
-  return false;
+  if (current.id === article.id) return false;
+
+  const context = pipelineContext(deps, tx, sender);
+  for (const feedId of newCarrierFeedIds) {
+    await afterNewCarrier(current.id, feedId, context);
+  }
+  const survivor = await loadArticleForExtraction(tx, current.id);
+  if (survivor !== null && survivor.pipelineState === 'ingested') {
+    await after('fetch', survivor.id, { status: 'ok', revision: survivor.revision }, context);
+  } else if (survivor !== null && survivor.pipelineState === 'extracted') {
+    await after('extract', survivor.id, { status: 'ok', revision: survivor.revision }, context);
+  }
+  return true;
 }
 
 /**

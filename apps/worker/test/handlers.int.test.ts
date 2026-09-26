@@ -675,6 +675,62 @@ describe('article.extract (M1-T7)', () => {
     const ranked = (await intents('user.rank')).map((p) => p['userId']);
     expect(ranked).toContain(active.id);
   });
+
+  it('applies the rel=canonical of a redirect target page to the merge survivor too', async () => {
+    const targetUrl = server.url('/chain/target.html');
+    const canonicalUrl = server.url('/chain/canonical.html');
+    let targetNamesCanonical = false;
+    server.route('/chain/target.html', () =>
+      html(articlePage('Chained story', targetNamesCanonical ? { canonical: canonicalUrl } : {})),
+    );
+    server.route('/chain/canonical.html', html(articlePage('Chained story')));
+    server.redirect('/chain/go', targetUrl, 302);
+    const feedOf = async (path: string, guid: string, link: string) => {
+      server.route(
+        path,
+        rssRoute(() => rss(path, rssItem(guid, 'Chained story', link))),
+      );
+      return addFeed(path, [{ user: reader, mode: 'off' }]);
+    };
+    const targetFeed = await feedOf('/chain/target.rss', 'chain-t', targetUrl);
+    const canonicalFeed = await feedOf('/chain/canonical.rss', 'chain-c', canonicalUrl);
+    const goFeed = await feedOf('/chain/go.rss', 'chain-g', server.url('/chain/go'));
+    await fetchFeed(targetFeed);
+    await fetchFeed(canonicalFeed);
+    const target = await articleIdByUrl(targetUrl);
+    const survivor = await articleIdByUrl(canonicalUrl);
+    // Both are extracted before the publisher adds the canonical tag to the target's page.
+    await run('article.extract');
+    targetNamesCanonical = true;
+
+    // A third feed links a URL that redirects to the target, whose page now names the canonical.
+    await fetchFeed(goFeed);
+    const go = await articleIdByUrl(server.url('/chain/go'));
+    await run('article.extract');
+
+    const left = await owner.query<{ id: string }>(
+      'SELECT id::text AS id FROM articles WHERE id = ANY($1::bigint[])',
+      [[go, target, survivor]],
+    );
+    expect(left.rows).toEqual([{ id: survivor }]);
+    const aliases = await owner.query<{ url_key: string; source: string }>(
+      'SELECT url_key, source FROM article_aliases WHERE article_id = $1 ORDER BY url_key',
+      [survivor],
+    );
+    expect(aliases.rows).toEqual(
+      [
+        { url_key: keyOf(server.url('/chain/go')), source: 'redirect' },
+        { url_key: keyOf(targetUrl), source: 'rel_canonical' },
+      ].sort((a, b) => (a.url_key < b.url_key ? -1 : 1)),
+    );
+    const carriers = await owner.query<{ feed_id: string }>(
+      'SELECT feed_id::text AS feed_id FROM feed_items WHERE article_id = $1',
+      [survivor],
+    );
+    expect(carriers.rows.map((r) => r.feed_id).sort()).toEqual(
+      [targetFeed, canonicalFeed, goFeed].sort(),
+    );
+  });
 });
 
 describe('article.capture-bookmark (M1-T7)', () => {
