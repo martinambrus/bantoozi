@@ -1,0 +1,150 @@
+{
+  "description": "Call B: one noul per interest card (3 cards, spec 05 §5.2) plus one L2 topic choice (§4).",
+  "source": "Hand-written from the documented request/response shapes of spec 04 §3 (not a provider recording); replaced by RECORD=1 recordings once a key is available.",
+  "request": {
+    "model": "jev-1.13.0",
+    "state": {
+      "article": {
+        "title": "Solid-state battery pilot line passes 1,000 fast-charge cycles",
+        "feed": {
+          "title": "Volt Weekly",
+          "site": "voltweekly.example"
+        },
+        "author": "Jana Nováková",
+        "categories": [
+          "Electric vehicles",
+          "Batteries"
+        ],
+        "excerpt": "Cells from the new pilot line kept 90% of their capacity after 1,000 fast-charge cycles, a milestone for the solid-state packs the carmaker plans to ship in 2028.",
+        "body_lead": "The carmaker said on Tuesday that prototype cells built on its pilot line near Nagoya retained 90% of their capacity after 1,000 cycles of charging from 10% to 80% in twelve minutes. Engineers attribute the result to a sulfide electrolyte that no longer cracks under repeated expansion of the lithium-metal anode. Independent researchers cautioned that pilot-line cells are hand-picked and that mass production will decide the real cost per kilowatt-hour.",
+        "length": "medium",
+        "language": "English"
+      }
+    },
+    "questions": {
+      "c101": {
+        "type": "noul",
+        "instructions": {
+          "question": "Would a reader with this interest want to read `article`?",
+          "interest": "New battery chemistry for electric vehicles (solid-state, sodium-ion, LFP improvements)",
+          "not_for": "Stock-price moves, car launch PR without battery detail",
+          "focus": "Judge the article's main subject, not passing mentions."
+        },
+        "criteria": {
+          "true": {
+            "what": "The article's main subject falls within `interest`",
+            "examples": [
+              "Toyota's solid-state pilot line hits 1,000 cycles"
+            ]
+          },
+          "false": {
+            "what": "Only mentions it in passing, or falls under `not_for`",
+            "examples": [
+              "Tesla shares slide 4% after delivery miss"
+            ]
+          }
+        }
+      },
+      "c102": {
+        "type": "noul",
+        "instructions": {
+          "question": "Would a reader with this interest want to read `article`?",
+          "interest": "Formula 1 race results, team strategy and technical regulations",
+          "not_for": "Driver celebrity gossip",
+          "focus": "Judge the article's main subject, not passing mentions."
+        },
+        "criteria": {
+          "true": {
+            "what": "The article's main subject falls within `interest`"
+          },
+          "false": {
+            "what": "Only mentions it in passing, or falls under `not_for`"
+          }
+        }
+      },
+      "c103": {
+        "type": "noul",
+        "instructions": {
+          "question": "Would a reader with this interest want to read `article`?",
+          "interest": "Home solar panels and battery storage for households",
+          "focus": "Judge the article's main subject, not passing mentions."
+        },
+        "criteria": {
+          "true": {
+            "what": "The article's main subject falls within `interest`",
+            "examples": [
+              "Subsidy for home batteries doubles in 2027"
+            ]
+          },
+          "false": {
+            "what": "Only mentions it in passing, or falls under `not_for`"
+          }
+        }
+      },
+      "t2_transport": {
+        "type": "choice",
+        "instructions": {
+          "question": "Which Cars and transport subtopic is `article` primarily about?"
+        },
+        "criteria": {
+          "cars": {
+            "what": "Cars"
+          },
+          "ev": {
+            "what": "Electric vehicles"
+          },
+          "public_transport_rail": {
+            "what": "Public transport and rail"
+          },
+          "aviation": {
+            "what": "Aviation"
+          },
+          "cycling_micromobility": {
+            "what": "Cycling and micromobility"
+          },
+          "none_of_these": null
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "jev-1.13.0",
+      "answers": {
+        "c101": {
+          "type": "noul",
+          "noul": 0.94
+        },
+        "c102": {
+          "type": "noul",
+          "noul": 0.02
+        },
+        "c103": {
+          "type": "noul",
+          "noul": 0.31
+        },
+        "t2_transport": {
+          "type": "choice",
+          "choice": "ev",
+          "probabilities": {
+            "cars": 0.12,
+            "ev": 0.83,
+            "public_transport_rail": 0.02,
+            "aviation": 0.01,
+            "cycling_micromobility": 0.01,
+            "none_of_these": 0.01
+          },
+          "confidence": 0.63
+        }
+      },
+      "usage": {
+        "input_tokens": 812,
+        "output_tokens": 18
+      }
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "description": "A revoked or wrong API key: 401 (auth_error, no retry).",
+  "source": "Hand-written from the documented request/response shapes of spec 04 §3 (not a provider recording); replaced by RECORD=1 recordings once a key is available.",
+  "request": {
+    "model": "jev-1.13.0",
+    "state": {
+      "article": {
+        "title": "Jana's private reading list: 14 articles on custody law",
+        "excerpt": null
+      }
+    },
+    "questions": {
+      "promotional": {
+        "type": "noul",
+        "instructions": "Is `article` a press release, sponsored post, affiliate roundup or vendor marketing rather than independent content?"
+      }
+    }
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "error": {
+        "type": "authentication_error",
+        "code": "invalid_api_key",
+        "message": "Invalid API key provided."
+      }
+    }
+  }
+}

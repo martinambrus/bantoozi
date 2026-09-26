@@ -347,3 +347,14 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   10 Score levels and 1 MiB of serialized `{state, questions}`; JSON nested deeper than 64 levels is
   rejected as a builder bug. Callers may lower or raise them per router (`limits`). Spec 04 §2
   updated.
+- D-55: 2026-09-26 M2-T2 — the Jev model pin holds in every environment, not only in production:
+  `TypeSafeEngine` sends exactly the configured `TYPESAFE_MODEL` and treats a response from another
+  model as `invalid_response`. `jev-fake` is accepted only with the explicit test flag
+  `allowFakeModel`, which a production engine refuses at construction, so a misconfigured development
+  or test process cannot silently store another model's answers. Spec 04 §3 updated.
+- D-56: 2026-09-26 M2-T2 — transport details spec 04 §3–4 left open. A redirect is never followed
+  (Authorization must not follow one) and ends the logical request as a permanent `error` with detail
+  `http_3xx`. Caller cancellation has no `CallStatus` of its own: it is reported as `error` with
+  detail `cancelled`, never retried, with billing `uncertain` when the request may already have
+  been sent. Response bodies are read up to 1 MiB; a larger body is an `invalid_response`. Spec 04
+  §3 and §4 updated.

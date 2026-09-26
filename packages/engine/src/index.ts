@@ -3,3 +3,4 @@ export const PACKAGE_NAME = '@bantoozi/engine';
 
 export * from './normalize.js';
 export * from './types.js';
+export * from './typesafe-engine.js';

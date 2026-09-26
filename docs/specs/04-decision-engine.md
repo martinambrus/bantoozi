@@ -348,12 +348,14 @@ The normalized answers are what is stored in `article_facets.answers`, `card_ans
 | 429 | rate limited | retry (§4). Feeds the client-side limiter |
 | 5xx (including 529), network error, timeout | transient | retry (§4) |
 | Other 4xx | unsupported model/endpoint or permanent request error | no retry; alert on model/configuration failures |
+| 3xx | redirect | never followed (Authorization must not follow it); permanent `error` `http_3xx`, no retry (D-56) |
 
 - Per-attempt timeout: 30 s.
 - **Model pinning:** the `model` field is always `TYPESAFE_MODEL` (default `jev-1.13.0`), never an
-  alias, in production.
+  alias; production additionally requires a pinned version.
 - The response's `model` is stored with every answer. A different model from the requested pin is
-  an `invalid_response` in production; `jev-fake` is allowed only by an explicit test configuration.
+  an `invalid_response` in every environment; `jev-fake` is allowed only with the explicit test flag
+  `allowFakeModel`, which production refuses (D-55).
 - **Cost:** `input_tokens × TYPESAFE_PRICE_PER_MTOK_USD / 1e6`. Output is free.
 
 **Client-side rate limiter:** token buckets at **1,000 requests/min** and **200,000 input tokens/s**
@@ -374,11 +376,13 @@ bounded by the job deadline, cancellation works while queued, and aging prevents
   either seconds or an HTTP date. Never retry sooner than a valid server delay. If that delay is
   longer than the remaining job deadline, return a deferred outcome with `retryAt` for the queue.
 - **Retry on:** 429, 5xx, network errors, timeouts, and at most one `invalid_response`. Cancellation,
-  auth errors and invalid requests are not retried. Reacquire limiter capacity and spend reservation
+  auth errors and invalid requests are not retried. A cancelled attempt is reported as `error` with
+  detail `cancelled`, billed `uncertain` when it may have been sent (D-56). Reacquire limiter capacity and spend reservation
   before every attempt and before entering fallback.
 - **Concurrency:** a process-wide semaphore of `ENGINE_CONCURRENCY` (default 8); the LLM also uses
   `OLLAMA_MAX_CONCURRENCY`. Backoff does not hold a semaphore slot. Requests and responses have
-  bounded bytes; abort transport and release capacity on timeout/cancellation.
+  bounded bytes (responses up to 1 MiB, D-56); abort transport and release capacity on
+  timeout/cancellation.
 - **Logging:** one `engine_calls` row per **wire attempt**, grouped by `logical_request_id`, with
   `attempts` as a monotonically increasing ordinal for that engine across **all subpacks and retries**
   in the logical request (do not restart at 1 for each split pack). Per-subpack retry limits are
