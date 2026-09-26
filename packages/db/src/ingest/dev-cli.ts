@@ -2,6 +2,7 @@ import { enqueueFetch, newUserId, planMinIntervalMap, type JobSender } from '@ba
 import { sql } from 'drizzle-orm';
 
 import type { Executor, Transaction } from '../client.js';
+import { resolveLiveFeedId } from './feeds.js';
 
 /**
  * Worker-role helpers for the development CLI (`pnpm worker-cli`, M1-T9; spec 03 §10). They are
@@ -43,11 +44,15 @@ export async function subscribeToFeed(
   let feedId = inserted.rows[0]?.id;
   const createdFeed = feedId !== undefined;
   if (feedId === undefined) {
-    const existing = await tx.execute<{ id: string; merged: string | null }>(sql`
-      SELECT id::text AS id, merged_into_id::text AS merged FROM feeds WHERE url = ${input.url}`);
+    const existing = await tx.execute<{ id: string }>(
+      sql`SELECT id::text AS id FROM feeds WHERE url = ${input.url}`,
+    );
     const row = existing.rows[0];
     if (row === undefined) throw new Error('feed disappeared during subscribe');
-    feedId = row.merged ?? row.id;
+    // A retired identity may have been merged more than once: subscribe to the live root.
+    const live = await resolveLiveFeedId(tx, row.id);
+    if (live === null) throw new Error(`feed ${row.id} has a missing or cyclic merge chain`);
+    feedId = live;
   }
   const subscribed = await tx.execute(sql`
     INSERT INTO subscriptions (user_id, feed_id) VALUES (${input.userId}::uuid, ${feedId}::bigint)
