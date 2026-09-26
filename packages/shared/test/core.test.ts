@@ -144,7 +144,9 @@ describe('UserPreferences (spec 08 §3.1)', () => {
     expect(read).not.toHaveProperty('legacy');
     expect(DEFAULT_USER_PREFERENCES.loadRemoteImages).toBe(false);
     expect(DEFAULT_USER_PREFERENCES.implicitFeedback).toBe(false);
+    expect(DEFAULT_USER_PREFERENCES.exampleSuggestions).toBe(true);
     expect(DEFAULT_USER_PREFERENCES.swipe).toEqual({ left: 'dislike', right: 'like' });
+    expect(readUserPreferences({ exampleSuggestions: 'no' }).exampleSuggestions).toBe(true);
   });
 
   it('merges only supplied leaves and replaces arrays', () => {
@@ -162,6 +164,11 @@ describe('UserPreferences (spec 08 §3.1)', () => {
     });
     expect(next.folderOrder).toEqual(['c']);
     expect(current.demote.stale).toBe('auto');
+    const quiet = mergeUserPreferences(
+      current,
+      UserPreferencesPatchSchema.parse({ exampleSuggestions: false }),
+    );
+    expect(quiet.exampleSuggestions).toBe(false);
   });
 
   it('rejects unknown keys and empty patches', () => {
@@ -235,7 +242,12 @@ describe('image policy (spec 08 §4.2)', () => {
 describe('Explain v1 (spec 06 §6.2)', () => {
   const explain = {
     v: 1,
-    inputs: { contentRevision: '3', rankRevision: '12', contextSha: 'a'.repeat(64) },
+    inputs: {
+      contentRevision: '3',
+      mediaRevision: '1',
+      rankRevision: '12',
+      contextSha: 'a'.repeat(64),
+    },
     source: 'cards',
     p: 0.82,
     lane: 'for_you',
@@ -257,5 +269,10 @@ describe('Explain v1 (spec 06 §6.2)', () => {
       }),
     ).toThrow();
     expect(() => ExplainSchema.parse({ ...explain, p: 1.2 })).toThrow();
+  });
+
+  it('requires the media revision the score used (spec 03 §6.4)', () => {
+    const { mediaRevision: _omitted, ...inputs } = explain.inputs;
+    expect(() => ExplainSchema.parse({ ...explain, inputs })).toThrow();
   });
 });

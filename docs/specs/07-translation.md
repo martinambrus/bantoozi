@@ -200,7 +200,9 @@ inserting a new card row:
   use the original pair. Card answers bind to `card_input_sha256`, the exact rendered question
   (specs 02/05), which includes the selected effective text. Earlier answers remain historical but
   are no longer current once that digest changes. Enqueue bounded rematching/backfill, advance
-  affected users' rank revisions and invalidate incompatible personal models. Rematch only pairs
+  affected users' rank revisions and invalidate incompatible personal models (spec 06 §8.1: a card
+  text mode switch changes every user's rating fingerprint; one card's new digest affects only
+  models with an own input for that card). Rematch only pairs
   with existing authorized manual/active demand; a mode change never enables an off feed. Switching
   back to `as_written` follows the same digest/invalidation policy; never mix answers made with different
   effective text under an unchanged cache identity.
@@ -230,7 +232,8 @@ Library cards already ship with English text (`lang = 'en'`).
   snapshot; stale inference-version/credential-version completions cannot revive cancelled demand.
 - Active encrypted Ollama credential is used without env API key; tombstone/rotation and no-key
   failures preserve reading and never leak keys in errors, outbox or accounting.
-- A card mode/text-digest change rematches only authorized eligible pairs and invalidates model compatibility;
+- A card mode/text-digest change rematches only authorized eligible pairs and invalidates personal
+  models only as spec 06 §8.1 defines;
   unchanged translated text does not trigger unnecessary work. API card-call accounting works as
   `bantoozi_app` without worker credentials.
 

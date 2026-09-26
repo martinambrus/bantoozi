@@ -18,6 +18,7 @@ const fields = {
   markReadOnExpand: z.boolean(),
   markReadOnRate: z.boolean(),
   feedbackPrompt: z.enum(['often', 'occasionally', 'never']),
+  exampleSuggestions: z.boolean(),
   demote: {
     clickbait: TriSchema,
     promotional: TriSchema,
@@ -44,6 +45,8 @@ export interface UserPreferences {
   markReadOnExpand: boolean;
   markReadOnRate: boolean;
   feedbackPrompt: 'often' | 'occasionally' | 'never';
+  /** Offer to add a rated article as a card example (spec 06 §10). */
+  exampleSuggestions: boolean;
   demote: { clickbait: Tri; promotional: Tri; shallow: Tri; stale: Tri };
   implicitNegative: boolean;
   swipe: { left: 'dislike' | 'read' | 'none'; right: 'like' | 'bookmark' | 'none' };
@@ -65,6 +68,7 @@ export const DEFAULT_USER_PREFERENCES: Readonly<UserPreferences> = Object.freeze
   markReadOnExpand: true,
   markReadOnRate: true,
   feedbackPrompt: 'occasionally',
+  exampleSuggestions: true,
   demote: { clickbait: 'auto', promotional: 'auto', shallow: 'auto', stale: 'auto' },
   implicitNegative: false,
   swipe: { left: 'dislike', right: 'like' },
@@ -84,6 +88,7 @@ export const UserPreferencesSchema: z.ZodType<UserPreferences> = z.object({
   markReadOnExpand: fields.markReadOnExpand.catch(DEFAULT_USER_PREFERENCES.markReadOnExpand),
   markReadOnRate: fields.markReadOnRate.catch(DEFAULT_USER_PREFERENCES.markReadOnRate),
   feedbackPrompt: fields.feedbackPrompt.catch(DEFAULT_USER_PREFERENCES.feedbackPrompt),
+  exampleSuggestions: fields.exampleSuggestions.catch(DEFAULT_USER_PREFERENCES.exampleSuggestions),
   demote: z
     .object({
       clickbait: fields.demote.clickbait.catch('auto'),
@@ -126,6 +131,7 @@ export const UserPreferencesPatchSchema = z
     markReadOnExpand: fields.markReadOnExpand,
     markReadOnRate: fields.markReadOnRate,
     feedbackPrompt: fields.feedbackPrompt,
+    exampleSuggestions: fields.exampleSuggestions,
     demote: z
       .object({
         clickbait: fields.demote.clickbait,

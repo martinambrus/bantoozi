@@ -179,4 +179,22 @@ describe('RankerConfig (spec 06 §11)', () => {
     expect(() => mergeRankerConfig({ bm25: { k1: 0 } })).toThrow();
     expect(() => mergeRankerConfig({ demotion: { factor: Number.NaN } })).toThrow();
   });
+
+  it('replaces model.lambdaGrid whole and validates the personal-model keys', () => {
+    const merged = mergeRankerConfig({ model: { lambdaGrid: [2, 20] } });
+    expect(merged.model.lambdaGrid).toEqual([2, 20]);
+    expect(merged.model.cardMatchP).toBe(0.5);
+    expect(merged.model.cardMinMatched).toBe(8);
+    expect(() => mergeRankerConfig({ model: { lambda: 1 } })).toThrow();
+    expect(() => mergeRankerConfig({ model: { lambdaGrid: [] } })).toThrow();
+    expect(() => mergeRankerConfig({ model: { lambdaGrid: [3, 1] } })).toThrow();
+    expect(() => mergeRankerConfig({ model: { lambdaGrid: [1, 1] } })).toThrow();
+    expect(() => mergeRankerConfig({ model: { lambdaGrid: [0, 1] } })).toThrow();
+    expect(() =>
+      mergeRankerConfig({ model: { lambdaGrid: Array.from({ length: 11 }, (_, i) => i + 1) } }),
+    ).toThrow();
+    expect(() => mergeRankerConfig({ model: { cardMatchP: 0 } })).toThrow();
+    expect(() => mergeRankerConfig({ model: { cardMatchP: 1.2 } })).toThrow();
+    expect(() => mergeRankerConfig({ model: { cardMinMatched: 0 } })).toThrow();
+  });
 });
