@@ -109,9 +109,11 @@ in the same outbox transaction. This makes an inaugural rating learnable when sl
     Version builders explicitly and test each optional-field/language/example path.
 - **Seeding:** `pnpm db:seed` (root script → `pnpm --filter @bantoozi/worker seed`, i.e.
   `apps/worker/src/seed.ts`, because only apps may import every package) upserts every set into
-  `question_sets`. The worker also checks this at startup.
-  - It **fails** if a `version` already exists with a different `sha256`. Changing wording requires
-    bumping the version (`enrich-v2`).
+  `question_sets`. The worker also checks this at startup (`verifyQuestionSets`): every set the code
+  defines is stored under its version with the same kind and `sha256`, every stored definition
+  hashes to its `sha256`, and every active set is one the code knows, of its kind (D-51).
+  - It **fails** if a `version` already exists with a different `sha256` or kind, or a set's `sha256`
+    does not match its own definition. Changing wording requires bumping the version (`enrich-v2`).
   - It sets `settings['question_sets.active'][kind]` **only when that kind is absent**.
 - **Switching sets:** `settings['question_sets.active']` names the active set per kind. Switching
   `enrich` to a new set (`PATCH /admin/settings`) enqueues
@@ -794,6 +796,9 @@ throttling alone does not replace this durable claim.
 
 - One file per L1. Each entry:
   `{ slug, title, title_sk, interest, interest_sk?, not_for?, topic_ids: string[], examples_yes?: string[≤3], examples_no?: string[≤2] }`.
+  The shipped library also requires `interest_sk` (≤ 300 characters); `title` ≤ 60, `interest` and
+  `not_for` ≤ 200, examples ≤ 200 characters and never an empty array; the first topic's L1 is the
+  file's L1, and text hashes are unique across the library (D-49).
 - **`pnpm db:seed`** (`apps/worker/src/seed.ts`, running as `bantoozi_worker`) upserts by `slug` into
   `interest_cards` (`origin='library', visibility='public'`, `i18n.sk` from the `*_sk` fields):
   - **Unchanged text** (same `text_hash`): update `title`, `topic_ids`, `i18n` in place. A `topic_ids`
@@ -807,8 +812,16 @@ throttling alone does not replace this durable claim.
     Keep the old card readable/answer-valid and held by existing users. Do **not** retire a held old
     version, re-point `user_cards`, rematch its holders, or change their model context automatically.
     A reused non-public shared hash must first satisfy the publication authorization policy (§8.1), so seed cannot bypass
-    publication controls; hold that entry with a report rather than silently promote it.
-  - Each seed entry/version-link transaction is idempotent. Cosmetic title/i18n/topic corrections are
+    publication controls; hold that entry with a report rather than silently promote it. The seed
+    also holds an entry whose text is another slug's card (`text_has_other_slug`), an older version
+    in a library chain (`text_is_library_version`, e.g. a revert) or whose stored chain disagrees
+    (`version_chain_mismatch`); a held entry is logged and does not fail the seed. An existing public
+    card with that text but no slug and no chain is adopted. The worker role cannot call
+    `admin_publish_library_card_version`, so the seed appends `library_card_versions` itself under
+    the same `library:<slug>` lock, and the guard trigger still enforces the chain (D-50).
+  - Each seed entry/version-link step is idempotent; the whole seed runs in one transaction. It
+    un-retires a shipped entry's card and never retires or deletes anything: removed entries, old
+    versions and topics the code no longer lists stay (D-50). Cosmetic title/i18n/topic corrections are
     permitted in place only when they do not alter classification semantics; question/example/text
     changes always create a version. Private forks retain their historical immutable parent.
   - **User-controlled updates (Q9 resolved):** `GET /library/updates` returns exact old/new ids and

@@ -312,3 +312,23 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
 - D-48: 2026-09-26 M2-T5 — `flattenFacets` throws on a missing or mistyped enrich answer rather than
   emitting partial features, and a `none_of_these` L2 answer yields only `t2_asked.<l1> = 1` with no
   `t2.<l1>.*` value. Spec 05 §3.4 did not say. Spec 05 §3.4 updated.
+- D-49: 2026-09-26 M2-T6 — library content rules beyond spec 05 §8: `interest_sk` is required
+  (≤ 300 characters), `title` ≤ 60, `interest` and `not_for` ≤ 200, examples ≤ 200 characters and
+  never an empty array, the first topic's L1 is the file's L1, and text hashes are unique across the
+  library, so every shipped card is displayable in Slovak and each file stays one L1. Spec 05 §8
+  updated.
+- D-50: 2026-09-26 M2-T6 — seed holds, versions and transaction. Besides the shared-hash case of
+  spec 05 §8, the seed holds an entry whose text is another slug's card (`text_has_other_slug`), an
+  older version in a library chain (`text_is_library_version`, e.g. a revert) or whose stored chain
+  disagrees (`version_chain_mismatch`); a held entry is logged and does not fail the seed. An
+  existing public card with that text but no slug and no chain is adopted. The worker role cannot
+  call `admin_publish_library_card_version`, so the seed appends `library_card_versions` itself under
+  the same `library:<slug>` lock, and the guard trigger still enforces the chain. The whole seed is
+  one transaction (the M0 design); it un-retires a shipped entry's card and never retires or deletes
+  anything. The worker image ships the library JSON the seed loads at runtime. Spec 05 §8 and spec 11
+  §2 updated.
+- D-51: 2026-09-26 M2-T6 — question-set checks. The seed also fails on a kind mismatch or a set whose
+  `sha256` does not match its own definition, and the worker's startup check (`verifyQuestionSets`)
+  also reports a set that was never seeded, a stored definition with a wrong hash and an active set
+  the code does not know or of another kind. Spec 05 §2 said only "the worker also checks this at
+  startup". Spec 05 §2 updated.
