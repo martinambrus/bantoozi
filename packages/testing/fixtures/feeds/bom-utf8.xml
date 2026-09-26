@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>Café Notes</title>
+<link>https://cafe.example.com/</link>
+<description>A feed that starts with a byte order mark.</description>
+<item>
+<title>Crème brûlée, ranked</title>
+<link>https://cafe.example.com/2026/09/creme-brulee</link>
+<description>We tried 14 desserts in 3 days.</description>
+<pubDate>Tue, 22 Sep 2026 11:00:00 GMT</pubDate>
+<guid>https://cafe.example.com/2026/09/creme-brulee</guid>
+</item>
+</channel>
+</rss>

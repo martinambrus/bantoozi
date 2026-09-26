@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>Tom & Jerry Fan Club</title>
+<link>https://fans.example.com/?ref=rss&lang=en</link>
+<description>News & updates</description>
+<item>
+<title>Q&A: Tom & Jerry's 90th anniversary</title>
+<link>https://fans.example.com/posts?id=90&view=full</link>
+<description>Cats & mice &amp; a valid entity, &#233;, &eacute; and&nbsp;space. An unknown &bogus; reference.</description>
+<pubDate>Tue, 22 Sep 2026 11:00:00 GMT</pubDate>
+<guid isPermaLink="false">fans-90&A</guid>
+</item>
+<item>
+<title><![CDATA[CDATA & stays as it is]]></title>
+<link>https://fans.example.com/posts?id=91</link>
+<description><![CDATA[<p>AT&T &amp; friends</p>]]></description>
+<!-- a comment with a bare & inside -->
+<pubDate>Mon, 21 Sep 2026 11:00:00 GMT</pubDate>
+</item>
+</channel>
+</rss>

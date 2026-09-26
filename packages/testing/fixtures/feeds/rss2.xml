@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+  xmlns:content="http://purl.org/rss/1.0/modules/content/"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:sy="http://purl.org/rss/1.0/modules/syndication/"
+  xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Example Engineering Blog</title>
+    <atom:link href="https://blog.example.com/feed/" rel="self" type="application/rss+xml"/>
+    <link>https://blog.example.com/</link>
+    <description>Notes on distributed systems, databases &amp; the web.</description>
+    <language>en-US</language>
+    <lastBuildDate>Fri, 25 Sep 2026 16:20:00 +0000</lastBuildDate>
+    <ttl>60</ttl>
+    <sy:updatePeriod>hourly</sy:updatePeriod>
+    <sy:updateFrequency>2</sy:updateFrequency>
+    <generator>https://wordpress.org/?v=6.8</generator>
+    <image>
+      <url>https://blog.example.com/assets/logo-144.png</url>
+      <title>Example Engineering Blog</title>
+      <link>https://blog.example.com/</link>
+    </image>
+    <item>
+      <title>Why we moved our job queue into PostgreSQL</title>
+      <link>https://blog.example.com/2026/09/postgres-job-queue/?utm_source=rss&amp;utm_medium=rss</link>
+      <comments>https://blog.example.com/2026/09/postgres-job-queue/#comments</comments>
+      <dc:creator><![CDATA[Jana Nováková]]></dc:creator>
+      <pubDate>Fri, 25 Sep 2026 14:05:00 +0000</pubDate>
+      <category><![CDATA[Databases]]></category>
+      <category><![CDATA[PostgreSQL]]></category>
+      <category><![CDATA[databases]]></category>
+      <category><![CDATA[News &amp; Opinion]]></category>
+      <guid isPermaLink="false">https://blog.example.com/?p=4812</guid>
+      <description><![CDATA[<p>We replaced a separate broker with a transactional outbox&#8230;</p>]]></description>
+      <content:encoded><![CDATA[<p>For three years our workers pulled jobs from a separate message broker. Keeping it consistent with the database cost us more than it saved.</p>
+<h2>The outbox pattern</h2>
+<p>Every state change and its follow-up work are written in <strong>one transaction</strong>. Read the <a href="https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE">locking documentation</a> for the details.</p>
+<figure><img src="https://blog.example.com/wp-content/uploads/2026/09/queue-diagram.png" alt="Queue diagram" width="1200" height="630" /><figcaption>Jobs flow from the outbox to the workers.</figcaption></figure>
+<pre><code>SELECT * FROM outbox ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 10;</code></pre>
+<p>The post <a href="https://blog.example.com/2026/09/postgres-job-queue/">Why we moved our job queue into PostgreSQL</a> appeared first on <a href="https://blog.example.com">Example Engineering Blog</a>.</p>]]></content:encoded>
+    </item>
+    <item>
+      <title>Release notes: 4.2 brings faster full-text search</title>
+      <link>https://blog.example.com/2026/09/release-4-2/</link>
+      <author>releases@example.com (Release Team)</author>
+      <pubDate>Wed, 23 Sep 2026 09:00:00 GMT</pubDate>
+      <category domain="https://blog.example.com/tag/">release</category>
+      <guid>https://blog.example.com/2026/09/release-4-2/</guid>
+      <description>Version 4.2 is out. Search is up to 3&#215; faster &amp; index builds use half the memory.</description>
+      <enclosure url="https://blog.example.com/media/release-4-2-cover.jpg" length="48213" type="image/jpeg"/>
+    </item>
+    <item>
+      <title>Podcast: episode 31 — scaling reads</title>
+      <link>https://blog.example.com/podcast/31/</link>
+      <pubDate>Mon, 21 Sep 2026 06:30:00 +0200</pubDate>
+      <guid isPermaLink="true">https://blog.example.com/podcast/31/</guid>
+      <description>&lt;p&gt;We talk about read replicas, caching and &lt;em&gt;when not to&lt;/em&gt; add either.&lt;/p&gt;</description>
+      <enclosure url="https://cdn.example.com/podcast/ep31.mp3" length="31457280" type="audio/mpeg"/>
+    </item>
+  </channel>
+</rss>

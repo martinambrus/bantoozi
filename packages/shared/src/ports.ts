@@ -1,6 +1,7 @@
 /**
- * Ports shared between `packages/engine` (consumer) and `packages/db` (implementation) — spec 04 §1.
- * Types only: `packages/db` implements `EngineStore` by importing these from `@bantoozi/shared`.
+ * Ports shared between consumer packages (`packages/engine`, `packages/feeds`) and their
+ * `packages/db` implementations (spec 01 §2, spec 04 §1, spec 03 §4). Types only: `packages/db`
+ * implements them by importing these from `@bantoozi/shared`.
  */
 
 export type EngineName = 'typesafe' | 'llm' | 'laya';
@@ -143,4 +144,32 @@ export interface EngineStore {
   ): Promise<BudgetSnapshot>;
   getSetting<T>(key: string): Promise<T | undefined>;
   setSetting<T>(key: string, value: T): Promise<void>;
+}
+
+/**
+ * Result of reserving a request start at one origin (spec 03 §8.2). Nothing is reserved unless
+ * `granted`; the holder releases exactly its `token` when the request ends.
+ */
+export type OriginReservation =
+  | { status: 'granted'; token: string }
+  /** Both request leases are held or the next start slot is later: try again at `retryAt`. */
+  | { status: 'wait'; retryAt: Date }
+  /** A persisted 429/503 cooldown: defer the work until `until` instead of sleeping in a worker. */
+  | { status: 'blocked'; until: Date };
+
+/**
+ * The per-origin politeness throttle shared by every safe-fetch caller: API discovery, feed fetch,
+ * robots and page extraction, across processes (spec 03 §4, §8.2). At most two concurrent requests
+ * and one second between request starts per origin (`scheme://host:port`), plus persisted
+ * cooldowns. `packages/feeds` consumes it; `packages/db` implements it on `origin_fetch_state` with
+ * short transactions that are never held open across an HTTP request. Lease expiry must exceed the
+ * total request deadline, so a crashed holder's lease is reclaimed.
+ */
+export interface OriginLimiter {
+  /** Try to reserve a request start under a lease of `leaseMs`; never waits itself. */
+  reserve(origin: string, options: { leaseMs: number }): Promise<OriginReservation>;
+  /** Release exactly this lease; releasing an unknown or expired token is a no-op. */
+  release(origin: string, token: string): Promise<void>;
+  /** Persist a cooldown until `until` (clamped to 24 h); never shortens a longer existing one. */
+  block(origin: string, until: Date): Promise<void>;
 }

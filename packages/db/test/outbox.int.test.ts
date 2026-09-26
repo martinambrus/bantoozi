@@ -331,7 +331,7 @@ describe('relay primitives (worker role)', () => {
     }
   });
 
-  it('reports the age of the oldest undelivered intent', async () => {
+  it('reports the age of the oldest due undelivered intent', async () => {
     await drain();
     expect(await oldestPendingOutboxAgeSeconds(ctx.worker)).toBeNull();
     await ctx.worker.transaction(async (tx) => {
@@ -340,9 +340,39 @@ describe('relay primitives (worker role)', () => {
       );
     });
     await ctx.owner.query(
-      "UPDATE job_outbox SET created_at = now() - interval '6 minutes' WHERE delivered_at IS NULL",
+      `UPDATE job_outbox SET created_at = now() - interval '6 minutes',
+                             available_at = now() - interval '6 minutes'
+        WHERE delivered_at IS NULL`,
     );
     expect(await oldestPendingOutboxAgeSeconds(ctx.worker)).toBeGreaterThan(300);
+  });
+
+  it('leaves an intentional delay out of the backlog age until the intent is due', async () => {
+    await drain();
+    // Created an hour ago and deferred for two more hours (an origin cooldown): not backlog.
+    await ctx.worker.transaction(async (tx) => {
+      await workerOutbox(tx, { availableAt: new Date(Date.now() + 2 * 3_600_000) }).enqueue(
+        buildJobIntent('article.extract', { articleId: '12' }, { revision: '1' }),
+      );
+    });
+    await ctx.owner.query(
+      "UPDATE job_outbox SET created_at = now() - interval '1 hour' WHERE delivered_at IS NULL",
+    );
+    expect(await oldestPendingOutboxAgeSeconds(ctx.worker)).toBeNull();
+    // Once due, it counts from its `available_at`, not from its creation.
+    await ctx.owner.query(
+      "UPDATE job_outbox SET available_at = now() - interval '1 minute' WHERE delivered_at IS NULL",
+    );
+    const due = await oldestPendingOutboxAgeSeconds(ctx.worker);
+    expect(due).toBeGreaterThanOrEqual(60);
+    expect(due).toBeLessThan(300);
+    // A failed send counts from its creation, also while its backoff moves `available_at`.
+    await ctx.owner.query(
+      `UPDATE job_outbox SET last_error = 'Error', available_at = now() + interval '15 minutes'
+        WHERE delivered_at IS NULL`,
+    );
+    expect(await oldestPendingOutboxAgeSeconds(ctx.worker)).toBeGreaterThan(3_000);
+    await drain();
   });
 
   it('bounds the retry backoff', () => {
@@ -367,6 +397,40 @@ describe('relay primitives (worker role)', () => {
     const left = await outboxRows();
     expect(left.map((r) => r.queue)).toEqual(['article.match']);
     expect(left[0]?.delivered_at).toBeNull();
+  });
+
+  it('delays an intent until availableAt, and an identical pending intent coalesces it', async () => {
+    await drain();
+    const later = new Date(Date.now() + 60 * 60_000);
+    await ctx.worker.transaction(async (tx) => {
+      await workerOutbox(tx, { availableAt: later }).enqueue(
+        buildJobIntent('article.extract', { articleId: '77' }, { revision: '2' }),
+      );
+    });
+    // Not due yet: the relay skips it (spec 03 §8.2, a cooldown defers instead of sleeping).
+    expect(await claimOutboxIntents(ctx.worker, { limit: 10, leaseSeconds: 30 })).toEqual([]);
+    const row = await ctx.owner.query<{ due_in_minutes: number }>(
+      `SELECT round(extract(epoch FROM available_at - now()) / 60)::int AS due_in_minutes
+         FROM job_outbox WHERE queue = 'article.extract' AND delivered_at IS NULL`,
+    );
+    expect(row.rows).toEqual([{ due_in_minutes: 60 }]);
+    // An immediate request for the same work coalesces with the pending delayed intent.
+    await ctx.worker.transaction(async (tx) => {
+      await workerOutbox(tx).enqueue(
+        buildJobIntent('article.extract', { articleId: '77' }, { revision: '2' }),
+      );
+    });
+    const pending = (await outboxRows('article.extract')).filter((r) => r.delivered_at === null);
+    expect(pending).toHaveLength(1);
+    // A past availableAt is due at once.
+    await drain();
+    await ctx.worker.transaction(async (tx) => {
+      await workerOutbox(tx, { availableAt: new Date(Date.now() - 60_000) }).enqueue(
+        buildJobIntent('article.extract', { articleId: '78' }, { revision: '1' }),
+      );
+    });
+    const due = await claimOutboxIntents(ctx.worker, { limit: 10, leaseSeconds: 30 });
+    expect(due.map((c) => c.payload)).toEqual([{ articleId: '78' }]);
   });
 
   it('writes follow-on intents without a requester in worker transactions', async () => {

@@ -65,6 +65,7 @@ describe('errors (spec 08 §1)', () => {
       RATE_LIMITED: 429,
       FEED_NOT_A_FEED: 422,
       FEED_TIMEOUT: 422,
+      FEED_ORIGIN_COOLDOWN: 422,
       ENGINE_UNAVAILABLE: 503,
       INTERNAL: 500,
     };

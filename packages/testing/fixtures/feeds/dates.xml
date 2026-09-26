@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<channel>
+<title>Date Edge Cases</title>
+<link>https://dates.example.com/</link>
+<description>Future, missing and malformed dates.</description>
+<item><title>Undated first</title><link>https://dates.example.com/undated-1</link></item>
+<item><title>Far future (scheduled post)</title><link>https://dates.example.com/future</link><pubDate>Sat, 10 Oct 2026 09:00:00 GMT</pubDate></item>
+<item><title>Eighteen hours ahead (clock skew)</title><link>https://dates.example.com/skew</link><pubDate>Sun, 27 Sep 2026 06:00:00 +0000</pubDate></item>
+<item><title>Malformed pubDate</title><link>https://dates.example.com/malformed</link><pubDate>32/13/2026 25:61</pubDate></item>
+<item><title>Malformed pubDate, valid dc:date</title><link>https://dates.example.com/dc-fallback</link><pubDate>yesterday</pubDate><dc:date>2026-09-20T10:00:00+02:00</dc:date></item>
+<item><title>US zone abbreviation</title><link>https://dates.example.com/est</link><pubDate>Thu, 24 Sep 2026 08:00:00 EST</pubDate></item>
+<item><title>Two-digit year and no weekday</title><link>https://dates.example.com/two-digit</link><pubDate>23 Sep 26 07:00 GMT</pubDate></item>
+<item><title>ISO date in pubDate</title><link>https://dates.example.com/iso</link><pubDate>2026-09-25T16:00:00.250Z</pubDate></item>
+<item><title>Offset with a zone comment</title><link>https://dates.example.com/comment</link><pubDate>Fri, 25 Sep 2026 20:30:00 +0200 (CEST)</pubDate></item>
+<item><title>No zone means UTC</title><link>https://dates.example.com/no-zone</link><pubDate>Thu, 24 Sep 2026 23:59:59</pubDate></item>
+<item><title>30 February</title><link>https://dates.example.com/feb-30</link><pubDate>Mon, 30 Feb 2026 10:00:00 GMT</pubDate></item>
+<item><title>Undated last</title><link>https://dates.example.com/undated-2</link></item>
+</channel>
+</rss>

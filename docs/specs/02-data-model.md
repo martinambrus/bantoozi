@@ -456,7 +456,8 @@ CREATE TABLE feed_items (                          -- which feeds carried which 
 );
 CREATE INDEX feed_items_article_idx ON feed_items (article_id);
 CREATE INDEX feed_items_feed_time_idx ON feed_items (feed_id, first_seen_at DESC);
-CREATE UNIQUE INDEX feed_items_guid_idx ON feed_items (feed_id, guid) WHERE guid IS NOT NULL;
+CREATE UNIQUE INDEX feed_items_guid_idx ON feed_items (feed_id, md5(guid)) WHERE guid IS NOT NULL;
+-- md5(guid): GUIDs of up to 4,096 characters exceed a B-tree key; lookups still compare guid (D-15)
 
 CREATE TABLE article_aliases (                     -- other URLs that resolve to the same article
   url_key     text PRIMARY KEY,
@@ -501,7 +502,7 @@ CREATE TABLE article_snapshots (                   -- immutable bookmark archive
   cold_at            timestamptz NULL,             -- cold lifecycle marker after 30 days; never a TTL
   unreferenced_at    timestamptz NULL,             -- set on final bookmark/pin release; clear on attach
   CHECK (coalesce(octet_length(body_text), 0) + coalesce(octet_length(body_html), 0) <= 10485760),
-  UNIQUE (article_id, source_revision, content_sha256)
+  UNIQUE (article_id, source_revision, content_sha256, completeness)  -- D-19: a complete twin of a partial row
 );
 ALTER TABLE article_snapshots ALTER COLUMN body_text SET STORAGE EXTENDED;
 ALTER TABLE article_snapshots ALTER COLUMN body_html SET STORAGE EXTENDED;
@@ -1302,7 +1303,7 @@ alone does not satisfy these requirements.
 | Topic references | Taxonomy seeding validates each level-2 parent is level 1 and every `interest_cards.topic_ids` entry exists. BEFORE INSERT/UPDATE trigger enforces this on admin/runtime card changes; seeded taxonomy IDs are never deleted while used by arrays or model definitions. Like a foreign-key check, the card trigger locks every referenced topic `FOR KEY SHARE` and a level-2 topic locks its parent `FOR SHARE`, so a concurrent topic delete, id change or level change waits for that writer and then fails against the committed reference instead of both committing |
 | Reader state and feedback agree | Lock the current `user_article` row (or conflict-safe insert), apply patch, increment `state_version`, append event and idempotency receipt, and write outbox intents in one transaction. Workers update only ranking-cache columns, except `house.archive`, whose `archived_at` write locks the row, rechecks, increments `state_version` and appends no event (spec 11 §6), and the article merge, which advances the surviving row's `state_version` past both inputs (spec 03 §8.4). Reject rating reasons unless the rating is -1 |
 | One active personal model | Lock the `users` row before allocating a model version or switching `active`; deactivate old and activate new in one transaction. Partial unique index rejects dual activation; stale training input revision cannot activate a model |
-| Inference gate generation | Subscription BEFORE UPDATE validates mode/timestamp/version transition. Manual request BEFORE INSERT checks active tenant, live subscription/version, actual feed carrier and frozen input hash; its input snapshot/hash is immutable after insert. Vetted feed/article identity merges may relocate only operational FKs while preserving recorded source identity in the snapshot; cancel and clear leases for pending/running old-identity requests. Completed manual results are worker-only. No label action or shared card adoption may bypass this gate |
+| Inference gate generation | Subscription BEFORE UPDATE validates mode/timestamp/version transition; only a worker-side identity merge (spec 03 §9) may strictly advance the version, and set an activation boundary that is not in the future, without a mode change (D-13). Manual request BEFORE INSERT checks active tenant, live subscription/version, actual feed carrier and frozen input hash; its input snapshot/hash is immutable after insert. Vetted feed/article identity merges may relocate only operational FKs while preserving recorded source identity in the snapshot; cancel and clear leases for pending/running old-identity requests. Completed manual results are worker-only. No label action or shared card adoption may bypass this gate |
 | Bookmark binding | Snapshot BEFORE UPDATE rejects payload/provenance edits; lifecycle/approved merge changes only. Binding helper checks snapshot article identity and completeness, increments capture generation, and maintains `unreferenced_at` plus undo pins under locks. Ordinary API writes cannot choose snapshot IDs or saved status |
 | Original-author publication | Request creation derives `user_id` from the immutable creator. Response functions alone maintain the durable publication veto. Promote locks/rechecks creator activity/provenance, veto, version and hashes and stores genuine-approval or 30-day-inactivity evidence; public visibility updates fail without that transaction or a reviewed initial-library seed. Published authorization evidence is immutable |
 | Library revision chain | Validate predecessor slug/version and immutable `library_card_versions` mapping. Semantic updates cannot re-point holdings except explicit recipient acceptance. Never mutate immutable label title |
@@ -1442,14 +1443,19 @@ p_origin_feed_id bigint)` and `clear_bookmark_snapshot(p_article_id bigint)` run
 with PUBLIC execute revoked and API execute explicitly granted. Each derives the authenticated active
 tenant, verifies article access (current subscribed carrier or owned bookmark), and acquires the
 owning user/article/reader rows in the documented lock order. Capture copies only stored trusted
-current source into a checksummed snapshot, sets/retains `bookmarked_at`, advances capture generation,
-binds any available content and writes capture intent when absent/partial. Clear advances generation,
-clears binding/status/origin/bookmarked_at, and records final-reference lifecycle state. The unbookmark
+current source into a checksummed snapshot (a body written by a feed extractor, `extractor_version`
+`feed-*`, keeps source `feed`; any other body is `page`, D-16), sets/retains `bookmarked_at`, advances
+capture generation, binds any available content and writes capture intent when absent/partial.
+Clear advances generation, clears binding/status/origin/bookmarked_at, and records final-reference
+lifecycle state. The unbookmark
 transaction then writes its undo receipt and pins exactly the `previous_snapshot_id` that clear
 returned, never any other snapshot ID; attaching the pin clears that snapshot's `unreferenced_at`
 again until the pin expires. No helper
 increments reader `state_version` or appends feedback on its own: the enclosing idempotent action
-transaction does so exactly once. Snapshot completion is worker-only and generation-fenced.
+transaction does so exactly once. Snapshot completion is worker-only and generation-fenced; it
+stores snapshots with the same `snapshot_content_sha256` checksum and records final-reference
+state with `mark_snapshot_if_unreferenced`, both of which grant EXECUTE to `bantoozi_worker` only
+(D-14).
 `restore_bookmark_snapshot(p_article_id bigint, p_mutation_id uuid)` accepts no caller-supplied snapshot
 ID: it verifies the caller's unexpired undo receipt/pin and expected reader version, restores its exact
 snapshot/origin, and advances generation to invalidate old capture jobs. Pins survive through the undo

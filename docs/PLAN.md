@@ -259,7 +259,7 @@ flowchart TD
 | Milestone | Depends on (merged to `main`) | Can run in parallel with | Autonomous? | Size | Status |
 |---|---|---|---|---|---|
 | **M0** Foundations | — | — | yes | M | ✓ done 2026-09-25 (§5) |
-| **M1** Ingestion core | M0 | M2 | yes (the fixture server is local) | L | not started |
+| **M1** Ingestion core | M0 | M2 | yes (the fixture server is local) | L | ✓ done 2026-09-26 (§6) |
 | **M2** Decision engine & classification | M0 | M1 | yes (fixtures and the fake engine only) | L | not started |
 | **M3a** Evaluation tooling & golden-set collection | M1, M2 | M4, M5 | yes, then a **human step** (§8.1) | M | not started |
 | **M3b** Run gate G1 | M3a + human ratings | M6, M7-T1…T6 | yes (needs API keys and network) | S | not started |
@@ -417,6 +417,14 @@ Complete milestone M0 "Foundations" exactly as specified in docs/PLAN.md §5, fo
 
 ## 6. M1: Ingestion core
 
+**Status: done 2026-09-26** on branch `claude/confident-ritchie-4h136b` (commits from `50373a3` on,
+including the media signals of revision R2 and the fixes from the Codex reviews of PR #5; the
+per-task commits are in the table below). The full check with coverage passed after the last commit
+(`packages/feeds` lines above 99 %), `ingestion.e2e.test.ts` passed, and `pnpm worker-cli` ran
+against the dev database with a local fixture site. Deviations: D-11…D-20 in `docs/DECISIONS.md`.
+Migrations 0009 (D-13…D-16), 0010 (the R2 media columns of spec 02) and 0011 (D-19) are added, so
+migrations of a parallel M2 branch are numbered after them. Merge to `main` before M3a, M4 and M5 (§0.2).
+
 **Outcome:** subscribed feeds are fetched safely on an adaptive schedule, and articles are stored
 once, deduplicated across feeds, with extracted text and detected language. The pipeline stops after
 `extract` until M2 replaces the later stubs.
@@ -431,17 +439,17 @@ Complete milestone M1 "Ingestion core" exactly as specified in docs/PLAN.md §6,
 
 **Tasks**
 
-| ID | Task | Needs | Lane | Specs |
-|---|---|---|---|---|
-| M1-T1 | `safeFetch`: IP-literal and DNS address checks, injectable resolver, manual redirects, limits, charset decoding | — | A | 03 §4 |
-| M1-T2 | `canonicalizeUrl`, `url_key`, tracking-param list | — | B | 03 §5 |
-| M1-T3 | `parseFeed`, `normalizeItem`, sanitizing, `title_norm`, `content_hash`, media signals (`mediaSignals`), feed fixtures | — | B | 03 §6, §12 |
-| M1-T4 | `nextSchedule` adaptive interval, with simulations | — | C | 03 §9 |
-| M1-T5 | Extraction: skip list, robots, Readability, body lead, media signals of the page body, canonical detection, politeness limiter | T1, T3 | A | 03 §6.4, §8 |
-| M1-T6 | Feed discovery and OPML parse/export | T1, T3 | A | 03 §10–11 |
-| M1-T7 | Migration for `articles.has_video`, `body_image_count` and `media_revision`; worker handlers: `feed.schedule`, `feed.fetch` (ingest §7, redirect merge §9), `article.extract` (alias/merge), `feeds.lang_hint` upkeep, `resetArticleAnswers`, inference eligibility and durable bookmark capture | T1–T5 | D | 03 §1–3, §7–9; 05 §5.6 |
-| M1-T8 | End-to-end ingestion integration test | T7 | D | 03 all |
-| M1-T9 | Dev CLI (`apps/worker/src/cli.ts`, run as `pnpm worker-cli …`): `feeds:add <url> [--user dev@localhost]`, `feeds:fetch-now <feedId>`, `feeds:show <feedId>` | T6, T7 | D | 03 §10 |
+| ID | Task | Needs | Lane | Specs | Status |
+|---|---|---|---|---|---|
+| M1-T1 | `safeFetch`: IP-literal and DNS address checks, injectable resolver, manual redirects, limits, charset decoding | — | A | 03 §4 | ✓ `59f334d` |
+| M1-T2 | `canonicalizeUrl`, `url_key`, tracking-param list | — | B | 03 §5 | ✓ `50373a3` |
+| M1-T3 | `parseFeed`, `normalizeItem`, sanitizing, `title_norm`, `content_hash`, media signals (`mediaSignals`), feed fixtures | — | B | 03 §6, §12 | ✓ `4d7c731`, `fbb989a`, `d52acdb` and the JSON Feed id fix |
+| M1-T4 | `nextSchedule` adaptive interval, with simulations | — | C | 03 §9 | ✓ `66e999f` |
+| M1-T5 | Extraction: skip list, robots, Readability, body lead, media signals of the page body, canonical detection, politeness limiter | T1, T3 | A | 03 §6.4, §8 | ✓ `b971298`, `5408064` and the robots.txt rejection and capped image count fixes |
+| M1-T6 | Feed discovery and OPML parse/export | T1, T3 | A | 03 §10–11 | ✓ `afa0514`, `390bfd3` |
+| M1-T7 | Migration for `articles.has_video`, `body_image_count` and `media_revision`; worker handlers: `feed.schedule`, `feed.fetch` (ingest §7, redirect merge §9), `article.extract` (alias/merge), `feeds.lang_hint` upkeep, `resetArticleAnswers`, inference eligibility and durable bookmark capture | T1–T5 | D | 03 §1–3, §7–9; 05 §5.6 | ✓ `e81e18a`, `dd02c22`, `eb68fff`, `965655b`, `64ad9ff`, `8cbf0be`, `6750847`, `28f4517`, `3ac8a85`, the canonical-after-redirect fix, the Undo-pin merge retry and the lost fetch lock stop |
+| M1-T8 | End-to-end ingestion integration test | T7 | D | 03 all | ✓ `03f7741` |
+| M1-T9 | Dev CLI (`apps/worker/src/cli.ts`, run as `pnpm worker-cli …`): `feeds:add <url> [--user dev@localhost]`, `feeds:fetch-now <feedId>`, `feeds:show <feedId>` | T6, T7 | D | 03 §10 | ✓ `6b2eea2`, `6026689`, `8d591aa` |
 
 **Done when:**
 

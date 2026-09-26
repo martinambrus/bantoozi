@@ -65,3 +65,90 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   transaction assigning a label and one removing it could each pass against its own snapshot and
   leave `label_ids` or `label_suggestions` naming a label the user no longer holds (found by the PR #2
   review). Migration 0008; spec 02 §5.2 updated.
+- D-11: 2026-09-26 M1-T2 — a canonical URL longer than 2,048 UTF-8 bytes is not its own `url_key`:
+  its key is `'sha256:' + sha256Hex(canonical_url)`. Spec 03 §5 step 7 made `url_key` the canonical
+  URL itself, but `articles.url_key` and `article_aliases.url_key` are unique B-tree keys, and
+  PostgreSQL rejects index entries of about 2.7 KB, so one overlong publisher link would fail its
+  item on every fetch. The hash keeps the identity global and deterministic (the same overlong URL
+  from two feeds is still one article), `canonical_url` keeps the full URL, and `safeFetch` already
+  rejects URLs above 8,192 bytes. Spec 03 §5 step 7 updated.
+- D-12: 2026-09-26 M1-T1 — new safe-client error code `FEED_ORIGIN_COOLDOWN` (with `retryAt`): no
+  request was sent because the origin is in a persisted 429/503 cooldown (§8.2), or because its
+  politeness throttle (two concurrent leases, one second between starts) cannot grant a start before
+  the request deadline. Spec 03 §4 item 8 listed no code for this case, but §8.2 requires jobs to
+  defer (delayed outbox intents, or the feed's next fetch time) instead of sleeping in a worker or
+  counting a transient cooldown as a feed or extraction failure, so callers must tell it apart from
+  `FEED_TIMEOUT`. The API maps it like every `FEED_*` code (422, spec 08 §1). Spec 03 §4 updated;
+  `packages/shared` errors list it.
+- D-13: 2026-09-26 M1-T7 — `subscriptions_inference_guard` lets a role other than the API role (the
+  worker's feed-merge transaction, the owner) strictly advance `inference_version` without a mode
+  change, and keep or set an activation boundary that is not in the future. Spec 03 §9 requires a feed
+  identity merge to advance every merged subscription's version past both inputs and to restart a
+  moved active subscription's activation boundary at the merge, but the M0 guard allowed a version
+  change only together with a mode change, so the merge could not commit. The API role keeps exactly
+  the spec 02 §3.4 mode-change rules. Migration 0009; spec 02 §5.2 updated.
+- D-14: 2026-09-26 M1-T7 — `bantoozi_worker` gets EXECUTE on `snapshot_content_sha256` and
+  `mark_snapshot_if_unreferenced` (still revoked from PUBLIC, never granted to the API role). Bookmark
+  capture completion is worker-only (spec 02 §6, spec 03 §8.5): it must store snapshots with the same
+  checksum as the API-side capture helper and record final-reference state when it replaces a partial
+  binding. Migration 0009; spec 02 §6 updated.
+- D-15: 2026-09-26 M1-T7 — the per-feed GUID uniqueness index is `feed_items (feed_id, md5(guid))`
+  instead of `(feed_id, guid)`. GUIDs are opaque identifiers of up to 4,096 characters that are never
+  truncated (spec 03 §6), but a B-tree entry cannot exceed about 2.7 KB, so an item with a long GUID
+  failed on every fetch (SQLSTATE 54000). Lookups still compare the GUID itself; an md5 collision could
+  only turn an item of the same feed into an identity conflict, never cross feeds. Migration 0009;
+  spec 02 §3 updated.
+- D-16: 2026-09-26 M1-T7 — `capture_bookmark_snapshot` copies a stored body written by a feed
+  extractor (`extractor_version` `feed-*`) with snapshot source `feed`, any other body with `page`.
+  Ingest stores the publisher's own feed text as a revisioned `feed-v1` body (complete for a linkless
+  item, partial for a linked one until page extraction replaces it; spec 03 §6, §7), and the M0
+  function labelled every stored body as page content, contradicting the page-versus-feed provenance
+  of spec 03 §8.1 step 6 and §8.5. Migration 0009 (only that assignment changes); spec 02 §6 updated.
+- D-17: 2026-09-26 M1-T7 — a feed identity merge gives every linkless key of the retired feed
+  (`urn:bantoozi:<old id>:<hash>`, spec 03 §5 step 8) a survivor-scoped alias
+  (`urn:bantoozi:<survivor id>:<hash>`), taken under the ingestion url_key locks before the items
+  move, unless an article already owns that key. Linkless identities are scoped to their feed, so a
+  guidless linkless item fetched from the survivor after the merge (including from the redirect
+  response itself) got a new key, found nothing, and was inserted again as a duplicate article;
+  items with a GUID already matched through their moved feed-scoped GUID. Spec 03 §9 listed no rule
+  for this (found by the Codex review of PR #5). No migration; spec 03 §9 updated.
+- D-18: 2026-09-26 M1-T7 — feed validators are stored only for the URL that returned them. Spec 03
+  §9 said a parsed 200 replaces `etag`/`last_modified` with the returned values. But the client
+  sends validators to `fetch_url` only (§4.3), so after a temporary redirect, a rejected permanent
+  redirect, or a merge into a survivor that polls another URL, the stored values came from a URL
+  that the next poll does not request. That URL could answer the foreign ETag or date with 304 and
+  hide the target's new items. Such a 200 now clears both validators, and such a 304 leaves them
+  unchanged; after an adopted permanent redirect the target is the new `fetch_url` and keeps its
+  validators. The rename that changes `fetch_url` clears the old URL's validators in the same
+  update, so a worker that stops before the fetch records its outcome never sends them to the new
+  URL. The safe client reports a 304 as success only for a request that sent validators; a 304 to
+  one that sent none (a redirect target, robots.txt) is `FEED_HTTP_304`, so it can neither count as
+  "not modified" nor read as an allow-all robots.txt (spec 03 §4 item 8). The already implemented
+  rule that a fetch whose item failed to ingest after its retries clears them too is now stated as
+  well, since both follow the parse-error rule. Found by the Codex review of PR #5. Spec 03 §4 and
+  §9 updated.
+- D-19: 2026-09-26 M1-T7 — completeness is part of a bookmark snapshot's identity:
+  `article_snapshots` is unique on `(article_id, source_revision, content_sha256, completeness)`
+  instead of `(article_id, source_revision, content_sha256)` (migration 0011). A linked item's feed
+  text is stored as a partial `feed-v1` body until page extraction replaces it, so a bookmark made
+  before extraction archives it as a partial snapshot. When the feed carries the full article, the
+  page capture can be byte-identical to it. Under the old key that complete capture reused the
+  immutable partial row, and the bookmark stayed `partial` for good. That contradicted spec 03 §8.5
+  step 5, which lets a later successful retry of a partial capture bind a new immutable snapshot
+  while other users keep theirs. `capture_bookmark_snapshot`, the worker's capture and the article
+  merge's snapshot relocation now match on completeness too, so a complete twin is never folded
+  into a partial row. When one reader's bookmarks of both merged articles collide, the merge keeps
+  the binding to a complete snapshot over a partial one of identical content before it compares
+  bookmark times. Found by the Codex review of PR #5. Spec 02 `article_snapshots` updated.
+- D-20: 2026-09-26 M1-T5 — the image count of a body whose text the 10 MiB limit cut covers only
+  the stored text. Spec 03 §6.4 says the count describes the stored body, the same text
+  `word_count` counts, but the images were counted in the whole source (the Readability fragment
+  or the feed content) before the cap, so images after the cut counted too. The count now stops at
+  the first image whose preceding source, converted to text as the stored text was, is longer than
+  the stored text. That text only grows with the prefix, so a binary search over the image tags
+  finds the image with at most 12 conversions (one conversion of a 5 MiB body takes about half a
+  second, and only a body whose text was cut needs any); an image within the first as many source
+  characters as the stored text has needs none, since a prefix never has more text than characters.
+  Should the search run out of conversions, the undecided images are left out, so an image after
+  the cut never counts. A cut of the HTML alone stores the whole text and still counts every image.
+  Found by the Codex review of PR #5. Spec 03 §6.4 updated.

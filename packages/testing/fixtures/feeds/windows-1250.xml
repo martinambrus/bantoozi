@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="windows-1250"?>
+<rss version="2.0">
+<channel>
+<title>Východoslovenský denník – Správy</title>
+<link>https://www.vychod.example/</link>
+<description>Správy z Košíc a okolia</description>
+<language>sk-SK</language>
+<item>
+<title>Ľudia v Košiciach protestovali proti zdražovaniu MHD</title>
+<link>https://www.vychod.example/kosice/protest-mhd</link>
+<description>„Cestovné sa zvýši o 20 %,“ uviedol dopravný podnik. Protest sa začal o 17.00 h na Hlavnej ulici…</description>
+<pubDate>Fri, 25 Sep 2026 18:30:00 +0200</pubDate>
+<category>Košice</category>
+<category>Doprava</category>
+<guid isPermaLink="false">vychod-55120</guid>
+</item>
+<item>
+<title>Počasie: cez víkend sa ochladí, v Tatrách môže snežiť</title>
+<link>https://www.vychod.example/pocasie/vikend</link>
+<description>Teploty klesnú pod 5 °C. Ďalšie podrobnosti: ťažké mraky, dážď a poľadovica.</description>
+<pubDate>Fri, 25 Sep 2026 12:05:00 +0200</pubDate>
+<category>Počasie</category>
+<guid isPermaLink="false">vychod-55118</guid>
+</item>
+</channel>
+</rss>

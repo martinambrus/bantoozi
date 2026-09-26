@@ -1,9 +1,15 @@
 import { QUEUE_NAMES, isAppError } from '@bantoozi/shared';
 import { describe, expect, it } from 'vitest';
 
+import type { Database } from '@bantoozi/db';
+import type pg from 'pg';
+
+import { createWorkerDeps } from '../src/handlers/deps.js';
 import {
   HANDLERS,
+  IMPLEMENTED_QUEUES,
   StageUnavailableError,
+  createHandlers,
   dispatch,
   isStageAvailable,
   unavailableQueues,
@@ -16,7 +22,39 @@ describe('handler map', () => {
     expect(Object.keys(HANDLERS).sort()).toEqual([...QUEUE_NAMES].sort());
   });
 
-  it('keeps every M0 stage a stub that refuses to acknowledge work', async () => {
+  it('implements exactly the M1 ingestion stages; every later stage stays a stub', () => {
+    const handlers = createHandlers(
+      createWorkerDeps({
+        db: {} as Database,
+        lockPool: {} as pg.Pool,
+        fetch: { userAgent: 'test', timeoutMs: 1000, maxBytes: 1024, allowPrivate: false },
+        ingestMaxAgeDays: 14,
+        settingsEnv: { dailyBudgetUsd: 2, languageModes: {}, signupMode: 'invite' },
+        limiter: {
+          reserve: async () => ({ status: 'granted', token: 't' }),
+          release: async () => {},
+          block: async () => {},
+        },
+        logger: { info: () => {}, warn: () => {}, error: () => {} },
+      }),
+    );
+    expect(Object.keys(handlers).sort()).toEqual([...QUEUE_NAMES].sort());
+    expect(QUEUE_NAMES.filter((q) => isStageAvailable(handlers, q)).sort()).toEqual(
+      [...IMPLEMENTED_QUEUES].sort(),
+    );
+    expect(IMPLEMENTED_QUEUES).toEqual([
+      'feed.schedule',
+      'feed.fetch',
+      'article.extract',
+      'article.capture-bookmark',
+    ]);
+    expect(unavailableQueues(handlers, ['article.enrich', 'user.rank'])).toEqual([
+      'article.enrich',
+      'user.rank',
+    ]);
+  });
+
+  it('keeps every stage of the base map a stub that refuses to acknowledge work', async () => {
     expect(unavailableQueues(HANDLERS, QUEUE_NAMES)).toEqual(QUEUE_NAMES);
     const error = await dispatch(
       HANDLERS,

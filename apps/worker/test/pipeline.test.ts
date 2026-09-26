@@ -1,7 +1,14 @@
 import type { JobIntent, JobSender } from '@bantoozi/shared';
 import { describe, expect, it } from 'vitest';
 
-import { NEXT_STAGES, STAGES, after, type PipelineGate } from '../src/pipeline.js';
+import {
+  NEXT_STAGES,
+  STAGES,
+  after,
+  afterNewCarrier,
+  type NewCarrierDemand,
+  type PipelineGate,
+} from '../src/pipeline.js';
 
 function recorder(): JobSender & { intents: JobIntent[] } {
   const intents: JobIntent[] = [];
@@ -14,12 +21,22 @@ function recorder(): JobSender & { intents: JobIntent[] } {
 }
 
 function gate(
-  overrides: Partial<{ demand: boolean; translate: boolean; users: string[] }> = {},
+  overrides: Partial<{
+    demand: boolean;
+    translate: boolean;
+    users: string[];
+    carrier: NewCarrierDemand | null;
+    queued: Array<{ articleId: string; revision: string; cardIds: readonly string[] }>;
+  }> = {},
 ): PipelineGate {
   return {
     hasInferenceDemand: async () => overrides.demand ?? true,
     needsTranslation: async () => overrides.translate ?? false,
     usersToRank: async () => overrides.users ?? [],
+    newCarrierDemand: async () => overrides.carrier ?? null,
+    queueMatch: async (articleId, revision, cardIds) => {
+      overrides.queued?.push({ articleId, revision, cardIds });
+    },
   };
 }
 
@@ -159,5 +176,84 @@ describe('pipeline.after (spec 03 §1 stage order)', () => {
       expect(queues(sender)).toEqual([]);
     }
     expect(asked).toEqual(['cluster']);
+  });
+});
+
+describe('pipeline.afterNewCarrier (spec 03 §7, a feed newly carrying an article)', () => {
+  const carrier = (overrides: Partial<NewCarrierDemand>): NewCarrierDemand => ({
+    revision: '4',
+    pipelineState: 'ingested',
+    createsDemand: true,
+    missingCardIds: [],
+    subscriberIds: [U1, U2],
+    ...overrides,
+  });
+  const ranks = [
+    ['user.rank', { userId: U1, reason: 'ingest' }],
+    ['user.rank', { userId: U2, reason: 'ingest' }],
+  ];
+  const run = async (
+    demand: NewCarrierDemand | null,
+    extra: Partial<{ translate: boolean }> = {},
+  ) => {
+    const sender = recorder();
+    const queued: Array<{ articleId: string; revision: string; cardIds: readonly string[] }> = [];
+    await afterNewCarrier('9', '5', {
+      sender,
+      gate: gate({ carrier: demand, queued, ...extra }),
+    });
+    return { intents: sender.intents.map((i) => [i.queue, i.payload]), queued, sender };
+  };
+
+  it('ranks the subscribers in every state, including stale and failed articles', async () => {
+    for (const pipelineState of ['ingested', 'stale', 'failed']) {
+      const { intents, queued } = await run(carrier({ pipelineState }));
+      expect(intents).toEqual(ranks);
+      expect(queued).toEqual([]);
+    }
+  });
+
+  it('queues only the missing admitted cards of an enriched or matched article, then matches', async () => {
+    for (const pipelineState of ['enriched', 'matched']) {
+      const { intents, queued, sender } = await run(
+        carrier({ pipelineState, missingCardIds: ['7', '8'] }),
+      );
+      expect(queued).toEqual([{ articleId: '9', revision: '4', cardIds: ['7', '8'] }]);
+      expect(intents).toEqual([...ranks, ['article.match', { articleId: '9' }]]);
+      expect(sender.intents.at(-1)?.dedupeKey).toBe('{"payload":{"articleId":"9"},"revision":"4"}');
+      // Valid answers are reused: nothing missing, no match work.
+      const none = await run(carrier({ pipelineState, missingCardIds: [] }));
+      expect(none.intents).toEqual(ranks);
+      expect(none.queued).toEqual([]);
+    }
+  });
+
+  it('continues an article that stopped at the demand gate only for new eligible demand', async () => {
+    expect((await run(carrier({ pipelineState: 'extracted' }))).intents).toEqual([
+      ...ranks,
+      ['article.enrich', { articleId: '9' }],
+    ]);
+    expect(
+      (await run(carrier({ pipelineState: 'extracted' }), { translate: true })).intents,
+    ).toEqual([...ranks, ['article.translate', { articleId: '9' }]]);
+    expect((await run(carrier({ pipelineState: 'translated' }))).intents).toEqual([
+      ...ranks,
+      ['article.enrich', { articleId: '9' }],
+    ]);
+    for (const pipelineState of ['extracted', 'translated', 'degraded']) {
+      expect((await run(carrier({ pipelineState, createsDemand: false }))).intents).toEqual(ranks);
+    }
+  });
+
+  it('re-enriches a degraded article (never straight to matching)', async () => {
+    const { intents, queued } = await run(
+      carrier({ pipelineState: 'degraded', missingCardIds: ['7'] }),
+    );
+    expect(intents).toEqual([...ranks, ['article.enrich', { articleId: '9' }]]);
+    expect(queued).toEqual([]);
+  });
+
+  it('does nothing when the association or article is gone', async () => {
+    expect((await run(null)).intents).toEqual([]);
   });
 });

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+  xmlns:content="http://purl.org/rss/1.0/modules/content/"
+  xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Riverside Allotments</title>
+    <link>https://garden.example.org/</link>
+    <description>News from the Riverside allotment association.</description>
+    <language>en-GB</language>
+    <item>
+      <title>The seed library is open</title>
+      <link>https://garden.example.org/2026/09/seed-library-opens/</link>
+      <dc:creator><![CDATA[Hana Kovač]]></dc:creator>
+      <pubDate>Sat, 26 Sep 2026 07:30:00 +0000</pubDate>
+      <category><![CDATA[Association news]]></category>
+      <guid isPermaLink="false">https://garden.example.org/?p=4411</guid>
+      <description><![CDATA[<p>The allotment association opened its seed library on Saturday&#8230;</p>]]></description>
+      <content:encoded><![CDATA[<p>The allotment association opened its new seed library on Saturday, two years after members first proposed swapping the seeds they save each autumn.</p>
+<figure class="wp-block-image size-large"><img decoding="async" width="1024" height="683" src="https://garden.example.org/wp-content/uploads/2026/09/seed-library-1024x683.jpg" alt="Shelves of labelled seed packets" class="wp-image-4412" srcset="https://garden.example.org/wp-content/uploads/2026/09/seed-library-1024x683.jpg 1024w, https://garden.example.org/wp-content/uploads/2026/09/seed-library-300x200.jpg 300w" sizes="(max-width: 1024px) 100vw, 1024px" /><figcaption class="wp-element-caption">More than 140 varieties are on the shelves.</figcaption></figure>
+<p>Members can borrow up to five packets a season and are asked to return seed from the healthiest plants of each variety.</p>
+<figure class="wp-block-image size-large"><img width="800" height="533" src="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20800%20533'%3E%3C/svg%3E" data-src="/wp-content/uploads/2026/09/volunteers-800x533.jpg" alt="Volunteers sorting seeds" class="wp-image-4413 lazyload" /><noscript><img width="800" height="533" src="https://garden.example.org/wp-content/uploads/2026/09/volunteers-800x533.jpg" alt="Volunteers sorting seeds" class="wp-image-4413" /></noscript><figcaption class="wp-element-caption">Volunteers sorted the donations over the summer.</figcaption></figure>
+<p>The library is in the shed next to plot 17 and opens on Saturday mornings until the end of October.</p>
+<figure class="wp-block-image"><picture><source srcset="/wp-content/uploads/2026/09/plot-map.avif" type="image/avif" /><img src="/wp-content/uploads/2026/09/plot-map.png" alt="Map of the plots with the shed marked" width="640" height="480" /></picture></figure>
+<p>The post <a href="https://garden.example.org/2026/09/seed-library-opens/">The seed library is open</a> appeared first on <a href="https://garden.example.org">Riverside Allotments</a>.</p>
+<img src="https://stats.example.net/pixel.gif?blog=77&amp;post=4411" width="1" height="1" alt="" style="height:1px;width:1px;border:0" />]]></content:encoded>
+    </item>
+    <item>
+      <title>Photo of the week: first frost</title>
+      <link>https://garden.example.org/2026/09/photo-first-frost/</link>
+      <pubDate>Fri, 25 Sep 2026 06:00:00 +0000</pubDate>
+      <guid isPermaLink="false">https://garden.example.org/?p=4405</guid>
+      <content:encoded><![CDATA[<figure class="wp-block-image"><img src="https://garden.example.org/wp-content/uploads/2026/09/first-frost.jpg" alt="" width="1600" height="1067" /></figure>]]></content:encoded>
+    </item>
+  </channel>
+</rss>

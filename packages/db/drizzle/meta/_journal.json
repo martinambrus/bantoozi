@@ -64,6 +64,27 @@
       "when": 1790410664448,
       "tag": "0008_label_assignment_locks",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790419527181,
+      "tag": "0009_worker_ingestion",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790426660915,
+      "tag": "0010_media_signals",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790433094496,
+      "tag": "0011_snapshot_completeness_identity",
+      "breakpoints": true
     }
   ]
 }

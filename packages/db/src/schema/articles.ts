@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   foreignKey,
   index,
@@ -139,6 +140,14 @@ export const articles = pgTable(
     lang: text('lang'),
     langConfidence: real('lang_confidence'),
     wordCount: integer('word_count'),
+    // Media signals (spec 03 §6.4, R2; migration 0010 appends them after `updated_at`): null is
+    // unknown; `has_video` never goes from true back to false; `body_image_count` describes the
+    // stored body, like `word_count`; `media_revision` counts their changes.
+    hasVideo: boolean('has_video'),
+    bodyImageCount: integer('body_image_count'),
+    mediaRevision: int8('media_revision')
+      .notNull()
+      .default(sql`0`),
     contentHash: text('content_hash').notNull(),
     contentRevision: int8('content_revision')
       .notNull()
@@ -154,6 +163,8 @@ export const articles = pgTable(
   (t) => [
     check('articles_lang_confidence_check', sql`lang_confidence BETWEEN 0 AND 1`),
     check('articles_word_count_check', sql`word_count >= 0`),
+    check('articles_body_image_count_check', sql`body_image_count >= 0`),
+    check('articles_media_revision_check', sql`media_revision >= 0`),
     check('articles_content_revision_check', sql`content_revision > 0`),
     check(
       'articles_pipeline_state_check',
@@ -189,8 +200,9 @@ export const feedItems = pgTable(
     primaryKey({ name: 'feed_items_pkey', columns: [t.feedId, t.articleId] }),
     index('feed_items_article_idx').on(t.articleId),
     index('feed_items_feed_time_idx').on(t.feedId, t.firstSeenAt.desc().nullsFirst()),
+    // md5(guid): long GUIDs (≤ 4,096 chars) exceed a B-tree key (D-15, migration 0009).
     uniqueIndex('feed_items_guid_idx')
-      .on(t.feedId, t.guid)
+      .on(t.feedId, sql`md5(guid)`)
       .where(sql`guid IS NOT NULL`),
   ],
 );
@@ -277,7 +289,14 @@ export const articleSnapshots = pgTable(
       'article_snapshots_size_check',
       sql`coalesce(octet_length(body_text), 0) + coalesce(octet_length(body_html), 0) <= 10485760`,
     ),
-    unique('article_snapshots_identity_key').on(t.articleId, t.sourceRevision, t.contentSha256),
+    // Completeness is part of the identity: a complete capture of content identical to a partial
+    // snapshot gets its own immutable row (D-19; spec 03 §8.5 step 5).
+    unique('article_snapshots_identity_key').on(
+      t.articleId,
+      t.sourceRevision,
+      t.contentSha256,
+      t.completeness,
+    ),
   ],
 );
 

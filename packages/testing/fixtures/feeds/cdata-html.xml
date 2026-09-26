@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel>
+<title><![CDATA[Denník Príklad &ndash; Správy]]></title>
+<link>https://www.dennik.example/</link>
+<description><![CDATA[Najnovšie <b>správy</b> z domova]]></description>
+<language>sk</language>
+<item>
+<title><![CDATA[<b>Exkluzívne:</b> Mestská rada schválila rozpočet &amp; nové investície]]></title>
+<link>https://www.dennik.example/spravy/rozpocet-2027</link>
+<guid isPermaLink="false">dennik-2026-88213</guid>
+<pubDate>Sat, 26 Sep 2026 07:40:00 +0200</pubDate>
+<description><![CDATA[
+<div class="perex" style="font-weight:bold" onclick="steal()">Poslanci schválili rozpočet na rok 2027.</div>
+<script type="text/javascript">document.write('<img src="https://tracker.example/pixel.gif">');</script>
+<style>.perex{color:red}</style>
+<p>Viac v <a href="/spravy/rozpocet-2027#detail" class="more" onmouseover="x()">článku</a>, alebo <a href="javascript:alert('xss')">tu</a>, alebo <a href="mailto:redakcia@dennik.example">napíšte nám</a>.</p>
+<img src="https://tracker.example/open.gif?id=88213" width="1" height="1" alt="" />
+<img src="/foto/2026/09/rozpocet.jpg" srcset="/foto/2026/09/rozpocet-2x.jpg 2x" alt="Poslanci pri hlasovaní" style="border:0" />
+<iframe src="https://video.example/embed/123" width="560" height="315"><p>fallback</p></iframe>
+<form action="/newsletter"><input name="email"><button>Odoberať</button></form>
+<object data="movie.swf"><embed src="movie.swf"></object>
+<h1>Hlavné body</h1>
+<p>Cena: 5 &lt; 7 &amp; 3&nbsp;%</p>
+<table><tr><td>Príjmy</td><td>1,2 mld. €</td></tr></table>
+]]></description>
+</item>
+<item>
+<title><![CDATA[Druhý článok bez obrázka]]></title>
+<link>https://www.dennik.example/spravy/druhy</link>
+<guid isPermaLink="false">dennik-2026-88214</guid>
+<pubDate>Sat, 26 Sep 2026 06:10:00 +0200</pubDate>
+<description><![CDATA[<p>Krátka <em>správa</em> s <a href="https://example.com/a?x=1&amp;y=2" target="_self" rel="opener">odkazom</a>.</p><p><a href="https://www.dennik.example/foto"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt=""></a></p>]]></description>
+</item>
+</channel>
+</rss>
