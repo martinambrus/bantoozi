@@ -513,7 +513,7 @@ ALTER TABLE article_snapshots ALTER COLUMN body_html SET COMPRESSION pglz;
 CREATE TABLE article_translations (
   article_id   bigint NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
   article_revision bigint NOT NULL CHECK (article_revision > 0),
-  source_sha256 text NOT NULL,                     -- exact source text sent to translation
+  source_sha256 text NOT NULL,                     -- canonical SHA-256 of {source_lang, title, excerpt, body_lead} as sent (D-34)
   target_lang  text NOT NULL DEFAULT 'en',
   engine       text NOT NULL CHECK (engine IN ('libretranslate','ollama')),
   model        text NULL,

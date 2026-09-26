@@ -213,3 +213,28 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `user_article.score_version` default `'0:0'` must never be current; `scoreVersion` rejects negative,
   fractional or non-canonical settings versions and takes an optional ranker version for evaluation;
   `isRankCurrent` treats a missing row or a malformed revision as outdated. Spec 06 §7 updated.
+- D-29: 2026-09-26 M2-T7 — `packages/translate` validates LibreTranslate and Ollama JSON with strict
+  hand-written own-property guards (exact keys, string types, output bounds, no inherited or
+  `__proto__` keys, no NUL or lone surrogates) instead of zod, which the package does not depend on.
+  Spec 01 §5 requires zod at every boundary; the guards are as strict and every rejection path has a
+  hostile-input test. Spec 01 §5 updated.
+- D-30: 2026-09-26 M2-T7 — a tier-2 reply wrapped in exactly one ```` ```json ```` fence is unwrapped
+  before strict validation, since chat models often fence JSON even when told not to; two fences or
+  trailing prose still fail. Spec 07 §3 step 3 did not say. Spec 07 §3 updated.
+- D-31: 2026-09-26 M2-T7 — when every field is too short (or `und`) to judge, `assessTranslation`
+  grades `ok` with `conclusive: false` in `quality_detail`. Spec 07 §4 made short text inconclusive
+  but the `quality` column must hold one of ok/weak/fail. Spec 07 §4 updated.
+- D-32: 2026-09-26 M2-T7 — card text translation statuses are `translated`, `english`, `undetermined`,
+  `unconfirmed`, `unsupported`, `weak` and `failed`. `unconfirmed` is new: when only the locale hint
+  (not the unhinted detector) says the card is non-English, nothing is sent and the original is kept,
+  because spec 07 §5 treats a hint as a fallback for ambiguous text, not proof of language. Spec 07
+  §5 updated.
+- D-33: 2026-09-26 M2-T7 — tier-1 failure classes. Terminal for the revision: unsupported language,
+  other validation errors and an invalid 200 body. Neither retried in-process nor terminal: 401/403,
+  other unexpected statuses and cancellation. Retried once with backoff: network errors, timeouts,
+  429 and 5xx; a `Retry-After` over 5 s returns `retryAt` instead of sleeping in the worker. Spec 07
+  §3 step 2 named only the transient and validation classes. Spec 07 §3 updated.
+- D-34: 2026-09-26 M2-T7 — `article_translations.source_sha256` is the canonical SHA-256 of
+  `{source_lang, title, excerpt, body_lead}` as sent, so the declared source language is part of the
+  fingerprint: the same text submitted under another language is a different translation input. Spec
+  02 said only "exact source text". Spec 02 `article_translations` updated.

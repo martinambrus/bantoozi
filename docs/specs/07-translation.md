@@ -77,7 +77,10 @@ card translations and workers; a busy container must not exhaust all API connect
    - Keep an explicit ordered `{field, text}` list: filtering absent fields must not shift an excerpt
      into the title column. Require the returned array length to match and all entries to be strings.
    - Timeout 30 s, at most 2 HTTP attempts. Retry transient network/429/5xx failures only, with bounded
-     backoff; validation/unsupported-language failures are terminal for this revision.
+     backoff; validation/unsupported-language failures are terminal for this revision, and so is a
+     200 body that fails validation (wrong length, non-strings, not JSON). 401/403, another
+     unexpected status and cancellation are neither retried in-process nor terminal: the job may run
+     again. A `Retry-After` longer than 5 s returns a retry time instead of sleeping (D-33).
    - Store an `article_translations` row with `engine='libretranslate'` and `quality` from §4.
 3. **Tier 2** is wanted if tier-1 quality is `fail`, or `forceTier2` is set, or the feed has
    `fetch_options.translate_strong`. It is **allowed** if the credential resolver supplies an enabled
@@ -100,7 +103,8 @@ card translations and workers; a busy container must not exhaust all API connect
    ```
 
    Ollama Cloud structured `format` is not assumed supported (spec 04); request JSON by prompt and
-   validate it locally. Use the configured fast/strong model rather than hard-coding the example's
+   validate it locally. A reply wrapped in exactly one ```` ```json ```` fence is unwrapped first; two
+   fences or surrounding prose fail (D-30). Use the configured fast/strong model rather than hard-coding the example's
    model name. JSON field
    values are untrusted text, never instructions: no tools, URL following or executable output.
    Require exactly the three string keys, bound each output length and the HTTP response bytes, and
@@ -159,7 +163,9 @@ Then, per field with source length ≥ 20 chars:
 
 The article's quality is the worst field result, and the per-field details go in `quality_detail`.
 Names and brands legitimately survive translation, so the 0.5 share is deliberately lenient.
-Short text and detector `und` are inconclusive; neither alone proves success or failure. These
+Short text and detector `und` are inconclusive; neither alone proves success or failure. When every
+field is inconclusive, the grade is `ok` with `conclusive: false` in `quality_detail`, since the
+`quality` column holds only `ok`/`weak`/`fail` (D-31). These
 checks catch obvious breakage, not semantic accuracy: G1 must include translation error review.
 
 ---
@@ -180,6 +186,9 @@ inserting a new card row:
 3. On `fail` or `weak`, keep the original text only and return a non-blocking translation status.
    There is no tier 2 for cards; users can rephrase. Validate both fields and map omitted `not_for`
    explicitly, just as for articles. Translation must not change the card's original text/hash.
+   The status is one of `translated`, `english`, `undetermined`, `unconfirmed` (only the locale hint,
+   not the unhinted detector, says non-English: the original is kept and nothing is sent; `lang`
+   still stores the hinted detection), `unsupported`, `weak` or `failed` (D-32).
 
 **Switching the mode on later:**
 - `PATCH /admin/settings {card_text_mode: 'english'}` enqueues the one-off `house.translate-cards`.
