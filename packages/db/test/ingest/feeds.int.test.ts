@@ -12,6 +12,7 @@ import {
   refreshFeedLangHint,
   resolveLiveFeedId,
   tryLockFeedForFetch,
+  FeedFetchLockLostError,
   type FeedScheduleColumns,
 } from '../../src/ingest/feeds.js';
 import { setupDbTest, type DbTestContext } from '../support/test-db.js';
@@ -170,6 +171,28 @@ describe('tryLockFeedForFetch (spec 03 §3)', () => {
     expect(ctx.workerPool.totalCount - ctx.workerPool.idleCount).toBe(0);
   });
 
+  it('confirms in PostgreSQL that it holds every key, and fails once released', async () => {
+    // Advisory keys are signed hashes: take one feed id of each sign.
+    const ids = await ctx.adminPool.query<{ negative: string; positive: string }>(
+      `SELECT (SELECT id::text FROM generate_series(1, 1000) AS id
+                WHERE hashtextextended('feed.fetch:' || id::text, 0) < 0 LIMIT 1) AS negative,
+              (SELECT id::text FROM generate_series(1, 1000) AS id
+                WHERE hashtextextended('feed.fetch:' || id::text, 0) > 0 LIMIT 1) AS positive`,
+    );
+    const { negative, positive } = ids.rows[0]!;
+    const lock = await tryLockFeedForFetch(ctx.workerPool, negative);
+    expect(lock).not.toBeNull();
+    expect(await lock!.tryExtend(positive)).toBe(true);
+    await expect(ctx.worker.transaction((tx) => lock!.assertHeld(tx))).resolves.toBeUndefined();
+    await expect(lock!.assertHeld()).resolves.toBeUndefined();
+    expect(lock!.signal.aborted).toBe(false);
+    await lock!.release();
+    await expect(lock!.assertHeld()).rejects.toBeInstanceOf(FeedFetchLockLostError);
+    await expect(ctx.worker.transaction((tx) => lock!.assertHeld(tx))).rejects.toBeInstanceOf(
+      FeedFetchLockLostError,
+    );
+  });
+
   it('is released when its connection dies, without crashing the holder', async () => {
     const feed = await feedWith({});
     const applicationName = `feed-lock-test-${process.pid}`;
@@ -189,6 +212,16 @@ describe('tryLockFeedForFetch (spec 03 §3)', () => {
         [applicationName],
       );
       expect(killed.rows).toEqual([{ ok: true }]);
+      // Nothing may be written for the fetch any more: PostgreSQL itself no longer grants the lock,
+      // and the connection failure aborts the lock's signal.
+      await expect(ctx.worker.transaction((tx) => lock!.assertHeld(tx))).rejects.toBeInstanceOf(
+        FeedFetchLockLostError,
+      );
+      for (let i = 0; i < 100 && !lock!.signal.aborted; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(lock!.signal.aborted).toBe(true);
+      await expect(lock!.assertHeld()).rejects.toBeInstanceOf(FeedFetchLockLostError);
       const after = await tryLockFeedForFetch(ctx.workerPool, feed);
       expect(after).not.toBeNull();
       await after?.release();

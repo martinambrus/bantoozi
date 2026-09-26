@@ -231,7 +231,10 @@ LIMIT 300;
 
 Record `feed.fetch` intents for each ID. The handler uses a dedicated connection and a
 session advisory lock keyed by feed ID for the whole fetch; release it in `finally` (connection loss
-also releases it). Re-read `next_fetch_at`, status and subscriber count after acquiring the lock;
+also releases it). A lost lock stops the fetch: the connection failure aborts the HTTP request, no
+further item is ingested, and every transaction that records the fetch first checks in PostgreSQL
+that the lock is still held, so nothing is written while another process may be fetching the feed.
+Re-read `next_fetch_at`, status and subscriber count after acquiring the lock;
 a stale scheduled job is a no-op. Manual refresh carries an explicit force flag but still observes
 origin cooldowns. This lock is required across both worker processes; queue keys alone are not a
 business lock. Follow `merged_into_id` to a live feed before scheduling; detect corrupt cycles.

@@ -4,6 +4,7 @@ import {
   MIGRATIONS_FOLDER,
   PG_BOSS_VERSION,
   createDatabase,
+  FeedFetchLockLostError,
   runMigrations,
   subscribeToFeed,
   workerOutbox,
@@ -276,6 +277,47 @@ afterAll(async () => {
 });
 
 describe('feed.schedule and feed.fetch (M1-T7)', () => {
+  it('stops a fetch whose lock connection fails, and records nothing for it', async () => {
+    const applicationName = `feed-fetch-lock-${process.pid}`;
+    const doomed = new pg.Pool({
+      connectionString: testDb.urls.worker,
+      max: 1,
+      application_name: applicationName,
+    });
+    doomed.on('error', () => undefined);
+    const admin = new pg.Pool({ connectionString: testDb.urls.admin, max: 1 });
+    const path = '/lock-lost/feed.rss';
+    const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    // While the origin answers, the lock's connection is terminated: PostgreSQL releases the lock,
+    // and another process could start fetching the feed.
+    server.route(path, () => {
+      void admin.query(
+        `SELECT pg_terminate_backend(pid, 5000) FROM pg_stat_activity
+          WHERE application_name = $1`,
+        [applicationName],
+      );
+      const item = rssItem('lock-1', 'Lock item', server.url('/lock-lost/1.html'));
+      return { ...rssRoute(() => rss(path, item))(), delayMs: 1_000 };
+    });
+    const lockLost = createHandlers({
+      ...workerDeps(createMemoryOriginLimiter({ spacingMs: 0 })),
+      lockPool: doomed,
+    });
+    try {
+      await expect(fetchFeed(feedId, lockLost)).rejects.toBeInstanceOf(FeedFetchLockLostError);
+      const row = await owner.query<{ total_fetches: number; last_fetch_at: Date | null }>(
+        'SELECT total_fetches, last_fetch_at FROM feeds WHERE id = $1',
+        [feedId],
+      );
+      expect(row.rows).toEqual([{ total_fetches: 0, last_fetch_at: null }]);
+      const items = await owner.query('SELECT 1 FROM feed_items WHERE feed_id = $1', [feedId]);
+      expect(items.rowCount).toBe(0);
+    } finally {
+      await doomed.end();
+      await admin.end();
+    }
+  });
+
   it('fetches a feed subscribed through a signed URL with fetch_url; feeds.url stays canonical', async () => {
     // The publisher signs the whole query, tracking parameter included: dropping utm_source
     // (as canonicalization does) breaks the signature.

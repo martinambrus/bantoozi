@@ -46,7 +46,10 @@ import type { QueueHandler } from './index.js';
  * - Resolves a merged feed to its live survivor; holds the per-feed session advisory lock on a
  *   dedicated connection for the whole fetch (another process fetching it makes this a no-op) and
  *   re-reads the feed after acquiring it: a paused, dead, unsubscribed or not-yet-due feed is a
- *   no-op unless `force` (a manual refresh still observes origin cooldowns).
+ *   no-op unless `force` (a manual refresh still observes origin cooldowns). A lost lock stops the
+ *   fetch: its connection failure aborts the HTTP request, every item checks the lock first, and
+ *   every transaction that records the fetch checks it in PostgreSQL, so nothing is written for a
+ *   feed that another process may be fetching (`FeedFetchLockLostError`).
  * - Conditional GET with the stored validators on `fetch_url`; a 304 without established
  *   validators is retried once unconditionally.
  * - Each item is ingested in its own short transaction (retried on identity races), which also
@@ -86,22 +89,23 @@ async function fetchFeed(
   if (!force && feed.nextFetchAt.getTime() > now.getTime()) return;
 
   const hadValidators = feed.etag !== null || feed.lastModified !== null;
-  let result = await fetchFeedBody(deps, feed, hadValidators);
+  let result = await fetchFeedBody(deps, feed, hadValidators, lock.signal);
   // A 304 to a request without validators is FEED_HTTP_304; without established validators it is
   // retried once unconditionally before it counts as an error (spec 03 §9).
   if (!hadValidators && !result.ok && result.status === 304) {
-    result = await fetchFeedBody(deps, feed, false);
+    result = await fetchFeedBody(deps, feed, false, lock.signal);
   }
 
   if (!result.ok) {
     if (result.code === 'FEED_ORIGIN_COOLDOWN') {
       // Our own politeness deferral, not a feed error: fetch again when the origin is free.
-      await deps.db.transaction((tx) =>
-        deferFeedFetch(tx, feedId, result.retryAt ?? new Date(now.getTime() + 60_000)),
-      );
+      await deps.db.transaction(async (tx) => {
+        await lock.assertHeld(tx);
+        await deferFeedFetch(tx, feedId, result.retryAt ?? new Date(now.getTime() + 60_000));
+      });
       return;
     }
-    await recordOutcome(deps, feed, feedId, errorOutcome(result, now), now);
+    await recordOutcome(deps, lock, feed, feedId, errorOutcome(result, now), now);
     return;
   }
   if (result.status === 304) {
@@ -109,6 +113,7 @@ async function fetchFeed(
     // validators belong there (a 304 from a redirect target is FEED_HTTP_304, handled above).
     await recordOutcome(
       deps,
+      lock,
       feed,
       feedId,
       {
@@ -129,6 +134,7 @@ async function fetchFeed(
   if (!decoded.ok) {
     await recordOutcome(
       deps,
+      lock,
       feed,
       feedId,
       { kind: 'error', code: decoded.code, message: decoded.message },
@@ -145,6 +151,7 @@ async function fetchFeed(
     // A parse error never installs the response's validators (spec 03 §9).
     await recordOutcome(
       deps,
+      lock,
       feed,
       feedId,
       { kind: 'error', code: parsed.code, message: parsed.message },
@@ -156,7 +163,7 @@ async function fetchFeed(
   // A permanent redirect of a successful fetch renames the feed or merges it (spec 03 §9).
   let targetId = feedId;
   if (result.permanentRedirect) {
-    targetId = await followPermanentRedirect(deps, feedId, feed, result.finalUrl);
+    targetId = await followPermanentRedirect(deps, lock, feedId, feed, result.finalUrl);
     // After a merge the rest of this fetch works on the survivor, so it must hold the survivor's
     // fetch lock too; when the survivor's own fetch is running, that fetch ingests this content.
     if (targetId !== feedId && !(await lock.tryExtend(targetId))) return;
@@ -165,6 +172,7 @@ async function fetchFeed(
   let nNew = 0;
   let failed = 0;
   for (const item of parsed.items) {
+    await lock.assertHeld();
     const input = ingestInput(targetId, item);
     try {
       const outcome = await retryTransaction(deps.db, async (tx) => {
@@ -220,6 +228,7 @@ async function fetchFeed(
     scheduleHints(parsed, result),
   );
   await deps.db.transaction(async (tx) => {
+    await lock.assertHeld(tx);
     await recordFeedFetch(tx, targetId, {
       schedule,
       meta: {
@@ -251,9 +260,11 @@ function fetchFeedBody(
   deps: WorkerDeps,
   feed: FeedForFetch,
   conditional: boolean,
+  signal: AbortSignal,
 ): Promise<SafeFetchResult> {
   return fetchWith(deps, feed.fetchUrl, {
     purpose: 'feed',
+    signal,
     ...(feed.userAgent === null ? {} : { userAgent: feed.userAgent }),
     ...(conditional ? { conditional: { etag: feed.etag, lastModified: feed.lastModified } } : {}),
   });
@@ -267,6 +278,7 @@ function fetchFeedBody(
  */
 async function recordOutcome(
   deps: WorkerDeps,
+  lock: FeedFetchLock,
   feed: FeedForFetch,
   feedId: string,
   outcome: FetchOutcome,
@@ -277,6 +289,7 @@ async function recordOutcome(
     cacheMaxAgeS: parseCacheMaxAge(cacheControl),
   });
   await deps.db.transaction(async (tx) => {
+    await lock.assertHeld(tx);
     await recordFeedFetch(tx, feedId, { schedule });
     if (outcome.kind === 'not_modified' && feed.langHint === null) {
       await refreshFeedLangHint(tx, feedId);
@@ -308,6 +321,7 @@ function errorOutcome(result: Extract<SafeFetchResult, { ok: false }>, now: Date
  */
 async function followPermanentRedirect(
   deps: WorkerDeps,
+  lock: FeedFetchLock,
   feedId: string,
   feed: FeedForFetch,
   finalUrl: string,
@@ -322,6 +336,7 @@ async function followPermanentRedirect(
   }
   if (target.canonicalUrl === feed.url && target.fetchUrl === feed.fetchUrl) return feedId;
   return retryTransaction(deps.db, async (tx) => {
+    await lock.assertHeld(tx);
     const sender = workerOutbox(tx);
     const redirect = await applyPermanentRedirect(tx, sender, feedId, {
       canonicalUrl: target.canonicalUrl,
