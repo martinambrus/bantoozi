@@ -450,6 +450,53 @@ describe('feed.schedule and feed.fetch (M1-T7)', () => {
     expect(await articleIdByUrl(server.url('/merge/y.html'))).toBeTruthy();
   });
 
+  it('leaves the survivor to its own fetch when that fetch holds the survivor lock', async () => {
+    server.route(
+      '/busy/old.rss',
+      rssRoute(() => rss('Busy old', rssItem('b-1', 'Busy story', server.url('/busy/1.html')))),
+    );
+    server.route(
+      '/busy/new.rss',
+      rssRoute(() => rss('Busy new', rssItem('b-2', 'Survivor story', server.url('/busy/2.html')))),
+    );
+    const target = await addFeed('/busy/new.rss', [{ user: reader, mode: 'off' }]);
+    const source = await addFeed('/busy/old.rss', [{ user: reader, mode: 'off' }]);
+    await fetchFeed(source);
+    server.redirect('/busy/old.rss', server.url('/busy/new.rss'), 301);
+    const before = (await feedRow(target)).total_fetches;
+
+    // The survivor's own fetch is running in another worker: it holds the survivor's lock.
+    const holder = await workerPool.connect();
+    try {
+      await holder.query(
+        `SELECT pg_advisory_lock(hashtextextended('feed.fetch:' || $1::text, 0))`,
+        [target],
+      );
+      await fetchFeed(source);
+      // The merge happened, but nothing was ingested or recorded on the survivor meanwhile.
+      const merged = await owner.query<{ merged_into_id: string | null }>(
+        'SELECT merged_into_id::text AS merged_into_id FROM feeds WHERE id = $1',
+        [source],
+      );
+      expect(merged.rows).toEqual([{ merged_into_id: target }]);
+      expect((await feedRow(target)).total_fetches).toBe(before);
+      const survivorStory = await owner.query('SELECT 1 FROM articles WHERE url_key = $1', [
+        keyOf(server.url('/busy/2.html')),
+      ]);
+      expect(survivorStory.rowCount).toBe(0);
+    } finally {
+      await holder.query(
+        `SELECT pg_advisory_unlock(hashtextextended('feed.fetch:' || $1::text, 0))`,
+        [target],
+      );
+      holder.release();
+    }
+    // The survivor's next fetch ingests its content.
+    await fetchFeed(target);
+    expect((await feedRow(target)).total_fetches).toBe(before + 1);
+    expect(await articleIdByUrl(server.url('/busy/2.html'))).toBeTruthy();
+  });
+
   it('sets lang_hint from <language>, else from ≥ 70 % of 20 detected articles', async () => {
     server.route(
       '/lang/sk.rss',

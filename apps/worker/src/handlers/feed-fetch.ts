@@ -13,6 +13,7 @@ import {
   tryLockFeedForFetch,
   workerOutbox,
   type ArticleBodyInput,
+  type FeedFetchLock,
   type FeedForFetch,
   type IngestItemInput,
 } from '@bantoozi/db';
@@ -64,14 +65,19 @@ export function createFeedFetchHandler(deps: WorkerDeps): QueueHandler<'feed.fet
     const lock = await tryLockFeedForFetch(deps.lockPool, liveId);
     if (lock === null) return;
     try {
-      await fetchFeed(deps, liveId, force === true);
+      await fetchFeed(deps, liveId, force === true, lock);
     } finally {
       await lock.release();
     }
   };
 }
 
-async function fetchFeed(deps: WorkerDeps, feedId: string, force: boolean): Promise<void> {
+async function fetchFeed(
+  deps: WorkerDeps,
+  feedId: string,
+  force: boolean,
+  lock: FeedFetchLock,
+): Promise<void> {
   const feed = await loadFeedForFetch(deps.db, feedId);
   if (feed === null || feed.mergedIntoId !== null) return;
   if (feed.status === 'dead' || feed.status === 'paused' || feed.subscriberCount === 0) return;
@@ -156,6 +162,9 @@ async function fetchFeed(deps: WorkerDeps, feedId: string, force: boolean): Prom
   let targetId = feedId;
   if (result.permanentRedirect) {
     targetId = await followPermanentRedirect(deps, feedId, feed, result.finalUrl);
+    // After a merge the rest of this fetch works on the survivor, so it must hold the survivor's
+    // fetch lock too; when the survivor's own fetch is running, that fetch ingests this content.
+    if (targetId !== feedId && !(await lock.tryExtend(targetId))) return;
   }
 
   let nNew = 0;

@@ -72,6 +72,14 @@ export async function resolveLiveFeedId(db: Executor, feedId: string): Promise<s
 export interface FeedFetchLock {
   readonly feedId: string;
   /**
+   * Also take another feed's fetch lock, non-blocking, on this lock's session connection (no
+   * second pool connection): after a permanent redirect merged this feed into a survivor, the rest
+   * of the fetch works on the survivor and must be serialized with the survivor's own fetches
+   * (spec 03 §3, §9). `false` when another session holds it, or this lock is already released or
+   * its connection broken. `release` unlocks it too.
+   */
+  tryExtend(feedId: string): Promise<boolean>;
+  /**
    * Unlock and return the dedicated connection to the pool; call it in `finally`. Idempotent and
    * never throws: when the connection was lost (which already released the session lock), the
    * connection is destroyed instead of being reused.
@@ -98,7 +106,7 @@ export async function tryLockFeedForFetch(
   pool: Pool,
   feedId: string,
 ): Promise<FeedFetchLock | null> {
-  if (!/^[0-9]{1,19}$/.test(feedId)) throw new RangeError(`invalid feed id: ${feedId}`);
+  assertFeedId(feedId);
   const client: PoolClient = await pool.connect();
   let broken: Error | undefined;
   const onError = (error: Error): void => {
@@ -129,14 +137,33 @@ export async function tryLockFeedForFetch(
     return null;
   }
   let released = false;
+  const held = [feedId];
   return {
     feedId,
+    async tryExtend(otherId) {
+      assertFeedId(otherId);
+      if (released || broken !== undefined) return false;
+      if (held.includes(otherId)) return true;
+      try {
+        const result = await client.query<{ locked: boolean }>(
+          `SELECT pg_try_advisory_lock(${FETCH_LOCK_KEY}) AS locked`,
+          [otherId],
+        );
+        if (result.rows[0]?.locked !== true) return false;
+        held.push(otherId);
+        return true;
+      } catch (error) {
+        broken ??= error instanceof Error ? error : new Error(String(error));
+        return false;
+      }
+    },
     async release() {
       if (released) return;
       released = true;
-      if (broken === undefined) {
+      for (const id of [...held].reverse()) {
+        if (broken !== undefined) break;
         try {
-          await client.query(`SELECT pg_advisory_unlock(${FETCH_LOCK_KEY})`, [feedId]);
+          await client.query(`SELECT pg_advisory_unlock(${FETCH_LOCK_KEY})`, [id]);
         } catch (error) {
           broken = error instanceof Error ? error : new Error(String(error));
         }
@@ -144,6 +171,10 @@ export async function tryLockFeedForFetch(
       giveBack();
     },
   };
+}
+
+function assertFeedId(feedId: string): void {
+  if (!/^[0-9]{1,19}$/.test(feedId)) throw new RangeError(`invalid feed id: ${feedId}`);
 }
 
 /** The feed row as `feed.fetch` needs it (spec 03 §3–§9); a superset of `nextSchedule`'s input. */

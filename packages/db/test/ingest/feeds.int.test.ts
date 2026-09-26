@@ -142,6 +142,34 @@ describe('tryLockFeedForFetch (spec 03 §3)', () => {
     expect(ctx.workerPool.totalCount - ctx.workerPool.idleCount).toBe(0);
   });
 
+  it('extends to a survivor feed on the same connection and releases both together', async () => {
+    const source = await feedWith({});
+    const survivor = await feedWith({});
+    const busy = await feedWith({});
+    const lock = await tryLockFeedForFetch(ctx.workerPool, source);
+    expect(lock).not.toBeNull();
+    const inUse = ctx.workerPool.totalCount - ctx.workerPool.idleCount;
+    expect(await lock!.tryExtend(survivor)).toBe(true);
+    expect(await lock!.tryExtend(survivor)).toBe(true); // already held: no second lock level
+    // No second pool connection, and another session cannot take the survivor now.
+    expect(ctx.workerPool.totalCount - ctx.workerPool.idleCount).toBe(inUse);
+    expect(await tryLockFeedForFetch(ctx.workerPool, survivor)).toBeNull();
+    // A feed another session is fetching cannot be taken over.
+    const other = await tryLockFeedForFetch(ctx.workerPool, busy);
+    expect(await lock!.tryExtend(busy)).toBe(false);
+    await other?.release();
+    await expect(lock!.tryExtend('not-a-feed-id')).rejects.toThrow(RangeError);
+
+    await lock!.release();
+    expect(await lock!.tryExtend(busy)).toBe(false); // released locks never extend
+    for (const feed of [source, survivor]) {
+      const again = await tryLockFeedForFetch(ctx.workerPool, feed);
+      expect(again).not.toBeNull();
+      await again?.release();
+    }
+    expect(ctx.workerPool.totalCount - ctx.workerPool.idleCount).toBe(0);
+  });
+
   it('is released when its connection dies, without crashing the holder', async () => {
     const feed = await feedWith({});
     const applicationName = `feed-lock-test-${process.pid}`;
