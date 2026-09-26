@@ -1,5 +1,6 @@
 import { Readability } from '@mozilla/readability';
 
+import { mediaSignals, videoEmbedRegex } from '../media/index.js';
 import { htmlToText, sanitizeHtml } from '../parse/index.js';
 import { detectCanonicalUrl } from './canonical-link.js';
 import { hasPaywallMarkers, looksLikeTeaser } from './completeness.js';
@@ -11,6 +12,9 @@ import type { HtmlExtractResult } from './types.js';
 /** Readability's `charThreshold` and the minimum readable text (spec 03 §8.1 step 5). */
 export const MIN_ARTICLE_CHARS = 200;
 
+/** Readability keeps `<iframe>`/`<embed>`/`<object>` players of these hosts (spec 03 §6.4). */
+const ALLOWED_VIDEO_REGEX = videoEmbedRegex();
+
 /**
  * The pure HTML part of extraction (spec 03 §8.1 steps 5–6), shared by `article.extract` and
  * bookmark capture (§8.5 step 3). Never throws.
@@ -20,18 +24,22 @@ export const MIN_ARTICLE_CHARS = 200;
  *    resolve relative links alike.
  * 2. Before Readability rewrites the DOM, detect the `rel=canonical` (`detectCanonicalUrl`) and
  *    known paywall markers (`hasPaywallMarkers`).
- * 3. `new Readability(document, { charThreshold: 200 }).parse()`. No result, or readable text
- *    shorter than 200 characters → `failed` with error `no_content` (reason `paywall` when the page
- *    is marked as paywalled, else `no_content`) and no canonical: a page without an article is not
- *    identity evidence for one.
- * 4. `bodyText`: the full readable text with paragraph boundaries (`htmlToText` of the Readability
+ * 3. `new Readability(document, { charThreshold: 200, allowedVideoRegex }).parse()`, where
+ *    `allowedVideoRegex` (`videoEmbedRegex`) keeps the player embeds of `VIDEO_EMBED_HOSTS`. No
+ *    result, or readable text shorter than 200 characters → `failed` with error `no_content`
+ *    (reason `paywall` when the page is marked as paywalled, else `no_content`) and no canonical: a
+ *    page without an article is not identity evidence for one.
+ * 4. Media signals (spec 03 §6.4) of the Readability fragment, read before sanitizing removes the
+ *    media: `videoEvidence` whenever Readability returned a fragment, `bodyImageCount` only when
+ *    the body is stored (status `ok`). Nothing outside the fragment is examined or counted.
+ * 5. `bodyText`: the full readable text with paragraph boundaries (`htmlToText` of the Readability
  *    fragment: blank lines between blocks); `bodyHtml`: the full fragment through `sanitizeHtml`
  *    (spec 03 §6.3); both together capped at `maxOutputBytes` (10 MiB) with well-formed truncation
  *    (`capOutput`).
- * 5. Completeness: `partial` with reason `truncated` (the cap cut the output), else `paywall`
+ * 6. Completeness: `partial` with reason `truncated` (the cap cut the output), else `paywall`
  *    (known markers), else `teaser` (short text or a "read more"/ellipsis ending); otherwise
  *    `complete`, meaning no known omission, never a claim about content behind a paywall.
- * 6. `bodyLead` and `wordCount` of the stored text.
+ * 7. `bodyLead` and `wordCount` of the stored text.
  */
 export function extractFromHtml(
   html: string,
@@ -44,14 +52,26 @@ export function extractFromHtml(
     const canonicalUrl = detectCanonicalUrl(document, pageUrl, baseUrl);
     const paywalled = hasPaywallMarkers(document);
 
-    const article = new Readability(document, { charThreshold: MIN_ARTICLE_CHARS }).parse();
+    const article = new Readability(document, {
+      charThreshold: MIN_ARTICLE_CHARS,
+      allowedVideoRegex: ALLOWED_VIDEO_REGEX,
+    }).parse();
     const contentHtml = article?.content ?? '';
     const text = contentHtml === '' ? '' : htmlToText(contentHtml);
-    if (!hasAtLeastChars(text, MIN_ARTICLE_CHARS)) {
+    const stored = hasAtLeastChars(text, MIN_ARTICLE_CHARS);
+    // Before sanitizing, which removes images, iframes and <video>; the page link is not examined.
+    const media = mediaSignals({
+      link: null,
+      html: [contentHtml],
+      bodyHtml: stored ? contentHtml : null,
+      baseUrl,
+    });
+    if (!stored) {
       return {
         ...emptyBody(paywalled ? 'paywall' : 'no_content', 'no_content'),
         canonicalUrl: null,
         status: 'failed',
+        videoEvidence: media.videoEvidence,
       };
     }
 
@@ -77,6 +97,8 @@ export function extractFromHtml(
       completenessReason: reason,
       canonicalUrl,
       error: null,
+      videoEvidence: media.videoEvidence,
+      bodyImageCount: media.bodyImageCount,
     };
   } catch {
     return {
@@ -99,6 +121,8 @@ function emptyBody(
     completeness: 'partial',
     completenessReason: reason,
     error,
+    videoEvidence: false,
+    bodyImageCount: null,
   };
 }
 

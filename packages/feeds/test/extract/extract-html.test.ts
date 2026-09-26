@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { BODY_LEAD_MAX_CHARS, extractFromHtml } from '../../src/extract/index.js';
 import { decodeBody } from '../../src/http/index.js';
+import { mediaSignals } from '../../src/media/index.js';
 
 const chars = (text: string | null): number => Array.from(text ?? '').length;
 const bytes = (text: string | null): number => Buffer.byteLength(text ?? '', 'utf8');
@@ -64,6 +65,9 @@ describe('spec 03 §8.1 steps 5–6 extractFromHtml — page fixtures', () => {
       canonicalUrl: url,
       error: null,
       wordCount: 600,
+      // The figure counts; the 1×1 pixel at the end of the article does not.
+      videoEvidence: false,
+      bodyImageCount: 1,
     });
     const text = result.bodyText ?? '';
     expect(text).toContain(
@@ -194,7 +198,106 @@ describe('spec 03 §8.1 steps 5–6 extractFromHtml — page fixtures', () => {
       completenessReason: 'no_content',
       canonicalUrl: null,
       error: 'no_content',
+      videoEvidence: false,
+      bodyImageCount: null,
     });
+  });
+});
+
+describe('spec 03 §6.4 media signals of the Readability fragment (M1-T5)', () => {
+  it('keeps an embedded YouTube iframe and reports video evidence', () => {
+    const url = 'https://news.example.com/2026/09/24/tram-restoration';
+    const result = extractFromHtml(fixtureHtml('video-youtube.html'), url);
+    expect(result).toMatchObject({
+      status: 'ok',
+      completeness: 'complete',
+      canonicalUrl: url,
+      videoEvidence: true,
+      // The tracking pixel inside the article is not an in-body image.
+      bodyImageCount: 0,
+    });
+    expect(result.bodyText).toContain('The volunteers filmed every stage of the work');
+    // Read before sanitizing: the stored HTML keeps neither the player nor the pixel.
+    expect(result.bodyHtml).not.toContain('<iframe');
+    expect(result.bodyHtml).not.toContain('youtube');
+  });
+
+  it('reports a <video> element as video evidence', () => {
+    const url = 'https://www.coastal.example/2026/09/harbour-timelapse/';
+    const result = extractFromHtml(fixtureHtml('video-element.html'), url);
+    expect(result).toMatchObject({
+      status: 'ok',
+      canonicalUrl: url,
+      videoEvidence: true,
+      bodyImageCount: 0,
+    });
+    expect(result.bodyText).toContain('compressed into ninety seconds');
+    expect(result.bodyHtml).not.toContain('<video');
+  });
+
+  it('counts lazy images once with their <noscript> fallbacks, never the pixel or other page parts', () => {
+    const url = 'https://news.example.com/2026/09/26/market-hall-reopens';
+    const html = fixtureHtml('lazy-images.html');
+    const result = extractFromHtml(html, url);
+    expect(result).toMatchObject({
+      status: 'ok',
+      completeness: 'complete',
+      canonicalUrl: url,
+      videoEvidence: false,
+      // The glass roof and the stalls: each lazy image and its fallback count once.
+      bodyImageCount: 2,
+    });
+    expect(result.bodyText).toContain('The glass roof lets in three times as much daylight');
+    expect(result.bodyText).not.toContain('Related stories');
+    expect(result.bodyHtml).not.toContain('<img');
+    // The whole page has six images: the logo and three related-story thumbnails lie outside the
+    // Readability result and are never counted.
+    expect(mediaSignals({ link: null, bodyHtml: html, baseUrl: url }).bodyImageCount).toBe(6);
+  });
+
+  it('passes allowedVideoRegex, so players beyond Readability’s default list survive', () => {
+    const facebook =
+      '<figure><iframe src="https://www.facebook.com/plugins/video.php?height=314&amp;href=https%3A%2F%2Fwww.facebook.com%2Fvalley%2Fvideos%2F1&amp;show_text=false&amp;width=560" width="560" height="314" allowfullscreen="true"></iframe><figcaption>The market on its first morning.</figcaption></figure>';
+    expect(extractFromHtml(articlePage({ after: facebook }), PAGE_URL)).toMatchObject({
+      status: 'ok',
+      videoEvidence: true,
+    });
+    const tiktok =
+      '<div class="embed"><iframe src="https://www.tiktok.com/embed/v2/7412345678901234567" width="325" height="740"></iframe></div>';
+    expect(extractFromHtml(articlePage({ after: tiktok }), PAGE_URL).videoEvidence).toBe(true);
+    // Other frames are removed by Readability and are no evidence anyway.
+    const other =
+      '<figure><iframe src="https://www.facebook.com/plugins/post.php?href=x" width="500" height="600"></iframe><figcaption>A post.</figcaption></figure><div><iframe src="https://maps.example.com/embed?q=market" width="600" height="450"></iframe></div>';
+    expect(extractFromHtml(articlePage({ after: other }), PAGE_URL)).toMatchObject({
+      status: 'ok',
+      videoEvidence: false,
+      bodyImageCount: 0,
+    });
+  });
+
+  it('reports video evidence of a fragment too short to store, without an image count', () => {
+    const page = `<html><body><article><h1>Watch: the tram is back</h1><p>The restored tram left the depot this morning.</p><figure><iframe src="https://www.youtube-nocookie.com/embed/tr4mR3st0r3" width="640" height="360"></iframe><figcaption>Car 7 on the river line.</figcaption></figure><img src="/still.jpg" alt="Car 7"></article></body></html>`;
+    expect(extractFromHtml(page, PAGE_URL)).toMatchObject({
+      status: 'failed',
+      error: 'no_content',
+      bodyText: null,
+      videoEvidence: true,
+      bodyImageCount: null,
+    });
+  });
+
+  it('resolves lazy image URLs against the pinned document base', () => {
+    const images = [
+      // Readability leaves this placeholder and the relative data-src as they are.
+      `<figure><img src="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%3E%3C/svg%3E" data-src="photos/a.jpg" alt="A"><figcaption>Photo A of the new pipes.</figcaption></figure>`,
+      '<figure><img srcset="photos/b-400.jpg 400w, photos/b-800.jpg 800w" alt="B"><figcaption>Photo B of the trench.</figcaption></figure>',
+      '<figure><img src="https://news.example.com/archive/photos/a.jpg" alt="A again"><figcaption>Photo A once more.</figcaption></figure>',
+    ].join('');
+    const result = extractFromHtml(
+      articlePage({ head: '<base href="/archive/">', after: images }),
+      PAGE_URL,
+    );
+    expect(result).toMatchObject({ status: 'ok', bodyImageCount: 2 });
   });
 });
 
@@ -329,6 +432,8 @@ describe('spec 03 §8.1 step 6 completeness: paywall and teaser markers', () => 
       error: 'no_content',
       completenessReason: 'no_content',
       bodyText: null,
+      videoEvidence: false,
+      bodyImageCount: null,
     });
     const head = '<meta property="article:content_tier" content="locked">';
     expect(extractFromHtml(articlePage({ paragraphs, head }), PAGE_URL)).toMatchObject({
@@ -443,6 +548,8 @@ describe('extractFromHtml robustness', () => {
       completenessReason: 'extraction_failed',
       canonicalUrl: null,
       error: 'extraction_failed',
+      videoEvidence: false,
+      bodyImageCount: null,
     });
   });
 });

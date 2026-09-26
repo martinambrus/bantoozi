@@ -1,17 +1,19 @@
 import { readFixture } from '@bantoozi/testing';
 import { describe, expect, it, vi } from 'vitest';
 
-const decoding = vi.hoisted(() => ({ fails: false }));
+const decoding = vi.hoisted(() => ({ fails: false, throws: false }));
 
 vi.mock('../../src/http/index.js', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   const decodeBody = actual['decodeBody'] as (bytes: Uint8Array, contentType?: string) => unknown;
   return {
     ...actual,
-    decodeBody: (bytes: Uint8Array, contentType?: string) =>
-      decoding.fails
+    decodeBody: (bytes: Uint8Array, contentType?: string) => {
+      if (decoding.throws) throw new Error('decoder crashed');
+      return decoding.fails
         ? { ok: false, code: 'FEED_DECODE_ERROR', message: 'unsupported character encoding' }
-        : decodeBody(bytes, contentType),
+        : decodeBody(bytes, contentType);
+    },
   };
 });
 
@@ -135,6 +137,8 @@ describe('spec 03 §8.1 extractArticle', () => {
       wordCount: 600,
       error: null,
       deferUntil: null,
+      videoEvidence: false,
+      bodyImageCount: 1,
     });
     expect(result.bodyText).toContain('The Riverton city council voted 7 to 2');
     expect(result.bodyHtml).toContain('<p>');
@@ -193,6 +197,7 @@ describe('spec 03 §8.1 extractArticle', () => {
   it('skips skip-list URLs without robots or fetch', async () => {
     const { fetch } = fakeFetch({});
     const { robots, checked } = fakeRobots();
+    // A skipped URL on a VIDEO_HOSTS host is video evidence (spec 03 §8.1 steps 1 and 6).
     await expect(
       extractArticle('https://m.youtube.com/watch?v=x', deps(fetch, robots)),
     ).resolves.toEqual({
@@ -208,20 +213,65 @@ describe('spec 03 §8.1 extractArticle', () => {
       canonicalUrl: null,
       error: null,
       deferUntil: null,
+      videoEvidence: true,
+      bodyImageCount: null,
     });
-    await expect(
-      extractArticle('https://cdn.example.com/ep/12', deps(fetch, robots), {
-        enclosureType: 'audio/mpeg',
-      }),
-    ).resolves.toMatchObject({ status: 'skipped', completenessReason: 'skip_media' });
-    await expect(
-      extractArticle('https://example.com/a.PDF', deps(fetch, robots)),
-    ).resolves.toMatchObject({
-      status: 'skipped',
-      completenessReason: 'skip_extension',
-    });
+    for (const video of [
+      'https://youtu.be/tr4mR3st0r3',
+      'https://vimeo.com/123456789',
+      'https://www.TikTok.com./@workshop/video/7412',
+    ]) {
+      await expect(extractArticle(video, deps(fetch, robots))).resolves.toMatchObject({
+        status: 'skipped',
+        completenessReason: 'skip_host',
+        videoEvidence: true,
+        bodyImageCount: null,
+      });
+    }
+    // Other skips are no video evidence: social and audio hosts, files, and enclosures (whose
+    // video type is feed evidence already).
+    for (const [url, reason, enclosureType] of [
+      ['https://x.com/valley/status/1', 'skip_host', null],
+      ['https://open.spotify.com/episode/1', 'skip_host', null],
+      ['https://www.facebook.com/valley/videos/1', 'skip_host', null],
+      ['https://example.com/a.PDF', 'skip_extension', null],
+      ['https://www.dailymotion.com/cdn/x8abcd.mp4', 'skip_extension', null],
+      ['https://cdn.example.com/ep/12', 'skip_media', 'audio/mpeg'],
+      ['https://cdn.example.com/ep/13', 'skip_media', 'video/mp4'],
+    ] as const) {
+      await expect(
+        extractArticle(url, deps(fetch, robots), { enclosureType }),
+      ).resolves.toMatchObject({
+        status: 'skipped',
+        completenessReason: reason,
+        videoEvidence: false,
+        bodyImageCount: null,
+      });
+    }
     expect(fetch).not.toHaveBeenCalled();
     expect(checked).toEqual([]);
+  });
+
+  it('reports the media signals of the fetched page body', async () => {
+    const tram = 'https://news.example.com/2026/09/24/tram-restoration';
+    const market = 'https://news.example.com/2026/09/26/market-hall-reopens';
+    const { fetch } = fakeFetch({
+      [tram]: htmlPage('video-youtube.html'),
+      [market]: htmlPage('lazy-images.html'),
+    });
+    const { robots } = fakeRobots();
+    await expect(extractArticle(tram, deps(fetch, robots))).resolves.toMatchObject({
+      status: 'ok',
+      resolvedUrl: tram,
+      videoEvidence: true,
+      bodyImageCount: 0,
+    });
+    await expect(extractArticle(market, deps(fetch, robots))).resolves.toMatchObject({
+      status: 'ok',
+      resolvedUrl: market,
+      videoEvidence: false,
+      bodyImageCount: 2,
+    });
   });
 
   it('blocks a robots.txt disallow before fetching', async () => {
@@ -237,6 +287,8 @@ describe('spec 03 §8.1 extractArticle', () => {
       error: 'robots_disallowed',
       bodyText: null,
       deferUntil: null,
+      videoEvidence: false,
+      bodyImageCount: null,
     });
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -305,8 +357,23 @@ describe('spec 03 §8.1 extractArticle', () => {
       resolvedUrl: video,
       completenessReason: 'skip_host',
       error: null,
+      // The skipped destination is on a video host: video evidence.
+      videoEvidence: true,
+      bodyImageCount: null,
     });
     expect(requested).toEqual([wrapper]);
+
+    const social = 'https://feeds.example.net/r/4';
+    const post = 'https://x.com/valley/status/1';
+    const other = fakeFetch({ [social]: { redirectTo: post } });
+    await expect(
+      extractArticle(social, deps(other.fetch, fakeRobots().robots)),
+    ).resolves.toMatchObject({
+      status: 'skipped',
+      resolvedUrl: post,
+      completenessReason: 'skip_host',
+      videoEvidence: false,
+    });
   });
 
   it('defers on an origin cooldown or a 429/503 with retryAt', async () => {
@@ -334,6 +401,8 @@ describe('spec 03 §8.1 extractArticle', () => {
         completenessReason: 'cooldown',
         error: code,
         deferUntil: retryAt,
+        videoEvidence: false,
+        bodyImageCount: null,
       });
     }
     const { fetch } = fakeFetch({
@@ -389,6 +458,8 @@ describe('spec 03 §8.1 extractArticle', () => {
       ).resolves.toMatchObject({
         deferUntil: null,
         bodyText: null,
+        videoEvidence: false,
+        bodyImageCount: null,
         ...expected,
       });
     }
@@ -416,6 +487,8 @@ describe('spec 03 §8.1 extractArticle', () => {
           resolvedUrl: ARTICLE_URL,
           httpStatus: 200,
           completenessReason: 'not_html',
+          videoEvidence: false,
+          bodyImageCount: null,
         });
       }
     }
@@ -447,12 +520,13 @@ describe('spec 03 §8.1 extractArticle', () => {
     ).resolves.toMatchObject({ status: 'ok', completenessReason: 'truncated', bodyHtml: null });
   });
 
-  it('rejects invalid and non-http URLs and never throws', async () => {
+  it('reports invalid and non-http URLs without robots or fetch', async () => {
     const { fetch } = fakeFetch({});
-    const { robots } = fakeRobots();
+    const { robots, checked } = fakeRobots();
     await expect(extractArticle('not a url', deps(fetch, robots))).resolves.toMatchObject({
       status: 'failed',
       error: 'FEED_INVALID_URL',
+      videoEvidence: false,
     });
     await expect(extractArticle('ftp://example.com/a', deps(fetch, robots))).resolves.toMatchObject(
       {
@@ -460,16 +534,53 @@ describe('spec 03 §8.1 extractArticle', () => {
         error: 'FEED_INVALID_URL',
       },
     );
+    expect(fetch).not.toHaveBeenCalled();
+    expect(checked).toEqual([]);
+  });
+
+  it('rejects when an injected dependency rejects (an infrastructure fault the caller retries)', async () => {
+    const { robots } = fakeRobots();
+    // A page fetch whose origin limiter cannot reach PostgreSQL rejects instead of resolving.
+    const outage = new Error('origin limiter: connection terminated');
+    const throwingFetch: ExtractDeps['fetch'] = () => Promise.reject(outage);
+    await expect(extractArticle(ARTICLE_URL, deps(throwingFetch, robots))).rejects.toBe(outage);
+
     const throwingRobots: RobotsChecker = { check: () => Promise.reject(new Error('boom')) };
-    await expect(extractArticle(ARTICLE_URL, deps(fetch, throwingRobots))).resolves.toMatchObject({
-      status: 'failed',
-      error: 'extraction_failed',
-      completenessReason: 'extraction_failed',
-    });
-    const throwingFetch: ExtractDeps['fetch'] = () => Promise.reject(new Error('boom'));
-    await expect(extractArticle(ARTICLE_URL, deps(throwingFetch, robots))).resolves.toMatchObject({
-      status: 'failed',
-      error: 'extraction_failed',
-    });
+    const { fetch } = fakeFetch({ [ARTICLE_URL]: htmlPage('article.html') });
+    await expect(extractArticle(ARTICLE_URL, deps(fetch, throwingRobots))).rejects.toThrow('boom');
+    expect(fetch).not.toHaveBeenCalled();
+
+    // The robots check of a redirect destination runs inside the fetch and rejects it the same way.
+    const wrapper = 'https://feeds.example.net/r/5';
+    const hop = fakeFetch({ [wrapper]: { redirectTo: ARTICLE_URL } });
+    const flakyRobots: RobotsChecker = {
+      check: (url: URL) =>
+        url.href === wrapper ? Promise.resolve(ALLOWED) : Promise.reject(new Error('robots store')),
+    };
+    await expect(extractArticle(wrapper, deps(hop.fetch, flakyRobots))).rejects.toThrow(
+      'robots store',
+    );
+  });
+
+  it('turns a failure of the local work into failed with extraction_failed', async () => {
+    const { fetch } = fakeFetch({ [ARTICLE_URL]: htmlPage('article.html') });
+    decoding.throws = true;
+    try {
+      await expect(
+        extractArticle(ARTICLE_URL, deps(fetch, fakeRobots().robots)),
+      ).resolves.toMatchObject({
+        status: 'failed',
+        resolvedUrl: ARTICLE_URL,
+        httpStatus: 200,
+        completenessReason: 'extraction_failed',
+        error: 'extraction_failed',
+        bodyText: null,
+        videoEvidence: false,
+        bodyImageCount: null,
+        deferUntil: null,
+      });
+    } finally {
+      decoding.throws = false;
+    }
   });
 });

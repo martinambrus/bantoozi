@@ -34,6 +34,20 @@ export interface ExtractResult {
   error: string | null;
   /** The origin is cooling down: the caller defers the job until then instead of failing it. */
   deferUntil: Date | null;
+  /**
+   * Page video evidence (spec 03 §6.4, §8.1 step 6): Readability's result fragment, read before
+   * sanitizing, contains a `<video>` element or a known player embed (whenever Readability returned
+   * a fragment, even one too short to store), or the URL (or a redirect destination) was skipped
+   * because its host is on `VIDEO_HOSTS`. `false` for every other outcome, which is no evidence
+   * either way: the caller keeps feed evidence and never sets `has_video` back to false.
+   */
+  videoEvidence: boolean;
+  /**
+   * In-body image count (spec 03 §6.4) of the Readability fragment, counted before sanitizing; set
+   * exactly when this result stores a readable body (status `ok`), else `null`. Images outside the
+   * Readability result are never counted.
+   */
+  bodyImageCount: number | null;
 }
 
 /** The robots policy callback `safeFetch` invokes before every request of a redirect chain. */
