@@ -189,8 +189,9 @@ export const feedItems = pgTable(
     primaryKey({ name: 'feed_items_pkey', columns: [t.feedId, t.articleId] }),
     index('feed_items_article_idx').on(t.articleId),
     index('feed_items_feed_time_idx').on(t.feedId, t.firstSeenAt.desc().nullsFirst()),
+    // md5(guid): long GUIDs (≤ 4,096 chars) exceed a B-tree key (D-15, migration 0009).
     uniqueIndex('feed_items_guid_idx')
-      .on(t.feedId, t.guid)
+      .on(t.feedId, sql`md5(guid)`)
       .where(sql`guid IS NOT NULL`),
   ],
 );

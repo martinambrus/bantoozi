@@ -23,15 +23,35 @@ async function insertIntent(tx: Executor, intent: JobIntent, requester: string |
     ON CONFLICT DO NOTHING`);
 }
 
+/** A worker intent that becomes due only at `availableAt` (the relay skips it until then). */
+async function insertDelayedIntent(tx: Executor, intent: JobIntent, availableAt: Date) {
+  await tx.execute(sql`
+    INSERT INTO job_outbox (queue, payload, dedupe_key, user_id, available_at)
+    VALUES (${intent.queue}, ${JSON.stringify(intent.payload)}::jsonb, ${intent.dedupeKey}, NULL,
+            greatest(now(), ${availableAt.toISOString()}::timestamptz))
+    ON CONFLICT DO NOTHING`);
+}
+
 /** The API's outbox writer: the requester is the transaction's tenant (RLS `job_outbox_requester`). */
 export function tenantOutbox(tx: TenantTx): JobSender {
   const requester = tenantUserId(tx);
   return { enqueue: (intent) => insertIntent(tx, intent, requester) };
 }
 
-/** A worker transaction's outbox writer (follow-on jobs; no requester). */
-export function workerOutbox(tx: Transaction): JobSender {
-  return { enqueue: (intent) => insertIntent(tx, intent, null) };
+/**
+ * A worker transaction's outbox writer (follow-on jobs; no requester). With `availableAt`, every
+ * intent it writes is delayed until then: a job deferred by a publisher cooldown or a known retry
+ * time records such an intent instead of sleeping inside a worker (spec 03 §8.2). An identical
+ * pending intent still coalesces it (the earlier one wins).
+ */
+export function workerOutbox(tx: Transaction, options: { availableAt?: Date } = {}): JobSender {
+  const { availableAt } = options;
+  return {
+    enqueue: (intent) =>
+      availableAt === undefined
+        ? insertIntent(tx, intent, null)
+        : insertDelayedIntent(tx, intent, availableAt),
+  };
 }
 
 export interface ClaimedIntent {

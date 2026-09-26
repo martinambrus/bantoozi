@@ -400,6 +400,27 @@ describe('bookmark archive functions (as bantoozi_app)', () => {
     expect(readable).toEqual([{ body_text: text, body_html: html }]);
   });
 
+  it('capture of stored publisher feed text records feed provenance (D-16)', async () => {
+    const { user, feedId } = await subscribedReader();
+    const article = await createArticle(ctx.owner, { feedIds: [feedId] });
+    const text = 'The whole weekly note, as published in the feed.';
+    await setBody(article.id, article.contentRevision, {
+      text,
+      html: `<p>${text}</p>`,
+      completeness: 'complete',
+      extractor: 'feed-v1',
+    });
+
+    const saved = await capture(user.id, article.id, feedId);
+    expect(saved).toEqual(bound(expect.any(String), 'saved', 1));
+    expect(await snapshot(saved.snapshot_id)).toMatchObject({
+      body_text: text,
+      completeness: 'complete',
+      source: 'feed',
+      extractor_version: 'feed-v1',
+    });
+  });
+
   it('capture of excerpt-only content binds a partial snapshot and queues one deduplicated capture intent', async () => {
     const { user, feedId } = await subscribedReader();
     const article = await createArticle(ctx.owner, { feedIds: [feedId], excerpt: 'The teaser.' });

@@ -1,5 +1,11 @@
 import { AppError, QUEUE_NAMES, type JobPayload, type QueueName } from '@bantoozi/shared';
 
+import { createCaptureBookmarkHandler } from './article-capture-bookmark.js';
+import { createArticleExtractHandler } from './article-extract.js';
+import type { WorkerDeps } from './deps.js';
+import { createFeedFetchHandler } from './feed-fetch.js';
+import { createFeedScheduleHandler } from './feed-schedule.js';
+
 /**
  * The handler map (spec 03 §2): one entry for every queue of `packages/shared` jobs.ts. A stage that
  * a later milestone implements is registered as `unavailable` so it is discoverable in development:
@@ -32,10 +38,35 @@ export class StageUnavailableError extends AppError {
 
 const unavailable = { status: 'unavailable' } as const;
 
-/** M0: every stage is a registered stub; milestones M1–M8 replace entries with real handlers. */
+/**
+ * The base map: every stage a registered stub. `createHandlers` replaces the stages a milestone
+ * implements; the rest stay discoverable stubs (M1 implements ingestion, spec 03).
+ */
 export const HANDLERS: HandlerMap = Object.freeze(
   Object.fromEntries(QUEUE_NAMES.map((queue) => [queue, unavailable])) as unknown as HandlerMap,
 );
+
+/** Queues with real handlers so far (M1: scheduling, fetch, extraction, bookmark capture). */
+export const IMPLEMENTED_QUEUES = [
+  'feed.schedule',
+  'feed.fetch',
+  'article.extract',
+  'article.capture-bookmark',
+] as const satisfies readonly QueueName[];
+
+/** The worker's handler map: the implemented stages bound to their dependencies, stubs elsewhere. */
+export function createHandlers(deps: WorkerDeps): HandlerMap {
+  return Object.freeze({
+    ...HANDLERS,
+    'feed.schedule': { status: 'implemented', handle: createFeedScheduleHandler(deps) },
+    'feed.fetch': { status: 'implemented', handle: createFeedFetchHandler(deps) },
+    'article.extract': { status: 'implemented', handle: createArticleExtractHandler(deps) },
+    'article.capture-bookmark': {
+      status: 'implemented',
+      handle: createCaptureBookmarkHandler(deps),
+    },
+  }) as HandlerMap;
+}
 
 export function isStageAvailable(handlers: HandlerMap, queue: QueueName): boolean {
   return handlers[queue].status === 'implemented';

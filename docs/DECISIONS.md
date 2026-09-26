@@ -80,3 +80,27 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   counting a transient cooldown as a feed or extraction failure, so callers must tell it apart from
   `FEED_TIMEOUT`. The API maps it like every `FEED_*` code (422, spec 08 §1). Spec 03 §4 updated;
   `packages/shared` errors list it.
+- D-13: 2026-09-26 M1-T7 — `subscriptions_inference_guard` lets a role other than the API role (the
+  worker's feed-merge transaction, the owner) strictly advance `inference_version` without a mode
+  change, and keep or set an activation boundary that is not in the future. Spec 03 §9 requires a feed
+  identity merge to advance every merged subscription's version past both inputs and to restart a
+  moved active subscription's activation boundary at the merge, but the M0 guard allowed a version
+  change only together with a mode change, so the merge could not commit. The API role keeps exactly
+  the spec 02 §3.4 mode-change rules. Migration 0009; spec 02 §5.2 updated.
+- D-14: 2026-09-26 M1-T7 — `bantoozi_worker` gets EXECUTE on `snapshot_content_sha256` and
+  `mark_snapshot_if_unreferenced` (still revoked from PUBLIC, never granted to the API role). Bookmark
+  capture completion is worker-only (spec 02 §6, spec 03 §8.5): it must store snapshots with the same
+  checksum as the API-side capture helper and record final-reference state when it replaces a partial
+  binding. Migration 0009; spec 02 §6 updated.
+- D-15: 2026-09-26 M1-T7 — the per-feed GUID uniqueness index is `feed_items (feed_id, md5(guid))`
+  instead of `(feed_id, guid)`. GUIDs are opaque identifiers of up to 4,096 characters that are never
+  truncated (spec 03 §6), but a B-tree entry cannot exceed about 2.7 KB, so an item with a long GUID
+  failed on every fetch (SQLSTATE 54000). Lookups still compare the GUID itself; an md5 collision could
+  only turn an item of the same feed into an identity conflict, never cross feeds. Migration 0009;
+  spec 02 §3 updated.
+- D-16: 2026-09-26 M1-T7 — `capture_bookmark_snapshot` copies a stored body written by a feed
+  extractor (`extractor_version` `feed-*`) with snapshot source `feed`, any other body with `page`.
+  Ingest stores the publisher's own feed text as a revisioned `feed-v1` body (complete for a linkless
+  item, partial for a linked one until page extraction replaces it; spec 03 §6, §7), and the M0
+  function labelled every stored body as page content, contradicting the page-versus-feed provenance
+  of spec 03 §8.1 step 6 and §8.5. Migration 0009 (only that assignment changes); spec 02 §6 updated.

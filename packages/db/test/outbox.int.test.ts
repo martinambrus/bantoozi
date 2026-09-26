@@ -369,6 +369,40 @@ describe('relay primitives (worker role)', () => {
     expect(left[0]?.delivered_at).toBeNull();
   });
 
+  it('delays an intent until availableAt, and an identical pending intent coalesces it', async () => {
+    await drain();
+    const later = new Date(Date.now() + 60 * 60_000);
+    await ctx.worker.transaction(async (tx) => {
+      await workerOutbox(tx, { availableAt: later }).enqueue(
+        buildJobIntent('article.extract', { articleId: '77' }, { revision: '2' }),
+      );
+    });
+    // Not due yet: the relay skips it (spec 03 §8.2, a cooldown defers instead of sleeping).
+    expect(await claimOutboxIntents(ctx.worker, { limit: 10, leaseSeconds: 30 })).toEqual([]);
+    const row = await ctx.owner.query<{ due_in_minutes: number }>(
+      `SELECT round(extract(epoch FROM available_at - now()) / 60)::int AS due_in_minutes
+         FROM job_outbox WHERE queue = 'article.extract' AND delivered_at IS NULL`,
+    );
+    expect(row.rows).toEqual([{ due_in_minutes: 60 }]);
+    // An immediate request for the same work coalesces with the pending delayed intent.
+    await ctx.worker.transaction(async (tx) => {
+      await workerOutbox(tx).enqueue(
+        buildJobIntent('article.extract', { articleId: '77' }, { revision: '2' }),
+      );
+    });
+    const pending = (await outboxRows('article.extract')).filter((r) => r.delivered_at === null);
+    expect(pending).toHaveLength(1);
+    // A past availableAt is due at once.
+    await drain();
+    await ctx.worker.transaction(async (tx) => {
+      await workerOutbox(tx, { availableAt: new Date(Date.now() - 60_000) }).enqueue(
+        buildJobIntent('article.extract', { articleId: '78' }, { revision: '1' }),
+      );
+    });
+    const due = await claimOutboxIntents(ctx.worker, { limit: 10, leaseSeconds: 30 });
+    expect(due.map((c) => c.payload)).toEqual([{ articleId: '78' }]);
+  });
+
   it('writes follow-on intents without a requester in worker transactions', async () => {
     await drain();
     await ctx.worker.transaction(async (tx) => {

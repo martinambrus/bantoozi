@@ -1046,7 +1046,7 @@
         },
         "feed_items_guid_idx": {
           "unique": true,
-          "definition": "(feed_id, guid) WHERE guid IS NOT NULL"
+          "definition": "(feed_id, md5(guid)) WHERE guid IS NOT NULL"
         }
       },
       "rls": false
@@ -4117,7 +4117,7 @@
       "volatility": "v",
       "securityDefiner": true,
       "config": ["search_path=pg_catalog, public, pg_temp"],
-      "execute": []
+      "execute": ["bantoozi_worker"]
     },
     "queue_state_counts": {
       "args": "",
@@ -4198,7 +4198,7 @@
       "volatility": "i",
       "securityDefiner": false,
       "config": ["search_path=pg_catalog, public, pg_temp"],
-      "execute": []
+      "execute": ["bantoozi_worker"]
     },
     "subscriptions_inference_guard": {
       "args": "",
