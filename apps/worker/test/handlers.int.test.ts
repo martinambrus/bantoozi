@@ -384,6 +384,39 @@ describe('feed.schedule and feed.fetch (M1-T7)', () => {
     expect(again.rows).toEqual(articles.rows);
   });
 
+  it('infers a missing lang_hint on a 304 once extraction has detected the languages', async () => {
+    const items = Array.from({ length: 20 }, (_, i) =>
+      rssItem(`hint-${i}`, `Hint item ${i}`, server.url(`/hint/${i}.html`)),
+    ).join('');
+    server.route('/hint/feed.rss', (request) =>
+      request.headers['if-none-match'] === '"hint-v1"'
+        ? { status: 304, headers: { etag: '"hint-v1"' } }
+        : rssRoute(() => rss('Hints', items), { etag: '"hint-v1"' })(),
+    );
+    const feedId = await addFeed('/hint/feed.rss', [{ user: reader, mode: 'off' }]);
+    await fetchFeed(feedId);
+    // The 200 brought the articles before any extraction detected their language.
+    expect(await feedRow(feedId)).toMatchObject({ lang_hint: null, etag: '"hint-v1"' });
+    await owner.query(
+      `UPDATE articles SET lang = 'sk'
+        WHERE id IN (SELECT article_id FROM feed_items WHERE feed_id = $1)`,
+      [feedId],
+    );
+
+    await fetchFeed(feedId);
+    expect(await feedRow(feedId)).toMatchObject({ lang_hint: 'sk', total_fetches: 2 });
+    // A hint the feed has is kept on a 304; only a 200 revisits it.
+    await owner.query(`UPDATE feeds SET lang_hint = 'en' WHERE id = $1`, [feedId]);
+    await fetchFeed(feedId);
+    expect(await feedRow(feedId)).toMatchObject({ lang_hint: 'en', total_fetches: 3 });
+    await owner.query(
+      `UPDATE job_outbox SET delivered_at = now()
+        WHERE queue = 'article.extract' AND payload->>'articleId' IN (
+          SELECT article_id::text FROM feed_items WHERE feed_id = $1)`,
+      [feedId],
+    );
+  });
+
   it('defers a feed whose origin is cooling down without counting a failure', async () => {
     const feedId = await addFeed('/cooldown/feed.rss', [{ user: reader, mode: 'off' }]);
     server.route(

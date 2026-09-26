@@ -267,7 +267,12 @@ function fetchFeedBody(
   });
 }
 
-/** Record a fetch that ingested nothing: an error, or a valid 304 (with its Cache-Control hint). */
+/**
+ * Record a fetch that ingested nothing: an error, or a valid 304 (with its Cache-Control hint).
+ * A 304 of a feed without `lang_hint` also infers it (spec 03 §8.3): the unchanged feed still has
+ * no `<language>`, and its articles' languages come from extractions that run after the 200 that
+ * brought them, so a feed that answers 304 from then on would otherwise never get its hint.
+ */
 async function recordOutcome(
   deps: WorkerDeps,
   feed: FeedForFetch,
@@ -279,7 +284,12 @@ async function recordOutcome(
   const schedule = nextSchedule(scheduleFeed(feed, feed.recentGapsS), outcome, now, {
     cacheMaxAgeS: parseCacheMaxAge(cacheControl),
   });
-  await deps.db.transaction((tx) => recordFeedFetch(tx, feedId, { schedule }));
+  await deps.db.transaction(async (tx) => {
+    await recordFeedFetch(tx, feedId, { schedule });
+    if (outcome.kind === 'not_modified' && feed.langHint === null) {
+      await refreshFeedLangHint(tx, feedId);
+    }
+  });
 }
 
 function errorOutcome(result: Extract<SafeFetchResult, { ok: false }>, now: Date): FetchOutcome {
