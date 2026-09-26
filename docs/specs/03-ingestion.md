@@ -235,9 +235,12 @@ also releases it). Every statement of the fetch runs on that session, so a trans
 commit only while the lock is held: once another process may be fetching the feed, nothing of this
 fetch commits, not even a transaction already under way. A lost lock also aborts the HTTP request
 and ends the fetch. Re-read `next_fetch_at`, status and subscriber count after acquiring the lock;
-a stale scheduled job is a no-op. Manual refresh carries an explicit force flag but still observes
-origin cooldowns. This lock is required across both worker processes; queue keys alone are not a
-business lock. Follow `merged_into_id` to a live feed before scheduling; detect corrupt cycles.
+a stale scheduled job (not yet due, `paused`, `dead` or without subscribers) is a no-op. Manual
+refresh carries an explicit force flag: it fetches the feed whatever its due time, status or
+subscriber count, still observes origin cooldowns, and its outcome never changes a `dead` or
+`paused` status, which only a reset does (D-23). This lock is required across both worker
+processes; queue keys alone are not a business lock. Follow `merged_into_id` to a live feed before
+scheduling; detect corrupt cycles.
 `paused` and `dead` feeds are never scheduled. A `quarantined` feed becomes due at `quarantined_until`
 (the fetch handler sets `next_fetch_at = quarantined_until`).
 

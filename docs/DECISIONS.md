@@ -177,3 +177,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   cleared, due now. A merged tombstone still resolves to its survivor, and a `paused` feed stays
   paused (the CLI says it is not fetched). Found by the Codex review of PR #5. Spec 03 §9 and §10
   step 6 updated.
+- D-23: 2026-09-26 M1-T7 — a forced `feed.fetch` ignores the feed-state guards. Spec 03 §3 made a
+  stale scheduled job a no-op and gave manual refresh a force flag, and the handler documented that
+  `force` fetches a paused, dead, unsubscribed or not-yet-due feed, but it bypassed only the due
+  time: `feeds:fetch-now` reported a fetch that never ran, for exactly the feeds an operator
+  inspects by hand. A forced fetch now runs whatever the feed's status, subscribers or due time. It
+  still observes origin cooldowns, a merged tombstone still resolves to its survivor, and its
+  outcome never changes a dead or paused status (only a reset does). Found by the Codex review of
+  PR #5. Spec 03 §3 updated.

@@ -24,8 +24,8 @@ import { createHandlers } from './handlers/index.js';
  * database of `.env` with the worker role:
  * - `feeds:add <url> [--user dev@localhost]`: discover the feed, create the dev user when missing,
  *   subscribe it (inference off; a dead feed is revived, D-22) and record a fetch;
- * - `feeds:fetch-now <feedId>`: fetch and ingest the feed now (forced), then run the pending
- *   extractions of its articles inline;
+ * - `feeds:fetch-now <feedId>`: fetch and ingest the feed now (forced, also when it is paused, dead
+ *   or unsubscribed; D-23), then run the pending extractions of its articles inline;
  * - `feeds:show <feedId>`: the feed's bookkeeping and newest articles.
  */
 

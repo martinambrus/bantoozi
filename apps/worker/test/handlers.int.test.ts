@@ -452,6 +452,40 @@ describe('feed.schedule and feed.fetch (M1-T7)', () => {
     await owner.query(`UPDATE job_outbox SET delivered_at = now() WHERE queue = 'feed.fetch'`);
   });
 
+  it('fetches a paused, dead or unsubscribed feed only when forced, keeping its status', async () => {
+    const names = ['paused', 'dead', 'none'] as const;
+    for (const name of names) {
+      server.route(
+        `/force/${name}.rss`,
+        rssRoute(() =>
+          rss(`Forced ${name}`, rssItem(`force-${name}`, name, server.url(`/force/${name}.html`))),
+        ),
+      );
+    }
+    const paused = await addFeed('/force/paused.rss', [{ user: reader, mode: 'off' }]);
+    const dead = await addFeed('/force/dead.rss', [{ user: reader, mode: 'off' }]);
+    const none = await addFeed('/force/none.rss', []);
+    await owner.query(`UPDATE feeds SET status = 'paused' WHERE id = $1`, [paused]);
+    await owner.query(`UPDATE feeds SET status = 'dead' WHERE id = $1`, [dead]);
+    const statusOf = async (feedId: string) =>
+      (await owner.query<{ status: string }>('SELECT status FROM feeds WHERE id = $1', [feedId]))
+        .rows[0]?.status;
+
+    for (const feedId of [paused, dead, none]) {
+      // A scheduled job is a no-op for these feeds (spec 03 §3)...
+      await dispatch(handlers, 'feed.fetch', { feedId }, { queue: 'feed.fetch', jobId: 't7' });
+      expect((await feedRow(feedId)).total_fetches).toBe(0);
+      // ...but a forced manual fetch runs (D-23).
+      await fetchFeed(feedId);
+      expect((await feedRow(feedId)).total_fetches).toBe(1);
+    }
+    expect(await articleIdByUrl(server.url('/force/dead.html'))).toBeTruthy();
+    // Its outcome never changes a dead or paused status: only a reset does.
+    expect(await statusOf(paused)).toBe('paused');
+    expect(await statusOf(dead)).toBe('dead');
+    expect(await statusOf(none)).toBe('active');
+  });
+
   it('sends the stored validators and treats a 304 as not modified', async () => {
     let conditional: string | undefined;
     server.route('/conditional/feed.rss', (request) => {

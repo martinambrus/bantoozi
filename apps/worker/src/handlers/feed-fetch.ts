@@ -47,10 +47,11 @@ import type { QueueHandler } from './index.js';
  * - Resolves a merged feed to its live survivor; holds the per-feed session advisory lock on a
  *   dedicated connection for the whole fetch (another process fetching it makes this a no-op) and
  *   re-reads the feed after acquiring it: a paused, dead, unsubscribed or not-yet-due feed is a
- *   no-op unless `force` (a manual refresh still observes origin cooldowns). Every statement of the
- *   fetch runs on the lock's own session, so no write commits once the lock is lost; the failure
- *   also aborts the HTTP request and stops the fetch before its next item or transaction
- *   (`FeedFetchLockLostError`).
+ *   no-op unless `force`. A forced manual fetch runs whatever the feed's status, subscribers and
+ *   due time, still observes origin cooldowns, and its outcome never changes a dead or paused
+ *   status (only a reset does; D-23). Every statement of the fetch runs on the lock's own
+ *   session, so no write commits once the lock is lost; the failure also aborts the HTTP request
+ *   and stops the fetch before its next item or transaction (`FeedFetchLockLostError`).
  * - Conditional GET with the stored validators on `fetch_url`; a 304 without established
  *   validators is retried once unconditionally.
  * - Each item is ingested in its own short transaction (retried on identity races), which also
@@ -92,9 +93,14 @@ async function fetchFeed(
 ): Promise<void> {
   const feed = await loadFeedForFetch(deps.db, feedId);
   if (feed === null || feed.mergedIntoId !== null) return;
-  if (feed.status === 'dead' || feed.status === 'paused' || feed.subscriberCount === 0) return;
   const now = nowOf(deps);
-  if (!force && feed.nextFetchAt.getTime() > now.getTime()) return;
+  // A scheduled job whose feed is no longer fetchable or due is a no-op (spec 03 §3).
+  const stale =
+    feed.status === 'dead' ||
+    feed.status === 'paused' ||
+    feed.subscriberCount === 0 ||
+    feed.nextFetchAt.getTime() > now.getTime();
+  if (stale && !force) return;
 
   const hadValidators = feed.etag !== null || feed.lastModified !== null;
   let result = await fetchFeedBody(deps, feed, hadValidators, lock.signal);
