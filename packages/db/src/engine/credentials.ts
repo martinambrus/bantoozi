@@ -228,7 +228,8 @@ export interface ValidationResult {
 /**
  * Complete a validation lease with its token. `valid`/`invalid` stamp `validated_at`; `pending`
  * leaves the candidate unvalidated with its error code. False when the lease is no longer this
- * token's (revoked, re-staged or reclaimed): the result is discarded.
+ * token's (revoked, re-staged or reclaimed) or has expired, even before another worker reclaims
+ * it: the result is discarded, like a candidate-secret read outside the lease.
  */
 export async function completeCredentialValidation(
   db: Executor,
@@ -257,7 +258,8 @@ export async function completeCredentialValidation(
      WHERE c.provider = ${input.provider}
        AND c.candidate_version = ${input.candidateVersion}::bigint
        AND c.candidate_status = 'validating'
-       AND c.validation_token = ${input.validationToken}::uuid`);
+       AND c.validation_token = ${input.validationToken}::uuid
+       AND c.validation_until > now()`);
   return result.rowCount === 1;
 }
 

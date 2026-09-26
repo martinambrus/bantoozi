@@ -427,6 +427,19 @@ describe('credential state machine (spec 04 §1.2)', () => {
         validationToken: crashed!.validationToken,
       }),
     ).toBeNull();
+    // A probe that finishes after its lease expired is discarded even before anyone reclaims it.
+    expect(
+      await completeCredentialValidation(ctx.worker, {
+        provider: 'ollama',
+        candidateVersion: '1',
+        validationToken: crashed!.validationToken,
+        result: { status: 'valid', validation: {} },
+      }),
+    ).toBe(false);
+    const late = await ctx.owner.query<{ candidate_status: string; validated_at: Date | null }>(
+      `SELECT candidate_status, validated_at FROM provider_credentials WHERE provider = 'ollama'`,
+    );
+    expect(late.rows[0]).toEqual({ candidate_status: 'validating', validated_at: null });
     const reclaimed = await claimCredentialValidation(ctx.worker, input);
     expect(reclaimed?.validationToken).not.toBe(crashed?.validationToken);
     expect(
