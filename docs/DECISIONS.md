@@ -45,3 +45,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   pending Drizzle migrations share one), so deployment stops before application replacement and a
   re-run converges. Spec 11 §3 required bounded timeouts without values, and the first migrate job
   set none (found by the PR #2 review). Spec 11 §3 updated.
+- D-8: 2026-09-26 M0-T7 — `pipeline.after('cluster')` records `user.rank {full: true}` (reason
+  `cluster`) for every user whose window holds a member of the article's story when the cluster stage
+  reports a membership change (`clusterChanged`). Spec 03 §1–2 routed nothing after clustering, but
+  cluster and match run in parallel, so match could rank an article before it joined a muted or read
+  story, and spec 06 §7 step 2 requires a cluster-membership change to enqueue a full rank (spec 05 §6
+  step 5 already did so for merges). Found by the PR #2 review; spec 03 §1 (diagram and text) and the
+  §2 `user.rank` producers updated.

@@ -31,9 +31,11 @@ export type Stage = (typeof STAGES)[number];
  * How a stage ended, for the content revision it processed (the dedupe fingerprint of the next
  * intent). `failed` is a terminal failure after the stage's bounded retries; `degraded` and
  * `invalid_request` are enrichment's engine-unavailable and question-set-bug outcomes.
+ * `clusterChanged` is the cluster stage's report that the article joined or moved story clusters,
+ * a merge included (spec 05 §6).
  */
 export type StageOutcome =
-  | { status: 'ok'; revision: string }
+  | { status: 'ok'; revision: string; clusterChanged?: boolean }
   | { status: 'failed'; revision: string }
   | { status: 'degraded'; revision: string }
   | { status: 'invalid_request'; revision: string };
@@ -44,8 +46,12 @@ export interface PipelineGate {
   hasInferenceDemand(articleId: string): Promise<boolean>;
   /** Whether the article's language mode requires translation before enrichment (spec 07 §1). */
   needsTranslation(articleId: string): Promise<boolean>;
-  /** Users whose ranking changed: matched users, or every subscriber after a degraded enrichment. */
-  usersToRank(articleId: string, after: 'enrich' | 'match'): Promise<readonly string[]>;
+  /**
+   * Users whose ranking changed: matched users, every subscriber after a degraded enrichment, or,
+   * after a cluster membership change, every user whose window holds a member of the article's
+   * story cluster.
+   */
+  usersToRank(articleId: string, after: 'enrich' | 'match' | 'cluster'): Promise<readonly string[]>;
 }
 
 export interface PipelineContext {
@@ -59,7 +65,7 @@ export const NEXT_STAGES: Readonly<Record<Stage, readonly Stage[]>> = {
   extract: ['translate', 'enrich'],
   translate: ['enrich'],
   enrich: ['cluster', 'match', 'rank'],
-  cluster: [],
+  cluster: ['rank'],
   match: ['rank'],
   rank: [],
 };
@@ -109,6 +115,13 @@ export async function after(
       }
       return;
     case 'cluster':
+      // Membership is a ranking input (read stories, mute-story rules), and match may already have
+      // ranked the article: a changed membership re-ranks every affected user in full (spec 06 §7).
+      if (outcome.status !== 'ok' || outcome.clusterChanged !== true) return;
+      for (const userId of await gate.usersToRank(articleId, 'cluster')) {
+        await enqueueRank(sender, { userId, reason: 'cluster', full: true });
+      }
+      return;
     case 'rank':
       return;
   }

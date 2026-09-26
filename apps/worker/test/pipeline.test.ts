@@ -31,6 +31,7 @@ const queues = (sender: { intents: JobIntent[] }) => sender.intents.map((i) => i
 describe('pipeline.after (spec 03 §1 stage order)', () => {
   it('lists the stages in pipeline order', () => {
     expect(STAGES).toEqual(['fetch', 'extract', 'translate', 'enrich', 'cluster', 'match', 'rank']);
+    expect(NEXT_STAGES.cluster).toEqual(['rank']);
     expect(NEXT_STAGES.rank).toEqual([]);
   });
 
@@ -96,7 +97,7 @@ describe('pipeline.after (spec 03 §1 stage order)', () => {
     }
   });
 
-  it('match → rank for the affected users; cluster and rank end the pipeline', async () => {
+  it('match → rank for the affected users; rank ends the pipeline', async () => {
     const userId = '0190a8e6-7d5b-7c2e-9f3a-1b2c3d4e5f60';
     const match = recorder();
     await after(
@@ -108,15 +109,55 @@ describe('pipeline.after (spec 03 §1 stage order)', () => {
     expect(match.intents.map((i) => [i.queue, i.send])).toEqual([
       ['user.rank', { kind: 'debounced', key: `rank:${userId}`, seconds: 3 }],
     ]);
-    for (const stage of ['cluster', 'rank'] as const) {
+    const rank = recorder();
+    await after(
+      'rank',
+      '1',
+      { status: 'ok', revision: '1' },
+      { sender: rank, gate: gate({ users: [userId] }) },
+    );
+    expect(queues(rank)).toEqual([]);
+  });
+
+  it('cluster → a full rank for the affected users only when the membership changed', async () => {
+    const asked: string[] = [];
+    const clusterGate: PipelineGate = {
+      ...gate(),
+      usersToRank: async (_articleId, stage) => {
+        asked.push(stage);
+        return [U1, U2];
+      },
+    };
+    const changed = recorder();
+    await after(
+      'cluster',
+      '1',
+      { status: 'ok', revision: '1', clusterChanged: true },
+      { sender: changed, gate: clusterGate },
+    );
+    expect(asked).toEqual(['cluster']);
+    expect(changed.intents.map((i) => [i.queue, i.payload, i.send])).toEqual([
+      [
+        'user.rank',
+        { userId: U1, reason: 'cluster', full: true },
+        { kind: 'send', singletonKey: `rank-full:${U1}` },
+      ],
+      [
+        'user.rank',
+        { userId: U2, reason: 'cluster', full: true },
+        { kind: 'send', singletonKey: `rank-full:${U2}` },
+      ],
+    ]);
+    // A singleton, an unchanged re-delivery or a failed clustering leaves every ranking as it is.
+    for (const outcome of [
+      { status: 'ok', revision: '1' },
+      { status: 'ok', revision: '1', clusterChanged: false },
+      { status: 'failed', revision: '1' },
+    ] as const) {
       const sender = recorder();
-      await after(
-        stage,
-        '1',
-        { status: 'ok', revision: '1' },
-        { sender, gate: gate({ users: [userId] }) },
-      );
+      await after('cluster', '1', outcome, { sender, gate: clusterGate });
       expect(queues(sender)).toEqual([]);
     }
+    expect(asked).toEqual(['cluster']);
   });
 });

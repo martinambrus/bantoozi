@@ -20,6 +20,7 @@ feed.schedule (cron, every minute)
                         └─► article.translate {articleId}   only if required (spec 07 §1)
                                └─► article.enrich {articleId}  Call A (spec 05)
                                       ├─► article.cluster {articleId}   spec 05 §6
+                                      │      └─► user.rank {userId, reason, full: true}   membership changed
                                       └─► article.match {articleId}     authorized match demand only
                                              └─► user.rank {userId, reason}   spec 06
 ```
@@ -27,6 +28,12 @@ feed.schedule (cron, every minute)
 `apps/worker/src/pipeline.ts` is the **only** place that decides the next stage. Each handler ends by
 calling `pipeline.after(<stage>, articleId, outcome, tx)`. Bookmark capture is a separate local
 `article.capture-bookmark` path (§8.5); it does not enter the classification graph.
+
+Cluster and match run in parallel, so match may rank an article before clustering places it. When
+the cluster stage changes the article's membership (it joins or moves to a story, a merge included),
+`pipeline.after` records `user.rank {full: true}` for every user whose window holds a member of that
+story (spec 06 §7 step 2, spec 05 §6 step 5), so read-story and mute-story effects apply without
+waiting for an unrelated re-rank.
 
 ### 1.1 Per-user-feed inference demand
 
@@ -100,7 +107,7 @@ schema, `createQueue` options and typed enqueue helpers (`enqueueFetch`, `enqueu
 | `article.cluster` | `{articleId}` | enrich | 4 | 1 | `stately`, key `cluster:<id>` |
 | `article.match` | `{articleId}` | enrich, `card.backfill`, itself (when rows remain) | 8 | 1 | `stately`, key `match:<id>`; drains all queued cards for the article |
 | `card.backfill` | `{userId, cardIds: string[], feedIds?: string[], snapshotAt?: iso, cursor?: {firstSeenAt: iso, articleId: string}, processedCount?: int}` | API (card or subscription change) | 2 | 2 | `standard` |
-| `user.rank` | `{userId, reason, full?: boolean}` | match, enrich (degraded), ingest, API, learn | 4 | 2 | queue `policy: 'stately'`. Incremental: `sendDebounced('user.rank', data, {}, 3, 'rank:<userId>')`. Full: `send('user.rank', {…, full: true}, {singletonKey: 'rank-full:<userId>'})`. Different keys mean a full request is never swallowed by a pending incremental one, while equivalent duplicates of each are suppressed; durable dirty state preserves later changes (spec 06 §7) |
+| `user.rank` | `{userId, reason, full?: boolean}` | match, cluster (membership changed, `full`), enrich (degraded), ingest, API, learn | 4 | 2 | queue `policy: 'stately'`. Incremental: `sendDebounced('user.rank', data, {}, 3, 'rank:<userId>')`. Full: `send('user.rank', {…, full: true}, {singletonKey: 'rank-full:<userId>'})`. Different keys mean a full request is never swallowed by a pending incremental one, while equivalent duplicates of each are suppressed; durable dirty state preserves later changes (spec 06 §7) |
 | `user.learn` | `{userId}` | API (ratings), `house.nightly-learn` | 2 | 1 | `sendDebounced(…, 60 s, key learn:<userId>)` |
 | `user.suggest` | `{userId}` | learn, `house.nightly-learn` | 1 | 1 | `stately`, key `suggest:<userId>` (deduplicates without throttling). The durable `last_suggested_at` lease/timestamp gate (spec 05 §7) enforces at most one admitted attempt per 24 h, so a run that sends nothing never blocks a later trigger |
 | `house.rescore-degraded`, `house.expire-rules`, `house.purge-auth`, `house.reconcile`, `house.archive`, `house.purge-articles`, `house.purge-bodies`, `house.purge-engine-calls`, `house.retire-cards`, `house.purge-users`, `house.nightly-learn`, `house.metrics`, `house.alerts` | `{}` | cron (spec 11 §6) | 1 | 1 | `policy: 'singleton'` (never two runs at once) |
