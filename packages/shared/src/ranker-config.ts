@@ -23,7 +23,7 @@ export const DEFAULT_RANKER_CONFIG = {
   },
   labelSuggest: 0.8,
   model: {
-    lambda: 1.0,
+    lambdaGrid: [1, 3, 10, 30, 100],
     minExplicit: 30,
     minEachClass: 5,
     minCvAuc: 0.6,
@@ -31,6 +31,8 @@ export const DEFAULT_RANKER_CONFIG = {
     retrainEvery: 10,
     historyDays: 180,
     keepVersions: 3,
+    cardMatchP: 0.5,
+    cardMinMatched: 8,
   },
   bm25: { k1: 1.2, b: 0.75, scale: 3 },
 } as const;
@@ -44,6 +46,16 @@ export const RANK_WINDOW_DAYS = 14;
 const unit = z.number().finite().min(0).max(1);
 const positiveInt = (max: number) => z.number().int().min(1).max(max);
 const positive = z.number().finite().positive();
+
+/** Ridge penalties tried when training a personal model (spec 06 §8.3). */
+const lambdaGridSchema = z
+  .array(positive)
+  .min(1)
+  .max(10)
+  .refine(
+    (grid) => grid.every((v, i) => i === 0 || (grid[i - 1] ?? v) < v),
+    'lambdaGrid must be strictly increasing',
+  );
 
 const tiersSchema = z
   .tuple([unit, unit, unit, unit])
@@ -74,7 +86,7 @@ const shape = {
   labelSuggest: unit,
   model: z
     .object({
-      lambda: positive,
+      lambdaGrid: lambdaGridSchema,
       minExplicit: positiveInt(1_000_000),
       minEachClass: positiveInt(1_000_000),
       minCvAuc: unit,
@@ -82,6 +94,8 @@ const shape = {
       retrainEvery: positiveInt(1_000_000),
       historyDays: positiveInt(3650),
       keepVersions: positiveInt(100),
+      cardMatchP: z.number().finite().gt(0).max(1),
+      cardMinMatched: positiveInt(1_000_000),
     })
     .strict(),
   bm25: z.object({ k1: positive, b: unit, scale: positive }).strict(),
@@ -106,7 +120,10 @@ export const RankerConfigSchema = z
 
 export type RankerConfig = z.infer<typeof RankerConfigSchema>;
 
-/** `settings['ranker.thresholds']`: a strict deep partial; arrays (tiers) are replaced whole. */
+/**
+ * `settings['ranker.thresholds']`: a strict deep partial; arrays (`tiers`, `model.lambdaGrid`) are
+ * replaced whole.
+ */
 export const RankerThresholdsSchema = z
   .object({
     lanes: shape.lanes.partial(),

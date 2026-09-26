@@ -686,7 +686,7 @@ Complete milestone M3a "Evaluation tooling and golden-set collection" exactly as
 | M3a-T3 | Rating server: rater add/token (`EVAL_PUBLIC_URL`), human identity + topic-profile registration, card-writing step, feed picking, assignments, blind rating UI | T1, T2 | B | 10 §2.2, §2.4 |
 | M3a-T4 | Facet labelling page | T3 | B | 10 §2.3 |
 | M3a-T5 | Metrics library | — | C | 10 §4 |
-| M3a-T6 | Experiment runner (eval router with `budgetOverrideUsd`, `ignoreDailyCaps`, `kind:'eval'`, `EVAL_CACHE_DIR` cache, estimate, `--yes`/`--max-usd`); experiments B0, B1, B1-T, E1, E2, E3, E3b, E4 (E5 stub); `eval replay` | T1, T2 | D | 10 §3, §6 |
+| M3a-T6 | Experiment runner (eval router with `budgetOverrideUsd`, `ignoreDailyCaps`, `kind:'eval'`, `EVAL_CACHE_DIR` cache, estimate, `--yes`/`--max-usd`); experiments B0, B1, B1-T, E1, E2, E3, E3b, E4, E6 (E5 stub); `eval replay` | T1, T2 | D | 10 §3, §6 |
 | M3a-T7 | Report generator, decision rules, `apps/eval/config/g1.json` schema, `apply-g1` with the field → settings mapping | T2, T5, T6 | C | 10 §1, §5 |
 | M3a-T8 | `eval dry-run` in the separate `bantoozi_eval_dryrun` database: simulated raters and the fake engine → full report | T3–T7 | D | 10 all |
 | M3a-T9 | Real sample ingested and the rater onboarding kit | T2, T3 | A | 10 §2 |
@@ -797,7 +797,7 @@ Complete milestone M3b "Run gate G1" as specified in docs/PLAN.md §9 and docs/s
 | ID | Task | Needs | Specs |
 |---|---|---|---|
 | M3b-T1 | Preflight: coverage/classes/facets and frozen split pass spec 10 readiness; actual model/MT capabilities verified; keys valid with budgeted tiny calls; total estimate printed | ratings | 10 §2–3 |
-| M3b-T2 | Run B0, B1, B1-T, E1, E2, E3, E3b, E4 (E5 only if Laya is installed), each with `--yes --max-usd <10 − spent so far>` | T1 | 10 §3 |
+| M3b-T2 | Run B0, B1, B1-T, E1, E2, E3, E3b, E4 (E5 only if Laya is installed), each with `--yes --max-usd <10 − spent so far>`; then the informational E6 if the remaining budget covers its estimate | T1 | 10 §3 |
 | M3b-T3 | Select/tune only on development groups; lock config and evaluate held-out production policy; report PASS/FAIL/INCONCLUSIVE; write `apps/eval/config/g1.json` (runs/snapshot/split hashes), commit | T2 | 10 §1, §4–5 |
 | M3b-T4 | On profile-scoped PASS: `apply-g1` to development; record the actual evidence scope and owner-approved initial-beta eligibility in `docs/DECISIONS.md` (daily budget recommendation, language modes, card text mode, thresholds, tier-2 cap; Q1 governs production cap increases). On FAIL/INCONCLUSIVE: write `docs/G1-FAIL.md` with the rule 1 details and the 20 worst-ranked liked articles | T3 | 10 §1, §5 |
 
@@ -820,7 +820,8 @@ gate for development/M7 and the initial beta; M8's other launch requirements sti
 - quotas, rate limits, CSRF and OpenAPI
 
 **Read first:** spec 08 (all), spec 02 §1.2, §4–6, spec 05 §5.1, spec 06 §6–8 (the fields it returns
-and the learn trigger), spec 03 §10–11, spec 07 §5 (card text translation).
+and the learn trigger) and §10 (example suggestions), spec 03 §10–11, spec 07 §5 (card text
+translation).
 
 **Goal text:**
 
@@ -838,7 +839,7 @@ Complete milestone M4 "HTTP API" exactly as specified in docs/PLAN.md §10 and d
 | M4-T4 | Subscriptions: discovery, OPML, per-feed inference transitions/selection and image overrides, folders, eligible `refresh_*`/backfill | T1 | B | 08 §4; 03 §10–11 |
 | M4-T5 | Cards, library consent and opt-in upgrades, neutral labels, topics, eligible card-text translation through M2 lifecycle | T1 | C | 08 §7; 05 §5.1; 07 §5 |
 | M4-T6 | `GET /articles` (candidate set → folding → filters → sort), counts, details, calibration, lazy full rank | T1 | D | 08 §5.1–5.2; 06 §7, §10 |
-| M4-T7 | Article actions, retained bookmark snapshots, frozen-input training requests, exact undo and feedback/learn triggers | T6 | D | 08 §5.3; 06 §7, §8.4 |
+| M4-T7 | Article actions, retained bookmark snapshots, frozen-input training requests, exact undo, feedback/learn triggers and example suggestions (the pure `suggestExample` helper in `packages/ranker`) | T6 | D | 08 §5.3; 06 §7, §8.2, §8.4, §10 |
 | M4-T8 | Rules endpoints | T1 | C | 08 §8; 06 §3 |
 | M4-T9 | Admin endpoints (provider credentials/status/test/rotate/revoke, consent-gated promotion, settings, invites), ops/metrics and dev-mail | T1 | E | 08 §9–10; 02 §6 |
 | M4-T10 | Quota enforcement across endpoints | T4, T5, T8 | B | 08 §6 |
@@ -912,6 +913,10 @@ Complete milestone M4 "HTTP API" exactly as specified in docs/PLAN.md §10 and d
   - Training captures immutable article/card context before applying the rating; delayed analysis
     may populate features only from that frozen context. First ratings on unanalyzed articles are
     not lost. Retraining counts effective explicit ratings, never organizational label changes.
+  - A rating's feature snapshot lists every applicable card with its answer and snapshot-time
+    strength (spec 06 §8.2). Interest-card changes record `user.learn`; label changes do not.
+  - The rating response carries `exampleSuggestion` per spec 06 §10 (the `suggestExample` truth
+    table is tested), stores it in the `rate` event and respects the 7-day and 24-hour limits.
   - Saved snapshot access survives upstream 404/deletion, unsubscribing and ordinary body purges;
     failed/partial capture is reported honestly, and other tenants cannot access private save state.
     Rating or labelling a saved snapshot succeeds after the live article gained a newer revision
@@ -1042,7 +1047,7 @@ Complete milestone M6 "Web app" exactly as specified in docs/PLAN.md §12 and do
 |---|---|---|---|---|
 | M6-T1 | App shell: API client, router, i18n (per feature), theme, layout, auth guard, login/join/waitlist | — | A | 09 §1–2 |
 | M6-T2 | Reader: lanes, counts, list items (structured `topReason`), tier slider, sorts, mark-all-read, Simple mode, clusters, optimistic updates, undo | T1 | A | 09 §3.1–3.3 |
-| M6-T3 | Swipe gestures, reason bar, keyboard shortcuts and overlay | T2 | B | 09 §3.3–3.4 |
+| M6-T3 | Swipe gestures, reason bar, the example-suggestion toast action, keyboard shortcuts and overlay | T2 | B | 09 §3.3–3.4 |
 | M6-T4 | "Why this?" drawer and its actions; the "Did you like it?" prompt | T2 | B | 09 §3.5–3.6 |
 | M6-T5 | Onboarding wizard (feeds default off, interests, explicit selected-article training, optional enable, `onboardingCompletedAt`) | T2 | C | 09 §4 |
 | M6-T6 | Feeds manager (folders), Interests (cards, library, suggestions, editor), Labels, Rules, Settings | T1 | C | 09 §5–7 |
@@ -1058,7 +1063,9 @@ Complete milestone M6 "Web app" exactly as specified in docs/PLAN.md §12 and do
   with a simulated server error rolls back and shows the toast; undo sends the server mutation receipt and restores prior state conditionally; the tier
   slider persists to preferences.
 - **T3:** swipe thresholds (15 % feedback, 35 % commit) are tested with synthetic pointer events; every
-  shortcut in the spec 09 §3.4 table has a test.
+  shortcut in the spec 09 §3.4 table has a test. A rating response with `exampleSuggestion` shows
+  the toast action, which calls `POST /cards/:id/examples` and swaps the cached card id; "Stop
+  suggesting" sets the preference; replayed offline actions show no suggestion.
 - **T4:** the drawer renders all `Explain` variants (snapshots); "Not really about this" sends
   `{articleId, side}`, swaps the cached card id, and shows the fork confirmation; the prompt appears
   after `/dwell` returns `prompt:true`.
@@ -1104,36 +1111,44 @@ Complete milestone M7 "Personal learning and suggestions" exactly as specified i
 
 | ID | Task | Needs | Lane | Specs |
 |---|---|---|---|---|
-| M7-T1 | `FEATURE_SPEC_V1` feature builder and sha (MurmurHash3 x86-32, seed 0) | — | A | 06 §8.1 |
+| M7-T1 | `FEATURE_SPEC_V1` feature builder (card groups, own card inputs) and sha (MurmurHash3 x86-32, seed 0) | — | A | 06 §8.1 |
 | M7-T2 | Label extraction from `user_article` and `feedback_events` | — | B | 06 §8.2 |
-| M7-T3 | `trainUserModel`: IRLS, L2, CV, Platt, activation, contributions | T1 | A | 06 §8.3 |
+| M7-T3 | `trainUserModel`: IRLS, L2 on the summed loss with λ chosen from `model.lambdaGrid`, own-card-input rule, CV, Platt, activation, contributions | T1 | A | 06 §8.1, §8.3 |
 | M7-T4 | `user.learn` handler, version retention (active + 3 newest), **`house.nightly-learn`** (learn and suggest enqueues) | T2, T3 | C | 06 §8.4; 11 §6 |
-| M7-T5 | Model scoring in `rankArticle` and `Explain.model`; the LLM-answer exclusion rule | T3 | A | 06 §2, §8.1 |
+| M7-T5 | Model scoring in `rankArticle` and `Explain.model`; the model-context check; the LLM-answer exclusion rule | T3 | A | 06 §2, §8.1 |
 | M7-T6 | `user.suggest` handler only (it is scheduled by T4) | — | B | 05 §7 |
 | M7-T7 | Learning-curve check on golden-v1 (stored answers of the g1 `runs`) | T3, M3b | D | 06 §8.3; 10 §1, §3 |
 
 **Done when:**
 
 - **T1:** a feature-vector snapshot for a seeded item; the murmur3 test vectors; the sha changes when
-  the spec changes (a test).
+  the spec changes (a test). Card groups, masks, `matched_log` and `cardscore` are computed from a
+  snapshot card list, including a later strength change and partial never coverage.
 - **T2:** the signal table of spec 06 §8.2 is implemented, and "the latest explicit signal wins" is
   tested.
 - **T3:**
   - On synthetic data the model recovers the weight signs and reaches AUC ≥ 0.9.
   - Platt scaling lowers ECE on synthetic over-confident scores; preprocessing/calibration use
     training folds only, story groups never cross folds, one-class/singular/small data fails safely.
-  - The activation rule is tested on each branch, including incompatible feature/card/model inputs
-    and missing event-time snapshots (excluded rather than reconstructed from post-feedback state).
+  - The activation rule is tested on each branch, including a rating-fingerprint mismatch, a
+    model-context mismatch and missing event-time snapshots (excluded rather than reconstructed from
+    post-feedback state).
+  - An own card input appears only when its evidence passes inside the training partition; with the
+    summed-loss penalty its weight grows from 30 to 1,000 synthetic ratings; λ is chosen by the folds,
+    ties to the larger value.
   - Contributions pick the top 3 by |value|.
 - **T4:** at least ten newly effective explicit ratings enqueue learn (through the M4 trigger); activation enqueues
   `user.rank {full}` and `user.suggest`; retention never deletes the active version; the nightly job
   enqueues only for users with changed eligible feedback inputs; labels stay neutral and model
-  activation never changes a subscription's inference mode.
+  activation never changes a subscription's inference mode. A card change without an own input keeps
+  the model scoring and its samples usable; a change to a card with an own input stops model scoring,
+  and the retrain from the stored ratings reactivates a model without new feedback.
 - **T5:** `scoreSource='model'` when active; demotions are skipped; never/must/rules still apply.
   The model is **never** used for degraded or failed items, items without facets, items whose facets
   came from `llm` or `laya` (including a Laya-enriched article with Jev card answers), or items with
   any `llm` or `laya` card answer. Each case has a test and falls back to the
-  cards, BM25 or `new` path of spec 06 §2.
+  cards, BM25 or `new` path of spec 06 §2. The rank handler computes the model context from the
+  current cards, and the model scores only while it matches (spec 06 §8.1).
 - **T6:** the suggestion flow works end-to-end against the fake TypeSafe server; dismissed cards are
   excluded for 90 days, even across a suggest-set or model-pin switch, and a card dismissed longer
   ago can be suggested again (the upsert clears the old dismissal); a later run replaces earlier
@@ -1145,7 +1160,8 @@ Complete milestone M7 "Personal learning and suggestions" exactly as specified i
 - **T7:**
   - `eval learning-curve` simulates each rater's ratings arriving in order: it trains on the first n
     (n = 10, 20, 30, 50, 100) development examples and evaluates every size on the same untouched
-    test groups, printing support and per-rater AUC of the model vs cards-only (spec 10).
+    test groups, printing support, per-rater AUC of the model vs cards-only and the number of own
+    card inputs (spec 10).
   - The table is printed and saved to `apps/eval/reports/`.
   - If the model does not beat cards-only at n = 50 for **more than half** of the raters,
     `docs/DECISIONS.md` gets an entry proposing a threshold change. Thresholds are not changed
@@ -1283,6 +1299,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | 2026-09-25 | Review fixes: `eval.sample` rows are versioned and runs record their dataset version, so older runs stay replayable; a creator's account erasure keeps card-publication audit records, anonymized; invite email is sent synchronously after commit and reports failure; publisher language hints outside the detector whitelist are kept; feeds keep their original fetch URL; settled spend reservations are purged with call audits; `engine.prefilter_enabled` and `engine.laya` are admin-settable |
 | 2026-09-25 | More review fixes: reader and ranker windows use the subscribed carrier's arrival time; the engine router tries a configured Laya checkpoint before returning `no_key`; Laya enrich work has its own registered queue; account erasure also removes waitlist rows and invite emails (the deletion ledger carries a keyed email hash); the shared DB-backed rate limiter is defined; a missing Jev credential falls through to the enabled fallbacks; cluster merges remap `mute_story` rules; jittered fetch delays stay within MAX; article retention follows the latest carrier arrival; unsubscribing keeps completed analysis requests; retained analysis requests protect their article from purge; expired idempotency receipts are purged; each eval run freezes its facet labels; folded rows report only the accessible cluster size; post-freeze eval top-ups create a new dataset version; archive, unread-cap eviction and mark-read cutoffs use carrier arrival; a newly carried article continues from its pipeline state (enrichment for gate-stopped or degraded articles); only the dedicated Laya worker loads Laya, and selected-article analysis gets its own Laya queue; credential and publication-consent functions get explicit API execute grants; the worker cancels analysis requests orphaned by unsubscribe; the unread view represents a folded story by its best unread member; the 14-day window is a fixed constant shared by the list, ranker and degraded recovery; the dedicated Laya worker is a Compose service that must be running before Laya is enabled and until its queued and outbox work drains; a new enrich question set re-enriches the whole ranking window by carrier arrival; a feed or folder view that keeps any authorized carrier shows the global score, whose card scope uses all authorized carriers; idle origin-limiter rows and member-less story clusters are purged; analysis requests still pending after 180 days are cancelled; `mute_story` rules always carry an expiry; expired unused invites and stale waitlist rows are purged, and signup removes the waitlist row; stale spend reservations settle conservatively and then purge; workers report env-credential presence so the admin status can show `source: 'env'`; card suggestions hide cards the user already holds; every match-affecting setting, model-pin change or library topic correction rebuilds the ranking window through `house.rematch` (and `house.reenrich` for the model pin); feeds without subscribers or references are purged after 30 days; a language-mode change re-enriches that language's window, and cluster/suggest set changes apply prospectively with recorded provenance; a publisher correction to a stale article resets its answers but keeps it stale; suggestions record their model pin and old-pin rows are hidden; used invites are purged once both accounts are erased; clustering candidates must have current facets and an authorization witness before the limit; `user.suggest` deduplicates without a broker throttle; translate settings require a healthy LibreTranslate and the `translate` profile; a card dismissed more than 90 days ago can be suggested again; retired unheld cards without audit or eval references are deleted after 30 days; the seed stores `LANGUAGE_MODES` as the effective `language_modes`, so the API detects the first change; `.laya` jobs for a removed language move to the ordinary queue, so the Laya queues drain; saved-snapshot actions are checked against the snapshot's revision instead of the live one; an admin reprocess retries skipped tier-2 translations; the clustering facet join is an eligibility witness at the current revision, not a cache read, since the cluster call never reads candidate facets; an active subscription merged onto another feed restarts its activation boundary; Ollama fallback models are part of the model pin; rater tokens expire and can be revoked without deleting ratings; a selected request authorizes clustering only inside its 180-day window; the degraded Maybe lane never overrides a seen-story cap; translation rows are not model-pinned; a replay is required before changing the Ollama fallback models; reissuing a rater token ends the old sessions; the Laya checkpoint and calibration join the model pin, and adding or removing a Laya language re-enriches it; cards skipped by the English-mode translation job are translated once their holder gains demand; the automatic archive is a versioned reader-state write; suggestions come from Jev only (bulk calls never use the LLM fallback) and record its model pin; switching the LLM fallback on or off is a model-pin change; a stale article with a current explicit selection ranks from its answers (in `rankArticle` and the rank handler); a language switched to `translate` resets its already enriched articles; each suggestion run replaces the user's undismissed suggestions; the router tries Laya first for `.laya` requests; switching a language back to `native` resets its translated articles; an article merge advances the surviving reader-state version; explicitly selected older articles join the rank handler's dirty set; an explicit per-feed image preference keeps its feed from the idle-feed purge; the personal model scores only items whose facets and card answers come from its feature spec's engine family, so Laya-enriched articles use the cards path; every signup-mode branch uses the effective mode, including the stored admin setting; suggestion spend reservations are fenced by the lease token and stamp `last_suggested_at` in the same transaction; mode-change and forced tier-2 translation jobs get their own queue keys, so a pending plain translation job cannot absorb them; a selection result that still matches the current article is always published to the current caches, and rebuilds cover current selections outside the window, so a selected stale or older article ranks from its answers |
 | 2026-09-26 | M0 Foundations done: status markers in §4 and §5 and a line in `CLAUDE.md` "Current state"; implementation decisions I1–I3 recorded in §17.3 and applied to specs 02 and 08 (D-6) |
+| 2026-09-26 | Personal-model revision R1 (§17.4): card inputs grouped by strength, plus own card inputs once a card has enough rated matches, instead of one input for each of the first 30 cards; ratings survive card edits (rating fingerprint and model context); ridge on the summed loss with λ chosen by cross-validation; card example suggestions after ratings; informational G1 experiment E6. Specs 05–10 and `RankerConfig`/preferences in `packages/shared` updated |
 
 ## 17. Owner decisions and implementation gates
 
@@ -1329,3 +1346,9 @@ exceed spending caps or represent an owner pilot as multi-person validation.
 | I1 | `admin_card_holders` (spec 02 §6) returns a holder count for any card ID an admin passes, including another user's private fork, while §5 keeps private forks visible only to their owner, also on admin card lists. | Keep the RLS rule. | The function stays as specified; admin card-list routes pass it only card IDs the admin session can read under RLS (spec 02 §6 "Callers"). M4 tests the admin routes with another user's fork present. |
 | I2 | The API role may insert `bookmark_snapshot_pins` (spec 02 §1.2), so a faulty route could pin a snapshot the user never had. | Pin only what clear returned. | The unbookmark transaction pins exactly the `previous_snapshot_id` that `clear_bookmark_snapshot` returned; routes and clients never supply snapshot IDs (spec 02 §1.2 and §6, spec 08 §5.4). M4's undo repository enforces and tests it. |
 | I3 | `articles.cluster_set_id` and `card_suggestions.question_set_id` stated no `ON DELETE` clause. | State it. | `ON DELETE RESTRICT`, like every other `question_sets` reference (D-6, migration 0006). |
+
+### 17.4 Design revisions (2026-09-26)
+
+| ID | Problem | Owner answer | Binding implementation |
+|---|---|---|---|
+| R1 | The personal model had one input for each of the first 30 positive cards (by card id) and for every never-card, more than 30 ratings can support, and its fingerprint covered every card, so any card change, including adding an example from the Why-this drawer, discarded all stored ratings. Its ridge penalty on the mean loss also kept every weight small however many ratings accumulated. | Adopt the proposed revision with the review's refinements. | Spec 06: card groups by strength plus own card inputs once a card has enough rated matches (§8.1); a rating fingerprint that card changes do not touch and a model context that covers only the model's own inputs (§8.1, §8.2, §8.4); ridge on the summed loss with λ chosen from `model.lambdaGrid` (§8.3, §11); card example suggestions after ratings (§10; spec 08 §3.1 and §5.3; spec 09 §3.3). Specs 05 §5.1 and §8 and 07 §5 follow; spec 10 adds the informational experiment E6. `RankerConfig` and the preferences schema in `packages/shared` carry the new keys. Plan: M3a-T6, M3b-T2, M4-T7, M6-T3, M7-T1, T3, T4, T5 and T7. |
