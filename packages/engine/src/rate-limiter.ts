@@ -110,12 +110,25 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
     tokens: tokenCapacity * factor(t),
   });
 
+  /** Refill `elapsed` ms at the rates (and up to the capacities) scaled by `f`. */
+  function accrue(elapsed: number, f: number): void {
+    const capRequests = requestCapacity * f;
+    const capTokens = tokenCapacity * f;
+    requests = Math.min(capRequests, requests + (elapsed * capRequests) / 60_000);
+    tokens = Math.min(capTokens, tokens + (elapsed * capTokens) / 1_000);
+  }
+
   function refill(t: number): void {
-    const elapsed = Math.max(0, t - lastRefill);
+    const from = lastRefill;
     lastRefill = Math.max(lastRefill, t);
-    const cap = caps(t);
-    requests = Math.min(cap.requests, requests + (elapsed * cap.requests) / 60_000);
-    tokens = Math.min(cap.tokens, tokens + (elapsed * cap.tokens) / 1_000);
+    if (from < penaltyUntil && penaltyUntil <= t) {
+      // A penalty ended inside the interval: its part refills at the penalized rate, so the bucket
+      // leaves the penalty no fuller than the penalized capacity instead of bursting at full.
+      accrue(penaltyUntil - from, penaltyFactor);
+      accrue(t - penaltyUntil, 1);
+      return;
+    }
+    accrue(Math.max(0, t - from), factor(t));
   }
 
   /** Earliest time (≥ t) at which a request of `need` tokens fits, at the current rates. */

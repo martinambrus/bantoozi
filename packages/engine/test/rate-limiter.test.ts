@@ -172,6 +172,22 @@ describe('createRateLimiter (spec 04 §3)', () => {
     expect(limiter.snapshot()).toMatchObject({ penalized: false, requestCapacity: 600 });
   });
 
+  it('refills the penalized part of an interval at the penalized rate', async () => {
+    const limiter = createRateLimiter({ requestsPerMinute: 600 });
+    limiter.penalize();
+    // No refill runs during the penalty: the first one after it still accrues the penalized
+    // minute at 300/min, so the bucket leaves it at 300 requests instead of bursting to 600.
+    await vi.advanceTimersByTimeAsync(RATE_LIMIT_PENALTY_MS);
+    expect(limiter.snapshot()).toMatchObject({
+      penalized: false,
+      requestCapacity: 600,
+      requests: 300,
+      tokens: TYPESAFE_INPUT_TOKENS_PER_SECOND / 2,
+    });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(limiter.snapshot().requests).toBe(400);
+  });
+
   it('penalizes without a server delay too', () => {
     const limiter = createRateLimiter({ requestsPerMinute: 600 });
     limiter.penalize();
