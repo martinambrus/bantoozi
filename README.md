@@ -9,6 +9,7 @@ Prerequisites: Node.js 22.22.2 (`.nvmrc`), pnpm 9 (pinned in `packageManager`; r
 
 ```sh
 pnpm i
+cp .env.example .env             # development settings; migrate, seed, dev and the CLIs load it
 pnpm db:dev:up                   # Postgres on localhost:5432 (PG_DEV_PORT)
 pnpm db:migrate && pnpm db:seed  # schema, settings defaults, taxonomy, question sets, card library
 pnpm dev                         # api (:3000), worker and web on http://localhost:5173

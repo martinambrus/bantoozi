@@ -256,19 +256,19 @@ flowchart TD
   L --> M9["M9 Optional extensions"]
 ```
 
-| Milestone | Depends on (merged to `main`) | Can run in parallel with | Autonomous? | Size |
-|---|---|---|---|---|
-| **M0** Foundations | — | — | yes | M |
-| **M1** Ingestion core | M0 | M2 | yes (the fixture server is local) | L |
-| **M2** Decision engine & classification | M0 | M1 | yes (fixtures and the fake engine only) | L |
-| **M3a** Evaluation tooling & golden-set collection | M1, M2 | M4, M5 | yes, then a **human step** (§8.1) | M |
-| **M3b** Run gate G1 | M3a + human ratings | M6, M7-T1…T6 | yes (needs API keys and network) | S |
-| **M4** HTTP API | M1, M2 | M3a, M5 | yes | L |
-| **M5** Ranking & lanes | M1, M2 | M3a, M4 | yes | M |
-| **M6** Web app (PWA) | M4, M5 | M3b | yes | L |
-| **M7** Personal learning & suggestions | M4, M5, M6 (its goal runs E2E), and **M3b for T7** (run T7 last, after M3b is merged) | M8 | yes | M |
-| **M8** Operations & launch readiness | M4, M5, M6, and M3b applied; final launch gate also requires all M7 | M7 implementation only | mostly (one-time host setup is manual) | M |
-| **M9** Optional extensions | launch | — | per item | — |
+| Milestone | Depends on (merged to `main`) | Can run in parallel with | Autonomous? | Size | Status |
+|---|---|---|---|---|---|
+| **M0** Foundations | — | — | yes | M | ✓ done 2026-09-25 (§5) |
+| **M1** Ingestion core | M0 | M2 | yes (the fixture server is local) | L | not started |
+| **M2** Decision engine & classification | M0 | M1 | yes (fixtures and the fake engine only) | L | not started |
+| **M3a** Evaluation tooling & golden-set collection | M1, M2 | M4, M5 | yes, then a **human step** (§8.1) | M | not started |
+| **M3b** Run gate G1 | M3a + human ratings | M6, M7-T1…T6 | yes (needs API keys and network) | S | not started |
+| **M4** HTTP API | M1, M2 | M3a, M5 | yes | L | not started |
+| **M5** Ranking & lanes | M1, M2 | M3a, M4 | yes | M | not started |
+| **M6** Web app (PWA) | M4, M5 | M3b | yes | L | not started |
+| **M7** Personal learning & suggestions | M4, M5, M6 (its goal runs E2E), and **M3b for T7** (run T7 last, after M3b is merged) | M8 | yes | M | not started |
+| **M8** Operations & launch readiness | M4, M5, M6, and M3b applied; final launch gate also requires all M7 | M7 implementation only | mostly (one-time host setup is manual) | M | not started |
+| **M9** Optional extensions | launch | — | per item | — | not started |
 
 **Shared registration points:**
 - M0 creates `apps/worker/src/pipeline.ts`, the table-driven handler map
@@ -289,6 +289,11 @@ M7 task or other launch gate is outstanding.
 
 ## 5. M0: Foundations
 
+**Status: done 2026-09-25** on branch `claude/exciting-cray-rlrjzj` (commits `40a6700`…`84f6b02`; the
+per-task commits are in the table below). The full check passed after the last task commit, and
+`pnpm dev` served `GET /api/v1/readyz → 200`. M1 and M2 start once this branch is merged to `main`
+(§0.2). Deviations: D-1…D-6 in `docs/DECISIONS.md`; follow-up decisions in §17.3.
+
 **Outcome:** an empty repository becomes a working monorepo. It has tooling, CI, per-process config,
 the shared text utilities and job definitions, the full database schema with grants, RLS and
 functions, the pg-boss schema and queues, per-worktree test databases, and runnable stub apps, so
@@ -306,16 +311,16 @@ Complete milestone M0 "Foundations" exactly as specified in docs/PLAN.md §5, fo
 
 **Tasks**
 
-| ID | Task | Needs | Lane | Specs |
-|---|---|---|---|---|
-| M0-T1 | Monorepo scaffold and tooling | — | A | 01 §1–2, §5–6 |
-| M0-T2 | `packages/shared`: config, settings/credential metadata registry, server-only encryption helpers, jobs, inference-mode and image policies, DTOs incl. `Explain`, ports, errors, ids, clock, mailer and text utils | T1 | A | 01 §2–3, §5; 02 §2; 03 §2, §6.1, §8.3; 04 §1; 05 §2, §5.1; 06 §6.2; 08 §3.1, §6 |
-| M0-T3 | Infra: compose files (named projects, env ports), `init.sh`, Caddy skeleton | T1 | B | 01 §4, §8; 02 §1.1; 11 §2 |
-| M0-T4 | `packages/testing` (part 1): per-worktree test databases from a template, fixture HTTP server | T1, T3 | B | 01 §6; 02 §1.1 |
-| M0-T5 | `packages/db`: schema, grants, RLS, SQL functions, pg-boss schema and queues in the migrate job, `withTenant`, factories (testing part 2), schema parity and RLS tests | T2, T3, T4 | A | 02 all; 03 §2 |
-| M0-T6 | Seed runner (`apps/worker/src/seed.ts`) and settings defaults | T5 | A | 02 §2; 05 §2 (mechanism only) |
-| M0-T7 | App skeletons (api, worker, web, eval), durable outbox relay, handler map, `pipeline.ts` stubs | T2, T5 | C | 01 §2, §4; 03 §1–2; 08 §10 |
-| M0-T8 | CI workflow and `CLAUDE.md` | T1; verification after T5–T7 | C | 01 §6–7, §10 |
+| ID | Task | Needs | Lane | Specs | Status |
+|---|---|---|---|---|---|
+| M0-T1 | Monorepo scaffold and tooling | — | A | 01 §1–2, §5–6 | ✓ `40a6700` |
+| M0-T2 | `packages/shared`: config, settings/credential metadata registry, server-only encryption helpers, jobs, inference-mode and image policies, DTOs incl. `Explain`, ports, errors, ids, clock, mailer and text utils | T1 | A | 01 §2–3, §5; 02 §2; 03 §2, §6.1, §8.3; 04 §1; 05 §2, §5.1; 06 §6.2; 08 §3.1, §6 | ✓ `07327f5` |
+| M0-T3 | Infra: compose files (named projects, env ports), `init.sh`, Caddy skeleton | T1 | B | 01 §4, §8; 02 §1.1; 11 §2 | ✓ `5530c6b` |
+| M0-T4 | `packages/testing` (part 1): per-worktree test databases from a template, fixture HTTP server | T1, T3 | B | 01 §6; 02 §1.1 | ✓ `d95780a` |
+| M0-T5 | `packages/db`: schema, grants, RLS, SQL functions, pg-boss schema and queues in the migrate job, `withTenant`, factories (testing part 2), schema parity and RLS tests | T2, T3, T4 | A | 02 all; 03 §2 | ✓ `a3b7ba6`, `84f6b02` |
+| M0-T6 | Seed runner (`apps/worker/src/seed.ts`) and settings defaults | T5 | A | 02 §2; 05 §2 (mechanism only) | ✓ `d894063` |
+| M0-T7 | App skeletons (api, worker, web, eval), durable outbox relay, handler map, `pipeline.ts` stubs | T2, T5 | C | 01 §2, §4; 03 §1–2; 08 §10 | ✓ `89278b4` |
+| M0-T8 | CI workflow and `CLAUDE.md` | T1; verification after T5–T7 | C | 01 §6–7, §10 | ✓ `00fc6e0` |
 
 **Done when** (per task):
 
@@ -1276,6 +1281,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | 2026-09-25 | Renamed the product from FeedIt Next Gen to Bantoozi: product name, `feedit` identifiers (packages, database and roles, env vars, header, user agent, URNs, compose projects) and the `fi_sid` cookie. References to the FeedIt.sk predecessor are unchanged |
 | 2026-09-25 | Review fixes: `eval.sample` rows are versioned and runs record their dataset version, so older runs stay replayable; a creator's account erasure keeps card-publication audit records, anonymized; invite email is sent synchronously after commit and reports failure; publisher language hints outside the detector whitelist are kept; feeds keep their original fetch URL; settled spend reservations are purged with call audits; `engine.prefilter_enabled` and `engine.laya` are admin-settable |
 | 2026-09-25 | More review fixes: reader and ranker windows use the subscribed carrier's arrival time; the engine router tries a configured Laya checkpoint before returning `no_key`; Laya enrich work has its own registered queue; account erasure also removes waitlist rows and invite emails (the deletion ledger carries a keyed email hash); the shared DB-backed rate limiter is defined; a missing Jev credential falls through to the enabled fallbacks; cluster merges remap `mute_story` rules; jittered fetch delays stay within MAX; article retention follows the latest carrier arrival; unsubscribing keeps completed analysis requests; retained analysis requests protect their article from purge; expired idempotency receipts are purged; each eval run freezes its facet labels; folded rows report only the accessible cluster size; post-freeze eval top-ups create a new dataset version; archive, unread-cap eviction and mark-read cutoffs use carrier arrival; a newly carried article continues from its pipeline state (enrichment for gate-stopped or degraded articles); only the dedicated Laya worker loads Laya, and selected-article analysis gets its own Laya queue; credential and publication-consent functions get explicit API execute grants; the worker cancels analysis requests orphaned by unsubscribe; the unread view represents a folded story by its best unread member; the 14-day window is a fixed constant shared by the list, ranker and degraded recovery; the dedicated Laya worker is a Compose service that must be running before Laya is enabled and until its queued and outbox work drains; a new enrich question set re-enriches the whole ranking window by carrier arrival; a feed or folder view that keeps any authorized carrier shows the global score, whose card scope uses all authorized carriers; idle origin-limiter rows and member-less story clusters are purged; analysis requests still pending after 180 days are cancelled; `mute_story` rules always carry an expiry; expired unused invites and stale waitlist rows are purged, and signup removes the waitlist row; stale spend reservations settle conservatively and then purge; workers report env-credential presence so the admin status can show `source: 'env'`; card suggestions hide cards the user already holds; every match-affecting setting, model-pin change or library topic correction rebuilds the ranking window through `house.rematch` (and `house.reenrich` for the model pin); feeds without subscribers or references are purged after 30 days; a language-mode change re-enriches that language's window, and cluster/suggest set changes apply prospectively with recorded provenance; a publisher correction to a stale article resets its answers but keeps it stale; suggestions record their model pin and old-pin rows are hidden; used invites are purged once both accounts are erased; clustering candidates must have current facets and an authorization witness before the limit; `user.suggest` deduplicates without a broker throttle; translate settings require a healthy LibreTranslate and the `translate` profile; a card dismissed more than 90 days ago can be suggested again; retired unheld cards without audit or eval references are deleted after 30 days; the seed stores `LANGUAGE_MODES` as the effective `language_modes`, so the API detects the first change; `.laya` jobs for a removed language move to the ordinary queue, so the Laya queues drain; saved-snapshot actions are checked against the snapshot's revision instead of the live one; an admin reprocess retries skipped tier-2 translations; the clustering facet join is an eligibility witness at the current revision, not a cache read, since the cluster call never reads candidate facets; an active subscription merged onto another feed restarts its activation boundary; Ollama fallback models are part of the model pin; rater tokens expire and can be revoked without deleting ratings; a selected request authorizes clustering only inside its 180-day window; the degraded Maybe lane never overrides a seen-story cap; translation rows are not model-pinned; a replay is required before changing the Ollama fallback models; reissuing a rater token ends the old sessions; the Laya checkpoint and calibration join the model pin, and adding or removing a Laya language re-enriches it; cards skipped by the English-mode translation job are translated once their holder gains demand; the automatic archive is a versioned reader-state write; suggestions come from Jev only (bulk calls never use the LLM fallback) and record its model pin; switching the LLM fallback on or off is a model-pin change; a stale article with a current explicit selection ranks from its answers (in `rankArticle` and the rank handler); a language switched to `translate` resets its already enriched articles; each suggestion run replaces the user's undismissed suggestions; the router tries Laya first for `.laya` requests; switching a language back to `native` resets its translated articles; an article merge advances the surviving reader-state version; explicitly selected older articles join the rank handler's dirty set; an explicit per-feed image preference keeps its feed from the idle-feed purge; the personal model scores only items whose facets and card answers come from its feature spec's engine family, so Laya-enriched articles use the cards path; every signup-mode branch uses the effective mode, including the stored admin setting; suggestion spend reservations are fenced by the lease token and stamp `last_suggested_at` in the same transaction; mode-change and forced tier-2 translation jobs get their own queue keys, so a pending plain translation job cannot absorb them; a selection result that still matches the current article is always published to the current caches, and rebuilds cover current selections outside the window, so a selected stale or older article ranks from its answers |
+| 2026-09-26 | M0 Foundations done: status markers in §4 and §5 and a line in `CLAUDE.md` "Current state"; implementation decisions I1–I3 recorded in §17.3 and applied to specs 02 and 08 (D-6) |
 
 ## 17. Owner decisions and implementation gates
 
@@ -1314,3 +1320,11 @@ values listed in Q4 and technical preflight: installed model IDs, account limits
 fields, MT language paths, encryption-key recovery, compression support and target-host performance.
 Report unsupported capabilities honestly; do not invent endpoints, silently switch providers,
 exceed spending caps or represent an owner pilot as multi-person validation.
+
+### 17.3 Implementation decisions (M0 follow-up, 2026-09-26)
+
+| ID | Question raised during M0 | Owner answer | Binding implementation |
+|---|---|---|---|
+| I1 | `admin_card_holders` (spec 02 §6) returns a holder count for any card ID an admin passes, including another user's private fork, while §5 keeps private forks visible only to their owner, also on admin card lists. | Keep the RLS rule. | The function stays as specified; admin card-list routes pass it only card IDs the admin session can read under RLS (spec 02 §6 "Callers"). M4 tests the admin routes with another user's fork present. |
+| I2 | The API role may insert `bookmark_snapshot_pins` (spec 02 §1.2), so a faulty route could pin a snapshot the user never had. | Pin only what clear returned. | The unbookmark transaction pins exactly the `previous_snapshot_id` that `clear_bookmark_snapshot` returned; routes and clients never supply snapshot IDs (spec 02 §1.2 and §6, spec 08 §5.4). M4's undo repository enforces and tests it. |
+| I3 | `articles.cluster_set_id` and `card_suggestions.question_set_id` stated no `ON DELETE` clause. | State it. | `ON DELETE RESTRICT`, like every other `question_sets` reference (D-6, migration 0006). |

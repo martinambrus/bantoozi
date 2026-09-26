@@ -128,7 +128,7 @@ sequences have no default API grant.
 | `user_article` | `INSERT (user_id, article_id, opened_at, read_at, rating, reason, rated_at, dwell_ms, bookmarked_at, archived_at, label_ids, feedback_prompted_at, state_version)`; `UPDATE` on those reader-state columns except the primary key, plus `label_suggestions` | rating/read/bookmark actions; ranking columns are worker-only |
 | `card_suggestions` | `UPDATE (dismissed_at)` | dismiss suggestion |
 | `user_models` | no writes | worker alone trains and activates models |
-| `bookmark_snapshot_pins` | `INSERT` only | vetted bookmark/undo repository pins original snapshot through the ten-minute undo deadline |
+| `bookmark_snapshot_pins` | `INSERT` only | vetted bookmark/undo repository pins original snapshot through the ten-minute undo deadline: only the `previous_snapshot_id` that `clear_bookmark_snapshot` returned in the same transaction, never a caller-chosen snapshot |
 | `analysis_requests` | `INSERT (id, user_id, feed_id, article_id, article_revision, inference_version, input_snapshot, input_sha)` only | exact selected-article manual authorization; validated immutable snapshot, worker owns completion |
 | `card_publication_requests`, `provider_credentials`, `article_snapshots`, `library_card_versions` | no direct writes | narrow consent/admin/bookmark functions below; worker maintains lifecycle |
 | `job_outbox` | `INSERT` only | durable job intent; requester RLS (§5), no API relay privileges |
@@ -1441,7 +1441,10 @@ tenant, verifies article access (current subscribed carrier or owned bookmark), 
 owning user/article/reader rows in the documented lock order. Capture copies only stored trusted
 current source into a checksummed snapshot, sets/retains `bookmarked_at`, advances capture generation,
 binds any available content and writes capture intent when absent/partial. Clear advances generation,
-clears binding/status/origin/bookmarked_at, and records final-reference lifecycle state. No helper
+clears binding/status/origin/bookmarked_at, and records final-reference lifecycle state. The unbookmark
+transaction then writes its undo receipt and pins exactly the `previous_snapshot_id` that clear
+returned, never any other snapshot ID; attaching the pin clears that snapshot's `unreferenced_at`
+again until the pin expires. No helper
 increments reader `state_version` or appends feedback on its own: the enclosing idempotent action
 transaction does so exactly once. Snapshot completion is worker-only and generation-fenced.
 `restore_bookmark_snapshot(p_article_id bigint, p_mutation_id uuid)` accepts no caller-supplied snapshot
@@ -1491,8 +1494,10 @@ the authenticated original author.
   affects them: subscribe/unsubscribe, card add/remove/scope change, label add/remove, account delete
   and restore. `house.reconcile` (spec 11) also runs them nightly for all feeds.
 - **The `admin_*` functions** are called only from admin routes, after the role check (spec 08 §9),
-  and enforce the active admin context again in SQL. Invalid `p_days` is rejected by the API; direct
-  SQL calls return no usage rows. Cost allocation is an estimate based on **current** holders, not
+  and enforce the active admin context again in SQL. Admin card lists pass `admin_card_holders` only
+  card IDs the admin session can read under RLS (public and shared cards, and the admin's own forks),
+  so another user's private fork never appears with a holder count (§5). Invalid `p_days` is rejected
+  by the API; direct SQL calls return no usage rows. Cost allocation is an estimate based on **current** holders, not
   historical billing; soft-deleted users and duplicate holdings never inflate the total.
 - Mutations use READ COMMITTED and acquire all affected user rows in UUID order, then feed rows in
   numeric order (`FOR NO KEY UPDATE`), before changing subscriptions/holdings. Both refresh functions
