@@ -29,14 +29,23 @@ export async function ensureDevUser(
 
 /**
  * Subscribe `userId` to the feed with canonical `url` (created with `fetchUrl` when new, spec 03
- * §5 and §10 step 5), with inference `off` like every new subscription. In the same transaction:
- * refresh the feed's subscriber count and card cache, and record a `feed.fetch` intent.
+ * §5 and §10 step 5), with inference `off` like every new subscription. In the same transaction
+ * (§10 step 6): revive a `dead` live feed, which the caller's discovery has just validated (status
+ * `active`, error and quarantine state cleared, due now; D-22), refresh the feed's subscriber count
+ * and card cache, and record a `feed.fetch` intent. A `paused` feed stays paused and is not
+ * fetched; `feedStatus` is the feed's status afterwards.
  */
 export async function subscribeToFeed(
   tx: Transaction,
   sender: JobSender,
   input: { userId: string; url: string; fetchUrl: string; title: string | null },
-): Promise<{ feedId: string; createdFeed: boolean; createdSubscription: boolean }> {
+): Promise<{
+  feedId: string;
+  createdFeed: boolean;
+  createdSubscription: boolean;
+  revivedFeed: boolean;
+  feedStatus: string;
+}> {
   await tx.execute(sql`SELECT 1 FROM users WHERE id = ${input.userId}::uuid FOR NO KEY UPDATE`);
   const inserted = await tx.execute<{ id: string }>(sql`
     INSERT INTO feeds (url, fetch_url, title) VALUES (${input.url}, ${input.fetchUrl}, ${input.title})
@@ -58,13 +67,17 @@ export async function subscribeToFeed(
   // own order): the subscription's foreign-key lock does not conflict with the merge's
   // `FOR NO KEY UPDATE`, so without this the insert could land on a feed the merge retires after
   // moving its subscriptions. A merge that committed while this waited is followed to its survivor.
+  let status: string;
   for (let attempt = 1; ; attempt += 1) {
-    const locked = await tx.execute<{ merged_into_id: string | null }>(sql`
-      SELECT merged_into_id::text AS merged_into_id FROM feeds
+    const locked = await tx.execute<{ merged_into_id: string | null; status: string }>(sql`
+      SELECT merged_into_id::text AS merged_into_id, status FROM feeds
        WHERE id = ${feedId}::bigint FOR SHARE`);
     const current = locked.rows[0];
     if (current === undefined) throw new Error(`feed ${feedId} disappeared during subscribe`);
-    if (current.merged_into_id === null) break;
+    if (current.merged_into_id === null) {
+      status = current.status;
+      break;
+    }
     const survivor = await resolveLiveFeedId(tx, feedId);
     if (survivor === null || attempt >= 5) {
       throw new Error(`feed ${feedId} has no stable live root to subscribe to`);
@@ -74,13 +87,30 @@ export async function subscribeToFeed(
   const subscribed = await tx.execute(sql`
     INSERT INTO subscriptions (user_id, feed_id) VALUES (${input.userId}::uuid, ${feedId}::bigint)
     ON CONFLICT (user_id, feed_id) DO NOTHING`);
+  // A dead feed is never fetched, so the fetch recorded below would do nothing. The row lock
+  // above keeps its status until this update; a merged tombstone was resolved to its live root.
+  const revivedFeed = status === 'dead';
+  if (revivedFeed) {
+    await tx.execute(sql`
+      UPDATE feeds
+         SET status = 'active', consecutive_errors = 0, first_error_at = NULL,
+             quarantined_until = NULL, quarantine_count = 0, next_fetch_at = now(),
+             updated_at = now()
+       WHERE id = ${feedId}::bigint`);
+  }
   const ids = sql.param([feedId]);
   await tx.execute(
     sql`SELECT refresh_feed_subscribers(${ids}::bigint[], ${JSON.stringify(planMinIntervalMap())}::jsonb)`,
   );
   await tx.execute(sql`SELECT refresh_feed_cards(${ids}::bigint[])`);
   await enqueueFetch(sender, { feedId });
-  return { feedId, createdFeed, createdSubscription: (subscribed.rowCount ?? 0) > 0 };
+  return {
+    feedId,
+    createdFeed,
+    createdSubscription: (subscribed.rowCount ?? 0) > 0,
+    revivedFeed,
+    feedStatus: revivedFeed ? 'active' : status,
+  };
 }
 
 export interface FeedOverview {

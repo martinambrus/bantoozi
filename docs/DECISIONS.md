@@ -165,5 +165,15 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   link, so it resets the article like a content change (`resetArticleAnswers`, extraction recorded
   for the new revision): a link skipped before the correction is then extracted. Another
   audio/video type keeps the skip and is stored without a reset. `article.extract` and
-  `article.capture-bookmark` pass it to the skip check. Spec 02 listed no such column. Found by the Codex review of PR #5. Spec 02 `articles`
-  and spec 03 §8.1 step 1 updated.
+  `article.capture-bookmark` pass it to the skip check. Spec 02 listed no such column. Found by the
+  Codex review of PR #5. Spec 02 `articles` and spec 03 §8.1 step 1 updated.
+- D-22: 2026-09-26 M1-T9 — a new subscription revives a `dead` feed. `feeds:add` reused an existing
+  dead feed and recorded an ordinary fetch, which the handler drops for a dead feed, so the
+  subscription was never fetched while the CLI reported a queued fetch. Spec 03 let an admin reset a
+  dead feed and said nothing about subscribing to one, although spec 02 grants the subscribe path
+  the reset columns of `feeds` and the fetch outcome writer already named subscribe as one of the
+  explicit resets. The subscription's discovery has just validated the feed (spec 03 §10 step 6), so
+  the subscribe transaction now revives a dead live feed: `active`, error and quarantine state
+  cleared, due now. A merged tombstone still resolves to its survivor, and a `paused` feed stays
+  paused (the CLI says it is not fetched). Found by the Codex review of PR #5. Spec 03 §9 and §10
+  step 6 updated.

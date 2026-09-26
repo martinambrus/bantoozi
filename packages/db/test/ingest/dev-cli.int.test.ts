@@ -77,8 +77,60 @@ describe('ensureDevUser and subscribeToFeed (M1-T9)', () => {
     );
 
     const sub = await subscribe('chain@localhost', a.url);
-    expect(sub).toMatchObject({ feedId: c.id, createdFeed: false, createdSubscription: true });
+    expect(sub).toMatchObject({
+      feedId: c.id,
+      createdFeed: false,
+      createdSubscription: true,
+      revivedFeed: false,
+      feedStatus: 'active',
+    });
     expect(await subscriptionFeeds(sub.user.id)).toEqual([c.id]);
+    // The merged tombstones stay dead: only the live root is subscribed to.
+    const tombstones = await ctx.owner.query<{ status: string }>(
+      'SELECT status FROM feeds WHERE id IN ($1, $2)',
+      [a.id, b.id],
+    );
+    expect(tombstones.rows).toEqual([{ status: 'dead' }, { status: 'dead' }]);
+  });
+
+  it('revives a dead feed it subscribes to; a paused feed stays paused', async () => {
+    const dead = await createFeed(ctx.owner, { url: 'https://dev-cli.example.test/dead.xml' });
+    await ctx.owner.query(
+      `UPDATE feeds SET status = 'dead', consecutive_errors = 40,
+              first_error_at = now() - interval '31 days', quarantine_count = 3,
+              quarantined_until = now() + interval '2 days',
+              next_fetch_at = now() + interval '7 days'
+        WHERE id = $1`,
+      [dead.id],
+    );
+    const revived = await subscribe('revive@localhost', dead.url);
+    expect(revived).toMatchObject({ feedId: dead.id, revivedFeed: true, feedStatus: 'active' });
+    const row = await ctx.owner.query(
+      `SELECT status, consecutive_errors, first_error_at, quarantine_count, quarantined_until,
+              next_fetch_at <= now() AS due
+         FROM feeds WHERE id = $1`,
+      [dead.id],
+    );
+    expect(row.rows).toEqual([
+      {
+        status: 'active',
+        consecutive_errors: 0,
+        first_error_at: null,
+        quarantine_count: 0,
+        quarantined_until: null,
+        due: true,
+      },
+    ]);
+
+    const paused = await createFeed(ctx.owner, { url: 'https://dev-cli.example.test/paused.xml' });
+    await ctx.owner.query(`UPDATE feeds SET status = 'paused' WHERE id = $1`, [paused.id]);
+    expect(await subscribe('revive@localhost', paused.url)).toMatchObject({
+      feedId: paused.id,
+      revivedFeed: false,
+      feedStatus: 'paused',
+    });
+    const kept = await ctx.owner.query('SELECT status FROM feeds WHERE id = $1', [paused.id]);
+    expect(kept.rows).toEqual([{ status: 'paused' }]);
   });
 
   it('waits for a running merge of the resolved feed and subscribes to its survivor', async () => {

@@ -421,7 +421,7 @@ Complete milestone M0 "Foundations" exactly as specified in docs/PLAN.md §5, fo
 including the media signals of revision R2 and the fixes from the Codex reviews of PR #5; the
 per-task commits are in the table below). The full check with coverage passed after the last commit
 (`packages/feeds` lines above 99 %), `ingestion.e2e.test.ts` passed, and `pnpm worker-cli` ran
-against the dev database with a local fixture site. Deviations: D-11…D-21 in `docs/DECISIONS.md`.
+against the dev database with a local fixture site. Deviations: D-11…D-22 in `docs/DECISIONS.md`.
 Migrations 0009 (D-13…D-16), 0010 (the R2 media columns of spec 02), 0011 (D-19) and 0012 (D-21)
 are added, so migrations of a parallel M2 branch are numbered after them. Merge to `main` before M3a,
 M4 and M5 (§0.2).

@@ -23,7 +23,7 @@ import { createHandlers } from './handlers/index.js';
  * Development CLI (M1-T9, spec 03 §10), run as `pnpm worker-cli <command>` against the dev
  * database of `.env` with the worker role:
  * - `feeds:add <url> [--user dev@localhost]`: discover the feed, create the dev user when missing,
- *   subscribe it (inference off) and record a fetch;
+ *   subscribe it (inference off; a dead feed is revived, D-22) and record a fetch;
  * - `feeds:fetch-now <feedId>`: fetch and ingest the feed now (forced), then run the pending
  *   extractions of its articles inline;
  * - `feeds:show <feedId>`: the feed's bookkeeping and newest articles.
@@ -130,9 +130,15 @@ program
           fetchUrl: candidate.url,
           title: found.validated?.parsed.feed.title ?? candidate.title,
         });
+        // Discovery has just validated the feed, so a dead one was revived; a paused one stays.
+        const outcome = sub.revivedFeed
+          ? 'revived the dead feed; fetch queued'
+          : sub.feedStatus === 'paused'
+            ? 'the feed is paused, so it is not fetched until it is resumed'
+            : 'fetch queued';
         process.stdout.write(
           `${sub.createdSubscription ? 'subscribed' : 'already subscribed'} to feed ${sub.feedId} ` +
-            `${candidate.canonicalUrl} (${candidate.type}, inference off${sub.createdFeed ? ', new feed' : ''}); fetch queued\n`,
+            `${candidate.canonicalUrl} (${candidate.type}, inference off${sub.createdFeed ? ', new feed' : ''}); ${outcome}\n`,
         );
       });
     });

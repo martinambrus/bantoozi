@@ -941,7 +941,8 @@ A feed with no prior new-item timestamp uses the 24-hour MAX until it has actual
     that key, so the survivor's next fetch of a guidless linkless item finds the moved article
     instead of inserting a duplicate (D-17)
 
-`dead` feeds without a merge target are shown with a banner (spec 09) and may be reset by an admin.
+`dead` feeds without a merge target are shown with a banner (spec 09) and may be reset by an admin;
+a new subscription, whose first fetch has just validated the feed, revives it too (§10 step 6, D-22).
 A merged tombstone cannot be revived independently; admin requests resolve to its survivor.
 
 Unit tests cover every branch, including a simulated 60-day sequence for four archetypes: a busy news
@@ -968,7 +969,10 @@ site, a daily blog, a weekly podcast, and a feed that breaks and recovers.
    probes and redirects), at most 10 total HTTP requests and 2 concurrent probes. Fetch and parse the
    chosen candidate to validate it; use that result for the title rather than downloading it a second
    time synchronously. Recheck the user's remaining quota inside the subscription transaction, then
-   atomically insert the subscription, refresh materializations and record `feed.fetch` work. Item
+   atomically insert the subscription, refresh materializations and record `feed.fetch` work. A
+   reused `dead` feed is revived in that transaction, since this fetch has just validated it:
+   `status = 'active'`, its error and quarantine state cleared and `next_fetch_at = now()` (D-22;
+   a merged tombstone resolves to its survivor first). A `paused` feed stays paused. Item
    ingestion runs in the worker. HTTPS-to-HTTP fallback is allowed only for transport failure, never
    to bypass TLS certificate errors or address policy. Candidate count is capped at 20, deduplicated
    and every selected URL is revalidated; HTML `rel=alternate` alone is not proof of a valid feed.
