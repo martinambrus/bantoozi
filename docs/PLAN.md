@@ -547,8 +547,8 @@ is ≥ 80 % (shown).
 
 ## 7. M2: Decision engine and classification
 
-**Status: done 2026-09-26** on branch `claude/project-thread-rbfpqh` (commits `8cdcc55`…`5179888`;
-the per-task commits are in the table below). The full check passed after the last task commit, with
+**Status: done 2026-09-26** on branch `claude/project-thread-rbfpqh` (commits `8cdcc55`…`5179888`
+and the fixes from the Codex review of PR #6; the per-task commits are in the table below). The full check passed after the last task commit, with
 line coverage of 96.4 % for `packages/engine`, 99.6 % for `packages/questions` and 100 % for
 `packages/ranker`; `classification.e2e.test.ts` and `engine-breaker.int.test.ts` passed. Deviations:
 D-24 and D-25…D-81 in `docs/DECISIONS.md`. Migration 0013 (D-24) adds
@@ -585,13 +585,13 @@ Complete milestone M2 "Decision engine and classification" exactly as specified 
 |---|---|---|---|---|---|
 | M2-T1 | Engine types and answer normalization | — | A | 04 §1–2 | ✓ `a3c5633` |
 | M2-T2 | `TypeSafeEngine` HTTP client, status handling, fixtures, **fake TypeSafe server** | T1 | A | 04 §3, §10 | ✓ `6b41d74` |
-| M2-T3 | `EngineRouter`: retries, priority semaphore, rate limiter, breaker (mirror and reset polling), spend guard, `EngineStore` implementation, DB credential resolution/validation/rotation, `usage_daily`, atomic reservations, eval overrides | T2 | A | 04 §1, §4–7 | ✓ `e75de18` |
+| M2-T3 | `EngineRouter`: retries, priority semaphore, rate limiter, breaker (mirror and reset polling), spend guard, `EngineStore` implementation, DB credential resolution/validation/rotation, `usage_daily`, atomic reservations, eval overrides | T2 | A | 04 §1, §4–7 | ✓ `e75de18` and the review fix `d0d0077`: a validation result that completes after its lease expired is discarded |
 | M2-T4 | `LlmFallbackEngine` (Ollama Cloud), off by default, wired into the router's fallback chain | T3 | A | 04 §5, §8 | ✓ `524c57c` (the router wiring and its fallback tests are in `e75de18`) |
 | M2-T5 | `packages/questions`: builders, taxonomy, `enrich-v1`, dynamic-set templates (`match-v1`, `cluster-v1`, `suggest-v1`), card and label builders, packing, `flattenFacets` | — | C | 05 §2–6 | ✓ `3d7f7fa`, `b768aa7`, `19ce7ef` |
 | M2-T6 | Card library seed (≥ 150 cards), and seeding of topics, question sets (active kind only if absent) and library (slug upsert rules) | T5 | C | 05 §2, §8 | ✓ `053e79e` |
 | M2-T7 | `packages/translate`: LibreTranslate and Ollama translators, `assessTranslation`, best-row selection | — | B | 07 | ✓ `cd1bb7d` |
 | M2-T8 | Card/label lifecycle, author consent and opt-in library upgrades (immutability, forks, title overrides, labels with `array_replace`, effects) | — | C | 05 §5.1, §5.3 | ✓ `4528413`, `a05146c`, `36118f3` |
-| M2-T9 | Worker handlers: `provider.validate`, `analysis.process`, translate/enrich/match/backfill/cluster and rescore | T3, T5, T7, T8 | D | 05 §3–6; 07 §3; 04 §5; 03 §1 | ✓ `99a9736` (`provider.validate` in `e75de18`) |
+| M2-T9 | Worker handlers: `provider.validate`, `analysis.process`, translate/enrich/match/backfill/cluster and rescore | T3, T5, T7, T8 | D | 05 §3–6; 07 §3; 04 §5; 03 §1 | ✓ `99a9736` (`provider.validate` in `e75de18`) and the review fix `ce53e31`: a mode-change translation job compares the effective text even when it produced no row, so a language switched back to `translate` re-enriches from its kept translation |
 | M2-T10 | Ranker bootstrap: `cardScore`, BM25 (window corpus), lane/tier and view-scoped inference projection helpers, `RANKER_VERSION` and composite `scoreVersion()` in `packages/ranker`; consume shared `RankerConfig` | T5 | E | 06 §4.1, §6.4, §7, §9 | ✓ `1eab1d9` |
 | M2-T11 | Integration tests: classification end-to-end, breaker, budget, degraded path, backfill | T4, T6, T9, T10 | D | 04 §10; 05 §11 | ✓ `5179888` |
 
