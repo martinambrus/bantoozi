@@ -39,7 +39,7 @@ import { hasRetriesLeft } from './transient.js';
 /** Articles a flagged job (tier-2 escalation, skipped-row reprocess, mode change) may translate. */
 const RETRANSLATABLE_STATES = ['extracted', 'translated', 'enriched', 'matched', 'degraded'];
 
-/** Thrown to make pg-boss retry after a transient tier-1 failure while the queue has retries left. */
+/** Thrown to make pg-boss retry the job after a transient tier-1 or tier-2 translation failure. */
 export class TransientTranslationError extends Error {
   constructor(reason: string) {
     super(`transient translation failure (${reason}); the queue retries the job`);
@@ -59,8 +59,9 @@ export class TransientTranslationError extends Error {
  * - a later job re-enriches an enriched/matched article through `resetArticleAnswers` (keeping
  *   the body and translations at the new revision) only when the effective model input changes;
  *   identical effective text is a no-op, and other states pick the best row up at enrichment.
- * A transient tier-1 failure retries the job while the queue allows; the last attempt continues
- * with native text rather than blocking the article (spec 07 §3).
+ * A transient tier-1 or tier-2 failure retries the job while the queue allows; the last attempt
+ * continues without that tier's row (native text when tier 1 has none) rather than blocking the
+ * article (spec 07 §3, D-74).
  */
 export function createArticleTranslateHandler(
   deps: WorkerDeps,

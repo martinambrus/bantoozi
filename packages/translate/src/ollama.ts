@@ -136,8 +136,9 @@ export type Tier2AttemptResult =
       ok: false;
       reason: Tier2FailureReason;
       /**
-       * Worth one more attempt under a new reservation: transient failures and invalid output
-       * (the "repair" retry). Auth, request, model and cancellation failures are not.
+       * Worth another attempt under a new reservation: invalid output (the caller's one "repair"
+       * attempt) and transient transport failures (left to the caller's job retry, spec 07 §3).
+       * Auth, request, model and cancellation failures are not.
        */
       retryable: boolean;
       /** A 429/503 server delay. */

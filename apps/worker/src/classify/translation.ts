@@ -58,7 +58,10 @@ export type TierOutcome =
   | { kind: 'row'; row: TranslationInput }
   /** Tier 1 had nothing to send (`und`, no text): the state stays native. */
   | { kind: 'none' }
-  /** A failure a later attempt may not repeat (network, 5xx, 429, auth, cancellation). */
+  /**
+   * No row: a failure a later attempt may not repeat (network, timeout, 5xx, 429, cancellation, and
+   * a tier-1 auth failure), with the server's retry time when it gave one.
+   */
   | { kind: 'transient'; reason: string; retryAt?: Date }
   /** The authorization no longer holds: no row, no further attempt. */
   | { kind: 'no_demand' };
@@ -174,9 +177,12 @@ export async function runTier1(
 /**
  * Tier 2 (spec 07 §3 step 3), once per content revision: without an enabled active Ollama key, or
  * when the reservation is refused for the daily cap or the budget, a skipped `fail` row records
- * the attempt; otherwise one attempt plus at most one repair attempt, each under its own
- * reservation and recorded with its actual usage. The outcome is always a row (graded, or `fail`
- * with its failure code) unless the authorization lapsed.
+ * the attempt; otherwise one attempt, plus one repair attempt after invalid output, each under its
+ * own reservation and recorded with its actual usage. A translation is graded; invalid output after
+ * the repair and a terminal provider failure (auth, request, model) become a `fail` row. A
+ * transport failure (429, 5xx, timeout, network) or a cancellation stores no row: it is transient,
+ * with the server's retry time when known, and the job's own retry runs tier 2 again (D-74), never
+ * a second in-process attempt as well. `no_demand` when the authorization lapsed.
  */
 export async function runTier2(
   db: Executor,
@@ -264,7 +270,8 @@ export async function runTier2(
       reservationId,
     );
     last = result;
-    if (result.ok || !result.retryable) break;
+    // Only invalid output earns the repair attempt.
+    if (result.ok || result.reason !== 'invalid_response') break;
   }
   if (last === undefined) return skipped('budget');
   if (last.ok) {
@@ -279,7 +286,16 @@ export async function runTier2(
       ),
     };
   }
-  if (last.reason === 'cancelled') return { kind: 'transient', reason: last.reason };
+  if (last.reason === 'cancelled' || (last.retryable && last.reason !== 'invalid_response')) {
+    const { startedAt, latencyMs } = last.attempt;
+    return {
+      kind: 'transient',
+      reason: last.reason,
+      ...(last.retryAfterMs === undefined
+        ? {}
+        : { retryAt: new Date(startedAt.getTime() + latencyMs + last.retryAfterMs) }),
+    };
+  }
   const version = versionOf(last.attempt.credentialVersion);
   return {
     kind: 'row',

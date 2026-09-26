@@ -1,3 +1,4 @@
+import { eligibleInferenceDemand, loadClassificationArticle } from '@bantoozi/db';
 import type { CredentialResolver } from '@bantoozi/shared/server';
 import {
   createFeed,
@@ -10,8 +11,20 @@ import {
   type FakeOllamaServer,
   type FixtureServer,
 } from '@bantoozi/testing';
-import { createLibreTranslateClient, createOllamaTranslator } from '@bantoozi/translate';
+import {
+  articleTranslationSource,
+  createLibreTranslateClient,
+  createOllamaTranslator,
+  translationSourceSha256,
+} from '@bantoozi/translate';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+
+import {
+  runTier2,
+  type TranslationDeps,
+  type TranslationJob,
+} from '../src/classify/translation.js';
+import { TransientTranslationError } from '../src/handlers/article-translate.js';
 
 import {
   ClassifyHarness,
@@ -59,6 +72,7 @@ let h: ClassifyHarness;
 let lt: FakeLibreTranslate;
 let ollama: FakeOllamaServer;
 let server: FixtureServer;
+let translation: TranslationDeps;
 let credential: Awaited<ReturnType<CredentialResolver['metadata']>>;
 let ollamaBase = 0;
 const closers: Array<() => Promise<void>> = [];
@@ -101,15 +115,16 @@ beforeAll(async () => {
       throw new Error('candidate keys are not used here');
     },
   };
+  translation = {
+    libretranslate,
+    ollama: translator,
+    credentials,
+    modelFast: LLM_MODEL,
+    modelStrong: 'glm-5.3',
+  };
   h = await ClassifyHarness.start({
     languageModes: { en: 'native', sk: 'translate', cs: 'native' },
-    translation: {
-      libretranslate,
-      ollama: translator,
-      credentials,
-      modelFast: LLM_MODEL,
-      modelStrong: 'glm-5.3',
-    },
+    translation,
   });
 });
 
@@ -121,7 +136,13 @@ afterAll(async () => {
 beforeEach(async () => {
   h.router.reset();
   lt.reset({ mode: 'ok' });
-  ollama.setOptions({ mode: 'ok', reply: translatedReply });
+  ollama.setOptions({
+    mode: 'ok',
+    reply: translatedReply,
+    status: undefined,
+    headers: undefined,
+    statusOverride: undefined,
+  });
   ollama.requests.length = 0;
   ollamaBase = ollama.requestCount();
   credential = { source: 'db', enabled: true, activeVersion: '3' };
@@ -159,6 +180,26 @@ async function translations(articleId: string) {
 }
 
 const translateRequests = () => lt.requests.filter((request) => request.path === '/translate');
+
+/** The tier-2 job of a Slovak article's current revision, as the handler builds it. */
+async function tier2Job(articleId: string): Promise<TranslationJob> {
+  const article = await loadClassificationArticle(h.deps.db, articleId);
+  if (article === null) throw new Error(`article ${articleId} is gone`);
+  const source = articleTranslationSource({
+    title: article.title,
+    excerpt: article.excerpt,
+    body_lead: article.bodyLead,
+  });
+  const witnesses = await eligibleInferenceDemand(h.deps.db, articleId);
+  return {
+    articleId,
+    articleRevision: article.revision,
+    sourceLang: 'sk',
+    source,
+    sourceSha256: translationSourceSha256('sk', source),
+    authorization: { type: 'article', articleId, articleRevision: article.revision, witnesses },
+  };
+}
 
 describe('article.translate tiers (spec 07 §3)', () => {
   it('the initial pipeline stores the tier-1 row, moves extracted → translated and records enrichment', async () => {
@@ -245,6 +286,42 @@ describe('article.translate tiers (spec 07 §3)', () => {
     credential = { source: 'db', enabled: true, activeVersion: '3' };
     await h.dispatch('article.translate', { articleId: s.articleId, replaceSkipped: true });
     expect(ollamaCalls()).toBe(1);
+    expect((await translations(s.articleId)).map((row) => [row.engine, row.quality])).toEqual([
+      ['libretranslate', 'fail'],
+      ['ollama', 'ok'],
+    ]);
+  });
+
+  it('a transient tier-2 failure uses the job retry; the last attempt continues without an ollama row', async () => {
+    lt.setOptions({ mode: 'fail' });
+    ollama.setOptions({ mode: 'status', status: 503 });
+    const s = await slovak();
+    const since = await h.mark();
+    const attempt = (count: number) =>
+      h.dispatch('article.translate', { articleId: s.articleId }, { retry: { count, limit: 1 } });
+
+    // One HTTP attempt, then the queue retry: no in-process retry, and nothing stored.
+    await expect(attempt(0)).rejects.toThrow(TransientTranslationError);
+    expect(ollamaCalls()).toBe(1);
+    expect(await translations(s.articleId)).toEqual([]);
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'extracted' });
+
+    // The last attempt continues from native text, and no `fail` row claims the revision's tier 2.
+    await attempt(1);
+    expect(ollamaCalls()).toBe(2);
+    expect((await translations(s.articleId)).map((row) => [row.engine, row.quality])).toEqual([
+      ['libretranslate', 'fail'],
+    ]);
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'translated' });
+    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+    expect(
+      h.router.external.filter((e) => e.call.engine === 'llm').map((e) => e.call.status),
+    ).toEqual(['error', 'error']);
+
+    // So a later escalation may still run it.
+    ollama.setOptions({ mode: 'ok' });
+    await h.dispatch('article.translate', { articleId: s.articleId, forceTier2: true });
+    expect(ollamaCalls()).toBe(3);
     expect((await translations(s.articleId)).map((row) => [row.engine, row.quality])).toEqual([
       ['libretranslate', 'fail'],
       ['ollama', 'ok'],
@@ -343,6 +420,48 @@ describe('article.translate tiers (spec 07 §3)', () => {
     expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'extracted' });
     expect(await h.payloads('article.enrich', since)).toEqual([]);
     expect(h.router.external).toEqual([]);
+  });
+});
+
+describe('tier-2 attempts (spec 07 §3 step 3)', () => {
+  it('returns a transport failure with the server retry time after one attempt, storing nothing', async () => {
+    const s = await slovak();
+    const job = await tier2Job(s.articleId);
+    ollama.setOptions({ mode: 'status', status: 429, headers: { 'retry-after': '30' } });
+    const before = Date.now();
+    const outcome = await runTier2(h.deps.db, h.router, translation, job, LLM_MODEL);
+    const after = Date.now();
+    expect(outcome).toMatchObject({ kind: 'transient', reason: 'rate_limited' });
+    const retryAt = outcome.kind === 'transient' ? outcome.retryAt?.getTime() : undefined;
+    expect(retryAt).toBeGreaterThanOrEqual(before + 30_000);
+    expect(retryAt).toBeLessThanOrEqual(after + 30_000);
+    expect(ollamaCalls()).toBe(1);
+    expect(h.router.reservations).toHaveLength(1);
+  });
+
+  it('repairs invalid output once: invalid again is a fail row, a failed repair call is transient', async () => {
+    const s = await slovak();
+    const job = await tier2Job(s.articleId);
+    ollama.setOptions({ mode: 'malformed' });
+    const invalid = await runTier2(h.deps.db, h.router, translation, job, LLM_MODEL);
+    expect(ollamaCalls()).toBe(2);
+    expect(invalid).toMatchObject({
+      kind: 'row',
+      row: { engine: 'ollama', quality: 'fail', qualityDetail: { failure: 'invalid_response' } },
+    });
+
+    let calls = 0;
+    ollama.setOptions({
+      statusOverride: () => {
+        calls += 1;
+        return calls === 2 ? { status: 503, body: { error: 'overloaded' } } : undefined;
+      },
+    });
+    expect(await runTier2(h.deps.db, h.router, translation, job, LLM_MODEL)).toEqual({
+      kind: 'transient',
+      reason: 'server_error',
+    });
+    expect(ollamaCalls()).toBe(4);
   });
 });
 
