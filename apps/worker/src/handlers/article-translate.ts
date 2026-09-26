@@ -208,7 +208,9 @@ async function continueInitial(
  * revision read at dispatch; an enriched/matched article whose current facets were built from
  * different effective text (native, or another tie-winning translation) is reset with its body and
  * translations kept at the new revision, and re-enters enrichment through the pipeline. Identical
- * effective text is a no-op, and an article not yet enriched uses the best row when it is.
+ * effective text is a no-op, and an article not yet enriched uses the best row when it is. The
+ * comparison runs even when this job produced no row: a language switched back to `translate`
+ * finds its current-revision rows already stored, while the facets were built from native text.
  */
 async function installRetranslation(
   deps: WorkerDeps,
@@ -218,7 +220,6 @@ async function installRetranslation(
   produced: readonly TranslationInput[],
   replaceSkipped: boolean,
 ): Promise<void> {
-  if (produced.length === 0) return;
   await retryTransaction(deps.db, async (tx) => {
     if (!(await storeRows(tx, article, produced, replaceSkipped))) return;
     if (article.pipelineState !== 'enriched' && article.pipelineState !== 'matched') return;

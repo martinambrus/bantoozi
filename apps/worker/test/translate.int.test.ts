@@ -296,6 +296,42 @@ describe('article.translate tiers (spec 07 §3)', () => {
     expect(await h.payloads('user.rank', same)).toEqual([]);
   });
 
+  it('a mode change back to translate re-enriches an article enriched from native text over its kept translation', async () => {
+    const translateModes = { en: 'native', sk: 'translate', cs: 'native' };
+    const s = await slovak();
+    await h.dispatch('article.translate', { articleId: s.articleId });
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'translated', revision: '1' });
+    // Switched to native before enrichment: the facets use native text, the tier-1 row stays.
+    await h.setSetting('language_modes', { ...translateModes, sk: 'native' });
+    try {
+      await h.run('article.enrich', forArticles(s.articleId));
+    } finally {
+      await h.setSetting('language_modes', translateModes);
+    }
+    expect(await h.facetRow(s.articleId)).toMatchObject({ revision: '1', variant: 'native' });
+
+    // Back in translate mode, the mode-change job calls no tier: it installs the stored row.
+    const requests = translateRequests().length;
+    const since = await h.mark();
+    await h.dispatch('article.translate', { articleId: s.articleId, modeChange: true });
+    expect(translateRequests()).toHaveLength(requests);
+    expect(ollamaCalls()).toBe(0);
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'translated', revision: '2' });
+    expect(
+      (await translations(s.articleId)).map((row) => [row.engine, row.quality, row.revision]),
+    ).toEqual([['libretranslate', 'ok', '2']]);
+    expect(await h.facetRow(s.articleId)).toBeNull();
+    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+    await h.run('article.enrich', forArticles(s.articleId));
+    expect(await h.facetRow(s.articleId)).toMatchObject({ revision: '2', variant: 'translated' });
+
+    // A repeated mode-change job finds the facets built from that translation: a no-op.
+    const again = await h.mark();
+    await h.dispatch('article.translate', { articleId: s.articleId, modeChange: true });
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'enriched', revision: '2' });
+    expect(await h.payloads('article.enrich', again)).toEqual([]);
+  });
+
   it('is a no-op for off or unselected demand: no HTTP request, no row, no stage change', async () => {
     const s = await slovak(['off', 'training']);
     const since = await h.mark();
