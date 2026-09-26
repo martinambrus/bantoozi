@@ -186,6 +186,13 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   still observes origin cooldowns, a merged tombstone still resolves to its survivor, and its
   outcome never changes a dead or paused status (only a reset does). Found by the Codex review of
   PR #5. Spec 03 §3 updated.
+- D-24: 2026-09-26 M2-T9 — `analysis_requests.stage_results` (jsonb, null; migration 0013) keeps the
+  finished stages of a selected request (its own translations, Call A, card and level-2 answers, each
+  with its state hash), so a request whose lease expired mid-way resumes on another worker without
+  paying for those stages again (spec 03 §2.2 asked for resumable, bounded stages but gave them no
+  storage). Only the running lease holder writes it; the integrity triggers keep it null at insert
+  and final once the request finishes, and the request's result is still `result_snapshot` alone.
+  Spec 02 §3.4 and §4 updated.
 - D-25: 2026-09-26 M2-T10 — BM25 details the spec left open. Ranker cards carry `lang`
   (`interest_cards.lang`), so a card written in English pairs with a translated (English) document.
   The corpus returns two statistics: over each article's §9 document (its translation when one
@@ -414,3 +421,120 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   to 1 and has no environment variable yet: M2 assumes one worker process calls Jev (the API's
   translation does not use the Jev buckets). A deployment with several Jev-calling processes must add
   a per-process share first (spec 11). Spec 04 §3 updated.
+- D-67: 2026-09-26 M2-T9 — `article.enrich` priorities and the producers the spec 03 §2 table
+  missed. A job without `priority` (new arrivals from extraction and translation) is interactive, so
+  the LLM fallback may serve it while Jev is unavailable; rescore sends `bulk`, and card backfill
+  sends interactive only within its first 50 articles. The model calls of clustering and
+  selected-request analysis, and the tier-2 translation reservations, are `bulk`: they stop at the
+  daily budget, and the router never serves the first two with the LLM fallback. `card.backfill`
+  (degraded articles) and `article.enrich` itself (a configuration change during the call) also send
+  `article.enrich`; `house.rescore-degraded` sends `article.match`; `analysis.process` sends
+  `user.rank`, `user.learn` and its own delayed retries (D-73). Spec 03 §2 updated.
+- D-68: 2026-09-26 M2-T9 — answer precedence for one input (spec 05 §10). A Jev answer at the pinned
+  model ranks highest, then an LLM fallback answer, then prefilter markers, Jev answers of a
+  superseded model pin and Laya answers (Laya is not interchangeable with Jev and gets no precedence
+  of its own until M9 records its policy). Live work replaces an answer of equal or lower precedence;
+  a selected request's cache fill writes only missing, incompatible or lower-precedence entries, so it
+  never replaces a live answer of the same input. A fallback level-2 answer is re-asked only by bulk
+  work (a pack without interactive shared cards), which Jev alone serves, so interactive packs do not
+  rebill it. Spec 05 §4 and §10 and spec 03 §2.2 updated.
+- D-69: 2026-09-26 M2-T9 — `pipeline_state` moves that spec 03 §2.1's "must not regress" left open. A
+  successful Call A moves the article to `enriched` from any state after extraction (re-enriching an
+  enriched, matched, degraded or failed article included); an unavailable engine (`degraded`) or an
+  invalid request (`failed`) changes the state only before the first facets, so a recovery retry
+  never downgrades an article that has answers. `article.match` moves `matched` back to `enriched`
+  when new required pairs make the classification incomplete. Both describe the current revision,
+  so neither is a regression. Spec 03 §2.1 updated.
+- D-70: 2026-09-26 M2-T9 — card backfill schedules prerequisite enrichment only for `degraded`
+  articles (spec 05 §5.4 step 2). Extracted and translated articles get their queue rows and wait for
+  the stage already under way, because an early Call A would bill a native state that the
+  translation then replaces; failed and stale articles get nothing. An extracted article whose
+  earlier enrichment found no demand, and which only a later selected request demands, keeps its rows
+  until `house.reconcile` (M8) repairs the missing stage; the request itself answers its frozen
+  cards meanwhile (D-81). Spec 05 §5.4 updated.
+- D-71: 2026-09-26 M2-T9 — analysis snapshots v1, the shapes spec 02 §4 left open
+  (`AnalysisInputSnapshotSchema` and `AnalysisResultSnapshotSchema` in `packages/shared`). The input
+  freezes the article source (title, author, categories, excerpt, body lead, word count, language,
+  canonical feed title and site), the request feed's arrival, the media and story signals, the
+  language mode and a usable translation, both question sets (id, version, hash), the card text mode,
+  the pinned Jev model and up to 2,000 held cards and labels with their built questions and hashes.
+  The result holds the Call A answers and features and the card and level-2 answers with their state
+  hashes and variant, linked to `input_sha`. The builder `captureAnalysisSnapshot` lives in
+  `apps/worker` for now (only tests call it); M4 moves it to a package before the training API uses
+  it, since apps never import each other (spec 01 §2). Spec 02 §3.4 and §4 updated.
+- D-72: 2026-09-26 M2-T9 — a selected request is one tenant's work (spec 05 §5.2, §5.5 step 5). Its
+  own cards, labels and level-2 branches share one partition, since no other tenant's text can enter
+  the context, and the requester bears every call. A question that cannot fit a request even alone
+  stays unanswered and is logged as an error. In translate mode without a frozen usable translation
+  the request translates its frozen source itself: tier 1, then tier 2 with the fast model only
+  after a tier-1 `fail`; a transient failure of either tier defers the request, and a tier 2 that is
+  not allowed (no key, cap, budget) leaves native text. This path ignores `translate_strong` and the
+  article's stored translation rows, so a tier-2 call may repeat one the live article already paid
+  for. Spec 05 §5.2 and spec 03 §2.2 updated.
+- D-73: 2026-09-26 M2-T9 — `analysis.process` values spec 03 §2.2 left open. A request gets 5 failure
+  attempts with 1, 2, 4 and 8 minute backoff, then fails. Deferrals (budget, no key, open breaker, a
+  provider retry time, a transient translation failure, and `continued` at the job budget, D-78)
+  count no attempt. A busy or not-yet-due request, and every request released back to pending,
+  re-sends itself through a delayed outbox intent at its lease expiry or due time. Terminal codes:
+  `invalid_request`, `invalid_snapshot` (a malformed or inconsistent snapshot) and
+  `context_unavailable` (this worker lacks the frozen question sets or the pinned Jev model); an
+  answer from another engine or model counts as a failure (`model_mismatch`). Publication records
+  `user.rank` while the live revision still matches, and `user.learn` when a surviving rating
+  references the request through `feedback_events.value.analysisRequestId`, the event field spec 08
+  §5.3 now names. Spec 03 §2.2 and spec 08 §5.3 updated.
+- D-74: 2026-09-26 M2-T9 — article translation details (spec 07 §3). A transient tier-1 or tier-2
+  failure uses the job's one queue retry, which runs at once (a known retry time is not waited for);
+  the last attempt continues without that tier's row, from native text when tier 1 has none, so the
+  article is never blocked. `translate_strong` is read from the article's canonical feed (its oldest
+  carrier). A re-translation install carries every row of the replaced revision to the new one,
+  `fail` and skipped rows included, so the once-per-revision tier-2 rule still holds after it. Spec
+  07 §3 updated.
+- D-75: 2026-09-26 M2-T9 — clustering details spec 05 §3.1 and §6 left open. The cluster state's
+  `new.feed` is the title of the article's oldest authorized carrier. An article already placed at
+  its revision makes no call (a reset clears membership, so this is a duplicate delivery). A merge
+  keeps the lower (older) cluster id and records the active cluster set on every moved member.
+  `feed.site` in the Call A and Call B states falls back to the registrable domain of the feed URL
+  when the feed has no site URL. Spec 05 §3.1 and §6 updated.
+- D-76: 2026-09-26 M2-T9 — `house.rescore-degraded` fairness comes from keyset pages that wrap
+  around (newest latest eligible arrival first, starting again from the top after the oldest page)
+  instead of priority aging: 100 recoverable articles and 100 articles with fallback answers per run,
+  plus up to 200 exhausted match rows (D-80), so every item is revisited within a bounded number of
+  runs. The cursors are registered in `HOUSE_PROGRESS_CURSORS` (spec 02 §2), and a run is skipped
+  while the primary engine is unavailable (breaker, credential or bulk budget). An LLM-enriched
+  article whose current revision Jev rejected as an invalid request under the active enrich set
+  keeps its fallback answers and is not revived, so persistent invalid input does not loop (spec 03
+  §2.2). Spec 04 §5 updated.
+- D-77: 2026-09-26 M2 — numeric defaults the specs left open. A worker handler gives each router call
+  a 5-minute deadline (spec 04 §4). Match rows and analysis requests are leased for 10 minutes, which
+  outlasts one call, and the lease is renewed before every call (spec 05 §5.5 step 1, spec 03 §2.2).
+  LibreTranslate's `/languages` list is cached for 1 hour, and a failed read is retried after 1
+  minute (spec 07 §2). The token estimator (spec 04 §6.1) multiplies by 1.25 until provider counts
+  calibrate it, and a text with more than 20 % non-Latin letters is bounded by its serialized UTF-8
+  byte length instead. Specs 03 §2.2, 04 §4 and §6.1, 05 §5.5 and 07 §2 updated.
+- D-78: 2026-09-26 M2-T9 — bounded wall time of the multi-call model stages (spec 03 §2.1). An
+  `article.match` or `analysis.process` job starts no further model call once its 10-minute job
+  budget has passed: the match job records a follow-up job for the packs it did not ask, and the
+  analysis run defers its request to now (`continued`, no attempt) so the next job resumes from the
+  saved stages. With one call inside its 10-minute lease, `expireInSeconds` is 1,800 for
+  `article.match`, `analysis.process` and `analysis.process.laya`; the single-call stages keep
+  pg-boss's 15-minute default. Spec 03 §2 and §2.1 and spec 05 §5.5 updated.
+- D-79: 2026-09-26 M2-T9 — level-2-only retries (spec 05 §4: "the same revision and durable-enqueue
+  rules as card work"). A failed or deferred pack of level-2 questions alone has no `match_queue`
+  row, so the job records a delayed `article.match {articleId, l2Attempts}` instead: a deferral at its
+  retry time without an attempt, retry exhaustion with the rows' backoff (1, 2, 4, 8 minutes) and
+  an error log after the fifth failure, and an invalid request gives up at once. The count gives the
+  retry intent its own outbox key, so a plain match intent is never absorbed by a delayed retry.
+  Spec 03 §2 and spec 05 §4 updated.
+- D-80: 2026-09-26 M2-T9 — recovery of exhausted `match_queue` rows ("only after the relevant condition
+  has changed", spec 05 §5.5 step 7). An exhausted row's `next_attempt_at` records when it gave up
+  (the fifth failure or an invalid request). `house.rescore-degraded` resets rows exhausted by
+  service failures only while the primary engine is available and at least 6 hours after they gave
+  up, so a pair that keeps failing costs one attempt series per 6 hours rather than one per run;
+  invalid requests stay exhausted until an admin fixes the question set. Spec 05 §5.5 and spec 11 §6
+  updated.
+- D-81: 2026-09-26 M2-T9 — the match rows queued right after Call A (spec 05 §5.3) hold the automatic
+  demand only, the active-arrival cards. A selected request's cards are answered by its own
+  `analysis.process` from the frozen snapshot and reach the live caches through its cache fill (spec
+  03 §2.2), so the article worker never asks them a second time from live inputs. When the fill is
+  refused (the live article or a manifest changed), those pairs stay unanswered in the live caches
+  until a card backfill or other demand queues them. Spec 05 §5.3 updated.

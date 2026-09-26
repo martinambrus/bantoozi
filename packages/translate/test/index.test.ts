@@ -23,6 +23,7 @@ describe('@bantoozi/translate public API', () => {
       'mayRunTier2',
       'skippedTier2QualityDetail',
       'translateCardText',
+      'createSupportedSourcesCache',
       'verifyTier1',
       'translationSourceSha256',
     ]) {

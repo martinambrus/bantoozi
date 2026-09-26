@@ -34,7 +34,8 @@ Claude is not used, for cost reasons (a locked decision).
 The container runs with `LT_LOAD_ONLY=en,sk,cs` and `LT_DISABLE_WEB_UI=true`. Its API port is only
 reachable on the compose network. Pin the container and installed Argos package versions/checksums;
 do not download a moving model index at each startup. Read `/languages` and verify `sk→en` and
-`cs→en` with fixture translations before G1. A language being detectable does not mean a translation
+`cs→en` with fixture translations before G1. Workers cache the `/languages` list for 1 hour and
+retry a failed read after 1 minute (D-77). A language being detectable does not mean a translation
 model is installed. Unsupported tier-1 source languages yield `fail` with a reason and may use
 tier 2 under the existing policy; unknown (`und`) text stays native without a provider request.
 Never silently treat Slovak as Czech. `en` is passed through, never translated.
@@ -82,8 +83,11 @@ card translations and workers; a busy container must not exhaust all API connect
      unexpected status and cancellation are neither retried in-process nor terminal: the job may run
      again. A `Retry-After` longer than 5 s returns a retry time instead of sleeping (D-33).
    - Store an `article_translations` row with `engine='libretranslate'` and `quality` from §4.
-3. **Tier 2** is wanted if tier-1 quality is `fail`, or `forceTier2` is set, or the feed has
-   `fetch_options.translate_strong`. It is **allowed** if the credential resolver supplies an enabled
+   - A transient tier-1 or tier-2 failure uses the job's one queue retry, which runs at once; the
+     last attempt continues without that tier's row (native text when tier 1 has none), so the
+     article is never blocked (D-74).
+3. **Tier 2** is wanted if tier-1 quality is `fail`, or `forceTier2` is set, or the article's
+   canonical feed (its oldest carrier, D-74) has `fetch_options.translate_strong`. It is **allowed** if the credential resolver supplies an enabled
    active Ollama key (encrypted DB, or permitted bootstrap env source), demand remains eligible, the daily cap is not
    reached, and `router.reserveExternalCall(...)` succeeds for this HTTP attempt. The reservation
    atomically checks both cap and spend; an earlier advisory `canSpend` result is insufficient.
@@ -135,7 +139,9 @@ card translations and workers; a busy container must not exhaust all API connect
 - Recompute the selected best row under step 4 (including its Ollama tie-break). If the effective
   model input changes, atomically install the selected translation through
   `resetArticleAnswers` (spec 05 §5.6), which advances the revision **and preserves that translation
-  under the new revision**, invalidates answers and persists the enrich intent. Identical effective
+  under the new revision** (with every other row of the replaced revision, `fail` and skipped rows
+  included, so the once-per-revision rule below still holds, D-74), invalidates answers and persists
+  the enrich intent. Identical effective
   text is a no-op. Comparing quality grades alone would miss a different tie-winning translation.
 - Otherwise nothing else happens.
 - This runs once per article content revision: the current-revision `ollama` row, even a skipped

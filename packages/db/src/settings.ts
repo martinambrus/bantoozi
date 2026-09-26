@@ -26,3 +26,26 @@ export async function readStoredSetting(db: Executor, key: string): Promise<unkn
   );
   return result.rows[0]?.value;
 }
+
+/**
+ * Read-modify-write one JSON setting under its row lock (spec 02 §3.3): a missing key is first
+ * inserted with `initial` (`ON CONFLICT DO NOTHING`), then locked, so concurrent writers never
+ * overwrite each other. `update` returns the new value (validated by the caller) and the stored
+ * value is replaced only when it changed. Returns the value now stored. Run inside a transaction.
+ */
+export async function updateSettingLocked<T>(
+  tx: Executor,
+  key: string,
+  initial: T,
+  update: (current: unknown) => T,
+): Promise<T> {
+  await insertSettingIfMissing(tx, key, initial);
+  const locked = await tx.execute<{ value: unknown }>(
+    sql`SELECT value FROM settings WHERE key = ${key} FOR UPDATE`,
+  );
+  const next = update(locked.rows[0]?.value);
+  await tx.execute(sql`
+    UPDATE settings SET value = ${JSON.stringify(next)}::jsonb, updated_at = now()
+     WHERE key = ${key} AND value IS DISTINCT FROM ${JSON.stringify(next)}::jsonb`);
+  return next;
+}

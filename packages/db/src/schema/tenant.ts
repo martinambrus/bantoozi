@@ -97,6 +97,10 @@ export const analysisRequests = pgTable(
     inputSha: text('input_sha').notNull(),
     resultSnapshot: jsonb('result_snapshot'),
     resultSha: text('result_sha'),
+    // Results of finished stages under earlier leases, so a reclaimed request resumes instead of
+    // paying for a stage again (spec 03 §2.2 resumable stages; D-24, migration 0013). Never read as
+    // the request's result, which `result_snapshot` alone is.
+    stageResults: jsonb('stage_results'),
     status: text('status').notNull().default('pending'),
     leaseToken: uuid('lease_token'),
     leaseUntil: tstz('lease_until'),

@@ -510,7 +510,8 @@ text; unavailable matching features remain null and are excluded from training (
 When feedback belongs to a selected training request, rating/prompt-answer bodies additionally send
 `analysisRequestId` (and bulk targets each carry their own optional id). Validate ownership, feed,
 article/revision and frozen context; reject an unrelated/obsolete id, never silently choose the
-"latest" request. Persist the association in the event. Delayed features may attach only via that
+"latest" request. Persist the association in the event as `feedback_events.value.analysisRequestId`,
+which the worker's completion reads to record `user.learn` (D-73). Delayed features may attach only via that
 specific request's frozen pre-feedback inputs (specs 05/06); unrelated live future analysis cannot
 retrofit training evidence. A rating without a request id remains valid explicit reader feedback
 but cannot itself cause inference.

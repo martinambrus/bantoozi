@@ -854,7 +854,10 @@ claims pending or expired-running requests in a short transaction, records a fre
 and completes/renews/retries/cancels only with that token. Clear the lease when leaving `running`.
 Crash recovery reuses the immutable input and never silently creates a fresh grant. Store bounded
 sanitized `last_error_code`, retry due time and attempt accounting; no DB transaction spans inference. A request contains no provider secret. Its
-snapshot freezes article/card/question/model context independently of later feedback. Completion saves
+snapshot freezes article/card/question/model context independently of later feedback; version 1 of
+both snapshots is `AnalysisInputSnapshotSchema`/`AnalysisResultSnapshotSchema` in `packages/shared`
+(D-71). The lease holder saves each finished stage in `stage_results`, so a reclaimed request resumes
+without paying for it again (D-24). Completion saves
 `result_snapshot`/`result_sha`; if the live article changed, these historical features may still serve
 that recorded training event, but cannot overwrite current shared caches. A changed subscription
 version, deletion or cancellation revokes further attempts. Feedback references the request ID rather
@@ -1007,10 +1010,11 @@ CREATE TABLE analysis_requests (                  -- explicit selected-article t
   article_id          bigint NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
   article_revision    bigint NOT NULL CHECK (article_revision > 0),
   inference_version   bigint NOT NULL CHECK (inference_version >= 0),
-  input_snapshot      jsonb NOT NULL,             -- immutable pre-feedback article/card/question context
+  input_snapshot      jsonb NOT NULL,             -- immutable pre-feedback article/card/question context (v1: AnalysisInputSnapshotSchema, D-71)
   input_sha           text NOT NULL,
-  result_snapshot     jsonb NULL,                 -- features/answers of frozen input, never future feedback
+  result_snapshot     jsonb NULL,                 -- features/answers of frozen input, never future feedback (v1: AnalysisResultSnapshotSchema, D-71)
   result_sha          text NULL,
+  stage_results       jsonb NULL,                 -- finished stages of a running request, written only by its lease holder; NULL at insert, final once finished, never the result (D-24)
   status              text NOT NULL DEFAULT 'pending'
                         CHECK (status IN ('pending','running','complete','failed','cancelled')),
   lease_token         uuid NULL,

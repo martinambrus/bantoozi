@@ -30,6 +30,13 @@ export interface ResetOptions {
    * input, until a replacement is stored (spec 03 §8.1 step 8).
    */
   keepBody?: boolean;
+  /**
+   * Keep the current translation rows as valid input at the new revision (spec 07 §3, spec 05 §2):
+   * a re-translation or language-mode rebuild installs the selected translation through this reset,
+   * so the translation that triggered it is not immediately stale. Use with `keepBody` (the
+   * translated source text stays the same). Otherwise translations are removed with the answers.
+   */
+  keepTranslations?: boolean;
   /** Abort (result `stale_revision`) unless the article is still at this revision. */
   expectedRevision?: string;
 }
@@ -55,8 +62,9 @@ export type ResetResult =
  * classification inputs change (publisher title/excerpt/author/category edits, a changed body or
  * language, an identity merge). In the caller's transaction:
  * 1. lock the article, increment `content_revision` and remove the current facets, card answers,
- *    level-2 topics and translations (they belong to the old input); install the triggering body at
- *    the new revision when given, so it is not immediately stale;
+ *    level-2 topics and translations (they belong to the old input); install the triggering body
+ *    (or keep the current body and translations) at the new revision when asked, so the input that
+ *    triggered the reset is not immediately stale;
  * 2. queue the admitted automatic article/card union at the new revision, clearing old leases and
  *    attempts, and drop queued questions of older revisions;
  * 3. set `pipeline_state` to `nextState` and leave the story cluster (reconciling its size and
@@ -102,7 +110,16 @@ export async function resetArticleAnswers(
   await tx.execute(sql`DELETE FROM article_facets WHERE article_id = ${articleId}::bigint`);
   await tx.execute(sql`DELETE FROM card_answers WHERE article_id = ${articleId}::bigint`);
   await tx.execute(sql`DELETE FROM article_topics_l2 WHERE article_id = ${articleId}::bigint`);
-  await tx.execute(sql`DELETE FROM article_translations WHERE article_id = ${articleId}::bigint`);
+  if (options.keepTranslations === true) {
+    await tx.execute(sql`
+      DELETE FROM article_translations
+       WHERE article_id = ${articleId}::bigint AND article_revision <> ${article.revision}::bigint`);
+    await tx.execute(sql`
+      UPDATE article_translations SET article_revision = ${revision}::bigint
+       WHERE article_id = ${articleId}::bigint AND article_revision = ${article.revision}::bigint`);
+  } else {
+    await tx.execute(sql`DELETE FROM article_translations WHERE article_id = ${articleId}::bigint`);
+  }
 
   if (options.installBody !== undefined) {
     await upsertArticleBody(tx, articleId, revision, options.installBody);

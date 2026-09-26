@@ -1,0 +1,151 @@
+import {
+  loadActiveQuestionSets,
+  readStoredSetting,
+  type Executor,
+  type QuestionSetKind,
+} from '@bantoozi/db';
+import { questionSetByVersion, type Question } from '@bantoozi/questions';
+import {
+  readSetting,
+  type CardTextMode,
+  type LanguageModes,
+  type SettingEnvDefaults,
+} from '@bantoozi/shared';
+
+/**
+ * The classification configuration a job reads once for its snapshot (spec 05 §5.5 step 2): the
+ * active question sets, card text mode, language modes and the prefilter flag. A completion
+ * compares the configuration it read inside its transaction with the job's snapshot and discards
+ * results asked under a configuration that changed meanwhile (spec 05 §5.5 step 6).
+ */
+
+/** An active stored set whose version this worker's code builds, with the same sha (spec 05 §2). */
+export interface ActiveQuestionSet {
+  id: string;
+  version: string;
+  sha256: string;
+}
+
+export interface ClassificationConfig {
+  enrich: ActiveQuestionSet | null;
+  match: ActiveQuestionSet | null;
+  cluster: ActiveQuestionSet | null;
+  cardTextMode: CardTextMode;
+  languageModes: LanguageModes;
+  prefilterEnabled: boolean;
+}
+
+/**
+ * An active set this worker cannot ask as stored: its version is unknown to the code or its sha
+ * differs from the code's definition (a deploy/seed mismatch the startup check also reports).
+ */
+export class QuestionSetMismatchError extends Error {
+  constructor(
+    readonly kind: QuestionSetKind,
+    readonly version: string,
+  ) {
+    super(`Active ${kind} question set ${version} does not match this worker's code`);
+    this.name = 'QuestionSetMismatchError';
+  }
+}
+
+/** A stored set verified against the code definition of its version. */
+export function verifiedSet(
+  kind: QuestionSetKind,
+  row: { id: string; version: string; sha256: string } | undefined,
+): ActiveQuestionSet | null {
+  if (row === undefined) return null;
+  const code = questionSetByVersion(row.version);
+  if (code === undefined || code.kind !== kind || code.sha256 !== row.sha256) {
+    throw new QuestionSetMismatchError(kind, row.version);
+  }
+  return { id: row.id, version: row.version, sha256: row.sha256 };
+}
+
+/** No active set of a kind the stage needs: the seed has not run (the startup check reports it). */
+export class QuestionSetInactiveError extends Error {
+  constructor(readonly kind: QuestionSetKind) {
+    super(`No active ${kind} question set`);
+    this.name = 'QuestionSetInactiveError';
+  }
+}
+
+export function requireSet(
+  set: ActiveQuestionSet | null,
+  kind: QuestionSetKind,
+): ActiveQuestionSet {
+  if (set === null) throw new QuestionSetInactiveError(kind);
+  return set;
+}
+
+/** The static questions of the active enrich set (spec 05 §3.3). */
+export function enrichQuestions(set: ActiveQuestionSet): Record<string, Question> {
+  const code: unknown = questionSetByVersion(set.version);
+  if (typeof code !== 'object' || code === null || !('questions' in code)) {
+    throw new QuestionSetMismatchError('enrich', set.version);
+  }
+  return (code as { questions: Record<string, Question> }).questions;
+}
+
+export async function loadClassificationConfig(
+  db: Executor,
+  env: SettingEnvDefaults,
+): Promise<ClassificationConfig> {
+  const sets = await loadActiveQuestionSets(db);
+  const cardTextMode =
+    readSetting('card_text_mode', await readStoredSetting(db, 'card_text_mode'), env) ??
+    'as_written';
+  const languageModes =
+    readSetting('language_modes', await readStoredSetting(db, 'language_modes'), env) ?? {};
+  const prefilterEnabled =
+    readSetting(
+      'engine.prefilter_enabled',
+      await readStoredSetting(db, 'engine.prefilter_enabled'),
+      env,
+    ) ?? false;
+  return {
+    enrich: verifiedSet('enrich', sets.enrich),
+    match: verifiedSet('match', sets.match),
+    cluster: verifiedSet('cluster', sets.cluster),
+    cardTextMode,
+    languageModes,
+    prefilterEnabled,
+  };
+}
+
+/** The language mode of an article language; an unknown language is native (spec 05 §3.1). */
+export function languageModeOf(
+  config: ClassificationConfig,
+  lang: string | null,
+): 'native' | 'translate' {
+  if (lang === null || lang === 'und') return 'native';
+  return config.languageModes[lang] ?? 'native';
+}
+
+/** Whether a completion may still apply a Call A result read under `snapshot` (spec 05 §5.5 step 6). */
+export function sameEnrichConfig(
+  snapshot: ClassificationConfig,
+  current: ClassificationConfig,
+  lang: string | null,
+): boolean {
+  return (
+    snapshot.enrich?.sha256 === current.enrich?.sha256 &&
+    snapshot.enrich?.id === current.enrich?.id &&
+    languageModeOf(snapshot, lang) === languageModeOf(current, lang)
+  );
+}
+
+/** Whether a completion may still apply a Call B result read under `snapshot`. */
+export function sameMatchConfig(
+  snapshot: ClassificationConfig,
+  current: ClassificationConfig,
+  lang: string | null,
+): boolean {
+  return (
+    sameEnrichConfig(snapshot, current, lang) &&
+    snapshot.match?.sha256 === current.match?.sha256 &&
+    snapshot.match?.id === current.match?.id &&
+    snapshot.cardTextMode === current.cardTextMode &&
+    snapshot.prefilterEnabled === current.prefilterEnabled
+  );
+}

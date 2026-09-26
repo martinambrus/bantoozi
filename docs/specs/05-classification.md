@@ -167,7 +167,7 @@ type Variant = 'native' | 'translated';
 // native
 { article: {
     title: string,
-    feed: { title: string | null, site: string | null },     // site = registrable domain
+    feed: { title: string | null, site: string | null },     // site = registrable domain of the site URL, else of the feed URL (D-75)
     author: string | null,
     categories: string[],                                      // ≤ 8
     excerpt: string | null,                                    // ≤ 600 chars, cut at a word boundary
@@ -329,7 +329,10 @@ insufficient; reuse compatible cached L2 answers without a call.
 Use deterministic branch ordering (probability descending, then id). Each selected branch is checked
 separately for a current answer; one cached L2 row must not suppress the other missing branch. Zero
 selected branches is a completed empty result, not a reason for endless retries. L2-only work follows
-the same revision and durable-enqueue rules as card work. Cost depends on the actual packed state.
+the same revision and durable-enqueue rules as card work: without a queue row, a failed or deferred
+L2-only pack records a delayed `article.match {articleId, l2Attempts}` under the rows' deferral,
+backoff and five-attempt rules (D-79). A provisional fallback L2 answer is re-asked only in bulk
+packs, which Jev alone serves (D-68). Cost depends on the actual packed state.
 
 ---
 
@@ -488,7 +491,9 @@ export function labelQuestion(card: CardRow, mode: CardTextMode): NoulQuestion {
   (the request envelope) and each question `conservativeTokens({[key]: question})`.
 - Partition shared/public questions from private questions, with one private owner per batch; put L2
   only in the shared batch. Opaque correlation keys must not contain user identities. An LLM must
-  never receive multiple tenants' private examples in one context.
+  never receive multiple tenants' private examples in one context. A selected request
+  (`analysis.process`) is one tenant's work: its cards, labels and L2 branches share one partition,
+  and the requester bears every call (D-72).
 - Within each partition fill requests greedily (next-fit) in deterministic priority order (labels,
   interactive cards, then the rest; tie-break by queue time, then card id with L2 items first, then
   key), partitions in order of first appearance, subject to:
@@ -509,7 +514,10 @@ export function labelQuestion(card: CardRow, mode: CardTextMode): NoulQuestion {
   Intersect it with article arrival after each holder's activation and scope; add exact selected
   training/active requests separately. Off/training subscriptions do not populate automatic demand.
 - The set of cards to ask for an article is the union remaining after §1.1 admission, including its
-  authorized selected-request cards. Never use an unfiltered feed-level union for paid work.
+  authorized selected-request cards. Never use an unfiltered feed-level union for paid work. A
+  request's own `analysis.process` answers its cards from the frozen snapshot and reaches the live
+  caches through its cache fill (spec 03 §2.2), so the rows queued after enrich hold the automatic
+  (active-arrival) union only (D-81).
 - New admitted articles get `match_queue` rows for that union right after enrich (priority 5). Matching and
   L2-only job intents are committed through the outbox. A newly discovered `feed_items` association
   on an existing article queues newly applicable **authorized** cards and reranks affected subscribers;
@@ -528,7 +536,9 @@ export function labelQuestion(card: CardRow, mode: CardTextMode): NoulQuestion {
 2. Select articles by eligible feed membership time in
    `[snapshotAt − plan.backfill_days, snapshotAt]`
    (default 7 days), not the possibly old globally deduplicated article timestamp. Include usable enriched/
-   matched revisions; schedule prerequisite enrichment for missing/degraded current facets. A user
+   matched revisions; schedule prerequisite enrichment for degraded articles, while extracted and
+   translated ones get queue rows that wait for the stage under way; failed and stale articles get
+   nothing (D-70). A user
    subscribing to an old globally known item must not leave it permanently unclassified.
 3. Process newest first in **pages of 500** distinct articles. For each article use the maximum
    eligible carrying feed's `feed_items.first_seen_at` as its page key (not the global article time).
@@ -558,8 +568,9 @@ from that request can satisfy this worker only when every current input fingerpr
 1. **Snapshot and lease, no transaction across HTTP.** In a short transaction select up to 400
    current due rows (`attempts < 5`, `next_attempt_at ≤ now`, lease absent/expired), ordered by
    priority, queue time and card id, using `FOR UPDATE SKIP LOCKED`. Stamp a fresh `lease_token`,
-   `lease_until` and `article_revision`, then commit. Lease duration must cover the router deadline;
-   renew or stop if ownership is lost. The article worker also serializes L2-only scheduling.
+   `lease_until` and `article_revision`, then commit. Lease duration must cover the router deadline
+   (a 10-minute lease over 5-minute calls, renewed before every pack, D-77); renew or stop if
+   ownership is lost. The article worker also serializes L2-only scheduling.
 2. Drop retired/unheld/out-of-scope or no-longer-admitted pairs; recheck inference mode/version and
    selected request authorization from §1.1 before every outgoing pack. Delete already-satisfied rows only when a current answer
    matches **all** §2 fingerprints and an approved primary engine/model. LLM/prefilter answers are
@@ -593,13 +604,16 @@ from that request can satisfy this worker only when every current input fingerpr
    **On actual retry exhaustion:** increment attempts once for that logical pack, schedule exponential
    job delay (1, 2, 4, 8 minutes), and retain rows at `attempts=5` as exhausted/unavailable. Permanent
    invalid requests are exhausted immediately and alert with redacted diagnostics. No unknown work
-   is silently deleted. Recovery resets a bounded batch only after the relevant condition has changed.
+   is silently deleted. Recovery resets a bounded batch only after the relevant condition has changed:
+   an exhausted row's `next_attempt_at` records when it gave up, and service failures are reset only
+   while the primary engine is available and 6 hours after that (D-80).
 8. `pipeline_state='matched'` means current facets, all required card pairs and selected L2 branches
    are complete (prefilter markers count only as completed provisional work). A single successful
    pack cannot mark the whole article complete. Service failure may mark the article degraded as an
    operational summary, but never invalidates another subscriber's already valid answers.
 9. In the same DB transaction write outbox intents for affected users' incremental `user.rank` and
-   any remaining due pages. The dispatcher must allow a follow-up after the active singleton job
+   any remaining due pages. A job starts no pack after its 10-minute job budget; the packs it left
+   get a follow-up job the same way (D-78). The dispatcher must allow a follow-up after the active singleton job
    completes; retrying an enqueue that was suppressed by the current singleton is mandatory. Future
    due/exhausted rows are recovered by the scheduler, not busy-polled by the current handler.
 
@@ -705,6 +719,8 @@ into unrelated off feeds merely to create cluster context.
 2. No candidates → done (the article is a singleton, `story_cluster_id` stays null).
 3. **State:**
    `{ new: {title, excerpt≤300, feed, published}, candidates: [{id: 'c1'…'c5', title, excerpt≤300, feed, published}] }`.
+   `new.feed` is the title of the article's oldest authorized carrier, and an article already placed
+   at its revision makes no call (D-75).
    `published` is a coarse string ("2 hours before `new`"), computed in code, so no date arithmetic is
    left to the model: `new` reads "reference time", candidates "within an hour of `new`", "N hour(s)
    before/after `new`" under 48 hours and "N day(s) before/after `new`" beyond (D-46).
@@ -727,7 +743,8 @@ into unrelated off feeds merely to create cluster context.
      loops or racing A→B/B→A clusters
    - repeated delivery is idempotent: increment `size` only on new membership, or recompute it from
      members; choose the oldest `(first_seen_at,id)` as representative. Merge two existing clusters
-     only under the same locking rule, reassigning all members and recomputing size. In the same
+     only under the same locking rule, reassigning all members and recomputing size; the lower (older)
+     cluster id survives, and every moved member records the active cluster set (D-75). In the same
      transaction, remap `mute_story` rule values from the losing cluster to the survivor (a user who
      muted both keeps the later `expires_at`) and record `user.rank {full}` intents for the
      affected users, so a muted story stays hidden
@@ -954,7 +971,10 @@ bounded metadata and billing provenance, not unredacted private text or provider
 `card_answers`, `article_topics_l2` and `article_facets` are **current caches**; their upserts do not
 constitute append-only history. Never promise a production replay from a row already replaced.
 Frozen eval runs (spec 10) separately store their question definitions, inputs, answers and versions.
-For identical valid inputs the approved primary answer outranks LLM/prefilter; an old primary answer
+For identical valid inputs the approved primary answer (Jev at the pinned model) outranks the LLM
+fallback, which outranks prefilter markers, answers of a superseded model pin and, until M9 records
+its policy, Laya. Live writes replace an answer of equal or lower precedence; a selected request's
+cache fill replaces only a lower one (D-68). An old primary answer
 for different inputs must not block a new current fallback. Enabling Laya requires an explicit
 per-kind engine precedence/calibration policy; it is not automatically interchangeable with Jev.
 

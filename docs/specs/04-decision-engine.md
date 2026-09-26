@@ -387,6 +387,7 @@ bounded by the job deadline, cancellation works while queued, and aging prevents
 - **Delay before attempt n (n ≥ 2):** `500 ms × 2^(n−2)` ± 20% jitter. Parse `Retry-After` as
   either seconds or an HTTP date. Never retry sooner than a valid server delay. If that delay is
   longer than the remaining job deadline, return a deferred outcome with `retryAt` for the queue.
+  A worker handler gives each router call a 5-minute deadline (D-77).
 - **Retry on:** 429, 5xx, network errors, timeouts, and at most one `invalid_response`. Cancellation,
   auth errors and invalid requests are not retried. A cancelled attempt is reported as `error` with
   detail `cancelled`, billed `uncertain` when it may have been sent (D-56). Reacquire limiter capacity and spend reservation
@@ -460,11 +461,14 @@ bounded by the job deadline, cancellation works while queued, and aging prevents
 `pipeline_state = 'degraded'` within the full supported **14-day** ranking/backfill window
 (`RANK_WINDOW_DAYS`, spec 06 §11), using feed membership time for newly subscribed/deduplicated
 items, while the primary engine is available
-and the budget allows **and a current automatic/manual demand remains authorized**. Use persisted keyset cursors and bounded pages with priority aging, so new
+and the budget allows **and a current automatic/manual demand remains authorized**. Use persisted keyset cursors over bounded pages that wrap around
+after the oldest page (100 recoverable articles and 100 articles with fallback answers per run, D-76), so new
 arrivals do not starve older recoverable work. Answers produced by the LLM fallback are **replaced** by Jev answers
 when the article is re-processed, because personal models must learn from one engine
 (spec 06 §8.1). `house.rescore-degraded` therefore also re-enqueues articles whose `enrich_engine = 'llm'`, **and**
-requeues current LLM card/L2 answers even when Call A already succeeded with Jev. Recovery consults
+requeues current LLM card/L2 answers even when Call A already succeeded with Jev. An LLM-enriched
+article whose current revision Jev rejected as an invalid request under the active enrich set keeps
+its fallback answers and is not revived (D-76). Recovery consults
 pending/unavailable pairs in spec 05 §5.5 and stays bounded; it does not repeatedly rebill a fresh Call A.
 
 ---
@@ -512,7 +516,9 @@ pending/unavailable pairs in spec 05 §5.5 and stays bounded; it does not repeat
 This is a planning heuristic, **not** a conservative bound for every Unicode language. Use provider
 counts to record `actual / estimated` by language and request kind. Before a verified tokenizer is
 available, apply a safety multiplier learned from the smoke-test fixtures and fall back to serialized
-UTF-8 byte length plus overhead as the conservative bound for unfamiliar scripts. Hard byte caps,
+UTF-8 byte length plus overhead as the conservative bound for unfamiliar scripts. Until provider
+counts calibrate it the multiplier is 1.25, and a text whose letters are more than 20 % non-Latin is
+an unfamiliar script (D-77). Hard byte caps,
 per-engine context caps and single-question overflow rejection still apply. The same estimator and
 safety policy are used by packing in spec 05 §5.2.
 

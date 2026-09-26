@@ -98,17 +98,17 @@ schema, `createQueue` options and typed enqueue helpers (`enqueueFetch`, `enqueu
 | `feed.schedule` | `{}` | cron `* * * * *` | 1 | none | `policy: 'standard'` |
 | `feed.fetch` | `{feedId, force?: boolean}` | schedule, subscribe API | 16 | 0 (failures are accounted for in the feed row) | `policy: 'stately'`, `singletonKey: feed:<id>` (at most one queued plus one running per feed), `expireInSeconds: 120` |
 | `article.extract` | `{articleId}` | fetch | 8 | 2, backoff 30 s | `stately`, key `extract:<id>` |
-| `analysis.process` | `{analysisRequestId: string}` | explicit selected-article training API, reconcile/retry | 4 (shares provider semaphore) | 1 queue retry; request/provider attempt ceilings still apply | `stately`, key `analysis:<requestId>`; immutable request snapshot, token-fenced publication (§2.2) |
-| `analysis.process.laya` | `{analysisRequestId: string}` | the `analysis.process` producers, instead of that queue, when `settings['engine.laya'].enrich` lists the request's frozen article language (M9) | 1, only in the dedicated Laya worker | as `analysis.process` | `stately`, key `analysis-laya:<requestId>`; same handler, frozen request identity and router order as `analysis.process` (spec 04 §4, §9); `WORKER_QUEUES=*` excludes it. If the language is no longer listed, the handler makes no engine call: it sends `analysis.process` for the same request and completes (spec 04 §9) |
+| `analysis.process` | `{analysisRequestId: string}` | explicit selected-article training API, reconcile/retry, itself (a delayed intent for a busy, not-yet-due or released request, D-73) | 4 (shares provider semaphore) | 1 queue retry; request/provider attempt ceilings still apply | `stately`, key `analysis:<requestId>`, `expireInSeconds: 1800` (D-78); immutable request snapshot, token-fenced publication (§2.2) |
+| `analysis.process.laya` | `{analysisRequestId: string}` | the `analysis.process` producers, instead of that queue, when `settings['engine.laya'].enrich` lists the request's frozen article language (M9) | 1, only in the dedicated Laya worker | as `analysis.process` | `stately`, key `analysis-laya:<requestId>`, `expireInSeconds: 1800` (D-78); same handler, frozen request identity and router order as `analysis.process` (spec 04 §4, §9); `WORKER_QUEUES=*` excludes it. If the language is no longer listed, the handler makes no engine call: it sends `analysis.process` for the same request and completes (spec 04 §9) |
 | `article.capture-bookmark` | `{articleId}` | bookmark action, explicit capture retry | 4 | 2, backoff 30 s | `stately`, key `capture-bookmark:<id>`; coalesced local capture, requester generations rechecked; never model inference |
 | `article.translate` | `{articleId, forceTier2?: boolean, replaceSkipped?: boolean, modeChange?: boolean}` | extract, `user.rank`, `house.retranslate-skipped`, `house.reenrich` after a language-mode change (spec 07 §3) | 4 | 1 | `stately`, one key per handler behaviour, so coalescing never drops a flag: `translate:<id>` for plain jobs, `translate-t2:<id>` with `forceTier2` alone, `retranslate:<id>` with `replaceSkipped` and `translate-mode:<id>` with `modeChange`. A plain and a flagged job for the same article may both run; each installs atomically (spec 07 §3), and a plain job that reaches an already enriched article is a late duplicate |
-| `article.enrich` | `{articleId, priority?: 'interactive'\|'bulk'}` | extract/translate, rescore, reenrich | 8 (shares the engine semaphore) | 1 | `stately`, key `enrich:<id>` |
+| `article.enrich` | `{articleId, priority?: 'interactive'\|'bulk'}` (absent = `interactive`, D-67) | extract/translate (no priority), `card.backfill` (degraded articles), rescore and reenrich (`bulk`), itself (the configuration changed during the call) | 8 (shares the engine semaphore) | 1 | `stately`, key `enrich:<id>` |
 | `article.enrich.laya` | `{articleId, priority?: 'interactive'\|'bulk'}` | the `article.enrich` producers, instead of that queue, when `settings['engine.laya'].enrich` lists the article's language (M9) | 1, only in the dedicated Laya worker | 1 | `stately`, key `enrich-laya:<id>`; same handler and router order as `article.enrich` (spec 04 §4, §9); `WORKER_QUEUES=*` excludes it. If the language is no longer listed, the handler makes no engine call: it sends `article.enrich` with the same payload and completes (spec 04 §9) |
 | `article.cluster` | `{articleId}` | enrich | 4 | 1 | `stately`, key `cluster:<id>` |
-| `article.match` | `{articleId}` | enrich, `card.backfill`, itself (when rows remain) | 8 | 1 | `stately`, key `match:<id>`; drains all queued cards for the article |
+| `article.match` | `{articleId, l2Attempts?: int 0–4}` (`l2Attempts` only on a delayed level-2-only retry, D-79) | enrich, `card.backfill`, `house.rescore-degraded`, itself (due rows remain, packs left at the job budget, a configuration change, or a level-2-only retry) | 8 | 1 | `stately`, key `match:<id>`, `expireInSeconds: 1800` (D-78); drains all queued cards for the article |
 | `card.backfill` | `{userId, cardIds: string[], feedIds?: string[], snapshotAt?: iso, cursor?: {firstSeenAt: iso, articleId: string}, processedCount?: int}` | API (card or subscription change) | 2 | 2 | `standard` |
-| `user.rank` | `{userId, reason, full?: boolean}` | match, cluster (membership changed, `full`), enrich (degraded), ingest, extract (media signals changed, §6.4), API, learn | 4 | 2 | queue `policy: 'stately'`. Incremental: `sendDebounced('user.rank', data, {}, 3, 'rank:<userId>')`. Full: `send('user.rank', {…, full: true}, {singletonKey: 'rank-full:<userId>'})`. Different keys mean a full request is never swallowed by a pending incremental one, while equivalent duplicates of each are suppressed; durable dirty state preserves later changes (spec 06 §7) |
-| `user.learn` | `{userId}` | API (ratings), `house.nightly-learn` | 2 | 1 | `sendDebounced(…, 60 s, key learn:<userId>)` |
+| `user.rank` | `{userId, reason, full?: boolean}` | match, cluster (membership changed, `full`), enrich (degraded), ingest, extract (media signals changed, §6.4), `analysis.process` (publication, D-73), API, learn | 4 | 2 | queue `policy: 'stately'`. Incremental: `sendDebounced('user.rank', data, {}, 3, 'rank:<userId>')`. Full: `send('user.rank', {…, full: true}, {singletonKey: 'rank-full:<userId>'})`. Different keys mean a full request is never swallowed by a pending incremental one, while equivalent duplicates of each are suppressed; durable dirty state preserves later changes (spec 06 §7) |
+| `user.learn` | `{userId}` | API (ratings), `house.nightly-learn`, `analysis.process` (a rating references the request, D-73) | 2 | 1 | `sendDebounced(…, 60 s, key learn:<userId>)` |
 | `user.suggest` | `{userId}` | learn, `house.nightly-learn` | 1 | 1 | `stately`, key `suggest:<userId>` (deduplicates without throttling). The durable `last_suggested_at` lease/timestamp gate (spec 05 §7) enforces at most one admitted attempt per 24 h, so a run that sends nothing never blocks a later trigger |
 | `house.rescore-degraded`, `house.expire-rules`, `house.purge-auth`, `house.reconcile`, `house.archive`, `house.purge-articles`, `house.purge-bodies`, `house.purge-engine-calls`, `house.retire-cards`, `house.purge-users`, `house.nightly-learn`, `house.metrics`, `house.alerts` | `{}` | cron (spec 11 §6) | 1 | 1 | `policy: 'singleton'` (never two runs at once) |
 | `provider.validate` | `{provider: 'typesafe'\|'ollama', candidateVersion: string}` | explicit admin validation | 1 | 0 implicit retries | `stately`, key `provider-validate:<provider>:<candidateVersion>`; bounded synthetic credential probe under spec04 budget, no secret in payload |
@@ -161,10 +161,16 @@ accepted or a handler has observed that revision. Bound attempts do not discard 
 Article handlers snapshot `articles.content_revision` and the selected question-set/model identity
 before external work, then lock/recheck the article before publishing results. A revision or active
 set change discards the stale result and records work for the current revision; it must not regress
-`pipeline_state`, overwrite newer bodies/answers, or invalidate newer ranking results. Re-running an
+`pipeline_state`, overwrite newer bodies/answers, or invalidate newer ranking results. A successful
+Call A moves the article to `enriched` from any state after extraction, and `article.match` moves
+`matched` back to `enriched` when new required pairs make it incomplete; an unavailable engine or an
+invalid request changes the state only before the first facets (D-69). Re-running an
 already completed stage for the same revision is a no-op unless an explicit upgrade requests it.
 Queue expiration must exceed the stage's bounded wall time plus shutdown margin; a feed fetch gets
 120 s, extraction 180 s, and model stages use their full provider timeout/retry bounds (spec 04).
+Single-call model stages keep pg-boss's 15-minute default. `article.match` and `analysis.process`
+start no call after a 10-minute job budget and leave the rest to a follow-up job, so their queues
+expire after 30 minutes (D-78).
 
 `house.reconcile` repairs missing **still-authorized** stage work and eligible `match_queue` work,
 and pending bookmark captures, in bounded batches from persisted state, so a worker crash, expired job or terminal queue failure cannot strand an article.
@@ -185,12 +191,16 @@ sets `status='running'`, a fresh lease token and bounded expiry; commits before 
 active user/subscription, `inference_version`, explicit request eligibility, frozen manifest/hash and
 that the request is still inside its 180-day retention window (spec 11 §5) before every provider
 admission; a request past that window is cancelled as `retention_expired` instead.
-Cancellation/revocation invalidates the token. Renew the lease while live; queue
+Cancellation/revocation invalidates the token. Renew the lease while live (a 10-minute lease,
+renewed before every call, D-77); queue
 expiration exceeds the bounded end-to-end stages and cannot allow two current owners.
 
 Execute the frozen input's required translation/enrichment/matching stages under the declared
-question/card/model context (spec05), reusing exact snapshot-state cache results and shared in-flight
-work. Every network attempt still reserves budget. A shared compatible live answer may satisfy the
+question/card/model context (spec05), reusing exact snapshot-state cache results, shared in-flight
+work and its own finished stages (`stage_results`, D-24). In translate mode without a frozen usable
+translation, the request translates its frozen source itself: tier 1, then tier 2 with the fast model
+only after a tier-1 `fail`; a transient failure defers the request, and a tier 2 that is not allowed
+leaves native text (D-72). Every network attempt still reserves budget. A shared compatible live answer may satisfy the
 request, but a newer incompatible article/card result cannot substitute for the frozen one. If the
 requested provider/context is unavailable, retain a bounded retriable/failed request with an honest
 reason; do not invent values or silently use a different snapshot.
@@ -199,14 +209,19 @@ Publish `result_snapshot`, `result_sha`, completion time/status and downstream l
 in one transaction guarded by request ID, lease token, current mode/version and unmodified input hash.
 Article content may have advanced since selection: retain this result for the selected historical
 training event, without overwriting current article facets/translations/card answers with it. A
-result also fills the shared **current** caches (entries still missing or incompatible) in that
+result also fills the shared **current** caches (entries still missing, incompatible or of lower
+precedence, spec 05 §10, D-68) in that
 transaction whenever every current revision/state/context check matches, and only then. This is how a selected article's answers reach
 ranking (spec 06 §7), including a stale or older article that automatic work never processes; a
 result that no longer matches is kept for training only. Training feedback/result association is
 defined in specs05/06.
 
 Transient failures release the lease and set `next_attempt_at` with bounded backoff; persistent
-invalid input becomes terminal and does not loop through reconciliation. An opt-out marks cancelled
+invalid input becomes terminal and does not loop through reconciliation. A request gets 5 failure
+attempts with 1, 2, 4 and 8 minute backoff; deferrals (budget, no key, open breaker, a retry time,
+`continued` at the job budget) count none; a busy, not-yet-due or released request re-sends itself
+through a delayed intent; `invalid_request`, `invalid_snapshot` and `context_unavailable` (the worker
+lacks the frozen sets or model pin) are terminal (D-73). An opt-out marks cancelled
 and cannot be changed to complete by a late worker; still-account for any upstream spend. Duplicate
 jobs after completion are no-ops. `house.reconcile` resumes due pending/expired running requests from
 their immutable snapshots without applying the automatic feed-arrival age cutoff, but never past
