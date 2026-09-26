@@ -169,12 +169,77 @@ function parseRfc(value: string): Parsed {
   );
 }
 
-/** V8 fallback, only for strings with a four-digit year, a time and an explicit zone. */
+const MONTH_NAME = '(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?';
+const DAY_NUMBER = '(\\d{1,2})(?:st|nd|rd|th)?\\b';
+/** `September 24` / `Sep. 24th` and `24 September` / `24th of Sep`. */
+const MONTH_DAY = new RegExp(`\\b${MONTH_NAME}\\s*${DAY_NUMBER}`, 'i');
+const DAY_MONTH = new RegExp(`\\b${DAY_NUMBER}\\s+(?:of\\s+)?${MONTH_NAME}`, 'i');
+/** Numeric dates as V8 reads them: `yyyy/m/d`, else `m/d/yyyy`. */
+const YEAR_MONTH_DAY = /\b(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})\b/;
+const MONTH_DAY_YEAR = /\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})\b/;
+const CLOCK = /\b(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*([ap])\.?m\b\.?)?/i;
+
+/** The wall-clock date and time a fallback string spells, `null` when it names no such fields. */
+function spelledDateTime(value: string): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+} | null {
+  let date: [number, number, number] | undefined;
+  const ymd = YEAR_MONTH_DAY.exec(value);
+  const mdy = ymd === null ? MONTH_DAY_YEAR.exec(value) : null;
+  if (ymd !== null) date = [Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3])];
+  else if (mdy !== null) date = [Number(mdy[3]), Number(mdy[1]) - 1, Number(mdy[2])];
+  else {
+    const named = MONTH_DAY.exec(value);
+    const reversed = named === null ? DAY_MONTH.exec(value) : null;
+    const year = /\b(\d{4})\b/.exec(value);
+    const month = MONTHS[(named?.[1] ?? reversed?.[2] ?? '').toLowerCase()];
+    const day = named?.[2] ?? reversed?.[1];
+    if (month !== undefined && day !== undefined && year !== null) {
+      date = [Number(year[1]), month, Number(day)];
+    }
+  }
+  const clock = CLOCK.exec(value);
+  if (date === undefined || clock === null) return null;
+  let hour = Number(clock[1]);
+  const meridiem = clock[4]?.toLowerCase();
+  if (meridiem !== undefined) {
+    if (hour < 1 || hour > 12) return null;
+    hour = (hour % 12) + (meridiem === 'p' ? 12 : 0);
+  }
+  const [year, month, day] = date;
+  return { year, month, day, hour, minute: Number(clock[2]) };
+}
+
+/**
+ * V8 fallback, only for strings with a four-digit year, a time and an explicit zone. `Date.parse`
+ * rolls impossible fields over (30 February → 2 March, 24:00 → the next day) instead of rejecting
+ * them, so the instant must show, in the string's zone, the date and time the string spells; a
+ * string whose date or time cannot be read that way is unknown too.
+ */
 function parseWithExplicitZone(value: string): number | null {
   if (!/\d{4}/.test(value) || !/\d{1,2}:\d{2}/.test(value)) return null;
   if (!/(?:\b(?:gmt|utc|ut|z)\b|[+-]\d{2}:?\d{2}\b)/i.test(value)) return null;
   const time = Date.parse(value);
-  return Number.isFinite(time) && time >= MIN_TIME && time <= MAX_TIME ? time : null;
+  if (!Number.isFinite(time) || time < MIN_TIME || time > MAX_TIME) return null;
+  const spelled = spelledDateTime(value);
+  if (spelled === null) return null;
+  const offset = /([+-])(\d{2}):?(\d{2})\b/.exec(value);
+  const offsetMinutes =
+    offset === null
+      ? 0
+      : (offset[1] === '-' ? -1 : 1) * (Number(offset[2]) * 60 + Number(offset[3]));
+  const wall = new Date(time + offsetMinutes * 60_000);
+  const matches =
+    wall.getUTCFullYear() === spelled.year &&
+    wall.getUTCMonth() === spelled.month &&
+    wall.getUTCDate() === spelled.day &&
+    wall.getUTCHours() === spelled.hour &&
+    wall.getUTCMinutes() === spelled.minute;
+  return matches ? time : null;
 }
 
 /**
@@ -189,8 +254,8 @@ export function parseFeedDate(input: string): Date | null {
     .replace(/\s*\([^()]*\)$/, '')
     .replace(/\s+/g, ' ');
   if (value === '' || value.length > 128) return null;
-  // The V8 fallback only sees strings that match neither grammar: it would roll invalid fields
-  // over (30 February → 2 March) instead of rejecting them.
+  // The V8 fallback only sees strings that match neither grammar, and checks what it returns
+  // against the fields the string spells.
   let time = parseIso(value);
   if (time === undefined) time = parseRfc(value);
   if (time === undefined) time = parseWithExplicitZone(value);

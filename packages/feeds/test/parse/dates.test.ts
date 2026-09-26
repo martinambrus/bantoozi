@@ -47,6 +47,11 @@ describe('parseFeedDate (spec 03 §6 published_at)', () => {
     ['2026', '2026-01-01T00:00:00.000Z'],
     // Last resort for strings with an explicit zone.
     ['September 24, 2026 08:00 GMT', '2026-09-24T08:00:00.000Z'],
+    ['September 24, 2026 10:00 AM GMT+0200', '2026-09-24T08:00:00.000Z'],
+    ['September 24, 2026 8:30 PM UTC', '2026-09-24T20:30:00.000Z'],
+    ['2026/09/24 08:00:00 -0500', '2026-09-24T13:00:00.000Z'],
+    ['09/24/2026 08:00 GMT', '2026-09-24T08:00:00.000Z'],
+    ['2026-09-24 08:00 GMT+0200', '2026-09-24T06:00:00.000Z'],
   ])('%s → %s', (input, expected) => {
     expect(parseFeedDate(input)?.toISOString()).toBe(expected);
   });
@@ -69,6 +74,11 @@ describe('parseFeedDate (spec 03 §6 published_at)', () => {
     ['0000-00-00 00:00:00'],
     ['0099-01-01T00:00:00Z'],
     ['September 24, 2026 08:00'],
+    // The fallback does not roll impossible fields over into another day.
+    ['February 30, 2026 10:00 GMT'],
+    ['2026/02/30 10:00:00 +0000'],
+    ['Sep 24 2026 24:00 GMT'],
+    ['September 24, 2026 13:00 PM GMT'],
     ['x'.repeat(200)],
   ])('%s → null', (input) => {
     expect(parseFeedDate(input)).toBeNull();
