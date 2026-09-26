@@ -93,6 +93,7 @@ export interface EngineRequest {
   userId?: string;                         // cost attribution
   priority: Priority;
   authorization: InferenceAuthorization; // server-produced capability, not model state
+  deadlineMs?: number;                    // the job's absolute deadline (epoch ms), D-65
 }
 
 export type EngineOutcome =
@@ -147,6 +148,8 @@ export function createEngineRouter(deps: {
   budgetOverrideUsd?: number;                                    // eval only; see below
   ignoreDailyCaps?: boolean;                                     // eval: ignore llm/tier-2 daily caps
   requiredEngine?: EngineName;                                  // eval: pin, no automatic fallback
+  random?: () => number; circuit?: CircuitStore;                 // test seams: jitter, shared breaker state
+  breakerParams?: Partial<BreakerParams>; newId?: () => string;  // (D-65)
 }): EngineRouter;
 ```
 
@@ -162,7 +165,10 @@ export function createEngineRouter(deps: {
   the selected engine, model, capability flags and price/normalization versions. Child evaluation
   adapters share the same invocation budget authority, not independently reset $ limits.
 
-Handlers never see HTTP errors. They get `ok: false` and apply their degraded behaviour.
+Handlers never see HTTP errors. They get `ok: false` and apply their degraded behaviour. An `error`
+with `retryAt` is a deferral that consumes no failure attempt (a wait past `deadlineMs` or longer
+than the router's `maxRetryWaitMs`, default 60 s, or a cancelled ask); `error` without it is retry
+exhaustion or a permanent failure (D-65).
 
 ### 1.1 Inference requires live user demand
 
@@ -207,6 +213,8 @@ The owner uses personal **Jev and Ollama** accounts. Store provider API keys in 
 `provider_credentials` rows (spec 02), editable through dedicated admin endpoints (spec 08) and the
 admin UI (spec 09). Until the UI exists, a server CLI/admin API stages the same rows using the same
 validation and authorization rules; do not put plaintext into SQL migrations or generic settings.
+The M2 CLI runs as the worker role through repository functions that mirror the admin SQL functions,
+naming an active administrator with `--admin <email>` (D-61).
 
 Reject empty/oversized keys (maximum 4 KiB UTF-8) and CR/LF/NUL before encryption; never place a
 key in a URL/query string or shell argument. Credentials CLI accepts protected stdin/input with echo
@@ -243,7 +251,10 @@ AES protects stolen dumps, not a host holding both ciphertext and master keys.
    plus sanitized capabilities/errors. Allow at most **3 HTTP attempts total** per validation action,
    no reader content, and at most **$0.02 reserved spend** plus the normal platform budget; validation
    LLM output is capped at 512 tokens. Exceeding these bounds fails or defers validation with a clear
-   reason. Every paid probe uses `kind='credential_probe'` and the normal spend guard. Validating a candidate
+   reason: an inconclusive probe stays `pending` with a sanitized code, and only a provider rejection
+   or an unusable candidate records `invalid` (D-62). Every paid probe uses `kind='credential_probe'`
+   and the normal spend guard through `reserveExternalCall`/`recordExternalCall`, never `ask`, and
+   Ollama is probed with `OLLAMA_MODEL_FAST` (D-63). Validating a candidate
    never resets the active credential's breaker or replaces its account silently.
 3. `activate` is an optimistic-CAS admin transaction requiring the exact validated candidate, an
    unchanged endpoint/model-policy fingerprint and a validation result no older than 24h. It swaps
@@ -361,7 +372,8 @@ The normalized answers are what is stored in `article_facets.answers`, `card_ans
 **Client-side rate limiter:** token buckets at **1,000 requests/min** and **200,000 input tokens/s**
 per API account across the deployment. Allocate static per-process shares whose sum is no greater
 than those limits (API translation does not consume the Jev buckets); do not give every worker the
-full account allowance. These are configurable defaults below published limits, not a guarantee.
+full account allowance. The share defaults to 1, for the single Jev-calling worker process of M2
+(D-66). These are configurable defaults below published limits, not a guarantee.
 Token cost is estimated before each attempt (§6.1); 429 lowers capacity temporarily. Waiting is
 bounded by the job deadline, cancellation works while queued, and aging prevents bulk starvation.
 
@@ -437,7 +449,9 @@ bounded by the job deadline, cancellation works while queued, and aging prevents
    - (M9) a `.laya` request reaches this point only after its step-0 Laya attempt failed, and does
      not retry Laya here
 5. Otherwise return `no_key` when Jev has no credential and no fallback was eligible (unless an
-   injected test engine exists), or `budget`, `circuit_open` or `error` with a retry time when known. Never route an
+   injected test engine exists), or `budget`, `circuit_open` or `error` with a retry time when known.
+   A failed fallback returns the primary engine's reason; after a budget refusal of the primary the
+   fallback is not tried (D-65). Never route an
    invalid request into another provider. Optional Laya has an explicit eligible-kind/language and
    engine-precedence policy; paid-provider budget exhaustion must not disable eligible local inference.
 
@@ -486,7 +500,10 @@ pending/unavailable pairs in spec 05 §5.5 and stays bounded; it does not repeat
   per UTC day; `house.alerts` alone sends notifications. Budget-blocked work remains queued until a
   usable budget or next UTC day; it does not consume failure attempts.
 - **Evaluation:** `kind='eval'` is excluded from production spend and uses its own synchronized
-  per-invocation cap (§1), including uncertainty and all concurrent attempts.
+  per-invocation cap (§1), including uncertainty and all concurrent attempts. Eval spend needs an
+  `eval` authorization and an eval router; a production router refuses it (D-64).
+- **Cap groups:** the decision kinds (`enrich`, `match`, `cluster`, `suggest`) share an engine's daily
+  call cap; `translate` and `credential_probe` count separately (D-64).
 
 ### 6.1 Token and output estimation
 

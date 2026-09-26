@@ -375,3 +375,42 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `num_predict` (default 2,048 output tokens), the adapter sends nothing and returns a
   non-retryable `error` with detail `output_cap_exceeded`, since the reply could only be truncated;
   the router splits packs with the same estimate before it asks. Spec 04 §6.1 and §8 updated.
+- D-61: 2026-09-26 M2-T3 — the credentials CLI (`pnpm worker-cli credentials:*`) runs as the
+  worker role. The M0 admin SQL functions execute only for the API role inside an admin session, so
+  the CLI uses worker-role repository functions that mirror them: the same row lock, expected
+  revision and state rules, with no new grant or migration. `--admin <email>` must name an active
+  administrator for stage, validate, activate and revoke and is recorded in `updated_by`; status and
+  rewrap need none. Output is redacted metadata only. Spec 04 §1.2 updated.
+- D-62: 2026-09-26 M2-T3 — validation outcomes. A probe that cannot conclude leaves the candidate
+  `pending` with a sanitized code the admin can act on (`not_configured`, `budget_unavailable`,
+  `probe_budget_exceeded`, `rate_limited`, `timeout`, `provider_unavailable`, or the credential
+  reason such as `keyring_unavailable`); only a provider rejection or an unusable candidate makes it
+  `invalid` (`auth_rejected` for 401/403, `request_rejected` for 400/413/422, `provider_error` for
+  another permanent failure, `invalid_response` after two invalid answers, `decrypt_failed`). A
+  server wait over 10 s ends the action instead of holding the lease. Spec 04 §1.2 step 2 said only
+  "fails or defers". Spec 04 §1.2 updated.
+- D-63: 2026-09-26 M2-T3 — the validation probe reserves and records each attempt through
+  `reserveExternalCall`/`recordExternalCall` with `kind = 'credential_probe'` instead of
+  `router.ask`, so it never passes through or changes the active credential's breaker. Ollama is
+  probed with `OLLAMA_MODEL_FAST` only; the configuration fingerprint that activation compares
+  covers the base URLs and every configured model. Spec 04 §1.2 updated.
+- D-64: 2026-09-26 M2-T3 — spend-ledger details. The daily call caps count per cap group: the
+  decision kinds (`enrich`, `match`, `cluster`, `suggest`) share an engine's cap, while `translate`
+  and `credential_probe` are separate groups. A reservation of `kind = 'eval'` needs an `eval`
+  authorization and is admitted only by an eval router; a production router refuses eval spend. The
+  80 %/100 % crossing rule exists in the engine (`nextBudgetAlerts`) and in the PostgreSQL store,
+  because `packages/db` cannot import the engine; tests pin both. Spec 04 §6 updated.
+- D-65: 2026-09-26 M2-T3 — router outcome contract. `EngineRequest` carries the job's absolute
+  `deadlineMs`; an `error` outcome with `retryAt` is a deferral that must not consume a failure
+  attempt: a `Retry-After`, rate-limiter or concurrency wait past the deadline or longer than
+  `maxRetryWaitMs` (default 60 s), or a cancelled ask. `error` without `retryAt` is retry exhaustion
+  or a permanent failure; `budget` carries the next UTC day and `circuit_open` the breaker's next
+  probe time as `retryAt`. An attempt that costs more than its reservation stops further
+  retries and alerts. A failed fallback returns the primary engine's reason, and the fallback is not
+  tried after the primary was refused for budget (a more expensive attempt could not be admitted
+  either). `createEngineRouter` also takes the test seams `random`, `circuit`, `breakerParams` and
+  `newId`. Spec 04 §1, §4 and §5 updated.
+- D-66: 2026-09-26 M2-T3 — the Jev rate-limit share of a process (`rateLimitShare`, in (0, 1]) defaults
+  to 1 and has no environment variable yet: M2 assumes one worker process calls Jev (the API's
+  translation does not use the Jev buckets). A deployment with several Jev-calling processes must add
+  a per-process share first (spec 11). Spec 04 §3 updated.
