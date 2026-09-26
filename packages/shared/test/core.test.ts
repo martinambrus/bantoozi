@@ -4,6 +4,7 @@ import {
   AppError,
   DEFAULT_USER_PREFERENCES,
   ExplainSchema,
+  IdSchema,
   PLANS,
   QuotaExceededError,
   UserPreferencesPatchSchema,
@@ -24,6 +25,7 @@ import {
   planLimits,
   planMinIntervalMap,
   readUserPreferences,
+  RevisionSchema,
   utcDay,
 } from '../src/index.js';
 
@@ -45,6 +47,18 @@ describe('ids (spec 01 §5)', () => {
     expect(isBigIntString('1e3')).toBe(false);
     expect(nextRevision('9007199254740993')).toBe('9007199254740994');
     expect(compareBigIntStrings('9007199254740993', '9007199254740992')).toBe(1);
+  });
+
+  it('rejects malformed ids and revisions without throwing', () => {
+    for (const value of ['v1', '1e3', '', ' 1', '0x10', '-0', '9223372036854775808']) {
+      expect(IdSchema.safeParse(value).success).toBe(false);
+      expect(RevisionSchema.safeParse(value).success).toBe(false);
+    }
+    expect(IdSchema.safeParse('0').success).toBe(false);
+    expect(IdSchema.safeParse('-1').success).toBe(false);
+    expect(IdSchema.safeParse('9223372036854775807').success).toBe(true);
+    expect(RevisionSchema.safeParse('0').success).toBe(true);
+    expect(RevisionSchema.safeParse('-1').success).toBe(false);
   });
 });
 

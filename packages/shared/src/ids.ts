@@ -44,14 +44,18 @@ export const BigIntStringSchema = z
   .string()
   .refine(isBigIntString, 'must be a decimal bigint string');
 
-/** A positive database id (identity columns start at 1). */
-export const IdSchema = BigIntStringSchema.refine((s) => BigInt(s) > 0n, 'must be a positive id');
+/**
+ * A positive database id (identity columns start at 1). One refinement: zod keeps running later
+ * refinements after a failed one, and `BigInt('v1')` would throw instead of failing validation.
+ */
+export const IdSchema = z
+  .string()
+  .refine((s) => isBigIntString(s) && BigInt(s) > 0n, 'must be a positive id');
 
-/** A non-negative revision counter. */
-export const RevisionSchema = BigIntStringSchema.refine(
-  (s) => BigInt(s) >= 0n,
-  'must be a non-negative revision',
-);
+/** A non-negative revision counter (one refinement, as {@link IdSchema}). */
+export const RevisionSchema = z
+  .string()
+  .refine((s) => isBigIntString(s) && BigInt(s) >= 0n, 'must be a non-negative revision');
 
 export function toBigIntString(value: bigint | string): string {
   const s = typeof value === 'bigint' ? value.toString() : value;
