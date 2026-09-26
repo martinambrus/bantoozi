@@ -923,7 +923,130 @@ describe('topics_parent_check and topics_reference_check', () => {
     );
     await expectOneRow(ctx.workerPool.query(`DELETE FROM topics WHERE id = 'sport.chess'`));
   });
+
+  // Row locks as a foreign-key check takes them: the second writer waits for the first and then
+  // fails against its committed state instead of both passing (migration 0007).
+  describe('concurrent writers', () => {
+    it('a topic delete or rename waits for an uncommitted card referencing it, then fails', async () => {
+      await insertTopics(ctx.owner, [
+        ['arts', null, 1],
+        ['arts.film', 'arts', 2],
+        ['arts.theatre', 'arts', 2],
+      ]);
+      const deleted = await secondWriterAfterFirstCommits(
+        (first) => insertCard(first, { topicIds: ['arts.film'] }),
+        (second) => second.query(`DELETE FROM topics WHERE id = 'arts.film'`),
+      );
+      expect(deleted).toMatchObject({ code: '23514', constraint: 'topics_reference_check' });
+      const renamed = await secondWriterAfterFirstCommits(
+        (first) => insertCard(first, { topicIds: ['arts', 'arts.theatre'] }),
+        (second) => second.query(`UPDATE topics SET id = 'arts.stage' WHERE id = 'arts.theatre'`),
+      );
+      expect(renamed).toMatchObject({ code: '23514', constraint: 'topics_reference_check' });
+    });
+
+    it('a card waits for an uncommitted delete of its topic, then fails', async () => {
+      await insertTopics(ctx.owner, [
+        ['music', null, 1],
+        ['music.jazz', 'music', 2],
+      ]);
+      const card = await insertCard(ctx.owner, { topicIds: ['music'] });
+      const inserted = await secondWriterAfterFirstCommits(
+        (first) => first.query(`DELETE FROM topics WHERE id = 'music.jazz'`),
+        (second) => insertCard(second, { topicIds: ['music.jazz'] }),
+      );
+      expect(inserted).toMatchObject({ code: '23514', constraint: 'interest_cards_content_check' });
+      await insertTopics(ctx.owner, [['music.folk', 'music', 2]]);
+      const updated = await secondWriterAfterFirstCommits(
+        (first) => first.query(`DELETE FROM topics WHERE id = 'music.folk'`),
+        (second) =>
+          second.query(`UPDATE interest_cards SET topic_ids = '{music.folk}' WHERE id = $1`, [
+            card,
+          ]),
+      );
+      expect(updated).toMatchObject({ code: '23514', constraint: 'interest_cards_content_check' });
+    });
+
+    it('a parent level change and a new child wait for each other, and the second fails', async () => {
+      await insertTopics(ctx.owner, [
+        ['home', null, 1],
+        ['garden', null, 1],
+        ['pets', null, 1],
+      ]);
+      const levelChange = await secondWriterAfterFirstCommits(
+        (first) => insertTopics(first, [['home.diy', 'home', 2]]),
+        (second) =>
+          second.query(`UPDATE topics SET level = 2, parent_id = 'garden' WHERE id = 'home'`),
+      );
+      expect(levelChange).toMatchObject({ code: '23514', constraint: 'topics_parent_check' });
+      const child = await secondWriterAfterFirstCommits(
+        (first) =>
+          first.query(`UPDATE topics SET level = 2, parent_id = 'garden' WHERE id = 'pets'`),
+        (second) => insertTopics(second, [['pets.cats', 'pets', 2]]),
+      );
+      expect(child).toMatchObject({ code: '23514', constraint: 'topics_parent_check' });
+    });
+  });
 });
+
+/**
+ * Runs `first` in an open worker transaction, then `second` in its own transaction on another
+ * worker connection, which must wait for a lock `first` holds; `first` then commits. Resolves with
+ * the error `second` settles with once it resumes (`null` when it succeeds).
+ */
+async function secondWriterAfterFirstCommits(
+  first: (client: PoolClient) => Promise<unknown>,
+  second: (client: PoolClient) => Promise<unknown>,
+): Promise<DbFailure | null> {
+  const firstClient = await ctx.workerPool.connect();
+  const secondClient = await ctx.workerPool.connect();
+  let settled: Promise<DbFailure | null> | undefined;
+  try {
+    await firstClient.query('BEGIN');
+    try {
+      await first(firstClient);
+    } catch (error) {
+      await firstClient.query('ROLLBACK');
+      throw error;
+    }
+    const { rows } = await secondClient.query<{ pid: number }>('SELECT pg_backend_pid() AS pid');
+    settled = (async () => {
+      await secondClient.query('BEGIN');
+      try {
+        await second(secondClient);
+        await secondClient.query('COMMIT');
+        return null;
+      } catch (error) {
+        await secondClient.query('ROLLBACK');
+        return error as DbFailure;
+      }
+    })();
+    try {
+      await waitForLockWait(rows[0]?.pid);
+    } finally {
+      await firstClient.query('COMMIT');
+    }
+    return await settled;
+  } finally {
+    // Never hand a connection back to the pool while its transaction is still running.
+    await settled;
+    firstClient.release();
+    secondClient.release();
+  }
+}
+
+/** Resolves once backend `pid` waits for a lock; fails if it never does (no conflicting lock). */
+async function waitForLockWait(pid: number | undefined): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const { rows } = await ctx.adminPool.query<{ waiting: boolean }>(
+      `SELECT coalesce(wait_event_type = 'Lock', false) AS waiting FROM pg_stat_activity WHERE pid = $1`,
+      [pid],
+    );
+    if (rows[0]?.waiting === true) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error('the second writer never waited for a lock held by the first');
+}
 
 // ── Label assignment integrity (deferred) ───────────────────────────────────────────────────────
 

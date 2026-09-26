@@ -52,3 +52,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   story, and spec 06 §7 step 2 requires a cluster-membership change to enqueue a full rank (spec 05 §6
   step 5 already did so for merges). Found by the PR #2 review; spec 03 §1 (diagram and text) and the
   §2 `user.rank` producers updated.
+- D-9: 2026-09-26 M0-T5 — the topic reference triggers lock the rows they read, as a foreign-key
+  check does: `interest_cards_content_check` takes `FOR KEY SHARE` on every referenced topic, and
+  `topics_parent_check` takes `FOR SHARE` on a level-2 topic's parent. Without the locks, a card write
+  and a concurrent delete or id change of one of its topics (or a new child and a concurrent level
+  change of its parent) could both pass their READ COMMITTED checks and commit a dangling reference,
+  which no foreign key repairs because `topic_ids` is an array (found by the PR #2 review). Migration
+  0007; spec 02 §5.2 updated.
