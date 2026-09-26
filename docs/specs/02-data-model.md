@@ -536,7 +536,7 @@ CREATE TABLE question_sets (
 );
 -- settings key 'question_sets.active': IDs are decimal strings, validated against kind + question_sets
 ALTER TABLE articles ADD CONSTRAINT articles_cluster_set_fk
-  FOREIGN KEY (cluster_set_id) REFERENCES question_sets(id);
+  FOREIGN KEY (cluster_set_id) REFERENCES question_sets(id) ON DELETE RESTRICT;
 
 CREATE TABLE engine_reservations (
   id              uuid PRIMARY KEY,              -- one reservation per outbound wire attempt
@@ -1192,7 +1192,7 @@ CREATE INDEX bookmark_snapshot_pins_expiry_idx ON bookmark_snapshot_pins (expire
 CREATE TABLE card_suggestions (
   user_id       uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   card_id       bigint NOT NULL REFERENCES interest_cards(id) ON DELETE CASCADE,
-  question_set_id bigint NOT NULL REFERENCES question_sets(id), -- suggest set that produced it; only the active set's rows are listed (spec 08 §7)
+  question_set_id bigint NOT NULL REFERENCES question_sets(id) ON DELETE RESTRICT, -- suggest set that produced it; only the active set's rows are listed (spec 08 §7)
   model_pin     text NOT NULL,                  -- settings['engine.model_pin'].model when produced: suggest calls are bulk, so they use Jev only (the LLM fallback serves interactive requests, spec 04 §5); rows from another model are not listed
   score         real NOT NULL CHECK (score BETWEEN 0 AND 1),
   created_at    timestamptz NOT NULL DEFAULT now(),

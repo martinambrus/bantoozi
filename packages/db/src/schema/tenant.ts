@@ -476,7 +476,7 @@ export const cardSuggestions = pgTable(
       .references(() => interestCards.id, { onDelete: 'cascade' }),
     questionSetId: int8('question_set_id')
       .notNull()
-      .references(() => questionSets.id),
+      .references(() => questionSets.id, { onDelete: 'restrict' }),
     modelPin: text('model_pin').notNull(),
     score: real('score').notNull(),
     createdAt: tstz('created_at').notNull().defaultNow(),

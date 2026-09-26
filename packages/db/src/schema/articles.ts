@@ -163,7 +163,7 @@ export const articles = pgTable(
       name: 'articles_cluster_set_fk',
       columns: [t.clusterSetId],
       foreignColumns: [questionSets.id],
-    }),
+    }).onDelete('restrict'),
     index('articles_first_seen_idx').on(t.firstSeenAt.desc().nullsFirst()),
     index('articles_title_trgm_idx').using('gin', t.titleNorm.op('gin_trgm_ops')),
     index('articles_cluster_idx')

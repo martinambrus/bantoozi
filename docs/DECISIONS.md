@@ -32,3 +32,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   value still returned one zero-cost row per current holder through the `shared` CTE, contradicting
   §6 "Callers" ("direct SQL calls return no usage rows"). Found by the M0 function tests; spec 02 §6
   updated.
+- D-6: 2026-09-26 M0-T5 (owner-approved) — `articles.cluster_set_id` and
+  `card_suggestions.question_set_id` reference `question_sets(id)` with `ON DELETE RESTRICT`. Spec 02
+  gave these two foreign keys no `ON DELETE` clause (so PostgreSQL's default `NO ACTION` applied),
+  although its introduction requires every foreign key to state one; every other `question_sets`
+  reference already uses `RESTRICT`, and question sets are never deleted while referenced. Migration
+  0006; spec 02 §3 and §4 updated.

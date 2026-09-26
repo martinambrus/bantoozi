@@ -971,7 +971,7 @@
         {
           "columns": ["cluster_set_id"],
           "references": "question_sets(id)",
-          "onDelete": "NO ACTION",
+          "onDelete": "RESTRICT",
           "deferrable": false
         }
       ],
@@ -3564,7 +3564,7 @@
         {
           "columns": ["question_set_id"],
           "references": "question_sets(id)",
-          "onDelete": "NO ACTION",
+          "onDelete": "RESTRICT",
           "deferrable": false
         }
       ],
