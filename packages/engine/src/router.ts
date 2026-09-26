@@ -1183,7 +1183,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
           throw new RangeError('a paid external call must be recorded with its reservation');
         }
         await store.insertCall(row);
-        return;
+        return { overrun: false };
       }
       await store.settleReservation(
         reservationId,
@@ -1200,10 +1200,26 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
         },
         call.billing,
       );
-      if (tracked !== undefined) {
-        external.delete(reservationId);
-        evalBudget?.settle(tracked.estimateUsd, known ? cost : null);
+      // A reservation no longer tracked (settled already, or evicted from the bounded map) has no
+      // reserve to compare against.
+      if (tracked === undefined) return { overrun: false };
+      external.delete(reservationId);
+      evalBudget?.settle(tracked.estimateUsd, known ? cost : null);
+      const overrun = known && cost > tracked.estimateUsd + USD_EPSILON;
+      if (overrun) {
+        // Spec 04 §6: actual usage above a reserve stops further calls (of this request) and alerts.
+        logger.warn(
+          {
+            engine: call.engine,
+            kind,
+            logicalRequestId: call.logicalRequestId,
+            reservedUsd: tracked.estimateUsd,
+            actualUsd: cost,
+          },
+          'engine attempt cost exceeded its reservation',
+        );
       }
+      return { overrun };
     },
   };
 }

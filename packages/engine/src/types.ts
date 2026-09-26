@@ -136,8 +136,12 @@ export interface EngineRouter {
     userId?: string;
     authorization: InferenceAuthorization;
   }): Promise<string | null>;
-  /** A failed attempt also settles conservatively. */
-  recordExternalCall(call: ExternalCall, reservationId?: string): Promise<void>;
+  /**
+   * A failed attempt also settles conservatively. `overrun` reports a known actual cost above the
+   * attempt's reserve, already alerted (spec 04 §6): the caller makes no further call of that
+   * logical request.
+   */
+  recordExternalCall(call: ExternalCall, reservationId?: string): Promise<{ overrun: boolean }>;
 }
 
 /** The structured logger subset the engine uses (pino in production). */

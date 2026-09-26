@@ -137,8 +137,10 @@ export interface EngineRouter {                  // the ONLY thing handlers use
   reserveExternalCall(input: {engine: ExternalCall['engine']; kind: ExternalCall['kind'];
     estimateUsd: number; priority: Priority; userId?: string;
     authorization: InferenceAuthorization}): Promise<string | null>;
-  recordExternalCall(call: ExternalCall, reservationId?: string): Promise<void>;
+  recordExternalCall(call: ExternalCall, reservationId?: string): Promise<{overrun: boolean}>;
   // Paid external calls MUST reserve before HTTP. A failed attempt also settles conservatively.
+  // `overrun`: a known actual cost above the reserve, already alerted; the caller makes no further
+  // call of that logical request (§6, D-86).
 }
 
 export function createEngineRouter(deps: {
@@ -254,7 +256,8 @@ AES protects stolen dumps, not a host holding both ciphertext and master keys.
    reason: an inconclusive probe stays `pending` with a sanitized code, and only a provider rejection
    or an unusable candidate records `invalid` (D-62). Every paid probe uses `kind='credential_probe'`
    and the normal spend guard through `reserveExternalCall`/`recordExternalCall`, never `ask`, and
-   Ollama is probed with `OLLAMA_MODEL_FAST` (D-63). Validating a candidate
+   Ollama is probed with `OLLAMA_MODEL_FAST` (D-63). An attempt whose actual cost exceeds its reserve
+   ends an inconclusive probe `pending` with `cost_overrun` (§6, D-86). Validating a candidate
    never resets the active credential's breaker or replaces its account silently.
 3. `activate` is an optimistic-CAS admin transaction requiring the exact validated candidate, an
    unchanged endpoint/model-policy fingerprint and a validation result no older than 24h. It swaps
@@ -501,7 +504,8 @@ pending/unavailable pairs in spec 05 §5.5 and stays bounded; it does not repeat
   disappearing from yesterday or being counted twice today during late settlement.
 - **Cap meaning:** with estimated tokenization this is a conservative application budget, not a
   mathematically exact provider invoice cap. Actual usage above a reserve stops further calls and
-  alerts. Set a provider-side hard spend limit when available. Never fabricate exact accounting for
+  alerts, for `ask` and for external calls alike: `recordExternalCall` reports the overrun to its
+  caller (D-86). Set a provider-side hard spend limit when available. Never fabricate exact accounting for
   network timeouts or unavailable usage.
 - **Crossings:** atomically mark 80% and 100% crossings in `settings['engine.budget_alerts']` once
   per UTC day; `house.alerts` alone sends notifications. Budget-blocked work remains queued until a

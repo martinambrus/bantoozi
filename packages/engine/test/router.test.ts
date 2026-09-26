@@ -1089,6 +1089,53 @@ describe('EngineRouter: external calls (spec 07 §2)', () => {
     expect([...store.usage.values()][0]).toMatchObject({ userId: USER_ID, calls: 1 });
   });
 
+  it('reports and alerts a known cost above the reserve, so the caller stops (spec 04 §6)', async () => {
+    const { router, store, logger } = setup();
+    const reserve = () =>
+      router.reserveExternalCall({
+        engine: 'llm',
+        kind: 'translate',
+        estimateUsd: 0.001,
+        priority: 'bulk',
+        authorization: auth,
+      });
+    const call = (costUsd: number, billing: 'known' | 'uncertain', attempt: number) => ({
+      engine: 'llm' as const,
+      kind: 'translate' as const,
+      inputTokens: 1_000,
+      outputTokens: 100,
+      costUsd,
+      latencyMs: 10,
+      status: 'invalid_response' as const,
+      billing,
+      logicalRequestId: '0199a000-0000-7000-8000-00000000abd1',
+      attempt,
+    });
+    expect(await router.recordExternalCall(call(0.001, 'known', 1), (await reserve())!)).toEqual({
+      overrun: false,
+    });
+    // Uncertain usage is never fabricated into an overrun.
+    expect(await router.recordExternalCall(call(0.5, 'uncertain', 2), (await reserve())!)).toEqual({
+      overrun: false,
+    });
+    expect(logger.entries.map((e) => e.msg)).not.toContain(
+      'engine attempt cost exceeded its reservation',
+    );
+    const id = (await reserve())!;
+    expect(await router.recordExternalCall(call(0.002, 'known', 3), id)).toEqual({ overrun: true });
+    expect(logger.entries).toContainEqual(
+      expect.objectContaining({
+        level: 'warn',
+        msg: 'engine attempt cost exceeded its reservation',
+      }),
+    );
+    // The overrun is still charged in full.
+    expect(store.reservations.find((r) => r.id === id)).toMatchObject({
+      status: 'settled',
+      actualUsd: 0.002,
+    });
+  });
+
   it('refuses a tier-2 reservation once the cap is reached', async () => {
     const { router, store } = setup();
     store.settings.set('translate.tier2_daily_cap', 0);

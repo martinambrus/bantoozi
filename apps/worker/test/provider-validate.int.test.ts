@@ -24,6 +24,7 @@ import { createLogger } from '@bantoozi/shared/server';
 import { encryptProviderSecret, ProviderKeyring } from '@bantoozi/shared/server/credential-crypto';
 import {
   dropCreatedTestDatabases,
+  fakeOllamaResponse,
   setupTestDatabase,
   startFakeOllama,
   startFakeTypeSafe,
@@ -105,6 +106,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   jev.setOptions({ apiKey: JEV_KEY, failRate: 0, statusOverride: undefined });
+  ollama.setOptions({ statusOverride: undefined });
   jev.requests.splice(0);
   ollama.requests.splice(0);
   await owner.query(`DELETE FROM engine_calls`);
@@ -474,6 +476,31 @@ describe('provider.validate (spec 04 §1.2 step 2)', () => {
     expect(record).toMatchObject({ candidateStatus: 'invalid', lastErrorCode: 'invalid_response' });
     expect(record.candidateValidation).toMatchObject({ attempts: 2 });
     expect(jev.requests).toHaveLength(2);
+  });
+
+  it('stops after an attempt that cost more than its reserve and leaves the candidate pending', async () => {
+    // Invalid output whose reported usage is above the attempt's reserve (spec 04 §6).
+    ollama.setOptions({
+      statusOverride: (body) => {
+        const response = fakeOllamaResponse(body, { mode: 'malformed' }) as Record<string, unknown>;
+        return { status: 200, body: { ...response, prompt_eval_count: 100_000 } };
+      },
+    });
+    const version = await stage('ollama', OLLAMA_KEY);
+    await handler().validate('ollama', version);
+
+    const record = await metadata('ollama');
+    expect(record).toMatchObject({ candidateStatus: 'pending', lastErrorCode: 'cost_overrun' });
+    expect(record.candidateValidation).toMatchObject({ attempts: 1, errorCode: 'cost_overrun' });
+    expect(ollama.requests).toHaveLength(1);
+    // The actual cost is charged in full, and the overrun alerts.
+    const [reserved] = await reservations();
+    const [call] = await calls();
+    expect(call).toMatchObject({ status: 'invalid_response', billing: 'known' });
+    expect(Number(call?.cost_usd)).toBeGreaterThan(reserved!.reserved_usd);
+    expect(lastLog('engine attempt cost exceeded its reservation')).toMatchObject({
+      kind: 'credential_probe',
+    });
   });
 
   it('keeps one validation action within $0.02 of reserved spend', async () => {

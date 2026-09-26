@@ -45,9 +45,10 @@ import type { QueueHandler } from './index.js';
  * Bounds: at most 3 HTTP attempts, at most $0.02 of reserved spend in total (each attempt reserves
  * through the router's normal spend guard with `kind = 'credential_probe'` and the
  * `credential_probe` authorization, which the store admits only under the live lease), LLM output
- * capped at 512 tokens. A bound that stops the probe, an exhausted platform budget or an unavailable
- * provider records the candidate `pending` with a clear error code (inconclusive: the admin may
- * validate again); an authentication or request rejection records it `invalid`. The probe never
+ * capped at 512 tokens. A bound that stops the probe (including an attempt whose actual cost
+ * exceeded its reserve, spec 04 §6), an exhausted platform budget or an unavailable provider
+ * records the candidate `pending` with a clear error code (inconclusive: the admin may validate
+ * again); an authentication or request rejection records it `invalid`. The probe never
  * goes through `router.ask`, so it never touches the active credential's breaker. A lease lost
  * to revocation or re-staging discards the result.
  */
@@ -136,7 +137,8 @@ interface ProbeLane {
 type FailedAttempt = Extract<EngineAttempt, { ok: false }>;
 
 type SendResult =
-  | { kind: 'sent'; attempt: EngineAttempt; latencyMs: number }
+  /** `overrun`: the attempt's known cost exceeded its reserve (spec 04 §6). */
+  | { kind: 'sent'; attempt: EngineAttempt; latencyMs: number; overrun: boolean }
   | { kind: 'denied' }
   | { kind: 'unavailable'; reason: string };
 
@@ -316,7 +318,7 @@ export function createProviderValidateHandler(
             };
           }
           const latencyMs = Math.max(0, now().getTime() - started);
-          await router.recordExternalCall(
+          const { overrun } = await router.recordExternalCall(
             externalCall(
               lane,
               attempt,
@@ -328,7 +330,7 @@ export function createProviderValidateHandler(
             ),
             reservationId,
           );
-          return { kind: 'sent', attempt, latencyMs };
+          return { kind: 'sent', attempt, latencyMs, overrun };
         },
       );
     } catch (error) {
@@ -447,6 +449,8 @@ export function createProviderValidateHandler(
       } else if (!attempt.retryable) {
         return result('invalid', 'provider_error', base());
       }
+      // Spec 04 §6: an attempt that cost more than its reserve stops further calls (inconclusive).
+      if (sent.overrun) return result('pending', 'cost_overrun', base());
     }
     return exhausted(last, base());
   }

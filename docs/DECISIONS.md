@@ -568,3 +568,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   changed releases every row it still holds unanswered and without an attempt, enqueues current work
   in the same transaction and sends no further pack; the enrich job enqueues itself again. Spec 05
   §5.5 and spec 03 §2 updated.
+- D-86: 2026-09-26 M2-T3 — spec 04 §6 says actual usage above a reserve stops further calls and
+  alerts; the router did this only inside `ask`. `recordExternalCall` now returns `{ overrun }` for
+  the reservation it settles (a known actual cost above the reserved estimate) and logs the same
+  alert, and its callers make no further call of that logical request: a tier-2 translation keeps
+  its invalid output as a `fail` row instead of sending the repair attempt, and a credential probe
+  stops with the candidate `pending` and the code `cost_overrun` unless the attempt already
+  concluded it. The overrun is still charged in full. Spec 04 §1.2 and §6 and spec 07 §3 updated.

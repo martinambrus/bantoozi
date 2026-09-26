@@ -355,8 +355,16 @@ export class ScriptedRouter implements EngineRouter {
     return id;
   }
 
-  async recordExternalCall(call: ExternalCall, reservationId?: string): Promise<void> {
+  /** Reports an overrun like the real router: a known cost above the reservation's estimate. */
+  async recordExternalCall(
+    call: ExternalCall,
+    reservationId?: string,
+  ): Promise<{ overrun: boolean }> {
     this.external.push({ call, reservationId });
+    const reserved = this.reservations.find((r) => r.id === reservationId)?.input.estimateUsd;
+    return {
+      overrun: reserved !== undefined && call.billing === 'known' && call.costUsd > reserved + 1e-9,
+    };
   }
 }
 
