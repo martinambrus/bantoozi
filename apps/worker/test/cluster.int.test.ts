@@ -8,7 +8,15 @@ import {
 import type * as Questions from '@bantoozi/questions';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ClassifyHarness, HOUR, MINUTE, ago, type AskRecord } from './support/classify.js';
+import {
+  ClassifyHarness,
+  HOUR,
+  MINUTE,
+  ago,
+  waitFor,
+  type AskRecord,
+  type SettingWrite,
+} from './support/classify.js';
 
 /**
  * M2-T9 `article.cluster` (spec 05 §6) through the real handler: the candidate SQL and the per-feed
@@ -68,6 +76,26 @@ const clusterAsk = (articleId: string): AskRecord | undefined =>
   h.router.asksFor(articleId, 'cluster').at(-1);
 
 const stateOf = (ask: AskRecord | undefined): ClusterState => ask?.request.state as ClusterState;
+
+/** Store the second cluster set (once) and return its id. */
+async function storeClusterV2(): Promise<string> {
+  const v2 = dynamicQuestionSet({
+    kind: 'cluster',
+    version: CLUSTER_V2_VERSION,
+    questions: clusterQuestions(CLUSTER_MAX_CANDIDATES),
+    note: 'second cluster set of the cluster integration test',
+  });
+  await h.owner.query(
+    `INSERT INTO question_sets (kind, version, sha256, definition)
+     VALUES ('cluster', $1, $2, $3::jsonb) ON CONFLICT DO NOTHING`,
+    [v2.version, v2.sha256, JSON.stringify(v2.definition)],
+  );
+  const found = await h.owner.query<{ id: string }>(
+    `SELECT id::text AS id FROM question_sets WHERE kind = 'cluster' AND version = $1`,
+    [v2.version],
+  );
+  return found.rows[0]?.id as string;
+}
 
 describe('article.cluster candidates (spec 05 §6 steps 1–3)', () => {
   it('keeps at most two candidates per feed and five in all, by similarity', async () => {
@@ -374,22 +402,7 @@ describe('article.cluster membership (spec 05 §6 steps 4–5)', () => {
     const reader = await readerFeed('Valley news');
     const p1 = await classified([reader.feedId], title, ago(3 * HOUR));
     const p2 = await classified([reader.feedId], title, ago(2 * HOUR));
-    const v2 = dynamicQuestionSet({
-      kind: 'cluster',
-      version: CLUSTER_V2_VERSION,
-      questions: clusterQuestions(CLUSTER_MAX_CANDIDATES),
-      note: 'second cluster set of the cluster integration test',
-    });
-    await h.owner.query(
-      `INSERT INTO question_sets (kind, version, sha256, definition)
-       VALUES ('cluster', $1, $2, $3::jsonb) ON CONFLICT DO NOTHING`,
-      [v2.version, v2.sha256, JSON.stringify(v2.definition)],
-    );
-    const found = await h.owner.query<{ id: string }>(
-      `SELECT id::text AS id FROM question_sets WHERE kind = 'cluster' AND version = $1`,
-      [v2.version],
-    );
-    const v2Id = found.rows[0]?.id as string;
+    const v2Id = await storeClusterV2();
     const active = (await h.setting('question_sets.active')) as Record<string, string>;
     h.router.respond = async (ask) => {
       if (ask.kind === 'cluster') {
@@ -413,6 +426,38 @@ describe('article.cluster membership (spec 05 §6 steps 4–5)', () => {
       expect((await h.articleRow(p2)).clusterId).not.toBeNull();
     } finally {
       h.router.respond = undefined;
+      await h.setSetting('question_sets.active', active);
+    }
+  });
+
+  it('a set switch that commits while the fold transaction runs discards the fold', async () => {
+    const title = 'Harbour crane collapses during the night shift at the container port';
+    const reader = await readerFeed('Coast news');
+    const p1 = await classified([reader.feedId], title, ago(3 * HOUR));
+    const p2 = await classified([reader.feedId], title, ago(2 * HOUR));
+    const v2Id = await storeClusterV2();
+    const active = (await h.setting('question_sets.active')) as Record<string, string>;
+    // The switch is written during the call and commits while the fold transaction runs.
+    let write: Promise<SettingWrite> | undefined;
+    h.router.respond = async (ask) => {
+      if (ask.kind === 'cluster') {
+        write ??= h.openSettingWrite('question_sets.active', { ...active, cluster: v2Id });
+        await write;
+      }
+      return undefined;
+    };
+    const since = await h.mark();
+    try {
+      const run = h.dispatch('article.cluster', { articleId: p2 });
+      expect(await waitFor(() => write !== undefined, 10_000)).toBe(true);
+      await (await write!).commit();
+      await run;
+      for (const id of [p1, p2]) expect((await h.articleRow(id)).clusterId).toBeNull();
+      expect(await h.payloads('article.cluster', since)).toEqual([{ articleId: p2 }]);
+      expect(await h.payloads('user.rank', since)).toEqual([]);
+    } finally {
+      h.router.respond = undefined;
+      (await write)?.close();
       await h.setSetting('question_sets.active', active);
     }
   });

@@ -28,6 +28,17 @@ export async function readStoredSetting(db: Executor, key: string): Promise<unkn
 }
 
 /**
+ * Share-lock the rows of `keys` until the transaction ends, in key order: a writer of any of them
+ * waits for this transaction, and a write in progress is waited for, so the values read after this
+ * stay current until commit. Missing keys lock nothing. Run inside a transaction.
+ */
+export async function shareLockSettings(tx: Executor, keys: readonly string[]): Promise<void> {
+  await tx.execute(sql`
+    SELECT key FROM settings WHERE key = ANY(${sql.param([...keys])}::text[])
+     ORDER BY key FOR SHARE`);
+}
+
+/**
  * Read-modify-write one JSON setting under its row lock (spec 02 §3.3): a missing key is first
  * inserted with `initial` (`ON CONFLICT DO NOTHING`), then locked, so concurrent writers never
  * overwrite each other. `update` returns the new value (validated by the caller) and the stored

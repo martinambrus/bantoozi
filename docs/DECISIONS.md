@@ -550,3 +550,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   discards the decision and queues `article.cluster` again at the article's revision: candidates were
   eligible through facets of the old enrich set, and the cluster set is recorded as the membership's
   provenance. Spec 05 §6 updated.
+- D-84: 2026-09-26 M2-T9 — a completion reads the configuration it compares with its snapshot (the
+  active question sets, card text mode, language modes, prefilter flag) under share locks. The
+  enrich, match, analysis and cluster completions compare it in their short READ COMMITTED
+  transaction, where a plain read let a switch commit between the comparison and the completion's
+  commit and publish a result decided under the old configuration. Each completion first takes
+  `FOR SHARE` on those `settings` rows, in key order: a switch waits for the completion to commit, and
+  one already written is waited for and then read, so the completion discards its result and queues
+  current work. Spec 05 §5.5 updated.

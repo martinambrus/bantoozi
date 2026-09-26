@@ -11,8 +11,10 @@ import {
   ago,
   failure,
   forArticles,
+  waitFor,
   witnessesOf,
   type AskRecord,
+  type SettingWrite,
 } from './support/classify.js';
 
 /**
@@ -265,6 +267,33 @@ describe('analysis.process results (spec 03 §2.2, spec 05 §1.1)', () => {
         { userId: t.userId, reason: 'analysis' },
       ]);
     } finally {
+      await h.setSetting('card_text_mode', 'as_written');
+    }
+  });
+
+  it('keeps the result request-only when a manifest switch commits while it is published', async () => {
+    const t = await trainee({ cards: 1 });
+    const { requestId } = await h.select(t.userId, t.feedId, t.articleId);
+    let write: Promise<SettingWrite> | undefined;
+    h.router.respond = async (ask) => {
+      if (ask.kind === 'match') {
+        write ??= h.openSettingWrite('card_text_mode', 'english');
+        await write;
+      }
+      return undefined;
+    };
+    try {
+      const run = processRequest(requestId);
+      expect(await waitFor(() => write !== undefined, 10_000)).toBe(true);
+      await (await write!).commit();
+      await run;
+      expect((await h.analysis(requestId)).status).toBe('complete');
+      expect(await h.facetRow(t.articleId)).toBeNull();
+      expect(await h.cardAnswers(t.articleId)).toEqual([]);
+      expect(await h.l2Rows(t.articleId)).toEqual([]);
+    } finally {
+      h.router.respond = undefined;
+      (await write)?.close();
       await h.setSetting('card_text_mode', 'as_written');
     }
   });

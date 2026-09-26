@@ -104,7 +104,9 @@ export function createArticleClusterHandler(
 
     await retryTransaction(deps.db, async (tx) => {
       const sender = workerOutbox(tx);
-      if (!sameClusterConfig(config, await loadClassificationConfig(tx, deps.settingsEnv))) {
+      // Under share locks: a switch committing meanwhile waits for this fold or is seen here.
+      const current = await loadClassificationConfig(tx, deps.settingsEnv, { lock: true });
+      if (!sameClusterConfig(config, current)) {
         // A set switched during the call: the decision used questions or candidates no longer
         // active, so the new sets decide on the next delivery.
         await enqueueCluster(sender, { articleId }, { revision: article.revision });

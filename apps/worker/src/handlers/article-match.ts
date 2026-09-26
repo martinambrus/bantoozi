@@ -460,7 +460,7 @@ async function applyPack(
   const { deps, article, classification } = job;
   return retryTransaction(deps.db, async (tx) => {
     if (!(await revisionHolds(tx, job))) return [];
-    const current = await loadClassificationConfig(tx, deps.settingsEnv);
+    const current = await loadClassificationConfig(tx, deps.settingsEnv, { lock: true });
     if (!sameMatchConfig(job.config, current, article.lang)) {
       await releaseHeld(tx, job, askCards, { kind: 'release' });
       await enqueueMatch(

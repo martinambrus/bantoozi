@@ -110,7 +110,7 @@ export function createArticleEnrichHandler(
         const locked = await lockArticleRevision(tx, articleId, 'update');
         // A reset replaced the input meanwhile: its own intents enrich the new revision.
         if (locked === null || locked.revision !== article.revision) return;
-        const current = await loadClassificationConfig(tx, deps.settingsEnv);
+        const current = await loadClassificationConfig(tx, deps.settingsEnv, { lock: true });
         if (!sameEnrichConfig(config, current, article.lang)) {
           await enqueueEnrich(
             workerOutbox(tx),

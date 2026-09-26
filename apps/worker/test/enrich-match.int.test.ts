@@ -23,7 +23,9 @@ import {
   PRIMARY_MODEL,
   failure,
   forArticles,
+  waitFor,
   witnessesOf,
+  type SettingWrite,
 } from './support/classify.js';
 
 /**
@@ -176,6 +178,38 @@ describe('article.enrich outcomes (spec 05 §3, spec 04 §5)', () => {
       expect(await h.payloads('article.cluster', since)).toEqual([]);
     },
   );
+
+  it('a language-mode switch committing while the facets are written discards them and asks again', async () => {
+    const feedId = await h.feed();
+    const userId = await h.user();
+    await h.subscribe(userId, feedId, 'active');
+    const articleId = await h.article({ feedIds: [feedId], lang: 'sk' });
+    const modes = (await h.setting('language_modes')) as Record<string, string>;
+    let write: Promise<SettingWrite> | undefined;
+    h.router.respond = async (ask) => {
+      if (ask.kind === 'enrich') {
+        write ??= h.openSettingWrite('language_modes', { ...modes, sk: 'translate' });
+        await write;
+      }
+      return undefined;
+    };
+    const since = await h.mark();
+    try {
+      const run = h.dispatch('article.enrich', { articleId });
+      expect(await waitFor(() => write !== undefined, 10_000)).toBe(true);
+      await (await write!).commit();
+      await run;
+      expect(await h.facetRow(articleId)).toBeNull();
+      expect(await h.articleRow(articleId)).toMatchObject({ state: 'extracted' });
+      expect(await h.payloads('article.enrich', since)).toEqual([
+        { articleId, priority: 'interactive' },
+      ]);
+    } finally {
+      h.router.respond = undefined;
+      (await write)?.close();
+      await h.setSetting('language_modes', modes);
+    }
+  });
 
   it('an invalid request fails the article; a failed recovery never downgrades an enriched one', async () => {
     const s = await scenario();
@@ -440,6 +474,38 @@ describe('article.match leases (spec 05 §5.5 steps 1, 6)', () => {
       ]);
       expect(await h.payloads('article.match', since)).toEqual([{ articleId: s.articleId }]);
     } finally {
+      await h.setSetting('card_text_mode', 'as_written');
+    }
+  });
+});
+
+describe('article.match completion fence (spec 05 §5.5 step 6)', () => {
+  it('a configuration switch committing while the pack completes discards it and enqueues current work', async () => {
+    const s = await scenario({ cards: 2 });
+    await h.enrichDirect(s.articleId, { topics: NO_BRANCH_TOPICS });
+    await h.queue(s.articleId, s.cardIds);
+    let write: Promise<SettingWrite> | undefined;
+    h.router.respond = async () => {
+      write ??= h.openSettingWrite('card_text_mode', 'english');
+      await write;
+      return undefined;
+    };
+    try {
+      const since = await h.mark();
+      const run = h.dispatch('article.match', { articleId: s.articleId });
+      expect(await waitFor(() => write !== undefined, 10_000)).toBe(true);
+      await (await write!).commit();
+      await run;
+      expect(await h.cardAnswers(s.articleId)).toEqual([]);
+      const rows = await h.queueRows(s.articleId);
+      expect(rows.map((row) => [row.leased, row.attempts, row.due])).toEqual([
+        [false, 0, true],
+        [false, 0, true],
+      ]);
+      expect(await h.payloads('article.match', since)).toEqual([{ articleId: s.articleId }]);
+    } finally {
+      h.router.respond = undefined;
+      (await write)?.close();
       await h.setSetting('card_text_mode', 'as_written');
     }
   });

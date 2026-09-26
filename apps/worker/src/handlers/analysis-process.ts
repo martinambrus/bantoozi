@@ -652,7 +652,7 @@ class AnalysisRun {
     result: AnalysisResultSnapshot,
   ): Promise<boolean> {
     const { snapshot, request, deps, classification } = this;
-    const config = await loadClassificationConfig(tx, deps.settingsEnv);
+    const config = await loadClassificationConfig(tx, deps.settingsEnv, { lock: true });
     if (!sameFrozenConfig(snapshot, config, classification.primaryModel)) return false;
     const article = await loadClassificationArticle(tx, request.articleId);
     if (article === null || article.revision !== request.articleRevision) return false;

@@ -1,6 +1,7 @@
 import {
   loadActiveQuestionSets,
   readStoredSetting,
+  shareLockSettings,
   type Executor,
   type QuestionSetKind,
 } from '@bantoozi/db';
@@ -16,8 +17,17 @@ import {
  * The classification configuration a job reads once for its snapshot (spec 05 §5.5 step 2): the
  * active question sets, card text mode, language modes and the prefilter flag. A completion
  * compares the configuration it read inside its transaction with the job's snapshot and discards
- * results asked under a configuration that changed meanwhile (spec 05 §5.5 step 6).
+ * results asked under a configuration that changed meanwhile (spec 05 §5.5 step 6). It reads them
+ * under share locks, so a switch either waits for the completion to commit or is seen by it (D-84).
  */
+
+/** The settings a completion compares with its snapshot. */
+const CLASSIFICATION_SETTING_KEYS = [
+  'question_sets.active',
+  'card_text_mode',
+  'language_modes',
+  'engine.prefilter_enabled',
+] as const;
 
 /** An active stored set whose version this worker's code builds, with the same sha (spec 05 §2). */
 export interface ActiveQuestionSet {
@@ -87,10 +97,16 @@ export function enrichQuestions(set: ActiveQuestionSet): Record<string, Question
   return (code as { questions: Record<string, Question> }).questions;
 }
 
+/**
+ * `lock` (a completion's transaction): share-lock the settings first, so the values read stay
+ * current until commit.
+ */
 export async function loadClassificationConfig(
   db: Executor,
   env: SettingEnvDefaults,
+  options: { lock?: boolean } = {},
 ): Promise<ClassificationConfig> {
+  if (options.lock === true) await shareLockSettings(db, CLASSIFICATION_SETTING_KEYS);
   const sets = await loadActiveQuestionSets(db);
   const cardTextMode =
     readSetting('card_text_mode', await readStoredSetting(db, 'card_text_mode'), env) ??

@@ -87,6 +87,30 @@ export const DAY = 86_400_000;
 
 export const ago = (ms: number): Date => new Date(Date.now() - ms);
 
+/** Poll `condition` every 20 ms until it holds or `timeoutMs` passes; whether it held. */
+export async function waitFor(
+  condition: () => boolean | Promise<boolean>,
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (await condition()) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+/** A setting write held open in its own transaction (`ClassifyHarness.openSettingWrite`). */
+export interface SettingWrite {
+  /**
+   * Commit once a session of the test database waits for a lock (a completion reading the setting
+   * under a share lock), or after `waitMs` without one (a read that does not wait).
+   */
+  commit(waitMs?: number): Promise<void>;
+  /** Return the connection; an uncommitted write is rolled back. */
+  close(): void;
+}
+
 /** Call A `topic_l1` probabilities of the scripted router: two L2 branches by default. */
 export const DEFAULT_TOPICS: Readonly<Record<string, number>> = { technology: 0.6, science: 0.3 };
 /** Topic probabilities that select no level-2 branch (`other` dominates). */
@@ -645,6 +669,39 @@ export class ClassifyHarness {
 
   async deleteSetting(key: string): Promise<void> {
     await this.owner.query('DELETE FROM settings WHERE key = $1', [key]);
+  }
+
+  /** Write a setting in a transaction of its own that keeps the row lock until `commit()`. */
+  async openSettingWrite(key: string, value: unknown): Promise<SettingWrite> {
+    const client = await this.owner.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO settings (key, value) VALUES ($1, $2::jsonb)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+        [key, JSON.stringify(value)],
+      );
+    } catch (error) {
+      client.release(true);
+      throw error;
+    }
+    return {
+      commit: async (waitMs = 2_000) => {
+        await waitFor(() => this.lockWaiter(), waitMs);
+        await client.query('COMMIT');
+      },
+      close: () => client.release(true),
+    };
+  }
+
+  /** Whether a session of the test database waits for a lock. */
+  async lockWaiter(): Promise<boolean> {
+    const result = await this.owner.query<{ waiting: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+          WHERE NOT l.granted AND a.datname = current_database()) AS waiting`,
+    );
+    return result.rows[0]?.waiting === true;
   }
 
   async setting(key: string): Promise<unknown> {
