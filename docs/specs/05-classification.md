@@ -589,7 +589,12 @@ from that request can satisfy this worker only when every current input fingerpr
 items are unclassified, never degraded merely because analysis was not requested. For admitted
 articles consider only the user's currently held positive cards scoped to an authorized carrying feed. A valid non-prefilter current answer is `answered`; missing work scheduled normally
 is `pending`; no-key/budget/breaker/exhausted or prefiltered work is `unavailable`. Labels/never-cards
-have independent coverage. Missing is never numerically equivalent to negative. Retain valid high
+have independent coverage. A reader's positive coverage aggregates in this order: `pending` when any
+applicable positive card is pending, otherwise `unavailable` when any is unavailable (`no_key`,
+`budget`, `circuit_open`, `exhausted`, or a prefilter marker whose pair is not scheduled again),
+otherwise `complete` (also with no applicable cards); a missing answer without known work is pending,
+and a usable answer stays answered while its pair is requeued (D-26). Missing is never numerically
+equivalent to negative. Retain valid high
 positive evidence; incomplete low positive evidence cannot send an item to Everything else. With no
 usable positive answers, pending goes to New and unavailable uses BM25/Maybe. A real current never-card
 answer can still apply its explicit rule. Reader coverage must be reevaluated on scope/config/revision

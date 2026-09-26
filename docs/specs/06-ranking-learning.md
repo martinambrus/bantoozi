@@ -22,7 +22,7 @@ interface UserRankContext {
   modelContextSha: string;              // model context for the active model's inputs (§8.1)
   config: RankerConfig;                 // fully validated shared defaults + settings overrides
   cards: { cardId: string; title: string; strength: Strength; scopeFeedId?: string;
-           interest: string; interestEn?: string }[];                    // texts are needed by BM25 (§9)
+           interest: string; interestEn?: string; lang?: string }[];     // texts and interest_cards.lang are needed by BM25 (§9)
   labels: { cardId: string; name: string }[];
   rules: { id: string; kind: RuleKind; value: string; expiresAt?: Date }[];   // non-expired only
   prefs: UserPreferences;                                                  // spec 08 §3.1
@@ -123,7 +123,11 @@ rankArticle(ctx, item, now):
 ```
 
 The "deciding card" is the positive card achieving `cardScore`, stored as `explain.decidingCardId`.
-Every rule that changes the outcome appends its code to `rulesFired` (§3.2). Ties use the lowest
+Every rule that changes the outcome appends its code to `rulesFired` (§3.2): a modifier fires only when
+the lane or P would differ without it (`seen_story` and a floor also fire when they preempt a later
+modifier, `never_soft:<id>` only when it lowers the lane, `pending_cards` only when step 7 moves the
+item), and the codes are listed in the order `seen_story`, `degraded`, floors (`must:<id>`,
+`boost_*`), `never_soft:<id>`, `llm_answer`, `pending_cards` (D-27). Ties use the lowest
 numeric card id. All exits return a valid `Explain` and label suggestions; hidden/new exits have null
 P and tier. A lane cap does not rewrite the score: a high tier in Everything after `seen_story` is
 intentional and is explained by the rule. `scoreSource = degraded` always fires `degraded`; actual
@@ -268,6 +272,9 @@ therefore still applies when the article is listed under authorized feed B. Book
 rows without a current authorized subscription are neutral too. Detail navigation carries `feedId`/view
 context so it does not unexpectedly reveal a different score. Counts and list pagination apply the
 same projection. This requires no provider work and never overwrites another view's global cache.
+A neutral row that matches an explicit hide/mute rule is `hidden` and fires only that rule's code,
+not `inference_not_requested`, because §2 step 1 precedes step 1b; the neutral explanation keeps the
+row's cached `explain.inputs` (null when the row has no stored explanation) (D-27).
 
 ---
 
@@ -280,7 +287,11 @@ user-specific rank invalidation; `user_article.rank_revision` records the revisi
 insertion goes through the transactional outbox (spec 03). Version numbers are serialized as strings.
 - `RANKER_VERSION` and `scoreVersion(settingsVersion)` are exported by `packages/ranker`. They are
   created in the ranker bootstrap (M2-T10), so both the API (M4) and the rank handler (M5) can use
-  them. The constant is bumped whenever the ranking semantics change.
+  them. The constant is bumped whenever the ranking semantics change. It is a positive decimal
+  string that starts at `'1'`, so the column default `'0:0'` is never current; `scoreVersion`
+  rejects a negative, fractional or non-canonical settings version and takes an optional ranker
+  version for evaluation, and `isRankCurrent(stored, current)` treats a missing row or a malformed
+  revision as outdated (D-28).
 - The API bumps `ranker.settings_version` on every change to `ranker.thresholds` (and to any future
   ranking-relevant key), and then enqueues `user.rank {full: true}` for users active in the last 7 days.
   A change to `strengthWeights` or `model` also records `user.learn` for users with an active model
@@ -613,7 +624,9 @@ Used when the article has no facets or answers because the engine was unavailabl
 baseline (spec 10).
 
 - **Tokenizer:** `normalizeText` (diacritics stripped, lower-case), split on non-alphanumerics, drop
-  tokens shorter than 2 chars and stop-words (small built-in EN/SK/CZ lists, ~150 words each).
+  tokens shorter than 2 chars and stop-words (small built-in EN/SK/CZ lists, ~150 words each, applied
+  as one union set after `normalizeText`; a stop word that normalizes to a content word of another
+  supported language, such as SK `byť` → `byt` or CS `více` → `vice`, is left out) (D-25).
 - **Document:** the title twice, then the excerpt (translated text instead, when a translation exists).
 - **Query:** applicable card `interest`, using `interest_en` only with an English document; do not
   compare translated English documents to untranslated Slovak/Czech queries. Without a matching
@@ -626,6 +639,9 @@ baseline (spec 10).
   Exact IDF is `ln(1 + (N-df+0.5)/(df+0.5))`; term contribution is
   `IDF * tf*(k1+1)/(tf + k1*(1-b + b*docLength/avgLength))`, summed over unique query terms.
   Empty corpus/document/query or zero average length yields score 0, never NaN.
+  The corpus keeps two statistics: over each article's document as defined above (its translation
+  when one exists), and over every article's own text; a translated article scored on its original
+  text because the card has no English query uses the second (D-25).
 - `s = max over positive cards of BM25(card, doc)`. `P = 1 − exp(−s / 3)`.
 - The lane is **always `maybe`**: never hidden and never `for_you`, because keywords are not trusted to
   hide or promote. Explicit hide rules/never evidence still apply first, and `seen_story` may

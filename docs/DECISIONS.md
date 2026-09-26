@@ -186,3 +186,30 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   still observes origin cooldowns, a merged tombstone still resolves to its survivor, and its
   outcome never changes a dead or paused status (only a reset does). Found by the Codex review of
   PR #5. Spec 03 §3 updated.
+- D-25: 2026-09-26 M2-T10 — BM25 details the spec left open. Ranker cards carry `lang`
+  (`interest_cards.lang`), so a card written in English pairs with a translated (English) document.
+  The corpus returns two statistics: over each article's §9 document (its translation when one
+  exists) and over every article's own text, which the "original document/query pair" fallback
+  uses, so that fallback is not scored against translated statistics. The EN/SK/CS stop-word lists
+  are applied as one set after `normalizeText`; a word that normalizes to a content word of another
+  supported language (SK `byť` → `byt`, CS `více` → `vice`, …) is left out, so one language's stop
+  word never erases another's content. Spec 06 §1 and §9 updated.
+- D-26: 2026-09-26 M2-T10 — the per-reader coverage aggregation of spec 05 §5.5 is made explicit:
+  `pending` when any applicable positive card is pending, else `unavailable` when any is unavailable
+  (`no_key`, `budget`, `circuit_open`, `exhausted`, or a prefilter marker not scheduled again), else
+  `complete` (also with no applicable cards). A missing answer without known work is pending, and a
+  usable answer stays answered while its pair is requeued. The spec named the three outcomes but not
+  their precedence. Spec 05 §5.5 updated.
+- D-27: 2026-09-26 M2-T10 — "every rule that changes the outcome" (spec 06 §2) is read
+  counterfactually: a modifier fires only when the lane or P would differ without it (`seen_story`
+  and floors also when they preempt a later modifier, `never_soft` only when it lowers the lane,
+  `pending_cards` only when step 7 moves the item); `degraded` always fires and `llm_answer` fires on
+  the deciding card's LLM answer, as before. Codes are listed in evaluation order. A neutral view
+  projection (§6.4) of a row that matches an explicit hide rule is `hidden` with only that rule's
+  code, since §2 step 1 precedes step 1b, and keeps the cached `explain.inputs`. The spec did not say
+  when a modifier that changes nothing fires, nor what a hidden neutral row explains. Spec 06 §2 and
+  §6.4 updated.
+- D-28: 2026-09-26 M2-T10 — `RANKER_VERSION` starts at `'1'`, never `'0'`, because the
+  `user_article.score_version` default `'0:0'` must never be current; `scoreVersion` rejects negative,
+  fractional or non-canonical settings versions and takes an optional ranker version for evaluation;
+  `isRankCurrent` treats a missing row or a malformed revision as outdated. Spec 06 §7 updated.
