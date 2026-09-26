@@ -38,6 +38,9 @@ let h: ClassifyHarness;
 
 const byId = (a: string, b: string): number => Number(a) - Number(b);
 const sorted = (ids: readonly string[]): string[] => [...ids].sort(byId);
+/** A card interest whose question cannot fit a request even alone (spec 05 §5.2). */
+const oversizedInterest = (topic: string): string =>
+  `${topic}: ${'Solid-state battery chemistry and pilot production lines. '.repeat(3_000)}`;
 
 beforeAll(async () => {
   h = await ClassifyHarness.start();
@@ -659,6 +662,38 @@ describe('article.match completion fence (spec 05 §5.5 step 6)', () => {
     }
   });
 
+  it('a configuration switch committing while an oversized question is exhausted keeps its row for current work', async () => {
+    const feedId = await h.feed();
+    const userId = await h.user();
+    await h.subscribe(userId, feedId, 'active');
+    // Under the snapshot this question would be exhausted as an invalid request.
+    const cardId = await h.heldCard(userId, {
+      topicIds: ['technology'],
+      interest: oversizedInterest('Fenced'),
+    });
+    const articleId = await h.article({ feedIds: [feedId] });
+    await h.enrichDirect(articleId, { topics: NO_BRANCH_TOPICS });
+    await h.queue(articleId, [cardId]);
+    // Written but not committed: the job's snapshot still has the old card text mode.
+    const write = await h.openSettingWrite('card_text_mode', 'english');
+    try {
+      const since = await h.mark();
+      const run = h.dispatch('article.match', { articleId });
+      await write.commit();
+      await run;
+      expect(h.router.asksFor(articleId, 'match')).toEqual([]);
+      // Not exhausted by the old question: due again, without an attempt.
+      const rows = await h.queueRows(articleId);
+      expect(rows.map((row) => [row.leased, row.attempts, row.due, row.lastError])).toEqual([
+        [false, 0, true, null],
+      ]);
+      expect(await h.payloads('article.match', since)).toEqual([{ articleId }]);
+    } finally {
+      write.close();
+      await h.setSetting('card_text_mode', 'as_written');
+    }
+  });
+
   it('a prefilter switch committing while its markers are written discards them and asks nothing', async () => {
     await h.setSetting('engine.prefilter_enabled', true);
     let write: SettingWrite | undefined;
@@ -1045,6 +1080,22 @@ describe('article.match failures and recovery (spec 05 §5.5 step 7)', () => {
     expect(h.router.asksFor(s.articleId, 'match').at(-1)?.cards).toEqual([failing]);
     expect((await h.cardAnswers(s.articleId)).map((a) => a.cardId)).toEqual([failing]);
     expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'enriched' });
+  });
+
+  it('exhausts a question that cannot fit a request even alone and still asks the others', async () => {
+    const s = await scenario({ cards: 1 });
+    const oversized = await h.heldCard(s.userId, {
+      topicIds: ['technology'],
+      interest: oversizedInterest('Exhausted'),
+    });
+    await h.enrichDirect(s.articleId, { topics: NO_BRANCH_TOPICS });
+    await h.queue(s.articleId, [...s.cardIds, oversized]);
+    await h.dispatch('article.match', { articleId: s.articleId });
+    expect(h.router.asksFor(s.articleId, 'match').map((ask) => ask.cards)).toEqual([s.cardIds]);
+    expect((await h.cardAnswers(s.articleId)).map((a) => a.cardId)).toEqual(s.cardIds);
+    expect(await h.queueRows(s.articleId)).toMatchObject([
+      { cardId: oversized, attempts: 5, lastError: 'invalid_request', leased: false },
+    ]);
   });
 
   it('keeps coverage per reader: one reader’s exhausted pair never blocks another reader’s answers', async () => {

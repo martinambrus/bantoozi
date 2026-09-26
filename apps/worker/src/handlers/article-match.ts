@@ -117,7 +117,7 @@ interface MatchJob {
  *    only under article demand), re-asking provisional fallback answers only in bulk packs;
  * 5. packs per owner partition and asks each pack, rechecking demand and renewing the lease first;
  * 6. applies an ok pack in a short transaction guarded by revision, configuration, demand and lease;
- *    every other write derived from the snapshot (steps 2, 3, 7 and 8) has the same configuration
+ *    every other write derived from the snapshot (steps 2, 3, 5, 7 and 8) has the same configuration
  *    fence, and a job that finds the configuration changed stops asking (D-85);
  * 7. releases failed rows as deferred, failed or exhausted without a hot loop; a failed level-2-only
  *    pack, which has no queue row, records a delayed retry job under the same rules instead;
@@ -287,7 +287,8 @@ async function prefilter(
 /**
  * Steps 4–5: the pack items of the remaining cards plus the selected L2 branches (§4) and the packs
  * (§5.2). A question that cannot fit a request even alone is a permanent invalid request: its row is
- * exhausted and alerted, never silently omitted.
+ * exhausted and alerted, never silently omitted, unless the configuration changed meanwhile (then
+ * the job stops and current work asks, D-85).
  */
 async function buildPacks(
   job: MatchJob,
@@ -357,12 +358,15 @@ async function buildPacks(
       const cardIds = overflowing.flatMap((item) =>
         item.cardId === undefined ? [] : [item.cardId],
       );
-      await releaseRows(job.deps, job.article.id, job.leaseToken, cardIds, {
-        kind: 'exhaust',
-        lastError: 'invalid_request',
-      });
-      for (const id of cardIds) job.held.delete(id);
-      if (items.length === 0) return [];
+      if (cardIds.length > 0) {
+        await retryTransaction(job.deps.db, async (tx) => {
+          // The overflow measured the snapshot's questions: under a changed configuration the rows
+          // go to current work instead of being exhausted by it (D-85).
+          if (!(await revisionHolds(tx, job)) || !(await configHolds(tx, job))) return;
+          await releaseHeld(tx, job, cardIds, { kind: 'exhaust', lastError: 'invalid_request' });
+        });
+      }
+      if (job.stale || items.length === 0) return [];
     }
   }
 }
