@@ -283,6 +283,10 @@ importers:
       undici:
         specifier: 8.11.2
         version: 8.11.2
+    devDependencies:
+      '@bantoozi/testing':
+        specifier: workspace:*
+        version: link:../testing
 
   packages/feeds:
     dependencies:
@@ -394,6 +398,10 @@ importers:
       undici:
         specifier: 8.11.2
         version: 8.11.2
+    devDependencies:
+      '@bantoozi/testing':
+        specifier: workspace:*
+        version: link:../testing
 
 packages:
 

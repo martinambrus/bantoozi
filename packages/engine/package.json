@@ -24,5 +24,7 @@
     "@bantoozi/shared": "workspace:*",
     "undici": "8.11.2"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@bantoozi/testing": "workspace:*"
+  }
 }

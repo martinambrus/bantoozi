@@ -22,3 +22,4 @@ export * from './ranker-config.js';
 export * from './settings.js';
 export * from './text/canonical-json.js';
 export * from './text/normalize-text.js';
+export * from './text/tokens.js';
