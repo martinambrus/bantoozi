@@ -190,6 +190,12 @@ async function feedRow(feedId: string) {
 describe('applyPermanentRedirect without another feed (spec 03 §9)', () => {
   it('renames the canonical URL and fetches the redirect target', async () => {
     const feed = await createFeed(ctx.owner);
+    const setValidators = (etag: string) =>
+      ctx.owner.query(
+        `UPDATE feeds SET etag = $2, last_modified = 'Fri, 25 Sep 2026 10:00:00 GMT' WHERE id = $1`,
+        [feed.id, etag],
+      );
+    await setValidators('"old-url"');
     const canonical = `${feed.url.replace('.xml', '')}-moved.xml`;
     const signed = `${canonical}?utm_source=rss&sig=abc`;
     expect(await redirect(feed.id, canonical, signed)).toEqual({
@@ -197,18 +203,33 @@ describe('applyPermanentRedirect without another feed (spec 03 §9)', () => {
       url: canonical,
       fetchUrl: signed,
     });
+    // The old URL's validators go in the same update (D-18): the new one never receives them.
     expect(await feedRow(feed.id)).toMatchObject({
       url: canonical,
       fetch_url: signed,
       status: 'active',
+      etag: null,
+      last_modified: null,
     });
     // The same redirect again changes nothing; a new fetch URL for the same identity is followed.
+    await setValidators('"signed-url"');
     expect(await redirect(feed.id, canonical, signed)).toEqual({ kind: 'unchanged' });
+    expect(await feedRow(feed.id)).toMatchObject({ etag: '"signed-url"' });
     expect(await redirect(feed.id, canonical, `${canonical}?sig=def`)).toEqual({
       kind: 'renamed',
       url: canonical,
       fetchUrl: `${canonical}?sig=def`,
     });
+    expect(await feedRow(feed.id)).toMatchObject({ etag: null, last_modified: null });
+    // A new identity that keeps the fetch URL keeps its validators.
+    await setValidators('"sig-def"');
+    const renamed = `${canonical.replace('.xml', '')}-renamed.xml`;
+    expect(await redirect(feed.id, renamed, `${canonical}?sig=def`)).toEqual({
+      kind: 'renamed',
+      url: renamed,
+      fetchUrl: `${canonical}?sig=def`,
+    });
+    expect(await feedRow(feed.id)).toMatchObject({ etag: '"sig-def"' });
   });
 
   it('leaves tombstones and missing feeds alone', async () => {

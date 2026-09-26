@@ -877,7 +877,9 @@ A feed with no prior new-item timestamp uses the 24-hour MAX until it has actual
 
 **Permanent redirect of the feed URL** (301/308 on the feed fetch):
 - If no other feed has the new canonical URL, update `feeds.url`, and set `feeds.fetch_url` to the
-  redirect target.
+  redirect target. A new `fetch_url` clears `etag` and `last_modified` in the same update, since they
+  belong to the old URL (D-18); the fetch that followed the redirect stores the target's own when it
+  records its outcome.
 - If another feed has it, **merge** into the surviving feed in one transaction (as `bantoozi_worker`):
   - lock feed IDs in ascending order and recheck the target; move subscriptions and feed items
   - create target subscriptions before repointing scoped cards, then remove source subscriptions

@@ -71,6 +71,7 @@ export type PermanentRedirectResult =
  * - Another feed has it: this feed merges into that feed's live root (`merged`, see `mergeFeeds`).
  *   When the URL belongs to a tombstone already merged into **this** feed, identity stays and only
  *   `fetch_url` follows the redirect (`renamed` with the unchanged `url`).
+ * A rename that changes `fetch_url` clears the old URL's validators in the same update.
  */
 export async function applyPermanentRedirect(
   tx: Transaction,
@@ -120,6 +121,12 @@ export async function applyPermanentRedirect(
   }
 }
 
+/**
+ * Point the feed at its redirect target. Validators belong to the URL that returned them (spec 03
+ * §9, D-18), so a new `fetch_url` clears `etag` and `last_modified` in the same update: the fetch
+ * that followed the redirect stores the target's own only when it records its outcome, and a
+ * worker that stops in between must not send the old URL's validators to the new one.
+ */
 async function renameFeed(
   tx: Transaction,
   feedId: string,
@@ -127,7 +134,11 @@ async function renameFeed(
   fetchUrl: string,
 ): Promise<PermanentRedirectResult> {
   const updated = await tx.execute<{ url: string; fetch_url: string }>(sql`
-    UPDATE feeds SET url = ${url}, fetch_url = ${fetchUrl}, updated_at = now()
+    UPDATE feeds
+       SET url = ${url}, fetch_url = ${fetchUrl},
+           etag = CASE WHEN fetch_url = ${fetchUrl} THEN etag END,
+           last_modified = CASE WHEN fetch_url = ${fetchUrl} THEN last_modified END,
+           updated_at = now()
      WHERE id = ${feedId}::bigint AND merged_into_id IS NULL
     RETURNING url, fetch_url`);
   const row = updated.rows[0];

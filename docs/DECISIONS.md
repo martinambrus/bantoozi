@@ -119,6 +119,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   that the next poll does not request. That URL could answer the foreign ETag or date with 304 and
   hide the target's new items. Such a 200 now clears both validators, and such a 304 leaves them
   unchanged; after an adopted permanent redirect the target is the new `fetch_url` and keeps its
-  validators. The already implemented rule that a fetch whose item failed to ingest after its
-  retries clears them too is now stated as well, since both follow the parse-error rule. Found by
-  the Codex review of PR #5. Spec 03 §9 updated.
+  validators. The rename that changes `fetch_url` clears the old URL's validators in the same
+  update, so a worker that stops before the fetch records its outcome never sends them to the new
+  URL. The already implemented rule that a fetch whose item failed to ingest after its retries
+  clears them too is now stated as well, since both follow the parse-error rule. Found by the Codex
+  review of PR #5. Spec 03 §9 updated.
