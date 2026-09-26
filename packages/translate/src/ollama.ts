@@ -5,6 +5,7 @@ import {
   type CallStatus,
   type Clock,
 } from '@bantoozi/shared';
+import { languageName } from '@bantoozi/shared/server';
 import type { Dispatcher } from 'undici';
 
 import { isCount, isPlainObject, ownValue } from './guards.js';
@@ -24,7 +25,6 @@ import {
   retryAfterMs,
   send,
 } from './http.js';
-import { languageName } from './language-names.js';
 import { ARTICLE_SOURCE_LIMITS, isBlankText } from './source.js';
 import {
   TRANSLATION_FIELDS,

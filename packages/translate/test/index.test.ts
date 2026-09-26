@@ -24,7 +24,6 @@ describe('@bantoozi/translate public API', () => {
       'skippedTier2QualityDetail',
       'translateCardText',
       'verifyTier1',
-      'languageName',
       'translationSourceSha256',
     ]) {
       expect(typeof (translate as Record<string, unknown>)[name], name).toBe('function');

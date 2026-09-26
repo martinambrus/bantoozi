@@ -7,6 +7,7 @@
 export * from './config.js';
 export * from './credential-ports.js';
 export * from './hash.js';
+export * from './language-names.js';
 export * from './language.js';
 export * from './logger.js';
 export * from './mail/mailer.js';

@@ -1,7 +1,6 @@
-import { normalizeLanguageHint } from '@bantoozi/shared/server';
 import { describe, expect, it } from 'vitest';
 
-import { languageName } from '../src/index.js';
+import { languageName, normalizeLanguageHint } from '../src/server/index.js';
 
 describe('languageName', () => {
   it('names the beta languages in English', () => {

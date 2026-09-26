@@ -1,4 +1,4 @@
-import { normalizeLanguageHint } from '@bantoozi/shared/server';
+import { normalizeLanguageHint } from './language.js';
 
 /**
  * English names of the ISO 639-1 languages, e.g. `sk` → `Slovak`, `cs` → `Czech`. The tier-2
