@@ -1,6 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 
 import { tenantUserId, type TenantTx } from '../tenant.js';
+import { toDate, type RawTimestamp } from '../timestamps.js';
 import { parseCardBody } from './body.js';
 import type { CardOrigin, CardVisibility, HeldCard, HeldLabel } from './types.js';
 import type { CardStrength } from './validation.js';
@@ -26,8 +27,8 @@ type HeldCardRow = {
   lang: string;
   slug: string | null;
   i18n: unknown;
-  created_at: Date;
-  updated_at: Date;
+  created_at: RawTimestamp;
+  updated_at: RawTimestamp;
 };
 
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -59,8 +60,8 @@ function heldCard(row: HeldCardRow): HeldCard {
     lang: row.lang,
     librarySlug: row.slug,
     i18n: asRecord(row.i18n),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdAt: toDate(row.created_at),
+    updatedAt: toDate(row.updated_at),
   };
 }
 
@@ -99,7 +100,7 @@ type HeldLabelRow = {
   visibility: CardVisibility;
   lang: string;
   count: number;
-  created_at: Date;
+  created_at: RawTimestamp;
 };
 
 function heldLabel(row: HeldLabelRow): HeldLabel {
@@ -120,7 +121,7 @@ function heldLabel(row: HeldLabelRow): HeldLabel {
     isPrivateFork: row.visibility === 'private',
     lang: row.lang,
     count: row.count,
-    createdAt: row.created_at,
+    createdAt: toDate(row.created_at),
   };
 }
 

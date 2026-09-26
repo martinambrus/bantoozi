@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm';
 
 import type { Transaction } from '../client.js';
 import { workerOutbox } from '../outbox.js';
+import type { RawTimestamp } from '../timestamps.js';
 
 /**
  * Seeding the public card library by slug (spec 05 §8, spec 02 §3.6). Library cards are immutable
@@ -60,7 +61,7 @@ type CardRow = {
   topic_ids: string[];
   i18n: unknown;
   visibility: 'public' | 'shared' | 'private';
-  retired_at: Date | null;
+  retired_at: RawTimestamp | null;
   in_chain: boolean;
 };
 
