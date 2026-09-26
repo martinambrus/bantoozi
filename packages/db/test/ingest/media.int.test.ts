@@ -750,6 +750,27 @@ describe('saveExtractionResult media signals (spec 03 §8.1 step 6)', () => {
       media_revision: '1',
     });
 
+    // A failed extraction of a newer revision keeps the older revision's page body: the word count
+    // and the image count both keep describing that body, not the excerpt.
+    const older = await extractedArticle(text, 5);
+    await ctx.worker.transaction((tx) =>
+      resetArticleAnswers(tx, workerOutbox(tx), older.id, {
+        reason: 'source_changed',
+        nextState: 'ingested',
+      }),
+    );
+    expect(
+      await save(
+        outcome(older, { expectedRevision: '2', body: empty('failed', 'timeout'), wordCount: 2 }),
+      ),
+    ).toMatchObject({ status: 'saved', revision: '2', advanced: true });
+    expect(await getArticleBody(ctx.worker, older.id)).toMatchObject({
+      articleRevision: '1',
+      bodyText: text,
+    });
+    expect(await wordCount(older.id)).toBe(6);
+    expect(await media(older.id)).toMatchObject({ has_video: false, body_image_count: 5 });
+
     // A partial feed body replaced by the page: the page's count.
     const replaced = await createArticle(ctx.owner);
     await storeBody(replaced.id, '1', feedBody(text));

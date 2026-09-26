@@ -321,7 +321,8 @@ describe('saveExtractionResult (spec 03 §8.1 steps 6–8, §2.1)', () => {
     expect(await articleRow(good.id)).toMatchObject({ revision: '1', lang: 'en' });
     expect(await outboxQueues()).toEqual([]);
 
-    // A good body of an older revision stays readable when the new revision's extraction fails.
+    // A good body of an older revision stays readable when the new revision's extraction fails,
+    // and word_count keeps counting that body rather than the excerpt the result was counted on.
     await ctx.worker.transaction((tx) =>
       resetArticleAnswers(tx, workerOutbox(tx), good.id, {
         reason: 'source_changed',
@@ -338,7 +339,7 @@ describe('saveExtractionResult (spec 03 §8.1 steps 6–8, §2.1)', () => {
     expect(await articleRow(good.id)).toMatchObject({
       revision: '2',
       pipeline_state: 'extracted',
-      word_count: 3,
+      word_count: 4,
     });
   });
 

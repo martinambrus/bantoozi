@@ -314,7 +314,8 @@ async function setLanguage(
  * - `ingested` (the pending extraction of this revision), for **every** terminal status: store the
  *   body at this revision, set `lang`, `lang_confidence`, `word_count` and move to `extracted` →
  *   `saved` with `advanced: true`. A stored body with content is kept instead of a result without
- *   one, and a complete `ok` body of this revision instead of a partial result;
+ *   one, and a complete `ok` body of this revision instead of a partial result; `word_count` then
+ *   counts the kept body, whatever its revision;
  * - `stale`: stored like the pending extraction but the state stays `stale` (`advanced: false`); a
  *   changed re-extraction of a revision that already has a page extraction resets as below, in its
  *   stale-preserving form;
@@ -368,8 +369,10 @@ export async function saveExtractionResult(
   if (article.pipeline_state === 'ingested' || (stale && !extractedBefore)) {
     // The pending extraction of this revision: no model result depends on its body yet.
     if (!keep) await upsertArticleBody(tx, articleId, revision, outcome.body);
-    const keptText =
-      keep && stored !== null && stored.articleRevision === revision ? stored.bodyText : null;
+    // `word_count` counts the body `article_bodies` holds once this commits, the text that
+    // `body_image_count` describes (spec 03 §6.4): a kept body, also one of an older revision,
+    // instead of the excerpt the result was counted on.
+    const keptText = keep && stored !== null ? stored.bodyText : null;
     const wordCount = keptText === null ? outcome.wordCount : countWords(keptText);
     await setLanguage(tx, articleId, outcome, wordCount, !stale);
     await applyMediaSignals(
