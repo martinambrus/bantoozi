@@ -118,6 +118,35 @@ const makeDue = (articleId: string) =>
     articleId,
   ]);
 
+const letGo = (userId: string, cardId: string) =>
+  h.owner.query('DELETE FROM user_cards WHERE user_id = $1 AND card_id = $2', [userId, cardId]);
+
+/**
+ * Until the returned cleanup runs, every write to the leased queue row of `cardId` (a lease renewal
+ * or a deletion) first gives `userId` their holding of that card back, in the writing transaction:
+ * demand that returns as a job drops the pair. A new holder's backfill that queues the pair again at
+ * the same revision keeps the job's lease, so the job's own row is all that is left of that work.
+ */
+async function holdingReturnsOnWrite(userId: string, cardId: string): Promise<() => Promise<void>> {
+  await h.owner.query(`
+    CREATE FUNCTION test_holding_returns() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+    BEGIN
+      INSERT INTO user_cards (user_id, card_id, strength)
+      VALUES ('${userId}'::uuid, ${Number(cardId)}, 'like') ON CONFLICT DO NOTHING;
+      IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+      RETURN NEW;
+    END $$`);
+  await h.owner.query(`
+    CREATE TRIGGER test_holding_returns BEFORE UPDATE OR DELETE ON match_queue FOR EACH ROW
+      WHEN (OLD.card_id = ${Number(cardId)} AND OLD.lease_token IS NOT NULL)
+      EXECUTE FUNCTION test_holding_returns()`);
+  return async () => {
+    await h.owner.query('DROP TRIGGER test_holding_returns ON match_queue');
+    await h.owner.query('DROP FUNCTION test_holding_returns()');
+  };
+}
+
 describe('article.enrich outcomes (spec 05 §3, spec 04 §5)', () => {
   it('writes current facets, moves to enriched, queues the admitted cards and records cluster + match', async () => {
     const s = await scenario();
@@ -1148,6 +1177,30 @@ describe('article.match packs (spec 05 §5.2, §5.5 steps 2–5)', () => {
     expect((await h.l2Rows(articleId)).map((row) => row.l1)).toEqual(['science', 'technology']);
     expect(await h.articleRow(articleId)).toMatchObject({ state: 'matched' });
   });
+
+  it('reads demand under the drop’s row locks: a pair whose holder returns before it is asked, not deleted', async () => {
+    const s = await scenario({ cards: 2 });
+    const [, returning] = sorted(s.cardIds) as [string, string];
+    await h.enrichDirect(s.articleId, { topics: NO_BRANCH_TOPICS });
+    await h.queue(s.articleId, s.cardIds);
+    // The reader let go of one card after it was queued and holds it again as the job drops pairs.
+    await letGo(s.userId, returning);
+    const restore = await holdingReturnsOnWrite(s.userId, returning);
+    try {
+      await h.dispatch('article.match', { articleId: s.articleId });
+    } finally {
+      await restore();
+    }
+
+    expect(h.router.asksFor(s.articleId, 'match').map((ask) => sorted(ask.cards))).toEqual([
+      sorted(s.cardIds),
+    ]);
+    expect(sorted((await h.cardAnswers(s.articleId)).map((a) => a.cardId))).toEqual(
+      sorted(s.cardIds),
+    );
+    expect(await h.queueRows(s.articleId)).toEqual([]);
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'matched' });
+  });
 });
 
 describe('article.match failures and recovery (spec 05 §5.5 step 7)', () => {
@@ -1275,6 +1328,41 @@ describe('article.match failures and recovery (spec 05 §5.5 step 7)', () => {
     );
     const ranked = (await h.payloads('user.rank', since)).map((p) => p['userId']);
     expect([...ranked].sort()).toEqual([a, b].sort());
+  });
+
+  it('a no_demand failure keeps a pair whose holder returns before its rows are released', async () => {
+    const s = await scenario({ cards: 2 });
+    const [, returning] = sorted(s.cardIds) as [string, string];
+    await h.enrichDirect(s.articleId, { topics: NO_BRANCH_TOPICS });
+    await h.queue(s.articleId, s.cardIds);
+    const restore = await holdingReturnsOnWrite(s.userId, returning);
+    const since = await h.mark();
+    try {
+      // The reader lets go of one card while the pack is in flight, and holds it again as the job
+      // drops the pairs the failure left without demand.
+      h.router.respond = async () => {
+        await letGo(s.userId, returning);
+        return { ok: false, reason: 'no_demand' };
+      };
+      await h.dispatch('article.match', { articleId: s.articleId });
+    } finally {
+      await restore();
+    }
+
+    expect(await h.cardAnswers(s.articleId)).toEqual([]);
+    expect(await h.queueRows(s.articleId)).toMatchObject(
+      sorted(s.cardIds).map((cardId) => ({ cardId, attempts: 0, leased: false, due: true })),
+    );
+    expect(await h.payloads('article.match', since)).toEqual([{ articleId: s.articleId }]);
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'enriched' });
+
+    // The follow-up asks both pairs.
+    h.router.respond = undefined;
+    await h.dispatch('article.match', { articleId: s.articleId });
+    expect(sorted((await h.cardAnswers(s.articleId)).map((a) => a.cardId))).toEqual(
+      sorted(s.cardIds),
+    );
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'matched' });
   });
 });
 

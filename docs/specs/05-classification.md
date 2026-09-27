@@ -572,7 +572,10 @@ from that request can satisfy this worker only when every current input fingerpr
    (a 10-minute lease over 5-minute calls, renewed before every pack, D-77); renew or stop if
    ownership is lost. The article worker also serializes L2-only scheduling.
 2. Drop retired/unheld/out-of-scope or no-longer-admitted pairs; recheck inference mode/version and
-   selected request authorization from §1.1 before every outgoing pack. Delete already-satisfied rows only when a current answer
+   selected request authorization from §1.1 before every outgoing pack. A drop locks the rows its
+   lease holds and reads their demand in the transaction that deletes them: a new holder's backfill
+   that queues a pair again at the same revision keeps the lease (§5.4), so its demand is either
+   read or its upsert waits and queues the pair afresh (D-91). Delete already-satisfied rows only when a current answer
    matches **all** §2 fingerprints and an approved primary engine/model. LLM/prefilter answers are
    provisional and cannot suppress recovery. Read the active configuration once for this job snapshot.
 3. **Prefilter (optional, disabled until G1 validates recall).** With more than

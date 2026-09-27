@@ -29,6 +29,7 @@ import {
   writeL2Answers,
   type CardAnswerInput,
   type CardInput,
+  type CardPairDemand,
   type ClaimedMatchRow,
   type ClassificationArticle,
   type FacetRow,
@@ -216,14 +217,10 @@ async function prepareCards(job: MatchJob): Promise<Map<string, CardInput>> {
   const { deps, article } = job;
   const claimed = [...job.held.keys()];
   if (claimed.length === 0) return new Map();
-  const demand = await cardPairDemand(deps.db, article.id, claimed);
+  const demand = await jobTransaction(job, (tx) => dropUndemanded(tx, job, claimed));
   const cards = await loadCardInputs(
     deps.db,
     demand.map((d) => d.cardId),
-  );
-  await dropRows(
-    job,
-    claimed.filter((id) => !cards.has(id)),
   );
   for (const [id, card] of cards) {
     job.questions.set(id, builtCardQuestion(card, job.config.cardTextMode));
@@ -400,12 +397,11 @@ async function askPack(job: MatchJob, pack: Pack): Promise<void> {
   });
 
   // Recheck §1.1 admission right before the pack leaves (spec 05 §5.5 step 2).
-  const demand = packCards.length === 0 ? [] : await cardPairDemand(deps.db, article.id, packCards);
+  const demand =
+    packCards.length === 0
+      ? []
+      : await jobTransaction(job, (tx) => dropUndemanded(tx, job, packCards));
   const demanded = new Set(demand.map((d) => d.cardId));
-  await dropRows(
-    job,
-    packCards.filter((id) => !demanded.has(id)),
-  );
   const askCards = packCards.filter((id) => demanded.has(id));
   const articleWitnesses =
     packL2.length === 0 ? [] : await eligibleInferenceDemand(deps.db, article.id);
@@ -439,10 +435,7 @@ async function askPack(job: MatchJob, pack: Pack): Promise<void> {
       type: 'article',
       articleId: article.id,
       articleRevision: article.revision,
-      witnesses: mergeWitnesses(
-        pairWitnesses(demand.filter((d) => demanded.has(d.cardId))),
-        articleWitnesses,
-      ),
+      witnesses: mergeWitnesses(pairWitnesses(demand), articleWitnesses),
     },
     deadlineMs: nowOf(deps).getTime() + classification.callDeadlineMs,
   });
@@ -584,18 +577,11 @@ async function failPack(
     if (!(await revisionHolds(tx, job)) || !(await configHolds(tx, job))) return;
     if (release === 'drop') {
       // Revoked demand: drop only the pairs that no longer have it, quietly.
-      const demanded = new Set(
-        (await cardPairDemand(tx, article.id, askCards)).map((d) => d.cardId),
-      );
-      await dropHeld(
-        tx,
-        job,
-        askCards.filter((id) => !demanded.has(id)),
-      );
+      const kept = await dropUndemanded(tx, job, askCards);
       await releaseHeld(
         tx,
         job,
-        askCards.filter((id) => demanded.has(id)),
+        kept.map((d) => d.cardId),
         { kind: 'release' },
       );
       return;
@@ -816,9 +802,29 @@ async function releaseHeld(
   for (const id of cardIds) job.held.delete(id);
 }
 
-async function dropRows(job: MatchJob, cardIds: readonly string[]) {
-  if (cardIds.length === 0) return;
-  await jobTransaction(job, (tx) => dropHeld(tx, job, cardIds));
+/**
+ * Drop the given claimed rows whose pair has no live demand (steps 2, 5 and 7 `no_demand`) and
+ * return the demand of those this lease still holds that keep it. The rows are locked before their
+ * demand is read, in the transaction that deletes them: a new holder's backfill that queues a pair
+ * again at this revision keeps this lease's token, so a drop decided on an earlier read would delete
+ * the work it just queued. Locked first, such an upsert either committed before, and its demand is
+ * read here, or waits and queues the pair afresh after the deletion (D-91).
+ */
+async function dropUndemanded(
+  tx: Transaction,
+  job: MatchJob,
+  cardIds: readonly string[],
+): Promise<CardPairDemand[]> {
+  const held = await heldRows(tx, job, cardIds);
+  if (held.length === 0) return [];
+  const demand = await cardPairDemand(tx, job.article.id, held);
+  const demanded = new Set(demand.map((d) => d.cardId));
+  await dropHeld(
+    tx,
+    job,
+    held.filter((id) => !demanded.has(id)),
+  );
+  return demand;
 }
 
 /**

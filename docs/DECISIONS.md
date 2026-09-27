@@ -618,3 +618,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   token-checked completion then discarded its result. The authorization now carries the validation
   token, and the reservation admits it only while that token holds the live lease, as the `suggest`
   authorization carries its lease token. Spec 04 §1 and §1.2 updated.
+- D-91: 2026-09-27 M2-T9 — spec 05 §5.5 step 2 drops claimed pairs that lost their demand, and §5.4
+  step 4 keeps a live lease when a pair is queued again at the same revision. The match handler
+  decided its drops (in step 2, before each pack, and after a `no_demand` failure) on a demand read
+  taken before it locked the rows, so a new holder's backfill that queued a pair again in between
+  left the row under the job's lease token, and the drop deleted it. The backfill's match job then
+  found nothing to ask, and the pair stayed unevaluated until another event queued it. Every drop
+  now locks the rows its lease holds, reads their demand in that transaction and deletes only the
+  pairs still without it: an upsert that committed first has its demand read, and a later one waits
+  and queues the pair afresh. Spec 05 §5.5 step 2 updated.
