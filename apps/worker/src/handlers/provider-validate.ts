@@ -428,6 +428,8 @@ export function createProviderValidateHandler(
       reservedUsd += lane.estimateUsd;
       attempts += 1;
       const { attempt } = sent;
+      // A concluded probe stands even when its attempt cost more than the reserve: the overrun
+      // stops further calls (spec 04 §6), and a concluded probe makes none (D-86).
       if (attempt.ok) {
         return result('valid', undefined, {
           ...base(),

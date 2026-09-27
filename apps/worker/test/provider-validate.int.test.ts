@@ -503,6 +503,31 @@ describe('provider.validate (spec 04 §1.2 step 2)', () => {
     });
   });
 
+  it('records a correct answer that cost more than its reserve as valid; the overrun is charged', async () => {
+    // A concluded probe makes no further call, so the overrun leaves its result standing (D-86).
+    ollama.setOptions({
+      statusOverride: (body) => {
+        const response = fakeOllamaResponse(body, { mode: 'ok' }) as Record<string, unknown>;
+        return { status: 200, body: { ...response, prompt_eval_count: 100_000 } };
+      },
+    });
+    const version = await stage('ollama', OLLAMA_KEY);
+    await handler().validate('ollama', version);
+
+    expect(await metadata('ollama')).toMatchObject({
+      candidateStatus: 'valid',
+      lastErrorCode: null,
+    });
+    expect(ollama.requests).toHaveLength(1);
+    const [reserved] = await reservations();
+    const [call] = await calls();
+    expect(call).toMatchObject({ status: 'ok', billing: 'known' });
+    expect(Number(call?.cost_usd)).toBeGreaterThan(reserved!.reserved_usd);
+    expect(lastLog('engine attempt cost exceeded its reservation')).toMatchObject({
+      kind: 'credential_probe',
+    });
+  });
+
   it('keeps one validation action within $0.02 of reserved spend', async () => {
     // A price at which one attempt reserves $0.012: a second one would exceed the bound.
     const tokens = conservativeRequestTokens(PROBE_STATE, TYPESAFE_PROBE_QUESTIONS);
