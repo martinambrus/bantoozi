@@ -1,0 +1,465 @@
+{
+  "description": "Call A: enrich-v1 (spec 05 §3.3) for one native English article; every answer type.",
+  "source": "Hand-written from the documented request/response shapes of spec 04 §3 (not a provider recording); replaced by RECORD=1 recordings once a key is available.",
+  "request": {
+    "model": "jev-1.13.0",
+    "state": {
+      "article": {
+        "title": "Solid-state battery pilot line passes 1,000 fast-charge cycles",
+        "feed": {
+          "title": "Volt Weekly",
+          "site": "voltweekly.example"
+        },
+        "author": "Jana Nováková",
+        "categories": [
+          "Electric vehicles",
+          "Batteries"
+        ],
+        "excerpt": "Cells from the new pilot line kept 90% of their capacity after 1,000 fast-charge cycles, a milestone for the solid-state packs the carmaker plans to ship in 2028.",
+        "body_lead": "The carmaker said on Tuesday that prototype cells built on its pilot line near Nagoya retained 90% of their capacity after 1,000 cycles of charging from 10% to 80% in twelve minutes. Engineers attribute the result to a sulfide electrolyte that no longer cracks under repeated expansion of the lithium-metal anode. Independent researchers cautioned that pilot-line cells are hand-picked and that mass production will decide the real cost per kilowatt-hour.",
+        "length": "medium",
+        "language": "English"
+      }
+    },
+    "questions": {
+      "content_type": {
+        "type": "choice",
+        "instructions": {
+          "question": "What kind of piece is `article`?",
+          "focus": "Judge the form of the piece, not its topic."
+        },
+        "criteria": {
+          "news_report": {
+            "what": "Reports a specific recent event, announcement, release, ruling or result",
+            "examples": [
+              "Company X recalls 40,000 cars over brake fault"
+            ]
+          },
+          "analysis": {
+            "what": "Explains causes, context or implications of events, based on reporting or data"
+          },
+          "opinion": {
+            "what": "Argues the author's personal view: column, editorial, commentary"
+          },
+          "tutorial": {
+            "what": "Teaches how to do something step by step"
+          },
+          "review": {
+            "what": "Evaluates one specific product, book, film, game, place or service"
+          },
+          "listicle": {
+            "what": "Organized as a numbered or bulleted list of items (\"10 best …\")"
+          },
+          "press_release": {
+            "what": "Written by the organization it is about, announcing something in its own voice"
+          },
+          "deal_or_ad": {
+            "what": "Sells something: discount, offer, classified ad, sponsored product placement"
+          },
+          "job_or_event": {
+            "what": "A job posting, event listing or call for participants"
+          },
+          "media": {
+            "what": "Mainly a podcast episode, video or photo gallery with little text"
+          },
+          "interview": {
+            "what": "Mostly questions and answers with one person"
+          },
+          "other": null
+        }
+      },
+      "topic_l1": {
+        "type": "choice",
+        "instructions": {
+          "question": "Which top-level topic is `article` primarily about?",
+          "focus": "Pick the main subject, not every topic mentioned."
+        },
+        "criteria": {
+          "technology": {
+            "what": "Software, hardware, the internet, AI and the tech industry",
+            "includes": [
+              "Software development",
+              "AI and machine learning",
+              "Hardware and gadgets",
+              "Cybersecurity",
+              "Internet platforms and social media",
+              "Telecom and connectivity",
+              "Open source",
+              "Tech companies and industry"
+            ]
+          },
+          "science": {
+            "what": "Scientific discoveries and research",
+            "includes": [
+              "Space and astronomy",
+              "Physics and chemistry",
+              "Biology and life sciences",
+              "Earth and climate science",
+              "Research and academia"
+            ]
+          },
+          "health": {
+            "what": "Medicine, fitness, nutrition and wellbeing",
+            "includes": [
+              "Medicine and healthcare",
+              "Fitness and exercise",
+              "Nutrition and diet",
+              "Mental health",
+              "Public health"
+            ]
+          },
+          "business": {
+            "what": "Companies, markets, money and work",
+            "includes": [
+              "Companies and industry",
+              "Startups and venture capital",
+              "Markets and investing",
+              "Personal finance",
+              "Real estate",
+              "Careers and work",
+              "Crypto and blockchain"
+            ]
+          },
+          "economy": {
+            "what": "The economy as a whole and economic policy",
+            "includes": [
+              "Macroeconomy",
+              "Central banks and inflation",
+              "Labour market",
+              "Trade and tariffs",
+              "Taxes and public finance"
+            ]
+          },
+          "politics": {
+            "what": "Government, elections, law and diplomacy",
+            "includes": [
+              "Domestic politics",
+              "Elections",
+              "International relations",
+              "Law and justice",
+              "Government policy and regulation"
+            ]
+          },
+          "world": {
+            "what": "Events in other regions of the world",
+            "includes": [
+              "Europe",
+              "The Americas",
+              "Asia and the Pacific",
+              "Middle East and Africa",
+              "War and armed conflicts"
+            ]
+          },
+          "local": {
+            "what": "News specifically about Slovakia or Czechia",
+            "includes": [
+              "Slovakia",
+              "Czechia",
+              "Regional and city news"
+            ]
+          },
+          "environment": {
+            "what": "Climate, energy, nature and pollution",
+            "includes": [
+              "Climate policy",
+              "Energy and the energy transition",
+              "Nature and wildlife",
+              "Pollution and waste"
+            ]
+          },
+          "transport": {
+            "what": "Vehicles, mobility and travel infrastructure",
+            "includes": [
+              "Cars",
+              "Electric vehicles",
+              "Public transport and rail",
+              "Aviation",
+              "Cycling and micromobility"
+            ]
+          },
+          "culture": {
+            "what": "Film, music, books and the arts",
+            "includes": [
+              "Film and TV",
+              "Music",
+              "Books and literature",
+              "Visual arts and design",
+              "Theatre and performing arts"
+            ]
+          },
+          "entertainment": {
+            "what": "Celebrities, streaming, humour and events",
+            "includes": [
+              "Celebrities",
+              "Streaming and online video",
+              "Humour and viral content",
+              "Events and festivals"
+            ]
+          },
+          "gaming": {
+            "what": "Video, board and competitive games",
+            "includes": [
+              "Video games",
+              "Board and tabletop games",
+              "Esports",
+              "Game industry"
+            ]
+          },
+          "sports": {
+            "what": "Competitive sport",
+            "includes": [
+              "Football",
+              "Ice hockey",
+              "Tennis",
+              "Motorsport",
+              "Cycling (sport)",
+              "Winter sports",
+              "Other sports"
+            ]
+          },
+          "lifestyle": {
+            "what": "Food, travel, home, fashion and family",
+            "includes": [
+              "Food and cooking",
+              "Travel",
+              "Fashion and beauty",
+              "Home and garden",
+              "Family and parenting",
+              "Relationships"
+            ]
+          },
+          "education": {
+            "what": "Schools, universities and learning",
+            "includes": [
+              "Schools",
+              "Universities",
+              "Learning and skills"
+            ]
+          },
+          "society": {
+            "what": "Social issues, religion, crime, history and media",
+            "includes": [
+              "Social issues",
+              "Religion",
+              "Crime and public safety",
+              "History",
+              "Media and journalism"
+            ]
+          },
+          "shopping": {
+            "what": "Buying things: deals, classifieds and buying advice",
+            "includes": [
+              "Deals and discounts",
+              "Classifieds and second-hand",
+              "Product reviews and buying guides"
+            ]
+          },
+          "diy": {
+            "what": "Building, repairing and making things",
+            "includes": [
+              "Electronics and maker projects",
+              "3D printing",
+              "Crafts and woodworking",
+              "Home improvement"
+            ]
+          },
+          "other": null
+        }
+      },
+      "depth": {
+        "type": "score",
+        "instructions": "How much substance does `article` offer beyond its headline?",
+        "criteria": [
+          "Headline only, or a one-paragraph rewrite of another source",
+          "Short brief: the basic facts, little context",
+          "Standard article: facts plus some context or quotes",
+          "In-depth: detailed explanation, data, several sources or perspectives",
+          "Deep dive or investigation: original research, extensive detail"
+        ]
+      },
+      "clickbait": {
+        "type": "noul",
+        "instructions": "Does the title of `article` withhold or exaggerate what the article actually delivers?",
+        "criteria": {
+          "true": {
+            "what": "Curiosity gap, sensational framing, or a promise that the excerpt does not meet",
+            "examples": [
+              "You won't believe what this app does",
+              "This one trick …"
+            ]
+          },
+          "false": {
+            "what": "The title plainly states what the article is about"
+          }
+        }
+      },
+      "promotional": {
+        "type": "noul",
+        "instructions": "Is `article` a press release, sponsored post, affiliate roundup or vendor marketing rather than independent content?"
+      },
+      "time_sensitive": {
+        "type": "noul",
+        "instructions": "Will `article` lose most of its value within a few days (breaking news, an expiring deal, an upcoming event)?"
+      },
+      "evergreen": {
+        "type": "noul",
+        "instructions": "Would `article` still be useful to a reader six months from now?"
+      },
+      "local_scope": {
+        "type": "choice",
+        "instructions": "What geographic scope does `article` concern?",
+        "criteria": {
+          "global": "Relevant regardless of country",
+          "national": "Mainly about one country",
+          "regional_or_city": "Mainly about a region, city or town",
+          "not_geographic": null
+        }
+      },
+      "tone": {
+        "type": "score",
+        "instructions": "What is the emotional tone of `article`?",
+        "criteria": [
+          "Alarming or distressing",
+          "Negative",
+          "Neutral",
+          "Positive",
+          "Upbeat or celebratory"
+        ]
+      },
+      "paywall_teaser": {
+        "type": "noul",
+        "instructions": "Does `article`'s text read like a teaser for content behind a paywall or login?"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "jev-1.13.0",
+      "answers": {
+        "content_type": {
+          "type": "choice",
+          "choice": "news_report",
+          "probabilities": {
+            "news_report": 0.86,
+            "analysis": 0.06,
+            "opinion": 0.01,
+            "tutorial": 0.0,
+            "review": 0.0,
+            "listicle": 0.0,
+            "press_release": 0.04,
+            "deal_or_ad": 0.0,
+            "job_or_event": 0.0,
+            "media": 0.0,
+            "interview": 0.0,
+            "other": 0.03
+          },
+          "confidence": 0.74
+        },
+        "topic_l1": {
+          "type": "choice",
+          "choice": "transport",
+          "probabilities": {
+            "technology": 0.21,
+            "science": 0.08,
+            "health": 0.0,
+            "business": 0.03,
+            "economy": 0.01,
+            "politics": 0.0,
+            "world": 0.0,
+            "local": 0.0,
+            "environment": 0.05,
+            "transport": 0.62,
+            "culture": 0.0,
+            "entertainment": 0.0,
+            "gaming": 0.0,
+            "sports": 0.0,
+            "lifestyle": 0.0,
+            "education": 0.0,
+            "society": 0.0,
+            "shopping": 0.0,
+            "diy": 0.0,
+            "other": 0.0
+          },
+          "confidence": 0.58
+        },
+        "depth": {
+          "type": "score",
+          "score": 1.95,
+          "legend": {
+            "0": "Headline only, or a one-paragraph rewrite of another source",
+            "1": "Short brief: the basic facts, little context",
+            "2": "Standard article: facts plus some context or quotes",
+            "3": "In-depth: detailed explanation, data, several sources or perspectives",
+            "4": "Deep dive or investigation: original research, extensive detail"
+          },
+          "probabilities": {
+            "0": 0.02,
+            "1": 0.2,
+            "2": 0.6,
+            "3": 0.17,
+            "4": 0.01
+          },
+          "confidence": 0.61
+        },
+        "clickbait": {
+          "type": "noul",
+          "noul": 0.07
+        },
+        "promotional": {
+          "type": "noul",
+          "noul": 0.12
+        },
+        "time_sensitive": {
+          "type": "noul",
+          "noul": 0.34
+        },
+        "evergreen": {
+          "type": "noul",
+          "noul": 0.41
+        },
+        "local_scope": {
+          "type": "choice",
+          "choice": "global",
+          "probabilities": {
+            "global": 0.71,
+            "national": 0.24,
+            "regional_or_city": 0.01,
+            "not_geographic": 0.04
+          },
+          "confidence": 0.45
+        },
+        "tone": {
+          "type": "score",
+          "score": 2.62,
+          "legend": {
+            "0": "Alarming or distressing",
+            "1": "Negative",
+            "2": "Neutral",
+            "3": "Positive",
+            "4": "Upbeat or celebratory"
+          },
+          "probabilities": {
+            "0": 0.0,
+            "1": 0.02,
+            "2": 0.4,
+            "3": 0.52,
+            "4": 0.06
+          },
+          "confidence": 0.52
+        },
+        "paywall_teaser": {
+          "type": "noul",
+          "noul": 0.05
+        }
+      },
+      "usage": {
+        "input_tokens": 2118,
+        "output_tokens": 64
+      }
+    }
+  }
+}

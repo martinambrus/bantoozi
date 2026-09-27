@@ -345,7 +345,10 @@ through `PATCH /admin/settings`.
 (from `LANGUAGE_MODES`) when they are missing. Deploys run the seed before starting the services, so
 the API compares a `language_modes` change against the modes the workers actually use and enqueues
 its re-enrichment (spec 08 §9). Other keys with an env fallback are never seeded, so their env
-default stays effective until an admin sets a value.
+default stays effective until an admin sets a value. A classification completion stores a missing
+key it compares with its snapshot (spec 05 §5.5 step 6) with its default before share-locking it,
+so that the key's first write waits for the completion (D-84); of those keys only
+`engine.prefilter_enabled` is not seeded, and its default has no env fallback.
 
 ---
 
@@ -513,7 +516,7 @@ ALTER TABLE article_snapshots ALTER COLUMN body_html SET COMPRESSION pglz;
 CREATE TABLE article_translations (
   article_id   bigint NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
   article_revision bigint NOT NULL CHECK (article_revision > 0),
-  source_sha256 text NOT NULL,                     -- exact source text sent to translation
+  source_sha256 text NOT NULL,                     -- canonical SHA-256 of {source_lang, title, excerpt, body_lead} as sent (D-34)
   target_lang  text NOT NULL DEFAULT 'en',
   engine       text NOT NULL CHECK (engine IN ('libretranslate','ollama')),
   model        text NULL,
@@ -854,7 +857,10 @@ claims pending or expired-running requests in a short transaction, records a fre
 and completes/renews/retries/cancels only with that token. Clear the lease when leaving `running`.
 Crash recovery reuses the immutable input and never silently creates a fresh grant. Store bounded
 sanitized `last_error_code`, retry due time and attempt accounting; no DB transaction spans inference. A request contains no provider secret. Its
-snapshot freezes article/card/question/model context independently of later feedback. Completion saves
+snapshot freezes article/card/question/model context independently of later feedback; version 1 of
+both snapshots is `AnalysisInputSnapshotSchema`/`AnalysisResultSnapshotSchema` in `packages/shared`
+(D-71). The lease holder saves each finished stage in `stage_results`, so a reclaimed request resumes
+without paying for it again (D-24). Completion saves
 `result_snapshot`/`result_sha`; if the live article changed, these historical features may still serve
 that recorded training event, but cannot overwrite current shared caches. A changed subscription
 version, deletion or cancellation revokes further attempts. Feedback references the request ID rather
@@ -1007,10 +1013,11 @@ CREATE TABLE analysis_requests (                  -- explicit selected-article t
   article_id          bigint NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
   article_revision    bigint NOT NULL CHECK (article_revision > 0),
   inference_version   bigint NOT NULL CHECK (inference_version >= 0),
-  input_snapshot      jsonb NOT NULL,             -- immutable pre-feedback article/card/question context
+  input_snapshot      jsonb NOT NULL,             -- immutable pre-feedback article/card/question context (v1: AnalysisInputSnapshotSchema, D-71)
   input_sha           text NOT NULL,
-  result_snapshot     jsonb NULL,                 -- features/answers of frozen input, never future feedback
+  result_snapshot     jsonb NULL,                 -- features/answers of frozen input, never future feedback (v1: AnalysisResultSnapshotSchema, D-71)
   result_sha          text NULL,
+  stage_results       jsonb NULL,                 -- finished stages of a running request, written only by its lease holder; NULL at insert, final once finished, never the result (D-24)
   status              text NOT NULL DEFAULT 'pending'
                         CHECK (status IN ('pending','running','complete','failed','cancelled')),
   lease_token         uuid NULL,
@@ -1075,7 +1082,7 @@ CREATE TABLE user_labels (
   user_id     uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   card_id     bigint NOT NULL REFERENCES interest_cards(id) ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED,  -- kind = 'label'
   name        text NOT NULL,
-  color       text NOT NULL DEFAULT 'slate',
+  color       text NOT NULL DEFAULT 'slate',        -- the repository always writes a validated hex colour, `#64748b` when omitted (spec 08 §7, D-42)
   created_at  timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, card_id)
 );
@@ -1472,7 +1479,8 @@ Metadata returns only version/status/timestamps/sanitized health, never envelope
 already encrypted envelope for the exact next revision without making a provider call or queueing a validation probe. A separate
 `admin_validate_provider_credential(p_provider text, p_candidate_version bigint,
 p_expected_revision bigint)` transaction enqueues `provider.validate {provider,candidateVersion}`
-only after the administrator explicitly requests Validate. Activation requires the same valid candidate, current revision/configuration fingerprint and a
+only after the administrator explicitly requests Validate, for a candidate that is not being validated
+under a live lease (a `validating` candidate whose lease expired may be queued again, D-87). Activation requires the same valid candidate, current revision/configuration fingerprint and a
 validation result no older than 24 hours; disable
 preserves a tombstone. Worker validation CAS includes candidate version and lease token. Keyring
 cryptography is application-side, not a PostgreSQL decryption function. No generic SQL setter or

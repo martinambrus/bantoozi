@@ -1,0 +1,84 @@
+[
+  {
+    "slug": "ev-batteries",
+    "title": "EV battery tech",
+    "title_sk": "Batérie pre elektromobily",
+    "interest": "New battery chemistry and manufacturing for electric vehicles (solid-state, sodium-ion, LFP)",
+    "interest_sk": "Nová chémia batérií a ich výroba pre elektromobily (s pevným elektrolytom, sodíkovo-iónové, LFP)",
+    "not_for": "Stock-price moves; car launch PR without battery detail",
+    "topic_ids": ["transport.ev", "science.physics_chemistry"]
+  },
+  {
+    "slug": "electric-cars",
+    "title": "Electric cars",
+    "title_sk": "Elektromobily",
+    "interest": "Electric car models, test drives, charging networks and EV adoption in Europe",
+    "interest_sk": "Modely elektromobilov, testovacie jazdy, nabíjacie siete a rozširovanie elektromobility v Európe",
+    "not_for": "Battery chemistry research",
+    "topic_ids": ["transport.ev"],
+    "examples_yes": ["Fast chargers along Slovak motorways double in a year"]
+  },
+  {
+    "slug": "car-reviews",
+    "title": "Car reviews",
+    "title_sk": "Recenzie áut",
+    "interest": "Reviews and test drives of new cars, with specifications, prices and comparisons",
+    "interest_sk": "Recenzie a testovacie jazdy nových áut so špecifikáciami, cenami a porovnaniami",
+    "not_for": "Car industry business news",
+    "topic_ids": ["transport.cars"],
+    "examples_yes": ["Test drive: the new Škoda Octavia estate"],
+    "examples_no": ["Carmaker's quarterly profit falls"]
+  },
+  {
+    "slug": "rail-travel",
+    "title": "Rail travel",
+    "title_sk": "Železničná doprava",
+    "interest": "Trains and railways: new connections, night trains, high-speed rail and rail infrastructure in Europe",
+    "interest_sk": "Vlaky a železnice: nové spoje, nočné vlaky, vysokorýchlostné trate a železničná infraštruktúra v Európe",
+    "not_for": "Model railways",
+    "topic_ids": ["transport.public_transport_rail"],
+    "examples_yes": ["Night train from Bratislava to Paris returns"],
+    "examples_no": ["Model railway exhibition opens"]
+  },
+  {
+    "slug": "aviation",
+    "title": "Aviation",
+    "title_sk": "Letectvo",
+    "interest": "Airlines, airports and aircraft: new routes, safety incidents and the aviation industry",
+    "interest_sk": "Letecké spoločnosti, letiská a lietadlá: nové linky, bezpečnostné incidenty a letecký priemysel",
+    "not_for": "Cheap flight deals",
+    "topic_ids": ["transport.aviation"],
+    "examples_yes": ["Airport opens a new terminal and adds ten routes"],
+    "examples_no": ["Flash sale: flights to Rome from €19"]
+  },
+  {
+    "slug": "urban-cycling",
+    "title": "Urban cycling",
+    "title_sk": "Cyklistika v meste",
+    "interest": "Cycling in cities: bike lanes, e-bikes, e-scooters and safer streets for cyclists",
+    "interest_sk": "Cyklistika v mestách: cyklotrasy, elektrobicykle, elektrokolobežky a bezpečnejšie ulice pre cyklistov",
+    "not_for": "Professional cycling races",
+    "topic_ids": ["transport.cycling_micromobility"],
+    "examples_yes": ["City adds 20 km of protected bike lanes"]
+  },
+  {
+    "slug": "sk-motorways",
+    "title": "Slovak roads and motorways",
+    "title_sk": "Slovenské cesty a diaľnice",
+    "interest": "Motorway and road construction in Slovakia, including the D1 and D4/R7, delays and tolls",
+    "interest_sk": "Výstavba diaľnic a ciest na Slovensku vrátane D1 a D4/R7, meškania a mýto",
+    "not_for": "Traffic accident reports",
+    "topic_ids": ["transport.cars", "local.slovakia"],
+    "examples_yes": ["New D1 motorway section in the north opens to traffic"]
+  },
+  {
+    "slug": "bratislava-transit",
+    "title": "Public transport in Bratislava",
+    "title_sk": "MHD v Bratislave",
+    "interest": "Trams, buses and trolleybuses in Bratislava: new lines, fares, vehicles and track works",
+    "interest_sk": "Električky, autobusy a trolejbusy v Bratislave: nové linky, cestovné, vozidlá a rekonštrukcie tratí",
+    "not_for": "National rail news",
+    "topic_ids": ["transport.public_transport_rail", "local.regional_city"],
+    "examples_yes": ["New trams enter service on the Petržalka line"]
+  }
+]

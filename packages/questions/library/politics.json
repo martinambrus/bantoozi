@@ -1,0 +1,79 @@
+[
+  {
+    "slug": "eu-politics",
+    "title": "EU politics",
+    "title_sk": "Politika EÚ",
+    "interest": "Politics of the European Union: the Commission, the Parliament, summits and new EU laws",
+    "interest_sk": "Politika Európskej únie: Komisia, Parlament, summity a nové európske zákony",
+    "not_for": "Eurovision; European football",
+    "topic_ids": ["politics.international_relations", "world.europe"],
+    "examples_yes": ["European Parliament approves new asylum rules"],
+    "examples_no": ["Who will win Eurovision this year?"]
+  },
+  {
+    "slug": "european-elections",
+    "title": "European elections",
+    "title_sk": "Voľby v Európe",
+    "interest": "Election campaigns, polls and results across European countries",
+    "interest_sk": "Volebné kampane, prieskumy a výsledky volieb v európskych krajinách",
+    "not_for": "Company board elections",
+    "topic_ids": ["politics.elections", "world.europe"],
+    "examples_yes": ["Poll: opposition leads ahead of the Polish election"]
+  },
+  {
+    "slug": "us-politics",
+    "title": "US politics",
+    "title_sk": "Politika USA",
+    "interest": "American politics: the White House, Congress, the Supreme Court and US elections",
+    "interest_sk": "Americká politika: Biely dom, Kongres, Najvyšší súd a voľby v USA",
+    "not_for": "US celebrity news",
+    "topic_ids": ["politics.domestic", "world.americas"],
+    "examples_yes": ["Senate passes budget bill after an all-night session"]
+  },
+  {
+    "slug": "rule-of-law",
+    "title": "Courts and the rule of law",
+    "title_sk": "Súdy a právny štát",
+    "interest": "Court rulings, judicial independence and rule-of-law disputes, including EU cases against member states",
+    "interest_sk": "Súdne rozhodnutia, nezávislosť justície a spory o právny štát vrátane konaní EÚ proti členským štátom",
+    "not_for": "Crime reports",
+    "topic_ids": ["politics.law_justice"]
+  },
+  {
+    "slug": "ai-regulation",
+    "title": "AI regulation",
+    "title_sk": "Regulácia umelej inteligencie",
+    "interest": "Laws and rules for artificial intelligence, such as the EU AI Act, and how they are enforced",
+    "interest_sk": "Zákony a pravidlá pre umelú inteligenciu, napríklad európsky AI Act, a ich presadzovanie",
+    "not_for": "AI product launches",
+    "topic_ids": ["politics.policy_regulation", "technology.ai_ml"],
+    "examples_yes": ["EU AI Act: what changes for companies from August"]
+  },
+  {
+    "slug": "diplomacy",
+    "title": "International diplomacy",
+    "title_sk": "Medzinárodná diplomacia",
+    "interest": "Diplomatic talks, summits and peace negotiations between governments",
+    "interest_sk": "Diplomatické rokovania, summity a mierové rokovania medzi vládami",
+    "not_for": "Reports of battlefield fighting",
+    "topic_ids": ["politics.international_relations"]
+  },
+  {
+    "slug": "political-analysis",
+    "title": "Political analysis",
+    "title_sk": "Politické analýzy",
+    "interest": "In-depth analysis of political trends, party strategies and public opinion",
+    "interest_sk": "Hĺbkové analýzy politických trendov, stratégií strán a verejnej mienky",
+    "not_for": "Daily political gossip",
+    "topic_ids": ["politics.domestic", "politics.elections"]
+  },
+  {
+    "slug": "migration-policy",
+    "title": "Migration policy",
+    "title_sk": "Migračná politika",
+    "interest": "Migration and asylum policy in Europe: rules, border controls and integration",
+    "interest_sk": "Migračná a azylová politika v Európe: pravidlá, hraničné kontroly a integrácia",
+    "not_for": "Bird migration",
+    "topic_ids": ["politics.policy_regulation", "society.social_issues"]
+  }
+]

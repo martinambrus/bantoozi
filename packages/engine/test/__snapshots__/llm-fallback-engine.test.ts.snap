@@ -1,0 +1,105 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`spec 04 §8 schema generation > builds a closed schema with one required property per question 1`] = `
+{
+  "additionalProperties": false,
+  "properties": {
+    "card": {
+      "additionalProperties": false,
+      "properties": {
+        "p": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number",
+        },
+      },
+      "required": [
+        "p",
+      ],
+      "type": "object",
+    },
+    "depth": {
+      "additionalProperties": false,
+      "properties": {
+        "probabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "0": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number",
+            },
+            "1": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number",
+            },
+            "2": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number",
+            },
+            "3": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number",
+            },
+          },
+          "required": [
+            "0",
+            "1",
+            "2",
+            "3",
+          ],
+          "type": "object",
+        },
+      },
+      "required": [
+        "probabilities",
+      ],
+      "type": "object",
+    },
+    "kind": {
+      "additionalProperties": false,
+      "properties": {
+        "probabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "news_report": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number",
+            },
+            "opinion": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number",
+            },
+            "other": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number",
+            },
+          },
+          "required": [
+            "news_report",
+            "opinion",
+            "other",
+          ],
+          "type": "object",
+        },
+      },
+      "required": [
+        "probabilities",
+      ],
+      "type": "object",
+    },
+  },
+  "required": [
+    "card",
+    "kind",
+    "depth",
+  ],
+  "type": "object",
+}
+`;

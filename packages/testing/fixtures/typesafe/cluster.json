@@ -1,0 +1,78 @@
+{
+  "description": "Story clustering: cluster-v1 (spec 05 §6) with two candidates.",
+  "source": "Hand-written from the documented request/response shapes of spec 04 §3 (not a provider recording); replaced by RECORD=1 recordings once a key is available.",
+  "request": {
+    "model": "jev-1.13.0",
+    "state": {
+      "new": {
+        "title": "Solid-state battery pilot line passes 1,000 fast-charge cycles",
+        "excerpt": "Cells from the new pilot line kept 90% of their capacity after 1,000 fast-charge cycles, a milestone for the solid-state packs the carmaker plans to ship in 2028.",
+        "feed": "Volt Weekly",
+        "published": "just now"
+      },
+      "candidates": [
+        {
+          "id": "c1",
+          "title": "Carmaker says solid-state cells survive 1,000 fast charges",
+          "excerpt": "Pilot-line cells kept 90% capacity after 1,000 cycles, the company announced on Tuesday.",
+          "feed": "Auto Denník",
+          "published": "3 hours before `new`"
+        },
+        {
+          "id": "c2",
+          "title": "Sodium-ion packs arrive in budget city cars",
+          "excerpt": "Two manufacturers will ship sodium-ion batteries in small cars next spring.",
+          "feed": "Volt Weekly",
+          "published": "1 day before `new`"
+        }
+      ]
+    },
+    "questions": {
+      "same_story": {
+        "type": "choice",
+        "instructions": {
+          "question": "Which item in `candidates` reports the same specific event as `new`?",
+          "focus": "Same topic is not enough; it must be the same event."
+        },
+        "criteria": {
+          "c1": null,
+          "c2": null,
+          "none": "No candidate reports the same specific event"
+        }
+      },
+      "is_followup": {
+        "type": "noul",
+        "instructions": "Is `new` a follow-up with substantial new developments rather than a re-report of an event already covered in `candidates`?"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "jev-1.13.0",
+      "answers": {
+        "same_story": {
+          "type": "choice",
+          "choice": "c1",
+          "probabilities": {
+            "c1": 0.91,
+            "c2": 0.03,
+            "none": 0.06
+          },
+          "confidence": 0.72
+        },
+        "is_followup": {
+          "type": "noul",
+          "noul": 0.12
+        }
+      },
+      "usage": {
+        "input_tokens": 431,
+        "output_tokens": 11
+      }
+    }
+  }
+}

@@ -260,7 +260,7 @@ flowchart TD
 |---|---|---|---|---|---|
 | **M0** Foundations | — | — | yes | M | ✓ done 2026-09-25 (§5) |
 | **M1** Ingestion core | M0 | M2 | yes (the fixture server is local) | L | ✓ done 2026-09-26 (§6) |
-| **M2** Decision engine & classification | M0 | M1 | yes (fixtures and the fake engine only) | L | not started |
+| **M2** Decision engine & classification | M0 | M1 | yes (fixtures and the fake engine only) | L | ✓ done 2026-09-26 (§7) |
 | **M3a** Evaluation tooling & golden-set collection | M1, M2 | M4, M5 | yes, then a **human step** (§8.1) | M | not started |
 | **M3b** Run gate G1 | M3a + human ratings | M6, M7-T1…T6 | yes (needs API keys and network) | S | not started |
 | **M4** HTTP API | M1, M2 | M3a, M5 | yes | L | not started |
@@ -547,6 +547,24 @@ is ≥ 80 % (shown).
 
 ## 7. M2: Decision engine and classification
 
+**Status: done 2026-09-26** on branch `claude/project-thread-rbfpqh` (commits `8cdcc55`…`5179888`
+and the fixes from the Codex review of PR #6; the per-task commits are in the table below). The full check passed after the last task commit, with
+line coverage of 96.4 % for `packages/engine`, 99.6 % for `packages/questions` and 100 % for
+`packages/ranker`; `classification.e2e.test.ts` and `engine-breaker.int.test.ts` passed. Deviations:
+D-24 and D-25…D-95 in `docs/DECISIONS.md`. Migration 0013 (D-24) adds
+`analysis_requests.stage_results` and 0014 (D-87) replaces `admin_validate_provider_credential`, so
+migrations of a parallel branch are numbered after them. M3a, M4
+and M5 start once this branch is merged to `main` (§0.2). Handoffs: M4 moves
+`captureAnalysisSnapshot` from `apps/worker` into a package before the training API uses it (D-71),
+checks the ≥ 3 holders of a promotion request itself (`admin_request_card_publication` does not),
+shows explanation titles by card id (a rename triggers no rank), answers a replayed library
+update from its Idempotency-Key receipt (a second `applyLibraryUpdate` returns 404), and offers
+Validate for a `validating` candidate too (a live lease answers with a conflict, D-87). M4 or M8 adds
+SQL functions to revise an open publication proposal and to expire a request. M8's
+`house.retire-cards` locks the card row and rechecks holders after the lock, `house.reconcile`
+repairs the extracted articles of D-70, and a deployment with several Jev-calling workers first adds
+a per-process rate share (D-66).
+
 **Outcome:**
 - Articles are enriched (Call A) and matched against interest cards (Call B) through a budgeted,
   breaker-protected engine router, with optional translation.
@@ -565,19 +583,19 @@ Complete milestone M2 "Decision engine and classification" exactly as specified 
 
 **Tasks**
 
-| ID | Task | Needs | Lane | Specs |
-|---|---|---|---|---|
-| M2-T1 | Engine types and answer normalization | — | A | 04 §1–2 |
-| M2-T2 | `TypeSafeEngine` HTTP client, status handling, fixtures, **fake TypeSafe server** | T1 | A | 04 §3, §10 |
-| M2-T3 | `EngineRouter`: retries, priority semaphore, rate limiter, breaker (mirror and reset polling), spend guard, `EngineStore` implementation, DB credential resolution/validation/rotation, `usage_daily`, atomic reservations, eval overrides | T2 | A | 04 §1, §4–7 |
-| M2-T4 | `LlmFallbackEngine` (Ollama Cloud), off by default, wired into the router's fallback chain | T3 | A | 04 §5, §8 |
-| M2-T5 | `packages/questions`: builders, taxonomy, `enrich-v1`, dynamic-set templates (`match-v1`, `cluster-v1`, `suggest-v1`), card and label builders, packing, `flattenFacets` | — | C | 05 §2–6 |
-| M2-T6 | Card library seed (≥ 150 cards), and seeding of topics, question sets (active kind only if absent) and library (slug upsert rules) | T5 | C | 05 §2, §8 |
-| M2-T7 | `packages/translate`: LibreTranslate and Ollama translators, `assessTranslation`, best-row selection | — | B | 07 |
-| M2-T8 | Card/label lifecycle, author consent and opt-in library upgrades (immutability, forks, title overrides, labels with `array_replace`, effects) | — | C | 05 §5.1, §5.3 |
-| M2-T9 | Worker handlers: `provider.validate`, `analysis.process`, translate/enrich/match/backfill/cluster and rescore | T3, T5, T7, T8 | D | 05 §3–6; 07 §3; 04 §5; 03 §1 |
-| M2-T10 | Ranker bootstrap: `cardScore`, BM25 (window corpus), lane/tier and view-scoped inference projection helpers, `RANKER_VERSION` and composite `scoreVersion()` in `packages/ranker`; consume shared `RankerConfig` | T5 | E | 06 §4.1, §6.4, §7, §9 |
-| M2-T11 | Integration tests: classification end-to-end, breaker, budget, degraded path, backfill | T4, T6, T9, T10 | D | 04 §10; 05 §11 |
+| ID | Task | Needs | Lane | Specs | Status |
+|---|---|---|---|---|---|
+| M2-T1 | Engine types and answer normalization | — | A | 04 §1–2 | ✓ `a3c5633` |
+| M2-T2 | `TypeSafeEngine` HTTP client, status handling, fixtures, **fake TypeSafe server** | T1 | A | 04 §3, §10 | ✓ `6b41d74` |
+| M2-T3 | `EngineRouter`: retries, priority semaphore, rate limiter, breaker (mirror and reset polling), spend guard, `EngineStore` implementation, DB credential resolution/validation/rotation, `usage_daily`, atomic reservations, eval overrides | T2 | A | 04 §1, §4–7 | ✓ `e75de18` and the review fixes `d0d0077` (a validation result that completes after its lease expired is discarded), `49971c9` (the half-open probe lease is renewed before every wire attempt, D-82), `8990e66` (a request bucket below one request, from a small share or a 429 penalty, serves at its refill rate), `9a3eafe` (the part of a refill interval before a penalty ended accrues at the penalized rate), `4d10781` (a multi-pack request stops once an answered subpack cost more than its reservation), `d05765a` (`recordExternalCall` reports a cost overrun, and a credential probe stops on one, D-86), `511fc49` (Validate requeues a candidate whose validator stopped, once its lease expired, D-87), `8d56aec` (an external call's settlement is retried like an `ask` attempt's instead of failing the call), `88d4125` (the router reads the credential fresh before it refuses a lane its cached metadata shows without a key, D-89), `cb4fc61` (a test pins that a concluded probe stands after a cost overrun, D-86), `f387ff7` (a rate-limit wait that runs past a 429 penalty continues at the full rate, toward the full capacity's need), `1d1cdec` (a credential probe's spend reservation is admitted only under its own validation token, D-90), `6615445` (a rate-limit request whose deadline already passed is refused before it spends capacity), `cdd36f0` (a Laya request rechecks its demand once it holds its engine slot, before it runs), `b1ae5c1` (an attempt that is never sent gives its rate capacity back), `5c68838` (no such refund undoes a 429 penalty newer than its debit) and `10d0e0d` (an attempt cancelled after its reservation was admitted releases it instead of recording a call, D-95) |
+| M2-T4 | `LlmFallbackEngine` (Ollama Cloud), off by default, wired into the router's fallback chain | T3 | A | 04 §5, §8 | ✓ `524c57c` (the router wiring and its fallback tests are in `e75de18`) |
+| M2-T5 | `packages/questions`: builders, taxonomy, `enrich-v1`, dynamic-set templates (`match-v1`, `cluster-v1`, `suggest-v1`), card and label builders, packing, `flattenFacets` | — | C | 05 §2–6 | ✓ `3d7f7fa`, `b768aa7`, `19ce7ef` |
+| M2-T6 | Card library seed (≥ 150 cards), and seeding of topics, question sets (active kind only if absent) and library (slug upsert rules) | T5 | C | 05 §2, §8 | ✓ `053e79e` |
+| M2-T7 | `packages/translate`: LibreTranslate and Ollama translators, `assessTranslation`, best-row selection | — | B | 07 | ✓ `cd1bb7d` and the review fix `8d23c49` (the LibreTranslate client asks its caller before every attempt, the retry included) |
+| M2-T8 | Card/label lifecycle, author consent and opt-in library upgrades (immutability, forks, title overrides, labels with `array_replace`, effects) | — | C | 05 §5.1, §5.3 | ✓ `4528413`, `a05146c`, `36118f3` |
+| M2-T9 | Worker handlers: `provider.validate`, `analysis.process`, translate/enrich/match/backfill/cluster and rescore | T3, T5, T7, T8 | D | 05 §3–6; 07 §3; 04 §5; 03 §1 | ✓ `99a9736` (`provider.validate` in `e75de18`) and the review fixes `ce53e31` (a mode-change translation job compares the effective text even when it produced no row, so a language switched back to `translate` re-enriches from its kept translation), `5fe700f` (`provider.validate` scales its abort margin down for a short lease, and an attempt cancelled at that margin leaves the candidate pending), `4e1bc5b` (a cluster fold applies only while its question sets are still active, D-83), `afcc703` (completions share-lock the settings they compare with their snapshot, D-84), `06c667f` (a tier-2 transport failure uses the job retry instead of a second attempt and a stored `fail` row), `34d71e5` (the cached enrich continuation and every other snapshot-derived match write have the same settings fence, D-85), `e29f523` (so do the failure paths: an old configuration's failure never counts against or exhausts the new one's work), `6b3c2df` (invalid tier-2 output that cost more than its reserve stands without a repair attempt, D-86), `d19bdb0` (the exhaustion of a question too large for any request has the settings fence too) and `f45a7e2` (a match pack locks the facet row before it rebuilds the features, so an analysis cache fill cannot slip in between), `81bbc2b` (a compared setting that was never written is stored with its default before the completion share-locks it, so its first write is fenced too, D-84), `ba9bb76` (a match transaction retried after a deadlock or unique conflict starts from the job's held rows before it, so its replay still answers and completes them), `87584fa` (tier 2 resolves the Ollama key with a fresh read before it reserves, so a pre-send credential failure charges nothing and cached metadata never decides a `no_key` skip, D-88), `1e2b738` (a rate-limited translation retries once at the provider's retry time, up to 10 minutes, instead of at once, D-74), `870271c` (a tier-1 row produced before a transient tier 2 is kept for the job's retry, D-74), `b9a07b9` (a match job locks its rows before it rechecks the demand it drops them for, so a pair a backfill queued again is kept, D-91), `3e7d451` (tier 1 rechecks the authorization before every LibreTranslate attempt, so a retry never sends text whose demand lapsed), `1c8856e` (a selected request's translation that changes a classified article's text resets the article for every reader instead of filling the caches, D-92), `d03adb1` (a selected request saves its tier-1 `fail` row before tier 2 runs, so a request resumed after a tier-2 deferral runs only tier 2, D-72), `06bab0d` (the enrich completion builds the facet features from the level-2 rows of the match set it reads under lock, and a cache fill that writes level-2 rows rebuilds the stored facet row's features, D-93) and `d95e751` (a re-translation compares the facets' own input under the article lock, rows kept for a retry are installed at once, and an enrichment whose translation changed during Call A runs again, D-94) |
+| M2-T10 | Ranker bootstrap: `cardScore`, BM25 (window corpus), lane/tier and view-scoped inference projection helpers, `RANKER_VERSION` and composite `scoreVersion()` in `packages/ranker`; consume shared `RankerConfig` | T5 | E | 06 §4.1, §6.4, §7, §9 | ✓ `1eab1d9` |
+| M2-T11 | Integration tests: classification end-to-end, breaker, budget, degraded path, backfill | T4, T6, T9, T10 | D | 04 §10; 05 §11 | ✓ `5179888` |
 
 **Done when:**
 

@@ -20,7 +20,13 @@ export type InferenceAuthorization =
       >;
     }
   | { type: 'suggest'; userId: string; eligibleArticleIds: string[]; leaseToken: string } // spec 05 §7
-  | { type: 'credential_probe'; provider: 'typesafe' | 'ollama'; candidateVersion: string }
+  | {
+      type: 'credential_probe';
+      provider: 'typesafe' | 'ollama';
+      candidateVersion: string;
+      /** The token of the validation lease the probe runs under (D-90). */
+      validationToken: string;
+    }
   | { type: 'eval'; runId: string }; // separately authorized eval; never inferred from a feed fetch
 
 export type CallStatus =
@@ -128,6 +134,12 @@ export interface EngineStore {
     usage: UsageRow,
     billing: 'known' | 'uncertain',
   ): Promise<void>;
+  /**
+   * The reservation of an admitted attempt that was never sent (cancelled before its send): removed,
+   * so it counts toward neither the budget nor a call cap, and no call is recorded. Idempotent; a
+   * reservation with a call row, or one no longer `reserved`, is kept.
+   */
+  releaseReservation(id: string): Promise<void>;
   /** Zero-cost calls only; idempotent. */
   insertCall(row: EngineCallRow): Promise<void>;
   /** Used inside settlement, never independently for paid calls. */

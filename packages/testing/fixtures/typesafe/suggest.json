@@ -1,0 +1,70 @@
+{
+  "description": "Card suggestions: suggest-v1 (spec 05 §7), one choice over library cards plus none.",
+  "source": "Hand-written from the documented request/response shapes of spec 04 §3 (not a provider recording); replaced by RECORD=1 recordings once a key is available.",
+  "request": {
+    "model": "jev-1.13.0",
+    "state": {
+      "liked_articles": [
+        {
+          "title": "Solid-state battery pilot line passes 1,000 fast-charge cycles",
+          "excerpt": "Cells from the new pilot line kept 90% of their capacity after 1,000 fast-charge cycles, a milestone for the solid-state packs the carmaker plans to ship in 2028."
+        },
+        {
+          "title": "Why sodium-ion cells could make small EVs cheaper",
+          "excerpt": "Sodium is abundant and the chemistry tolerates cold, but energy density still lags lithium."
+        },
+        {
+          "title": "Grid batteries now outnumber gas peakers in new capacity",
+          "excerpt": "Utility-scale storage made up most new flexible capacity added this year."
+        }
+      ]
+    },
+    "questions": {
+      "common_interest": {
+        "type": "choice",
+        "instructions": {
+          "question": "Which interest best describes what `liked_articles` have in common?"
+        },
+        "criteria": {
+          "c201": {
+            "what": "Electric vehicles: new models, range tests and charging networks"
+          },
+          "c202": {
+            "what": "Battery technology and energy storage research",
+            "not_for": "Consumer gadget battery life reviews"
+          },
+          "c203": {
+            "what": "Public transport, trains and urban mobility"
+          },
+          "none": "None of these describe what the articles have in common"
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "jev-1.13.0",
+      "answers": {
+        "common_interest": {
+          "type": "choice",
+          "choice": "c202",
+          "probabilities": {
+            "c201": 0.28,
+            "c202": 0.61,
+            "c203": 0.02,
+            "none": 0.09
+          },
+          "confidence": 0.38
+        }
+      },
+      "usage": {
+        "input_tokens": 356,
+        "output_tokens": 9
+      }
+    }
+  }
+}

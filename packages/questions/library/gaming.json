@@ -1,0 +1,91 @@
+[
+  {
+    "slug": "video-game-reviews",
+    "title": "Video game reviews",
+    "title_sk": "Recenzie videohier",
+    "interest": "Reviews and previews of new video games on PC and consoles",
+    "interest_sk": "Recenzie a ukážky nových videohier na PC a konzoly",
+    "not_for": "Gambling and casinos",
+    "topic_ids": ["gaming.video_games"],
+    "examples_yes": ["Review: the new open-world RPG is huge but uneven"],
+    "examples_no": ["Online casino bonus codes this weekend"]
+  },
+  {
+    "slug": "nintendo",
+    "title": "Nintendo",
+    "title_sk": "Nintendo",
+    "interest": "Nintendo consoles and games: Switch releases, Mario, Zelda and Pokémon",
+    "interest_sk": "Konzoly a hry od Nintenda: novinky pre Switch, Mario, Zelda a Pokémon",
+    "not_for": "Exclusives for other consoles",
+    "topic_ids": ["gaming.video_games"]
+  },
+  {
+    "slug": "indie-games",
+    "title": "Indie games",
+    "title_sk": "Nezávislé hry",
+    "interest": "Independent video games and small studios: new releases, hidden gems and developer stories",
+    "interest_sk": "Nezávislé videohry a malé štúdiá: novinky, skryté klenoty a príbehy vývojárov",
+    "not_for": "Marketing for big-budget blockbusters",
+    "topic_ids": ["gaming.video_games", "gaming.game_industry"]
+  },
+  {
+    "slug": "esports",
+    "title": "Esports",
+    "title_sk": "E-športy",
+    "interest": "Competitive gaming: esports tournaments, teams and players in games such as Counter-Strike and League of Legends",
+    "interest_sk": "Súťažné hranie: e-športové turnaje, tímy a hráči v hrách ako Counter-Strike či League of Legends",
+    "not_for": "Traditional sports",
+    "topic_ids": ["gaming.esports"],
+    "examples_yes": ["Slovak team qualifies for a Counter-Strike Major"]
+  },
+  {
+    "slug": "board-games",
+    "title": "Board games",
+    "title_sk": "Stolové hry",
+    "interest": "Board games and tabletop games: new releases, reviews and strategy",
+    "interest_sk": "Stolové a spoločenské hry: novinky, recenzie a stratégie",
+    "not_for": "Video games",
+    "topic_ids": ["gaming.tabletop"],
+    "examples_yes": ["The best new cooperative board games of the year"],
+    "examples_no": ["New console bundle announced"]
+  },
+  {
+    "slug": "tabletop-rpg",
+    "title": "Tabletop role-playing",
+    "title_sk": "Stolové RPG",
+    "interest": "Tabletop role-playing games such as Dungeons & Dragons: rules, adventures and campaign advice",
+    "interest_sk": "Stolové hry na hrdinov ako Dungeons & Dragons: pravidlá, dobrodružstvá a rady k vedeniu kampaní",
+    "not_for": "Role-playing video games",
+    "topic_ids": ["gaming.tabletop"]
+  },
+  {
+    "slug": "game-industry",
+    "title": "Game industry",
+    "title_sk": "Herný priemysel",
+    "interest": "The business of video games: studio acquisitions, layoffs, sales figures and platform deals",
+    "interest_sk": "Biznis videohier: akvizície štúdií, prepúšťanie, predaje a dohody platforiem",
+    "not_for": "Game reviews",
+    "topic_ids": ["gaming.game_industry"],
+    "examples_yes": ["Publisher lays off 900 staff and closes two studios"],
+    "examples_no": ["Review: the new racing game"]
+  },
+  {
+    "slug": "cz-sk-game-studios",
+    "title": "Czech and Slovak game studios",
+    "title_sk": "České a slovenské herné štúdiá",
+    "interest": "Games made by Czech and Slovak studios such as Warhorse, Bohemia Interactive and Pixel Federation",
+    "interest_sk": "Hry od českých a slovenských štúdií ako Warhorse, Bohemia Interactive či Pixel Federation",
+    "not_for": "Foreign game studios",
+    "topic_ids": ["gaming.game_industry", "local.czechia", "local.slovakia"],
+    "examples_yes": ["Warhorse reveals the release date of its next game"]
+  },
+  {
+    "slug": "retro-gaming",
+    "title": "Retro gaming",
+    "title_sk": "Retro hry",
+    "interest": "Retro video games and classic consoles: emulation, collecting and remasters",
+    "interest_sk": "Retro videohry a klasické konzoly: emulácia, zberateľstvo a remastery",
+    "not_for": "New console launches",
+    "topic_ids": ["gaming.video_games"]
+  }
+]

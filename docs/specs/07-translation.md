@@ -34,7 +34,8 @@ Claude is not used, for cost reasons (a locked decision).
 The container runs with `LT_LOAD_ONLY=en,sk,cs` and `LT_DISABLE_WEB_UI=true`. Its API port is only
 reachable on the compose network. Pin the container and installed Argos package versions/checksums;
 do not download a moving model index at each startup. Read `/languages` and verify `sk→en` and
-`cs→en` with fixture translations before G1. A language being detectable does not mean a translation
+`cs→en` with fixture translations before G1. Workers cache the `/languages` list for 1 hour and
+retry a failed read after 1 minute (D-77). A language being detectable does not mean a translation
 model is installed. Unsupported tier-1 source languages yield `fail` with a reason and may use
 tier 2 under the existing policy; unknown (`und`) text stays native without a provider request.
 Never silently treat Slovak as Czech. `en` is passed through, never translated.
@@ -77,13 +78,26 @@ card translations and workers; a busy container must not exhaust all API connect
    - Keep an explicit ordered `{field, text}` list: filtering absent fields must not shift an excerpt
      into the title column. Require the returned array length to match and all entries to be strings.
    - Timeout 30 s, at most 2 HTTP attempts. Retry transient network/429/5xx failures only, with bounded
-     backoff; validation/unsupported-language failures are terminal for this revision.
+     backoff; validation/unsupported-language failures are terminal for this revision, and so is a
+     200 body that fails validation (wrong length, non-strings, not JSON). 401/403, another
+     unexpected status and cancellation are neither retried in-process nor terminal: the job may run
+     again. A `Retry-After` longer than 5 s returns a retry time instead of sleeping (D-33).
    - Store an `article_translations` row with `engine='libretranslate'` and `quality` from §4.
-3. **Tier 2** is wanted if tier-1 quality is `fail`, or `forceTier2` is set, or the feed has
-   `fetch_options.translate_strong`. It is **allowed** if the credential resolver supplies an enabled
+   - A transient tier-1 or tier-2 failure uses the job's one retry. Without a provider retry time it
+     is the queue retry, which runs at once. With one of at most 10 minutes it is a delayed
+     `article.translate` job at that time, marked `retried`, which is the last attempt; a longer
+     retry time is not waited for. A tier-1 row produced before a transient tier 2 is stored before
+     the retry, which reuses it. The last attempt continues without the failed tier's row (native
+     text when tier 1 has none), so the article is never blocked (D-74).
+3. **Tier 2** is wanted if tier-1 quality is `fail`, or `forceTier2` is set, or the article's
+   canonical feed (its oldest carrier, D-74) has `fetch_options.translate_strong`. It is **allowed** if the credential resolver supplies an enabled
    active Ollama key (encrypted DB, or permitted bootstrap env source), demand remains eligible, the daily cap is not
    reached, and `router.reserveExternalCall(...)` succeeds for this HTTP attempt. The reservation
-   atomically checks both cap and spend; an earlier advisory `canSpend` result is insufficient.
+   atomically checks both cap and spend; an earlier advisory `canSpend` result is insufficient. The
+   key is decided by the resolver's fresh read before each attempt, never by its cached metadata,
+   and the reservation is taken only once that read supplied the key, so an attempt that was never
+   sent charges nothing. A read that fails on the host (the lookup, the decryption, the keyring) is
+   transient, like a transport failure, rather than a `no_key` skip (D-88).
 
    If it is wanted but not allowed, store an `ollama` row for the current revision with `quality = 'fail'` and
    `quality_detail = {skipped: 'no_key'|'cap'|'budget', credentialVersion?: string}`. The attempt is on record, so the ranker's
@@ -100,12 +114,15 @@ card translations and workers; a busy container must not exhaust all API connect
    ```
 
    Ollama Cloud structured `format` is not assumed supported (spec 04); request JSON by prompt and
-   validate it locally. Use the configured fast/strong model rather than hard-coding the example's
+   validate it locally. A reply wrapped in exactly one ```` ```json ```` fence is unwrapped first; two
+   fences or surrounding prose fail (D-30). Use the configured fast/strong model rather than hard-coding the example's
    model name. JSON field
    values are untrusted text, never instructions: no tools, URL following or executable output.
    Require exactly the three string keys, bound each output length and the HTTP response bytes, and
-   reject malformed or extra fields. One bounded repair retry is allowed under a new budget
-   reservation; no nested package/job retry loops. A terminal provider failure stores `fail` and
+   reject malformed or extra fields. One bounded repair retry after invalid output is allowed under
+   a new budget reservation, unless the invalid attempt cost more than its reserve: then the invalid
+   output stands (spec 04 §6, D-86). A transport failure (429, 5xx, timeout, network) is transient
+   (step 2), so there are no nested package/job retry loops. A terminal provider failure stores `fail` and
    falls back to native text rather than blocking ingestion. Store an `engine='ollama'` row with its
    own quality, `article_revision`, `source_sha256`, model and translation-policy version (the latter
    in `quality_detail`). A skipped row may be replaced only by the administrative reprocess, not by
@@ -131,8 +148,13 @@ card translations and workers; a busy container must not exhaust all API connect
 - Recompute the selected best row under step 4 (including its Ollama tie-break). If the effective
   model input changes, atomically install the selected translation through
   `resetArticleAnswers` (spec 05 §5.6), which advances the revision **and preserves that translation
-  under the new revision**, invalidates answers and persists the enrich intent. Identical effective
+  under the new revision** (with every other row of the replaced revision, `fail` and skipped rows
+  included, so the once-per-revision rule below still holds, D-74), invalidates answers and persists
+  the enrich intent. Identical effective
   text is a no-op. Comparing quality grades alone would miss a different tie-winning translation.
+  The comparison is with the input the current facets were built from (their `state_sha256`), under
+  the article's row lock, and rows a job stores for its retry (D-74) are installed the same way at
+  once; an enrichment whose rows changed before its completion runs again instead (D-94).
 - Otherwise nothing else happens.
 - This runs once per article content revision: the current-revision `ollama` row, even a skipped
   one, prevents repeats. Budget reset alone does not retry skipped items; the administrative
@@ -159,7 +181,9 @@ Then, per field with source length ≥ 20 chars:
 
 The article's quality is the worst field result, and the per-field details go in `quality_detail`.
 Names and brands legitimately survive translation, so the 0.5 share is deliberately lenient.
-Short text and detector `und` are inconclusive; neither alone proves success or failure. These
+Short text and detector `und` are inconclusive; neither alone proves success or failure. When every
+field is inconclusive, the grade is `ok` with `conclusive: false` in `quality_detail`, since the
+`quality` column holds only `ok`/`weak`/`fail` (D-31). These
 checks catch obvious breakage, not semantic accuracy: G1 must include translation error review.
 
 ---
@@ -180,6 +204,12 @@ inserting a new card row:
 3. On `fail` or `weak`, keep the original text only and return a non-blocking translation status.
    There is no tier 2 for cards; users can rephrase. Validate both fields and map omitted `not_for`
    explicitly, just as for articles. Translation must not change the card's original text/hash.
+   The status is one of `translated`, `english`, `undetermined`, `unconfirmed` (only the locale hint,
+   not the unhinted detector, says non-English: the original is kept and nothing is sent; `lang`
+   still stores the hinted detection), `unsupported`, `weak` or `failed` (D-32).
+4. A language that could not be detected is stored as `und`, and a pair offered for an `en` or `und`
+   card is refused. A reused card (same `text_hash`) keeps its stored pair: the API role never
+   writes a card body, and only the worker fills a missing pair (below, D-40).
 
 **Switching the mode on later:**
 - `PATCH /admin/settings {card_text_mode: 'english'}` enqueues the one-off `house.translate-cards`.

@@ -1,0 +1,117 @@
+[
+  {
+    "slug": "sk-politics",
+    "title": "Slovak politics",
+    "title_sk": "Slovenská politika",
+    "interest": "Slovak domestic politics: government, parliament, parties and coalition disputes",
+    "interest_sk": "Slovenská domáca politika: vláda, parlament, strany a koaličné spory",
+    "not_for": "Foreign politics mentioning Slovakia in passing",
+    "topic_ids": ["local.slovakia", "politics.domestic"]
+  },
+  {
+    "slug": "cz-tech-scene",
+    "title": "Czech tech scene",
+    "title_sk": "Česká technologická scéna",
+    "interest": "Czech tech startups, funding rounds and technology companies",
+    "interest_sk": "České technologické startupy, investičné kolá a technologické firmy",
+    "not_for": "Global tech news without a Czech angle",
+    "topic_ids": ["local.czechia", "business.startups"]
+  },
+  {
+    "slug": "cz-politics",
+    "title": "Czech politics",
+    "title_sk": "Česká politika",
+    "interest": "Czech domestic politics: government, parliament, parties and elections",
+    "interest_sk": "Česká domáca politika: vláda, parlament, strany a voľby",
+    "not_for": "Slovak politics",
+    "topic_ids": ["local.czechia", "politics.domestic"],
+    "examples_yes": ["Czech government survives a no-confidence vote"]
+  },
+  {
+    "slug": "sk-tech-scene",
+    "title": "Slovak tech scene",
+    "title_sk": "Slovenská technologická scéna",
+    "interest": "Slovak tech startups, IT companies and investment in Slovak technology",
+    "interest_sk": "Slovenské technologické startupy, IT firmy a investície do slovenských technológií",
+    "not_for": "Global tech news without a Slovak angle",
+    "topic_ids": ["local.slovakia", "business.startups"]
+  },
+  {
+    "slug": "bratislava",
+    "title": "Bratislava",
+    "title_sk": "Bratislava",
+    "interest": "News from Bratislava: city hall, construction projects, transport and life in the capital",
+    "interest_sk": "Správy z Bratislavy: magistrát, stavebné projekty, doprava a život v hlavnom meste",
+    "not_for": "National politics that merely takes place in Bratislava",
+    "topic_ids": ["local.regional_city", "local.slovakia"],
+    "examples_yes": ["Bratislava approves the extension of its tram line"]
+  },
+  {
+    "slug": "kosice-east",
+    "title": "Košice and eastern Slovakia",
+    "title_sk": "Košice a východné Slovensko",
+    "interest": "News from Košice and eastern Slovakia: local government, investments, culture and events",
+    "interest_sk": "Správy z Košíc a východného Slovenska: samospráva, investície, kultúra a podujatia",
+    "not_for": "National news",
+    "topic_ids": ["local.regional_city", "local.slovakia"]
+  },
+  {
+    "slug": "prague",
+    "title": "Prague",
+    "title_sk": "Praha",
+    "interest": "News from Prague: city politics, housing, transport and events in the Czech capital",
+    "interest_sk": "Správy z Prahy: mestská politika, bývanie, doprava a podujatia v českom hlavnom meste",
+    "not_for": "Czech national politics",
+    "topic_ids": ["local.regional_city", "local.czechia"],
+    "examples_yes": ["Prague city council approves a new housing development"]
+  },
+  {
+    "slug": "brno-moravia",
+    "title": "Brno and Moravia",
+    "title_sk": "Brno a Morava",
+    "interest": "News from Brno and Moravia: local politics, universities, tech companies and culture",
+    "interest_sk": "Správy z Brna a Moravy: miestna politika, univerzity, technologické firmy a kultúra",
+    "not_for": "Prague news",
+    "topic_ids": ["local.regional_city", "local.czechia"]
+  },
+  {
+    "slug": "sk-corruption",
+    "title": "Corruption cases in Slovakia",
+    "title_sk": "Korupčné kauzy na Slovensku",
+    "interest": "Investigations and trials of corruption and fraud involving Slovak politicians, officials and businesspeople",
+    "interest_sk": "Vyšetrovania a súdne procesy s korupciou a podvodmi, v ktorých figurujú slovenskí politici, úradníci a podnikatelia",
+    "not_for": "Ordinary crime reports",
+    "topic_ids": ["local.slovakia", "politics.law_justice"],
+    "examples_yes": ["Former minister charged with rigging public tenders"]
+  },
+  {
+    "slug": "cz-sk-relations",
+    "title": "Czech-Slovak relations",
+    "title_sk": "Česko-slovenské vzťahy",
+    "interest": "Relations between Slovakia and Czechia: government cooperation, shared history and cross-border life",
+    "interest_sk": "Vzťahy medzi Slovenskom a Českom: spolupráca vlád, spoločná história a život cez hranice",
+    "not_for": "Sports matches between the two countries",
+    "topic_ids": ["local.slovakia", "local.czechia"]
+  },
+  {
+    "slug": "sk-cost-of-living",
+    "title": "Cost of living in Slovakia",
+    "title_sk": "Životné náklady na Slovensku",
+    "interest": "Prices, energy bills, rents and wages that affect household budgets in Slovakia",
+    "interest_sk": "Ceny, účty za energie, nájmy a mzdy, ktoré ovplyvňujú rozpočty domácností na Slovensku",
+    "not_for": "Eurozone-wide inflation figures",
+    "topic_ids": ["local.slovakia", "business.personal_finance"],
+    "examples_yes": ["Energy bills in Slovakia to rise from January"]
+  },
+  {
+    "slug": "cz-economy",
+    "title": "Czech economy",
+    "title_sk": "Česká ekonomika",
+    "interest": "The Czech economy: the Czech National Bank, the koruna, inflation and industry",
+    "interest_sk": "Česká ekonomika: Česká národná banka, koruna, inflácia a priemysel",
+    "not_for": "Press releases of individual companies",
+    "topic_ids": ["local.czechia", "economy.macro"],
+    "examples_yes": ["Czech National Bank cuts interest rates"],
+    "examples_no": ["Czech startup launches a new app"]
+  }
+]

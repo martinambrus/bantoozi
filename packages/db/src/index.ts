@@ -4,9 +4,13 @@
  */
 export const PACKAGE_NAME = '@bantoozi/db';
 
+export * from './cards/index.js';
+export * from './classify/index.js';
 export * from './client.js';
+export * from './engine/index.js';
 export * from './errors.js';
 export * from './ingest/index.js';
+export * from './library/index.js';
 export * from './migrate/migrate.js';
 export * from './outbox.js';
 export * from './readiness.js';

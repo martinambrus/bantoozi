@@ -1,0 +1,81 @@
+[
+  {
+    "slug": "film-reviews",
+    "title": "Film reviews",
+    "title_sk": "Filmové recenzie",
+    "interest": "Reviews and analysis of new films in cinemas and on streaming, including festival premieres",
+    "interest_sk": "Recenzie a rozbory nových filmov v kinách aj na streamingu vrátane festivalových premiér",
+    "not_for": "Celebrity gossip",
+    "topic_ids": ["culture.film_tv"],
+    "examples_yes": ["Review: the Cannes winner is a quiet masterpiece"],
+    "examples_no": ["Actor spotted at a Paris restaurant"]
+  },
+  {
+    "slug": "tv-series",
+    "title": "TV series",
+    "title_sk": "Seriály",
+    "interest": "New and ongoing TV series: reviews, season announcements and behind-the-scenes coverage",
+    "interest_sk": "Nové aj pokračujúce seriály: recenzie, ohlásenia nových sérií a zákulisie natáčania",
+    "not_for": "Reality TV gossip",
+    "topic_ids": ["culture.film_tv", "entertainment.streaming_video"],
+    "examples_yes": ["Season two review: the thriller finally finds its pace"]
+  },
+  {
+    "slug": "books",
+    "title": "Books",
+    "title_sk": "Knihy",
+    "interest": "Book reviews, new releases, author interviews and literary prizes",
+    "interest_sk": "Recenzie kníh, knižné novinky, rozhovory s autormi a literárne ceny",
+    "not_for": "Bookkeeping and accounting",
+    "topic_ids": ["culture.books"],
+    "examples_yes": ["Booker Prize shortlist announced"],
+    "examples_no": ["Five bookkeeping tips for freelancers"]
+  },
+  {
+    "slug": "sk-cz-film",
+    "title": "Slovak and Czech film",
+    "title_sk": "Slovenský a český film",
+    "interest": "Slovak and Czech films and TV productions: premieres, festivals and reviews",
+    "interest_sk": "Slovenské a české filmy a televízna tvorba: premiéry, festivaly a recenzie",
+    "not_for": "Hollywood blockbusters",
+    "topic_ids": ["culture.film_tv", "local.slovakia", "local.czechia"]
+  },
+  {
+    "slug": "classical-music",
+    "title": "Classical music",
+    "title_sk": "Klasická hudba",
+    "interest": "Classical music and opera: concerts, recordings, orchestras and performers",
+    "interest_sk": "Klasická hudba a opera: koncerty, nahrávky, orchestre a interpreti",
+    "not_for": "Pop charts",
+    "topic_ids": ["culture.music", "culture.performing_arts"],
+    "examples_yes": ["Slovak Philharmonic opens its season with Mahler"]
+  },
+  {
+    "slug": "rock-alternative",
+    "title": "Rock and alternative music",
+    "title_sk": "Rock a alternatíva",
+    "interest": "New albums, tours and interviews from rock, indie and alternative bands",
+    "interest_sk": "Nové albumy, turné a rozhovory rockových, nezávislých a alternatívnych kapiel",
+    "not_for": "Rock climbing; geology",
+    "topic_ids": ["culture.music"]
+  },
+  {
+    "slug": "art-design",
+    "title": "Art and design",
+    "title_sk": "Umenie a dizajn",
+    "interest": "Visual arts, exhibitions, architecture and design",
+    "interest_sk": "Výtvarné umenie, výstavy, architektúra a dizajn",
+    "not_for": "DIY craft projects",
+    "topic_ids": ["culture.visual_arts_design"],
+    "examples_yes": ["Andy Warhol retrospective opens in Bratislava"]
+  },
+  {
+    "slug": "theatre",
+    "title": "Theatre",
+    "title_sk": "Divadlo",
+    "interest": "Theatre productions, premieres, reviews and news from stages in Slovakia and abroad",
+    "interest_sk": "Divadelné inscenácie, premiéry, recenzie a novinky zo scén na Slovensku aj v zahraničí",
+    "not_for": "Home theatre audio equipment",
+    "topic_ids": ["culture.performing_arts"]
+  }
+]

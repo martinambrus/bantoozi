@@ -66,6 +66,13 @@ interface QueueSpec<S extends z.ZodType> {
 
 const spec = <S extends z.ZodType>(s: QueueSpec<S>): QueueSpec<S> => s;
 
+/**
+ * Expiration of the multi-call model stages (spec 03 §2.1): a job starts no call after the
+ * worker's 10-minute job budget and one call ends within its 10-minute lease, so 30 minutes covers
+ * the wall time plus the shutdown margin. Single-call stages keep pg-boss's 15-minute default.
+ */
+export const MODEL_JOB_EXPIRE_SECONDS = 30 * 60;
+
 const houseSpecs = Object.fromEntries(
   HOUSE_CRON_QUEUES.map((name) => [
     name,
@@ -98,12 +105,12 @@ export const QUEUES = {
   'analysis.process': spec({
     payload: analysisPayload,
     concurrency: 4,
-    options: { policy: 'stately', retryLimit: 1 },
+    options: { policy: 'stately', retryLimit: 1, expireInSeconds: MODEL_JOB_EXPIRE_SECONDS },
   }),
   'analysis.process.laya': spec({
     payload: analysisPayload,
     concurrency: 1,
-    options: { policy: 'stately', retryLimit: 1 },
+    options: { policy: 'stately', retryLimit: 1, expireInSeconds: MODEL_JOB_EXPIRE_SECONDS },
     layaOnly: true,
   }),
   'article.capture-bookmark': spec({
@@ -118,6 +125,9 @@ export const QUEUES = {
         forceTier2: z.boolean().optional(),
         replaceSkipped: z.boolean().optional(),
         modeChange: z.boolean().optional(),
+        // Set only on the delayed retry of a transient failure at the provider's retry time
+        // (spec 07 §3): that job is the last attempt.
+        retried: z.boolean().optional(),
       })
       .strict(),
     concurrency: 4,
@@ -140,9 +150,16 @@ export const QUEUES = {
     options: { policy: 'stately', retryLimit: 1 },
   }),
   'article.match': spec({
-    payload: articleOnly,
+    payload: z
+      .object({
+        articleId: IdSchema,
+        // Set only on a level-2-only retry (spec 05 §4): its failed attempts so far; the fifth
+        // failure gives up, as for a `match_queue` row.
+        l2Attempts: z.number().int().min(0).max(4).optional(),
+      })
+      .strict(),
     concurrency: 8,
-    options: { policy: 'stately', retryLimit: 1 },
+    options: { policy: 'stately', retryLimit: 1, expireInSeconds: MODEL_JOB_EXPIRE_SECONDS },
   }),
   'card.backfill': spec({
     payload: z
@@ -358,7 +375,8 @@ export function sendSpecFor<Q extends QueueName>(queue: Q, payload: JobPayload<Q
 
 /**
  * One key per handler behaviour, so coalescing never drops a flag (spec 03 §2): plain jobs,
- * `forceTier2` alone, `replaceSkipped` and `modeChange` each have their own key.
+ * `forceTier2` alone, `replaceSkipped` and `modeChange` each have their own key. A `retried` job
+ * keeps the key of the job it retries.
  */
 function translateKey(p: Record<string, unknown>): string {
   const articleId = String(p['articleId']);
@@ -439,15 +457,48 @@ export const enqueueRetranslateSkipped = (
 export const enqueueRematch = (s: JobSender, p: JobPayloadInput<'house.rematch'>) =>
   enqueue(s, 'house.rematch', p);
 
-/** Cron schedules (UTC) of the housekeeping jobs are registered in M8; `feed.schedule` runs each minute. */
+/** `feed.schedule` runs each minute (spec 03 §3). */
 export const FEED_SCHEDULE_CRON = '* * * * *';
 
+/** A housekeeping job's cron (UTC) and its period. */
+export interface HouseCronSchedule {
+  cron: string;
+  /** A last recorded run older than this is overdue at worker startup (spec 11 §6). */
+  everyMs: number;
+}
+
 /**
- * Per-job cursor schemas for `settings['house.progress'][job].cursor` (spec 02 §2). M8 replaces
- * the generic JSON cursors with each job's concrete keyset shape.
+ * Cron schedules (spec 11 §6) of the housekeeping jobs implemented so far; M8 adds the rest. A
+ * worker registers the schedule of each such queue it consumes, and enqueues an overdue one once
+ * at startup.
  */
+export const HOUSE_CRON_SCHEDULES: Readonly<Partial<Record<HouseCronQueue, HouseCronSchedule>>> =
+  Object.freeze({
+    'house.rescore-degraded': { cron: '*/10 * * * *', everyMs: 10 * 60_000 },
+  });
+
+/** Jobs that persist progress in `settings['house.progress']` (spec 02 §2, spec 11 §6). */
 export const HOUSE_PROGRESS_JOBS = [
   ...HOUSE_CRON_QUEUES,
   'house.reenrich',
   'house.rematch',
 ] as const;
+export type HouseProgressJob = (typeof HOUSE_PROGRESS_JOBS)[number];
+
+/** A keyset position `(latest eligible arrival, article id)`, descending. */
+const recoveryCursor = z.object({ key: iso, articleId: IdSchema }).strict();
+
+/**
+ * Per-job cursor schemas of `settings['house.progress'][job].cursor` (spec 02 §2) for the jobs
+ * implemented so far; M8 registers the rest. A stored cursor that does not parse restarts that
+ * job's pass instead of failing it.
+ */
+export const HOUSE_PROGRESS_CURSORS = {
+  /** The two recovery pages' positions; an absent page starts a fresh pass (spec 04 §5). */
+  'house.rescore-degraded': z
+    .object({ enrich: recoveryCursor.optional(), answers: recoveryCursor.optional() })
+    .strict(),
+} as const satisfies Partial<Record<HouseProgressJob, z.ZodType>>;
+export type HouseProgressCursor<J extends keyof typeof HOUSE_PROGRESS_CURSORS> = z.output<
+  (typeof HOUSE_PROGRESS_CURSORS)[J]
+>;

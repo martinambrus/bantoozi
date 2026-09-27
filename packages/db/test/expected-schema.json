@@ -2683,6 +2683,11 @@
           "type": "timestamp with time zone",
           "nullable": true,
           "default": null
+        },
+        "stage_results": {
+          "type": "jsonb",
+          "nullable": true,
+          "default": null
         }
       },
       "primaryKey": ["id"],

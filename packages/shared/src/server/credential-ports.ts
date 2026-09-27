@@ -12,7 +12,15 @@ export interface ProviderAuth {
 }
 
 export interface CredentialResolver {
-  metadata(provider: 'typesafe' | 'ollama'): Promise<{
+  /**
+   * The provider's credential state, without key material. It may be cached for up to 10 s (the UI
+   * poll, spec 04 §1.2 step 5); `fresh` reads the row again, as a decision to admit or refuse work
+   * must.
+   */
+  metadata(
+    provider: 'typesafe' | 'ollama',
+    options?: { fresh?: boolean },
+  ): Promise<{
     source: CredentialSource;
     enabled: boolean;
     revision?: string;

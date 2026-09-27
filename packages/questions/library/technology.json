@@ -1,0 +1,145 @@
+[
+  {
+    "slug": "rust-lang",
+    "title": "Rust programming",
+    "title_sk": "Programovanie v Ruste",
+    "interest": "The Rust programming language: releases, libraries, tooling and real-world use",
+    "interest_sk": "Programovací jazyk Rust: nové verzie, knižnice, nástroje a použitie v praxi",
+    "not_for": "Rust the video game; corrosion",
+    "topic_ids": ["technology.software_dev"]
+  },
+  {
+    "slug": "llm-research",
+    "title": "LLM research",
+    "title_sk": "Výskum jazykových modelov",
+    "interest": "Research results and technical deep-dives about large language models",
+    "interest_sk": "Výsledky výskumu a technické rozbory veľkých jazykových modelov",
+    "not_for": "Consumer product announcements without technical content",
+    "topic_ids": ["technology.ai_ml", "science.research_academia"]
+  },
+  {
+    "slug": "python-ecosystem",
+    "title": "Python ecosystem",
+    "title_sk": "Ekosystém Pythonu",
+    "interest": "The Python language: new releases, popular libraries and packaging tools such as pip, uv and Poetry",
+    "interest_sk": "Jazyk Python: nové verzie, populárne knižnice a nástroje na správu balíčkov ako pip, uv či Poetry",
+    "not_for": "Snakes and wildlife",
+    "topic_ids": ["technology.software_dev", "technology.open_source"],
+    "examples_yes": ["New Python release makes the interpreter noticeably faster"],
+    "examples_no": ["Ball python found in an apartment building"]
+  },
+  {
+    "slug": "web-frontend",
+    "title": "Web frontend development",
+    "title_sk": "Vývoj webového frontendu",
+    "interest": "Building websites and web apps: JavaScript and TypeScript frameworks, CSS and browser APIs",
+    "interest_sk": "Tvorba webov a webových aplikácií: frameworky pre JavaScript a TypeScript, CSS a rozhrania prehliadačov",
+    "not_for": "Web design showcases without code",
+    "topic_ids": ["technology.software_dev"]
+  },
+  {
+    "slug": "cloud-devops",
+    "title": "Cloud and DevOps",
+    "title_sk": "Cloud a DevOps",
+    "interest": "Cloud infrastructure and DevOps practice: Kubernetes, containers, CI/CD and infrastructure as code",
+    "interest_sk": "Cloudová infraštruktúra a DevOps v praxi: Kubernetes, kontajnery, CI/CD a infraštruktúra ako kód",
+    "not_for": "Earnings reports of cloud providers",
+    "topic_ids": ["technology.software_dev", "technology.tech_industry"]
+  },
+  {
+    "slug": "data-breaches",
+    "title": "Data breaches and hacks",
+    "title_sk": "Úniky dát a hackerské útoky",
+    "interest": "Cyberattacks, data breaches and ransomware incidents: how they happened and who was affected",
+    "interest_sk": "Kybernetické útoky, úniky dát a útoky ransomvéru: ako k nim došlo a koho zasiahli",
+    "not_for": "Generic password tips",
+    "topic_ids": ["technology.cybersecurity"],
+    "examples_yes": ["Hospital network hit by ransomware, operations postponed"],
+    "examples_no": ["Ten tips for a stronger password"]
+  },
+  {
+    "slug": "security-vulnerabilities",
+    "title": "Security vulnerabilities",
+    "title_sk": "Bezpečnostné zraniteľnosti",
+    "interest": "Newly disclosed software vulnerabilities, zero-days and the security patches that fix them",
+    "interest_sk": "Novo zverejnené zraniteľnosti softvéru, zero-day chyby a bezpečnostné záplaty, ktoré ich opravujú",
+    "not_for": "Vendor marketing for security products",
+    "topic_ids": ["technology.cybersecurity"]
+  },
+  {
+    "slug": "online-privacy",
+    "title": "Online privacy",
+    "title_sk": "Súkromie na internete",
+    "interest": "Online privacy and data protection: tracking, encryption and GDPR enforcement against tech companies",
+    "interest_sk": "Súkromie a ochrana údajov na internete: sledovanie, šifrovanie a vymáhanie GDPR voči technologickým firmám",
+    "not_for": "Celebrity privacy scandals",
+    "topic_ids": ["technology.cybersecurity", "politics.policy_regulation"]
+  },
+  {
+    "slug": "smartphones",
+    "title": "Smartphones",
+    "title_sk": "Smartfóny",
+    "interest": "New smartphones, their reviews and updates to the Android and iOS mobile operating systems",
+    "interest_sk": "Nové smartfóny, ich recenzie a aktualizácie mobilných operačných systémov Android a iOS",
+    "not_for": "Mobile carrier price plans",
+    "topic_ids": ["technology.hardware_gadgets"],
+    "examples_yes": ["Review: this year's flagship phone finally fixes battery life"],
+    "examples_no": ["Operator raises the prices of mobile plans"]
+  },
+  {
+    "slug": "pc-hardware",
+    "title": "PC hardware",
+    "title_sk": "Počítačový hardvér",
+    "interest": "Processors, graphics cards and PC components: launches, benchmarks and building your own computer",
+    "interest_sk": "Procesory, grafické karty a komponenty do PC: novinky, testy výkonu a stavba vlastného počítača",
+    "not_for": "Chipmaker stock moves",
+    "topic_ids": ["technology.hardware_gadgets"],
+    "examples_yes": ["New graphics card benchmarked: 30% faster at the same price"]
+  },
+  {
+    "slug": "open-source-projects",
+    "title": "Open-source projects",
+    "title_sk": "Open-source projekty",
+    "interest": "News from open-source projects and communities: major releases, governance, funding and licence changes",
+    "interest_sk": "Správy z open-source projektov a komunít: veľké vydania, správa projektov, financovanie a zmeny licencií",
+    "not_for": "Proprietary product launches",
+    "topic_ids": ["technology.open_source"]
+  },
+  {
+    "slug": "linux",
+    "title": "Linux",
+    "title_sk": "Linux",
+    "interest": "Linux distributions, the kernel and the Linux desktop: releases, features and practical tips",
+    "interest_sk": "Linuxové distribúcie, jadro a linuxový desktop: nové verzie, funkcie a praktické tipy",
+    "not_for": "Windows and macOS news",
+    "topic_ids": ["technology.open_source", "technology.software_dev"]
+  },
+  {
+    "slug": "big-tech-regulation",
+    "title": "Big Tech and regulation",
+    "title_sk": "Big Tech a regulácia",
+    "interest": "Antitrust cases and EU rules such as the DMA and DSA aimed at large tech platforms",
+    "interest_sk": "Antimonopolné konania a pravidlá EÚ ako DMA a DSA zamerané na veľké technologické platformy",
+    "not_for": "Product feature announcements",
+    "topic_ids": ["technology.internet_platforms", "politics.policy_regulation"],
+    "examples_yes": ["EU fines a platform for breaking the Digital Markets Act"]
+  },
+  {
+    "slug": "ai-tools",
+    "title": "AI tools in practice",
+    "title_sk": "AI nástroje v praxi",
+    "interest": "Practical uses of AI assistants and generative AI tools at work and at home, with hands-on tests",
+    "interest_sk": "Praktické využitie AI asistentov a generatívnych nástrojov v práci aj doma, s testami v praxi",
+    "not_for": "AI research papers; AI stock hype",
+    "topic_ids": ["technology.ai_ml"]
+  },
+  {
+    "slug": "mobile-networks",
+    "title": "Mobile networks and broadband",
+    "title_sk": "Mobilné siete a internet",
+    "interest": "Mobile networks and internet access: 5G rollout, fibre broadband and changes at telecom operators",
+    "interest_sk": "Mobilné siete a pripojenie na internet: zavádzanie 5G, optické pripojenie a zmeny u telekomunikačných operátorov",
+    "not_for": "Smartphone reviews",
+    "topic_ids": ["technology.telecom"]
+  }
+]

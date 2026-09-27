@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  FEED_SCHEDULE_CRON,
   HOUSE_CRON_QUEUES,
+  HOUSE_CRON_SCHEDULES,
+  HOUSE_PROGRESS_CURSORS,
+  HOUSE_PROGRESS_JOBS,
   LAYA_QUEUES,
+  MODEL_JOB_EXPIRE_SECONDS,
   QUEUES,
   QUEUE_NAMES,
   buildJobIntent,
@@ -88,12 +93,44 @@ describe('jobs registry (spec 03 §2)', () => {
       expireInSeconds: 180,
     });
     expect(QUEUES['card.backfill'].options).toMatchObject({ policy: 'standard', retryLimit: 2 });
+    // Multi-call model stages outlive the worker's job budget plus one call (spec 03 §2.1).
+    for (const queue of ['article.match', 'analysis.process', 'analysis.process.laya'] as const) {
+      expect(QUEUES[queue].options).toMatchObject({
+        policy: 'stately',
+        retryLimit: 1,
+        expireInSeconds: MODEL_JOB_EXPIRE_SECONDS,
+      });
+    }
     expect(QUEUES['provider.validate'].options).toMatchObject({ policy: 'stately', retryLimit: 0 });
     for (const house of HOUSE_CRON_QUEUES) {
       expect(QUEUES[house].options).toMatchObject({ policy: 'singleton', retryLimit: 1 });
     }
     expect(QUEUES['house.reenrich'].options.policy).toBe('singleton');
     expect(QUEUES['house.retranslate-skipped'].options.policy).toBe('singleton');
+  });
+
+  it('schedules feed.schedule each minute and the implemented house jobs per spec 11 §6', () => {
+    expect(FEED_SCHEDULE_CRON).toBe('* * * * *');
+    expect(HOUSE_CRON_SCHEDULES).toEqual({
+      'house.rescore-degraded': { cron: '*/10 * * * *', everyMs: 600_000 },
+    });
+    for (const queue of Object.keys(HOUSE_CRON_SCHEDULES)) {
+      expect(HOUSE_CRON_QUEUES).toContain(queue);
+    }
+  });
+
+  it('registers the persisted cursor of each implemented housekeeping job (spec 02 §2)', () => {
+    const rescore = HOUSE_PROGRESS_CURSORS['house.rescore-degraded'];
+    const position = { key: '2026-09-26T10:00:00.123456Z', articleId: '42' };
+    expect(rescore.parse({ enrich: position })).toEqual({ enrich: position });
+    expect(rescore.parse({})).toEqual({});
+    expect(rescore.safeParse({ enrich: { key: 'yesterday', articleId: '42' } }).success).toBe(
+      false,
+    );
+    expect(rescore.safeParse({ answers: position, extra: 1 }).success).toBe(false);
+    for (const job of Object.keys(HOUSE_PROGRESS_CURSORS)) {
+      expect(HOUSE_PROGRESS_JOBS).toContain(job);
+    }
   });
 
   it('excludes the dedicated Laya queues from WORKER_QUEUES=*', () => {
@@ -119,6 +156,13 @@ describe('jobs registry (spec 03 §2)', () => {
     expect(() => parseJobPayload('user.rank', { userId: 'not-a-uuid', reason: 'match' })).toThrow();
     expect(() => parseJobPayload('house.metrics', { x: 1 })).toThrow();
     expect(() => parseJobPayload('house.retranslate-skipped', { reasons: ['nope'] })).toThrow();
+    // A level-2-only retry carries its failed attempts (at most 4: the fifth failure gives up).
+    expect(parseJobPayload('article.match', { articleId: '5', l2Attempts: 4 })).toEqual({
+      articleId: '5',
+      l2Attempts: 4,
+    });
+    expect(() => parseJobPayload('article.match', { articleId: '5', l2Attempts: 5 })).toThrow();
+    expect(() => parseJobPayload('article.match', { articleId: '5', l2Attempts: -1 })).toThrow();
   });
 
   it('uses the spec singleton and debounce keys', () => {
@@ -141,6 +185,9 @@ describe('jobs registry (spec 03 §2)', () => {
       kind: 'send',
       singletonKey: 'translate-mode:5',
     });
+    expect(
+      buildJobIntent('article.translate', { articleId: '5', forceTier2: true, retried: true }).send,
+    ).toEqual({ kind: 'send', singletonKey: 'translate-t2:5' });
     expect(buildJobIntent('user.rank', { userId: USER, reason: 'match' }).send).toEqual({
       kind: 'debounced',
       key: `rank:${USER}`,
@@ -184,6 +231,16 @@ describe('jobs registry (spec 03 §2)', () => {
     expect(buildJobIntent('card.backfill', { userId: USER, cardIds: ['1'] }).dedupeKey).not.toBe(
       buildJobIntent('card.backfill', { userId: USER, cardIds: ['2'] }).dedupeKey,
     );
+    // A delayed level-2 retry never coalesces with (and so never delays) a plain match intent,
+    // while both share the article's singleton key.
+    const plain = buildJobIntent('article.match', { articleId: '5' }, { revision: '2' });
+    const retry = buildJobIntent(
+      'article.match',
+      { articleId: '5', l2Attempts: 0 },
+      { revision: '2' },
+    );
+    expect(retry.dedupeKey).not.toBe(plain.dedupeKey);
+    expect(retry.send).toEqual(plain.send);
   });
 
   it('enqueue helpers send validated intents through the JobSender', async () => {

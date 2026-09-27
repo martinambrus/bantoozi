@@ -1,0 +1,60 @@
+[
+  {
+    "slug": "sk-schools",
+    "title": "Slovak schools",
+    "title_sk": "Slovenské školstvo",
+    "interest": "Slovak schools and education policy: curriculum reform, teachers' pay, exams and school enrolment",
+    "interest_sk": "Slovenské školy a vzdelávacia politika: reforma obsahu vzdelávania, platy učiteľov, maturity a zápis do škôl",
+    "not_for": "University rankings",
+    "topic_ids": ["education.schools", "local.slovakia"],
+    "examples_yes": ["Teachers' pay to rise from September"]
+  },
+  {
+    "slug": "universities",
+    "title": "Universities",
+    "title_sk": "Vysoké školy",
+    "interest": "Universities and higher education: admissions, rankings, student life and academic policy",
+    "interest_sk": "Univerzity a vysokoškolské vzdelávanie: prijímacie konanie, rebríčky, študentský život a akademická politika",
+    "not_for": "Primary schools",
+    "topic_ids": ["education.higher_education"]
+  },
+  {
+    "slug": "study-abroad",
+    "title": "Studying abroad",
+    "title_sk": "Štúdium v zahraničí",
+    "interest": "Studying at foreign universities: Erasmus, scholarships, applications and life as an international student",
+    "interest_sk": "Štúdium na zahraničných univerzitách: Erasmus, štipendiá, prihlášky a život zahraničného študenta",
+    "not_for": "Tourist travel",
+    "topic_ids": ["education.higher_education", "lifestyle.travel"]
+  },
+  {
+    "slug": "language-learning",
+    "title": "Language learning",
+    "title_sk": "Učenie sa jazykov",
+    "interest": "Learning foreign languages: methods, apps, research on language acquisition and practical tips",
+    "interest_sk": "Učenie sa cudzích jazykov: metódy, aplikácie, výskum osvojovania si jazykov a praktické tipy",
+    "not_for": "Programming languages",
+    "topic_ids": ["education.learning_skills"],
+    "examples_yes": ["Does learning with apps work? What the studies show"],
+    "examples_no": ["New version of a programming language released"]
+  },
+  {
+    "slug": "online-learning",
+    "title": "Online learning",
+    "title_sk": "Online vzdelávanie",
+    "interest": "Online courses and self-study: MOOCs, learning platforms and how to learn new skills effectively",
+    "interest_sk": "Online kurzy a samoštúdium: kurzy MOOC, vzdelávacie platformy a ako sa efektívne učiť nové zručnosti",
+    "not_for": "School policy",
+    "topic_ids": ["education.learning_skills"]
+  },
+  {
+    "slug": "ai-in-education",
+    "title": "AI in education",
+    "title_sk": "AI vo vzdelávaní",
+    "interest": "How AI tools are used in schools and universities: teaching, cheating concerns and new rules",
+    "interest_sk": "Ako sa nástroje umelej inteligencie využívajú v školách a na univerzitách: výučba, obavy z podvádzania a nové pravidlá",
+    "not_for": "General AI research",
+    "topic_ids": ["education.schools", "technology.ai_ml"],
+    "examples_yes": ["Universities rethink exams as students use chatbots"]
+  }
+]

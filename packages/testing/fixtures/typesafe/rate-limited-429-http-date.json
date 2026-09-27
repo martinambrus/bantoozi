@@ -1,0 +1,33 @@
+{
+  "description": "Rate limited: 429 with Retry-After as an HTTP-date, 7 s after the test clock (2026-09-26T12:00:00Z).",
+  "source": "Hand-written from the documented request/response shapes of spec 04 §3 (not a provider recording); replaced by RECORD=1 recordings once a key is available.",
+  "request": {
+    "model": "jev-1.13.0",
+    "state": {
+      "article": {
+        "title": "Jana's private reading list: 14 articles on custody law",
+        "excerpt": null
+      }
+    },
+    "questions": {
+      "promotional": {
+        "type": "noul",
+        "instructions": "Is `article` a press release, sponsored post, affiliate roundup or vendor marketing rather than independent content?"
+      }
+    }
+  },
+  "response": {
+    "status": 429,
+    "headers": {
+      "content-type": "application/json",
+      "retry-after": "Sat, 26 Sep 2026 12:00:07 GMT"
+    },
+    "body": {
+      "error": {
+        "type": "rate_limit_error",
+        "code": "rate_limited",
+        "message": "Rate limit exceeded: 200000 input tokens per second."
+      }
+    }
+  }
+}

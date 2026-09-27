@@ -1,10 +1,26 @@
 import { describe, expect, it } from 'vitest';
 
-import { PACKAGE_NAME } from '../src/index.js';
+import * as engine from '../src/index.js';
 
-// Placeholder (M0-T1): replaced by real tests when the package gets its features.
-describe('@bantoozi/engine', () => {
-  it('exposes its public entry point', () => {
-    expect(PACKAGE_NAME).toBe('@bantoozi/engine');
+describe('@bantoozi/engine public entry', () => {
+  it('exposes the router and its building blocks', () => {
+    expect(engine.PACKAGE_NAME).toBe('@bantoozi/engine');
+    for (const name of [
+      'createEngineRouter',
+      'createBreakerCoordinator',
+      'createMemoryCircuitStore',
+      'createPrioritySemaphore',
+      'createRateLimiter',
+      'createTypeSafeEngine',
+      'createLlmFallbackEngine',
+      'validateRequest',
+      'normalizeAnswers',
+      'splitQuestionsForLlm',
+      'decideRetry',
+      'parseRetryAfter',
+      'nextBudgetAlerts',
+    ] as const) {
+      expect(typeof engine[name]).toBe('function');
+    }
   });
 });

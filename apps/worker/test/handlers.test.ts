@@ -2,12 +2,21 @@ import { QUEUE_NAMES, isAppError } from '@bantoozi/shared';
 import { describe, expect, it } from 'vitest';
 
 import type { Database } from '@bantoozi/db';
+import type { CredentialResolver } from '@bantoozi/shared/server';
 import type pg from 'pg';
 
-import { createWorkerDeps } from '../src/handlers/deps.js';
+import type { TranslationDeps } from '../src/classify/translation.js';
 import {
+  createWorkerDeps,
+  type ClassificationDeps,
+  type WorkerDepsInput,
+} from '../src/handlers/deps.js';
+import {
+  CLASSIFICATION_QUEUES,
   HANDLERS,
   IMPLEMENTED_QUEUES,
+  INGESTION_QUEUES,
+  PROVIDER_QUEUES,
   StageUnavailableError,
   createHandlers,
   dispatch,
@@ -17,32 +26,42 @@ import {
 } from '../src/handlers/index.js';
 import { assertProductionReady } from '../src/readiness.js';
 
+const baseDeps: WorkerDepsInput = {
+  db: {} as Database,
+  lockPool: {} as pg.Pool,
+  fetch: { userAgent: 'test', timeoutMs: 1000, maxBytes: 1024, allowPrivate: false },
+  ingestMaxAgeDays: 14,
+  settingsEnv: { dailyBudgetUsd: 2, languageModes: {}, signupMode: 'invite' },
+  limiter: {
+    reserve: async () => ({ status: 'granted', token: 't' }),
+    release: async () => {},
+    block: async () => {},
+  },
+  logger: { info: () => {}, warn: () => {}, error: () => {} },
+};
+
+const classification = (translation?: TranslationDeps): ClassificationDeps => ({
+  router: {} as ClassificationDeps['router'],
+  primaryModel: 'jev-1.13.0',
+  leaseMs: 600_000,
+  callDeadlineMs: 300_000,
+  jobBudgetMs: 600_000,
+  ...(translation === undefined ? {} : { translation }),
+});
+
+const available = (handlers: HandlerMap) =>
+  QUEUE_NAMES.filter((q) => isStageAvailable(handlers, q)).sort();
+
 describe('handler map', () => {
   it('registers an entry for every queue of jobs.ts', () => {
     expect(Object.keys(HANDLERS).sort()).toEqual([...QUEUE_NAMES].sort());
   });
 
-  it('implements exactly the M1 ingestion stages; every later stage stays a stub', () => {
-    const handlers = createHandlers(
-      createWorkerDeps({
-        db: {} as Database,
-        lockPool: {} as pg.Pool,
-        fetch: { userAgent: 'test', timeoutMs: 1000, maxBytes: 1024, allowPrivate: false },
-        ingestMaxAgeDays: 14,
-        settingsEnv: { dailyBudgetUsd: 2, languageModes: {}, signupMode: 'invite' },
-        limiter: {
-          reserve: async () => ({ status: 'granted', token: 't' }),
-          release: async () => {},
-          block: async () => {},
-        },
-        logger: { info: () => {}, warn: () => {}, error: () => {} },
-      }),
-    );
+  it('implements only the M1 ingestion stages without classification dependencies', () => {
+    const handlers = createHandlers(createWorkerDeps(baseDeps));
     expect(Object.keys(handlers).sort()).toEqual([...QUEUE_NAMES].sort());
-    expect(QUEUE_NAMES.filter((q) => isStageAvailable(handlers, q)).sort()).toEqual(
-      [...IMPLEMENTED_QUEUES].sort(),
-    );
-    expect(IMPLEMENTED_QUEUES).toEqual([
+    expect(available(handlers)).toEqual([...INGESTION_QUEUES].sort());
+    expect(INGESTION_QUEUES).toEqual([
       'feed.schedule',
       'feed.fetch',
       'article.extract',
@@ -52,6 +71,59 @@ describe('handler map', () => {
       'article.enrich',
       'user.rank',
     ]);
+  });
+
+  it('implements the M2 classification stages with classification dependencies', () => {
+    const handlers = createHandlers(
+      createWorkerDeps({
+        ...baseDeps,
+        classification: classification({} as TranslationDeps),
+      }),
+    );
+    expect(available(handlers)).toEqual([...INGESTION_QUEUES, ...CLASSIFICATION_QUEUES].sort());
+    expect(CLASSIFICATION_QUEUES).toEqual([
+      'article.translate',
+      'article.enrich',
+      'article.cluster',
+      'article.match',
+      'card.backfill',
+      'analysis.process',
+      'house.rescore-degraded',
+    ]);
+    expect(unavailableQueues(handlers, ['article.enrich', 'user.rank'])).toEqual(['user.rank']);
+  });
+
+  it('implements provider.validate with the provider probe dependencies', () => {
+    const handlers = createHandlers(
+      createWorkerDeps({
+        ...baseDeps,
+        classification: classification({} as TranslationDeps),
+        providerValidation: {
+          router: {} as ClassificationDeps['router'],
+          credentials: {} as CredentialResolver,
+          config: {
+            nodeEnv: 'test',
+            typesafeBaseUrl: 'http://127.0.0.1:9',
+            typesafeModel: 'jev-1.13.0',
+            typesafePricePerMtokUsd: 0.042,
+            ollamaBaseUrl: 'http://127.0.0.1:9',
+            ollamaModelFast: 'fast',
+            ollamaModelStrong: 'strong',
+          },
+        },
+      }),
+    );
+    expect(PROVIDER_QUEUES).toEqual(['provider.validate']);
+    expect(available(handlers)).toEqual([...IMPLEMENTED_QUEUES].sort());
+    expect(unavailableQueues(handlers, QUEUE_NAMES)).not.toContain('provider.validate');
+  });
+
+  it('keeps article.translate a stub without the translators', () => {
+    const handlers = createHandlers(
+      createWorkerDeps({ ...baseDeps, classification: classification() }),
+    );
+    expect(isStageAvailable(handlers, 'article.translate')).toBe(false);
+    expect(isStageAvailable(handlers, 'analysis.process')).toBe(true);
   });
 
   it('keeps every stage of the base map a stub that refuses to acknowledge work', async () => {

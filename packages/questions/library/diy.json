@@ -1,0 +1,82 @@
+[
+  {
+    "slug": "home-assistant",
+    "title": "Smart home DIY",
+    "title_sk": "Inteligentná domácnosť svojpomocne",
+    "interest": "Home Assistant, self-hosted home automation and smart-home hardware hacking",
+    "interest_sk": "Home Assistant, vlastná domáca automatizácia a úpravy hardvéru pre inteligentnú domácnosť",
+    "not_for": "Commercial smart-speaker ads",
+    "topic_ids": ["diy.electronics_diy", "technology.hardware_gadgets"]
+  },
+  {
+    "slug": "maker-electronics",
+    "title": "Maker electronics",
+    "title_sk": "Elektronika pre makerov",
+    "interest": "Electronics projects with Raspberry Pi, Arduino and ESP32: builds, sensors and tutorials",
+    "interest_sk": "Elektronické projekty s Raspberry Pi, Arduinom a ESP32: konštrukcie, senzory a návody",
+    "not_for": "Consumer gadget reviews",
+    "topic_ids": ["diy.electronics_diy"],
+    "examples_yes": ["Build a weather station with an ESP32 and three sensors"],
+    "examples_no": ["Review: the latest smartwatch"]
+  },
+  {
+    "slug": "3d-printing",
+    "title": "3D printing",
+    "title_sk": "3D tlač",
+    "interest": "3D printers, slicers, materials and printable projects for hobbyists",
+    "interest_sk": "3D tlačiarne, slicery, materiály a projekty na tlač pre nadšencov",
+    "not_for": "Industrial additive manufacturing earnings",
+    "topic_ids": ["diy.printing_3d"],
+    "examples_yes": ["Printing strong parts: PETG and ASA compared"]
+  },
+  {
+    "slug": "woodworking",
+    "title": "Woodworking",
+    "title_sk": "Práca s drevom",
+    "interest": "Woodworking projects, hand and power tools, and joinery techniques",
+    "interest_sk": "Projekty z dreva, ručné a elektrické náradie a stolárske spoje",
+    "not_for": "Forestry industry news",
+    "topic_ids": ["diy.crafts_woodworking"],
+    "examples_yes": ["How to cut a dovetail joint by hand"]
+  },
+  {
+    "slug": "home-renovation",
+    "title": "Home renovation",
+    "title_sk": "Rekonštrukcia bývania",
+    "interest": "Renovating flats and houses yourself: bathrooms, flooring, insulation and practical how-tos",
+    "interest_sk": "Svojpomocná rekonštrukcia bytov a domov: kúpeľne, podlahy, zatepľovanie a praktické návody",
+    "not_for": "Real-estate prices",
+    "topic_ids": ["diy.home_improvement"],
+    "examples_yes": ["Laying vinyl flooring yourself: a step-by-step guide"],
+    "examples_no": ["Flat prices in Bratislava rise again"]
+  },
+  {
+    "slug": "self-hosting",
+    "title": "Self-hosting",
+    "title_sk": "Vlastné servery doma",
+    "interest": "Running your own servers at home: NAS, homelabs, Docker and self-hosted alternatives to cloud services",
+    "interest_sk": "Prevádzka vlastných serverov doma: NAS, homelab, Docker a vlastné alternatívy ku cloudovým službám",
+    "not_for": "Enterprise cloud news",
+    "topic_ids": ["diy.electronics_diy", "technology.open_source"],
+    "examples_yes": ["Replace Google Photos with a self-hosted alternative"]
+  },
+  {
+    "slug": "crafts-sewing",
+    "title": "Crafts and sewing",
+    "title_sk": "Ručné práce a šitie",
+    "interest": "Sewing, knitting and handicraft projects with patterns and techniques",
+    "interest_sk": "Šitie, pletenie a ručné práce so strihmi a technikami",
+    "not_for": "Fashion industry news",
+    "topic_ids": ["diy.crafts_woodworking"]
+  },
+  {
+    "slug": "diy-solar",
+    "title": "DIY solar and batteries",
+    "title_sk": "Svojpomocná fotovoltika",
+    "interest": "Building small solar and battery systems yourself: balcony solar, off-grid setups and safety",
+    "interest_sk": "Svojpomocná stavba malých solárnych a batériových systémov: balkónové panely, ostrovné systémy a bezpečnosť",
+    "not_for": "Utility-scale solar farms",
+    "topic_ids": ["diy.electronics_diy", "environment.energy"],
+    "examples_yes": ["Balcony solar panels: what to know before buying"]
+  }
+]

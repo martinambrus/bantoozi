@@ -16,6 +16,7 @@ import { createLogger, loadConfig, type ProcessConfig } from '@bantoozi/shared/s
 import { Command } from 'commander';
 import type pg from 'pg';
 
+import { openCredentialSession, registerCredentialCommands } from './credentials/index.js';
 import { createWorkerDeps, fetchWith, type WorkerDeps } from './handlers/deps.js';
 import { createHandlers } from './handlers/index.js';
 
@@ -26,7 +27,9 @@ import { createHandlers } from './handlers/index.js';
  *   subscribe it (inference off; a dead feed is revived, D-22) and record a fetch;
  * - `feeds:fetch-now <feedId>`: fetch and ingest the feed now (forced, also when it is paused, dead
  *   or unsubscribed; D-23), then run the pending extractions of its articles inline;
- * - `feeds:show <feedId>`: the feed's bookkeeping and newest articles.
+ * - `feeds:show <feedId>`: the feed's bookkeeping and newest articles;
+ * - `credentials:status|stage|validate|activate|revoke|rewrap`: provider credentials (M2-T3,
+ *   spec 04 §1.2; see credentials/commands.ts). Keys are read from stdin only.
  */
 
 interface Runtime {
@@ -187,5 +190,14 @@ program
       printOverview(overview);
     });
   });
+
+registerCredentialCommands(program, {
+  io: { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr },
+  open: async () =>
+    openCredentialSession(
+      loadConfig({ process: 'worker' }),
+      createLogger({ name: 'worker-cli', level: 'warn', pretty: true }),
+    ),
+});
 
 await program.parseAsync(process.argv);
