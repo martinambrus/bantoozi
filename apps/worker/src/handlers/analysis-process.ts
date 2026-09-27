@@ -79,6 +79,7 @@ import { RECOVERY_INTERVAL_MS, failureDisposition } from '../classify/outcomes.j
 import { runTier1, runTier2, type TranslationDeps } from '../classify/translation.js';
 import { nowOf, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
+import { resetOnChangedText } from './translation-change.js';
 
 /**
  * Results of finished stages under earlier leases (`analysis_requests.stage_results`, migration
@@ -616,7 +617,12 @@ class AnalysisRun {
       const sha = await completeAnalysisRequest(tx, request.id, this.leaseToken, result);
       if (sha === null) return 'lost' as const;
       const sender = workerOutbox(tx);
-      const live = await lockArticleRevision(tx, request.articleId, 'share');
+      // Installing the request's own translation may reset the article (D-92): lock it for that.
+      const live = await lockArticleRevision(
+        tx,
+        request.articleId,
+        (this.stages.translation ?? []).length > 0 ? 'update' : 'share',
+      );
       let cachesFilled = false;
       if (live !== null && live.revision === request.articleRevision) {
         cachesFilled = await this.fillCurrentCaches(tx, states, result);
@@ -644,7 +650,10 @@ class AnalysisRun {
    * compatible answer: `fill` mode) with the result, only when the live article revision, question
    * sets, card text mode, language mode, pinned model and the live model states all equal the frozen
    * ones; each card also needs its live question hash. A result that no longer matches stays
-   * request-specific (training only).
+   * request-specific (training only). The request's own translation of the live source is stored
+   * first; when it changes the effective text the article's current facets were built from, the
+   * article is reset and re-enriched from it as a re-translation is, and nothing else is filled
+   * (D-92).
    */
   private async fillCurrentCaches(
     tx: Transaction,
@@ -660,15 +669,19 @@ class AnalysisRun {
     // The request's own translation reaches the shared cache only for the live source.
     const produced = this.stages.translation ?? [];
     if (produced.length > 0 && article.lang !== null) {
-      const liveSource = articleTranslationSource({
-        title: article.title,
-        excerpt: article.excerpt,
-        body_lead: article.bodyLead,
-      });
-      for (const row of produced) {
-        if (row.sourceSha256 === translationSourceSha256(article.lang, liveSource)) {
-          await storeTranslation(tx, row);
-        }
+      const liveSha = translationSourceSha256(
+        article.lang,
+        articleTranslationSource({
+          title: article.title,
+          excerpt: article.excerpt,
+          body_lead: article.bodyLead,
+        }),
+      );
+      const rows = produced.filter((row) => row.sourceSha256 === liveSha);
+      if (rows.length > 0) {
+        const before = await listTranslations(tx, article.id, article.revision);
+        for (const row of rows) await storeTranslation(tx, row);
+        if (await resetOnChangedText(tx, deps, config, article, before)) return false;
       }
     }
     const input = modelInput(

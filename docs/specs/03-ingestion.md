@@ -211,7 +211,10 @@ Article content may have advanced since selection: retain this result for the se
 training event, without overwriting current article facets/translations/card answers with it. A
 result also fills the shared **current** caches (entries still missing, incompatible or of lower
 precedence, spec 05 §10, D-68) in that
-transaction whenever every current revision/state/context check matches, and only then. This is how a selected article's answers reach
+transaction whenever every current revision/state/context check matches, and only then. The request's
+own translation of the live source is stored first; when it changes the effective text that an
+enriched or matched article's current facets were built from, the article is reset and re-enriched
+from it as a re-translation is (spec 07 §3), and nothing else is filled (D-92). This is how a selected article's answers reach
 ranking (spec 06 §7), including a stale or older article that automatic work never processes; a
 result that no longer matches is kept for training only. Training feedback/result association is
 defined in specs05/06.

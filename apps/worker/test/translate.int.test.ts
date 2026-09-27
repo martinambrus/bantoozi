@@ -37,6 +37,7 @@ import {
   DAY,
   HOUR,
   LLM_MODEL,
+  NO_BRANCH_TOPICS,
   ago,
   forArticles,
   witnessesOf,
@@ -749,6 +750,87 @@ describe('tier-2 attempts (spec 07 §3 step 3)', () => {
       kind: 'row',
       row: { engine: 'ollama', quality: 'fail', qualityDetail: { failure: 'invalid_response' } },
     });
+  });
+});
+
+describe('selected requests in translate mode (spec 03 §2.2, D-72)', () => {
+  /** A Slovak article of a feed with an active reader and a trainee, each holding a card. */
+  async function readerAndTrainee() {
+    const feedId = await h.feed();
+    const reader = await h.user();
+    const trainee = await h.user();
+    await h.subscribe(reader, feedId, 'active');
+    await h.subscribe(trainee, feedId, 'training');
+    const readerCard = await h.heldCard(reader, { topicIds: ['technology'] });
+    const traineeCard = await h.heldCard(trainee, { topicIds: ['technology'] });
+    const articleId = await h.article({ feedIds: [feedId], lang: 'sk', ...TRAM });
+    return { feedId, reader, trainee, readerCard, traineeCard, articleId };
+  }
+
+  it('a request’s translation that changes a matched article’s text resets it for every reader; its result stays request-only', async () => {
+    const s = await readerAndTrainee();
+    h.router.topics = NO_BRANCH_TOPICS;
+    // Tier 1 was unavailable when the article arrived: it was enriched and matched natively.
+    await h.enrichDirect(s.articleId, { topics: NO_BRANCH_TOPICS });
+    await h.queue(s.articleId, [s.readerCard]);
+    await h.dispatch('article.match', { articleId: s.articleId });
+    const native = await h.articleRow(s.articleId);
+    expect(native.state).toBe('matched');
+    expect((await h.facetRow(s.articleId))?.variant).toBe('native');
+
+    const { requestId, snapshot } = await h.select(s.trainee, s.feedId, s.articleId);
+    expect(snapshot.translation).toBeNull();
+    const since = await h.mark();
+    await h.dispatch('analysis.process', { analysisRequestId: requestId });
+
+    const request = await h.analysis(requestId);
+    expect(request.status).toBe('complete');
+    expect(request.resultSnapshot?.['translation']).toMatchObject({ engine: 'libretranslate' });
+    // The request's translation is now the article's text: the native answers are gone and the
+    // article goes through enrichment and matching again at a new revision, for every reader.
+    const reset = await h.articleRow(s.articleId);
+    expect(reset).toMatchObject({
+      state: 'translated',
+      revision: String(Number(native.revision) + 1),
+    });
+    expect(await h.facetRow(s.articleId)).toBeNull();
+    expect(await h.cardAnswers(s.articleId)).toEqual([]);
+    expect(await translations(s.articleId)).toMatchObject([
+      { engine: 'libretranslate', quality: 'ok', revision: reset.revision },
+    ]);
+    expect(await h.queueRows(s.articleId)).toMatchObject([
+      { cardId: s.readerCard, revision: reset.revision },
+    ]);
+    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+
+    await h.run('article.enrich', forArticles(s.articleId));
+    await h.run('article.match', forArticles(s.articleId));
+    expect((await h.facetRow(s.articleId))?.variant).toBe('translated');
+    expect(await h.articleRow(s.articleId)).toMatchObject({
+      state: 'matched',
+      revision: reset.revision,
+    });
+    expect((await h.cardAnswers(s.articleId)).map((a) => a.cardId)).toEqual([s.readerCard]);
+  });
+
+  it('an article not classified yet takes the request’s translation and answers into the shared caches', async () => {
+    const feedId = await h.feed();
+    const trainee = await h.user();
+    await h.subscribe(trainee, feedId, 'training');
+    const card = await h.heldCard(trainee, { topicIds: ['technology'] });
+    const articleId = await h.article({ feedIds: [feedId], lang: 'sk', ...TRAM });
+    h.router.topics = NO_BRANCH_TOPICS;
+
+    const { requestId } = await h.select(trainee, feedId, articleId);
+    await h.dispatch('analysis.process', { analysisRequestId: requestId });
+
+    expect((await h.analysis(requestId)).status).toBe('complete');
+    expect(await h.articleRow(articleId)).toMatchObject({ state: 'extracted', revision: '1' });
+    expect(await translations(articleId)).toMatchObject([
+      { engine: 'libretranslate', quality: 'ok', revision: '1' },
+    ]);
+    expect(await h.facetRow(articleId)).toMatchObject({ revision: '1', variant: 'translated' });
+    expect((await h.cardAnswers(articleId)).map((a) => a.cardId)).toEqual([card]);
   });
 });
 

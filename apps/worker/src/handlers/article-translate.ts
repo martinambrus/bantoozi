@@ -3,8 +3,6 @@ import {
   listTranslations,
   loadClassificationArticle,
   lockArticleRevision,
-  readFacets,
-  resetArticleAnswers,
   retryTransaction,
   storeTranslation,
   transitionPipelineState,
@@ -18,13 +16,10 @@ import {
   articleTranslationSource,
   decideTier2,
   mayRunTier2,
-  sameTranslationText,
   translationSourceSha256,
-  type TranslationTexts,
 } from '@bantoozi/translate';
 
 import { languageModeOf, loadClassificationConfig } from '../classify/config.js';
-import { effectiveTranslationTexts } from '../classify/model-input.js';
 import {
   runTier1,
   runTier2,
@@ -35,6 +30,7 @@ import { after } from '../pipeline.js';
 import { nowOf, pipelineContext, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
 import { hasRetriesLeft } from './transient.js';
+import { resetOnChangedText } from './translation-change.js';
 
 /** Articles a flagged job (tier-2 escalation, skipped-row reprocess, mode change) may translate. */
 const RETRANSLATABLE_STATES = ['extracted', 'translated', 'enriched', 'matched', 'degraded'];
@@ -252,12 +248,10 @@ async function continueInitial(
 
 /**
  * Re-translation and mode-change installs (spec 07 §3, spec 05 §2). The rows are stored at the
- * revision read at dispatch; an enriched/matched article whose current facets were built from
- * different effective text (native, or another tie-winning translation) is reset with its body and
- * translations kept at the new revision, and re-enters enrichment through the pipeline. Identical
- * effective text is a no-op, and an article not yet enriched uses the best row when it is. The
- * comparison runs even when this job produced no row: a language switched back to `translate`
- * finds its current-revision rows already stored, while the facets were built from native text.
+ * revision read at dispatch, and an article whose current facets were built from different
+ * effective text is reset and re-enriched ({@link resetOnChangedText}). The comparison runs even
+ * when this job produced no row: a language switched back to `translate` finds its current-revision
+ * rows already stored, while the facets were built from native text.
  */
 async function installRetranslation(
   deps: WorkerDeps,
@@ -269,34 +263,6 @@ async function installRetranslation(
 ): Promise<void> {
   await retryTransaction(deps.db, async (tx) => {
     if (!(await storeRows(tx, article, produced, replaceSkipped))) return;
-    if (article.pipelineState !== 'enriched' && article.pipelineState !== 'matched') return;
-    const enrichSet = config.enrich;
-    if (enrichSet === null) return;
-    const facets = await readFacets(tx, article.id, enrichSet.id);
-    if (facets === null || facets.articleRevision !== article.revision) return;
-    const used: TranslationTexts | null =
-      facets.stateVariant === 'translated'
-        ? effectiveTranslationTexts(before, article.revision)
-        : null;
-    const current = effectiveTranslationTexts(
-      await listTranslations(tx, article.id, article.revision),
-      article.revision,
-    );
-    if (sameTranslationText(used, current)) return;
-    const sender = workerOutbox(tx);
-    const reset = await resetArticleAnswers(tx, sender, article.id, {
-      reason: 'translation_changed',
-      nextState: 'translated',
-      keepBody: true,
-      keepTranslations: true,
-      expectedRevision: article.revision,
-    });
-    if (reset.status !== 'reset') return;
-    await after(
-      'translate',
-      article.id,
-      { status: 'ok', revision: reset.revision },
-      pipelineContext(deps, tx, sender),
-    );
+    await resetOnChangedText(tx, deps, config, article, before);
   });
 }

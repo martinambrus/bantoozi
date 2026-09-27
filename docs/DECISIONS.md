@@ -627,3 +627,14 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   now locks the rows its lease holds, reads their demand in that transaction and deletes only the
   pairs still without it: an upsert that committed first has its demand read, and a later one waits
   and queues the pair afresh. Spec 05 §5.5 step 2 updated.
+- D-92: 2026-09-27 M2-T9 — spec 03 §2.2 lets a selected request's result fill the shared current
+  caches, and D-72 has a request in translate mode translate its frozen source itself, but neither
+  said what storing that translation does to an article already classified from other text. The
+  cache fill stored the request's translation of the live source, which could become the article's
+  effective translation, and then replaced the facets with the request's answers for that text. The
+  other readers' card answers from the old text stayed, the article stayed `matched`, and no queue
+  row refreshed them. The fill now stores the translation and, when it changes the effective text
+  the article's current facets were built from, resets the article as a re-translation does (spec 07
+  §3: body and translations kept at a new revision, answers deleted, current demand queued again,
+  enrichment enqueued) and fills nothing else, so the result stays request-only. An article not
+  enriched yet still takes the translation and the answers. Spec 03 §2.2 updated.
