@@ -918,7 +918,10 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
     }
   }
 
-  /** Local Laya (M9): free, one attempt, recorded as a zero-cost call. */
+  /**
+   * Local Laya (M9): free, one attempt, recorded as a zero-cost call. Its demand is rechecked once
+   * the slot is held, since the wait for it may outlast the demand (spec 04 §1.1).
+   */
   async function runLaya(ctx: AskContext): Promise<EngineOutcome> {
     const engine = deps.engines?.laya;
     if (engine === undefined) return failed('error', 'laya:not_configured');
@@ -933,19 +936,27 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
         ? cancelledOutcome()
         : failed('error', 'deferred:concurrency', new Date(nowMs() + CAPACITY_RETRY_MS));
     }
-    ctx.ordinals.laya += 1;
-    const createdAt = clock.now();
+    let createdAt: Date;
     let attempt: EngineAttempt;
     try {
-      attempt = await engine.ask(req, ctx.signal);
-    } catch {
-      attempt = {
-        ok: false,
-        status: 'error',
-        retryable: false,
-        detail: 'engine_exception',
-        billing: 'known',
-      };
+      // A free attempt has no reservation to recheck the demand atomically: check it here, as the
+      // last step before the send.
+      if (!(await store.authorizeInference(req.authorization))) {
+        return failed('no_demand', 'demand_lost');
+      }
+      ctx.ordinals.laya += 1;
+      createdAt = clock.now();
+      try {
+        attempt = await engine.ask(req, ctx.signal);
+      } catch {
+        attempt = {
+          ok: false,
+          status: 'error',
+          retryable: false,
+          detail: 'engine_exception',
+          billing: 'known',
+        };
+      }
     } finally {
       slot.release();
     }

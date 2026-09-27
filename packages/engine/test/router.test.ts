@@ -1005,6 +1005,35 @@ describe('EngineRouter: eval routers (spec 04 §1)', () => {
     expect(store.calls[0]).toMatchObject({ engine: 'laya', kind: 'eval', costUsd: 0, attempts: 1 });
   });
 
+  it('rechecks the demand of a Laya request that waited for its slot', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const laya = scriptedEngine('laya', [
+      async (req) => {
+        await gate;
+        return success('laya', req);
+      },
+    ]);
+    const { router, store } = setup({
+      laya,
+      budgetOverrideUsd: 1,
+      requiredEngine: 'laya',
+      config: { concurrency: 1 },
+    });
+    const first = router.ask(evalRequest());
+    const second = router.ask(evalRequest());
+    await advance(10);
+    // The first holds the only slot while the second, admitted, waits for it; the demand lapses.
+    store.authorize = () => false;
+    release();
+    expect(await first).toMatchObject({ ok: true, engine: 'laya' });
+    expect(await second).toEqual({ ok: false, reason: 'no_demand', detail: 'demand_lost' });
+    expect(laya.calls).toHaveLength(1);
+    expect(store.calls).toHaveLength(1);
+  });
+
   it('reports a pinned Laya that is not configured', async () => {
     const { router } = setup({ budgetOverrideUsd: 1, requiredEngine: 'laya' });
     expect(await router.ask(evalRequest())).toMatchObject({
