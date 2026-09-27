@@ -134,6 +134,12 @@ export interface EngineStore {
     usage: UsageRow,
     billing: 'known' | 'uncertain',
   ): Promise<void>;
+  /**
+   * The reservation of an admitted attempt that was never sent (cancelled before its send): removed,
+   * so it counts toward neither the budget nor a call cap, and no call is recorded. Idempotent; a
+   * reservation with a call row, or one no longer `reserved`, is kept.
+   */
+  releaseReservation(id: string): Promise<void>;
   /** Zero-cost calls only; idempotent. */
   insertCall(row: EngineCallRow): Promise<void>;
   /** Used inside settlement, never independently for paid calls. */

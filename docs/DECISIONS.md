@@ -665,3 +665,17 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   with the current enrich input's, rows stored for a retry are installed the same way at once, and
   the enrich completion and its cache continuation read the rows again under the same lock,
   enqueueing the job again when its input changed. Specs 03 §2 and 07 §3 updated.
+- D-95: 2026-09-27 M2-T3 — spec 04 §4 records one `engine_calls` row per wire attempt, but an
+  attempt whose signal was cancelled while its spend reservation was being admitted still went on as
+  sent. The adapter reported a known pre-send cancellation, and the router settled it as an attempt:
+  a call row with `usage_daily.calls` counted, the reservation's call-cap slot kept, and the
+  rate-limit debit not given back, although nothing reached the provider. A credential probe
+  cancelled at its lease margin in that window did the same through `recordExternalCall`. The router
+  now checks the signal once the reservation is admitted and releases a cancelled attempt's
+  reservation instead of settling it: `EngineStore.releaseReservation` deletes a `reserved` row that
+  has no call row, so it holds no spend or call-cap slot, and the rate capacity comes back as for
+  any unsent attempt (b1ae5c1). `EngineRouter.releaseExternalCall` does the same for a reserved
+  external call that is never sent, which the probe now uses. A release that keeps failing is tried
+  like a settlement and then leaves the reservation charged for housekeeping. A released `suggest`
+  reservation keeps its suggestion stamp (spec 05 §7), as a request cancelled after its send does.
+  Specs 04 §1 and §4 and 11 §5 updated.

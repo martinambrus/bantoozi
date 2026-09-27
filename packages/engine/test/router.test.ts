@@ -11,6 +11,7 @@ import {
 import { splitQuestionsForLlm } from '../src/router.js';
 import { typesafeCostUsd } from '../src/typesafe-engine.js';
 import type { EngineRequest } from '../src/types.js';
+import { createMemoryEngineStore, type MemoryEngineStore } from './support/memory-store.js';
 import {
   drive,
   failure,
@@ -30,6 +31,20 @@ import {
 const NOW = new Date('2026-09-26T12:00:00.000Z');
 const advance = (ms: number) => vi.advanceTimersByTimeAsync(ms);
 const EVAL_AUTH = { type: 'eval', runId: 'run-1' } as const;
+
+/** A store whose next admitted reservation aborts `controller` before it returns (D-95). */
+function abortingStore(controller: AbortController): MemoryEngineStore {
+  const store = createMemoryEngineStore({ dailyBudgetUsd: 2 });
+  const reserve = store.reserveSpend.bind(store);
+  store.reserveSpend = async (input) => {
+    const id = await reserve(input);
+    // The job is cancelled while its reservation is being admitted.
+    controller.abort();
+    store.reserveSpend = reserve;
+    return id;
+  };
+  return store;
+}
 
 /** The reserve of one Jev attempt of `req` (conservative §6.1 tokens at the Jev price). */
 const jevEstimate = (req: EngineRequest = request()) =>
@@ -948,6 +963,65 @@ describe('EngineRouter: concurrency and rate limits (spec 04 §3, §4)', () => {
     expect(typesafe.calls.map((call) => call.at - NOW.getTime())).toEqual([0, 1_000]);
   });
 
+  it('releases the reservation and the rate capacity of a request cancelled while it reserved', async () => {
+    // Like the real adapters, a signal already aborted at the send is a known pre-send cancellation.
+    const typesafe = scriptedEngine('typesafe', [], (req, _auth, signal) =>
+      signal.aborted
+        ? failure('error', { retryable: false, detail: 'cancelled' })
+        : success('typesafe', req),
+    );
+    const controller = new AbortController();
+    const store = abortingStore(controller);
+    const { router } = setup({
+      typesafe,
+      store,
+      config: {
+        typesafe: {
+          baseUrl: 'http://127.0.0.1:9',
+          model: TYPESAFE_MODEL,
+          pricePerMTokUsd: 0.042,
+          requestsPerMinute: 1,
+        },
+      },
+    });
+    expect(await router.ask(request(), controller.signal)).toMatchObject({
+      ok: false,
+      reason: 'error',
+      detail: 'cancelled',
+    });
+    // Nothing was sent or recorded, and no spend or call-cap slot stays reserved.
+    expect(typesafe.calls).toHaveLength(0);
+    expect(store.calls).toEqual([]);
+    expect(store.reservations).toEqual([]);
+    expect([...store.usage.values()]).toEqual([]);
+    // Its request came back to the limiter too: the next one is sent at once, not after a minute.
+    expect((await drive(router.ask(request()), advance)).ok).toBe(true);
+    expect(typesafe.calls.map((call) => call.at - NOW.getTime())).toEqual([0]);
+  });
+
+  it('keeps the reservation of a cancelled request charged when its release keeps failing', async () => {
+    const controller = new AbortController();
+    const store = abortingStore(controller);
+    store.failReleases(3);
+    const { router, typesafe, logger } = setup({ store });
+    expect(await router.ask(request(), controller.signal)).toMatchObject({
+      ok: false,
+      reason: 'error',
+      detail: 'cancelled',
+    });
+    expect(store.releaseAttempts).toBe(3);
+    expect(typesafe!.calls).toHaveLength(0);
+    expect(store.calls).toEqual([]);
+    // Housekeeping settles it later (spec 11 §6).
+    expect(store.reservations).toMatchObject([{ status: 'reserved' }]);
+    expect(logger.entries).toContainEqual(
+      expect.objectContaining({
+        level: 'error',
+        msg: 'engine reservation release failed; it stays charged',
+      }),
+    );
+  });
+
   it('lowers the rate after a 429', async () => {
     const typesafe = scriptedEngine('typesafe', [
       failure('rate_limited', { retryAfterMs: 2_000 }),
@@ -1335,6 +1409,56 @@ describe('EngineRouter: external calls (spec 07 §2)', () => {
       first!,
     );
     expect(store.calls[0]).toMatchObject({ kind: 'eval' });
+    expect(await router.reserveExternalCall(input)).not.toBeNull();
+  });
+
+  it('releases a reservation whose call was never sent, without a call row (D-95)', async () => {
+    const { router, store } = setup();
+    const input = {
+      engine: 'llm',
+      kind: 'translate',
+      estimateUsd: 0.001,
+      priority: 'bulk',
+      authorization: auth,
+    } as const;
+    const unsent = (await router.reserveExternalCall(input))!;
+    await router.releaseExternalCall(unsent);
+    expect(store.reservations).toEqual([]);
+    expect(store.calls).toEqual([]);
+    expect([...store.usage.values()]).toEqual([]);
+    // A recorded call may have reached the provider: its reservation stays charged.
+    const recorded = (await router.reserveExternalCall(input))!;
+    await router.recordExternalCall(
+      {
+        engine: 'llm',
+        kind: 'translate',
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: 0,
+        latencyMs: 10,
+        status: 'timeout',
+        billing: 'uncertain',
+        logicalRequestId: '0199a000-0000-7000-8000-00000000abd2',
+        attempt: 1,
+      },
+      recorded,
+    );
+    await router.releaseExternalCall(recorded);
+    expect(store.reservations).toMatchObject([{ id: recorded, status: 'uncertain' }]);
+  });
+
+  it('gives a released reservation back to the invocation cap of an eval router', async () => {
+    const { router } = setup({ budgetOverrideUsd: 0.0015, ignoreDailyCaps: true });
+    const input = {
+      engine: 'llm',
+      kind: 'translate',
+      estimateUsd: 0.001,
+      priority: 'bulk',
+      authorization: EVAL_AUTH,
+    } as const;
+    const first = await router.reserveExternalCall(input);
+    expect(await router.reserveExternalCall(input)).toBeNull();
+    await router.releaseExternalCall(first!);
     expect(await router.reserveExternalCall(input)).not.toBeNull();
   });
 

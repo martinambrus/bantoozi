@@ -52,6 +52,7 @@ export interface EngineStore {                 // implemented in packages/db
   authorizeInference(authorization: InferenceAuthorization): Promise<boolean>; // free/local call fence
   settleReservation(id: string, call: EngineCallRow, usage: UsageRow,
     billing: 'known'|'uncertain'): Promise<void>; // one transaction: call + rollup + reservation
+  releaseReservation(id: string): Promise<void>; // an admitted attempt never sent: no call row, no spend (D-95)
   insertCall(row: EngineCallRow): Promise<void>; // zero-cost calls only; idempotent
   upsertUsage(row: UsageRow): Promise<void>;      // used inside settlement, never independently for paid calls
   spendSince(fromUtc: Date, opts: { excludeKinds: CallKind[] | 'none' }): Promise<number>;
@@ -140,6 +141,7 @@ export interface EngineRouter {                  // the ONLY thing handlers use
     estimateUsd: number; priority: Priority; userId?: string;
     authorization: InferenceAuthorization}): Promise<string | null>;
   recordExternalCall(call: ExternalCall, reservationId?: string): Promise<{overrun: boolean}>;
+  releaseExternalCall(reservationId: string): Promise<void>; // a reserved call never sent (D-95)
   // Paid external calls MUST reserve before HTTP. A failed attempt also settles conservatively.
   // A settlement that keeps failing leaves the reservation charged and does not throw (§6).
   // `overrun`: a known actual cost above the reserve, already alerted; the caller makes no further
@@ -405,7 +407,10 @@ bounded by the job deadline, cancellation works while queued, and aging prevents
 - **Retry on:** 429, 5xx, network errors, timeouts, and at most one `invalid_response`. Cancellation,
   auth errors and invalid requests are not retried. A cancelled attempt is reported as `error` with
   detail `cancelled`, billed `uncertain` when it may have been sent (D-56). Reacquire limiter capacity and spend reservation
-  before every attempt and before entering fallback.
+  before every attempt and before entering fallback. An attempt cancelled after its reservation was
+  admitted but before its send is not a wire attempt: its reservation is released instead of
+  settled, with no `engine_calls` row, spend or call-cap slot, and its rate capacity is given back
+  (D-95).
 - **Concurrency:** a process-wide semaphore of `ENGINE_CONCURRENCY` (default 8); the LLM also uses
   `OLLAMA_MAX_CONCURRENCY`. Backoff does not hold a semaphore slot. Requests and responses have
   bounded bytes (responses up to 1 MiB, D-56); abort transport and release capacity on

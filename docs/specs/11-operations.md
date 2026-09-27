@@ -179,7 +179,7 @@ backup immediately increases exposure and must alert rather than being reported 
 | `article_snapshots` full saved text/HTML | indefinitely while at least one live bookmark references that immutable snapshot; cold after 30 days, never shortened or replaced by a lead |
 | `article_translations` | with the article |
 | `engine_calls` | 180 days (aggregated into `usage_daily` live) |
-| `engine_reservations` | settled: 180 days, purged with their `engine_calls`. A `reserved` row past `expires_at` becomes `uncertain`, never refunded, because the attempt may have reached the provider. An `uncertain` row that provider usage has not reconciled is settled at its `reserved_usd` 7 days after its budget `day`, then follows the settled retention |
+| `engine_reservations` | settled: 180 days, purged with their `engine_calls`. A `reserved` row past `expires_at` becomes `uncertain`, never refunded, because the attempt may have reached the provider; a reservation whose attempt was cancelled before its send is deleted at once (D-95). An `uncertain` row that provider usage has not reconciled is settled at its `reserved_usd` 7 days after its budget `day`, then follows the settled retention |
 | `usage_daily` | aggregate totals forever; user attribution is removed on hard deletion (§5.1) |
 | `user_article` reader state | while both user and article exist; unprotected articles expire after 90 days. Read items archived after 31 days; unread cap 1,000 per user per feed, subject to protected-state rules below |
 | `analysis_requests` frozen inputs/results | 180 days from creation, covering the matching learning window; terminal/cancelled requests beyond that window are purged after dependent training/receipt references are handled |

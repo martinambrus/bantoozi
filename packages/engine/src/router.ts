@@ -73,8 +73,9 @@ import type {
  *    when due), then per wire attempt the rate limiter, the concurrency semaphore, the credential
  *    (`useActive`, re-read and decrypted for this attempt only) and an atomic spend reservation
  *    (`reserveSpend`, which rechecks demand, budget and call caps) immediately before the send;
- *    an attempt that is not sent gives its rate capacity back, and every attempt that is sent is
- *    settled as one `engine_calls` row with its `usage_daily` rollup;
+ *    an attempt that is not sent gives its rate capacity back (and its reservation, when it was
+ *    cancelled after admission, D-95), and every attempt that is sent is settled as one
+ *    `engine_calls` row with its `usage_daily` rollup;
  * 3. on failure, the LLM fallback only when `LLM_FALLBACK_ENABLED`, the request is interactive, the
  *    LLM breaker admits it and a daily-cap slot is reserved with the LLM's own spend (input plus the
  *    full output cap at LLM prices), splitting the pack so each part's answer fits the output cap;
@@ -304,7 +305,10 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
     now: nowMs,
   });
   /** External-call reservations of this process: attribution and the eval reserve at settlement. */
-  const external = new Map<string, { estimateUsd: number; userId: string | undefined }>();
+  const external = new Map<
+    string,
+    { engine: ExternalCall['engine']; estimateUsd: number; userId: string | undefined }
+  >();
 
   function adapterError(engine: EngineName, error: unknown): undefined {
     logger.error(
@@ -539,6 +543,12 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
       evalBudget?.cancel(estimateUsd);
       return { kind: 'denied' };
     }
+    if (ctx.signal.aborted) {
+      // Cancelled while the reservation was admitted: the attempt is never sent, so its
+      // reservation is released instead of settled, and its rate capacity is given back (D-95).
+      await releaseUnsent(reservationId, estimateUsd, { engine: lane.name });
+      return { kind: 'cancelled' };
+    }
     ctx.ordinals[lane.name] += 1;
     const ordinal = ctx.ordinals[lane.name];
     const createdAt = clock.now();
@@ -682,6 +692,34 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
             },
             'engine attempt settlement failed; its reservation stays charged',
           );
+          return;
+        }
+      }
+    }
+  }
+
+  /**
+   * Release the reservation of an admitted attempt that is never sent (D-95): no call row, no
+   * call-cap slot, no spend. It is tried like a settlement; one that keeps failing leaves the
+   * reservation charged for housekeeping, and the eval cap keeps its reserve too.
+   */
+  async function releaseUnsent(
+    id: string,
+    reservedUsd: number,
+    context: { engine?: string },
+  ): Promise<void> {
+    for (let tries = 1; ; tries += 1) {
+      try {
+        await store.releaseReservation(id);
+        evalBudget?.cancel(reservedUsd);
+        return;
+      } catch (error) {
+        if (tries >= SETTLE_TRIES) {
+          logger.error(
+            { ...context, reservationId: id, err: errorLabel(error) },
+            'engine reservation release failed; it stays charged',
+          );
+          evalBudget?.settle(reservedUsd, null);
           return;
         }
       }
@@ -1192,7 +1230,11 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
         const oldest = external.keys().next();
         if (oldest.done !== true) external.delete(oldest.value);
       }
-      external.set(id, { estimateUsd: input.estimateUsd, userId: input.userId });
+      external.set(id, {
+        engine: input.engine,
+        estimateUsd: input.estimateUsd,
+        userId: input.userId,
+      });
       return id;
     },
 
@@ -1273,6 +1315,16 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
         );
       }
       return { overrun };
+    },
+
+    async releaseExternalCall(reservationId: string) {
+      const tracked = external.get(reservationId);
+      external.delete(reservationId);
+      await releaseUnsent(
+        reservationId,
+        tracked?.estimateUsd ?? 0,
+        tracked === undefined ? {} : { engine: tracked.engine },
+      );
     },
   };
 }

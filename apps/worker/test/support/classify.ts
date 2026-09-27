@@ -367,6 +367,12 @@ export class ScriptedRouter implements EngineRouter {
       overrun: reserved !== undefined && call.billing === 'known' && call.costUsd > reserved + 1e-9,
     };
   }
+
+  readonly released: string[] = [];
+
+  async releaseExternalCall(reservationId: string): Promise<void> {
+    this.released.push(reservationId);
+  }
 }
 
 /** A failed outcome for `respond` hooks. */

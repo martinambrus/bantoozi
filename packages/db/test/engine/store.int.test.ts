@@ -325,6 +325,38 @@ describe('reserveSpend and settleReservation (spec 04 §6)', () => {
     expect(await usage(day, demand.userId)).toMatchObject({ calls: 1, cost_usd: '0.04000000' });
   });
 
+  it('releases the reservation of an attempt that was never sent, and no other (D-95)', async () => {
+    const demand = await automaticDemand();
+    const s = store(2);
+    const day = freshDay();
+    // A call cap of one: the released reservation gives its slot back with its spend.
+    const input = reserveInput(day, demand.authorization, { callCap: 1 });
+    const unsent = (await s.reserveSpend(input))!;
+    expect(await s.reserveSpend(input)).toBeNull();
+    await s.releaseReservation(unsent);
+    await s.releaseReservation(unsent);
+    expect(await reservation(unsent)).toBeUndefined();
+    expect(await s.getBudgetSnapshot(day, { excludeKinds: 'none' })).toEqual({
+      settledUsd: 0,
+      reservedUsd: 0,
+      uncertainUsd: 0,
+      callsByEngineKind: {},
+    });
+    // A reservation with a call row may have been sent: it stays charged.
+    const recorded = (await s.reserveSpend(input))!;
+    const call = callRow({ reservationId: recorded, userId: demand.userId });
+    await s.settleReservation(
+      recorded,
+      call,
+      usageRow(day, { userId: demand.userId }),
+      'uncertain',
+    );
+    await s.releaseReservation(recorded);
+    expect(await reservation(recorded)).toMatchObject({ status: 'uncertain' });
+    expect(await callsOf(call.logicalRequestId)).toHaveLength(1);
+    await expect(s.releaseReservation('not-a-uuid')).rejects.toThrow(RangeError);
+  });
+
   it('keeps unknown billing charged at the reserve until a known settlement reconciles it', async () => {
     const demand = await automaticDemand();
     const s = store(1);

@@ -33,7 +33,7 @@ import {
   type TestDatabase,
 } from '@bantoozi/testing';
 import pg from 'pg';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createWorkerCredentialResolver,
@@ -388,6 +388,41 @@ describe('provider.validate (spec 04 §1.2 step 2)', () => {
       lastErrorCode: 'timeout',
     });
     expect(await calls()).toMatchObject([{ status: 'error', credential_version: version }]);
+  });
+
+  it('releases the reservation of a probe cancelled before its send and records nothing', async () => {
+    const version = await stage('typesafe', JEV_KEY);
+    const real = resolver();
+    let cancelled: Promise<void> = Promise.resolve();
+    const keepSignal: WorkerCredentialResolver = {
+      ...real,
+      useCandidate: (provider, candidateVersion, validationToken, signal, send) => {
+        cancelled = new Promise((resolve) => signal.addEventListener('abort', () => resolve()));
+        return real.useCandidate(provider, candidateVersion, validationToken, signal, send);
+      },
+    };
+    const h = handler({ credentials: keepSignal, leaseMs: 5_000 });
+    const reserve = h.router.reserveExternalCall.bind(h.router);
+    // The lease margin cancels the probe while its reservation is being admitted.
+    const spy = vi.spyOn(h.router, 'reserveExternalCall').mockImplementationOnce(async (input) => {
+      const id = await reserve(input);
+      await cancelled;
+      return id;
+    });
+    try {
+      await h.validate('typesafe', version);
+    } finally {
+      spy.mockRestore();
+    }
+    // Nothing was sent, recorded or left reserved (D-95); the result is inconclusive.
+    expect(jev.requests).toHaveLength(0);
+    expect(await calls()).toEqual([]);
+    expect(await reservations()).toEqual([]);
+    expect(await metadata('typesafe')).toMatchObject({
+      candidateStatus: 'pending',
+      lastErrorCode: 'timeout',
+    });
+    expect(lastLog('provider credential validation recorded')).toMatchObject({ attempts: 0 });
   });
 
   it('records an authentication rejection as invalid without touching the breaker', async () => {

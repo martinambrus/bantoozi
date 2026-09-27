@@ -43,6 +43,9 @@ export interface MemoryEngineStore extends EngineStore {
   /** Make the next `n` settlements throw (a lost database connection). */
   failSettlements(n: number): void;
   settleAttempts: number;
+  /** Make the next `n` releases throw. */
+  failReleases(n: number): void;
+  releaseAttempts: number;
 }
 
 export function createMemoryEngineStore(options: { dailyBudgetUsd: number }): MemoryEngineStore {
@@ -51,6 +54,7 @@ export function createMemoryEngineStore(options: { dailyBudgetUsd: number }): Me
   const usage = new Map<string, UsageRow>();
   const settings = new Map<string, unknown>();
   let failures = 0;
+  let releaseFailures = 0;
 
   const budget = (): number => {
     const stored = settings.get('engine.daily_budget_usd');
@@ -84,9 +88,13 @@ export function createMemoryEngineStore(options: { dailyBudgetUsd: number }): Me
     usage,
     settings,
     settleAttempts: 0,
+    releaseAttempts: 0,
     authorize: () => true,
     failSettlements(n) {
       failures = n;
+    },
+    failReleases(n) {
+      releaseFailures = n;
     },
 
     async reserveSpend(input) {
@@ -153,6 +161,19 @@ export function createMemoryEngineStore(options: { dailyBudgetUsd: number }): Me
         reservation.status = 'uncertain';
       }
       addUsage({ ...row, day: reservation.day, costUsd: cost });
+    },
+
+    async releaseReservation(id) {
+      store.releaseAttempts += 1;
+      if (releaseFailures > 0) {
+        releaseFailures -= 1;
+        throw new Error('connection lost');
+      }
+      const index = reservations.findIndex((r) => r.id === id);
+      if (index === -1) return;
+      if (reservations[index]?.status !== 'reserved') return;
+      if (calls.some((c) => c.reservationId === id)) return;
+      reservations.splice(index, 1);
     },
 
     async insertCall(row) {

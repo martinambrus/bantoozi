@@ -140,6 +140,8 @@ type SendResult =
   /** `overrun`: the attempt's known cost exceeded its reserve (spec 04 §6). */
   | { kind: 'sent'; attempt: EngineAttempt; latencyMs: number; overrun: boolean }
   | { kind: 'denied' }
+  /** Cancelled at the lease margin after its reservation was admitted: nothing was sent. */
+  | { kind: 'cancelled' }
   | { kind: 'unavailable'; reason: string };
 
 export function createProviderValidateHandler(
@@ -304,6 +306,11 @@ export function createProviderValidateHandler(
             authorization: request.authorization,
           });
           if (reservationId === null) return { kind: 'denied' };
+          if (signal.aborted) {
+            // Cancelled while the reservation was admitted: released, not recorded (D-95).
+            await router.releaseExternalCall(reservationId);
+            return { kind: 'cancelled' };
+          }
           const started = now().getTime();
           let attempt: EngineAttempt;
           try {
@@ -426,6 +433,7 @@ export function createProviderValidateHandler(
         return result('pending', reasonCode(sent.reason), base());
       }
       if (sent.kind === 'denied') return result('pending', 'budget_unavailable', base());
+      if (sent.kind === 'cancelled') return result('pending', 'timeout', base());
       reservedUsd += lane.estimateUsd;
       attempts += 1;
       const { attempt } = sent;

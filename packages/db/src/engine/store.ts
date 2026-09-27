@@ -41,7 +41,8 @@ import { isInferenceAuthorized } from './authorization.js';
  * 80 %/100 % crossings in `settings['engine.budget_alerts']`. Concurrent reservations therefore
  * cannot exceed the budget. Settlement writes the call row, the `usage_daily` rollup and the
  * reservation state in one transaction and is idempotent on the reservation id; unknown billing
- * keeps the reservation `uncertain` (still charged) until a known settlement reconciles it.
+ * keeps the reservation `uncertain` (still charged) until a known settlement reconciles it. An
+ * admitted attempt that is cancelled before its send deletes its `reserved` row instead (D-95).
  *
  * **Shared breaker state.** `readCircuit`/`updateCircuit` implement the engine's `CircuitStore`
  * for `settings['engine.circuit']`: an update locks the row (inserting the default first when
@@ -462,6 +463,16 @@ export function createPgEngineStore(db: Database, options: PgEngineStoreOptions)
       assertCallRow(call);
       assertUsage(usage);
       await db.transaction((tx) => settle(tx, id, call, usage, billing));
+    },
+
+    async releaseReservation(id) {
+      if (!isUuid(id)) throw new RangeError('reservation id must be a UUID');
+      // Only a reservation nothing was recorded against: once a call row exists, or housekeeping
+      // turned it `uncertain`, the attempt may have been sent and stays charged.
+      await db.execute(sql`
+        DELETE FROM engine_reservations r
+         WHERE r.id = ${id}::uuid AND r.status = 'reserved'
+           AND NOT EXISTS (SELECT 1 FROM engine_calls c WHERE c.reservation_id = r.id)`);
     },
 
     async insertCall(row) {

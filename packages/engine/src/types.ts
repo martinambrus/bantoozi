@@ -143,6 +143,11 @@ export interface EngineRouter {
    * that logical request.
    */
   recordExternalCall(call: ExternalCall, reservationId?: string): Promise<{ overrun: boolean }>;
+  /**
+   * A reservation whose call was never sent (cancelled before its send, D-95): released instead of
+   * recorded, with no call row. A release that keeps failing leaves it charged and does not throw.
+   */
+  releaseExternalCall(reservationId: string): Promise<void>;
 }
 
 /** The structured logger subset the engine uses (pino in production). */
