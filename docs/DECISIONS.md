@@ -588,3 +588,13 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   this rule (NULL-safe, so a row without a candidate always conflicts); `requestProviderValidation`
   and the CLI's `--inline` check share it, and the credential metadata and `credentials:status` show
   the expired lease. Spec 04 §1.2 and spec 02 §6 updated.
+- D-88: 2026-09-27 M2-T9 — spec 07 §3 step 3 lets tier 2 run only with an enabled active Ollama key,
+  but the handler decided that from the resolver's metadata, which is cached for up to 10 s, and
+  reserved spend before it resolved the key. A key activated within that window was recorded as a
+  `no_key` skip, which ordinary redelivery never retries, and a key revoked within it charged the
+  attempt's full estimate as uncertain although nothing was sent. Each attempt now resolves the key
+  with a fresh read first and reserves only inside the resolver's callback, as a router attempt
+  does: no enabled active key at that read (none, disabled, pending) is a `no_key` skip without a
+  reservation, and a read that fails on the host (the lookup, the decryption, the keyring) is
+  transient and charges nothing. A cap or budget skip records the version of the key the attempt
+  would have used. Spec 07 §3 updated.

@@ -25,6 +25,10 @@ import {
   type TranslationDeps,
   type TranslationJob,
 } from '../src/classify/translation.js';
+import {
+  CredentialUnavailableError,
+  type CredentialUnavailableReason,
+} from '../src/credentials/resolver.js';
 import { TransientTranslationError } from '../src/handlers/article-translate.js';
 
 import {
@@ -74,7 +78,13 @@ let lt: FakeLibreTranslate;
 let ollama: FakeOllamaServer;
 let server: FixtureServer;
 let translation: TranslationDeps;
-let credential: Awaited<ReturnType<CredentialResolver['metadata']>>;
+type CredentialMetadata = Awaited<ReturnType<CredentialResolver['metadata']>>;
+/** The Ollama credential row as a fresh read sees it (`useActive`). */
+let credential: CredentialMetadata;
+/** What `metadata` returns, like the resolver's cache: the row unless a test pins an older one. */
+let cachedMetadata: CredentialMetadata | undefined;
+/** A read that fails on the host (lookup, decryption, keyring) before anything is sent. */
+let readFailure: CredentialUnavailableReason | undefined;
 let ollamaBase = 0;
 const closers: Array<() => Promise<void>> = [];
 
@@ -108,10 +118,24 @@ beforeAll(async () => {
     () => ollama.close(),
     () => server.close(),
   );
+  // Like the worker's resolver (spec 04 §1.2): `metadata` may be cached, `useActive` reads the row
+  // again and sends only with an enabled active key.
   const credentials: CredentialResolver = {
-    metadata: async () => credential,
-    useActive: async (_provider, _signal, send) =>
-      send({ apiKey: 'test-key', source: 'db', credentialVersion: '3' }),
+    metadata: async () => cachedMetadata ?? credential,
+    useActive: async (_provider, _signal, send) => {
+      if (readFailure !== undefined) throw new CredentialUnavailableError('ollama', readFailure);
+      if (credential.source === 'none') throw new CredentialUnavailableError('ollama', 'none');
+      if (!credential.enabled) throw new CredentialUnavailableError('ollama', 'disabled');
+      if (credential.source === 'env') return send({ apiKey: 'test-key', source: 'env' });
+      if (credential.activeVersion === undefined) {
+        throw new CredentialUnavailableError('ollama', 'pending');
+      }
+      return send({
+        apiKey: 'test-key',
+        source: 'db',
+        credentialVersion: credential.activeVersion,
+      });
+    },
     useCandidate: async () => {
       throw new Error('candidate keys are not used here');
     },
@@ -147,6 +171,8 @@ beforeEach(async () => {
   ollama.requests.length = 0;
   ollamaBase = ollama.requestCount();
   credential = { source: 'db', enabled: true, activeVersion: '3' };
+  cachedMetadata = undefined;
+  readFailure = undefined;
   await h.clearOutbox();
 });
 
@@ -291,6 +317,36 @@ describe('article.translate tiers (spec 07 §3)', () => {
       ['libretranslate', 'fail'],
       ['ollama', 'ok'],
     ]);
+  });
+
+  it('decides a missing key from a fresh read, never from the cached credential metadata', async () => {
+    lt.setOptions({ mode: 'fail' });
+    // Activated a moment ago: the metadata cache still says there is no key.
+    cachedMetadata = { source: 'none', enabled: false };
+    const s = await slovak();
+    await h.dispatch('article.translate', { articleId: s.articleId });
+    expect(ollamaCalls()).toBe(1);
+    expect((await translations(s.articleId)).map((row) => [row.engine, row.quality])).toEqual([
+      ['libretranslate', 'fail'],
+      ['ollama', 'ok'],
+    ]);
+
+    // Revoked a moment ago while the cache still says enabled: skipped, and nothing is charged.
+    h.router.reset();
+    cachedMetadata = { source: 'db', enabled: true, activeVersion: '3' };
+    credential = { source: 'db', enabled: false, activeVersion: '3' };
+    const t = await slovak();
+    await h.dispatch('article.translate', { articleId: t.articleId });
+    expect(ollamaCalls()).toBe(1);
+    expect(h.router.reservations).toEqual([]);
+    expect(h.router.external.filter((e) => e.call.engine === 'llm')).toEqual([]);
+    const rows = await translations(t.articleId);
+    expect(rows.map((row) => [row.engine, row.quality])).toEqual([
+      ['libretranslate', 'fail'],
+      ['ollama', 'fail'],
+    ]);
+    expect(rows[1]?.detail).toMatchObject({ skipped: 'no_key' });
+    expect(await h.articleRow(t.articleId)).toMatchObject({ state: 'translated' });
   });
 
   it('a transient tier-2 failure uses the job retry; the last attempt continues without an ollama row', async () => {
@@ -463,6 +519,51 @@ describe('tier-2 attempts (spec 07 §3 step 3)', () => {
       reason: 'server_error',
     });
     expect(ollamaCalls()).toBe(4);
+  });
+
+  it('reserves and charges nothing when the credential read fails before sending', async () => {
+    const s = await slovak();
+    const job = await tier2Job(s.articleId);
+    // Revoked since the metadata was cached: a no-key skip.
+    cachedMetadata = { source: 'db', enabled: true, activeVersion: '3' };
+    credential = { source: 'db', enabled: false, activeVersion: '3' };
+    expect(await runTier2(h.deps.db, h.router, translation, job, LLM_MODEL)).toMatchObject({
+      kind: 'row',
+      row: { engine: 'ollama', quality: 'fail', qualityDetail: { skipped: 'no_key' } },
+    });
+    // A staged key that is not active yet is no key either.
+    credential = { source: 'db', enabled: true };
+    expect(await runTier2(h.deps.db, h.router, translation, job, LLM_MODEL)).toMatchObject({
+      kind: 'row',
+      row: { quality: 'fail', qualityDetail: { skipped: 'no_key' } },
+    });
+    // A read that fails on the host is transient: the job's retry reads the key again.
+    credential = { source: 'db', enabled: true, activeVersion: '3' };
+    readFailure = 'decrypt_failed';
+    expect(await runTier2(h.deps.db, h.router, translation, job, LLM_MODEL)).toEqual({
+      kind: 'transient',
+      reason: 'credential_decrypt_failed',
+    });
+    expect(ollamaCalls()).toBe(0);
+    expect(h.router.reservations).toEqual([]);
+    expect(h.router.external).toEqual([]);
+  });
+
+  it('records the key a refused reservation would have used on its cap or budget skip', async () => {
+    const s = await slovak();
+    const job = await tier2Job(s.articleId);
+    h.router.reservation = () => null;
+    expect(await runTier2(h.deps.db, h.router, translation, job, LLM_MODEL)).toMatchObject({
+      kind: 'row',
+      row: { quality: 'fail', qualityDetail: { skipped: 'cap', credentialVersion: '3' } },
+    });
+    h.router.spendable = false;
+    expect(await runTier2(h.deps.db, h.router, translation, job, LLM_MODEL)).toMatchObject({
+      kind: 'row',
+      row: { quality: 'fail', qualityDetail: { skipped: 'budget', credentialVersion: '3' } },
+    });
+    expect(ollamaCalls()).toBe(0);
+    expect(h.router.external).toEqual([]);
   });
 
   it('makes no repair call after invalid output that cost more than its reserve (spec 04 §6)', async () => {

@@ -90,7 +90,11 @@ card translations and workers; a busy container must not exhaust all API connect
    canonical feed (its oldest carrier, D-74) has `fetch_options.translate_strong`. It is **allowed** if the credential resolver supplies an enabled
    active Ollama key (encrypted DB, or permitted bootstrap env source), demand remains eligible, the daily cap is not
    reached, and `router.reserveExternalCall(...)` succeeds for this HTTP attempt. The reservation
-   atomically checks both cap and spend; an earlier advisory `canSpend` result is insufficient.
+   atomically checks both cap and spend; an earlier advisory `canSpend` result is insufficient. The
+   key is decided by the resolver's fresh read before each attempt, never by its cached metadata,
+   and the reservation is taken only once that read supplied the key, so an attempt that was never
+   sent charges nothing. A read that fails on the host (the lookup, the decryption, the keyring) is
+   transient, like a transport failure, rather than a `no_key` skip (D-88).
 
    If it is wanted but not allowed, store an `ollama` row for the current revision with `quality = 'fail'` and
    `quality_detail = {skipped: 'no_key'|'cap'|'budget', credentialVersion?: string}`. The attempt is on record, so the ranker's

@@ -17,6 +17,11 @@ import {
   type TranslationTexts,
 } from '@bantoozi/translate';
 
+import {
+  isCredentialUnavailableError,
+  type CredentialUnavailableReason,
+} from '../credentials/resolver.js';
+
 /**
  * What the translation stages need (spec 07 §2–3): the tier-1 client, the tier-2 translator, the
  * credential resolver that unwraps the active Ollama key for one attempt, and the configured
@@ -174,16 +179,32 @@ export async function runTier1(
   }
 }
 
+/** What one tier-2 attempt did inside the resolver's callback. */
+type Tier2Send =
+  | { kind: 'denied'; credentialVersion: string | undefined }
+  | { kind: 'sent'; reservationId: string; result: Tier2AttemptResult };
+
+/** A fresh credential read that found no enabled active key: tier 2 is skipped for `no_key`. */
+const NO_KEY_REASONS: ReadonlySet<CredentialUnavailableReason> = new Set([
+  'none',
+  'disabled',
+  'pending',
+]);
+
 /**
- * Tier 2 (spec 07 §3 step 3), once per content revision: without an enabled active Ollama key, or
- * when the reservation is refused for the daily cap or the budget, a skipped `fail` row records
- * the attempt; otherwise one attempt, plus one repair attempt after invalid output that stayed
- * within its reserve (spec 04 §6), each under its own reservation and recorded with its actual
- * usage. A translation is graded; invalid output after the repair (or without one after a cost
- * overrun) and a terminal provider failure (auth, request, model) become a `fail` row. A
- * transport failure (429, 5xx, timeout, network) or a cancellation stores no row: it is transient,
- * with the server's retry time when known, and the job's own retry runs tier 2 again (D-74), never
- * a second in-process attempt as well. `no_demand` when the authorization lapsed.
+ * Tier 2 (spec 07 §3 step 3), once per content revision. Every attempt resolves the active Ollama
+ * key with a fresh read first (spec 04 §1.2) and reserves spend and a daily-cap slot only then,
+ * inside the resolver's callback like a router attempt, so nothing is charged for a call that was
+ * never sent (D-88). Without an enabled active key at that read (none, disabled, pending), or when
+ * the reservation is refused for the daily cap or the budget, a skipped `fail` row records the
+ * attempt; a read that failed for another reason (the lookup, the decryption, the host keyring) is
+ * transient. A sent attempt is recorded with its actual usage, and invalid output that stayed
+ * within its reserve earns one repair attempt (spec 04 §6). A translation is graded; invalid output
+ * after the repair (or without one after a cost overrun) and a terminal provider failure (auth,
+ * request, model) become a `fail` row. A transport failure (429, 5xx, timeout, network) or a
+ * cancellation stores no row: it is transient, with the server's retry time when known, and the
+ * job's own retry runs tier 2 again (D-74), never a second in-process attempt as well. `no_demand`
+ * when the authorization lapsed.
  */
 export async function runTier2(
   db: Executor,
@@ -192,42 +213,42 @@ export async function runTier2(
   job: TranslationJob,
   model: string,
 ): Promise<TierOutcome> {
-  const credential = await translation.credentials.metadata('ollama');
-  const skipped = (reason: 'no_key' | 'cap' | 'budget'): TierOutcome => {
-    const version = versionOf(credential.activeVersion);
-    return {
-      kind: 'row',
-      row: failedRow(job, 'ollama', model, { ...skippedTier2QualityDetail(reason, version) }),
-    };
-  };
-  if (credential.source === 'none' || !credential.enabled) return skipped('no_key');
+  const skipped = (
+    reason: 'no_key' | 'cap' | 'budget',
+    credentialVersion?: string,
+  ): TierOutcome => ({
+    kind: 'row',
+    row: failedRow(job, 'ollama', model, {
+      ...skippedTier2QualityDetail(reason, versionOf(credentialVersion)),
+    }),
+  });
 
   const input = { model, sourceLang: job.sourceLang, source: job.source };
   const estimate = translation.ollama.estimate(input);
   const logicalRequestId = randomUUID();
   let last: Tier2AttemptResult | undefined;
   for (let attempt = 1; attempt <= TIER2_MAX_ATTEMPTS; attempt += 1) {
-    const reservationId = await router.reserveExternalCall({
-      engine: 'llm',
-      kind: 'translate',
-      estimateUsd: estimate.estimateUsd,
-      priority: 'bulk',
-      ...(job.userId === undefined ? {} : { userId: job.userId }),
-      authorization: job.authorization,
-    });
-    if (reservationId === null) {
-      // The repair attempt was not admitted: the first attempt's failure stands.
-      if (last !== undefined) break;
-      if (!(await isInferenceAuthorized(db, job.authorization))) return { kind: 'no_demand' };
-      return skipped((await router.canSpend(estimate.estimateUsd, 'bulk')) ? 'cap' : 'budget');
-    }
-    let result: Tier2AttemptResult;
+    // Set once the attempt holds a reservation: from then on it may reach the provider.
+    const reserved: { id?: string } = {};
+    let sent: Tier2Send;
     try {
-      result = await translation.credentials.useActive(
+      sent = await translation.credentials.useActive(
         'ollama',
         AbortSignal.timeout(120_000),
-        (auth) =>
-          translation.ollama.translateOnce({
+        async (auth): Promise<Tier2Send> => {
+          const reservationId = await router.reserveExternalCall({
+            engine: 'llm',
+            kind: 'translate',
+            estimateUsd: estimate.estimateUsd,
+            priority: 'bulk',
+            ...(job.userId === undefined ? {} : { userId: job.userId }),
+            authorization: job.authorization,
+          });
+          if (reservationId === null) {
+            return { kind: 'denied', credentialVersion: auth.credentialVersion };
+          }
+          reserved.id = reservationId;
+          const result = await translation.ollama.translateOnce({
             ...input,
             auth: {
               apiKey: auth.apiKey,
@@ -236,10 +257,21 @@ export async function runTier2(
                 : { credentialVersion: auth.credentialVersion }),
             },
             attempt,
-          }),
+          });
+          return { kind: 'sent', reservationId, result };
+        },
       );
     } catch (error) {
-      // No usable key after all (revoked meanwhile), or an unexpected failure around the send: the
+      if (reserved.id === undefined) {
+        // Nothing was reserved or sent. A repair attempt that cannot go out leaves the first
+        // attempt's failure standing.
+        if (!isCredentialUnavailableError(error)) throw error;
+        if (last !== undefined) break;
+        return NO_KEY_REASONS.has(error.reason)
+          ? skipped('no_key')
+          : { kind: 'transient', reason: `credential_${error.reason}` };
+      }
+      // An unexpected failure around the send: it may have reached the provider, so the
       // reservation stays charged conservatively and the job may run again.
       await router.recordExternalCall(
         {
@@ -253,22 +285,30 @@ export async function runTier2(
           costUsd: 0,
           latencyMs: 0,
           status: 'error',
-          error: 'credential_or_send_failure',
+          error: 'send_failure',
           billing: 'uncertain',
           logicalRequestId,
           attempt,
         },
-        reservationId,
+        reserved.id,
       );
       throw error;
     }
+    if (sent.kind === 'denied') {
+      // The repair attempt was not admitted: the first attempt's failure stands.
+      if (last !== undefined) break;
+      if (!(await isInferenceAuthorized(db, job.authorization))) return { kind: 'no_demand' };
+      const refused = (await router.canSpend(estimate.estimateUsd, 'bulk')) ? 'cap' : 'budget';
+      return skipped(refused, sent.credentialVersion);
+    }
+    const { result } = sent;
     const { overrun } = await router.recordExternalCall(
       toExternalCall(result.attempt, {
         logicalRequestId,
         articleId: job.articleId,
         articleRevision: job.articleRevision,
       }),
-      reservationId,
+      sent.reservationId,
     );
     last = result;
     // Only invalid output earns the repair attempt, and never after an attempt that cost more than
