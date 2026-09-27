@@ -129,10 +129,12 @@ const versionOf = (value: string | undefined): string | undefined =>
   value !== undefined && CREDENTIAL_VERSION.test(value) ? value : undefined;
 
 /**
- * Tier 1 (spec 07 §3 step 2): the free CPU translation, after rechecking the authorization. Every
- * HTTP attempt is recorded as a zero-cost `libretranslate` call. A translation is graded; a
- * terminal failure (unsupported language, invalid request or response) becomes a `fail` row, so
- * the revision is never retried; other failures are transient.
+ * Tier 1 (spec 07 §3 step 2): the free CPU translation. The authorization is rechecked before the
+ * job starts and again before every HTTP attempt, the client's retry after its backoff included, so
+ * text whose demand lapsed meanwhile is never sent (spec 07 §2). Every HTTP attempt is recorded as
+ * a zero-cost `libretranslate` call. A translation is graded; a terminal failure (unsupported
+ * language, invalid request or response) becomes a `fail` row, so the revision is never retried;
+ * other failures are transient.
  */
 export async function runTier1(
   db: Executor,
@@ -142,10 +144,15 @@ export async function runTier1(
 ): Promise<TierOutcome> {
   if (!(await isInferenceAuthorized(db, job.authorization))) return { kind: 'no_demand' };
   const supported = await translation.supportedSources?.();
+  let lapsed = false;
   const result = await translation.libretranslate.translateArticle({
     source: job.source,
     lang: job.sourceLang,
     ...(supported === undefined ? {} : { supportedSources: supported }),
+    beforeAttempt: async () => {
+      lapsed = !(await isInferenceAuthorized(db, job.authorization));
+      return !lapsed;
+    },
   });
   const logicalRequestId = randomUUID();
   for (const attempt of result.attempts) {
@@ -157,6 +164,7 @@ export async function runTier1(
       }),
     );
   }
+  if (lapsed) return { kind: 'no_demand' };
   switch (result.status) {
     case 'translated':
     case 'passthrough':

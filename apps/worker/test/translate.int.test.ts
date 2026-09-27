@@ -21,6 +21,7 @@ import {
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  runTier1,
   runTier2,
   type TranslationDeps,
   type TranslationJob,
@@ -208,8 +209,8 @@ async function translations(articleId: string) {
 
 const translateRequests = () => lt.requests.filter((request) => request.path === '/translate');
 
-/** The tier-2 job of a Slovak article's current revision, as the handler builds it. */
-async function tier2Job(articleId: string): Promise<TranslationJob> {
+/** The translation job of a Slovak article's current revision, as the handler builds it. */
+async function translationJob(articleId: string): Promise<TranslationJob> {
   const article = await loadClassificationArticle(h.deps.db, articleId);
   if (article === null) throw new Error(`article ${articleId} is gone`);
   const source = articleTranslationSource({
@@ -606,10 +607,42 @@ describe('article.translate tiers (spec 07 §3)', () => {
   });
 });
 
+describe('tier-1 attempts (spec 07 §2, §3 step 2)', () => {
+  it('rechecks the demand before the retry: text whose only reader left during the backoff is not sent again', async () => {
+    const s = await slovak();
+    const [reader] = s.users as [string];
+    const job = await translationJob(s.articleId);
+    lt.setOptions({ sequence: [{ mode: 'status', status: 503 }] });
+    // The client's retry after a transient failure; the reader switches the feed off meanwhile.
+    const retrying = createLibreTranslateClient({
+      baseUrl: lt.url,
+      maxAttempts: 2,
+      backoffMs: 10,
+      sleep: async () => {
+        await h.setMode(reader, s.feedId, 'off');
+      },
+    });
+    try {
+      const outcome = await runTier1(
+        h.deps.db,
+        h.router,
+        { ...translation, libretranslate: retrying },
+        job,
+      );
+      expect(outcome).toEqual({ kind: 'no_demand' });
+    } finally {
+      await retrying.close();
+    }
+    expect(translateRequests()).toHaveLength(1);
+    // The attempt that was sent is still recorded.
+    expect(h.router.external.map((e) => e.call.engine)).toEqual(['libretranslate']);
+  });
+});
+
 describe('tier-2 attempts (spec 07 §3 step 3)', () => {
   it('returns a transport failure with the server retry time after one attempt, storing nothing', async () => {
     const s = await slovak();
-    const job = await tier2Job(s.articleId);
+    const job = await translationJob(s.articleId);
     ollama.setOptions({ mode: 'status', status: 429, headers: { 'retry-after': '30' } });
     const before = Date.now();
     const outcome = await runTier2(h.deps.db, h.router, translation, job, LLM_MODEL);
@@ -624,7 +657,7 @@ describe('tier-2 attempts (spec 07 §3 step 3)', () => {
 
   it('repairs invalid output once: invalid again is a fail row, a failed repair call is transient', async () => {
     const s = await slovak();
-    const job = await tier2Job(s.articleId);
+    const job = await translationJob(s.articleId);
     ollama.setOptions({ mode: 'malformed' });
     const invalid = await runTier2(h.deps.db, h.router, translation, job, LLM_MODEL);
     expect(ollamaCalls()).toBe(2);
@@ -649,7 +682,7 @@ describe('tier-2 attempts (spec 07 §3 step 3)', () => {
 
   it('reserves and charges nothing when the credential read fails before sending', async () => {
     const s = await slovak();
-    const job = await tier2Job(s.articleId);
+    const job = await translationJob(s.articleId);
     // Revoked since the metadata was cached: a no-key skip.
     cachedMetadata = { source: 'db', enabled: true, activeVersion: '3' };
     credential = { source: 'db', enabled: false, activeVersion: '3' };
@@ -677,7 +710,7 @@ describe('tier-2 attempts (spec 07 §3 step 3)', () => {
 
   it('records the key a refused reservation would have used on its cap or budget skip', async () => {
     const s = await slovak();
-    const job = await tier2Job(s.articleId);
+    const job = await translationJob(s.articleId);
     h.router.reservation = () => null;
     expect(await runTier2(h.deps.db, h.router, translation, job, LLM_MODEL)).toMatchObject({
       kind: 'row',
@@ -694,7 +727,7 @@ describe('tier-2 attempts (spec 07 §3 step 3)', () => {
 
   it('makes no repair call after invalid output that cost more than its reserve (spec 04 §6)', async () => {
     const s = await slovak();
-    const job = await tier2Job(s.articleId);
+    const job = await translationJob(s.articleId);
     ollama.setOptions({
       // Invalid output whose reported usage is far above the attempt's estimate.
       statusOverride: (body) => {
