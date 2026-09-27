@@ -152,6 +152,9 @@ card translations and workers; a busy container must not exhaust all API connect
   included, so the once-per-revision rule below still holds, D-74), invalidates answers and persists
   the enrich intent. Identical effective
   text is a no-op. Comparing quality grades alone would miss a different tie-winning translation.
+  The comparison is with the input the current facets were built from (their `state_sha256`), under
+  the article's row lock, and rows a job stores for its retry (D-74) are installed the same way at
+  once; an enrichment whose rows changed before its completion runs again instead (D-94).
 - Otherwise nothing else happens.
 - This runs once per article content revision: the current-revision `ollama` row, even a skipped
   one, prevents repeats. Budget reset alone does not retry skipped items; the administrative

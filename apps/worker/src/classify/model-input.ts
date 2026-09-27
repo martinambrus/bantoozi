@@ -9,7 +9,7 @@ import {
   type StateCall,
   type StateVariant,
 } from '@bantoozi/questions';
-import { selectBestTranslation, type TranslationTexts } from '@bantoozi/translate';
+import { selectBestTranslation } from '@bantoozi/translate';
 
 import { languageModeOf, type ClassificationConfig } from './config.js';
 
@@ -75,17 +75,6 @@ export function usableTranslation(
   if (best === null) return null;
   const texts = { title: best.title, excerpt: best.excerpt, bodyLead: best.bodyLead };
   return effectiveStateVariant('translated', texts) === 'translated' ? best : null;
-}
-
-/** The effective translated text a state is built from, in the translate package's field names. */
-export function effectiveTranslationTexts(
-  translations: readonly TranslationRow[],
-  revision: string,
-): TranslationTexts | null {
-  const best = usableTranslation(translations, revision);
-  return best === null
-    ? null
-    : { title: best.title, excerpt: best.excerpt, body_lead: best.bodyLead };
 }
 
 /** One built state and its hash (the `state_sha256` of every answer it produces). */

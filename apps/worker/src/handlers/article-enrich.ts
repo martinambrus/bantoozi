@@ -48,7 +48,9 @@ const ENRICHED_STATES: readonly string[] = ['enriched', 'matched'];
  * `enriched` and continues through `pipeline.after`. An unavailable engine degrades an article
  * that has no facets yet, an invalid request fails it, and neither ever downgrades an article that
  * already has facets (a recovery retry of LLM answers leaves them in place). Every one of these
- * writes first rechecks the configuration: after a switch the job runs again instead (D-85).
+ * writes first rechecks the configuration: after a switch the job runs again instead (D-85). A
+ * completion also reads the translation rows again under the article lock: a translation stored
+ * during Call A changed the input, and the job runs again instead (D-94).
  *
  * Without `priority` the job is interactive, so the LLM fallback may serve new arrivals while Jev
  * is unavailable; recovery and re-enrichment send `bulk` (spec 04 §5).
@@ -112,6 +114,7 @@ export function createArticleEnrichHandler(
         if (locked === null || locked.revision !== article.revision) return;
         const current = await configHolds(tx, deps, config, article, priority);
         if (current === null) return;
+        if (!(await inputHolds(tx, deps, current, article, enrichState.sha256, priority))) return;
         await writeFacets(
           tx,
           {
@@ -195,8 +198,8 @@ export function createArticleEnrichHandler(
  * A current primary Call A for this exact input exists (a selected request filled the cache, or the
  * job is a duplicate). No call: an article that has not continued yet continues now; one already
  * enriched or matched at this revision is a late duplicate. The input was judged current under the
- * job's configuration snapshot, so the continuation has the completion's fence (D-84, D-85): a
- * switch committed meanwhile re-enqueues the job instead.
+ * job's configuration snapshot, so the continuation has the completion's fences (D-84, D-85, D-94):
+ * a switch or a translation committed meanwhile re-enqueues the job instead.
  */
 async function continueFromCache(
   deps: WorkerDeps,
@@ -209,7 +212,9 @@ async function continueFromCache(
     const locked = await lockArticleRevision(tx, article.id, 'update');
     if (locked === null || locked.revision !== article.revision) return;
     if (ENRICHED_STATES.includes(locked.pipelineState)) return;
-    if ((await configHolds(tx, deps, config, article, priority)) === null) return;
+    const current = await configHolds(tx, deps, config, article, priority);
+    if (current === null) return;
+    if (!(await inputHolds(tx, deps, current, article, stored.stateSha256, priority))) return;
     const changed = await transitionPipelineState(tx, {
       articleId: article.id,
       revision: article.revision,
@@ -249,6 +254,32 @@ async function configHolds(
     { revision: article.revision },
   );
   return null;
+}
+
+/**
+ * The input fence of a write derived from the job's Call A state (D-94): a translation stored after
+ * the job read its rows changes the model input without a new revision. The rows are read again
+ * under the article lock, which every translation store takes too, so a store either commits first
+ * and is seen here, or waits and then finds the new facets (spec 07 §3). A changed input enqueues
+ * the job again at the article's revision in the same transaction, and the caller writes nothing
+ * (false).
+ */
+async function inputHolds(
+  tx: Transaction,
+  deps: WorkerDeps,
+  config: ClassificationConfig,
+  article: ClassificationArticle,
+  stateSha256: string,
+  priority: 'interactive' | 'bulk',
+): Promise<boolean> {
+  const rows = await listTranslations(tx, article.id, article.revision);
+  if (buildState(modelInput(article, rows, config), 'enrich').sha256 === stateSha256) return true;
+  await enqueueEnrich(
+    workerOutbox(tx),
+    { articleId: article.id, priority },
+    { revision: article.revision },
+  );
+  return false;
 }
 
 /**

@@ -9,7 +9,6 @@ import {
   workerOutbox,
   type ClassificationArticle,
   type TranslationInput,
-  type TranslationRow,
 } from '@bantoozi/db';
 import { enqueueTranslate, type InferenceAuthorization, type JobPayload } from '@bantoozi/shared';
 import {
@@ -19,7 +18,11 @@ import {
   translationSourceSha256,
 } from '@bantoozi/translate';
 
-import { languageModeOf, loadClassificationConfig } from '../classify/config.js';
+import {
+  languageModeOf,
+  loadClassificationConfig,
+  type ClassificationConfig,
+} from '../classify/config.js';
 import {
   runTier1,
   runTier2,
@@ -63,7 +66,8 @@ export class TransientTranslationError extends Error {
  *   identical effective text is a no-op, and other states pick the best row up at enrichment.
  * A transient tier-1 or tier-2 failure uses the job's one retry (see {@link retryTransient}); the
  * last attempt continues without that tier's row (native text when tier 1 has none) rather than
- * blocking the article (spec 07 §3, D-74).
+ * blocking the article (spec 07 §3, D-74). Rows kept for the retry are installed like a finished
+ * job's (D-94).
  */
 export function createArticleTranslateHandler(
   deps: WorkerDeps,
@@ -119,7 +123,10 @@ export function createArticleTranslateHandler(
       const tier1 = await runTier1(deps.db, classification.router, translation, job);
       if (tier1.kind === 'no_demand') return;
       if (tier1.kind === 'transient') {
-        if (retriesLeft && (await retryTransient(deps, article, payload, produced, tier1))) {
+        if (
+          retriesLeft &&
+          (await retryTransient(deps, config, article, payload, produced, tier1))
+        ) {
           return;
         }
         deps.logger.warn(
@@ -145,7 +152,7 @@ export function createArticleTranslateHandler(
       if (tier2.kind === 'no_demand') return;
       if (tier2.kind === 'row') produced.push(tier2.row);
       else if (tier2.kind === 'transient' && retriesLeft) {
-        if (await retryTransient(deps, article, payload, produced, tier2)) return;
+        if (await retryTransient(deps, config, article, payload, produced, tier2)) return;
       }
     }
 
@@ -153,14 +160,16 @@ export function createArticleTranslateHandler(
       await continueInitial(deps, article, produced, replaceSkipped);
       return;
     }
-    await installRetranslation(deps, config, article, rows, produced, replaceSkipped);
+    await installRetranslation(deps, config, article, produced, replaceSkipped);
   };
 }
 
 /**
  * The job's one retry after a transient tier-1 or tier-2 failure (spec 07 §3, D-74). The rows the
  * job produced before it (a tier-1 translation before a transient tier 2) are stored first, so the
- * retry reuses them instead of running tier 1 again. Without a provider retry time the retry is
+ * retry reuses them instead of running tier 1 again. Readers select a stored row at once, so they
+ * are installed like a finished job's: an enriched article whose effective input they change is
+ * reset now, whatever the retry does later (D-94). Without a provider retry time the retry is
  * pg-boss's immediate queue retry: this throws. With one it is a delayed job at that time, marked
  * `retried` so it is the last attempt, and this job ends (true). A retry time beyond
  * {@link MAX_TRANSLATION_RETRY_WAIT_MS} is not waited for (false): nothing is stored here, and the
@@ -168,6 +177,7 @@ export function createArticleTranslateHandler(
  */
 async function retryTransient(
   deps: WorkerDeps,
+  config: ClassificationConfig,
   article: ClassificationArticle,
   payload: JobPayload<'article.translate'>,
   produced: readonly TranslationInput[],
@@ -178,8 +188,11 @@ async function retryTransient(
   if (waitMs > MAX_TRANSLATION_RETRY_WAIT_MS) return false;
   if (produced.length > 0 || retryAt !== undefined) {
     await retryTransaction(deps.db, async (tx) => {
-      if (produced.length > 0) {
-        await storeRows(tx, article, produced, payload.replaceSkipped === true);
+      if (
+        produced.length > 0 &&
+        (await storeRows(tx, article, produced, payload.replaceSkipped === true))
+      ) {
+        await resetOnChangedText(tx, deps, config, article);
       }
       if (retryAt === undefined) return;
       await enqueueTranslate(
@@ -248,21 +261,20 @@ async function continueInitial(
 
 /**
  * Re-translation and mode-change installs (spec 07 §3, spec 05 §2). The rows are stored at the
- * revision read at dispatch, and an article whose current facets were built from different
- * effective text is reset and re-enriched ({@link resetOnChangedText}). The comparison runs even
+ * revision read at dispatch, and an article whose current facets were built from a different
+ * effective input is reset and re-enriched ({@link resetOnChangedText}). The comparison runs even
  * when this job produced no row: a language switched back to `translate` finds its current-revision
  * rows already stored, while the facets were built from native text.
  */
 async function installRetranslation(
   deps: WorkerDeps,
-  config: Awaited<ReturnType<typeof loadClassificationConfig>>,
+  config: ClassificationConfig,
   article: ClassificationArticle,
-  before: readonly TranslationRow[],
   produced: readonly TranslationInput[],
   replaceSkipped: boolean,
 ): Promise<void> {
   await retryTransaction(deps.db, async (tx) => {
     if (!(await storeRows(tx, article, produced, replaceSkipped))) return;
-    await resetOnChangedText(tx, deps, config, article, before);
+    await resetOnChangedText(tx, deps, config, article);
   });
 }

@@ -651,3 +651,17 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   enrich set and language mode it compares fix the Call B state), and a cache fill that writes L2
   rows rebuilds the stored facet row's features from the stored rows of its branches, as a match
   pack does. Spec 05 §3.4 updated.
+- D-94: 2026-09-27 M2-T9 — spec 07 §3 installs a translation through `resetArticleAnswers` when the
+  effective model input changes, but the input was compared or stored against stale snapshots. The
+  re-translation check read the pipeline state from the job's dispatch snapshot, so an enrichment
+  that completed from the old text while a flagged translation ran was taken for an article not
+  enriched yet, and its facets stayed. It compared the new rows with the rows the job had read at
+  dispatch rather than with the input the facets were built from. Rows stored for a job's retry (a
+  tier-1 row before a transient tier 2, D-74) were installed only when the retry reached its own
+  install, so readers selected the new translation while the facets stayed on the old text until
+  then, or for good when the retry's demand lapsed. An enrichment whose translation changed during
+  Call A also completed from the old text, because a translation does not change the revision. The
+  check now reads the state under the article's row lock and compares the facets' `state_sha256`
+  with the current enrich input's, rows stored for a retry are installed the same way at once, and
+  the enrich completion and its cache continuation read the rows again under the same lock,
+  enqueueing the job again when its input changed. Specs 03 §2 and 07 §3 updated.

@@ -18,7 +18,7 @@ import {
   createOllamaTranslator,
   translationSourceSha256,
 } from '@bantoozi/translate';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   runTier1,
@@ -592,6 +592,114 @@ describe('article.translate tiers (spec 07 §3)', () => {
     await h.dispatch('article.translate', { articleId: s.articleId, modeChange: true });
     expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'enriched', revision: '2' });
     expect(await h.payloads('article.enrich', again)).toEqual([]);
+  });
+
+  it('a flagged translation reads the state under the lock: an enrichment that completed while it ran is reset', async () => {
+    lt.setOptions({ mode: 'weak' });
+    const s = await slovak();
+    await h.dispatch('article.translate', { articleId: s.articleId });
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'translated', revision: '1' });
+
+    // The escalation reads the article while it is `translated`; the enrichment already queued
+    // completes from the weak translation while tier 2 is on its way.
+    const reserve = h.router.reserveExternalCall.bind(h.router);
+    const spy = vi.spyOn(h.router, 'reserveExternalCall').mockImplementationOnce(async (input) => {
+      await h.run('article.enrich', forArticles(s.articleId));
+      return reserve(input);
+    });
+    const since = await h.mark();
+    try {
+      await h.dispatch('article.translate', { articleId: s.articleId, forceTier2: true });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(h.router.asksFor(s.articleId, 'enrich')).toHaveLength(1);
+
+    // Tier 2's better translation is not what those facets were built from: reset, enrich again.
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'translated', revision: '2' });
+    expect(await h.facetRow(s.articleId)).toBeNull();
+    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+    await h.run('article.enrich', forArticles(s.articleId));
+    const reenriched = h.router.asksFor(s.articleId, 'enrich').at(-1);
+    expect(reenriched?.articleRevision).toBe('2');
+    expect(JSON.stringify(reenriched?.request.state)).toContain(pseudoTranslate(TRAM.title));
+  });
+
+  it('an enrichment whose translation changed during Call A runs again instead of completing', async () => {
+    lt.setOptions({ mode: 'weak' });
+    const s = await slovak();
+    await h.dispatch('article.translate', { articleId: s.articleId });
+
+    // The escalation installs its better translation while Call A is on its way: the article is
+    // not enriched yet, so the install leaves it to the enrichment.
+    let raced = false;
+    h.router.respond = async (ask) => {
+      if (ask.kind !== 'enrich' || raced) return undefined;
+      raced = true;
+      await h.dispatch('article.translate', { articleId: s.articleId, forceTier2: true });
+      return undefined;
+    };
+    await h.run('article.enrich', forArticles(s.articleId));
+
+    // Its completion finds the new rows and enrichment runs again, from the new translation.
+    const asks = h.router.asksFor(s.articleId, 'enrich');
+    expect(asks).toHaveLength(2);
+    expect(JSON.stringify(asks[0]?.request.state)).not.toContain(pseudoTranslate(TRAM.title));
+    expect(JSON.stringify(asks[1]?.request.state)).toContain(pseudoTranslate(TRAM.title));
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'enriched', revision: '1' });
+    expect((await h.facetRow(s.articleId))?.stateSha256).toBe(asks[1]?.request.stateSha256);
+  });
+
+  it('a tier-1 row kept for the retry is installed at once: a changed input resets the article', async () => {
+    // Enriched from native text, with no translation row, while Slovak was native.
+    const translateModes = { en: 'native', sk: 'translate', cs: 'native' };
+    const s = await slovak();
+    await h.owner.query(
+      `UPDATE feeds SET fetch_options = fetch_options || '{"translate_strong": true}' WHERE id = $1`,
+      [s.feedId],
+    );
+    await h.setSetting('language_modes', { ...translateModes, sk: 'native' });
+    try {
+      await h.dispatch('article.translate', { articleId: s.articleId });
+      await h.run('article.enrich', forArticles(s.articleId));
+    } finally {
+      await h.setSetting('language_modes', translateModes);
+    }
+    expect(await h.facetRow(s.articleId)).toMatchObject({ revision: '1', variant: 'native' });
+    expect(await translations(s.articleId)).toEqual([]);
+
+    // Back in translate mode, tier 1 succeeds and the `translate_strong` tier 2 is rate limited.
+    // Readers select the stored tier-1 row now, so it is installed before the retry is scheduled.
+    ollama.setOptions({ mode: 'status', status: 429, headers: { 'retry-after': '30' } });
+    const since = await h.mark();
+    await h.dispatch(
+      'article.translate',
+      { articleId: s.articleId, modeChange: true },
+      { retry: { count: 0, limit: 1 } },
+    );
+    expect(ollamaCalls()).toBe(1);
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'translated', revision: '2' });
+    expect(
+      (await translations(s.articleId)).map((row) => [row.engine, row.quality, row.revision]),
+    ).toEqual([['libretranslate', 'ok', '2']]);
+    expect(await h.facetRow(s.articleId)).toBeNull();
+    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+    expect(await h.payloads('article.translate', since)).toEqual([
+      { articleId: s.articleId, modeChange: true, retried: true },
+    ]);
+    await h.run('article.enrich', forArticles(s.articleId));
+    expect(await h.facetRow(s.articleId)).toMatchObject({ revision: '2', variant: 'translated' });
+
+    // The retry, rate limited again, continues from the kept row: the facets are already its own.
+    const retried = await h.mark();
+    await h.dispatch('article.translate', {
+      articleId: s.articleId,
+      modeChange: true,
+      retried: true,
+    });
+    expect(ollamaCalls()).toBe(2);
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'enriched', revision: '2' });
+    expect(await h.payloads('article.enrich', retried)).toEqual([]);
   });
 
   it('is a no-op for off or unselected demand: no HTTP request, no row, no stage change', async () => {

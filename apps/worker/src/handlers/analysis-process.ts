@@ -700,9 +700,8 @@ class AnalysisRun {
       );
       const rows = produced.filter((row) => row.sourceSha256 === liveSha);
       if (rows.length > 0) {
-        const before = await listTranslations(tx, article.id, article.revision);
         for (const row of rows) await storeTranslation(tx, row);
-        if (await resetOnChangedText(tx, deps, config, article, before)) return false;
+        if (await resetOnChangedText(tx, deps, config, article)) return false;
       }
     }
     const input = modelInput(
