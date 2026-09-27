@@ -47,6 +47,7 @@ import { createTypeSafeEngine, typesafeCostUsd } from './typesafe-engine.js';
 import type {
   Answer,
   CreateEngineRouterDeps,
+  CredentialResolver,
   DecisionEngine,
   EngineAttempt,
   EngineOutcome,
@@ -460,17 +461,26 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
 
   // ── Credentials and breaker ───────────────────────────────────────────────────────────────────
 
-  /** Whether a provider has a usable credential (metadata only; spec 04 §5 step 1). */
+  /**
+   * Whether a provider has a usable credential (metadata only; spec 04 §5 step 1). The metadata may
+   * be cached, so a provider it shows without one is read again before its lane is refused: a key
+   * activated meanwhile is used at once (spec 04 §1.2 step 5). A usable view needs no second read,
+   * since `useActive` rechecks the row before every attempt.
+   */
   async function credentialState(
     provider: CredentialProvider,
   ): Promise<{ available: true } | { available: false; reason: string }> {
-    try {
-      const meta = await credentials.metadata(provider);
-      if (meta.source === 'env') return { available: true };
+    const availability = (meta: Awaited<ReturnType<CredentialResolver['metadata']>>) => {
+      if (meta.source === 'env') return { available: true } as const;
       if (meta.source === 'db' && meta.enabled && meta.activeVersion !== undefined) {
-        return { available: true };
+        return { available: true } as const;
       }
-      return { available: false, reason: meta.source === 'none' ? 'none' : 'not_active' };
+      return { available: false, reason: meta.source === 'none' ? 'none' : 'not_active' } as const;
+    };
+    try {
+      const cached = availability(await credentials.metadata(provider));
+      if (cached.available) return cached;
+      return availability(await credentials.metadata(provider, { fresh: true }));
     } catch {
       return { available: false, reason: 'lookup_failed' };
     }

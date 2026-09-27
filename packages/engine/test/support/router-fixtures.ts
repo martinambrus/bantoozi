@@ -164,8 +164,12 @@ export function scriptedEngine(
   return engine;
 }
 
+type CredentialMetadata = Awaited<ReturnType<CredentialResolver['metadata']>>;
+
 export interface FakeCredentials extends CredentialResolver {
   keys: Partial<Record<'typesafe' | 'ollama', ProviderAuth>>;
+  /** A stale cached view that `metadata` returns instead of the keys, except for a fresh read. */
+  cached: Partial<Record<'typesafe' | 'ollama', CredentialMetadata>>;
   used: string[];
 }
 
@@ -175,8 +179,11 @@ export function fakeCredentials(
 ): FakeCredentials {
   const resolver: FakeCredentials = {
     keys: { ...keys },
+    cached: {},
     used: [],
-    async metadata(provider) {
+    async metadata(provider, options) {
+      const cached = resolver.cached[provider];
+      if (cached !== undefined && options?.fresh !== true) return { ...cached };
       const auth = resolver.keys[provider];
       if (auth === undefined) return { source: 'none', enabled: false };
       return {

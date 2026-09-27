@@ -1335,6 +1335,28 @@ describe('EngineRouter: the real TypeSafe adapter configuration (spec 04 §2, §
     }
   });
 
+  it('reads the credential again before refusing Jev on cached metadata without a key', async () => {
+    const fake = await startFakeTypeSafe({ apiKey: JEV_KEY.apiKey });
+    try {
+      const credentials = fakeCredentials({ typesafe: JEV_KEY });
+      // Activated a moment ago: the metadata cache still shows no key (spec 04 §1.2 step 5).
+      credentials.cached.typesafe = { source: 'none', enabled: false };
+      const { router } = setup({ typesafe: null, credentials, config: fakeConfig(fake.url) });
+      expect(await router.ask(request())).toMatchObject({ ok: true, engine: 'typesafe' });
+      expect(fake.requestCount()).toBe(1);
+      // Still without a key at the fresh read: refused as before, without a request.
+      delete credentials.keys.typesafe;
+      expect(await router.ask(request())).toEqual({
+        ok: false,
+        reason: 'no_key',
+        detail: 'typesafe:none',
+      });
+      expect(fake.requestCount()).toBe(1);
+    } finally {
+      await fake.close();
+    }
+  });
+
   it('refuses to start with allowFakeModel in production', () => {
     expect(() =>
       setup({

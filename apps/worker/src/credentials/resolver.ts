@@ -29,7 +29,8 @@ import {
  *   no crypto, database or provider payload), which the router turns into `no_key`.
  * - `useCandidate` serves `provider.validate` only: the candidate envelope under its live lease.
  * - `metadata` reads no envelope; it is polled at most every `metadataTtlMs` (default 10 s) per
- *   provider. Admission never relies on it: `useActive` rechecks the row.
+ *   provider, and `fresh` reads (and caches) the row at once. Admission never relies on the cache:
+ *   `useActive` rechecks the row, and a refusal reads it fresh.
  */
 
 export type CredentialProvider = 'typesafe' | 'ollama';
@@ -174,9 +175,9 @@ export function createWorkerCredentialResolver(
         : { ok: false, reason: parsed.reason };
     },
 
-    async metadata(provider) {
+    async metadata(provider, options) {
       assertProvider(provider);
-      const hit = cache.get(provider);
+      const hit = options?.fresh === true ? undefined : cache.get(provider);
       if (hit !== undefined && ttlMs > 0 && now() - hit.at < ttlMs) return { ...hit.value };
       const row = await readCredentialMetadata(db, provider);
       let value: Metadata;

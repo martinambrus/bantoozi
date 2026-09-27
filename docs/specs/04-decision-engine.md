@@ -111,7 +111,8 @@ export interface ProviderAuth { // SERVER-ONLY transport data; never serialize o
   apiKey: string; source:'db'|'env'; credentialVersion?:string;
 }
 export interface CredentialResolver { // app composition + encrypted DB repo; Node-only shared port
-  metadata(provider:'typesafe'|'ollama'): Promise<{source:'none'|'env'|'db'; enabled:boolean;
+  metadata(provider:'typesafe'|'ollama', options?:{fresh?:boolean}): // cached ≤10s unless fresh
+    Promise<{source:'none'|'env'|'db'; enabled:boolean;
     revision?:string; activeVersion?:string}>;
   useActive<T>(provider:'typesafe'|'ollama', signal:AbortSignal,
     send:(auth:ProviderAuth)=>Promise<T>): Promise<T>;
@@ -272,8 +273,11 @@ AES protects stolen dumps, not a host holding both ciphertext and master keys.
    key; the admin UI states that provider dashboard action separately. No new calls are admitted;
    in-flight calls can remain billable and cannot resurrect a revoked candidate on completion.
 5. Poll metadata at most every 10s for UI/cache refresh and recheck DB `revision/enabled/activeVersion`
-   immediately before every admission. Do not cache plaintext between attempts. A DB read/decrypt
-   failure or disabled row returns unavailable; **never fall back to an older key or environment**.
+   immediately before every admission. A provider that the cached metadata shows without a usable
+   key is read again (`metadata(provider, {fresh: true})`) before its work is refused, so a key
+   activated within the poll interval is used at once (D-89). Do not cache plaintext between
+   attempts. A DB read/decrypt failure or disabled row returns unavailable; **never fall back to an
+   older key or environment**.
 
 `TYPESAFE_API_KEY`/`OLLAMA_API_KEY` are optional bootstrap sources **only when no row for that provider
 exists**. A staged row without an active key is pending/unavailable, and a disabled row deliberately

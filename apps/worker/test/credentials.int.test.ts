@@ -477,5 +477,14 @@ describe('credential resolver and CLI lifecycle (spec 04 §1.2)', () => {
     expect(await r.metadata('ollama')).toEqual({ source: 'db', enabled: false, revision: '1' });
     // Admission never relies on the cache: the row is re-read for every attempt.
     expect(await activeAuth(r, 'ollama')).toBe('disabled');
+    // A fresh read, which a refusal takes, reads the row at once and refreshes the cache.
+    await owner.query(`UPDATE provider_credentials SET revision = 2 WHERE provider = 'ollama'`);
+    expect(await r.metadata('ollama')).toEqual({ source: 'db', enabled: false, revision: '1' });
+    expect(await r.metadata('ollama', { fresh: true })).toEqual({
+      source: 'db',
+      enabled: false,
+      revision: '2',
+    });
+    expect(await r.metadata('ollama')).toEqual({ source: 'db', enabled: false, revision: '2' });
   });
 });

@@ -598,3 +598,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   reservation, and a read that fails on the host (the lookup, the decryption, the keyring) is
   transient and charges nothing. A cap or budget skip records the version of the key the attempt
   would have used. Spec 07 §3 updated.
+- D-89: 2026-09-27 M2-T3 — spec 04 §1.2 step 5 rechecks the credential row before every admission,
+  but the router refused a lane whose provider the resolver's metadata, cached for up to 10 s,
+  showed without a usable key. A key activated within that window was ignored: Jev work returned
+  `no_key`, which the enrich job persists as `degraded` until housekeeping recovers it.
+  `CredentialResolver.metadata` takes `{fresh: true}`, which reads the row at once and refreshes the
+  cache, and the router reads it fresh before it refuses a lane the cached view shows without a key.
+  A usable cached view needs no second read, since `useActive` rechecks the row before every
+  attempt. Spec 04 §1.2 updated.
