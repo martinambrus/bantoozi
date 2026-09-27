@@ -32,7 +32,11 @@ import {
 import { validateRequest } from './normalize.js';
 import { createRateLimiter, type RateLimiter } from './rate-limiter.js';
 import { decideRetry, sleep } from './retry.js';
-import { createPrioritySemaphore, type PrioritySemaphore } from './semaphore.js';
+import {
+  createPrioritySemaphore,
+  type AcquireOptions,
+  type PrioritySemaphore,
+} from './semaphore.js';
 import {
   admitsSpend,
   attributionUserId,
@@ -69,7 +73,8 @@ import type {
  *    when due), then per wire attempt the rate limiter, the concurrency semaphore, the credential
  *    (`useActive`, re-read and decrypted for this attempt only) and an atomic spend reservation
  *    (`reserveSpend`, which rechecks demand, budget and call caps) immediately before the send;
- *    every attempt is settled as one `engine_calls` row with its `usage_daily` rollup;
+ *    an attempt that is not sent gives its rate capacity back, and every attempt that is sent is
+ *    settled as one `engine_calls` row with its `usage_daily` rollup;
  * 3. on failure, the LLM fallback only when `LLM_FALLBACK_ENABLED`, the request is interactive, the
  *    LLM breaker admits it and a daily-cap slot is reserved with the LLM's own spend (input plus the
  *    full output cap at LLM prices), splitting the pack so each part's answer fits the output cap;
@@ -591,18 +596,41 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
     const { signal } = ctx;
     if (signal.aborted) return { kind: 'cancelled' };
     const wait = sub.deadlineMs === undefined ? { signal } : { signal, deadlineMs: sub.deadlineMs };
-    if (lane.limiter !== undefined) {
-      const rate = await lane.limiter.acquire({
-        tokens: lane.rateTokens(sub),
-        priority: sub.priority,
-        ...wait,
-      });
-      if (!rate.ok) {
-        return rate.reason === 'cancelled'
-          ? { kind: 'cancelled' }
-          : { kind: 'deferred', retryAt: rate.retryAt, detail: 'deferred:rate_limit' };
-      }
+    if (lane.limiter === undefined) return admitAndSend(run, sub, ctx, wait);
+    const rate = await lane.limiter.acquire({
+      tokens: lane.rateTokens(sub),
+      priority: sub.priority,
+      ...wait,
+    });
+    if (!rate.ok) {
+      return rate.reason === 'cancelled'
+        ? { kind: 'cancelled' }
+        : { kind: 'deferred', retryAt: rate.retryAt, detail: 'deferred:rate_limit' };
     }
+    // Only an attempt that is sent spends rate capacity: every other exit (a slot wait that
+    // expired or was cancelled, a lost probe, no credential, a refused reservation, a store
+    // failure) gives the debit back.
+    let sent = false;
+    try {
+      const result = await admitAndSend(run, sub, ctx, wait);
+      sent = result.kind === 'sent';
+      return result;
+    } finally {
+      if (!sent) rate.refund();
+    }
+  }
+
+  /**
+   * The rest of one attempt after its rate capacity: the concurrency semaphores, the probe lease,
+   * then the credential, the reservation and the send.
+   */
+  async function admitAndSend(
+    run: LaneRun,
+    sub: EngineRequest,
+    ctx: AskContext,
+    wait: AcquireOptions,
+  ): Promise<AttemptResult> {
+    const { lane } = run;
     const releases: Array<() => void> = [];
     try {
       for (const semaphore of lane.semaphores) {

@@ -913,6 +913,41 @@ describe('EngineRouter: concurrency and rate limits (spec 04 §3, §4)', () => {
     expect(typesafe!.calls.at(-1)!.at - NOW.getTime()).toBeGreaterThanOrEqual(29_000);
   });
 
+  it('gives back the rate capacity of a request that is never sent', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const typesafe = scriptedEngine('typesafe', [
+      async (req) => {
+        await gate;
+        return success('typesafe', req);
+      },
+    ]);
+    const { router } = setup({
+      typesafe,
+      config: {
+        concurrency: 1,
+        typesafe: {
+          baseUrl: 'http://127.0.0.1:9',
+          model: TYPESAFE_MODEL,
+          pricePerMTokUsd: 0.042,
+          requestsPerMinute: 2,
+        },
+      },
+    });
+    // The first holds the only slot; the second takes the bucket's last request and gives up
+    // waiting for the slot at its deadline, unsent.
+    const first = router.ask(request());
+    const second = await drive(router.ask(request({ deadlineMs: NOW.getTime() + 1_000 })), advance);
+    expect(second).toMatchObject({ reason: 'error', detail: 'deferred:concurrency' });
+    release();
+    expect((await first).ok).toBe(true);
+    // Its request came back: the next one is sent at once, not when the bucket has refilled.
+    expect((await drive(router.ask(request()), advance)).ok).toBe(true);
+    expect(typesafe.calls.map((call) => call.at - NOW.getTime())).toEqual([0, 1_000]);
+  });
+
   it('lowers the rate after a 429', async () => {
     const typesafe = scriptedEngine('typesafe', [
       failure('rate_limited', { retryAfterMs: 2_000 }),

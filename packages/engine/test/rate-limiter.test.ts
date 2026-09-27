@@ -139,7 +139,7 @@ describe('createRateLimiter (spec 04 §3)', () => {
     const first = limiter.acquire({ tokens: 1, priority: 'interactive' });
     const second = limiter.acquire({ tokens: 1, priority: 'bulk', deadlineMs: 70_000 });
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(await first).toEqual({ ok: true });
+    expect(await first).toMatchObject({ ok: true });
     await vi.advanceTimersByTimeAsync(10_000);
     const result = await second;
     expect(result.ok).toBe(false);
@@ -165,6 +165,31 @@ describe('createRateLimiter (spec 04 §3)', () => {
     ).toMatchObject({
       ok: false,
       reason: 'cancelled',
+    });
+  });
+
+  it('gives the debit of an unsent attempt back once, up to the capacity', async () => {
+    const limiter = createRateLimiter({ requestsPerMinute: 2 });
+    const a = await limiter.acquire({ tokens: 1_000, priority: 'bulk' });
+    const b = await limiter.acquire({ tokens: 1_000, priority: 'bulk' });
+    if (!a.ok || !b.ok) throw new Error('both fit the full bucket');
+    const log: Array<[string, number, boolean]> = [];
+    const c = track(limiter.acquire({ tokens: 1_000, priority: 'bulk' }), log, 'c');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(log).toEqual([]);
+    // b is never sent: its refund serves the waiting c at once instead of 29 s later, and a second
+    // refund of it counts for nothing.
+    b.refund();
+    b.refund();
+    await c;
+    expect(log).toEqual([['c', 1_000, true]]);
+    expect(limiter.snapshot().requests).toBeCloseTo(1 / 30, 9);
+    // A refund never fills a bucket past its capacity.
+    await vi.advanceTimersByTimeAsync(60_000);
+    a.refund();
+    expect(limiter.snapshot()).toMatchObject({
+      requests: 2,
+      tokens: TYPESAFE_INPUT_TOKENS_PER_SECOND,
     });
   });
 

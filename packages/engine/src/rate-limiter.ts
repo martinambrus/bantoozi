@@ -6,9 +6,10 @@ import type { Priority } from './types.js';
  * per minute and input tokens per second. The account limits are shared by every process of the
  * deployment, so each process gets a static `share` (the shares must sum to at most 1; API
  * translation does not use these buckets). The token cost of an attempt is its conservative
- * estimate (spec 04 §6.1), taken before the attempt. A 429 lowers the capacity temporarily and
- * honours the server's delay for every waiter of this process. Waiting is bounded by the job
- * deadline, cancellable, and ordered interactive before bulk with aging (as the semaphore).
+ * estimate (spec 04 §6.1), taken before the attempt; an acquisition whose attempt is never sent
+ * gives its debit back (`refund`). A 429 lowers the capacity temporarily and honours the server's
+ * delay for every waiter of this process. Waiting is bounded by the job deadline, cancellable, and
+ * ordered interactive before bulk with aging (as the semaphore).
  */
 
 /** Published-limit-based defaults (spec 04 §3); configurable, not a guarantee. */
@@ -32,7 +33,11 @@ export interface RateLimiterOptions {
 }
 
 export type RateLimitAcquisition =
-  | { ok: true }
+  /**
+   * `refund`: give the debit back when the attempt is not sent after all (a later wait expired, a
+   * reservation was refused), up to the current capacities; only the first call counts.
+   */
+  | { ok: true; refund: () => void }
   /** `retryAt`: when capacity is expected (deadline) or now (cancelled). */
   | { ok: false; reason: 'cancelled' | 'deadline'; retryAt: Date };
 
@@ -174,11 +179,26 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
     return Math.max(start, t + waitFor(level, need, 1));
   }
 
-  function consume(need: number): void {
+  /** Debit one request of `need` tokens; the acquisition's `refund` gives it back once. */
+  function consume(need: number): Extract<RateLimitAcquisition, { ok: true }> {
     // A request above one bucket's capacity waits for a full bucket and leaves a debt behind, so
     // the refill rate stays the long-run limit.
     requests -= 1;
     tokens -= need;
+    let refunded = false;
+    return {
+      ok: true,
+      refund: () => {
+        if (refunded) return;
+        refunded = true;
+        const t = now();
+        refill(t);
+        const cap = caps(t);
+        requests = Math.min(cap.requests, requests + 1);
+        tokens = Math.min(cap.tokens, tokens + need);
+        schedule();
+      },
+    };
   }
 
   function head(): Waiter | undefined {
@@ -216,8 +236,7 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
       }
       if (ready <= t) {
         remove(next);
-        consume(next.tokens);
-        next.settle({ ok: true });
+        next.settle(consume(next.tokens));
         continue;
       }
       timer = setTimeout(schedule, Math.max(1, Math.ceil(ready - t)));
@@ -244,10 +263,7 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
           retryAt: new Date(Math.ceil(readyAt(need, t))),
         });
       }
-      if (queue.length === 0 && readyAt(need, t) <= t) {
-        consume(need);
-        return Promise.resolve({ ok: true });
-      }
+      if (queue.length === 0 && readyAt(need, t) <= t) return Promise.resolve(consume(need));
       return new Promise<RateLimitAcquisition>((resolve) => {
         let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
         const waiter: Waiter = {
