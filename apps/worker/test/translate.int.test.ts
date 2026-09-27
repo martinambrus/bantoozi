@@ -357,14 +357,19 @@ describe('article.translate tiers (spec 07 §3)', () => {
     const attempt = (count: number) =>
       h.dispatch('article.translate', { articleId: s.articleId }, { retry: { count, limit: 1 } });
 
-    // One HTTP attempt, then the queue retry: no in-process retry, and nothing stored.
+    // One HTTP attempt, then the queue retry: no in-process retry, and no ollama row. The tier-1
+    // row is kept for the retry.
     await expect(attempt(0)).rejects.toThrow(TransientTranslationError);
     expect(ollamaCalls()).toBe(1);
-    expect(await translations(s.articleId)).toEqual([]);
+    expect((await translations(s.articleId)).map((row) => [row.engine, row.quality])).toEqual([
+      ['libretranslate', 'fail'],
+    ]);
     expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'extracted' });
 
-    // The last attempt continues from native text, and no `fail` row claims the revision's tier 2.
+    // The last attempt reuses it, continues from native text, and no `fail` row claims the
+    // revision's tier 2.
     await attempt(1);
+    expect(translateRequests()).toHaveLength(1);
     expect(ollamaCalls()).toBe(2);
     expect((await translations(s.articleId)).map((row) => [row.engine, row.quality])).toEqual([
       ['libretranslate', 'fail'],
@@ -417,6 +422,41 @@ describe('article.translate tiers (spec 07 §3)', () => {
     expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
   });
 
+  it('a tier-1 translation made before a rate-limited tier 2 is kept for the retry', async () => {
+    // A `translate_strong` feed wants tier 2 after a good tier 1.
+    ollama.setOptions({ mode: 'status', status: 429, headers: { 'retry-after': '30' } });
+    const s = await slovak();
+    await h.owner.query(
+      `UPDATE feeds SET fetch_options = fetch_options || '{"translate_strong": true}' WHERE id = $1`,
+      [s.feedId],
+    );
+    const since = await h.mark();
+    await h.dispatch(
+      'article.translate',
+      { articleId: s.articleId },
+      { retry: { count: 0, limit: 1 } },
+    );
+    expect(ollamaCalls()).toBe(1);
+    expect((await translations(s.articleId)).map((row) => [row.engine, row.quality])).toEqual([
+      ['libretranslate', 'ok'],
+    ]);
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'extracted' });
+    expect(await h.payloads('article.translate', since)).toEqual([
+      { articleId: s.articleId, retried: true },
+    ]);
+
+    // The retry sends no tier-1 request; with tier 2 rate limited again, the article continues
+    // from the kept translation even though LibreTranslate is now unavailable.
+    lt.setOptions({ mode: 'status', status: 503 });
+    await h.dispatch('article.translate', { articleId: s.articleId, retried: true });
+    expect(translateRequests()).toHaveLength(1);
+    expect(ollamaCalls()).toBe(2);
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'translated' });
+    await h.run('article.enrich', forArticles(s.articleId));
+    const [ask] = h.router.asksFor(s.articleId, 'enrich');
+    expect(JSON.stringify(ask?.request.state)).toContain(pseudoTranslate(TRAM.title));
+  });
+
   it('a rate-limited tier 2 retries once at the provider retry time; a longer wait is not awaited', async () => {
     lt.setOptions({ mode: 'fail' });
     ollama.setOptions({ mode: 'status', status: 429, headers: { 'retry-after': '30' } });
@@ -429,7 +469,9 @@ describe('article.translate tiers (spec 07 §3)', () => {
       { retry: { count: 0, limit: 1 } },
     );
     expect(ollamaCalls()).toBe(1);
-    expect(await translations(s.articleId)).toEqual([]);
+    expect((await translations(s.articleId)).map((row) => [row.engine, row.quality])).toEqual([
+      ['libretranslate', 'fail'],
+    ]);
     expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'extracted' });
     const intents = await h.intents('article.translate', { since });
     expect(intents.map((intent) => intent.payload)).toEqual([

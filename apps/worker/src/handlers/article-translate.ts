@@ -123,7 +123,9 @@ export function createArticleTranslateHandler(
       const tier1 = await runTier1(deps.db, classification.router, translation, job);
       if (tier1.kind === 'no_demand') return;
       if (tier1.kind === 'transient') {
-        if (retriesLeft && (await retryTransient(deps, article, payload, tier1))) return;
+        if (retriesLeft && (await retryTransient(deps, article, payload, produced, tier1))) {
+          return;
+        }
         deps.logger.warn(
           { articleId, reason: tier1.reason },
           'tier-1 translation unavailable; continuing with native text',
@@ -147,7 +149,7 @@ export function createArticleTranslateHandler(
       if (tier2.kind === 'no_demand') return;
       if (tier2.kind === 'row') produced.push(tier2.row);
       else if (tier2.kind === 'transient' && retriesLeft) {
-        if (await retryTransient(deps, article, payload, tier2)) return;
+        if (await retryTransient(deps, article, payload, produced, tier2)) return;
       }
     }
 
@@ -160,28 +162,38 @@ export function createArticleTranslateHandler(
 }
 
 /**
- * The job's one retry after a transient tier-1 or tier-2 failure (spec 07 §3, D-74). Without a
- * provider retry time it is pg-boss's immediate queue retry: this throws. With one it is a delayed
- * job at that time, marked `retried` so it is the last attempt, and this job ends without storing
- * anything (true). A retry time beyond {@link MAX_TRANSLATION_RETRY_WAIT_MS} is not waited for
- * (false): the job continues without that tier's row.
+ * The job's one retry after a transient tier-1 or tier-2 failure (spec 07 §3, D-74). The rows the
+ * job produced before it (a tier-1 translation before a transient tier 2) are stored first, so the
+ * retry reuses them instead of running tier 1 again. Without a provider retry time the retry is
+ * pg-boss's immediate queue retry: this throws. With one it is a delayed job at that time, marked
+ * `retried` so it is the last attempt, and this job ends (true). A retry time beyond
+ * {@link MAX_TRANSLATION_RETRY_WAIT_MS} is not waited for (false): nothing is stored here, and the
+ * job continues without that tier's row.
  */
 async function retryTransient(
   deps: WorkerDeps,
   article: ClassificationArticle,
   payload: JobPayload<'article.translate'>,
+  produced: readonly TranslationInput[],
   failure: { reason: string; retryAt?: Date },
 ): Promise<boolean> {
   const { retryAt } = failure;
+  const waitMs = retryAt === undefined ? 0 : retryAt.getTime() - nowOf(deps).getTime();
+  if (waitMs > MAX_TRANSLATION_RETRY_WAIT_MS) return false;
+  if (produced.length > 0 || retryAt !== undefined) {
+    await retryTransaction(deps.db, async (tx) => {
+      if (produced.length > 0) {
+        await storeRows(tx, article, produced, payload.replaceSkipped === true);
+      }
+      if (retryAt === undefined) return;
+      await enqueueTranslate(
+        workerOutbox(tx, { availableAt: retryAt }),
+        { ...payload, retried: true },
+        { revision: article.revision },
+      );
+    });
+  }
   if (retryAt === undefined) throw new TransientTranslationError(failure.reason);
-  if (retryAt.getTime() - nowOf(deps).getTime() > MAX_TRANSLATION_RETRY_WAIT_MS) return false;
-  await deps.db.transaction((tx) =>
-    enqueueTranslate(
-      workerOutbox(tx, { availableAt: retryAt }),
-      { ...payload, retried: true },
-      { revision: article.revision },
-    ),
-  );
   return true;
 }
 
