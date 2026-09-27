@@ -41,7 +41,7 @@ export interface RateLimitRequest {
   tokens: number;
   priority: Priority;
   signal?: AbortSignal;
-  /** Absolute deadline (epoch ms). */
+  /** Absolute deadline (epoch ms); one already reached is refused at once, spending nothing. */
   deadlineMs?: number;
 }
 
@@ -236,6 +236,14 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
         return Promise.resolve({ ok: false, reason: 'cancelled', retryAt: new Date(t) });
       }
       refill(t);
+      if (request.deadlineMs !== undefined && request.deadlineMs <= t) {
+        // An expired deadline sends nothing, so it spends nothing either (as the semaphore).
+        return Promise.resolve({
+          ok: false,
+          reason: 'deadline',
+          retryAt: new Date(Math.ceil(readyAt(need, t))),
+        });
+      }
       if (queue.length === 0 && readyAt(need, t) <= t) {
         consume(need);
         return Promise.resolve({ ok: true });

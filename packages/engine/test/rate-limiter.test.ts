@@ -108,6 +108,31 @@ describe('createRateLimiter (spec 04 §3)', () => {
     expect(result).toEqual({ ok: false, reason: 'deadline', retryAt: new Date(60_000) });
   });
 
+  it('refuses an expired deadline at once, without spending capacity', async () => {
+    const limiter = createRateLimiter({ requestsPerMinute: 2 });
+    for (const deadlineMs of [0, -1_000, 0, 0]) {
+      expect(await limiter.acquire({ tokens: 10, priority: 'bulk', deadlineMs })).toEqual({
+        ok: false,
+        reason: 'deadline',
+        retryAt: new Date(0),
+      });
+    }
+    expect(limiter.snapshot()).toMatchObject({
+      requests: 2,
+      tokens: TYPESAFE_INPUT_TOKENS_PER_SECOND,
+      waiting: 0,
+    });
+    // Without capacity, the refusal says when the request fits: one request refills in 30 s.
+    await limiter.acquire({ tokens: 10, priority: 'bulk' });
+    await limiter.acquire({ tokens: 10, priority: 'bulk' });
+    expect(await limiter.acquire({ tokens: 10, priority: 'bulk', deadlineMs: 0 })).toEqual({
+      ok: false,
+      reason: 'deadline',
+      retryAt: new Date(30_000),
+    });
+    expect(limiter.snapshot()).toMatchObject({ requests: 0, waiting: 0 });
+  });
+
   it('gives up at the deadline while queued behind another waiter', async () => {
     const limiter = createRateLimiter({ requestsPerMinute: 1 });
     await limiter.acquire({ tokens: 1, priority: 'bulk' });
@@ -247,8 +272,19 @@ describe('createRateLimiter (spec 04 §3)', () => {
         penaltyFactor: between(0.1, 1),
         now: () => clock,
       });
-      const acquireNow = (tokens: number) =>
-        limiter.acquire({ tokens, priority: 'bulk', deadlineMs: clock });
+      /** The retry time of an expired deadline, which spends nothing. */
+      const readyTime = async (tokens: number) => {
+        const result = await limiter.acquire({ tokens, priority: 'bulk', deadlineMs: clock });
+        if (result.ok) throw new Error('an expired deadline was granted');
+        return result.retryAt.getTime();
+      };
+      /** Granted when the request fits now; otherwise withdrawn before it waits. */
+      const acquireNow = async (tokens: number) => {
+        const controller = new AbortController();
+        const pending = limiter.acquire({ tokens, priority: 'bulk', signal: controller.signal });
+        controller.abort();
+        return (await pending).ok;
+      };
       for (let step = 0; step < 6; step += 1) {
         clock += Math.floor(between(0, 60_000));
         if (random() < 0.35) {
@@ -257,22 +293,23 @@ describe('createRateLimiter (spec 04 §3)', () => {
         }
         const tokens = between(0, tokenRate * share * 2);
         for (let tries = 0; tries < 4; tries += 1) {
-          const result = await acquireNow(tokens);
-          if (result.ok) break;
-          clock = result.retryAt.getTime();
+          if (await acquireNow(tokens)) break;
+          clock = await readyTime(tokens);
         }
       }
       const tokens = between(0, tokenRate * share * 2);
-      const result = await acquireNow(tokens);
-      if (result.ok) continue;
+      const retryAt = await readyTime(tokens);
+      if (retryAt <= clock) {
+        expect(await acquireNow(tokens)).toBe(true);
+        continue;
+      }
       refused += 1;
-      const retryAt = result.retryAt.getTime();
       if (retryAt - 2 > clock) {
         clock = retryAt - 2;
-        expect((await acquireNow(tokens)).ok).toBe(false);
+        expect(await acquireNow(tokens)).toBe(false);
       }
       clock = retryAt;
-      expect(await acquireNow(tokens)).toEqual({ ok: true });
+      expect(await acquireNow(tokens)).toBe(true);
     }
     expect(refused).toBeGreaterThan(200);
   });
