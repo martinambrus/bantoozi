@@ -832,6 +832,50 @@ describe('selected requests in translate mode (spec 03 §2.2, D-72)', () => {
     expect(await h.facetRow(articleId)).toMatchObject({ revision: '1', variant: 'translated' });
     expect((await h.cardAnswers(articleId)).map((a) => a.cardId)).toEqual([card]);
   });
+
+  it('a request whose tier 2 defers keeps its tier-1 row: the resumed request runs only tier 2', async () => {
+    const feedId = await h.feed();
+    const trainee = await h.user();
+    await h.subscribe(trainee, feedId, 'training');
+    await h.heldCard(trainee, { topicIds: ['technology'] });
+    const articleId = await h.article({ feedIds: [feedId], lang: 'sk', ...TRAM });
+    h.router.topics = NO_BRANCH_TOPICS;
+    lt.setOptions({ mode: 'fail' });
+    ollama.setOptions({ mode: 'status', status: 503 });
+
+    const { requestId } = await h.select(trainee, feedId, articleId);
+    await h.dispatch('analysis.process', { analysisRequestId: requestId });
+    const deferred = await h.analysis(requestId);
+    expect(deferred).toMatchObject({
+      status: 'pending',
+      attempts: 0,
+      lastErrorCode: 'translate_unavailable',
+    });
+    expect(translateRequests()).toHaveLength(1);
+    expect(ollamaCalls()).toBe(1);
+    expect(deferred.stageResults?.['tier1']).toMatchObject({
+      engine: 'libretranslate',
+      quality: 'fail',
+    });
+
+    // Due again with tier 2 back: LibreTranslate is not asked again, although it would now fail.
+    lt.setOptions({ mode: 'status', status: 503 });
+    ollama.setOptions({ mode: 'ok' });
+    await h.owner.query('UPDATE analysis_requests SET next_attempt_at = now() WHERE id = $1', [
+      requestId,
+    ]);
+    await h.dispatch('analysis.process', { analysisRequestId: requestId });
+    expect(translateRequests()).toHaveLength(1);
+    expect(ollamaCalls()).toBe(2);
+    const done = await h.analysis(requestId);
+    expect(done.status).toBe('complete');
+    expect(done.resultSnapshot?.['translation']).toMatchObject({ engine: 'ollama' });
+    expect(done.stageResults?.['tier1']).toBeUndefined();
+    expect((await translations(articleId)).map((row) => [row.engine, row.quality])).toEqual([
+      ['libretranslate', 'fail'],
+      ['ollama', 'ok'],
+    ]);
+  });
 });
 
 describe('pipeline.after end to end (spec 03 §1)', () => {

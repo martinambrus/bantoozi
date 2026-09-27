@@ -90,6 +90,11 @@ interface StageResults {
   v: 1;
   /** Rows the request's own translation stage produced for the frozen source. */
   translation?: TranslationInput[];
+  /**
+   * The tier-1 `fail` row of a translation stage whose tier 2 has not finished, saved before tier 2
+   * runs: a resumed request reuses it and runs only tier 2.
+   */
+  tier1?: TranslationInput;
   enrich?: { stateSha256: string; answers: Record<string, unknown> };
   cards?: Record<
     string,
@@ -278,16 +283,31 @@ class AnalysisRun {
         authorization: this.authorization(),
         userId: this.request.userId,
       };
-      const rows: TranslationInput[] = [];
-      await this.renewLease();
-      const tier1 = await runTier1(this.deps.db, this.classification.router, this.translation, job);
-      if (tier1.kind === 'no_demand') return this.terminal('cancel', 'revoked');
-      if (tier1.kind === 'transient') {
-        return this.defer(tier1.retryAt ?? this.recoveryTime(), 'translate_unavailable');
+      // Tier 1 is final for the frozen source once it produced a row. A `fail` row is saved before
+      // tier 2 runs, so a request resumed after its tier 2 deferred, or after its lease was lost,
+      // reuses it and never sends the text to tier 1 again.
+      let tier1Row = this.stages.tier1;
+      if (tier1Row?.sourceSha256 !== job.sourceSha256) {
+        await this.renewLease();
+        const tier1 = await runTier1(
+          this.deps.db,
+          this.classification.router,
+          this.translation,
+          job,
+        );
+        if (tier1.kind === 'no_demand') return this.terminal('cancel', 'revoked');
+        if (tier1.kind === 'transient') {
+          return this.defer(tier1.retryAt ?? this.recoveryTime(), 'translate_unavailable');
+        }
+        tier1Row = tier1.kind === 'row' ? tier1.row : undefined;
+        if (tier1Row?.quality === 'fail') {
+          this.stages.tier1 = tier1Row;
+          await this.saveStages();
+        }
       }
-      if (tier1.kind === 'row') rows.push(tier1.row);
+      const rows: TranslationInput[] = tier1Row === undefined ? [] : [tier1Row];
       // Tier 2 only when tier 1 failed; nothing to send (`none`) stays native.
-      if (tier1.kind === 'row' && tier1.row.quality === 'fail') {
+      if (tier1Row?.quality === 'fail') {
         await this.renewLease();
         const tier2 = await runTier2(
           this.deps.db,
@@ -302,6 +322,7 @@ class AnalysisRun {
         }
         if (tier2.kind === 'row') rows.push(tier2.row);
       }
+      delete this.stages.tier1;
       this.stages.translation = rows;
       await this.saveStages();
     }

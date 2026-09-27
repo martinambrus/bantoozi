@@ -200,7 +200,8 @@ question/card/model context (spec05), reusing exact snapshot-state cache results
 work and its own finished stages (`stage_results`, D-24). In translate mode without a frozen usable
 translation, the request translates its frozen source itself: tier 1, then tier 2 with the fast model
 only after a tier-1 `fail`; a transient failure defers the request, and a tier 2 that is not allowed
-leaves native text (D-72). Every network attempt still reserves budget. A shared compatible live answer may satisfy the
+leaves native text. A tier-1 `fail` row is saved in `stage_results` before tier 2 runs, so a resumed
+request runs only tier 2 (D-72). Every network attempt still reserves budget. A shared compatible live answer may satisfy the
 request, but a newer incompatible article/card result cannot substitute for the frozen one. If the
 requested provider/context is unavailable, retain a bounded retriable/failed request with an honest
 reason; do not invent values or silently use a different snapshot.

@@ -468,9 +468,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   stays unanswered and is logged as an error. In translate mode without a frozen usable translation
   the request translates its frozen source itself: tier 1, then tier 2 with the fast model only
   after a tier-1 `fail`; a transient failure of either tier defers the request, and a tier 2 that is
-  not allowed (no key, cap, budget) leaves native text. This path ignores `translate_strong` and the
-  article's stored translation rows, so a tier-2 call may repeat one the live article already paid
-  for. Spec 05 §5.2 and spec 03 §2.2 updated.
+  not allowed (no key, cap, budget) leaves native text. A tier-1 `fail` row is saved in the stage
+  results before tier 2 runs, so a request resumed after a deferral or a lost lease runs only tier 2
+  and never sends the text to tier 1 again. This path ignores `translate_strong` and the article's
+  stored translation rows, so a tier-2 call may repeat one the live article already paid for. Spec
+  05 §5.2 and spec 03 §2.2 updated.
 - D-73: 2026-09-26 M2-T9 — `analysis.process` values spec 03 §2.2 left open. A request gets 5 failure
   attempts with 1, 2, 4 and 8 minute backoff, then fails. Deferrals (budget, no key, open breaker, a
   provider retry time, a transient translation failure, and `continued` at the job budget, D-78)
