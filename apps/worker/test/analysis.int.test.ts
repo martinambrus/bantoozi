@@ -331,6 +331,24 @@ describe('analysis.process results (spec 03 §2.2, spec 05 §1.1)', () => {
       ['technology', 'typesafe'],
     ]);
   });
+
+  it('rebuilds the features of a facet row it keeps from the level-2 answers it fills', async () => {
+    const t = await trainee({ cards: 1 });
+    // A current primary Call A of the same input, stored before any level-2 branch was asked.
+    await h.enrichDirect(t.articleId, { state: 'extracted' });
+    const kept = await h.facetRow(t.articleId);
+    expect(kept?.features).toMatchObject({ 't2_asked.technology': 0, 't2_asked.science': 0 });
+    const { requestId } = await h.select(t.userId, t.feedId, t.articleId);
+    await processRequest(requestId);
+
+    expect((await h.analysis(requestId)).status).toBe('complete');
+    // Call A came from that row; the match asked both of its branches.
+    expect(requestAsks(requestId).map((ask) => ask.kind)).toEqual(['match']);
+    expect((await h.l2Rows(t.articleId)).map((l2) => l2.l1)).toEqual(['science', 'technology']);
+    const facets = await h.facetRow(t.articleId);
+    expect(facets?.answers).toEqual(kept?.answers);
+    expect(facets?.features).toMatchObject({ 't2_asked.technology': 1, 't2_asked.science': 1 });
+  });
 });
 
 describe('analysis.process fences (spec 03 §2.2, spec 05 §1.1)', () => {

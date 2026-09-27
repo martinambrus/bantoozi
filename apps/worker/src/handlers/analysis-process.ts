@@ -73,7 +73,7 @@ import {
   loadClassificationConfig,
   type ClassificationConfig,
 } from '../classify/config.js';
-import { facetFeatures, l2Branches } from '../classify/features.js';
+import { facetFeatures, l2Branches, refreshFacetFeatures } from '../classify/features.js';
 import { buildState, modelInput } from '../classify/model-input.js';
 import { RECOVERY_INTERVAL_MS, failureDisposition } from '../classify/outcomes.js';
 import { runTier1, runTier2, type TranslationDeps } from '../classify/translation.js';
@@ -674,7 +674,7 @@ class AnalysisRun {
    * request-specific (training only). The request's own translation of the live source is stored
    * first; when it changes the effective text the article's current facets were built from, the
    * article is reset and re-enriched from it as a re-translation is, and nothing else is filled
-   * (D-92).
+   * (D-92). Level-2 rows it writes rebuild the stored facet row's features (D-93).
    */
   private async fillCurrentCaches(
     tx: Transaction,
@@ -743,6 +743,20 @@ class AnalysisRun {
       answer: row.answer,
     }));
     await writeL2Answers(tx, l2Rows, fill);
+    // L2 answers arrived: the stored facet row's features follow the stored rows of its branches,
+    // also when the fill kept that row as an equal-precedence answer of the same input (D-93).
+    if (l2Rows.length > 0) {
+      const facets = await readFacets(tx, request.articleId, snapshot.questionSets.enrich.id, {
+        lock: true,
+      });
+      if (facets !== null) {
+        await refreshFacetFeatures(tx, facets, {
+          articleRevision: request.articleRevision,
+          matchSetSha: result.match.questionSetSha,
+          stateSha256: states.match.sha256,
+        });
+      }
+    }
 
     const liveCards = await loadCardInputs(
       tx,

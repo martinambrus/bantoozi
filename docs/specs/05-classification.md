@@ -304,7 +304,9 @@ means "yes, the named thing". There are no negated instructions, no arithmetic, 
 
 `flattenFacets` throws on a missing or mistyped enrich answer rather than emitting partial
 features, and a `none_of_these` L2 answer yields only `t2_asked.<l1> = 1` (D-48).
-`features` is recomputed (and the row updated) when L2 answers arrive after Call B. Include the
+`features` is recomputed (and the row updated) when L2 answers arrive, from Call B or an analysis
+cache fill, and a Call A completion builds them from the L2 rows of the match set it reads under
+lock, not its job snapshot's (D-93). Include the
 feature-builder version in the model feature-schema fingerprint; changing L2 semantics invalidates
 personal-model compatibility. Do not combine L2 from an old revision/set/state with current facets.
 

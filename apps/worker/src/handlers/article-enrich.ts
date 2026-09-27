@@ -29,7 +29,7 @@ import {
   type ClassificationConfig,
 } from '../classify/config.js';
 import { currentL2Answers, facetFeatures, l2Branches } from '../classify/features.js';
-import { buildState, modelInput, type BuiltState } from '../classify/model-input.js';
+import { buildState, modelInput, type ModelInput } from '../classify/model-input.js';
 import { failureDisposition } from '../classify/outcomes.js';
 import { after } from '../pipeline.js';
 import { nowOf, pipelineContext, type ClassificationDeps, type WorkerDeps } from './deps.js';
@@ -74,7 +74,6 @@ export function createArticleEnrichHandler(
       config,
     );
     const enrichState = buildState(input, 'enrich');
-    const matchState = config.match === null ? null : buildState(input, 'match');
 
     const stored = await readFacets(deps.db, articleId, enrichSet.id);
     if (
@@ -111,7 +110,8 @@ export function createArticleEnrichHandler(
         const locked = await lockArticleRevision(tx, articleId, 'update');
         // A reset replaced the input meanwhile: its own intents enrich the new revision.
         if (locked === null || locked.revision !== article.revision) return;
-        if (!(await configHolds(tx, deps, config, article, priority))) return;
+        const current = await configHolds(tx, deps, config, article, priority);
+        if (current === null) return;
         await writeFacets(
           tx,
           {
@@ -123,7 +123,7 @@ export function createArticleEnrichHandler(
             model: outcome.model,
             stateVariant: enrichState.variant,
             answers: outcome.answers,
-            features: await features(tx, article, outcome.answers, config, matchState),
+            features: await features(tx, article, outcome.answers, current, input),
           },
           { primaryModel: classification.primaryModel },
         );
@@ -171,7 +171,7 @@ export function createArticleEnrichHandler(
       if (locked === null || locked.revision !== article.revision) return;
       // The failure answered the snapshot's request: under a changed configuration the job runs
       // again instead of failing or degrading the article.
-      if (!(await configHolds(tx, deps, config, article, priority))) return;
+      if ((await configHolds(tx, deps, config, article, priority)) === null) return;
       // Only an article without facets changes state; a degraded one is not ranked again, and an
       // enriched one (a recovery retry) keeps its answers.
       const changed = await transitionPipelineState(tx, {
@@ -209,7 +209,7 @@ async function continueFromCache(
     const locked = await lockArticleRevision(tx, article.id, 'update');
     if (locked === null || locked.revision !== article.revision) return;
     if (ENRICHED_STATES.includes(locked.pipelineState)) return;
-    if (!(await configHolds(tx, deps, config, article, priority))) return;
+    if ((await configHolds(tx, deps, config, article, priority)) === null) return;
     const changed = await transitionPipelineState(tx, {
       articleId: article.id,
       revision: article.revision,
@@ -230,8 +230,9 @@ async function continueFromCache(
 
 /**
  * The configuration fence of every write derived from the job's snapshot (D-84, D-85): the compared
- * settings, re-read under share locks, must still be the snapshot's. Otherwise the job is enqueued
- * again at the article's revision in the same transaction, and the caller writes nothing.
+ * settings, re-read under share locks, must still be the snapshot's. Returns that locked current
+ * configuration. Otherwise the job is enqueued again at the article's revision in the same
+ * transaction, and the caller writes nothing (null).
  */
 async function configHolds(
   tx: Transaction,
@@ -239,31 +240,37 @@ async function configHolds(
   snapshot: ClassificationConfig,
   article: ClassificationArticle,
   priority: 'interactive' | 'bulk',
-): Promise<boolean> {
+): Promise<ClassificationConfig | null> {
   const current = await loadClassificationConfig(tx, deps.settingsEnv, { lock: true });
-  if (sameEnrichConfig(snapshot, current, article.lang)) return true;
+  if (sameEnrichConfig(snapshot, current, article.lang)) return current;
   await enqueueEnrich(
     workerOutbox(tx),
     { articleId: article.id, priority },
     { revision: article.revision },
   );
-  return false;
+  return null;
 }
 
-/** Features of new Call A answers with the current L2 answers of the branches they select. */
+/**
+ * Features of new Call A answers with the current L2 answers of the branches they select, under the
+ * match set of the locked current configuration `current` (D-93). The fence compares only the
+ * enrich set and the language mode, which fix the Call B state of `input`, so a match set switched
+ * during Call A never combines the old set's L2 rows with the new facets, and L2 rows the new set
+ * already has (an analysis cache fill) count at once.
+ */
 async function features(
   tx: Transaction,
   article: ClassificationArticle,
   answers: Readonly<Record<string, unknown>>,
-  config: ClassificationConfig,
-  matchState: BuiltState | null,
+  current: ClassificationConfig,
+  input: ModelInput,
 ): Promise<Record<string, number>> {
-  const match: ActiveQuestionSet | null = config.match;
-  if (match === null || matchState === null) return facetFeatures(answers, {});
+  const match: ActiveQuestionSet | null = current.match;
+  if (match === null) return facetFeatures(answers, {});
   const l2 = currentL2Answers(await readL2Answers(tx, article.id), l2Branches(answers), {
     articleRevision: article.revision,
     matchSetSha: match.sha256,
-    stateSha256: matchState.sha256,
+    stateSha256: buildState(input, 'match').sha256,
   });
   return facetFeatures(answers, l2);
 }

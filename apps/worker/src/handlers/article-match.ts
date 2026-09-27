@@ -23,7 +23,6 @@ import {
   renewMatchLease,
   retryTransaction,
   transitionPipelineState,
-  updateFacetFeatures,
   workerOutbox,
   writeCardAnswers,
   writeL2Answers,
@@ -67,10 +66,9 @@ import {
   type ClassificationConfig,
 } from '../classify/config.js';
 import {
-  currentL2Answers,
-  facetFeatures,
   isCurrentL2,
   l2Branches,
+  refreshFacetFeatures,
   topicL1Probabilities,
 } from '../classify/features.js';
 import { buildState, modelInput, type BuiltState } from '../classify/model-input.js';
@@ -522,7 +520,9 @@ async function applyPack(
       }
       await writeL2Answers(tx, l2Rows, { primaryModel: classification.primaryModel });
     }
-    if (l2Rows.length > 0 && facets !== null) await refreshFeatures(tx, job, facets);
+    if (l2Rows.length > 0 && facets !== null) {
+      await refreshFacetFeatures(tx, facets, job.fingerprint);
+    }
     if (rows.length > 0 || l2Rows.length > 0) await rankAffected(tx, job);
     return unanswered;
   });
@@ -687,20 +687,6 @@ async function retryL2(job: MatchJob, disposition: FailureDisposition): Promise<
       { revision: article.revision },
     );
   });
-}
-
-/**
- * Rebuild the features of the current facets, locked by the caller, from the current L2 rows (spec
- * 05 §3.4).
- */
-async function refreshFeatures(tx: Transaction, job: MatchJob, facets: FacetRow): Promise<void> {
-  if (facets.articleRevision !== job.article.revision) return;
-  const l2 = currentL2Answers(
-    await readL2Answers(tx, job.article.id),
-    l2Branches(facets.answers),
-    job.fingerprint,
-  );
-  await updateFacetFeatures(tx, { ...facets, features: facetFeatures(facets.answers, l2) });
 }
 
 function cardAnswer(

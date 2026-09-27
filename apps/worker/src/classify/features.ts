@@ -1,4 +1,10 @@
-import type { L2AnswerRow } from '@bantoozi/db';
+import {
+  readL2Answers,
+  updateFacetFeatures,
+  type FacetRow,
+  type L2AnswerRow,
+  type Transaction,
+} from '@bantoozi/db';
 import {
   flattenFacets,
   selectL2Branches,
@@ -73,4 +79,23 @@ export function facetFeatures(
   l2: Readonly<Record<string, ChoiceAnswer>>,
 ): Record<string, number> {
   return flattenFacets(answers as Record<string, Answer>, l2);
+}
+
+/**
+ * Rebuild the features of stored facets, locked by the caller, from the current L2 rows of the
+ * branches their answers select (spec 05 §3.4: recomputed when L2 answers arrive). A facet row of
+ * another revision is left alone.
+ */
+export async function refreshFacetFeatures(
+  tx: Transaction,
+  facets: FacetRow,
+  fingerprint: L2Fingerprint,
+): Promise<void> {
+  if (facets.articleRevision !== fingerprint.articleRevision) return;
+  const l2 = currentL2Answers(
+    await readL2Answers(tx, facets.articleId),
+    l2Branches(facets.answers),
+    fingerprint,
+  );
+  await updateFacetFeatures(tx, { ...facets, features: facetFeatures(facets.answers, l2) });
 }

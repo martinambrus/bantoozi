@@ -640,3 +640,14 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   §3: body and translations kept at a new revision, answers deleted, current demand queued again,
   enrichment enqueued) and fills nothing else, so the result stays request-only. An article not
   enriched yet still takes the translation and the answers. Spec 03 §2.2 updated.
+- D-93: 2026-09-27 M2-T9 — spec 05 §3.4 recomputes `article_facets.features` when L2 answers arrive
+  and never combines L2 of an old set with current facets, but two writers left the features stale.
+  The enrich completion built them from the L2 rows of its job snapshot's match set, while its fence
+  compares only the enrich set and the language mode: after a match-set switch during Call A the old
+  set's rows counted and L2 rows the new set already had did not. An analysis cache fill wrote L2
+  rows but left the features of a facet row it kept (an equal-precedence answer of the same input)
+  as they were. The match job then found those branches answered and refreshed nothing. The enrich
+  completion now builds the features from the L2 rows of the match set it reads under lock (the
+  enrich set and language mode it compares fix the Call B state), and a cache fill that writes L2
+  rows rebuilds the stored facet row's features from the stored rows of its branches, as a match
+  pack does. Spec 05 §3.4 updated.

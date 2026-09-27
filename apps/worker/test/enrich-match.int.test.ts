@@ -10,9 +10,10 @@ import {
   workerOutbox,
   type MatchClaim,
 } from '@bantoozi/db';
-import type { ChoiceAnswer } from '@bantoozi/questions';
+import { MATCH_V1, dynamicQuestionSet, type ChoiceAnswer } from '@bantoozi/questions';
+import type * as Questions from '@bantoozi/questions';
 import { matchCoverage, type RankCard } from '@bantoozi/ranker';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PREFILTER_MIN_CARDS } from '../src/handlers/article-match.js';
 import type { ClassificationDeps } from '../src/handlers/deps.js';
@@ -35,6 +36,23 @@ import {
  * handlers, a migrated and seeded database and a scripted router that rechecks every request's
  * authorization like the real one.
  */
+
+/** A second match set the worker's code knows, so a test can switch the active set. */
+const MATCH_V2_VERSION = 'match-v2-test';
+
+vi.mock('@bantoozi/questions', async (importOriginal) => {
+  const original = await importOriginal<typeof Questions>();
+  const v2 = original.dynamicQuestionSet({
+    ...original.MATCH_V1.definition,
+    version: 'match-v2-test',
+    note: 'second match set of the enrich and match integration test',
+  });
+  return {
+    ...original,
+    questionSetByVersion: (version: string) =>
+      version === v2.version ? v2 : original.questionSetByVersion(version),
+  };
+});
 
 let h: ClassifyHarness;
 
@@ -112,6 +130,25 @@ const expireLeases = (articleId: string) =>
       WHERE article_id = $1 AND lease_token IS NOT NULL`,
     [articleId],
   );
+
+/** Store the second match set (once) and return its id. */
+async function storeMatchV2(): Promise<string> {
+  const v2 = dynamicQuestionSet({
+    ...MATCH_V1.definition,
+    version: MATCH_V2_VERSION,
+    note: 'second match set of the enrich and match integration test',
+  });
+  await h.owner.query(
+    `INSERT INTO question_sets (kind, version, sha256, definition)
+     VALUES ('match', $1, $2, $3::jsonb) ON CONFLICT DO NOTHING`,
+    [v2.version, v2.sha256, JSON.stringify(v2.definition)],
+  );
+  const found = await h.owner.query<{ id: string }>(
+    `SELECT id::text AS id FROM question_sets WHERE kind = 'match' AND version = $1`,
+    [v2.version],
+  );
+  return found.rows[0]?.id as string;
+}
 
 const makeDue = (articleId: string) =>
   h.owner.query('UPDATE match_queue SET next_attempt_at = now() WHERE article_id = $1', [
@@ -300,6 +337,35 @@ describe('article.enrich outcomes (spec 05 §3, spec 04 §5)', () => {
       h.router.respond = undefined;
       (await write)?.close();
       await h.setSetting('language_modes', modes);
+    }
+  });
+
+  it('a match-set switch during Call A builds the features from the new set’s level-2 answers', async () => {
+    const s = await scenario({ cards: 0 });
+    const v2 = await storeMatchV2();
+    const active = (await h.setting('question_sets.active')) as Record<string, string>;
+    h.router.respond = async (ask) => {
+      if (ask.kind !== 'enrich') return undefined;
+      // Meanwhile the second set becomes active and a cache fill writes its level-2 answers.
+      await h.setSetting('question_sets.active', { ...active, match: v2 });
+      await h.answerL2(s.articleId, 'technology', { engine: 'typesafe' });
+      await h.answerL2(s.articleId, 'science', { engine: 'typesafe' });
+      return undefined;
+    };
+    try {
+      await h.dispatch('article.enrich', { articleId: s.articleId });
+      expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'enriched' });
+      const answered = { 't2_asked.technology': 1, 't2_asked.science': 1 };
+      expect((await h.facetRow(s.articleId))?.features).toMatchObject(answered);
+
+      // The match job finds both branches answered: it asks nothing and refreshes nothing.
+      h.router.respond = undefined;
+      await h.run('article.match', forArticles(s.articleId));
+      expect(h.router.asksFor(s.articleId, 'match')).toEqual([]);
+      expect((await h.facetRow(s.articleId))?.features).toMatchObject(answered);
+    } finally {
+      h.router.respond = undefined;
+      await h.setSetting('question_sets.active', active);
     }
   });
 
