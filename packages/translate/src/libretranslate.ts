@@ -127,6 +127,12 @@ export interface Tier1TranslateInput<F extends string> {
    */
   supportedSources?: ReadonlySet<string>;
   signal?: AbortSignal;
+  /**
+   * Asked before every HTTP attempt, the retry included: `false` sends nothing more and fails the
+   * call as `cancelled`, with the attempts already made (the caller's authorization to send the
+   * text lapsed, spec 07 §2).
+   */
+  beforeAttempt?: () => Promise<boolean>;
 }
 
 export type Tier1Result<F extends string> =
@@ -181,6 +187,7 @@ export interface LibreTranslateClient {
     lang: string;
     supportedSources?: ReadonlySet<string>;
     signal?: AbortSignal;
+    beforeAttempt?: () => Promise<boolean>;
   }): Promise<Tier1ArticleResult>;
   /** `GET /languages`, one attempt: what the container can translate. */
   languages(options?: { signal?: AbortSignal }): Promise<LanguagesResult>;
@@ -528,6 +535,9 @@ export function createLibreTranslateClient(
     });
     const attempts: TranslationAttempt[] = [];
     for (let n = 1; ; n += 1) {
+      if (input.beforeAttempt !== undefined && !(await input.beforeAttempt())) {
+        return { status: 'failed', reason: 'cancelled', terminal: false, attempts };
+      }
       const outcome = await attempt(
         n,
         translateUrl,
@@ -578,6 +588,7 @@ export function createLibreTranslateClient(
           ? {}
           : { supportedSources: input.supportedSources }),
         ...(input.signal === undefined ? {} : { signal: input.signal }),
+        ...(input.beforeAttempt === undefined ? {} : { beforeAttempt: input.beforeAttempt }),
       });
       if (result.status !== 'translated' && result.status !== 'passthrough') return result;
       const texts: TranslationTexts = { title: null, excerpt: null, body_lead: null };

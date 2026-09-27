@@ -433,6 +433,51 @@ describe('tier 1 retries and failures', () => {
   });
 });
 
+describe('tier 1 authorization before every attempt (spec 07 §2)', () => {
+  const source = article({ title: TITLE });
+
+  it('asks beforeAttempt before each attempt; a refusal before the retry sends nothing more', async () => {
+    lt.setOptions({ sequence: [{ mode: 'status', status: 503 }] });
+    const { client, sleeps } = tier1();
+    const asked: number[] = [];
+    const result = await client.translateArticle({
+      source,
+      lang: 'sk',
+      beforeAttempt: () => {
+        asked.push(lt.requests.length);
+        return Promise.resolve(asked.length === 1);
+      },
+    });
+    expect(result).toMatchObject({ status: 'failed', reason: 'cancelled', terminal: false });
+    expect(errors(result.attempts)).toEqual(['http_503']);
+    expect(asked).toEqual([0, 1]);
+    expect(sleeps).toEqual([10]);
+    expect(lt.requests).toHaveLength(1);
+  });
+
+  it('sends nothing when refused before the first attempt, and every attempt when allowed', async () => {
+    const { client } = tier1();
+    const refused = await client.translateArticle({
+      source,
+      lang: 'sk',
+      beforeAttempt: () => Promise.resolve(false),
+    });
+    expect(refused).toMatchObject({ status: 'failed', reason: 'cancelled', attempts: [] });
+    expect(lt.requests).toHaveLength(0);
+
+    lt.setOptions({ sequence: [{ mode: 'status', status: 503 }] });
+    let asked = 0;
+    const allowed = await client.translateArticle({
+      source,
+      lang: 'sk',
+      beforeAttempt: () => Promise.resolve((asked += 1) > 0),
+    });
+    expect(allowed.status).toBe('translated');
+    expect(asked).toBe(2);
+    expect(lt.requests).toHaveLength(2);
+  });
+});
+
 describe('invalid tier-1 responses never become article text (spec 07 §6)', () => {
   const source = article({ title: TITLE, body_lead: BODY });
   const cases: Array<[string, { body?: unknown; rawText?: string }, string]> = [
