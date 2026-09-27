@@ -188,6 +188,95 @@ describe('createRateLimiter (spec 04 §3)', () => {
     expect(limiter.snapshot().requests).toBe(400);
   });
 
+  it('continues a wait that outlasts the penalty at the full rate', async () => {
+    // Half a request per minute: the first request leaves a debt of half a request, and a 429
+    // then halves the rate for a minute. The bucket is at -0.25 when the penalty ends and holds
+    // half a request 90 s later, at 150 s, not at the 180 s the halved rate alone would take.
+    const limiter = createRateLimiter({ requestsPerMinute: 1, share: 0.5 });
+    await limiter.acquire({ tokens: 1, priority: 'bulk' });
+    limiter.penalize();
+    expect(await limiter.acquire({ tokens: 1, priority: 'bulk', deadlineMs: 140_000 })).toEqual({
+      ok: false,
+      reason: 'deadline',
+      retryAt: new Date(150_000),
+    });
+    const log: Array<[string, number, boolean]> = [];
+    track(limiter.acquire({ tokens: 1, priority: 'bulk', deadlineMs: 160_000 }), log, 'a');
+    await vi.advanceTimersByTimeAsync(149_999);
+    expect(log).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(log).toEqual([['a', 150_000, true]]);
+  });
+
+  it('measures a wait past the penalty against the full capacity', async () => {
+    // A 429 empties a bucket of half a request per minute and halves it for a minute. The halved
+    // bucket would hold its quarter request just as the penalty ends, but the need is half a
+    // request from then on: that takes 30 s more, so a deadline at 70 s is refused at once.
+    const limiter = createRateLimiter({ requestsPerMinute: 1, share: 0.5 });
+    limiter.penalize();
+    const log: Array<[string, number, boolean]> = [];
+    const pending = track(
+      limiter.acquire({ tokens: 1, priority: 'bulk', deadlineMs: 70_000 }),
+      log,
+      'a',
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(log).toEqual([['a', 0, false]]);
+    expect(await pending).toEqual({ ok: false, reason: 'deadline', retryAt: new Date(90_000) });
+    track(limiter.acquire({ tokens: 1, priority: 'bulk' }), log, 'b');
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(log.at(-1)).toEqual(['b', 90_000, true]);
+  });
+
+  it('refuses a wait with the time at which the buckets first fit the request', async () => {
+    // Seeded scenarios of shares, debts and penalties: a refused acquisition's retry time must be
+    // when the limiter, refilling as it does, first grants the request, a penalty's end included.
+    let seed = 7;
+    const random = () => (seed = (seed * 48_271) % 2_147_483_647) / 2_147_483_647;
+    const between = (low: number, high: number) => low + random() * (high - low);
+    let clock = 0;
+    let refused = 0;
+    for (let run = 0; run < 400; run += 1) {
+      const tokenRate = between(50, 3_000);
+      const share = between(0.1, 1);
+      const limiter = createRateLimiter({
+        requestsPerMinute: between(0.2, 6),
+        inputTokensPerSecond: tokenRate,
+        share,
+        penaltyMs: between(1_000, 180_000),
+        penaltyFactor: between(0.1, 1),
+        now: () => clock,
+      });
+      const acquireNow = (tokens: number) =>
+        limiter.acquire({ tokens, priority: 'bulk', deadlineMs: clock });
+      for (let step = 0; step < 6; step += 1) {
+        clock += Math.floor(between(0, 60_000));
+        if (random() < 0.35) {
+          limiter.penalize(random() < 0.5 ? undefined : between(0, 200_000));
+          continue;
+        }
+        const tokens = between(0, tokenRate * share * 2);
+        for (let tries = 0; tries < 4; tries += 1) {
+          const result = await acquireNow(tokens);
+          if (result.ok) break;
+          clock = result.retryAt.getTime();
+        }
+      }
+      const tokens = between(0, tokenRate * share * 2);
+      const result = await acquireNow(tokens);
+      if (result.ok) continue;
+      refused += 1;
+      const retryAt = result.retryAt.getTime();
+      if (retryAt - 2 > clock) {
+        clock = retryAt - 2;
+        expect((await acquireNow(tokens)).ok).toBe(false);
+      }
+      clock = retryAt;
+      expect(await acquireNow(tokens)).toEqual({ ok: true });
+    }
+    expect(refused).toBeGreaterThan(200);
+  });
+
   it('penalizes without a server delay too', () => {
     const limiter = createRateLimiter({ requestsPerMinute: 600 });
     limiter.penalize();

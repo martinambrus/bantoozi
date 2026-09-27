@@ -69,6 +69,11 @@ interface Waiter {
   settle: (result: RateLimitAcquisition) => void;
 }
 
+interface Levels {
+  requests: number;
+  tokens: number;
+}
+
 function positive(name: string, value: number): number {
   if (!Number.isFinite(value) || value <= 0) throw new RangeError(`${name} must be positive`);
   return value;
@@ -110,12 +115,19 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
     tokens: tokenCapacity * factor(t),
   });
 
-  /** Refill `elapsed` ms at the rates (and up to the capacities) scaled by `f`. */
-  function accrue(elapsed: number, f: number): void {
+  /** `level` after `elapsed` ms of refill at the rates (and up to the capacities) scaled by `f`. */
+  function grown(level: Levels, elapsed: number, f: number): Levels {
     const capRequests = requestCapacity * f;
     const capTokens = tokenCapacity * f;
-    requests = Math.min(capRequests, requests + (elapsed * capRequests) / 60_000);
-    tokens = Math.min(capTokens, tokens + (elapsed * capTokens) / 1_000);
+    return {
+      requests: Math.min(capRequests, level.requests + (elapsed * capRequests) / 60_000),
+      tokens: Math.min(capTokens, level.tokens + (elapsed * capTokens) / 1_000),
+    };
+  }
+
+  /** Refill `elapsed` ms at the rates (and up to the capacities) scaled by `f`. */
+  function accrue(elapsed: number, f: number): void {
+    ({ requests, tokens } = grown({ requests, tokens }, elapsed, f));
   }
 
   function refill(t: number): void {
@@ -131,16 +143,35 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
     accrue(Math.max(0, t - from), factor(t));
   }
 
-  /** Earliest time (≥ t) at which a request of `need` tokens fits, at the current rates. */
-  function readyAt(need: number, t: number): number {
-    const cap = caps(t);
+  /** How long `level`, refilling at the rates scaled by `f`, takes to fit `need` tokens. */
+  function waitFor(level: Levels, need: number, f: number): number {
+    const capRequests = requestCapacity * f;
+    const capTokens = tokenCapacity * f;
     // A request bucket below one request (a small share, or a 429 penalty) waits for a full bucket.
-    const needRequests = Math.min(1, cap.requests);
-    const needTokens = Math.min(need, cap.tokens);
+    const needRequests = Math.min(1, capRequests);
+    const needTokens = Math.min(need, capTokens);
     const waitRequests =
-      requests >= needRequests ? 0 : ((needRequests - requests) * 60_000) / cap.requests;
-    const waitTokens = tokens >= needTokens ? 0 : ((needTokens - tokens) * 1_000) / cap.tokens;
-    return Math.max(t + waitRequests, t + waitTokens, blockedUntil);
+      level.requests >= needRequests ? 0 : ((needRequests - level.requests) * 60_000) / capRequests;
+    const waitTokens =
+      level.tokens >= needTokens ? 0 : ((needTokens - level.tokens) * 1_000) / capTokens;
+    return Math.max(waitRequests, waitTokens);
+  }
+
+  /**
+   * Earliest time (≥ t) at which a request of `need` tokens fits. A penalty's rates and capacities
+   * hold only until it ends: a wait that runs past its end continues from the levels it leaves (as
+   * `refill` accrues them) at the full rates, toward the need of the full capacities.
+   */
+  function readyAt(need: number, t: number): number {
+    const start = Math.max(t, blockedUntil);
+    const level = { requests, tokens };
+    if (t < penaltyUntil) {
+      const during = Math.max(start, t + waitFor(level, need, penaltyFactor));
+      if (during < penaltyUntil) return during;
+      const left = grown(level, penaltyUntil - t, penaltyFactor);
+      return Math.max(start, penaltyUntil + waitFor(left, need, 1));
+    }
+    return Math.max(start, t + waitFor(level, need, 1));
   }
 
   function consume(need: number): void {
