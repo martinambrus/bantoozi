@@ -193,6 +193,23 @@ describe('createRateLimiter (spec 04 §3)', () => {
     });
   });
 
+  it('lets no refund undo a 429 penalty applied after its debit', async () => {
+    const limiter = createRateLimiter({ requestsPerMinute: 2 });
+    const a = await limiter.acquire({ tokens: 1_000, priority: 'bulk' });
+    if (!a.ok) throw new Error('a fits the full bucket');
+    limiter.penalize();
+    a.refund();
+    expect(limiter.snapshot()).toMatchObject({ requests: 0, penalized: true });
+    // The next request waits for the penalized refill (one request a minute), not a moment.
+    const log: Array<[string, number, boolean]> = [];
+    const b = track(limiter.acquire({ tokens: 1_000, priority: 'bulk' }), log, 'b');
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(log).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    await b;
+    expect(log).toEqual([['b', 60_000, true]]);
+  });
+
   it('serves interactive waiters first, with aging for bulk', async () => {
     const limiter = createRateLimiter({ requestsPerMinute: 60, agingMs: 5_000 });
     // Drain the bucket.

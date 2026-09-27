@@ -35,7 +35,8 @@ export interface RateLimiterOptions {
 export type RateLimitAcquisition =
   /**
    * `refund`: give the debit back when the attempt is not sent after all (a later wait expired, a
-   * reservation was refused), up to the current capacities; only the first call counts.
+   * reservation was refused), up to the current capacities; only the first call counts, and none
+   * after a 429 penalty newer than the debit.
    */
   | { ok: true; refund: () => void }
   /** `retryAt`: when capacity is expected (deadline) or now (cancelled). */
@@ -111,6 +112,8 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
   let penaltyUntil = Number.NEGATIVE_INFINITY;
   let blockedUntil = Number.NEGATIVE_INFINITY;
   let seq = 0;
+  /** Penalties applied so far: a refund never crosses a penalty newer than its debit. */
+  let penalties = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const queue: Waiter[] = [];
 
@@ -185,12 +188,16 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
     // the refill rate stays the long-run limit.
     requests -= 1;
     tokens -= need;
+    const generation = penalties;
     let refunded = false;
     return {
       ok: true,
       refund: () => {
         if (refunded) return;
         refunded = true;
+        // A 429 since the debit emptied the request bucket on purpose: giving capacity back now
+        // would let waiters that give up undo the penalty one by one.
+        if (penalties !== generation) return;
         const t = now();
         refill(t);
         const cap = caps(t);
@@ -309,6 +316,7 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
     penalize(retryAfterMs) {
       const t = now();
       refill(t);
+      penalties += 1;
       const delay =
         retryAfterMs !== undefined && Number.isFinite(retryAfterMs) && retryAfterMs > 0
           ? retryAfterMs
