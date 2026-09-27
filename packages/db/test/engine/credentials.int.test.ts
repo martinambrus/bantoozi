@@ -235,6 +235,7 @@ describe('credential state machine (spec 04 §1.2)', () => {
       'revision',
       'updatedAt',
       'validatedAt',
+      'validationLeaseExpired',
     ]);
     expect(JSON.stringify(await listCredentialMetadata(ctx.worker))).not.toMatch(
       /ciphertext|wrapped_key|nonce|test-secret/,
@@ -450,6 +451,49 @@ describe('credential state machine (spec 04 §1.2)', () => {
         result: { status: 'valid', validation: {} },
       }),
     ).toBe(false);
+  });
+
+  it('queues Validate again for a candidate whose validator stopped, once its lease expired', async () => {
+    await ctx.owner.query(`DELETE FROM provider_credentials WHERE provider = 'ollama'`);
+    const ollamaIntents = `FROM job_outbox
+                            WHERE queue = 'provider.validate' AND payload->>'provider' = 'ollama'`;
+    await ctx.owner.query(`DELETE ${ollamaIntents}`);
+    await stageProviderCredential(ctx.worker, {
+      provider: 'ollama',
+      expectedRevision: '0',
+      envelope: envelope('ollama', '1'),
+    });
+    const request = { provider: 'ollama' as const, candidateVersion: '1', expectedRevision: '1' };
+    const input = { provider: 'ollama' as const, candidateVersion: '1', leaseMs: 60_000 };
+    const stopped = await claimCredentialValidation(ctx.worker, input);
+    expect(stopped).not.toBeNull();
+    // A validator at work (a live lease) is refused.
+    await expect(requestProviderValidation(ctx.worker, request)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+    expect(await readCredentialMetadata(ctx.worker, 'ollama')).toMatchObject({
+      candidateStatus: 'validating',
+      validationLeaseExpired: false,
+    });
+    // It exited without recording a result, and the queue does not retry `provider.validate`.
+    await ctx.owner.query(
+      `UPDATE provider_credentials SET validation_until = now() - interval '1 second'
+        WHERE provider = 'ollama'`,
+    );
+    expect(await readCredentialMetadata(ctx.worker, 'ollama')).toMatchObject({
+      candidateStatus: 'validating',
+      validationLeaseExpired: true,
+    });
+    await requestProviderValidation(ctx.worker, request);
+    expect((await ctx.owner.query(`SELECT payload ${ollamaIntents}`)).rows).toEqual([
+      { payload: { provider: 'ollama', candidateVersion: '1' } },
+    ]);
+    // The queued probe reclaims the expired lease; a live lease refuses Validate again.
+    const reclaimed = await claimCredentialValidation(ctx.worker, input);
+    expect(reclaimed?.validationToken).not.toBe(stopped?.validationToken);
+    await expect(requestProviderValidation(ctx.worker, request)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
   });
 
   it('revokes into a tombstone that invalidates leases and blocks re-enabling', async () => {

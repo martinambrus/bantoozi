@@ -1476,7 +1476,8 @@ Metadata returns only version/status/timestamps/sanitized health, never envelope
 already encrypted envelope for the exact next revision without making a provider call or queueing a validation probe. A separate
 `admin_validate_provider_credential(p_provider text, p_candidate_version bigint,
 p_expected_revision bigint)` transaction enqueues `provider.validate {provider,candidateVersion}`
-only after the administrator explicitly requests Validate. Activation requires the same valid candidate, current revision/configuration fingerprint and a
+only after the administrator explicitly requests Validate, for a candidate that is not being validated
+under a live lease (a `validating` candidate whose lease expired may be queued again, D-87). Activation requires the same valid candidate, current revision/configuration fingerprint and a
 validation result no older than 24 hours; disable
 preserves a tombstone. Worker validation CAS includes candidate version and lease token. Keyring
 cryptography is application-side, not a PostgreSQL decryption function. No generic SQL setter or

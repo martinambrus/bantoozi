@@ -9,6 +9,7 @@ import {
   setProviderCredentialEnabled,
   sqlState,
   stageProviderCredential,
+  validationRequestable,
   type CredentialMetadataRecord,
   type Database,
 } from '@bantoozi/db';
@@ -160,8 +161,10 @@ export function describeCredential(
       .map(([name]) => name)
       .sort()
       .join(',');
+    // A validator that stopped without a result: Validate may be requested again (D-87).
+    const lease = row.validationLeaseExpired ? ' lease=expired' : '';
     lines.push(
-      `  candidate=${row.candidateVersion} status=${row.candidateStatus ?? '-'} ` +
+      `  candidate=${row.candidateVersion} status=${row.candidateStatus ?? '-'}${lease} ` +
         `validated=${at(row.validatedAt)} model=${v.model ?? '-'} config=${fingerprint} ` +
         `capabilities=${capabilities === '' ? '-' : capabilities} attempts=${v.attempts ?? '-'} ` +
         `error=${row.lastErrorCode ?? '-'}`,
@@ -334,7 +337,7 @@ export function registerCredentialCommands(program: Command, deps: CredentialCli
               row === null ||
               row.revision !== expectedRevision ||
               row.candidateVersion !== candidateVersion ||
-              !['pending', 'valid', 'invalid'].includes(row.candidateStatus ?? '')
+              !validationRequestable(row)
             ) {
               throw new AppError('CONFLICT', 'Stale or busy credential candidate');
             }

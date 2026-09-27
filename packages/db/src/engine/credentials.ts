@@ -24,7 +24,9 @@ import { workerOutbox } from '../outbox.js';
  * - **Validation lease** (`provider.validate`): claim a lease for the exact candidate version (CAS),
  *   then complete it with the same token, recording `valid`/`invalid` (or `pending` for an
  *   inconclusive run) with sanitized capability metadata. A revoked or re-staged candidate makes
- *   the completion a no-op, so a stale probe can never validate a newer candidate.
+ *   the completion a no-op, so a stale probe can never validate a newer candidate. A validator
+ *   that stopped without a result leaves the candidate `validating` until its lease expires; the
+ *   queue does not retry the job, so Validate may then be requested again (D-87).
  * - **Admin state machine** for the credentials CLI. The M0 admin SQL functions are granted to the
  *   API role only (spec 02 §6) and the CLI runs as `bantoozi_worker` (whose login
  *   `admin_context_allowed()` treats as operational), so these statements mirror
@@ -50,6 +52,11 @@ export interface CredentialMetadataRecord {
   activatedAt: Date | null;
   validatedAt: Date | null;
   lastErrorCode: string | null;
+  /**
+   * A `validating` candidate whose lease expired: its validator stopped without recording a result,
+   * and Validate may be requested again (D-87).
+   */
+  validationLeaseExpired: boolean;
 }
 
 type MetadataRow = {
@@ -64,6 +71,7 @@ type MetadataRow = {
   activated_at: Date | string | null;
   validated_at: Date | string | null;
   last_error_code: string | null;
+  validation_lease_expired: boolean;
 };
 
 const date = (value: Date | string | null): Date | null =>
@@ -83,7 +91,26 @@ function toMetadata(row: MetadataRow): CredentialMetadataRecord {
     activatedAt: date(row.activated_at),
     validatedAt: date(row.validated_at),
     lastErrorCode: row.last_error_code,
+    validationLeaseExpired: row.validation_lease_expired,
   };
+}
+
+/**
+ * Whether Validate may be requested for a candidate (spec 04 §1.2 step 2): a settled one (`pending`,
+ * `valid`, `invalid`), or one still `validating` after its lease expired (D-87). The new probe
+ * reclaims that lease; a live lease means a validator is still at work.
+ */
+export function validationRequestable(candidate: {
+  candidateStatus: CandidateStatus | null;
+  validationLeaseExpired: boolean;
+}): boolean {
+  const status = candidate.candidateStatus;
+  return (
+    status === 'pending' ||
+    status === 'valid' ||
+    status === 'invalid' ||
+    (status === 'validating' && candidate.validationLeaseExpired)
+  );
 }
 
 function assertProvider(provider: string): asserts provider is CredentialProviderName {
@@ -101,10 +128,15 @@ function assertVersion(name: string, value: string, { allowZero }: { allowZero: 
   }
 }
 
+/** A `validating` candidate whose lease expired (the lease columns are set exactly then). */
+const LEASE_EXPIRED = sql`
+  coalesce(c.candidate_status = 'validating' AND c.validation_until <= now(), false)`;
+
 const METADATA = sql`
   c.provider, c.revision::text AS revision, c.enabled, c.active_version::text AS active_version,
   c.candidate_version::text AS candidate_version, c.candidate_status, c.candidate_validation,
-  c.updated_at, c.activated_at, c.validated_at, c.last_error_code`;
+  c.updated_at, c.activated_at, c.validated_at, c.last_error_code,
+  ${LEASE_EXPIRED} AS validation_lease_expired`;
 
 /** Metadata of one provider's row, or null when no row exists (no envelope is read). */
 export async function readCredentialMetadata(
@@ -273,6 +305,7 @@ type LockedRow = {
   candidate_status: CandidateStatus | null;
   candidate_validation: unknown;
   validated_recently: boolean | null;
+  validation_lease_expired: boolean;
 };
 
 async function lockRow(
@@ -287,7 +320,8 @@ async function lockRow(
   const result = await tx.execute<LockedRow>(sql`
     SELECT c.revision::text AS revision, c.enabled, c.active_version::text AS active_version,
            c.candidate_version::text AS candidate_version, c.candidate_status, c.candidate_validation,
-           (c.validated_at >= now() - interval '24 hours') AS validated_recently
+           (c.validated_at >= now() - interval '24 hours') AS validated_recently,
+           ${LEASE_EXPIRED} AS validation_lease_expired
       FROM provider_credentials c WHERE c.provider = ${provider} FOR UPDATE`);
   return result.rows[0];
 }
@@ -332,7 +366,8 @@ export async function stageProviderCredential(
 /**
  * Explicit Validate (mirrors `admin_validate_provider_credential`): queue
  * `provider.validate {provider, candidateVersion}` through the outbox, only for the current
- * candidate at the expected revision that is not being validated. The payload carries no secret.
+ * candidate at the expected revision that is not being validated under a live lease
+ * (`validationRequestable`). The payload carries no secret.
  */
 export async function requestProviderValidation(
   db: Database,
@@ -347,7 +382,10 @@ export async function requestProviderValidation(
     if (
       row.revision !== input.expectedRevision ||
       row.candidate_version !== input.candidateVersion ||
-      !['pending', 'valid', 'invalid'].includes(row.candidate_status ?? '')
+      !validationRequestable({
+        candidateStatus: row.candidate_status,
+        validationLeaseExpired: row.validation_lease_expired,
+      })
     ) {
       throw new AppError('CONFLICT', 'Stale or busy credential candidate');
     }

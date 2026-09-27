@@ -576,3 +576,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   its invalid output as a `fail` row instead of sending the repair attempt, and a credential probe
   stops with the candidate `pending` and the code `cost_overrun` unless the attempt already
   concluded it. The overrun is still charged in full. Spec 04 §1.2 and §6 and spec 07 §3 updated.
+- D-87: 2026-09-27 M2-T3 — spec 04 §1.2 step 2 left open what happens to a candidate whose validator
+  stops without recording a result. `provider.validate` has no queue retries, so such a candidate
+  stayed `validating`: the worker's claim reclaims an expired lease, but Validate refused the
+  candidate as busy, so only staging the key again could recover it. Validate now also accepts a
+  `validating` candidate whose lease has expired, and the probe it queues reclaims that lease; a
+  live lease is still refused. Migration 0014 replaces `admin_validate_provider_credential` with
+  this rule (NULL-safe, so a row without a candidate always conflicts); `requestProviderValidation`
+  and the CLI's `--inline` check share it, and the credential metadata and `credentials:status` show
+  the expired lease. Spec 04 §1.2 and spec 02 §6 updated.

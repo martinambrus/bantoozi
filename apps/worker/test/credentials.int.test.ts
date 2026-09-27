@@ -370,6 +370,27 @@ describe('credential resolver and CLI lifecycle (spec 04 §1.2)', () => {
     expect(await activeAuth(r)).toMatchObject({ apiKey: DB_KEY_2, credentialVersion: '3' });
   });
 
+  it('validates again a candidate whose validator stopped, once its lease expired', async () => {
+    // The lease above is never completed: its validator stopped without a result (D-87).
+    const busy = await cli(['credentials:validate', 'typesafe', '--admin', ADMIN, '--inline']);
+    expect(busy).toMatchObject({ exitCode: 1 });
+    expect(busy.stderr).toContain('CONFLICT');
+    expect((await cli(['credentials:status'])).stdout).toContain(
+      'candidate=5 status=validating validated=',
+    );
+    await owner.query(
+      `UPDATE provider_credentials SET validation_until = now() - interval '1 second'
+        WHERE provider = 'typesafe'`,
+    );
+    expect((await cli(['credentials:status'])).stdout).toContain(
+      'candidate=5 status=validating lease=expired validated=',
+    );
+    const validated = await cli(['credentials:validate', 'typesafe', '--admin', ADMIN, '--inline']);
+    expect(validated.exitCode).toBe(0);
+    expect(validated.stdout).toContain('candidate=5 status=valid validated=');
+    await expectNoPlaintext();
+  });
+
   it('rewraps stored keys under a new master key (rotation)', async () => {
     const rotated = {
       providerMasterKeyId: 'k2',

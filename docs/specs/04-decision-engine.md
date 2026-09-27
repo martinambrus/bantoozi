@@ -257,8 +257,11 @@ AES protects stolen dumps, not a host holding both ciphertext and master keys.
    or an unusable candidate records `invalid` (D-62). Every paid probe uses `kind='credential_probe'`
    and the normal spend guard through `reserveExternalCall`/`recordExternalCall`, never `ask`, and
    Ollama is probed with `OLLAMA_MODEL_FAST` (D-63). An attempt whose actual cost exceeds its reserve
-   ends an inconclusive probe `pending` with `cost_overrun` (§6, D-86). Validating a candidate
-   never resets the active credential's breaker or replaces its account silently.
+   ends an inconclusive probe `pending` with `cost_overrun` (§6, D-86). The job has no queue
+   retries: a validator that stops without a result leaves the candidate `validating` until its
+   lease expires, and `validate` may then be requested again; that probe reclaims the lease, while a
+   live lease is refused as busy (D-87). Validating a candidate never resets the active credential's
+   breaker or replaces its account silently.
 3. `activate` is an optimistic-CAS admin transaction requiring the exact validated candidate, an
    unchanged endpoint/model-policy fingerprint and a validation result no older than 24h. It swaps
    candidate into the active slot and clears the superseded envelope, enables the provider, increments row revision, clears old candidate

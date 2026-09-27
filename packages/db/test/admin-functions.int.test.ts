@@ -520,6 +520,39 @@ describe('provider credential admin functions (spec 02 §2.1, §6; spec 04 §1.2
     expect(await outboxCount('provider.validate')).toBe(1);
   });
 
+  it('queues Validate again for a candidate whose validator stopped, once its lease expired', async () => {
+    await stage(admin, 'typesafe', 0, sealFor('typesafe', 1));
+    expect(await claimValidation('typesafe', 1)).not.toBeNull();
+    expect(await sqlStateOf(requestValidation(admin, 'typesafe', 1, 1))).toBe('BZ409'); // live lease
+    // The validator exited without a result; the queue does not retry `provider.validate` (D-87).
+    await ctx.owner.query(
+      `UPDATE provider_credentials SET validation_until = now() - interval '1 second'
+        WHERE provider = 'typesafe'`,
+    );
+    await requestValidation(admin, 'typesafe', 1, 1);
+    expect(await outboxCount('provider.validate')).toBe(1);
+    expect(await credential('typesafe')).toMatchObject({
+      revision: '1',
+      candidate_status: 'validating',
+    });
+    expect(await sqlStateOf(requestValidation(admin, 'typesafe', 1, 0))).toBe('BZ409'); // stale
+
+    // A row without a candidate conflicts, also for a NULL candidate version.
+    await ctx.owner.query(
+      `UPDATE provider_credentials SET candidate_status = 'valid', validated_at = now(),
+              candidate_validation = '{}', validation_token = NULL, validation_until = NULL
+        WHERE provider = 'typesafe'`,
+    );
+    await activate(admin, 'typesafe', 1, 1);
+    const noCandidate = appRow(admin, 'SELECT admin_validate_provider_credential($1, $2, $3)', [
+      'typesafe',
+      null,
+      2,
+    ]);
+    expect(await sqlStateOf(noCandidate)).toBe('BZ409');
+    expect(await outboxCount('provider.validate')).toBe(1);
+  });
+
   it('never lets a late validation of a replaced candidate mark or activate the newer one', async () => {
     await stage(admin, 'typesafe', 0, sealFor('typesafe', 1));
     const staleLease = await claimValidation('typesafe', 1);
