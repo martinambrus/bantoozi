@@ -551,13 +551,15 @@ is ≥ 80 % (shown).
 and the fixes from the Codex review of PR #6; the per-task commits are in the table below). The full check passed after the last task commit, with
 line coverage of 96.4 % for `packages/engine`, 99.6 % for `packages/questions` and 100 % for
 `packages/ranker`; `classification.e2e.test.ts` and `engine-breaker.int.test.ts` passed. Deviations:
-D-24 and D-25…D-86 in `docs/DECISIONS.md`. Migration 0013 (D-24) adds
-`analysis_requests.stage_results`, so migrations of a parallel branch are numbered after it. M3a, M4
+D-24 and D-25…D-87 in `docs/DECISIONS.md`. Migration 0013 (D-24) adds
+`analysis_requests.stage_results` and 0014 (D-87) replaces `admin_validate_provider_credential`, so
+migrations of a parallel branch are numbered after them. M3a, M4
 and M5 start once this branch is merged to `main` (§0.2). Handoffs: M4 moves
 `captureAnalysisSnapshot` from `apps/worker` into a package before the training API uses it (D-71),
 checks the ≥ 3 holders of a promotion request itself (`admin_request_card_publication` does not),
-shows explanation titles by card id (a rename triggers no rank), and answers a replayed library
-update from its Idempotency-Key receipt (a second `applyLibraryUpdate` returns 404). M4 or M8 adds
+shows explanation titles by card id (a rename triggers no rank), answers a replayed library
+update from its Idempotency-Key receipt (a second `applyLibraryUpdate` returns 404), and offers
+Validate for a `validating` candidate too (a live lease answers with a conflict, D-87). M4 or M8 adds
 SQL functions to revise an open publication proposal and to expire a request. M8's
 `house.retire-cards` locks the card row and rechecks holders after the lock, `house.reconcile`
 repairs the extracted articles of D-70, and a deployment with several Jev-calling workers first adds
@@ -585,7 +587,7 @@ Complete milestone M2 "Decision engine and classification" exactly as specified 
 |---|---|---|---|---|---|
 | M2-T1 | Engine types and answer normalization | — | A | 04 §1–2 | ✓ `a3c5633` |
 | M2-T2 | `TypeSafeEngine` HTTP client, status handling, fixtures, **fake TypeSafe server** | T1 | A | 04 §3, §10 | ✓ `6b41d74` |
-| M2-T3 | `EngineRouter`: retries, priority semaphore, rate limiter, breaker (mirror and reset polling), spend guard, `EngineStore` implementation, DB credential resolution/validation/rotation, `usage_daily`, atomic reservations, eval overrides | T2 | A | 04 §1, §4–7 | ✓ `e75de18` and the review fixes `d0d0077` (a validation result that completes after its lease expired is discarded), `49971c9` (the half-open probe lease is renewed before every wire attempt, D-82), `8990e66` (a request bucket below one request, from a small share or a 429 penalty, serves at its refill rate), `9a3eafe` (the part of a refill interval before a penalty ended accrues at the penalized rate), `4d10781` (a multi-pack request stops once an answered subpack cost more than its reservation) and `d05765a` (`recordExternalCall` reports a cost overrun, and a credential probe stops on one, D-86) |
+| M2-T3 | `EngineRouter`: retries, priority semaphore, rate limiter, breaker (mirror and reset polling), spend guard, `EngineStore` implementation, DB credential resolution/validation/rotation, `usage_daily`, atomic reservations, eval overrides | T2 | A | 04 §1, §4–7 | ✓ `e75de18` and the review fixes `d0d0077` (a validation result that completes after its lease expired is discarded), `49971c9` (the half-open probe lease is renewed before every wire attempt, D-82), `8990e66` (a request bucket below one request, from a small share or a 429 penalty, serves at its refill rate), `9a3eafe` (the part of a refill interval before a penalty ended accrues at the penalized rate), `4d10781` (a multi-pack request stops once an answered subpack cost more than its reservation), `d05765a` (`recordExternalCall` reports a cost overrun, and a credential probe stops on one, D-86), `511fc49` (Validate requeues a candidate whose validator stopped, once its lease expired, D-87) and `8d56aec` (an external call's settlement is retried like an `ask` attempt's instead of failing the call) |
 | M2-T4 | `LlmFallbackEngine` (Ollama Cloud), off by default, wired into the router's fallback chain | T3 | A | 04 §5, §8 | ✓ `524c57c` (the router wiring and its fallback tests are in `e75de18`) |
 | M2-T5 | `packages/questions`: builders, taxonomy, `enrich-v1`, dynamic-set templates (`match-v1`, `cluster-v1`, `suggest-v1`), card and label builders, packing, `flattenFacets` | — | C | 05 §2–6 | ✓ `3d7f7fa`, `b768aa7`, `19ce7ef` |
 | M2-T6 | Card library seed (≥ 150 cards), and seeding of topics, question sets (active kind only if absent) and library (slug upsert rules) | T5 | C | 05 §2, §8 | ✓ `053e79e` |
