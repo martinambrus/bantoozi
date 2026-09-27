@@ -1136,6 +1136,50 @@ describe('EngineRouter: external calls (spec 07 §2)', () => {
     });
   });
 
+  it('retries the settlement of an external call and never discards its result', async () => {
+    const { router, store, logger } = setup();
+    const reserve = () =>
+      router.reserveExternalCall({
+        engine: 'llm',
+        kind: 'translate',
+        estimateUsd: 0.001,
+        priority: 'bulk',
+        authorization: auth,
+      });
+    const call = (costUsd: number, attempt: number) => ({
+      engine: 'llm' as const,
+      kind: 'translate' as const,
+      inputTokens: 1_000,
+      outputTokens: 100,
+      costUsd,
+      latencyMs: 10,
+      status: 'ok' as const,
+      billing: 'known' as const,
+      logicalRequestId: '0199a000-0000-7000-8000-00000000abd2',
+      attempt,
+    });
+    const first = (await reserve())!;
+    store.failSettlements(2);
+    expect(await router.recordExternalCall(call(0.0005, 1), first)).toEqual({ overrun: false });
+    expect(store.settleAttempts).toBe(3);
+    expect(store.calls).toHaveLength(1);
+    expect(store.reservations.find((r) => r.id === first)).toMatchObject({ status: 'settled' });
+
+    // A settlement that keeps failing leaves the reservation charged; the overrun still stops.
+    const second = (await reserve())!;
+    store.failSettlements(3);
+    expect(await router.recordExternalCall(call(0.002, 2), second)).toEqual({ overrun: true });
+    expect(store.settleAttempts).toBe(6);
+    expect(store.calls).toHaveLength(1);
+    expect(store.reservations.find((r) => r.id === second)).toMatchObject({ status: 'reserved' });
+    expect(logger.entries).toContainEqual(
+      expect.objectContaining({
+        level: 'error',
+        msg: 'engine attempt settlement failed; its reservation stays charged',
+      }),
+    );
+  });
+
   it('refuses a tier-2 reservation once the cap is reached', async () => {
     const { router, store } = setup();
     store.settings.set('translate.tier2_daily_cap', 0);

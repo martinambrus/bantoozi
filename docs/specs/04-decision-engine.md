@@ -139,6 +139,7 @@ export interface EngineRouter {                  // the ONLY thing handlers use
     authorization: InferenceAuthorization}): Promise<string | null>;
   recordExternalCall(call: ExternalCall, reservationId?: string): Promise<{overrun: boolean}>;
   // Paid external calls MUST reserve before HTTP. A failed attempt also settles conservatively.
+  // A settlement that keeps failing leaves the reservation charged and does not throw (§6).
   // `overrun`: a known actual cost above the reserve, already alerted; the caller makes no further
   // call of that logical request (§6, D-86).
 }
@@ -500,7 +501,9 @@ pending/unavailable pairs in spec 05 §5.5 and stays bounded; it does not repeat
   provider usage or retain it for that budget day; the next UTC day has a separate allowance.
   Housekeeping turns an expired `reserved` row into `uncertain` and settles a still-uncertain one at
   its reserved amount 7 days after its day (spec 11 §6), so every reservation eventually settles and
-  follows audit retention.
+  follows audit retention. The router tries a settlement three times, for `ask` attempts and
+  external calls alike; one that still fails leaves its reservation charged for housekeeping and
+  never discards the attempt's already paid result.
   Attribute an attempt and its usage to `reservation.day` (UTC at send/admission), even if settlement
   crosses midnight. `engine_calls.created_at` is the send timestamp, not completion time; reserve
   each retry on its own actual UTC send day. Budget queries join reservation day, avoiding charges

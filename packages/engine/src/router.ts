@@ -86,8 +86,10 @@ import type {
  * (`budgetOverrideUsd`) record everything as `kind = 'eval'` under their own invocation cap.
  *
  * Provider and HTTP failures never throw; infrastructure failures of the store (the database) do,
- * so the queue retries the job. Secrets never leave the `useActive` callback: only the credential
- * version is kept, as call metadata.
+ * so the queue retries the job. The settlement of a sent attempt, `ask`'s or an external call's, is
+ * the exception: it is tried `SETTLE_TRIES` times and then left charged for housekeeping, so a
+ * result already paid for is never discarded. Secrets never leave the `useActive` callback: only the
+ * credential version is kept, as call metadata.
  */
 
 /** Default of `EngineConfig.maxRetryWaitMs`. */
@@ -1185,7 +1187,9 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
         await store.insertCall(row);
         return { overrun: false };
       }
-      await store.settleReservation(
+      // Like an `ask` attempt's: a settlement that keeps failing leaves the reservation charged for
+      // housekeeping instead of discarding a result the caller has already paid for.
+      await settleWithRetry(
         reservationId,
         row,
         {

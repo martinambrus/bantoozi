@@ -137,9 +137,10 @@ export interface EngineRouter {
     authorization: InferenceAuthorization;
   }): Promise<string | null>;
   /**
-   * A failed attempt also settles conservatively. `overrun` reports a known actual cost above the
-   * attempt's reserve, already alerted (spec 04 §6): the caller makes no further call of that
-   * logical request.
+   * A failed attempt also settles conservatively. A settlement that keeps failing leaves the
+   * reservation charged for housekeeping and does not throw (spec 04 §6). `overrun` reports a known
+   * actual cost above the attempt's reserve, already alerted: the caller makes no further call of
+   * that logical request.
    */
   recordExternalCall(call: ExternalCall, reservationId?: string): Promise<{ overrun: boolean }>;
 }
