@@ -22,7 +22,8 @@ import { SELECTION_WINDOW_DAYS } from '../ingest/demand.js';
  * One valid witness is enough for shared article work. `suggest` authorizations hold the
  * `user.suggest` lease (spec 05 §7): the user row is locked when `lock` is set, the lease token
  * must be live, and every candidate article must still be authorized for that user. Credential
- * probes need the candidate under a live validation lease; eval runs are separately authorized.
+ * probes need the candidate under their own live validation lease, whose token they carry (D-90);
+ * eval runs are separately authorized.
  * Malformed ids never reach SQL: they simply do not authorize.
  */
 
@@ -198,15 +199,17 @@ async function probeAuthorized(
   authorization: Extract<InferenceAuthorization, { type: 'credential_probe' }>,
   lock: boolean,
 ): Promise<boolean> {
-  const { provider, candidateVersion } = authorization;
+  const { provider, candidateVersion, validationToken } = authorization;
   if (provider !== 'typesafe' && provider !== 'ollama') return false;
-  if (!isPositiveId(candidateVersion)) return false;
+  if (!isPositiveId(candidateVersion) || !uuid(validationToken)) return false;
+  // The probe's own lease: a validator whose lease was reclaimed admits nothing under the new one.
   const result = await db.execute<{ ok: boolean }>(sql`
     SELECT true AS ok
       FROM provider_credentials c
      WHERE c.provider = ${provider}
        AND c.candidate_version = ${candidateVersion}::bigint
        AND c.candidate_status = 'validating'
+       AND c.validation_token = ${validationToken}::uuid
        AND c.validation_until > now()
      ${lock ? sql`FOR SHARE` : sql.empty()}`);
   return result.rows[0]?.ok === true;

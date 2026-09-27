@@ -18,7 +18,8 @@ export type InferenceAuthorization =
       witnesses: Array<{kind:'automatic'; userId:string; feedId:string; inferenceVersion:string}
                      | {kind:'manual'; analysisRequestId:string}> }
   | { type: 'suggest'; userId:string; eligibleArticleIds:string[]; leaseToken:string } // spec 05 §7
-  | { type: 'credential_probe'; provider:'typesafe'|'ollama'; candidateVersion:string }
+  | { type: 'credential_probe'; provider:'typesafe'|'ollama'; candidateVersion:string;
+      validationToken:string } // the probe's own validation lease (D-90)
   | { type: 'eval'; runId:string }; // separately authorized eval; never inferred from a feed fetch
 export type CallStatus = 'ok' | 'error' | 'timeout' | 'rate_limited' | 'invalid_request' | 'invalid_response' | 'auth_error';
 
@@ -262,8 +263,10 @@ AES protects stolen dumps, not a host holding both ciphertext and master keys.
    ends an inconclusive probe `pending` with `cost_overrun` (§6, D-86). The job has no queue
    retries: a validator that stops without a result leaves the candidate `validating` until its
    lease expires, and `validate` may then be requested again; that probe reclaims the lease, while a
-   live lease is refused as busy (D-87). Validating a candidate never resets the active credential's
-   breaker or replaces its account silently.
+   live lease is refused as busy (D-87). A probe's authorization carries its validation token, and
+   each reservation is admitted only while that token holds the live lease, so a validator whose
+   lease was reclaimed sends nothing (D-90). Validating a candidate never resets the active
+   credential's breaker or replaces its account silently.
 3. `activate` is an optimistic-CAS admin transaction requiring the exact validated candidate, an
    unchanged endpoint/model-policy fingerprint and a validation result no older than 24h. It swaps
    candidate into the active slot and clears the superseded envelope, enables the provider, increments row revision, clears old candidate

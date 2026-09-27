@@ -782,23 +782,33 @@ describe('authorization rechecks at admission (spec 04 §1.1)', () => {
         secret: 'fake-ollama-key',
       }),
     });
-    const probe: InferenceAuthorization = {
+    type ProbeAuthorization = Extract<InferenceAuthorization, { type: 'credential_probe' }>;
+    const probe = (validationToken: string): ProbeAuthorization => ({
       type: 'credential_probe',
       provider: 'ollama',
       candidateVersion: staged.candidateVersion,
-    };
+      validationToken,
+    });
     const reserveProbe = (auth: InferenceAuthorization, kind: CallKind = 'credential_probe') =>
       s.reserveSpend(reserveInput(day, auth, { engine: 'llm', kind, estimateUsd: 0.01 }));
+    const claim = async () => {
+      const lease = await claimCredentialValidation(ctx.worker, {
+        provider: 'ollama',
+        candidateVersion: staged.candidateVersion,
+        leaseMs: 60_000,
+      });
+      if (lease === null) throw new Error('the candidate could not be claimed');
+      return probe(lease.validationToken);
+    };
     // Pending: no lease yet.
-    expect(await reserveProbe(probe)).toBeNull();
-    await claimCredentialValidation(ctx.worker, {
-      provider: 'ollama',
-      candidateVersion: staged.candidateVersion,
-      leaseMs: 60_000,
-    });
-    expect(await reserveProbe(probe)).not.toBeNull();
-    expect(await isInferenceAuthorized(ctx.worker, probe)).toBe(true);
-    expect(await reserveProbe({ ...probe, candidateVersion: '99' })).toBeNull();
+    expect(await reserveProbe(probe(newUuid()))).toBeNull();
+    const first = await claim();
+    expect(await reserveProbe(first)).not.toBeNull();
+    expect(await isInferenceAuthorized(ctx.worker, first)).toBe(true);
+    expect(await reserveProbe({ ...first, candidateVersion: '99' })).toBeNull();
+    // Only the lease's own token admits: another token, or a malformed one, is refused (D-90).
+    expect(await reserveProbe(probe(newUuid()))).toBeNull();
+    expect(await reserveProbe(probe('not-a-token'))).toBeNull();
     // A probe reservation needs the probe authorization, and vice versa for other kinds.
     const article = await automaticDemand();
     expect(await reserveProbe(article.authorization)).toBeNull();
@@ -806,7 +816,12 @@ describe('authorization rechecks at admission (spec 04 §1.1)', () => {
       `UPDATE provider_credentials SET validation_until = now() - interval '1 second'
         WHERE provider = 'ollama'`,
     );
-    expect(await reserveProbe(probe)).toBeNull();
+    expect(await reserveProbe(first)).toBeNull();
+    // Another validator reclaims the expired lease: the first validator stays refused under it.
+    const second = await claim();
+    expect(await reserveProbe(first)).toBeNull();
+    expect(await isInferenceAuthorized(ctx.worker, first)).toBe(false);
+    expect(await reserveProbe(second)).not.toBeNull();
   });
 });
 

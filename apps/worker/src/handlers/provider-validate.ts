@@ -44,13 +44,13 @@ import type { QueueHandler } from './index.js';
  *
  * Bounds: at most 3 HTTP attempts, at most $0.02 of reserved spend in total (each attempt reserves
  * through the router's normal spend guard with `kind = 'credential_probe'` and the
- * `credential_probe` authorization, which the store admits only under the live lease), LLM output
- * capped at 512 tokens. A bound that stops the probe (including an attempt whose actual cost
- * exceeded its reserve, spec 04 §6), an exhausted platform budget or an unavailable provider
- * records the candidate `pending` with a clear error code (inconclusive: the admin may validate
- * again); an authentication or request rejection records it `invalid`. The probe never
- * goes through `router.ask`, so it never touches the active credential's breaker. A lease lost
- * to revocation or re-staging discards the result.
+ * `credential_probe` authorization, which the store admits only under this validation's own live
+ * lease, D-90), LLM output capped at 512 tokens. A bound that stops the probe (including an attempt
+ * whose actual cost exceeded its reserve, spec 04 §6), an exhausted platform budget or an
+ * unavailable provider records the candidate `pending` with a clear error code (inconclusive: the
+ * admin may validate again); an authentication or request rejection records it `invalid`. The probe
+ * never goes through `router.ask`, so it never touches the active credential's breaker. A lease
+ * lost to revocation or re-staging discards the result.
  */
 
 /** Spec 04 §1.2: attempts and reserved spend of one validation action. */
@@ -233,6 +233,7 @@ export function createProviderValidateHandler(
   function probeRequest(
     provider: CredentialProvider,
     candidateVersion: string,
+    validationToken: string,
     questions: Record<string, Question>,
   ): EngineRequest {
     return {
@@ -243,7 +244,7 @@ export function createProviderValidateHandler(
       questionSetSha: sha256Hex(canonicalJson(questions)),
       stateSha256: sha256Hex(canonicalJson(PROBE_STATE)),
       priority: 'interactive',
-      authorization: { type: 'credential_probe', provider, candidateVersion },
+      authorization: { type: 'credential_probe', provider, candidateVersion, validationToken },
     };
   }
 
@@ -384,7 +385,7 @@ export function createProviderValidateHandler(
     if (lane === undefined) {
       return result('pending', 'not_configured', { configFingerprint: fingerprint, attempts: 0 });
     }
-    const request = probeRequest(provider, candidateVersion, lane.questions);
+    const request = probeRequest(provider, candidateVersion, validationToken, lane.questions);
     const logicalRequestId = newUuid();
     let reservedUsd = 0;
     let attempts = 0;

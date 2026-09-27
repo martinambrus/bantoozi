@@ -665,6 +665,42 @@ describe('provider.validate (spec 04 §1.2 step 2)', () => {
     });
   });
 
+  it('sends nothing when another validator reclaims the lease before the reservation', async () => {
+    const version = await stage('typesafe', JEV_KEY);
+    const real = resolver();
+    let other: { validationToken: string } | null = null;
+    // The lease runs out just after the candidate secret was read, and another validator reclaims
+    // the same candidate version before this one reserves its first attempt.
+    const reclaimAfterRead: WorkerCredentialResolver = {
+      ...real,
+      useCandidate: (provider, candidateVersion, validationToken, signal, send) =>
+        real.useCandidate(provider, candidateVersion, validationToken, signal, async (auth) => {
+          await owner.query(
+            `UPDATE provider_credentials SET validation_until = now() - interval '1 second'
+              WHERE provider = 'typesafe'`,
+          );
+          other = await claimCredentialValidation(db, {
+            provider: 'typesafe',
+            candidateVersion,
+            leaseMs: 60_000,
+          });
+          return send(auth);
+        }),
+    };
+    await handler({ credentials: reclaimAfterRead }).validate('typesafe', version);
+
+    expect(other).not.toBeNull();
+    // The stale validator reserves and sends nothing under the other validator's lease (D-90).
+    expect(jev.requests).toHaveLength(0);
+    expect(await reservations()).toEqual([]);
+    expect(await calls()).toEqual([]);
+    expect(await metadata('typesafe')).toMatchObject({ candidateStatus: 'validating' });
+    expect(lastLog('provider validation result discarded: the lease was lost')).toMatchObject({
+      attempts: 0,
+      recorded: false,
+    });
+  });
+
   it('skips a candidate that is being validated elsewhere', async () => {
     const version = await stage('typesafe', JEV_KEY);
     const lease = await claimCredentialValidation(db, {

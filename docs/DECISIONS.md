@@ -610,3 +610,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   cache, and the router reads it fresh before it refuses a lane the cached view shows without a key.
   A usable cached view needs no second read, since `useActive` rechecks the row before every
   attempt. Spec 04 §1.2 updated.
+- D-90: 2026-09-27 M2-T3 — spec 04 §1 gave the `credential_probe` authorization only the provider
+  and the candidate version, so the spend reservation of a probe attempt checked that the candidate
+  had a live validation lease, but not whose lease it was. A validator that read the candidate
+  secret just before its lease expired could, once another validator had reclaimed the same
+  candidate version, still reserve and send a paid probe under the other validator's lease; the
+  token-checked completion then discarded its result. The authorization now carries the validation
+  token, and the reservation admits it only while that token holds the live lease, as the `suggest`
+  authorization carries its lease token. Spec 04 §1 and §1.2 updated.

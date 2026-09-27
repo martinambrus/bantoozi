@@ -20,7 +20,13 @@ export type InferenceAuthorization =
       >;
     }
   | { type: 'suggest'; userId: string; eligibleArticleIds: string[]; leaseToken: string } // spec 05 §7
-  | { type: 'credential_probe'; provider: 'typesafe' | 'ollama'; candidateVersion: string }
+  | {
+      type: 'credential_probe';
+      provider: 'typesafe' | 'ollama';
+      candidateVersion: string;
+      /** The token of the validation lease the probe runs under (D-90). */
+      validationToken: string;
+    }
   | { type: 'eval'; runId: string }; // separately authorized eval; never inferred from a feed fetch
 
 export type CallStatus =
