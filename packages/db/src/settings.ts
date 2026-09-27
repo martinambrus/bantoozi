@@ -28,13 +28,30 @@ export async function readStoredSetting(db: Executor, key: string): Promise<unkn
 }
 
 /**
- * Share-lock the rows of `keys` until the transaction ends, in key order: a writer of any of them
- * waits for this transaction, and a write in progress is waited for, so the values read after this
- * stay current until commit. Missing keys lock nothing. Run inside a transaction.
+ * Share-lock the rows of `settings` until the transaction ends, in key order: a writer of any of
+ * them waits for this transaction, and a write in progress is waited for, so the values read after
+ * this stay current until commit. A missing row cannot be locked, and its first write (an insert)
+ * would slip in between the read and the commit, so a missing key is first stored with `initial`,
+ * the default its readers fall back to, which leaves its effective value unchanged; an insert in
+ * progress is waited for. Run inside a transaction.
  */
-export async function shareLockSettings(tx: Executor, keys: readonly string[]): Promise<void> {
+export async function shareLockSettings(
+  tx: Executor,
+  settings: readonly { key: string; initial: unknown }[],
+): Promise<void> {
+  const keys = settings.map((setting) => setting.key);
+  const values = settings.map(({ key, initial }) => {
+    if (initial === undefined) throw new RangeError(`setting ${key} needs an initial value`);
+    return JSON.stringify(initial);
+  });
   await tx.execute(sql`
-    SELECT key FROM settings WHERE key = ANY(${sql.param([...keys])}::text[])
+    INSERT INTO settings (key, value)
+    SELECT s.key, s.value::jsonb
+      FROM unnest(${sql.param(keys)}::text[], ${sql.param(values)}::text[]) AS s(key, value)
+     ORDER BY s.key
+    ON CONFLICT (key) DO NOTHING`);
+  await tx.execute(sql`
+    SELECT key FROM settings WHERE key = ANY(${sql.param(keys)}::text[])
      ORDER BY key FOR SHARE`);
 }
 

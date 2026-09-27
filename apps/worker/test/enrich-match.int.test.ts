@@ -728,6 +728,38 @@ describe('article.match completion fence (spec 05 §5.5 step 6)', () => {
     }
   });
 
+  it('the first write of a compared setting committing while the pack completes is fenced too', async () => {
+    // Never written: readers use its default (off), and there is no row to lock.
+    await h.deleteSetting('engine.prefilter_enabled');
+    const s = await scenario({ cards: 2 });
+    await h.enrichDirect(s.articleId, { topics: NO_BRANCH_TOPICS });
+    await h.queue(s.articleId, s.cardIds);
+    let write: Promise<SettingWrite> | undefined;
+    h.router.respond = async () => {
+      write ??= h.openSettingWrite('engine.prefilter_enabled', true);
+      await write;
+      return undefined;
+    };
+    try {
+      const since = await h.mark();
+      const run = h.dispatch('article.match', { articleId: s.articleId });
+      expect(await waitFor(() => write !== undefined, 10_000)).toBe(true);
+      await (await write!).commit();
+      await run;
+      expect(await h.cardAnswers(s.articleId)).toEqual([]);
+      const rows = await h.queueRows(s.articleId);
+      expect(rows.map((row) => [row.leased, row.attempts, row.due])).toEqual([
+        [false, 0, true],
+        [false, 0, true],
+      ]);
+      expect(await h.payloads('article.match', since)).toEqual([{ articleId: s.articleId }]);
+    } finally {
+      h.router.respond = undefined;
+      (await write)?.close();
+      await h.setSetting('engine.prefilter_enabled', false);
+    }
+  });
+
   it('rebuilds level-2 features from facet answers an analysis fill replaces during the call', async () => {
     const feedId = await h.feed();
     const userId = await h.user();

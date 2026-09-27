@@ -7,7 +7,9 @@ import {
 } from '@bantoozi/db';
 import { questionSetByVersion, type Question } from '@bantoozi/questions';
 import {
+  parseSetting,
   readSetting,
+  settingDefault,
   type CardTextMode,
   type LanguageModes,
   type SettingEnvDefaults,
@@ -19,6 +21,8 @@ import {
  * compares the configuration it read inside its transaction with the job's snapshot and discards
  * results asked under a configuration that changed meanwhile (spec 05 §5.5 step 6). It reads them
  * under share locks, so a switch either waits for the completion to commit or is seen by it (D-84).
+ * A compared key without a row is first stored with its default, so that its first write is fenced
+ * as well.
  */
 
 /** The settings a completion compares with its snapshot. */
@@ -99,14 +103,22 @@ export function enrichQuestions(set: ActiveQuestionSet): Record<string, Question
 
 /**
  * `lock` (a completion's transaction): share-lock the settings first, so the values read stay
- * current until commit.
+ * current until commit. A missing key is stored with the default it reads as (D-84).
  */
 export async function loadClassificationConfig(
   db: Executor,
   env: SettingEnvDefaults,
   options: { lock?: boolean } = {},
 ): Promise<ClassificationConfig> {
-  if (options.lock === true) await shareLockSettings(db, CLASSIFICATION_SETTING_KEYS);
+  if (options.lock === true) {
+    await shareLockSettings(
+      db,
+      CLASSIFICATION_SETTING_KEYS.map((key) => ({
+        key,
+        initial: parseSetting(key, settingDefault(key, env)),
+      })),
+    );
+  }
   const sets = await loadActiveQuestionSets(db);
   const cardTextMode =
     readSetting('card_text_mode', await readStoredSetting(db, 'card_text_mode'), env) ??

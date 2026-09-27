@@ -345,7 +345,10 @@ through `PATCH /admin/settings`.
 (from `LANGUAGE_MODES`) when they are missing. Deploys run the seed before starting the services, so
 the API compares a `language_modes` change against the modes the workers actually use and enqueues
 its re-enrichment (spec 08 §9). Other keys with an env fallback are never seeded, so their env
-default stays effective until an admin sets a value.
+default stays effective until an admin sets a value. A classification completion stores a missing
+key it compares with its snapshot (spec 05 §5.5 step 6) with its default before share-locking it,
+so that the key's first write waits for the completion (D-84); of those keys only
+`engine.prefilter_enabled` is not seeded, and its default has no env fallback.
 
 ---
 

@@ -554,10 +554,13 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   active question sets, card text mode, language modes, prefilter flag) under share locks. The
   enrich, match, analysis and cluster completions compare it in their short READ COMMITTED
   transaction, where a plain read let a switch commit between the comparison and the completion's
-  commit and publish a result decided under the old configuration. Each completion first takes
-  `FOR SHARE` on those `settings` rows, in key order: a switch waits for the completion to commit, and
+  commit and publish a result decided under the old configuration. Each completion first takes `FOR
+  SHARE` on those `settings` rows, in key order: a switch waits for the completion to commit, and
   one already written is waited for and then read, so the completion discards its result and queues
-  current work. Spec 05 §5.5 updated.
+  current work. A compared setting that was never written has no row to lock (its readers use the
+  default), so the completion first stores each missing one with its default value (`INSERT … ON
+  CONFLICT DO NOTHING`, in key order) and then locks it: the first write of such a setting waits
+  for, or is seen by, the completion like any other switch. Specs 02 §2 and 05 §5.5 updated.
 - D-85: 2026-09-26 M2-T9 — the D-84 fence covers every write an article job derives from its
   configuration snapshot, not only a model result: the enrich job's continuation from a cached Call
   A and the failed or degraded state it records, and the match job's deletion of already satisfied
