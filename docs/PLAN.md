@@ -553,8 +553,8 @@ line coverage of 96.4 % for `packages/engine`, 99.6 % for `packages/questions` a
 `packages/ranker`; `classification.e2e.test.ts` and `engine-breaker.int.test.ts` passed. Deviations:
 D-24 and D-25…D-95 in `docs/DECISIONS.md`. Migration 0013 (D-24) adds
 `analysis_requests.stage_results` and 0014 (D-87) replaces `admin_validate_provider_credential`, so
-migrations of a parallel branch are numbered after them. M3a, M4
-and M5 start once this branch is merged to `main` (§0.2). Handoffs: M4 moves
+migrations of a parallel branch are numbered after them. Merged to `main` on 2026-09-27 through
+PR #6 (merge commit `cd8a284`), so M3a, M4 and M5 can start (§0.2). Handoffs: M4 moves
 `captureAnalysisSnapshot` from `apps/worker` into a package before the training API uses it (D-71),
 checks the ≥ 3 holders of a promotion request itself (`admin_request_card_publication` does not),
 shows explanation titles by card id (a rename triggers no rank), answers a replayed library
