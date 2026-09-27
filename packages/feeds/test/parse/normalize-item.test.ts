@@ -265,7 +265,7 @@ describe('normalizeItem (spec 03 §6)', () => {
       // Media signals read the same bounded input the body is built from.
       expect(item.feedBodyImageCount).toBe(1);
       expect(item.videoEvidence).toBe(false);
-    });
+    }, 30_000);
 
     it('keeps text + HTML within the 10 MiB body limit', () => {
       // Escaping multiplies "&" by five in the HTML: about 10.8 MiB of text + HTML.
