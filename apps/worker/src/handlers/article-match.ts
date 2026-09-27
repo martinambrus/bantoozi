@@ -96,7 +96,11 @@ interface MatchJob {
   leaseToken: string;
   /** Failed level-2-only attempts of this input before this job (the retry intent's count). */
   l2Attempts: number;
-  /** Claimed rows still held by this job (removed once completed, dropped or released). */
+  /**
+   * Claimed rows still held by this job (removed once completed, dropped or released). Transactions
+   * that change it run in {@link jobTransaction}, which undoes the changes of an attempt that rolls
+   * back.
+   */
   held: Map<string, ClaimedMatchRow>;
   /** The built question of every demanded claimed card. */
   questions: Map<string, BuiltCardQuestion>;
@@ -235,7 +239,7 @@ async function prepareCards(job: MatchJob): Promise<Map<string, CardInput>> {
     })
     .map((answer) => answer.cardId);
   if (satisfied.length > 0) {
-    await retryTransaction(deps.db, async (tx) => {
+    await jobTransaction(job, async (tx) => {
       if (!(await revisionHolds(tx, job)) || !(await configHolds(tx, job))) return;
       await completeRows(tx, job, satisfied);
     });
@@ -271,7 +275,7 @@ async function prefilter(
     );
   });
   if (skipped.length === 0) return;
-  await retryTransaction(job.deps.db, async (tx) => {
+  await jobTransaction(job, async (tx) => {
     if (!(await revisionHolds(tx, job)) || !(await configHolds(tx, job))) return;
     const held = await heldRows(tx, job, skipped);
     const rows = held.flatMap((id) => {
@@ -359,7 +363,7 @@ async function buildPacks(
         item.cardId === undefined ? [] : [item.cardId],
       );
       if (cardIds.length > 0) {
-        await retryTransaction(job.deps.db, async (tx) => {
+        await jobTransaction(job, async (tx) => {
           // The overflow measured the snapshot's questions: under a changed configuration the rows
           // go to current work instead of being exhausted by it (D-85).
           if (!(await revisionHolds(tx, job)) || !(await configHolds(tx, job))) return;
@@ -467,8 +471,8 @@ async function applyPack(
   askL2: readonly string[],
   outcome: Extract<EngineOutcome, { ok: true }>,
 ): Promise<string[]> {
-  const { deps, article, classification } = job;
-  return retryTransaction(deps.db, async (tx) => {
+  const { article, classification } = job;
+  return jobTransaction(job, async (tx) => {
     if (!(await revisionHolds(tx, job)) || !(await configHolds(tx, job))) return [];
     // Level-2 answers rebuild the facet features below. The facet row is locked before any answer
     // is written, as the analysis cache fill does, so a replacement of its answers either commits
@@ -574,7 +578,7 @@ async function failPack(
     if (askL2.length > 0) await retryL2(job, disposition);
     return;
   }
-  await retryTransaction(deps.db, async (tx) => {
+  await jobTransaction(job, async (tx) => {
     // The failure answered the snapshot's questions: under a changed configuration the rows go to
     // current work unanswered instead of counting it, or being exhausted by it (D-85).
     if (!(await revisionHolds(tx, job)) || !(await configHolds(tx, job))) return;
@@ -607,9 +611,9 @@ async function failPack(
  * changed configuration the current job enqueued instead decides the state.
  */
 async function finish(job: MatchJob): Promise<void> {
-  const { deps, article } = job;
+  const { article } = job;
   if (job.stale) return;
-  await retryTransaction(deps.db, async (tx) => {
+  await jobTransaction(job, async (tx) => {
     const locked = await lockArticleRevision(tx, article.id, 'update');
     if (locked === null || locked.revision !== article.revision) return;
     if (!(await configHolds(tx, job))) return;
@@ -689,7 +693,7 @@ async function retryL2(job: MatchJob, disposition: FailureDisposition): Promise<
       at = new Date(nowOf(deps).getTime() + matchFailureDelayMs(attempts));
       break;
   }
-  await retryTransaction(deps.db, async (tx) => {
+  await jobTransaction(job, async (tx) => {
     if (!(await revisionHolds(tx, job)) || !(await configHolds(tx, job))) return;
     await enqueueMatch(
       workerOutbox(tx, { availableAt: at }),
@@ -814,7 +818,31 @@ async function releaseHeld(
 
 async function dropRows(job: MatchJob, cardIds: readonly string[]) {
   if (cardIds.length === 0) return;
-  await retryTransaction(job.deps.db, (tx) => dropHeld(tx, job, cardIds));
+  await jobTransaction(job, (tx) => dropHeld(tx, job, cardIds));
+}
+
+/**
+ * A retried transaction that may change the job's in-memory state (the held rows, `stale`, `lost`).
+ * Every attempt starts from the state before the transaction, and a failed transaction leaves it
+ * there: an attempt rolled back for a retryable error (a deadlock, a unique conflict) leaves no
+ * trace, so its replay still holds, answers and completes the rows the database kept leased.
+ */
+async function jobTransaction<T>(job: MatchJob, fn: (tx: Transaction) => Promise<T>): Promise<T> {
+  const before = { held: new Map(job.held), stale: job.stale, lost: job.lost };
+  const restore = () => {
+    job.held = new Map(before.held);
+    job.stale = before.stale;
+    job.lost = before.lost;
+  };
+  try {
+    return await retryTransaction(job.deps.db, async (tx) => {
+      restore();
+      return fn(tx);
+    });
+  } catch (error) {
+    restore();
+    throw error;
+  }
 }
 
 async function releaseRows(

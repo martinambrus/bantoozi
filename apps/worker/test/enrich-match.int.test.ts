@@ -478,6 +478,47 @@ describe('article.match leases (spec 05 §5.5 steps 1, 6)', () => {
     });
   });
 
+  it('a pack transaction replayed after a deadlock still answers and completes the rows it holds', async () => {
+    const s = await scenario({ cards: 2 });
+    await h.enrichDirect(s.articleId, { topics: NO_BRANCH_TOPICS });
+    await h.queue(s.articleId, s.cardIds);
+    // The pack's first rank intent deadlocks once, after its answers and completions: the whole
+    // transaction rolls back and runs again (a sequence is not rolled back, so the replay passes).
+    await h.owner.query('CREATE SEQUENCE test_deadlock_once');
+    await h.owner.query(`
+      CREATE FUNCTION test_deadlock_once() RETURNS trigger
+      LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+      BEGIN
+        IF nextval('test_deadlock_once') = 1 THEN
+          RAISE EXCEPTION 'injected deadlock' USING ERRCODE = '40P01';
+        END IF;
+        RETURN NEW;
+      END $$`);
+    await h.owner.query(`
+      CREATE TRIGGER test_deadlock_once BEFORE INSERT ON job_outbox FOR EACH ROW
+        WHEN (NEW.queue = 'user.rank') EXECUTE FUNCTION test_deadlock_once()`);
+    try {
+      const since = await h.mark();
+      await h.dispatch('article.match', { articleId: s.articleId });
+      expect(h.router.asksFor(s.articleId, 'match')).toHaveLength(1);
+      expect(sorted((await h.cardAnswers(s.articleId)).map((a) => a.cardId))).toEqual(
+        sorted(s.cardIds),
+      );
+      expect(await h.queueRows(s.articleId)).toEqual([]);
+      expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'matched' });
+      expect(await h.payloads('user.rank', since)).toEqual([{ userId: s.userId, reason: 'match' }]);
+      // The deadlock did fire, and the pack's transaction ran again.
+      const inserts = await h.owner.query<{ n: string }>(
+        'SELECT last_value AS n FROM test_deadlock_once',
+      );
+      expect(Number(inserts.rows[0]?.n)).toBeGreaterThan(1);
+    } finally {
+      await h.owner.query('DROP TRIGGER test_deadlock_once ON job_outbox');
+      await h.owner.query('DROP FUNCTION test_deadlock_once()');
+      await h.owner.query('DROP SEQUENCE test_deadlock_once');
+    }
+  });
+
   it('a reset during the call discards the answers; rows without current facets are released unasked', async () => {
     const s = await scenario({ cards: 2 });
     await h.enrichDirect(s.articleId);
