@@ -83,9 +83,11 @@ card translations and workers; a busy container must not exhaust all API connect
      unexpected status and cancellation are neither retried in-process nor terminal: the job may run
      again. A `Retry-After` longer than 5 s returns a retry time instead of sleeping (D-33).
    - Store an `article_translations` row with `engine='libretranslate'` and `quality` from §4.
-   - A transient tier-1 or tier-2 failure uses the job's one queue retry, which runs at once; the
-     last attempt continues without that tier's row (native text when tier 1 has none), so the
-     article is never blocked (D-74).
+   - A transient tier-1 or tier-2 failure uses the job's one retry. Without a provider retry time it
+     is the queue retry, which runs at once. With one of at most 10 minutes it is a delayed
+     `article.translate` job at that time, marked `retried`, which is the last attempt; a longer
+     retry time is not waited for. The last attempt continues without that tier's row (native text
+     when tier 1 has none), so the article is never blocked (D-74).
 3. **Tier 2** is wanted if tier-1 quality is `fail`, or `forceTier2` is set, or the article's
    canonical feed (its oldest carrier, D-74) has `fetch_options.translate_strong`. It is **allowed** if the credential resolver supplies an enabled
    active Ollama key (encrypted DB, or permitted bootstrap env source), demand remains eligible, the daily cap is not

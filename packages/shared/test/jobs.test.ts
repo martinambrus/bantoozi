@@ -185,6 +185,9 @@ describe('jobs registry (spec 03 §2)', () => {
       kind: 'send',
       singletonKey: 'translate-mode:5',
     });
+    expect(
+      buildJobIntent('article.translate', { articleId: '5', forceTier2: true, retried: true }).send,
+    ).toEqual({ kind: 'send', singletonKey: 'translate-t2:5' });
     expect(buildJobIntent('user.rank', { userId: USER, reason: 'match' }).send).toEqual({
       kind: 'debounced',
       key: `rank:${USER}`,

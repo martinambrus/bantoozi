@@ -125,6 +125,9 @@ export const QUEUES = {
         forceTier2: z.boolean().optional(),
         replaceSkipped: z.boolean().optional(),
         modeChange: z.boolean().optional(),
+        // Set only on the delayed retry of a transient failure at the provider's retry time
+        // (spec 07 §3): that job is the last attempt.
+        retried: z.boolean().optional(),
       })
       .strict(),
     concurrency: 4,
@@ -372,7 +375,8 @@ export function sendSpecFor<Q extends QueueName>(queue: Q, payload: JobPayload<Q
 
 /**
  * One key per handler behaviour, so coalescing never drops a flag (spec 03 §2): plain jobs,
- * `forceTier2` alone, `replaceSkipped` and `modeChange` each have their own key.
+ * `forceTier2` alone, `replaceSkipped` and `modeChange` each have their own key. A `retried` job
+ * keeps the key of the job it retries.
  */
 function translateKey(p: Record<string, unknown>): string {
   const articleId = String(p['articleId']);

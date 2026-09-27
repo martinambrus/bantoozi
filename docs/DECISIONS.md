@@ -483,11 +483,14 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   references the request through `feedback_events.value.analysisRequestId`, the event field spec 08
   §5.3 now names. Spec 03 §2.2 and spec 08 §5.3 updated.
 - D-74: 2026-09-26 M2-T9 — article translation details (spec 07 §3). A transient tier-1 or tier-2
-  failure uses the job's one queue retry, which runs at once (a known retry time is not waited for);
-  the last attempt continues without that tier's row, from native text when tier 1 has none, so the
-  article is never blocked. `translate_strong` is read from the article's canonical feed (its oldest
-  carrier). A re-translation install carries every row of the replaced revision to the new one,
-  `fail` and skipped rows included, so the once-per-revision tier-2 rule still holds after it. Spec
+  failure uses the job's one retry. Without a provider retry time it is the queue retry, which runs
+  at once. With one of at most 10 minutes it is a delayed `article.translate` job at that time,
+  marked `retried`, which is the last attempt, so a rate-limited provider is not asked again before
+  the time it gave; a longer retry time is not waited for. The last attempt continues without that
+  tier's row, from native text when tier 1 has none, so the article is never blocked.
+  `translate_strong` is read from the article's canonical feed (its oldest carrier). A
+  re-translation install carries every row of the replaced revision to the new one, `fail` and
+  skipped rows included, so the once-per-revision tier-2 rule still holds after it. Specs 03 §2 and
   07 §3 updated.
 - D-75: 2026-09-26 M2-T9 — clustering details spec 05 §3.1 and §6 left open. The cluster state's
   `new.feed` is the title of the article's oldest authorized carrier. An article already placed at

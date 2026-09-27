@@ -385,6 +385,90 @@ describe('article.translate tiers (spec 07 §3)', () => {
     ]);
   });
 
+  it('a rate-limited tier 1 retries once at the provider retry time instead of at once', async () => {
+    lt.setOptions({ mode: 'status', status: 429, retryAfter: '30' });
+    const s = await slovak();
+    const since = await h.mark();
+    const sent = Date.now();
+    // The job records its one retry at the server's time and completes: nothing is stored yet.
+    await h.dispatch(
+      'article.translate',
+      { articleId: s.articleId },
+      { retry: { count: 0, limit: 1 } },
+    );
+    expect(translateRequests()).toHaveLength(1);
+    expect(await translations(s.articleId)).toEqual([]);
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'extracted' });
+    const intents = await h.intents('article.translate', { since });
+    expect(intents.map((intent) => intent.payload)).toEqual([
+      { articleId: s.articleId, retried: true },
+    ]);
+    const due = intents[0]?.availableAt.getTime() ?? 0;
+    expect(due).toBeGreaterThanOrEqual(sent + 29_000);
+    expect(due).toBeLessThanOrEqual(Date.now() + 31_000);
+
+    // The retry translates once the server accepts again.
+    lt.setOptions({ mode: 'ok' });
+    await h.dispatch('article.translate', { articleId: s.articleId, retried: true });
+    expect((await translations(s.articleId)).map((row) => [row.engine, row.quality])).toEqual([
+      ['libretranslate', 'ok'],
+    ]);
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'translated' });
+    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+  });
+
+  it('a rate-limited tier 2 retries once at the provider retry time; a longer wait is not awaited', async () => {
+    lt.setOptions({ mode: 'fail' });
+    ollama.setOptions({ mode: 'status', status: 429, headers: { 'retry-after': '30' } });
+    const s = await slovak();
+    const since = await h.mark();
+    const sent = Date.now();
+    await h.dispatch(
+      'article.translate',
+      { articleId: s.articleId },
+      { retry: { count: 0, limit: 1 } },
+    );
+    expect(ollamaCalls()).toBe(1);
+    expect(await translations(s.articleId)).toEqual([]);
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'extracted' });
+    const intents = await h.intents('article.translate', { since });
+    expect(intents.map((intent) => intent.payload)).toEqual([
+      { articleId: s.articleId, retried: true },
+    ]);
+    const due = intents[0]?.availableAt.getTime() ?? 0;
+    expect(due).toBeGreaterThanOrEqual(sent + 29_000);
+    expect(due).toBeLessThanOrEqual(Date.now() + 31_000);
+
+    // The retry is the last attempt: rate limited again, it continues from native text, even with
+    // a queue retry left.
+    await h.dispatch(
+      'article.translate',
+      { articleId: s.articleId, retried: true },
+      { retry: { count: 0, limit: 1 } },
+    );
+    expect(ollamaCalls()).toBe(2);
+    expect((await translations(s.articleId)).map((row) => [row.engine, row.quality])).toEqual([
+      ['libretranslate', 'fail'],
+    ]);
+    expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'translated' });
+    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+    expect(await h.payloads('article.translate', since)).toHaveLength(1);
+
+    // A server asking for more than ten minutes is not waited for: the article continues at once.
+    ollama.setOptions({ headers: { 'retry-after': '3600' } });
+    const t = await slovak();
+    const later = await h.mark();
+    await h.dispatch(
+      'article.translate',
+      { articleId: t.articleId },
+      { retry: { count: 0, limit: 1 } },
+    );
+    expect(ollamaCalls()).toBe(3);
+    expect(await h.payloads('article.translate', later)).toEqual([]);
+    expect(await h.articleRow(t.articleId)).toMatchObject({ state: 'translated' });
+    expect(await h.payloads('article.enrich', later)).toEqual([{ articleId: t.articleId }]);
+  });
+
   it('a flagged re-translation that changes the effective text resets the article; identical text is a no-op', async () => {
     // Enriched with a weak tier-1 translation (the source echoed).
     lt.setOptions({ mode: 'weak' });

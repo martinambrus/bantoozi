@@ -13,7 +13,7 @@ import {
   type TranslationInput,
   type TranslationRow,
 } from '@bantoozi/db';
-import type { InferenceAuthorization } from '@bantoozi/shared';
+import { enqueueTranslate, type InferenceAuthorization, type JobPayload } from '@bantoozi/shared';
 import {
   articleTranslationSource,
   decideTier2,
@@ -32,12 +32,18 @@ import {
   type TranslationJob,
 } from '../classify/translation.js';
 import { after } from '../pipeline.js';
-import { pipelineContext, type ClassificationDeps, type WorkerDeps } from './deps.js';
+import { nowOf, pipelineContext, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
 import { hasRetriesLeft } from './transient.js';
 
 /** Articles a flagged job (tier-2 escalation, skipped-row reprocess, mode change) may translate. */
 const RETRANSLATABLE_STATES = ['extracted', 'translated', 'enriched', 'matched', 'degraded'];
+
+/**
+ * The longest provider retry time a job's retry waits for (D-74). A server asking for longer is not
+ * waited for: the job continues without that tier's row at once.
+ */
+const MAX_TRANSLATION_RETRY_WAIT_MS = 10 * 60_000;
 
 /** Thrown to make pg-boss retry the job after a transient tier-1 or tier-2 translation failure. */
 export class TransientTranslationError extends Error {
@@ -59,9 +65,9 @@ export class TransientTranslationError extends Error {
  * - a later job re-enriches an enriched/matched article through `resetArticleAnswers` (keeping
  *   the body and translations at the new revision) only when the effective model input changes;
  *   identical effective text is a no-op, and other states pick the best row up at enrichment.
- * A transient tier-1 or tier-2 failure retries the job while the queue allows; the last attempt
- * continues without that tier's row (native text when tier 1 has none) rather than blocking the
- * article (spec 07 §3, D-74).
+ * A transient tier-1 or tier-2 failure uses the job's one retry (see {@link retryTransient}); the
+ * last attempt continues without that tier's row (native text when tier 1 has none) rather than
+ * blocking the article (spec 07 §3, D-74).
  */
 export function createArticleTranslateHandler(
   deps: WorkerDeps,
@@ -109,13 +115,15 @@ export function createArticleTranslateHandler(
     };
     const rows = await listTranslations(deps.db, articleId, article.revision);
     const produced: TranslationInput[] = [];
+    // The job's one retry: pg-boss's queue retry, or a delayed job marked `retried`.
+    const retriesLeft = payload.retried !== true && hasRetriesLeft(context);
 
     let tier1Quality = rows.find((row) => row.engine === 'libretranslate')?.quality ?? null;
     if (payload.forceTier2 !== true && tier1Quality === null) {
       const tier1 = await runTier1(deps.db, classification.router, translation, job);
       if (tier1.kind === 'no_demand') return;
       if (tier1.kind === 'transient') {
-        if (hasRetriesLeft(context)) throw new TransientTranslationError(tier1.reason);
+        if (retriesLeft && (await retryTransient(deps, article, payload, tier1))) return;
         deps.logger.warn(
           { articleId, reason: tier1.reason },
           'tier-1 translation unavailable; continuing with native text',
@@ -138,8 +146,8 @@ export function createArticleTranslateHandler(
       const tier2 = await runTier2(deps.db, classification.router, translation, job, model);
       if (tier2.kind === 'no_demand') return;
       if (tier2.kind === 'row') produced.push(tier2.row);
-      else if (tier2.kind === 'transient' && hasRetriesLeft(context)) {
-        throw new TransientTranslationError(tier2.reason);
+      else if (tier2.kind === 'transient' && retriesLeft) {
+        if (await retryTransient(deps, article, payload, tier2)) return;
       }
     }
 
@@ -149,6 +157,32 @@ export function createArticleTranslateHandler(
     }
     await installRetranslation(deps, config, article, rows, produced, replaceSkipped);
   };
+}
+
+/**
+ * The job's one retry after a transient tier-1 or tier-2 failure (spec 07 §3, D-74). Without a
+ * provider retry time it is pg-boss's immediate queue retry: this throws. With one it is a delayed
+ * job at that time, marked `retried` so it is the last attempt, and this job ends without storing
+ * anything (true). A retry time beyond {@link MAX_TRANSLATION_RETRY_WAIT_MS} is not waited for
+ * (false): the job continues without that tier's row.
+ */
+async function retryTransient(
+  deps: WorkerDeps,
+  article: ClassificationArticle,
+  payload: JobPayload<'article.translate'>,
+  failure: { reason: string; retryAt?: Date },
+): Promise<boolean> {
+  const { retryAt } = failure;
+  if (retryAt === undefined) throw new TransientTranslationError(failure.reason);
+  if (retryAt.getTime() - nowOf(deps).getTime() > MAX_TRANSLATION_RETRY_WAIT_MS) return false;
+  await deps.db.transaction((tx) =>
+    enqueueTranslate(
+      workerOutbox(tx, { availableAt: retryAt }),
+      { ...payload, retried: true },
+      { revision: article.revision },
+    ),
+  );
+  return true;
 }
 
 function authorizationOf(
