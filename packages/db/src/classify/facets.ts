@@ -42,11 +42,15 @@ export interface FacetRow {
   updatedAt: Date;
 }
 
-/** The stored facets of `(articleId, questionSetId)`, whatever their revision (callers compare). */
+/**
+ * The stored facets of `(articleId, questionSetId)`, whatever their revision (callers compare).
+ * `lock` takes the row `FOR UPDATE`, so its answers cannot change until the transaction ends.
+ */
 export async function readFacets(
   db: Executor,
   articleId: string,
   questionSetId: string,
+  options: { lock?: boolean } = {},
 ): Promise<FacetRow | null> {
   const result = await db.execute<{
     article_id: string;
@@ -64,7 +68,8 @@ export async function readFacets(
            article_revision::text AS article_revision, state_sha256, engine, model, state_variant,
            answers, features, updated_at
       FROM article_facets
-     WHERE article_id = ${articleId}::bigint AND question_set_id = ${questionSetId}::bigint`);
+     WHERE article_id = ${articleId}::bigint AND question_set_id = ${questionSetId}::bigint
+     ${options.lock === true ? sql`FOR UPDATE` : sql``}`);
   const row = result.rows[0];
   return row === undefined
     ? null
@@ -137,17 +142,22 @@ export async function writeFacets(
 
 /**
  * Replace the flattened features of the current facets (spec 05 §3.4: recomputed when L2 answers
- * arrive), only while the row still holds exactly the answers they were built from.
+ * arrive), only while the row still holds exactly the answers they were built from: the same
+ * revision, state, engine, model and answers. Callers read that row with `lock` in the same
+ * transaction, so a concurrent replacement of the answers waits instead of being overwritten.
  */
 export async function updateFacetFeatures(
   tx: Transaction,
-  input: {
-    articleId: string;
-    questionSetId: string;
-    articleRevision: string;
-    stateSha256: string;
-    features: Record<string, number>;
-  },
+  input: Pick<
+    FacetRow,
+    | 'articleId'
+    | 'questionSetId'
+    | 'articleRevision'
+    | 'stateSha256'
+    | 'engine'
+    | 'model'
+    | 'answers'
+  > & { features: Record<string, number> },
 ): Promise<boolean> {
   const result = await tx.execute(sql`
     UPDATE article_facets SET features = ${JSON.stringify(input.features)}::jsonb, updated_at = now()
@@ -155,6 +165,9 @@ export async function updateFacetFeatures(
        AND question_set_id = ${input.questionSetId}::bigint
        AND article_revision = ${input.articleRevision}::bigint
        AND state_sha256 = ${input.stateSha256}
+       AND engine = ${input.engine}
+       AND model IS NOT DISTINCT FROM ${input.model}::text
+       AND answers = ${JSON.stringify(input.answers)}::jsonb
        AND features IS DISTINCT FROM ${JSON.stringify(input.features)}::jsonb`);
   return (result.rowCount ?? 0) > 0;
 }

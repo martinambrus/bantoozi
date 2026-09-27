@@ -599,9 +599,10 @@ from that request can satisfy this worker only when every current input fingerpr
    state (step 8). A job that finds the configuration changed releases the
    rows it holds unanswered and without an attempt, enqueues current work and sends no further pack
    (D-85). Otherwise upsert only the returned pack's
-   answers and L2 rows with full provenance, rebuild compatible features, and delete only the rows
-   leased and answered by this pack. A newer/primary answer cannot be overwritten by an older or
-   fallback result for the same input. Do not delete rows another worker reclaimed.
+   answers and L2 rows with full provenance, rebuild compatible features from the facet row locked
+   before any answer is written (a concurrent replacement of its answers, such as an analysis cache
+   fill, is either read or waits), and delete only the rows leased and answered by this pack. A
+   newer/primary answer cannot be overwritten by an older or fallback result for the same input. Do not delete rows another worker reclaimed.
 7. **On deferred outcome** (`budget`, `no_key`, open breaker, provider `Retry-After`): release the
    lease, record `last_error`, set `next_attempt_at` (next UTC budget day, known retry time, or the
    10-minute recovery interval). Do not increment failure attempts or immediately re-enqueue a hot

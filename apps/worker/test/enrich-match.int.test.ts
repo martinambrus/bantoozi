@@ -6,9 +6,11 @@ import {
   renewMatchLease,
   resetArticleAnswers,
   retryTransaction,
+  updateFacetFeatures,
   workerOutbox,
   type MatchClaim,
 } from '@bantoozi/db';
+import type { ChoiceAnswer } from '@bantoozi/questions';
 import { matchCoverage, type RankCard } from '@bantoozi/ranker';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -723,6 +725,65 @@ describe('article.match completion fence (spec 05 §5.5 step 6)', () => {
     } finally {
       write?.close();
       await h.setSetting('engine.prefilter_enabled', false);
+    }
+  });
+
+  it('rebuilds level-2 features from facet answers an analysis fill replaces during the call', async () => {
+    const feedId = await h.feed();
+    const userId = await h.user();
+    await h.subscribe(userId, feedId, 'active');
+    const articleId = await h.article({ feedIds: [feedId] });
+    // Fallback facets that select two branches: the match job asks level-2 questions only.
+    await h.enrichDirect(articleId, { engine: 'llm', model: LLM_MODEL });
+    const fallback = await h.facetRow(articleId);
+    const topic = fallback!.answers['topic_l1'] as ChoiceAnswer;
+    // A selected request's primary Call A for the same input replaces them (fill mode).
+    const answers = {
+      ...fallback!.answers,
+      topic_l1: { ...topic, probabilities: { ...topic.probabilities, technology: 0.85 } },
+    };
+    let write: Promise<SettingWrite> | undefined;
+    h.router.respond = async () => {
+      write ??= h.openWrite(
+        `UPDATE article_facets SET engine = 'typesafe', model = $3, answers = $4::jsonb,
+                updated_at = now()
+          WHERE article_id = $1 AND question_set_id = $2`,
+        [articleId, h.sets.enrich, PRIMARY_MODEL, JSON.stringify(answers)],
+      );
+      await write;
+      return undefined;
+    };
+    try {
+      const run = h.dispatch('article.match', { articleId });
+      expect(await waitFor(() => write !== undefined, 10_000)).toBe(true);
+      await (await write!).commit();
+      await run;
+      expect(h.router.asksFor(articleId, 'match').map((ask) => [...ask.l2].sort())).toEqual([
+        ['science', 'technology'],
+      ]);
+      const facets = await h.facetRow(articleId);
+      expect(facets).toMatchObject({ engine: 'typesafe', model: PRIMARY_MODEL, answers });
+      // The features belong to the replaced answers, with the job's level-2 answers.
+      expect(facets?.features['t1.technology']).toBe(0.85);
+      expect(facets?.features['t2_asked.technology']).toBe(1);
+      // The update fence itself refuses features built from the replaced answers.
+      const stale = await h.db.transaction((tx) =>
+        updateFacetFeatures(tx, {
+          articleId,
+          questionSetId: h.sets.enrich,
+          articleRevision: fallback!.revision,
+          stateSha256: fallback!.stateSha256,
+          engine: fallback!.engine,
+          model: fallback!.model,
+          answers: fallback!.answers,
+          features: { stale: 1 },
+        }),
+      );
+      expect(stale).toBe(false);
+      expect((await h.facetRow(articleId))?.features).toEqual(facets?.features);
+    } finally {
+      h.router.respond = undefined;
+      (await write)?.close();
     }
   });
 

@@ -470,6 +470,13 @@ async function applyPack(
   const { deps, article, classification } = job;
   return retryTransaction(deps.db, async (tx) => {
     if (!(await revisionHolds(tx, job)) || !(await configHolds(tx, job))) return [];
+    // Level-2 answers rebuild the facet features below. The facet row is locked before any answer
+    // is written, as the analysis cache fill does, so a replacement of its answers either commits
+    // first and is read here, or waits for this transaction.
+    const facets =
+      askL2.length === 0
+        ? null
+        : await readFacets(tx, article.id, job.enrichSet.id, { lock: true });
     const held = await heldRows(tx, job, askCards);
     const demanded = new Set((await cardPairDemand(tx, article.id, held)).map((d) => d.cardId));
     await dropHeld(
@@ -518,7 +525,7 @@ async function applyPack(
       }
       await writeL2Answers(tx, l2Rows, { primaryModel: classification.primaryModel });
     }
-    if (l2Rows.length > 0) await refreshFeatures(tx, job);
+    if (l2Rows.length > 0 && facets !== null) await refreshFeatures(tx, job, facets);
     if (rows.length > 0 || l2Rows.length > 0) await rankAffected(tx, job);
     return unanswered;
   });
@@ -692,22 +699,18 @@ async function retryL2(job: MatchJob, disposition: FailureDisposition): Promise<
   });
 }
 
-/** Rebuild the features of the current facets from the current L2 rows (spec 05 §3.4). */
-async function refreshFeatures(tx: Transaction, job: MatchJob): Promise<void> {
-  const facets = await readFacets(tx, job.article.id, job.enrichSet.id);
-  if (facets === null || facets.articleRevision !== job.article.revision) return;
+/**
+ * Rebuild the features of the current facets, locked by the caller, from the current L2 rows (spec
+ * 05 §3.4).
+ */
+async function refreshFeatures(tx: Transaction, job: MatchJob, facets: FacetRow): Promise<void> {
+  if (facets.articleRevision !== job.article.revision) return;
   const l2 = currentL2Answers(
     await readL2Answers(tx, job.article.id),
     l2Branches(facets.answers),
     job.fingerprint,
   );
-  await updateFacetFeatures(tx, {
-    articleId: job.article.id,
-    questionSetId: job.enrichSet.id,
-    articleRevision: job.article.revision,
-    stateSha256: facets.stateSha256,
-    features: facetFeatures(facets.answers, l2),
-  });
+  await updateFacetFeatures(tx, { ...facets, features: facetFeatures(facets.answers, l2) });
 }
 
 function cardAnswer(

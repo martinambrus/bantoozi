@@ -101,10 +101,11 @@ export async function waitFor(
 }
 
 /** A setting write held open in its own transaction (`ClassifyHarness.openSettingWrite`). */
+/** An uncommitted concurrent write ({@link ClassifyHarness.openWrite}), holding its row locks. */
 export interface SettingWrite {
   /**
-   * Commit once a session of the test database waits for a lock (a completion reading the setting
-   * under a share lock), or after `waitMs` without one (a read that does not wait).
+   * Commit once a session of the test database waits for a lock (a completion reading the written
+   * row under a lock), or after `waitMs` without one (a read that does not wait).
    */
   commit(waitMs?: number): Promise<void>;
   /** Return the connection; an uncommitted write is rolled back. */
@@ -681,14 +682,19 @@ export class ClassifyHarness {
 
   /** Write a setting in a transaction of its own that keeps the row lock until `commit()`. */
   async openSettingWrite(key: string, value: unknown): Promise<SettingWrite> {
+    return this.openWrite(
+      `INSERT INTO settings (key, value) VALUES ($1, $2::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      [key, JSON.stringify(value)],
+    );
+  }
+
+  /** A concurrent writer: `text` runs as the owner in its own transaction, committed on demand. */
+  async openWrite(text: string, values: readonly unknown[]): Promise<SettingWrite> {
     const client = await this.owner.connect();
     try {
       await client.query('BEGIN');
-      await client.query(
-        `INSERT INTO settings (key, value) VALUES ($1, $2::jsonb)
-         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
-        [key, JSON.stringify(value)],
-      );
+      await client.query(text, [...values]);
     } catch (error) {
       client.release(true);
       throw error;
