@@ -343,7 +343,8 @@ When the page becomes visible again after `/open`:
 - **Card editor:**
   - title (optional), "I want to read about…" (interest), "…but not about" (not_for), strength, scope
   - live guidance: the authoring rules from spec 05 §8 as hints ("Describe one topic", "Avoid 'not' in
-    the main text; use the 'but not' field")
+    the main text; use the 'but not' field", "Leave out dates and number limits such as prices,
+    lengths or ages; freshness is handled for you")
   - character counters
 - **Labels page:** name, definition, "but not", colour. The list shows how many articles carry each
   label. Explain that labels organize content and never mean "like" or "dislike"; assigning one does

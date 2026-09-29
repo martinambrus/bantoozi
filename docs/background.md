@@ -12,6 +12,10 @@
 > library upgrades opt-in and labels neutral. Final decisions allow publication after 30 days of creator
 > inactivity, accept a passing owner-only pilot for initial beta, and exclude media from bookmark archives.
 > Those decisions supersede earlier hypotheses below.
+>
+> **Review note (2026-09-29):** independent tests published after Jev's public launch are summarized
+> in §2.4 and the access changes in §3.1. They support the design's use of Jev, correct the earlier
+> claim that its probabilities are calibrated, and led to design revision R3 (PLAN §17.4).
 
 ## 1. The idea in one page
 
@@ -27,9 +31,12 @@ engine by hand:
 
 The next generation replaces the hand-built scoring with **TypeSafe's Jev**, a "System One" decision
 model. You send Jev a *state* (the article) and a set of typed *questions* (Choice / Score / Noul). It
-returns calibrated probabilities plus a confidence value in about 70–500 ms. It costs $0.042 per million input
+returns probabilities plus a confidence value in under a second (TypeSafe says 70–500 ms; an
+independent benchmark measured a 0.65 s median, §2.4). It costs $0.042 per million input
 tokens, and output is free. It returns typed decisions rather than free-form text; those decisions
-can still be wrong and need held-out measurement and recoverable user controls.
+can still be wrong and need held-out measurement and recoverable user controls. TypeSafe calls the
+probabilities calibrated, but an independent test found that true for Noul far more than for Choice
+or Score (§2.4), so Bantoozi treats every answer as a score and sets its cutoffs on its own labels.
 
 The design in one picture:
 
@@ -56,12 +63,15 @@ Five ideas carry most of the design:
    turn inference on for an untrained subscription.
 2. **Reuse eligible article analysis.** When at least one reader requests it, per-article enrichment
    can be shared across eligible tenants; an off subscription creates no such demand. DreamCatcher's global article store already works this way, so reuse it.
-3. **The model's calibration replaces hand balancing.** Jev's probabilities are trained to be calibrated.
-   Tiers become probability buckets instead of hand-tuned percent thresholds. When per-user learning
-   is needed, a tiny logistic model learns the weights, so nobody has to tune them.
-4. **Confidence is a product feature.** High-confidence "no" items get hidden. Low-confidence items go
-   to a *Maybe* lane and are the articles the app asks you to rate. This is active learning: you only
-   train where the model is unsure.
+3. **Measurement replaces hand balancing.** Jev's answers are good scores, not guaranteed
+   probabilities (§2.4). Lane, tier and demotion cutoffs are chosen on blind human ratings and labels
+   at gate G1 instead of hand-tuned percent thresholds. When per-user learning is needed, a tiny
+   logistic model learns the weights and its own calibration from the user's ratings, so nobody has
+   to tune them.
+4. **Confidence is a product feature.** Confident "no" items sink to *Everything else*; only
+   never-cards and the reader's own rules or preferences hide an article. Low-confidence items go to a
+   *Maybe* lane and are the articles the app asks you to rate. This is active learning: you only train
+   where the model is unsure.
 5. **Feedback carries reasons, not just a sign.** A 👎 comes with an optional one-tap reason
    ("off-topic", "clickbait", "already seen this story", "too shallow", "promo"). Each reason maps onto a
    Jev question that already exists, so a dislike becomes negative evidence. The old engine could never
@@ -217,6 +227,59 @@ Five ideas carry most of the design:
   practice it runs lower. Newsjack saw a median confidence of 0.53 against a median top probability of 0.68.
   Thresholds must be tuned on our own data.
 
+### 2.4 Independent tests after launch (reviewed 2026-09-29)
+
+Jev opened to the public on 2026-09-20 and independent tests followed within days. An article that
+checked TypeSafe's five launch claims against them (The Speed Engineer, 2026-09-29) prompted this
+review; the primary sources are in §4.
+
+- **Speed and cost held.** Bolna found Jev 1.7–3.3× faster than the models it compared, JevBench
+  measured a 0.65 s median latency, and Primeline ran 9,750 calls for about $0.38. The price and the
+  30 s attempt timeout of spec 04 stand.
+- **Calibration depends on the question type.** Primeline measured an expected calibration error of
+  0.012 for Noul, 0.086 for Choice and 0.254 for Score, and advises tuning each threshold per decision,
+  never copying one across question types. Calibration measured on the vendor's data need not hold on
+  ours either. Card questions are Nouls, and spec 06 already treats card scores as heuristic.
+  Revision R3 has gate G1 check the fixed demotion cutoffs against the facet labels, including
+  `shallow`, which thresholds a Score.
+- **Aggregate agreement hides one-sided errors.** In Bolna's routing test (600 decisions from 136 real
+  calls, ten models) Jev stayed correctly 94 % of the time but moved only 52 % of the times it should
+  have. Six request designs all scored 71.8–73.1 %, and a threshold sweep traded stay recall
+  (84 → 97 %) for move recall (61 → 41 %) while agreement stayed near 72.5 %. A cutoff cannot repair
+  weak discrimination; it only moves errors from one side to the other. G1 already gates on AUC; R3
+  adds where liked and disliked articles land by lane, so a one-sided failure shows.
+- **Jev is strongest on many narrow questions about one piece of state** (Bolna's field extraction and
+  call judging; Primeline's commit classification, 65.7 % against Haiku 4.5's 54.8 %) and weakest
+  where the answer depends on a conversation's history and shifting intent. Calls A and B are the
+  first kind.
+- **Typed output is not a correct answer.** An image sent as state returned HTTP 200 with Noul 0.50,
+  and an instruction that contradicted its criteria was followed literally in 20 of 20 cases
+  (Primeline). Bantoozi's state is text only and its question sets have no negated instructions
+  (spec 05 §3.3), so neither case should arise. A 0.5 that does come back is an ordinary input to
+  the ranking policy (spec 06 §2), not a safe default: under the default settings it cannot hide an
+  article (a never-card hides at 0.7), but it need not land in Maybe either, because a *must* card
+  at 0.5 meets the must floor and lifts the article to For You, and G1 may move the lane cutoffs.
+- **TypeSafe's headline accuracy is agreement with other models** (67.8 % against two frontier LLMs,
+  per the article), not ground truth. G1 uses blind human ratings and facet labels only (locked
+  decision 3).
+- **Retrieval caps recall.** The article cites a reranking test in which Jev added almost nothing
+  because the intended item reached the candidate pool for only 36 % of queries. Bantoozi's retrieval
+  step is the topic prefilter, which stays off until G1 measures its recall (spec 05 §5.5).
+- **The article's rules for building on Jev are mostly in the design already:** pin the model and
+  log the returned id with the raw probability (spec 04 §3, spec 05 §10); tune one threshold per
+  action on your own labels and set each bar by the cost of a mistake (G1; only never-cards and
+  explicit rules hide); treat state as hostile input (spec 04 §8, §10.1; R3 adds the informational
+  experiment E7); keep dates and arithmetic in code (spec 05 §3.1, §3.3; R3 adds a card-authoring
+  rule); keep state within the limits (spec 05 §3.1 caps; packing at 48k/28k under Jev's 64k/32k,
+  §5.2). Its last rule, that nothing which moves state forward is decided by Jev alone, holds in
+  spirit: Maybe asks the reader and suggestions are offers, while the decisions Jev does make alone
+  (a never-card hide, a story fold) stay explained and recoverable under Show hidden.
+- **Not adopted:** self-hosting decider-4b v2 (64.1 against Jev's 63.3 on JevBench v1.4.2) needs a GPU
+  and our own recalibration (locked decision 5); Laya stays the optional local engine (M9).
+- **Accepted risk:** story folding (spec 05 §6) uses a fixed 0.7 bar on a Choice that G1 does not
+  measure. A wrong fold caps an article at Everything else (`seen_story`) or hides it under the
+  reader's own `mute_story` rule; both are explained and recoverable.
+
 ---
 
 ## 3. Risks
@@ -225,6 +288,16 @@ Five ideas carry most of the design:
 
 Jev is new and single-vendor. The mitigations are the `DecisionEngine` abstraction, the LLM fallback, pinned
 versions, stored raw answers, and the fact that no user data is locked into the vendor (cards are plain text).
+
+Access has already changed several times. New signups opened with $5 of credit on 2026-09-20, paused
+on 2026-09-22 while existing accounts kept working, and reopened around 2026-09-28 without the free
+credit. The plan's direct account (locked decisions 8 and 13) needs a key before M3b. Gateways resell
+the same model: OpenRouter accepts the same `POST /v1/systemone` request and returns the same answer
+shape under `https://openrouter.ai/api` without a TypeSafe account, but with a 32,000-token context
+(Bantoozi packs up to 48,000 tokens), a requested id `typesafe/jev-1.13` that comes back dated (for
+example `typesafe/jev-1.13-20260917`, which the exact-pin check of spec 04 §3 rejects), and one more
+processor of article and card text (§3.5). Switching to it would change locked decision 8 and spec 04
+§3, so it stays a documented fallback rather than built work.
 
 ### 3.2 Language (important for Slovak/Czech feeds)
 
@@ -260,6 +333,8 @@ Article text can argue for its own classification. The mitigations:
 - Jev only sees data in state
 - post-rules never *hide* on a single low-confidence answer
 - promotional content is explicitly modelled
+- the informational experiment E7 measures how far steering text inside an article moves card
+  answers ([spec 10 §3](./specs/10-evaluation.md))
 
 ### 3.4 Cost at scale
 
@@ -296,3 +371,13 @@ training or the golden set without the explicit opt-in specified in spec 10.
   [Autoresearch feature discovery](https://docs.typesafe.ai/cookbooks/autoresearch_feature_discovery.md),
   [Introducing System One models](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
   [Jev on OpenRouter](https://openrouter.ai/docs/guides/community/jev), [jevai.net](https://jevai.net/) (third-party overview site).
+- Independent tests and access changes (§2.4, §3.1; reviewed 2026-09-29): The Speed Engineer,
+  *I Checked Jev's Five Launch Claims for 10 Days. Only Two Survived.* (Medium, 2026-09-29),
+  [Bolna: Testing Jev on real phone calls](https://www.bolna.ai/blog/testing-jev-on-real-phone-calls),
+  [Primeline: pre-registered test](https://primeline.cc/blog/typesafe-jev-pre-registered-test),
+  [JevBench v1.4.2](https://github.com/fstandhartinger/jevbench/releases/tag/v1.4.2) and
+  [its leaderboard](https://benchmarkheaven.com/jev-models),
+  [Jev can't be calibrated](https://www.alexmolas.com/2026/09/23/jev-cant-be-calibrated.html),
+  [signups paused](https://aifront-page.com/typesafe-ai-pauses-jev-ai-model-signups-demand-surge/) and
+  [reopened](https://aifront-page.com/typesafe-ai-reopens-jev-sign-ups-free-credit-suspended/),
+  [OpenRouter System One API](https://openrouter.ai/docs/api/api-reference/systemone/submit-a-system-one-request).
