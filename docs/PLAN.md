@@ -206,7 +206,7 @@ Background and rationale: [`background.md`](./background.md).
 **Decided by measurement at gate G1 (M3b), with defaults until then:**
 - language mode per language (default `native`)
 - card text mode (default `as_written`)
-- lane and tier thresholds (spec 06 §11 defaults)
+- lane, tier and demotion thresholds (spec 06 §11 defaults)
 - measured workload/cost recommendations (baseline $2/day; no automatic cap increase)
 
 ---
@@ -725,8 +725,8 @@ Complete milestone M3a "Evaluation tooling and golden-set collection" exactly as
 | M3a-T2 | CLI skeleton; `feeds-golden.txt` (18–22 feeds per language); `ingest-sample` (worker heartbeat check, drain wait, `--watch`); `sample`; `status` | T1 | A | 10 §2.1 |
 | M3a-T3 | Rating server: rater add/token (`EVAL_PUBLIC_URL`), human identity + topic-profile registration, card-writing step, feed picking, assignments, blind rating UI | T1, T2 | B | 10 §2.2, §2.4 |
 | M3a-T4 | Facet labelling page | T3 | B | 10 §2.3 |
-| M3a-T5 | Metrics library | — | C | 10 §4 |
-| M3a-T6 | Experiment runner (eval router with `budgetOverrideUsd`, `ignoreDailyCaps`, `kind:'eval'`, `EVAL_CACHE_DIR` cache, estimate, `--yes`/`--max-usd`); experiments B0, B1, B1-T, E1, E2, E3, E3b, E4, E6 (E5 stub); `eval replay` | T1, T2 | D | 10 §3, §6 |
+| M3a-T5 | Metrics library, including cutoff precision/recall and the per-class lane distribution | — | C | 10 §4 |
+| M3a-T6 | Experiment runner (eval router with `budgetOverrideUsd`, `ignoreDailyCaps`, `kind:'eval'`, `EVAL_CACHE_DIR` cache, estimate, `--yes`/`--max-usd`); experiments B0, B1, B1-T, E1, E2, E3, E3b, E4, E6, E7 (E5 stub); `eval replay` | T1, T2 | D | 10 §3, §6 |
 | M3a-T7 | Report generator, decision rules, `apps/eval/config/g1.json` schema, `apply-g1` with the field → settings mapping | T2, T5, T6 | C | 10 §1, §5 |
 | M3a-T8 | `eval dry-run` in the separate `bantoozi_eval_dryrun` database: simulated raters and the fake engine → full report | T3–T7 | D | 10 all |
 | M3a-T9 | Real sample ingested and the rater onboarding kit | T2, T3 | A | 10 §2 |
@@ -762,7 +762,8 @@ Complete milestone M3a "Evaluation tooling and golden-set collection" exactly as
 - **T4:** the labelling page stores all six fields; the second labeller's overlap subset is chosen
   deterministically.
 - **T5:** AUC matches known Mann–Whitney values, including ties; bootstrap CI determinism with a seed;
-  P@k; ECE; macro-F1; Spearman; Cohen's κ; isotonic regression. All unit-tested.
+  P@k; ECE; macro-F1; Spearman; Cohen's κ; isotonic regression; precision and recall at a cutoff;
+  the lane distribution of liked and disliked items. All unit-tested.
 - **T6:**
   - Each experiment is a config object.
   - Calls go through an eval router: `kind: 'eval'`, with the budget override and the cap bypass.
@@ -771,11 +772,13 @@ Complete milestone M3a "Evaluation tooling and golden-set collection" exactly as
   - `eval.runs` / `eval.run_answers` are written.
   - `eval replay` produces a diff report against a stored run (tested on fixture runs), including
     an `--engine llm` replay of the fallback classifier.
+  - E7's two variants differ from the frozen E1 state only in `excerpt` (a test).
 - **T7:**
   - The report renders every table of spec 10 §4 and one reliability SVG per language.
   - The decision rules of spec 10 §5 are pure functions with a unit test for every branch: E*
     eligibility, split isolation, actual composed production configuration, insufficient-coverage
-    INCONCLUSIVE state, tier-2 cap, per-language pooling and the isotonic fallback.
+    INCONCLUSIVE state, tier-2 cap, per-language pooling, the isotonic fallback, and the demotion
+    cutoff selection with its unmeasured fallback.
   - `apps/eval/config/g1.json` validates against a zod schema.
   - `apply-g1` writes exactly the settings in the spec 10 §1 mapping table.
 - **T8:**
@@ -837,7 +840,7 @@ Complete milestone M3b "Run gate G1" as specified in docs/PLAN.md §9 and docs/s
 | ID | Task | Needs | Specs |
 |---|---|---|---|
 | M3b-T1 | Preflight: coverage/classes/facets and frozen split pass spec 10 readiness; actual model/MT capabilities verified; keys valid with budgeted tiny calls; total estimate printed | ratings | 10 §2–3 |
-| M3b-T2 | Run B0, B1, B1-T, E1, E2, E3, E3b, E4 (E5 only if Laya is installed), each with `--yes --max-usd <10 − spent so far>`; then the informational E6 if the remaining budget covers its estimate | T1 | 10 §3 |
+| M3b-T2 | Run B0, B1, B1-T, E1, E2, E3, E3b, E4 (E5 only if Laya is installed), each with `--yes --max-usd <10 − spent so far>`; then the informational E6 and E7 if the remaining budget covers their estimates | T1 | 10 §3 |
 | M3b-T3 | Select/tune only on development groups; lock config and evaluate held-out production policy; report PASS/FAIL/INCONCLUSIVE; write `apps/eval/config/g1.json` (runs/snapshot/split hashes), commit | T2 | 10 §1, §4–5 |
 | M3b-T4 | On profile-scoped PASS: `apply-g1` to development; record the actual evidence scope and owner-approved initial-beta eligibility in `docs/DECISIONS.md` (daily budget recommendation, language modes, card text mode, thresholds, tier-2 cap; Q1 governs production cap increases). On FAIL/INCONCLUSIVE: write `docs/G1-FAIL.md` with the rule 1 details and the 20 worst-ranked liked articles | T3 | 10 §1, §5 |
 
@@ -1345,6 +1348,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | 2026-09-26 | M0 Foundations done: status markers in §4 and §5 and a line in `CLAUDE.md` "Current state"; implementation decisions I1–I3 recorded in §17.3 and applied to specs 02 and 08 (D-6) |
 | 2026-09-26 | Personal-model revision R1 (§17.4): card inputs grouped by strength, plus own card inputs once a card has enough rated matches, instead of one input for each of the first 30 cards; ratings survive card edits (rating fingerprint and model context); ridge on the summed loss with λ chosen by cross-validation; card example suggestions after ratings; informational G1 experiment E6. Specs 05–10 and `RankerConfig`/preferences in `packages/shared` updated |
 | 2026-09-26 | Media signals R2 (§17.4): the personal model gains `has_video` and a bucketed in-body image density per 500 words, both detected at ingestion and extraction before sanitizing removes the media. Specs 02, 03 and 06 and `ExplainSchema` in `packages/shared` updated; plan: M1-T3, T5, T7, M5-T4 and M7-T1 |
+| 2026-09-29 | Evaluation revision R3 (§17.4) after independent Jev tests: gate G1 checks the demotion cutoffs against the facet labels and selects them on development data, reports where liked and disliked articles land by lane, and adds the informational steering-text experiment E7; card authoring keeps dates, age and amounts out of interests; `background.md` corrects the calibration claim and records the access changes. Specs 05, 06, 09 and 10 updated; plan: §2, M3a-T5, T6, T7 and M3b-T2 |
 
 ## 17. Owner decisions and implementation gates
 
@@ -1392,9 +1396,10 @@ exceed spending caps or represent an owner pilot as multi-person validation.
 | I2 | The API role may insert `bookmark_snapshot_pins` (spec 02 §1.2), so a faulty route could pin a snapshot the user never had. | Pin only what clear returned. | The unbookmark transaction pins exactly the `previous_snapshot_id` that `clear_bookmark_snapshot` returned; routes and clients never supply snapshot IDs (spec 02 §1.2 and §6, spec 08 §5.4). M4's undo repository enforces and tests it. |
 | I3 | `articles.cluster_set_id` and `card_suggestions.question_set_id` stated no `ON DELETE` clause. | State it. | `ON DELETE RESTRICT`, like every other `question_sets` reference (D-6, migration 0006). |
 
-### 17.4 Design revisions (2026-09-26)
+### 17.4 Design revisions (R1, R2 2026-09-26; R3 2026-09-29)
 
 | ID | Problem | Owner answer | Binding implementation |
 |---|---|---|---|
 | R1 | The personal model had one input for each of the first 30 positive cards (by card id) and for every never-card, more than 30 ratings can support, and its fingerprint covered every card, so any card change, including adding an example from the Why-this drawer, discarded all stored ratings. Its ridge penalty on the mean loss also kept every weight small however many ratings accumulated. | Adopt the proposed revision with the review's refinements. | Spec 06: card groups by strength plus own card inputs once a card has enough rated matches (§8.1); a rating fingerprint that card changes do not touch and a model context that covers only the model's own inputs (§8.1, §8.2, §8.4); ridge on the summed loss with λ chosen from `model.lambdaGrid` (§8.3, §11); card example suggestions after ratings (§10; spec 08 §3.1 and §5.3; spec 09 §3.3). Specs 05 §5.1 and §8 and 07 §5 follow; spec 10 adds the informational experiment E6. `RankerConfig` and the preferences schema in `packages/shared` carry the new keys. Plan: M3a-T6, M3b-T2, M4-T7, M6-T3, M7-T1, T3, T4, T5 and T7. |
 | R2 | The personal model had no input for media beyond `has_image` (a thumbnail exists). `ct.media` marks only pieces that are mostly video, so a normal article with an embedded video looked like any other, and nothing distinguished an image-padded piece from an illustrated long read. | Add both signals; measure images against length, in coarse buckets, counting only the extracted main body. | Spec 03 §6.4: `mediaSignals` detects video (video enclosures and `media:content`, video-host links, `<video>` and known player embeds) and counts distinct in-body images (pixels, placeholders and repeats excluded), both read before sanitizing removes the media; §7 step 6 and §8.1 step 6 store them. A change to either value increments `articles.media_revision`, which `Explain.inputs` records, and re-ranks the carriers' subscribers (spec 06 §6.2, §7). Spec 02: `articles.has_video` (nullable, monotonic), `body_image_count` (same text as `word_count`) and `media_revision`. `ExplainSchema` in `packages/shared` gains `inputs.mediaRevision`. Spec 06 §8.1: `has_video` with a mask and one-hot `img.none/light/moderate/heavy/unknown` from images × 500 / max(words, 500). `FEATURE_SPEC_V1` is extended in place because no model or feature snapshot exists yet. Plan: M1-T3, T5, T7, M5-T4 and M7-T1. |
+| R3 | Independent tests published after Jev's launch (`background.md` §2.4) found that its calibration depends on the question type (expected calibration error 0.012 for Noul, 0.086 for Choice, 0.254 for Score) and that overall agreement can hide a one-sided failure (94 % correct holds but 52 % correct moves in a routing test). Gate G1 tuned only the lane and tier cutoffs: the fixed demotion cutoffs, one of them on the Score `depth`, were never checked against labels; no metric showed where liked articles land; the adversarial feed text that spec 04 §10.1 sends to the golden evaluation had no experiment; and nothing kept dates or amounts out of reader-written cards. | Asked on 2026-09-29 to apply what fits from the article before M3a starts. | Spec 10: §4 reports each demotion cutoff's precision and recall against the facet labels and the lane distribution of liked and disliked items; §5 step 4 selects `demotion.clickbait`, `promotional`, `staleTimeSensitive` and `shallowDepth` on development facet labels (precision ≥0.80, at least 20 flagged articles, otherwise the default marked unmeasured), and the confirmation makes unmeasured or imprecise cutoffs and the share of liked items in Everything owner-review items; §3 adds the informational experiment E7 (steering text); §9 tests. Spec 06 §5 points to that selection. Spec 05 §8 and spec 09 §6 add a card-authoring rule against dates, age and amounts. `background.md` §1, §2.4, §3.1 and §3.3 record the tests and the access changes. Plan: §2, M3a-T5, T6 and T7, M3b-T2. No code changes: M2 already pins the model and stores the returned id with raw answers, keeps dates and arithmetic in code and packs within Jev's limits. |

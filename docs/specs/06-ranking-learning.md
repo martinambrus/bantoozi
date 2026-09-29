@@ -207,6 +207,11 @@ flag. Recompute auto activation when the 90-day boundary passes (§7).
 
 Each active and triggered flag multiplies `P` by **0.6** and fires `demote:<flag>`.
 
+The cutoffs are the `demotion` values of `RankerConfig` (§11). Gate G1 checks each against human
+facet labels and selects it on development data when the labels support it (spec 10 §5); a fixed
+bar that holds for one question type need not hold for another (`depth` is a Score, the rest are
+Nouls).
+
 ---
 
 ## 6. Lanes, tiers, explanations, labels
