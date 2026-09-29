@@ -414,12 +414,14 @@ additional ≥3-person requirement or unresolved owner waiver for this initial l
      tier boundaries only; it does not transform stored scores or justify probability wording.
    - `demotion` cutoffs come from the adjudicated development facet labels (§2.3) and the Call A
      answers of the per-language variants chosen by steps 2–3, one sample per labelled article,
-     uncertain/not-applicable labels excluded. `demotion.clickbait`, `demotion.promotional` and
-     `demotion.staleTimeSensitive` each take the smallest t on 0.50…0.95, step 0.05, whose flagged
-     articles (facet ≥ t) have precision ≥0.80 against a *yes* label; `demotion.shallowDepth` takes
-     the largest t on 0.10…0.50, step 0.05, whose flagged articles (`depth` ≤ t) have precision
-     ≥0.80 against a labelled depth ≤1. Each needs at least 20 flagged articles; otherwise the flag
-     keeps its default and is marked **unmeasured**. The other `demotion` fields keep their values.
+     uncertain/not-applicable labels excluded. A candidate cutoff counts only when it flags at least
+     20 articles. `demotion.clickbait`, `demotion.promotional` and `demotion.staleTimeSensitive` each
+     take the smallest counted t on 0.50…0.95, step 0.05, whose flagged articles (facet ≥ t) have
+     precision ≥0.80 against a *yes* label; `demotion.shallowDepth` takes the largest counted t on
+     0.10…0.50, step 0.05, whose flagged articles (`depth` ≤ t) have precision ≥0.80 against a
+     labelled depth ≤1. Without such a t the flag keeps its default and is marked **unmet** when some
+     candidate flags at least 20 articles (measured, below the bar), or **unmeasured** when none does
+     (too few flagged articles to judge). The other `demotion` fields keep their values.
 5. Freeze the selected per-language composition, baseline, thresholds and run ids in a selection
    manifest **before the CLI reveals test metrics**. No output-derived retuning is permitted under
    the same test manifest.
@@ -433,8 +435,8 @@ bootstrap CIs; point estimates determine this initial small-beta gate, so the
 report must not claim population-level certainty. Also report all policy metrics, per-language
 results and the test precision and recall of every demotion cutoff. Hard-hide false negatives,
 unmet For You precision targets, the share of liked items placed in Everything, and demotion cutoffs
-that stayed unmeasured or fall below 0.80 test precision are explicit owner-review items before
-launch; no threshold change is allowed to make those disappear from the report.
+that are marked unmet or unmeasured or fall below 0.80 test precision are explicit owner-review
+items before launch; no threshold change is allowed to make those disappear from the report.
 
 `fail` blocks claims of a passed gate for the selected profile and reports per-rater/language diagnostics and 20
 worst-ranked liked articles (identify development vs test). The owner chooses remedies. Reusing
@@ -546,9 +548,10 @@ until a separate schema/API/retention/consent design and privacy notice are appr
   produce a fabricated pass; confidence intervals are paired and group-aware.
 - Selected mixed-language deployment is tested, global thresholds remain valid, and budget units
   include the /1000 divisor. Threshold-only replay detects policy regressions despite unchanged AUC.
-- Demotion cutoffs are selected from development facet labels only, keep their defaults marked
-  unmeasured below the support floor, and report test precision/recall at the selected values; the
-  policy lane distribution places each rated item in exactly one lane per rater.
+- Demotion cutoffs are selected from development facet labels only. A flag without a qualifying
+  cutoff keeps its default, marked unmet when a candidate reached the 20-article floor and
+  unmeasured when none did; test precision/recall is reported at the selected values. The policy
+  lane distribution places each rated item in exactly one lane per rater.
 - E7 variants differ from the frozen E1 state only in `excerpt`, and E7 cannot change selection,
   thresholds or the gate.
 - Rating-token ownership/expiry/redaction and separate golden DB worker-mode guards are enforced.

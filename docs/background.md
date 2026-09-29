@@ -254,8 +254,11 @@ review; the primary sources are in §4.
   first kind.
 - **Typed output is not a correct answer.** An image sent as state returned HTTP 200 with Noul 0.50,
   and an instruction that contradicted its criteria was followed literally in 20 of 20 cases
-  (Primeline). Bantoozi's state is text only, its question sets have no negated instructions (spec 05
-  §3.3), and an uninformative 0.5 lands in Maybe, where the reader decides.
+  (Primeline). Bantoozi's state is text only and its question sets have no negated instructions
+  (spec 05 §3.3), so neither case should arise. A 0.5 that does come back is an ordinary input to
+  the ranking policy (spec 06 §2), not a safe default: under the default settings it cannot hide an
+  article (a never-card hides at 0.7), but it need not land in Maybe either, because a *must* card
+  at 0.5 meets the must floor and lifts the article to For You, and G1 may move the lane cutoffs.
 - **TypeSafe's headline accuracy is agreement with other models** (67.8 % against two frontier LLMs,
   per the article), not ground truth. G1 uses blind human ratings and facet labels only (locked
   decision 3).
