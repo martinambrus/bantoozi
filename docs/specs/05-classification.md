@@ -886,9 +886,11 @@ throttling alone does not replace this durable claim.
 - Add `not_for` for the most likely confusion.
 - Avoid negated meaning inside `interest`; validate semantically, not with a substring ban that
   rejects words such as “notebooks”.
-- Keep conditions on dates, age and amounts out of `interest` ("from this week", "still upcoming",
-  "under €300"). Jev reads dates and numbers as text, does not know today's date and does not
-  compare quantities; freshness is handled in code (spec 06 §5 and §8.1).
+- Keep conditions on dates, ages and other numeric limits out of `interest` ("from this week",
+  "still upcoming", "under €300", "videos under 30 minutes", "for children under 5"). Jev reads dates
+  and numbers as text, does not know today's date and does not compare quantities; freshness is
+  handled in code (spec 06 §5 and §8.1). Name the kind of thing instead ("budget laptops", "short
+  videos", "toddlers").
 - ≤ 200 chars.
 - English text; the Slovak translation goes in `*_sk` for display only.
 
