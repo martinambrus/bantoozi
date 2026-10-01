@@ -1,10 +1,17 @@
 import {
   appendAssignments,
+  copySampleRows,
+  createDataset,
   headDataset,
+  insertSampleRows,
   listAssignments,
   listRaterCards,
   listRaterFeedIds,
+  loadSample,
+  lockDataset,
+  lockDatasetAdditions,
   lockRater,
+  nextDatasetVersion,
   openDatasetForCorrection,
   recentUnsampledCandidates,
   sampleCandidates,
@@ -14,7 +21,7 @@ import {
 } from '@bantoozi/db';
 import { sha256Hex } from '@bantoozi/shared/server';
 
-import { addArticlesToDataset } from '../dataset/topup.js';
+import { buildSampleRows } from '../dataset/topup.js';
 import { countCards, readyToRate } from './steps.js';
 
 /**
@@ -24,7 +31,7 @@ import { countCards, readyToRate } from './steps.js';
  * - from `eval.sample` rows carried by the rater's picked feeds (frozen snapshots);
  * - split equally across the rater's languages, a short language topped up from the others;
  * - when the sample cannot fill the target, from recent non-sampled articles of the same feeds,
- *   which are first added to the dataset (`addArticlesToDataset`: they join the open head version,
+ *   which are first added to the dataset in the same transaction (they join the open head version,
  *   or create the next version once the head is frozen, so a frozen version never changes);
  * - in a seeded order derived from the rater id, so the same inputs always give the same queue.
  *
@@ -208,12 +215,48 @@ export class NoDatasetError extends Error {
 }
 
 /**
+ * Add top-up articles inside the caller's transaction, as `addArticlesToDataset` does: under the
+ * additions lock they join the open head version, or create the next version (copying the frozen
+ * one) once the head is frozen. Lock order: the caller's rater row lock, then the additions lock,
+ * then the dataset row; no path takes the additions lock before a rater lock.
+ */
+async function addTopUps(
+  tx: Transaction,
+  articleIds: readonly string[],
+): Promise<{ added: string[]; createdFrom: string | null }> {
+  await lockDatasetAdditions(tx);
+  const head = await headDataset(tx);
+  if (head === null) throw new NoDatasetError();
+  let version = head.version;
+  let createdFrom: string | null = null;
+  const locked = await lockDataset(tx, head.version);
+  if (locked !== null && locked.frozenAt !== null) {
+    version = nextDatasetVersion(head.version);
+    await createDataset(tx, {
+      version,
+      parentVersion: head.version,
+      seed: head.seed,
+      params: { ...head.params, topUpOf: head.version },
+    });
+    await copySampleRows(tx, head.version, version);
+    createdFrom = head.version;
+  }
+  const present = new Set((await loadSample(tx, version, { articleIds })).map((r) => r.articleId));
+  const missing = [...new Set(articleIds)].filter((id) => !present.has(id));
+  const { rows } = await buildSampleRows(tx, version, head.seed, missing);
+  await insertSampleRows(tx, version, rows);
+  return { added: rows.map((r) => r.articleId), createdFrom };
+}
+
+/**
  * Bring the rater's assignments up to `target` (idempotent; a no-op once the target is reached).
- * The top-up articles are added to the dataset first (their own transaction, serialized by the
- * dataset lock), then the assignments are chosen again from the sample under the rater's row lock,
- * so concurrent calls never assign twice. Under that lock the card and feed steps are rechecked
- * ({@link NotReadyError}), and a frozen head first gets its next open version, so a frozen
- * version never gains assignments.
+ * Everything happens in one transaction under the rater's row lock, which card and feed changes
+ * also take: the picked feeds and the card and feed steps ({@link NotReadyError}) are read under
+ * it, the top-up articles are chosen from those feeds and added to the dataset in the same
+ * transaction, and the assignments are then chosen from the sample. So concurrent calls never
+ * assign twice, a concurrent feed change can never add articles of a dropped feed, and a rejected
+ * start adds nothing. A frozen head first gets its next open version, so a frozen version never
+ * gains rows or assignments.
  */
 export async function ensureAssignments(
   db: Database,
@@ -232,90 +275,77 @@ export async function ensureAssignments(
 ): Promise<EnsureAssignmentsResult> {
   const target = input.target ?? ASSIGNMENTS_PER_RATER;
   const seed = raterSeed(input.raterId);
-  const head = await headDataset(db);
-  if (head === null) throw new NoDatasetError();
-  const feedIds = await listRaterFeedIds(db, input.raterId);
-  const ready = async (executor: Database | Transaction, feeds: number) =>
-    readyToRate({
-      ...countCards(await listRaterCards(executor, input.raterId)),
-      feeds,
-      assignments: 0,
-    });
-  // Early exit before any top-up is added to the dataset; rechecked under the lock below.
-  if (input.requireReady === true && !(await ready(db, feedIds.length))) throw new NotReadyError();
-  const existing = await listAssignments(db, input.raterId, head.version);
-  let toppedUp: string[] = [];
-  let createdFrom: string | null = null;
-  if (existing.length < target) {
-    const sample = await sampleCandidates(db, {
-      version: head.version,
-      langs: input.langs,
-      feedIds,
-    });
-    const recent = await recentUnsampledCandidates(db, {
-      version: head.version,
-      langs: input.langs,
-      feedIds,
-      since: new Date(input.now.getTime() - (input.recentDays ?? TOP_UP_RECENT_DAYS) * DAY_MS),
-      limit: target,
-    });
-    const plan = planAssignments({
-      seed,
-      langs: input.langs,
-      target,
-      existing,
-      pools: [sample, recent],
-    });
-    const fallback = plan.picks.filter((p) => p.pool === 1).map((p) => p.articleId);
-    if (fallback.length > 0) {
-      const added = await addArticlesToDataset(db, fallback);
-      toppedUp = added.added;
-      createdFrom = added.createdFrom;
-    }
-  }
   return db.transaction(async (tx) => {
     if (!(await lockRater(tx, input.raterId))) throw new Error(`rater ${input.raterId} is gone`);
-    // Readiness and the picked feeds are re-read under the rater lock, which card and feed
-    // changes also take: a concurrent card deletion cannot slip in between check and insert.
-    const lockedFeedIds = await listRaterFeedIds(tx, input.raterId);
-    if (input.requireReady === true && !(await ready(tx, lockedFeedIds.length))) {
-      throw new NotReadyError();
+    const feedIds = await listRaterFeedIds(tx, input.raterId);
+    if (input.requireReady === true) {
+      const ready = readyToRate({
+        ...countCards(await listRaterCards(tx, input.raterId)),
+        feeds: feedIds.length,
+        assignments: 0,
+      });
+      if (!ready) throw new NotReadyError();
     }
     let current = await headDataset(tx);
     if (current === null) throw new NoDatasetError();
-    const assigned = await listAssignments(tx, input.raterId, current.version);
-    let added = 0;
-    if (assigned.length < target) {
-      const sample = await sampleCandidates(tx, {
-        version: current.version,
-        langs: input.langs,
-        feedIds: lockedFeedIds,
-      });
-      const plan = planAssignments({
-        seed,
-        langs: input.langs,
-        target,
-        existing: assigned,
-        pools: [sample],
-      });
-      if (plan.picks.length > 0) {
-        // A frozen version's assignment membership is final (its manifest records it): new
-        // assignments first open the next version, which copies the rows unchanged.
-        const opened = await openDatasetForCorrection(tx, 'assignments');
-        if (opened !== null) {
-          createdFrom ??= opened.createdFrom;
-          current = (await headDataset(tx)) ?? current;
-        }
-        added = await appendAssignments(
-          tx,
-          input.raterId,
-          plan.picks.map((p) => p.articleId),
+    const existing = await listAssignments(tx, input.raterId, current.version);
+    if (existing.length >= target) {
+      return {
+        added: 0,
+        total: existing.length,
+        toppedUp: [],
+        datasetVersion: current.version,
+        createdFrom: null,
+      };
+    }
+    const choose = async (version: string, withTopUps: boolean) => {
+      const sample = await sampleCandidates(tx, { version, langs: input.langs, feedIds });
+      const pools: AssignmentCandidate[][] = [sample];
+      if (withTopUps) {
+        pools.push(
+          await recentUnsampledCandidates(tx, {
+            version,
+            langs: input.langs,
+            feedIds,
+            since: new Date(
+              input.now.getTime() - (input.recentDays ?? TOP_UP_RECENT_DAYS) * DAY_MS,
+            ),
+            limit: target,
+          }),
         );
       }
+      return planAssignments({ seed, langs: input.langs, target, existing, pools });
+    };
+    let plan = await choose(current.version, true);
+    let toppedUp: string[] = [];
+    let createdFrom: string | null = null;
+    const fallback = plan.picks.filter((p) => p.pool === 1).map((p) => p.articleId);
+    if (fallback.length > 0) {
+      const added = await addTopUps(tx, fallback);
+      toppedUp = added.added;
+      createdFrom = added.createdFrom;
+      current = (await headDataset(tx)) ?? current;
+      // The top-ups are sample rows now (of the head version, which may be new): choose again.
+      plan = await choose(current.version, false);
+    }
+    let added = 0;
+    if (plan.picks.length > 0) {
+      // A frozen version's assignment membership is final (its manifest records it): new
+      // assignments first open the next version, which copies the rows unchanged.
+      const opened = await openDatasetForCorrection(tx, 'assignments');
+      if (opened !== null) {
+        createdFrom ??= opened.createdFrom;
+        current = (await headDataset(tx)) ?? current;
+      }
+      added = await appendAssignments(
+        tx,
+        input.raterId,
+        plan.picks.map((p) => p.articleId),
+      );
     }
     return {
       added,
-      total: assigned.length + added,
+      total: existing.length + added,
       toppedUp,
       datasetVersion: current.version,
       createdFrom,

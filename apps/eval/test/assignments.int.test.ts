@@ -260,7 +260,7 @@ describe('ensureAssignments', () => {
       }
     });
     // Hold the rater lock (as a concurrent card deletion would) and delete a card under it while
-    // ensureAssignments, which passed its early check, waits for the lock.
+    // ensureAssignments waits for the lock.
     const client = await rdb.owner.connect();
     try {
       await client.query('BEGIN');
@@ -297,6 +297,62 @@ describe('ensureAssignments', () => {
         requireReady: true,
       }),
     ).rejects.toBeInstanceOf(NotReadyError);
+  });
+
+  it('chooses top-ups from the feeds read under the rater lock, so a dropped feed adds nothing', async () => {
+    // Two golden feeds with only recent, non-sampled articles: every assignment is a top-up.
+    const [keep, drop] = await addGoldenFeeds(rdb, 'en', 2);
+    const keptIds = await addArticles(
+      rdb,
+      keep!.id,
+      'en',
+      8,
+      new Date(now.getTime() - DAY),
+      (i) => `kept ${i}`,
+    );
+    const droppedIds = await addArticles(
+      rdb,
+      drop!.id,
+      'en',
+      8,
+      new Date(now.getTime() - DAY),
+      (i) => `dropped ${i}`,
+    );
+    const { rater } = await addRater(rdb, { langs: ['en'], now });
+    await pick(rater.id, [keep!, drop!]);
+    // Hold the rater lock (as a concurrent feed change would) and drop a feed under it while
+    // ensureAssignments waits for the lock.
+    const client = await rdb.owner.connect();
+    let pending: ReturnType<typeof ensureAssignments> | undefined;
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT 1 FROM eval.raters WHERE id = $1 FOR UPDATE', [rater.id]);
+      pending = ensureAssignments(rdb.db, {
+        raterId: rater.id,
+        langs: rater.langs,
+        now,
+        target: 10,
+      });
+      pending.catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await client.query('DELETE FROM eval.rater_feeds WHERE rater_id = $1 AND feed_id = $2', [
+        rater.id,
+        drop!.id,
+      ]);
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+    const result = await pending;
+    expect(result.added).toBe(8);
+    expect([...result.toppedUp].sort()).toEqual([...keptIds].sort());
+    const inSample = await rdb.owner.query<{ n: string }>(
+      'SELECT count(*)::text AS n FROM eval.sample WHERE article_id = ANY($1::bigint[])',
+      [droppedIds],
+    );
+    expect(inSample.rows[0]!.n).toBe('0');
+    const assigned = await listAssignments(rdb.db, rater.id, result.datasetVersion);
+    expect(assigned.map((a) => a.articleId).sort()).toEqual([...keptIds].sort());
   });
 
   it('opens the next version before assigning from a frozen head, even without top-ups', async () => {
