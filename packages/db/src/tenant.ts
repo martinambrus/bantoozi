@@ -38,3 +38,16 @@ export function tenantUserId(tx: TenantTx): string {
   if (tenant === undefined) throw new Error('not a withTenant transaction');
   return tenant;
 }
+
+/**
+ * Bind an already open transaction to `userId` (spec 08 §2.1 verify): the auth flow identifies the
+ * user only after checking the code inside its transaction, then needs RLS-scoped writes (restore
+ * refreshes, outbox intents) in that same transaction. `userId` must be the user just verified.
+ */
+export async function bindTenant(tx: Transaction, userId: string): Promise<TenantTx> {
+  const tenant = UuidSchema.parse(userId);
+  await tx.execute(sql`SELECT set_config('app.user_id', ${tenant}, true)`);
+  const tenantTx = tx as TenantTx;
+  tenants.set(tenantTx, tenant);
+  return tenantTx;
+}
