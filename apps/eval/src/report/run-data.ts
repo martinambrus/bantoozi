@@ -174,6 +174,8 @@ const scoreAnswer = z.looseObject({
   variant: z.string().nullish(),
   /** English-card runs: a card of the rater kept its original text (failed or weak translation). */
   cardTextFallback: z.boolean().nullish(),
+  /** Translated-state BM25 runs: the rater's corpus held a document left on native text. */
+  corpusFallback: z.boolean().nullish(),
 });
 
 /** A Call B answer of one card: usable `{p, engine}` or failed. */
@@ -211,8 +213,9 @@ export interface RunData {
   results: RunResults | null;
   /**
    * `score.r<raterId>` → articleId → score (null = unknown). A fallback-tagged score (the runner's
-   * `variant: 'native'` translation fallback or `cardTextFallback: true`) never observed the run's
-   * advertised variant, so it is unknown here, exactly as the runner leaves it out of coverage.
+   * `variant: 'native'` translation fallback, `cardTextFallback: true` or `corpusFallback: true`) never
+   * observed the run's advertised variant, so it is unknown here, exactly as the runner leaves it out
+   * of coverage.
    */
   scores: Map<string, Map<string, number | null>>;
   /**
@@ -310,7 +313,9 @@ export function parseRunData(run: RawRun, answers: readonly RawAnswer[]): RunDat
       const parsed = scoreAnswer.safeParse(row.answer);
       const fallback =
         parsed.success &&
-        (parsed.data.cardTextFallback === true || parsed.data.variant === 'native');
+        (parsed.data.cardTextFallback === true ||
+          parsed.data.corpusFallback === true ||
+          parsed.data.variant === 'native');
       const score = parsed.success && !fallback ? parsed.data.score : null;
       if (!parsed.success) data.malformed += 1;
       const valid = score !== null && Number.isFinite(score) ? score : null;

@@ -368,6 +368,12 @@ describe('run data and the reliability SVG', () => {
         answer: { score: 0.7, source: 'cards', cardTextFallback: true },
       },
       {
+        articleId: '4',
+        cardId: null,
+        questionKey: 'score.r7',
+        answer: { score: 0.6, source: 'bm25', variant: 'translated', corpusFallback: true },
+      },
+      {
         articleId: '1',
         cardId: null,
         questionKey: 'enrich.depth',
@@ -386,13 +392,14 @@ describe('run data and the reliability SVG', () => {
         ['1', 0.9],
         ['2', null],
         ['3', null],
+        ['4', null],
       ]),
     );
     expect(e3b.enrich.get('1')?.get('depth')).toEqual(depth);
     expect(e3b.enrich.get('2')?.get('depth')).toBeNull();
     expect(e3b.malformed).toBe(0);
     // A native-state run tags every Call A answer `native`: those are its real observations.
-    const e1 = parseRunData(raw('E1', 'native', 'as_written'), answers.slice(3));
+    const e1 = parseRunData(raw('E1', 'native', 'as_written'), answers.slice(4));
     expect(e1.enrich.get('2')?.get('depth')).toEqual(depth);
   });
 
