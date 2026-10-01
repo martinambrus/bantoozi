@@ -289,8 +289,9 @@ export async function sampleCandidates(
 }
 
 /**
- * Recent articles of the rater's feeds that `version` does not hold yet, newest first: the top-up
- * pool when the sample runs short (spec 10 §2.2). Stale and failed articles are left out.
+ * Recent articles of the rater's feeds that `version` does not hold yet, newest first and at most
+ * `limit` per language: the top-up pool when the sample runs short (spec 10 §2.2). Stale and failed
+ * articles are left out.
  */
 export async function recentUnsampledCandidates(
   db: Executor,
@@ -303,20 +304,25 @@ export async function recentUnsampledCandidates(
   },
 ): Promise<AssignmentCandidate[]> {
   if (input.feedIds.length === 0 || input.langs.length === 0 || input.limit <= 0) return [];
+  // The limit applies per language, so a language with many newer articles cannot crowd the others
+  // out of the pool before the planner applies its equal language shares.
   const result = await db.execute<{ article_id: string; lang: string }>(sql`
-    SELECT a.id::text AS article_id, a.lang
-      FROM articles a
-      JOIN (SELECT fi.article_id, max(fi.first_seen_at) AS seen
-              FROM feed_items fi
-             WHERE fi.feed_id = ANY(${sql.param([...input.feedIds])}::bigint[])
-               AND fi.first_seen_at >= ${input.since.toISOString()}::timestamptz
-             GROUP BY fi.article_id) recent ON recent.article_id = a.id
-     WHERE a.lang = ANY(${sql.param([...input.langs])}::text[])
-       AND a.pipeline_state NOT IN ('stale', 'failed')
-       AND NOT EXISTS (SELECT 1 FROM eval.sample s
-                        WHERE s.dataset_version = ${input.version} AND s.article_id = a.id)
-     ORDER BY recent.seen DESC, a.id DESC
-     LIMIT ${input.limit}`);
+    SELECT article_id, lang FROM (
+      SELECT a.id::text AS article_id, a.lang, recent.seen, a.id,
+             row_number() OVER (PARTITION BY a.lang ORDER BY recent.seen DESC, a.id DESC) AS rank
+        FROM articles a
+        JOIN (SELECT fi.article_id, max(fi.first_seen_at) AS seen
+                FROM feed_items fi
+               WHERE fi.feed_id = ANY(${sql.param([...input.feedIds])}::bigint[])
+                 AND fi.first_seen_at >= ${input.since.toISOString()}::timestamptz
+               GROUP BY fi.article_id) recent ON recent.article_id = a.id
+       WHERE a.lang = ANY(${sql.param([...input.langs])}::text[])
+         AND a.pipeline_state NOT IN ('stale', 'failed')
+         AND NOT EXISTS (SELECT 1 FROM eval.sample s
+                          WHERE s.dataset_version = ${input.version} AND s.article_id = a.id)
+    ) ranked
+     WHERE rank <= ${input.limit}
+     ORDER BY seen DESC, id DESC`);
   return result.rows.map((row) => ({ articleId: row.article_id, lang: row.lang }));
 }
 

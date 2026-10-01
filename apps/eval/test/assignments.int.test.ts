@@ -172,4 +172,43 @@ describe('ensureAssignments', () => {
     // 20 sampled + 10 recent articles, all of which are in the sample by now.
     expect(result.total).toBe(30);
   });
+
+  it('tops up every language equally when one language has many newer articles', async () => {
+    // New golden feeds with no sampled articles: English is much newer than Slovak.
+    const newEn = await addGoldenFeeds(rdb, 'en', 3);
+    const oldSk = await addGoldenFeeds(rdb, 'sk', 3);
+    for (const feed of newEn) {
+      await addArticles(
+        rdb,
+        feed.id,
+        'en',
+        20,
+        new Date(now.getTime() - 3_600_000),
+        (i) => `fresh ${feed.id}-${i}`,
+      );
+    }
+    for (const feed of oldSk) {
+      await addArticles(
+        rdb,
+        feed.id,
+        'sk',
+        20,
+        new Date(now.getTime() - 5 * DAY),
+        (i) => `older ${feed.id}-${i}`,
+      );
+    }
+    const { rater } = await addRater(rdb, { langs: ['en', 'sk'], now });
+    await pick(rater.id, [...newEn, ...oldSk]);
+    const result = await ensureAssignments(rdb.db, {
+      raterId: rater.id,
+      langs: rater.langs,
+      now,
+      target: 40,
+    });
+    expect(result.added).toBe(40);
+    expect(result.toppedUp).toHaveLength(40);
+    const assigned = await listAssignments(rdb.db, rater.id, result.datasetVersion);
+    expect(assigned.filter((a) => a.lang === 'en')).toHaveLength(20);
+    expect(assigned.filter((a) => a.lang === 'sk')).toHaveLength(20);
+  });
 });
