@@ -598,6 +598,7 @@ export function isTableRun(run: RunData): boolean {
 export function renderInformational(
   model: ReportModel,
   config: PolicyConfig = DEFAULT_POLICY_CONFIG,
+  resamples = 1000,
 ): string {
   const latest = latestRuns(model.runs);
   const e1 = latest.get('E1');
@@ -609,7 +610,7 @@ export function renderInformational(
     const cells = buildCells(items, 'context');
     const delta = pairedMacroDelta(cells, e6Score(e6), runView(e1).score, {
       seed: `${e6.id}:e6`,
-      resamples: 1000,
+      resamples,
     });
     const added = Object.entries(e6.results?.e6?.examplesAdded ?? {});
     out += `**E6 card examples** (#${e6.id}, later development half, ${items.length} ratings): paired ΔAUC vs E1 ${signed(delta.estimate)} ${ci(delta)}; examples added: ${
@@ -741,6 +742,9 @@ export function renderEvaluationReport(
     for (const view of views) parts.push(renderPolicy(model, view, split, DEFAULT_POLICY_CONFIG));
   }
   parts.push('\n## Operations\n', renderOperations(model));
-  parts.push('\n## Informational experiments (E6, E7)\n', renderInformational(model));
+  parts.push(
+    '\n## Informational experiments (E6, E7)\n',
+    renderInformational(model, DEFAULT_POLICY_CONFIG, options.settings.resamples ?? 1000),
+  );
   return `${parts.join('\n')}\n`;
 }

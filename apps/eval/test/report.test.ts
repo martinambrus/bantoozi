@@ -354,7 +354,7 @@ describe('run data and the reliability SVG', () => {
       runs: [...standardRuns(fixture), e6, replay],
       sample: fixture.sample,
     });
-    const informational = renderInformational(model);
+    const informational = renderInformational(model, undefined, settings.resamples);
     const line = informational.split('\n').find((l) => l.startsWith('**E6 card examples**'))!;
     expect(line).toMatch(/paired ΔAUC vs E1 [+−-]?\d/);
     expect(line).toContain('card 901 +2/−1');

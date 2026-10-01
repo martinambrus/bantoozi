@@ -170,7 +170,7 @@ export function renderGateReport(input: GateReportInput): string {
   parts.push('\n### Operations\n', renderOperations(model));
   parts.push(
     '\n### Informational experiments (E6, E7; never gate inputs)\n',
-    renderInformational(model, confirmation?.policyConfig),
+    renderInformational(model, confirmation?.policyConfig, input.settings.resamples ?? 1000),
   );
   return `${parts.join('\n')}\n`;
 }
