@@ -85,6 +85,7 @@ const PAGES: Record<string, string> = {
   }),
   facets: facetPage({
     article,
+    articleId: '9',
     index: 0,
     total: 300,
     labelled: 0,

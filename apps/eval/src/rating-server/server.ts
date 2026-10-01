@@ -854,6 +854,7 @@ export async function buildRatingServer(options: RatingServerOptions): Promise<F
       reply,
       facetPage({
         article: await articleView(item.articleId, new Set()),
+        articleId: item.articleId,
         index,
         total: list.items.length,
         labelled: list.items.filter((i) => done.has(i.articleId)).length,
@@ -880,17 +881,33 @@ export async function buildRatingServer(options: RatingServerOptions): Promise<F
       const value = single(body[key]);
       if (value !== undefined) raw[key] = value;
     }
+    // The form names the article it showed. The labeller's set is recomputed from the head dataset,
+    // so a top-up or a new head version can shift positions while the form is open: save only when
+    // the displayed article is still the one at this position of this labeller's set.
+    const shown = IdParamSchema.safeParse(single(body['articleId']));
+    if (!shown.success) throw new HttpError(400, 'Bad request', 'The form names no article.');
+    const list = await facetList(s.rater);
+    if (list.items[index]?.articleId !== shown.data) {
+      if (list.items[index] === undefined) {
+        throw new HttpError(409, 'List changed', 'Your labelling list changed; nothing was saved.');
+      }
+      return renderFacet(
+        reply,
+        s,
+        index,
+        'Your labelling list changed while this page was open, so nothing was saved. ' +
+          'Please label the article shown now.',
+        409,
+      );
+    }
     const parsed = FacetFormSchema.safeParse(raw);
     if (!parsed.success) {
       return renderFacet(reply, s, index, 'Please answer all six questions.', 400, raw);
     }
-    const list = await facetList(s.rater);
-    const item = list.items[index];
-    if (item === undefined) throw new HttpError(404, 'Not found', 'There is no such article.');
     await db.transaction((tx) =>
       saveFacetLabels(tx, {
         labeler: list.labeler,
-        articleId: item.articleId,
+        articleId: shown.data,
         values: parsed.data,
         now: now(),
       }),

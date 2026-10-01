@@ -52,11 +52,22 @@ async function signIn(token: string): Promise<Session> {
 const get = (s: Session, url: string) =>
   app.inject({ method: 'GET', url, headers: { cookie: `${SESSION_COOKIE}=${s.cookie}` } });
 
-const post = (s: Session, url: string, form: Record<string, string>) =>
+/** The article id the page at `url` shows in its form (what a browser would post back). */
+const shownArticle = async (s: Session, url: string): Promise<string> =>
+  parseHTML((await get(s, url)).body)
+    .document.querySelector('input[name="articleId"]')
+    ?.getAttribute('value') ?? '';
+
+/** Submit the labelling form at `url`, posting back the shown article unless `form` names one. */
+const post = async (s: Session, url: string, form: Record<string, string>) =>
   app.inject({
     method: 'POST',
     url,
-    payload: new URLSearchParams({ ...form, _csrf: csrfToken(s.cookie) }).toString(),
+    payload: new URLSearchParams({
+      articleId: await shownArticle(s, url),
+      ...form,
+      _csrf: csrfToken(s.cookie),
+    }).toString(),
     headers: {
       cookie: `${SESSION_COOKIE}=${s.cookie}`,
       'content-type': 'application/x-www-form-urlencoded',
@@ -210,5 +221,30 @@ describe('facet labelling page', () => {
     await post(second, '/facets/0', { ...LABELS, clickbait: 'yes' });
     const labels = (await listFacetLabels(rdb.db)).filter((l) => l.articleId === seen[0]);
     expect(labels.filter((l) => l.labeler !== ownerKey)).toHaveLength(6);
+  });
+
+  it('never saves on another article when the list shifts between showing and saving', async () => {
+    const before = (await listFacetLabels(rdb.db)).length;
+    const shownAt5 = await shownArticle(owner, '/facets/5');
+    expect(shownAt5).toBe(articleOf(await get(owner, '/facets/5')));
+    // The article shown at position 5 is now at another position (simulated shift): refused.
+    const shifted = await post(owner, '/facets/6', { ...LABELS, articleId: shownAt5 });
+    expect(shifted.statusCode).toBe(409);
+    expect(shifted.body).toContain('nothing was saved');
+    // The re-rendered page shows the article now at that position, with its own id.
+    expect(await shownArticle(owner, '/facets/6')).not.toBe(shownAt5);
+    // An article outside the labeller's set (the friend's overlap excludes most) is refused too.
+    const overlap = new Set<string>();
+    for (let i = 0; i < 50; i += 1) overlap.add(await shownArticle(second, `/facets/${i}`));
+    const outside = [...titleToId.values()].find((id) => !overlap.has(id))!;
+    expect((await post(second, '/facets/1', { ...LABELS, articleId: outside })).statusCode).toBe(
+      409,
+    );
+    // A position past the end of the list, and a form without an article id.
+    expect((await post(second, '/facets/60', { ...LABELS, articleId: outside })).statusCode).toBe(
+      409,
+    );
+    expect((await post(second, '/facets/1', { ...LABELS, articleId: '' })).statusCode).toBe(400);
+    expect((await listFacetLabels(rdb.db)).length).toBe(before);
   });
 });

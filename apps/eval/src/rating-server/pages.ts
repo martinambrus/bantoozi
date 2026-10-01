@@ -446,6 +446,8 @@ const UNSURE_TEXT: Record<(typeof FACET_UNSURE_VALUES)[number], string> = {
 
 export function facetPage(input: {
   article: ArticleView;
+  /** The displayed article; posted back so labels never land on another article (see server). */
+  articleId: string;
   index: number;
   total: number;
   labelled: number;
@@ -479,6 +481,7 @@ export function facetPage(input: {
       ${input.error ? html`<p class="error" role="alert">${input.error}</p>` : ''}
       <form method="post" action="/facets/${index}">
         ${csrfField(input.csrf)}
+        <input type="hidden" name="articleId" value="${input.articleId}" />
         ${FACET_FIELDS.map(
           (field) =>
             html`<fieldset>
