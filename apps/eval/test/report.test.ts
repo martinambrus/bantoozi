@@ -10,7 +10,7 @@ import {
 } from '../src/report/gate.js';
 import { renderGateReport } from '../src/report/gate-report.js';
 import { escapeCell, table, usd } from '../src/report/markdown.js';
-import { buildReportModel, latestRuns, runView } from '../src/report/model.js';
+import { buildReportModel, latestRuns, pickReference, runView } from '../src/report/model.js';
 import {
   CONFIGURED_CUTOFFS,
   DEFAULT_POLICY_CONFIG,
@@ -695,6 +695,24 @@ describe('language-subset runs', () => {
       .map((l) => l.split('|')[2]!.trim());
     expect(scopes).toContain('lang sk');
     expect(scopes.filter((x) => x.startsWith('lang '))).toEqual(['lang sk']);
+  });
+  it('a later language-scoped E1 does not replace the full-scope E1 or the reference', () => {
+    const fixture = buildFixture();
+    const isSk = (id: string) => fixture.sample.get(id)?.lang === 'sk';
+    const runs = standardRuns(fixture);
+    const full = latestRuns(runs).get('E1')!;
+    const spec = { ...standardSpecs().find((x) => x.experiment === 'E1')!, id: '90' };
+    const raw = makeRawRun(fixture, spec);
+    (raw.run.config as { langs: string[] }).langs = ['sk'];
+    const scoped = parseRunData(
+      raw.run,
+      raw.answers.filter((a) => isSk(a.articleId)),
+    );
+    expect(scoped.results?.status).toBe('complete');
+    expect(latestRuns([...runs, scoped]).get('E1')?.id).toBe(full.id);
+    expect(pickReference([...runs, scoped])?.id).toBe(full.id);
+    // Alone, the scoped run is the only E1 and is chosen.
+    expect(latestRuns([scoped]).get('E1')?.id).toBe('90');
   });
 });
 

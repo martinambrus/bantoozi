@@ -34,23 +34,51 @@ export interface ScoreView {
 
 const isComplete = (run: RunData) => run.results?.status === 'complete';
 
+/**
+ * Whether `run` covers a strict subset of `other`'s scope (languages and raters): a diagnostic
+ * rerun with `--langs` or `--raters` that must not replace a full-scope run of the experiment.
+ */
+function narrowerThan(run: RunData, other: RunData): boolean {
+  const langs = new Set(other.config.langs);
+  const raters = new Set(other.config.raters.map((r) => r.raterId));
+  const within =
+    run.config.langs.every((l) => langs.has(l)) &&
+    run.config.raters.every((r) => raters.has(r.raterId));
+  return within && (run.config.langs.length < langs.size || run.config.raters.length < raters.size);
+}
+
+/** Complete runs not narrower than another complete run of the same experiment. */
+function fullScope(runs: readonly RunData[]): RunData[] {
+  const complete = runs.filter(isComplete);
+  return complete.filter(
+    (run) =>
+      !complete.some((other) => other.experiment === run.experiment && narrowerThan(run, other)),
+  );
+}
+
 export function pickReference(runs: readonly RunData[]): RunData | null {
   const byNewest = [...runs].sort((a, b) => compareBigIntStrings(b.id, a.id));
+  const full = new Set(fullScope(runs));
   return (
-    byNewest.find((r) => r.experiment === 'E1' && isComplete(r)) ??
+    byNewest.find((r) => r.experiment === 'E1' && full.has(r)) ??
     byNewest.find(isComplete) ??
     byNewest[0] ??
     null
   );
 }
 
-/** The latest complete run of each experiment (else its latest run, reported as incomplete). */
+/**
+ * The latest complete run of each experiment (else its latest run, reported as incomplete). A
+ * complete run narrower than another complete run of its experiment is passed over, so a later
+ * `--langs`/`--raters` rerun does not replace the full-scope run (`--run` still selects it).
+ */
 export function latestRuns(runs: readonly RunData[]): Map<string, RunData> {
   const result = new Map<string, RunData>();
+  const full = new Set(fullScope(runs));
   const sorted = [...runs].sort((a, b) => compareBigIntStrings(a.id, b.id));
   for (const run of sorted) {
     const current = result.get(run.experiment);
-    if (current === undefined || isComplete(run) || !isComplete(current)) {
+    if (current === undefined || full.has(run) || !isComplete(current)) {
       result.set(run.experiment, run);
     }
   }
