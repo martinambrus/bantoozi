@@ -1,8 +1,10 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { createRun, finishRun, getRun } from '@bantoozi/db';
 
 import { replayRun } from '../src/experiments/replay.js';
 import { runExperiment } from '../src/experiments/runner.js';
@@ -158,8 +160,8 @@ describe('eval replay (M3a-T6)', () => {
 
     const reportPath = path.join(reportDir, 'cli.md');
     const printed = await runCli(ctx, ['replay', runs['E1']!, '--yes', '--out', reportPath]);
-    expect(printed).toMatch(new RegExp(`replay \\d+ vs ${runs['E1']!}: (pass|inconclusive)`));
-    expect(await readFile(reportPath, 'utf8')).toContain('## Verdict');
+    expect(printed).toMatch(new RegExp(`replay \\d+ vs ${runs['E1']!}: pass`));
+    expect(await readFile(reportPath, 'utf8')).toContain('## Verdict: PASS');
 
     await expect(runCli(ctx, ['replay', runs['B0']!, '--yes'])).rejects.toMatchObject({
       message: /cannot be replayed/,
@@ -170,5 +172,138 @@ describe('eval replay (M3a-T6)', () => {
     await expect(runCli(ctx, ['replay'])).rejects.toMatchObject({
       message: /name the run to replay/,
     });
+  });
+
+  /** A copy of the E1 run's row with other results (and optionally another config). */
+  async function copyOfE1(
+    results: Record<string, unknown>,
+    config?: (c: Record<string, unknown>) => Record<string, unknown>,
+  ): Promise<string> {
+    const { rt } = runtime(ctx);
+    try {
+      const e1 = (await getRun(rt.db, runs['E1']!))!;
+      const run = await createRun(rt.db, {
+        experiment: 'E1',
+        datasetVersion: e1.datasetVersion,
+        config: config === undefined ? e1.config : config(e1.config),
+        gitSha: 'copy',
+      });
+      await finishRun(rt.db, run.id, results);
+      return run.id;
+    } finally {
+      await rt.close();
+    }
+  }
+
+  async function replayOf(runId: string, thresholds?: unknown) {
+    const { rt } = runtime(ctx);
+    try {
+      return await replayRun(rt, {
+        againstRunId: runId,
+        yes: true,
+        gitSha: 'replay',
+        reportPath: null,
+        ...(thresholds === undefined ? {} : { thresholds }),
+      });
+    } finally {
+      await rt.close();
+    }
+  }
+
+  it('exits nonzero for every verdict but pass: 4 = fail, 5 = inconclusive', async () => {
+    // A hard-hide threshold below the never-card's p hides liked articles: the rule fails.
+    const thresholds = path.join(reportDir, 'hide-all.json');
+    await writeFile(thresholds, JSON.stringify({ never: { hide: 0.05, soft: 0.04 } }));
+    const failOut = path.join(reportDir, 'fail.md');
+    await expect(
+      runCli(ctx, ['replay', runs['E1']!, '--yes', '--thresholds', thresholds, '--out', failOut]),
+    ).rejects.toMatchObject({ name: 'EvalCommandError', exitCode: 4 });
+    expect(await readFile(failOut, 'utf8')).toContain('## Verdict: FAIL');
+
+    // A base without stored answers leaves the comparison unsupported: inconclusive.
+    const e1Results = (await runRow(ctx, runs['E1']!)).results!;
+    const empty = await copyOfE1(e1Results);
+    const inconclusiveOut = path.join(reportDir, 'inconclusive.md');
+    await expect(
+      runCli(ctx, ['replay', empty, '--yes', '--out', inconclusiveOut]),
+    ).rejects.toMatchObject({
+      name: 'EvalCommandError',
+      exitCode: 5,
+      message: /inconclusive/,
+    });
+    expect(await readFile(inconclusiveOut, 'utf8')).toContain('## Verdict: INCONCLUSIVE');
+  });
+
+  it('refuses an aborted, partial or incompletely covered base run', async () => {
+    const e1Results = (await runRow(ctx, runs['E1']!)).results!;
+    for (const status of ['aborted', 'partial']) {
+      const id = await copyOfE1({ ...e1Results, status });
+      await expect(replayOf(id)).rejects.toMatchObject({
+        name: 'EvalCommandError',
+        message: new RegExp(`run ${id} is ${status}, not complete`),
+      });
+    }
+    const coverage = e1Results['coverage'] as { byLang: Record<string, { expected: number }> };
+    const [lang, cell] = Object.entries(coverage.byLang)[0]!;
+    const gap = await copyOfE1({
+      ...e1Results,
+      coverage: { ...coverage, byLang: { ...coverage.byLang, [lang]: { ...cell, valid: 0 } } },
+    });
+    await expect(replayOf(gap)).rejects.toMatchObject({
+      message: new RegExp(`incomplete byLang coverage for ${lang}`),
+    });
+  });
+
+  it('compares against the deployed thresholds frozen by the base run; --thresholds is replay-only', async () => {
+    const base = await runRow(ctx, runs['E1']!);
+    expect(base.config['rankerThresholds']).toEqual({});
+    // A later settings change does not move the baseline of a run that recorded its thresholds.
+    await ctx.owner.query(
+      `INSERT INTO settings (key, value) VALUES ('ranker.thresholds', $1::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [JSON.stringify({ lanes: { forYou: 0.8 } })],
+    );
+    try {
+      const proposed = await replayOf(runs['E1']!, { lanes: { maybe: 0.4 } });
+      const replay = (await runRow(ctx, proposed.run.runId!)).config['replay'] as Record<
+        string,
+        { lanes?: unknown } | string | null
+      >;
+      expect(replay['baseRankerSource']).toBe('base_run');
+      expect((replay['baseRanker'] as { lanes: unknown }).lanes).toEqual({
+        forYou: 0.65,
+        maybe: 0.35,
+      });
+      expect((replay['replayRanker'] as { lanes: unknown }).lanes).toEqual({
+        forYou: 0.65,
+        maybe: 0.4,
+      });
+      expect(replay['thresholds']).toEqual({ lanes: { maybe: 0.4 } });
+      expect(proposed.report).toMatch(/Baseline ranker \(from the base run\)/);
+
+      // A base run written before thresholds were recorded uses the stored setting now.
+      const legacy = await copyOfE1(base.results!, (c) => {
+        const { rankerThresholds: _t, ...rest } = c;
+        return rest;
+      });
+      const fromSettings = await replayOf(legacy, { lanes: { maybe: 0.4 } });
+      const legacyReplay = (await runRow(ctx, fromSettings.run.runId!)).config['replay'] as Record<
+        string,
+        { lanes?: unknown } | string | null
+      >;
+      expect(legacyReplay['baseRankerSource']).toBe('settings');
+      expect((legacyReplay['baseRanker'] as { lanes: unknown }).lanes).toEqual({
+        forYou: 0.8,
+        maybe: 0.35,
+      });
+      expect((legacyReplay['replayRanker'] as { lanes: unknown }).lanes).toEqual({
+        forYou: 0.8,
+        maybe: 0.4,
+      });
+      expect(fromSettings.report).toContain('the stored `ranker.thresholds` at replay time');
+      expect(fromSettings.report).toMatch(/Maybe share \d+\/\d+/);
+    } finally {
+      await ctx.owner.query(`DELETE FROM settings WHERE key = 'ranker.thresholds'`);
+    }
   });
 });

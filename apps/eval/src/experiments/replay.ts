@@ -22,6 +22,7 @@ import { isExperimentId, REPLAYABLE_EXPERIMENTS } from './definitions.js';
 import { pairedAuc, type PairedAuc, type ScoredItem } from './paired-auc.js';
 import { parseRunConfig, type RunConfig, type RunEngine } from './run-config.js';
 import {
+  deployedRankerThresholds,
   runExperiment,
   type CostEstimate,
   type RunExperimentResult,
@@ -101,8 +102,56 @@ function frozenTranslations(rows: readonly RunAnswerRow[]): Map<string, FrozenTr
   return map;
 }
 
-function rankerOf(thresholds: unknown): RankerConfig {
-  return mergeRankerConfig(thresholds ?? {});
+/**
+ * The baseline side's ranker config (spec 10 §6: the comparison is against the deployed policy):
+ * the effective config a base replay recorded, else the `ranker.thresholds` the base run froze when
+ * it started, else the stored setting now (runs written before thresholds were recorded). A base
+ * that was itself a replay keeps its own proposed thresholds on top.
+ */
+export async function baselineRanker(
+  db: EvalRuntime['db'],
+  config: RunConfig,
+): Promise<{ ranker: RankerConfig; source: 'base_run' | 'settings' }> {
+  if (config.replay?.replayRanker !== undefined) {
+    return { ranker: mergeRankerConfig(config.replay.replayRanker), source: 'base_run' };
+  }
+  const proposed = config.replay?.thresholds ?? {};
+  if (config.rankerThresholds !== undefined) {
+    return {
+      ranker: mergeRankerConfig(proposed, mergeRankerConfig(config.rankerThresholds)),
+      source: 'base_run',
+    };
+  }
+  return {
+    ranker: mergeRankerConfig(proposed, mergeRankerConfig(await deployedRankerThresholds(db))),
+    source: 'settings',
+  };
+}
+
+/** A complete base run: finished `complete` with every coverage cell full (no missing output). */
+function assertCompleteBase(id: string, results: unknown): void {
+  const r = (results ?? {}) as {
+    status?: unknown;
+    coverage?: Record<string, Record<string, { expected?: unknown; valid?: unknown }> | undefined>;
+  };
+  if (r.status !== 'complete') {
+    throw new EvalCommandError(
+      `run ${id} is ${typeof r.status === 'string' ? r.status : 'unfinished'}, not complete; ` +
+        'replay only a complete run (resume it first with `eval run --resume`)',
+    );
+  }
+  for (const group of ['byLang', 'byRater', 'enrich'] as const) {
+    for (const [key, cell] of Object.entries(r.coverage?.[group] ?? {})) {
+      if (typeof cell.expected === 'number' && typeof cell.valid === 'number') {
+        if (cell.valid < cell.expected) {
+          throw new EvalCommandError(
+            `run ${id} has incomplete ${group} coverage for ${key} (${cell.valid}/${cell.expected}); ` +
+              'replay only a complete run',
+          );
+        }
+      }
+    }
+  }
 }
 
 export async function replayRun(rt: EvalRuntime, options: ReplayOptions): Promise<ReplayResult> {
@@ -118,19 +167,24 @@ export async function replayRun(rt: EvalRuntime, options: ReplayOptions): Promis
       `run ${base.id} (${base.experiment}) cannot be replayed; replayable: ${REPLAYABLE_EXPERIMENTS.join(', ')}`,
     );
   }
+  assertCompleteBase(base.id, base.results);
   const questionSet = options.questionSet ?? ENRICH_V1.version;
   if (questionSet !== ENRICH_V1.version) {
     throw new EvalCommandError(
       `question set ${questionSet} is not built by this code (available: ${ENRICH_V1.version})`,
     );
   }
+  const baseline = await baselineRanker(rt.db, baseConfig);
+  const baseRanker = baseline.ranker;
   let replayRanker: RankerConfig;
   try {
-    replayRanker = rankerOf(options.thresholds ?? baseConfig.replay?.thresholds ?? null);
+    replayRanker =
+      options.thresholds === undefined
+        ? baseRanker
+        : mergeRankerConfig(options.thresholds, baseRanker);
   } catch {
     throw new EvalCommandError('the thresholds are not a valid ranker.thresholds partial');
   }
-  const baseRanker = rankerOf(baseConfig.replay?.thresholds ?? null);
 
   const engineName = options.engine ?? (baseConfig.engine?.provider === 'llm' ? 'llm' : 'typesafe');
   const engine: RunEngine =
@@ -162,9 +216,10 @@ export async function replayRun(rt: EvalRuntime, options: ReplayOptions): Promis
       model: engine.model,
       questionSet,
       thresholds:
-        options.thresholds === undefined
-          ? (baseConfig.replay?.thresholds ?? null)
-          : (options.thresholds as Record<string, unknown>),
+        options.thresholds === undefined ? null : (options.thresholds as Record<string, unknown>),
+      baseRanker: { ...baseRanker },
+      baseRankerSource: baseline.source,
+      replayRanker: { ...replayRanker },
     },
   };
   const translations = frozenTranslations(
@@ -235,6 +290,19 @@ export interface ReplayCell {
   eligible: boolean;
 }
 
+/** Lane-policy counts of one side over every rated pair (spec 10 §6). */
+export interface PolicyCounts {
+  hardHideFalseNegatives: number;
+  liked: number;
+  forYou: number;
+  forYouLiked: number;
+  /** Items in the Maybe lane, and the liked ones among them. */
+  maybe: number;
+  maybeLiked: number;
+  /** Rated pairs the side placed (the denominator of the lane shares). */
+  items: number;
+}
+
 export interface ReplayDiff {
   cells: ReplayCell[];
   macro: { base: number | null; replay: number | null; delta: number | null };
@@ -242,8 +310,8 @@ export interface ReplayDiff {
   deltaP: Array<{ key: string; meanAbs: number; n: number }>;
   laneChange: { changed: number; total: number };
   policy: {
-    base: { hardHideFalseNegatives: number; liked: number; forYou: number; forYouLiked: number };
-    replay: { hardHideFalseNegatives: number; liked: number; forYou: number; forYouLiked: number };
+    base: PolicyCounts;
+    replay: PolicyCounts;
   };
   coverage: { base: number; replay: number; expected: number };
   verdict: 'pass' | 'fail' | 'inconclusive';
@@ -305,6 +373,16 @@ export function policyLane(
   ).lane;
 }
 
+const emptyPolicy = (): PolicyCounts => ({
+  hardHideFalseNegatives: 0,
+  liked: 0,
+  forYou: 0,
+  forYouLiked: 0,
+  maybe: 0,
+  maybeLiked: 0,
+  items: 0,
+});
+
 export function replayDiff(input: {
   config: RunConfig;
   articles: ReadonlyMap<string, { lang: string; storyGroupId: string }>;
@@ -328,8 +406,8 @@ export function replayDiff(input: {
   let laneChanged = 0;
   let laneTotal = 0;
   const policy = {
-    base: { hardHideFalseNegatives: 0, liked: 0, forYou: 0, forYouLiked: 0 },
-    replay: { hardHideFalseNegatives: 0, liked: 0, forYou: 0, forYouLiked: 0 },
+    base: emptyPolicy(),
+    replay: emptyPolicy(),
   };
   let baseValid = 0;
   let replayValid = 0;
@@ -366,7 +444,12 @@ export function replayDiff(input: {
       ['replay', laneReplay],
     ] as const) {
       const p = policy[side];
+      p.items += 1;
       if (liked) p.liked += 1;
+      if (lane === 'maybe') {
+        p.maybe += 1;
+        if (liked) p.maybeLiked += 1;
+      }
       if (liked && lane === 'hidden') p.hardHideFalseNegatives += 1;
       if (lane === 'for_you') {
         p.forYou += 1;
@@ -443,6 +526,10 @@ export function replayDiff(input: {
     verdict = 'inconclusive';
     reasons.push(`the replay is ${input.replayStatus}, not complete`);
   }
+  if (baseValid < expected) {
+    verdict = 'inconclusive';
+    reasons.push(`base output coverage ${baseValid}/${expected} is incomplete`);
+  }
   if (replayValid < expected) {
     verdict = 'inconclusive';
     reasons.push(`replay output coverage ${replayValid}/${expected} is incomplete`);
@@ -517,8 +604,18 @@ export function renderReplayReport(input: {
   lines.push(
     `- Change: engine \`${input.engine.provider}\`, model \`${input.engine.model}\`, ` +
       `question set \`${input.change?.questionSet ?? ENRICH_V1.version}\`, thresholds ` +
-      (thresholds === null ? 'default' : `\`${JSON.stringify(thresholds)}\``),
+      (thresholds === null ? 'unchanged' : `\`${JSON.stringify(thresholds)}\` (replay side only)`),
   );
+  if (input.change?.baseRanker !== undefined) {
+    const source =
+      input.change.baseRankerSource === 'settings'
+        ? 'the stored `ranker.thresholds` at replay time (the base run predates recorded thresholds)'
+        : 'the base run';
+    lines.push(
+      `- Baseline ranker (from ${source}): lanes \`${JSON.stringify(input.change.baseRanker['lanes'] ?? null)}\`; ` +
+        `replay ranker lanes \`${JSON.stringify(input.change.replayRanker?.['lanes'] ?? null)}\``,
+    );
+  }
   lines.push(`- Replay status: **${input.run.status}**`);
   const cost = input.run.results?.cost;
   if (cost !== undefined) {
@@ -575,7 +672,8 @@ export function renderReplayReport(input: {
     const p = diff.policy[side];
     lines.push(
       `- ${side}: hard-hide false negatives ${p.hardHideFalseNegatives}/${p.liked} (${share(p.hardHideFalseNegatives, p.liked)}), ` +
-        `For You precision ${p.forYouLiked}/${p.forYou} (${share(p.forYouLiked, p.forYou)})`,
+        `For You precision ${p.forYouLiked}/${p.forYou} (${share(p.forYouLiked, p.forYou)}), ` +
+        `Maybe share ${p.maybe}/${p.items} (${share(p.maybe, p.items)}; liked ${p.maybeLiked})`,
     );
   }
   lines.push('');

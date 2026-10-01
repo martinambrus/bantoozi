@@ -255,6 +255,39 @@ describe('replayDiff', () => {
   });
 });
 
+describe('replayDiff guards and lane shares', () => {
+  const f = fixture(24);
+  const liked = (i: number) => 0.6 + (i % 5) / 20;
+  const disliked = (i: number) => 0.1 + (i % 7) / 20;
+
+  it('is inconclusive when the base run is missing output', () => {
+    const base = rows('1', f.ids, liked, disliked).filter(
+      (row) => !(row.articleId === f.ids[1] && row.questionKey === 'score.r1'),
+    );
+    const diff = diffOf(f, base, rows('2', f.ids, liked, disliked));
+    expect(diff.coverage.base).toBe(23);
+    expect(diff.verdict).toBe('inconclusive');
+    expect(diff.reasons).toContain('base output coverage 23/24 is incomplete');
+  });
+
+  it('counts the Maybe lane per side', () => {
+    const base = rows('1', f.ids, liked, disliked);
+    // Scores between maybe (0.35) and forYou (0.65) land in Maybe.
+    const replay = rows(
+      '2',
+      f.ids,
+      () => 0.5,
+      () => 0.4,
+    );
+    const diff = diffOf(f, base, replay);
+    expect(diff.policy.replay.items).toBe(24);
+    expect(diff.policy.replay.maybe).toBe(24);
+    expect(diff.policy.replay.maybeLiked).toBe(12);
+    expect(diff.policy.base.items).toBe(24);
+    expect(diff.policy.base.maybe).toBeLessThan(24);
+  });
+});
+
 describe('renderReplayReport', () => {
   it('writes the markdown sections of spec 10 §6', () => {
     const f = fixture(24);
@@ -316,6 +349,8 @@ describe('renderReplayReport', () => {
     expect(report).toContain('| 1 | en | 24 | 12 | 12 | 1.000 | 1.000 | 0.000 |');
     expect(report).toContain('## Mean |Δp| per question key');
     expect(report).toContain('## Lanes and policy');
+    expect(report).toMatch(/- base: .*Maybe share \d+\/24 \(/);
+    expect(report).toMatch(/- replay: .*Maybe share \d+\/24 \(/);
     expect(report).toContain('72 cache hit(s), savings $0.0123');
     expect(report).toContain('thresholds `{"lanes":{"forYou":0.7}}`');
     expect(report).toContain('regression checks, not new independent quality proof');

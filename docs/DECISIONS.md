@@ -816,7 +816,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   the card): raters can share a card id when cards are reused by text hash (D-100), and E6 gives each
   rater's copy different examples, so E6 writes no `card` rows. The chrono score is a recency
   percentile within each rater's scored articles. Exit codes: 3 for an aborted run, 4 for a failed
-  replay. Spec 10 §3 and §6 updated.
+  replay, 5 for an inconclusive replay. A replay compares against the deployed policy: every run freezes `ranker.thresholds` in
+  `config.rankerThresholds`, and a replay records `baseRanker`, `baseRankerSource` (`base_run`, or
+  `settings` for runs written before this field) and `replayRanker`; `--thresholds` is a partial over
+  the baseline applied to the replay side only. Only a `complete` run with full coverage can be a
+  replay base. Spec 10 §3 and §6 updated.
 - D-115: 2026-10-01 M3a-T8 — the dry-run database is copied from the migrated test template
   (`TEST_ADMIN_DATABASE_URL` is used only to create and drop it, under the template advisory lock)
   and seeded by running the worker seed script as a subprocess against it. Only the names

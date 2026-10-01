@@ -15,17 +15,19 @@ import {
   loadEvalRatings,
   loadRunAnswers,
   loadSample,
+  readStoredSetting,
   runCallSpend,
   updateRunResults,
   upsertRunAnswers,
   type DatasetRow,
   type DatasetSplit,
+  type Executor,
   type RunAnswerInput,
 } from '@bantoozi/db';
 import { OLLAMA_PRICE_TABLE_VERSION, type EngineLogger } from '@bantoozi/engine';
 import { ENRICH_V1, MATCH_V1, type Answer } from '@bantoozi/questions';
 import type { CardAnswer } from '@bantoozi/ranker';
-import type { CardTextMode, JsonValue } from '@bantoozi/shared';
+import { parseSetting, type CardTextMode, type JsonValue } from '@bantoozi/shared';
 import { canonicalSha256 } from '@bantoozi/shared/server';
 import { TRANSLATION_POLICY_VERSION } from '@bantoozi/translate';
 
@@ -275,6 +277,12 @@ function runtimeInfo(): Record<string, JsonValue> {
 
 const uniqSorted = (ids: Iterable<string>) => [...new Set(ids)].sort(compareIds);
 
+/** The stored `ranker.thresholds` partial (the deployed lane policy; `{}` when unset). */
+export async function deployedRankerThresholds(db: Executor): Promise<Record<string, unknown>> {
+  const stored = await readStoredSetting(db, 'ranker.thresholds');
+  return parseSetting('ranker.thresholds', stored ?? {}) as Record<string, unknown>;
+}
+
 /** The draft config of a new run, read from the rater tables (or from the base run for E6/E7). */
 async function draftConfig(
   rt: EvalRuntime,
@@ -312,6 +320,7 @@ async function draftConfig(
     },
     developmentOnly: def.developmentOnly,
     maxUsd,
+    rankerThresholds: await deployedRankerThresholds(rt.db),
     runtime: runtimeInfo(),
   };
 

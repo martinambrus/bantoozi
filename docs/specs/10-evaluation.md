@@ -506,9 +506,12 @@ by `apply-g1` and the normal production settings flow (§1); owner-pilot scope r
 - Re-runs the G1 variant with the proposed change on the `dataset_version` of the run it compares
   against (`golden-v1` for the G1 runs), cached where possible. The replay is stored as an
   `eval.runs` row with experiment `replay:<experiment>`; a replay that fails the pass rule exits
-  with code 4 (D-114).
+  with code 4 and an inconclusive one with code 5 (D-114). The base run must be complete with full coverage; the baseline policy is the
+  `ranker.thresholds` frozen with the base run (or stored at replay time for older runs), and
+  `--thresholds` changes only the replay side (D-114).
 - **Reports:** ΔAUC per rater and language (with CIs), the mean |Δp| per question key, and the share of
-  items changing lane.
+  items changing lane. The policy section shows hard-hide false negatives, For You precision and
+  the Maybe share for both sides.
 - **Required** before:
   - changing `TYPESAFE_MODEL`
   - activating a new question set

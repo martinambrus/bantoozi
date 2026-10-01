@@ -121,8 +121,18 @@ export const RunConfigSchema = z.object({
       model: z.string(),
       questionSet: z.string(),
       thresholds: z.record(z.string(), z.unknown()).nullable(),
+      /** The effective ranker config of the compared (baseline) side and where it came from. */
+      baseRanker: z.record(z.string(), z.unknown()).optional(),
+      baseRankerSource: z.enum(['base_run', 'settings']).optional(),
+      /** The effective ranker config of the replay side (baseline + `--thresholds`). */
+      replayRanker: z.record(z.string(), z.unknown()).optional(),
     })
     .optional(),
+  /**
+   * The stored `ranker.thresholds` partial (spec 06 §11) when the run started: the deployed policy
+   * a later replay compares against. Absent in runs written before it was recorded.
+   */
+  rankerThresholds: z.record(z.string(), z.unknown()).optional(),
   runtime: z.record(z.string(), z.unknown()),
 });
 export type RunConfig = z.infer<typeof RunConfigSchema>;

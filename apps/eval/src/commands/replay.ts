@@ -14,7 +14,8 @@ import { terminalConfirm } from './run.js';
  * [--question-set enrich-v1] [--thresholds file.json] [--max-usd n] [--yes] [--out report.md]`
  * (spec 10 §6, M3a-T6). Re-runs the stored run's frozen inputs with the proposed change through
  * the cache and writes the markdown diff report (default `apps/eval/reports/REPLAY-<run>-vs-<base>.md`;
- * paths are relative to the repository root). Exit status 4 when the pass rule fails.
+ * paths are relative to the repository root). Exit status 0 only for `pass`; 4 when the pass rule
+ * fails, 5 when the replay is inconclusive (partial replay, missing output or no supported cell).
  */
 
 const id = z.string().regex(/^[1-9]\d{0,18}$/);
@@ -34,7 +35,7 @@ const OptionsSchema = z.object({
 export function registerReplay(program: Command, ctx: CliContext): void {
   program
     .command('replay')
-    .description(describeCommand('replay'))
+    .description(`${describeCommand('replay')}; exit 0 = pass, 4 = fail, 5 = inconclusive`)
     .argument('[runId]', 'the stored run to compare against')
     .option('--against <runId>', 'the stored run (alias of the argument)')
     .option('--engine <engine>', 'typesafe (default) or llm: replay the fallback classifier')
@@ -91,6 +92,12 @@ export function registerReplay(program: Command, ctx: CliContext): void {
         );
         if (result.verdict === 'fail') {
           throw new EvalCommandError('the replay fails the spec 10 §6 pass rule', 4);
+        }
+        if (result.verdict !== 'pass') {
+          throw new EvalCommandError(
+            'the replay is inconclusive (see the report); it does not pass the spec 10 §6 rule',
+            5,
+          );
         }
       });
     });
