@@ -28,7 +28,7 @@ describe('eval CLI (commander)', () => {
   });
 
   it('refuses commands of later milestones without doing anything', async () => {
-    const cli = run(['run', '--experiment', 'B0']);
+    const cli = run(['learning-curve']);
     await expect(cli.parse()).rejects.toBeInstanceOf(NotImplementedError);
   });
 

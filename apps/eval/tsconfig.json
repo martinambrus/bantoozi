@@ -24,6 +24,12 @@
     },
     {
       "path": "../../packages/translate"
+    },
+    {
+      "path": "../../packages/feeds"
+    },
+    {
+      "path": "../../packages/testing"
     }
   ]
 }

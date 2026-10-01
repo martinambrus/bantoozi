@@ -1168,37 +1168,39 @@ describe('mergeArticles (spec 03 §8.4)', () => {
     expect(await snapshotRow(one.id)).toMatchObject({ article_id: source.id });
   });
 
-  it('defers while evaluation data references either article (simulated M3a schema)', async () => {
+  it('defers while evaluation data references either article (the M3a eval schema)', async () => {
     const { source, target } = await pair();
-    await ctx.owner.query('CREATE SCHEMA eval');
-    try {
-      await ctx.owner.query(`
-        CREATE TABLE eval.sample (dataset_version text NOT NULL,
-          article_id bigint NOT NULL REFERENCES articles(id) ON DELETE RESTRICT,
-          PRIMARY KEY (dataset_version, article_id));
-        CREATE TABLE eval.ratings (rater_id bigint NOT NULL,
-          article_id bigint REFERENCES articles(id) ON DELETE RESTRICT,
-          rating smallint NOT NULL, PRIMARY KEY (rater_id, article_id));
-        GRANT USAGE ON SCHEMA eval TO bantoozi_worker;
-        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA eval TO bantoozi_worker;`);
-      const expected = {
-        status: 'deferred',
-        survivorId: target.id,
-        sourceId: source.id,
-        reason: 'eval_reference',
-      };
-      await ctx.owner.query(`INSERT INTO eval.sample VALUES ('golden-v1', $1)`, [source.id]);
-      expect(await merge(source.id, target.id)).toEqual(expected);
-      await ctx.owner.query('DELETE FROM eval.sample');
-      // A golden label of the target defers too: it must not be silently rewritten.
-      await ctx.owner.query('INSERT INTO eval.ratings VALUES (1, $1, 1)', [target.id]);
-      expect(await merge(source.id, target.id)).toEqual(expected);
-      expect(await articleExists(source.id)).toBe(true);
-      await ctx.owner.query('DELETE FROM eval.ratings');
-      expect(await merge(source.id, target.id)).toMatchObject({ status: 'merged' });
-    } finally {
-      await ctx.owner.query('DROP SCHEMA eval CASCADE');
-    }
+    const expected = {
+      status: 'deferred',
+      survivorId: target.id,
+      sourceId: source.id,
+      reason: 'eval_reference',
+    };
+    await ctx.owner.query(
+      `INSERT INTO eval.datasets (version, seed, params) VALUES ('merge-v1', 's', '{}')`,
+    );
+    await ctx.owner.query(
+      `INSERT INTO eval.sample (dataset_version, article_id, lang, snapshot, snapshot_sha, split)
+       VALUES ('merge-v1', $1, 'en', '{}', 'x', 'dev')`,
+      [source.id],
+    );
+    expect(await merge(source.id, target.id)).toEqual(expected);
+    // Sample rows are append-only (no row DELETE); the owner truncates the fixture.
+    await ctx.owner.query('TRUNCATE eval.sample');
+    // A golden label of the target defers too: it must not be silently rewritten.
+    const rater = await ctx.owner.query<{ id: string }>(
+      `INSERT INTO eval.raters (name, participant_key, token_hash, token_expires_at, langs)
+       VALUES ('m', gen_random_uuid(), 'merge-token', now() + interval '1 day', '{en}')
+       RETURNING id::text AS id`,
+    );
+    await ctx.owner.query(
+      'INSERT INTO eval.ratings (rater_id, article_id, rating) VALUES ($1, $2, 1)',
+      [rater.rows[0]!.id, target.id],
+    );
+    expect(await merge(source.id, target.id)).toEqual(expected);
+    expect(await articleExists(source.id)).toBe(true);
+    await ctx.owner.query('DELETE FROM eval.ratings');
+    expect(await merge(source.id, target.id)).toMatchObject({ status: 'merged' });
   });
 
   describe('Undo pins (spec 08 §5.4)', () => {

@@ -120,6 +120,9 @@ importers:
       '@bantoozi/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@bantoozi/feeds':
+        specifier: workspace:*
+        version: link:../../packages/feeds
       '@bantoozi/questions':
         specifier: workspace:*
         version: link:../../packages/questions
@@ -129,6 +132,9 @@ importers:
       '@bantoozi/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@bantoozi/testing':
+        specifier: workspace:*
+        version: link:../../packages/testing
       '@bantoozi/translate':
         specifier: workspace:*
         version: link:../../packages/translate
@@ -138,13 +144,16 @@ importers:
       fastify:
         specifier: 5.12.5
         version: 5.12.5
+      linkedom:
+        specifier: 0.18.13
+        version: 0.18.13
       pg:
         specifier: 8.23.0
         version: 8.23.0
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
-      '@bantoozi/testing':
-        specifier: workspace:*
-        version: link:../../packages/testing
       '@types/pg':
         specifier: 8.23.1
         version: 8.23.1

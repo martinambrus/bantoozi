@@ -74,6 +74,11 @@ export interface PipelineGate {
 export interface PipelineContext {
   sender: JobSender;
   gate: PipelineGate;
+  /**
+   * `EVAL_INGEST_ONLY=true` (spec 10 §2.1): the pipeline stops after extraction, so a golden
+   * collection worker never translates, enriches, matches, clusters or ranks, and costs nothing.
+   */
+  ingestOnly?: boolean;
 }
 
 /** The stages that may follow `stage` (for documentation and tests of the order). */
@@ -95,6 +100,8 @@ export async function after(
 ): Promise<void> {
   const { sender, gate } = context;
   const revision = { revision: outcome.revision };
+  // Ingest-only: fetch still continues to extraction; nothing follows extraction.
+  if (context.ingestOnly === true && stage !== 'fetch') return;
   switch (stage) {
     case 'fetch':
       // A new, non-stale article from ingest: extraction runs for reading and saved content.
@@ -162,6 +169,8 @@ export async function afterNewCarrier(
   context: PipelineContext,
 ): Promise<void> {
   const { sender, gate } = context;
+  // Ingest-only (spec 10 §2.1): a new carrier changes no ranking and starts no paid stage.
+  if (context.ingestOnly === true) return;
   const demand = await gate.newCarrierDemand(articleId, feedId);
   if (demand === null) return;
   for (const userId of demand.subscriberIds) {

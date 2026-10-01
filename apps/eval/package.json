@@ -15,16 +15,19 @@
   "dependencies": {
     "@bantoozi/db": "workspace:*",
     "@bantoozi/engine": "workspace:*",
+    "@bantoozi/feeds": "workspace:*",
     "@bantoozi/questions": "workspace:*",
     "@bantoozi/ranker": "workspace:*",
     "@bantoozi/shared": "workspace:*",
+    "@bantoozi/testing": "workspace:*",
     "@bantoozi/translate": "workspace:*",
     "commander": "15.0.0",
     "fastify": "5.12.5",
-    "pg": "8.23.0"
+    "linkedom": "0.18.13",
+    "pg": "8.23.0",
+    "zod": "4.6.5"
   },
   "devDependencies": {
-    "@bantoozi/testing": "workspace:*",
     "@types/pg": "8.23.1",
     "tsx": "4.23.15"
   }

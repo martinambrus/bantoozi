@@ -1,0 +1,96 @@
+# Golden feed list for `golden-v1` (spec 10 §2.1): 18–22 real feeds per language (en, sk, cs) mixing
+# news, tech, science, sport, lifestyle, local and classifieds, with at least one Google News feed
+# and one feed with poor excerpts. Read by `pnpm evaluate ingest-sample --feeds <this file>`; the
+# parser is apps/eval/src/collection/feed-list.ts (zod-validated).
+#
+# Format: one feed per line, whitespace-separated columns
+#
+#   <lang>  <category>  <url>  [tag …]
+#
+#   lang      en | sk | cs: the language the feed is expected to publish in (the sample uses the
+#             detected article language, not this column)
+#   category  news | tech | science | sport | lifestyle | local | classifieds
+#   url       the feed URL (http or https; no credentials)
+#   tags      google-news    a Google News feed (aggregated headlines)
+#             poor-excerpts  items carry little or no excerpt text (links, points, headlines only)
+#             bot-sensitive  the origin blocks clients without a bot User-Agent or is rate-limited;
+#                            reachable with FETCH_USER_AGENT, but expect occasional failures
+#             legacy-charset served in a legacy charset (windows-1250), exercising charset decoding
+#
+# `#` starts a comment (at the start of a line or after whitespace); blank lines are ignored.
+# Every URL below answered with a parseable RSS document through the SSRF-safe fetch client on
+# 2026-10-01 (`pnpm evaluate ingest-sample --dry-run` re-checks reachability). Redirecting URLs are
+# listed at their final address. Several publishers (The Guardian, Condé Nast, Reach, Ringier's
+# aktuality.sk, iDNES) answered 403 to direct datacenter requests and were left out.
+
+# --- English (22) -------------------------------------------------------------------------------
+en  news         https://feeds.bbci.co.uk/news/rss.xml
+en  news         https://www.france24.com/en/rss
+en  news         https://feeds.npr.org/1001/rss.xml
+en  news         https://www.aljazeera.com/xml/rss/all.xml
+en  news         https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en              google-news poor-excerpts
+en  tech         https://techcrunch.com/feed/
+en  tech         https://www.engadget.com/rss.xml
+en  tech         https://www.smashingmagazine.com/feed/
+en  tech         https://hnrss.org/frontpage                                         poor-excerpts
+en  science      https://www.sciencedaily.com/rss/all.xml
+en  science      https://phys.org/rss-feed/
+en  science      https://www.nasa.gov/news-release/feed/
+en  sport        https://feeds.bbci.co.uk/sport/rss.xml
+en  sport        https://www.skysports.com/rss/12040
+en  sport        https://www.cbssports.com/rss/headlines/
+en  lifestyle    https://www.thekitchn.com/main.rss
+en  lifestyle    https://www.apartmenttherapy.com/main.rss
+en  lifestyle    https://www.budgetbytes.com/feed/
+en  local        https://feeds.bbci.co.uk/news/england/london/rss.xml
+en  local        https://www.berkeleyside.org/feed
+en  local        https://blockclubchicago.org/feed/
+en  classifieds  https://weworkremotely.com/remote-jobs.rss
+
+# --- Slovak (22) --------------------------------------------------------------------------------
+sk  news         https://www.sme.sk/rss-title                                        bot-sensitive
+sk  news         https://www.postoj.sk/rss
+sk  news         https://www.pravda.sk/spravy/rss/xml
+sk  news         https://dennikn.sk/feed/
+sk  news         https://news.google.com/rss?hl=sk&gl=SK&ceid=SK:sk                 google-news poor-excerpts
+sk  tech         https://vosveteit.zoznam.sk/feed/
+sk  tech         https://touchit.sk/feed/
+sk  tech         https://www.techbox.sk/feed
+sk  tech         https://www.dsl.sk/export/rss_articles.php                         legacy-charset
+sk  science      https://dennikn.sk/veda/feed/
+sk  science      https://vedanadosah.cvtisr.sk/feed/
+sk  science      https://www.teraz.sk/rss/veda.rss
+sk  sport        https://www.teraz.sk/rss/sport.rss
+sk  sport        https://sportnet.sme.sk/rss/                                        bot-sensitive
+sk  sport        https://www.pravda.sk/sportweb/rss/xml
+sk  lifestyle    https://www.interez.sk/feed/
+sk  lifestyle    https://www.pravda.sk/zena/rss/xml
+sk  lifestyle    https://www.zenyvmeste.sk/feed.xml
+sk  local        https://www.sme.sk/bratislava/rss-title                            bot-sensitive
+sk  local        https://korzar.sme.sk/kosice/rss-title                             bot-sensitive
+sk  local        https://www.bystricoviny.sk/feed/
+sk  classifieds  https://www.bazos.sk/rss.php?rub=pc
+
+# --- Czech (22) ---------------------------------------------------------------------------------
+cs  news         https://www.seznamzpravy.cz/rss
+cs  news         https://www.irozhlas.cz/rss/irozhlas
+cs  news         https://www.novinky.cz/rss
+cs  news         https://ct24.ceskatelevize.cz/rss/hlavni-zpravy
+cs  news         https://news.google.com/rss?hl=cs&gl=CZ&ceid=CZ:cs                 google-news poor-excerpts
+cs  tech         https://www.lupa.cz/rss/clanky/
+cs  tech         https://www.root.cz/rss/clanky/
+cs  tech         https://www.zive.cz/rss/sc-47/
+cs  tech         https://cc.cz/feed/
+cs  science      https://www.osel.cz/rss/rss.php
+cs  science      https://ct24.ceskatelevize.cz/rss/rubrika/veda-25
+cs  science      https://21stoleti.cz/feed/
+cs  sport        https://isport.blesk.cz/rss
+cs  sport        https://www.sport.cz/rss/
+cs  sport        https://sport.ceskatelevize.cz/rss
+cs  lifestyle    https://www.toprecepty.cz/rss1.xml
+cs  lifestyle    https://www.apetitonline.cz/rss.xml
+cs  lifestyle    https://www.prozeny.cz/rss
+cs  local        https://moravskoslezsky.denik.cz/rss/vse.xml
+cs  local        https://brnensky.denik.cz/rss/vse.xml
+cs  local        https://prazsky.denik.cz/rss/vse.xml
+cs  classifieds  https://www.bazos.cz/rss.php?rub=pc

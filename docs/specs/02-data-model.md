@@ -1538,6 +1538,13 @@ changes, proving both materialized feed caches equal a fresh source-table aggreg
 
 ```sql
 CREATE SCHEMA eval;
+CREATE TABLE eval.datasets (version text PRIMARY KEY CHECK (version ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
+  parent_version text NULL REFERENCES eval.datasets(version) ON DELETE RESTRICT,
+  seed text NOT NULL, params jsonb NOT NULL,  -- sampling parameters, availability, exclusions (D-96)
+  manifest jsonb NULL, snapshot_sha text NULL, split_sha text NULL, -- written once, at the freeze
+  created_at timestamptz NOT NULL DEFAULT now(), frozen_at timestamptz NULL,
+  CHECK ((frozen_at IS NULL) = (manifest IS NULL) AND (frozen_at IS NULL) = (snapshot_sha IS NULL)
+         AND (frozen_at IS NULL) = (split_sha IS NULL)));
 CREATE TABLE eval.raters (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, name text NOT NULL,
   participant_key uuid NOT NULL, context_name text NULL, -- same human keeps one key across topic personas
   token_hash text NOT NULL UNIQUE, token_expires_at timestamptz NOT NULL, token_revoked_at timestamptz NULL,
@@ -1553,20 +1560,21 @@ CREATE TABLE eval.rater_feeds (rater_id bigint REFERENCES eval.raters(id) ON DEL
 CREATE TABLE eval.assignments (rater_id bigint REFERENCES eval.raters(id) ON DELETE CASCADE,
   article_id bigint REFERENCES articles(id) ON DELETE RESTRICT, position int NOT NULL CHECK (position >= 0),
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','rated','skipped')),
-  PRIMARY KEY (rater_id, article_id), UNIQUE (rater_id, position));
+  skip_reason text NULL CHECK (skip_reason IS NULL OR (status = 'skipped' AND length(skip_reason) <= 500)),
+  PRIMARY KEY (rater_id, article_id), UNIQUE (rater_id, position));  -- skip_reason: D-101
 CREATE TABLE eval.ratings (rater_id bigint REFERENCES eval.raters(id) ON DELETE CASCADE,
   article_id bigint REFERENCES articles(id) ON DELETE RESTRICT, rating smallint NOT NULL CHECK (rating IN (-1, 1)),
   reason text NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (rater_id, article_id));
 CREATE TABLE eval.facet_labels (labeler text NOT NULL, article_id bigint REFERENCES articles(id) ON DELETE RESTRICT,
   question_key text NOT NULL, value text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (article_id, question_key, labeler));
-CREATE TABLE eval.sample (dataset_version text NOT NULL, -- e.g. golden-v1; every version keeps its own rows
+CREATE TABLE eval.sample (dataset_version text NOT NULL REFERENCES eval.datasets(version) ON DELETE RESTRICT, -- e.g. golden-v1; every version keeps its own rows
   article_id bigint NOT NULL REFERENCES articles(id) ON DELETE RESTRICT, lang text NOT NULL,
   snapshot jsonb NOT NULL, snapshot_sha text NOT NULL,
   split text NOT NULL CHECK (split IN ('dev','test')),
   created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (dataset_version, article_id));
 CREATE TABLE eval.runs (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, experiment text NOT NULL,
-  dataset_version text NOT NULL, -- the eval.sample version this run read
+  dataset_version text NOT NULL REFERENCES eval.datasets(version) ON DELETE RESTRICT, -- the eval.sample version this run read
   config jsonb NOT NULL, git_sha text NOT NULL, started_at timestamptz NOT NULL DEFAULT now(),
   finished_at timestamptz NULL, results jsonb NULL);
 CREATE TABLE eval.run_answers (run_id bigint NOT NULL REFERENCES eval.runs(id) ON DELETE CASCADE,
@@ -1575,6 +1583,10 @@ CREATE TABLE eval.run_answers (run_id bigint NOT NULL REFERENCES eval.runs(id) O
   question_key text NOT NULL, answer jsonb NOT NULL,
   UNIQUE NULLS NOT DISTINCT (run_id, article_id, card_id, question_key));
 CREATE INDEX run_answers_run_idx ON eval.run_answers (run_id, article_id);
+CREATE TABLE eval.dataset_truth (dataset_version text PRIMARY KEY REFERENCES eval.datasets(version) ON DELETE RESTRICT,
+  raters jsonb NOT NULL, ratings jsonb NOT NULL, assignments jsonb NOT NULL, cards jsonb NOT NULL,
+  facet_labels jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now());  -- written once when the version freezes (D-110)
 GRANT USAGE ON SCHEMA eval TO bantoozi_worker;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA eval TO bantoozi_worker;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA eval TO bantoozi_worker;
@@ -1583,6 +1595,16 @@ ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA eval GRANT USAGE, SEL
 ```
 
 - The `eval` schema is accessed only by `apps/eval`, through `DATABASE_URL_WORKER`.
+- Append-only triggers (D-96): `eval.sample` rows are never updated or deleted, a frozen
+  `eval.datasets` version accepts no new sample rows and never changes or disappears, and an
+  `eval.runs` row's experiment, dataset version, config, git sha and start time are immutable (only
+  `finished_at` and `results` are written later). An `eval.dataset_truth` row (a frozen version's
+  raters (id, name, participant, context name, languages), ratings, assignments, cards and facet labels,
+  captured in its freezing transaction) is inserted
+  only for a frozen version and never updated or deleted; runs on a frozen version read it instead
+  of the live tables. `rater_sessions` has an index on `rater_id`.
+- The evaluation user `eval@bantoozi.local` (role `user`, no invites) marks a **golden database**
+  (D-96): only workers with `EVAL_INGEST_ONLY=true` may serve one (spec 10 §2.1).
 - Dataset versions are append-only. A new version (after a rating correction, a late duplicate or
   an addition, spec 10 §2.1) inserts its own `eval.sample` rows, copying unchanged snapshots, and
   never updates or deletes an earlier version's rows. A run reads only its `dataset_version`, so older

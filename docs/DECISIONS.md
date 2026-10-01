@@ -679,6 +679,442 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   like a settlement and then leaves the reservation charged for housekeeping. A released `suggest`
   reservation keeps its suggestion stamp (spec 05 §7), as a request cancelled after its send does.
   Specs 04 §1 and §4 and 11 §5 updated.
+- D-96: 2026-10-01 M3a-T1 — spec 02 §7 had no place for a dataset version's own record, yet spec 10
+  §2.1 stores the sampling seed, timestamps and exclusions, freezes a version at its first model run
+  and requires a top-up after that to create the next version. `eval.datasets` (version, parent,
+  seed, sampling `params`, and the `manifest`, `snapshot_sha` and `split_sha` written once at the
+  freeze) holds them; `eval.sample.dataset_version` and `eval.runs.dataset_version` reference it.
+  Triggers make the rules hold for every role: `eval.sample` rows are never updated or deleted, a
+  frozen version accepts no new rows and never changes again, and a run's experiment, version,
+  config and git sha are immutable once it starts. Spec 10 §2.1 also requires that ordinary workers
+  cannot consume the golden database and that a heartbeat alone is not isolation, without saying how:
+  the presence of the evaluation user `eval@bantoozi.local` marks a golden database. A worker without
+  `EVAL_INGEST_ONLY=true` refuses to start on one and stops when one appears under it (checked with
+  every heartbeat); an ingest-only worker consumes only `feed.schedule`, `feed.fetch` and
+  `article.extract`, and its pipeline stops after extraction (no translate, enrich, cluster, match or
+  rank intent, also for a new carrier); `ingest-sample` refuses to collect while any live heartbeat
+  is not ingest-only. The worker heartbeat itself (spec 02 §2, every 30 s, entries older than an hour
+  pruned) is written by M3a because `ingest-sample` is its first reader. Ordering closes the startup
+  race: a worker writes its first heartbeat, then checks for the evaluation user, and registers no
+  consumer until both are done; `ingest-sample` creates the evaluation user, then reads heartbeats,
+  and enqueues nothing before that check, so of a worker and a collection starting together at
+  least one sees the other. On shutdown the worker removes its heartbeat only after its outbox
+  relay and queue consumers have stopped, so the heartbeat covers every moment it consumes. Specs
+  02 §7 and 10 §2.1 updated.
+- D-97: 2026-10-01 M3a-T2 — spec 10 §2.1 groups the split by story but the golden database runs no
+  clustering (its worker is ingest-only, D-96), so most sampled articles have no `story_cluster_id`.
+  A snapshot's story-group id is `c<story_cluster_id>` when the article is clustered and otherwise
+  `t<first 16 hex of the SHA-256 of the normalized title>`, which keeps exact republished duplicates
+  (the same story carried by several feeds under one title) on one side of the split. Near-duplicates
+  with different titles are not grouped; spec 10 already requires a new split/version when such
+  unclustered duplicates are found before G1. The 70 % share is measured in articles: whole groups
+  are chosen as the subset whose article count lands nearest the language's development target
+  (a 0/1 knapsack over a seeded group order; ties take the smaller count), so one story with many
+  copies cannot unbalance the sides. Spec 10 §2.1 updated.
+  Addendum (PR #10 review): a group's language is that of its oldest article in the version, and a
+  later copy of a known group (a top-up in another language included) is counted under that same
+  language, so the per-language totals the fresh groups are balanced against stay consistent.
+- D-98: 2026-10-01 M3a-T2 — spec 10 §2.1 sets the sample's targets, the 10% feed cap and the strata
+  but not eligibility, the cap's base or re-runs. Eligible articles are carried by the evaluation
+  user's feeds, are past extraction (not `ingested`, `stale` or `failed`) and have a detected
+  language in `--langs`; everything else is counted as an exclusion by kind. The cap is 10% of the
+  size actually drawn: the largest n ≤ target with Σ min(available, ⌊0.1·n⌋) ≥ n, so a short
+  language shrinks instead of filling from one feed. The draw is a seeded water-fill across feeds by
+  each article's oldest golden carrier, rotating over UTC collection days within a feed; the seed
+  defaults to the version name. An open version only gains rows (its stored target, cap and
+  languages are the defaults); a frozen version is never changed, and without `--version` a frozen
+  head leads to the next version (parent rows copied), created only when it adds articles. Every
+  draw appends its time, seed, window, per-language target/available/size/cap/feeds/days and
+  exclusions to `params.sampling[]`. Spec 10 §2.1 updated.
+  Addendum (PR #10): a re-run keeps the version's rows (its own, or those copied from a frozen head),
+  so it may only widen the recorded `langs`, `perLang` and `feedCapShare`. That means a superset of
+  languages, a target or a cap at least as high. The kept rows satisfy every widened constraint and
+  the draw only tops each language up. Dropping a language or lowering the target or the cap is
+  refused (`eval sample` exits 1) with a pointer to `--version <new>`, which starts a new lineage.
+  Addendum (PR #10 review): the draw share-locks every candidate article (`FOR SHARE`) until it
+  commits, so the ingest-only worker cannot change an article's language or pipeline state between
+  the selection and its snapshot; its updates wait for the draw.
+  Addendum (PR #10 review): the cap holds for every golden feed that carries a selected article,
+  not only the oldest carrier the draw stratifies by. A draw takes an article only while each of its
+  carriers stays within max(cap, its existing rows), and the sample shrinks until a draw fills its
+  size. A feed that carries the other feeds' stories therefore limits the sample (and shows in the
+  report's per-feed counts, which now count every carried article) instead of exceeding the cap.
+  A draw prefers, within a stratum, the article with the fewest carriers, and a size it cannot fill
+  gets a second, exclusive-first attempt before the sample shrinks, so a shared article never uses
+  up another feed's room while an exclusive one is left.
+  A size still unfilled gets a bounded augmenting-path repair: an unchosen article blocked by one
+  full feed displaces a chosen article of that feed, the room that article frees on its other feeds
+  is offered on recursively until an article fits outright, so each path adds one. A path has no
+  length limit (each article is tried once per search). Exact packing under several caps is
+  NP-hard, so only the total work is budgeted; the cap is never exceeded. The draw also holds `feed_items` in SHARE mode
+  until it commits, so no carrier is added between the selection and the snapshots.
+  Otherwise English rows would stay under `langs: ['sk']`, or a sample would exceed its recorded
+  target or cap. A parameter the version never recorded constrains nothing. The widened values are
+  recorded on the version even when the draw adds nothing. Repeated languages are recorded once.
+- D-99: 2026-10-01 M3a-T2 — `ingest-sample` mechanics that spec 10 §2.1 leaves open. The feed list
+  is `<lang> <category> <url> [tags]` with tags `google-news`, `poor-excerpts`, `bot-sensitive` and
+  `legacy-charset` and `#` comments. Besides a heartbeat under 90 s with `evalIngestOnly` and no live
+  ordinary worker, the live ingest-only workers must consume `feed.fetch` and `article.extract`.
+  "Fetch once now" records the fetch through the subscription for a new feed and forces a
+  `feed.fetch` for an already subscribed active one. "Drained" means every active golden feed was
+  fetched since the start (5 s skew allowance), no golden article is still `ingested` and no
+  `article.extract` work is pending in the outbox or pg-boss; paused, dead and quarantined feeds are
+  not waited for. The default timeout is 60 minutes and a timeout exits 0 with the counts, because
+  the worker keeps collecting. `--watch` re-checks heartbeats every tick (a warning, not an exit) and
+  re-subscribes lost feeds. Spec 10 §2.1 updated.
+- D-100: 2026-10-01 M3a-T3 — spec 10 §2.2 asks for cards "before seeing any article" but not what
+  happens to later edits. The card and feed steps close (409) once the rater has any assignment, so
+  the cards a run freezes are the ones written before rating. The 5–10 limit counts must/love/like
+  cards; "never" cards are capped at 3. Cards are stored as `origin='user'`, `visibility='shared'`,
+  created by the evaluation user and reused by `text_hash`; the card language is detected from
+  interest plus not-for text (hint: the rater's first language) unless the rater chooses it. Spec 10
+  §2.2 updated.
+- D-101: 2026-10-01 M3a-T3 — spec 10 §2.2 stores an optional skip reason, but spec 02 §7 had no
+  column for it. `eval.assignments.skip_reason text NULL` (≤ 500 characters, only on a skipped row)
+  was added to migration 0015 before it shipped. A later rating clears it in the same update; a skip
+  withdraws an earlier rating, so a skip is never read as a dislike. Specs 02 §7 and 10 §2.2 updated.
+- D-102: 2026-10-01 M3a-T3 — spec 10 §2.4 does not say whether a link token can be exchanged
+  twice. It can, until it expires or is revoked, so a rater can sign in on a phone and a laptop; each
+  exchange creates its own session, and the token leaves the URL at once. Sessions last at most
+  min(30 days, token expiry). The cookie is SameSite=Lax (a link click from a mail client still
+  carries it after the redirect), and mutations need a per-session HMAC CSRF token and a same-origin
+  request. Exchange is limited to 20 attempts per client address per 10 minutes. `--participant` must
+  name an existing participant key, so a typo cannot create a phantom human. Spec 10 §2.4 updated.
+  Addendum (PR #10 review): every rater reaches the server through the loopback tunnel, so the
+  socket address is the same for all of them and one client's bad links would lock everyone out.
+  The server trusts only the loopback hop (`trustProxy: 'loopback'`) and counts attempts by the
+  client address the tunnel appends to `X-Forwarded-For`; addresses a client sends itself sit to the
+  left of it and are ignored. Without that header the socket address is used, as before.
+- D-103: 2026-10-01 M3a-T4 — spec 10 §2.3 names the owner as labeller and a 50-article overlap
+  without a selection rule. The owner is the participant of the earliest rater. The owner's set is up
+  to 100 articles per language of the head dataset version in seeded hash order (seed = dataset seed
+  + `:facets`); already-labelled articles always stay in it, so a growing sample never drops finished
+  work. The second labeller's 50 come from the owner's set, split equally across its languages with
+  round-robin top-up. Facet labels are keyed by participant; `uncertain` and `not_applicable` are
+  allowed for every field. Spec 10 §2.3 updated.
+- D-104: 2026-10-01 M3a-T3 — assignment details spec 10 §2.2 leaves open. The seed is
+  `rater:<id>`; a seeded hash order chooses within each language and a second seeded shuffle sets the
+  queue order. The sample is used in full before any top-up; the top-up pool is articles of the
+  rater's feeds first seen in the last 30 days that are not in the head version and not stale or
+  failed, added through the dataset top-up (a frozen head creates the next version) before
+  assignment. Assignments are built on "Start rating" and again from "Look for more articles" when
+  nothing is pending and the rater has fewer than 300. A rating change, or a skip that withdraws a
+  rating, made while the head version is frozen first creates the next open version
+  (`params.correctionOf`, rows copied unchanged) in the same transaction (spec 10 §2.1); ratings stay
+  current-state rows and each run freezes the ratings it used in its config. Adding assignments
+  while the head is frozen likewise first creates the next open version (`params.assignmentsAfter`),
+  even without a top-up, so a frozen version's assignments never change. The rating app rechecks the
+  card and feed steps under the rater row lock before assigning (a concurrent card deletion answers
+  409); synthetic dry-run raters skip that check. Top-ups are planned and written in the same
+  transaction as the assignments, under the rater row lock, then the additions lock, then the dataset
+  row lock, from the feeds read under the rater lock, so a concurrent feed change never adds articles
+  from a dropped feed and a start rejected as not ready writes nothing. No path takes the additions
+  lock and then a rater lock. Assignments are per (rater, article), not per version, so the rating
+  page shows an assigned article from the head's sample row, else from the newest version holding
+  it: an independent lineage started by `eval sample --version` never strands earlier assignments.
+  A rating or rating-withdrawing skip opens the next version of every lineage tip that holds the
+  article (the head last, so it stays the head when it holds the article; with no such tip, the
+  head), so a later freeze of any lineage holding it captures it. A changed facet label opens
+  versions the same way, for the labelled article. A card add, strength change or removal is
+  ground truth for every article, so it opens the next version of every frozen lineage tip. New
+  assignments open every frozen lineage tip holding a picked article. When the head holds the
+  change but is still open, the other lineages' new versions are dated just before it, so it stays
+  the head (a head holding none of the articles still yields to the lineage that does).
+  A sample article whose carrier feed was merged into a picked feed after sampling stays a
+  candidate: the snapshot keeps the source id, so the merge chain is followed back (at most 20).
+  Every new version takes the next unused name after its parent (`eval sample --version` may already
+  have used the plain successor). Top-ups, like the sample draw, take only extracted-or-later
+  articles: an `ingested` one (e.g. re-queued by a content update) has no current body yet.
+  Spec 10 §2.2 updated. The planned top-up articles are share-locked (`FOR SHARE OF a`, in id
+  order) and revalidated in that transaction (same language, not stale or failed) before their
+  snapshots are built. A no-longer-eligible article is dropped (whenever the plan held top-ups it is
+  rebuilt from the sample alone, so a rejected pick is never assigned), and the ingest worker cannot change
+  a locked one until commit. `feed_items` is not table-locked here, unlike the sample draw: the rating
+  request already holds the rater and additions locks, and a carrier added meanwhile changes no
+  eligibility.
+- D-105: 2026-10-01 M3a-T7 — spec 10 §2.3 asks for a predeclared adjudication step without defining
+  it. Facet values use the labelling page's strings (yes/no, `0`–`4`, option ids); `uncertain` and
+  `not_applicable` are excluded from accuracy. A label by the labeller `adjudicated` wins; otherwise a
+  single label, or the value all labellers agree on, is the reference; an unresolved disagreement is
+  excluded and counted. κ is computed between the two labellers with the largest overlap,
+  quadratic-weighted for depth. Spec 10 §2.3 updated.
+- D-106: 2026-10-01 M3a-T7 — spec 10 §5 locks the development selection before the test split is
+  read, without saying where. The lock is an `eval.runs` row with experiment `G1-gate` (no new table):
+  its immutable config holds the profile, the dataset manifest, the cohort sha, the configSha and
+  the run ids, and its results hold the status and report sha. `eval report` keeps the test split
+  sealed until a lock exists. Unmet readiness writes only a report (no lock, no g1.json); an
+  incomplete selection writes g1.json with `needs_more_data`, no lock, test not revealed. A rerun on
+  the same manifest with another profile or configSha is refused. Spec 10 §1 and §4 updated.
+  Addendum (PR #10 review): one lock fences the holdout of the whole dataset version, for every
+  cohort. `eval report` reveals the version's test split as soon as any lock exists, so `eval gate`
+  refuses a new selection whenever the version already has a lock for another cohort (or another
+  snapshot or split). A new cohort needs a new held-out dataset version. The alternative, scoping
+  the report's unsealing to the locked cohort, was rejected: cohorts share test articles, and one
+  cohort's revealed test outcomes would still inform another cohort's selection. The refusal is
+  simpler and stricter. Spec 10 §5 step 5 updated.
+- D-107: 2026-10-01 M3a-T7 — interpretations of spec 10 §5. Translate exactly when the development
+  gain is ≥ 0.02 (the "native suffices" check only drives the Laya recommendation). A non-English-card
+  context has any positive card whose language is not `en`. The overall and participant AUC cell is
+  the context with languages pooled; language summaries use context × language cells, and the ≥ 20
+  items / ≥ 5 per class support rule applies on both splits. The primary AUC excludes unknown scores;
+  the sensitivity AUC ranks unknown liked items last and unknown disliked items first. Coverage is the
+  stricter of the runner's and the report's count. forYou coverage and the tier ECE use hierarchical
+  weights; isotonic cut points are rounded to 4 decimals. The tier-2 gain is E4 minus the selected
+  card mode's translated run per language; an E4 run in the other card mode is unmeasured. Budget:
+  uncached cost = billed + cache savings, weighted by development language share, `--daily-revisions`
+  default 1000, sensitivity ×5. `owner_pilot` requires exactly one participant key. g1
+  `language_modes` lists `en` and every gate language; an unmeasured one gets the default `native`, the mode its composition was scored, thresholded and budgeted with, so applying G1 never leaves a stored `translate` under a configuration the gate did not confirm (spec 10 §5: keep default settings for unmeasured languages). Budget cost attribution: the per-article cost is the
+  development-share-weighted sum, over composed languages, of each language's uncached dollars per
+  article under its composed run, from `results.cost.byLang` (that language's own spend over its own
+  processed articles). A run without it charges its whole uncached cost to the processed articles of
+  the languages it serves (`costBasis: run_total`, an upper bound), so language-specific spend such as
+  E3's translation is never diluted over languages it does not serve. The G1 report states the basis.
+  The gate's languages are the dataset's languages plus any the reference run served, so a run
+  limited by `--langs` leaves the others unmeasured rather than dropped. The budget is unmeasured
+  when a development language has no composed run, its composed run processed none of it, or a
+  composed run's cost is `incomplete` (a lower bound after a crashed invocation); an unmeasured
+  budget is a selection reason, so the gate reports `needs_more_data` instead of passing. The
+  threshold pool (For You, Maybe, tiers) takes only items of supported development contexts (≥ 20
+  items, ≥ 5 per class), so an unsupported context never carries a share of its participant's
+  weight. Addendum (PR #10 review): every paired gain (card mode, translate vs native, the E4 tier-2
+  gain) is computed on the intersection of items both runs scored: each run's macro AUC uses only
+  the items with a known score in both, so an item missing on one side (up to 5% may be) cannot
+  create or erase a 0.02/0.05 gain. Without one of the runs the gain is unmeasured, as before. The
+  test confirmation pairs the same way: the composed macro, the baseline macro, every participant's
+  candidate and baseline AUC (the win check) and the paired bootstrap interval all use the test
+  items both the composition and the baseline scored, so items one side left unknown cannot make
+  the +0.05 gain, the 0.70 floor or a participant win. The per-view ranking tables of the report
+  stay diagnostic and keep each view's own scored items. The
+  report reads a `score.r*` answer tagged as a fallback (`variant: 'native'` from a translation
+  fallback, or `cardTextFallback: true`) as unknown, and a Call A answer tagged `variant: 'native'`
+  in a translated-state (`lt`/`glm`) run as failed. This matches the runner, whose coverage already
+  excludes those answers, so the advertised variant's AUCs, the threshold pool and the demotion
+  samples never count them. The pinned-engine eligibility check (E1–E4, E6, E7) audits every answer
+  source the metrics read, not only the shared `card` rows: every per-key card map (the per-rater
+  `card.r<raterId>` rows, `e6.r*`, `e7.*`) and every usable Call A answer. The report keeps each
+  Call A answer's engine (an untagged answer counts as `typesafe`, as untagged card rows do), so a
+  single answer from any other engine makes the run ineligible.
+  The G1 report shows an unmeasured language as `native (unmeasured default, unvalidated)`, the
+  value g1.json writes and apply-g1 applies, never as "current setting kept".
+  Step 1 ranks each candidate set (B1/B1-T, and E1/E2/E3/E3b) on the development items every eligible
+  candidate of that set scored, so no baseline or core candidate wins by missing harder items, and
+  the report's development macro column shows those set-paired values for these runs.
+- D-108: 2026-10-01 M3a-T7 — `apply-g1` semantics spec 10 §1 leaves open. `language_modes` is merged
+  over the stored modes (a language outside the gate keeps its stored mode; unmeasured gate languages are written as `native`, D-107); `ranker.thresholds` is replaced whole. A
+  key is written only when its effective value changes (a missing row counts as its default), so a
+  second apply changes nothing. Side effects mirror spec 08 `PATCH /admin/settings` (`user.rank`,
+  `house.reenrich`, `house.rematch`, `house.translate-cards`, `user.learn`) through the outbox with
+  `reason: 'apply-g1'`. Runs, dataset hashes, configSha and the gate lock's profile, status and report
+  sha are checked against the database being written. A `dryRun` artifact is accepted only in
+  `bantoozi_eval_dryrun`. The API's LibreTranslate language probe is not repeated. Spec 10 §1 updated.
+  Addendum (PR #10 review): `gate.participants` is not in the config hash, so `eval gate` also
+  records the readiness participant count in the lock's results, next to the status and report
+  sha. `apply-g1` refuses a file whose count differs from the lock's ("participant count mismatch"),
+  so an edited count cannot present owner-pilot evidence as broader evidence. The lock's results
+  jsonb carries it, so no migration is needed and the configSha stays unchanged. A lock written
+  before this change has no count and is refused; rerunning `eval gate` on the same manifest
+  records it.
+  Addendum (PR #10 review): `apply-g1` also refuses a file whose gate lock records `dryRun: true`
+  outside the dry-run database, or whose `dryRun` mark disagrees with its lock. `g1ConfigSha` now
+  hashes the mark when it is true, so a dry-run artifact with the mark stripped no longer matches
+  its hash. A real artifact omits the key, so its hash is unchanged (no format break).
+- D-109: 2026-10-01 M3a-T7 — the evaluation policy view (lane distribution, spec 10 §4) applies no
+  demotions (the golden set has no per-user demotion state). A failed card answer makes coverage
+  unavailable, and an item with no usable answer stays in New and is counted.
+  Addendum (PR #10 review): the E7 "below For You → For You" share runs both sides through this
+  policy view. Each side uses the rater's full card set (never cards included) with must floors,
+  never caps and hides, and coverage. The variant side uses the variant's answers over the base
+  run's. The denominator is every base item outside For You and New, hidden items included.
+- D-110: 2026-10-01 M3a-T6 — the run cohort is the rated pairs of the selected raters and
+  languages, plus facet-labelled articles for card experiments; the gate checks a run limited to a
+  subset of the reference run's languages (E4 defaults to SK/CZ) against the reference cohort and
+  ratings restricted to that subset, and its coverage on those languages' items only; E6/E7 are
+  checked against their base run's development pairs for their languages and raters. E6/E7 hold
+  their base run's claim in shared mode for the whole invocation, and a run that E6/E7 build on is
+  never resumed (start a new E1 run instead), so the base answers they read stay fixed; E6/E7 use only development pairs of
+  the base E1 run's frozen config. The run config adds `assignments` (the BM25 corpus),
+  `developmentOnly`, `baseRunId` and `replay`, and records the exact card text sent: english mode
+  translates the cards before the run row is written. A `translation` answer key freezes article
+  translations per run. Every executed run freezes its dataset version (idempotent); the E5 stub
+  does not. In translated-state runs (B1-T, E3, E3b, E4) an article whose translation failed or was
+  unusable is answered on native text, tagged `variant: 'native'`, excluded from valid coverage and
+  counted in `results.translationFallbacks`, so the run ends `partial`; in B1-T a native document
+  in a rater's BM25 corpus (rated or only assigned) also invalidates every score of that rater,
+  tagged `corpusFallback: true`, since it shifts the corpus statistics; a resume reuses an answer only
+  when its variant matches. Likewise in english-card runs (E2, E3b, E4) a card whose attempted
+  English translation came back `failed` or `weak` is asked with its original text: its card and
+  score rows carry `cardTextFallback: true`, every pair scored with it is excluded from valid
+  coverage and `results.cardTextFallbacks` counts these cards per language (the card text is in the
+  immutable config, so only a new run repairs it). Cards production would not translate
+  (`english`, `undetermined`, `unconfirmed`, `unsupported`) are asked as production asks them and are
+  not fallbacks. Card detection takes the production locale hint (spec 07 §5) from the rater: the
+  rater's only non-English language, none when the rater has several. The freeze and the config capture (ratings,
+  cards, assignments, facet labels) run in one transaction under the dataset-additions lock and the
+  dataset row lock that rating writes take, so the config and the frozen version hold the same
+  ratings. A dataset version's ground truth (every rater's ratings, assignments and cards with their
+  exact text, and every facet label of its articles) is captured once into the append-only
+  `eval.dataset_truth` (migration 0016) in the transaction that freezes the version, and every run
+  on a frozen version builds its config from that snapshot (filtered by the run's raters, languages
+  and split), never from the live tables. `eval.ratings` and `eval.assignments` keep one current row
+  per (rater, article), so a correction, a later assignment, a card change or a facet label change
+  (each first creates the next open version: `correctionOf`, `assignmentsAfter`,
+  `cardsChangedAfter`, `facetsChangedAfter`; saving unchanged labels creates none) reaches only
+  versions frozen after it. A version frozen before 0016 gets its snapshot the next time a run freezes it.
+  A resumed run's `results.cost` covers every invocation: billed, failed-call, token and cache
+  figures are summed, overall and per language; the estimate stays the first invocation's whole-run
+  estimate and `cost.invocations` counts the invocations. In-flight progress carries the earlier cost
+  forward; an invocation that ended without recording its cost (a crash) marks the cost `incomplete`
+  (a lower bound), because `engine_calls` cannot be attributed to a run afterwards. `--max-usd` stays
+  a per-invocation cap; a resume prints what earlier invocations billed. For the first enablement of
+  `LLM_FALLBACK_ENABLED` (spec 10 §6), `eval replay --against <B1 run> --engine llm` replays the
+  fallback classifier on E1's variant with B1's frozen inputs, stored as `replay:E1` with
+  `replay.baseline = 'keyword'`; only the AUC pass rules apply (B1 has no card answers or lane
+  policy), and a B1 base without `--engine llm` is refused. A replay's macro no-drop rule (spec 10
+  §6) uses the gate's aggregation: per-context cells with the gate's support rule, the hierarchical
+  macro (supported contexts averaged within each participant, then participants weighted equally)
+  and the gate's paired story-group bootstrap; the per rater × language cell rule (no drop above
+  0.03) is unchanged. The run config is captured again in the freeze transaction, and in
+  English-card runs the card text is translated afterwards (LibreTranslate, not confirmed). Before
+  the run row and any engine call, the runner compares the final inputs (including the translated
+  card text) with the estimated ones; when they differ it estimates again and records that estimate,
+  and when the estimate changes it prints it and applies the confirmation rule again (above $1 needs
+  `--yes` or an interactive yes). A decline leaves no run row; the version stays frozen. Every
+  dataset mutation takes the additions advisory lock before the dataset row lock, the order the
+  freeze and top-up paths use, so a mutation racing a freeze waits instead of deadlocking. A frozen
+  version's `eval.dataset_truth` row also captures its raters (id, name, participant, context name,
+  languages); runs on a frozen version take their rater set (and `--raters` filtering) from it, so a
+  rater added after the freeze never joins and the ground-truth hash stays stable. Every resumed
+  invocation records its in-flight state before any work (`status: 'running'`, the earlier cost
+  carried and marked `incomplete`), so a kill at any point leaves a lower bound. In a replay, a For
+  You lane the base fills but the replay empties is a fail; a lane empty on both sides makes For You
+  precision unsupported, so the replay is inconclusive. Spec 10 §3 updated.
+  Addendum (PR #10): the cache identity does not include the price, so a cache hit's uncached
+  equivalent (`cacheSavingsUsd`, overall and per language, in the estimate pass and in the run) is
+  computed from its stored token counts at the current price. The pricing functions are those of
+  the live router: `typesafeCostUsd` at this invocation's `TYPESAFE_PRICE_PER_MTOK_USD`, and
+  `llmCostUsd` or `tier2CostUsd` on the current Ollama price table; LibreTranslate costs nothing.
+  The recorded `costUsd` is not used. Call B entries store each card's equal share of its pack's
+  tokens, and tier-2 translation entries store their tokens. An entry cached before this (no token
+  counts), or one of an unpriced model, keeps its recorded cost. This needs no cache invalidation:
+  only the savings figure of such old entries can lag a price change.
+  Addendum (PR #10): a new run freezes its dataset version only once its final estimate is
+  accepted. The first estimate and prompt use inputs read without freezing. The English card text
+  is then translated, and when the inputs changed the estimate is repeated and, if it changed,
+  prompted again. One transaction then takes the additions lock, freezes the version, reads the
+  inputs again and writes the run row. If those inputs differ from the confirmed ones, the
+  transaction (freeze included) is rolled back, and the new inputs go through translation, the
+  estimate and the prompt again, at most 3 times before the command fails without freezing. A run
+  declined at either prompt leaves the version open. No rating, card or assignment can land between
+  the freeze and the config snapshot, and the card text is still translated before the run row. E6
+  and E7 apply `--raters` to the base run's frozen raters, ratings, assignments and cards, and an id
+  that is not a base-run rater is refused (`unknown rater id in --raters`). The inputs compared
+  between confirmation and freeze also cover the seed, the deployed `ranker.thresholds` (E6 plans
+  with them) and the base run id, so a change to any of them forces a new estimate.
+  Addendum (PR #10 review): the §4 report tables are scoped to the run's own languages and
+  ratings. Operations coverage uses the run's stored per-language coverage when present, else the
+  scoring coverage of items whose (rater, article) pair is in the run's cohort, and the enrichment
+  table lists only the run's languages, and the policy view leaves out items whose run did not
+  request their language (an item with no run still counts in New), so an SK-only run no longer
+  reports the other languages' missing answers.
+  By default (`eval report`, `eval gate`), a complete run whose languages and raters are a strict
+  subset of another complete run of the same experiment is not chosen, so a later `--langs` or
+  `--raters` rerun of E1 does not replace the full-scope run or the reference; `--run` still
+  selects it explicitly.
+- D-111: 2026-10-01 M3a-T6 — eval routers use a process-local circuit breaker, so an evaluation
+  never trips or reads the production breaker (spec 04 §1). The LLM fallback is off and the pinned
+  engine has no automatic fallback, so a run never mixes engines silently.
+- D-112: 2026-10-01 M3a-T6 — cache granularity for spec 10 §3. Call B is cached per card (state
+  sha + card input sha + match question set), Call A per whole request and translations per source
+  sha and policy; a pack's cost is split equally across its cards. Runs record `results.cost.byLang`
+  (estimated, billed and cache savings by article language; translations count against the source
+  article's language; nonzero calls with no article go under `und`), and the run totals are the sums
+  of this split. Estimates for translated variants
+  use the native state as a size proxy.
+  Addendum (PR #10): Call B deduplicates the shared request set of an article on what is actually
+  sent (the card id, the built question's `card_input_sha256` and the card's text status), not on
+  the card id alone. Raters can share a card id (D-100) while an English-card run froze a different
+  translation for each copy (the rater's locale hint differs), and each distinct copy is asked. Two
+  copies of one card id never go into one request (packs key questions by card id), so they are
+  asked in separate rounds over the same state. The first rater (by id) holding the card id keeps
+  the shared `card` key. Every rater whose copy differs gets its own row, `card.r<raterId>` (card id
+  = the card), and is scored on it. The report reads a rater's answers as `card` overridden by that
+  rater's `card.r<raterId>` rows (`raterCardResults` in `report/run-data.ts`, used by the policy
+  lanes, the E7 table and the replay lanes), and the replay compares those rows like `card` rows. A
+  resume reuses a copy's stored answer when every row of that copy is stored. Rows are written per
+  article at once, so this means both or neither. The `cardTextFallbacks` count is per distinct
+  copy.
+  The report's operations table also counts every per-key answer map (`card.r<raterId>`,
+  `e6.r<raterId>`, `e7.*`) in its degraded rate and its distinct processed articles, so an E7 run
+  gets its uncached $/1,000.
+  Addendum (PR #10): the estimate no longer uses the native state as the size proxy of a translated
+  variant. When the estimate pass has no translation for an article (a cache miss, since nothing is
+  sent while estimating), tier 1 and tier 2 alike, Call A and Call B are estimated on a stand-in
+  translated state (`estimateStandInTranslation`). Each source field is repeated, in its own script,
+  to 2.5 times its length, the spec 07 §4 length-ratio limit
+  (`ESTIMATE_TRANSLATION_LENGTH_RATIO`): a longer translation fails grading and is never sent. A
+  field under the 20 code points that check needs gets 2,000 code points, more than any state field
+  limit. The state builder cuts each field to its limit. With `original_title`, the stand-in is at
+  least as large as both the largest usable translated state and the native state a failed
+  translation falls back to, so the estimate bounds the live Call A/B requests.
+- D-113: 2026-10-01 M3a-T6 — `eval replay` computes its paired ΔAUC with a story-group bootstrap; the
+  macro is the plain mean over eligible cells (≥ 20 items, ≥ 5 of each class).
+  Addendum (PR #10): every evaluated rater/language cell must be supported (≥ 20 items, ≥ 5 of
+  each class). A cell is evaluated when both sides scored at least one of its items; a rater or
+  language with no item in the replay scope has no cell. If any evaluated cell is unsupported, a
+  replay that would otherwise pass is inconclusive (exit 5), and the reasons name each such cell
+  with its item and class counts. Before, one supported cell was enough, so an unsupported cell was
+  ignored. A measured regression in a supported cell, or in the macro or the policy rules, still
+  fails.
+- D-114: 2026-10-01 M3a-T6 — runner and replay conventions. A replay's run row has experiment
+  `replay:<experiment>`; only E1, E2, E3, E3b and E4 can be replayed, and only `enrich-v1` is
+  accepted until a new set exists. E6 rerun answers are keyed per rater as `e6.r<raterId>` (card id =
+  the card): raters can share a card id when cards are reused by text hash (D-100), and E6 gives each
+  rater's copy different examples, so E6 writes no `card` rows. The chrono score is a recency
+  percentile within each rater's scored articles. Exit codes: 3 for an aborted run, 4 for a failed
+  replay, 5 for an inconclusive replay. A replay compares against the deployed policy: every run freezes `ranker.thresholds` in
+  `config.rankerThresholds`, and a replay records `baseRanker`, `baseRankerSource` (`base_run`, or
+  `settings` for runs written before this field) and `replayRanker`; `--thresholds` is a partial over
+  the baseline applied to the replay side only. Only a `complete` run with full coverage can be a
+  replay base. One invocation executes a run at a time: a resume claims the run before reading its
+  resume state, and a new run is claimed as soon as its row exists, with a session advisory lock on
+  a dedicated connection held for the whole invocation (a crash frees it with the connection); a
+  second invocation on a claimed run is refused before any work. Spec 10 §3 and §6 updated.
+  Addendum (PR #10): a resumed E6 or E7 run reuses its successful stored answers (`e6.r<raterId>`,
+  `e7.targeted`, `e7.generic`) like the shared Call B path and asks only the missing or failed
+  cards, so the resume estimate counts the persisted tasks as done and a resume with a cleared
+  cache or on another host bills no task twice.
+  Addendum (PR #10 review): the report compares E6 and E7 with the run named by their own
+  `config.baseRunId`, not with the latest E1. If that run is missing, the section says so and
+  makes no comparison. E6 suggests examples (spec 06 §10) with the run's effective ranker config: the
+  `rankerThresholds` frozen in its config over the defaults (the stored setting for a config
+  without them), the same helper as the replay baseline (`runRankerConfig`), never the defaults. E6
+  suggestions and the E7 target read each rater's own E1 answers: that rater's `card.r<raterId>` copy
+  of a shared card id first (a failed copy counts as no answer), then the shared `card` answer. An
+  article is an E7 candidate when the rater E7 picks for it has such answers, so a rater's own
+  successful copy keeps an article whose shared requests all failed. Each candidate's
+  target (an answered positive card of the picked rater) is resolved before the seeded `perLang`
+  slots are filled, so only targetable items take a slot.
+- D-115: 2026-10-01 M3a-T8 — the dry-run database is copied from the migrated test template
+  (`TEST_ADMIN_DATABASE_URL` is used only to create and drop it, under the template advisory lock)
+  and seeded by running the worker seed script as a subprocess against it. Only the names
+  `bantoozi_eval_dryrun` and `bantoozi_eval_dryrun_<suffix>` are accepted, so the command can never
+  drop another database. Its SQL lives in `packages/db/src/eval/dryrun.ts`. Spec 10 §3 updated.
+- D-116: 2026-10-01 M3a-T8 — synthetic data for the dry run: 8 topics with language-neutral anchors
+  plus English topic nouns, about 30% of SK/CZ articles without an anchor (they match a card only
+  after translation, through an exact-text fake LibreTranslate map), and 4 raters with distinct
+  participant keys whose ratings follow a hidden per-topic preference model with seeded noise and a
+  clickbait penalty; one rater writes Slovak cards.
+- D-117: 2026-10-01 M3a-T8 — dry-run outputs are the gate report `DRYRUN-<date>.md` (the sha in
+  the g1 file is this report's), `DRYRUN-<date>.g1.json` with `dryRun: true`, and
+  `DRYRUN-<date>.report.md` for the §4 tables. Defaults: 300 sampled per language, 300 assignments
+  per rater, 40 facet labels per language, `--max-usd 5` per experiment (fake engine only).
+- D-118: 2026-10-01 M3a-T8 (amends D-110) — every experiment of one language scope shares one
+  cohort (rated pairs plus facet-labelled articles; only card experiments ask Call A about the
+  labelled articles), so the gate's cohort check accepts the baselines. E4 (SK/CZ only), E6 and E7
+  differ by design and stay diagnostic or informational.
+- D-119: 2026-10-01 M3a-T8 — on synthetic data with the fake engine, card experiments match about as
+  well as keyword baselines (B1-T ≈ E3), so the dry-run gate may FAIL. It is a pipeline check, not
+  evidence, and its verdict is printed as computed. The required check is that E1 beats B0.
 - D-120: 2026-10-01 M4-T1 — spec 08 §11 named `@fastify/rate-limit`, but its store contract needs
   the bucket's hit count and applies one limit per route, while `rate_limit_hit()` (spec 02 §6)
   returns only `(allowed, retry_after_s)` and a route needs several limits at once (per IP, per user

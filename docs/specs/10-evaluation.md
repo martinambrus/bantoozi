@@ -36,8 +36,13 @@ Notation: `eval <command>` below is short for the root script `pnpm evaluate <co
      "dataset": { "version": "golden-v1", "snapshotSha": "…", "splitSha": "…" },
      "selection": { "developmentRunIds": ["11","12","13"], "lockedAt": "ISO timestamp", "configSha": "…" },
      "gate": { "profile": "owner_pilot" | "multi_person_beta", "participants": 1,
-               "status": "pass" | "fail" | "needs_more_data", "reportSha": "…" } }
+               "status": "pass" | "fail" | "needs_more_data", "reportSha": "…" },
+     "dryRun": true }                                        // optional; only `eval dry-run` sets it
    ```
+
+   `eval gate` records the locked selection as an `eval.runs` row with experiment `G1-gate`;
+   `apply-g1` requires that lock to record the file's config hash, profile, participant count, status
+   and report hash, and accepts a `dryRun` artifact only in `bantoozi_eval_dryrun` (D-106, D-108).
 
 3. `pnpm evaluate apply-g1 apps/eval/config/g1.json` (paths are relative to the repository root; the
    CLI resolves them from there) writes the settings below to the dev DB. In production, an admin
@@ -73,7 +78,8 @@ settings, regardless of profile.
 
 - **Feed list:** `apps/eval/data/feeds-golden.txt`, 54–66 feeds: 18–22 each for English, Slovak and
   Czech. It mixes news, tech, science, sport, lifestyle, local and classifieds, and includes at least
-  one Google News feed and one feed with poor excerpts.
+  one Google News feed and one feed with poor excerpts. Format `<lang> <category> <url> [tag …]` with
+  tags `google-news`, `poor-excerpts`, `bot-sensitive`, `legacy-charset`; `#` starts a comment (D-99).
 - **`eval ingest-sample --feeds apps/eval/data/feeds-golden.txt`:**
   - creates or reuses the internal system user `eval@bantoozi.local` (role `user`, never logs in) and
     subscribes it to the feeds
@@ -82,16 +88,29 @@ settings, regardless of profile.
     §2) and exits with instructions if there is none. So enrich and match never run, and there are no
     Jev costs. **Every live worker on that database** must have this flag; a heartbeat from just one
     ingest-only process is insufficient. Refuse collection if any non-ingest-only worker is live,
-    and do not share the golden DB with concurrent API/E2E development workers
-  - fetches each feed once immediately, waits until the `article.extract` queue for these articles has
-    drained, and prints per-language article counts
+    and do not share the golden DB with concurrent API/E2E development workers. The evaluation
+    user's presence marks the golden database: a worker without the flag refuses to start on it
+    and stops when it appears; an ingest-only worker consumes only `feed.schedule`, `feed.fetch`
+    and `article.extract` and stops its pipeline after extraction (D-96)
+  - fetches each feed once immediately (a forced fetch for feeds already subscribed), waits until
+    every active golden feed has been fetched since the start and no golden article awaits
+    extraction (`--timeout`, default 60 min; a timeout reports the counts and exits 0 because the
+    worker keeps collecting), and prints per-language article counts (D-99)
   - **`--watch`** keeps the eval user subscribed and prints counts every 10 minutes, until stopped
   - between the first run and rating, the normal schedule keeps fetching, because the eval user is a
     subscriber
 - **Sample (`eval sample`):** up to 1,500 non-stale articles, 500/500/500 by detected language (fewer
   if a language runs short), stratified across feeds and collection days. Cap any one feed at 10% of
   its language sample; report actual availability instead of quietly replacing source diversity
-  with one prolific feed. Store sampling seed, timestamps and exclusions.
+  with one prolific feed. Store sampling seed, timestamps and exclusions. Eligible means extracted,
+  not `stale`/`failed`, with a detected language in the requested set; the 10% cap applies to every
+  feed carrying a selected article and to the size actually drawn (the largest size the feeds can
+  fill under it); an open version only gains
+  rows, a frozen one never changes and the next draw creates the next version (D-98). A re-run may
+  only widen the recorded parameters (more languages, a higher `--per-lang` or `--feed-cap`). Any
+  other change is refused, and a new `--version` starts a new lineage. The draw share-locks its
+  candidate articles and the feed–article associations until it commits, so the worker cannot
+  change an article or add a carrier between selection and snapshot.
 - **Freeze:** `eval.sample.snapshot` stores immutable article input (title, excerpt, body lead used by
   the classifier, language, timestamps, carrier feeds, content revision and story-group id), with
   `snapshot_sha`. Freeze rater cards/strengths and assignment membership before the first model run.
@@ -99,6 +118,10 @@ settings, regardless of profile.
   request state/question manifests are frozen with the run, including failures and engine/version.
 - **Split before looking at outputs:** deterministic 70% development / 30% test, stratified by
   language and grouped by story (all duplicates and all raters' copies of a story stay together).
+  The story-group id is `c<story_cluster_id>` for a clustered article and otherwise `t<sha16>` of
+  its normalized title, since the ingest-only golden database does not cluster (D-97). The 70%
+  share counts articles, not story groups: the development side of each language is the set of
+  whole groups whose article count lands nearest its target (seeded tie order).
   Persist `eval.sample.split` per `dataset_version` and a split-manifest hash. Unclustered duplicates
   found later require a new split/version before G1; do not move selected difficult items across the
   split.
@@ -128,7 +151,8 @@ settings, regardless of profile.
 - **Step 1 in the rating app: write interests first.** Before seeing any article, each context writes
   **5–10 interest cards** (and optionally 1–3 "never" cards) in their own words, in their preferred
   language. Stored as real `interest_cards` (visibility `shared`) and `eval.rater_cards`. The spec 05
-  authoring rules are shown as hints.
+  authoring rules are shown as hints. The card and feed steps close once the rater has any
+  assignment, so cards are final before the first article is seen (D-100).
 - **Step 2: pick feeds.** The rater ticks the golden feeds they would actually subscribe to (at least
   10) → `eval.rater_feeds`.
 - **Step 3: rate.** On first entry, the app builds the rater's `eval.assignments`:
@@ -136,18 +160,23 @@ settings, regardless of profile.
   - split **equally across the rater's `langs`**; a language short of its share is topped up from the
     others
   - if the sample has fewer than 300 for these feeds, all of them are assigned, topped up from
-    non-sampled recent articles of the rater's feeds (which are then added to `eval.sample`)
+    non-sampled recent articles of the rater's feeds (first seen within the last 30 days, excluding
+    stale/failed; D-104), which are then added to `eval.sample`
   - top-ups join the dataset version being built until its first model run freezes it; after that,
     a top-up creates the next version (spec 02 §7) with a recomputed manifest hash and never
     changes the frozen one
   - every top-up receives the same frozen snapshot and story-group split before assignment
   - shuffled deterministically (seeded by the rater id)
   - **Blind:** no model output is shown.
-  - The page shows the feed, title, excerpt (≤ 600 chars) and "open original".
+  - The page shows the feed, title, excerpt (≤ 600 chars) and "open original", from the head
+    version's sample row, else the newest version holding the article (assignments are per
+    rater and article, so a new lineage never strands them; D-104).
   - Buttons: 👍 "I'd want to read this" / 👎 "Not for me", plus an optional reason (the spec 09 reason set).
-  - Keyboard: `+`/`-`, `1`–`6`, `j`/`k`.
+  - Keyboard: `+`/`-`, `1`–`6`, `j`/`k` (also `s` skip and `o` open original).
   - Progress is saved on every click (`eval.ratings`) and ratings can be changed.
-  - A rater may skip an article; persist `eval.assignments.status = skipped` (and an optional reason).
+  - A rater may skip an article; persist `eval.assignments.status = skipped` and an optional
+    `skip_reason` (≤ 500 characters). A later rating clears the reason; a skip withdraws an earlier
+    rating of that article (D-101).
     Rating sets `rated`, returning to a skipped article is supported, and pending remains distinct.
     Goal: ≥250 distinct article ratings per actual participant, with supported context/language
     cells (§5). Rating one article under three personas counts as one article toward participant
@@ -164,6 +193,11 @@ settings, regardless of profile.
   (Cohen's κ; weighted κ for ordinal depth) is a reference, not an absolute model-accuracy ceiling.
   Preserve both labels and use a predeclared adjudication step for disagreement; do not choose the
   label that agrees with a model. Include uncertain/not-applicable rather than forcing a false class.
+  A label by the labeller `adjudicated` resolves a disagreement; unresolved disagreements are
+  excluded from accuracy and counted (D-105).
+  The owner is the participant of the earliest rater; the owner's set is chosen in seeded hash order
+  and keeps already-labelled articles, and the second labeller's 50 are taken from it, split equally
+  across its languages (D-103).
 
 ### 2.4 Rating app (`apps/eval/src/rating-server`)
 
@@ -172,13 +206,15 @@ settings, regardless of profile.
 - Generate ≥128-bit random rater tokens and store only a cryptographic hash. Exchange the link token
   for an HttpOnly, SameSite cookie, then redirect to a token-free URL; Secure on the HTTPS tunnel.
   Set `Referrer-Policy: no-referrer`, no external resources/analytics, redact token-bearing URLs in
-  logs, and rate-limit token exchange. Link tokens expire (`token_expires_at`, default 30 days,
-  `eval rater add --token-days <n>`). `eval rater revoke <id>` sets `token_revoked_at` and deletes
+  logs, and rate-limit token exchange per client (the address the loopback tunnel forwards, D-102).
+  Link tokens expire (`token_expires_at`, default 30 days, `eval rater add --token-days <n>`). `eval rater revoke <id>` sets `token_revoked_at` and deletes
   the rater's `eval.rater_sessions`; `eval rater token <id>` issues a new token and expiry, clears
   the revocation and also deletes those sessions, so no session from the old token survives.
   Neither touches assignments, ratings or cards, which deleting the rater would cascade. Exchange
   accepts only an unexpired, unrevoked token and creates a session row whose random cookie value is
-  stored hashed and whose expiry never exceeds the token's. Every request rechecks the session's
+  stored hashed and whose expiry never exceeds the token's. A link token may be exchanged on more
+  than one device until it expires or is revoked; "one-time" means it leaves the URL once
+  exchanged (D-102). Every request rechecks the session's
   expiry and the token's revocation. Every read/write is scoped to that rater's assignment; the
   worker DB role makes application-level ownership checks essential.
 - Uses `DATABASE_URL_WORKER`.
@@ -206,6 +242,11 @@ Each run:
   settings and content revision; simple string concatenation is not a safe key. Writes are atomic,
   cache hits retain actual provenance, failures are not cached as answers
 - uses the production packages: `questions`, `engine`, `translate`, `ranker`
+- answer keys: `enrich.<key>` (Call A), `card` (Call B per card), `score.r<raterId>` (zero-training
+  score), `translation` (frozen article translations), `e6.r<raterId>` (E6 rerun per rater, since
+  raters can share a card) and `e7.targeted`/`e7.generic`. `--resume <runId>` continues an aborted
+  run; an aborted run exits with code 3 (D-110, D-114). One invocation executes a run at a time; a
+  resume of a run another invocation is executing is refused (D-114)
 - frozen assignments are **explicit evaluation demand**, isolated from production subscriptions.
   An eval run may process only assigned snapshots approved for that invocation, subject to its cost
   cap; subscribing the ingestion-only eval user does not make all collected articles inference-active.
@@ -257,7 +298,8 @@ data, shares the invocation budget and never changes selection, thresholds or th
 runs it after E6 when the remaining budget covers its estimate.
 
 **Completeness:** a gate experiment pins its intended engine; an LLM fallback must not silently
-become an E1–E4, E6 or E7 Jev answer. Record unavailable cases and retry/resume within budget. Compare all
+become an E1–E4, E6 or E7 Jev answer (the gate checks every Call A and Call B answer the run
+stored, including per-rater card answers). Record unavailable cases and retry/resume within budget. Compare all
 variants on the identical assigned/rated cohort; require ≥95% valid scoring coverage per language
 and rater, and include conservative missing-output sensitivity (missing model score behaves as
 unknown/degraded). Below that coverage the result is `needs_more_data`, not a pass on easy items only.
@@ -285,7 +327,10 @@ invocation budget, retain completed answers, and resume explicitly; partial runs
   `bantoozi_eval_dryrun`, freshly created from the current template **and seeded** (spec 02 §1.1). The
   eval process connects through `TEST_ADMIN_DATABASE_URL` only to create it. It writes
   `reports/DRYRUN-<date>.md` and `reports/DRYRUN-<date>.g1.json`, both git-ignored, and never touches
-  the real `eval` tables.
+  the real `eval` tables. It also writes `reports/DRYRUN-<date>.report.md` (the §4 report). The
+  synthetic data has four participants, so the gate runs as `multi_person_beta` by default
+  (`--profile`); `--db bantoozi_eval_dryrun_<suffix>` lets tests use their own database. The dry
+  run is a pipeline check, not evidence: its gate verdict is printed as computed (D-115…D-119).
 - **`eval gate --profile owner_pilot|multi_person_beta`:** validate the frozen dataset/run manifests,
   compute profile readiness, select on development, lock the profile/config hash, then reveal the
   test confirmation and write the scoped report plus `g1.json` (§5). `--profile` is mandatory and
@@ -308,6 +353,9 @@ invocation budget, retain completed answers, and resume explicitly; partial runs
 ---
 
 ## 4. Metrics (`apps/eval/src/metrics`)
+
+`eval report` shows test-split tables only after `eval gate` has locked a selection for the dataset
+version (D-106).
 
 **Ranking** (per reading context and participant, language and experiment):
 - **ROC AUC** of the score vs the rating (Mann–Whitney U, ties counted as ½), with a **95 % CI** from
@@ -399,6 +447,12 @@ additional ≥3-person requirement or unresolved owner waiver for this initial l
    recommend the Laya track. If bilingual comparison is unsupported, use the within-language
    translation gain and flag the English comparison as inconclusive. E4 must use the same selected
    card mode; tier-2 cap is 1000 only if its paired gain over tier 1 is ≥0.05 for SK or CS, else 300.
+   Every paired gain in steps 2–3 (card mode, translate vs native, E4 vs tier 1) compares the two
+   runs on the items both scored; an item either run left unknown is dropped from both sides. The
+   test confirmation below does the same for the composition and the baseline (both macros, every
+   participant's win and the paired interval). A
+   score answered on a fallback (native text in a translated-state run, or original card text in an
+   English-card run) is unknown for these metrics and the threshold pool, as in coverage.
 4. **One global threshold object:** pool development examples from the per-language variants chosen
    by steps 2–3. The schema has no per-language thresholds. Equal total weight per actual participant,
    then per supported context inside that participant, then per article inside that context; persona
@@ -426,7 +480,9 @@ additional ≥3-person requirement or unresolved owner waiver for this initial l
      (too few flagged articles to judge). The other `demotion` fields keep their values.
 5. Freeze the selected per-language composition, baseline, thresholds and run ids in a selection
    manifest **before the CLI reveals test metrics**. No output-derived retuning is permitted under
-   the same test manifest.
+   the same test manifest. One lock reveals the version's test split for every cohort, so a
+   selection for another cohort (e.g. other `--raters`) on an already locked dataset version is
+   refused; it needs a new held-out dataset version (D-106).
 
 **Confirmation uses the test only:** evaluate the actual selected per-language composition (not just
 whichever single experiment won selection), against the locked B1/B1-T baseline on the same cohort.
@@ -467,9 +523,14 @@ by `apply-g1` and the normal production settings flow (§1); owner-pilot scope r
 `eval replay --against <runId> [--model jev-x.y.z] [--engine llm --llm-model <model>] [--question-set enrich-v2] [--thresholds file.json]`
 
 - Re-runs the G1 variant with the proposed change on the `dataset_version` of the run it compares
-  against (`golden-v1` for the G1 runs), cached where possible.
+  against (`golden-v1` for the G1 runs), cached where possible. The replay is stored as an
+  `eval.runs` row with experiment `replay:<experiment>`; a replay that fails the pass rule exits
+  with code 4 and an inconclusive one with code 5 (D-114). The base run must be complete with full coverage; the baseline policy is the
+  `ranker.thresholds` frozen with the base run (or stored at replay time for older runs), and
+  `--thresholds` changes only the replay side (D-114).
 - **Reports:** ΔAUC per rater and language (with CIs), the mean |Δp| per question key, and the share of
-  items changing lane.
+  items changing lane. The policy section shows hard-hide false negatives, For You precision and
+  the Maybe share for both sides.
 - **Required** before:
   - changing `TYPESAFE_MODEL`
   - activating a new question set
@@ -483,7 +544,10 @@ by `apply-g1` and the normal production settings flow (§1); owner-pilot scope r
 - **Pass rule:** on the identical frozen cohort, no eligible rater/language AUC drops by more than
   0.03 and macro AUC does not drop. Threshold-only changes cannot be assessed by AUC (it is unchanged):
   also require no increase in hard-hide false-negative rate, no fall in For You precision >0.03,
-  and report coverage/Maybe-share changes. Unsupported cells yield inconclusive, not pass.
+  and report coverage/Maybe-share changes. Unsupported cells yield inconclusive, not pass: any
+  evaluated rater/language cell (one with scored items in the replay scope) below the support rule
+  (≥ 20 items, ≥ 5 of each class) makes a replay that would otherwise pass inconclusive, naming
+  those cells. A measured regression elsewhere still fails (D-113).
 - Dataset hashes, complete output coverage and the same paired bootstrap procedure are mandatory.
   Replays of a repeatedly viewed test set are regression checks, not new independent quality proof;
   use a fresh holdout for tuning/engine-selection claims.
