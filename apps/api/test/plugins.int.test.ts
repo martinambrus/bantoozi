@@ -347,6 +347,24 @@ describe('rate limits (spec 08 §11)', () => {
     }
   });
 
+  it('report the tightest applicable limit when a looser bucket rejects', async () => {
+    await h.owner.query('DELETE FROM rate_limit_buckets');
+    // The global per-IP bucket (300/min) is already exhausted for the inject client's address.
+    await h.owner.query(
+      `INSERT INTO rate_limit_buckets (key, window_start, hits)
+       VALUES ('all:ip:127.0.0.1', now(), 300)`,
+    );
+    const limited = await probeServer({ RATE_LIMITS_ENABLED: 'true' });
+    try {
+      const res = await apiClient(limited).post('/probe/limited');
+      expect(res.statusCode).toBe(429);
+      expect(res.headers['x-ratelimit-limit']).toBe('2');
+    } finally {
+      await limited.close();
+      await h.owner.query('DELETE FROM rate_limit_buckets');
+    }
+  });
+
   it('limit authenticated mutations per user', async () => {
     await h.owner.query('DELETE FROM rate_limit_buckets');
     const limited = await probeServer({ RATE_LIMITS_ENABLED: 'true' });

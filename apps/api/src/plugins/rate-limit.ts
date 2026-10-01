@@ -68,21 +68,41 @@ async function apply(
   rules: readonly RateLimitRule[],
 ): Promise<void> {
   if (!limiter.enabled || rules.length === 0) return;
-  let tightest = Number.POSITIVE_INFINITY;
+  // Every response, a 429 included, reports the tightest maximum that applies to the route.
+  void reply.header('x-ratelimit-limit', String(tightestLimit(request)));
   for (const rule of rules) {
     const subject = rule.per === 'ip' ? request.ip : request.auth?.userId;
     if (subject === undefined) continue;
-    tightest = Math.min(tightest, rule.max);
     const result = await limiter.hit(`${rule.group}:${rule.per}:${subject}`, rule);
-    if (!result.allowed) {
-      void reply.header('x-ratelimit-limit', String(rule.max));
-      throw rateLimited(reply, result.retryAfterSeconds);
-    }
+    if (!result.allowed) throw rateLimited(reply, result.retryAfterSeconds);
   }
-  if (Number.isFinite(tightest)) void reply.header('x-ratelimit-limit', String(tightest));
 }
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/** Whether the route takes a session, so its per-user limits apply to a caller. */
+function sessionRoute(request: FastifyRequest): boolean {
+  const auth = request.routeOptions.config.auth ?? 'user';
+  return auth === 'user' || auth === 'admin' || auth === 'admin_or_metrics';
+}
+
+/**
+ * The smallest maximum among the limits the route applies, known from its config before
+ * authentication: the global per-IP limit, the per-user mutation limit of a session mutation and the
+ * route's own limits (per-user ones only on session routes).
+ */
+function tightestLimit(request: FastifyRequest): number {
+  const config = request.routeOptions.config;
+  const session = sessionRoute(request);
+  let tightest = GLOBAL_IP_LIMIT.max;
+  if (session && MUTATING.has(request.method) && config.authFlow !== true) {
+    tightest = Math.min(tightest, USER_MUTATION_LIMIT.max);
+  }
+  for (const rule of config.rateLimits ?? []) {
+    if (rule.per === 'ip' || session) tightest = Math.min(tightest, rule.max);
+  }
+  return tightest;
+}
 
 /**
  * Installs the limits as hooks on the root instance: the per-IP limit before authentication, the
