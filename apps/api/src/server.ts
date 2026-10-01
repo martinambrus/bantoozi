@@ -20,6 +20,7 @@ import type { ApiConfig, ApiServices } from './context.js';
 import { registerAuth } from './plugins/auth.js';
 import { registerCsrf } from './plugins/csrf.js';
 import { registerErrorHandlers } from './plugins/errors.js';
+import { registerMetrics } from './plugins/metrics.js';
 import { createRateLimiter, registerRateLimits } from './plugins/rate-limit.js';
 import { openApiRoute, registerSwagger } from './plugins/swagger.js';
 import { registerTenant } from './plugins/tenant.js';
@@ -133,6 +134,7 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   registerErrorHandlers(app);
+  registerMetrics(app);
 
   // Hook order: the per-IP limit, CSRF and authentication run on every request before parsing;
   // per-user and route limits follow authentication (they need the user id).
