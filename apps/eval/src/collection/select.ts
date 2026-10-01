@@ -239,13 +239,13 @@ export function selectLanguageSample(input: SelectInput): SelectResult {
     const existing = existingByFeed.get(feedId)?.length ?? 0;
     return { existing, available: existing + (freshByFeed.get(feedId)?.length ?? 0) };
   });
-  const freshById = new Map(input.fresh.map((item) => [item.articleId, item]));
   /**
-   * Repairs a draw that fell short of `n` with augmenting swaps: an unchosen article blocked by a
-   * single full feed replaces a chosen article of that feed when a third article then fits too,
-   * one more each time (an article with two strata-feeds of room, `{A,Y}` for `{A,X}`, frees `X`
-   * for `{B,X}`). Exact packing under several caps is NP-hard, so the search is bounded; the cap
-   * itself is never exceeded.
+   * Repairs a draw that fell short of `n` with augmenting paths: to place an unchosen article
+   * blocked by one full feed, a chosen article of that feed steps aside, and the room it frees on
+   * its other feeds is offered on, recursively, until an article fits outright, so each path adds
+   * one article (`{D,X}` evicts `{A,X}`, `{A,Y}` evicts `{B,Y}`, `{B,Z}` fits). Exact packing under
+   * several caps is NP-hard, so the search is bounded in depth and work; the cap itself is never
+   * exceeded.
    */
   const augment = (n: number, result: ReturnType<typeof draw>) => {
     const limitOf = (feedId: string) => Math.max(result.cap, carrierExisting.get(feedId) ?? 0);
@@ -265,38 +265,64 @@ export function selectLanguageSample(input: SelectInput): SelectResult {
         groupRank(seed, a.articleId) - groupRank(seed, b.articleId) ||
         byKey(a.articleId, b.articleId),
     );
-    let budget = 2_000_000;
-    let improved = true;
-    while (improved && input.existing.length + chosen.size < n && budget > 0) {
-      improved = false;
-      search: for (const c of order) {
-        if (chosen.has(c.articleId)) continue;
+    const byCarrier = new Map<string, SelectItem[]>();
+    for (const item of order) {
+      for (const c of carriersOf(item)) {
+        const list = byCarrier.get(c) ?? [];
+        list.push(item);
+        byCarrier.set(c, list);
+      }
+    }
+    let budget = 500_000;
+    const pinned = new Set<string>();
+    const visited = new Set<string>();
+    const place = (c: SelectItem, depth: number): boolean => {
+      budget -= 1;
+      if (budget <= 0) return false;
+      if (fits(c)) {
+        shift(c, 1);
+        return true;
+      }
+      if (depth === 0) return false;
+      const full = carriersOf(c).filter((f) => (count.get(f) ?? 0) >= limitOf(f));
+      if (full.length !== 1) return false;
+      const f = full[0]!;
+      for (const s of byCarrier.get(f) ?? []) {
+        if (!chosen.has(s.articleId) || pinned.has(s.articleId)) continue;
+        shift(s, -1);
         if (fits(c)) {
           shift(c, 1);
-          improved = true;
+          pinned.add(c.articleId);
+          const freed = new Set(carriersOf(s).filter((x) => !carriersOf(c).includes(x)));
+          for (const x of freed) {
+            for (const t of byCarrier.get(x) ?? []) {
+              if (t === s || chosen.has(t.articleId) || visited.has(t.articleId)) continue;
+              visited.add(t.articleId);
+              if (place(t, depth - 1)) return true;
+              if (budget <= 0) break;
+            }
+          }
+          pinned.delete(c.articleId);
+          shift(c, -1);
+        }
+        shift(s, 1);
+        if (budget <= 0) return false;
+      }
+      return false;
+    };
+    let progress = true;
+    while (progress && input.existing.length + chosen.size < n && budget > 0) {
+      progress = false;
+      for (const c of order) {
+        if (chosen.has(c.articleId)) continue;
+        visited.clear();
+        pinned.clear();
+        visited.add(c.articleId);
+        if (place(c, 8)) {
+          progress = true;
           break;
         }
-        const full = carriersOf(c).filter((f) => (count.get(f) ?? 0) >= limitOf(f));
-        if (full.length !== 1) continue;
-        for (const id of [...chosen]) {
-          budget -= 1;
-          const s = freshById.get(id);
-          if (s === undefined || !carriersOf(s).includes(full[0]!)) continue;
-          shift(s, -1);
-          if (fits(c)) {
-            shift(c, 1);
-            for (const t of order) {
-              budget -= 1;
-              if (t === s || chosen.has(t.articleId) || !fits(t)) continue;
-              shift(t, 1);
-              improved = true;
-              break search;
-            }
-            shift(c, -1);
-          }
-          shift(s, 1);
-          if (budget <= 0) break search;
-        }
+        if (budget <= 0) break;
       }
     }
     const drawn = new Set(result.added);

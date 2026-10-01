@@ -229,6 +229,36 @@ describe('selectLanguageSample', () => {
     }
   });
 
+  it('repairs a draw with an augmenting path of several swaps', () => {
+    // Cap 1 at size 10: {A,X}/{A,Y}, {B,Y}/{B,Z}, {D,X} and seven exclusive strata. Only
+    // {A,Y}, {B,Z} and {D,X} together fill all ten.
+    const pool: SelectItem[] = [
+      { articleId: 'ax', feedId: 'A', carriers: ['A', 'X'], day: '2026-09-10' },
+      { articleId: 'ay', feedId: 'A', carriers: ['A', 'Y'], day: '2026-09-10' },
+      { articleId: 'by', feedId: 'B', carriers: ['B', 'Y'], day: '2026-09-10' },
+      { articleId: 'bz', feedId: 'B', carriers: ['B', 'Z'], day: '2026-09-10' },
+      { articleId: 'dx', feedId: 'D', carriers: ['D', 'X'], day: '2026-09-10' },
+      ...Array.from({ length: 7 }, (_, f) => ({
+        articleId: `e${f}`,
+        feedId: `f${f}`,
+        day: '2026-09-10',
+      })),
+    ];
+    for (let i = 0; i < 30; i += 1) {
+      const result = selectLanguageSample({
+        fresh: pool,
+        existing: [],
+        target: 10,
+        feedCapShare: 0.1,
+        seed: `s${i}`,
+      });
+      expect(result.size).toBe(10);
+      expect([...result.added].sort()).toEqual(
+        ['ay', 'bz', 'dx', 'e0', 'e1', 'e2', 'e3', 'e4', 'e5', 'e6'].sort(),
+      );
+    }
+  });
+
   it('draws nothing when no language article is eligible', () => {
     const result = selectLanguageSample({
       fresh: [],
