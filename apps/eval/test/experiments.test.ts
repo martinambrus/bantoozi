@@ -1,4 +1,13 @@
+import { ENRICH_V1 } from '@bantoozi/questions';
+import { articleTranslationSource } from '@bantoozi/translate';
 import { describe, expect, it } from 'vitest';
+
+import {
+  ESTIMATE_TRANSLATION_LENGTH_RATIO,
+  estimateStandInTranslation,
+  gradeTranslation,
+  requestEstimateUsd,
+} from '../src/experiments/calls.js';
 
 import {
   EXPERIMENT_IDS,
@@ -17,6 +26,8 @@ import {
   type RunConfig,
   type RunRating,
 } from '../src/experiments/run-config.js';
+import type { RunEngine } from '../src/experiments/run-config.js';
+import { buildState, type ModelInput } from '../src/experiments/states.js';
 import { latencySummary, mapPool } from '../src/experiments/util.js';
 
 /** M3a-T6: experiments as config objects (spec 10 §3) and the pure run helpers. */
@@ -297,4 +308,90 @@ describe('util', () => {
     expect(out).toEqual([2, 4, 6, 8, 10, 12]);
     expect(peak).toBe(2);
   });
+});
+
+describe('estimate stand-in for an unseen article translation (D-110 addendum)', () => {
+  const engine: RunEngine = {
+    provider: 'typesafe',
+    model: 'jev-fake',
+    requiredEngine: 'typesafe',
+    pricePerMTokUsd: 1,
+    maxOutputTokens: null,
+  };
+  const native = (excerpt: string | null, bodyLead: string | null): ModelInput => ({
+    variant: 'native',
+    input: {
+      title: 'Ceny batérií pre elektromobily klesajú',
+      author: null,
+      categories: ['Ekonomika'],
+      excerpt,
+      bodyLead,
+      wordCount: 400,
+      lang: 'sk',
+      feed: { title: 'Správy', site: 'spravy.example' },
+    },
+  });
+  const translated = (input: ModelInput, texts: ReturnType<typeof estimateStandInTranslation>) =>
+    ({
+      variant: 'translated',
+      input: {
+        ...input.input,
+        translation: { title: texts.title, excerpt: texts.excerpt, bodyLead: texts.body_lead },
+      },
+    }) satisfies ModelInput;
+  // The longest usable English translation: every field at the 2.5 ratio limit (a longer one fails
+  // spec 07 §4 and is never sent).
+  const longest = (source: ReturnType<typeof articleTranslationSource>) => {
+    const field = (text: string | null) => {
+      if (text === null) return null;
+      const n = Math.floor([...text.trim()].length * ESTIMATE_TRANSLATION_LENGTH_RATIO);
+      // Distinct words, so no 3-gram loop fails the field.
+      const words = Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
+      return words.slice(0, n).trim();
+    };
+    return {
+      title: field(source.title),
+      excerpt: field(source.excerpt),
+      body_lead: field(source.body_lead),
+    };
+  };
+
+  for (const [name, excerpt, bodyLead] of [
+    ['short', 'Ceny klesajú.', null],
+    [
+      'typical',
+      'Ceny batérií klesli o desatinu. Viac v článku.',
+      'Výrobcovia znížili ceny. '.repeat(8),
+    ],
+    ['long', 'Ceny batérií klesli o desatinu. '.repeat(30), 'Výrobcovia znížili ceny. '.repeat(80)],
+  ] as const) {
+    it(`bounds the native state and the longest usable translation (${name})`, () => {
+      const input = native(excerpt, bodyLead);
+      const source = articleTranslationSource({
+        title: input.input.title,
+        excerpt: input.input.excerpt,
+        body_lead: input.input.bodyLead,
+      });
+      const worst = longest(source);
+      expect(gradeTranslation(source, worst, 'sk')).not.toBe('fail');
+      const standIn = translated(input, estimateStandInTranslation(source));
+      // The states of both calls (their body-lead limits differ) under one question set.
+      const questions = { ...ENRICH_V1.questions };
+      for (const call of ['enrich', 'match'] as const) {
+        const usd = (m: ModelInput) =>
+          requestEstimateUsd(engine, buildState(m, call).state, questions);
+        const bound = usd(standIn);
+        expect(bound).toBeGreaterThanOrEqual(usd(input));
+        expect(bound).toBeGreaterThanOrEqual(usd(translated(input, worst)));
+      }
+      // The native state alone is not a bound: the longest translation outweighs it.
+      expect(
+        requestEstimateUsd(engine, buildState(translated(input, worst), 'enrich').state, {
+          ...ENRICH_V1.questions,
+        }),
+      ).toBeGreaterThan(
+        requestEstimateUsd(engine, buildState(input, 'enrich').state, { ...ENRICH_V1.questions }),
+      );
+    });
+  }
 });

@@ -801,6 +801,13 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   sealed until a lock exists. Unmet readiness writes only a report (no lock, no g1.json); an
   incomplete selection writes g1.json with `needs_more_data`, no lock, test not revealed. A rerun on
   the same manifest with another profile or configSha is refused. Spec 10 §1 and §4 updated.
+  Addendum (PR #10 review): one lock fences the holdout of the whole dataset version, for every
+  cohort. `eval report` reveals the version's test split as soon as any lock exists, so `eval gate`
+  refuses a new selection whenever the version already has a lock for another cohort (or another
+  snapshot or split). A new cohort needs a new held-out dataset version. The alternative, scoping
+  the report's unsealing to the locked cohort, was rejected: cohorts share test articles, and one
+  cohort's revealed test outcomes would still inform another cohort's selection. The refusal is
+  simpler and stricter. Spec 10 §5 step 5 updated.
 - D-107: 2026-10-01 M3a-T7 — interpretations of spec 10 §5. Translate exactly when the development
   gain is ≥ 0.02 (the "native suffices" check only drives the Laya recommendation). A non-English-card
   context has any positive card whose language is not `en`. The overall and participant AUC cell is
@@ -919,6 +926,15 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   tokens, and tier-2 translation entries store their tokens. An entry cached before this (no token
   counts), or one of an unpriced model, keeps its recorded cost. This needs no cache invalidation:
   only the savings figure of such old entries can lag a price change.
+  Addendum (PR #10): a new run freezes its dataset version only once its final estimate is
+  accepted. The first estimate and prompt use inputs read without freezing. The English card text
+  is then translated, and when the inputs changed the estimate is repeated and, if it changed,
+  prompted again. One transaction then takes the additions lock, freezes the version, reads the
+  inputs again and writes the run row. If those inputs differ from the confirmed ones, the
+  transaction (freeze included) is rolled back, and the new inputs go through translation, the
+  estimate and the prompt again, at most 3 times before the command fails without freezing. A run
+  declined at either prompt leaves the version open. No rating, card or assignment can land between
+  the freeze and the config snapshot, and the card text is still translated before the run row.
 - D-111: 2026-10-01 M3a-T6 — eval routers use a process-local circuit breaker, so an evaluation
   never trips or reads the production breaker (spec 04 §1). The LLM fallback is off and the pinned
   engine has no automatic fallback, so a run never mixes engines silently.
@@ -942,6 +958,16 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   resume reuses a copy's stored answer when every row of that copy is stored. Rows are written per
   article at once, so this means both or neither. The `cardTextFallbacks` count is per distinct
   copy.
+  Addendum (PR #10): the estimate no longer uses the native state as the size proxy of a translated
+  variant. When the estimate pass has no translation for an article (a cache miss, since nothing is
+  sent while estimating), tier 1 and tier 2 alike, Call A and Call B are estimated on a stand-in
+  translated state (`estimateStandInTranslation`). Each source field is repeated, in its own script,
+  to 2.5 times its length, the spec 07 §4 length-ratio limit
+  (`ESTIMATE_TRANSLATION_LENGTH_RATIO`): a longer translation fails grading and is never sent. A
+  field under the 20 code points that check needs gets 2,000 code points, more than any state field
+  limit. The state builder cuts each field to its limit. With `original_title`, the stand-in is at
+  least as large as both the largest usable translated state and the native state a failed
+  translation falls back to, so the estimate bounds the live Call A/B requests.
 - D-113: 2026-10-01 M3a-T6 — `eval replay` computes its paired ΔAUC with a story-group bootstrap; the
   macro is the plain mean over eligible cells (≥ 20 items, ≥ 5 of each class).
 - D-114: 2026-10-01 M3a-T6 — runner and replay conventions. A replay's run row has experiment

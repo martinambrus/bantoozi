@@ -1303,6 +1303,53 @@ export async function runExperiment(
   }
 }
 
+/** Attempts to freeze when the inputs keep changing between the estimate and the freeze. */
+const MAX_FREEZE_ATTEMPTS = 3;
+
+/** The inputs read under the freeze differ from the estimated ones (the freeze is rolled back). */
+class InputsChanged extends Error {
+  constructor(readonly config: Omit<RunConfig, 'configSha'>) {
+    super('run inputs changed before the freeze');
+    this.name = 'InputsChanged';
+  }
+}
+
+/**
+ * English card text (spec 07 §5) for every card of a config. Production hints card detection with
+ * the user's locale; a rater has no UI locale here, so a rater with exactly one non-English
+ * language uses it as the hint.
+ */
+async function translateRunCards(
+  env: CallEnv,
+  config: Omit<RunConfig, 'configSha'>,
+): Promise<Omit<RunConfig, 'configSha'>> {
+  const localeOf = new Map<string, string | null>();
+  for (const rater of config.raters) {
+    const others = [...new Set(rater.langs.filter((lang) => lang !== 'en'))];
+    localeOf.set(rater.raterId, others.length === 1 ? (others[0] ?? null) : null);
+  }
+  const translated: RunCard[] = [];
+  const byText = new Map<string, Promise<RunCard>>();
+  for (const card of config.cards) {
+    const locale = localeOf.get(card.raterId) ?? null;
+    const key = JSON.stringify([card.interest, card.notFor, locale]);
+    let pending = byText.get(key);
+    if (pending === undefined) {
+      pending = translateCard(env, card, locale);
+      byText.set(key, pending);
+    }
+    const done = await pending;
+    translated.push({
+      ...card,
+      interestEn: done.interestEn,
+      notForEn: done.notForEn,
+      lang: done.lang,
+      textStatus: done.textStatus,
+    });
+  }
+  return { ...config, cards: translated };
+}
+
 async function claimRun(rt: EvalRuntime, runId: string): Promise<RunLock> {
   const lock = await tryLockRun(rt.config.databaseUrlWorker, runId);
   if (lock === null) {
@@ -1400,23 +1447,6 @@ async function runClaimed(
       return { runId: null, status: 'declined', estimate, results: null };
     }
 
-    // 2. Freeze before the first model call; a new run's inputs are read again after the freeze,
-    // in the same transaction and under the dataset additions lock that every post-freeze rating
-    // correction takes (and the row lock an open-head rating write shares), so no rating, card or
-    // assignment can land between the freeze and the config snapshot (D-110).
-    const shown = inputsSha(config);
-    if (existingRunId === null && options.replay === undefined) {
-      const version = dataset.version;
-      ({ dataset, config } = await rt.db.transaction(async (tx) => {
-        await lockDatasetAdditions(tx);
-        const frozenRow = await freezeDataset(tx, version);
-        return {
-          dataset: frozenRow,
-          config: await draftConfig(rt, tx, def, options, frozenRow, cardMode, maxUsd),
-        };
-      }));
-    }
-
     const plan0 = await buildPlan(rt, def, config, { frozenTranslations: frozen, existing });
     const env = newEnv(rt, cache, plan0, translators, services, false);
     env.router = createEvalRouter({
@@ -1433,63 +1463,82 @@ async function runClaimed(
       onLogicalRequest: (id) => env.stats.logicalRequestIds.push(id),
     });
 
-    // 3. Card text in English mode is translated before the run is written, so the config
-    // records the exact card text every question uses.
-    if (existingRunId === null && options.replay === undefined && cardMode === 'english') {
-      // Production hints card detection with the user's locale (spec 07 §5); a rater has no UI
-      // locale here, so a rater with exactly one non-English language uses it as the hint.
-      const localeOf = new Map<string, string | null>();
-      for (const rater of config.raters) {
-        const others = [...new Set(rater.langs.filter((lang) => lang !== 'en'))];
-        localeOf.set(rater.raterId, others.length === 1 ? (others[0] ?? null) : null);
-      }
-      const translated: RunCard[] = [];
-      const byText = new Map<string, Promise<RunCard>>();
-      for (const card of config.cards) {
-        const locale = localeOf.get(card.raterId) ?? null;
-        const key = JSON.stringify([card.interest, card.notFor, locale]);
-        let pending = byText.get(key);
-        if (pending === undefined) {
-          pending = translateCard(env, card, locale);
-          byText.set(key, pending);
-        }
-        const done = await pending;
-        translated.push({
-          ...card,
-          interestEn: done.interestEn,
-          notForEn: done.notForEn,
-          lang: done.lang,
-          textStatus: done.textStatus,
-        });
-      }
-      config = { ...config, cards: translated };
-    }
-
-    // Ratings, assignments or cards may have changed while the estimate was shown, and English
-    // card text is only known now: estimate the exact final inputs again and, when that differs,
-    // show it and ask again, still before the run row and any engine call (D-110 addendum). The
-    // card translations above are LibreTranslate calls (free) and need no confirmation.
-    if (existingRunId === null && options.replay === undefined && inputsSha(config) !== shown) {
-      const revised = await estimateFor(config);
-      estimateEnv = revised.env;
-      if (
-        revised.estimate.estimatedUsd !== estimate.estimatedUsd ||
-        revised.estimate.uncachedCalls !== estimate.uncachedCalls
-      ) {
-        estimate = revised.estimate;
-        if (!(await announce(estimate, true))) {
-          return { runId: null, status: 'declined', estimate, results: null };
-        }
-      }
-    }
-
-    // 4. The run row (immutable config) or the resumed one.
     let runId = existingRunId;
-    if (runId === null) {
+    if (existingRunId === null && options.replay === undefined) {
+      // 2. A new run: settle the final inputs and their estimate, then freeze and write the run
+      // row in one transaction, so a run declined at any prompt freezes nothing (D-110 addendum).
+      let shown = inputsSha(config);
+      let draft = config;
+      for (let attempt = 1; ; attempt += 1) {
+        // 3. Card text in English mode is translated before the run is written, so the config
+        // records the exact card text every question uses (LibreTranslate: free, not confirmed).
+        const final = cardMode === 'english' ? await translateRunCards(env, draft) : draft;
+        // Ratings, assignments or cards may have changed while the estimate was shown, and English
+        // card text is only known now: estimate the exact final inputs again and, when that
+        // differs, show it and ask again, still before the freeze, the run row and any engine call.
+        if (inputsSha(final) !== shown) {
+          const revised = await estimateFor(final);
+          estimateEnv = revised.env;
+          shown = inputsSha(final);
+          if (
+            revised.estimate.estimatedUsd !== estimate.estimatedUsd ||
+            revised.estimate.uncachedCalls !== estimate.uncachedCalls
+          ) {
+            estimate = revised.estimate;
+            if (!(await announce(estimate, true))) {
+              return { runId: null, status: 'declined', estimate, results: null };
+            }
+          }
+        }
+        // 4. Freeze and read the inputs again in one transaction, under the dataset additions lock
+        // that every post-freeze rating correction takes (and the row lock an open-head rating
+        // write shares), so no rating, card or assignment lands between the freeze and the config
+        // snapshot. The run row is written only when they are still the confirmed ones; otherwise
+        // the freeze is rolled back and the new inputs go through the estimate again.
+        const version = dataset.version;
+        const draftSha = inputsSha(draft);
+        const written = await rt.db
+          .transaction(async (tx) => {
+            await lockDatasetAdditions(tx);
+            const frozenRow = await freezeDataset(tx, version);
+            const locked = await draftConfig(rt, tx, def, options, frozenRow, cardMode, maxUsd);
+            if (inputsSha(locked) !== draftSha) throw new InputsChanged(locked);
+            const runConfig = withConfigSha({ ...locked, cards: final.cards });
+            const run = await createRun(tx, {
+              experiment: def.id,
+              datasetVersion: frozenRow.version,
+              config: runConfig as unknown as Record<string, unknown>,
+              gitSha,
+            });
+            return { run, frozenRow, runConfig };
+          })
+          .catch((error: unknown) => {
+            if (error instanceof InputsChanged) return error;
+            throw error;
+          });
+        if (written instanceof InputsChanged) {
+          if (attempt >= MAX_FREEZE_ATTEMPTS) {
+            throw new EvalCommandError(
+              `the ratings, cards or assignments of ${version} kept changing while the run was ` +
+                'being set up; nothing was frozen, try again',
+            );
+          }
+          draft = written.config;
+          continue;
+        }
+        const { configSha: _sha, ...stored } = written.runConfig;
+        dataset = written.frozenRow;
+        config = stored;
+        runId = written.run.id;
+        claim.lock = await claimRun(rt, runId);
+        rt.out(`run ${runId} started (config ${written.runConfig.configSha.slice(0, 12)})\n`);
+        break;
+      }
+    } else if (runId === null) {
+      // A replay's run row (its config is the compared run's, frozen already).
       const fullConfig = withConfigSha(config);
       const run = await createRun(rt.db, {
-        experiment:
-          options.replay === undefined ? def.id : `replay:${options.replay.config.experiment}`,
+        experiment: `replay:${options.replay?.config.experiment ?? def.id}`,
         datasetVersion: dataset.version,
         config: fullConfig as unknown as Record<string, unknown>,
         gitSha,
@@ -1502,6 +1551,8 @@ async function runClaimed(
     }
     env.runId = runId;
     const plan = await buildPlan(rt, def, config, { frozenTranslations: frozen, existing });
+    // The cost split follows the final cohort (the inputs may have changed before the freeze).
+    env.articleLang = new Map([...plan.samples].map(([id, item]) => [id, item.lang]));
     const id = runId;
     const sink: Sink = (rows) => upsertRunAnswers(rt.db, id, rows);
 

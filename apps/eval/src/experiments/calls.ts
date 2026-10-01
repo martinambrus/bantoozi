@@ -28,6 +28,7 @@ import {
 import type { CredentialResolver } from '@bantoozi/shared/server';
 import {
   articleTranslationSource,
+  ASSESSMENT_THRESHOLDS,
   assessTranslation,
   supportedSourceLanguages,
   TIER2_MAX_ATTEMPTS,
@@ -541,6 +542,55 @@ export type TranslationResult =
   /** `translation` null: nothing to translate (English, undetermined, no text). */
   { ok: true; translation: FrozenTranslation | null; cached: boolean } | Failed;
 
+/**
+ * Upper-bound length ratio of a usable translation: spec 07 §4 grades a field whose source has at
+ * least 20 code points as `fail` when its translation is more than 2.5 times longer, and a failed
+ * translation is never sent (the article falls back to its shorter native state).
+ */
+export const ESTIMATE_TRANSLATION_LENGTH_RATIO = ASSESSMENT_THRESHOLDS.maxLengthRatio;
+/** Stand-in length of a field too short for the ratio check: above every state field limit. */
+export const ESTIMATE_SHORT_FIELD_CHARS = 2000;
+
+/**
+ * What the estimate pass uses for an article translation it cannot see (a cache miss: nothing is
+ * sent while estimating), so Call A/B are estimated on a translated state at least as large as the
+ * one the live run sends (D-110 addendum). Each source field becomes its own text repeated to
+ * `ESTIMATE_TRANSLATION_LENGTH_RATIO` times its length (the script is kept, so the byte-length
+ * bound of unfamiliar scripts still applies), or to `ESTIMATE_SHORT_FIELD_CHARS` for a field below
+ * the ratio check's 20 code points; the state builder then cuts every field to its limit. With the
+ * added `original_title`, the result also bounds the native state a failed translation falls back to.
+ */
+export function estimateStandInTranslation(source: TranslationTexts): TranslationTexts {
+  const field = (text: string | null): string | null => {
+    if (text === null) return null;
+    const chars = [...text];
+    const target =
+      chars.length < ASSESSMENT_THRESHOLDS.minSourceChars
+        ? ESTIMATE_SHORT_FIELD_CHARS
+        : Math.ceil(chars.length * ESTIMATE_TRANSLATION_LENGTH_RATIO);
+    const out: string[] = [];
+    while (out.length < target) out.push(...chars, ' ');
+    return out.slice(0, target).join('');
+  };
+  return {
+    title: field(source.title),
+    excerpt: field(source.excerpt),
+    body_lead: field(source.body_lead),
+  };
+}
+
+function estimateTranslation(
+  source: TranslationTexts,
+  engine: 'libretranslate' | 'ollama',
+  model: string | null,
+): TranslationResult {
+  return {
+    ok: true,
+    translation: { engine, model, quality: 'ok', texts: estimateStandInTranslation(source) },
+    cached: false,
+  };
+}
+
 /** The quality of a translation of `source` (spec 07 §4); a skipped assessment is `fail`. */
 export function gradeTranslation(
   source: TranslationTexts,
@@ -645,7 +695,7 @@ export async function translateArticle(
     };
   }
   if (input.provider === 'ollama') return translateTier2(env, snapshot, source, manifest);
-  if (env.estimating) return { ok: false, reason: 'estimate' };
+  if (env.estimating) return estimateTranslation(source, 'libretranslate', null);
   if (env.abort.aborted) return { ok: false, reason: 'aborted' };
   const sources = await supportedSources(env);
   const result = await env.translators.libretranslate().translateArticle({
@@ -693,7 +743,7 @@ async function translateTier2(
   if (env.estimating) {
     addCost(env, snapshot.articleId, 'estimateUsd', estimate.estimateUsd);
     env.stats.estimateCalls += 1;
-    return { ok: false, reason: 'estimate' };
+    return estimateTranslation(source, 'ollama', env.ollamaModel);
   }
   const router = env.router;
   if (env.abort.aborted || router === null) return { ok: false, reason: 'aborted' };

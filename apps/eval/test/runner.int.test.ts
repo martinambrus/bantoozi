@@ -802,6 +802,34 @@ describe('eval run (M3a-T6)', () => {
       [opened!.version],
     );
     expect(rows.rows[0]!.n).toBe(0);
+    // Declined at the second prompt: the version is not frozen, so later ratings, cards and
+    // top-ups still land in it (D-110 addendum).
+    const frozenAt = async () =>
+      (
+        await ctx.owner.query<{ frozen: boolean }>(
+          `SELECT frozen_at IS NOT NULL AS frozen FROM eval.datasets WHERE version = $1`,
+          [opened!.version],
+        )
+      ).rows[0]!.frozen;
+    expect(await frozenAt()).toBe(false);
+    // Accepted, the same run freezes the version together with its run row.
+    const accepted = runtime(ctx, {
+      TYPESAFE_PRICE_PER_MTOK_USD: '200',
+      EVAL_CACHE_DIR: await freshCache(),
+    });
+    try {
+      const run = await runExperiment(accepted.rt, {
+        experiment: 'E1',
+        datasetVersion: opened!.version,
+        gitSha: 'test',
+        yes: true,
+        maxUsd: 1000,
+      });
+      expect(run.status).toBe('complete');
+    } finally {
+      await accepted.rt.close();
+    }
+    expect(await frozenAt()).toBe(true);
   });
 
   it('estimates and confirms English-card runs on the translated card text', async () => {
@@ -1203,5 +1231,44 @@ describe('eval run (M3a-T6)', () => {
     // Back at the original price the same hits are worth what they were billed.
     const third = await e1('200');
     expect(third.cost.cacheSavingsUsd).toBeCloseTo(first.cost.billedUsd, 9);
+  });
+
+  it('estimates Call A/B of a translated-state run on an empty cache at least at the live cost', async () => {
+    // Nothing is translated while estimating: the classifier estimate uses an upper-bound stand-in
+    // for the English text (D-110 addendum), never the native text the live run does not send.
+    const sk = await ctx.owner.query<{ title: string; excerpt: string | null }>(
+      `SELECT title, excerpt FROM articles WHERE lang = 'sk'`,
+    );
+    // Translations twice as long as their source (still within the 2.5 ratio check).
+    ctx.libretranslate.reset({
+      translations: Object.fromEntries(
+        sk.rows.flatMap((row) =>
+          [row.title, row.excerpt]
+            .filter((t): t is string => t !== null)
+            .map((t) => [t.trim(), `${t.trim()} — ${t.trim()} (${t.trim().slice(0, 8)})`]),
+        ),
+      ),
+    });
+    const { rt } = runtime(ctx, {
+      TYPESAFE_PRICE_PER_MTOK_USD: '200',
+      EVAL_CACHE_DIR: await freshCache(),
+    });
+    try {
+      const result = await runExperiment(rt, {
+        experiment: 'E3',
+        langs: ['sk'],
+        yes: true,
+        maxUsd: 1000,
+        gitSha: 'test',
+      });
+      expect(result.runId).not.toBeNull();
+      const row = await runRow(ctx, result.runId!);
+      const cost = (row.results as { cost: { billedUsd: number } }).cost;
+      expect(cost.billedUsd).toBeGreaterThan(0);
+      expect(result.estimate.estimatedUsd).toBeGreaterThanOrEqual(cost.billedUsd);
+    } finally {
+      await rt.close();
+      ctx.libretranslate.reset();
+    }
   });
 });
