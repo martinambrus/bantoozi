@@ -635,11 +635,19 @@ describe('rating', () => {
     ]);
     const reasonBar = await a.browser.get('/r/a/0?why=1');
     expect(reasonBar.body).toContain('Saved. Why not?');
+    // A reason is saved on the same article, which shows it; Next moves on.
     const reason = await a.browser.post('/r/a/0/rate', { rating: 'dislike', reason: 'clickbait' });
-    expect(reason.headers.location).toBe('/r/a/1');
+    expect(reason.headers.location).toBe('/r/a/0');
     expect(await ratingsOf(id)).toEqual([
       { article_id: article0.article_id, rating: -1, reason: 'clickbait' },
     ]);
+    const { document: saved } = parseHTML((await a.browser.get('/r/a/0')).body);
+    expect(saved.querySelector('#status')?.textContent).toBe(
+      'You marked this "Not for me" (Clickbait).',
+    );
+    expect(saved.querySelector('button[name="reason"].current')?.getAttribute('value')).toBe(
+      'clickbait',
+    );
     // Back to a like: the reason goes with the dislike.
     await a.browser.post('/r/a/0/rate', { rating: 'like' });
     expect(await ratingsOf(id)).toEqual([

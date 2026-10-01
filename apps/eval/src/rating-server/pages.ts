@@ -430,7 +430,14 @@ export function ratePage(input: {
       </div>
       <div class="nav">
         ${pos > 0 ? html`<a class="button" id="prev" data-key="k" href="/r/a/${pos - 1}">← Previous <kbd>k</kbd></a>` : ''}
-        ${pos < input.lastPosition ? html`<a class="button" id="next" data-key="j" href="/r/a/${pos + 1}">Next <kbd>j</kbd> →</a>` : ''}
+        ${
+          pos < input.lastPosition
+            ? html`<a class="button" id="next" data-key="j" href="/r/a/${pos + 1}"
+                >Next <kbd>j</kbd> →</a
+              >`
+            : // The last article stays put after a dislike or reason: /r leads on (more, or done).
+              html`<a class="button" id="next" data-key="j" href="/r">Finish <kbd>j</kbd> →</a>`
+        }
       </div>
       <form class="skip" method="post" action="${action}/skip">
         ${csrfField(input.csrf)}
