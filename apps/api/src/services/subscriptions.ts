@@ -9,10 +9,9 @@ import {
   refreshFeedMaterializations,
   reviveDeadFeed,
   subscribedFeedIds,
-  subscriptionUnreadCounts,
+  countSubscriptionUnread,
   type SubscriptionRow,
   type TenantTx,
-  type UnreadCounts,
 } from '@bantoozi/db';
 import {
   discoverFeed,
@@ -28,8 +27,11 @@ import {
   readUserPreferences,
   type JobSender,
   type Subscription,
+  type LaneUnreadCounts,
   type UserPreferences,
 } from '@bantoozi/shared';
+
+import { currentScoreVersion } from './score-version.js';
 
 /**
  * Subscription orchestration (spec 08 §4, spec 03 §10–11): discovery before any transaction, the
@@ -37,13 +39,13 @@ import {
  * unread counts. SQL lives in `@bantoozi/db` (`api/subscriptions.ts`).
  */
 
-const NO_UNREAD: UnreadCounts = Object.freeze({ forYou: 0, maybe: 0, everything: 0, new: 0 });
+const NO_UNREAD: LaneUnreadCounts = Object.freeze({ forYou: 0, maybe: 0, everything: 0, new: 0 });
 
 /** The `Subscription` DTO of a row (spec 08 §4). */
 export function subscriptionDto(
   row: SubscriptionRow,
   preferences: UserPreferences,
-  unread: UnreadCounts | undefined,
+  unread: LaneUnreadCounts | undefined,
 ): Subscription {
   return {
     feed: {
@@ -84,10 +86,10 @@ export async function loadSubscriptionDto(
   const row = await getSubscription(tx, feedId);
   if (row === null) throw new AppError('NOT_FOUND', 'Subscription not found');
   const preferences = await ownPreferences(tx);
-  const unread = await subscriptionUnreadCounts(tx, {
+  const unread = await countSubscriptionUnread(tx, {
     asOf,
     minTier: preferences.defaultTier,
-    feedIds: [feedId],
+    scoreVersion: await currentScoreVersion(tx),
   });
   return subscriptionDto(row, preferences, unread.get(feedId));
 }

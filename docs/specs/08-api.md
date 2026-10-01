@@ -251,7 +251,7 @@ response or `GET /invites`. `POST /admin/waitlist/:id/invite` sends and reports 
 | `GET /feed-preferences` | — | Own remembered preferences, including unsubscribed bookmark sources: `[{feedId,imagePolicy,effectiveImagesAllowed}]` |
 | `PUT /feed-preferences/:feedId` | `{imagePolicy:'inherit'\|'allow'\|'block'}` | Upsert durable `user_feed_preferences`; require owned subscription, bookmark source or already-owned preference, return the effective policy. Never changes inference mode |
 | `DELETE /subscriptions/:feedId` | — | Delete, then `refresh_feed_subscribers`, `refresh_feed_cards`, `user.rank {full}`. The user's pending/running `analysis_requests` for the feed lose their demand, and the worker cancels them on their next attempt or `house.reconcile` (the API role has no update grant; the worker owns completion). Completed ones stay for learning (spec 11 §5) |
-| `POST /subscriptions/:feedId/mark-read` | `{olderThan, datasetVersion}` | Same operation as `/articles/mark-read` with `filter.feedId` fixed by the path; same scope, cap, receipt and undo contract |
+| `POST /subscriptions/:feedId/mark-read` | `{olderThan, datasetVersion}` | Same operation as `/articles/mark-read` with `filter: {lane: 'all', feedId}` fixed by the path and the default `minTier` (`prefs.defaultTier`), so `datasetVersion` is the one `GET /articles?lane=all&feedId=<id>` returned for `asOf = olderThan`; same scope, cap, receipt and undo contract. A feed without the caller's subscription is `404` |
 | `POST /subscriptions/import-opml` | multipart `file` (≤ 1 MB) | spec 03 §11. `200 {added, existing, invalid: [...]}`. New subscriptions start off; no inference/card backfill. Existing subscriptions retain mode. Quota `opmlMaxFeeds` and `maxFeeds` |
 | `GET /subscriptions/export-opml` | — | `text/x-opml` attachment |
 | `POST /subscriptions/folders/rename` | `{from, to}` | Rename a folder across the user's subscriptions and in `preferences.folderOrder` → `200 {count}` |
@@ -380,7 +380,9 @@ for the same dataset version. `bookmarks` is computed separately using bookmark-
 Folder/feed counts are scoped counts, not sums of globally folded lane counts.
 
 **Outdated scores:** if any eligible row has a missing/stale `score_version` or `rank_revision`
-(spec 06 §7), request a debounced full rank via the outbox. Taking only the newest version would
+(spec 06 §7), request a debounced full rank via the outbox (`user.rank {full:true, reason:'list'}`,
+deduplicated per user, without advancing `users.rank_revision`: the rows are already outdated, and a
+bump from a read would make every later read outdated again). Taking only the newest version would
 miss partially updated batches. Serve existing scores immediately and return `rankingPending`.
 Eligibility includes the user's inference-demand policy (§4.1). Plain untrained articles may remain
 in New indefinitely with `rankingPending:false`; neither reading nor polling authorizes a model
@@ -520,18 +522,18 @@ but cannot itself cause inference.
 
 | Endpoint | Body | Effect |
 |---|---|---|
-| `/articles/:id/read` | `{}` | Set `read_at` (expand in the list, when `markReadOnExpand`) |
+| `/articles/:id/read` | `{trigger?: 'expand'}` | Set `read_at` (expand in the list, when `markReadOnExpand`). The list's expand side effect sends `trigger:'expand'` and is recorded with `signalOrigin:'expand'` (spec 06 §8.2), never as an individual explicit read; the client can only weaken the recorded origin this way, never claim consent |
 | `/articles/:id/unread` | `{}` | Clear `read_at` and `archived_at`, record `unread`; invalidate cluster seen-story ranking where needed |
 | `/articles/:id/unhide` | `{}` | Clear only `archived_at`, record `unhide`, preserve read/rating state and rerank. A Never card or block/mute rule may still hide it; expose that explanation rather than silently deleting the user's rule |
 | `/articles/:id/open` | `{}` | Require a non-null safe original URL; otherwise `400 VALIDATION_FAILED`. Set `opened_at` and `read_at`, and record a `feedback_events` `open` (the user opened the original URL) |
-| `/articles/:id/dwell` | `{ms}` | Integer 0..1,800,000; require a prior open, clamp to elapsed time since it. Set `dwell_ms = max(existing, ms)` and record `dwell`. Includes `prompt: boolean` from spec 06 §10; atomically set `feedback_prompted_at` when true so two tabs cannot prompt twice. Dwell is only a weak signal, never proof of reading |
-| `/articles/:id/rating` | `{rating: 1 \| -1 \| null, reason?, hide?: boolean, analysisRequestId?}` | Set explicit state, never toggle server-side. Reason enum is `off_topic\|clickbait\|seen\|shallow\|promo\|other`, allowed only for -1; null/+1 clears it. Null also clears `rated_at` and leaves read/archive state alone; only non-null ratings mark read if `markReadOnRate`. `hide:true` sets `archived_at`; false/absent does not clear it. Records `rate`/`unrate`, applies spec 06 §8.4. The response adds `exampleSuggestion: {cardId, side: 'yes' \| 'no'} \| null` from spec 06 §10; a non-null one is also stored in the `rate` event's `value`, where the suggestion limits count it |
+| `/articles/:id/dwell` | `{ms}` | Integer 0..1,800,000; require a prior open (`409 CONFLICT`, `details.reason: 'not_opened'`), clamp to elapsed time since it. Set `dwell_ms = max(existing, ms)` and record `dwell`. Includes `prompt: boolean` from spec 06 §10; atomically set `feedback_prompted_at` when true so two tabs cannot prompt twice. Dwell is only a weak signal, never proof of reading |
+| `/articles/:id/rating` | `{rating: 1 \| -1 \| null, reason?, hide?: boolean, analysisRequestId?, selection?: 'calibration'}` | Set explicit state, never toggle server-side. Reason enum is `off_topic\|clickbait\|seen\|shallow\|promo\|other`, allowed only for -1; null/+1 clears it. Null also clears `rated_at` and leaves read/archive state alone; only non-null ratings mark read if `markReadOnRate`. `hide:true` sets `archived_at`; false/absent does not clear it. Records `rate`/`unrate`, applies spec 06 §8.4. The response adds `exampleSuggestion: {cardId, side: 'yes' \| 'no'} \| null` from spec 06 §10; a non-null one is also stored in the `rate` event's `value`, where the suggestion limits count it. `selection:'calibration'` marks a rating of a calibration-round item; the event stores `selection: {method:'calibration', sourceLane}` (spec 06 §10) |
 | `/articles/:id/prompt-answer` | `{liked: boolean, analysisRequestId?}` | Store as a rating (`rating = liked ? 1 : -1`, `rated_at = now`), record `prompt_answer`, and apply the learn trigger |
 | `/articles/:id/bookmark` / `DELETE` of the same path | `{mediaPolicyFeedId?}` on POST; no body on DELETE | Set/clear bookmark and record the event. POST validates the chosen owned display feed, captures existing full trusted body transactionally or records pending status and a local capture intent. Return capture status immediately. Capture generation fences late completions after unbookmark/rebookmark; no inference demand is created |
 | `/articles/:id/bookmark/retry-capture` | `{captureGeneration}` | Explicit local fetch/extraction retry for an owned partial/failed bookmark; keep the existing snapshot readable until a replacement is safely captured, then bind atomically. No paid classification/translation call → `202 {item, mutationId}` |
 | `/articles/:id/labels` | `{labelId}` | Add to `label_ids`, remove from `label_suggestions`, record neutral organization only; no positive/negative preference-learning signal. **Cards are not changed** (spec 05 §5.1). Label examples are explicit (§7) |
 | `DELETE /articles/:id/labels/:labelId` | — | Remove it, record `unlabel` |
-| `/articles/:id/mute-story` | `{days: 1\|3\|7\|30}` | Create a cluster for the article if it has none, create a `mute_story` rule with `expires_at`, enqueue `user.rank {full}` → `201 {rule}` |
+| `/articles/:id/mute-story` | `{days: 1\|3\|7\|30}` | Create a cluster for the article if it has none, create a `mute_story` rule with `expires_at` through the `POST /rules` path (§8: live-rule quota, an existing live mute of the story is returned with the later of both expiries), enqueue `user.rank {full}` → `201 {rule}` in the §8 rule shape. No reader fence: it changes no reader state |
 | `/articles/mark-read` | `{targets: [{id, stateVersion, contentRevision}]}` **or** `{filter: {lane, feedId?, folder?, labelId?, minTier?, olderThan}, datasetVersion}` | Explicit targets ≤500; filter uses §5.1 query semantics with `status=unread` and an inclusive arrival cutoff (§5.1) captured when confirming. Materialize/lock the displayed representatives once; no later arrivals. Maximum 5,000 targets; reject an oversized set rather than silently truncate. A changed dataset returns `STALE_STATE`. → `200 {count, mutationId}` |
 | `/articles/rate-bulk` | `{targets: [{id, stateVersion, contentRevision, analysisRequestId?}][1..200], rating: 1 \| -1 \| null}` | One transaction using single-rating semantics, per-item feedback snapshots and one coalesced learn/rank intent → `200 {count, mutationId, items}`. Explicit un-rate is supported; exact undo uses the endpoint below |
 | `/articles/undo` | `{mutationId}` | Restore the original mutation's captured reader fields (§5.4) → `200 {count, mutationId, items}` |
@@ -560,7 +562,9 @@ enabling them never retroactively opts old events into learning.
 The mutation receipt stores the target ids, affected reader fields' **before** values and resulting
 state versions for read/unread/unhide/rating/bookmark/label and bulk actions. Undo is accepted for 10 minutes
 after commit only if the receipt belongs to the user, has not already been undone and every target
-still has the receipt's resulting state version. It restores only fields changed by that action,
+still has the receipt's resulting state version. A receipt without undo data (open, dwell, mute-story,
+a no-op) is `409 CONFLICT` with `details.reason: 'not_undoable'`; another user's or an unknown
+receipt is `404`. It restores only fields changed by that action,
 increments state versions, records an `undo` event referencing the original mutation and requests
 the same rank/learn invalidation. It never writes old ranking-cache fields or fabricates a rating.
 An intervening device action/deleted label/inaccessible article returns `409 STALE_STATE` atomically;

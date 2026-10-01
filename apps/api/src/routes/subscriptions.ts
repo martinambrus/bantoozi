@@ -18,7 +18,7 @@ import {
   renameSubscriptionFolder,
   reusableAnalysisRequests,
   setInferenceMode,
-  subscriptionUnreadCounts,
+  countSubscriptionUnread,
   updateOwnUser,
   updateSubscriptionMetadata,
   upsertFeedPreference,
@@ -57,6 +57,7 @@ import { z } from 'zod';
 
 import { captureSelectionSnapshot, loadSnapshotConfig } from '../services/analysis.js';
 import { importOpml } from '../services/opml.js';
+import { currentScoreVersion } from '../services/score-version.js';
 import {
   discover,
   loadSubscriptionDto,
@@ -116,9 +117,10 @@ export const subscriptionRoutes: FastifyPluginAsyncZod = async (app) => {
       request.withTx(async (tx) => {
         const preferences = await ownPreferences(tx);
         const rows = await listSubscriptions(tx);
-        const unread = await subscriptionUnreadCounts(tx, {
+        const unread = await countSubscriptionUnread(tx, {
           asOf: clock.now(),
           minTier: preferences.defaultTier,
+          scoreVersion: await currentScoreVersion(tx),
         });
         return rows.map((row) => subscriptionDto(row, preferences, unread.get(row.feed.id)));
       }),
