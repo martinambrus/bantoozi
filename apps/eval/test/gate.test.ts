@@ -282,6 +282,13 @@ describe('development selection and test confirmation', () => {
         const articleIds = config.cohort.articleIds.filter(isSk);
         config.cohort = { articleIds, sha: canonicalSha256(articleIds) };
         config.ratings = config.ratings.filter((r) => isSk(r.articleId));
+        // An SK run has no English answers and records no English coverage.
+        const results = raw.run.results as { coverage: { byLang: Record<string, unknown> } };
+        delete results.coverage.byLang['en'];
+        return parseRunData(
+          raw.run,
+          raw.answers.filter((a) => isSk(a.articleId)),
+        );
       }
       return parseRunData(raw.run, raw.answers);
     };
@@ -290,6 +297,7 @@ describe('development selection and test confirmation', () => {
     const scoped = setup(fixture, withE4(e4(true))).assessments.get('E4')!;
     expect(scoped.reasons).not.toContain('cohort differs from the reference run');
     expect(scoped.reasons).not.toContain('ratings differ from the reference run');
+    expect(scoped.reasons.join(' ')).not.toMatch(/coverage/);
     // An SK run that still carries the English cohort and ratings is not that subset.
     const unscoped = setup(fixture, withE4(e4(false))).assessments.get('E4')!;
     expect(unscoped.reasons).toContain('cohort differs from the reference run');

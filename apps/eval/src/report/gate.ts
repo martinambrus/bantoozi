@@ -163,7 +163,12 @@ export function assessGateRuns(
       result.set(experiment, { experiment, run, eligible: false, reasons: ['no run'] });
       continue;
     }
-    const computed = scoringCoverage(run, model.items);
+    // A run limited to some languages is covered on those languages' items only.
+    const runLangs = new Set(run.config.langs);
+    const computed = scoringCoverage(
+      run,
+      model.items.filter((item) => runLangs.has(item.lang)),
+    );
     const stored = run.results?.coverage;
     const merge = (
       mine: Map<string, { expected: number; valid: number }>,
