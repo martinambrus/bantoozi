@@ -44,6 +44,11 @@ export interface MutationOutcome<T = unknown> {
   body: T;
   /** Allowlisted prior reader fields for exact undo (spec 08 §5.4); omitted when not undoable. */
   undo?: unknown;
+  /**
+   * Runs in the same transaction right after the receipt is saved, for rows that reference it
+   * (e.g. `bookmark_snapshot_pins` of an unbookmark, spec 02 §3.5); not run on a replay.
+   */
+  afterSave?: (tx: TenantTx) => Promise<void>;
 }
 
 declare module 'fastify' {

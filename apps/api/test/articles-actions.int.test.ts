@@ -1,0 +1,1028 @@
+import { randomUUID } from 'node:crypto';
+
+import { createCard } from '@bantoozi/testing';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import {
+  DAY,
+  HOUR,
+  ago,
+  carriedArticle,
+  clearOutbox,
+  clusterOf,
+  events,
+  explainJson,
+  fence,
+  freshFence,
+  newReader,
+  outbox,
+  rank,
+  rankRevision,
+  readerState,
+  restamp,
+  subscribedFeed,
+  type Reader,
+} from './support/article-fixtures.js';
+import { createApiHarness, type ApiHarness } from './support/harness.js';
+
+/**
+ * M4-T7 (spec 08 §5.3–5.4, spec 06 §8.2, §8.4, §10): every reader action through `req.mutate`
+ * (fences, idempotent retries, exact undo), event provenance and feature snapshots, rank/learn
+ * intents, example suggestions, bookmarks with retained snapshots and selected training requests.
+ */
+
+let h: ApiHarness;
+
+beforeAll(async () => {
+  h = await createApiHarness();
+});
+
+afterAll(async () => {
+  await h.close();
+});
+
+interface Item {
+  id: string;
+  stateVersion: string;
+  contentRevision: string;
+  readAt: string | null;
+  rating: 1 | -1 | null;
+  reason: string | null;
+  archivedAt: string | null;
+  bookmarkedAt: string | null;
+  labelIds: string[];
+  labelSuggestions: string[];
+  bookmarkCapture: {
+    status: string;
+    generation: string;
+    snapshotId: string | null;
+  } | null;
+  analysis: { mode: string; status: string; requestId: string | null };
+}
+
+async function setup(
+  prefs: Record<string, unknown> = {},
+  feedMode: 'active' | 'off' | 'training' = 'active',
+) {
+  const r = await newReader(h, prefs);
+  const feed = await subscribedFeed(h, r.user.id, { mode: feedMode });
+  const article = await carriedArticle(h, [feed]);
+  return { r, feed, article };
+}
+
+async function ok(
+  promise: ReturnType<Reader['api']['post']>,
+  status = 200,
+): Promise<{ item: Item; mutationId: string } & Record<string, unknown>> {
+  const res = await promise;
+  expect(res.statusCode, res.body).toBe(status);
+  return res.json();
+}
+
+async function errorOf(promise: ReturnType<Reader['api']['post']>, status: number) {
+  const res = await promise;
+  expect(res.statusCode, res.body).toBe(status);
+  return res.json().error as { code: string; details?: Record<string, unknown> };
+}
+
+async function createLabel(userId: string, name = 'Politics'): Promise<string> {
+  const card = await createCard(h.owner, {
+    kind: 'label',
+    visibility: 'private',
+    ownerUserId: userId,
+    title: name,
+  });
+  await h.owner.query(`INSERT INTO user_labels (user_id, card_id, name) VALUES ($1, $2, $3)`, [
+    userId,
+    card.id,
+    name,
+  ]);
+  return card.id;
+}
+
+async function holdCard(userId: string, strength: string, title = 'EV batteries'): Promise<string> {
+  const card = await createCard(h.owner, { title });
+  await h.owner.query(`INSERT INTO user_cards (user_id, card_id, strength) VALUES ($1, $2, $3)`, [
+    userId,
+    card.id,
+    strength,
+  ]);
+  return card.id;
+}
+
+const QUESTION_SET_SHA = 'f'.repeat(64);
+
+async function answer(articleId: string, cardId: string, p: number, revision = 1): Promise<void> {
+  await h.owner.query(
+    `INSERT INTO question_sets (kind, version, sha256, definition)
+     VALUES ('match', 'articles-test', $1, '{}') ON CONFLICT DO NOTHING`,
+    [QUESTION_SET_SHA],
+  );
+  await h.owner.query(
+    `INSERT INTO card_answers (article_id, card_id, p, engine, question_set_sha, article_revision,
+                               state_sha256, card_input_sha256, state_variant)
+     VALUES ($1, $2, $3, 'typesafe', $5, $4, 's', 'c', 'native')`,
+    [articleId, cardId, p, revision, QUESTION_SET_SHA],
+  );
+}
+
+/** A pending selected request, inserted as its tenant (the insert trigger checks it). */
+async function selectArticle(userId: string, feedId: string, articleId: string): Promise<string> {
+  const id = randomUUID();
+  const client = await h.owner.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SELECT set_config('app.user_id', $1, true)", [userId]);
+    await client.query(
+      `INSERT INTO analysis_requests (id, user_id, feed_id, article_id, article_revision,
+                                      inference_version, input_snapshot, input_sha)
+       SELECT $1, $2, $3, a.id, a.content_revision, s.inference_version, '{"article":"frozen"}',
+              encode(sha256(convert_to('{"article":"frozen"}'::jsonb::text, 'UTF8')), 'hex')
+         FROM articles a JOIN subscriptions s ON s.user_id = $2 AND s.feed_id = $3
+        WHERE a.id = $4`,
+      [id, userId, feedId, articleId],
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+  return id;
+}
+
+const queues = async (userId: string) => (await outbox(h, userId)).map((job) => job.queue);
+
+describe('single-article state actions', () => {
+  it('read and unread record events; a clustered story requests a full rank', async () => {
+    const { r, feed, article } = await setup();
+    const loose = await carriedArticle(h, [feed]);
+    const before = await rankRevision(h, r.user.id);
+    // An unclustered read changes no ranking input.
+    await ok(r.api.post(`/articles/${loose}/read`, freshFence));
+    expect(await rankRevision(h, r.user.id)).toBe(before);
+    await clusterOf(h, [article]);
+    await clearOutbox(h, r.user.id);
+    const read = await ok(r.api.post(`/articles/${article}/read`, freshFence));
+    expect(read.item).toMatchObject({ stateVersion: '1', readAt: expect.any(String) });
+    expect(read.mutationId).toEqual(expect.any(String));
+    expect(BigInt(await rankRevision(h, r.user.id))).toBe(BigInt(before) + 1n);
+    expect(await queues(r.user.id)).toContain('user.rank');
+
+    const unread = await ok(r.api.post(`/articles/${article}/unread`, fence(read.item)));
+    expect(unread.item).toMatchObject({ stateVersion: '2', readAt: null });
+    const evs = await events(h, r.user.id, article);
+    expect(evs.map((e) => e.kind)).toEqual(['read', 'unread']);
+    expect(evs[0]!.value).toMatchObject({
+      signalOrigin: 'explicit',
+      learningConsent: { implicitFeedback: false, implicitNegative: false },
+    });
+    expect(evs[0]!.value['features'] ?? null).toBeNull();
+    // A no-op read of an already read article appends nothing.
+    const again = await ok(r.api.post(`/articles/${article}/read`, fence(unread.item)));
+    await ok(r.api.post(`/articles/${article}/read`, fence(again.item)));
+    expect((await events(h, r.user.id, article)).length).toBe(3);
+  });
+
+  it('expand-triggered reads are recorded as such and never carry features', async () => {
+    const { r, article } = await setup({ implicitFeedback: true, implicitNegative: true });
+    await ok(r.api.post(`/articles/${article}/read`, { ...freshFence, trigger: 'expand' }));
+    const [event] = await events(h, r.user.id, article);
+    expect(event!.value).toMatchObject({ signalOrigin: 'expand' });
+    expect(event!.value['features'] ?? null).toBeNull();
+  });
+
+  it('open requires a safe URL and sets opened_at and read_at', async () => {
+    const { r, feed, article } = await setup();
+    const opened = await ok(r.api.post(`/articles/${article}/open`, freshFence));
+    expect(opened.item.readAt).not.toBeNull();
+    const state = await readerState(h, r.user.id, article);
+    expect(state!.opened_at).not.toBeNull();
+    expect((await events(h, r.user.id, article)).map((e) => e.kind)).toEqual(['open']);
+
+    const unsafe = await carriedArticle(h, [feed], { url: 'javascript:alert(1)' });
+    const error = await errorOf(r.api.post(`/articles/${unsafe}/open`, freshFence), 400);
+    expect(error.code).toBe('VALIDATION_FAILED');
+  });
+
+  it('a stale fence or content revision is STALE_STATE with the current item', async () => {
+    const { r, article } = await setup();
+    await ok(r.api.post(`/articles/${article}/read`, freshFence));
+    const stale = await errorOf(r.api.post(`/articles/${article}/unread`, freshFence), 409);
+    expect(stale.code).toBe('STALE_STATE');
+    expect(stale.details).toMatchObject({ item: { id: article, stateVersion: '1' } });
+    const revision = await errorOf(
+      r.api.post(`/articles/${article}/unread`, { stateVersion: '1', contentRevision: '2' }),
+      409,
+    );
+    expect(revision.code).toBe('STALE_STATE');
+  });
+
+  it('actions on inaccessible articles are 404', async () => {
+    const { r } = await setup();
+    const other = await setup();
+    await errorOf(r.api.post(`/articles/${other.article}/read`, freshFence), 404);
+    await errorOf(r.api.post('/articles/999999999/rating', { ...freshFence, rating: 1 }), 404);
+    expect(await readerState(h, r.user.id, other.article)).toBeUndefined();
+  });
+});
+
+describe('/dwell', () => {
+  it('stores nothing without the implicit-feedback opt-in', async () => {
+    const { r, article } = await setup();
+    const opened = await ok(r.api.post(`/articles/${article}/open`, freshFence));
+    const dwell = await ok(
+      r.api.post(`/articles/${article}/dwell`, { ...fence(opened.item), ms: 9000 }),
+    );
+    expect(dwell).toMatchObject({
+      prompt: false,
+      item: { stateVersion: opened.item.stateVersion },
+    });
+    expect((await readerState(h, r.user.id, article))!.dwell_ms).toBeNull();
+    expect((await events(h, r.user.id, article)).map((e) => e.kind)).toEqual(['open']);
+  });
+
+  it('validates the duration, needs an open, clamps and prompts at most once', async () => {
+    const { r, feed, article } = await setup({ implicitFeedback: true });
+    await rank(h, r.user.id, article, { lane: 'maybe', p: 0.5, tier: 3 });
+    for (const ms of [-1, 1_800_001, 1.5]) {
+      await errorOf(r.api.post(`/articles/${article}/dwell`, { ...freshFence, ms }), 400);
+    }
+    const notOpened = await errorOf(
+      r.api.post(`/articles/${article}/dwell`, { ...freshFence, ms: 1000 }),
+      409,
+    );
+    expect(notOpened).toMatchObject({ code: 'CONFLICT', details: { reason: 'not_opened' } });
+
+    const opened = await ok(r.api.post(`/articles/${article}/open`, freshFence));
+    // Clamped to the time since the open: a just-opened article cannot claim 20 minutes.
+    const quick = await ok(
+      r.api.post(`/articles/${article}/dwell`, { ...fence(opened.item), ms: 1_200_000 }),
+    );
+    expect(quick.prompt).toBe(false);
+    expect((await readerState(h, r.user.id, article))!.dwell_ms).toBeLessThan(60_000);
+
+    await h.owner.query(
+      `UPDATE user_article SET opened_at = now() - interval '5 minutes' WHERE user_id = $1 AND article_id = $2`,
+      [r.user.id, article],
+    );
+    const long = await ok(
+      r.api.post(`/articles/${article}/dwell`, { ...fence(quick.item), ms: 9000 }),
+    );
+    expect(long.prompt).toBe(true);
+    const state = await readerState(h, r.user.id, article);
+    expect(state).toMatchObject({ dwell_ms: 9000, feedback_prompted_at: expect.any(Date) });
+    const twice = await ok(
+      r.api.post(`/articles/${article}/dwell`, { ...fence(long.item), ms: 8000 }),
+    );
+    expect(twice.prompt).toBe(false);
+    expect((await readerState(h, r.user.id, article))!.dwell_ms).toBe(9000);
+    const kinds = (await events(h, r.user.id, article)).map((e) => e.kind);
+    expect(kinds.filter((k) => k === 'dwell').length).toBe(3);
+
+    // A rated article is never prompted.
+    const rated = await carriedArticle(h, [feed]);
+    await rank(h, r.user.id, rated, { lane: 'maybe', p: 0.5, tier: 3 });
+    const rate = await ok(r.api.post(`/articles/${rated}/rating`, { ...freshFence, rating: 1 }));
+    const open2 = await ok(r.api.post(`/articles/${rated}/open`, fence(rate.item)));
+    await h.owner.query(
+      `UPDATE user_article SET opened_at = now() - interval '5 minutes' WHERE user_id = $1 AND article_id = $2`,
+      [r.user.id, rated],
+    );
+    const noPrompt = await ok(
+      r.api.post(`/articles/${rated}/dwell`, { ...fence(open2.item), ms: 9000 }),
+    );
+    expect(noPrompt.prompt).toBe(false);
+  });
+});
+
+describe('/rating and /prompt-answer', () => {
+  it('rates, un-rates and hides with the documented read/archive effects', async () => {
+    const { r, article } = await setup();
+    const liked = await ok(r.api.post(`/articles/${article}/rating`, { ...freshFence, rating: 1 }));
+    expect(liked.item).toMatchObject({ rating: 1, reason: null, readAt: expect.any(String) });
+    expect(liked.exampleSuggestion).toBeNull();
+    const unrated = await ok(
+      r.api.post(`/articles/${article}/rating`, { ...fence(liked.item), rating: null }),
+    );
+    expect(unrated.item).toMatchObject({ rating: null, readAt: liked.item.readAt });
+    const hidden = await ok(
+      r.api.post(`/articles/${article}/rating`, {
+        ...fence(unrated.item),
+        rating: -1,
+        reason: 'clickbait',
+        hide: true,
+      }),
+    );
+    expect(hidden.item).toMatchObject({
+      rating: -1,
+      reason: 'clickbait',
+      archivedAt: expect.any(String),
+    });
+    expect((await events(h, r.user.id, article)).map((e) => e.kind)).toEqual([
+      'rate',
+      'unrate',
+      'rate',
+    ]);
+    // Un-rating forces learning.
+    expect(await queues(r.user.id)).toContain('user.learn');
+
+    await errorOf(
+      r.api.post(`/articles/${article}/rating`, {
+        ...fence(hidden.item),
+        rating: 1,
+        reason: 'seen',
+      }),
+      400,
+    );
+  });
+
+  it('honours markReadOnRate=false', async () => {
+    const { r, article } = await setup({ markReadOnRate: false });
+    const liked = await ok(r.api.post(`/articles/${article}/rating`, { ...freshFence, rating: 1 }));
+    expect(liked.item.readAt).toBeNull();
+  });
+
+  it('records the calibration selection with its source lane', async () => {
+    const { r, article } = await setup();
+    await rank(h, r.user.id, article, { lane: 'maybe', p: 0.5, tier: 3 });
+    const round = (await r.api.get('/articles/calibration')).json();
+    expect(round.items.map((i: Item) => i.id)).toEqual([article]);
+    await ok(
+      r.api.post(`/articles/${article}/rating`, {
+        ...freshFence,
+        rating: -1,
+        selection: 'calibration',
+      }),
+    );
+    const [event] = await events(h, r.user.id, article);
+    expect(event!.value['selection']).toEqual({ method: 'calibration', sourceLane: 'maybe' });
+    expect((await r.api.get('/articles/calibration')).json().items).toEqual([]);
+  });
+
+  it('stores a prompt answer as a rating', async () => {
+    const { r, article } = await setup();
+    const res = await ok(
+      r.api.post(`/articles/${article}/prompt-answer`, { ...freshFence, liked: false }),
+    );
+    expect(res.item).toMatchObject({ rating: -1, reason: null });
+    const [event] = await events(h, r.user.id, article);
+    expect(event).toMatchObject({
+      kind: 'prompt_answer',
+      value: { rating: -1, signalOrigin: 'explicit' },
+    });
+  });
+
+  it('freezes the feature snapshot with every applicable card and its snapshot-time strength', async () => {
+    const { r, feed, article } = await setup();
+    const love = await holdCard(r.user.id, 'love', 'Batteries');
+    const never = await holdCard(r.user.id, 'never', 'Crypto');
+    const unanswered = await holdCard(r.user.id, 'like', 'Rail');
+    const otherFeed = await subscribedFeed(h, r.user.id);
+    const scoped = await holdCard(r.user.id, 'must', 'Scoped elsewhere');
+    await h.owner.query(
+      `UPDATE user_cards SET scope_feed_id = $3 WHERE user_id = $1 AND card_id = $2`,
+      [r.user.id, scoped, otherFeed],
+    );
+    await answer(article, love, 0.8);
+    await answer(article, never, 0.2);
+    await rank(h, r.user.id, article, { lane: 'for_you', p: 0.8, tier: 4 });
+
+    await ok(r.api.post(`/articles/${article}/rating`, { ...freshFence, rating: 1 }));
+    // A later strength change does not rewrite the frozen snapshot.
+    await h.owner.query(
+      `UPDATE user_cards SET strength = 'like' WHERE user_id = $1 AND card_id = $2`,
+      [r.user.id, love],
+    );
+    const [event] = await events(h, r.user.id, article);
+    const features = event!.value['features'] as Record<string, unknown>;
+    expect(features).toMatchObject({
+      specSha: expect.stringMatching(/^[0-9a-f]{64}$/),
+      ratingSha: expect.stringMatching(/^[0-9a-f]{64}$/),
+      sourceManifest: { contentRevision: '1', inferenceFeedIds: [feed] },
+    });
+    const cards = (features['cards'] as { id: string; strength: string; p: number | null }[]).map(
+      (c) => [c.id, c.strength, c.p === null ? null : Math.round(c.p * 100) / 100],
+    );
+    expect(cards).toEqual(
+      [
+        [love, 'love', 0.8],
+        [never, 'never', 0.2],
+        [unanswered, 'like', null],
+      ].sort((a, b) => Number(a[0]) - Number(b[0])),
+    );
+    expect(event!.value['before']).toMatchObject({ lane: 'for_you', tier: 4 });
+
+    // An ineligible (off-feed) article keeps the rating but has no features.
+    const offFeed = await subscribedFeed(h, r.user.id, { mode: 'off' });
+    const neutral = await carriedArticle(h, [offFeed]);
+    const res = await ok(r.api.post(`/articles/${neutral}/rating`, { ...freshFence, rating: -1 }));
+    expect(res.item.rating).toBe(-1);
+    expect((await events(h, r.user.id, neutral))[0]!.value).toMatchObject({ features: null });
+  });
+
+  it('keeps the first rating of an unanalyzed article', async () => {
+    const { r, article } = await setup();
+    await holdCard(r.user.id, 'love');
+    const res = await ok(r.api.post(`/articles/${article}/rating`, { ...freshFence, rating: 1 }));
+    expect(res.item.rating).toBe(1);
+    const [event] = await events(h, r.user.id, article);
+    const cards = (event!.value['features'] as { cards: { p: number | null }[] }).cards;
+    expect(cards.map((c) => c.p)).toEqual([null]);
+  });
+
+  it('records user.learn once retrainEvery articles changed, never for labels', async () => {
+    const r = await newReader(h);
+    const feed = await subscribedFeed(h, r.user.id);
+    const articles: string[] = [];
+    for (let i = 0; i < 11; i += 1) articles.push(await carriedArticle(h, [feed]));
+    const label = await createLabel(r.user.id);
+    const bulk = await r.api.post('/articles/rate-bulk', {
+      targets: articles.slice(0, 9).map((id) => ({ id, ...freshFence })),
+      rating: 1,
+    });
+    expect(bulk.statusCode, bulk.body).toBe(200);
+    expect(await queues(r.user.id)).not.toContain('user.learn');
+    await ok(r.api.post(`/articles/${articles[9]!}/labels`, { ...freshFence, labelId: label }));
+    expect(await queues(r.user.id)).not.toContain('user.learn');
+    await ok(r.api.post(`/articles/${articles[10]!}/rating`, { ...freshFence, rating: -1 }));
+    expect((await outbox(h, r.user.id, 'user.learn')).map((j) => j.payload)).toEqual([
+      { userId: r.user.id },
+    ]);
+  });
+});
+
+describe('example suggestions (spec 06 §10)', () => {
+  async function suggestible(r: Reader, feed: string, cardId: string, title: string) {
+    const article = await carriedArticle(h, [feed], { title });
+    await rank(h, r.user.id, article, {
+      lane: 'maybe',
+      p: 0.5,
+      tier: 3,
+      explain: explainJson({
+        p: 0.5,
+        lane: 'maybe',
+        tier: 3,
+        decidingCardId: cardId,
+        cards: [{ id: cardId, title: 'C', strength: 'love', p: 0.5, engine: 'typesafe' }],
+      }),
+    });
+    return article;
+  }
+
+  it('returns and stores the suggestion and respects the 7-day and 24-hour limits', async () => {
+    const r = await newReader(h);
+    const feed = await subscribedFeed(h, r.user.id);
+    const card = await holdCard(r.user.id, 'love');
+    const first = await suggestible(r, feed, card, 'Solid-state pilot line hits 1,000 cycles');
+    const res = await ok(r.api.post(`/articles/${first}/rating`, { ...freshFence, rating: 1 }));
+    expect(res.exampleSuggestion).toEqual({ cardId: card, side: 'yes' });
+    const [event] = await events(h, r.user.id, first);
+    expect(event!.value['exampleSuggestion']).toEqual({ cardId: card, side: 'yes' });
+
+    // Same card within 7 days: no suggestion.
+    const second = await suggestible(r, feed, card, 'Sodium-ion cells reach the grid');
+    const again = await ok(r.api.post(`/articles/${second}/rating`, { ...freshFence, rating: 1 }));
+    expect(again.exampleSuggestion).toBeNull();
+
+    // Three suggestions in the last 24 hours block a fourth card.
+    const others = [await holdCard(r.user.id, 'like'), await holdCard(r.user.id, 'like')];
+    for (const other of others) {
+      await h.owner.query(
+        `INSERT INTO feedback_events (user_id, article_id, kind, value, created_at)
+         VALUES ($1, $2, 'rate', $3::jsonb, now() - interval '1 hour')`,
+        [r.user.id, first, JSON.stringify({ exampleSuggestion: { cardId: other, side: 'yes' } })],
+      );
+    }
+    const fresh = await holdCard(r.user.id, 'love');
+    const third = await suggestible(r, feed, fresh, 'Lithium recycling plant opens');
+    const blocked = await ok(r.api.post(`/articles/${third}/rating`, { ...freshFence, rating: 1 }));
+    expect(blocked.exampleSuggestion).toBeNull();
+    await h.owner.query(
+      `UPDATE feedback_events SET created_at = now() - interval '2 days'
+        WHERE user_id = $1 AND value -> 'exampleSuggestion' ->> 'cardId' = ANY($2::text[])`,
+      [r.user.id, others],
+    );
+    const fourth = await suggestible(r, feed, fresh, 'Battery passport rules agreed');
+    const allowed = await ok(
+      r.api.post(`/articles/${fourth}/rating`, { ...freshFence, rating: 1 }),
+    );
+    expect(allowed.exampleSuggestion).toEqual({ cardId: fresh, side: 'yes' });
+  });
+
+  it('never suggests for bulk ratings or when the preference is off', async () => {
+    const r = await newReader(h, { exampleSuggestions: false });
+    const feed = await subscribedFeed(h, r.user.id);
+    const card = await holdCard(r.user.id, 'love');
+    const article = await suggestible(r, feed, card, 'Grid batteries double');
+    const res = await ok(r.api.post(`/articles/${article}/rating`, { ...freshFence, rating: 1 }));
+    expect(res.exampleSuggestion).toBeNull();
+  });
+});
+
+describe('labels', () => {
+  it('assigns and removes a held label without touching cards or learning', async () => {
+    const { r, article } = await setup();
+    const card = await holdCard(r.user.id, 'love');
+    const label = await createLabel(r.user.id);
+    const cardsBefore = await h.owner.query(
+      `SELECT c.id, c.body, c.text_hash, uc.strength FROM interest_cards c
+         LEFT JOIN user_cards uc ON uc.card_id = c.id AND uc.user_id = $1
+        WHERE c.id = ANY($2::bigint[]) ORDER BY c.id`,
+      [r.user.id, [card, label]],
+    );
+    await h.owner.query(
+      `UPDATE user_article SET label_suggestions = ARRAY[$3::bigint] WHERE user_id = $1 AND article_id = $2`,
+      [r.user.id, article, label],
+    );
+    await h.owner.query(
+      `INSERT INTO user_article (user_id, article_id, label_suggestions) VALUES ($1, $2, ARRAY[$3::bigint])
+       ON CONFLICT DO NOTHING`,
+      [r.user.id, article, label],
+    );
+    await clearOutbox(h, r.user.id);
+    const added = await ok(
+      r.api.post(`/articles/${article}/labels`, { ...freshFence, labelId: label }),
+    );
+    expect(added.item).toMatchObject({ labelIds: [label], labelSuggestions: [] });
+    const removed = await ok(
+      r.api.delete(`/articles/${article}/labels/${label}`, { query: fence(added.item) }),
+    );
+    expect(removed.item.labelIds).toEqual([]);
+    expect(
+      (await events(h, r.user.id, article)).map((e) => [e.kind, e.value['features'] ?? null]),
+    ).toEqual([
+      ['label', null],
+      ['unlabel', null],
+    ]);
+    const cardsAfter = await h.owner.query(
+      `SELECT c.id, c.body, c.text_hash, uc.strength FROM interest_cards c
+         LEFT JOIN user_cards uc ON uc.card_id = c.id AND uc.user_id = $1
+        WHERE c.id = ANY($2::bigint[]) ORDER BY c.id`,
+      [r.user.id, [card, label]],
+    );
+    expect(cardsAfter.rows).toEqual(cardsBefore.rows);
+    expect(await queues(r.user.id)).toEqual([]);
+
+    const foreign = await createLabel((await newReader(h)).user.id, 'Not mine');
+    await errorOf(
+      r.api.post(`/articles/${article}/labels`, { ...fence(removed.item), labelId: foreign }),
+      404,
+    );
+  });
+});
+
+describe('/mute-story', () => {
+  it('creates a cluster when missing and a mute_story rule; enqueues a full rank', async () => {
+    const { r, article } = await setup();
+    await clearOutbox(h, r.user.id);
+    const res = await r.api.post(`/articles/${article}/mute-story`, { days: 7 });
+    expect(res.statusCode, res.body).toBe(201);
+    const { rule } = res.json();
+    const cluster = await h.owner.query<{ id: string }>(
+      `SELECT story_cluster_id::text AS id FROM articles WHERE id = $1`,
+      [article],
+    );
+    expect(cluster.rows[0]!.id).not.toBeNull();
+    expect(rule).toMatchObject({
+      kind: 'mute_story',
+      value: cluster.rows[0]!.id,
+      expiresAt: expect.any(String),
+    });
+    expect(Date.parse(rule.expiresAt) - Date.now()).toBeGreaterThan(6.9 * DAY);
+    expect((await outbox(h, r.user.id, 'user.rank')).map((j) => j.payload['full'])).toEqual([true]);
+    const repeat = await r.api.post(`/articles/${article}/mute-story`, { days: 1 });
+    expect(repeat.json().rule.id).toBe(rule.id);
+    expect((await r.api.post(`/articles/${article}/mute-story`, { days: 2 })).statusCode).toBe(400);
+  });
+});
+
+describe('bulk actions', () => {
+  it('mark-read by targets is all-or-nothing and never touches foreign articles', async () => {
+    const { r, feed, article } = await setup();
+    const second = await carriedArticle(h, [feed]);
+    const other = await setup();
+    const mixed = await errorOf(
+      r.api.post('/articles/mark-read', {
+        targets: [
+          { id: article, ...freshFence },
+          { id: other.article, ...freshFence },
+        ],
+      }),
+      404,
+    );
+    expect(mixed.code).toBe('NOT_FOUND');
+    expect(await readerState(h, r.user.id, article)).toBeUndefined();
+    expect(await readerState(h, other.r.user.id, other.article)).toBeUndefined();
+    expect(await readerState(h, r.user.id, other.article)).toBeUndefined();
+
+    const res = await r.api.post('/articles/mark-read', {
+      targets: [
+        { id: article, ...freshFence },
+        { id: second, ...freshFence },
+      ],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toEqual({ count: 2, mutationId: expect.any(String) });
+    const [event] = await events(h, r.user.id, article);
+    expect(event).toMatchObject({ kind: 'mark_read', value: { signalOrigin: 'bulk_mark_read' } });
+    const stale = await errorOf(
+      r.api.post('/articles/mark-read', { targets: [{ id: article, ...freshFence }] }),
+      409,
+    );
+    expect(stale.code).toBe('STALE_STATE');
+  });
+
+  it('mark-read by filter checks the dataset version and the 5,000 cap', async () => {
+    const { r, feed } = await setup();
+    const listed = (await r.api.get('/articles', { query: { lane: 'all' } })).json();
+    await carriedArticle(h, [feed], { arrival: ago(HOUR) });
+    const stale = await errorOf(
+      r.api.post('/articles/mark-read', {
+        filter: { lane: 'all', olderThan: listed.asOf },
+        datasetVersion: listed.datasetVersion,
+      }),
+      409,
+    );
+    expect(stale.code).toBe('STALE_STATE');
+
+    await h.owner.query(
+      `WITH a AS (
+         INSERT INTO articles (url, canonical_url, url_key, title, title_norm, content_hash, first_seen_at)
+         SELECT 'https://bulk.example.test/' || g, 'https://bulk.example.test/' || g,
+                'bulk.example.test/' || g || '-' || $2, 'Bulk ' || g, 'bulk ' || g, md5(g::text || $2),
+                now() - interval '2 hours'
+           FROM generate_series(1, 5001) g RETURNING id)
+       INSERT INTO feed_items (feed_id, article_id, guid, first_seen_at)
+       SELECT $1, a.id, 'bulk-' || a.id, now() - interval '2 hours' FROM a`,
+      [feed, randomUUID()],
+    );
+    const big = (await r.api.get('/articles', { query: { lane: 'all', limit: '1' } })).json();
+    const tooMany = await errorOf(
+      r.api.post('/articles/mark-read', {
+        filter: { lane: 'all', olderThan: big.asOf },
+        datasetVersion: big.datasetVersion,
+      }),
+      400,
+    );
+    expect(tooMany).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      details: { reason: 'too_many_targets' },
+    });
+    const unread = await h.owner.query(
+      `SELECT count(*)::int AS n FROM user_article WHERE user_id = $1 AND read_at IS NOT NULL`,
+      [r.user.id],
+    );
+    expect(unread.rows[0]).toEqual({ n: 0 });
+  });
+
+  it('rate-bulk applies single-rating semantics; null un-rates; undo restores', async () => {
+    const { r, feed, article } = await setup();
+    const second = await carriedArticle(h, [feed]);
+    const liked = await r.api.post('/articles/rate-bulk', {
+      targets: [
+        { id: article, ...freshFence },
+        { id: second, ...freshFence },
+      ],
+      rating: 1,
+    });
+    expect(liked.statusCode, liked.body).toBe(200);
+    const body = liked.json();
+    expect(body.count).toBe(2);
+    expect(body.items.map((i: Item) => i.rating)).toEqual([1, 1]);
+    const cleared = await r.api.post('/articles/rate-bulk', {
+      targets: body.items.map((i: Item) => ({ id: i.id, ...fence(i) })),
+      rating: null,
+    });
+    expect(cleared.statusCode, cleared.body).toBe(200);
+    expect(cleared.json().items.map((i: Item) => i.rating)).toEqual([null, null]);
+    expect((await events(h, r.user.id, article)).map((e) => e.kind)).toEqual(['rate', 'unrate']);
+    const undo = await r.api.post('/articles/undo', { mutationId: cleared.json().mutationId });
+    expect(undo.statusCode, undo.body).toBe(200);
+    expect(undo.json()).toMatchObject({ count: 2 });
+    expect(undo.json().items.map((i: Item) => i.rating)).toEqual([1, 1]);
+    expect((await events(h, r.user.id, article)).map((e) => e.kind)).toEqual([
+      'rate',
+      'unrate',
+      'undo',
+    ]);
+  });
+
+  it('rate-bulk with a foreign target mutates nothing', async () => {
+    const { r, article } = await setup();
+    const other = await setup();
+    await errorOf(
+      r.api.post('/articles/rate-bulk', {
+        targets: [
+          { id: article, ...freshFence },
+          { id: other.article, ...freshFence },
+        ],
+        rating: -1,
+      }),
+      404,
+    );
+    expect(await events(h, r.user.id)).toEqual([]);
+    expect(await events(h, other.r.user.id)).toEqual([]);
+  });
+});
+
+describe('idempotency and undo', () => {
+  it('a retry with the same key replays without a second effect', async () => {
+    const { r, article } = await setup();
+    const key = randomUUID();
+    const first = await r.api.post(
+      `/articles/${article}/rating`,
+      { ...freshFence, rating: 1 },
+      { idempotencyKey: key },
+    );
+    const replay = await r.api.post(
+      `/articles/${article}/rating`,
+      { ...freshFence, rating: 1 },
+      { idempotencyKey: key },
+    );
+    expect(first.statusCode).toBe(200);
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual(first.json());
+    expect(first.json().mutationId).toBe(key);
+    expect((await events(h, r.user.id, article)).length).toBe(1);
+    const conflict = await errorOf(
+      r.api.post(
+        `/articles/${article}/rating`,
+        { ...freshFence, rating: -1 },
+        { idempotencyKey: key },
+      ),
+      409,
+    );
+    expect(conflict.code).toBe('IDEMPOTENCY_CONFLICT');
+  });
+
+  it('undo restores exactly the prior fields and rejects later edits', async () => {
+    const { r, article } = await setup();
+    const liked = await ok(r.api.post(`/articles/${article}/rating`, { ...freshFence, rating: 1 }));
+    const disliked = await ok(
+      r.api.post(`/articles/${article}/rating`, {
+        ...fence(liked.item),
+        rating: -1,
+        reason: 'promo',
+        hide: true,
+      }),
+    );
+    await clearOutbox(h, r.user.id);
+    const undo = await r.api.post('/articles/undo', { mutationId: disliked.mutationId });
+    expect(undo.statusCode, undo.body).toBe(200);
+    const restored = undo.json().items[0] as Item;
+    expect(restored).toMatchObject({
+      rating: 1,
+      reason: null,
+      archivedAt: null,
+      readAt: liked.item.readAt,
+    });
+    expect(BigInt(restored.stateVersion)).toBe(BigInt(disliked.item.stateVersion) + 1n);
+    expect(await queues(r.user.id)).toEqual(expect.arrayContaining(['user.rank', 'user.learn']));
+    const undoEvent = (await events(h, r.user.id, article)).at(-1)!;
+    expect(undoEvent).toMatchObject({ kind: 'undo', value: { mutationId: disliked.mutationId } });
+
+    const twice = await errorOf(
+      r.api.post('/articles/undo', { mutationId: disliked.mutationId }),
+      409,
+    );
+    expect(twice).toMatchObject({ code: 'CONFLICT' });
+    const later = await errorOf(
+      r.api.post('/articles/undo', { mutationId: liked.mutationId }),
+      409,
+    );
+    expect(later.code).toBe('STALE_STATE');
+    const other = await newReader(h);
+    await errorOf(other.api.post('/articles/undo', { mutationId: liked.mutationId }), 404);
+    await errorOf(r.api.post('/articles/undo', { mutationId: randomUUID() }), 404);
+  });
+
+  it('a non-undoable action (open) cannot be undone', async () => {
+    const { r, article } = await setup();
+    const opened = await ok(r.api.post(`/articles/${article}/open`, freshFence));
+    const error = await errorOf(
+      r.api.post('/articles/undo', { mutationId: opened.mutationId }),
+      409,
+    );
+    expect(error).toMatchObject({ code: 'CONFLICT', details: { reason: 'not_undoable' } });
+  });
+
+  it('undo of a filter mark-read restores unread state', async () => {
+    const { r, feed, article } = await setup();
+    const listed = (await r.api.get('/articles', { query: { lane: 'all', feedId: feed } })).json();
+    const res = await r.api.post(`/subscriptions/${feed}/mark-read`, {
+      olderThan: listed.asOf,
+      datasetVersion: listed.datasetVersion,
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().count).toBe(1);
+    expect((await readerState(h, r.user.id, article))!.read_at).not.toBeNull();
+    const undo = await r.api.post('/articles/undo', { mutationId: res.json().mutationId });
+    expect(undo.statusCode, undo.body).toBe(200);
+    expect((await readerState(h, r.user.id, article))!.read_at).toBeNull();
+
+    const other = await newReader(h);
+    const theirs = await subscribedFeed(h, other.user.id);
+    await errorOf(
+      r.api.post(`/subscriptions/${theirs}/mark-read`, {
+        olderThan: listed.asOf,
+        datasetVersion: listed.datasetVersion,
+      }),
+      404,
+    );
+  });
+});
+
+describe('bookmarks and saved snapshots', () => {
+  it('captures, unbookmarks with a pinned snapshot and undoes exactly', async () => {
+    const { r, article } = await setup();
+    const saved = await ok(r.api.post(`/articles/${article}/bookmark`, freshFence));
+    expect(saved.item.bookmarkedAt).not.toBeNull();
+    expect(saved.item.bookmarkCapture).toMatchObject({
+      status: 'pending',
+      snapshotId: expect.any(String),
+    });
+    expect(await queues(r.user.id)).toContain('article.capture-bookmark');
+    expect((await events(h, r.user.id, article)).map((e) => e.kind)).toEqual(['bookmark']);
+    // Re-bookmarking is a no-op.
+    const again = await ok(r.api.post(`/articles/${article}/bookmark`, fence(saved.item)));
+    expect(again.item.stateVersion).toBe(saved.item.stateVersion);
+
+    const snapshotId = saved.item.bookmarkCapture!.snapshotId!;
+    const removed = await r.api.delete(`/articles/${article}/bookmark`, {
+      query: fence(saved.item),
+    });
+    expect(removed.statusCode, removed.body).toBe(200);
+    expect(removed.json().item).toMatchObject({ bookmarkedAt: null, bookmarkCapture: null });
+    const pins = await h.owner.query(
+      `SELECT snapshot_id::text FROM bookmark_snapshot_pins WHERE user_id = $1 AND mutation_id = $2`,
+      [r.user.id, removed.json().mutationId],
+    );
+    expect(pins.rows).toEqual([{ snapshot_id: snapshotId }]);
+    expect(await queues(r.user.id)).toContain('user.learn');
+
+    const undo = await r.api.post('/articles/undo', { mutationId: removed.json().mutationId });
+    expect(undo.statusCode, undo.body).toBe(200);
+    const state = await readerState(h, r.user.id, article);
+    expect(state).toMatchObject({
+      bookmark_snapshot_id: snapshotId,
+      bookmarked_at: expect.any(Date),
+    });
+    expect(BigInt(state!.bookmark_capture_generation)).toBeGreaterThan(
+      BigInt(saved.item.bookmarkCapture!.generation),
+    );
+  });
+
+  it('retry-capture needs a partial/failed capture at the displayed generation', async () => {
+    const { r, article } = await setup();
+    const saved = await ok(r.api.post(`/articles/${article}/bookmark`, freshFence));
+    const generation = saved.item.bookmarkCapture!.generation;
+    const notRetryable = await errorOf(
+      r.api.post(`/articles/${article}/bookmark/retry-capture`, {
+        ...fence(saved.item),
+        captureGeneration: generation,
+      }),
+      409,
+    );
+    expect(notRetryable.code).toBe('CONFLICT');
+    await h.owner.query(
+      `UPDATE user_article SET bookmark_capture_status = 'failed' WHERE user_id = $1 AND article_id = $2`,
+      [r.user.id, article],
+    );
+    const wrong = await errorOf(
+      r.api.post(`/articles/${article}/bookmark/retry-capture`, {
+        ...fence(saved.item),
+        captureGeneration: String(BigInt(generation) + 5n),
+      }),
+      409,
+    );
+    expect(wrong.code).toBe('STALE_STATE');
+    const retried = await ok(
+      r.api.post(`/articles/${article}/bookmark/retry-capture`, {
+        ...fence(saved.item),
+        captureGeneration: generation,
+      }),
+      202,
+    );
+    expect(BigInt(retried.item.bookmarkCapture!.generation)).toBeGreaterThan(BigInt(generation));
+  });
+
+  it('saved snapshots survive unsubscribing and stay private; snapshot fences accept older revisions', async () => {
+    const { r, feed, article } = await setup();
+    const saved = await ok(r.api.post(`/articles/${article}/bookmark`, freshFence));
+    const snapshotId = saved.item.bookmarkCapture!.snapshotId!;
+    // A newer live revision and a lost source URL (publisher change/404) leave the save intact.
+    await h.owner.query(`UPDATE articles SET content_revision = 2, url = NULL WHERE id = $1`, [
+      article,
+    ]);
+    await h.owner.query(`DELETE FROM subscriptions WHERE user_id = $1 AND feed_id = $2`, [
+      r.user.id,
+      feed,
+    ]);
+    const view = await r.api.get(`/articles/${article}`, { query: { view: 'saved' } });
+    expect(view.statusCode, view.body).toBe(200);
+    expect(view.json().bookmarkSnapshot).toMatchObject({
+      id: snapshotId,
+      contentRevision: '1',
+      completeness: 'partial',
+    });
+    const other = await newReader(h);
+    expect(
+      (await other.api.get(`/articles/${article}`, { query: { view: 'saved' } })).statusCode,
+    ).toBe(404);
+
+    const snapshotFence = {
+      stateVersion: saved.item.stateVersion,
+      contentRevision: '1',
+      snapshotId,
+    };
+    const rated = await ok(
+      r.api.post(`/articles/${article}/rating`, { ...snapshotFence, rating: 1 }),
+    );
+    expect(rated.item.rating).toBe(1);
+    const [, rate] = await events(h, r.user.id, article);
+    expect(rate!.value).toMatchObject({ snapshotId, contentRevision: '1', features: null });
+
+    const label = await createLabel(r.user.id);
+    await ok(
+      r.api.post(`/articles/${article}/labels`, {
+        stateVersion: rated.item.stateVersion,
+        contentRevision: '1',
+        snapshotId,
+        labelId: label,
+      }),
+    );
+    const mismatched = await errorOf(
+      r.api.post(`/articles/${article}/rating`, {
+        stateVersion: String(BigInt(rated.item.stateVersion) + 1n),
+        contentRevision: '2',
+        snapshotId,
+        rating: -1,
+      }),
+      409,
+    );
+    expect(mismatched.code).toBe('STALE_STATE');
+    const live = await errorOf(
+      r.api.post(`/articles/${article}/rating`, {
+        stateVersion: String(BigInt(rated.item.stateVersion) + 1n),
+        contentRevision: '1',
+        rating: -1,
+      }),
+      409,
+    );
+    expect(live.code).toBe('STALE_STATE');
+  });
+});
+
+describe('selected training requests', () => {
+  it('validates analysisRequestId and records it in the event', async () => {
+    const { r, feed, article } = await setup({}, 'training');
+    const requestId = await selectArticle(r.user.id, feed, article);
+    const inputSha = (
+      await h.owner.query<{ input_sha: string }>(
+        `SELECT input_sha FROM analysis_requests WHERE id = $1`,
+        [requestId],
+      )
+    ).rows[0]!.input_sha;
+    const item = (await r.api.get(`/articles/${article}`)).json();
+    expect(item.analysis).toEqual({ mode: 'training', status: 'pending', requestId });
+
+    await errorOf(
+      r.api.post(`/articles/${article}/rating`, {
+        ...freshFence,
+        rating: 1,
+        analysisRequestId: randomUUID(),
+      }),
+      404,
+    );
+    const rated = await ok(
+      r.api.post(`/articles/${article}/rating`, {
+        ...freshFence,
+        rating: 1,
+        analysisRequestId: requestId,
+      }),
+    );
+    const [event] = await events(h, r.user.id, article);
+    expect(event!.value).toMatchObject({ analysisRequestId: requestId, inputSha });
+    // The pre-feedback inputs are frozen in the request; the event has the eligible snapshot too.
+    expect(event!.value['features']).toMatchObject({
+      sourceManifest: { inferenceFeedIds: [feed] },
+    });
+
+    await h.owner.query(
+      `UPDATE analysis_requests SET status = 'cancelled', completed_at = now() WHERE id = $1`,
+      [requestId],
+    );
+    const obsolete = await errorOf(
+      r.api.post(`/articles/${article}/prompt-answer`, {
+        ...fence(rated.item),
+        liked: true,
+        analysisRequestId: requestId,
+      }),
+      409,
+    );
+    expect(obsolete).toMatchObject({ code: 'CONFLICT', details: { reason: 'obsolete_request' } });
+    await restamp(h, r.user.id);
+  });
+});

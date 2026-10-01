@@ -28,6 +28,7 @@ import { adminRoutes } from './routes/admin/index.js';
 import { articleRoutes } from './routes/articles.js';
 import { authRoutes } from './routes/auth.js';
 import { cardRoutes } from './routes/cards.js';
+import { feedMarkReadRoutes } from './routes/feed-mark-read.js';
 import { healthRoutes } from './routes/health.js';
 import { inviteRoutes } from './routes/invites.js';
 import { labelRoutes } from './routes/labels.js';
@@ -170,6 +171,7 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
       await api.register(inviteRoutes);
       await api.register(meRoutes, { prefix: '/me' });
       await api.register(subscriptionRoutes);
+      await api.register(feedMarkReadRoutes);
       await api.register(articleRoutes, { prefix: '/articles' });
       await api.register(cardRoutes);
       await api.register(labelRoutes, { prefix: '/labels' });

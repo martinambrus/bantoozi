@@ -118,6 +118,7 @@ export function registerTenant(app: FastifyInstance): void {
             response: outcome.body ?? null,
             ...(outcome.undo === undefined ? {} : { undo: outcome.undo }),
           });
+          if (outcome.afterSave !== undefined) await outcome.afterSave(tx);
           return outcome;
         });
       } catch (error) {
