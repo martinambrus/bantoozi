@@ -1,4 +1,4 @@
-import type { QuotaUsage } from '@bantoozi/shared';
+import { QuotaExceededError, type QuotaUsage } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import { tenantUserId, type TenantTx } from '../tenant.js';
@@ -22,4 +22,21 @@ export async function quotaUsage(tx: TenantTx): Promise<QuotaUsage> {
   const row = result.rows[0];
   if (row === undefined) throw new Error('quota usage query returned no row');
   return row;
+}
+
+/**
+ * Enforce a counted limit before adding `adding` holdings (spec 08 §6): the caller holds its
+ * `users` row lock (spec 08 §1.1), so the count cannot change before the insert. Throws
+ * `409 QUOTA_EXCEEDED {limit, used, max}` when `used + adding` would exceed `max`; `used` is the
+ * current count. Existing holdings are no-ops and must not be counted in `adding`.
+ */
+export async function assertQuotaRoom(
+  tx: TenantTx,
+  limit: keyof QuotaUsage,
+  max: number,
+  adding = 1,
+): Promise<number> {
+  const used = (await quotaUsage(tx))[limit];
+  if (adding > 0 && used + adding > max) throw new QuotaExceededError(limit, used, max);
+  return used;
 }
