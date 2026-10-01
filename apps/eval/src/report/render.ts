@@ -426,9 +426,15 @@ export function renderPolicy(
   split: Split,
   config: PolicyConfig,
 ): string {
-  if (view.runFor === null) return '';
-  const items = onSplit(model.items, split);
-  const lanes = policyLanes(items, view.runFor, model.reference?.config.cards ?? [], config);
+  const runFor = view.runFor;
+  if (runFor === null) return '';
+  // An item whose run did not request its language has no answers: leave it out rather than count
+  // it in New (an item with no run keeps counting there).
+  const items = onSplit(model.items, split).filter((i) => {
+    const run = runFor(i);
+    return run === null || run.config.langs.includes(i.lang);
+  });
+  const lanes = policyLanes(items, runFor, model.reference?.config.cards ?? [], config);
   const laneOf = (item: RatedItem): ReportLane => lanes.get(item.key)?.lane ?? 'new';
   const row = (scope: string, subset: readonly RatedItem[]) => {
     const summary = policySummary(subset.map((i) => ({ liked: i.liked, lane: laneOf(i) })));

@@ -814,7 +814,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   it: an independent lineage started by `eval sample --version` never strands earlier assignments.
   A rating or rating-withdrawing skip opens the next version of every lineage tip that holds the
   article (the head last, so it stays the head when it holds the article; with no such tip, the
-  head), so a later freeze of any lineage holding it captures it.
+  head), so a later freeze of any lineage holding it captures it. A changed facet label opens
+  versions the same way, for the labelled article.
   Every new version takes the next unused name after its parent (`eval sample --version` may already
   have used the plain successor). Top-ups, like the sample draw, take only extracted-or-later
   articles: an `ingested` one (e.g. re-queued by a content update) has no current body yet.
@@ -1006,8 +1007,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   Addendum (PR #10 review): the §4 report tables are scoped to the run's own languages and
   ratings. Operations coverage uses the run's stored per-language coverage when present, else the
   scoring coverage of items whose (rater, article) pair is in the run's cohort, and the enrichment
-  table lists only the run's languages, so an SK-only run no longer reports the other languages'
-  missing answers.
+  table lists only the run's languages, and the policy view leaves out items whose run did not
+  request their language (an item with no run still counts in New), so an SK-only run no longer
+  reports the other languages' missing answers.
 - D-111: 2026-10-01 M3a-T6 — eval routers use a process-local circuit breaker, so an evaluation
   never trips or reads the production breaker (spec 04 §1). The LLM fallback is off and the pinned
   engine has no automatic fallback, so a run never mixes engines silently.

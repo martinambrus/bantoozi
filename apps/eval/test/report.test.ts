@@ -10,14 +10,16 @@ import {
 } from '../src/report/gate.js';
 import { renderGateReport } from '../src/report/gate-report.js';
 import { escapeCell, table, usd } from '../src/report/markdown.js';
-import { buildReportModel, latestRuns } from '../src/report/model.js';
+import { buildReportModel, latestRuns, runView } from '../src/report/model.js';
 import {
   CONFIGURED_CUTOFFS,
+  DEFAULT_POLICY_CONFIG,
   e6Score,
   renderEnrichment,
   renderEvaluationReport,
   renderInformational,
   renderOperations,
+  renderPolicy,
 } from '../src/report/render.js';
 import { parseRunData } from '../src/report/run-data.js';
 import { reliabilitySvg } from '../src/report/svg.js';
@@ -685,6 +687,14 @@ describe('language-subset runs', () => {
     const e4Rows = enrichment.split('\n').filter((l) => l.startsWith('| E4 '));
     expect(e4Rows.length).toBeGreaterThan(0);
     for (const line of e4Rows) expect(line.split('|')[2]!.trim()).toBe('sk');
+
+    const policy = renderPolicy(model, runView(e4), 'dev', DEFAULT_POLICY_CONFIG);
+    const scopes = policy
+      .split('\n')
+      .filter((l) => l.startsWith('| E4 '))
+      .map((l) => l.split('|')[2]!.trim());
+    expect(scopes).toContain('lang sk');
+    expect(scopes.filter((x) => x.startsWith('lang '))).toEqual(['lang sk']);
   });
 });
 
