@@ -187,6 +187,15 @@ export async function updateRunResults(
     UPDATE eval.runs SET results = ${JSON.stringify(results)}::jsonb WHERE id = ${runId}::bigint`);
 }
 
+/** The id of a run built on `runId` (E6/E7 record their base in `config.baseRunId`), if any. */
+export async function findDerivedRunId(db: Executor, runId: string): Promise<string | null> {
+  const result = await db.execute<{ id: string }>(sql`
+    SELECT id::text AS id FROM eval.runs
+     WHERE config->>'baseRunId' = ${runId}
+     ORDER BY id LIMIT 1`);
+  return result.rows[0]?.id ?? null;
+}
+
 /** A session advisory lock on one run, held by a dedicated connection until released. */
 export interface RunLock {
   release(): Promise<void>;
@@ -197,8 +206,14 @@ export interface RunLock {
  * on its own connection, so two invocations never execute the same run at once, and a crashed one
  * frees the run when its connection drops (no stale claim to clear). Null when another invocation
  * holds it. The connection is separate from the runtime pool, so holding it never starves the run.
+ * A run built on it (E6/E7 on an E1 run) holds the `shared` mode for its whole invocation, so the
+ * base cannot be resumed (and gain answers) while its answers are read; derived runs share it.
  */
-export async function tryLockRun(connectionString: string, runId: string): Promise<RunLock | null> {
+export async function tryLockRun(
+  connectionString: string,
+  runId: string,
+  mode: 'exclusive' | 'shared' = 'exclusive',
+): Promise<RunLock | null> {
   const client = new pg.Client({ connectionString, application_name: 'bantoozi-eval-run-lock' });
   // A dropped connection releases the lock server-side; the error must not crash the process.
   client.on('error', () => undefined);
@@ -206,7 +221,9 @@ export async function tryLockRun(connectionString: string, runId: string): Promi
   let locked = false;
   try {
     const result = await client.query<{ locked: boolean }>(
-      "SELECT pg_try_advisory_lock(hashtext('eval.run'), hashtext($1::bigint::text)) AS locked",
+      mode === 'shared'
+        ? "SELECT pg_try_advisory_lock_shared(hashtext('eval.run'), hashtext($1::bigint::text)) AS locked"
+        : "SELECT pg_try_advisory_lock(hashtext('eval.run'), hashtext($1::bigint::text)) AS locked",
       [runId],
     );
     locked = result.rows[0]?.locked === true;

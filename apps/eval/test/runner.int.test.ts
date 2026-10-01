@@ -2,7 +2,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { loadRunAnswers, openDatasetForCorrection, rateAssignment } from '@bantoozi/db';
+import { loadRunAnswers, openDatasetForCorrection, rateAssignment, tryLockRun } from '@bantoozi/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { EXPERIMENT_IDS } from '../src/experiments/definitions.js';
@@ -501,6 +501,15 @@ describe('eval run (M3a-T6)', () => {
         runExperiment(rt, { experiment: 'E6', yes: true, gitSha: 'test', baseRunId: e1.runId! }),
       ).rejects.toMatchObject({ message: expect.stringContaining('is not finished (running)') });
       await setStatus('complete');
+      // A base run being resumed (its exclusive claim) cannot be built on at the same time.
+      const resuming = await tryLockRun(rt.config.databaseUrlWorker, e1.runId!);
+      try {
+        await expect(
+          runExperiment(rt, { experiment: 'E6', yes: true, gitSha: 'test', baseRunId: e1.runId! }),
+        ).rejects.toMatchObject({ message: /base run \d+ is being executed/ });
+      } finally {
+        await resuming?.release();
+      }
       const e6 = await runExperiment(rt, {
         experiment: 'E6',
         yes: true,
@@ -509,6 +518,12 @@ describe('eval run (M3a-T6)', () => {
       });
       expect(e6.status).toBe('complete');
       e6RunId = e6.runId!;
+      // Once E6 is built on it, a partial base run is never resumed: its answers stay final.
+      await setStatus('partial');
+      await expect(
+        runExperiment(rt, { experiment: 'E1', yes: true, gitSha: 'test', resumeRunId: e1.runId! }),
+      ).rejects.toMatchObject({ message: /is the base of run \d+, so its answers are final/ });
+      await setStatus('complete');
     } finally {
       await rt.close();
     }

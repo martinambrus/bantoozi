@@ -22,6 +22,7 @@ import {
   runCallSpend,
   runCallSpendByArticle,
   tryLockRun,
+  findDerivedRunId,
   updateRunResults,
   upsertRunAnswers,
   type DatasetRow,
@@ -1366,11 +1367,12 @@ export async function runExperiment(
   // One invocation per run at a time (D-114 addendum): a resume claims the run before it reads the
   // run's resume state, and a new run is claimed as soon as its row exists. The claim lives for
   // the whole invocation and ends with its connection, so a crash never leaves a stale one.
-  const claim: { lock: RunLock | null } = { lock: null };
+  const claim: { lock: RunLock | null; base: RunLock | null } = { lock: null, base: null };
   try {
     return await runClaimed(rt, options, claim);
   } finally {
     await claim.lock?.release();
+    await claim.base?.release();
   }
 }
 
@@ -1432,7 +1434,7 @@ async function claimRun(rt: EvalRuntime, runId: string): Promise<RunLock> {
 async function runClaimed(
   rt: EvalRuntime,
   options: RunExperimentOptions,
-  claim: { lock: RunLock | null },
+  claim: { lock: RunLock | null; base: RunLock | null },
 ): Promise<RunExperimentResult> {
   const def = EXPERIMENTS[options.experiment];
   const maxUsd = validateOptions(options);
@@ -1460,6 +1462,13 @@ async function runClaimed(
     if (status === 'complete' || status === 'skipped') {
       throw new EvalCommandError(`run ${run.id} is ${String(status)}; nothing to resume`);
     }
+    // A run that E6/E7 build on keeps its answers: they read them whenever they plan or resume.
+    const derived = await findDerivedRunId(rt.db, run.id);
+    if (derived !== null) {
+      throw new EvalCommandError(
+        `run ${run.id} is the base of run ${derived}, so its answers are final; start a new ${def.id} run instead`,
+      );
+    }
     const { configSha: _sha, ...stored } = parseRunConfig(run.config);
     config = stored;
     existingRunId = run.id;
@@ -1476,6 +1485,27 @@ async function runClaimed(
       return skipRun(rt, def, dataset, maxUsd, gitSha, options);
     }
     config = await draftConfig(rt, rt.db, def, options, dataset, cardMode, maxUsd);
+  }
+  if (config.baseRunId !== undefined) {
+    // Hold the base run in shared mode for this whole invocation: a resume of the base (which
+    // would add answers this run reads) needs it exclusively. Its row then names the base, which
+    // refuses any later resume of it.
+    claim.base = await tryLockRun(rt.config.databaseUrlWorker, config.baseRunId, 'shared');
+    if (claim.base === null) {
+      throw new EvalCommandError(
+        `base run ${config.baseRunId} is being executed by another eval run invocation`,
+      );
+    }
+    const baseStatus = (
+      (await getRun(rt.db, config.baseRunId))?.results as {
+        status?: unknown;
+      } | null
+    )?.status;
+    if (baseStatus !== 'complete' && baseStatus !== 'partial') {
+      throw new EvalCommandError(
+        `base run ${config.baseRunId} is not finished (${String(baseStatus ?? 'running')})`,
+      );
+    }
   }
 
   const cache = createEvalCache({ dir: rt.config.evalCacheDir, now: rt.now });
