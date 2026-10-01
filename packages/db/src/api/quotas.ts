@@ -17,7 +17,8 @@ export async function quotaUsage(tx: TenantTx): Promise<QuotaUsage> {
            (SELECT count(*)::int FROM user_cards uc
               JOIN interest_cards c ON c.id = uc.card_id AND c.kind = 'interest'
              WHERE uc.user_id = ${user}::uuid AND c.visibility = 'private') AS "maxForks",
-           (SELECT count(*)::int FROM user_rules WHERE user_id = ${user}::uuid) AS "maxRules"`);
+           (SELECT count(*)::int FROM user_rules
+             WHERE user_id = ${user}::uuid AND (expires_at IS NULL OR expires_at > now())) AS "maxRules"`);
   const row = result.rows[0];
   if (row === undefined) throw new Error('quota usage query returned no row');
   return row;
