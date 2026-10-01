@@ -9,9 +9,14 @@ import {
   selectOnDevelopment,
 } from '../src/report/gate.js';
 import { renderGateReport } from '../src/report/gate-report.js';
-import { escapeCell, table } from '../src/report/markdown.js';
+import { escapeCell, table, usd } from '../src/report/markdown.js';
 import { buildReportModel, latestRuns } from '../src/report/model.js';
-import { e6Score, renderEvaluationReport, renderInformational } from '../src/report/render.js';
+import {
+  e6Score,
+  renderEvaluationReport,
+  renderInformational,
+  renderOperations,
+} from '../src/report/render.js';
 import { parseRunData } from '../src/report/run-data.js';
 import { reliabilitySvg } from '../src/report/svg.js';
 import { calibration } from '../src/metrics/index.js';
@@ -198,6 +203,48 @@ describe('G1 report', () => {
       expect(markdown).toContain(text);
     }
     expect(svgCount(markdown)).toBe(4);
+  });
+
+  it('reports an unmeasured language as the native default g1.json applies', () => {
+    const fixture = buildFixture({
+      raters: [
+        {
+          raterId: '1',
+          participantKey: 'owner',
+          contextName: 'web',
+          langs: ['en'],
+          cardLang: 'en',
+        },
+      ],
+      langs: ['en', 'cs'],
+      perLang: 300,
+    });
+    const runs = standardRuns(fixture);
+    const model = buildReportModel({
+      datasetVersion: DATASET.version,
+      runs,
+      sample: fixture.sample,
+    });
+    const assessments = assessGateRuns(model, latestRuns(runs), DATASET);
+    const selection = selectOnDevelopment(
+      developmentInput(model, assessments, 'owner_pilot', DATASET, 1000),
+    );
+    expect(selection.languages.find((l) => l.lang === 'cs')?.mode).toBeNull();
+    expect(selection.languageModes['cs']).toBe('native');
+    const markdown = renderGateReport({
+      model,
+      readiness: gateReadiness(model, 'owner_pilot'),
+      runs: assessments,
+      selection,
+      confirmation: null,
+      status: 'needs_more_data',
+      lockedAt: null,
+      generatedAt,
+      settings,
+      dryRun: true,
+    });
+    expect(markdown).toMatch(/\| cs \| native \(unmeasured default, unvalidated\) \|/);
+    expect(markdown).not.toContain('current setting kept');
   });
 
   it('writes an honest incomplete report without revealing the test split', () => {
@@ -532,6 +579,59 @@ describe('E7 lane movement', () => {
     const row = out.split('\n').find((l) => l.startsWith('| generic | en |'))!;
     // `floored` is already For You (not in the denominator); `hidden` stays hidden; `plain` rises.
     expect(row).toContain('50.0% (1/2)');
+  });
+});
+
+describe('operations table', () => {
+  it('counts per-key answers in the failure rate and the distinct articles', () => {
+    const fixture = buildFixture();
+    const [a, b] = [...fixture.sample.keys()];
+    const raw = (id: string, experiment: string) => ({
+      id,
+      experiment,
+      datasetVersion: DATASET.version,
+      gitSha: 'x',
+      startedAt: generatedAt,
+      finishedAt: generatedAt,
+      config: {
+        experiment,
+        datasetVersion: DATASET.version,
+        cohort: { articleIds: [a!, b!], sha: 's' },
+      },
+      results: { status: 'complete', cost: { billedUsd: 0.02, cacheSavingsUsd: 0 } },
+    });
+    const row = (articleId: string, questionKey: string, answer: Record<string, unknown>) => ({
+      articleId,
+      cardId: '501',
+      questionKey,
+      answer,
+    });
+    // E7 writes only `e7.*` rows: two articles, one of them failed.
+    const e7 = parseRunData(raw('70', 'E7'), [
+      row(a!, 'e7.targeted', { ok: true, p: 0.4 }),
+      row(b!, 'e7.generic', { ok: false, reason: 'timeout' }),
+    ]);
+    // A card run whose only failure is a rater's own copy of a shared card.
+    const e1 = parseRunData(raw('71', 'E1'), [
+      row(a!, 'card', { ok: true, p: 0.4 }),
+      row(b!, 'card', { ok: true, p: 0.4 }),
+      row(a!, 'card.r2', { ok: true, p: 0.4 }),
+      row(b!, 'card.r2', { ok: false, reason: 'timeout' }),
+    ]);
+    const markdown = renderOperations(
+      buildReportModel({ datasetVersion: DATASET.version, runs: [e7, e1], sample: fixture.sample }),
+    );
+    const cells = (label: string) =>
+      markdown
+        .split('\n')
+        .find((l) => l.startsWith(`| ${label} |`))!
+        .split('|')
+        .map((c) => c.trim());
+    const e7Row = cells('E7 (#70)');
+    expect(e7Row[7]).toBe('2');
+    expect(e7Row[8]).toBe(usd(10));
+    expect(e7Row[12]).toBe('50.0%');
+    expect(cells('E1 (#71)')[12]).toBe('25.0%');
   });
 });
 

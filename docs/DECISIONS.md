@@ -858,6 +858,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `card.r<raterId>` rows, `e6.r*`, `e7.*`) and every usable Call A answer. The report keeps each
   Call A answer's engine (an untagged answer counts as `typesafe`, as untagged card rows do), so a
   single answer from any other engine makes the run ineligible.
+  The G1 report shows an unmeasured language as `native (unmeasured default, unvalidated)`, the
+  value g1.json writes and apply-g1 applies, never as "current setting kept".
 - D-108: 2026-10-01 M3a-T7 — `apply-g1` semantics spec 10 §1 leaves open. `language_modes` is merged
   over the stored modes (a language outside the gate keeps its stored mode; unmeasured gate languages are written as `native`, D-107); `ranker.thresholds` is replaced whole. A
   key is written only when its effective value changes (a missing row counts as its default), so a
@@ -977,6 +979,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   resume reuses a copy's stored answer when every row of that copy is stored. Rows are written per
   article at once, so this means both or neither. The `cardTextFallbacks` count is per distinct
   copy.
+  The report's operations table also counts every per-key answer map (`card.r<raterId>`,
+  `e6.r<raterId>`, `e7.*`) in its degraded rate and its distinct processed articles, so an E7 run
+  gets its uncached $/1,000.
   Addendum (PR #10): the estimate no longer uses the native state as the size proxy of a translated
   variant. When the estimate pass has no translation for an article (a cache miss, since nothing is
   sent while estimating), tier 1 and tier 2 alike, Call A and Call B are estimated on a stand-in

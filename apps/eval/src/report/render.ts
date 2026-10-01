@@ -497,7 +497,11 @@ export function renderOperations(model: ReportModel): string {
     const cost = run.results?.cost;
     const articles = processedArticles(run);
     const uncached = uncachedUsd(run);
-    const cardRows = [...run.cards.values()].flatMap((m) => [...m.values()]);
+    // Every Call B answer: the shared `card` rows and every per-key map in `extra` (per-rater
+    // `card.r<raterId>`, `e6.r<raterId>`, `e7.targeted`/`e7.generic`).
+    const cardRows = [run.cards, ...run.extra.values()].flatMap((byArticle) =>
+      [...byArticle.values()].flatMap((m) => [...m.values()]),
+    );
     const failed = cardRows.filter((r) => !r.ok).length;
     const cov = scoringCoverage(run, model.items);
     const expected = [...cov.byLang.values()].reduce((s, c) => s + c.expected, 0);
@@ -544,9 +548,10 @@ export function renderOperations(model: ReportModel): string {
   );
 }
 
-/** Distinct articles a run processed (any answer row). */
+/** Distinct articles a run processed (any answer row, including the per-key maps in `extra`). */
 export function processedArticles(run: RunData): number {
   const ids = new Set<string>([...run.enrich.keys(), ...run.cards.keys()]);
+  for (const byArticle of run.extra.values()) for (const id of byArticle.keys()) ids.add(id);
   for (const scores of run.scores.values()) for (const id of scores.keys()) ids.add(id);
   return ids.size;
 }

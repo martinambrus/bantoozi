@@ -201,7 +201,8 @@ function renderSelection(model: ReportModel, s: GateSelection, lockedAt: Date | 
       ['lang', 'mode', 'translation gain', 'bilingual English comparison', 'Laya track'],
       s.languages.map((l) => [
         l.lang,
-        l.mode ?? 'unmeasured (current setting kept)',
+        // An unmeasured language is written as the native default (applied by apply-g1, D-107).
+        l.mode ?? `${s.languageModes[l.lang] ?? 'native'} (unmeasured default, unvalidated)`,
         signed(l.translationGain),
         l.englishComparison,
         l.layaRecommended ? 'recommended' : '—',
