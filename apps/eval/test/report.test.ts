@@ -12,7 +12,9 @@ import { renderGateReport } from '../src/report/gate-report.js';
 import { escapeCell, table, usd } from '../src/report/markdown.js';
 import { buildReportModel, latestRuns } from '../src/report/model.js';
 import {
+  CONFIGURED_CUTOFFS,
   e6Score,
+  renderEnrichment,
   renderEvaluationReport,
   renderInformational,
   renderOperations,
@@ -20,7 +22,14 @@ import {
 import { parseRunData } from '../src/report/run-data.js';
 import { reliabilitySvg } from '../src/report/svg.js';
 import { calibration } from '../src/metrics/index.js';
-import { buildFixture, DATASET, makeRawRun, makeRun, standardRuns } from './gate-fixtures.js';
+import {
+  buildFixture,
+  DATASET,
+  makeRawRun,
+  makeRun,
+  standardRuns,
+  standardSpecs,
+} from './gate-fixtures.js';
 
 /** M3a-T7: the report renders every table of spec 10 §4 and one reliability SVG per language. */
 
@@ -639,6 +648,43 @@ describe('operations table', () => {
     expect(e7Row[8]).toBe(usd(10));
     expect(e7Row[12]).toBe('50.0%');
     expect(cells('E1 (#71)')[12]).toBe('25.0%');
+  });
+});
+
+describe('language-subset runs', () => {
+  it('report an SK-only E4 on its own languages in operations and enrichment', () => {
+    const fixture = buildFixture();
+    const isSk = (id: string) => fixture.sample.get(id)?.lang === 'sk';
+    const spec = standardSpecs().find((x) => x.experiment === 'E4')!;
+    const raw = makeRawRun(fixture, spec);
+    (raw.run.config as { langs: string[] }).langs = ['sk'];
+    const results = raw.run.results as {
+      coverage: { byLang: Record<string, { expected: number; valid: number }> };
+    };
+    delete results.coverage.byLang['en'];
+    const e4 = parseRunData(
+      raw.run,
+      raw.answers.filter((a) => isSk(a.articleId)),
+    );
+    const runs = [...standardRuns(fixture).filter((r) => r.experiment !== 'E4'), e4];
+    const model = buildReportModel({
+      datasetVersion: DATASET.version,
+      runs,
+      sample: fixture.sample,
+    });
+
+    const sk = results.coverage.byLang['sk']!;
+    const ops = renderOperations(model)
+      .split('\n')
+      .find((l) => l.startsWith(`| E4 (#${e4.id}) |`))!
+      .split('|')
+      .map((c) => c.trim());
+    expect(ops[11]).toBe(`${sk.valid}/${sk.expected}`);
+
+    const enrichment = renderEnrichment(model, 'dev', { configured: CONFIGURED_CUTOFFS });
+    const e4Rows = enrichment.split('\n').filter((l) => l.startsWith('| E4 '));
+    expect(e4Rows.length).toBeGreaterThan(0);
+    for (const line of e4Rows) expect(line.split('|')[2]!.trim()).toBe('sk');
   });
 });
 

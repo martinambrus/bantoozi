@@ -336,7 +336,8 @@ export function renderEnrichment(
   const cutRows: string[][] = [];
   for (const run of stateRuns) {
     const answerOf = (articleId: string, key: string) => run.enrich.get(articleId)?.get(key);
-    for (const lang of model.langs) {
+    // A run limited to some languages (E4 defaults to SK/CS) gets no rows for the others.
+    for (const lang of model.langs.filter((l) => run.config.langs.includes(l))) {
       const ids = articlesOf(lang);
       const m = enrichmentMetrics(ids, model.labels, answerOf);
       if (m.articles === 0) continue;
@@ -503,9 +504,21 @@ export function renderOperations(model: ReportModel): string {
       [...byArticle.values()].flatMap((m) => [...m.values()]),
     );
     const failed = cardRows.filter((r) => !r.ok).length;
-    const cov = scoringCoverage(run, model.items);
-    const expected = [...cov.byLang.values()].reduce((s, c) => s + c.expected, 0);
-    const valid = [...cov.byLang.values()].reduce((s, c) => s + c.valid, 0);
+    // The run's own scope: the runner's coverage of the pairs it scored (a language subset, a
+    // development-only rerun), else the report's view of the rated pairs its config captured.
+    const stored = run.results?.coverage?.byLang;
+    const inConfig = new Set(run.config.ratings.map((r) => `${r.raterId}|${r.articleId}`));
+    const cells =
+      stored === undefined
+        ? [
+            ...scoringCoverage(
+              run,
+              model.items.filter((i) => inConfig.has(`${i.raterId}|${i.articleId}`)),
+            ).byLang.values(),
+          ]
+        : Object.values(stored);
+    const expected = cells.reduce((s, c) => s + c.expected, 0);
+    const valid = cells.reduce((s, c) => s + c.valid, 0);
     const latency = Object.entries(run.results?.latencyMs ?? {})
       .map(([kind, l]) => `${kind} ${num(l.p50, 0)}/${num(l.p95, 0)} ms (${l.n})`)
       .join(', ');
