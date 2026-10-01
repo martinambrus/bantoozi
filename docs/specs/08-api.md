@@ -601,12 +601,15 @@ needed by still-valid undo receipts, so undo does not refer to content already d
 ## 7. Cards, library, suggestions, labels
 
 ```ts
-Card = { id, kind: 'interest', title /* title_override ?? card.title */, interest, notFor, strength,
-         scopeFeedId, origin, isPrivateFork, examplesYes, examplesNo, topicIds, lang, createdAt }
+Card = { id, kind: 'interest', title /* title_override ?? localized card.title */, titleOverride,
+         interest, notFor, strength, scopeFeedId, origin, isPrivateFork, examplesYes, examplesNo,
+         topicIds, lang, librarySlug, createdAt }
 Label = { id /* card id */, name, color, definition, notFor, examplesYes, examplesNo, count /* articles labelled */ }
 ```
 
-Library cards are localized to the user's locale from `i18n`. Cards are **immutable** (spec 05 §5.1),
+Library cards are localized to the user's locale from `i18n`: `GET /library` and suggestions show
+the localized title and interest; a held card (`Card`) shows the localized title only, because its
+interest is the stored text an edit starts from. Cards are **immutable** (spec 05 §5.1),
 so every endpoint that changes text or examples returns the card with its possibly **new id**. The web
 client must replace its cached id.
 
@@ -619,7 +622,7 @@ client must replace its cached id.
 | `POST /cards/:id/examples` | `{articleId, side: 'yes' \| 'no'}` | Add the article title as an example (private fork, new id) → `{card}`. Quota `maxForks` |
 | `POST /cards/:id/examples/remove` | `{side, text}` | Remove an example (new fork id) → `{card}` |
 | `POST /cards/from-article` | `{articleId, interest, notFor?, title?, strength}` | Shared text card plus a private fork with the article title as `examples_yes` → `201 {card}`. Quotas `maxCards`, `maxForks` |
-| `GET /library` | `?topic=&q=` | Public cards (`visibility = 'public'`), localized, grouped by L1 topic |
+| `GET /library` | `?topic=&q=&cursor=&limit=` | Current public cards (`visibility = 'public'`, not retired, not an older library version), localized, ordered by L1 topic then id, in the paginated envelope; each carries `l1TopicId`, `version` and `held` |
 | `POST /library/:id/adopt` | `{strength, scopeFeedId?}` | Hold a library card. A superseded library version is `409 CONFLICT {reason: 'superseded'}` (D-39) |
 | `GET /library/updates` | — | Available immutable semantic successors for the user's library holdings: `[{currentCardId,newCardId,librarySlug,fromVersion,toVersion,diff,hasPrivateCustomization}]`. Private forks receive advisory notices only |
 | `POST /library/:id/updates/:newId/apply` | `{expectedCurrentCardId}` | Explicitly accept a validated successor for an unchanged held library card; replace the holding, retain strength/scope/display override, refresh authorized demand and invalidate answers by new identity → `200 {card,idChange}`. Custom/private forks require the explicit editor; never overwrite their examples |
@@ -635,7 +638,10 @@ client must replace its cached id.
 | `DELETE /labels/:id` | — | Remove the label, and remove its id from the user's `label_ids`/`label_suggestions` |
 
 `GET /topics` → the taxonomy (id, parent, names, level) for the web client.
-PATCH/adopt/example routes return `200 {card}` or `200 {label}` with the final id; deletes return
+Create routes return `201 {card|label, idChange: null, translation}`; PATCH/adopt/example/update routes
+return `200 {card, idChange, translation}` or `200 {label, idChange, translation}` with the final id,
+where `translation` is the non-blocking card-text status of spec 07 §5 (`null` when no new text was
+submitted or the answer is a receipt replay); deletes return
 `204`. `notFor:null` clears the field; `scopeFeedId:null` means all feeds. Fork/re-point transactions
 return `idChange: {from, to} | null` so queued client references can be reconciled. A stale old id
 not currently held by the user returns `404`; it must not create another implicit holding. Quotas
@@ -662,7 +668,7 @@ nor grants permission to analyze other articles.
 | Endpoint | Body | Behaviour |
 |---|---|---|
 | `GET /rules` | — | `[{id, kind, value, displayValue, createdAt, expiresAt}]` |
-| `POST /rules` | `{kind, value, expiresInDays?}` | Validate `value` per kind (feed id owned by a subscription, domain syntax, keyword 2–100 chars). `mute_story` requires `expiresInDays` ∈ {1, 3, 7, 30}, as `/articles/:id/mute-story` does; other kinds may omit it. Quota `maxRules`. Enqueue `user.rank {full}` → `201` |
+| `POST /rules` | `{kind, value, expiresInDays?}` | Validate `value` per kind (feed id owned by a subscription, cluster id of a story carried by a subscription or on the reading list, domain syntax stored as its registrable domain, keyword 2–100 chars). `mute_story` requires `expiresInDays` ∈ {1, 3, 7, 30}, as `/articles/:id/mute-story` does; other kinds may omit it. A live rule of the same kind and value is returned instead of a second one, keeping the later expiry. Quota `maxRules` counts live (unexpired) rules. Enqueue `user.rank {full}` → `201 {rule}` |
 | `DELETE /rules/:id` | — | Delete, rank full → `204` |
 
 ---
@@ -794,7 +800,7 @@ authorship policy, not a forged user approval.
 | `POST /articles/:id/bookmark/retry-capture` | 20 / hour per user, plus safe-fetch host limits |
 | Provider credential stage/validate/activate/delete | 20 / hour per admin; validation additionally obeys shared engine admission |
 | `GET /me/export` | 2 / hour per user |
-| `POST /cards`, `PATCH /cards/*`, `POST /cards/*/examples*`, `POST /labels*` | 60 / hour per user (each may trigger backfills) |
+| `POST /cards`, `POST /cards/from-article`, `PATCH /cards/*`, `POST /cards/*/examples*`, `POST /labels*` | 60 / hour per user, one shared bucket (each may trigger backfills) |
 
 All limits are enforced unless `RATE_LIMITS_ENABLED=false` (spec 01 §3). Only E2E and load-test
 environments with `NODE_ENV=test` set it to false. Config validation rejects `false` in production.
