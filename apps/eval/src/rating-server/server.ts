@@ -793,8 +793,10 @@ export async function buildRatingServer(options: RatingServerOptions): Promise<F
       rateAssignment(tx, { raterId: s.rater.id, position, rating, reason, now: now() }),
     );
     if (saved === null) throw new HttpError(404, 'Not found', 'There is no such article.');
-    // A dislike without a reason opens the reason bar on the same article (spec 09 §3.3).
+    // A dislike without a reason opens the reason bar on the same article (spec 09 §3.3); a reason
+    // also stays there, so the rater sees it saved (the status line names it) and moves on with Next.
     if (rating === -1 && reason === null) return reply.redirect(`/r/a/${position}?why=1`, 303);
+    if (rating === -1) return reply.redirect(`/r/a/${position}`, 303);
     return advance(reply, s.rater.id, position);
   });
 

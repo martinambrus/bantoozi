@@ -52,6 +52,7 @@ one you see the feed, the title, a short excerpt and an "open original" link.
 - 👍 **I'd want to read this** (key `+`): you would open or save it if it appeared in your reader.
 - 👎 **Not for me** (key `-`): you would scroll past it.
 - Optional reason for a 👎 (keys `1`–`6`): off-topic, clickbait, seen it, too shallow, promo, other.
+  👎 and a reason are saved on the same article; move on with Next (`j`). 👍 moves on by itself.
 - **Skip** when you cannot judge it (for example a language you do not read well), optionally with a
   short reason. A skip is not a dislike, and you can return to skipped articles later.
 - `j` / `k` move to the next / previous article, `s` skips and `o` opens the original. You can
@@ -123,7 +124,8 @@ Pri každom uvidíte zdroj, titulok, krátky úryvok a odkaz „otvoriť origin�
   objavil vo vašej čítačke.
 - 👎 **Nie pre mňa** (kláves `-`): prešli by ste ďalej.
 - Nepovinný dôvod pre 👎 (klávesy `1`–`6`): mimo témy, clickbait, už som videl(a), príliš plytké,
-  reklama, iné.
+  reklama, iné. 👎 aj dôvod sa uložia na tom istom článku; ďalej pokračujete tlačidlom Next (`j`).
+  👍 prejde na ďalší článok sám.
 - **Preskočiť**, ak článok neviete posúdiť (napríklad v jazyku, ktorý dobre neovládate).
   Preskočenie nie je 👎 a k preskočeným článkom sa môžete vrátiť.
 - `j` / `k` presúvajú na ďalší / predchádzajúci článok, `s` preskočí a `o` otvorí originál. Každé
