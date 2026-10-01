@@ -774,6 +774,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `api_mutations` receipt, so mutations may run an `afterSave` step once the receipt row exists (not
   on replay). `GET /subscriptions` unread counts use the same per-feed query builder as `GET
   /articles/counts`. Specs 06 §10 and 08 §4, §5 updated.
+- D-130: 2026-10-01 M4-T5 — `PATCH /labels/:id` shares the card-write bucket (60 / hour per user):
+  a semantic label edit translates its text and inserts a replacement card with backfill, like `PATCH
+  /cards/:id`. Spec 08 §11 listed only `POST /labels*`. Spec 08 §11 updated.
 - D-140: 2026-10-01 M5-T2 — `ExplainSchema` limited a rule `code` to 64 characters, but spec 06 §3.2
   makes a muted keyword part of its code (`mute_keyword:<value>`) and spec 08 §11 allows keywords of
   up to 100 characters, so a valid mute could not be explained. The limit is now 200 characters,

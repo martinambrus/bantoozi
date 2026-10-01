@@ -481,4 +481,11 @@ describe('card write rate limit (spec 08 §11)', () => {
     const next = await api.post('/cards', { interest: unique('Another'), strength: 'like' });
     expect(next.statusCode).toBe(201);
   });
+
+  it('charges label edits to the same card-write bucket', async () => {
+    const user = await createTestUser(h);
+    const api = apiClient(limited, user);
+    const label = await api.patch('/labels/1', { color: '#123456' });
+    expect(label.headers['x-ratelimit-limit']).toBe('60');
+  });
 });

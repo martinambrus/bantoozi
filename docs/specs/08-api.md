@@ -807,7 +807,7 @@ authorship policy, not a forged user approval.
 | Provider credential stage/validate/activate/delete | 20 / hour per admin; validation additionally obeys shared engine admission |
 | `POST /admin/ops-event` | 30 / min per IP |
 | `GET /me/export` | 2 / hour per user |
-| `POST /cards`, `POST /cards/from-article`, `PATCH /cards/*`, `POST /cards/*/examples*`, `POST /labels*` | 60 / hour per user, one shared bucket (each may trigger backfills) |
+| `POST /cards`, `POST /cards/from-article`, `PATCH /cards/*`, `POST /cards/*/examples*`, `POST /labels*`, `PATCH /labels/*` | 60 / hour per user, one shared bucket (each may trigger backfills) |
 
 All limits are enforced unless `RATE_LIMITS_ENABLED=false` (spec 01 §3). Only E2E and load-test
 environments with `NODE_ENV=test` set it to false. Config validation rejects `false` in production.

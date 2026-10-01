@@ -107,6 +107,7 @@ export const labelRoutes: FastifyPluginAsyncZod = async (app) => {
   app.patch(
     '/:id',
     {
+      config: CARD_WRITE,
       schema: {
         tags,
         summary: 'Recolour, rename or redefine a label (a semantic change returns a new id)',
