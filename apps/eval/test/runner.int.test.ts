@@ -787,7 +787,9 @@ describe('eval run (M3a-T6)', () => {
     }
     expect(asked).toHaveLength(2);
     expect(asked[1]!).toBeGreaterThan(asked[0]!);
-    expect(out()).toMatch(/revised estimate \(the frozen inputs changed\) \$\d+\.\d{2}/);
+    expect(out()).toMatch(
+      /revised estimate \(the frozen inputs or card text changed\) \$\d+\.\d{2}/,
+    );
     expect(result).toMatchObject({ runId: null, status: 'declined' });
     expect(result.estimate.estimatedUsd).toBe(asked[1]);
     // Declined before the run row and before any model call.
@@ -797,5 +799,78 @@ describe('eval run (M3a-T6)', () => {
       [opened!.version],
     );
     expect(rows.rows[0]!.n).toBe(0);
+  });
+
+  it('estimates and confirms English-card runs on the translated card text', async () => {
+    // The Slovak card translates to a longer English text: Call B questions grow after the
+    // translation step, which runs after the first estimate.
+    const skInterest = (
+      await ctx.owner.query<{ interest: string }>(
+        `SELECT body->>'interest' AS interest FROM interest_cards WHERE id = $1`,
+        [golden.cards.skBattery],
+      )
+    ).rows[0]!.interest;
+    ctx.libretranslate.reset({
+      translations: {
+        [skInterest]:
+          'I am interested in batteries for electric cars, how and where they are charged, ' +
+          'what the batteries and the charging cost, and the prices of electric cars in Slovakia',
+      },
+    });
+    const e2 = async (price: string, confirm?: (usd: number) => boolean) => {
+      const asked: number[] = [];
+      const { rt, out } = runtime(ctx, {
+        TYPESAFE_PRICE_PER_MTOK_USD: price,
+        EVAL_CACHE_DIR: await freshCache(),
+      });
+      try {
+        const result = await runExperiment(rt, {
+          experiment: 'E2',
+          gitSha: 'test',
+          ...(confirm === undefined
+            ? {}
+            : {
+                confirm: (estimate) => {
+                  asked.push(estimate.estimatedUsd);
+                  return Promise.resolve(confirm(estimate.estimatedUsd));
+                },
+              }),
+        });
+        return { result, asked, out: out() };
+      } finally {
+        await rt.close();
+      }
+    };
+    const requests = ctx.typesafe.requestCount();
+    try {
+      // At a high price both estimates are above $1: the first prompt is accepted, the second
+      // (on the translated text) shows the larger estimate.
+      let prompts = 0;
+      const probe = await e2('200', () => (prompts += 1) === 1);
+      expect(probe.asked).toHaveLength(2);
+      const [before, after] = probe.asked as [number, number];
+      expect(after).toBeGreaterThan(before);
+      expect(probe.result).toMatchObject({ runId: null, status: 'declined' });
+      // A price where the untranslated estimate is below $1 and the translated one above:
+      // without --yes and without a prompt, the run is declined before the run row.
+      const price = (200 * 2) / (before + after);
+      const runsBefore = (
+        await ctx.owner.query<{ n: number }>(`SELECT count(*)::int AS n FROM eval.runs`)
+      ).rows[0]!.n;
+      const unattended = await e2(String(price));
+      expect(unattended.out).toMatch(/estimated cost \$0\.\d{4}/);
+      expect(unattended.out).toMatch(
+        /revised estimate \(the frozen inputs or card text changed\) \$1\./,
+      );
+      expect(unattended.result).toMatchObject({ runId: null, status: 'declined' });
+      expect(unattended.result.estimate.estimatedUsd).toBeGreaterThan(1);
+      const runsAfter = (
+        await ctx.owner.query<{ n: number }>(`SELECT count(*)::int AS n FROM eval.runs`)
+      ).rows[0]!.n;
+      expect(runsAfter).toBe(runsBefore);
+      expect(ctx.typesafe.requestCount()).toBe(requests);
+    } finally {
+      ctx.libretranslate.reset();
+    }
   });
 });

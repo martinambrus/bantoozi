@@ -805,7 +805,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   limited by `--langs` leaves the others unmeasured rather than dropped. The budget is unmeasured
   when a development language has no composed run, its composed run processed none of it, or a
   composed run's cost is `incomplete` (a lower bound after a crashed invocation); an unmeasured
-  budget is a selection reason, so the gate reports `needs_more_data` instead of passing.
+  budget is a selection reason, so the gate reports `needs_more_data` instead of passing. The
+  threshold pool (For You, Maybe, tiers) takes only items of supported development contexts (≥ 20
+  items, ≥ 5 per class), so an unsupported context never carries a share of its participant's
+  weight.
 - D-108: 2026-10-01 M3a-T7 — `apply-g1` semantics spec 10 §1 leaves open. `language_modes` is merged
   over the stored modes (unmeasured languages keep theirs); `ranker.thresholds` is replaced whole. A
   key is written only when its effective value changes (a missing row counts as its default), so a
@@ -858,10 +861,15 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   §6) uses the gate's aggregation: per-context cells with the gate's support rule, the hierarchical
   macro (supported contexts averaged within each participant, then participants weighted equally)
   and the gate's paired story-group bootstrap; the per rater × language cell rule (no drop above
-  0.03) is unchanged. When the inputs captured in the freeze transaction differ from the estimated
-  ones, the runner estimates the frozen inputs again before any live call and records that estimate;
-  when it changes, it prints it and applies the confirmation rule again (above $1 needs `--yes` or an
-  interactive yes). A decline leaves no run row; the version stays frozen. Spec 10 §3 updated.
+  0.03) is unchanged. The run config is captured again in the freeze transaction, and in
+  English-card runs the card text is translated afterwards (LibreTranslate, not confirmed). Before
+  the run row and any engine call, the runner compares the final inputs (including the translated
+  card text) with the estimated ones; when they differ it estimates again and records that estimate,
+  and when the estimate changes it prints it and applies the confirmation rule again (above $1 needs
+  `--yes` or an interactive yes). A decline leaves no run row; the version stays frozen. Every
+  dataset mutation takes the additions advisory lock before the dataset row lock, the order the
+  freeze and top-up paths use, so a mutation racing a freeze waits instead of deadlocking. Spec 10 §3
+  updated.
 - D-111: 2026-10-01 M3a-T6 — eval routers use a process-local circuit breaker, so an evaluation
   never trips or reads the production breaker (spec 04 §1). The LLM fallback is off and the pinned
   engine has no automatic fallback, so a run never mixes engines silently.

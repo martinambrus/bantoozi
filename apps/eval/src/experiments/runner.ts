@@ -1240,7 +1240,7 @@ export async function runExperiment(
     /** Print an estimate and apply the confirmation rule; false when the run is declined. */
     const announce = async (value: CostEstimate, revised: boolean): Promise<boolean> => {
       rt.out(
-        `${def.id} on ${dataset.version}: ${revised ? 'revised estimate (the frozen inputs changed)' : 'estimated cost'} ` +
+        `${def.id} on ${dataset.version}: ${revised ? 'revised estimate (the frozen inputs or card text changed)' : 'estimated cost'} ` +
           `${formatUsd(value.estimatedUsd)} ` +
           `(${value.uncachedCalls} uncached request(s), ${value.cacheHits} cache hit(s)); ` +
           `cap ${formatUsd(maxUsd)}\n`,
@@ -1259,9 +1259,9 @@ export async function runExperiment(
     // in the same transaction and under the dataset additions lock that every post-freeze rating
     // correction takes (and the row lock an open-head rating write shares), so no rating, card or
     // assignment can land between the freeze and the config snapshot (D-120).
+    const shown = inputsSha(config);
     if (existingRunId === null && options.replay === undefined) {
       const version = dataset.version;
-      const shown = inputsSha(config);
       ({ dataset, config } = await rt.db.transaction(async (tx) => {
         await lockDatasetAdditions(tx);
         const frozenRow = await freezeDataset(tx, version);
@@ -1270,22 +1270,6 @@ export async function runExperiment(
           config: await draftConfig(rt, tx, def, options, frozenRow, cardMode, maxUsd),
         };
       }));
-      // Ratings, assignments or cards may have changed while the estimate was shown: estimate
-      // the frozen inputs again and, when that differs, show it and ask again before any call
-      // (no run row exists yet; D-110 addendum).
-      if (inputsSha(config) !== shown) {
-        const revised = await estimateFor(config);
-        estimateEnv = revised.env;
-        if (
-          revised.estimate.estimatedUsd !== estimate.estimatedUsd ||
-          revised.estimate.uncachedCalls !== estimate.uncachedCalls
-        ) {
-          estimate = revised.estimate;
-          if (!(await announce(estimate, true))) {
-            return { runId: null, status: 'declined', estimate, results: null };
-          }
-        }
-      }
     }
 
     const plan0 = await buildPlan(rt, def, config, { frozenTranslations: frozen, existing });
@@ -1334,6 +1318,24 @@ export async function runExperiment(
         });
       }
       config = { ...config, cards: translated };
+    }
+
+    // Ratings, assignments or cards may have changed while the estimate was shown, and English
+    // card text is only known now: estimate the exact final inputs again and, when that differs,
+    // show it and ask again, still before the run row and any engine call (D-110 addendum). The
+    // card translations above are LibreTranslate calls (free) and need no confirmation.
+    if (existingRunId === null && options.replay === undefined && inputsSha(config) !== shown) {
+      const revised = await estimateFor(config);
+      estimateEnv = revised.env;
+      if (
+        revised.estimate.estimatedUsd !== estimate.estimatedUsd ||
+        revised.estimate.uncachedCalls !== estimate.uncachedCalls
+      ) {
+        estimate = revised.estimate;
+        if (!(await announce(estimate, true))) {
+          return { runId: null, status: 'declined', estimate, results: null };
+        }
+      }
     }
 
     // 4. The run row (immutable config) or the resumed one.
