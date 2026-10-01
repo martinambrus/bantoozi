@@ -509,27 +509,39 @@ export async function openDatasetForCorrection(
   tx: Transaction,
   cause: 'rating' | 'assignments' | 'cards' | 'facets' = 'rating',
   /**
-   * The rated article: its rating belongs to the lineage that sampled it. When the head holds it
-   * (or nothing does) the head is the base as usual; otherwise the newest lineage tip holding it
-   * is, so a rating of an assignment from an older lineage (`eval sample --version` started a new
-   * one) still reaches a version that a later freeze captures.
+   * The rated article. Ratings are per (rater, article), so the change is ground truth for every
+   * lineage whose tip holds the article (`eval sample --version` may have started several), and
+   * assignments record no version: each such frozen tip gets its next open version, the head's (or
+   * else the newest tip's) last, so it stays the head. With no tip holding it, the head is used.
    */
   articleId?: string,
 ): Promise<{ version: string; createdFrom: string } | null> {
   // The additions lock first, then the dataset row: the same order as the freeze and top-up paths,
   // so a mutation racing a run's freeze waits instead of deadlocking.
   await lockDatasetAdditions(tx);
-  const head =
-    (articleId === undefined ? null : await lineageTipHolding(tx, articleId)) ??
-    (await headDataset(tx));
-  if (head === null) return null;
-  if (head.frozenAt === null) {
+  const tips = articleId === undefined ? [] : await lineageTipsHolding(tx, articleId);
+  if (tips.length === 0) {
+    const head = await headDataset(tx);
+    return head === null ? null : openNextVersion(tx, head, cause);
+  }
+  let opened: { version: string; createdFrom: string } | null = null;
+  for (const tip of tips) opened = (await openNextVersion(tx, tip, cause)) ?? opened;
+  return opened;
+}
+
+/** Create the next open version of `base` when it is frozen (see {@link openDatasetForCorrection}). */
+async function openNextVersion(
+  tx: Transaction,
+  base: DatasetRow,
+  cause: 'rating' | 'assignments' | 'cards' | 'facets',
+): Promise<{ version: string; createdFrom: string } | null> {
+  if (base.frozenAt === null) {
     const locked = await tx.execute<{ frozen: boolean }>(sql`
       SELECT frozen_at IS NOT NULL AS frozen FROM eval.datasets
-       WHERE version = ${head.version} FOR SHARE`);
+       WHERE version = ${base.version} FOR SHARE`);
     if (locked.rows[0]?.frozen !== true) return null;
   }
-  const current = await getDataset(tx, head.version);
+  const current = await getDataset(tx, base.version);
   if (current === null || current.frozenAt === null) return null;
   const version = await unusedDatasetVersion(tx, current.version);
   await createDataset(tx, {
@@ -552,20 +564,23 @@ export async function openDatasetForCorrection(
 }
 
 /**
- * The lineage tip (a version no other version names as parent) whose sample holds `articleId`:
- * the head when it does, else the newest such tip; null when no tip holds it.
+ * Every lineage tip (a version no other version names as parent) whose sample holds `articleId`,
+ * the preferred one last: the head when it holds it, else the newest such tip.
  */
-async function lineageTipHolding(tx: Transaction, articleId: string): Promise<DatasetRow | null> {
+async function lineageTipsHolding(tx: Transaction, articleId: string): Promise<DatasetRow[]> {
   const head = await headDataset(tx);
   const result = await tx.execute<{ version: string }>(sql`
     SELECT d.version FROM eval.datasets d
      WHERE NOT EXISTS (SELECT 1 FROM eval.datasets c WHERE c.parent_version = d.version)
        AND EXISTS (SELECT 1 FROM eval.sample s
                     WHERE s.dataset_version = d.version AND s.article_id = ${articleId}::bigint)
-     ORDER BY (d.version = ${head?.version ?? null}) IS TRUE DESC, d.created_at DESC, d.version DESC
-     LIMIT 1`);
-  const version = result.rows[0]?.version;
-  return version === undefined ? null : getDataset(tx, version);
+     ORDER BY (d.version = ${head?.version ?? null}) IS TRUE, d.created_at, d.version`);
+  const tips: DatasetRow[] = [];
+  for (const row of result.rows) {
+    const tip = await getDataset(tx, row.version);
+    if (tip !== null) tips.push(tip);
+  }
+  return tips;
 }
 
 /** Whether the rater has an assignment at `position`, its article, and whether it has a rating. */

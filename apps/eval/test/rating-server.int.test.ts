@@ -1,4 +1,5 @@
 import {
+  copySampleRows,
   createDataset,
   createRater,
   createRaterSession,
@@ -868,5 +869,30 @@ describe('rating corrections after a freeze (spec 10 §2.1)', () => {
       (await loadSample(rdb.db, older.version)).length,
     );
     expect((await loadSample(rdb.db, unrelated)).length).toBe(0);
+  });
+
+  it('a correction opens the next version of every frozen lineage that holds the article', async () => {
+    // The rater's lineage (frozen) and an independent twin lineage with the same rows (frozen,
+    // newest, so the head): assignments record no version, so both must capture the rating.
+    const own = (await headDataset(rdb.db))!;
+    await rdb.db.transaction((tx) => freezeDataset(tx, own.version));
+    await rdb.db.transaction(async (tx) => {
+      await createDataset(tx, { version: 'golden-twin', seed: 'seed-twin', params: {} });
+      await copySampleRows(tx, own.version, 'golden-twin');
+    });
+    await rdb.db.transaction((tx) => freezeDataset(tx, 'golden-twin'));
+    expect((await headDataset(rdb.db))!.version).toBe('golden-twin');
+
+    await r.browser.post('/r/a/3/rate', { rating: 'like' });
+    const children = (await listDatasets(rdb.db)).filter(
+      (d) => d.parentVersion === own.version || d.parentVersion === 'golden-twin',
+    );
+    expect(children.map((d) => d.parentVersion).sort()).toEqual(
+      [own.version, 'golden-twin'].sort(),
+    );
+    for (const child of children)
+      expect(child.params).toMatchObject({ correctionOf: child.parentVersion });
+    // The head's lineage is opened last, so it stays the head.
+    expect((await headDataset(rdb.db))!.parentVersion).toBe('golden-twin');
   });
 });
