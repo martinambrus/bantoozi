@@ -261,7 +261,7 @@ flowchart TD
 | **M0** Foundations | — | — | yes | M | ✓ done 2026-09-25 (§5) |
 | **M1** Ingestion core | M0 | M2 | yes (the fixture server is local) | L | ✓ done 2026-09-26 (§6) |
 | **M2** Decision engine & classification | M0 | M1 | yes (fixtures and the fake engine only) | L | ✓ done 2026-09-26 (§7) |
-| **M3a** Evaluation tooling & golden-set collection | M1, M2 | M4, M5 | yes, then a **human step** (§8.1) | M | not started |
+| **M3a** Evaluation tooling & golden-set collection | M1, M2 | M4, M5 | yes, then a **human step** (§8.1) | M | ✓ done 2026-10-01 (§8); human step pending |
 | **M3b** Run gate G1 | M3a + human ratings | M6, M7-T1…T6 | yes (needs API keys and network) | S | not started |
 | **M4** HTTP API | M1, M2 | M3a, M5 | yes | L | ✓ done 2026-10-01 (§10) |
 | **M5** Ranking & lanes | M1, M2 | M3a, M4 | yes | M | ✓ done 2026-10-01 (§11) |
@@ -700,6 +700,17 @@ Complete milestone M2 "Decision engine and classification" exactly as specified 
 ---
 
 ## 8. M3a: Evaluation tooling and golden-set collection
+
+**Status: done 2026-10-01** on branch `claude/m3a-evaluation-tooling-ttz5fm` (87 commits from
+`4aa39b6` T1 through `46a1a1a`, including the PR #10 review fixes). The full check passed after the
+last commit, and CI and the Codex review were green on `46a1a1a`. The dry run wrote
+`apps/eval/reports/DRYRUN-2026-10-01.md` (E1 AUC 0.742 vs B0 0.502; its gate prints FAIL on synthetic
+data, as expected). The real sample, from 66 live feeds (1,889 articles), holds 500 EN, 425 SK and
+500 CZ sampled articles (SK is capped by the 10% per-feed limit). That golden database lived in the
+build container, so the owner rebuilds it on the dev box with `docs/eval/TUNNEL.md` before rating.
+Deviations: D-96…D-119 in `docs/DECISIONS.md`, with PR #10 addenda. Migrations 0015 and 0016.
+Merged to `main` on 2026-10-01 through PR #10 (merge commit `0f722e5`). Next: the human step (§8.1),
+then M3b.
 
 **Outcome:**
 - `apps/eval` can ingest a real EN/SK/CZ sample, serve the blind rating and facet-labelling pages to
