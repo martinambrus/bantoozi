@@ -223,8 +223,13 @@ export function createUserRankHandler(
                 await enqueueTranslate(sender, { articleId, forceTier2: true });
               }
             }
+            // The decision to stop is taken here, once: the run stops exactly when this commit
+            // carries the continuation (and an incremental rank for any article that moved).
             if (final && morePages && spent()) {
-              await enqueueRank(sender, continuationIntent(payload, forceBefore, pageCursor));
+              const anyMoved = moved.size > 0 || outcome.movedArticleIds.length > 0;
+              for (const intent of stopIntents(payload, forceBefore, pageCursor, anyMoved)) {
+                await enqueueRank(sender, intent);
+              }
               checkpoint.committed = true;
             }
           }
@@ -239,20 +244,24 @@ export function createUserRankHandler(
       }
       if (!morePages) break;
       cursor = pageCursor;
-      if (checkpoint.committed || spent()) {
+      // A page that wrote something stops only with its committed continuation; a page that wrote
+      // nothing left no write behind, so its continuation is recorded below.
+      if (batches.length > 0 ? checkpoint.committed : spent()) {
         outcome = 'continued';
         continued = checkpoint.committed;
         break;
       }
     }
 
-    // A continuation not committed with a write (the page wrote nothing, or the budget ran out
-    // after its last write) is recorded here.
-    const followUp = continued
-      ? null
-      : followUpIntent(payload, outcome, forceBefore, cursor, moved.size > 0);
-    if (followUp !== null) {
-      await retryTransaction(deps.db, (tx) => enqueueRank(workerOutbox(tx), followUp));
+    // A continuation not committed with a write (the last page wrote nothing) is recorded here.
+    const followUps = continued
+      ? []
+      : followUpIntents(payload, outcome, forceBefore, cursor, moved.size > 0);
+    if (followUps.length > 0) {
+      await retryTransaction(deps.db, async (tx) => {
+        const sender = workerOutbox(tx);
+        for (const intent of followUps) await enqueueRank(sender, intent);
+      });
     }
     deps.logger.info(
       {
@@ -284,26 +293,39 @@ function continuationIntent(
   };
 }
 
+/** The jobs of a run that stops for its budget: the continuation, and an incremental rank for moved articles. */
+function stopIntents(
+  payload: JobPayload<'user.rank'>,
+  forceBefore: Date | undefined,
+  cursor: RankCursor | undefined,
+  anyMoved: boolean,
+): Array<JobPayload<'user.rank'>> {
+  const continuation = continuationIntent(payload, forceBefore, cursor);
+  return anyMoved
+    ? [continuation, { userId: payload.userId, reason: 'article_moved' }]
+    : [continuation];
+}
+
 /**
- * The job a run leaves behind: a continuation that resumes below the last visited position when the
+ * The jobs a run leaves behind: a continuation that resumes below the last visited position when the
  * budget ran out (a full run's keeps its snapshot), a replacement when the run was superseded, an
- * incremental rank for moved articles.
+ * incremental rank for moved articles (also next to a continuation, which never revisits them).
  */
-function followUpIntent(
+function followUpIntents(
   payload: JobPayload<'user.rank'>,
   outcome: RunOutcome,
   forceBefore: Date | undefined,
   cursor: RankCursor | undefined,
   anyMoved: boolean,
-): JobPayload<'user.rank'> | null {
+): Array<JobPayload<'user.rank'>> {
   switch (outcome) {
     case 'gone':
-      return null;
+      return [];
     case 'continued':
-      return continuationIntent(payload, forceBefore, cursor);
+      return stopIntents(payload, forceBefore, cursor, anyMoved);
     case 'superseded':
-      return { userId: payload.userId, reason: 'superseded' };
+      return [{ userId: payload.userId, reason: 'superseded' }];
     case 'done':
-      return anyMoved ? { userId: payload.userId, reason: 'article_moved' } : null;
+      return anyMoved ? [{ userId: payload.userId, reason: 'article_moved' }] : [];
   }
 }

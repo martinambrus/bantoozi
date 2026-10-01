@@ -695,7 +695,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   unavailable without any new answer; such rows (inputs within 15 minutes before `scored_at`,
   unscored `new` items with queued card work) are re-ranked but written only when the result
   differs. Inputs are compared with `scored_at` at millisecond precision (the run's `now`), so an
-  input stamped later within that millisecond is such a recheck rather than dirty on every run. The run stops after a 5-minute budget and commits a continuation that resumes strictly
+  input stamped later within that millisecond is such a recheck rather than dirty on every run. The run stops after a 5-minute budget and commits a continuation, in the transaction of the
+  page's last write and next to an incremental rank when an article moved, that resumes strictly
   below its last window position (new optional `user.rank` field `cursor`, under its own
   `rank-cont:` queue key so it neither swallows nor is swallowed by an event's rank); a full run's
   also carries `snapshotAt` so it forces only rows scored before it. The ranking thresholds and

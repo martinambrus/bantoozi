@@ -665,6 +665,40 @@ describe('full runs, continuations and fences (spec 06 §7 step 5)', () => {
     ]);
   });
 
+  it('an article that moved on the stopping page gets its incremental rank with the continuation', async () => {
+    const r = await reader();
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i += 1) ids.push(await matched(r.feedId, r.cardId, 0.5));
+    const since = await h.mark();
+    const run = await rank(r.userId, {
+      handler: {
+        pageSize: 2,
+        batchSize: 2,
+        budgetMs: 0,
+        beforeWrite: async () => {
+          await h.owner.query(
+            'UPDATE articles SET media_revision = media_revision + 1 WHERE id = $1',
+            [ids[2]],
+          );
+        },
+      },
+    });
+    expect(run).toMatchObject({ outcome: 'continued', written: 1, moved: 1 });
+    const payloads = await h.payloads('user.rank', since);
+    expect(payloads).toHaveLength(2);
+    expect(payloads).toContainEqual({ userId: r.userId, reason: 'article_moved' });
+    expect(payloads).toContainEqual(
+      expect.objectContaining({ reason: 'continuation', cursor: expect.anything() }),
+    );
+    // Both commit with the page's last write.
+    const xmins = await h.owner.query<{ xmin: string }>(
+      `SELECT xmin::text FROM job_outbox WHERE id = ANY($1::bigint[])
+       UNION SELECT xmin::text FROM user_article WHERE user_id = $2 AND article_id = $3`,
+      [(await h.intents('user.rank', { since })).map((intent) => intent.id), r.userId, ids[1]],
+    );
+    expect(xmins.rows).toHaveLength(1);
+  });
+
   it('a full continuation keeps its snapshot and forces only rows scored before it', async () => {
     const r = await reader();
     for (let i = 0; i < 5; i += 1) await matched(r.feedId, r.cardId, 0.5);

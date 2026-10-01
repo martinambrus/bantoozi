@@ -367,8 +367,8 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
    and written only when the result differs, so a run with nothing dirty writes 0 rows (input times
    are compared at `scored_at`'s millisecond precision; a later input in that millisecond is such a
    recheck). A run
-   stops starting pages after 5 minutes and commits a continuation `user.rank {cursor}` under its
-   own key that resumes strictly below the last visited window position; a full run's also carries
+   stops starting pages after 5 minutes and commits a continuation `user.rank {cursor}` with the page's last write (and an incremental rank
+   when an article moved) under its own key that resumes strictly below the last visited window position; a full run's also carries
    `snapshotAt` and forces only rows scored before that snapshot. Writes take the user's advisory lock, never replace a row scored from a
    newer snapshot, and skip an article whose content or media revision moved (an incremental
    replacement follows); a superseded run enqueues an incremental replacement, whose dirty set holds
