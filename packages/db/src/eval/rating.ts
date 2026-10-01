@@ -291,6 +291,9 @@ export interface AssignmentCandidate {
 /**
  * Sample rows of `version` in the rater's languages whose frozen snapshot names one of `feedIds` as
  * a carrier feed (spec 10 §2.2: "articles from eval.sample carried by the rater's picked feeds").
+ * A carrier merged into a picked feed after sampling still counts: the snapshot keeps the source id
+ * while the rater's feeds were remapped to the survivor, so the merge chain is followed back (at
+ * most 20 merges, as in the golden collection).
  */
 export async function sampleCandidates(
   db: Executor,
@@ -298,12 +301,18 @@ export async function sampleCandidates(
 ): Promise<AssignmentCandidate[]> {
   if (input.feedIds.length === 0 || input.langs.length === 0) return [];
   const result = await db.execute<{ article_id: string; lang: string }>(sql`
+    WITH RECURSIVE carriers AS (
+      SELECT unnest(${sql.param([...input.feedIds])}::bigint[]) AS id, 0 AS depth
+      UNION
+      SELECT f.id, c.depth + 1
+        FROM carriers c JOIN feeds f ON f.merged_into_id = c.id
+       WHERE c.depth < 20)
     SELECT s.article_id::text AS article_id, s.lang
       FROM eval.sample s
      WHERE s.dataset_version = ${input.version}
        AND s.lang = ANY(${sql.param([...input.langs])}::text[])
        AND EXISTS (SELECT 1 FROM jsonb_array_elements(s.snapshot->'carrierFeeds') cf
-                    WHERE cf->>'feedId' = ANY(${sql.param([...input.feedIds])}::text[]))
+                    WHERE cf->>'feedId' IN (SELECT id::text FROM carriers))
      ORDER BY s.article_id`);
   return result.rows.map((row) => ({ articleId: row.article_id, lang: row.lang }));
 }

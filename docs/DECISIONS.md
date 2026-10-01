@@ -820,6 +820,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   assignments open every frozen lineage tip holding a picked article. When the head holds the
   change but is still open, the other lineages' new versions are dated just before it, so it stays
   the head (a head holding none of the articles still yields to the lineage that does).
+  A sample article whose carrier feed was merged into a picked feed after sampling stays a
+  candidate: the snapshot keeps the source id, so the merge chain is followed back (at most 20).
   Every new version takes the next unused name after its parent (`eval sample --version` may already
   have used the plain successor). Top-ups, like the sample draw, take only extracted-or-later
   articles: an `ingested` one (e.g. re-queued by a content update) has no current body yet.
@@ -1014,6 +1016,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   table lists only the run's languages, and the policy view leaves out items whose run did not
   request their language (an item with no run still counts in New), so an SK-only run no longer
   reports the other languages' missing answers.
+  By default (`eval report`, `eval gate`), a complete run whose languages and raters are a strict
+  subset of another complete run of the same experiment is not chosen, so a later `--langs` or
+  `--raters` rerun of E1 does not replace the full-scope run or the reference; `--run` still
+  selects it explicitly.
 - D-111: 2026-10-01 M3a-T6 — eval routers use a process-local circuit breaker, so an evaluation
   never trips or reads the production breaker (spec 04 §1). The LLM fallback is off and the pinned
   engine has no automatic fallback, so a run never mixes engines silently.

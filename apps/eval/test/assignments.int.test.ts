@@ -11,6 +11,7 @@ import {
   lockTopUpArticles,
   openDatasetForCorrection,
   removeRaterCard,
+  sampleCandidates,
   saveFacetLabels,
   setRaterFeeds,
 } from '@bantoozi/db';
@@ -584,6 +585,45 @@ describe('ensureAssignments', () => {
       await expect(mutation).resolves.toBeUndefined();
     } finally {
       client.release();
+    }
+  });
+
+  it('counts a carrier merged into a picked feed after sampling', async () => {
+    const version = (await headDataset(rdb.db))!.version;
+    const [survivor, source] = [sk[4]!, sk[5]!];
+    const { status } = (
+      await rdb.owner.query<{ status: string }>('SELECT status FROM feeds WHERE id = $1', [
+        source.id,
+      ])
+    ).rows[0]!;
+    const before = await sampleCandidates(rdb.db, {
+      version,
+      langs: ['sk'],
+      feedIds: [survivor.id],
+    });
+    const both = await sampleCandidates(rdb.db, {
+      version,
+      langs: ['sk'],
+      feedIds: [survivor.id, source.id],
+    });
+    expect(both.length).toBeGreaterThan(before.length);
+    await rdb.owner.query("UPDATE feeds SET merged_into_id = $1, status = 'dead' WHERE id = $2", [
+      survivor.id,
+      source.id,
+    ]);
+    try {
+      const after = await sampleCandidates(rdb.db, {
+        version,
+        langs: ['sk'],
+        feedIds: [survivor.id],
+      });
+      // The source feed's sampled articles now count for the survivor.
+      expect(after).toEqual(both);
+    } finally {
+      await rdb.owner.query('UPDATE feeds SET merged_into_id = NULL, status = $2 WHERE id = $1', [
+        source.id,
+        status,
+      ]);
     }
   });
 });
