@@ -32,7 +32,7 @@ import {
 } from '@bantoozi/db';
 import { OLLAMA_PRICE_TABLE_VERSION, type EngineLogger } from '@bantoozi/engine';
 import { ENRICH_V1, MATCH_V1, type Answer, type StateVariant } from '@bantoozi/questions';
-import type { CardAnswer } from '@bantoozi/ranker';
+import { mergeRankerConfig, type CardAnswer, type RankerConfig } from '@bantoozi/ranker';
 import { parseSetting, type CardTextMode, type JsonValue } from '@bantoozi/shared';
 import { canonicalSha256 } from '@bantoozi/shared/server';
 import { TRANSLATION_POLICY_VERSION } from '@bantoozi/translate';
@@ -325,6 +325,20 @@ export async function deployedRankerThresholds(db: Executor): Promise<Record<str
   return parseSetting('ranker.thresholds', stored ?? {}) as Record<string, unknown>;
 }
 
+/**
+ * The effective ranker config of a run: the `ranker.thresholds` it froze when it started over the
+ * defaults, else (a run written before thresholds were recorded) the stored setting now. E6's
+ * example suggestions and the replay baseline both use it (D-114 addendum).
+ */
+export async function runRankerConfig(
+  db: Executor,
+  config: Pick<RunConfig, 'rankerThresholds'>,
+): Promise<{ ranker: RankerConfig; source: 'base_run' | 'settings' }> {
+  return config.rankerThresholds !== undefined
+    ? { ranker: mergeRankerConfig(config.rankerThresholds), source: 'base_run' }
+    : { ranker: mergeRankerConfig(await deployedRankerThresholds(db)), source: 'settings' };
+}
+
 /** The draft config of a new run, read from the rater tables (or from the base run for E6/E7). */
 async function draftConfig(
   rt: EvalRuntime,
@@ -560,7 +574,13 @@ async function buildPlan(
           { storyGroupId: item.snapshot.storyGroupId, title: item.snapshot.input.title },
         ]),
       );
-      plan.e6 = planE6({ cards: config.cards, ratings: config.ratings, articles, answers });
+      plan.e6 = planE6({
+        cards: config.cards,
+        ratings: config.ratings,
+        articles,
+        answers,
+        config: (await runRankerConfig(rt.db, config)).ranker,
+      });
     } else if (def.id === 'E7') {
       plan.e7 = planE7({
         seed: config.seed,

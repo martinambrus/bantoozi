@@ -30,8 +30,8 @@ import {
 import { pairedAuc, type PairedAuc, type ScoredItem } from './paired-auc.js';
 import { parseRunConfig, type RunConfig, type RunEngine } from './run-config.js';
 import {
-  deployedRankerThresholds,
   runExperiment,
+  runRankerConfig,
   type CostEstimate,
   type RunExperimentResult,
   type RunStatus,
@@ -124,16 +124,8 @@ export async function baselineRanker(
     return { ranker: mergeRankerConfig(config.replay.replayRanker), source: 'base_run' };
   }
   const proposed = config.replay?.thresholds ?? {};
-  if (config.rankerThresholds !== undefined) {
-    return {
-      ranker: mergeRankerConfig(proposed, mergeRankerConfig(config.rankerThresholds)),
-      source: 'base_run',
-    };
-  }
-  return {
-    ranker: mergeRankerConfig(proposed, mergeRankerConfig(await deployedRankerThresholds(db))),
-    source: 'settings',
-  };
+  const frozen = await runRankerConfig(db, config);
+  return { ranker: mergeRankerConfig(proposed, frozen.ranker), source: frozen.source };
 }
 
 /** A complete base run: finished `complete` with every coverage cell full (no missing output). */

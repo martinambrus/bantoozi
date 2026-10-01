@@ -382,6 +382,8 @@ describe('run data and the reliability SVG', () => {
     const e6 = parseRunData(
       {
         ...raw.run,
+        // Planned against the standard E1 (#14).
+        config: { ...raw.run.config, baseRunId: '14' },
         results: {
           ...(raw.run.results as object),
           e6: {
@@ -416,14 +418,31 @@ describe('run data and the reliability SVG', () => {
     expect(e6Score(e6)(item)).toBeCloseTo(DEFAULT_RANKER_CONFIG.strengthWeights.like * p, 10);
 
     const replay = makeRun(fixture, { id: '41', experiment: 'replay:E1', signal: () => 0.1 });
+    // A newer E1 finished after E6 was planned: E6 still compares against its own base run.
+    const newerE1 = makeRun(fixture, { id: '50', experiment: 'E1', signal: () => 0.1 });
     const model = buildReportModel({
       datasetVersion: DATASET.version,
-      runs: [...standardRuns(fixture), e6, replay],
+      runs: [...standardRuns(fixture), e6, replay, newerE1],
       sample: fixture.sample,
     });
+    expect(latestRuns(model.runs).get('E1')?.id).toBe('50');
     const informational = renderInformational(model, undefined, settings.resamples);
     const line = informational.split('\n').find((l) => l.startsWith('**E6 card examples**'))!;
-    expect(line).toMatch(/paired ΔAUC vs E1 [+−-]?\d/);
+    expect(line).toMatch(/paired ΔAUC vs E1 #14 [+−-]?\d/);
+    // Without a recorded base run the section says so instead of picking an E1.
+    const unbased = parseRunData({ ...raw.run, id: '42' }, answers);
+    const lone = renderInformational(
+      buildReportModel({
+        datasetVersion: DATASET.version,
+        runs: [...standardRuns(fixture), unbased],
+        sample: fixture.sample,
+      }),
+      undefined,
+      settings.resamples,
+    );
+    expect(lone).toContain(
+      '**E6 card examples** (#42): not compared, its config names no base run.',
+    );
     expect(line).toContain('card 901 +2/−1');
     const markdown = renderEvaluationReport(model, {
       title: 'r',
@@ -439,6 +458,80 @@ describe('run data and the reliability SVG', () => {
     );
     expect(scorerTables.length).toBeGreaterThan(0);
     expect(scorerTables).not.toContain('replay:E1');
+  });
+});
+
+describe('E7 lane movement', () => {
+  it('moves lanes through the production policy: never hides and must floors count', () => {
+    const fixture = buildFixture();
+    const [hidden, floored, plain] = [...fixture.sample.values()]
+      .filter((s) => s.lang === 'en')
+      .map((s) => s.articleId);
+    const cards = [
+      { raterId: '1', cardId: '501', strength: 'like', lang: 'en', interest: 'like' },
+      { raterId: '1', cardId: '502', strength: 'must', lang: 'en', interest: 'must' },
+      { raterId: '1', cardId: '503', strength: 'never', lang: 'en', interest: 'never' },
+    ];
+    const config = (experiment: string) => ({
+      experiment,
+      datasetVersion: DATASET.version,
+      cohort: { articleIds: [hidden, floored, plain], sha: 's' },
+      cards,
+      ...(experiment === 'E7' ? { baseRunId: '60' } : {}),
+    });
+    const raw = (id: string, experiment: string, results: Record<string, unknown>) => ({
+      id,
+      experiment,
+      datasetVersion: DATASET.version,
+      gitSha: 'x',
+      startedAt: generatedAt,
+      finishedAt: generatedAt,
+      config: config(experiment),
+      results: { status: 'complete', ...results },
+    });
+    const card = (articleId: string, cardId: string, p: number, key = 'card') => ({
+      articleId: articleId!,
+      cardId,
+      questionKey: key,
+      answer: { ok: true, p, engine: 'typesafe' },
+    });
+    // Base answers: `hidden` matches the never card (hidden in production); `floored` reaches the
+    // must floor (For You in production although its weighted score is below 0.65); `plain` is
+    // in Maybe on its like card alone.
+    const e1 = parseRunData(raw('60', 'E1', {}), [
+      card(hidden!, '501', 0.5),
+      card(hidden!, '502', 0.2),
+      card(hidden!, '503', 0.9),
+      card(floored!, '501', 0.5),
+      card(floored!, '502', 0.6),
+      card(floored!, '503', 0.1),
+      card(plain!, '501', 0.5),
+      card(plain!, '502', 0.2),
+      card(plain!, '503', 0.1),
+    ]);
+    // The generic variant lifts every like answer to 0.95 (0.76 weighted: For You on its own).
+    const e7 = parseRunData(
+      raw('61', 'E7', {
+        e7: {
+          items: [hidden, floored, plain].map((articleId) => ({
+            articleId,
+            raterId: '1',
+            targetedCardId: '501',
+          })),
+        },
+      }),
+      [hidden, floored, plain].map((id) => card(id!, '501', 0.95, 'e7.generic')),
+    );
+    const model = buildReportModel({
+      datasetVersion: DATASET.version,
+      runs: [e1, e7],
+      sample: fixture.sample,
+    });
+    const out = renderInformational(model, undefined, 20);
+    expect(out).toContain('**E7 steering text** (#61 vs E1 #60, development only)');
+    const row = out.split('\n').find((l) => l.startsWith('| generic | en |'))!;
+    // `floored` is already For You (not in the denominator); `hidden` stays hidden; `plain` rises.
+    expect(row).toContain('50.0% (1/2)');
   });
 });
 

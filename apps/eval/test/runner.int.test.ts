@@ -1283,4 +1283,49 @@ describe('eval run (M3a-T6)', () => {
       ctx.libretranslate.reset();
     }
   });
+
+  it("suggests E6 examples with the run's frozen lane thresholds, not the defaults", async () => {
+    // The fake answers 0.9 on matching cards: a liked article at 0.9 is For You by default (0.65),
+    // so it suggests nothing; with For You at 0.95 it lies in [maybe, forYou) and becomes a `yes`.
+    const e6 = async () => {
+      const { rt } = runtime(ctx);
+      try {
+        const e1 = await runExperiment(rt, { experiment: 'E1', yes: true, gitSha: 'test' });
+        expect(e1.status).toBe('complete');
+        const result = await runExperiment(rt, {
+          experiment: 'E6',
+          yes: true,
+          gitSha: 'test',
+          baseRunId: e1.runId!,
+        });
+        expect(result.status).toBe('complete');
+        return runRow(ctx, result.runId!);
+      } finally {
+        await rt.close();
+      }
+    };
+    const added = (row: Awaited<ReturnType<typeof runRow>>) =>
+      (row.results as { e6: { examplesAdded: Record<string, { yes: number; no: number }> } }).e6
+        .examplesAdded;
+    await ctx.owner.query(`DELETE FROM settings WHERE key = 'ranker.thresholds'`);
+    const yes = (row: Awaited<ReturnType<typeof runRow>>) =>
+      Object.values(added(row)).reduce((sum, c) => sum + c.yes, 0);
+    const defaults = await e6();
+    expect(yes(defaults)).toBe(0);
+
+    const lanes = { forYou: 0.95, maybe: 0.5 };
+    await ctx.owner.query(
+      `INSERT INTO settings (key, value) VALUES ('ranker.thresholds', $1::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [JSON.stringify({ lanes })],
+    );
+    try {
+      const custom = await e6();
+      expect(custom.config['rankerThresholds']).toEqual({ lanes });
+      expect(yes(custom)).toBeGreaterThan(0);
+      expect(added(custom)).not.toEqual(added(defaults));
+    } finally {
+      await ctx.owner.query(`DELETE FROM settings WHERE key = 'ranker.thresholds'`);
+    }
+  });
 });

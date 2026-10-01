@@ -20,7 +20,7 @@ import {
 import { onSplit, scoringCoverage, type RatedItem, type Split } from './items.js';
 import { ci, num, pct, shortId, signed, table, usd } from './markdown.js';
 import { latestRuns, runView, type ReportModel, type ScoreView } from './model.js';
-import { policyLanes, rankCardsOf, type PolicyConfig } from './policy.js';
+import { policyLanes, policyOutcome, rankCardsOf, type PolicyConfig } from './policy.js';
 import {
   buildCells,
   cellAucWithCi,
@@ -593,8 +593,29 @@ export function isTableRun(run: RunData): boolean {
 }
 
 /**
- * E6 and E7 (informational, development only; never gate inputs). E7's lane share uses `config`:
- * the selected configuration in the G1 report, the configured defaults in `eval report`.
+ * The E1 run an informational run was planned against: its own `config.baseRunId`, never simply
+ * the latest E1 (a newer E1 did not generate its plan). Null when the config names none or the run
+ * is not among the dataset's runs.
+ */
+export function informationalBase(model: ReportModel, run: RunData): RunData | null {
+  const id = run.config.baseRunId;
+  if (id === null || id === undefined) return null;
+  return model.runs.find((r) => r.id === id) ?? null;
+}
+
+function missingBase(run: RunData): string {
+  const id = run.config.baseRunId;
+  return id === null || id === undefined
+    ? 'its config names no base run'
+    : `its base run #${id} is not among this dataset's runs`;
+}
+
+/**
+ * E6 and E7 (informational, development only; never gate inputs). Each compares against the base
+ * run that generated its plan ({@link informationalBase}). E7's lane movement runs both sides
+ * through the production policy helpers ({@link policyOutcome}: must floors, never caps and hides,
+ * coverage) under `config`: the selected configuration in the G1 report, the configured defaults
+ * in `eval report`.
  */
 export function renderInformational(
   model: ReportModel,
@@ -602,81 +623,100 @@ export function renderInformational(
   resamples = 1000,
 ): string {
   const latest = latestRuns(model.runs);
-  const e1 = latest.get('E1');
   let out = '';
   const e6 = latest.get('E6');
-  if (e6 !== undefined && e1 !== undefined) {
-    const later = new Set(e6.results?.e6?.laterArticleIds ?? []);
-    const items = onSplit(model.items, 'dev').filter((i) => later.has(i.articleId));
-    const cells = buildCells(items, 'context');
-    const delta = pairedMacroDelta(cells, e6Score(e6), runView(e1).score, {
-      seed: `${e6.id}:e6`,
-      resamples,
-    });
-    const added = Object.entries(e6.results?.e6?.examplesAdded ?? {});
-    out += `**E6 card examples** (#${e6.id}, later development half, ${items.length} ratings): paired ΔAUC vs E1 ${signed(delta.estimate)} ${ci(delta)}; examples added: ${
-      added.length === 0
-        ? 'none'
-        : added.map(([card, v]) => `card ${card} +${v.yes}/−${v.no}`).join(', ')
-    }\n\n`;
+  if (e6 !== undefined) {
+    const base = informationalBase(model, e6);
+    if (base === null) {
+      out += `**E6 card examples** (#${e6.id}): not compared, ${missingBase(e6)}.\n\n`;
+    } else {
+      const later = new Set(e6.results?.e6?.laterArticleIds ?? []);
+      const items = onSplit(model.items, 'dev').filter((i) => later.has(i.articleId));
+      const cells = buildCells(items, 'context');
+      const delta = pairedMacroDelta(cells, e6Score(e6), runView(base).score, {
+        seed: `${e6.id}:e6`,
+        resamples,
+      });
+      const added = Object.entries(e6.results?.e6?.examplesAdded ?? {});
+      out += `**E6 card examples** (#${e6.id}, later development half, ${items.length} ratings): paired ΔAUC vs E1 #${base.id} ${signed(delta.estimate)} ${ci(delta)}; examples added: ${
+        added.length === 0
+          ? 'none'
+          : added.map(([card, v]) => `card ${card} +${v.yes}/−${v.no}`).join(', ')
+      }\n\n`;
+    }
   }
   const e7 = latest.get('E7');
-  if (e7 !== undefined && e1 !== undefined) {
-    const cards = model.reference?.config.cards ?? [];
-    const rows: string[][] = [];
-    for (const variant of ['e7.targeted', 'e7.generic'] as const) {
-      const answers = e7.extra.get(variant);
-      for (const lang of model.langs) {
-        const deltas: number[] = [];
-        let risen = 0;
-        let below = 0;
-        for (const item of e7.results?.e7?.items ?? []) {
-          if (model.sample.get(item.articleId)?.lang !== lang) continue;
-          const variantAnswers = answers?.get(item.articleId);
-          if (variantAnswers === undefined) continue;
-          const raterCards = cards.filter(
-            (c) => c.raterId === item.raterId && c.strength !== 'never',
-          );
-          const targets =
-            variant === 'e7.targeted'
-              ? raterCards.filter((c) => c.cardId === item.targetedCardId)
-              : raterCards;
-          for (const card of targets) {
-            const before = raterCardResults(e1, item.raterId, item.articleId)?.get(card.cardId);
-            const after = variantAnswers.get(card.cardId);
-            if (before?.ok === true && after?.ok === true) deltas.push(after.p - before.p);
-          }
-          const baseScore = e1.scores.get(item.raterId)?.get(item.articleId) ?? null;
-          if (baseScore !== null && laneOfScore(baseScore, config) !== 'for_you') {
-            below += 1;
-            const weights = config.strengthWeights;
-            let best: number | null = null;
-            for (const card of raterCards) {
-              const after =
-                variantAnswers.get(card.cardId) ??
-                raterCardResults(e1, item.raterId, item.articleId)?.get(card.cardId);
-              if (after?.ok !== true) continue;
-              const strength = card.strength as 'must' | 'love' | 'like';
-              const s = weights[strength] * after.p;
-              best = best === null ? s : Math.max(best, s);
-            }
-            if (laneOfScore(best, config) === 'for_you') risen += 1;
-          }
-        }
-        if (deltas.length === 0 && below === 0) continue;
-        rows.push([
-          variant.slice(3),
-          lang,
-          String(deltas.length),
-          signed(deltas.length === 0 ? null : deltas.reduce((a, b) => a + b, 0) / deltas.length),
-          `${pct(below === 0 ? null : risen / below)} (${risen}/${below})`,
-        ]);
-      }
+  if (e7 !== undefined) {
+    const base = informationalBase(model, e7);
+    if (base === null) {
+      out += `**E7 steering text** (#${e7.id}): not compared, ${missingBase(e7)}.\n\n`;
+    } else {
+      out += renderE7(model, e7, base, config);
     }
-    out += `**E7 steering text** (#${e7.id}, development only):\n\n`;
-    out += table(['variant', 'lang', 'answers', 'mean Δp vs E1', 'below For You → For You'], rows);
   }
   return out === '' ? '_no informational runs_\n' : out;
+}
+
+/** E7's per-variant Δp and lane movement against its base run. */
+function renderE7(model: ReportModel, e7: RunData, base: RunData, config: PolicyConfig): string {
+  const cards = e7.config.cards;
+  const rankCards = new Map<string, ReturnType<typeof rankCardsOf>>();
+  const rankCardsFor = (raterId: string) => {
+    let list = rankCards.get(raterId);
+    if (list === undefined) rankCards.set(raterId, (list = rankCardsOf(cards, raterId)));
+    return list;
+  };
+  const rows: string[][] = [];
+  for (const variant of ['e7.targeted', 'e7.generic'] as const) {
+    const answers = e7.extra.get(variant);
+    for (const lang of model.langs) {
+      const deltas: number[] = [];
+      let risen = 0;
+      let below = 0;
+      for (const item of e7.results?.e7?.items ?? []) {
+        if (model.sample.get(item.articleId)?.lang !== lang) continue;
+        const variantAnswers = answers?.get(item.articleId);
+        if (variantAnswers === undefined) continue;
+        const raterCards = cards.filter(
+          (c) => c.raterId === item.raterId && c.strength !== 'never',
+        );
+        const targets =
+          variant === 'e7.targeted'
+            ? raterCards.filter((c) => c.cardId === item.targetedCardId)
+            : raterCards;
+        const baseResults = raterCardResults(base, item.raterId, item.articleId);
+        for (const card of targets) {
+          const before = baseResults?.get(card.cardId);
+          const after = variantAnswers.get(card.cardId);
+          if (before?.ok === true && after?.ok === true) deltas.push(after.p - before.p);
+        }
+        // Both sides through the production policy: the rater's full card set (never cards
+        // included), the base answers, and on the variant side the variant's answers over them.
+        const rank = rankCardsFor(item.raterId);
+        const before = policyOutcome(rank, base, item.articleId, config, item.raterId);
+        if (before.lane === 'new' || before.lane === 'for_you') continue;
+        below += 1;
+        const merged: RunData = {
+          ...base,
+          cards: new Map([[item.articleId, new Map([...(baseResults ?? []), ...variantAnswers])]]),
+          extra: new Map(),
+        };
+        if (policyOutcome(rank, merged, item.articleId, config).lane === 'for_you') risen += 1;
+      }
+      if (deltas.length === 0 && below === 0) continue;
+      rows.push([
+        variant.slice(3),
+        lang,
+        String(deltas.length),
+        signed(deltas.length === 0 ? null : deltas.reduce((a, b) => a + b, 0) / deltas.length),
+        `${pct(below === 0 ? null : risen / below)} (${risen}/${below})`,
+      ]);
+    }
+  }
+  return (
+    `**E7 steering text** (#${e7.id} vs E1 #${base.id}, development only):\n\n` +
+    table(['variant', 'lang', 'answers', 'mean Δp vs E1', 'below For You → For You'], rows)
+  );
 }
 
 /** AUC of an arbitrary item subset (used by the worst-ranked list and diagnostics). */

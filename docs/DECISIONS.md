@@ -876,6 +876,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
 - D-109: 2026-10-01 M3a-T7 — the evaluation policy view (lane distribution, spec 10 §4) applies no
   demotions (the golden set has no per-user demotion state). A failed card answer makes coverage
   unavailable, and an item with no usable answer stays in New and is counted.
+  Addendum (PR #10 review): the E7 "below For You → For You" share runs both sides through this
+  policy view. Each side uses the rater's full card set (never cards included) with must floors,
+  never caps and hides, and coverage. The variant side uses the variant's answers over the base
+  run's. The denominator is every base item outside For You and New, hidden items included.
 - D-110: 2026-10-01 M3a-T6 — the run cohort is the rated pairs of the selected raters and
   languages, plus facet-labelled articles for card experiments; E6/E7 use only development pairs of
   the base E1 run's frozen config. The run config adds `assignments` (the BM25 corpus),
@@ -1010,6 +1014,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `e7.targeted`, `e7.generic`) like the shared Call B path and asks only the missing or failed
   cards, so the resume estimate counts the persisted tasks as done and a resume with a cleared
   cache or on another host bills no task twice.
+  Addendum (PR #10 review): the report compares E6 and E7 with the run named by their own
+  `config.baseRunId`, not with the latest E1. If that run is missing, the section says so and
+  makes no comparison. E6 suggests examples (spec 06 §10) with the run's effective ranker config: the
+  `rankerThresholds` frozen in its config over the defaults (the stored setting for a config
+  without them), the same helper as the replay baseline (`runRankerConfig`), never the defaults.
 - D-115: 2026-10-01 M3a-T8 — the dry-run database is copied from the migrated test template
   (`TEST_ADMIN_DATABASE_URL` is used only to create and drop it, under the template advisory lock)
   and seeded by running the worker seed script as a subprocess against it. Only the names
