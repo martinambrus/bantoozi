@@ -113,6 +113,22 @@ beforeEach(async () => {
 });
 
 describe("card_text_mode = 'english'", () => {
+  it('translates once for concurrent duplicates of one Idempotency-Key', async () => {
+    const user = await slovakReader('active');
+    fake.setOptions({ delayMs: 100 });
+    const body = { interest: variant(SLOVAK_INTEREST), strength: 'like' };
+    const key = randomUUID();
+    const api = apiClient(server, user);
+    const [a, b] = await Promise.all([
+      api.post('/cards', body, { idempotencyKey: key }),
+      api.post('/cards', body, { idempotencyKey: key }),
+    ]);
+    expect(a.statusCode, a.body).toBe(201);
+    expect(b.json()).toEqual(a.json());
+    expect(fake.requests.filter((r) => r.path === '/translate')).toHaveLength(1);
+    expect(await translationCalls(user.id)).toHaveLength(1);
+  });
+
   it('stores lang and the English pair of a Slovak card created on an active feed', async () => {
     const user = await slovakReader('active');
     const res = await apiClient(server, user).post('/cards', {

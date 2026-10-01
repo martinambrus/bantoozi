@@ -83,19 +83,22 @@ export const labelRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (request, reply) => {
       const body = request.body;
-      const text = await prepareCardText(app, request, {
-        interest: body.definition,
-        notFor: body.notFor,
-      });
-      const outcome = await request.mutate(async (tx) => {
-        const mutation = await createUserLabel(tx, {
-          name: body.name,
-          definition: body.definition,
-          ...(body.notFor === undefined ? {} : { notFor: body.notFor }),
-          ...(body.color === undefined ? {} : { color: body.color }),
-          ...textFields(text),
+      // Holds the key across translation, so a concurrent duplicate translates nothing.
+      const outcome = await request.holdingKey(async () => {
+        const text = await prepareCardText(app, request, {
+          interest: body.definition,
+          notFor: body.notFor,
         });
-        return { status: 201, body: labelMutationResponse(mutation, text.status) };
+        return request.mutate(async (tx) => {
+          const mutation = await createUserLabel(tx, {
+            name: body.name,
+            definition: body.definition,
+            ...(body.notFor === undefined ? {} : { notFor: body.notFor }),
+            ...(body.color === undefined ? {} : { color: body.color }),
+            ...textFields(text),
+          });
+          return { status: 201, body: labelMutationResponse(mutation, text.status) };
+        });
       });
       await reply.code(201).send(outcome.body);
     },
@@ -115,32 +118,35 @@ export const labelRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       const { id } = request.params;
       const body = request.body;
-      let text: CardTextPlan = { status: null };
-      if (body.name !== undefined || body.definition !== undefined || body.notFor !== undefined) {
-        // A semantic change inserts a new label card: prepare its text before the transaction.
-        const current = await request.withTx((tx) => getUserLabel(tx, id));
-        if (current !== null) {
-          const next = {
-            interest: body.definition ?? current.definition,
-            notFor: body.notFor === undefined ? current.notFor : body.notFor,
-          };
-          const semantic =
-            normCardText(body.name ?? current.cardTitle) !== normCardText(current.cardTitle) ||
-            normCardText(next.interest) !== normCardText(current.definition) ||
-            normCardText(next.notFor ?? '') !== normCardText(current.notFor ?? '');
-          if (semantic) text = await prepareCardText(app, request, next);
+      // Holds the key across translation, so a concurrent duplicate translates nothing.
+      const outcome = await request.holdingKey(async () => {
+        let text: CardTextPlan = { status: null };
+        if (body.name !== undefined || body.definition !== undefined || body.notFor !== undefined) {
+          // A semantic change inserts a new label card: prepare its text before the transaction.
+          const current = await request.withTx((tx) => getUserLabel(tx, id));
+          if (current !== null) {
+            const next = {
+              interest: body.definition ?? current.definition,
+              notFor: body.notFor === undefined ? current.notFor : body.notFor,
+            };
+            const semantic =
+              normCardText(body.name ?? current.cardTitle) !== normCardText(current.cardTitle) ||
+              normCardText(next.interest) !== normCardText(current.definition) ||
+              normCardText(next.notFor ?? '') !== normCardText(current.notFor ?? '');
+            if (semantic) text = await prepareCardText(app, request, next);
+          }
         }
-      }
-      const outcome = await request.mutate(async (tx) => {
-        const mutation = await updateUserLabel(tx, {
-          labelId: id,
-          ...(body.name === undefined ? {} : { name: body.name }),
-          ...(body.definition === undefined ? {} : { definition: body.definition }),
-          ...(body.notFor === undefined ? {} : { notFor: body.notFor }),
-          ...(body.color === undefined ? {} : { color: body.color }),
-          ...textFields(text),
+        return request.mutate(async (tx) => {
+          const mutation = await updateUserLabel(tx, {
+            labelId: id,
+            ...(body.name === undefined ? {} : { name: body.name }),
+            ...(body.definition === undefined ? {} : { definition: body.definition }),
+            ...(body.notFor === undefined ? {} : { notFor: body.notFor }),
+            ...(body.color === undefined ? {} : { color: body.color }),
+            ...textFields(text),
+          });
+          return { status: 200, body: labelMutationResponse(mutation, text.status) };
         });
-        return { status: 200, body: labelMutationResponse(mutation, text.status) };
       });
       await reply.code(200).send(outcome.body);
     },

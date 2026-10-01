@@ -319,17 +319,20 @@ export const cardRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       const { locale } = requireAuth(request);
       const body = request.body;
-      const text = await prepareCardText(app, request, body);
-      const outcome = await request.mutate(async (tx) => {
-        const mutation = await createUserCard(tx, {
-          interest: body.interest,
-          strength: body.strength,
-          ...(body.title === undefined ? {} : { title: body.title }),
-          ...(body.notFor === undefined ? {} : { notFor: body.notFor }),
-          ...(body.scopeFeedId === undefined ? {} : { scopeFeedId: body.scopeFeedId }),
-          ...textFields(text),
+      // Holds the key across translation, so a concurrent duplicate translates nothing.
+      const outcome = await request.holdingKey(async () => {
+        const text = await prepareCardText(app, request, body);
+        return request.mutate(async (tx) => {
+          const mutation = await createUserCard(tx, {
+            interest: body.interest,
+            strength: body.strength,
+            ...(body.title === undefined ? {} : { title: body.title }),
+            ...(body.notFor === undefined ? {} : { notFor: body.notFor }),
+            ...(body.scopeFeedId === undefined ? {} : { scopeFeedId: body.scopeFeedId }),
+            ...textFields(text),
+          });
+          return { status: 201, body: cardMutationResponse(mutation, locale, text.status) };
         });
-        return { status: 201, body: cardMutationResponse(mutation, locale, text.status) };
       });
       await reply.code(201).send(outcome.body);
     },
@@ -349,17 +352,20 @@ export const cardRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       const { locale } = requireAuth(request);
       const body = request.body;
-      const text = await prepareCardText(app, request, body);
-      const outcome = await request.mutate(async (tx) => {
-        const mutation = await createCardFromArticle(tx, {
-          articleId: body.articleId,
-          interest: body.interest,
-          strength: body.strength,
-          ...(body.title === undefined ? {} : { title: body.title }),
-          ...(body.notFor === undefined ? {} : { notFor: body.notFor }),
-          ...textFields(text),
+      // Holds the key across translation, so a concurrent duplicate translates nothing.
+      const outcome = await request.holdingKey(async () => {
+        const text = await prepareCardText(app, request, body);
+        return request.mutate(async (tx) => {
+          const mutation = await createCardFromArticle(tx, {
+            articleId: body.articleId,
+            interest: body.interest,
+            strength: body.strength,
+            ...(body.title === undefined ? {} : { title: body.title }),
+            ...(body.notFor === undefined ? {} : { notFor: body.notFor }),
+            ...textFields(text),
+          });
+          return { status: 201, body: cardMutationResponse(mutation, locale, text.status) };
         });
-        return { status: 201, body: cardMutationResponse(mutation, locale, text.status) };
       });
       await reply.code(201).send(outcome.body);
     },
@@ -381,34 +387,37 @@ export const cardRoutes: FastifyPluginAsyncZod = async (app) => {
       const { locale } = requireAuth(request);
       const { id } = request.params;
       const body = request.body;
-      let text: CardTextPlan = { status: null };
-      if (body.interest !== undefined || body.notFor !== undefined) {
-        // Translate only a text that really changes; the repository rechecks under its locks.
-        const current = await request.withTx((tx) => getUserCard(tx, id));
-        if (current !== null) {
-          const next = {
-            interest: body.interest ?? current.interest,
-            notFor: body.notFor === undefined ? current.notFor : body.notFor,
-          };
-          if (
-            !sameText(next.interest, current.interest) ||
-            !sameText(next.notFor, current.notFor)
-          ) {
-            text = await prepareCardText(app, request, next);
+      // Holds the key across translation, so a concurrent duplicate translates nothing.
+      const outcome = await request.holdingKey(async () => {
+        let text: CardTextPlan = { status: null };
+        if (body.interest !== undefined || body.notFor !== undefined) {
+          // Translate only a text that really changes; the repository rechecks under its locks.
+          const current = await request.withTx((tx) => getUserCard(tx, id));
+          if (current !== null) {
+            const next = {
+              interest: body.interest ?? current.interest,
+              notFor: body.notFor === undefined ? current.notFor : body.notFor,
+            };
+            if (
+              !sameText(next.interest, current.interest) ||
+              !sameText(next.notFor, current.notFor)
+            ) {
+              text = await prepareCardText(app, request, next);
+            }
           }
         }
-      }
-      const outcome = await request.mutate(async (tx) => {
-        const mutation = await updateUserCard(tx, {
-          cardId: id,
-          ...(body.title === undefined ? {} : { title: body.title }),
-          ...(body.interest === undefined ? {} : { interest: body.interest }),
-          ...(body.notFor === undefined ? {} : { notFor: body.notFor }),
-          ...(body.strength === undefined ? {} : { strength: body.strength }),
-          ...(body.scopeFeedId === undefined ? {} : { scopeFeedId: body.scopeFeedId }),
-          ...textFields(text),
+        return request.mutate(async (tx) => {
+          const mutation = await updateUserCard(tx, {
+            cardId: id,
+            ...(body.title === undefined ? {} : { title: body.title }),
+            ...(body.interest === undefined ? {} : { interest: body.interest }),
+            ...(body.notFor === undefined ? {} : { notFor: body.notFor }),
+            ...(body.strength === undefined ? {} : { strength: body.strength }),
+            ...(body.scopeFeedId === undefined ? {} : { scopeFeedId: body.scopeFeedId }),
+            ...textFields(text),
+          });
+          return { status: 200, body: cardMutationResponse(mutation, locale, text.status) };
         });
-        return { status: 200, body: cardMutationResponse(mutation, locale, text.status) };
       });
       await reply.code(200).send(outcome.body);
     },
