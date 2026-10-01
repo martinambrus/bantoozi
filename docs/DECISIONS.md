@@ -696,3 +696,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   is not ingest-only. The worker heartbeat itself (spec 02 §2, every 30 s, entries older than an hour
   pruned) is written by M3a because `ingest-sample` is its first reader. Specs 02 §7 and 10 §2.1
   updated.
+- D-97: 2026-10-01 M3a-T2 — spec 10 §2.1 groups the split by story but the golden database runs no
+  clustering (its worker is ingest-only, D-96), so most sampled articles have no `story_cluster_id`.
+  A snapshot's story-group id is `c<story_cluster_id>` when the article is clustered and otherwise
+  `t<first 16 hex of the SHA-256 of the normalized title>`, which keeps exact republished duplicates
+  (the same story carried by several feeds under one title) on one side of the split. Near-duplicates
+  with different titles are not grouped; spec 10 already requires a new split/version when such
+  unclustered duplicates are found before G1. Spec 10 §2.1 updated.
