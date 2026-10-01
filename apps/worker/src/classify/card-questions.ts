@@ -1,32 +1,12 @@
-import type { CardAnswerRow, CardInput } from '@bantoozi/db';
-import {
-  cardInputSha256,
-  cardQuestion,
-  labelQuestion,
-  type NoulQuestion,
-} from '@bantoozi/questions';
-import type { CardTextMode } from '@bantoozi/shared';
+import type { CardAnswerRow } from '@bantoozi/db';
 
 /**
  * Call B card questions and their cache identity (spec 05 §2, §5.2): the exact built question of a
- * card or label under the card text mode, and the fingerprints a stored answer must match to be
- * current for this article state.
+ * card or label under the card text mode (`builtCardQuestion`, shared with the training API in
+ * `@bantoozi/questions`, D-71), and the fingerprints a stored answer must match to be current for
+ * this article state.
  */
-
-export interface BuiltCardQuestion {
-  question: NoulQuestion;
-  /** `card_input_sha256`: the hash of the exact built question. */
-  sha256: string;
-}
-
-/** A label is asked with its shared card title (part of its text hash), never `user_labels.name`. */
-export function builtCardQuestion(card: CardInput, mode: CardTextMode): BuiltCardQuestion {
-  const question =
-    card.kind === 'label'
-      ? labelQuestion({ title: card.title, body: card.body }, mode)
-      : cardQuestion(card.body, mode);
-  return { question, sha256: cardInputSha256(question) };
-}
+export { builtCardQuestion, type BuiltCardQuestion } from '@bantoozi/questions';
 
 /** The fingerprints of one article state under the active match set. */
 export interface MatchFingerprint {

@@ -17,16 +17,35 @@ function envelope(error: AppError): ErrorResponse {
   };
 }
 
+/**
+ * Where a request failed validation: the part (`body`, `querystring`, …) and JSON pointer of at most
+ * 20 issues, with the validator's message. Values are never echoed.
+ */
+function validationIssues(
+  validation: NonNullable<FastifyError['validation']>,
+  context: FastifyError['validationContext'],
+): { path: string; message: string }[] {
+  return validation.slice(0, 20).map((issue) => ({
+    path: `${context ?? 'request'}${issue.instancePath}`,
+    message: (issue.message ?? 'invalid').slice(0, 200),
+  }));
+}
+
 function toAppError(error: unknown, requestId: string): AppError {
   if (isAppError(error)) return error;
   const fastifyError = error as Partial<FastifyError>;
   // Schema validation, malformed JSON, unsupported media types and oversized bodies: Fastify's own
   // client (4xx) errors.
   const status = fastifyError.statusCode ?? 500;
-  if (
-    fastifyError.validation !== undefined ||
-    (fastifyError.code?.startsWith('FST_') === true && status >= 400 && status < 500)
-  ) {
+  if (fastifyError.validation !== undefined) {
+    return new AppError('VALIDATION_FAILED', 'Invalid request', {
+      details: {
+        issues: validationIssues(fastifyError.validation, fastifyError.validationContext),
+      },
+      cause: error,
+    });
+  }
+  if (fastifyError.code?.startsWith('FST_') === true && status >= 400 && status < 500) {
     return new AppError('VALIDATION_FAILED', 'Invalid request', { cause: error });
   }
   const mapped = mapDbError(error);
