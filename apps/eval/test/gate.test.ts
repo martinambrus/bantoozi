@@ -175,6 +175,21 @@ describe('development selection and test confirmation', () => {
     expect(devItems).toBeGreaterThan(200);
   });
 
+  it('pools only supported development contexts for the thresholds', () => {
+    const fixture = buildFixture();
+    const runs = standardRuns(fixture);
+    const { model, assessments } = setup(fixture, runs);
+    const before = select(model, assessments);
+    // A one-participant context with three liked development items (below the support rule) would
+    // otherwise carry a third of the participant's weight in the pool.
+    const tiny = onSplit(model.items, 'dev')
+      .filter((i) => i.raterId === '1')
+      .slice(0, 3)
+      .map((i) => ({ ...i, key: `tiny:${i.articleId}`, contextId: 'tiny', liked: true }));
+    const after = select({ ...model, items: [...model.items, ...tiny] }, assessments);
+    expect(after.thresholds).toEqual(before.thresholds);
+  });
+
   it('chooses English card text when it helps non-English-card contexts, and E4 sets the tier-2 cap', () => {
     const fixture = buildFixture();
     const runs = standardRuns(fixture, {

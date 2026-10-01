@@ -426,9 +426,15 @@ export function selectOnDevelopment(input: DevelopmentInput): GateSelection {
   }
   const composed = compositionView('composition', compositionRuns, null);
 
-  // Step 4: one global threshold object from the pooled composed scores.
+  // Step 4: one global threshold object from the pooled composed scores. Only supported
+  // development contexts (≥ 20 items, ≥ 5 per class) contribute: hierarchical weighting gives each
+  // context an equal share of its participant, so an unsupported one could swing the thresholds.
+  const supportedContexts = new Set(
+    contextCells.filter((c) => c.supported).map((c) => c.contextId),
+  );
   const pool = weightPool(
     items
+      .filter((item) => supportedContexts.has(item.contextId))
       .map((item) => ({ item, p: composed.score(item) }))
       .filter((x): x is { item: RatedItem; p: number } => x.p !== null && x.p >= 0 && x.p <= 1)
       .map(({ item, p }) => ({
