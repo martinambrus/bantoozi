@@ -116,7 +116,8 @@ Every per-user query runs under row-level security, and every limit that bounds 
 
 **`request-code` decision table.** "Mode" is the effective signup mode: `settings['signup_mode']` if
 set, otherwise `SIGNUP_MODE` (spec 02 §2). It is read on every request, so an admin change applies
-to the next one, and no row reads the environment value alone.
+to the next one, and no row reads the environment value alone. A stored value that no longer parses
+is logged and treated as `closed` for signups (D-122).
 
 | Situation | Email sent |
 |---|---|
@@ -135,7 +136,8 @@ to the next one, and no row reads the environment value alone.
   **5** verify attempts per code.
   `challenge_nonce` is a fresh UUID generated before insert, not the database identity id.
 - The requested `locale` and the `inviteCode` are stored on the `login_codes` row.
-- A new request invalidates older unconsumed codes for the email.
+- A new request invalidates older unconsumed codes for the email (it sets their `consumed_at`;
+  D-122).
 - Serialize requests/verifications for a normalized email (transaction advisory lock plus challenge
   row lock). Compare digests in constant time; atomically consume the code, create/restore the user,
   consume any invite and create the session. Concurrent correct verifications cannot create two
@@ -145,7 +147,7 @@ to the next one, and no row reads the environment value alone.
   signup eligibility then; a code is not a reserved invite. Use the same generic error for expired,
   consumed, incorrect or ineligible codes. A login code created for an existing user must not become
   a signup authorization if that user was purged in the meantime.
-- Emails come from localized templates (en/sk) in `packages/shared/src/mail/templates/` (shared with
+- Emails come from localized templates (en/sk) in `packages/shared/src/server/mail/templates.ts` (shared with
   the worker's alert emails), with a plain-text and an HTML part.
 - Public responses disclose neither account existence nor SMTP outcome. After committing the code,
   attempt synchronous SMTP delivery with a bounded timeout and keep plaintext only in request
@@ -191,9 +193,9 @@ email never hits the unique constraint through the signup path.
 
 | Endpoint | Body | Behaviour |
 |---|---|---|
-| `GET /invites` | — | My invites `[{code, email, createdAt, expiresAt, usedAt, url}]` and `invitesLeft` |
-| `POST /invites` | `{email?, note?}` | Atomically requires/decrements `invites_left > 0` under the user lock. Creates a CSPRNG code (10 chars, Crockford base32, expires in 30 days; retry unique collisions). If `email` is given, sends the invite email after commit (below) → `201 {code, url: PUBLIC_BASE_URL + '/join?code=' + code, emailSent?: boolean}` |
-| `POST /waitlist` | `{email, locale?, note?}` | Public. Upsert → `202`. Rate-limited per IP |
+| `GET /invites` | — | `{items: [{code, email, createdAt, expiresAt, usedAt, url}], invitesLeft}` |
+| `POST /invites` | `{email?, note?}` | Atomically requires/decrements `invites_left > 0` under the user lock. Creates a CSPRNG code (10 chars, Crockford base32, expires in 30 days; retry unique collisions). If `email` is given, sends the invite email after commit (below) → `201 {code, url: PUBLIC_BASE_URL + '/join?code=' + code, emailSent?: boolean}`. No slot left → `409 QUOTA_EXCEEDED {limit: 'invites', invitesLeft: 0}` (D-122) |
+| `POST /waitlist` | `{email, locale?, note?}` | Public. Upsert → `202 {next: 'waitlisted'}`. Rate-limited per IP |
 
 **Invite email** follows the auth-mail pattern of §2.1: there is no mail queue, and the invite code
 never enters an outbox payload. After the invite commits, attempt bounded synchronous SMTP delivery.
@@ -785,7 +787,7 @@ authorship policy, not a forged user approval.
 
 ---
 
-## 11. Rate limits (API hooks over `rate_limit_hit()`, D-96; keyed as noted)
+## 11. Rate limits (API hooks over `rate_limit_hit()`, D-120; keyed as noted)
 
 | Route group | Limit |
 |---|---|
@@ -807,13 +809,13 @@ All limits are enforced unless `RATE_LIMITS_ENABLED=false` (spec 01 §3). Only E
 environments with `NODE_ENV=test` set it to false. Config validation rejects `false` in production.
 Only Caddy's known internal proxy address/network is trusted for forwarded IP headers; never
 `trustProxy: true` for arbitrary clients. The API trusts loopback and the RFC 1918 private ranges of the compose
-network, whose API port is not published elsewhere (D-97). Limits are shared across API processes and restarts through
+network, whose API port is not published elsewhere (D-121). Limits are shared across API processes and restarts through
 the DB-backed limiter: `rate_limit_hit()` over `rate_limit_buckets` (spec 02 §6), cleaned up by
 `house.purge-auth`.
 Send `Retry-After` for 429. Public waitlist upserts never expose whether an address already exists.
 Every limited response carries `X-RateLimit-Limit` (the tightest applicable maximum); a 429 adds
 `Retry-After` and `X-RateLimit-Reset` in seconds. `X-RateLimit-Remaining` is not sent, because
-`rate_limit_hit()` reports only whether a hit is allowed and when to retry (D-96).
+`rate_limit_hit()` reports only whether a hit is allowed and when to retry (D-120).
 
 ---
 

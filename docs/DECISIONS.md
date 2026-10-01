@@ -679,7 +679,7 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   like a settlement and then leaves the reservation charged for housekeeping. A released `suggest`
   reservation keeps its suggestion stamp (spec 05 §7), as a request cancelled after its send does.
   Specs 04 §1 and §4 and 11 §5 updated.
-- D-96: 2026-10-01 M4-T1 — spec 08 §11 named `@fastify/rate-limit`, but its store contract needs
+- D-120: 2026-10-01 M4-T1 — spec 08 §11 named `@fastify/rate-limit`, but its store contract needs
   the bucket's hit count and applies one limit per route, while `rate_limit_hit()` (spec 02 §6)
   returns only `(allowed, retry_after_s)` and a route needs several limits at once (per IP, per user
   mutation and its own group). The API therefore applies the limits in its own hooks over
@@ -687,8 +687,65 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `X-RateLimit-Limit`; a 429 adds `Retry-After` and `X-RateLimit-Reset`. `X-RateLimit-Remaining` is
   not sent, because the function does not report it; adding a migration for it would collide with
   the parallel M3a migration. Specs 08 §11 and 02 §6 updated.
-- D-97: 2026-10-01 M4-T1 — spec 08 §11 trusts forwarded IP headers only from Caddy's known internal
+- D-121: 2026-10-01 M4-T1 — spec 08 §11 trusts forwarded IP headers only from Caddy's known internal
   address/network. The API trusts loopback and the RFC 1918 private ranges the compose network uses
   (`DEFAULT_TRUSTED_PROXIES`), never `trustProxy: true`; the API port is not published outside that
   network (spec 11). A deployment that exposes the API port elsewhere passes a narrower list to
   `buildServer`. Spec 08 §11 updated.
+- D-122: 2026-10-01 M4-T2 — spec 08 §2 left several auth and invite details open. A new login-code
+  request invalidates older unconsumed codes by setting their `consumed_at` (the active-code index
+  stays valid and the rows remain an audit trail) rather than deleting them. `POST /waitlist`
+  answers `202 {next: 'waitlisted'}` and `GET /invites` returns `{items, invitesLeft}`. With no slot
+  left, `POST /invites` answers `409 QUOTA_EXCEEDED` with `{limit: 'invites', invitesLeft: 0}`,
+  because invites are not a §6 plan limit with `used`/`max`. A stored `signup_mode` that no longer
+  parses is logged and treated as `closed` for signups, so request-code still answers 202 and logins
+  keep working. Request-code answers are padded to at least 600 ms; slow SMTP can still exceed it,
+  bounded by the mailer timeouts. The mail templates stay in
+  `packages/shared/src/server/mail/templates.ts` (server-only code), not `packages/shared/src/mail/`.
+  Spec 08 §2 updated.
+- D-123: 2026-10-01 M4-T1 — response DTOs use `UuidStringSchema` (a plain UUID pattern) instead of
+  `UuidSchema`, whose lower-casing transform cannot be encoded: fastify-type-provider-zod serializes
+  responses with `z.encode`, which throws on one-way transforms. Requests still use `UuidSchema`.
+- D-124: 2026-10-01 M4-T5 — card responses and the library listing. `Card` adds `titleOverride`
+  and `librarySlug`. Create routes return `201 {card|label, idChange: null, translation}`, edits,
+  adopt, examples and library updates `200 {card|label, idChange, translation}`; `translation` is
+  the non-blocking status of spec 07 §5, `null` when no new text was submitted or the response is a
+  receipt replay. A held card localizes only its title: its interest stays as stored, because an
+  edit starts from that text and a localized interest would make an unchanged edit look like a text
+  change; the library and suggestions localize both. `GET /library` uses the paginated envelope
+  (`?topic=&q=&cursor=&limit=`, ordered by L1 topic then id, items with `l1TopicId`, `version` and
+  `held`) and lists only current, non-retired public versions. `POST /cards/from-article` counts in
+  the 60/hour card-write bucket, which cards and labels share. Spec 08 §7 and §11 updated.
+- D-125: 2026-10-01 M4-T8 — rules. A create with the kind and value of a live rule returns that
+  rule (keeping the later expiry) instead of a duplicate row, so repeated mutes use no quota. Domain
+  values are stored as their registrable domain (tldts, as `item.domain`), so they match ranking.
+  `maxRules` and the `Me` quota usage count live rules only; `house.expire-rules` deletes expired
+  ones hourly. A `mute_story` value must name a cluster with a member the user can access. Spec 08
+  §8 updated.
+- D-126: 2026-10-01 M4-T9 — admin side effects the API cannot target exactly under RLS. A
+  `ranker.thresholds` change of `strengthWeights` or `model` enqueues `user.learn` for every user
+  active in 7 days, not only users with an active model (RLS hides other tenants' `user_models`; the
+  handler trains only when the context or samples changed). A plan change in `PATCH
+  /admin/users/:id` runs `refresh_feed_subscribers` over every feed with subscribers, a superset of
+  the target's feeds. Exact targeting needs SECURITY DEFINER functions, i.e. a migration, which the
+  parallel M3a branch owns. Activation relies on `admin_activate_provider_credential` (exact
+  candidate, `valid`, validated within 24 h): the endpoint/model fingerprint comparison stays with
+  the worker CLI, because `TYPESAFE_*`/`OLLAMA_*` are worker-only env; the worker heartbeat could
+  carry fingerprints later. An env-sourced credential reports `enabled: true`. The recall-validation
+  prerequisite of `engine.prefilter_enabled` and `engine.laya` is an operator procedure; only the
+  Laya heartbeat check is enforced. Spec 08 §9 updated.
+- D-127: 2026-10-01 M4-T9 — admin request and response details. LibreTranslate settings need
+  `{lang}→en` for each language newly set to `translate`, and every non-English `language_modes`
+  language for `card_text_mode = 'english'`; the probe runs before the transaction and is rechecked
+  inside it, and a failure answers `503 ENGINE_UNAVAILABLE {engine: 'libretranslate', reason,
+  missing}`. Promotion also records the card as library version 1 of its slug
+  (`admin_publish_library_card_version`) in the same transaction; its body is `{cardId, title,
+  titleSk?, topicIds, slug?}` with `slug` defaulting to `<slugified-title>-<cardId>`, and unknown
+  topic ids answer 400 `{field: 'topicIds'}` instead of the trigger's check violation. The overview
+  reports registry defaults for unset settings (`DAILY_BUDGET_USD` is worker-only env). `POST
+  /admin/ops-event` answers `201 {kind, at, stored}`, is limited to 30/min per IP, stores
+  `host_health` detail as canonical JSON of at most 2000 characters, and without the bearer the CSRF
+  check runs first (403, then 401). `POST /admin/invites` requires `count` 1 with an `email`, and
+  invite POSTs omit `emailSent` on a replayed receipt (the email is never re-sent). There is no admin
+  audit table: admin mutations write structured `audit` log lines without secrets. Spec 08 §9 and §11
+  updated.

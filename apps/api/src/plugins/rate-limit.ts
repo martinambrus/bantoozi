@@ -11,7 +11,7 @@ import type { RateLimitRule } from '../types.js';
  * off only when `RATE_LIMITS_ENABLED=false` (allowed with `NODE_ENV=test` only, spec 01 §3).
  *
  * The limited response carries `X-RateLimit-Limit` (the tightest applicable maximum) and, on 429,
- * `Retry-After` and `X-RateLimit-Reset` in seconds (D-96: `rate_limit_hit()` reports whether a hit
+ * `Retry-After` and `X-RateLimit-Reset` in seconds (D-120: `rate_limit_hit()` reports whether a hit
  * is allowed and when to retry, not the remaining count, so `X-RateLimit-Remaining` is not sent).
  */
 
