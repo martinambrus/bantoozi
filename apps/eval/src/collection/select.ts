@@ -239,10 +239,83 @@ export function selectLanguageSample(input: SelectInput): SelectResult {
     const existing = existingByFeed.get(feedId)?.length ?? 0;
     return { existing, available: existing + (freshByFeed.get(feedId)?.length ?? 0) };
   });
-  // Each size gets a second, exclusive-first attempt before it is given up.
+  const freshById = new Map(input.fresh.map((item) => [item.articleId, item]));
+  /**
+   * Repairs a draw that fell short of `n` with augmenting swaps: an unchosen article blocked by a
+   * single full feed replaces a chosen article of that feed when a third article then fits too,
+   * one more each time (an article with two strata-feeds of room, `{A,Y}` for `{A,X}`, frees `X`
+   * for `{B,X}`). Exact packing under several caps is NP-hard, so the search is bounded; the cap
+   * itself is never exceeded.
+   */
+  const augment = (n: number, result: ReturnType<typeof draw>) => {
+    const limitOf = (feedId: string) => Math.max(result.cap, carrierExisting.get(feedId) ?? 0);
+    const count = new Map(result.count);
+    const chosen = new Set(result.added);
+    const days = { ...result.days };
+    const fits = (item: SelectItem) =>
+      carriersOf(item).every((c) => (count.get(c) ?? 0) < limitOf(c));
+    const shift = (item: SelectItem, delta: 1 | -1) => {
+      for (const c of carriersOf(item)) count.set(c, (count.get(c) ?? 0) + delta);
+      days[item.day] = (days[item.day] ?? 0) + delta;
+      if (delta === 1) chosen.add(item.articleId);
+      else chosen.delete(item.articleId);
+    };
+    const order = [...input.fresh].sort(
+      (a, b) =>
+        groupRank(seed, a.articleId) - groupRank(seed, b.articleId) ||
+        byKey(a.articleId, b.articleId),
+    );
+    let budget = 2_000_000;
+    let improved = true;
+    while (improved && input.existing.length + chosen.size < n && budget > 0) {
+      improved = false;
+      search: for (const c of order) {
+        if (chosen.has(c.articleId)) continue;
+        if (fits(c)) {
+          shift(c, 1);
+          improved = true;
+          break;
+        }
+        const full = carriersOf(c).filter((f) => (count.get(f) ?? 0) >= limitOf(f));
+        if (full.length !== 1) continue;
+        for (const id of [...chosen]) {
+          budget -= 1;
+          const s = freshById.get(id);
+          if (s === undefined || !carriersOf(s).includes(full[0]!)) continue;
+          shift(s, -1);
+          if (fits(c)) {
+            shift(c, 1);
+            for (const t of order) {
+              budget -= 1;
+              if (t === s || chosen.has(t.articleId) || !fits(t)) continue;
+              shift(t, 1);
+              improved = true;
+              break search;
+            }
+            shift(c, -1);
+          }
+          shift(s, 1);
+          if (budget <= 0) break search;
+        }
+      }
+    }
+    const drawn = new Set(result.added);
+    const added = [
+      ...result.added.filter((id) => chosen.has(id)),
+      ...order
+        .filter((i) => chosen.has(i.articleId) && !drawn.has(i.articleId))
+        .map((i) => i.articleId),
+    ];
+    return { cap: result.cap, added, days, count };
+  };
+  // Each size gets a second, exclusive-first attempt and then the augmenting repair before it is
+  // given up.
   const attempt = (size: number) => {
     const spread = draw(size, false);
-    return input.existing.length + spread.added.length >= size ? spread : draw(size, true);
+    if (input.existing.length + spread.added.length >= size) return spread;
+    const exclusive = draw(size, true);
+    if (input.existing.length + exclusive.added.length >= size) return exclusive;
+    return augment(size, exclusive);
   };
   let n = feasibleSize(strata, input.target, input.feedCapShare);
   let result = attempt(n);

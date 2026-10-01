@@ -6,6 +6,7 @@ import {
   insertSampleRows,
   loadSample,
   loadSampleCandidates,
+  lockSampleCarriers,
   lockDataset,
   lockDatasetAdditions,
   nextDatasetVersion,
@@ -210,6 +211,7 @@ export async function drawSample(
     }
 
     const existingRows = base === null ? [] : await loadSample(tx, base.version);
+    await lockSampleCarriers(tx);
     const candidates = await loadSampleCandidates(tx, userId);
     const candidateById = new Map<string, SampleCandidate>(candidates.map((c) => [c.articleId, c]));
     const existingIds = new Set(existingRows.map((r) => r.articleId));

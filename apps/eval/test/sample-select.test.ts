@@ -201,6 +201,34 @@ describe('selectLanguageSample', () => {
     }
   });
 
+  it('repairs a draw blocked by equally shared articles with an augmenting swap', () => {
+    // Cap 1 at size 10: stratum A offers {A,X} and {A,Y}, stratum B only {B,X}, plus eight
+    // exclusive strata. {A,Y} with {B,X} fills all ten whichever of A's articles comes first.
+    const pool: SelectItem[] = [
+      { articleId: 'ax', feedId: 'A', carriers: ['A', 'X'], day: '2026-09-10' },
+      { articleId: 'ay', feedId: 'A', carriers: ['A', 'Y'], day: '2026-09-10' },
+      { articleId: 'bx', feedId: 'B', carriers: ['B', 'X'], day: '2026-09-10' },
+      ...Array.from({ length: 8 }, (_, f) => ({
+        articleId: `e${f}`,
+        feedId: `f${f}`,
+        day: '2026-09-10',
+      })),
+    ];
+    for (let i = 0; i < 20; i += 1) {
+      const result = selectLanguageSample({
+        fresh: pool,
+        existing: [],
+        target: 10,
+        feedCapShare: 0.1,
+        seed: `s${i}`,
+      });
+      expect(result.size).toBe(10);
+      expect(result.added).toContain('bx');
+      expect(result.added).toContain('ay');
+      for (const feed of result.feeds) expect(feed.selected).toBeLessThanOrEqual(1);
+    }
+  });
+
   it('draws nothing when no language article is eligible', () => {
     const result = selectLanguageSample({
       fresh: [],

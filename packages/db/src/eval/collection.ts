@@ -233,6 +233,15 @@ export interface SampleCandidate {
 }
 
 /**
+ * Holds every feed–article association still until the transaction ends: `SHARE` mode lets readers
+ * through but makes the ingest worker's `feed_items` writes wait, so the carrier sets a sample draw
+ * selects by are the ones its snapshots freeze. Must run inside a transaction.
+ */
+export async function lockSampleCarriers(tx: Executor): Promise<void> {
+  await tx.execute(sql`LOCK TABLE feed_items IN SHARE MODE`);
+}
+
+/**
  * Every article the user's feeds carry, ordered by id (eligible or not: exclusions are counted).
  * Inside a transaction the articles stay share-locked until it ends, so the ingest-only worker
  * cannot change an article's language or pipeline state between the draw and its snapshot.

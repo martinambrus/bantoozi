@@ -109,8 +109,8 @@ settings, regardless of profile.
   rows, a frozen one never changes and the next draw creates the next version (D-98). A re-run may
   only widen the recorded parameters (more languages, a higher `--per-lang` or `--feed-cap`). Any
   other change is refused, and a new `--version` starts a new lineage. The draw share-locks its
-  candidate articles until it commits, so the worker cannot change one between selection and
-  snapshot.
+  candidate articles and the feed–article associations until it commits, so the worker cannot
+  change an article or add a carrier between selection and snapshot.
 - **Freeze:** `eval.sample.snapshot` stores immutable article input (title, excerpt, body lead used by
   the classifier, language, timestamps, carrier feeds, content revision and story-group id), with
   `snapshot_sha`. Freeze rater cards/strengths and assignment membership before the first model run.

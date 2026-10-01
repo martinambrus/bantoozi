@@ -742,6 +742,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   A draw prefers, within a stratum, the article with the fewest carriers, and a size it cannot fill
   gets a second, exclusive-first attempt before the sample shrinks, so a shared article never uses
   up another feed's room while an exclusive one is left.
+  A size still unfilled gets a bounded augmenting repair (an unchosen article blocked by one full
+  feed replaces a chosen article of that feed when a third then fits), since exact packing under
+  several caps is NP-hard; the cap is never exceeded. The draw also holds `feed_items` in SHARE mode
+  until it commits, so no carrier is added between the selection and the snapshots.
   Otherwise English rows would stay under `langs: ['sk']`, or a sample would exceed its recorded
   target or cap. A parameter the version never recorded constrains nothing. The widened values are
   recorded on the version even when the draw adds nothing. Repeated languages are recorded once.

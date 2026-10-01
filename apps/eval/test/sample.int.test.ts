@@ -4,6 +4,7 @@ import {
   getDataset,
   loadSample,
   loadSampleCandidates,
+  lockSampleCarriers,
 } from '@bantoozi/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -337,5 +338,25 @@ describe('eval sample (M3a-T2)', () => {
     );
     expect(new Set(candidate?.carrierFeedIds)).toEqual(new Set([a, b]));
     expect(candidate?.feedId).toBe(candidate?.carrierFeedIds[0]);
+  });
+  it('holds the carrier sets still while the draw runs, so the worker cannot add a carrier', async () => {
+    const [a, b] = [feedsByLang['sk']![4]!, feedsByLang['sk']![5]!];
+    const id = await collected(ctx, { feedIds: [a], lang: 'sk', title: 'Carried once' });
+    await ctx.db.transaction(async (tx) => {
+      await lockSampleCarriers(tx);
+      const client = await ctx.owner.connect();
+      try {
+        await client.query(`SET lock_timeout = '200ms'`);
+        await expect(
+          client.query(
+            `INSERT INTO feed_items (feed_id, article_id, guid, first_seen_at)
+             VALUES ($1, $2, 'late-carrier', now())`,
+            [b, id],
+          ),
+        ).rejects.toMatchObject({ code: '55P03' });
+      } finally {
+        client.release(true);
+      }
+    });
   });
 });
