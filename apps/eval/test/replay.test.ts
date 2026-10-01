@@ -301,6 +301,42 @@ describe('replayDiff', () => {
   });
 });
 
+describe('replayDiff unsupported cells (D-113 addendum)', () => {
+  it('is inconclusive when one evaluated cell is supported and another is not', () => {
+    // 24 English items (supported) and 6 Slovak ones (unsupported) of rater 1, scored identically.
+    const f = fixture(30);
+    const articles = new Map(
+      f.ids.map((id, i) => [id, { lang: i < 24 ? 'en' : 'sk', storyGroupId: `g${i}` }]),
+    );
+    const mixed = { ...f, articles };
+    const scores = (runId: string) =>
+      rows(
+        runId,
+        f.ids,
+        (i) => 0.6 + (i % 5) / 20,
+        (i) => 0.1 + (i % 7) / 20,
+      );
+    const diff = diffOf(mixed, scores('1'), scores('2'));
+    expect(diff.cells.map((c) => [c.lang, c.eligible])).toEqual([
+      ['en', true],
+      ['sk', false],
+    ]);
+    expect(diff.verdict).toBe('inconclusive');
+    expect(diff.reasons.join('\n')).toMatch(
+      /unsupported rater\/language cell\(s\).*rater 1 sk \(6 items, 3\/3\)/,
+    );
+
+    // A measured regression in the supported cell still fails.
+    const worse = rows(
+      '2',
+      f.ids,
+      (i) => (i < 24 ? 0.1 + (i % 7) / 20 : 0.6 + (i % 5) / 20),
+      (i) => (i < 24 ? 0.6 + (i % 5) / 20 : 0.1 + (i % 7) / 20),
+    );
+    expect(diffOf(mixed, scores('1'), worse).verdict).toBe('fail');
+  });
+});
+
 describe('replayDiff guards and lane shares', () => {
   const f = fixture(24);
   const liked = (i: number) => 0.6 + (i % 5) / 20;

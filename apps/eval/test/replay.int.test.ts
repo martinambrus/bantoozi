@@ -29,10 +29,11 @@ import {
 let ctx: RunnerTestContext;
 let reportDir: string;
 const runs: Record<string, string> = {};
+let raterA = '';
 
 beforeAll(async () => {
   ctx = await setupRunnerTest();
-  await seedGolden(ctx);
+  raterA = (await seedGolden(ctx)).raters.a;
   reportDir = await mkdtemp(path.join(tmpdir(), 'bantoozi-eval-replay-'));
   for (const experiment of ['E1', 'E3', 'B0', 'B1'] as const) {
     const { rt } = runtime(ctx);
@@ -210,9 +211,35 @@ describe('eval replay (M3a-T6)', () => {
     ]).catch((error: unknown) => error);
     expect(out).toMatchObject({ name: 'EvalCommandError', message: /cannot read thresholds/ });
 
+    // The full E1 run has unsupported cells (rater A's 8 Slovak items, rater B's 4 English likes),
+    // so its unchanged replay is inconclusive and names them (exit 5, D-113 addendum).
+    const fullPath = path.join(reportDir, 'cli-full.md');
+    await expect(
+      runCli(ctx, ['replay', runs['E1']!, '--yes', '--out', fullPath]),
+    ).rejects.toMatchObject({ name: 'EvalCommandError', exitCode: 5 });
+    const full = await readFile(fullPath, 'utf8');
+    expect(full).toContain('## Verdict: INCONCLUSIVE');
+    expect(full).toMatch(new RegExp(`unsupported rater/language cell\\(s\\).*rater ${raterA} sk`));
+
+    // An E1 run whose only cell is supported (rater A, English) passes its unchanged replay.
+    const scoped = runtime(ctx);
+    let scopedId: string;
+    try {
+      const result = await runExperiment(scoped.rt, {
+        experiment: 'E1',
+        raterIds: [raterA],
+        langs: ['en'],
+        yes: true,
+        gitSha: 'base',
+      });
+      expect(result.status).toBe('complete');
+      scopedId = result.runId!;
+    } finally {
+      await scoped.rt.close();
+    }
     const reportPath = path.join(reportDir, 'cli.md');
-    const printed = await runCli(ctx, ['replay', runs['E1']!, '--yes', '--out', reportPath]);
-    expect(printed).toMatch(new RegExp(`replay \\d+ vs ${runs['E1']!}: pass`));
+    const printed = await runCli(ctx, ['replay', scopedId, '--yes', '--out', reportPath]);
+    expect(printed).toMatch(new RegExp(`replay \\d+ vs ${scopedId}: pass`));
     expect(await readFile(reportPath, 'utf8')).toContain('## Verdict: PASS');
 
     await expect(runCli(ctx, ['replay', runs['B0']!, '--yes'])).rejects.toMatchObject({

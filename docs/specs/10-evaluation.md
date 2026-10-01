@@ -41,8 +41,8 @@ Notation: `eval <command>` below is short for the root script `pnpm evaluate <co
    ```
 
    `eval gate` records the locked selection as an `eval.runs` row with experiment `G1-gate`;
-   `apply-g1` requires that lock to record the file's config hash, profile, status and report hash,
-   and accepts a `dryRun` artifact only in `bantoozi_eval_dryrun` (D-106, D-108).
+   `apply-g1` requires that lock to record the file's config hash, profile, participant count, status
+   and report hash, and accepts a `dryRun` artifact only in `bantoozi_eval_dryrun` (D-106, D-108).
 
 3. `pnpm evaluate apply-g1 apps/eval/config/g1.json` (paths are relative to the repository root; the
    CLI resolves them from there) writes the settings below to the dev DB. In production, an admin
@@ -541,7 +541,10 @@ by `apply-g1` and the normal production settings flow (§1); owner-pilot scope r
 - **Pass rule:** on the identical frozen cohort, no eligible rater/language AUC drops by more than
   0.03 and macro AUC does not drop. Threshold-only changes cannot be assessed by AUC (it is unchanged):
   also require no increase in hard-hide false-negative rate, no fall in For You precision >0.03,
-  and report coverage/Maybe-share changes. Unsupported cells yield inconclusive, not pass.
+  and report coverage/Maybe-share changes. Unsupported cells yield inconclusive, not pass: any
+  evaluated rater/language cell (one with scored items in the replay scope) below the support rule
+  (≥ 20 items, ≥ 5 of each class) makes a replay that would otherwise pass inconclusive, naming
+  those cells. A measured regression elsewhere still fails (D-113).
 - Dataset hashes, complete output coverage and the same paired bootstrap procedure are mandatory.
   Replays of a repeatedly viewed test set are regression checks, not new independent quality proof;
   use a fresh holdout for tuning/engine-selection claims.

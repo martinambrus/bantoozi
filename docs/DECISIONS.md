@@ -858,6 +858,13 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `reason: 'apply-g1'`. Runs, dataset hashes, configSha and the gate lock's profile, status and report
   sha are checked against the database being written. A `dryRun` artifact is accepted only in
   `bantoozi_eval_dryrun`. The API's LibreTranslate language probe is not repeated. Spec 10 §1 updated.
+  Addendum (PR #10 review): `gate.participants` is not in the config hash, so `eval gate` also
+  records the readiness participant count in the lock's results, next to the status and report
+  sha. `apply-g1` refuses a file whose count differs from the lock's ("participant count mismatch"),
+  so an edited count cannot present owner-pilot evidence as broader evidence. The lock's results
+  jsonb carries it, so no migration is needed and the configSha stays unchanged. A lock written
+  before this change has no count and is refused; rerunning `eval gate` on the same manifest
+  records it.
 - D-109: 2026-10-01 M3a-T7 — the evaluation policy view (lane distribution, spec 10 §4) applies no
   demotions (the golden set has no per-user demotion state). A failed card answer makes coverage
   unavailable, and an item with no usable answer stays in New and is counted.
@@ -970,6 +977,13 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   translation falls back to, so the estimate bounds the live Call A/B requests.
 - D-113: 2026-10-01 M3a-T6 — `eval replay` computes its paired ΔAUC with a story-group bootstrap; the
   macro is the plain mean over eligible cells (≥ 20 items, ≥ 5 of each class).
+  Addendum (PR #10): every evaluated rater/language cell must be supported (≥ 20 items, ≥ 5 of
+  each class). A cell is evaluated when both sides scored at least one of its items; a rater or
+  language with no item in the replay scope has no cell. If any evaluated cell is unsupported, a
+  replay that would otherwise pass is inconclusive (exit 5), and the reasons name each such cell
+  with its item and class counts. Before, one supported cell was enough, so an unsupported cell was
+  ignored. A measured regression in a supported cell, or in the macro or the policy rules, still
+  fails.
 - D-114: 2026-10-01 M3a-T6 — runner and replay conventions. A replay's run row has experiment
   `replay:<experiment>`; only E1, E2, E3, E3b and E4 can be replayed, and only `enrich-v1` is
   accepted until a new set exists. E6 rerun answers are keyed per rater as `e6.r<raterId>` (card id =

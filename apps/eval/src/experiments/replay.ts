@@ -633,6 +633,9 @@ export function replayDiff(input: {
     verdict = 'inconclusive';
     reasons.push('no rater/language cell has enough support (≥ 20 items, ≥ 5 of each class)');
   }
+  // Every evaluated cell (one with an item both sides scored) needs support: an unsupported one
+  // has no regression check, so the replay cannot pass (spec 10 §6, D-113 addendum).
+  const unsupported = eligible.length === 0 ? [] : cells.filter((cell) => !cell.eligible);
   if (verdict !== 'inconclusive') {
     for (const cell of eligible) {
       if (cell.auc.delta !== null && cell.auc.delta < -MAX_CELL_AUC_DROP) {
@@ -668,6 +671,19 @@ export function replayDiff(input: {
       verdict = 'inconclusive';
       reasons.push('For You precision is unsupported: the lane is empty on both sides');
     }
+  }
+  if (verdict === 'pass' && unsupported.length > 0) {
+    // A measured regression still fails; otherwise the unsupported cells make it inconclusive.
+    verdict = 'inconclusive';
+    reasons.push(
+      `unsupported rater/language cell(s) (< ${MIN_CELL_ITEMS} items or < ${MIN_CELL_CLASS} of a class): ` +
+        unsupported
+          .map(
+            (cell) =>
+              `rater ${cell.raterId} ${cell.lang} (${cell.auc.n} items, ${cell.auc.positives}/${cell.auc.negatives})`,
+          )
+          .join(', '),
+    );
   }
   return {
     cells,
