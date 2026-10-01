@@ -205,7 +205,7 @@ export interface RunResults {
      */
     byLang: Record<string, { estimatedUsd: number; billedUsd: number; cacheSavingsUsd: number }>;
     /**
-     * Invocations this cost covers (a `--resume` adds one; D-122). Billed, failed-call, token and
+     * Invocations this cost covers (a `--resume` adds one; D-110). Billed, failed-call, token and
      * cache figures are summed over them; the estimate is the first invocation's whole-run one.
      */
     invocations?: number;
@@ -804,6 +804,22 @@ async function processCardArticle(
   if (sink !== null && rows.length > 0) await sink(rows);
 }
 
+/**
+ * A successful stored answer of a resumed run (`plan.existing`), or null when it is missing or
+ * failed. E6/E7 reuse them like the shared Call B path, so a resume (even with a cleared cache or on
+ * another host) asks and bills only the missing or failed tasks (D-114 addendum).
+ */
+function storedCardAnswer(
+  plan: Plan,
+  articleId: string,
+  cardId: string,
+  key: string,
+): CardAnswer | null {
+  const stored = plan.existing.get(answerKey(articleId, cardId, key));
+  if (stored?.['ok'] !== true || typeof stored['p'] !== 'number') return null;
+  return { p: stored['p'], engine: stored['engine'] === 'llm' ? 'llm' : 'typesafe' };
+}
+
 async function processE6(env: CallEnv, plan: Plan, out: Execution, sink: Sink | null) {
   const e6 = plan.e6;
   if (e6 === null) return;
@@ -814,33 +830,44 @@ async function processE6(env: CallEnv, plan: Plan, out: Execution, sink: Sink | 
     const item = plan.samples.get(articleId);
     if (item === undefined) return;
     const cards = e6.cardsByRater.get(raterId) ?? [];
-    const asks = cards.map((card) => ({
-      cardId: card.cardId,
-      built: buildCardQuestion(card, plan.cardMode),
-      owner: null,
-    }));
-    const state = buildState(modelInputOf(item.snapshot, null), 'match');
-    const results = await askCards(env, {
-      articleId,
-      revision: item.snapshot.contentRevision,
-      state,
-      cards: asks,
-    });
+    const key = e6AnswerKey(raterId);
     const answers = new Map<string, CardAnswer>();
+    const asks: CardAsk[] = [];
+    for (const card of cards) {
+      const stored = storedCardAnswer(plan, articleId, card.cardId, key);
+      if (stored !== null) {
+        answers.set(card.cardId, stored);
+        continue;
+      }
+      asks.push({
+        cardId: card.cardId,
+        built: buildCardQuestion(card, plan.cardMode),
+        owner: null,
+      });
+    }
+    const results =
+      asks.length === 0
+        ? new Map<string, CardResult>()
+        : await askCards(env, {
+            articleId,
+            revision: item.snapshot.contentRevision,
+            state: buildState(modelInputOf(item.snapshot, null), 'match'),
+            cards: asks,
+          });
     const rows: RunAnswerInput[] = [];
     for (const [cardId, result] of results) {
       // Keyed per rater: raters can share a card id (reused by text hash, D-100) while E6 gives
       // each rater's copy different examples, so a shared `card` key would overwrite (D-114).
       const card = cards.find((c) => c.cardId === cardId);
       const fallback = card !== undefined && cardTextFallback(card, plan.cardMode);
-      rows.push(cardRow(articleId, cardId, e6AnswerKey(raterId), result, undefined, fallback));
+      rows.push(cardRow(articleId, cardId, key, result, undefined, fallback));
       const answer = cardAnswerOf(result);
       if (answer !== null) answers.set(cardId, answer);
     }
     const byArticle = out.raterAnswers.get(raterId) ?? new Map<string, Map<string, CardAnswer>>();
     byArticle.set(articleId, answers);
     out.raterAnswers.set(raterId, byArticle);
-    if (sink !== null) await sink(rows);
+    if (sink !== null && rows.length > 0) await sink(rows);
   });
 }
 
@@ -851,31 +878,34 @@ async function processE7(env: CallEnv, plan: Plan, out: Execution, sink: Sink | 
     if (item === undefined) return;
     const base = modelInputOf(item.snapshot, null);
     const cards = plan.cardsByRater.get(e7.raterId) ?? [];
-    const asks = cards.map((card) => ({
-      cardId: card.cardId,
-      built: buildCardQuestion(card, plan.cardMode),
-      owner: null,
-    }));
     const rows: RunAnswerInput[] = [];
     let valid = true;
     for (const [variant, sentence] of [
       ['targeted', e7TargetedSentence(e7.targetedInterest)],
       ['generic', E7_GENERIC_SENTENCE],
     ] as const) {
-      const state = buildState(steeredInput(base, sentence), 'match');
+      const key = `e7.${variant}`;
+      const asks: CardAsk[] = cards
+        .filter((card) => storedCardAnswer(plan, e7.articleId, card.cardId, key) === null)
+        .map((card) => ({
+          cardId: card.cardId,
+          built: buildCardQuestion(card, plan.cardMode),
+          owner: null,
+        }));
+      if (asks.length === 0) continue;
       const results = await askCards(env, {
         articleId: e7.articleId,
         revision: item.snapshot.contentRevision,
-        state,
+        state: buildState(steeredInput(base, sentence), 'match'),
         cards: asks,
       });
       for (const [cardId, result] of results) {
-        rows.push(cardRow(e7.articleId, cardId, `e7.${variant}`, result));
+        rows.push(cardRow(e7.articleId, cardId, key, result));
         valid &&= result.ok;
       }
     }
-    out.e7Valid.set(`${e7.raterId}|${e7.articleId}`, valid && asks.length > 0);
-    if (sink !== null) await sink(rows);
+    out.e7Valid.set(`${e7.raterId}|${e7.articleId}`, valid && cards.length > 0);
+    if (sink !== null && rows.length > 0) await sink(rows);
   });
 }
 
@@ -1289,7 +1319,7 @@ async function runClaimed(
     // 2. Freeze before the first model call; a new run's inputs are read again after the freeze,
     // in the same transaction and under the dataset additions lock that every post-freeze rating
     // correction takes (and the row lock an open-head rating write shares), so no rating, card or
-    // assignment can land between the freeze and the config snapshot (D-120).
+    // assignment can land between the freeze and the config snapshot (D-110).
     const shown = inputsSha(config);
     if (existingRunId === null && options.replay === undefined) {
       const version = dataset.version;
@@ -1393,7 +1423,7 @@ async function runClaimed(
 
     // A resume records its in-flight state before any work, for every experiment: the earlier
     // invocations' cost carried and marked incomplete, so a kill at any point leaves a lower
-    // bound that the next resume keeps (D-122).
+    // bound that the next resume keeps (D-110).
     if (existingRunId !== null) {
       await updateRunResults(rt.db, id, {
         status: 'running',
@@ -1519,7 +1549,7 @@ export function priorRunCost(results: Record<string, unknown> | null): {
 }
 
 /**
- * The cost of a resumed run (D-122): this invocation's billed, failed-call, token and cache figures
+ * The cost of a resumed run (D-110): this invocation's billed, failed-call, token and cache figures
  * added to the earlier invocations' (per language too); the estimate stays the first invocation's
  * whole-run estimate when there is one. Totals remain the sums of the per-language split.
  */

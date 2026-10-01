@@ -281,7 +281,7 @@ describe('eval run (M3a-T6)', () => {
     expect(resumed.out()).toContain(`resuming run ${aborted.runId!}`);
     // Information only: `--max-usd` caps each invocation (spec 10 §3).
     expect(resumed.out()).toMatch(/earlier invocations billed \$[\d.]+\n/);
-    // The final cost covers both invocations (D-122): billed = first + resumed invocation.
+    // The final cost covers both invocations (D-110): billed = first + resumed invocation.
     const finalCost = ((await runRow(ctx, aborted.runId!)).results as { cost: Cost }).cost;
     const resumedSpend = (await spentSoFar()) - s2;
     expect(resumedSpend).toBeGreaterThan(0);
@@ -969,5 +969,60 @@ describe('eval run (M3a-T6)', () => {
     expect(after.config.raters.map((r) => r.raterId)).not.toContain(added.rows[0]!.id);
     expect(after.config.raters).toEqual(before.config.raters);
     expect(groundTruthSha(after.config)).toBe(groundTruthSha(before.config));
+  });
+
+  it('a resumed E6 run reuses its persisted answers (cache cleared): no task is billed twice', async () => {
+    const base = runtime(ctx);
+    let e1Id: string;
+    try {
+      const e1 = await runExperiment(base.rt, { experiment: 'E1', yes: true, gitSha: 'test' });
+      expect(e1.status).toBe('complete');
+      e1Id = e1.runId!;
+    } finally {
+      await base.rt.close();
+    }
+    const e6 = async (
+      overrides: Record<string, string>,
+      options: { maxUsd?: number; resumeRunId?: string } = {},
+    ) => {
+      const { rt } = runtime(ctx, { TYPESAFE_PRICE_PER_MTOK_USD: '200', ...overrides });
+      const before = ctx.typesafe.requestCount();
+      try {
+        const result = await runExperiment(rt, {
+          experiment: 'E6',
+          baseRunId: e1Id,
+          gitSha: 'test',
+          yes: true,
+          ...(options.maxUsd === undefined ? {} : { maxUsd: options.maxUsd }),
+          ...(options.resumeRunId === undefined ? {} : { resumeRunId: options.resumeRunId }),
+        });
+        return { result, requests: ctx.typesafe.requestCount() - before };
+      } finally {
+        await rt.close();
+      }
+    };
+    // A complete E6 from an empty cache: the requests one full run sends.
+    const full = await e6({ EVAL_CACHE_DIR: await freshCache() }, { maxUsd: 1000 });
+    expect(full.result.status).toBe('complete');
+    expect(full.requests).toBeGreaterThan(0);
+    // Aborted part-way by the cap, then resumed with a cleared cache (another host).
+    const aborted = await e6(
+      { EVAL_CACHE_DIR: await freshCache() },
+      { maxUsd: full.result.estimate.estimatedUsd / 3 },
+    );
+    expect(aborted.result.status).toBe('aborted');
+    expect(aborted.requests).toBeGreaterThan(0);
+    const persisted = await answerCounts(ctx, aborted.result.runId!);
+    expect(Object.values(persisted).reduce((a, b) => a + b, 0)).toBeGreaterThan(0);
+    const resumed = await e6(
+      { EVAL_CACHE_DIR: await freshCache() },
+      { maxUsd: 1000, resumeRunId: aborted.result.runId! },
+    );
+    expect(resumed.result.status).toBe('complete');
+    // The resume's estimate counts the persisted tasks as done.
+    expect(resumed.result.estimate.estimatedUsd).toBeLessThan(full.result.estimate.estimatedUsd);
+    // Only the missing or failed tasks were asked again.
+    expect(resumed.requests).toBeLessThan(full.requests);
+    expect(aborted.requests + resumed.requests).toBeLessThanOrEqual(full.requests);
   });
 });

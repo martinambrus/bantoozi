@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { mergeRunCost, priorRunCost } from '../src/experiments/runner.js';
 
-/** D-122: a resumed run's cost covers every invocation. */
+/** D-110: a resumed run's cost covers every invocation. */
 const cost = (billed: number, estimate: number, savings: number) => ({
   estimatedUsd: estimate,
   billedUsd: billed,

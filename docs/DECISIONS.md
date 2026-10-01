@@ -817,7 +817,15 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   budget is a selection reason, so the gate reports `needs_more_data` instead of passing. The
   threshold pool (For You, Maybe, tiers) takes only items of supported development contexts (≥ 20
   items, ≥ 5 per class), so an unsupported context never carries a share of its participant's
-  weight.
+  weight. Addendum (PR #10 review): every paired gain (card mode, translate vs native, the E4 tier-2
+  gain) is computed on the intersection of items both runs scored: each run's macro AUC uses only
+  the items with a known score in both, so an item missing on one side (up to 5% may be) cannot
+  create or erase a 0.02/0.05 gain. Without one of the runs the gain is unmeasured, as before. The
+  report reads a `score.r*` answer tagged as a fallback (`variant: 'native'` from a translation
+  fallback, or `cardTextFallback: true`) as unknown, and a Call A answer tagged `variant: 'native'`
+  in a translated-state (`lt`/`glm`) run as failed. This matches the runner, whose coverage already
+  excludes those answers, so the advertised variant's AUCs, the threshold pool and the demotion
+  samples never count them.
 - D-108: 2026-10-01 M3a-T7 — `apply-g1` semantics spec 10 §1 leaves open. `language_modes` is merged
   over the stored modes (a language outside the gate keeps its stored mode; unmeasured gate languages are written as `native`, D-107); `ranker.thresholds` is replaced whole. A
   key is written only when its effective value changes (a missing row counts as its default), so a
@@ -911,6 +919,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   resume state, and a new run is claimed as soon as its row exists, with a session advisory lock on
   a dedicated connection held for the whole invocation (a crash frees it with the connection); a
   second invocation on a claimed run is refused before any work. Spec 10 §3 and §6 updated.
+  Addendum (PR #10): a resumed E6 or E7 run reuses its successful stored answers (`e6.r<raterId>`,
+  `e7.targeted`, `e7.generic`) like the shared Call B path and asks only the missing or failed
+  cards, so the resume estimate counts the persisted tasks as done and a resume with a cleared
+  cache or on another host bills no task twice.
 - D-115: 2026-10-01 M3a-T8 — the dry-run database is copied from the migrated test template
   (`TEST_ADMIN_DATABASE_URL` is used only to create and drop it, under the template advisory lock)
   and seeded by running the worker seed script as a subprocess against it. Only the names
