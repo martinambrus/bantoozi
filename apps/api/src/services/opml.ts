@@ -33,7 +33,7 @@ function folderOf(entry: OpmlEntry): string | null {
  * 1. More valid feeds than `opmlMaxFeeds` → `409 QUOTA_EXCEEDED {limit, used, max}` (`used` is the
  *    number of feeds in the file).
  * 2. Entries whose feed the user already subscribes to are `existing`: they keep their inference
- *    mode and folder and use no quota.
+ *    mode and folder and use no quota; so are repeated outlines of one feed within the file.
  * 3. New feeds are added in document order up to the remaining `maxFeeds` quota; the rest are
  *    reported as `quota_exceeded`, never silently dropped.
  * 4. Feed rows are created or reused without a fetch (due now), subscriptions start `off`, and both
@@ -62,7 +62,8 @@ export async function importOpml(
     parsed.entries.map((entry) => entry.canonicalUrl),
   );
   const subscribed = await subscribedFeedIds(tx, [...new Set(known.values())]);
-  let existing = 0;
+  // Later outlines of a canonical feed already in the file (`parseOpml` drops them) are existing.
+  let existing = parsed.duplicates.length;
   const fresh: OpmlEntry[] = [];
   const freshFeeds = new Set<string>();
   for (const entry of parsed.entries) {

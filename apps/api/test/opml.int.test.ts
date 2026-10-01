@@ -175,6 +175,20 @@ describe('POST /subscriptions/import-opml', () => {
     ]);
   });
 
+  it('reports repeated outlines of one feed as existing', async () => {
+    const alice = await createTestUser(h);
+    const res = await importOpml(
+      alice,
+      opmlDocument([
+        { xmlUrl: 'https://twice.example.com/feed.xml' },
+        { xmlUrl: 'https://twice.example.com/feed.xml', folder: 'Again' },
+      ]),
+    );
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toEqual({ added: 1, existing: 1, invalid: [] });
+    expect(await subscriptions(alice.id)).toHaveLength(1);
+  });
+
   it('replays the same report for a retried idempotency key', async () => {
     const alice = await createTestUser(h);
     const document = opmlDocument([{ xmlUrl: 'https://replay.example.com/feed.xml' }]);
