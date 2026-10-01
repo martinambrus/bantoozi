@@ -7,6 +7,8 @@ import {
   listAssignments,
   listDatasets,
   loadSample,
+  lockDatasetAdditions,
+  openDatasetForCorrection,
   removeRaterCard,
   saveFacetLabels,
   setRaterFeeds,
@@ -386,5 +388,35 @@ describe('ensureAssignments', () => {
     expect((await listDatasets(rdb.db)).length).toBe(versions);
     await save('no');
     expect((await listDatasets(rdb.db)).length).toBe(versions + 1);
+  });
+
+  it('takes the additions lock before the dataset row, so a mutation racing a freeze waits', async () => {
+    const articleId = sampled[1]!;
+    await rdb.db.transaction((tx) =>
+      saveFacetLabels(tx, { labeler: 'owner', articleId, values: { 'facet.lock': 'a' }, now }),
+    );
+    const head = (await headDataset(rdb.db))!;
+    expect(head.frozenAt).toBeNull();
+    // A run's freeze holds the additions lock and then takes the row FOR UPDATE. A mutation that
+    // shares the row first and then needs the additions lock (a correction followed by a top-up)
+    // would close a lock cycle with it.
+    const client = await rdb.owner.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext('eval.dataset.additions'))`);
+      const mutation = rdb.db.transaction(async (tx) => {
+        await openDatasetForCorrection(tx, 'assignments');
+        await lockDatasetAdditions(tx);
+      });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await client.query(`SET LOCAL lock_timeout = '3s'`);
+      await client.query(`SELECT 1 FROM eval.datasets WHERE version = $1 FOR UPDATE`, [
+        head.version,
+      ]);
+      await client.query('COMMIT');
+      await expect(mutation).resolves.toBeUndefined();
+    } finally {
+      client.release();
+    }
   });
 });

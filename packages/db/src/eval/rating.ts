@@ -468,14 +468,18 @@ export async function nextPendingPosition(
  * `'assignments'`), before a rater's card change (`'cards'`) or before a facet label change
  * (`'facets'`; runs read cards and labels from the version's freeze-time ground truth): when the
  * head dataset version is frozen, create the next open version in this transaction, copying every
- * row unchanged (the top-up path; serialized by the additions lock). Idempotent: an open head is only share-locked, so a concurrent freeze waits until this
- * transaction commits and its manifest then includes the change. Earlier runs keep the exact
- * ratings they froze in their own config. Returns the version created, or null when none was.
+ * row unchanged (the top-up path). Every caller takes the additions lock first and then shares the
+ * open head's row, so a concurrent freeze waits until this transaction commits and its ground truth
+ * then includes the change. Earlier runs keep the exact ratings they froze in their own config.
+ * Returns the version created, or null when none was.
  */
 export async function openDatasetForCorrection(
   tx: Transaction,
   cause: 'rating' | 'assignments' | 'cards' | 'facets' = 'rating',
 ): Promise<{ version: string; createdFrom: string } | null> {
+  // The additions lock first, then the dataset row: the same order as the freeze and top-up paths,
+  // so a mutation racing a run's freeze waits instead of deadlocking.
+  await lockDatasetAdditions(tx);
   const head = await headDataset(tx);
   if (head === null) return null;
   if (head.frozenAt === null) {
@@ -484,7 +488,6 @@ export async function openDatasetForCorrection(
        WHERE version = ${head.version} FOR SHARE`);
     if (locked.rows[0]?.frozen !== true) return null;
   }
-  await lockDatasetAdditions(tx);
   const current = await headDataset(tx);
   if (current === null || current.frozenAt === null) return null;
   const version = nextDatasetVersion(current.version);
