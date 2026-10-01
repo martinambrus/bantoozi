@@ -13,6 +13,13 @@ import {
 } from '../cards/validation.js';
 import type { Executor, Transaction } from '../client.js';
 import { toDate, type RawTimestamp } from '../timestamps.js';
+import {
+  copySampleRows,
+  createDataset,
+  headDataset,
+  lockDatasetAdditions,
+  nextDatasetVersion,
+} from './datasets.js';
 import { EVAL_USER_EMAIL } from './system-user.js';
 
 /**
@@ -446,9 +453,58 @@ export async function nextPendingPosition(
 }
 
 /**
+ * Before a rating correction (spec 10 §2.1: "once frozen, … rating corrections … create a new
+ * version manifest"): when the head dataset version is frozen, create the next open version in
+ * this transaction, copying every row unchanged (the top-up path; serialized by the additions
+ * lock). Idempotent: an open head is only share-locked, so a concurrent freeze waits until this
+ * transaction commits and its manifest then includes the change. Earlier runs keep the exact
+ * ratings they froze in their own config. Returns the version created, or null when none was.
+ */
+export async function openDatasetForCorrection(
+  tx: Transaction,
+): Promise<{ version: string; createdFrom: string } | null> {
+  const head = await headDataset(tx);
+  if (head === null) return null;
+  if (head.frozenAt === null) {
+    const locked = await tx.execute<{ frozen: boolean }>(sql`
+      SELECT frozen_at IS NOT NULL AS frozen FROM eval.datasets
+       WHERE version = ${head.version} FOR SHARE`);
+    if (locked.rows[0]?.frozen !== true) return null;
+  }
+  await lockDatasetAdditions(tx);
+  const current = await headDataset(tx);
+  if (current === null || current.frozenAt === null) return null;
+  const version = nextDatasetVersion(current.version);
+  await createDataset(tx, {
+    version,
+    parentVersion: current.version,
+    seed: current.seed,
+    params: { ...current.params, correctionOf: current.version },
+  });
+  await copySampleRows(tx, current.version, version);
+  return { version, createdFrom: current.version };
+}
+
+/** Whether the rater has an assignment at `position`, and whether it has a rating. */
+async function assignmentState(
+  tx: Transaction,
+  raterId: string,
+  position: number,
+): Promise<{ rated: boolean } | null> {
+  const result = await tx.execute<{ rated: boolean }>(sql`
+    SELECT EXISTS (SELECT 1 FROM eval.ratings g
+                    WHERE g.rater_id = a.rater_id AND g.article_id = a.article_id) AS rated
+      FROM eval.assignments a
+     WHERE a.rater_id = ${raterId}::bigint AND a.position = ${position}`);
+  const row = result.rows[0];
+  return row === undefined ? null : { rated: row.rated };
+}
+
+/**
  * Rate the article at the rater's `position` (spec 10 §2.2): upsert `eval.ratings` (a later rating
  * replaces the earlier one; a reason only goes with a dislike) and mark the assignment `rated`.
- * Returns null when the rater has no assignment at that position.
+ * Returns null when the rater has no assignment at that position. When the head dataset version is
+ * frozen, the next open version is created first ({@link openDatasetForCorrection}).
  */
 export async function rateAssignment(
   tx: Transaction,
@@ -461,6 +517,9 @@ export async function rateAssignment(
   },
 ): Promise<AssignmentView | null> {
   const reason = input.rating === -1 ? input.reason : null;
+  // Every rating (new or changed) is ground truth: never mutate a frozen version's in place.
+  if ((await assignmentState(tx, input.raterId, input.position)) === null) return null;
+  await openDatasetForCorrection(tx);
   const assignment = await tx.execute<{ article_id: string }>(sql`
     UPDATE eval.assignments SET status = 'rated', skip_reason = NULL
      WHERE rater_id = ${input.raterId}::bigint AND position = ${input.position}
@@ -498,6 +557,10 @@ export async function skipAssignment(
     throw new RangeError(`a skip reason has at most ${SKIP_REASON_MAX} characters`);
   }
   const skipReason = trimmed === '' ? null : trimmed;
+  const state = await assignmentState(tx, input.raterId, input.position);
+  if (state === null) return null;
+  // A skip that withdraws a rating is a rating correction too.
+  if (state.rated) await openDatasetForCorrection(tx);
   const assignment = await tx.execute<{ article_id: string }>(sql`
     UPDATE eval.assignments SET status = 'skipped', skip_reason = ${skipReason}
      WHERE rater_id = ${input.raterId}::bigint AND position = ${input.position}

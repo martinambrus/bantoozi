@@ -367,23 +367,27 @@ export async function buildRatingServer(options: RatingServerOptions): Promise<F
       throw new HttpError(429, 'Too many attempts', 'Too many link attempts. Wait a few minutes.');
     }
     const at = now();
-    const rater = isTokenShaped(token) ? await findRaterByToken(db, hashSecret(token), at) : null;
-    if (rater === null) {
-      throw new HttpError(
+    const tokenHash = isTokenShaped(token) ? hashSecret(token) : null;
+    const rater = tokenHash === null ? null : await findRaterByToken(db, tokenHash, at);
+    const expired = () =>
+      new HttpError(
         401,
         'Link expired',
         'This rating link is not valid: it has expired or was revoked. Ask for a new one.',
       );
-    }
+    if (rater === null || tokenHash === null) throw expired();
     const previous = parseCookies(req.headers.cookie).get(SESSION_COOKIE);
     if (previous !== undefined) await deleteRaterSession(db, hashSecret(previous));
     const value = newSecret();
     const expiresAt = await createRaterSession(db, {
       sessionHash: hashSecret(value),
       raterId: rater.id,
+      tokenHash,
       expiresAt: sessionExpiry(at),
       now: at,
     });
+    // A reissue or revocation between the lookup above and the insert: no session.
+    if (expiresAt === null) throw expired();
     reply.header('set-cookie', cookieHeader(value, (expiresAt.getTime() - at.getTime()) / 1000));
     return reply.redirect(destination, 303);
   }
@@ -605,15 +609,21 @@ export async function buildRatingServer(options: RatingServerOptions): Promise<F
     checkMutation(req, s);
     const cardId = IdParamSchema.safeParse((req.params as { cardId: string }).cardId);
     if (!cardId.success) throw new HttpError(404, 'Not found', 'There is no such card.');
-    const state = await stepState(s.rater.id);
-    if (setupLocked(state)) {
+    // Same lock as card adds, feed changes and assignment building: the "no assignments yet"
+    // check and the delete cannot interleave with a start.
+    const removed = await db.transaction(async (tx) => {
+      await lockRater(tx, s.rater.id);
+      const progress = await assignmentProgress(tx, s.rater.id);
+      if (setupLocked({ assignments: progress.total })) return 'locked' as const;
+      return removeRaterCard(tx, s.rater.id, cardId.data);
+    });
+    if (removed === 'locked') {
       throw new HttpError(
         409,
         'Cards are final',
         'Your cards are final now that rating has started.',
       );
     }
-    await removeRaterCard(db, s.rater.id, cardId.data);
     return reply.redirect('/r/cards', 303);
   });
 

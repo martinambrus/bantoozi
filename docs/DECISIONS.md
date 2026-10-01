@@ -757,7 +757,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   rater's feeds first seen in the last 30 days that are not in the head version and not stale or
   failed, added through the dataset top-up (a frozen head creates the next version) before
   assignment. Assignments are built on "Start rating" and again from "Look for more articles" when
-  nothing is pending and the rater has fewer than 300. Spec 10 §2.2 updated.
+  nothing is pending and the rater has fewer than 300. A rating change, or a skip that withdraws a
+  rating, made while the head version is frozen first creates the next open version
+  (`params.correctionOf`, rows copied unchanged) in the same transaction (spec 10 §2.1); ratings stay
+  current-state rows and each run freezes the ratings it used in its config. Spec 10 §2.2 updated.
 - D-105: 2026-10-01 M3a-T7 — spec 10 §2.3 asks for a predeclared adjudication step without defining
   it. Facet values use the labelling page's strings (yes/no, `0`–`4`, option ids); `uncertain` and
   `not_applicable` are excluded from accuracy. A label by the labeller `adjudicated` wins; otherwise a

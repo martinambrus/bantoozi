@@ -1,5 +1,12 @@
 import {
   createRater,
+  createRaterSession,
+  findRaterByToken,
+  freezeDataset,
+  getDataset,
+  headDataset,
+  listDatasets,
+  loadSample,
   raterProgress,
   reissueRaterToken,
   revokeRater,
@@ -519,6 +526,18 @@ describe('rating', () => {
       409,
     );
     expect((await a.browser.get('/r/cards')).body).toContain('Your cards are final');
+    // Deleting a card is refused under the same lock and state check.
+    const card = await rdb.owner.query<{ card_id: string }>(
+      'SELECT card_id::text FROM eval.rater_cards WHERE rater_id = $1 LIMIT 1',
+      [a.rater.id],
+    );
+    const del = await a.browser.post(`/r/cards/${card.rows[0]!.card_id}/delete`);
+    expect(del.statusCode).toBe(409);
+    expect(del.body).toContain('Cards are final');
+    const left = await rdb.owner.query('SELECT 1 FROM eval.rater_cards WHERE rater_id = $1', [
+      a.rater.id,
+    ]);
+    expect(left.rowCount).toBe(5);
   });
 
   it('shows a blind page: feed, title, excerpt (≤ 600 characters) and open original, no model fields', async () => {
@@ -723,5 +742,79 @@ describe('feed picking uses the golden feeds only', () => {
       setRaterFeeds(tx, rater.id, [feeds[0]!.id, '999999']),
     );
     expect(stored).toEqual([feeds[0]!.id]);
+  });
+});
+
+describe('session creation races a reissue or revocation', () => {
+  it('creates no session for a token that was replaced or revoked after validation', async () => {
+    for (const change of ['reissue', 'revoke'] as const) {
+      const { rater, token } = await addRater(rdb, { langs: ['en'], now: now() });
+      const tokenHash = hashSecret(token);
+      // The exchange validated the token…
+      expect((await findRaterByToken(rdb.db, tokenHash, now()))?.id).toBe(rater.id);
+      // …then the token changed before the session insert.
+      if (change === 'reissue') {
+        const issued = issueToken(now(), 30);
+        await reissueRaterToken(rdb.db, rater.id, {
+          tokenHash: issued.tokenHash,
+          tokenExpiresAt: issued.expiresAt,
+        });
+      } else {
+        await revokeRater(rdb.db, rater.id, now());
+      }
+      const created = await createRaterSession(rdb.db, {
+        sessionHash: hashSecret(`session-${change}`),
+        raterId: rater.id,
+        tokenHash,
+        expiresAt: new Date(Date.now() + 86_400_000),
+        now: now(),
+      });
+      expect(created).toBeNull();
+      const sessions = await rdb.owner.query(
+        'SELECT 1 FROM eval.rater_sessions WHERE rater_id = $1',
+        [rater.id],
+      );
+      expect(sessions.rowCount).toBe(0);
+    }
+  });
+});
+
+describe('rating corrections after a freeze (spec 10 §2.1)', () => {
+  it('create the next open version once; the frozen version stays unchanged', async () => {
+    const r = await readyRater('corrector');
+    await r.browser.post('/r/a/0/rate', { rating: 'like' });
+    const head = (await headDataset(rdb.db))!;
+    const frozen = await rdb.db.transaction((tx) => freezeDataset(tx, head.version));
+    const frozenRows = await loadSample(rdb.db, head.version);
+    const versionsBefore = (await listDatasets(rdb.db)).length;
+
+    // Changing a rating while the head is frozen first opens the next version.
+    await r.browser.post('/r/a/0/rate', { rating: 'dislike', reason: 'seen' });
+    const next = (await headDataset(rdb.db))!;
+    expect(next.version).not.toBe(head.version);
+    expect(next).toMatchObject({ parentVersion: head.version, frozenAt: null, seed: head.seed });
+    expect(next.params).toMatchObject({ correctionOf: head.version });
+    const nextRows = await loadSample(rdb.db, next.version);
+    expect(nextRows.map((row) => [row.articleId, row.snapshotSha, row.split])).toEqual(
+      frozenRows.map((row) => [row.articleId, row.snapshotSha, row.split]),
+    );
+    const after = (await getDataset(rdb.db, head.version))!;
+    expect(after.manifest).toEqual(frozen.manifest);
+    expect(after.frozenAt?.getTime()).toBe(frozen.frozenAt?.getTime());
+    expect(await loadSample(rdb.db, head.version)).toEqual(frozenRows);
+
+    // Further changes go to the open version: no other version is created.
+    await r.browser.post('/r/a/1/rate', { rating: 'like' });
+    await r.browser.post('/r/a/0/skip');
+    expect((await listDatasets(rdb.db)).length).toBe(versionsBefore + 1);
+
+    // After the next freeze, a skip that withdraws a rating also opens a version; a skip of an
+    // unrated article does not.
+    await rdb.db.transaction((tx) => freezeDataset(tx, next.version));
+    await r.browser.post('/r/a/2/skip');
+    expect((await listDatasets(rdb.db)).length).toBe(versionsBefore + 1);
+    await r.browser.post('/r/a/1/skip');
+    expect((await listDatasets(rdb.db)).length).toBe(versionsBefore + 2);
+    expect((await headDataset(rdb.db))!.parentVersion).toBe(next.version);
   });
 });

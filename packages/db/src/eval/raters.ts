@@ -143,20 +143,31 @@ export async function findRaterByToken(
   return row === undefined ? null : toRater(row);
 }
 
-/** A session row; its expiry is capped at the token's (spec 10 §2.4). */
+/**
+ * A session row for the token the caller just validated; its expiry is capped at the token's
+ * (spec 10 §2.4). The insert re-checks, in the same statement, that `tokenHash` is still the
+ * rater's current, unrevoked, unexpired token, so a reissue or revocation that lands between the
+ * exchange's validation and this insert leaves no session behind. `FOR SHARE` orders the insert
+ * against a concurrent reissue/revoke (which update the row, then delete its sessions): either the
+ * insert waits and re-reads the new hash, or it commits first and the reissue deletes it. Null
+ * when the check fails.
+ */
 export async function createRaterSession(
   db: Executor,
-  input: { sessionHash: string; raterId: string; expiresAt: Date; now: Date },
-): Promise<Date> {
+  input: { sessionHash: string; raterId: string; tokenHash: string; expiresAt: Date; now: Date },
+): Promise<Date | null> {
   const result = await db.execute<{ expires_at: RawTimestamp }>(sql`
     INSERT INTO eval.rater_sessions (session_hash, rater_id, created_at, expires_at)
     SELECT ${input.sessionHash}, r.id, ${input.now.toISOString()}::timestamptz,
            least(${input.expiresAt.toISOString()}::timestamptz, r.token_expires_at)
-      FROM eval.raters r WHERE r.id = ${input.raterId}::bigint
+      FROM eval.raters r
+     WHERE r.id = ${input.raterId}::bigint AND r.token_hash = ${input.tokenHash}
+       AND r.token_revoked_at IS NULL
+       AND r.token_expires_at > ${input.now.toISOString()}::timestamptz
+       FOR SHARE OF r
     RETURNING expires_at`);
   const row = result.rows[0];
-  if (row === undefined) throw new Error(`rater ${input.raterId} does not exist`);
-  return toDate(row.expires_at);
+  return row === undefined ? null : toDate(row.expires_at);
 }
 
 /**
