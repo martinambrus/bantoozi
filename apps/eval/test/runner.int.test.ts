@@ -489,6 +489,18 @@ describe('eval run (M3a-T6)', () => {
     try {
       const e1 = await runExperiment(rt, { experiment: 'E1', yes: true, gitSha: 'test' });
       expect(e1.status).toBe('complete');
+      // An unfinished base run is refused: its answers could still change between plans.
+      const setStatus = (status: string) =>
+        ctx.owner.query(
+          `UPDATE eval.runs SET results = jsonb_set(results, '{status}', to_jsonb($2::text))
+            WHERE id = $1`,
+          [e1.runId, status],
+        );
+      await setStatus('running');
+      await expect(
+        runExperiment(rt, { experiment: 'E6', yes: true, gitSha: 'test', baseRunId: e1.runId! }),
+      ).rejects.toMatchObject({ message: expect.stringContaining('is not finished (running)') });
+      await setStatus('complete');
       const e6 = await runExperiment(rt, {
         experiment: 'E6',
         yes: true,

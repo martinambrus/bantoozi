@@ -388,6 +388,14 @@ async function draftConfig(
     if (base.experiment !== def.baseExperiment) {
       throw new EvalCommandError(`base run ${baseRunId} is not an ${def.baseExperiment} run`);
     }
+    // The plan reads the base run's answers more than once (estimate, run, resume): only a finished
+    // base keeps them fixed, as the default lookup above requires.
+    const baseStatus = (baseRun.results as { status?: unknown } | null)?.status;
+    if (baseStatus !== 'complete' && baseStatus !== 'partial') {
+      throw new EvalCommandError(
+        `base run ${baseRunId} is not finished (${String(baseStatus ?? 'running')}); ${def.id} builds on a complete or partial ${def.baseExperiment} run`,
+      );
+    }
     const langs = base.langs.filter((lang) => options.langs?.includes(lang) ?? true);
     const isDev = (articleId: string) => {
       const row = sampleById.get(articleId);
