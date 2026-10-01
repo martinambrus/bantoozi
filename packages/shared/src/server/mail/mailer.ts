@@ -6,6 +6,8 @@ export interface EmailMessage {
   to: string;
   subject: string;
   text: string;
+  /** Optional HTML alternative of `text` (spec 08 §2.1: auth emails carry both parts). */
+  html?: string;
 }
 
 export interface Mailer {
@@ -48,6 +50,7 @@ export function createMailer(options: CreateMailerOptions): Mailer {
         to: message.to,
         subject: message.subject,
         text: message.text,
+        ...(message.html === undefined ? {} : { html: message.html }),
       });
     },
     lastEmail: () => undefined,

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { UuidSchema } from '../ids.js';
+import { UuidStringSchema } from '../ids.js';
 import { PLAN_NAMES } from '../plans.js';
 import { UserPreferencesSchema } from '../preferences.js';
 
@@ -46,7 +46,7 @@ export type Locale = z.infer<typeof LocaleSchema>;
 /** `Me` (spec 08 §3): the signed-in user, returned by `GET /me` and `POST /auth/verify`. */
 export const MeSchema = z
   .object({
-    id: UuidSchema,
+    id: UuidStringSchema,
     email: z.string(),
     displayName: z.string().nullable(),
     locale: LocaleSchema,

@@ -23,6 +23,9 @@ export const UuidSchema = z
   .regex(UUID_PATTERN, 'must be a UUID')
   .transform((s) => s.toLowerCase());
 
+/** A UUID string in responses: no transform, so response serialization can encode it. */
+export const UuidStringSchema = z.string().regex(UUID_PATTERN, 'must be a UUID');
+
 /**
  * Bigint ids and revision counters travel as decimal strings in JSON, cursors and job payloads
  * (spec 01 §5). They are never round-tripped through JS `number`.
