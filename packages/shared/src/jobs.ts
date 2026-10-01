@@ -184,6 +184,9 @@ export const QUEUES = {
         // Set only on the continuation of a full run (spec 06 §7 step 5): the run's snapshot time;
         // rows scored at or after it are not forced again.
         snapshotAt: iso.optional(),
+        // Set only on a continuation: the last window position the previous run visited; the run
+        // resumes strictly below it.
+        cursor: z.object({ arrival: iso, articleId: IdSchema }).strict().optional(),
       })
       .strict(),
     concurrency: 4,
@@ -352,6 +355,15 @@ export function sendSpecFor<Q extends QueueName>(queue: Q, payload: JobPayload<Q
     case 'article.match':
       return { kind: 'send', singletonKey: `match:${id('articleId')}` };
     case 'user.rank':
+      if (p['cursor'] !== undefined) {
+        // A continuation has a key of its own per position: it never swallows, and is never
+        // swallowed by, an event's incremental or full rank.
+        const cursor = p['cursor'] as { arrival: string; articleId: string };
+        return {
+          kind: 'send',
+          singletonKey: `rank-cont:${id('userId')}:${cursor.arrival}:${cursor.articleId}`,
+        };
+      }
       return p['full'] === true
         ? { kind: 'send', singletonKey: `rank-full:${id('userId')}` }
         : { kind: 'debounced', key: `rank:${id('userId')}`, seconds: 3 };

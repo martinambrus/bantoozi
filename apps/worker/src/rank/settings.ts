@@ -1,4 +1,4 @@
-import { readStoredSetting, type Executor } from '@bantoozi/db';
+import { readStoredSettings, type Executor } from '@bantoozi/db';
 import { resolveRankerSettings, type RankerSettings } from '@bantoozi/ranker';
 
 /**
@@ -9,7 +9,10 @@ import { resolveRankerSettings, type RankerSettings } from '@bantoozi/ranker';
  * thresholds.
  */
 export async function loadRankerSettings(db: Executor): Promise<RankerSettings> {
-  const thresholds = await readStoredSetting(db, 'ranker.thresholds');
-  const settingsVersion = await readStoredSetting(db, 'ranker.settings_version');
-  return resolveRankerSettings({ thresholds, settingsVersion });
+  // One statement, one snapshot: never the old thresholds with the new version, or the reverse.
+  const stored = await readStoredSettings(db, ['ranker.thresholds', 'ranker.settings_version']);
+  return resolveRankerSettings({
+    thresholds: stored.get('ranker.thresholds'),
+    settingsVersion: stored.get('ranker.settings_version'),
+  });
 }

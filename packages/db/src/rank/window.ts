@@ -197,7 +197,7 @@ export async function rankWindowPage(
 
 /**
  * One document of the BM25 corpus (spec 06 §7 step 1, §9), which holds every inference-eligible
- * window article, not just the dirty ones. The caller selects the translation and normalizes it.
+ * window article, not just the dirty ones (archived articles are outside the window). The caller selects the translation and normalizes it.
  */
 export interface RankCorpusArticle {
   articleId: string;
@@ -224,7 +224,8 @@ export async function rankCorpusPage(
     SELECT a.id::text AS id, a.content_revision::text AS revision, a.lang, a.title_norm, a.excerpt
       FROM rank_window w
       JOIN articles a ON a.id = w.article_id
-     WHERE ${admitted(input.userId, input.now)} ${after}
+      LEFT JOIN user_article ua ON ua.user_id = ${input.userId}::uuid AND ua.article_id = w.article_id
+     WHERE ua.archived_at IS NULL AND ${admitted(input.userId, input.now)} ${after}
      ORDER BY a.id
      LIMIT ${input.limit}`);
   return result.rows.map((row) => ({

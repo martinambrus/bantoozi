@@ -1,6 +1,6 @@
 import { recordRankIntents, workerOutbox } from '@bantoozi/db';
 import { scoreVersion } from '@bantoozi/ranker';
-import { buildJobIntent, type Explain } from '@bantoozi/shared';
+import { buildJobIntent, parseJobPayload, type Explain } from '@bantoozi/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -42,7 +42,14 @@ interface RunLog {
 /** Run `user.rank` for `userId` and return its summary log line. */
 async function rank(
   userId: string,
-  options: { full?: boolean; now?: Date; snapshotAt?: Date; handler?: UserRankOptions } = {},
+  options: {
+    full?: boolean;
+    now?: Date;
+    snapshotAt?: Date;
+    /** A continuation payload recorded by an earlier run (its other fields win). */
+    continuation?: Record<string, unknown> | undefined;
+    handler?: UserRankOptions;
+  } = {},
 ): Promise<RunLog> {
   const logs: Array<Record<string, unknown>> = [];
   const { now } = options;
@@ -55,12 +62,13 @@ async function rank(
     options.handler,
   );
   await handle(
-    {
+    parseJobPayload('user.rank', {
       userId,
       reason: 'test',
       ...(options.full === true ? { full: true } : {}),
       ...(options.snapshotAt === undefined ? {} : { snapshotAt: options.snapshotAt.toISOString() }),
-    },
+      ...options.continuation,
+    }),
     { queue: 'user.rank', jobId: 'test' },
   );
   const log = logs.find((entry) => entry['job'] === 'user.rank');
@@ -469,6 +477,17 @@ describe('the dirty set covers each freshness trigger (spec 06 §7 step 2)', () 
       before.get(degraded)?.scoredAt?.getTime() ?? 0,
     );
     for (const id of others) expect(after.get(id)?.scoredAt).toEqual(before.get(id)?.scoredAt);
+
+    // Archived articles are outside the window, the corpus included: archiving one changes it.
+    await h.owner.query(
+      `UPDATE user_article SET archived_at = now() WHERE user_id = $1 AND article_id = $2`,
+      [r.userId, others[0]],
+    );
+    const archivedRun = await rank(r.userId);
+    expect(archivedRun.written).toBe(1);
+    expect((await row(r.userId, degraded)).scoredAt?.getTime()).toBeGreaterThan(
+      after.get(degraded)?.scoredAt?.getTime() ?? 0,
+    );
   });
 });
 
@@ -492,8 +511,12 @@ describe('full runs, continuations and fences (spec 06 §7 step 5)', () => {
       reason: 'continuation',
       full: true,
       snapshotAt: new Date().toISOString(),
+      cursor: { arrival: '2026-10-01T10:00:00.123456Z', articleId: '42' },
     });
-    expect(continued.send).toEqual(full.send);
+    expect(continued.send).toEqual({
+      kind: 'send',
+      singletonKey: `rank-cont:${userId}:2026-10-01T10:00:00.123456Z:42`,
+    });
   });
 
   it('a stale run fails its revision guard: nothing is written and a replacement is enqueued', async () => {
@@ -551,7 +574,46 @@ describe('full runs, continuations and fences (spec 06 §7 step 5)', () => {
     }
   });
 
-  it('a run out of budget commits a continuation; a full continuation keeps its snapshot', async () => {
+  it('a run out of budget commits a continuation that resumes below its last position', async () => {
+    const r = await reader();
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i += 1) ids.push(await matched(r.feedId, r.cardId, 0.5));
+    const tight = { pageSize: 2, batchSize: 2, budgetMs: 0 };
+    const visited: string[][] = [];
+    const handler = {
+      ...tight,
+      beforeWrite: async (batch: readonly string[]) => void visited.push([...batch]),
+    };
+
+    let since = await h.mark();
+    expect(await rank(r.userId, { handler })).toMatchObject({ outcome: 'continued', written: 2 });
+    let [continuation] = await h.payloads('user.rank', since);
+    expect(continuation).toMatchObject({ userId: r.userId, reason: 'continuation' });
+    expect(continuation?.['cursor']).toMatchObject({ articleId: ids[3] });
+    expect(buildJobIntent('user.rank', parseJobPayload('user.rank', continuation)).send).toEqual({
+      kind: 'send',
+      singletonKey: `rank-cont:${r.userId}:${String((continuation?.['cursor'] as { arrival: string }).arrival)}:${ids[3]}`,
+    });
+
+    // The rows already written stay recheck candidates; the continuation never revisits them.
+    since = await h.mark();
+    expect(await rank(r.userId, { continuation, handler })).toMatchObject({
+      outcome: 'continued',
+      written: 2,
+    });
+    [continuation] = await h.payloads('user.rank', since);
+    expect(await rank(r.userId, { continuation, handler })).toMatchObject({
+      outcome: 'done',
+      written: 1,
+    });
+    expect(visited.map((batch) => [...batch].sort())).toEqual([
+      [ids[3], ids[4]].sort(),
+      [ids[1], ids[2]].sort(),
+      [ids[0]],
+    ]);
+  });
+
+  it('a full continuation keeps its snapshot and forces only rows scored before it', async () => {
     const r = await reader();
     for (let i = 0; i < 5; i += 1) await matched(r.feedId, r.cardId, 0.5);
     await rank(r.userId);
@@ -563,11 +625,13 @@ describe('full runs, continuations and fences (spec 06 §7 step 5)', () => {
     expect(run).toMatchObject({ outcome: 'continued', written: 2 });
     const [continuation] = await h.payloads('user.rank', since);
     expect(continuation).toMatchObject({ userId: r.userId, reason: 'continuation', full: true });
-    const snapshotAt = new Date(String(continuation?.['snapshotAt']));
-    // The continuation forces only rows scored before the snapshot: the other three.
-    const next = await rank(r.userId, { full: true, snapshotAt });
+    expect(continuation?.['snapshotAt']).toBeDefined();
+    // The continuation resumes below the cursor and forces the other three.
+    const next = await rank(r.userId, { continuation });
     expect(next).toMatchObject({ outcome: 'done', written: 3 });
-    expect((await rank(r.userId, { full: true, snapshotAt })).written).toBe(0);
+    // Nothing above the snapshot is forced again, wherever it starts.
+    const { cursor: _cursor, ...restart } = continuation ?? {};
+    expect((await rank(r.userId, { continuation: restart })).written).toBe(0);
   });
 
   it(`drains more than ${RANK_PAGE} eligible items in bounded batches`, async () => {

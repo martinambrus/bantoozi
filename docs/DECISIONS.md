@@ -694,9 +694,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   snapshot can commit after it with an older timestamp, and an unscored item's coverage turns
   unavailable without any new answer; such rows (inputs within 15 minutes before `scored_at`,
   unscored `new` items with queued card work) are re-ranked but written only when the result
-  differs. The run stops after a 5-minute budget and commits a continuation; a full run's carries
-  `snapshotAt` (a new optional `user.rank` payload field) so the continuation forces only rows
-  scored before it. Writes serialize on a per-user advisory lock, keep the newer `scored_at`, and
+  differs. The run stops after a 5-minute budget and commits a continuation that resumes strictly
+  below its last window position (new optional `user.rank` field `cursor`, under its own
+  `rank-cont:` queue key so it neither swallows nor is swallowed by an event's rank); a full run's
+  also carries `snapshotAt` so it forces only rows scored before it. The ranking thresholds and
+  their version are read in one statement, and the BM25 corpus excludes archived articles. Writes serialize on a per-user advisory lock, keep the newer `scored_at`, and
   skip articles whose content or media revision moved; a superseded run or a moved article enqueues
   an incremental replacement, because the dirty set already holds every outdated row.
   `user.rank` needs no model dependencies, so the worker registers it unconditionally. Specs 03

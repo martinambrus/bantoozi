@@ -90,7 +90,8 @@ type RunOutcome = 'done' | 'superseded' | 'gone' | 'continued';
  * fenced by the captured revision and settings version (`writeRankBatch`).
  *
  * A full run also re-ranks every row scored before its snapshot. When the wall-time budget runs out
- * it commits a continuation through the outbox (a full run's carries its snapshot time) and ends;
+ * it commits a continuation through the outbox that resumes strictly below the last visited window
+ * position (a full run's also carries its snapshot time) and ends;
  * a superseded run enqueues a replacement, whose dirty set then holds every row of the old
  * revision or settings; articles whose revision moved during the run get an incremental rank. An
  * item newly placed in `maybe` with only a weak tier-1 translation enqueues
@@ -141,7 +142,7 @@ export function createUserRankHandler(
     const moved = new Set<string>();
     let written = 0;
     let ranked = 0;
-    let cursor: RankCursor | undefined;
+    let cursor: RankCursor | undefined = payload.cursor;
     let outcome: RunOutcome = 'done';
 
     pages: for (;;) {
@@ -226,7 +227,7 @@ export function createUserRankHandler(
       }
     }
 
-    const followUp = followUpIntent(payload, outcome, forceBefore, moved.size > 0);
+    const followUp = followUpIntent(payload, outcome, forceBefore, cursor, moved.size > 0);
     if (followUp !== null) {
       await retryTransaction(deps.db, (tx) => enqueueRank(workerOutbox(tx), followUp));
     }
@@ -247,27 +248,27 @@ export function createUserRankHandler(
 }
 
 /**
- * The job a run leaves behind: a continuation when the budget ran out (a full run's keeps its
- * snapshot), a replacement when the run was superseded, an incremental rank for moved articles.
+ * The job a run leaves behind: a continuation that resumes below the last visited position when the
+ * budget ran out (a full run's keeps its snapshot), a replacement when the run was superseded, an
+ * incremental rank for moved articles.
  */
 function followUpIntent(
   payload: JobPayload<'user.rank'>,
   outcome: RunOutcome,
   forceBefore: Date | undefined,
+  cursor: RankCursor | undefined,
   anyMoved: boolean,
 ): JobPayload<'user.rank'> | null {
   switch (outcome) {
     case 'gone':
       return null;
     case 'continued':
-      return forceBefore === undefined
-        ? { userId: payload.userId, reason: 'continuation' }
-        : {
-            userId: payload.userId,
-            reason: 'continuation',
-            full: true,
-            snapshotAt: forceBefore.toISOString(),
-          };
+      return {
+        userId: payload.userId,
+        reason: 'continuation',
+        ...(cursor === undefined ? {} : { cursor }),
+        ...(forceBefore === undefined ? {} : { full: true, snapshotAt: forceBefore.toISOString() }),
+      };
     case 'superseded':
       return { userId: payload.userId, reason: 'superseded' };
     case 'done':
