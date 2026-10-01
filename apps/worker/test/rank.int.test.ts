@@ -562,6 +562,36 @@ describe('full runs, continuations and fences (spec 06 §7 step 5)', () => {
     }
   });
 
+  it('a first settings version inserted while a batch writes supersedes it', async () => {
+    const r = await reader();
+    await matched(r.feedId, r.cardId, 0.9);
+    await h.deleteSetting('ranker.settings_version');
+    await h.deleteSetting('ranker.thresholds');
+    let committed: Promise<void> | undefined;
+    try {
+      const run = await rank(r.userId, {
+        handler: {
+          beforeWrite: async () => {
+            // The insert is in flight when the fence runs: the fence waits for it and sees it.
+            const write = await h.openSettingWrite('ranker.settings_version', 1);
+            committed = write.commit().finally(() => write.close());
+          },
+        },
+      });
+      await committed;
+      expect(run).toMatchObject({ outcome: 'superseded', written: 0 });
+      expect(await h.setting('ranker.settings_version')).toBe(1);
+    } finally {
+      await committed?.catch(() => {});
+      await h.deleteSetting('ranker.settings_version');
+    }
+    // Without a concurrent writer the fence stores the defaults it compared against.
+    await h.deleteSetting('ranker.thresholds');
+    expect((await rank(r.userId)).written).toBe(1);
+    expect(await h.setting('ranker.settings_version')).toBe(0);
+    expect(await h.setting('ranker.thresholds')).toEqual({});
+  });
+
   it('a malformed ranking override fails the job visibly', async () => {
     const r = await reader();
     await matched(r.feedId, r.cardId, 0.9);

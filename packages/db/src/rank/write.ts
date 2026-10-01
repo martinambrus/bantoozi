@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 
 import type { Transaction } from '../client.js';
+import { shareLockSettings } from '../settings.js';
 
 /** The ranking columns of one row to write (spec 06 §7 step 5). */
 export interface RankWrite {
@@ -41,7 +42,8 @@ export type RankWriteResult =
  * Upserts one batch of results (spec 06 §7 step 5). Inside the caller's transaction it
  * 1. takes the user's rank lock (`pg_advisory_xact_lock`), so concurrent runs of one user write in
  *    turn, and share-locks the user row and both ranking settings rows, comparing the captured rank
- *    revision and settings version with the current ones: if either changed, it writes nothing;
+ *    revision and settings version with the current ones: if either changed, it writes nothing (a
+ *    missing settings row is first stored with its default, so a first insert cannot slip past);
  * 2. writes only rows whose article still has the captured content and media revisions (the rest
  *    are reported as moved), and never replaces a row scored from a newer snapshot;
  * 3. sets only the ranking columns: reader state (read, rating, bookmark, labels, archive) is never
@@ -63,9 +65,14 @@ export async function writeRankBatch(
   const current = user.rows[0];
   if (current === undefined) return { status: 'gone' };
   if (current.rank_revision !== fence.rankRevision) return { status: 'superseded' };
+  // A missing row cannot be locked, and its first insert could commit before this transaction:
+  // store the defaults first (which leaves the effective values unchanged), then share-lock both.
+  await shareLockSettings(tx, [
+    { key: 'ranker.settings_version', initial: 0 },
+    { key: 'ranker.thresholds', initial: {} },
+  ]);
   const settings = await tx.execute<{ value: unknown }>(sql`
-    SELECT value FROM settings WHERE key = 'ranker.settings_version' FOR SHARE`);
-  await tx.execute(sql`SELECT 1 FROM settings WHERE key = 'ranker.thresholds' FOR SHARE`);
+    SELECT value FROM settings WHERE key = 'ranker.settings_version'`);
   const version = settings.rows[0]?.value;
   const settingsVersion = version === undefined ? '0' : JSON.stringify(version);
   if (settingsVersion !== fence.settingsVersion) return { status: 'superseded' };
