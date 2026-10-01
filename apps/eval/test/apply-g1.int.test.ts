@@ -4,11 +4,15 @@ import path from 'node:path';
 
 import {
   createDatabase,
+  createGateLock,
+  findGateLocks,
   G1_SETTING_KEYS,
   MIGRATIONS_FOLDER,
   PG_BOSS_VERSION,
+  recordGateOutcome,
   runMigrations,
   type Database,
+  type GateLockConfig,
 } from '@bantoozi/db';
 import {
   createUser,
@@ -246,6 +250,58 @@ describe('eval apply-g1 refusals', () => {
         [id],
       );
     }
+  });
+
+  it('refuses an artifact with dryRun stripped when the gate lock records a dry run', async () => {
+    // The lock is a dry-run lock (as in a restored or renamed dry-run database); the file is the
+    // same artifact without its `dryRun` mark, so its config hash still matches.
+    // A lock's config is immutable: replace the row with the same results and the mark changed.
+    const set = async (value: boolean) => {
+      const lock = (await findGateLocks(db, g1.dataset.version)).find(
+        (l) => (l.config as { configSha?: unknown }).configSha === g1.selection.configSha,
+      )!;
+      await owner.query('DELETE FROM eval.runs WHERE id = $1', [lock.id]);
+      const created = await createGateLock(db, {
+        gitSha: lock.gitSha,
+        config: { ...(lock.config as unknown as GateLockConfig), dryRun: value },
+      });
+      await recordGateOutcome(
+        db,
+        created.id,
+        lock.results as { status: 'pass'; reportSha: string } & Record<string, unknown>,
+      );
+    };
+    const before = await settingsSnapshot();
+    expect(g1.dryRun).toBeUndefined();
+    await set(true);
+    try {
+      await expect(evalCli(['apply-g1', g1Path])).rejects.toThrow(
+        /gate lock records a dry run[\s\S]*dry-run mismatch: g1\.json says not a dry run, the gate lock says dry run/,
+      );
+    } finally {
+      await set(false);
+    }
+    expect(await settingsSnapshot()).toEqual(before);
+  });
+
+  it('hashes the dry-run mark: adding it breaks the hash, re-hashing it contradicts the lock', async () => {
+    const marked = await writeVariant('marked.json', (g) => ({ ...g, dryRun: true }));
+    await expect(evalCli(['apply-g1', marked])).rejects.toThrow(/config hash mismatch/);
+    const rehashed = await writeVariant('rehashed.json', (g) => {
+      const value = { ...g, dryRun: true };
+      return {
+        ...value,
+        selection: {
+          ...g.selection,
+          configSha: g1ConfigSha({ ...value, profile: g.gate.profile }),
+        },
+      };
+    });
+    await expect(evalCli(['apply-g1', rehashed])).rejects.toThrow(
+      /no gate lock records this selection/,
+    );
+    // Without the mark the artifact hashes as before (real artifacts are unaffected).
+    expect(g1ConfigSha({ ...g1, profile: g1.gate.profile })).toBe(g1.selection.configSha);
   });
 
   it('refuses a report that does not match its hash', async () => {

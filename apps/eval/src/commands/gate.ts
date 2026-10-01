@@ -166,7 +166,7 @@ export async function runGate(
   let status: GateRunResult['status'] = 'needs_more_data';
   if (readiness.ready) {
     selection = selectOnDevelopment(
-      developmentInput(model, assessments, profile, dataset, options.dailyRevisions),
+      developmentInput(model, assessments, profile, dataset, options.dailyRevisions, dryRun),
     );
     if (selection.status === 'selected') {
       const cohortSha = reference?.config.cohort.sha ?? '';

@@ -49,7 +49,10 @@ export const G1Schema = z
   .strict();
 export type G1File = z.output<typeof G1Schema>;
 
-/** The fields the selection lock covers: every applied setting plus the evidence they rest on. */
+/**
+ * The fields the selection lock covers: every applied setting plus the evidence they rest on, and
+ * the dry-run mark of a synthetic artifact.
+ */
 export function g1ConfigSha(
   g1: Pick<
     G1File,
@@ -61,6 +64,7 @@ export function g1ConfigSha(
     | 'laya_track_recommended'
     | 'runs'
     | 'dataset'
+    | 'dryRun'
   > & { profile: G1File['gate']['profile'] },
 ): string {
   return canonicalSha256({
@@ -73,6 +77,9 @@ export function g1ConfigSha(
     runs: g1.runs,
     dataset: g1.dataset,
     profile: g1.profile,
+    // A dry-run artifact hashes the flag, so stripping it breaks the hash. A real artifact
+    // omits the key, so its hash is unchanged from before (D-108).
+    ...(g1.dryRun === true ? { dryRun: true } : {}),
   });
 }
 

@@ -104,6 +104,17 @@ export async function checkG1(
   const lock = locks.find(
     (l) => (l.config as { configSha?: unknown }).configSha === g1.selection.configSha,
   );
+  // A dry-run lock marks synthetic evidence whatever the file says (its `dryRun` may have been
+  // stripped, or the dry-run database restored or renamed): it never applies (D-108).
+  const lockDryRun = (lock?.config as { dryRun?: unknown } | undefined)?.dryRun;
+  if (lock !== undefined && lockDryRun === true && !isDryRunDatabaseName(database)) {
+    problems.push('the gate lock records a dry run: synthetic evidence cannot be applied');
+  }
+  if (lock !== undefined && (lockDryRun === true) !== (g1.dryRun === true)) {
+    problems.push(
+      `dry-run mismatch: g1.json says ${g1.dryRun === true ? 'dry run' : 'not a dry run'}, the gate lock says ${lockDryRun === true ? 'dry run' : 'not a dry run'}`,
+    );
+  }
   const lockResults = (lock?.results ?? null) as {
     status?: unknown;
     reportSha?: unknown;

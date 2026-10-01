@@ -209,6 +209,8 @@ export interface DevelopmentInput {
   /** Language of every sample article (both splits), to attribute a run's work to languages. */
   articleLang: ReadonlyMap<string, string>;
   dailyRevisions: number;
+  /** A dry-run gate (synthetic data): the selection's config hash covers the mark. */
+  dryRun?: boolean;
 }
 
 /**
@@ -558,6 +560,7 @@ export function selectOnDevelopment(input: DevelopmentInput): GateSelection {
       splitSha: input.dataset.splitSha,
     },
     profile: input.profile,
+    dryRun: input.dryRun === true,
   });
   return {
     profile: input.profile,
@@ -592,6 +595,7 @@ export function developmentInput(
   profile: Profile,
   dataset: GateDataset,
   dailyRevisions: number,
+  dryRun = false,
 ): DevelopmentInput {
   const cards = model.reference?.config.cards ?? [];
   const nonEnglish = new Set(
@@ -620,6 +624,7 @@ export function developmentInput(
     nonEnglishCardContexts: nonEnglish,
     raterLangs: new Map((model.reference?.config.raters ?? []).map((r) => [r.raterId, r.langs])),
     dailyRevisions,
+    dryRun,
   };
 }
 
