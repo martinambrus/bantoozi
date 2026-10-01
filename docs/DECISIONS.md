@@ -915,7 +915,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
 - D-110: 2026-10-01 M3a-T6 — the run cohort is the rated pairs of the selected raters and
   languages, plus facet-labelled articles for card experiments; the gate checks a run limited to a
   subset of the reference run's languages (E4 defaults to SK/CZ) against the reference cohort and
-  ratings restricted to that subset, and its coverage on those languages' items only. E6/E7 hold
+  ratings restricted to that subset, and its coverage on those languages' items only; E6/E7 are
+  checked against their base run's development pairs for their languages and raters. E6/E7 hold
   their base run's claim in shared mode for the whole invocation, and a run that E6/E7 build on is
   never resumed (start a new E1 run instead), so the base answers they read stay fixed; E6/E7 use only development pairs of
   the base E1 run's frozen config. The run config adds `assignments` (the BM25 corpus),

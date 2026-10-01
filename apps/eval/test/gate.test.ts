@@ -304,6 +304,37 @@ describe('development selection and test confirmation', () => {
     expect(unscoped.reasons).toContain('ratings differ from the reference run');
   });
 
+  it('checks E6 against the development pairs of its base run for its raters', () => {
+    const fixture = buildFixture();
+    const rater = fixture.raters[0]!.raterId;
+    const e6 = (scoped: boolean) => {
+      const raw = makeRawRun(fixture, { id: '19', experiment: 'E6', signal: () => 0.85 });
+      const config = raw.run.config as {
+        baseRunId?: string;
+        raters: { raterId: string }[];
+        cohort: { articleIds: string[]; sha: string };
+        ratings: { raterId: string; articleId: string }[];
+      };
+      config.baseRunId = '14';
+      if (scoped) {
+        const isDev = (id: string) => fixture.sample.get(id)?.split === 'dev';
+        config.raters = config.raters.filter((r) => r.raterId === rater);
+        config.ratings = config.ratings.filter((r) => r.raterId === rater && isDev(r.articleId));
+        const articleIds = [...new Set(config.ratings.map((r) => r.articleId))].sort(
+          (a, b) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0),
+        );
+        config.cohort = { articleIds, sha: canonicalSha256(articleIds) };
+      }
+      return parseRunData(raw.run, raw.answers);
+    };
+    const scoped = setup(fixture, [...standardRuns(fixture), e6(true)]).assessments.get('E6')!;
+    expect(scoped.reasons).not.toContain('cohort differs from the reference run');
+    expect(scoped.reasons).not.toContain('ratings differ from the reference run');
+    // The full reference cohort is not what an E6 run on rater A's development pairs carries.
+    const full = setup(fixture, [...standardRuns(fixture), e6(false)]).assessments.get('E6')!;
+    expect(full.reasons).toContain('cohort differs from the reference run');
+  });
+
   it('audits Call A answers and per-rater card answers for the pinned engine', () => {
     const fixture = buildFixture();
     const rating = fixture.ratings[0]!;

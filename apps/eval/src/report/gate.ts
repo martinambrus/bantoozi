@@ -38,6 +38,7 @@ import {
   type CutoffResult,
   type DemotionFlag,
 } from './enrichment.js';
+import { compareIds } from '../experiments/run-config.js';
 import { g1ConfigSha, type G1File } from './g1-schema.js';
 import { groundTruthSha, onSplit, runScore, scoringCoverage, type RatedItem } from './items.js';
 import { compositionView, runView, type ReportModel, type ScoreView } from './model.js';
@@ -156,6 +157,28 @@ export function assessGateRuns(
     expected.set(key, value);
     return value;
   };
+  // E6/E7 rerun the development pairs of their base E1 run, narrowed to their languages and raters:
+  // that scope of the base run's ground truth is what they must carry.
+  const expectedFromBase = (run: RunData): { cohortSha: string | null; truth: string | null } => {
+    const base = model.runs.find((r) => r.id === run.config.baseRunId);
+    if (base === undefined) return { cohortSha: null, truth: null };
+    const langs = new Set(run.config.langs);
+    const ofRater = new Set(run.config.raters.map((r) => r.raterId));
+    const isDev = (articleId: string) => {
+      const info = model.sample.get(articleId);
+      return info !== undefined && info.split === 'dev' && langs.has(info.lang);
+    };
+    const ratings = base.config.ratings.filter((r) => ofRater.has(r.raterId) && isDev(r.articleId));
+    const articleIds = [...new Set(ratings.map((r) => r.articleId))].sort(compareIds);
+    return {
+      cohortSha: canonicalSha256(articleIds),
+      truth: groundTruthSha({
+        ...base.config,
+        raters: base.config.raters.filter((r) => ofRater.has(r.raterId)),
+        ratings,
+      }),
+    };
+  };
   const result = new Map<string, RunAssessment>();
   for (const experiment of GATE_EXPERIMENTS) {
     const run = runs.get(experiment) ?? null;
@@ -190,6 +213,10 @@ export function assessGateRuns(
       return out;
     };
     const informational = experiment === 'E6' || experiment === 'E7';
+    const scope =
+      informational && run.config.baseRunId != null
+        ? expectedFromBase(run)
+        : expectedFor(run.config.langs);
     const foreign = PINNED_ENGINE.has(experiment) ? foreignEngineAnswers(run) : 0;
     const eligibility = runEligibility({
       experiment,
@@ -199,8 +226,8 @@ export function assessGateRuns(
         run.datasetVersion === dataset.version &&
         run.config.snapshotSha === dataset.snapshotSha &&
         run.config.splitSha === dataset.splitSha,
-      cohortMatches: run.config.cohort.sha === expectedFor(run.config.langs).cohortSha,
-      groundTruthMatches: groundTruthSha(run.config) === expectedFor(run.config.langs).truth,
+      cohortMatches: run.config.cohort.sha === scope.cohortSha,
+      groundTruthMatches: groundTruthSha(run.config) === scope.truth,
       // E6/E7 rerun subsets; their coverage is reported, not gated.
       coverage: informational
         ? { byLang: {}, byRater: {} }
