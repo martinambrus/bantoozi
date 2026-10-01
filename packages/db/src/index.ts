@@ -9,6 +9,8 @@ export * from './classify/index.js';
 export * from './client.js';
 export * from './engine/index.js';
 export * from './errors.js';
+export * from './eval/index.js';
+export * from './heartbeat.js';
 export * from './ingest/index.js';
 export * from './library/index.js';
 export * from './migrate/migrate.js';

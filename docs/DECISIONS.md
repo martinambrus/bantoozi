@@ -679,3 +679,20 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   like a settlement and then leaves the reservation charged for housekeeping. A released `suggest`
   reservation keeps its suggestion stamp (spec 05 §7), as a request cancelled after its send does.
   Specs 04 §1 and §4 and 11 §5 updated.
+- D-96: 2026-10-01 M3a-T1 — spec 02 §7 had no place for a dataset version's own record, yet spec 10
+  §2.1 stores the sampling seed, timestamps and exclusions, freezes a version at its first model run
+  and requires a top-up after that to create the next version. `eval.datasets` (version, parent,
+  seed, sampling `params`, and the `manifest`, `snapshot_sha` and `split_sha` written once at the
+  freeze) holds them; `eval.sample.dataset_version` and `eval.runs.dataset_version` reference it.
+  Triggers make the rules hold for every role: `eval.sample` rows are never updated or deleted, a
+  frozen version accepts no new rows and never changes again, and a run's experiment, version,
+  config and git sha are immutable once it starts. Spec 10 §2.1 also requires that ordinary workers
+  cannot consume the golden database and that a heartbeat alone is not isolation, without saying how:
+  the presence of the evaluation user `eval@bantoozi.local` marks a golden database. A worker without
+  `EVAL_INGEST_ONLY=true` refuses to start on one and stops when one appears under it (checked with
+  every heartbeat); an ingest-only worker consumes only `feed.schedule`, `feed.fetch` and
+  `article.extract`, and its pipeline stops after extraction (no translate, enrich, cluster, match or
+  rank intent, also for a new carrier); `ingest-sample` refuses to collect while any live heartbeat
+  is not ingest-only. The worker heartbeat itself (spec 02 §2, every 30 s, entries older than an hour
+  pruned) is written by M3a because `ingest-sample` is its first reader. Specs 02 §7 and 10 §2.1
+  updated.

@@ -82,7 +82,10 @@ settings, regardless of profile.
     §2) and exits with instructions if there is none. So enrich and match never run, and there are no
     Jev costs. **Every live worker on that database** must have this flag; a heartbeat from just one
     ingest-only process is insufficient. Refuse collection if any non-ingest-only worker is live,
-    and do not share the golden DB with concurrent API/E2E development workers
+    and do not share the golden DB with concurrent API/E2E development workers. The evaluation
+    user's presence marks the golden database: a worker without the flag refuses to start on it
+    and stops when it appears; an ingest-only worker consumes only `feed.schedule`, `feed.fetch`
+    and `article.extract` and stops its pipeline after extraction (D-96)
   - fetches each feed once immediately, waits until the `article.extract` queue for these articles has
     drained, and prints per-language article counts
   - **`--watch`** keeps the eval user subscribed and prints counts every 10 minutes, until stopped

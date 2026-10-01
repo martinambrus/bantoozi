@@ -1,3 +1,5 @@
+import { hostname } from 'node:os';
+
 import { createDatabase, createPgOriginLimiter, createPool } from '@bantoozi/db';
 import {
   FEED_SCHEDULE_CRON,
@@ -11,6 +13,12 @@ import { createLogger, loadConfig } from '@bantoozi/shared/server';
 import { createBoss, pgBossBroker, registerHandlers } from './boss.js';
 import { createWorkerModels } from './classification-deps.js';
 import { createWorkerDeps } from './handlers/deps.js';
+import {
+  assertWorkerMode,
+  effectiveWorkerQueues,
+  startHeartbeat,
+  type Heartbeat,
+} from './eval-mode.js';
 import { createHandlers } from './handlers/index.js';
 import { enqueueOverdueHousekeeping } from './housekeeping.js';
 import { startOutboxRelay } from './outbox-relay.js';
@@ -67,10 +75,15 @@ const handlers = createHandlers(
     logger,
     classification: models.classification,
     providerValidation: models.providerValidation,
+    ...(config.evalIngestOnly ? { evalIngestOnly: true } : {}),
   }),
 );
+// EVAL_INGEST_ONLY (spec 10 §2.1): only fetching and extraction; a golden database refuses
+// ordinary workers (D-96).
+const workerQueues = effectiveWorkerQueues(config.workerQueues, config.evalIngestOnly);
+await assertWorkerMode(db, config.evalIngestOnly);
 
-const unavailable = assertProductionReady(config.nodeEnv, handlers, config.workerQueues);
+const unavailable = assertProductionReady(config.nodeEnv, handlers, workerQueues);
 if (unavailable.length > 0) {
   logger.warn({ unavailable }, 'stages not implemented yet: their jobs and intents stay pending');
 }
@@ -84,7 +97,7 @@ await verifyQuestionSets(db).catch((error: unknown) => {
 const boss = createBoss(config.databaseUrlWorker);
 boss.on('error', (err) => logger.error({ err }, 'pg-boss error'));
 await boss.start();
-const registration = await registerHandlers(boss, handlers, config.workerQueues, logger);
+const registration = await registerHandlers(boss, handlers, workerQueues, logger);
 if (registration.consuming.includes('feed.schedule')) {
   // Every minute (spec 03 §3); pg-boss keeps one schedule row per queue across workers.
   await boss.schedule('feed.schedule', FEED_SCHEDULE_CRON, {}, { tz: 'UTC' });
@@ -106,7 +119,23 @@ const overdue = await enqueueOverdueHousekeeping(
 );
 if (overdue.length > 0) logger.info({ overdue }, 'overdue housekeeping enqueued');
 const relay = startOutboxRelay(db, pgBossBroker(boss), { handlers, logger });
-logger.info(registration, 'worker started');
+const heartbeat: Heartbeat = await startHeartbeat({
+  db,
+  processId: `${hostname()}:${process.pid}`,
+  queues: registration.consuming,
+  evalIngestOnly: config.evalIngestOnly,
+  envCredentials: [
+    ...(config.typesafeApiKey ? (['typesafe'] as const) : []),
+    ...(config.ollamaApiKey ? (['ollama'] as const) : []),
+  ],
+  logger,
+  onGoldenDatabase: (error) => {
+    logger.error({ err: error }, 'stopping: the database became a golden evaluation database');
+    process.exitCode = 1;
+    void shutdown('golden-database');
+  },
+});
+logger.info({ ...registration, evalIngestOnly: config.evalIngestOnly }, 'worker started');
 
 let stopping = false;
 async function shutdown(signal: string): Promise<void> {
@@ -114,6 +143,7 @@ async function shutdown(signal: string): Promise<void> {
   stopping = true;
   logger.info({ signal }, 'worker stopping');
   try {
+    await heartbeat.stop();
     await relay.stop();
     await boss.stop({ graceful: true, timeout: 20_000, wait: true });
     await models.close();

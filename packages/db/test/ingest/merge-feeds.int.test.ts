@@ -886,38 +886,29 @@ describe('mergeFeeds chains and guards (spec 03 §9, spec 02 §3.3)', () => {
     expect(subs.rows.map((row) => row.user_id)).toEqual([reader.id, rootReader.id].sort());
   });
 
-  it('re-points eval rater feeds when the eval schema exists', async () => {
+  it('re-points eval rater feeds (the M3a eval schema)', async () => {
     const source = await createFeed(ctx.owner);
     const target = await createFeed(ctx.owner);
-    await ctx.adminPool.query(`
-      CREATE SCHEMA eval;
-      CREATE TABLE eval.raters (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, name text NOT NULL);
-      CREATE TABLE eval.rater_feeds (
-        rater_id bigint REFERENCES eval.raters(id) ON DELETE CASCADE,
-        feed_id bigint REFERENCES feeds(id) ON DELETE RESTRICT,
-        PRIMARY KEY (rater_id, feed_id));
-      GRANT USAGE ON SCHEMA eval TO bantoozi_worker;
-      GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA eval TO bantoozi_worker;`);
-    try {
-      const raters = await ctx.adminPool.query<{ id: string }>(
-        `INSERT INTO eval.raters (name) VALUES ('one'), ('two') RETURNING id::text AS id`,
-      );
-      const [one, two] = raters.rows.map((row) => row.id);
-      await ctx.adminPool.query(
-        `INSERT INTO eval.rater_feeds (rater_id, feed_id) VALUES ($1, $3), ($2, $3), ($2, $4)`,
-        [one, two, source.id, target.id],
-      );
-      await merge(source.id, target.id);
-      const rows = await ctx.adminPool.query(
-        `SELECT rater_id::text AS rater_id, feed_id::text AS feed_id FROM eval.rater_feeds
-          ORDER BY rater_id, feed_id`,
-      );
-      expect(rows.rows).toEqual([
-        { rater_id: one, feed_id: target.id },
-        { rater_id: two, feed_id: target.id },
-      ]);
-    } finally {
-      await ctx.adminPool.query('DROP SCHEMA eval CASCADE');
-    }
+    const raters = await ctx.owner.query<{ id: string }>(
+      `INSERT INTO eval.raters (name, participant_key, token_hash, token_expires_at, langs)
+       VALUES ('one', gen_random_uuid(), 'merge-feeds-1', now() + interval '1 day', '{en}'),
+              ('two', gen_random_uuid(), 'merge-feeds-2', now() + interval '1 day', '{en}')
+       RETURNING id::text AS id`,
+    );
+    const [one, two] = raters.rows.map((row) => row.id);
+    await ctx.owner.query(
+      `INSERT INTO eval.rater_feeds (rater_id, feed_id) VALUES ($1, $3), ($2, $3), ($2, $4)`,
+      [one, two, source.id, target.id],
+    );
+    await merge(source.id, target.id);
+    const rows = await ctx.owner.query(
+      `SELECT rater_id::text AS rater_id, feed_id::text AS feed_id FROM eval.rater_feeds
+        WHERE rater_id = ANY($1::bigint[]) ORDER BY rater_id, feed_id`,
+      [[one, two]],
+    );
+    expect(rows.rows).toEqual([
+      { rater_id: one, feed_id: target.id },
+      { rater_id: two, feed_id: target.id },
+    ]);
   });
 });

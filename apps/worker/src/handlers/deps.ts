@@ -90,6 +90,10 @@ export interface WorkerDeps {
    * credential resolver and provider configuration. Without it the queue stays a stub.
    */
   providerValidation?: Omit<ProviderValidateDeps, 'db' | 'logger'>;
+  /**
+   * EVAL_INGEST_ONLY (spec 10 §2.1): stop the pipeline after extraction (golden collection).
+   */
+  evalIngestOnly?: boolean;
   /** Test seams: DNS and the clock. */
   resolver?: Resolver;
   now?: () => Date;
@@ -159,7 +163,11 @@ export function pipelineContext(
   tx: Transaction,
   sender: JobSender,
 ): PipelineContext {
-  return { sender, gate: createPipelineGate(tx, deps.settingsEnv) };
+  return {
+    sender,
+    gate: createPipelineGate(tx, deps.settingsEnv),
+    ...(deps.evalIngestOnly === true ? { ingestOnly: true } : {}),
+  };
 }
 
 export function nowOf(deps: WorkerDeps): Date {
