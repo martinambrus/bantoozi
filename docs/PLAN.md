@@ -263,7 +263,7 @@ flowchart TD
 | **M2** Decision engine & classification | M0 | M1 | yes (fixtures and the fake engine only) | L | ✓ done 2026-09-26 (§7) |
 | **M3a** Evaluation tooling & golden-set collection | M1, M2 | M4, M5 | yes, then a **human step** (§8.1) | M | not started |
 | **M3b** Run gate G1 | M3a + human ratings | M6, M7-T1…T6 | yes (needs API keys and network) | S | not started |
-| **M4** HTTP API | M1, M2 | M3a, M5 | yes | L | not started |
+| **M4** HTTP API | M1, M2 | M3a, M5 | yes | L | ✓ done 2026-10-01 (§10) |
 | **M5** Ranking & lanes | M1, M2 | M3a, M4 | yes | M | ✓ done 2026-10-01 (§11) |
 | **M6** Web app (PWA) | M4, M5 | M3b | yes | L | not started |
 | **M7** Personal learning & suggestions | M4, M5, M6 (its goal runs E2E), and **M3b for T7** (run T7 last, after M3b is merged) | M8 | yes | M | not started |
@@ -852,6 +852,15 @@ gate for development/M7 and the initial beta; M8's other launch requirements sti
 ---
 
 ## 10. M4: HTTP API
+
+**Status: done 2026-10-01** on branch `claude/m4-api-u1m08h` (`fe21b42`, `828931f` T1, `e96dc0a` T2,
+`7d0034e` T3, `cda217d` T4, `b6299db` T5, `8bea329` T6, `2cc2e38` T7, `5523d86` T8, `879292d`,
+`45e0990` T9, `cdb7d73` T10, `014eaf2`, `451b5d4`, `d3c5b55`, `425c39c` T11; PR #11 review fixes
+`06bf0a9`…`6d22332`, 21 commits). The full check passed after the last commit (api integration 366
+tests, including `api-rls-isolation.int.test.ts` and `api-operations.test.ts`). Deviations: D-120…D-130
+in `docs/DECISIONS.md`. No migrations. Merged to `main` on 2026-10-01 through PR #11 (squash commit
+`471911f`). Handoffs: M6 builds on the `/api/v1` surface and its committed OpenAPI snapshot; M7 owns
+the raw feature snapshot format and the feedback cutoff (D-128).
 
 **Outcome:** the complete `/api/v1` of spec 08:
 - auth with invites and the admin bootstrap
