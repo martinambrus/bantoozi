@@ -841,7 +841,11 @@ describe('rating corrections after a freeze (spec 10 §2.1)', () => {
   });
 
   it('an independent lineage (eval sample --version) keeps serving articles only an older one holds', async () => {
-    // A new, unrelated head that holds none of the rater's articles.
+    // The rater's lineage is frozen, then a new, unrelated head holds none of its articles.
+    const older = (await headDataset(rdb.db))!;
+    if (older.frozenAt === null) {
+      await rdb.db.transaction((tx) => freezeDataset(tx, older.version));
+    }
     await createDataset(rdb.db, { version: 'golden-x1', seed: 'seed-x', params: {} });
     expect((await headDataset(rdb.db))!.version).toBe('golden-x1');
     expect(await loadSample(rdb.db, 'golden-x1')).toEqual([]);
@@ -849,5 +853,16 @@ describe('rating corrections after a freeze (spec 10 §2.1)', () => {
     const res = await r.browser.get('/r/a/3');
     expect(res.statusCode).toBe(200);
     expect(parseHTML(res.body).document.querySelector('h1')?.textContent).toMatch(/story/u);
+
+    // Rating it opens the next version of the article's own lineage, not of the unrelated head,
+    // so the rating reaches a version a later freeze captures.
+    await r.browser.post('/r/a/3/rate', { rating: 'like' });
+    const corrected = (await headDataset(rdb.db))!;
+    expect(corrected.parentVersion).toBe(older.version);
+    expect(corrected.params).toMatchObject({ correctionOf: older.version });
+    expect((await loadSample(rdb.db, corrected.version)).length).toBe(
+      (await loadSample(rdb.db, older.version)).length,
+    );
+    expect((await loadSample(rdb.db, 'golden-x1')).length).toBe(0);
   });
 });

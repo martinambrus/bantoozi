@@ -812,6 +812,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   lock and then a rater lock. Assignments are per (rater, article), not per version, so the rating
   page shows an assigned article from the head's sample row, else from the newest version holding
   it: an independent lineage started by `eval sample --version` never strands earlier assignments.
+  A rating or rating-withdrawing skip opens the next version of the lineage holding the article
+  (the head when it does, else the newest lineage tip that does), so a later freeze captures it.
   Spec 10 §2.2 updated. The planned top-up articles are share-locked (`FOR SHARE OF a`, in id
   order) and revalidated in that transaction (same language, not stale or failed) before their
   snapshots are built. A no-longer-eligible article is dropped (whenever the plan held top-ups it is

@@ -16,9 +16,11 @@ import { toDate, type RawTimestamp } from '../timestamps.js';
 import {
   copySampleRows,
   createDataset,
+  getDataset,
   headDataset,
   lockDatasetAdditions,
   nextDatasetVersion,
+  type DatasetRow,
 } from './datasets.js';
 import { EVAL_USER_EMAIL } from './system-user.js';
 
@@ -505,11 +507,20 @@ export async function nextPendingPosition(
 export async function openDatasetForCorrection(
   tx: Transaction,
   cause: 'rating' | 'assignments' | 'cards' | 'facets' = 'rating',
+  /**
+   * The rated article: its rating belongs to the lineage that sampled it. When the head holds it
+   * (or nothing does) the head is the base as usual; otherwise the newest lineage tip holding it
+   * is, so a rating of an assignment from an older lineage (`eval sample --version` started a new
+   * one) still reaches a version that a later freeze captures.
+   */
+  articleId?: string,
 ): Promise<{ version: string; createdFrom: string } | null> {
   // The additions lock first, then the dataset row: the same order as the freeze and top-up paths,
   // so a mutation racing a run's freeze waits instead of deadlocking.
   await lockDatasetAdditions(tx);
-  const head = await headDataset(tx);
+  const head =
+    (articleId === undefined ? null : await lineageTipHolding(tx, articleId)) ??
+    (await headDataset(tx));
   if (head === null) return null;
   if (head.frozenAt === null) {
     const locked = await tx.execute<{ frozen: boolean }>(sql`
@@ -517,7 +528,7 @@ export async function openDatasetForCorrection(
        WHERE version = ${head.version} FOR SHARE`);
     if (locked.rows[0]?.frozen !== true) return null;
   }
-  const current = await headDataset(tx);
+  const current = await getDataset(tx, head.version);
   if (current === null || current.frozenAt === null) return null;
   const version = nextDatasetVersion(current.version);
   await createDataset(tx, {
@@ -539,19 +550,37 @@ export async function openDatasetForCorrection(
   return { version, createdFrom: current.version };
 }
 
-/** Whether the rater has an assignment at `position`, and whether it has a rating. */
+/**
+ * The lineage tip (a version no other version names as parent) whose sample holds `articleId`:
+ * the head when it does, else the newest such tip; null when no tip holds it.
+ */
+async function lineageTipHolding(tx: Transaction, articleId: string): Promise<DatasetRow | null> {
+  const head = await headDataset(tx);
+  const result = await tx.execute<{ version: string }>(sql`
+    SELECT d.version FROM eval.datasets d
+     WHERE NOT EXISTS (SELECT 1 FROM eval.datasets c WHERE c.parent_version = d.version)
+       AND EXISTS (SELECT 1 FROM eval.sample s
+                    WHERE s.dataset_version = d.version AND s.article_id = ${articleId}::bigint)
+     ORDER BY (d.version = ${head?.version ?? null}) IS TRUE DESC, d.created_at DESC, d.version DESC
+     LIMIT 1`);
+  const version = result.rows[0]?.version;
+  return version === undefined ? null : getDataset(tx, version);
+}
+
+/** Whether the rater has an assignment at `position`, its article, and whether it has a rating. */
 async function assignmentState(
   tx: Transaction,
   raterId: string,
   position: number,
-): Promise<{ rated: boolean } | null> {
-  const result = await tx.execute<{ rated: boolean }>(sql`
+): Promise<{ rated: boolean; articleId: string } | null> {
+  const result = await tx.execute<{ rated: boolean; article_id: string }>(sql`
     SELECT EXISTS (SELECT 1 FROM eval.ratings g
-                    WHERE g.rater_id = a.rater_id AND g.article_id = a.article_id) AS rated
+                    WHERE g.rater_id = a.rater_id AND g.article_id = a.article_id) AS rated,
+           a.article_id::text AS article_id
       FROM eval.assignments a
      WHERE a.rater_id = ${raterId}::bigint AND a.position = ${position}`);
   const row = result.rows[0];
-  return row === undefined ? null : { rated: row.rated };
+  return row === undefined ? null : { rated: row.rated, articleId: row.article_id };
 }
 
 /**
@@ -572,8 +601,9 @@ export async function rateAssignment(
 ): Promise<AssignmentView | null> {
   const reason = input.rating === -1 ? input.reason : null;
   // Every rating (new or changed) is ground truth: never mutate a frozen version's in place.
-  if ((await assignmentState(tx, input.raterId, input.position)) === null) return null;
-  await openDatasetForCorrection(tx);
+  const state = await assignmentState(tx, input.raterId, input.position);
+  if (state === null) return null;
+  await openDatasetForCorrection(tx, 'rating', state.articleId);
   const assignment = await tx.execute<{ article_id: string }>(sql`
     UPDATE eval.assignments SET status = 'rated', skip_reason = NULL
      WHERE rater_id = ${input.raterId}::bigint AND position = ${input.position}
@@ -614,7 +644,7 @@ export async function skipAssignment(
   const state = await assignmentState(tx, input.raterId, input.position);
   if (state === null) return null;
   // A skip that withdraws a rating is a rating correction too.
-  if (state.rated) await openDatasetForCorrection(tx);
+  if (state.rated) await openDatasetForCorrection(tx, 'rating', state.articleId);
   const assignment = await tx.execute<{ article_id: string }>(sql`
     UPDATE eval.assignments SET status = 'skipped', skip_reason = ${skipReason}
      WHERE rater_id = ${input.raterId}::bigint AND position = ${input.position}
