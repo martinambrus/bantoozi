@@ -345,6 +345,21 @@ describe('settings (spec 08 §9, spec 02 §2)', () => {
     expect(jobs).toContainEqual({ queue: 'house.rematch', payload: {} });
     expect(lt.requests.some((r) => r.path === '/languages')).toBe(true);
 
+    // While card text is English, a new native language still needs its source→en pair.
+    lt.reset({
+      languages: [
+        { code: 'en', name: 'English', targets: ['cs', 'en', 'sk'] },
+        { code: 'cs', name: 'Czech', targets: ['cs', 'en'] },
+        { code: 'sk', name: 'Slovak', targets: ['en', 'sk'] },
+      ],
+    });
+    const german = await apiClient(ltServer, admin).patch('/admin/settings', {
+      language_modes: { en: 'native', sk: 'translate', cs: 'native', de: 'native' },
+    });
+    expect(german.statusCode).toBe(503);
+    expect(german.json().error.details.missing).toEqual(['de-en']);
+    lt.reset();
+
     // Back to as_written needs no probe and still rematches.
     await clearOutbox();
     const back = await apiClient(ltDownServer, admin).patch('/admin/settings', {

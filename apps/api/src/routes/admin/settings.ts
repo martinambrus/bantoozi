@@ -89,8 +89,9 @@ function changedKeys(current: AdminSettingsValues, patch: AdminSettingsPatch): A
 
 /**
  * The `source→en` pairs LibreTranslate must list before a change is accepted (spec 08 §9): every
- * `translate` language of a changed `language_modes`, and for `card_text_mode = 'english'` every
- * configured non-English content language (card texts are translated into English, spec 07 §5).
+ * `translate` language of a changed `language_modes`, and, when the resulting `card_text_mode` is
+ * `english` and either setting changed, every configured non-English content language (card texts
+ * are translated into English, spec 07 §5).
  */
 function requiredPairs(
   next: AdminSettingsValues,
@@ -102,11 +103,14 @@ function requiredPairs(
       if (mode === 'translate' && lang !== 'en') sources.add(lang);
     }
   }
-  if (changed.includes('card_text_mode') && next.card_text_mode === 'english') {
+  const cardModeAffected = changed.includes('card_text_mode') || changed.includes('language_modes');
+  if (cardModeAffected && next.card_text_mode === 'english') {
     for (const lang of Object.keys(next.language_modes)) if (lang !== 'en') sources.add(lang);
   }
   return [...sources].sort().map((lang): [string, string] => [lang, 'en']);
 }
+
+const LANGUAGE_KEYS: readonly AdminSettingKey[] = ['card_text_mode', 'language_modes'];
 
 const pairName = ([source, target]: readonly [string, string]) => `${source}-${target}`;
 
@@ -183,8 +187,16 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
       const outcome = await request.mutate(async (tx, { outbox, now }) => {
         const adminId = request.auth!.userId;
         const patchedKeys = ADMIN_PATCHABLE_SETTING_KEYS.filter((key) => patch[key] !== undefined);
-        const rows = await lockSettingRows(tx, [...patchedKeys, VERSION_KEY]);
-        const current = effectiveValues(rows, env);
+        // The language-pair check reads both settings, so a patch of either locks both.
+        const dependent = patchedKeys.some((key) => LANGUAGE_KEYS.includes(key))
+          ? LANGUAGE_KEYS
+          : [];
+        await lockSettingRows(tx, [...patchedKeys, ...dependent, VERSION_KEY]);
+        // Unpatched keys keep their stored values; read every key after the locks are held.
+        const current = effectiveValues(
+          await readSettingRows(tx, [...ADMIN_PATCHABLE_SETTING_KEYS, VERSION_KEY]),
+          env,
+        );
         const next = { ...current.values, ...patch } as AdminSettingsValues;
         validateMerged(next);
         const changed = changedKeys(current.values, patch);
