@@ -740,6 +740,51 @@ export async function listAdminWaitlist(
   }));
 }
 
+/**
+ * Lock a waitlist entry for `POST /admin/waitlist/:id/invite` (spec 08 §9), or `null` when it does
+ * not exist. The lock serializes two admins inviting the same entry.
+ */
+export async function lockWaitlistEntry(
+  tx: Executor,
+  id: string,
+): Promise<{ email: string; locale: 'en' | 'sk' } | null> {
+  const result = await tx.execute<{ email: string; locale: 'en' | 'sk' }>(sql`
+    SELECT w.email::text AS email, w.locale FROM waitlist w
+     WHERE w.id = ${bigintParam(id)} FOR UPDATE`);
+  return result.rows[0] ?? null;
+}
+
+/** Record the invite sent to a waitlist entry (`invited_at`, `invite_code`; spec 02 §3). */
+export async function markWaitlistInvited(
+  tx: Executor,
+  input: { id: string; code: string },
+): Promise<AdminWaitlistRow> {
+  const result = await tx.execute<{
+    id: string;
+    email: string;
+    locale: 'en' | 'sk';
+    note: string | null;
+    created_at: RawTimestamp;
+    invited_at: RawTimestamp | null;
+    invite_code: string | null;
+  }>(sql`
+    UPDATE waitlist SET invited_at = now(), invite_code = ${input.code}
+     WHERE id = ${bigintParam(input.id)}
+    RETURNING id::text AS id, email::text AS email, locale, note, created_at, invited_at,
+              invite_code`);
+  const row = result.rows[0];
+  if (row === undefined) throw new Error('waitlist entry vanished under its lock');
+  return {
+    id: row.id,
+    email: row.email,
+    locale: row.locale,
+    note: row.note,
+    createdAt: toDate(row.created_at),
+    invitedAt: toDateOrNull(row.invited_at),
+    inviteCode: row.invite_code,
+  };
+}
+
 // ── Publication requests, candidates and promotion (spec 08 §9.2, spec 05 §8.1) ─────────────────
 
 /** The original creator must have been inactive at least this long (720 h, spec 02 §3.6). */

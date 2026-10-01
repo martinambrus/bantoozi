@@ -11,6 +11,7 @@ import {
   SETTINGS,
   SignupModeSchema,
 } from '../settings.js';
+import { EmailSchema, INVITE_NOTE_MAX_LENGTH, InviteSchema } from './auth.js';
 import { IsoTimestampSchema, PageQuerySchema, pageSchema } from './common.js';
 import {
   CandidateStatusSchema,
@@ -348,6 +349,48 @@ export const AdminWaitlistEntrySchema = z
   .strict();
 export const AdminWaitlistQuerySchema = PageQuerySchema;
 export const AdminWaitlistPageSchema = pageSchema(AdminWaitlistEntrySchema);
+
+/** At most this many invites per `POST /admin/invites` (spec 08 §9). */
+export const ADMIN_INVITE_MAX_COUNT = 50;
+export const ADMIN_INVITE_MAX_EXPIRES_DAYS = 90;
+
+/**
+ * `POST /admin/invites`: `{count ≤ 50, email?, note?, expiresDays ≤ 90}`. An email binds the invite
+ * and is sent one invite, so it requires `count` 1.
+ */
+export const AdminCreateInvitesBodySchema = z
+  .object({
+    count: z.number().int().min(1).max(ADMIN_INVITE_MAX_COUNT).default(1),
+    email: EmailSchema.optional(),
+    note: z.string().trim().max(INVITE_NOTE_MAX_LENGTH).optional(),
+    expiresDays: z.number().int().min(1).max(ADMIN_INVITE_MAX_EXPIRES_DAYS).optional(),
+  })
+  .strict()
+  .refine((body) => body.email === undefined || body.count === 1, {
+    message: 'an email-bound invite is created one at a time',
+    path: ['count'],
+  });
+export type AdminCreateInvitesBody = z.infer<typeof AdminCreateInvitesBodySchema>;
+
+export const AdminCreateInvitesResultSchema = z
+  .object({ items: z.array(InviteSchema), emailSent: z.boolean().optional() })
+  .strict();
+export type AdminCreateInvitesResult = z.infer<typeof AdminCreateInvitesResultSchema>;
+
+export const AdminWaitlistParamsSchema = z.object({ id: IdSchema }).strict();
+
+/**
+ * `POST /admin/waitlist/:id/invite`. `emailSent` reports this request's delivery; a replayed
+ * receipt omits it (the email is never re-sent), as `POST /invites` does.
+ */
+export const AdminWaitlistInviteResultSchema = z
+  .object({
+    entry: AdminWaitlistEntrySchema,
+    invite: InviteSchema,
+    emailSent: z.boolean().optional(),
+  })
+  .strict();
+export type AdminWaitlistInviteResult = z.infer<typeof AdminWaitlistInviteResultSchema>;
 
 // ── Library, candidates and promotion (spec 08 §9.2, spec 05 §8.1) ───────────────────────────────
 

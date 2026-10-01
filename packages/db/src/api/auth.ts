@@ -342,6 +342,8 @@ export async function createInvites(
     email?: string | null;
     note?: string | null;
     count?: number;
+    /** Days until expiry; defaults to {@link INVITE_TTL_DAYS} (admins choose up to 90). */
+    expiresDays?: number;
     /** Test seam; defaults to {@link newInviteCode}. */
     generate?: () => string;
   },
@@ -355,7 +357,7 @@ export async function createInvites(
       const result = await tx.execute<RawInvite>(sql`
         INSERT INTO invites (code, created_by, email, note, expires_at)
         VALUES (${generate()}, ${input.createdBy}::uuid, ${input.email ?? null}::citext,
-                ${input.note ?? null}, now() + make_interval(days => ${INVITE_TTL_DAYS}))
+                ${input.note ?? null}, now() + make_interval(days => ${input.expiresDays ?? INVITE_TTL_DAYS}::int))
         ON CONFLICT (code) DO NOTHING
         RETURNING code, email::text AS email, note, created_at, expires_at, used_at`);
       row = result.rows[0];
