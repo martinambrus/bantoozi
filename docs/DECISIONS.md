@@ -698,7 +698,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   race: a worker writes its first heartbeat, then checks for the evaluation user, and registers no
   consumer until both are done; `ingest-sample` creates the evaluation user, then reads heartbeats,
   and enqueues nothing before that check, so of a worker and a collection starting together at
-  least one sees the other. Specs 02 §7 and 10 §2.1 updated.
+  least one sees the other. On shutdown the worker removes its heartbeat only after its outbox
+  relay and queue consumers have stopped, so the heartbeat covers every moment it consumes. Specs
+  02 §7 and 10 §2.1 updated.
 - D-97: 2026-10-01 M3a-T2 — spec 10 §2.1 groups the split by story but the golden database runs no
   clustering (its worker is ingest-only, D-96), so most sampled articles have no `story_cluster_id`.
   A snapshot's story-group id is `c<story_cluster_id>` when the article is clustered and otherwise
@@ -905,7 +907,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `config.rankerThresholds`, and a replay records `baseRanker`, `baseRankerSource` (`base_run`, or
   `settings` for runs written before this field) and `replayRanker`; `--thresholds` is a partial over
   the baseline applied to the replay side only. Only a `complete` run with full coverage can be a
-  replay base. Spec 10 §3 and §6 updated.
+  replay base. One invocation executes a run at a time: a resume claims the run before reading its
+  resume state, and a new run is claimed as soon as its row exists, with a session advisory lock on
+  a dedicated connection held for the whole invocation (a crash frees it with the connection); a
+  second invocation on a claimed run is refused before any work. Spec 10 §3 and §6 updated.
 - D-115: 2026-10-01 M3a-T8 — the dry-run database is copied from the migrated test template
   (`TEST_ADMIN_DATABASE_URL` is used only to create and drop it, under the template advisory lock)
   and seeded by running the worker seed script as a subprocess against it. Only the names

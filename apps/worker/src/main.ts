@@ -106,9 +106,11 @@ async function shutdown(signal: string): Promise<void> {
   stopping = true;
   logger.info({ signal }, 'worker stopping');
   try {
-    await heartbeat?.stop();
+    // The heartbeat advertises these consumers (an ingest-only collection checks it), so it is
+    // removed only after the relay and the queue consumers have stopped.
     await relay?.stop();
     await boss?.stop({ graceful: true, timeout: 20_000, wait: true });
+    await heartbeat?.stop();
     await models.close();
     await Promise.all([pool.end(), lockPool.end()]);
   } catch (error) {

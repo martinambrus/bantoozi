@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import pg from 'pg';
 
 import type { Executor } from '../client.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
@@ -184,4 +185,41 @@ export async function updateRunResults(
 ): Promise<void> {
   await db.execute(sql`
     UPDATE eval.runs SET results = ${JSON.stringify(results)}::jsonb WHERE id = ${runId}::bigint`);
+}
+
+/** A session advisory lock on one run, held by a dedicated connection until released. */
+export interface RunLock {
+  release(): Promise<void>;
+}
+
+/**
+ * Claim a run for one `eval run` invocation (its creation or a `--resume`): a session advisory lock
+ * on its own connection, so two invocations never execute the same run at once, and a crashed one
+ * frees the run when its connection drops (no stale claim to clear). Null when another invocation
+ * holds it. The connection is separate from the runtime pool, so holding it never starves the run.
+ */
+export async function tryLockRun(connectionString: string, runId: string): Promise<RunLock | null> {
+  const client = new pg.Client({ connectionString, application_name: 'bantoozi-eval-run-lock' });
+  // A dropped connection releases the lock server-side; the error must not crash the process.
+  client.on('error', () => undefined);
+  await client.connect();
+  let locked = false;
+  try {
+    const result = await client.query<{ locked: boolean }>(
+      "SELECT pg_try_advisory_lock(hashtext('eval.run'), hashtext($1::bigint::text)) AS locked",
+      [runId],
+    );
+    locked = result.rows[0]?.locked === true;
+  } finally {
+    if (!locked) await client.end().catch(() => undefined);
+  }
+  if (!locked) return null;
+  let released = false;
+  return {
+    async release() {
+      if (released) return;
+      released = true;
+      await client.end().catch(() => undefined);
+    },
+  };
 }

@@ -876,7 +876,7 @@ describe('eval run (M3a-T6)', () => {
     }
   });
 
-  it("marks a resumed run's cost incomplete before any work, so a kill leaves a lower bound", async () => {
+  it("marks a resumed run's cost incomplete before any work and refuses a concurrent resume", async () => {
     const env = { TYPESAFE_PRICE_PER_MTOK_USD: '200', EVAL_CACHE_DIR: await freshCache() };
     const first = runtime(ctx, env);
     let runId: string;
@@ -921,6 +921,21 @@ describe('eval run (M3a-T6)', () => {
       expect(inFlight.status).toBe('running');
       expect(inFlight.cost.incomplete).toBe(true);
       expect(inFlight.cost.billedUsd).toBeCloseTo(recorded.billedUsd, 9);
+      // A second resume of the same run while this one executes is refused before any work.
+      const second = runtime(ctx, env);
+      try {
+        await expect(
+          runExperiment(second.rt, {
+            experiment: 'E1',
+            yes: true,
+            resumeRunId: runId,
+            maxUsd: 1000,
+            gitSha: 'test',
+          }),
+        ).rejects.toMatchObject({ message: /is being executed by another eval run invocation/ });
+      } finally {
+        await second.rt.close();
+      }
       ctx.typesafe.setOptions({ latencyMs: 0, statusOverride: undefined });
       expect((await pending).status).toBe('complete');
     } finally {

@@ -240,7 +240,8 @@ Each run:
 - answer keys: `enrich.<key>` (Call A), `card` (Call B per card), `score.r<raterId>` (zero-training
   score), `translation` (frozen article translations), `e6.r<raterId>` (E6 rerun per rater, since
   raters can share a card) and `e7.targeted`/`e7.generic`. `--resume <runId>` continues an aborted
-  run; an aborted run exits with code 3 (D-110, D-114)
+  run; an aborted run exits with code 3 (D-110, D-114). One invocation executes a run at a time; a
+  resume of a run another invocation is executing is refused (D-114)
 - frozen assignments are **explicit evaluation demand**, isolated from production subscriptions.
   An eval run may process only assigned snapshots approved for that invocation, subject to its cost
   cap; subscribing the ingestion-only eval user does not make all collected articles inference-active.

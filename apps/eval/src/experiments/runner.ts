@@ -18,8 +18,10 @@ import {
   loadRunAnswers,
   loadSample,
   readStoredSetting,
+  type RunLock,
   runCallSpend,
   runCallSpendByArticle,
+  tryLockRun,
   updateRunResults,
   upsertRunAnswers,
   type DatasetRow,
@@ -1176,6 +1178,30 @@ export async function runExperiment(
   rt: EvalRuntime,
   options: RunExperimentOptions,
 ): Promise<RunExperimentResult> {
+  // One invocation per run at a time (D-114 addendum): a resume claims the run before it reads the
+  // run's resume state, and a new run is claimed as soon as its row exists. The claim lives for
+  // the whole invocation and ends with its connection, so a crash never leaves a stale one.
+  const claim: { lock: RunLock | null } = { lock: null };
+  try {
+    return await runClaimed(rt, options, claim);
+  } finally {
+    await claim.lock?.release();
+  }
+}
+
+async function claimRun(rt: EvalRuntime, runId: string): Promise<RunLock> {
+  const lock = await tryLockRun(rt.config.databaseUrlWorker, runId);
+  if (lock === null) {
+    throw new EvalCommandError(`run ${runId} is being executed by another eval run invocation`);
+  }
+  return lock;
+}
+
+async function runClaimed(
+  rt: EvalRuntime,
+  options: RunExperimentOptions,
+  claim: { lock: RunLock | null },
+): Promise<RunExperimentResult> {
   const def = EXPERIMENTS[options.experiment];
   const maxUsd = validateOptions(options);
   const services = options.services ?? {};
@@ -1192,6 +1218,7 @@ export async function runExperiment(
     config = options.replay.config;
     dataset = await resolveDataset(rt, config.datasetVersion);
   } else if (options.resumeRunId !== undefined) {
+    claim.lock = await claimRun(rt, options.resumeRunId);
     const run = await getRun(rt.db, options.resumeRunId);
     if (run === null) throw new EvalCommandError(`run ${options.resumeRunId} does not exist`);
     if (run.experiment !== def.id) {
@@ -1354,6 +1381,7 @@ export async function runExperiment(
         gitSha,
       });
       runId = run.id;
+      claim.lock = await claimRun(rt, runId);
       rt.out(`run ${runId} started (config ${fullConfig.configSha.slice(0, 12)})\n`);
     } else {
       rt.out(`resuming run ${runId}\n`);
