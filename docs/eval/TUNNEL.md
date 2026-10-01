@@ -13,6 +13,39 @@ it through an HTTPS tunnel. This page shows how to set that up.
   **before** running `eval rater add` or `eval rater token`. With an `https://` address the session
   cookie is marked `Secure`.
 
+## Setting up the golden database (once)
+
+The golden database is a separate database on the dev box's PostgreSQL, never the everyday
+development database. As the PostgreSQL superuser, create it with the same extensions and grants as
+`infra/postgres/init.sh`:
+
+```sql
+CREATE DATABASE bantoozi_golden OWNER bantoozi_owner;
+\connect bantoozi_golden
+CREATE EXTENSION IF NOT EXISTS citext;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+ALTER SCHEMA public OWNER TO bantoozi_owner;
+REVOKE ALL ON DATABASE bantoozi_golden FROM PUBLIC;
+GRANT CONNECT ON DATABASE bantoozi_golden TO bantoozi_app, bantoozi_worker;
+```
+
+Then, with an env file whose `DATABASE_URL*` variables point at `bantoozi_golden` and with
+`EVAL_INGEST_ONLY=true`:
+
+```sh
+pnpm db:migrate && pnpm db:seed
+pnpm --filter @bantoozi/worker dev          # the only worker on this database, ingest-only
+pnpm evaluate ingest-sample --dry-run       # every feed reachable from this machine?
+pnpm evaluate ingest-sample                 # subscribe, fetch once, wait for extraction
+pnpm evaluate sample --version golden-v1    # draw and split the sample
+pnpm evaluate status
+```
+
+Keep the worker running while raters work, so `ingest-sample --watch` and the assignment top-ups
+see fresh articles.
+
 ## Option A: Cloudflare Tunnel (recommended)
 
 1. Install `cloudflared` from Cloudflare's downloads page and log in: `cloudflared tunnel login`.

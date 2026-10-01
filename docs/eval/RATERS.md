@@ -52,9 +52,10 @@ one you see the feed, the title, a short excerpt and an "open original" link.
 - 👍 **I'd want to read this** (key `+`): you would open or save it if it appeared in your reader.
 - 👎 **Not for me** (key `-`): you would scroll past it.
 - Optional reason for a 👎 (keys `1`–`6`): off-topic, clickbait, seen it, too shallow, promo, other.
-- **Skip** when you cannot judge it (for example a language you do not read well). A skip is not a
-  dislike, and you can return to skipped articles later.
-- `j` / `k` move to the next / previous article. You can change any earlier rating.
+- **Skip** when you cannot judge it (for example a language you do not read well), optionally with a
+  short reason. A skip is not a dislike, and you can return to skipped articles later.
+- `j` / `k` move to the next / previous article, `s` skips and `o` opens the original. You can
+  change any earlier rating.
 
 Judge the article as it is presented: would you want to read it, given its title and excerpt? Open
 the original only when the excerpt is unclear. Aim for **at least 250 ratings**.
@@ -125,7 +126,8 @@ Pri každom uvidíte zdroj, titulok, krátky úryvok a odkaz „otvoriť origin�
   reklama, iné.
 - **Preskočiť**, ak článok neviete posúdiť (napríklad v jazyku, ktorý dobre neovládate).
   Preskočenie nie je 👎 a k preskočeným článkom sa môžete vrátiť.
-- `j` / `k` presúvajú na ďalší / predchádzajúci článok. Každé skoršie hodnotenie môžete zmeniť.
+- `j` / `k` presúvajú na ďalší / predchádzajúci článok, `s` preskočí a `o` otvorí originál. Každé
+  skoršie hodnotenie môžete zmeniť.
 
 Posudzujte článok tak, ako je zobrazený: chceli by ste si ho prečítať podľa titulku a úryvku?
 Originál otvorte, len keď úryvok nie je jasný. Cieľ je **aspoň 250 hodnotení**.
