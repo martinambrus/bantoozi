@@ -15,21 +15,39 @@ export type TenantTx = Transaction & { readonly [TENANT]: true };
 const tenants = new WeakMap<object, string>();
 
 /**
- * Run `fn` in a READ COMMITTED transaction bound to `userId` (the verified session's user, never a
- * request value). The setting is transaction-local, so a reused pool connection fails closed.
+ * Isolation of a tenant transaction: READ COMMITTED by default; a consistent read-only snapshot
+ * (`GET /me/export`, spec 08 §3) asks for `repeatable read` with `readOnly`.
+ */
+export interface TenantTxOptions {
+  isolation?: 'read committed' | 'repeatable read';
+  readOnly?: boolean;
+}
+
+/**
+ * Run `fn` in a transaction bound to `userId` (the verified session's user, never a request value),
+ * READ COMMITTED unless `options` ask otherwise. The setting is transaction-local, so a reused pool
+ * connection fails closed.
  */
 export async function withTenant<T>(
   db: Database,
   userId: string,
   fn: (tx: TenantTx) => Promise<T>,
+  options: TenantTxOptions = {},
 ): Promise<T> {
   const tenant = UuidSchema.parse(userId);
+  const config =
+    options.isolation === undefined && options.readOnly !== true
+      ? undefined
+      : {
+          isolationLevel: options.isolation ?? 'read committed',
+          accessMode: options.readOnly === true ? ('read only' as const) : ('read write' as const),
+        };
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT set_config('app.user_id', ${tenant}, true)`);
     const tenantTx = tx as TenantTx;
     tenants.set(tenantTx, tenant);
     return fn(tenantTx);
-  });
+  }, config);
 }
 
 /** The user a {@link TenantTx} is bound to. */
