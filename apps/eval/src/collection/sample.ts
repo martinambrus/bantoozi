@@ -286,7 +286,16 @@ export async function drawSample(
       if (base.frozenAt === null && !sameSampling(stored, { perLang, feedCapShare, langs })) {
         await updateDatasetParams(tx, version, { perLang, feedCapShare, langs });
       }
-      return { status: 'unchanged', ...common, created: false, added: 0, skipped: [] };
+      // Nothing was drawn: no successor of a frozen head exists, so report the version kept.
+      return {
+        status: 'unchanged',
+        ...common,
+        version: parent?.version ?? version,
+        createdFrom: null,
+        created: false,
+        added: 0,
+        skipped: [],
+      };
     }
 
     const created = base === null || parent !== null;

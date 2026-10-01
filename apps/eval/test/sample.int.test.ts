@@ -217,6 +217,14 @@ describe('eval sample (M3a-T2)', () => {
     const v2 = await getDataset(ctx.db, 'golden-c-v2');
     expect(v2).toMatchObject({ parentVersion: 'golden-c', seed: 's2', frozenAt: null });
     expect(await getDataset(ctx.db, 'golden-c')).toEqual(frozen);
+
+    // A frozen head with nothing new to draw creates no successor and reports itself, not the
+    // name a successor would have had.
+    await ctx.db.transaction((tx) => freezeDataset(tx, 'golden-c-v2'));
+    const idle = await sample(['--per-lang', '80']);
+    expect(idle.out).toContain('golden-c-v2: unchanged');
+    expect(idle.out).not.toContain('golden-c-v3');
+    expect(await getDataset(ctx.db, 'golden-c-v3')).toBeNull();
   });
 
   it('reports a language that runs short instead of filling it from one feed', async () => {
