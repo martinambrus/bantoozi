@@ -6,6 +6,7 @@ import {
   findGateLocks,
   getDataset,
   getRun,
+  isDryRunDatabaseName,
 } from '@bantoozi/db';
 import { LanguageModesSchema, type SettingEnvDefaults } from '@bantoozi/shared';
 import { sha256Hex } from '@bantoozi/shared/server';
@@ -56,7 +57,7 @@ export async function checkG1(
 ): Promise<string[]> {
   const problems: string[] = [];
   const database = await currentDatabaseName(rt.db);
-  if (g1.dryRun === true && database !== DRYRUN_DATABASE) {
+  if (g1.dryRun === true && !isDryRunDatabaseName(database)) {
     problems.push(`a dry-run artifact cannot be applied to database ${database}`);
   }
   if (g1.gate.status !== 'pass') problems.push(`gate status is ${g1.gate.status}, not pass`);

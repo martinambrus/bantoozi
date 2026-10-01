@@ -6,6 +6,7 @@ import {
   createGateLock,
   currentDatabaseName,
   findGateLocks,
+  isDryRunDatabaseName,
   lockGateManifest,
   recordGateOutcome,
   type RunRow,
@@ -34,7 +35,6 @@ import { buildReportModel, latestRuns, pickReference } from '../report/model.js'
 import { DEFAULT_G1_PATH, defaultGateReportPath, resolveRepoPath } from '../report/paths.js';
 import type { RunData } from '../report/run-data.js';
 import { EvalCommandError, type EvalRuntime } from '../runtime.js';
-import { DRYRUN_DATABASE } from './apply-g1.js';
 
 /**
  * `eval gate --profile owner_pilot|multi_person_beta` (spec 10 §3, §5; M3a-T7). In order:
@@ -152,7 +152,7 @@ export async function runGate(
     splitSha: loaded.dataset.splitSha,
   };
   const dryRun =
-    overrides.dryRun === true || (await currentDatabaseName(rt.db)) === DRYRUN_DATABASE;
+    overrides.dryRun === true || isDryRunDatabaseName(await currentDatabaseName(rt.db));
   const assessments = assessGateRuns(model, chosen, dataset);
   const readiness = gateReadiness(model, profile);
   const settings = { seed: options.seed ?? loaded.dataset.seed, resamples: options.resamples };
