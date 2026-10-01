@@ -828,7 +828,15 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   rater's only non-English language, none when the rater has several. The freeze and the config capture (ratings,
   cards, assignments, facet labels) run in one transaction under the dataset-additions lock and the
   dataset row lock that rating writes take, so the config and the frozen version hold the same
-  ratings. Spec 10 §3 updated.
+  ratings. A dataset version's ground truth (every rater's ratings, assignments and cards with their
+  exact text, and every facet label of its articles) is captured once into the append-only
+  `eval.dataset_truth` (migration 0016) in the transaction that freezes the version, and every run
+  on a frozen version builds its config from that snapshot (filtered by the run's raters, languages
+  and split), never from the live tables. `eval.ratings` and `eval.assignments` keep one current row
+  per (rater, article), so a correction, a later assignment or a card change (each first creates the
+  next open version: `correctionOf`, `assignmentsAfter`, `cardsChangedAfter`) reaches only versions
+  frozen after it. A version frozen before 0016 gets its snapshot the next time a run freezes it.
+  Spec 10 §3 updated.
 - D-111: 2026-10-01 M3a-T6 — eval routers use a process-local circuit breaker, so an evaluation
   never trips or reads the production breaker (spec 04 §1). The LLM fallback is off and the pinned
   engine has no automatic fallback, so a run never mixes engines silently.

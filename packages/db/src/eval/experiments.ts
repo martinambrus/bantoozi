@@ -202,6 +202,66 @@ export async function loadEvalFacetLabels(
 }
 
 /**
+ * The ground truth of a frozen dataset version (`eval.dataset_truth`, D-110 addendum): every
+ * rater's ratings, assignments and cards and every facet label, as the loaders above read them in
+ * the transaction that froze the version. `eval.ratings` and `eval.assignments` hold one current
+ * row per (rater, article), so after the freeze only this snapshot still describes the version.
+ */
+export interface DatasetTruth {
+  ratings: EvalRatingRecord[];
+  assignments: EvalAssignmentRecord[];
+  cards: EvalRaterCardRecord[];
+  facetLabels: EvalFacetLabelRecord[];
+}
+
+/**
+ * Capture a frozen version's ground truth once (call it in the freezing transaction, under the
+ * dataset row lock and the dataset-additions lock that rating writes take). A no-op returning false
+ * when the row exists; the table is append-only and accepts frozen versions only.
+ */
+export async function captureDatasetTruth(db: Executor, version: string): Promise<boolean> {
+  const existing = await db.execute(
+    sql`SELECT 1 FROM eval.dataset_truth WHERE dataset_version = ${version}`,
+  );
+  if (existing.rows.length > 0) return false;
+  const raterIds = (await loadEvalRaters(db)).map((r) => r.raterId);
+  const ratings = await loadEvalRatings(db, version, raterIds);
+  const assignments = await loadEvalAssignments(db, version, raterIds);
+  const cards = await loadEvalRaterCards(db, raterIds);
+  const facetLabels = await loadEvalFacetLabels(db, version);
+  const inserted = await db.execute(sql`
+    INSERT INTO eval.dataset_truth (dataset_version, ratings, assignments, cards, facet_labels)
+    VALUES (${version}, ${JSON.stringify(ratings)}::jsonb, ${JSON.stringify(assignments)}::jsonb,
+            ${JSON.stringify(cards)}::jsonb, ${JSON.stringify(facetLabels)}::jsonb)
+    ON CONFLICT (dataset_version) DO NOTHING
+    RETURNING 1`);
+  return inserted.rows.length > 0;
+}
+
+/** A frozen version's captured ground truth, or null when none was captured (not frozen yet). */
+export async function loadDatasetTruth(
+  db: Executor,
+  version: string,
+): Promise<DatasetTruth | null> {
+  const result = await db.execute<{
+    ratings: Array<Omit<EvalRatingRecord, 'createdAt'> & { createdAt: string }>;
+    assignments: EvalAssignmentRecord[];
+    cards: EvalRaterCardRecord[];
+    facet_labels: EvalFacetLabelRecord[];
+  }>(sql`
+    SELECT ratings, assignments, cards, facet_labels FROM eval.dataset_truth
+     WHERE dataset_version = ${version}`);
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  return {
+    ratings: row.ratings.map((r) => ({ ...r, createdAt: new Date(r.createdAt) })),
+    assignments: row.assignments,
+    cards: row.cards,
+    facetLabels: row.facet_labels,
+  };
+}
+
+/**
  * The newest finished run of an experiment on a dataset version whose `results.status` is one of
  * `statuses` (E6/E7 build on the E1 run; spec 10 §3), or null.
  */

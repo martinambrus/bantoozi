@@ -9,6 +9,7 @@ import {
   headDataset,
   latestFinishedRunId,
   lockDatasetAdditions,
+  loadDatasetTruth,
   loadEvalAssignments,
   loadEvalFacetLabels,
   loadEvalRaterCards,
@@ -405,12 +406,28 @@ async function draftConfig(
     throw new EvalCommandError('unknown rater id in --raters');
   }
   const raterIds = raters.map((r) => r.raterId);
-  const [cards, assignments, ratings, labels] = await Promise.all([
-    loadEvalRaterCards(db, raterIds),
-    loadEvalAssignments(db, dataset.version, raterIds),
-    loadEvalRatings(db, dataset.version, raterIds),
-    loadEvalFacetLabels(db, dataset.version),
-  ]);
+  // A frozen version's ground truth is the snapshot taken when it froze (D-110 addendum): the live
+  // rows may hold later corrections or assignments that belong to a child version. Only the
+  // estimate of a legacy version frozen before that snapshot existed reads the live tables; the
+  // freeze transaction captures it before the config is read again.
+  const truth = dataset.frozenAt === null ? null : await loadDatasetTruth(db, dataset.version);
+  const [cards, assignments, ratings, labels] =
+    truth === null
+      ? await Promise.all([
+          loadEvalRaterCards(db, raterIds),
+          loadEvalAssignments(db, dataset.version, raterIds),
+          loadEvalRatings(db, dataset.version, raterIds),
+          loadEvalFacetLabels(db, dataset.version),
+        ])
+      : (() => {
+          const ofRater = new Set(raterIds);
+          return [
+            truth.cards.filter((c) => ofRater.has(c.raterId)),
+            truth.assignments.filter((a) => ofRater.has(a.raterId)),
+            truth.ratings.filter((r) => ofRater.has(r.raterId)),
+            truth.facetLabels,
+          ] as const;
+        })();
   const scopedRatings = ratings.filter((r) => inScope(r.articleId));
   // Every experiment of a language scope shares one cohort (rated pairs plus facet-labelled
   // articles), so the gate compares runs on identical ground truth (D-110); only card

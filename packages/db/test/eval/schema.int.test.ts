@@ -36,6 +36,7 @@ describe('eval schema (M3a-T1)', () => {
     );
     expect(tables.rows.map((r) => r.table_name)).toEqual([
       'assignments',
+      'dataset_truth',
       'datasets',
       'facet_labels',
       'rater_cards',
@@ -172,6 +173,38 @@ describe('eval schema (M3a-T1)', () => {
         ctx.workerPool.query(
           `UPDATE eval.datasets SET frozen_at = now() WHERE version = 'golden-t2'`,
         ),
+      ),
+    ).toBe('23514');
+  });
+
+  it("keeps a frozen version's captured ground truth append-only", async () => {
+    const truth = (version: string) =>
+      ctx.workerPool.query(
+        `INSERT INTO eval.dataset_truth (dataset_version, ratings, assignments, cards, facet_labels)
+         VALUES ($1, '[]', '[]', '[]', '[]')`,
+        [version],
+      );
+    await ctx.workerPool.query(
+      `INSERT INTO eval.datasets (version, seed, params) VALUES ('golden-t3', 'seed', '{}')`,
+    );
+    // Only a frozen version has ground truth.
+    expect(await failure(truth('golden-t3'))).toBe('23514');
+    await ctx.workerPool.query(
+      `UPDATE eval.datasets SET frozen_at = now(), manifest = '{}', snapshot_sha = 's', split_sha = 'p'
+        WHERE version = 'golden-t3'`,
+    );
+    await truth('golden-t3');
+    expect(await failure(truth('golden-t3'))).toBe('23505');
+    expect(
+      await failure(
+        ctx.workerPool.query(
+          `UPDATE eval.dataset_truth SET ratings = '[{}]' WHERE dataset_version = 'golden-t3'`,
+        ),
+      ),
+    ).toBe('23514');
+    expect(
+      await failure(
+        ctx.workerPool.query(`DELETE FROM eval.dataset_truth WHERE dataset_version = 'golden-t3'`),
       ),
     ).toBe('23514');
   });

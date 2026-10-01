@@ -2,6 +2,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { openDatasetForCorrection, rateAssignment } from '@bantoozi/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { EXPERIMENT_IDS } from '../src/experiments/definitions.js';
@@ -442,6 +443,9 @@ describe('eval run (M3a-T6)', () => {
       `INSERT INTO eval.rater_cards (rater_id, card_id, strength) VALUES ($1, $2, 'like')`,
       [golden.raters.b, golden.cards.battery],
     );
+    // golden-v1 is frozen with its captured truth; the card reaches the next version.
+    const opened = await ctx.db.transaction((tx) => openDatasetForCorrection(tx, 'assignments'));
+    expect(opened).toMatchObject({ version: 'golden-v2', createdFrom: 'golden-v1' });
     const { rt } = runtime(ctx);
     let e6RunId: string;
     try {
@@ -585,6 +589,83 @@ describe('eval run (M3a-T6)', () => {
     expect(tagged.rows.every((r) => r.tagged)).toBe(true);
   });
 
+  it('`eval run B0 --yes` through the CLI', async () => {
+    const out = await runCli(ctx, ['run', 'B0', '--yes', '--langs', 'en']);
+    expect(out).toMatch(/B0 on golden-v2: estimated cost \$0\.0000/);
+    expect(out).toMatch(/run \d+ complete: billed \$0\.0000/);
+  });
+
+  it('a run on a frozen version reads its captured truth, not a later correction', async () => {
+    type Config = {
+      ratings: Array<{ raterId: string; articleId: string; rating: number }>;
+      assignments: Record<string, string[]>;
+    };
+    const runB0 = async (datasetVersion: string) => {
+      const { rt } = runtime(ctx);
+      try {
+        const result = await runExperiment(rt, {
+          experiment: 'B0',
+          datasetVersion,
+          yes: true,
+          gitSha: 'test',
+        });
+        return (await runRow(ctx, result.runId!)).config as Config;
+      } finally {
+        await rt.close();
+      }
+    };
+    const first = await ctx.owner.query<{ article_id: string; rating: number }>(
+      `SELECT a.article_id::text, g.rating FROM eval.assignments a
+         JOIN eval.ratings g ON g.rater_id = a.rater_id AND g.article_id = a.article_id
+        WHERE a.rater_id = $1 AND a.position = 0`,
+      [golden.raters.a],
+    );
+    const original = first.rows[0]!;
+    // The rating app's correction: the head is frozen, so it branches the next version and
+    // overwrites the one current rating row.
+    const corrected = original.rating === 1 ? -1 : 1;
+    const branched = await ctx.db.transaction(async (tx) => {
+      const opened = await openDatasetForCorrection(tx);
+      await rateAssignment(tx, {
+        raterId: golden.raters.a,
+        position: 0,
+        rating: corrected,
+        reason: corrected === -1 ? 'off_topic' : null,
+        now: new Date(),
+      });
+      return opened;
+    });
+    expect(branched).not.toBeNull();
+    const parent = branched!.createdFrom;
+    // An assignment appended after branching (a global row) for an article of the frozen parent.
+    const unassigned = await ctx.owner.query<{ article_id: string }>(
+      `SELECT s.article_id::text FROM eval.sample s
+        WHERE s.dataset_version = $2
+          AND NOT EXISTS (SELECT 1 FROM eval.assignments a
+                           WHERE a.rater_id = $1 AND a.article_id = s.article_id)
+        ORDER BY s.article_id LIMIT 1`,
+      [golden.raters.b, parent],
+    );
+    const extra = unassigned.rows[0]!.article_id;
+    await ctx.owner.query(
+      `INSERT INTO eval.assignments (rater_id, article_id, position, status)
+       SELECT $1, $2, coalesce(max(position), -1) + 1, 'pending' FROM eval.assignments WHERE rater_id = $1`,
+      [golden.raters.b, extra],
+    );
+
+    const onParent = await runB0(parent);
+    const rated = (config: Config) =>
+      config.ratings.find(
+        (r) => r.raterId === golden.raters.a && r.articleId === original.article_id,
+      )?.rating;
+    expect(rated(onParent)).toBe(original.rating);
+    expect(onParent.assignments[golden.raters.b]).not.toContain(extra);
+    // The child version freezes with the correction and the new assignment.
+    const onChild = await runB0(branched!.version);
+    expect(rated(onChild)).toBe(corrected);
+    expect(onChild.assignments[golden.raters.b]).toContain(extra);
+  });
+
   it('freezes the dataset and reads the run config under one lock (no rating slips in between)', async () => {
     const before = await ctx.owner.query<{ rater_id: string; article_id: string; rating: number }>(
       `SELECT rater_id::text, article_id::text, rating FROM eval.ratings
@@ -592,6 +673,9 @@ describe('eval run (M3a-T6)', () => {
       [golden.raters.a],
     );
     const target = before.rows[0]!;
+    // An open version to freeze (the earlier ones are frozen with their truth captured).
+    const opened = await ctx.db.transaction((tx) => openDatasetForCorrection(tx));
+    expect(opened).not.toBeNull();
     // A rating write holding the lock every post-freeze correction takes, committed only after
     // the run has reached its freeze.
     const writer = await ctx.owner.connect();
@@ -604,9 +688,12 @@ describe('eval run (M3a-T6)', () => {
         [target.rater_id, target.article_id, -target.rating],
       );
       const { rt } = runtime(ctx);
-      const pending = runExperiment(rt, { experiment: 'B0', yes: true, gitSha: 'test' }).finally(
-        () => rt.close(),
-      );
+      const pending = runExperiment(rt, {
+        experiment: 'B0',
+        datasetVersion: opened!.version,
+        yes: true,
+        gitSha: 'test',
+      }).finally(() => rt.close());
       await new Promise((resolve) => setTimeout(resolve, 500));
       await writer.query('COMMIT');
       runId = (await pending).runId;
@@ -625,11 +712,5 @@ describe('eval run (M3a-T6)', () => {
         [target.rater_id, target.article_id, target.rating],
       );
     }
-  });
-
-  it('`eval run B0 --yes` through the CLI', async () => {
-    const out = await runCli(ctx, ['run', 'B0', '--yes', '--langs', 'en']);
-    expect(out).toMatch(/B0 on golden-v1: estimated cost \$0\.0000/);
-    expect(out).toMatch(/run \d+ complete: billed \$0\.0000/);
   });
 });

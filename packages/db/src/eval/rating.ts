@@ -92,7 +92,9 @@ export async function listRaterCards(db: Executor, raterId: string): Promise<Rat
  * Store a card the rater wrote (spec 10 §2.2): a real `interest_cards` row with visibility `shared`
  * (reused by `text_hash` when identical text exists, un-retired if needed) plus the
  * `eval.rater_cards` link with its strength. Writing the same text again only changes the strength.
- * Rows are immutable, so the card text a run froze can never change underneath it.
+ * Rows are immutable, so the card text a run froze can never change underneath it. When the head
+ * dataset version is frozen, the next open version is created first, so the change reaches the next
+ * runs ({@link openDatasetForCorrection}).
  */
 export async function addRaterCard(
   tx: Transaction,
@@ -127,6 +129,7 @@ export async function addRaterCard(
     examplesYes,
     examplesNo,
   });
+  await openDatasetForCorrection(tx, 'cards');
   const inserted = await tx.execute<{ id: string }>(sql`
     INSERT INTO interest_cards (kind, title, body, text_hash, lang, origin, visibility,
                                 creator_user_id)
@@ -152,13 +155,20 @@ export async function addRaterCard(
   return { cardId, reused };
 }
 
-/** Remove one of the rater's cards (the card row stays: other raters or runs may use it). */
+/**
+ * Remove one of the rater's cards (the card row stays: other raters or runs may use it). Like
+ * {@link addRaterCard}, a removal under a frozen head first creates the next open version.
+ */
 export async function removeRaterCard(
-  db: Executor,
+  tx: Transaction,
   raterId: string,
   cardId: string,
 ): Promise<boolean> {
-  const result = await db.execute(sql`
+  const linked = await tx.execute(sql`
+    SELECT 1 FROM eval.rater_cards WHERE rater_id = ${raterId}::bigint AND card_id = ${cardId}::bigint`);
+  if ((linked.rowCount ?? 0) === 0) return false;
+  await openDatasetForCorrection(tx, 'cards');
+  const result = await tx.execute(sql`
     DELETE FROM eval.rater_cards WHERE rater_id = ${raterId}::bigint AND card_id = ${cardId}::bigint`);
   return (result.rowCount ?? 0) > 0;
 }
@@ -454,8 +464,9 @@ export async function nextPendingPosition(
 
 /**
  * Before a rating correction (spec 10 §2.1: "once frozen, … rating corrections … create a new
- * version manifest"), or before new assignments (the manifest's assignment membership, `cause`
- * `'assignments'`): when the head dataset version is frozen, create the next open version in
+ * version manifest"), before new assignments (the manifest's assignment membership, `cause`
+ * `'assignments'`) or before a rater's card change (`'cards'`; runs read cards from the version's
+ * freeze-time ground truth): when the head dataset version is frozen, create the next open version in
  * this transaction, copying every row unchanged (the top-up path; serialized by the additions
  * lock). Idempotent: an open head is only share-locked, so a concurrent freeze waits until this
  * transaction commits and its manifest then includes the change. Earlier runs keep the exact
@@ -463,7 +474,7 @@ export async function nextPendingPosition(
  */
 export async function openDatasetForCorrection(
   tx: Transaction,
-  cause: 'rating' | 'assignments' = 'rating',
+  cause: 'rating' | 'assignments' | 'cards' = 'rating',
 ): Promise<{ version: string; createdFrom: string } | null> {
   const head = await headDataset(tx);
   if (head === null) return null;
@@ -485,7 +496,9 @@ export async function openDatasetForCorrection(
       ...current.params,
       ...(cause === 'rating'
         ? { correctionOf: current.version }
-        : { assignmentsAfter: current.version }),
+        : cause === 'assignments'
+          ? { assignmentsAfter: current.version }
+          : { cardsChangedAfter: current.version }),
     },
   });
   await copySampleRows(tx, current.version, version);

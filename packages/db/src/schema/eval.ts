@@ -169,6 +169,24 @@ export const evalSample = evalSchema.table(
   ],
 );
 
+/**
+ * The ground truth of a frozen dataset version (D-110 addendum): every rater's ratings,
+ * assignments and cards (with their exact text) and every facet label of the version's articles,
+ * captured once in the transaction that freezes the version. Runs on a frozen version build their
+ * config from this row, never from the live tables, so post-freeze corrections (which branch a
+ * child version) and later assignments never reach the parent. Append-only (hand-written trigger).
+ */
+export const evalDatasetTruth = evalSchema.table('dataset_truth', {
+  datasetVersion: text('dataset_version')
+    .primaryKey()
+    .references(() => evalDatasets.version, { onDelete: 'restrict' }),
+  ratings: jsonb('ratings').notNull(),
+  assignments: jsonb('assignments').notNull(),
+  cards: jsonb('cards').notNull(),
+  facetLabels: jsonb('facet_labels').notNull(),
+  createdAt: tstz('created_at').notNull().defaultNow(),
+});
+
 export const evalRuns = evalSchema.table('runs', {
   id: int8('id').primaryKey().generatedAlwaysAsIdentity(),
   experiment: text('experiment').notNull(),

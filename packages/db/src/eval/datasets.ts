@@ -4,6 +4,8 @@ import { sql } from 'drizzle-orm';
 import type { Executor, Transaction } from '../client.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
 
+import { captureDatasetTruth } from './experiments.js';
+
 /**
  * Golden dataset versions (spec 10 §2.1, spec 02 §7, D-96). A version is a set of `eval.sample`
  * rows: an immutable article snapshot, its hash and its development/test split. The version being
@@ -309,13 +311,20 @@ export async function computeDatasetManifest(
 }
 
 /**
- * Freeze a version before its first model run (spec 10 §2.1): record the manifest once and close
- * the version to new rows. Idempotent: an already frozen version is returned unchanged.
+ * Freeze a version before its first model run (spec 10 §2.1): record the manifest once, capture the
+ * version's ground truth (`eval.dataset_truth`, D-110 addendum) in the same transaction and close
+ * the version to new rows. Idempotent: an already frozen version is returned unchanged (a legacy one
+ * without captured truth gets it now). Callers hold the dataset-additions lock so no rating write
+ * interleaves.
  */
 export async function freezeDataset(tx: Transaction, version: string): Promise<DatasetRow> {
   const locked = await lockDataset(tx, version);
   if (locked === null) throw new Error(`dataset version ${version} does not exist`);
-  if (locked.frozenAt !== null) return locked;
+  if (locked.frozenAt !== null) {
+    // A version frozen before ground-truth capture existed gets its snapshot now, once.
+    await captureDatasetTruth(tx, version);
+    return locked;
+  }
   const manifest = await computeDatasetManifest(tx, version);
   const result = await tx.execute<DatasetDbRow>(sql`
     UPDATE eval.datasets
@@ -325,6 +334,7 @@ export async function freezeDataset(tx: Transaction, version: string): Promise<D
     RETURNING ${DATASET_COLUMNS}`);
   const row = result.rows[0];
   if (row === undefined) throw new Error('dataset freeze returned no row');
+  await captureDatasetTruth(tx, version);
   return toDataset(row);
 }
 

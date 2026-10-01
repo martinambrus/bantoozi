@@ -7,6 +7,7 @@ import {
   listAssignments,
   listDatasets,
   loadSample,
+  removeRaterCard,
   setRaterFeeds,
 } from '@bantoozi/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -326,6 +327,37 @@ describe('ensureAssignments', () => {
       target: 10,
     });
     expect(again.added).toBe(0);
+    expect((await listDatasets(rdb.db)).length).toBe(versions);
+  });
+
+  it('opens the next version before a card change under a frozen head', async () => {
+    const head = (await headDataset(rdb.db))!;
+    if (head.frozenAt === null) await rdb.db.transaction((tx) => freezeDataset(tx, head.version));
+    const { rater } = await addRater(rdb, { langs: ['en'], now });
+    const card = await rdb.db.transaction((tx) =>
+      addRaterCard(tx, rater.id, {
+        title: null,
+        interest: 'Rail infrastructure investment and timetables',
+        notFor: null,
+        strength: 'like',
+        lang: 'en',
+        examplesYes: [],
+        examplesNo: [],
+      }),
+    );
+    const added = (await headDataset(rdb.db))!;
+    expect(added).toMatchObject({ parentVersion: head.version, frozenAt: null });
+    expect(added.params).toMatchObject({ cardsChangedAfter: head.version });
+    // An open head takes the removal without another version; a frozen one branches again.
+    await rdb.db.transaction((tx) => freezeDataset(tx, added.version));
+    expect(await rdb.db.transaction((tx) => removeRaterCard(tx, rater.id, card.cardId))).toBe(true);
+    const removed = (await headDataset(rdb.db))!;
+    expect(removed).toMatchObject({ parentVersion: added.version, frozenAt: null });
+    // Removing a card the rater does not hold changes nothing.
+    const versions = (await listDatasets(rdb.db)).length;
+    expect(await rdb.db.transaction((tx) => removeRaterCard(tx, rater.id, card.cardId))).toBe(
+      false,
+    );
     expect((await listDatasets(rdb.db)).length).toBe(versions);
   });
 });
