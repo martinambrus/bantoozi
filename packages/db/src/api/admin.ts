@@ -1300,13 +1300,17 @@ export async function patchLibraryCard(
   cardId: string,
   patch: LibraryCardPatch,
 ): Promise<{ cardId: string; versioned: boolean } | null> {
-  const current = await getAdminLibraryCard(tx, cardId);
-  if (current === null) return null;
+  const found = await getAdminLibraryCard(tx, cardId);
+  if (found === null) return null;
   if (patch.topicIds !== undefined) await assertKnownTopics(tx, patch.topicIds);
-  if (current.slug !== null) {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`library:${current.slug}`}))`);
+  if (found.slug !== null) {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`library:${found.slug}`}))`);
   }
   await tx.execute(sql`SELECT id FROM interest_cards WHERE id = ${bigintParam(cardId)} FOR UPDATE`);
+  // Read the state again under the locks: a concurrent patch may have committed since (its fields
+  // are carried into this one, never overwritten with the stale snapshot).
+  const current = await getAdminLibraryCard(tx, cardId);
+  if (current === null) return null;
 
   const semantic =
     (patch.interest !== undefined && patch.interest !== current.interest) ||

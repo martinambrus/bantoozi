@@ -411,4 +411,33 @@ describe('library administration (spec 08 §9, spec 05 §8)', () => {
     expect((await client.patch('/admin/library/999999999', { title: 'X' })).statusCode).toBe(404);
     expect((await client.patch(`/admin/library/${card.cardId}`, {})).statusCode).toBe(400);
   });
+
+  it('reads the card under its locks, so overlapping patches keep both changes', async () => {
+    const client = apiClient(h.server, admin);
+    const created = await client.post('/admin/library', {
+      slug: 'admin-test-overlap',
+      title: 'Overlap',
+      interest: 'Concurrent edits of one library card',
+      topicIds: [],
+    });
+    expect(created.statusCode).toBe(201);
+    const cardId = created.json().card.cardId as string;
+
+    // A rename holds the card's locks while a topics-only patch starts and reads the card.
+    const rename = await h.owner.connect();
+    try {
+      await rename.query('BEGIN');
+      await rename.query(`SELECT pg_advisory_xact_lock(hashtext('library:admin-test-overlap'))`);
+      await rename.query('SELECT id FROM interest_cards WHERE id = $1 FOR UPDATE', [cardId]);
+      const topics = client.patch(`/admin/library/${cardId}`, { topicIds: [TOPIC] });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await rename.query(`UPDATE interest_cards SET title = 'Renamed' WHERE id = $1`, [cardId]);
+      await rename.query('COMMIT');
+      const res = await topics;
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json().card).toMatchObject({ title: 'Renamed', topicIds: [TOPIC] });
+    } finally {
+      rename.release();
+    }
+  });
 });
