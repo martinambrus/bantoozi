@@ -57,51 +57,47 @@ export function planE7(input: {
   const perLang = input.perLang ?? E7_ARTICLES_PER_LANG;
   const answersOf =
     input.answersOf ?? ((_raterId: string, articleId: string) => input.answers.get(articleId));
-  const byLang = new Map<string, E7Candidate[]>();
+  // Each candidate's item is resolved first: the rater E7 picks (independent of the answers) and
+  // that rater's answered positive card with the lowest p. Only targetable items compete for the
+  // seeded `perLang` slots, so a candidate without one never displaces a valid one.
+  const byLang = new Map<string, E7Item[]>();
   for (const candidate of input.candidates) {
-    // Eligible when the rater E7 picks for the article has E1 answers there (its own `card.r`
-    // copies included): the pick does not depend on the answers, so it is made first.
     const raterId = e7Rater(candidate.articleId, candidate.raterIds);
-    if (raterId === null || (answersOf(raterId, candidate.articleId)?.size ?? 0) === 0) continue;
+    if (raterId === null) continue;
+    const answers = answersOf(raterId, candidate.articleId);
+    let target: { card: RunCard; p: number } | null = null;
+    for (const card of input.cardsByRater.get(raterId) ?? []) {
+      if (!isPositiveStrength(card.strength)) continue;
+      const p = answers?.get(card.cardId);
+      if (p === undefined) continue;
+      if (
+        target === null ||
+        p < target.p ||
+        (p === target.p && compareBigIntStrings(card.cardId, target.card.cardId) < 0)
+      ) {
+        target = { card, p };
+      }
+    }
+    if (target === null) continue;
     const list = byLang.get(candidate.lang) ?? [];
-    list.push(candidate);
+    list.push({
+      articleId: candidate.articleId,
+      lang: candidate.lang,
+      raterId,
+      targetedCardId: target.card.cardId,
+      targetedInterest: target.card.interest,
+    });
     byLang.set(candidate.lang, list);
   }
   const items: E7Item[] = [];
   for (const lang of [...byLang.keys()].sort()) {
-    const sampled = (byLang.get(lang) ?? [])
-      .map((candidate) => ({ candidate, r: rank(input.seed, candidate.articleId) }))
-      .sort(
-        (a, b) => a.r - b.r || compareBigIntStrings(a.candidate.articleId, b.candidate.articleId),
-      )
-      .slice(0, perLang)
-      .map(({ candidate }) => candidate);
-    for (const candidate of sampled) {
-      const raterId = e7Rater(candidate.articleId, candidate.raterIds);
-      if (raterId === null) continue;
-      const answers = answersOf(raterId, candidate.articleId);
-      let target: { card: RunCard; p: number } | null = null;
-      for (const card of input.cardsByRater.get(raterId) ?? []) {
-        if (!isPositiveStrength(card.strength)) continue;
-        const p = answers?.get(card.cardId);
-        if (p === undefined) continue;
-        if (
-          target === null ||
-          p < target.p ||
-          (p === target.p && compareBigIntStrings(card.cardId, target.card.cardId) < 0)
-        ) {
-          target = { card, p };
-        }
-      }
-      if (target === null) continue;
-      items.push({
-        articleId: candidate.articleId,
-        lang,
-        raterId,
-        targetedCardId: target.card.cardId,
-        targetedInterest: target.card.interest,
-      });
-    }
+    items.push(
+      ...(byLang.get(lang) ?? [])
+        .map((item) => ({ item, r: rank(input.seed, item.articleId) }))
+        .sort((a, b) => a.r - b.r || compareBigIntStrings(a.item.articleId, b.item.articleId))
+        .slice(0, perLang)
+        .map(({ item }) => item),
+    );
   }
   return items;
 }

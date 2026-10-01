@@ -742,9 +742,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   A draw prefers, within a stratum, the article with the fewest carriers, and a size it cannot fill
   gets a second, exclusive-first attempt before the sample shrinks, so a shared article never uses
   up another feed's room while an exclusive one is left.
-  A size still unfilled gets a bounded augmenting repair (an unchosen article blocked by one full
-  feed replaces a chosen article of that feed when a third then fits), since exact packing under
-  several caps is NP-hard; the cap is never exceeded. The draw also holds `feed_items` in SHARE mode
+  A size still unfilled gets a bounded augmenting-path repair: an unchosen article blocked by one
+  full feed displaces a chosen article of that feed, the room that article frees on its other feeds
+  is offered on recursively (depth 8) until an article fits outright, so each path adds one. Exact
+  packing under several caps is NP-hard, so the search is bounded; the cap is never exceeded. The draw also holds `feed_items` in SHARE mode
   until it commits, so no carrier is added between the selection and the snapshots.
   Otherwise English rows would stay under `langs: ['sk']`, or a sample would exceed its recorded
   target or cap. A parameter the version never recorded constrains nothing. The widened values are
@@ -810,7 +811,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   lock and then a rater lock. Assignments are per (rater, article), not per version, so the rating
   page shows an assigned article from the head's sample row, else from the newest version holding
   it: an independent lineage started by `eval sample --version` never strands earlier assignments.
-  Spec 10 §2.2 updated.
+  Spec 10 §2.2 updated. The planned top-up articles are share-locked (`FOR SHARE OF a`, in id
+  order) and revalidated in that transaction (same language, not stale or failed) before their
+  snapshots are built. A no-longer-eligible article is dropped, and the ingest worker cannot change
+  a locked one until commit. `feed_items` is not table-locked here, unlike the sample draw: the rating
+  request already holds the rater and additions locks, and a carrier added meanwhile changes no
+  eligibility.
 - D-105: 2026-10-01 M3a-T7 — spec 10 §2.3 asks for a predeclared adjudication step without defining
   it. Facet values use the labelling page's strings (yes/no, `0`–`4`, option ids); `uncertain` and
   `not_applicable` are excluded from accuracy. A label by the labeller `adjudicated` wins; otherwise a
@@ -1053,7 +1059,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   suggestions and the E7 target read each rater's own E1 answers: that rater's `card.r<raterId>` copy
   of a shared card id first (a failed copy counts as no answer), then the shared `card` answer. An
   article is an E7 candidate when the rater E7 picks for it has such answers, so a rater's own
-  successful copy keeps an article whose shared requests all failed.
+  successful copy keeps an article whose shared requests all failed. Each candidate's
+  target (an answered positive card of the picked rater) is resolved before the seeded `perLang`
+  slots are filled, so only targetable items take a slot.
 - D-115: 2026-10-01 M3a-T8 — the dry-run database is copied from the migrated test template
   (`TEST_ADMIN_DATABASE_URL` is used only to create and drop it, under the template advisory lock)
   and seeded by running the worker seed script as a subprocess against it. Only the names

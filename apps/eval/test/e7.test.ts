@@ -147,6 +147,31 @@ describe('planE7', () => {
     expect(items.map((item) => item.targetedCardId)).toEqual(['11']);
   });
 
+  it('fills every per-language slot with targetable items only', () => {
+    // 20 candidates of rater 1; only every fifth has an answered positive card of rater 1. The
+    // others hold only a never-card answer (12) or another rater's card (20), so they cannot be
+    // targeted and must not take a slot from a valid candidate later in the seeded order.
+    const ids = Array.from({ length: 20 }, (_, i) => String(300 + i));
+    const answers = new Map(
+      ids.map((id, i) => [
+        id,
+        new Map(i % 5 === 0 ? [['10', 0.4]] : i % 2 === 0 ? [['12', 0.3]] : [['20', 0.3]]) as Map<
+          string,
+          number
+        >,
+      ]),
+    );
+    const items = planE7({
+      seed: 's',
+      candidates: ids.map((articleId) => ({ articleId, lang: 'en', raterIds: ['1'] })),
+      cardsByRater,
+      answers,
+      perLang: 4,
+    });
+    expect(items).toHaveLength(4);
+    expect(items.every((item) => item.raterId === '1' && item.targetedCardId === '10')).toBe(true);
+  });
+
   it('targets the answered positive card with the lowest p and skips items without one', () => {
     const answers = new Map([
       [
