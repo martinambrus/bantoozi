@@ -774,7 +774,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   transaction as the assignments, under the rater row lock, then the additions lock, then the dataset
   row lock, from the feeds read under the rater lock, so a concurrent feed change never adds articles
   from a dropped feed and a start rejected as not ready writes nothing. No path takes the additions
-  lock and then a rater lock. Spec 10 §2.2 updated.
+  lock and then a rater lock. Assignments are per (rater, article), not per version, so the rating
+  page shows an assigned article from the head's sample row, else from the newest version holding
+  it: an independent lineage started by `eval sample --version` never strands earlier assignments.
+  Spec 10 §2.2 updated.
 - D-105: 2026-10-01 M3a-T7 — spec 10 §2.3 asks for a predeclared adjudication step without defining
   it. Facet values use the labelling page's strings (yes/no, `0`–`4`, option ids); `uncertain` and
   `not_applicable` are excluded from accuracy. A label by the labeller `adjudicated` wins; otherwise a
@@ -799,7 +802,7 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   card mode's translated run per language; an E4 run in the other card mode is unmeasured. Budget:
   uncached cost = billed + cache savings, weighted by development language share, `--daily-revisions`
   default 1000, sensitivity ×5. `owner_pilot` requires exactly one participant key. g1
-  `language_modes` lists only measured languages plus `en`. Budget cost attribution: the per-article cost is the
+  `language_modes` lists `en` and every gate language; an unmeasured one gets the default `native`, the mode its composition was scored, thresholded and budgeted with, so applying G1 never leaves a stored `translate` under a configuration the gate did not confirm (spec 10 §5: keep default settings for unmeasured languages). Budget cost attribution: the per-article cost is the
   development-share-weighted sum, over composed languages, of each language's uncached dollars per
   article under its composed run, from `results.cost.byLang` (that language's own spend over its own
   processed articles). A run without it charges its whole uncached cost to the processed articles of
@@ -814,7 +817,7 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   items, ≥ 5 per class), so an unsupported context never carries a share of its participant's
   weight.
 - D-108: 2026-10-01 M3a-T7 — `apply-g1` semantics spec 10 §1 leaves open. `language_modes` is merged
-  over the stored modes (unmeasured languages keep theirs); `ranker.thresholds` is replaced whole. A
+  over the stored modes (a language outside the gate keeps its stored mode; unmeasured gate languages are written as `native`, D-107); `ranker.thresholds` is replaced whole. A
   key is written only when its effective value changes (a missing row counts as its default), so a
   second apply changes nothing. Side effects mirror spec 08 `PATCH /admin/settings` (`user.rank`,
   `house.reenrich`, `house.rematch`, `house.translate-cards`, `user.learn`) through the outbox with

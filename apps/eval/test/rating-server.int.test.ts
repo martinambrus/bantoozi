@@ -1,4 +1,5 @@
 import {
+  createDataset,
   createRater,
   createRaterSession,
   findRaterByToken,
@@ -780,8 +781,13 @@ describe('session creation races a reissue or revocation', () => {
 });
 
 describe('rating corrections after a freeze (spec 10 §2.1)', () => {
+  let r: { rater: RaterRow; token: string; browser: Browser };
+
+  beforeAll(async () => {
+    r = await readyRater('corrector');
+  });
+
   it('create the next open version once; the frozen version stays unchanged', async () => {
-    const r = await readyRater('corrector');
     await r.browser.post('/r/a/0/rate', { rating: 'like' });
     const head = (await headDataset(rdb.db))!;
     const frozen = await rdb.db.transaction((tx) => freezeDataset(tx, head.version));
@@ -816,5 +822,16 @@ describe('rating corrections after a freeze (spec 10 §2.1)', () => {
     await r.browser.post('/r/a/1/skip');
     expect((await listDatasets(rdb.db)).length).toBe(versionsBefore + 2);
     expect((await headDataset(rdb.db))!.parentVersion).toBe(next.version);
+  });
+
+  it('an independent lineage (eval sample --version) keeps serving articles only an older one holds', async () => {
+    // A new, unrelated head that holds none of the rater's articles.
+    await createDataset(rdb.db, { version: 'golden-x1', seed: 'seed-x', params: {} });
+    expect((await headDataset(rdb.db))!.version).toBe('golden-x1');
+    expect(await loadSample(rdb.db, 'golden-x1')).toEqual([]);
+
+    const res = await r.browser.get('/r/a/3');
+    expect(res.statusCode).toBe(200);
+    expect(parseHTML(res.body).document.querySelector('h1')?.textContent).toMatch(/story/u);
   });
 });

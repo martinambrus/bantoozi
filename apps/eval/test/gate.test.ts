@@ -87,6 +87,13 @@ describe('gate readiness', () => {
     const readiness = gateReadiness(model, 'owner_pilot');
     expect(readiness.measuredLangs).toEqual(['en']);
     expect(readiness.unmeasuredLangs).toEqual(['cs']);
+    // Selection keeps the default (native) for it and writes that mode explicitly, so applying G1
+    // deploys the composition the gate scored and budgeted, not a stored `translate`.
+    const { assessments } = setup(fixture, standardRuns(fixture));
+    const selection = select(model, assessments);
+    expect(selection.languages.find((l) => l.lang === 'cs')?.mode).toBeNull();
+    expect(selection.composition['cs']).toMatch(/^E[12]$/);
+    expect(selection.languageModes['cs']).toBe('native');
   });
 });
 

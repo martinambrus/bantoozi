@@ -13,7 +13,7 @@ import {
   listRaterCards,
   listRaterFeedIds,
   listRaters,
-  loadSample,
+  loadSampleArticle,
   lockRater,
   nextPendingPosition,
   ownerParticipantKey,
@@ -414,10 +414,7 @@ export async function buildRatingServer(options: RatingServerOptions): Promise<F
     preferredFeeds: ReadonlySet<string>,
   ): Promise<ArticleView> {
     const head = await headDataset(db);
-    const row =
-      head === null
-        ? undefined
-        : (await loadSample(db, head.version, { articleIds: [articleId] }))[0];
+    const row = await loadSampleArticle(db, articleId, head?.version ?? null);
     if (row === undefined) {
       throw new HttpError(404, 'Not found', 'This article is not in the golden sample.');
     }

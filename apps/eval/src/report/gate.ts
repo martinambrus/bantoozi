@@ -484,7 +484,10 @@ export function selectOnDevelopment(input: DevelopmentInput): GateSelection {
 
   const languageModes: Record<string, 'native' | 'translate'> = {};
   if (input.langs.includes('en')) languageModes['en'] = 'native';
-  for (const l of languages) if (l.mode !== null) languageModes[l.lang] = l.mode;
+  // An unmeasured language keeps the default mode, native (spec 10 §5), written explicitly: the
+  // composition above scored, thresholded and budgeted it as native, so applying G1 must not leave
+  // a stored `translate` in place and deploy a configuration the gate never confirmed.
+  for (const l of languages) languageModes[l.lang] = l.mode ?? 'native';
 
   const runs: Record<string, string> = {};
   for (const [experiment, a] of input.runs)

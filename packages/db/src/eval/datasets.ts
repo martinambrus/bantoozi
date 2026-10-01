@@ -251,6 +251,38 @@ export async function loadSample(
 }
 
 /**
+ * An article's sample row for display, wherever it was sampled: the head's row when the head holds
+ * it, else the newest version's. Assignments are per (rater, article), not per version, so an
+ * independent lineage started by `eval sample --version` must not strand a rater's assignments
+ * from an older one.
+ */
+export async function loadSampleArticle(
+  db: Executor,
+  articleId: string,
+  preferVersion: string | null,
+): Promise<SampleRow | undefined> {
+  const result = await db.execute<SampleDbRow>(sql`
+    SELECT s.dataset_version, s.article_id::text AS article_id, s.lang, s.snapshot, s.snapshot_sha,
+           s.split, s.created_at
+      FROM eval.sample s JOIN eval.datasets d ON d.version = s.dataset_version
+     WHERE s.article_id = ${articleId}::bigint
+     ORDER BY (d.version = ${preferVersion}) IS TRUE DESC, d.created_at DESC, d.version DESC
+     LIMIT 1`);
+  const row = result.rows[0];
+  return row === undefined
+    ? undefined
+    : {
+        datasetVersion: row.dataset_version,
+        articleId: row.article_id,
+        lang: row.lang,
+        snapshot: row.snapshot,
+        snapshotSha: row.snapshot_sha,
+        split: row.split,
+        createdAt: toDate(row.created_at),
+      };
+}
+
+/**
  * The split of every story group already present in a version (`snapshot.storyGroupId`), so a
  * top-up keeps a new copy of a known story on its group's side.
  */

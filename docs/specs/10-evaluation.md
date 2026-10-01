@@ -163,7 +163,9 @@ settings, regardless of profile.
   - every top-up receives the same frozen snapshot and story-group split before assignment
   - shuffled deterministically (seeded by the rater id)
   - **Blind:** no model output is shown.
-  - The page shows the feed, title, excerpt (≤ 600 chars) and "open original".
+  - The page shows the feed, title, excerpt (≤ 600 chars) and "open original", from the head
+    version's sample row, else the newest version holding the article (assignments are per
+    rater and article, so a new lineage never strands them; D-104).
   - Buttons: 👍 "I'd want to read this" / 👎 "Not for me", plus an optional reason (the spec 09 reason set).
   - Keyboard: `+`/`-`, `1`–`6`, `j`/`k` (also `s` skip and `o` open original).
   - Progress is saved on every click (`eval.ratings`) and ratings can be changed.
