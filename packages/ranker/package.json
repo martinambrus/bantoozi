@@ -23,5 +23,7 @@
     "@bantoozi/questions": "workspace:*",
     "@bantoozi/shared": "workspace:*"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "fast-check": "4.10.2"
+  }
 }
