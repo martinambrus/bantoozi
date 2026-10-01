@@ -32,6 +32,12 @@ import { selectLanguageSample, type SelectItem, type SelectResult } from './sele
  * (none when nothing changed, so a re-run on the same data writes nothing); a frozen version is
  * never touched — without `--version` the draw goes to the next version, which starts as a copy of
  * the frozen one (spec 02 §7), and it is created only when it would add articles.
+ *
+ * Because the rows are kept, a re-run may only widen the recorded parameters: more languages (a
+ * superset), a higher per-language target or a higher feed cap. The kept rows still satisfy every
+ * widened constraint, and the draw only tops the sample up. Anything else (dropping a language,
+ * lowering the target or the cap) would leave rows that violate the recorded parameters. That is
+ * refused with a pointer to `--version <new>`, which starts a new lineage (D-98 addendum).
  */
 
 export const DEFAULT_PER_LANG = 500;
@@ -99,6 +105,53 @@ function langsParam(params: Record<string, unknown>): string[] | undefined {
   return Array.isArray(value) && value.every((v) => typeof v === 'string') ? value : undefined;
 }
 
+interface SamplingParams {
+  perLang: number;
+  feedCapShare: number;
+  langs: readonly string[];
+}
+
+/**
+ * Why `next` cannot be applied to a version whose rows were drawn with `stored`, or null when it
+ * only widens them (a superset of languages, a target or cap at least as high). A parameter the
+ * version never recorded constrains nothing.
+ */
+export function incompatibleSampling(
+  stored: Record<string, unknown>,
+  next: SamplingParams,
+): string | null {
+  const reasons: string[] = [];
+  const langs = langsParam(stored);
+  if (langs !== undefined) {
+    const dropped = langs.filter((lang) => !next.langs.includes(lang));
+    if (dropped.length > 0) {
+      reasons.push(
+        `languages ${langs.join(',')} (now ${next.langs.join(',')}: drops ${dropped.join(',')})`,
+      );
+    }
+  }
+  const perLang = numberParam(stored, 'perLang');
+  if (perLang !== undefined && next.perLang < perLang) {
+    reasons.push(`--per-lang ${perLang} (now ${next.perLang})`);
+  }
+  const feedCapShare = numberParam(stored, 'feedCapShare');
+  if (feedCapShare !== undefined && next.feedCapShare < feedCapShare) {
+    reasons.push(`--feed-cap ${feedCapShare} (now ${next.feedCapShare})`);
+  }
+  return reasons.length === 0 ? null : reasons.join('; ');
+}
+
+function sameSampling(stored: Record<string, unknown>, next: SamplingParams): boolean {
+  const langs = langsParam(stored);
+  return (
+    numberParam(stored, 'perLang') === next.perLang &&
+    numberParam(stored, 'feedCapShare') === next.feedCapShare &&
+    langs !== undefined &&
+    langs.length === next.langs.length &&
+    langs.every((lang, i) => lang === next.langs[i])
+  );
+}
+
 export async function drawSample(
   db: Database,
   options: SampleOptions,
@@ -143,7 +196,18 @@ export async function drawSample(
     const perLang = options.perLang ?? numberParam(stored, 'perLang') ?? DEFAULT_PER_LANG;
     const feedCapShare =
       options.feedCapShare ?? numberParam(stored, 'feedCapShare') ?? DEFAULT_FEED_CAP_SHARE;
-    const langs = [...(options.langs ?? langsParam(stored) ?? DEFAULT_LANGS)];
+    const langs = [...new Set(options.langs ?? langsParam(stored) ?? DEFAULT_LANGS)];
+    if (base !== null) {
+      // The draw keeps `base`'s rows (an open version's own, or a frozen head's copied ones).
+      const conflict = incompatibleSampling(stored, { perLang, feedCapShare, langs });
+      if (conflict !== null) {
+        throw new SampleError(
+          `${base.version} was sampled with ${conflict}. A re-run keeps its rows, so it may only ` +
+            'add languages or raise --per-lang or --feed-cap; start a new lineage with ' +
+            '`--version <new>` to sample with these parameters',
+        );
+      }
+    }
 
     const existingRows = base === null ? [] : await loadSample(tx, base.version);
     const candidates = await loadSampleCandidates(tx, userId);
@@ -217,6 +281,10 @@ export async function drawSample(
         throw new SampleError(
           `no eligible articles for ${langs.join(', ')} yet: let ingest-sample collect first`,
         );
+      }
+      // A widened open version records its parameters even when nothing new could be drawn.
+      if (base.frozenAt === null && !sameSampling(stored, { perLang, feedCapShare, langs })) {
+        await updateDatasetParams(tx, version, { perLang, feedCapShare, langs });
       }
       return { status: 'unchanged', ...common, created: false, added: 0, skipped: [] };
     }

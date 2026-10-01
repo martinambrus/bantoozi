@@ -105,7 +105,9 @@ settings, regardless of profile.
   with one prolific feed. Store sampling seed, timestamps and exclusions. Eligible means extracted,
   not `stale`/`failed`, with a detected language in the requested set; the 10% cap applies to the
   size actually drawn (the largest size the feeds can fill under it); an open version only gains
-  rows, a frozen one never changes and the next draw creates the next version (D-98).
+  rows, a frozen one never changes and the next draw creates the next version (D-98). A re-run may
+  only widen the recorded parameters (more languages, a higher `--per-lang` or `--feed-cap`). Any
+  other change is refused, and a new `--version` starts a new lineage.
 - **Freeze:** `eval.sample.snapshot` stores immutable article input (title, excerpt, body lead used by
   the classifier, language, timestamps, carrier feeds, content revision and story-group id), with
   `snapshot_sha`. Freeze rater cards/strengths and assignment membership before the first model run.
@@ -293,7 +295,8 @@ data, shares the invocation budget and never changes selection, thresholds or th
 runs it after E6 when the remaining budget covers its estimate.
 
 **Completeness:** a gate experiment pins its intended engine; an LLM fallback must not silently
-become an E1–E4, E6 or E7 Jev answer. Record unavailable cases and retry/resume within budget. Compare all
+become an E1–E4, E6 or E7 Jev answer (the gate checks every Call A and Call B answer the run
+stored, including per-rater card answers). Record unavailable cases and retry/resume within budget. Compare all
 variants on the identical assigned/rated cohort; require ≥95% valid scoring coverage per language
 and rater, and include conservative missing-output sensitivity (missing model score behaves as
 unknown/degraded). Below that coverage the result is `needs_more_data`, not a pass on easy items only.

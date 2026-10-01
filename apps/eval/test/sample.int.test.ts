@@ -238,6 +238,56 @@ describe('eval sample (M3a-T2)', () => {
     expect(Math.max(...byFeed.values())).toBeLessThanOrEqual(cap);
   });
 
+  it('refuses a re-run that narrows the recorded parameters and records a widening one', async () => {
+    // golden-short holds Slovak rows drawn with a target of 500 and a 10 % cap.
+    const before = await computeDatasetManifest(ctx.db, 'golden-short');
+    const params = (await getDataset(ctx.db, 'golden-short'))?.params;
+    for (const [args, reason] of [
+      [['--langs', 'en'], 'drops sk'],
+      [['--per-lang', '100'], '--per-lang 500 (now 100)'],
+      [['--feed-cap', '0.05'], '--feed-cap 0.1 (now 0.05)'],
+    ] as const) {
+      await expect(sample(['--version', 'golden-short', ...args])).rejects.toMatchObject({
+        name: 'EvalCommandError',
+        message: expect.stringMatching(
+          new RegExp(
+            `golden-short was sampled with .*${reason.replace(/[.()]/g, '\\$&')}.*--version <new>`,
+          ),
+        ),
+      });
+    }
+    // Nothing changed: rows and recorded parameters stay as they were.
+    expect(await computeDatasetManifest(ctx.db, 'golden-short')).toEqual(before);
+    expect((await getDataset(ctx.db, 'golden-short'))?.params).toEqual(params);
+
+    // A superset of languages tops the version up and records the widened set.
+    const skRows = await loadSample(ctx.db, 'golden-short', { langs: ['sk'] });
+    const widened = await sample(['--version', 'golden-short', '--langs', 'sk,cs']);
+    expect(widened.out).toMatch(/golden-short: \d+ article\(s\) added/);
+    expect(await loadSample(ctx.db, 'golden-short', { langs: ['sk'] })).toEqual(skRows);
+    expect((await loadSample(ctx.db, 'golden-short', { langs: ['cs'] })).length).toBeGreaterThan(0);
+    expect((await getDataset(ctx.db, 'golden-short'))?.params['langs']).toEqual(['sk', 'cs']);
+    // Dropping the language just added is refused too; a new version starts its own lineage.
+    await expect(sample(['--version', 'golden-short', '--langs', 'sk'])).rejects.toMatchObject({
+      message: expect.stringContaining('drops cs'),
+    });
+    const fresh = await sample([
+      '--version',
+      'golden-short-en',
+      '--langs',
+      'en',
+      '--per-lang',
+      '20',
+    ]);
+    expect(fresh.out).toContain('golden-short-en: created');
+
+    // A widening that adds nothing still records its parameters.
+    // (French has no articles and English is already at its target.)
+    const unchanged = await sample(['--version', 'golden-short-en', '--langs', 'en,fr']);
+    expect(unchanged.out).toContain('golden-short-en: unchanged');
+    expect((await getDataset(ctx.db, 'golden-short-en'))?.params['langs']).toEqual(['en', 'fr']);
+  });
+
   it('refuses a draw on a database without collected articles', async () => {
     await expect(sample(['--version', 'golden-none', '--langs', 'fr'])).rejects.toMatchObject({
       name: 'EvalCommandError',

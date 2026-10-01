@@ -723,6 +723,14 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   head leads to the next version (parent rows copied), created only when it adds articles. Every
   draw appends its time, seed, window, per-language target/available/size/cap/feeds/days and
   exclusions to `params.sampling[]`. Spec 10 §2.1 updated.
+  Addendum (PR #10): a re-run keeps the version's rows (its own, or those copied from a frozen head),
+  so it may only widen the recorded `langs`, `perLang` and `feedCapShare`. That means a superset of
+  languages, a target or a cap at least as high. The kept rows satisfy every widened constraint and
+  the draw only tops each language up. Dropping a language or lowering the target or the cap is
+  refused (`eval sample` exits 1) with a pointer to `--version <new>`, which starts a new lineage.
+  Otherwise English rows would stay under `langs: ['sk']`, or a sample would exceed its recorded
+  target or cap. A parameter the version never recorded constrains nothing. The widened values are
+  recorded on the version even when the draw adds nothing. Repeated languages are recorded once.
 - D-99: 2026-10-01 M3a-T2 — `ingest-sample` mechanics that spec 10 §2.1 leaves open. The feed list
   is `<lang> <category> <url> [tags]` with tags `google-news`, `poor-excerpts`, `bot-sensitive` and
   `legacy-charset` and `#` comments. Besides a heartbeat under 90 s with `evalIngestOnly` and no live
@@ -830,7 +838,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   fallback, or `cardTextFallback: true`) as unknown, and a Call A answer tagged `variant: 'native'`
   in a translated-state (`lt`/`glm`) run as failed. This matches the runner, whose coverage already
   excludes those answers, so the advertised variant's AUCs, the threshold pool and the demotion
-  samples never count them.
+  samples never count them. The pinned-engine eligibility check (E1–E4, E6, E7) audits every answer
+  source the metrics read, not only the shared `card` rows: every per-key card map (the per-rater
+  `card.r<raterId>` rows, `e6.r*`, `e7.*`) and every usable Call A answer. The report keeps each
+  Call A answer's engine (an untagged answer counts as `typesafe`, as untagged card rows do), so a
+  single answer from any other engine makes the run ineligible.
 - D-108: 2026-10-01 M3a-T7 — `apply-g1` semantics spec 10 §1 leaves open. `language_modes` is merged
   over the stored modes (a language outside the gate keeps its stored mode; unmeasured gate languages are written as `native`, D-107); `ranker.thresholds` is replaced whole. A
   key is written only when its effective value changes (a missing row counts as its default), so a
