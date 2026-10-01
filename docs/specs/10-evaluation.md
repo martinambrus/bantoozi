@@ -107,7 +107,9 @@ settings, regardless of profile.
   size actually drawn (the largest size the feeds can fill under it); an open version only gains
   rows, a frozen one never changes and the next draw creates the next version (D-98). A re-run may
   only widen the recorded parameters (more languages, a higher `--per-lang` or `--feed-cap`). Any
-  other change is refused, and a new `--version` starts a new lineage.
+  other change is refused, and a new `--version` starts a new lineage. The draw share-locks its
+  candidate articles until it commits, so the worker cannot change one between selection and
+  snapshot.
 - **Freeze:** `eval.sample.snapshot` stores immutable article input (title, excerpt, body lead used by
   the classifier, language, timestamps, carrier feeds, content revision and story-group id), with
   `snapshot_sha`. Freeze rater cards/strengths and assignment membership before the first model run.
@@ -203,8 +205,8 @@ settings, regardless of profile.
 - Generate ≥128-bit random rater tokens and store only a cryptographic hash. Exchange the link token
   for an HttpOnly, SameSite cookie, then redirect to a token-free URL; Secure on the HTTPS tunnel.
   Set `Referrer-Policy: no-referrer`, no external resources/analytics, redact token-bearing URLs in
-  logs, and rate-limit token exchange. Link tokens expire (`token_expires_at`, default 30 days,
-  `eval rater add --token-days <n>`). `eval rater revoke <id>` sets `token_revoked_at` and deletes
+  logs, and rate-limit token exchange per client (the address the loopback tunnel forwards, D-102).
+  Link tokens expire (`token_expires_at`, default 30 days, `eval rater add --token-days <n>`). `eval rater revoke <id>` sets `token_revoked_at` and deletes
   the rater's `eval.rater_sessions`; `eval rater token <id>` issues a new token and expiry, clears
   the revocation and also deletes those sessions, so no session from the old token survives.
   Neither touches assignments, ratings or cards, which deleting the rater would cascade. Exchange

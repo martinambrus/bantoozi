@@ -728,6 +728,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   languages, a target or a cap at least as high. The kept rows satisfy every widened constraint and
   the draw only tops each language up. Dropping a language or lowering the target or the cap is
   refused (`eval sample` exits 1) with a pointer to `--version <new>`, which starts a new lineage.
+  Addendum (PR #10 review): the draw share-locks every candidate article (`FOR SHARE`) until it
+  commits, so the ingest-only worker cannot change an article's language or pipeline state between
+  the selection and its snapshot; its updates wait for the draw.
   Otherwise English rows would stay under `langs: ['sk']`, or a sample would exceed its recorded
   target or cap. A parameter the version never recorded constrains nothing. The widened values are
   recorded on the version even when the draw adds nothing. Repeated languages are recorded once.
@@ -760,6 +763,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   carries it after the redirect), and mutations need a per-session HMAC CSRF token and a same-origin
   request. Exchange is limited to 20 attempts per client address per 10 minutes. `--participant` must
   name an existing participant key, so a typo cannot create a phantom human. Spec 10 §2.4 updated.
+  Addendum (PR #10 review): every rater reaches the server through the loopback tunnel, so the
+  socket address is the same for all of them and one client's bad links would lock everyone out.
+  The server trusts only the loopback hop (`trustProxy: 'loopback'`) and counts attempts by the
+  client address the tunnel appends to `X-Forwarded-For`; addresses a client sends itself sit to the
+  left of it and are ignored. Without that header the socket address is used, as before.
 - D-103: 2026-10-01 M3a-T4 — spec 10 §2.3 names the owner as labeller and a 50-article overlap
   without a selection rule. The owner is the participant of the earliest rater. The owner's set is up
   to 100 articles per language of the head dataset version in seeded hash order (seed = dataset seed

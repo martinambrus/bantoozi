@@ -230,11 +230,24 @@ export interface SampleCandidate {
   firstSeenAt: Date;
 }
 
-/** Every article the user's feeds carry, ordered by id (eligible or not: exclusions are counted). */
+/**
+ * Every article the user's feeds carry, ordered by id (eligible or not: exclusions are counted).
+ * Inside a transaction the articles stay share-locked until it ends, so the ingest-only worker
+ * cannot change an article's language or pipeline state between the draw and its snapshot.
+ */
 export async function loadSampleCandidates(
   db: Executor,
   userId: string,
 ): Promise<SampleCandidate[]> {
+  await db.execute(sql`
+    SELECT a.id
+      FROM articles a
+     WHERE a.id IN (SELECT fi.article_id
+                      FROM subscriptions s
+                      JOIN feed_items fi ON fi.feed_id = s.feed_id
+                     WHERE s.user_id = ${userId}::uuid)
+     ORDER BY a.id
+       FOR SHARE OF a`);
   const result = await db.execute<{
     article_id: string;
     lang: string | null;

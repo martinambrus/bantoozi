@@ -1,4 +1,10 @@
-import { computeDatasetManifest, freezeDataset, getDataset, loadSample } from '@bantoozi/db';
+import {
+  computeDatasetManifest,
+  freezeDataset,
+  getDataset,
+  loadSample,
+  loadSampleCandidates,
+} from '@bantoozi/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { asSnapshot } from '../src/dataset/snapshot.js';
@@ -302,5 +308,25 @@ describe('eval sample (M3a-T2)', () => {
       message: expect.stringContaining('no eligible articles for fr'),
     });
     expect(await getDataset(ctx.db, 'golden-none')).toBeNull();
+  });
+  it('keeps the candidates locked until the draw commits, so the worker cannot change them', async () => {
+    const feedId = feedsByLang['en']![3]!;
+    const target = await ctx.owner.query<{ id: string }>(
+      `SELECT fi.article_id::text AS id FROM feed_items fi WHERE fi.feed_id = $1 LIMIT 1`,
+      [feedId],
+    );
+    const id = target.rows[0]!.id;
+    await ctx.db.transaction(async (tx) => {
+      await loadSampleCandidates(tx, ctx.evalUserId);
+      const client = await ctx.owner.connect();
+      try {
+        await client.query(`SET lock_timeout = '200ms'`);
+        await expect(
+          client.query(`UPDATE articles SET lang = 'sk' WHERE id = $1`, [id]),
+        ).rejects.toMatchObject({ code: '55P03' });
+      } finally {
+        client.release(true);
+      }
+    });
   });
 });

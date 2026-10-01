@@ -82,7 +82,8 @@ import {
  * Security model:
  * - `GET /r?t=<token>` (or `/facets?t=`) exchanges an unexpired, unrevoked link token for a random
  *   session cookie (HttpOnly, SameSite=Lax, Secure when `EVAL_PUBLIC_URL` is https) and redirects
- *   to the token-free URL. Exchange is rate-limited per client address. Only hashes are stored.
+ *   to the token-free URL. Exchange is rate-limited per client address: the one the loopback
+ *   tunnel reports in `X-Forwarded-For`, else the socket's. Only hashes are stored.
  * - Every request re-reads the session and rechecks its expiry and the token's expiry and
  *   revocation, so `eval rater revoke` / `eval rater token` end sessions at once.
  * - Every read and write is scoped to the session's rater (its assignments, cards, feeds) or, for
@@ -241,7 +242,9 @@ export async function buildRatingServer(options: RatingServerOptions): Promise<F
   const secureCookie = publicOrigin.startsWith('https:');
   const attempts = new Map<string, { count: number; windowStart: number }>();
 
-  const app = Fastify({ logger: false, bodyLimit: 64 * 1024, trustProxy: false });
+  // Every client arrives through the loopback tunnel, so trust only that hop: `req.ip` is the
+  // address the tunnel appended to `X-Forwarded-For` (entries a client sends sit to its left).
+  const app = Fastify({ logger: false, bodyLimit: 64 * 1024, trustProxy: 'loopback' });
   app.addContentTypeParser(
     'application/x-www-form-urlencoded',
     { parseAs: 'string' },

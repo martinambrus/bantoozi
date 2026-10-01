@@ -308,8 +308,24 @@ describe('link token exchange and sessions', () => {
         (await limited.inject({ method: 'GET', url: `/r?t=${'B'.repeat(43)}` })).statusCode,
       );
     }
+    // Behind the tunnel every request comes from loopback; the limit follows the forwarded client,
+    // and an address a client prepends to X-Forwarded-For does not move it to another bucket.
+    const viaTunnel = async (forwardedFor: string) =>
+      (
+        await limited.inject({
+          method: 'GET',
+          url: `/r?t=${'B'.repeat(43)}`,
+          remoteAddress: '127.0.0.1',
+          headers: { 'x-forwarded-for': forwardedFor },
+        })
+      ).statusCode;
+    const tunnelled: number[] = [];
+    for (let i = 0; i < 3; i += 1) tunnelled.push(await viaTunnel('203.0.113.7'));
+    tunnelled.push(await viaTunnel('198.51.100.1, 203.0.113.7'));
+    tunnelled.push(await viaTunnel('198.51.100.9'));
     await limited.close();
     expect(codes).toEqual([401, 401, 429]);
+    expect(tunnelled).toEqual([401, 401, 429, 429, 401]);
   });
 
   it('never logs the link token', async () => {
