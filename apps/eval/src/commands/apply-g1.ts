@@ -103,7 +103,11 @@ export async function checkG1(
   const lock = locks.find(
     (l) => (l.config as { configSha?: unknown }).configSha === g1.selection.configSha,
   );
-  const lockResults = (lock?.results ?? null) as { status?: unknown; reportSha?: unknown } | null;
+  const lockResults = (lock?.results ?? null) as {
+    status?: unknown;
+    reportSha?: unknown;
+    participants?: unknown;
+  } | null;
   if (lock === undefined) {
     problems.push('no gate lock records this selection');
   } else if (
@@ -112,6 +116,12 @@ export async function checkG1(
     lockResults?.reportSha !== g1.gate.reportSha
   ) {
     problems.push('the gate lock records a different profile, status or report');
+  }
+  // The participant count is outside the config hash: the lock records it (D-108).
+  if (lock !== undefined && lockResults?.participants !== g1.gate.participants) {
+    problems.push(
+      `participant count mismatch: g1.json claims ${g1.gate.participants}, the gate lock records ${String(lockResults?.participants ?? 'none')}`,
+    );
   }
   return problems;
 }

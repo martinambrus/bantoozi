@@ -215,6 +215,11 @@ describe('eval apply-g1 refusals', () => {
       },
       /no gate lock records this selection/,
     ],
+    [
+      'an edited participant count',
+      (g: G1File) => ({ ...g, gate: { ...g.gate, participants: 3 } }),
+      /participant count mismatch: g1\.json claims 3, the gate lock records 1/,
+    ],
     ['an invalid file', () => ({ language_modes: {} }), /invalid g1\.json/],
   ])('refuses %s and writes nothing', async (_name, patch, message) => {
     const before = await settingsSnapshot();

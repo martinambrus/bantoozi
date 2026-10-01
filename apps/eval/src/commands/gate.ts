@@ -275,6 +275,8 @@ export async function runGate(
       await recordGateOutcome(rt.db, lock.id, {
         status,
         reportSha,
+        // The participant count g1.json claims, authenticated here for `apply-g1` (D-108).
+        participants: readiness.participants,
         macroAuc: confirmation?.macro ?? null,
         baselineMacroAuc: confirmation?.baselineMacro ?? null,
       });
