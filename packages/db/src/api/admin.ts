@@ -740,6 +740,13 @@ export async function listAdminWaitlist(
   }));
 }
 
+/** The email of a waitlist entry, unlocked, so the caller can take the auth-email lock first. */
+export async function waitlistEntryEmail(tx: Executor, id: string): Promise<string | null> {
+  const result = await tx.execute<{ email: string }>(sql`
+    SELECT email::text AS email FROM waitlist WHERE id = ${bigintParam(id)}`);
+  return result.rows[0]?.email ?? null;
+}
+
 /**
  * Lock a waitlist entry for `POST /admin/waitlist/:id/invite` (spec 08 §9), or `null` when it does
  * not exist. The lock serializes two admins inviting the same entry.

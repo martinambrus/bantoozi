@@ -1,12 +1,15 @@
 import {
   createInvites,
   listAdminInvites,
+  findUserByEmail,
+  lockAuthEmail,
   lockWaitlistEntry,
   markWaitlistInvited,
   listAdminUsers,
   listAdminWaitlist,
   updateAdminUser,
   type AdminUserRow,
+  waitlistEntryEmail,
 } from '@bantoozi/db';
 import {
   AdminCreateInvitesBodySchema,
@@ -283,8 +286,18 @@ export const accountRoutes: FastifyPluginAsyncZod = async (app) => {
       const { config } = app.services;
       let sent: { code: string; expiresAt: Date; email: string; locale: 'en' | 'sk' } | undefined;
       const outcome = await request.mutate(async (tx) => {
+        // Same lock order as request-code and verify (auth-email lock, then rows), so an invite
+        // cannot race a signup of the same email.
+        const email = await waitlistEntryEmail(tx, id);
+        if (email === null) throw new AppError('NOT_FOUND', 'Waitlist entry not found');
+        await lockAuthEmail(tx, email);
         const entry = await lockWaitlistEntry(tx, id);
         if (entry === null) throw new AppError('NOT_FOUND', 'Waitlist entry not found');
+        if ((await findUserByEmail(tx, entry.email)) !== null) {
+          throw new AppError('CONFLICT', 'An account with this email already exists', {
+            details: { reason: 'account_exists' },
+          });
+        }
         const [invite] = await createInvites(tx, { createdBy: auth.userId, email: entry.email });
         if (invite === undefined) throw new Error('invite insert returned no row');
         const row = await markWaitlistInvited(tx, { id, code: invite.code });

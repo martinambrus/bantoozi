@@ -142,6 +142,20 @@ describe('POST /admin/waitlist/:id/invite', () => {
     expect(h.mailer.sent.filter((m) => m.to === to)).toHaveLength(1);
   });
 
+  it('refuses to invite an email that already has an account', async () => {
+    const id = await waitlistEntry(reader.email, 'en');
+    const client = apiClient(h.server, admin);
+    const res = await client.post(`/admin/waitlist/${id}/invite`);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.details).toEqual({ reason: 'account_exists' });
+    const stored = await h.owner.query<{ invite_code: string | null }>(
+      'SELECT invite_code FROM waitlist WHERE id = $1',
+      [id],
+    );
+    expect(stored.rows[0]!.invite_code).toBeNull();
+    expect(h.mailer.sent.filter((m) => m.to === reader.email)).toHaveLength(0);
+  });
+
   it('keeps the invite when SMTP fails, 404s unknown entries and refuses non-admins', async () => {
     const to = 'waiting-en@example.test';
     const id = await waitlistEntry(to, 'en');
