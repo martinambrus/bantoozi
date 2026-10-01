@@ -108,7 +108,8 @@ export async function unusedDatasetVersion(db: Executor, version: string): Promi
 /**
  * Insert a dataset version. `created_at` is the wall clock, not the transaction start, so versions
  * created one after another in one transaction (a correction that opens several lineages) keep
- * their order for {@link headDataset}.
+ * their order for {@link headDataset}. With `createdBefore`, it is kept just below that version's,
+ * so an open head another lineage branches beside stays the head.
  */
 export async function createDataset(
   tx: Executor,
@@ -117,12 +118,18 @@ export async function createDataset(
     seed: string;
     params: Record<string, unknown>;
     parentVersion?: string | null;
+    createdBefore?: string;
   },
 ): Promise<DatasetRow> {
+  const createdAt =
+    input.createdBefore === undefined
+      ? sql`clock_timestamp()`
+      : sql`LEAST(clock_timestamp(), (SELECT created_at - interval '1 microsecond'
+                                        FROM eval.datasets WHERE version = ${input.createdBefore}))`;
   const result = await tx.execute<DatasetDbRow>(sql`
     INSERT INTO eval.datasets (version, parent_version, seed, params, created_at)
     VALUES (${input.version}, ${input.parentVersion ?? null}, ${input.seed},
-            ${JSON.stringify(input.params)}::jsonb, clock_timestamp())
+            ${JSON.stringify(input.params)}::jsonb, ${createdAt})
     RETURNING ${DATASET_COLUMNS}`);
   const row = result.rows[0];
   if (row === undefined) throw new Error('dataset insert returned no row');

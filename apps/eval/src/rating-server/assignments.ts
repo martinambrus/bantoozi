@@ -340,8 +340,13 @@ export async function ensureAssignments(
     let added = 0;
     if (plan.picks.length > 0) {
       // A frozen version's assignment membership is final (its manifest records it): new
-      // assignments first open the next version, which copies the rows unchanged.
-      const opened = await openDatasetForCorrection(tx, 'assignments');
+      // assignments first open the next version of every lineage holding a picked article, which
+      // copies the rows unchanged.
+      const opened = await openDatasetForCorrection(
+        tx,
+        'assignments',
+        plan.picks.map((p) => p.articleId),
+      );
       if (opened !== null) {
         createdFrom ??= opened.createdFrom;
         current = (await headDataset(tx)) ?? current;

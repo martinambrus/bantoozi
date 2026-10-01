@@ -509,29 +509,36 @@ export async function openDatasetForCorrection(
   tx: Transaction,
   cause: 'rating' | 'assignments' | 'cards' | 'facets' = 'rating',
   /**
-   * The rated article. Ratings are per (rater, article), so the change is ground truth for every
-   * lineage whose tip holds the article (`eval sample --version` may have started several), and
-   * assignments record no version: each such frozen tip gets its next open version, the head's (or
-   * else the newest tip's) last, so it stays the head. With no tip holding it, the head is used.
-   * Cards are ground truth for every article, so a `'cards'` change opens every lineage tip.
+   * The rated, labelled or newly assigned articles. Ratings are per (rater, article) and
+   * assignments record no version, so the change is ground truth for every lineage whose tip holds
+   * one of them (`eval sample --version` may have started several): each such frozen tip gets its
+   * next open version, the head's (or else the newest tip's) last. With no tip holding one, the head
+   * is used. Cards are ground truth for every article, so a `'cards'` change opens every tip.
    */
-  articleId?: string,
+  articleIds?: string | readonly string[],
 ): Promise<{ version: string; createdFrom: string } | null> {
   // The additions lock first, then the dataset row: the same order as the freeze and top-up paths,
   // so a mutation racing a run's freeze waits instead of deadlocking.
   await lockDatasetAdditions(tx);
+  const head = await headDataset(tx);
+  const ids = articleIds === undefined ? [] : [articleIds].flat();
   const tips =
     cause === 'cards'
-      ? await lineageTips(tx, null)
-      : articleId === undefined
+      ? await lineageTips(tx, head, null)
+      : ids.length === 0
         ? []
-        : await lineageTips(tx, articleId);
-  if (tips.length === 0) {
-    const head = await headDataset(tx);
-    return head === null ? null : openNextVersion(tx, head, cause);
-  }
+        : await lineageTips(tx, head, ids);
+  if (tips.length === 0) return head === null ? null : openNextVersion(tx, head, cause);
+  // A head that holds the change but is open gets no next version: the other lineages' new
+  // versions are dated just before it, so it stays the head. A head that holds none of the
+  // articles yields to the newest lineage that does, so a later freeze captures the change.
+  const keepHead =
+    head !== null && head.frozenAt === null && tips.some((t) => t.version === head.version)
+      ? head.version
+      : undefined;
   let opened: { version: string; createdFrom: string } | null = null;
-  for (const tip of tips) opened = (await openNextVersion(tx, tip, cause)) ?? opened;
+  for (const tip of tips) opened = await openNextVersion(tx, tip, cause, keepHead);
+  // The preferred tip's (last) result: the head's next version, or null when the head was open.
   return opened;
 }
 
@@ -540,6 +547,7 @@ async function openNextVersion(
   tx: Transaction,
   base: DatasetRow,
   cause: 'rating' | 'assignments' | 'cards' | 'facets',
+  createdBefore?: string,
 ): Promise<{ version: string; createdFrom: string } | null> {
   if (base.frozenAt === null) {
     const locked = await tx.execute<{ frozen: boolean }>(sql`
@@ -553,6 +561,7 @@ async function openNextVersion(
   await createDataset(tx, {
     version,
     parentVersion: current.version,
+    ...(createdBefore === undefined ? {} : { createdBefore }),
     seed: current.seed,
     params: {
       ...current.params,
@@ -571,16 +580,22 @@ async function openNextVersion(
 
 /**
  * Every lineage tip (a version no other version names as parent), or only those whose sample holds
- * `articleId`, the preferred one last: the head when it is one, else the newest such tip.
+ * one of `articleIds`, the preferred one last: the head when it is one, else the newest such tip.
  */
-async function lineageTips(tx: Transaction, articleId: string | null): Promise<DatasetRow[]> {
-  const head = await headDataset(tx);
+async function lineageTips(
+  tx: Transaction,
+  head: DatasetRow | null,
+  articleIds: readonly string[] | null,
+): Promise<DatasetRow[]> {
+  const holding =
+    articleIds === null
+      ? sql``
+      : sql` AND EXISTS (SELECT 1 FROM eval.sample s
+                          WHERE s.dataset_version = d.version
+                            AND s.article_id = ANY(${sql.param([...articleIds])}::bigint[]))`;
   const result = await tx.execute<{ version: string }>(sql`
     SELECT d.version FROM eval.datasets d
-     WHERE NOT EXISTS (SELECT 1 FROM eval.datasets c WHERE c.parent_version = d.version)
-       AND (${articleId}::bigint IS NULL
-            OR EXISTS (SELECT 1 FROM eval.sample s
-                        WHERE s.dataset_version = d.version AND s.article_id = ${articleId}::bigint))
+     WHERE NOT EXISTS (SELECT 1 FROM eval.datasets c WHERE c.parent_version = d.version)${holding}
      ORDER BY (d.version = ${head?.version ?? null}) IS TRUE, d.created_at, d.version`);
   const tips: DatasetRow[] = [];
   for (const row of result.rows) {

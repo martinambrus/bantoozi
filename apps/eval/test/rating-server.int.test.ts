@@ -23,6 +23,7 @@ import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { parseHTML } from 'linkedom';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { ensureAssignments } from '../src/rating-server/assignments.js';
 import { buildRatingServer, SESSION_COOKIE } from '../src/rating-server/server.js';
 import { csrfToken, hashSecret, issueToken } from '../src/rating-server/tokens.js';
 import {
@@ -931,5 +932,49 @@ describe('rating corrections after a freeze (spec 10 §2.1)', () => {
     );
     for (const child of afterCards)
       expect(child.params).toMatchObject({ cardsChangedAfter: child.parentVersion });
+
+    // New assignments open every frozen lineage tip holding a picked article.
+    const late = await addRater(rdb, { name: 'late', langs: ['en', 'sk'], now: now() });
+    await rdb.db.transaction((tx) =>
+      setRaterFeeds(
+        tx,
+        late.rater.id,
+        feeds.map((f) => f.id),
+      ),
+    );
+    const cardTips = (await listDatasets(rdb.db)).filter((d) =>
+      afterCards.some((c) => c.parentVersion === d.parentVersion),
+    );
+    for (const t of cardTips) await rdb.db.transaction((tx) => freezeDataset(tx, t.version));
+    const assigned = await ensureAssignments(rdb.db, {
+      raterId: late.rater.id,
+      langs: ['en', 'sk'],
+      now: now(),
+    });
+    expect(assigned.added).toBeGreaterThan(0);
+    const afterAssign = (await listDatasets(rdb.db)).filter((d) =>
+      cardTips.some((t) => t.version === d.parentVersion),
+    );
+    expect(afterAssign.map((d) => d.parentVersion).sort()).toEqual(
+      cardTips.map((t) => t.version).sort(),
+    );
+    for (const child of afterAssign)
+      expect(child.params).toMatchObject({ assignmentsAfter: child.parentVersion });
+
+    // An open head stays the head when only another lineage gets a next version.
+    const head = (await headDataset(rdb.db))!;
+    expect(head.frozenAt).toBeNull();
+    const other = afterAssign.find((d) => d.version !== head.version)!;
+    await rdb.db.transaction((tx) => freezeDataset(tx, other.version));
+    await rdb.db.transaction((tx) =>
+      saveFacetLabels(tx, {
+        labeler: 'owner',
+        articleId,
+        values: { 'facet.lineage': 'b' },
+        now: new Date(),
+      }),
+    );
+    expect((await listDatasets(rdb.db)).some((d) => d.parentVersion === other.version)).toBe(true);
+    expect((await headDataset(rdb.db))!.version).toBe(head.version);
   });
 });

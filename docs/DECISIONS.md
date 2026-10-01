@@ -816,7 +816,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   article (the head last, so it stays the head when it holds the article; with no such tip, the
   head), so a later freeze of any lineage holding it captures it. A changed facet label opens
   versions the same way, for the labelled article. A card add, strength change or removal is
-  ground truth for every article, so it opens the next version of every frozen lineage tip.
+  ground truth for every article, so it opens the next version of every frozen lineage tip. New
+  assignments open every frozen lineage tip holding a picked article. When the head holds the
+  change but is still open, the other lineages' new versions are dated just before it, so it stays
+  the head (a head holding none of the articles still yields to the lineage that does).
   Every new version takes the next unused name after its parent (`eval sample --version` may already
   have used the plain successor). Top-ups, like the sample draw, take only extracted-or-later
   articles: an `ingested` one (e.g. re-queued by a content update) has no current body yet.
