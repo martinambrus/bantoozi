@@ -218,9 +218,11 @@ export async function drawSample(
     for (const row of existingRows) {
       const snapshot = asSnapshot(row.snapshot);
       const list = existing.get(row.lang) ?? [];
+      const candidate = candidateById.get(row.articleId);
       list.push({
         articleId: row.articleId,
-        feedId: candidateById.get(row.articleId)?.feedId ?? snapshot.canonicalFeedId ?? '',
+        feedId: candidate?.feedId ?? snapshot.canonicalFeedId ?? '',
+        ...(candidate === undefined ? {} : { carriers: candidate.carrierFeedIds }),
         day: dayOf(snapshot.firstSeenAt),
       });
       existing.set(row.lang, list);
@@ -248,7 +250,12 @@ export async function drawSample(
         counts[state === 'ingested' ? 'pending' : state] += 1;
         continue;
       }
-      pool.push({ articleId: c.articleId, feedId: c.feedId, day: dayOf(c.firstSeenAt) });
+      pool.push({
+        articleId: c.articleId,
+        feedId: c.feedId,
+        carriers: c.carrierFeedIds,
+        day: dayOf(c.firstSeenAt),
+      });
       if (windowFrom === null || c.firstSeenAt < windowFrom) windowFrom = c.firstSeenAt;
       if (windowTo === null || c.firstSeenAt > windowTo) windowTo = c.firstSeenAt;
     }

@@ -103,8 +103,9 @@ settings, regardless of profile.
   if a language runs short), stratified across feeds and collection days. Cap any one feed at 10% of
   its language sample; report actual availability instead of quietly replacing source diversity
   with one prolific feed. Store sampling seed, timestamps and exclusions. Eligible means extracted,
-  not `stale`/`failed`, with a detected language in the requested set; the 10% cap applies to the
-  size actually drawn (the largest size the feeds can fill under it); an open version only gains
+  not `stale`/`failed`, with a detected language in the requested set; the 10% cap applies to every
+  feed carrying a selected article and to the size actually drawn (the largest size the feeds can
+  fill under it); an open version only gains
   rows, a frozen one never changes and the next draw creates the next version (D-98). A re-run may
   only widen the recorded parameters (more languages, a higher `--per-lang` or `--feed-cap`). Any
   other change is refused, and a new `--version` starts a new lineage. The draw share-locks its

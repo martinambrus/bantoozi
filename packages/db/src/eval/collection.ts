@@ -227,6 +227,8 @@ export interface SampleCandidate {
   pipelineState: string;
   /** The golden feed that first carried it (oldest `feed_items` row, then lowest feed id). */
   feedId: string;
+  /** Every golden feed carrying it, in that order (`feedId` first). */
+  carrierFeedIds: string[];
   firstSeenAt: Date;
 }
 
@@ -252,21 +254,23 @@ export async function loadSampleCandidates(
     article_id: string;
     lang: string | null;
     pipeline_state: string;
-    feed_id: string;
+    feed_ids: string[];
     first_seen_at: RawTimestamp;
   }>(sql`
-    SELECT DISTINCT ON (a.id) a.id::text AS article_id, a.lang, a.pipeline_state,
-           fi.feed_id::text AS feed_id, a.first_seen_at
+    SELECT a.id::text AS article_id, a.lang, a.pipeline_state, a.first_seen_at,
+           array_agg(fi.feed_id::text ORDER BY fi.first_seen_at, fi.feed_id) AS feed_ids
       FROM subscriptions s
       JOIN feed_items fi ON fi.feed_id = s.feed_id
       JOIN articles a ON a.id = fi.article_id
      WHERE s.user_id = ${userId}::uuid
-     ORDER BY a.id, fi.first_seen_at, fi.feed_id`);
+     GROUP BY a.id
+     ORDER BY a.id`);
   return result.rows.map((row) => ({
     articleId: row.article_id,
     lang: row.lang,
     pipelineState: row.pipeline_state,
-    feedId: row.feed_id,
+    feedId: row.feed_ids[0] ?? '',
+    carrierFeedIds: row.feed_ids,
     firstSeenAt: toDate(row.first_seen_at),
   }));
 }

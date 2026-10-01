@@ -128,6 +128,57 @@ describe('selectLanguageSample', () => {
     expect(more.added.every((id) => !taken.has(id))).toBe(true);
   });
 
+  it('caps every feed that carries a selected article, not only the first carrier', () => {
+    // 20 feeds × 20 articles; the first 8 of each are also carried by one prolific hub feed.
+    const pool: SelectItem[] = [];
+    for (let f = 0; f < 20; f += 1) {
+      for (let i = 0; i < 20; i += 1) {
+        const feedId = `f${String(f).padStart(2, '0')}`;
+        pool.push({
+          articleId: `${feedId}-${i}`,
+          feedId,
+          carriers: i < 8 ? [feedId, 'hub'] : [feedId],
+          day: `2026-09-${String(10 + (i % 3))}`,
+        });
+      }
+    }
+    const result = selectLanguageSample({
+      fresh: pool,
+      existing: [],
+      target: 100,
+      feedCapShare: 0.1,
+      seed: 's',
+    });
+    expect(result.size).toBe(100);
+    const hubCarried = result.added.filter((id) => Number(id.split('-')[1]) < 8).length;
+    expect(hubCarried).toBeLessThanOrEqual(result.cap);
+    expect(result.feeds.find((f) => f.feedId === 'hub')).toMatchObject({
+      available: 160,
+      selected: hubCarried,
+    });
+    for (const feed of result.feeds) expect(feed.selected).toBeLessThanOrEqual(result.cap);
+  });
+
+  it('shrinks the sample when a feed carrying every article would exceed the cap', () => {
+    const pool = items(Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`f${i}`, 10]))).map(
+      (item, index) => ({
+        ...item,
+        carriers: index % 2 === 0 ? [item.feedId, 'hub'] : [item.feedId],
+      }),
+    );
+    const result = selectLanguageSample({
+      fresh: pool,
+      existing: [],
+      target: 200,
+      feedCapShare: 0.1,
+      seed: 's',
+    });
+    const hub = result.feeds.find((f) => f.feedId === 'hub');
+    expect(hub?.selected ?? 0).toBeLessThanOrEqual(result.cap);
+    expect(result.size).toBeGreaterThan(0);
+    expect(result.cap).toBe(Math.floor(result.size / 10));
+  });
+
   it('draws nothing when no language article is eligible', () => {
     const result = selectLanguageSample({
       fresh: [],

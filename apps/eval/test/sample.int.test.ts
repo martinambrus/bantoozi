@@ -329,4 +329,13 @@ describe('eval sample (M3a-T2)', () => {
       }
     });
   });
+  it('loads every golden carrier of an article, the first carrier first', async () => {
+    const [a, b] = [feedsByLang['cs']![4]!, feedsByLang['cs']![5]!];
+    const id = await collected(ctx, { feedIds: [a, b], lang: 'cs', title: 'Carried twice' });
+    const candidate = (await loadSampleCandidates(ctx.db, ctx.evalUserId)).find(
+      (c) => c.articleId === id,
+    );
+    expect(new Set(candidate?.carrierFeedIds)).toEqual(new Set([a, b]));
+    expect(candidate?.feedId).toBe(candidate?.carrierFeedIds[0]);
+  });
 });

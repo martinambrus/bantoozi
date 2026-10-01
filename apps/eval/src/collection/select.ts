@@ -2,7 +2,9 @@ import { groupRank } from '../dataset/split.js';
 
 /**
  * Drawing one language's sample (spec 10 §2.1): up to `target` articles, stratified across feeds and
- * collection days, with no feed above `feedCapShare` of the language sample. The cap is a share of
+ * collection days, with no feed above `feedCapShare` of the language sample. The cap holds for every
+ * feed that carries a selected article, not only the feed that carried it first, so a prolific feed
+ * that syndicates many other feeds' stories cannot exceed it either (D-98). The cap is a share of
  * the sample actually drawn, so when a language runs short the sample shrinks to the largest size
  * the feeds can fill under the cap instead of letting one prolific feed replace source diversity;
  * the result reports the availability per feed.
@@ -14,7 +16,10 @@ import { groupRank } from '../dataset/split.js';
 
 export interface SelectItem {
   articleId: string;
+  /** The feed that carried it first: the stratum of the draw. */
   feedId: string;
+  /** Every golden feed carrying it (`feedId` included); each one's count is capped. */
+  carriers?: readonly string[];
   /** Collection day (UTC `YYYY-MM-DD` of `first_seen_at`). */
   day: string;
 }
@@ -30,6 +35,7 @@ export interface SelectInput {
   seed: string;
 }
 
+/** Per feed, counting every article the feed carries (not only those it carried first). */
 export interface FeedAvailability {
   feedId: string;
   /** Eligible articles (existing + fresh). */
@@ -78,8 +84,16 @@ export function feasibleSize(
   return existingTotal;
 }
 
+const carriersOf = (item: SelectItem): readonly string[] =>
+  item.carriers === undefined || item.carriers.length === 0
+    ? [item.feedId]
+    : item.carriers.includes(item.feedId)
+      ? item.carriers
+      : [item.feedId, ...item.carriers];
+
 export function selectLanguageSample(input: SelectInput): SelectResult {
   const { seed } = input;
+  // Strata: the feed that carried each article first.
   const feedIds = [...new Set([...input.fresh, ...input.existing].map((i) => i.feedId))].sort(
     byKey,
   );
@@ -95,48 +109,22 @@ export function selectLanguageSample(input: SelectInput): SelectResult {
     list.push(item);
     existingByFeed.set(item.feedId, list);
   }
-  const stats = feedIds.map((feedId) => {
-    const existing = existingByFeed.get(feedId)?.length ?? 0;
-    return { feedId, existing, available: existing + (freshByFeed.get(feedId)?.length ?? 0) };
-  });
-  const size = feasibleSize(stats, input.target, input.feedCapShare);
-  const cap = feedCap(size, input.feedCapShare);
-
-  // Water-filling: one more article at a time to the feed holding the fewest, ties broken by a
-  // seeded feed order, until the size is reached. No feed goes above max(cap, its existing rows).
-  const quota = new Map(stats.map((s) => [s.feedId, s.existing]));
-  const limit = new Map(
-    stats.map((s) => [s.feedId, Math.min(s.available, Math.max(s.existing, cap))]),
-  );
-  const feedOrder = new Map(feedIds.map((id) => [id, groupRank(seed, `feed:${id}`)]));
-  let remaining = size - input.existing.length;
-  while (remaining > 0) {
-    let best: string | null = null;
-    for (const feedId of feedIds) {
-      const q = quota.get(feedId) ?? 0;
-      if (q >= (limit.get(feedId) ?? 0)) continue;
-      if (best === null) {
-        best = feedId;
-        continue;
-      }
-      const qb = quota.get(best) ?? 0;
-      if (q < qb || (q === qb && (feedOrder.get(feedId) ?? 0) < (feedOrder.get(best) ?? 0))) {
-        best = feedId;
-      }
+  // Carrier counts: every feed carrying an article counts it.
+  const carrierAvailable = new Map<string, number>();
+  const carrierExisting = new Map<string, number>();
+  for (const item of input.existing) {
+    for (const c of carriersOf(item)) {
+      carrierExisting.set(c, (carrierExisting.get(c) ?? 0) + 1);
+      carrierAvailable.set(c, (carrierAvailable.get(c) ?? 0) + 1);
     }
-    if (best === null) break;
-    quota.set(best, (quota.get(best) ?? 0) + 1);
-    remaining -= 1;
+  }
+  for (const item of input.fresh) {
+    for (const c of carriersOf(item)) carrierAvailable.set(c, (carrierAvailable.get(c) ?? 0) + 1);
   }
 
-  // Within a feed, spread the additions over collection days: always take from the day holding the
-  // fewest of this feed's selected articles (earlier day first), in the seeded order of the day.
-  const added: string[] = [];
-  const days: Record<string, number> = {};
-  for (const item of input.existing) days[item.day] = (days[item.day] ?? 0) + 1;
+  // Within a feed, the seeded order of each collection day's articles.
+  const sortedPools = new Map<string, Map<string, SelectItem[]>>();
   for (const feedId of feedIds) {
-    const want = (quota.get(feedId) ?? 0) - (existingByFeed.get(feedId)?.length ?? 0);
-    if (want <= 0) continue;
     const pools = new Map<string, SelectItem[]>();
     for (const item of freshByFeed.get(feedId) ?? []) {
       const list = pools.get(item.day) ?? [];
@@ -150,32 +138,111 @@ export function selectLanguageSample(input: SelectInput): SelectResult {
           byKey(a.articleId, b.articleId),
       );
     }
-    const taken = new Map<string, number>();
-    for (const item of existingByFeed.get(feedId) ?? []) {
-      taken.set(item.day, (taken.get(item.day) ?? 0) + 1);
+    sortedPools.set(feedId, pools);
+  }
+  const feedOrder = new Map(feedIds.map((id) => [id, groupRank(seed, `feed:${id}`)]));
+
+  /**
+   * One draw of size `n`: water-filling, one article at a time from the stratum whose feed carries
+   * the fewest selected articles (ties by a seeded feed order); within it, from the collection day
+   * holding the fewest of its selected articles (earlier day first), in the day's seeded order.
+   * An article is taken only when every feed carrying it stays within max(cap, its existing rows).
+   */
+  const draw = (n: number) => {
+    const cap = feedCap(n, input.feedCapShare);
+    const limitOf = (feedId: string) => Math.max(cap, carrierExisting.get(feedId) ?? 0);
+    const count = new Map(carrierExisting);
+    const fits = (item: SelectItem) =>
+      carriersOf(item).every((c) => (count.get(c) ?? 0) < limitOf(c));
+    const pools = new Map(
+      [...sortedPools].map(([feedId, byDay]) => [
+        feedId,
+        new Map([...byDay].map(([day, list]) => [day, [...list]])),
+      ]),
+    );
+    const taken = new Map<string, Map<string, number>>();
+    for (const item of input.existing) {
+      const perDay = taken.get(item.feedId) ?? new Map<string, number>();
+      perDay.set(item.day, (perDay.get(item.day) ?? 0) + 1);
+      taken.set(item.feedId, perDay);
     }
-    const dayKeys = [...pools.keys()].sort(byKey);
-    for (let i = 0; i < want; i += 1) {
-      let day: string | null = null;
-      for (const key of dayKeys) {
-        if ((pools.get(key)?.length ?? 0) === 0) continue;
-        if (day === null || (taken.get(key) ?? 0) < (taken.get(day) ?? 0)) day = key;
+    // The next article a stratum would give, dropping those that no longer fit (counts only grow).
+    const next = (feedId: string): { day: string; item: SelectItem } | null => {
+      const byDay = pools.get(feedId);
+      if (byDay === undefined) return null;
+      const perDay = taken.get(feedId);
+      const days = [...byDay.keys()].sort(
+        (a, b) => (perDay?.get(a) ?? 0) - (perDay?.get(b) ?? 0) || byKey(a, b),
+      );
+      for (const day of days) {
+        const list = byDay.get(day) ?? [];
+        while (list.length > 0 && !fits(list[0]!)) list.shift();
+        if (list.length > 0) return { day, item: list[0]! };
+        byDay.delete(day);
       }
-      if (day === null) break;
-      const item = pools.get(day)?.shift();
-      if (item === undefined) break;
-      taken.set(day, (taken.get(day) ?? 0) + 1);
-      days[day] = (days[day] ?? 0) + 1;
-      added.push(item.articleId);
+      return null;
+    };
+    const added: string[] = [];
+    const days: Record<string, number> = {};
+    for (const item of input.existing) days[item.day] = (days[item.day] ?? 0) + 1;
+    let remaining = n - input.existing.length;
+    while (remaining > 0) {
+      let best: { feedId: string; day: string; item: SelectItem } | null = null;
+      for (const feedId of feedIds) {
+        const candidate = next(feedId);
+        if (candidate === null) continue;
+        if (best === null) {
+          best = { feedId, ...candidate };
+          continue;
+        }
+        const q = count.get(feedId) ?? 0;
+        const qb = count.get(best.feedId) ?? 0;
+        if (
+          q < qb ||
+          (q === qb && (feedOrder.get(feedId) ?? 0) < (feedOrder.get(best.feedId) ?? 0))
+        ) {
+          best = { feedId, ...candidate };
+        }
+      }
+      if (best === null) break;
+      pools.get(best.feedId)?.get(best.day)?.shift();
+      for (const c of carriersOf(best.item)) count.set(c, (count.get(c) ?? 0) + 1);
+      const perDay = taken.get(best.feedId) ?? new Map<string, number>();
+      perDay.set(best.day, (perDay.get(best.day) ?? 0) + 1);
+      taken.set(best.feedId, perDay);
+      days[best.day] = (days[best.day] ?? 0) + 1;
+      added.push(best.item.articleId);
+      remaining -= 1;
     }
+    return { cap, added, days, count };
+  };
+
+  // The largest size the strata could fill under the cap bounds the draw; when the feeds that also
+  // carry articles block it, shrink to what the draw reached (the cap of a smaller size is no
+  // larger) until a draw fills its size.
+  const strata = feedIds.map((feedId) => {
+    const existing = existingByFeed.get(feedId)?.length ?? 0;
+    return { existing, available: existing + (freshByFeed.get(feedId)?.length ?? 0) };
+  });
+  let n = feasibleSize(strata, input.target, input.feedCapShare);
+  let result = draw(n);
+  while (input.existing.length + result.added.length < n) {
+    n = Math.min(n - 1, input.existing.length + result.added.length);
+    result = draw(n);
   }
 
+  const allFeeds = [...carrierAvailable.keys()].sort(byKey);
   return {
-    added,
-    size: input.existing.length + added.length,
-    cap,
-    available: stats.reduce((s, f) => s + f.available, 0),
-    feeds: stats.map((s) => ({ ...s, selected: quota.get(s.feedId) ?? s.existing })),
-    days,
+    added: result.added,
+    size: input.existing.length + result.added.length,
+    cap: result.cap,
+    available: input.existing.length + input.fresh.length,
+    feeds: allFeeds.map((feedId) => ({
+      feedId,
+      available: carrierAvailable.get(feedId) ?? 0,
+      existing: carrierExisting.get(feedId) ?? 0,
+      selected: result.count.get(feedId) ?? 0,
+    })),
+    days: result.days,
   };
 }
