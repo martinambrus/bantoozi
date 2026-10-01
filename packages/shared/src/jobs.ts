@@ -482,6 +482,7 @@ export interface HouseCronSchedule {
 export const HOUSE_CRON_SCHEDULES: Readonly<Partial<Record<HouseCronQueue, HouseCronSchedule>>> =
   Object.freeze({
     'house.rescore-degraded': { cron: '*/10 * * * *', everyMs: 10 * 60_000 },
+    'house.expire-rules': { cron: '5 * * * *', everyMs: 60 * 60_000 },
   });
 
 /** Jobs that persist progress in `settings['house.progress']` (spec 02 §2, spec 11 §6). */

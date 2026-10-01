@@ -9,12 +9,15 @@ import {
   type RankCursor,
   type RankWrite,
   type StoredRankRow,
+  type TranslationRow,
 } from '@bantoozi/db';
 import { rankArticle, type RankResult } from '@bantoozi/ranker';
+import { currentTier2Row, selectBestTranslation } from '@bantoozi/translate';
 import {
   canonicalJson,
   compareBigIntStrings,
   enqueueRank,
+  enqueueTranslate,
   RANK_WINDOW_DAYS,
   type JobPayload,
 } from '@bantoozi/shared';
@@ -61,6 +64,21 @@ export function sameRank(stored: StoredRankRow | undefined, result: RankResult):
   );
 }
 
+/**
+ * Weak-translation escalation (spec 06 §7 step 6, spec 07 §3): the best current translation is a
+ * tier-1 `weak` one and no `ollama` row exists yet (a skipped attempt leaves one too), so the
+ * escalation happens once per article.
+ */
+export function needsTier2(translations: readonly TranslationRow[], revision: string): boolean {
+  const best = selectBestTranslation(translations, revision);
+  return (
+    best !== null &&
+    best.engine === 'libretranslate' &&
+    best.quality === 'weak' &&
+    currentTier2Row(translations, revision) === undefined
+  );
+}
+
 type RunOutcome = 'done' | 'superseded' | 'gone' | 'continued';
 
 /**
@@ -74,7 +92,9 @@ type RunOutcome = 'done' | 'superseded' | 'gone' | 'continued';
  * A full run also re-ranks every row scored before its snapshot. When the wall-time budget runs out
  * it commits a continuation through the outbox (a full run's carries its snapshot time) and ends;
  * a superseded run enqueues a replacement, whose dirty set then holds every row of the old
- * revision or settings; articles whose revision moved during the run get an incremental rank.
+ * revision or settings; articles whose revision moved during the run get an incremental rank. An
+ * item newly placed in `maybe` with only a weak tier-1 translation enqueues
+ * `article.translate {forceTier2: true}` in its batch's transaction (step 6).
  */
 export function createUserRankHandler(
   deps: WorkerDeps,
@@ -150,10 +170,18 @@ export function createUserRankHandler(
           chunk.map((row) => row.articleId),
         );
         const writes: RankWrite[] = [];
-        for (const { item, stored } of loaded) {
+        const escalate = new Set<string>();
+        for (const { item, stored, translations } of loaded) {
           const result = rankArticle(ctx, item, now);
           ranked += 1;
           if (!dirty.has(item.articleId) && sameRank(stored, result)) continue;
+          if (
+            result.lane === 'maybe' &&
+            stored?.lane !== 'maybe' &&
+            needsTier2(translations, item.contentRevision)
+          ) {
+            escalate.add(item.articleId);
+          }
           writes.push({
             articleId: item.articleId,
             contentRevision: item.contentRevision,
@@ -170,7 +198,18 @@ export function createUserRankHandler(
         }
         if (writes.length === 0) continue;
         await options.beforeWrite?.(writes.map((write) => write.articleId));
-        const result = await retryTransaction(deps.db, (tx) => writeRankBatch(tx, fence, writes));
+        const result = await retryTransaction(deps.db, async (tx) => {
+          const outcome = await writeRankBatch(tx, fence, writes);
+          if (outcome.status === 'written') {
+            const sender = workerOutbox(tx);
+            for (const articleId of outcome.written) {
+              if (escalate.has(articleId)) {
+                await enqueueTranslate(sender, { articleId, forceTier2: true });
+              }
+            }
+          }
+          return outcome;
+        });
         if (result.status !== 'written') {
           outcome = result.status;
           break pages;

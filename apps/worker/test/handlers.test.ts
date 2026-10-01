@@ -62,7 +62,7 @@ describe('handler map', () => {
     const handlers = createHandlers(createWorkerDeps(baseDeps));
     expect(Object.keys(handlers).sort()).toEqual([...QUEUE_NAMES].sort());
     expect(available(handlers)).toEqual([...INGESTION_QUEUES, ...RANKING_QUEUES].sort());
-    expect(RANKING_QUEUES).toEqual(['user.rank']);
+    expect(RANKING_QUEUES).toEqual(['user.rank', 'house.expire-rules']);
     expect(INGESTION_QUEUES).toEqual([
       'feed.schedule',
       'feed.fetch',

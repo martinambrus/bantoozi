@@ -598,3 +598,101 @@ describe('full runs, continuations and fences (spec 06 §7 step 5)', () => {
     expect((await rank(r.userId)).written).toBe(0);
   }, 120_000);
 });
+
+describe('weak-translation escalation (spec 06 §7 step 6, spec 07 §3)', () => {
+  async function translated(
+    articleId: string,
+    engine: 'libretranslate' | 'ollama',
+    quality: 'ok' | 'weak' | 'fail',
+  ): Promise<void> {
+    await h.owner.query(
+      `INSERT INTO article_translations (article_id, article_revision, source_sha256, engine,
+                                         source_lang, title, excerpt, quality)
+       VALUES ($1, 1, 'x', $2, 'sk', 'Translated title', 'Translated excerpt', $3)`,
+      [articleId, engine, quality],
+    );
+  }
+
+  const tier2 = (payloads: Array<Record<string, unknown>>, articleId: string) =>
+    payloads.filter((p) => p['articleId'] === articleId && p['forceTier2'] === true);
+
+  it('a newly maybe item with a weak tier-1 translation and no ollama row escalates once', async () => {
+    const r = await reader();
+    const a = await matched(r.feedId, r.cardId, 0.6);
+    await translated(a, 'libretranslate', 'weak');
+    const since = await h.mark();
+    await rank(r.userId);
+    expect((await row(r.userId, a)).lane).toBe('maybe');
+    expect(tier2(await h.payloads('article.translate', since), a)).toEqual([
+      { articleId: a, forceTier2: true },
+    ]);
+
+    // Still maybe on the next (full) run: not newly placed, no second escalation.
+    const again = await h.mark();
+    expect((await rank(r.userId, { full: true })).written).toBe(1);
+    expect(tier2(await h.payloads('article.translate', again), a)).toEqual([]);
+  });
+
+  it('does not escalate once an ollama row exists, nor for an ok translation or another lane', async () => {
+    const r = await reader();
+    const skipped = await matched(r.feedId, r.cardId, 0.6);
+    await translated(skipped, 'libretranslate', 'weak');
+    await translated(skipped, 'ollama', 'fail');
+    const ok = await matched(r.feedId, r.cardId, 0.6);
+    await translated(ok, 'libretranslate', 'ok');
+    const high = await matched(r.feedId, r.cardId, 0.97);
+    await translated(high, 'libretranslate', 'weak');
+    const since = await h.mark();
+    await rank(r.userId);
+    const stored = await rows(r.userId);
+    expect(stored.get(skipped)?.lane).toBe('maybe');
+    expect(stored.get(ok)?.lane).toBe('maybe');
+    expect(stored.get(high)?.lane).toBe('for_you');
+    expect(await h.payloads('article.translate', since)).toEqual([]);
+  });
+});
+
+describe('house.expire-rules (spec 11 §6)', () => {
+  it('deletes expired rules hourly and records a full rank for their users', async () => {
+    const r = await reader();
+    const other = await reader();
+    await h.owner.query(
+      `INSERT INTO user_rules (user_id, kind, value, expires_at) VALUES
+         ($1, 'mute_keyword', 'expired one', now() - interval '1 minute'),
+         ($1, 'mute_story', '123', now() - interval '1 hour'),
+         ($2, 'mute_keyword', 'still active', now() + interval '1 hour'),
+         ($2, 'block_domain', 'forever.example', NULL)`,
+      [r.userId, other.userId],
+    );
+    const since = await h.mark();
+    await h.dispatch('house.expire-rules', {});
+
+    const left = await h.owner.query<{ user_id: string; value: string }>(
+      `SELECT user_id::text AS user_id, value FROM user_rules WHERE user_id = ANY($1::uuid[])
+        ORDER BY value`,
+      [[r.userId, other.userId]],
+    );
+    expect(left.rows).toEqual([
+      { user_id: other.userId, value: 'forever.example' },
+      { user_id: other.userId, value: 'still active' },
+    ]);
+    expect(await h.payloads('user.rank', since)).toEqual([
+      { userId: r.userId, reason: 'rule_expired', full: true },
+    ]);
+    const revisions = await h.owner.query<{ id: string; rank_revision: string }>(
+      `SELECT id::text AS id, rank_revision::text AS rank_revision FROM users WHERE id = ANY($1::uuid[])`,
+      [[r.userId, other.userId]],
+    );
+    expect(Object.fromEntries(revisions.rows.map((u) => [u.id, u.rank_revision]))).toEqual({
+      [r.userId]: '1',
+      [other.userId]: '0',
+    });
+    const progress = (await h.setting('house.progress')) as Record<string, { updatedAt: string }>;
+    expect(progress['house.expire-rules']?.updatedAt).toBeDefined();
+
+    // Nothing left to expire: no further intents.
+    const next = await h.mark();
+    await h.dispatch('house.expire-rules', {});
+    expect(await h.payloads('user.rank', next)).toEqual([]);
+  });
+});
