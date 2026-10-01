@@ -14,6 +14,7 @@ import pg from 'pg';
  *    the pg-boss grants.
  * 3. Every queue of `packages/shared` jobs.ts via pg-boss `createQueue(name, options)` (then
  *    `updateQueue`, so changed options converge), so the per-queue partitions are owner-created.
+ *    pg-boss's own cron queue ({@link PG_BOSS_CRON_QUEUE}) is created by migration 0017 instead.
  *
  * Every step is idempotent and the whole job holds a session advisory lock, so concurrent or repeated
  * runs converge. Every wait is bounded (spec 11 §3): a held lock or a hung statement fails the job
@@ -26,6 +27,11 @@ export const PG_BOSS_VERSION = '10.4.2';
 /** pg-boss schema version of that release (`pg-boss/version.json`). */
 export const PG_BOSS_SCHEMA_VERSION = 24;
 export const PG_BOSS_SCHEMA = 'pgboss';
+/**
+ * The internal queue pg-boss's timekeeper sends due `boss.schedule` crons through (pg-boss 10
+ * `timekeeper.js` QUEUES.SEND_IT). The worker role cannot create it, so migration 0017 does (D-142).
+ */
+export const PG_BOSS_CRON_QUEUE = '__pgboss__send-it';
 
 /** The bundled Drizzle migrations (`packages/db/drizzle`), from both `src/` and `dist/`. */
 export const MIGRATIONS_FOLDER = fileURLToPath(new URL('../../drizzle/', import.meta.url));
