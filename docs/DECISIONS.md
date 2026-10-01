@@ -758,3 +758,62 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   failed, added through the dataset top-up (a frozen head creates the next version) before
   assignment. Assignments are built on "Start rating" and again from "Look for more articles" when
   nothing is pending and the rater has fewer than 300. Spec 10 §2.2 updated.
+- D-105: 2026-10-01 M3a-T7 — spec 10 §2.3 asks for a predeclared adjudication step without defining
+  it. Facet values use the labelling page's strings (yes/no, `0`–`4`, option ids); `uncertain` and
+  `not_applicable` are excluded from accuracy. A label by the labeller `adjudicated` wins; otherwise a
+  single label, or the value all labellers agree on, is the reference; an unresolved disagreement is
+  excluded and counted. κ is computed between the two labellers with the largest overlap,
+  quadratic-weighted for depth. Spec 10 §2.3 updated.
+- D-106: 2026-10-01 M3a-T7 — spec 10 §5 locks the development selection before the test split is
+  read, without saying where. The lock is an `eval.runs` row with experiment `G1-gate` (no new table):
+  its immutable config holds the profile, the dataset manifest, the cohort sha, the configSha and
+  the run ids, and its results hold the status and report sha. `eval report` keeps the test split
+  sealed until a lock exists. Unmet readiness writes only a report (no lock, no g1.json); an
+  incomplete selection writes g1.json with `needs_more_data`, no lock, test not revealed. A rerun on
+  the same manifest with another profile or configSha is refused. Spec 10 §1 and §4 updated.
+- D-107: 2026-10-01 M3a-T7 — interpretations of spec 10 §5. Translate exactly when the development
+  gain is ≥ 0.02 (the "native suffices" check only drives the Laya recommendation). A non-English-card
+  context has any positive card whose language is not `en`. The overall and participant AUC cell is
+  the context with languages pooled; language summaries use context × language cells, and the ≥ 20
+  items / ≥ 5 per class support rule applies on both splits. The primary AUC excludes unknown scores;
+  the sensitivity AUC ranks unknown liked items last and unknown disliked items first. Coverage is the
+  stricter of the runner's and the report's count. forYou coverage and the tier ECE use hierarchical
+  weights; isotonic cut points are rounded to 4 decimals. The tier-2 gain is E4 minus the selected
+  card mode's translated run per language; an E4 run in the other card mode is unmeasured. Budget:
+  uncached cost = billed + cache savings, weighted by development language share, `--daily-revisions`
+  default 1000, sensitivity ×5. `owner_pilot` requires exactly one participant key. g1
+  `language_modes` lists only measured languages plus `en`.
+- D-108: 2026-10-01 M3a-T7 — `apply-g1` semantics spec 10 §1 leaves open. `language_modes` is merged
+  over the stored modes (unmeasured languages keep theirs); `ranker.thresholds` is replaced whole. A
+  key is written only when its effective value changes (a missing row counts as its default), so a
+  second apply changes nothing. Side effects mirror spec 08 `PATCH /admin/settings` (`user.rank`,
+  `house.reenrich`, `house.rematch`, `house.translate-cards`, `user.learn`) through the outbox with
+  `reason: 'apply-g1'`. Runs, dataset hashes, configSha and the gate lock's profile, status and report
+  sha are checked against the database being written. A `dryRun` artifact is accepted only in
+  `bantoozi_eval_dryrun`. The API's LibreTranslate language probe is not repeated. Spec 10 §1 updated.
+- D-109: 2026-10-01 M3a-T7 — the evaluation policy view (lane distribution, spec 10 §4) applies no
+  demotions (the golden set has no per-user demotion state). A failed card answer makes coverage
+  unavailable, and an item with no usable answer stays in New and is counted.
+- D-110: 2026-10-01 M3a-T6 — the run cohort is the rated pairs of the selected raters and
+  languages, plus facet-labelled articles for card experiments; E6/E7 use only development pairs of
+  the base E1 run's frozen config. The run config adds `assignments` (the BM25 corpus),
+  `developmentOnly`, `baseRunId` and `replay`, and records the exact card text sent: english mode
+  translates the cards before the run row is written. A `translation` answer key freezes article
+  translations per run. Every executed run freezes its dataset version (idempotent); the E5 stub
+  does not. Spec 10 §3 updated.
+- D-111: 2026-10-01 M3a-T6 — eval routers use a process-local circuit breaker, so an evaluation
+  never trips or reads the production breaker (spec 04 §1). The LLM fallback is off and the pinned
+  engine has no automatic fallback, so a run never mixes engines silently.
+- D-112: 2026-10-01 M3a-T6 — cache granularity for spec 10 §3. Call B is cached per card (state
+  sha + card input sha + match question set), Call A per whole request and translations per source
+  sha and policy; a pack's cost is split equally across its cards. Estimates for translated variants
+  use the native state as a size proxy.
+- D-113: 2026-10-01 M3a-T6 — `eval replay` computes its paired ΔAUC with a story-group bootstrap; the
+  macro is the plain mean over eligible cells (≥ 20 items, ≥ 5 of each class).
+- D-114: 2026-10-01 M3a-T6 — runner and replay conventions. A replay's run row has experiment
+  `replay:<experiment>`; only E1, E2, E3, E3b and E4 can be replayed, and only `enrich-v1` is
+  accepted until a new set exists. E6 rerun answers are keyed per rater as `e6.r<raterId>` (card id =
+  the card): raters can share a card id when cards are reused by text hash (D-100), and E6 gives each
+  rater's copy different examples, so E6 writes no `card` rows. The chrono score is a recency
+  percentile within each rater's scored articles. Exit codes: 3 for an aborted run, 4 for a failed
+  replay. Spec 10 §3 and §6 updated.

@@ -36,8 +36,13 @@ Notation: `eval <command>` below is short for the root script `pnpm evaluate <co
      "dataset": { "version": "golden-v1", "snapshotSha": "…", "splitSha": "…" },
      "selection": { "developmentRunIds": ["11","12","13"], "lockedAt": "ISO timestamp", "configSha": "…" },
      "gate": { "profile": "owner_pilot" | "multi_person_beta", "participants": 1,
-               "status": "pass" | "fail" | "needs_more_data", "reportSha": "…" } }
+               "status": "pass" | "fail" | "needs_more_data", "reportSha": "…" },
+     "dryRun": true }                                        // optional; only `eval dry-run` sets it
    ```
+
+   `eval gate` records the locked selection as an `eval.runs` row with experiment `G1-gate`;
+   `apply-g1` requires that lock to record the file's config hash, profile, status and report hash,
+   and accepts a `dryRun` artifact only in `bantoozi_eval_dryrun` (D-106, D-108).
 
 3. `pnpm evaluate apply-g1 apps/eval/config/g1.json` (paths are relative to the repository root; the
    CLI resolves them from there) writes the settings below to the dev DB. In production, an admin
@@ -179,6 +184,8 @@ settings, regardless of profile.
   (Cohen's κ; weighted κ for ordinal depth) is a reference, not an absolute model-accuracy ceiling.
   Preserve both labels and use a predeclared adjudication step for disagreement; do not choose the
   label that agrees with a model. Include uncertain/not-applicable rather than forcing a false class.
+  A label by the labeller `adjudicated` resolves a disagreement; unresolved disagreements are
+  excluded from accuracy and counted (D-105).
   The owner is the participant of the earliest rater; the owner's set is chosen in seeded hash order
   and keeps already-labelled articles, and the second labeller's 50 are taken from it, split equally
   across its languages (D-103).
@@ -226,6 +233,10 @@ Each run:
   settings and content revision; simple string concatenation is not a safe key. Writes are atomic,
   cache hits retain actual provenance, failures are not cached as answers
 - uses the production packages: `questions`, `engine`, `translate`, `ranker`
+- answer keys: `enrich.<key>` (Call A), `card` (Call B per card), `score.r<raterId>` (zero-training
+  score), `translation` (frozen article translations), `e6.r<raterId>` (E6 rerun per rater, since
+  raters can share a card) and `e7.targeted`/`e7.generic`. `--resume <runId>` continues an aborted
+  run; an aborted run exits with code 3 (D-110, D-114)
 - frozen assignments are **explicit evaluation demand**, isolated from production subscriptions.
   An eval run may process only assigned snapshots approved for that invocation, subject to its cost
   cap; subscribing the ingestion-only eval user does not make all collected articles inference-active.
@@ -328,6 +339,9 @@ invocation budget, retain completed answers, and resume explicitly; partial runs
 ---
 
 ## 4. Metrics (`apps/eval/src/metrics`)
+
+`eval report` shows test-split tables only after `eval gate` has locked a selection for the dataset
+version (D-106).
 
 **Ranking** (per reading context and participant, language and experiment):
 - **ROC AUC** of the score vs the rating (Mann–Whitney U, ties counted as ½), with a **95 % CI** from
@@ -487,7 +501,9 @@ by `apply-g1` and the normal production settings flow (§1); owner-pilot scope r
 `eval replay --against <runId> [--model jev-x.y.z] [--engine llm --llm-model <model>] [--question-set enrich-v2] [--thresholds file.json]`
 
 - Re-runs the G1 variant with the proposed change on the `dataset_version` of the run it compares
-  against (`golden-v1` for the G1 runs), cached where possible.
+  against (`golden-v1` for the G1 runs), cached where possible. The replay is stored as an
+  `eval.runs` row with experiment `replay:<experiment>`; a replay that fails the pass rule exits
+  with code 4 (D-114).
 - **Reports:** ΔAUC per rater and language (with CIs), the mean |Δp| per question key, and the share of
   items changing lane.
 - **Required** before:
