@@ -608,6 +608,42 @@ describe('eval run (M3a-T6)', () => {
       expect(v.variant).toBe(v.article_id === target!.id ? 'native' : 'translated');
     }
     // The gate's run check reads this as not eligible (status partial, sk coverage short).
+
+    // B1-T scores by BM25 over each rater's whole corpus: the native document changes the corpus
+    // statistics, so every score of a rater whose corpus holds it is invalid, not only its own.
+    ctx.libretranslate.reset({ translations: Object.fromEntries(texts.map((t) => [t, ''])) });
+    const b1t = runtime(ctx, { EVAL_CACHE_DIR: await freshCache() });
+    let b1tRunId: string;
+    try {
+      const result = await runExperiment(b1t.rt, { experiment: 'B1-T', yes: true, gitSha: 'test' });
+      expect(result.status).toBe('partial');
+      b1tRunId = result.runId!;
+    } finally {
+      await b1t.rt.close();
+      ctx.libretranslate.reset();
+    }
+    const b1tRow = await runRow(ctx, b1tRunId);
+    const b1tConfig = b1tRow.config as { assignments: Record<string, string[]> };
+    const holders = Object.entries(b1tConfig.assignments)
+      .filter(([, ids]) => ids.includes(target!.id))
+      .map(([raterId]) => raterId);
+    expect(holders.length).toBeGreaterThan(0);
+    const byRater = (
+      b1tRow.results as {
+        coverage: { byRater: Record<string, { expected: number; valid: number }> };
+      }
+    ).coverage.byRater;
+    for (const raterId of holders) {
+      expect(byRater[raterId]!.expected).toBeGreaterThan(1);
+      expect(byRater[raterId]!.valid).toBe(0);
+      const untagged = await ctx.owner.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM eval.run_answers
+          WHERE run_id = $1 AND question_key = $2
+            AND coalesce((answer->>'corpusFallback')::boolean, false) = false`,
+        [b1tRunId, `score.r${raterId}`],
+      );
+      expect(untagged.rows[0]!.n).toBe(0);
+    }
   });
 
   it("an English-card run whose card translation failed counts that rater's pairs as missing", async () => {

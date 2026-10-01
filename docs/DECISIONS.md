@@ -930,7 +930,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   translations per run. Every executed run freezes its dataset version (idempotent); the E5 stub
   does not. In translated-state runs (B1-T, E3, E3b, E4) an article whose translation failed or was
   unusable is answered on native text, tagged `variant: 'native'`, excluded from valid coverage and
-  counted in `results.translationFallbacks`, so the run ends `partial`; a resume reuses an answer only
+  counted in `results.translationFallbacks`, so the run ends `partial`; in B1-T a native document
+  in a rater's BM25 corpus (rated or only assigned) also invalidates every score of that rater,
+  tagged `corpusFallback: true`, since it shifts the corpus statistics; a resume reuses an answer only
   when its variant matches. Likewise in english-card runs (E2, E3b, E4) a card whose attempted
   English translation came back `failed` or `weak` is asked with its original text: its card and
   score rows carry `cardTextFallback: true`, every pair scored with it is excluded from valid

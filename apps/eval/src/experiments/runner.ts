@@ -1200,9 +1200,19 @@ function scoreRows(
     const cardFallback = raterCards.some((card) => cardTextFallback(card, plan.cardMode));
     let chrono: Map<string, number> | null = null;
     let corpus: ReturnType<typeof bm25Corpus> | null = null;
+    // In a translated-state run, a corpus document left on native text (its translation failed or
+    // is missing) changes the corpus statistics behind every score of this rater, rated or not.
+    let corpusFallback = false;
     if (def.score === 'chrono') chrono = chronoScores(articleIds, snapshots);
     if (def.score === 'bm25') {
       const corpusIds = uniqSorted([...(plan.config.assignments[raterId] ?? []), ...articleIds]);
+      corpusFallback =
+        plan.config.translation.articles !== null &&
+        corpusIds.some((id) => {
+          const item = plan.samples.get(id);
+          if (item === undefined || item.lang === 'en' || item.lang === 'und') return false;
+          return !out.translations.has(id) || translationFallback(plan, item, out);
+        });
       corpus = bm25Corpus(
         corpusIds.flatMap((id) => {
           const item = plan.samples.get(id);
@@ -1239,7 +1249,7 @@ function scoreRows(
         valid = cardsComplete(cards, record);
       }
       const degraded = fallback.has(articleId);
-      count(item.lang, raterId, valid && !degraded && !cardFallback);
+      count(item.lang, raterId, valid && !degraded && !cardFallback && !corpusFallback);
       rows.push({
         articleId,
         cardId: null,
@@ -1250,6 +1260,7 @@ function scoreRows(
             ? {}
             : { variant: degraded ? 'native' : 'translated' }),
           ...(cardFallback ? { cardTextFallback: true } : {}),
+          ...(corpusFallback ? { corpusFallback: true } : {}),
         },
       });
     }
