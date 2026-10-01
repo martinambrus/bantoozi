@@ -731,6 +731,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   Addendum (PR #10 review): the draw share-locks every candidate article (`FOR SHARE`) until it
   commits, so the ingest-only worker cannot change an article's language or pipeline state between
   the selection and its snapshot; its updates wait for the draw.
+  Addendum (PR #10 review): the cap holds for every golden feed that carries a selected article,
+  not only the oldest carrier the draw stratifies by. A draw takes an article only while each of its
+  carriers stays within max(cap, its existing rows), and the sample shrinks until a draw fills its
+  size. A feed that carries the other feeds' stories therefore limits the sample (and shows in the
+  report's per-feed counts, which now count every carried article) instead of exceeding the cap.
   Otherwise English rows would stay under `langs: ['sk']`, or a sample would exceed its recorded
   target or cap. A parameter the version never recorded constrains nothing. The widened values are
   recorded on the version even when the draw adds nothing. Repeated languages are recorded once.
@@ -875,6 +880,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   jsonb carries it, so no migration is needed and the configSha stays unchanged. A lock written
   before this change has no count and is refused; rerunning `eval gate` on the same manifest
   records it.
+  Addendum (PR #10 review): `apply-g1` also refuses a file whose gate lock records `dryRun: true`
+  outside the dry-run database, or whose `dryRun` mark disagrees with its lock. `g1ConfigSha` now
+  hashes the mark when it is true, so a dry-run artifact with the mark stripped no longer matches
+  its hash. A real artifact omits the key, so its hash is unchanged (no format break).
 - D-109: 2026-10-01 M3a-T7 — the evaluation policy view (lane distribution, spec 10 §4) applies no
   demotions (the golden set has no per-user demotion state). A failed card answer makes coverage
   unavailable, and an item with no usable answer stays in New and is counted.
@@ -955,7 +964,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   transaction (freeze included) is rolled back, and the new inputs go through translation, the
   estimate and the prompt again, at most 3 times before the command fails without freezing. A run
   declined at either prompt leaves the version open. No rating, card or assignment can land between
-  the freeze and the config snapshot, and the card text is still translated before the run row.
+  the freeze and the config snapshot, and the card text is still translated before the run row. E6
+  and E7 apply `--raters` to the base run's frozen raters, ratings, assignments and cards, and an id
+  that is not a base-run rater is refused (`unknown rater id in --raters`).
 - D-111: 2026-10-01 M3a-T6 — eval routers use a process-local circuit breaker, so an evaluation
   never trips or reads the production breaker (spec 04 §1). The LLM fallback is off and the pinned
   engine has no automatic fallback, so a run never mixes engines silently.
@@ -1023,7 +1034,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `config.baseRunId`, not with the latest E1. If that run is missing, the section says so and
   makes no comparison. E6 suggests examples (spec 06 §10) with the run's effective ranker config: the
   `rankerThresholds` frozen in its config over the defaults (the stored setting for a config
-  without them), the same helper as the replay baseline (`runRankerConfig`), never the defaults.
+  without them), the same helper as the replay baseline (`runRankerConfig`), never the defaults. E6
+  suggestions and the E7 target read each rater's own E1 answers: that rater's `card.r<raterId>` copy
+  of a shared card id first (a failed copy counts as no answer), then the shared `card` answer.
 - D-115: 2026-10-01 M3a-T8 — the dry-run database is copied from the migrated test template
   (`TEST_ADMIN_DATABASE_URL` is used only to create and drop it, under the template advisory lock)
   and seeded by running the worker seed script as a subprocess against it. Only the names

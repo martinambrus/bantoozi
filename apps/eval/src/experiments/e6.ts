@@ -40,6 +40,11 @@ export interface E6Input {
   articles: ReadonlyMap<string, E6Article>;
   /** E1's card answers: article id → card id → answer. */
   answers: ReadonlyMap<string, ReadonlyMap<string, E6Answer>>;
+  /**
+   * One rater's answers of an article when they differ from the shared ones (E1's
+   * `card.r<raterId>` copies, D-112 addendum); default `answers.get(articleId)`.
+   */
+  answersOf?: (raterId: string, articleId: string) => ReadonlyMap<string, E6Answer> | undefined;
   config?: Pick<ReadonlyRankerConfig, 'lanes'>;
 }
 
@@ -113,6 +118,8 @@ export function suggestExample(
 
 export function planE6(input: E6Input): E6Plan {
   const config = input.config ?? DEFAULT_RANKER_CONFIG;
+  const answersOf =
+    input.answersOf ?? ((_raterId: string, articleId: string) => input.answers.get(articleId));
   const cardsByRater = new Map<string, RunCard[]>();
   for (const card of input.cards) {
     const list = cardsByRater.get(card.raterId) ?? [];
@@ -152,7 +159,12 @@ export function planE6(input: E6Input): E6Plan {
         continue;
       }
       earlier.add(rating.articleId);
-      const suggestion = suggestExample(cards, input.answers.get(rating.articleId), rating, config);
+      const suggestion = suggestExample(
+        cards,
+        answersOf(raterId, rating.articleId),
+        rating,
+        config,
+      );
       if (suggestion === null) continue;
       const card = cards.find((c) => c.cardId === suggestion.cardId);
       const text = exampleText(article.title);

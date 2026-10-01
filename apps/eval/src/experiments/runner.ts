@@ -411,23 +411,32 @@ async function draftConfig(
       );
     }
     const langs = base.langs.filter((lang) => options.langs?.includes(lang) ?? true);
+    // `--raters` narrows the base run's raters (D-110 addendum); every id must be one of them.
+    const wantedBase = options.raterIds === undefined ? null : new Set(options.raterIds);
+    const raters = base.raters.filter((r) => wantedBase === null || wantedBase.has(r.raterId));
+    if (wantedBase !== null && raters.length !== wantedBase.size) {
+      throw new EvalCommandError('unknown rater id in --raters');
+    }
+    const ofRater = new Set(raters.map((r) => r.raterId));
     const isDev = (articleId: string) => {
       const row = sampleById.get(articleId);
       return row !== undefined && row.split === 'dev' && langs.includes(row.lang);
     };
-    const ratings = base.ratings.filter((r) => isDev(r.articleId));
+    const ratings = base.ratings.filter((r) => ofRater.has(r.raterId) && isDev(r.articleId));
     const assignments = Object.fromEntries(
-      Object.entries(base.assignments).map(([raterId, ids]) => [raterId, ids.filter(isDev)]),
+      Object.entries(base.assignments)
+        .filter(([raterId]) => ofRater.has(raterId))
+        .map(([raterId, ids]) => [raterId, ids.filter(isDev)]),
     );
     const articleIds = uniqSorted(ratings.map((r) => r.articleId));
     return {
       ...common,
       langs,
-      raters: base.raters,
+      raters,
       cohort: { articleIds, sha: canonicalSha256(articleIds) },
       assignments,
       ratings,
-      cards: base.cards,
+      cards: base.cards.filter((c) => ofRater.has(c.raterId)),
       facetLabels: [],
       baseRunId,
     };
@@ -558,15 +567,42 @@ async function buildPlan(
   };
 
   if (def.baseExperiment !== null && config.baseRunId !== undefined) {
-    const baseAnswers = await loadRunAnswers(rt.db, config.baseRunId, { questionKeys: ['card'] });
+    // E1's shared `card` answers plus each rater's own copy of a shared card id (`card.r<raterId>`,
+    // D-112 addendum): a rater's E6 suggestions and E7 target read the rater's own answer first.
+    const baseAnswers = await loadRunAnswers(rt.db, config.baseRunId, { keyPrefix: 'card' });
     const answers = new Map<string, Map<string, { p: number; engine: string }>>();
+    const own = new Map<string, Map<string, { p: number; engine: string } | null>>();
     for (const row of baseAnswers) {
+      if (row.cardId === null) continue;
       const value = row.answer as { ok?: unknown; p?: unknown; engine?: unknown };
-      if (row.cardId === null || value.ok !== true || typeof value.p !== 'number') continue;
-      const map = answers.get(row.articleId) ?? new Map<string, { p: number; engine: string }>();
-      map.set(row.cardId, { p: value.p, engine: String(value.engine) });
-      answers.set(row.articleId, map);
+      const answer =
+        value.ok === true && typeof value.p === 'number'
+          ? { p: value.p, engine: String(value.engine) }
+          : null;
+      if (row.questionKey === 'card') {
+        if (answer === null) continue;
+        const map = answers.get(row.articleId) ?? new Map<string, { p: number; engine: string }>();
+        map.set(row.cardId, answer);
+        answers.set(row.articleId, map);
+      } else if (row.questionKey.startsWith('card.r')) {
+        const key = `${row.questionKey.slice('card.r'.length)}|${row.articleId}`;
+        const map = own.get(key) ?? new Map<string, { p: number; engine: string } | null>();
+        map.set(row.cardId, answer);
+        own.set(key, map);
+      }
     }
+    const answersOf = (raterId: string, articleId: string) => {
+      const shared = answers.get(articleId);
+      const overrides = own.get(`${raterId}|${articleId}`);
+      if (overrides === undefined) return shared;
+      const merged = new Map(shared);
+      for (const [cardId, answer] of overrides) {
+        // A failed own copy never borrows another rater's answer.
+        if (answer === null) merged.delete(cardId);
+        else merged.set(cardId, answer);
+      }
+      return merged;
+    };
     if (def.id === 'E6') {
       const articles = new Map(
         [...samples].map(([id, item]) => [
@@ -579,6 +615,7 @@ async function buildPlan(
         ratings: config.ratings,
         articles,
         answers,
+        answersOf,
         config: (await runRankerConfig(rt.db, config)).ranker,
       });
     } else if (def.id === 'E7') {
@@ -595,6 +632,12 @@ async function buildPlan(
             new Map([...map].map(([cardId, a]) => [cardId, a.p])),
           ]),
         ),
+        answersOf: (raterId, articleId) => {
+          const map = answersOf(raterId, articleId);
+          return map === undefined
+            ? undefined
+            : new Map([...map].map(([cardId, a]) => [cardId, a.p]));
+        },
       });
     }
   }

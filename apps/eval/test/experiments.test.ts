@@ -255,6 +255,34 @@ describe('planE6', () => {
     expect(isOffTopic(' Off Topic ')).toBe(true);
     expect(isOffTopic(null)).toBe(false);
   });
+
+  it("reads a rater's own copy of a shared card before the shared answer", () => {
+    // Raters 1 and 2 share card 10; rater 2's copy (other English text) answered 0.5, not 0.9.
+    const cards = [card({ cardId: '10' }), { ...card({ cardId: '10' }), raterId: '2' }];
+    const ratings = ['1', '2'].flatMap((raterId) =>
+      ['300', '301'].map((articleId, i) => ({ ...rating(articleId, 1, i), raterId })),
+    );
+    const articles = new Map([
+      ['300', { storyGroupId: 'g300', title: 'T300' }],
+      ['301', { storyGroupId: 'g301', title: 'T301' }],
+    ]);
+    const shared = new Map([['10', { p: 0.9, engine: 'typesafe' }]]);
+    const answers = new Map([
+      ['300', shared],
+      ['301', shared],
+    ]);
+    const own = new Map([['10', { p: 0.5, engine: 'typesafe' }]]);
+    const plan = planE6({
+      cards,
+      ratings,
+      articles,
+      answers,
+      answersOf: (raterId, articleId) => (raterId === '2' ? own : answers.get(articleId)),
+    });
+    // 0.9 is For You (no example) for rater 1; rater 2's 0.5 is in [maybe, forYou): a yes.
+    expect(plan.cardsByRater.get('1')?.[0]?.examplesYes).toEqual([]);
+    expect(plan.cardsByRater.get('2')?.[0]?.examplesYes).toEqual(['T300']);
+  });
 });
 
 describe('paired AUC', () => {

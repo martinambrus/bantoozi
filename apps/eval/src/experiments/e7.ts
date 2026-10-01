@@ -50,9 +50,13 @@ export function planE7(input: {
   cardsByRater: ReadonlyMap<string, readonly RunCard[]>;
   /** E1's card answers: article id → card id → p. */
   answers: ReadonlyMap<string, ReadonlyMap<string, number>>;
+  /** One rater's answers when they differ from the shared ones (`card.r<raterId>`, D-112). */
+  answersOf?: (raterId: string, articleId: string) => ReadonlyMap<string, number> | undefined;
   perLang?: number;
 }): E7Item[] {
   const perLang = input.perLang ?? E7_ARTICLES_PER_LANG;
+  const answersOf =
+    input.answersOf ?? ((_raterId: string, articleId: string) => input.answers.get(articleId));
   const byLang = new Map<string, E7Candidate[]>();
   for (const candidate of input.candidates) {
     if ((input.answers.get(candidate.articleId)?.size ?? 0) === 0) continue;
@@ -72,7 +76,7 @@ export function planE7(input: {
     for (const candidate of sampled) {
       const raterId = e7Rater(candidate.articleId, candidate.raterIds);
       if (raterId === null) continue;
-      const answers = input.answers.get(candidate.articleId);
+      const answers = answersOf(raterId, candidate.articleId);
       let target: { card: RunCard; p: number } | null = null;
       for (const card of input.cardsByRater.get(raterId) ?? []) {
         if (!isPositiveStrength(card.strength)) continue;

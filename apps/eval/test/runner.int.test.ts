@@ -1328,4 +1328,81 @@ describe('eval run (M3a-T6)', () => {
       await ctx.owner.query(`DELETE FROM settings WHERE key = 'ranker.thresholds'`);
     }
   });
+
+  it("targets E7 with each rater's own E1 copy of a shared card and honours --raters on base-run experiments", async () => {
+    const { rt } = runtime(ctx);
+    try {
+      const e1 = await runExperiment(rt, { experiment: 'E1', yes: true, gitSha: 'test' });
+      expect(e1.status).toBe('complete');
+      const e1Id = e1.runId!;
+      const e1Config = parseRunConfig((await runRow(ctx, e1Id)).config);
+      const b = golden.raters.b;
+      // B shares A's battery card (added in the E6 test above).
+      expect(e1Config.cards.some((c) => c.raterId === b && c.cardId === golden.cards.battery)).toBe(
+        true,
+      );
+      const targets = async () => {
+        const e7 = await runExperiment(rt, {
+          experiment: 'E7',
+          yes: true,
+          gitSha: 'test',
+          baseRunId: e1Id,
+        });
+        expect(e7.status).toBe('complete');
+        const row = await runRow(ctx, e7.runId!);
+        return (
+          row.results as { e7: { items: Array<{ raterId: string; targetedCardId: string }> } }
+        ).e7.items.filter((item) => item.raterId === b);
+      };
+      // Shared answers: battery (the lower id) wins every tie at 0.1, so some of B's items target it.
+      const shared = await targets();
+      expect(shared.length).toBeGreaterThan(0);
+      expect(shared.some((item) => item.targetedCardId === golden.cards.battery)).toBe(true);
+      // B's own copy of battery answered 0.99 everywhere (`card.r<B>`, D-112): never the lowest.
+      await ctx.owner.query(
+        `INSERT INTO eval.run_answers (run_id, article_id, card_id, question_key, answer)
+         SELECT $1, article_id, card_id, $2, '{"ok": true, "p": 0.99, "engine": "typesafe"}'::jsonb
+           FROM eval.run_answers
+          WHERE run_id = $1 AND card_id = $3 AND question_key = 'card'`,
+        [e1Id, `card.r${b}`, golden.cards.battery],
+      );
+      const own = await targets();
+      expect(own.length).toBe(shared.length);
+      expect(own.every((item) => item.targetedCardId === golden.cards.astronomy)).toBe(true);
+
+      // --raters narrows a base-run experiment to those raters; an unknown id is refused.
+      const e6 = await runExperiment(rt, {
+        experiment: 'E6',
+        yes: true,
+        gitSha: 'test',
+        baseRunId: e1Id,
+        raterIds: [golden.raters.a],
+      });
+      expect(e6.status).toBe('complete');
+      const e6Config = parseRunConfig((await runRow(ctx, e6.runId!)).config);
+      expect(e6Config.raters.map((r) => r.raterId)).toEqual([golden.raters.a]);
+      expect(new Set(e6Config.cards.map((c) => c.raterId))).toEqual(new Set([golden.raters.a]));
+      expect(new Set(e6Config.ratings.map((r) => r.raterId))).toEqual(new Set([golden.raters.a]));
+      expect(Object.keys(e6Config.assignments)).toEqual([golden.raters.a]);
+      const keys = await ctx.owner.query<{ question_key: string }>(
+        `SELECT DISTINCT question_key FROM eval.run_answers WHERE run_id = $1 AND card_id IS NOT NULL`,
+        [e6.runId!],
+      );
+      expect(keys.rows.map((r) => r.question_key)).toEqual([`e6.r${golden.raters.a}`]);
+      await expect(
+        runExperiment(rt, {
+          experiment: 'E7',
+          yes: true,
+          gitSha: 'test',
+          baseRunId: e1Id,
+          raterIds: ['999999'],
+        }),
+      ).rejects.toMatchObject({
+        name: 'EvalCommandError',
+        message: 'unknown rater id in --raters',
+      });
+    } finally {
+      await rt.close();
+    }
+  });
 });

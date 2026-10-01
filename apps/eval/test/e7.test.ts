@@ -105,6 +105,31 @@ describe('planE7', () => {
     ['2', [card('2', '20', 'like')]],
   ]);
 
+  it("targets with the chosen rater's own answers when they differ from the shared ones", () => {
+    const answers = new Map([
+      [
+        '100',
+        new Map([
+          ['10', 0.2],
+          ['11', 0.6],
+        ]),
+      ],
+    ]);
+    const items = planE7({
+      seed: 's',
+      candidates: [{ articleId: '100', lang: 'en', raterIds: ['1'] }],
+      cardsByRater,
+      answers,
+      // Rater 1's own copy of card 10 answered 0.9: card 11 is now the lowest.
+      answersOf: () =>
+        new Map([
+          ['10', 0.9],
+          ['11', 0.6],
+        ]),
+    });
+    expect(items.map((item) => item.targetedCardId)).toEqual(['11']);
+  });
+
   it('targets the answered positive card with the lowest p and skips items without one', () => {
     const answers = new Map([
       [
