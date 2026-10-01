@@ -177,7 +177,14 @@ export const QUEUES = {
   }),
   'user.rank': spec({
     payload: z
-      .object({ userId: UuidSchema, reason: reasonSchema, full: z.boolean().optional() })
+      .object({
+        userId: UuidSchema,
+        reason: reasonSchema,
+        full: z.boolean().optional(),
+        // Set only on the continuation of a full run (spec 06 §7 step 5): the run's snapshot time;
+        // rows scored at or after it are not forced again.
+        snapshotAt: iso.optional(),
+      })
       .strict(),
     concurrency: 4,
     options: { policy: 'stately', retryLimit: 2 },

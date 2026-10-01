@@ -684,3 +684,20 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   up to 100 characters, so a valid mute could not be explained. The limit is now 200 characters,
   enough for the prefix and any permitted keyword (also when it uses characters outside the BMP).
   Spec 06 §6.2 updated.
+- D-97: 2026-10-01 M5-T4 — spec 06 §7 leaves several mechanics of the `user.rank` run open, and
+  two of its dirty-set signs are not durable. `explain.inputs.contextSha` had no recipe: it is now
+  the sha256 of the canonical JSON of the score version, rank revision, the classification context
+  (active enrich set, match set, card text mode, language modes, each held card's and label's
+  question hash) and the model context (`null` until M7), and degraded results add the BM25 corpus
+  fingerprint, which is how "corpus membership changed: rerank all degraded items" and a card's
+  newly translated text reach the dirty set. An input whose transaction began before the run's
+  snapshot can commit after it with an older timestamp, and an unscored item's coverage turns
+  unavailable without any new answer; such rows (inputs within 15 minutes before `scored_at`,
+  unscored `new` items with queued card work) are re-ranked but written only when the result
+  differs. The run stops after a 5-minute budget and commits a continuation; a full run's carries
+  `snapshotAt` (a new optional `user.rank` payload field) so the continuation forces only rows
+  scored before it. Writes serialize on a per-user advisory lock, keep the newer `scored_at`, and
+  skip articles whose content or media revision moved; a superseded run or a moved article enqueues
+  an incremental replacement, because the dirty set already holds every outdated row.
+  `user.rank` needs no model dependencies, so the worker registers it unconditionally. Specs 03
+  §2 and 06 §7 updated.

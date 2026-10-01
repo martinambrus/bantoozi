@@ -354,6 +354,23 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
    never touched. Filter `label_suggestions` against current labels/assignments at write time so a
    concurrent label action is not undone. Commit batches plus a continuation through the outbox;
    completion is recorded only after the last batch, and a crash resumes safely.
+   **Run mechanics (D-97).** `explain.inputs.contextSha` is a sha256 of the canonical JSON of the
+   score version, the rank revision, the classification context the answers and facets are judged
+   current under (active enrich set id, match set sha, card text mode, language modes, and each held
+   card's and label's question hash) and the model context (`null` until M7); degraded results hash
+   the BM25 corpus fingerprint too (each eligible window article's revision and selected
+   translation), so a corpus change re-ranks every degraded item and a card's newly translated text
+   dirties the window. Besides the inputs above, a row is dirty when `scored_at` is older than the
+   article's `updated_at`, its cluster's `updated_at` or its latest subscribed carrier arrival. An
+   input written up to 15 minutes before `scored_at` (a transaction that began before the run's
+   snapshot can commit after it), and an unscored `new` item with queued card work, are re-ranked
+   and written only when the result differs, so a run with nothing dirty writes 0 rows. A run
+   stops starting pages after 5 minutes and commits a continuation: `user.rank {full: true,
+   snapshotAt}` for a full run, whose continuation forces only rows scored before that snapshot, or
+   a plain incremental one. Writes take the user's advisory lock, never replace a row scored from a
+   newer snapshot, and skip an article whose content or media revision moved (an incremental
+   replacement follows); a superseded run enqueues an incremental replacement, whose dirty set holds
+   every row of the old revision or settings version.
 6. **Weak-translation escalation** (spec 07 §3): for items newly placed in `maybe` whose best
    translation is a tier-1 `weak` one **and** that have no `ollama` translation row yet (a skipped
    attempt also leaves a row), enqueue `article.translate {forceTier2: true}` under its own queue

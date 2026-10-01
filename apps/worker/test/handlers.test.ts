@@ -17,6 +17,7 @@ import {
   IMPLEMENTED_QUEUES,
   INGESTION_QUEUES,
   PROVIDER_QUEUES,
+  RANKING_QUEUES,
   StageUnavailableError,
   createHandlers,
   dispatch,
@@ -57,10 +58,11 @@ describe('handler map', () => {
     expect(Object.keys(HANDLERS).sort()).toEqual([...QUEUE_NAMES].sort());
   });
 
-  it('implements only the M1 ingestion stages without classification dependencies', () => {
+  it('implements only the M1 ingestion and M5 ranking stages without classification dependencies', () => {
     const handlers = createHandlers(createWorkerDeps(baseDeps));
     expect(Object.keys(handlers).sort()).toEqual([...QUEUE_NAMES].sort());
-    expect(available(handlers)).toEqual([...INGESTION_QUEUES].sort());
+    expect(available(handlers)).toEqual([...INGESTION_QUEUES, ...RANKING_QUEUES].sort());
+    expect(RANKING_QUEUES).toEqual(['user.rank']);
     expect(INGESTION_QUEUES).toEqual([
       'feed.schedule',
       'feed.fetch',
@@ -69,7 +71,6 @@ describe('handler map', () => {
     ]);
     expect(unavailableQueues(handlers, ['article.enrich', 'user.rank'])).toEqual([
       'article.enrich',
-      'user.rank',
     ]);
   });
 
@@ -80,7 +81,9 @@ describe('handler map', () => {
         classification: classification({} as TranslationDeps),
       }),
     );
-    expect(available(handlers)).toEqual([...INGESTION_QUEUES, ...CLASSIFICATION_QUEUES].sort());
+    expect(available(handlers)).toEqual(
+      [...INGESTION_QUEUES, ...CLASSIFICATION_QUEUES, ...RANKING_QUEUES].sort(),
+    );
     expect(CLASSIFICATION_QUEUES).toEqual([
       'article.translate',
       'article.enrich',
@@ -90,7 +93,9 @@ describe('handler map', () => {
       'analysis.process',
       'house.rescore-degraded',
     ]);
-    expect(unavailableQueues(handlers, ['article.enrich', 'user.rank'])).toEqual(['user.rank']);
+    expect(unavailableQueues(handlers, ['article.enrich', 'user.rank', 'user.learn'])).toEqual([
+      'user.learn',
+    ]);
   });
 
   it('implements provider.validate with the provider probe dependencies', () => {
