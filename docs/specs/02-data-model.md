@@ -158,6 +158,9 @@ against the pinned pg-boss catalog at M0 and covered by parity tests; no job pay
 - Created by the migrate job (as the owner) with `createQueue(name, options)` for every entry of
   `packages/shared/src/jobs.ts` (spec 03 §2), so per-queue partitions are owned by `bantoozi_owner` and
   covered by the default privileges.
+- pg-boss's internal cron queue `__pgboss__send-it`, through which its timekeeper sends every due
+  `schedule()` cron, is created by migration 0017 as the owner with pg-boss's defaults: a started
+  pg-boss creates it itself, which the worker role cannot (D-142).
 - The worker starts pg-boss with `migrate: false`, supervises and runs cron schedules plus the
   outbox relay. The API has no pg-boss client or credentials beyond its own database role.
 - If the pinned pg-boss version differs in these mechanics, keep the requirement: the owner creates the

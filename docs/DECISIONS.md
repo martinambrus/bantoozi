@@ -1239,3 +1239,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   an incremental replacement, because the dirty set already holds every outdated row.
   `user.rank` needs no model dependencies, so the worker registers it unconditionally. Specs 03
   §2 and 06 §7 updated.
+- D-142: 2026-10-01 M0-T5 — pg-boss 10 sends every due `boss.schedule` cron through its internal
+  queue `__pgboss__send-it`, which a started pg-boss creates itself. The worker starts pg-boss as
+  `bantoozi_worker`, which cannot create partitions in the `pgboss` schema, so that creation failed
+  silently, the timekeeper's inserts were dropped and no cron schedule (`feed.schedule`, the
+  `house.*` jobs) ever fired: feeds were fetched once when subscribed and never again. Found while
+  collecting the golden sample (§8.1). Migration 0017 creates the queue as `bantoozi_owner` with
+  pg-boss's defaults, like the jobs.ts queues; a database that already has it is unchanged. Spec 02
+  §1.2 updated.

@@ -4,7 +4,11 @@ import { QUEUE_NAMES } from '@bantoozi/shared';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { PG_BOSS_SCHEMA_VERSION, PG_BOSS_VERSION } from '../src/migrate/migrate.js';
+import {
+  PG_BOSS_CRON_QUEUE,
+  PG_BOSS_SCHEMA_VERSION,
+  PG_BOSS_VERSION,
+} from '../src/migrate/migrate.js';
 import { setupDbTest, withConnection, type DbTestContext } from './support/test-db.js';
 
 /**
@@ -583,8 +587,8 @@ describe('schema parity with expected-schema.json', () => {
     expect(version.rows[0]?.version).toBe(expected.pgBoss.schemaVersion);
     expect(PG_BOSS_SCHEMA_VERSION).toBe(expected.pgBoss.schemaVersion);
     const queues = await ctx.owner.query<{ name: string }>(
-      'SELECT name FROM pgboss.queue ORDER BY 1',
+      'SELECT name FROM pgboss.queue ORDER BY name COLLATE "C"',
     );
-    expect(queues.rows.map((q) => q.name)).toEqual([...QUEUE_NAMES].sort());
+    expect(queues.rows.map((q) => q.name)).toEqual([...QUEUE_NAMES, PG_BOSS_CRON_QUEUE].sort());
   });
 });

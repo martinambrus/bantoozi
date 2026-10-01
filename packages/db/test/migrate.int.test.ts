@@ -4,11 +4,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { QUEUE_NAMES, QUEUES } from '@bantoozi/shared';
+import PgBoss from 'pg-boss';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { migrationStatus, readMigrationJournal } from '../src/readiness.js';
 import {
   MIGRATIONS_FOLDER,
+  PG_BOSS_CRON_QUEUE,
   PG_BOSS_SCHEMA,
   PG_BOSS_SCHEMA_VERSION,
   PG_BOSS_VERSION,
@@ -80,10 +82,19 @@ describe('migrate job', () => {
               has_table_privilege('bantoozi_worker', c.oid, 'SELECT, INSERT, UPDATE, DELETE') AS worker_dml
          FROM pgboss.queue q JOIN pg_class c ON c.relname = q.partition_name
          JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'pgboss'
-        ORDER BY q.name`,
+        ORDER BY q.name COLLATE "C"`,
     );
-    expect(queues.rows.map((q) => q.name)).toEqual([...QUEUE_NAMES].sort());
+    expect(queues.rows.map((q) => q.name)).toEqual([...QUEUE_NAMES, PG_BOSS_CRON_QUEUE].sort());
     for (const row of queues.rows) {
+      if (row.name === PG_BOSS_CRON_QUEUE) {
+        // pg-boss's defaults, as its timekeeper would create the queue.
+        expect(row).toMatchObject({
+          policy: 'standard',
+          partition_owner: 'bantoozi_owner',
+          worker_dml: true,
+        });
+        continue;
+      }
       const options = QUEUES[row.name as keyof typeof QUEUES].options;
       expect(row).toMatchObject({
         policy: options.policy,
@@ -109,7 +120,39 @@ describe('migrate job', () => {
       'cancelled',
       'failed',
     ]);
-    expect(counts.rows).toHaveLength(QUEUE_NAMES.length);
+    expect(counts.rows).toHaveLength(QUEUE_NAMES.length + 1);
+  });
+
+  it('lets a worker-role pg-boss fire its cron schedules', async () => {
+    // The timekeeper sends due crons through PG_BOSS_CRON_QUEUE, which the worker cannot create.
+    const boss = new PgBoss({
+      connectionString: ctx.testDb.urls.worker,
+      schema: PG_BOSS_SCHEMA,
+      migrate: false,
+      max: 2,
+      cronMonitorIntervalSeconds: 1,
+      cronWorkerIntervalSeconds: 1,
+    });
+    boss.on('error', () => undefined);
+    await boss.start();
+    try {
+      await boss.schedule('feed.schedule', '* * * * *', {}, { tz: 'UTC' });
+      let fired = 0;
+      for (let i = 0; i < 100 && fired === 0; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const jobs = await ctx.owner.query<{ n: number }>(
+          "SELECT count(*)::int AS n FROM pgboss.job WHERE name = 'feed.schedule'",
+        );
+        fired = jobs.rows[0]?.n ?? 0;
+      }
+      expect(fired).toBe(1);
+    } finally {
+      await boss.unschedule('feed.schedule');
+      await boss.stop({ graceful: false, wait: true });
+      await ctx.owner.query('DELETE FROM pgboss.job WHERE name = ANY($1::text[])', [
+        ['feed.schedule', PG_BOSS_CRON_QUEUE],
+      ]);
+    }
   });
 
   it('lets the worker use pg-boss without owning it', async () => {
