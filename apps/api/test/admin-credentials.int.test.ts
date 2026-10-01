@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 import { decryptProviderSecret, ProviderKeyring } from '@bantoozi/shared/server/credential-crypto';
 import type { FastifyInstance } from 'fastify';
@@ -324,6 +324,21 @@ describe('credential lifecycle (spec 08 §9.1, spec 04 §1.2)', () => {
     });
     expect(noKeyring.body).not.toContain(SECRET);
     expect(await credentialRow('typesafe')).toBeUndefined();
+  });
+
+  it('replays a committed stage from its receipt even without the keyring', async () => {
+    const key = randomUUID();
+    const body = { apiKey: SECRET, expectedRevision: '0' };
+    const staged = await apiClient(keyed, admin).put('/admin/engine/credentials/typesafe', body, {
+      idempotencyKey: key,
+    });
+    expect(staged.statusCode, staged.body).toBe(200);
+    // A retry lands on an instance whose keyring is missing.
+    const retry = await apiClient(h.server, admin).put('/admin/engine/credentials/typesafe', body, {
+      idempotencyKey: key,
+    });
+    expect(retry.statusCode, retry.body).toBe(200);
+    expect(retry.json()).toEqual(staged.json());
   });
 
   it('is admin-only and needs the CSRF header', async () => {

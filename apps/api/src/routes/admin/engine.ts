@@ -259,6 +259,12 @@ export const engineRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       const { provider } = request.params;
       const { apiKey, expectedRevision } = request.body;
+      // A retry of a committed stage replays its receipt without needing the keyring again.
+      const saved = await request.savedOutcome<{ credential: CredentialStatus }>();
+      if (saved !== null) {
+        auditLog(request, { action: 'credentials.stage', target: provider });
+        return reply.code(200).send(saved.body);
+      }
       const { config } = app.services;
       const keyring = ProviderKeyring.parse(config.providerMasterKeyId, config.providerMasterKeys);
       if (!keyring.ok) {
