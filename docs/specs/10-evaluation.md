@@ -316,7 +316,10 @@ invocation budget, retain completed answers, and resume explicitly; partial runs
   `bantoozi_eval_dryrun`, freshly created from the current template **and seeded** (spec 02 §1.1). The
   eval process connects through `TEST_ADMIN_DATABASE_URL` only to create it. It writes
   `reports/DRYRUN-<date>.md` and `reports/DRYRUN-<date>.g1.json`, both git-ignored, and never touches
-  the real `eval` tables.
+  the real `eval` tables. It also writes `reports/DRYRUN-<date>.report.md` (the §4 report). The
+  synthetic data has four participants, so the gate runs as `multi_person_beta` by default
+  (`--profile`); `--db bantoozi_eval_dryrun_<suffix>` lets tests use their own database. The dry
+  run is a pipeline check, not evidence: its gate verdict is printed as computed (D-115…D-119).
 - **`eval gate --profile owner_pilot|multi_person_beta`:** validate the frozen dataset/run manifests,
   compute profile readiness, select on development, lock the profile/config hash, then reveal the
   test confirmation and write the scoped report plus `g1.json` (§5). `--profile` is mandatory and

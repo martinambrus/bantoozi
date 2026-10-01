@@ -817,3 +817,24 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   rater's copy different examples, so E6 writes no `card` rows. The chrono score is a recency
   percentile within each rater's scored articles. Exit codes: 3 for an aborted run, 4 for a failed
   replay. Spec 10 §3 and §6 updated.
+- D-115: 2026-10-01 M3a-T8 — the dry-run database is copied from the migrated test template
+  (`TEST_ADMIN_DATABASE_URL` is used only to create and drop it, under the template advisory lock)
+  and seeded by running the worker seed script as a subprocess against it. Only the names
+  `bantoozi_eval_dryrun` and `bantoozi_eval_dryrun_<suffix>` are accepted, so the command can never
+  drop another database. Its SQL lives in `packages/db/src/eval/dryrun.ts`. Spec 10 §3 updated.
+- D-116: 2026-10-01 M3a-T8 — synthetic data for the dry run: 8 topics with language-neutral anchors
+  plus English topic nouns, about 30% of SK/CZ articles without an anchor (they match a card only
+  after translation, through an exact-text fake LibreTranslate map), and 4 raters with distinct
+  participant keys whose ratings follow a hidden per-topic preference model with seeded noise and a
+  clickbait penalty; one rater writes Slovak cards.
+- D-117: 2026-10-01 M3a-T8 — dry-run outputs are the gate report `DRYRUN-<date>.md` (the sha in
+  the g1 file is this report's), `DRYRUN-<date>.g1.json` with `dryRun: true`, and
+  `DRYRUN-<date>.report.md` for the §4 tables. Defaults: 300 sampled per language, 300 assignments
+  per rater, 40 facet labels per language, `--max-usd 5` per experiment (fake engine only).
+- D-118: 2026-10-01 M3a-T8 (amends D-110) — every experiment of one language scope shares one
+  cohort (rated pairs plus facet-labelled articles; only card experiments ask Call A about the
+  labelled articles), so the gate's cohort check accepts the baselines. E4 (SK/CZ only), E6 and E7
+  differ by design and stay diagnostic or informational.
+- D-119: 2026-10-01 M3a-T8 — on synthetic data with the fake engine, card experiments match about as
+  well as keyword baselines (B1-T ≈ E3), so the dry-run gate may FAIL. It is a pipeline check, not
+  evidence, and its verdict is printed as computed. The required check is that E1 beats B0.
