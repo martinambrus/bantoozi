@@ -464,4 +464,21 @@ describe('card write rate limit (spec 08 §11)', () => {
     // Reads are not card writes.
     expect((await api.get('/cards')).statusCode).toBe(200);
   });
+
+  it('answers retries of a committed write from the receipt without charging the limit', async () => {
+    const user = await createTestUser(h);
+    const api = apiClient(limited, user);
+    const key = randomUUID();
+    const body = { interest: unique('Replayed interest'), strength: 'like' };
+    const first = await api.post('/cards', body, { idempotencyKey: key });
+    expect(first.statusCode).toBe(201);
+    for (let i = 0; i < 65; i += 1) {
+      const retry = await api.post('/cards', body, { idempotencyKey: key });
+      expect(retry.statusCode, retry.body).toBe(201);
+      expect(retry.json()).toEqual(first.json());
+    }
+    // Only the first write was charged.
+    const next = await api.post('/cards', { interest: unique('Another'), strength: 'like' });
+    expect(next.statusCode).toBe(201);
+  });
 });

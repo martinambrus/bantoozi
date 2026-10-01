@@ -124,6 +124,19 @@ export function registerTenant(app: FastifyInstance): void {
     }
   });
 
+  app.decorateRequest('knownKey', async function knownKey(this: FastifyRequest): Promise<boolean> {
+    const auth = this.auth;
+    if (auth === null) return false;
+    let key: string;
+    try {
+      key = idempotencyKey(this);
+    } catch {
+      return false;
+    }
+    if (keyHolders.has(`${auth.userId}:${key}`)) return true;
+    return this.withTx(async (tx) => (await readMutation(tx, key)) !== null);
+  });
+
   app.decorateRequest('mutate', async function mutate<
     T,
   >(this: FastifyRequest, fn: (tx: TenantTx, ctx: MutationContext) => Promise<MutationOutcome<T>>): Promise<

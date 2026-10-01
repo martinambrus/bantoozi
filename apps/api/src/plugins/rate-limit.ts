@@ -105,15 +105,16 @@ export function registerRateLimits(app: FastifyInstance, limiter: RateLimiter): 
   app.addHook('preValidation', async (request, reply) => {
     const config = request.routeOptions.config;
     const rules: RateLimitRule[] = [];
-    if (
+    const mutation =
       request.auth !== null &&
       MUTATING.has(request.method) &&
       config.authFlow !== true &&
-      !request.metricsBearer
-    ) {
-      rules.push(USER_MUTATION_LIMIT);
-    }
+      !request.metricsBearer;
+    if (mutation) rules.push(USER_MUTATION_LIMIT);
     rules.push(...(config.rateLimits ?? []));
+    if (rules.length === 0 || !limiter.enabled) return;
+    // A retry of a committed (or in-flight) mutation replays its receipt: it is not charged again.
+    if (mutation && (await request.knownKey())) return;
     await apply(limiter, request, reply, rules);
   });
 }

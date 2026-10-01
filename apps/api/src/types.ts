@@ -94,5 +94,11 @@ declare module 'fastify' {
      * repeating discovery.
      */
     holdingKey<T>(fn: () => Promise<T>): Promise<T>;
+    /**
+     * True when this caller's `Idempotency-Key` already has a receipt or is held in flight here. A
+     * replay or duplicate of a known key does no new work (it replays, waits or conflicts), so the
+     * per-user and route limits do not charge it.
+     */
+    knownKey(): Promise<boolean>;
   }
 }
