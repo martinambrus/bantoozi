@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { createArticle, createFeed, createSubscription } from '@bantoozi/testing';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -251,6 +253,30 @@ describe('POST /subscriptions (discovery, spec 03 §10)', () => {
     });
     expect((await feedRow(first.feed.id)).subscriber_count).toBe(1);
     expect(await intents('feed.fetch', { feedId: first.feed.id })).toHaveLength(1);
+  });
+
+  it('answers a retried subscribe from its receipt without repeating discovery', async () => {
+    const alice = await createTestUser(h);
+    const url = 'https://retry.example.com/feed.xml';
+    web.route(url, { body: rssDocument('Retry'), contentType: 'application/rss+xml' });
+    const key = randomUUID();
+    const client = apiClient(h.server, alice);
+    const first = await client.post('/subscriptions', { url }, { idempotencyKey: key });
+    expect(first.statusCode, first.body).toBe(201);
+    // The feed is gone now; a retry with the same key must still get the committed result.
+    web.route(url, { fail: 'FEED_HTTP_404', status: 404 });
+    const fetchedBefore = web.fetched.length;
+    const retry = await client.post('/subscriptions', { url }, { idempotencyKey: key });
+    expect(retry.statusCode, retry.body).toBe(201);
+    expect(retry.json()).toEqual(first.json());
+    expect(web.fetched.length).toBe(fetchedBefore);
+    const other = await client.post(
+      '/subscriptions',
+      { url: 'https://other.example.com/feed.xml' },
+      { idempotencyKey: key },
+    );
+    expect(other.statusCode).toBe(409);
+    expect(other.json().error.code).toBe('IDEMPOTENCY_CONFLICT');
   });
 
   it('rejects invalid bodies with 400', async () => {

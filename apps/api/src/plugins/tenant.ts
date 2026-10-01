@@ -71,6 +71,18 @@ export function idempotencyKey(request: FastifyRequest): string {
   return header.toLowerCase();
 }
 
+/** A saved receipt as its outcome; a receipt of a different request is a conflict. */
+function replayed<T>(
+  saved: Awaited<ReturnType<typeof readMutation>>,
+  digest: string,
+): MutationOutcome<T> | null {
+  if (saved === null) return null;
+  if (saved.requestHash !== digest) {
+    throw new AppError('IDEMPOTENCY_CONFLICT', 'Idempotency-Key was used for a different request');
+  }
+  return { status: saved.status, body: saved.response as T };
+}
+
 export function registerTenant(app: FastifyInstance): void {
   app.decorateRequest('withTx', function withTx<
     T,
@@ -78,6 +90,14 @@ export function registerTenant(app: FastifyInstance): void {
     const auth = this.auth;
     if (auth === null) return Promise.reject(unauthenticated());
     return withTenant(app.services.db, auth.userId, fn);
+  });
+
+  app.decorateRequest('savedOutcome', async function savedOutcome<
+    T,
+  >(this: FastifyRequest): Promise<MutationOutcome<T> | null> {
+    const key = idempotencyKey(this);
+    const digest = requestDigest(this, app.services.config.sessionPepper);
+    return this.withTx(async (tx) => replayed<T>(await readMutation(tx, key), digest));
   });
 
   app.decorateRequest('mutate', async function mutate<
@@ -95,16 +115,8 @@ export function registerTenant(app: FastifyInstance): void {
       try {
         return await this.withTx(async (tx) => {
           await lockMutationKey(tx, key);
-          const saved = await readMutation(tx, key);
-          if (saved !== null) {
-            if (saved.requestHash !== digest) {
-              throw new AppError(
-                'IDEMPOTENCY_CONFLICT',
-                'Idempotency-Key was used for a different request',
-              );
-            }
-            return { status: saved.status, body: saved.response as T };
-          }
+          const saved = replayed<T>(await readMutation(tx, key), digest);
+          if (saved !== null) return saved;
           const outcome = await fn(tx, {
             mutationId: key,
             outbox: tenantOutbox(tx),

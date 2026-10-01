@@ -248,6 +248,28 @@ describe('POST /waitlist', () => {
     expect((await waitlistRow(email2))?.locale).toBe('sk');
   });
 
+  it('serializes with signup under the per-email auth lock', async () => {
+    const email = nextEmail('race');
+    const holder = await h.owner.connect();
+    try {
+      // A verification holding the email's lock (spec 08 §2.1) while it creates the account.
+      await holder.query('BEGIN');
+      await holder.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+        `bantoozi:auth-email:${email}`,
+      ]);
+      const pending = apiClient(h.server).post('/waitlist', { email });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(await waitlistRow(email)).toBeUndefined();
+      await createUser(h.owner, { email });
+      await holder.query('COMMIT');
+      expect((await pending).statusCode).toBe(202);
+    } finally {
+      holder.release();
+    }
+    // The waitlist write waited for the signup, saw the account and listed nothing.
+    expect(await waitlistRow(email)).toBeUndefined();
+  });
+
   it('validates the body strictly', async () => {
     const anon = apiClient(h.server);
     for (const body of [

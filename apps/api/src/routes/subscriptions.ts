@@ -50,6 +50,7 @@ import {
   planInferenceModeChange,
   readUserPreferences,
   type AnalyzeResponse,
+  type SubscriptionEnvelope,
 } from '@bantoozi/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
@@ -138,6 +139,9 @@ export const subscriptionRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request, reply) => {
+      // A retry of a committed subscribe is answered from its receipt, without new discovery.
+      const saved = await request.savedOutcome<SubscriptionEnvelope>();
+      if (saved !== null) return reply.code(saved.status === 201 ? 201 : 200).send(saved.body);
       // Slow outbound work first: no transaction is open during discovery (spec 08 §1).
       const discovered = await discover(
         request.body.url,

@@ -3,7 +3,7 @@ import { randomInt } from 'node:crypto';
 import { CROCKFORD_ALPHABET, INVITE_CODE_LENGTH, planMinIntervalMap } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
-import type { Executor, Transaction } from '../client.js';
+import type { Database, Executor, Transaction } from '../client.js';
 import { recordRankIntents } from '../ingest/rank-intents.js';
 import { tenantOutbox } from '../outbox.js';
 import { tenantUserId, type TenantTx } from '../tenant.js';
@@ -411,16 +411,21 @@ export async function listOwnInvites(
 
 /**
  * Add or refresh a waitlist entry (public). An address that already has an account is not listed;
- * the caller answers identically either way, so existence is never revealed.
+ * the caller answers identically either way, so existence is never revealed. It runs under
+ * {@link lockAuthEmail}, like verification, so a signup racing it either sees and deletes the new
+ * entry or commits its account before this check reads it.
  */
 export async function upsertWaitlistEntry(
-  db: Executor,
+  db: Database,
   input: { email: string; locale: 'en' | 'sk'; note: string | null },
 ): Promise<void> {
-  await db.execute(sql`
-    INSERT INTO waitlist (email, locale, note)
-    SELECT ${input.email}::citext, ${input.locale}, ${input.note}
-     WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = ${input.email}::citext)
-    ON CONFLICT (email) DO UPDATE
-       SET locale = EXCLUDED.locale, note = coalesce(EXCLUDED.note, waitlist.note)`);
+  await db.transaction(async (tx) => {
+    await lockAuthEmail(tx, input.email);
+    await tx.execute(sql`
+      INSERT INTO waitlist (email, locale, note)
+      SELECT ${input.email}::citext, ${input.locale}, ${input.note}
+       WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = ${input.email}::citext)
+      ON CONFLICT (email) DO UPDATE
+         SET locale = EXCLUDED.locale, note = coalesce(EXCLUDED.note, waitlist.note)`);
+  });
 }
