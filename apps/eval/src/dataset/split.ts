@@ -63,13 +63,15 @@ const byNumericId = (a: string, b: string) => a.length - b.length || (a < b ? -1
 /**
  * Assign a split to every item. `known` holds the groups already in the version (their side is
  * final); `knownCounts` the number of articles of known groups per language (a group's language is
- * that of its oldest article) and side, for the balance.
+ * that of its oldest article) and side, for the balance; `knownLang` each known group's language,
+ * so a new copy in another language is charged to the group's original language.
  */
 export function assignSplits(
   items: readonly SplitItem[],
   seed: string,
   known: ReadonlyMap<string, DatasetSplit> = new Map(),
   knownCounts: ReadonlyMap<string, { dev: number; test: number }> = new Map(),
+  knownLang: ReadonlyMap<string, string> = new Map(),
 ): Map<string, DatasetSplit> {
   // A new group's language is that of its oldest article (lowest id).
   const groups = new Map<string, SplitItem[]>();
@@ -89,9 +91,10 @@ export function assignSplits(
     if (side !== undefined) {
       // New copies of a known story keep its side and count toward its language's balance.
       decided.set(groupId, side);
-      const langCounts = counts.get(oldest.lang) ?? { dev: 0, test: 0 };
+      const lang = knownLang.get(groupId) ?? oldest.lang;
+      const langCounts = counts.get(lang) ?? { dev: 0, test: 0 };
       langCounts[side] += members.length;
-      counts.set(oldest.lang, langCounts);
+      counts.set(lang, langCounts);
       continue;
     }
     const list = fresh.get(oldest.lang) ?? [];

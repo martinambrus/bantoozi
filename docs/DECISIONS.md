@@ -711,6 +711,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   are chosen as the subset whose article count lands nearest the language's development target
   (a 0/1 knapsack over a seeded group order; ties take the smaller count), so one story with many
   copies cannot unbalance the sides. Spec 10 §2.1 updated.
+  Addendum (PR #10 review): a group's language is that of its oldest article in the version, and a
+  later copy of a known group (a top-up in another language included) is counted under that same
+  language, so the per-language totals the fresh groups are balanced against stay consistent.
 - D-98: 2026-10-01 M3a-T2 — spec 10 §2.1 sets the sample's targets, the 10% feed cap and the strata
   but not eligibility, the cap's base or re-runs. Eligible articles are carried by the evaluation
   user's feeds, are past extraction (not `ingested`, `stale` or `failed`) and have a detected
@@ -736,6 +739,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   carriers stays within max(cap, its existing rows), and the sample shrinks until a draw fills its
   size. A feed that carries the other feeds' stories therefore limits the sample (and shows in the
   report's per-feed counts, which now count every carried article) instead of exceeding the cap.
+  A draw prefers, within a stratum, the article with the fewest carriers, and a size it cannot fill
+  gets a second, exclusive-first attempt before the sample shrinks, so a shared article never uses
+  up another feed's room while an exclusive one is left.
   Otherwise English rows would stay under `langs: ['sk']`, or a sample would exceed its recorded
   target or cap. A parameter the version never recorded constrains nothing. The widened values are
   recorded on the version even when the draw adds nothing. Repeated languages are recorded once.

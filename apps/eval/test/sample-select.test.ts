@@ -179,6 +179,28 @@ describe('selectLanguageSample', () => {
     expect(result.cap).toBe(Math.floor(result.size / 10));
   });
 
+  it('keeps a feasible sample when a shared article competes with exclusive ones', () => {
+    // Ten feeds with one exclusive article each (cap 1 at size 10); feed f0 also carries an article
+    // f1 carries too. Taking it would leave f1 with no room and collapse the sample.
+    const pool: SelectItem[] = Array.from({ length: 10 }, (_, f) => ({
+      articleId: `e${f}`,
+      feedId: `f${f}`,
+      day: '2026-09-10',
+    }));
+    pool.push({ articleId: 'shared', feedId: 'f0', carriers: ['f0', 'f1'], day: '2026-09-10' });
+    for (let i = 0; i < 20; i += 1) {
+      const result = selectLanguageSample({
+        fresh: pool,
+        existing: [],
+        target: 10,
+        feedCapShare: 0.1,
+        seed: `s${i}`,
+      });
+      expect(result.size).toBe(10);
+      expect(result.added).not.toContain('shared');
+    }
+  });
+
   it('draws nothing when no language article is eligible', () => {
     const result = selectLanguageSample({
       fresh: [],

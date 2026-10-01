@@ -148,7 +148,7 @@ export function selectLanguageSample(input: SelectInput): SelectResult {
    * holding the fewest of its selected articles (earlier day first), in the day's seeded order.
    * An article is taken only when every feed carrying it stays within max(cap, its existing rows).
    */
-  const draw = (n: number) => {
+  const draw = (n: number, exclusiveFirst: boolean) => {
     const cap = feedCap(n, input.feedCapShare);
     const limitOf = (feedId: string) => Math.max(cap, carrierExisting.get(feedId) ?? 0);
     const count = new Map(carrierExisting);
@@ -167,27 +167,42 @@ export function selectLanguageSample(input: SelectInput): SelectResult {
       taken.set(item.feedId, perDay);
     }
     // The next article a stratum would give, dropping those that no longer fit (counts only grow).
-    const next = (feedId: string): { day: string; item: SelectItem } | null => {
+    // Among the articles that fit, the one with the fewest carriers comes first, so an article
+    // shared with another feed does not use up that feed's room while an exclusive one is left; in
+    // `exclusiveFirst` mode that preference outranks the day spread.
+    const next = (feedId: string): { day: string; index: number; item: SelectItem } | null => {
       const byDay = pools.get(feedId);
       if (byDay === undefined) return null;
       const perDay = taken.get(feedId);
       const days = [...byDay.keys()].sort(
         (a, b) => (perDay?.get(a) ?? 0) - (perDay?.get(b) ?? 0) || byKey(a, b),
       );
+      let found: { day: string; index: number; item: SelectItem } | null = null;
       for (const day of days) {
         const list = byDay.get(day) ?? [];
-        while (list.length > 0 && !fits(list[0]!)) list.shift();
-        if (list.length > 0) return { day, item: list[0]! };
-        byDay.delete(day);
+        for (let i = list.length - 1; i >= 0; i -= 1) if (!fits(list[i]!)) list.splice(i, 1);
+        if (list.length === 0) {
+          byDay.delete(day);
+          continue;
+        }
+        let index = 0;
+        for (let i = 1; i < list.length; i += 1) {
+          if (carriersOf(list[i]!).length < carriersOf(list[index]!).length) index = i;
+        }
+        const item = list[index]!;
+        if (found === null || carriersOf(item).length < carriersOf(found.item).length) {
+          found = { day, index, item };
+        }
+        if (!exclusiveFirst || carriersOf(item).length === 1) break;
       }
-      return null;
+      return found;
     };
     const added: string[] = [];
     const days: Record<string, number> = {};
     for (const item of input.existing) days[item.day] = (days[item.day] ?? 0) + 1;
     let remaining = n - input.existing.length;
     while (remaining > 0) {
-      let best: { feedId: string; day: string; item: SelectItem } | null = null;
+      let best: { feedId: string; day: string; index: number; item: SelectItem } | null = null;
       for (const feedId of feedIds) {
         const candidate = next(feedId);
         if (candidate === null) continue;
@@ -205,7 +220,7 @@ export function selectLanguageSample(input: SelectInput): SelectResult {
         }
       }
       if (best === null) break;
-      pools.get(best.feedId)?.get(best.day)?.shift();
+      pools.get(best.feedId)?.get(best.day)?.splice(best.index, 1);
       for (const c of carriersOf(best.item)) count.set(c, (count.get(c) ?? 0) + 1);
       const perDay = taken.get(best.feedId) ?? new Map<string, number>();
       perDay.set(best.day, (perDay.get(best.day) ?? 0) + 1);
@@ -224,11 +239,16 @@ export function selectLanguageSample(input: SelectInput): SelectResult {
     const existing = existingByFeed.get(feedId)?.length ?? 0;
     return { existing, available: existing + (freshByFeed.get(feedId)?.length ?? 0) };
   });
+  // Each size gets a second, exclusive-first attempt before it is given up.
+  const attempt = (size: number) => {
+    const spread = draw(size, false);
+    return input.existing.length + spread.added.length >= size ? spread : draw(size, true);
+  };
   let n = feasibleSize(strata, input.target, input.feedCapShare);
-  let result = draw(n);
+  let result = attempt(n);
   while (input.existing.length + result.added.length < n) {
     n = Math.min(n - 1, input.existing.length + result.added.length);
-    result = draw(n);
+    result = attempt(n);
   }
 
   const allFeeds = [...carrierAvailable.keys()].sort(byKey);

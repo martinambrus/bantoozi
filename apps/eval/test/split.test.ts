@@ -39,6 +39,28 @@ describe('assignSplits', () => {
     expect(count(first, 'dev')).toBe(19);
   });
 
+  it("charges a new copy of a known story to the group's original language", () => {
+    // A Czech copy of an English story already on the test side, and 10 fresh Czech stories.
+    const items: SplitItem[] = [
+      { articleId: '900', lang: 'cs', storyGroupId: 'k' },
+      ...Array.from({ length: 10 }, (_, i) => ({
+        articleId: `${910 + i}`,
+        lang: 'cs',
+        storyGroupId: `c${i}`,
+      })),
+    ];
+    const known = new Map([['k', 'test' as const]]);
+    const knownCounts = new Map([
+      ['cs', { dev: 7, test: 3 }],
+      ['en', { dev: 0, test: 5 }],
+    ]);
+    const splits = assignSplits(items, 'seed', known, knownCounts, new Map([['k', 'en']]));
+    expect(splits.get('900')).toBe('test');
+    // Czech: 7 + 3 known + 10 fresh = 20, so 14 development: 7 of the fresh. Charging the copy to
+    // Czech instead would make it 21 and 15.
+    expect(count(splits, 'dev')).toBe(7);
+  });
+
   it('picks the whole-group subset nearest the target, not a greedy prefix', () => {
     const sizes = new Map([
       ['a', 1],

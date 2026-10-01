@@ -79,6 +79,7 @@ export async function buildSampleRows(
     seed,
     known,
     knownCounts,
+    groupLang,
   );
   const rows = snapshots.map((snapshot) => ({
     articleId: snapshot.articleId,
