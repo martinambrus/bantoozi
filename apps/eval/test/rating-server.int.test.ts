@@ -4,6 +4,7 @@ import {
   createRaterSession,
   findRaterByToken,
   freezeDataset,
+  nextDatasetVersion,
   getDataset,
   headDataset,
   listDatasets,
@@ -846,9 +847,11 @@ describe('rating corrections after a freeze (spec 10 §2.1)', () => {
     if (older.frozenAt === null) {
       await rdb.db.transaction((tx) => freezeDataset(tx, older.version));
     }
-    await createDataset(rdb.db, { version: 'golden-x1', seed: 'seed-x', params: {} });
-    expect((await headDataset(rdb.db))!.version).toBe('golden-x1');
-    expect(await loadSample(rdb.db, 'golden-x1')).toEqual([]);
+    // It took the name the older lineage's next version would get (`eval sample --version` may).
+    const unrelated = nextDatasetVersion(older.version);
+    await createDataset(rdb.db, { version: unrelated, seed: 'seed-x', params: {} });
+    expect((await headDataset(rdb.db))!.version).toBe(unrelated);
+    expect(await loadSample(rdb.db, unrelated)).toEqual([]);
 
     const res = await r.browser.get('/r/a/3');
     expect(res.statusCode).toBe(200);
@@ -859,10 +862,11 @@ describe('rating corrections after a freeze (spec 10 §2.1)', () => {
     await r.browser.post('/r/a/3/rate', { rating: 'like' });
     const corrected = (await headDataset(rdb.db))!;
     expect(corrected.parentVersion).toBe(older.version);
+    expect(corrected.version).toBe(nextDatasetVersion(unrelated));
     expect(corrected.params).toMatchObject({ correctionOf: older.version });
     expect((await loadSample(rdb.db, corrected.version)).length).toBe(
       (await loadSample(rdb.db, older.version)).length,
     );
-    expect((await loadSample(rdb.db, 'golden-x1')).length).toBe(0);
+    expect((await loadSample(rdb.db, unrelated)).length).toBe(0);
   });
 });

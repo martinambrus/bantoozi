@@ -19,9 +19,10 @@ import {
   getDataset,
   headDataset,
   lockDatasetAdditions,
-  nextDatasetVersion,
+  unusedDatasetVersion,
   type DatasetRow,
 } from './datasets.js';
+import { SAMPLE_EXCLUDED_STATES } from './collection.js';
 import { EVAL_USER_EMAIL } from './system-user.js';
 
 /**
@@ -336,7 +337,7 @@ export async function recentUnsampledCandidates(
                  AND fi.first_seen_at >= ${input.since.toISOString()}::timestamptz
                GROUP BY fi.article_id) recent ON recent.article_id = a.id
        WHERE a.lang = ANY(${sql.param([...input.langs])}::text[])
-         AND a.pipeline_state NOT IN ('stale', 'failed')
+         AND a.pipeline_state <> ALL(${sql.param([...SAMPLE_EXCLUDED_STATES])}::text[])
          AND NOT EXISTS (SELECT 1 FROM eval.sample s
                           WHERE s.dataset_version = ${input.version} AND s.article_id = a.id)
     ) ranked
@@ -347,7 +348,8 @@ export async function recentUnsampledCandidates(
 
 /**
  * Share-lock planned top-up articles (`FOR SHARE OF a`, in id order) and return those that still
- * qualify: the same language as planned, and not stale or failed. The ingest-only worker cannot
+ * qualify: the same language as planned, and extracted or later (not ingested, stale or failed, as
+ * in the sample draw). The ingest-only worker cannot
  * change a locked article until the transaction ends, so the snapshots built afterwards in the same
  * transaction see exactly what was revalidated here. Must run inside a transaction.
  */
@@ -368,8 +370,7 @@ export async function lockTopUpArticles(
       (row) =>
         row.lang !== null &&
         row.lang === planned.get(row.id) &&
-        row.pipeline_state !== 'stale' &&
-        row.pipeline_state !== 'failed',
+        !(SAMPLE_EXCLUDED_STATES as readonly string[]).includes(row.pipeline_state),
     )
     .map((row) => row.id);
 }
@@ -530,7 +531,7 @@ export async function openDatasetForCorrection(
   }
   const current = await getDataset(tx, head.version);
   if (current === null || current.frozenAt === null) return null;
-  const version = nextDatasetVersion(current.version);
+  const version = await unusedDatasetVersion(tx, current.version);
   await createDataset(tx, {
     version,
     parentVersion: current.version,

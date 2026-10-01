@@ -9,7 +9,7 @@ import {
   loadSample,
   lockDataset,
   lockDatasetAdditions,
-  nextDatasetVersion,
+  unusedDatasetVersion,
   type Database,
   type DatasetSplit,
   type SampleRowInput,
@@ -104,7 +104,7 @@ export async function addArticlesToDataset(
     let createdFrom: string | null = null;
     const locked = await lockDataset(tx, head.version);
     if (locked !== null && locked.frozenAt !== null) {
-      version = nextDatasetVersion(head.version);
+      version = await unusedDatasetVersion(tx, head.version);
       await createDataset(tx, {
         version,
         parentVersion: head.version,

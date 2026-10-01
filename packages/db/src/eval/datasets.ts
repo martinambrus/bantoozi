@@ -94,6 +94,17 @@ export function nextDatasetVersion(version: string): string {
   return match === null ? `${version}-v2` : `${match[1]}${Number(match[2]) + 1}`;
 }
 
+/**
+ * The next version name after `version` that no dataset uses yet. Versions are named per lineage
+ * (`golden-v1` → `golden-v2`), but `eval sample --version` may already have taken a name for an
+ * unrelated lineage, so the counter skips past it instead of failing on the unique key.
+ */
+export async function unusedDatasetVersion(db: Executor, version: string): Promise<string> {
+  let next = nextDatasetVersion(version);
+  while ((await getDataset(db, next)) !== null) next = nextDatasetVersion(next);
+  return next;
+}
+
 export async function createDataset(
   tx: Executor,
   input: {

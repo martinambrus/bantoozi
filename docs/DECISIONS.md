@@ -814,6 +814,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   it: an independent lineage started by `eval sample --version` never strands earlier assignments.
   A rating or rating-withdrawing skip opens the next version of the lineage holding the article
   (the head when it does, else the newest lineage tip that does), so a later freeze captures it.
+  Every new version takes the next unused name after its parent (`eval sample --version` may already
+  have used the plain successor). Top-ups, like the sample draw, take only extracted-or-later
+  articles: an `ingested` one (e.g. re-queued by a content update) has no current body yet.
   Spec 10 §2.2 updated. The planned top-up articles are share-locked (`FOR SHARE OF a`, in id
   order) and revalidated in that transaction (same language, not stale or failed) before their
   snapshots are built. A no-longer-eligible article is dropped (whenever the plan held top-ups it is

@@ -12,7 +12,7 @@ import {
   lockDatasetAdditions,
   lockRater,
   lockTopUpArticles,
-  nextDatasetVersion,
+  unusedDatasetVersion,
   openDatasetForCorrection,
   recentUnsampledCandidates,
   sampleCandidates,
@@ -232,7 +232,7 @@ async function addTopUps(
   let createdFrom: string | null = null;
   const locked = await lockDataset(tx, head.version);
   if (locked !== null && locked.frozenAt !== null) {
-    version = nextDatasetVersion(head.version);
+    version = await unusedDatasetVersion(tx, head.version);
     await createDataset(tx, {
       version,
       parentVersion: head.version,

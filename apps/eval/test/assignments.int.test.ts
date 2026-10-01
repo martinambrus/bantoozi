@@ -441,21 +441,26 @@ describe('ensureAssignments', () => {
 
   it('drops a planned top-up article that no longer qualifies when it is locked', async () => {
     const [feed] = await addGoldenFeeds(rdb, 'en', 1);
-    const [stale, moved, fine] = await addArticles(
+    const [stale, moved, fine, pending] = await addArticles(
       rdb,
       feed!.id,
       'en',
-      3,
+      4,
       new Date(now.getTime() - DAY),
       (i) => `revalidated top-up ${i}`,
     );
     await rdb.owner.query(`UPDATE articles SET pipeline_state = 'stale' WHERE id = $1`, [stale]);
     await rdb.owner.query(`UPDATE articles SET lang = 'sk' WHERE id = $1`, [moved]);
+    // A content update sent this one back to extraction: its body and metadata are not current.
+    await rdb.owner.query(`UPDATE articles SET pipeline_state = 'ingested' WHERE id = $1`, [
+      pending,
+    ]);
     const kept = await rdb.db.transaction((tx) =>
       lockTopUpArticles(tx, [
         { articleId: stale!, lang: 'en' },
         { articleId: moved!, lang: 'en' },
         { articleId: fine!, lang: 'en' },
+        { articleId: pending!, lang: 'en' },
       ]),
     );
     expect(kept).toEqual([fine]);

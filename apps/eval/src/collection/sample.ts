@@ -9,7 +9,7 @@ import {
   lockSampleCarriers,
   lockDataset,
   lockDatasetAdditions,
-  nextDatasetVersion,
+  unusedDatasetVersion,
   SAMPLE_EXCLUDED_STATES,
   updateDatasetParams,
   type Database,
@@ -182,7 +182,7 @@ export async function drawSample(
         version = FIRST_VERSION;
       } else if (base.frozenAt !== null) {
         parent = base;
-        version = nextDatasetVersion(base.version);
+        version = await unusedDatasetVersion(tx, base.version);
       } else {
         version = base.version;
       }
