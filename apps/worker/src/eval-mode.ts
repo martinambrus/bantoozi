@@ -64,7 +64,11 @@ export interface HeartbeatOptions {
   evalIngestOnly: boolean;
   envCredentials: readonly ('typesafe' | 'ollama')[];
   logger: HeartbeatLogger;
-  /** Called once when the database turned golden under an ordinary worker. */
+  /**
+   * Called once when the database turned golden under an ordinary worker after startup. A golden
+   * database at startup is not reported here: `startHeartbeat` rejects with the error instead, so
+   * the caller aborts before it holds a heartbeat handle.
+   */
   onGoldenDatabase: (error: GoldenDatabaseError) => void;
   intervalMs?: number;
   now?: () => Date;
@@ -77,7 +81,10 @@ export interface Heartbeat {
   stop(): Promise<void>;
 }
 
-/** Write the first heartbeat now, then every `intervalMs`. */
+/**
+ * Write the first heartbeat now, then every `intervalMs`. Rejects with `GoldenDatabaseError` when an
+ * ordinary worker finds a golden database on that first beat (nothing is written then).
+ */
 export async function startHeartbeat(options: HeartbeatOptions): Promise<Heartbeat> {
   const now = options.now ?? (() => new Date());
   let violated = false;
@@ -99,6 +106,9 @@ export async function startHeartbeat(options: HeartbeatOptions): Promise<Heartbe
     })[options.processId];
     if (entry === undefined) throw new Error('heartbeat entry missing after validation');
     await recordWorkerHeartbeat(options.db, options.processId, entry, at);
+  }
+  if (!options.evalIngestOnly && (await isGoldenDatabase(options.db))) {
+    throw new GoldenDatabaseError();
   }
   await beat();
   const timer = setInterval(() => {

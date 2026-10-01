@@ -312,4 +312,28 @@ describe('golden database guard and heartbeat (M3a-T1, D-96)', () => {
     await expect(assertWorkerMode(db, false)).rejects.toBeInstanceOf(GoldenDatabaseError);
     await expect(assertWorkerMode(db, true)).resolves.toBeUndefined();
   });
+
+  it('rejects startHeartbeat when the database is already golden on the first beat', async () => {
+    await db.transaction(async (tx) => ensureEvalUser(tx));
+    let called = false;
+    await expect(
+      startHeartbeat({
+        db,
+        processId: 'ordinary:2',
+        queues: ['article.enrich'],
+        evalIngestOnly: false,
+        envCredentials: [],
+        logger: silent,
+        onGoldenDatabase: () => {
+          called = true;
+        },
+        intervalMs: 3_600_000,
+      }),
+    ).rejects.toBeInstanceOf(GoldenDatabaseError);
+    expect(called).toBe(false);
+    const entries = await owner.query<{ value: Record<string, unknown> }>(
+      `SELECT value FROM settings WHERE key = 'worker.heartbeat'`,
+    );
+    expect(entries.rows[0]?.value?.['ordinary:2']).toBeUndefined();
+  });
 });

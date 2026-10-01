@@ -119,31 +119,14 @@ const overdue = await enqueueOverdueHousekeeping(
 );
 if (overdue.length > 0) logger.info({ overdue }, 'overdue housekeeping enqueued');
 const relay = startOutboxRelay(db, pgBossBroker(boss), { handlers, logger });
-const heartbeat: Heartbeat = await startHeartbeat({
-  db,
-  processId: `${hostname()}:${process.pid}`,
-  queues: registration.consuming,
-  evalIngestOnly: config.evalIngestOnly,
-  envCredentials: [
-    ...(config.typesafeApiKey ? (['typesafe'] as const) : []),
-    ...(config.ollamaApiKey ? (['ollama'] as const) : []),
-  ],
-  logger,
-  onGoldenDatabase: (error) => {
-    logger.error({ err: error }, 'stopping: the database became a golden evaluation database');
-    process.exitCode = 1;
-    void shutdown('golden-database');
-  },
-});
-logger.info({ ...registration, evalIngestOnly: config.evalIngestOnly }, 'worker started');
-
 let stopping = false;
+let heartbeat: Heartbeat | undefined;
 async function shutdown(signal: string): Promise<void> {
   if (stopping) return;
   stopping = true;
   logger.info({ signal }, 'worker stopping');
   try {
-    await heartbeat.stop();
+    await heartbeat?.stop();
     await relay.stop();
     await boss.stop({ graceful: true, timeout: 20_000, wait: true });
     await models.close();
@@ -153,5 +136,33 @@ async function shutdown(signal: string): Promise<void> {
     process.exitCode = 1;
   }
 }
+try {
+  heartbeat = await startHeartbeat({
+    db,
+    processId: `${hostname()}:${process.pid}`,
+    queues: registration.consuming,
+    evalIngestOnly: config.evalIngestOnly,
+    envCredentials: [
+      ...(config.typesafeApiKey ? (['typesafe'] as const) : []),
+      ...(config.ollamaApiKey ? (['ollama'] as const) : []),
+    ],
+    logger,
+    onGoldenDatabase: (error) => {
+      logger.error({ err: error }, 'stopping: the database became a golden evaluation database');
+      process.exitCode = 1;
+      void shutdown('golden-database');
+    },
+  });
+} catch (error) {
+  // The database turned golden between the startup check and the first beat (or the beat failed):
+  // stop what already runs instead of serving it.
+  logger.error({ err: error }, 'worker heartbeat could not start');
+  process.exitCode = 1;
+  await shutdown('heartbeat-start');
+}
+if (!stopping) {
+  logger.info({ ...registration, evalIngestOnly: config.evalIngestOnly }, 'worker started');
+}
+
 process.once('SIGTERM', () => void shutdown('SIGTERM'));
 process.once('SIGINT', () => void shutdown('SIGINT'));
