@@ -513,13 +513,19 @@ export async function openDatasetForCorrection(
    * lineage whose tip holds the article (`eval sample --version` may have started several), and
    * assignments record no version: each such frozen tip gets its next open version, the head's (or
    * else the newest tip's) last, so it stays the head. With no tip holding it, the head is used.
+   * Cards are ground truth for every article, so a `'cards'` change opens every lineage tip.
    */
   articleId?: string,
 ): Promise<{ version: string; createdFrom: string } | null> {
   // The additions lock first, then the dataset row: the same order as the freeze and top-up paths,
   // so a mutation racing a run's freeze waits instead of deadlocking.
   await lockDatasetAdditions(tx);
-  const tips = articleId === undefined ? [] : await lineageTipsHolding(tx, articleId);
+  const tips =
+    cause === 'cards'
+      ? await lineageTips(tx, null)
+      : articleId === undefined
+        ? []
+        : await lineageTips(tx, articleId);
   if (tips.length === 0) {
     const head = await headDataset(tx);
     return head === null ? null : openNextVersion(tx, head, cause);
@@ -564,16 +570,17 @@ async function openNextVersion(
 }
 
 /**
- * Every lineage tip (a version no other version names as parent) whose sample holds `articleId`,
- * the preferred one last: the head when it holds it, else the newest such tip.
+ * Every lineage tip (a version no other version names as parent), or only those whose sample holds
+ * `articleId`, the preferred one last: the head when it is one, else the newest such tip.
  */
-async function lineageTipsHolding(tx: Transaction, articleId: string): Promise<DatasetRow[]> {
+async function lineageTips(tx: Transaction, articleId: string | null): Promise<DatasetRow[]> {
   const head = await headDataset(tx);
   const result = await tx.execute<{ version: string }>(sql`
     SELECT d.version FROM eval.datasets d
      WHERE NOT EXISTS (SELECT 1 FROM eval.datasets c WHERE c.parent_version = d.version)
-       AND EXISTS (SELECT 1 FROM eval.sample s
-                    WHERE s.dataset_version = d.version AND s.article_id = ${articleId}::bigint)
+       AND (${articleId}::bigint IS NULL
+            OR EXISTS (SELECT 1 FROM eval.sample s
+                        WHERE s.dataset_version = d.version AND s.article_id = ${articleId}::bigint))
      ORDER BY (d.version = ${head?.version ?? null}) IS TRUE, d.created_at, d.version`);
   const tips: DatasetRow[] = [];
   for (const row of result.rows) {

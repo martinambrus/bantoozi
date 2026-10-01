@@ -12,6 +12,7 @@ import {
   loadSample,
   raterProgress,
   reissueRaterToken,
+  removeRaterCard,
   revokeRater,
   saveFacetLabels,
   setRaterFeeds,
@@ -914,5 +915,21 @@ describe('rating corrections after a freeze (spec 10 §2.1)', () => {
     expect(grandchildren.map((d) => d.parentVersion).sort()).toEqual(
       children.map((c) => c.version).sort(),
     );
+
+    // A card change is ground truth for every article, so it opens every frozen lineage tip.
+    for (const g of grandchildren) await rdb.db.transaction((tx) => freezeDataset(tx, g.version));
+    const card = await rdb.owner.query<{ card_id: string }>(
+      'SELECT card_id::text FROM eval.rater_cards WHERE rater_id = $1 LIMIT 1',
+      [r.rater.id],
+    );
+    await rdb.db.transaction((tx) => removeRaterCard(tx, r.rater.id, card.rows[0]!.card_id));
+    const afterCards = (await listDatasets(rdb.db)).filter((d) =>
+      grandchildren.some((g) => g.version === d.parentVersion),
+    );
+    expect(afterCards.map((d) => d.parentVersion).sort()).toEqual(
+      grandchildren.map((g) => g.version).sort(),
+    );
+    for (const child of afterCards)
+      expect(child.params).toMatchObject({ cardsChangedAfter: child.parentVersion });
   });
 });
