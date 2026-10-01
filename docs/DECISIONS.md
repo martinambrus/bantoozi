@@ -805,7 +805,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `developmentOnly`, `baseRunId` and `replay`, and records the exact card text sent: english mode
   translates the cards before the run row is written. A `translation` answer key freezes article
   translations per run. Every executed run freezes its dataset version (idempotent); the E5 stub
-  does not. Spec 10 §3 updated.
+  does not. In translated-state runs (B1-T, E3, E3b, E4) an article whose translation failed or was
+  unusable is answered on native text, tagged `variant: 'native'`, excluded from valid coverage and
+  counted in `results.translationFallbacks`, so the run ends `partial`; a resume reuses an answer only
+  when its variant matches. Spec 10 §3 updated.
 - D-111: 2026-10-01 M3a-T6 — eval routers use a process-local circuit breaker, so an evaluation
   never trips or reads the production breaker (spec 04 §1). The LLM fallback is off and the pinned
   engine has no automatic fallback, so a run never mixes engines silently.

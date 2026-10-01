@@ -27,7 +27,7 @@ import {
   type RunAnswerInput,
 } from '@bantoozi/db';
 import { OLLAMA_PRICE_TABLE_VERSION, type EngineLogger } from '@bantoozi/engine';
-import { ENRICH_V1, MATCH_V1, type Answer } from '@bantoozi/questions';
+import { ENRICH_V1, MATCH_V1, type Answer, type StateVariant } from '@bantoozi/questions';
 import type { CardAnswer } from '@bantoozi/ranker';
 import { parseSetting, type CardTextMode, type JsonValue } from '@bantoozi/shared';
 import { canonicalSha256 } from '@bantoozi/shared/server';
@@ -171,6 +171,12 @@ export interface RunResults {
     byRater: Record<string, { expected: number; valid: number }>;
     enrich?: Record<string, { expected: number; valid: number }>;
   };
+  /**
+   * Translated-state experiments only: articles per language whose translation failed or was
+   * graded unusable, so they were answered on native text. Their answers carry `variant: 'native'`
+   * and are not valid coverage (the translated variant was never evaluated).
+   */
+  translationFallbacks?: Record<string, number>;
   cost: {
     estimatedUsd: number;
     billedUsd: number;
@@ -542,15 +548,43 @@ function cardRow(
   cardId: string,
   key: string,
   result: CardResult,
+  variant?: StateVariant,
 ): RunAnswerInput {
+  const tag = variant === undefined ? {} : { variant };
   return {
     articleId,
     cardId,
     questionKey: key,
     answer: result.ok
-      ? { ok: true, p: result.p, engine: result.engine, model: result.model, cached: result.cached }
-      : { ok: false, reason: result.reason },
+      ? {
+          ok: true,
+          p: result.p,
+          engine: result.engine,
+          model: result.model,
+          cached: result.cached,
+          ...tag,
+        }
+      : { ok: false, reason: result.reason, ...tag },
   };
+}
+
+/**
+ * Whether a translated-state run answered this article on native text instead (its translation
+ * failed or was graded unusable): a degraded observation that never counts as valid coverage.
+ */
+function translationFallback(plan: Plan, item: SampleItem, out: Execution): boolean {
+  if (plan.config.translation.articles === null || item.lang === 'en' || item.lang === 'und') {
+    return false;
+  }
+  const id = item.snapshot.articleId;
+  if (!out.translations.has(id)) return false;
+  return modelInputOf(item.snapshot, out.translations.get(id) ?? null).variant === 'native';
+}
+
+/** A stored answer is reused on resume only when it was made on the same article variant. */
+function sameVariant(stored: Record<string, unknown> | undefined, variant: StateVariant): boolean {
+  const recorded = stored?.['variant'];
+  return recorded === undefined || recorded === variant;
 }
 
 function existingTranslation(value: Record<string, unknown> | undefined): FrozenTranslation | null {
@@ -606,10 +640,14 @@ async function articleTranslation(
 }
 
 /** Stored complete Call A answers of an article (resume), or null. */
-function existingEnrich(plan: Plan, articleId: string): Record<string, unknown>[] | null {
+function existingEnrich(
+  plan: Plan,
+  articleId: string,
+  variant: StateVariant,
+): Record<string, unknown>[] | null {
   const keys = Object.keys(ENRICH_V1.questions);
   const values = keys.map((key) => plan.existing.get(answerKey(articleId, null, `enrich.${key}`)));
-  return values.every((value) => value?.['ok'] === true)
+  return values.every((value) => value?.['ok'] === true && sameVariant(value, variant))
     ? (values as Record<string, unknown>[])
     : null;
 }
@@ -630,7 +668,7 @@ async function processCardArticle(
   const revision = item.snapshot.contentRevision;
 
   // Call A, once per article and variant.
-  if (existingEnrich(plan, articleId) !== null) {
+  if (existingEnrich(plan, articleId, input.variant) !== null) {
     out.enrichValid.set(articleId, true);
   } else {
     const state = buildState(input, 'enrich');
@@ -653,7 +691,11 @@ async function processCardArticle(
                 variant: state.variant,
                 stateSha256: state.sha256,
               }
-            : { ok: false, reason: result.ok ? 'error:unanswered' : result.reason },
+            : {
+                ok: false,
+                reason: result.ok ? 'error:unanswered' : result.reason,
+                variant: state.variant,
+              },
       });
     }
   }
@@ -671,7 +713,11 @@ async function processCardArticle(
     const asks: CardAsk[] = [];
     for (const card of [...cards.values()].sort((a, b) => compareIds(a.cardId, b.cardId))) {
       const stored = plan.existing.get(answerKey(articleId, card.cardId, 'card'));
-      if (stored?.['ok'] === true && typeof stored['p'] === 'number') {
+      if (
+        stored?.['ok'] === true &&
+        typeof stored['p'] === 'number' &&
+        sameVariant(stored, input.variant)
+      ) {
         answers.set(card.cardId, {
           p: stored['p'],
           engine: stored['engine'] === 'llm' ? 'llm' : 'typesafe',
@@ -688,7 +734,7 @@ async function processCardArticle(
       const state = buildState(input, 'match');
       const results = await askCards(env, { articleId, revision, state, cards: asks });
       for (const [cardId, result] of results) {
-        rows.push(cardRow(articleId, cardId, 'card', result));
+        rows.push(cardRow(articleId, cardId, 'card', result, state.variant));
         const answer = cardAnswerOf(result);
         if (answer !== null) answers.set(cardId, answer);
       }
@@ -824,7 +870,11 @@ async function execute(
 function scoreRows(
   plan: Plan,
   out: Execution,
-): { rows: RunAnswerInput[]; coverage: RunResults['coverage'] } {
+): {
+  rows: RunAnswerInput[];
+  coverage: RunResults['coverage'];
+  translationFallbacks: Record<string, number> | null;
+} {
   const byLang: Record<string, { expected: number; valid: number }> = {};
   const byRater: Record<string, { expected: number; valid: number }> = {};
   const count = (lang: string, raterId: string, valid: boolean) => {
@@ -844,7 +894,20 @@ function scoreRows(
     for (const item of plan.e7 ?? []) {
       count(item.lang, item.raterId, out.e7Valid.get(`${item.raterId}|${item.articleId}`) === true);
     }
-    return { rows, coverage: { byLang, byRater } };
+    return { rows, coverage: { byLang, byRater }, translationFallbacks: null };
+  }
+
+  const fallback = new Set<string>();
+  let translationFallbacks: Record<string, number> | null = null;
+  if (plan.config.translation.articles !== null) {
+    translationFallbacks = {};
+    for (const articleId of [...out.translations.keys()].sort(compareIds)) {
+      const item = plan.samples.get(articleId);
+      if (item === undefined || item.lang === 'en' || item.lang === 'und') continue;
+      const degraded = translationFallback(plan, item, out);
+      translationFallbacks[item.lang] = (translationFallbacks[item.lang] ?? 0) + (degraded ? 1 : 0);
+      if (degraded) fallback.add(articleId);
+    }
   }
 
   const pairs =
@@ -906,12 +969,16 @@ function scoreRows(
         row = cardsScoreRow(cards, record);
         valid = cardsComplete(cards, record);
       }
-      count(item.lang, raterId, valid);
+      const degraded = fallback.has(articleId);
+      count(item.lang, raterId, valid && !degraded);
       rows.push({
         articleId,
         cardId: null,
         questionKey: `score.r${raterId}`,
-        answer: { ...row },
+        answer:
+          plan.config.translation.articles === null || item.lang === 'en'
+            ? { ...row }
+            : { ...row, variant: degraded ? 'native' : 'translated' },
       });
     }
   }
@@ -925,11 +992,11 @@ function scoreRows(
       const lang = plan.samples.get(articleId)?.lang ?? 'und';
       const cell = (enrich[lang] ??= { expected: 0, valid: 0 });
       cell.expected += 1;
-      if (out.enrichValid.get(articleId) === true) cell.valid += 1;
+      if (out.enrichValid.get(articleId) === true && !fallback.has(articleId)) cell.valid += 1;
     }
     coverage.enrich = enrich;
   }
-  return { rows, coverage };
+  return { rows, coverage, translationFallbacks };
 }
 
 /** The per-language cost split of a run (`results.cost.byLang`, consumed by the G1 budget). */
@@ -1188,6 +1255,9 @@ export async function runExperiment(
     const results: RunResults = {
       ...verdict,
       coverage: scored.coverage,
+      ...(scored.translationFallbacks === null
+        ? {}
+        : { translationFallbacks: scored.translationFallbacks }),
       cost: {
         // Totals are the sums of the per-language split (identical up to float rounding to the
         // estimate printed above, the engine_calls sum and the live savings counter).

@@ -483,6 +483,64 @@ describe('eval run (M3a-T6)', () => {
     expect(keys.rows.map((r) => r.question_key).sort()).toEqual([keyA, keyB].sort());
   });
 
+  it('a failed article translation falls back to native text, marked degraded and not valid', async () => {
+    // Record the LibreTranslate request of one Slovak article (B1-T makes no model calls).
+    ctx.libretranslate.reset();
+    const probe = runtime(ctx, { EVAL_CACHE_DIR: await freshCache() });
+    try {
+      await runExperiment(probe.rt, { experiment: 'B1-T', yes: true, gitSha: 'test' });
+    } finally {
+      await probe.rt.close();
+    }
+    const titles = await ctx.owner.query<{ id: string; title: string }>(
+      `SELECT id::text, title FROM articles WHERE lang = 'sk' ORDER BY id`,
+    );
+    const sent = ctx.libretranslate.requests
+      .filter((r) => r.path === '/translate')
+      .map((r) => r.body as { q?: unknown; source?: unknown })
+      .filter((b) => b.source === 'sk' && Array.isArray(b.q))
+      .map((b) => b.q as string[]);
+    const target = titles.rows.find((row) => sent.some((q) => q.includes(row.title)));
+    expect(target).toBeDefined();
+    const texts = sent.find((q) => q.includes(target!.title))!;
+    // That article's translation comes back empty (unusable); every other one translates.
+    ctx.libretranslate.reset({ translations: Object.fromEntries(texts.map((t) => [t, ''])) });
+
+    const { rt } = runtime(ctx, { EVAL_CACHE_DIR: await freshCache() });
+    let runId: string;
+    try {
+      const result = await runExperiment(rt, { experiment: 'E3', yes: true, gitSha: 'test' });
+      expect(result.status).toBe('partial');
+      runId = result.runId!;
+    } finally {
+      await rt.close();
+      ctx.libretranslate.reset();
+    }
+    const row = await runRow(ctx, runId);
+    const results = row.results as {
+      coverage: { byLang: Record<string, { expected: number; valid: number }> };
+      translationFallbacks: Record<string, number>;
+    };
+    expect(results.translationFallbacks).toEqual({ sk: 1 });
+    const sk = results.coverage.byLang['sk']!;
+    expect(sk.valid).toBeLessThan(sk.expected);
+    const en = results.coverage.byLang['en']!;
+    expect(en.valid).toBe(en.expected);
+    const variants = await ctx.owner.query<{ article_id: string; variant: string; n: number }>(
+      `SELECT article_id::text, answer->>'variant' AS variant, count(*)::int AS n
+         FROM eval.run_answers
+        WHERE run_id = $1 AND (question_key = 'card' OR question_key LIKE 'score.r%')
+          AND article_id IN (SELECT id FROM articles WHERE lang = 'sk')
+        GROUP BY 1, 2`,
+      [runId],
+    );
+    expect(variants.rows.length).toBeGreaterThan(1);
+    for (const v of variants.rows) {
+      expect(v.variant).toBe(v.article_id === target!.id ? 'native' : 'translated');
+    }
+    // The gate's run check reads this as not eligible (status partial, sk coverage short).
+  });
+
   it('`eval run B0 --yes` through the CLI', async () => {
     const out = await runCli(ctx, ['run', 'B0', '--yes', '--langs', 'en']);
     expect(out).toMatch(/B0 on golden-v1: estimated cost \$0\.0000/);
