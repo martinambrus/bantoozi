@@ -1,3 +1,4 @@
+import { canonicalSha256 } from '@bantoozi/shared/server';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -263,6 +264,36 @@ describe('development selection and test confirmation', () => {
     expect(assessments.get('E4')?.reasons.join(' ')).toMatch(/engine other than the pinned one/);
     expect(assessments.get('B1')?.reasons).toContain('status partial');
     expect(assessments.get('E5')?.reasons).toEqual(['no run']);
+  });
+
+  it('compares a language-subset run (E4 on SK only) with the reference restricted to it', () => {
+    const fixture = buildFixture();
+    const isSk = (id: string) => fixture.sample.get(id)?.lang === 'sk';
+    const e4 = (scoped: boolean) => {
+      const spec = standardSpecs().find((x) => x.experiment === 'E4')!;
+      const raw = makeRawRun(fixture, spec);
+      const config = raw.run.config as {
+        langs: string[];
+        cohort: { articleIds: string[]; sha: string };
+        ratings: { articleId: string }[];
+      };
+      config.langs = ['sk'];
+      if (scoped) {
+        const articleIds = config.cohort.articleIds.filter(isSk);
+        config.cohort = { articleIds, sha: canonicalSha256(articleIds) };
+        config.ratings = config.ratings.filter((r) => isSk(r.articleId));
+      }
+      return parseRunData(raw.run, raw.answers);
+    };
+    const withE4 = (run: RunData) =>
+      standardRuns(fixture).map((r) => (r.experiment === 'E4' ? run : r));
+    const scoped = setup(fixture, withE4(e4(true))).assessments.get('E4')!;
+    expect(scoped.reasons).not.toContain('cohort differs from the reference run');
+    expect(scoped.reasons).not.toContain('ratings differ from the reference run');
+    // An SK run that still carries the English cohort and ratings is not that subset.
+    const unscoped = setup(fixture, withE4(e4(false))).assessments.get('E4')!;
+    expect(unscoped.reasons).toContain('cohort differs from the reference run');
+    expect(unscoped.reasons).toContain('ratings differ from the reference run');
   });
 
   it('audits Call A answers and per-rater card answers for the pinned engine', () => {

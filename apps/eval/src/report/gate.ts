@@ -1,5 +1,6 @@
 import { mergeRankerConfig, type RankerThresholds } from '@bantoozi/ranker';
 import { compareBigIntStrings } from '@bantoozi/shared';
+import { canonicalSha256 } from '@bantoozi/shared/server';
 
 import {
   chooseCardMode,
@@ -120,8 +121,41 @@ export function assessGateRuns(
   dataset: GateDataset,
 ): Map<string, RunAssessment> {
   const reference = model.reference;
-  const cohortSha = reference?.config.cohort.sha ?? null;
-  const truth = reference === null ? null : groundTruthSha(reference.config);
+  // The reference's cohort and ground truth restricted to a run's languages: a run limited to a
+  // subset of them (E4 defaults to SK/CZ) is compared on that subset, never on the full hashes.
+  const expected = new Map<string, { cohortSha: string | null; truth: string | null }>();
+  const expectedFor = (langs: readonly string[]) => {
+    const key = [...new Set(langs)].sort().join(',');
+    const cached = expected.get(key);
+    if (cached !== undefined) return cached;
+    let value: { cohortSha: string | null; truth: string | null } = {
+      cohortSha: null,
+      truth: null,
+    };
+    if (reference !== null) {
+      const refLangs = new Set(reference.config.langs);
+      const wanted = new Set(langs);
+      const subset = wanted.size < refLangs.size && [...wanted].every((lang) => refLangs.has(lang));
+      if (subset) {
+        const inScope = (articleId: string) => wanted.has(model.sample.get(articleId)?.lang ?? '');
+        const articleIds = reference.config.cohort.articleIds.filter(inScope);
+        value = {
+          cohortSha: canonicalSha256(articleIds),
+          truth: groundTruthSha({
+            ...reference.config,
+            ratings: reference.config.ratings.filter((r) => inScope(r.articleId)),
+          }),
+        };
+      } else {
+        value = {
+          cohortSha: reference.config.cohort.sha,
+          truth: groundTruthSha(reference.config),
+        };
+      }
+    }
+    expected.set(key, value);
+    return value;
+  };
   const result = new Map<string, RunAssessment>();
   for (const experiment of GATE_EXPERIMENTS) {
     const run = runs.get(experiment) ?? null;
@@ -160,8 +194,8 @@ export function assessGateRuns(
         run.datasetVersion === dataset.version &&
         run.config.snapshotSha === dataset.snapshotSha &&
         run.config.splitSha === dataset.splitSha,
-      cohortMatches: run.config.cohort.sha === cohortSha,
-      groundTruthMatches: groundTruthSha(run.config) === truth,
+      cohortMatches: run.config.cohort.sha === expectedFor(run.config.langs).cohortSha,
+      groundTruthMatches: groundTruthSha(run.config) === expectedFor(run.config.langs).truth,
       // E6/E7 rerun subsets; their coverage is reported, not gated.
       coverage: informational
         ? { byLang: {}, byRater: {} }
