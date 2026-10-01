@@ -8,6 +8,7 @@ import {
   listDatasets,
   loadSample,
   removeRaterCard,
+  saveFacetLabels,
   setRaterFeeds,
 } from '@bantoozi/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -359,5 +360,31 @@ describe('ensureAssignments', () => {
       false,
     );
     expect((await listDatasets(rdb.db)).length).toBe(versions);
+  });
+
+  it('opens the next version before a facet label change under a frozen head', async () => {
+    const head = (await headDataset(rdb.db))!;
+    if (head.frozenAt === null) await rdb.db.transaction((tx) => freezeDataset(tx, head.version));
+    const articleId = sampled[0]!;
+    const save = (value: string) =>
+      rdb.db.transaction((tx) =>
+        saveFacetLabels(tx, {
+          labeler: 'owner',
+          articleId,
+          values: { 'facet.test': value },
+          now,
+        }),
+      );
+    await save('yes');
+    const changed = (await headDataset(rdb.db))!;
+    expect(changed).toMatchObject({ parentVersion: head.version, frozenAt: null });
+    expect(changed.params).toMatchObject({ facetsChangedAfter: head.version });
+    await rdb.db.transaction((tx) => freezeDataset(tx, changed.version));
+    // Saving the same values again changes nothing and creates no version.
+    const versions = (await listDatasets(rdb.db)).length;
+    await save('yes');
+    expect((await listDatasets(rdb.db)).length).toBe(versions);
+    await save('no');
+    expect((await listDatasets(rdb.db)).length).toBe(versions + 1);
   });
 });

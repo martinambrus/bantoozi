@@ -833,9 +833,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `eval.dataset_truth` (migration 0016) in the transaction that freezes the version, and every run
   on a frozen version builds its config from that snapshot (filtered by the run's raters, languages
   and split), never from the live tables. `eval.ratings` and `eval.assignments` keep one current row
-  per (rater, article), so a correction, a later assignment or a card change (each first creates the
-  next open version: `correctionOf`, `assignmentsAfter`, `cardsChangedAfter`) reaches only versions
-  frozen after it. A version frozen before 0016 gets its snapshot the next time a run freezes it.
+  per (rater, article), so a correction, a later assignment, a card change or a facet label change
+  (each first creates the next open version: `correctionOf`, `assignmentsAfter`,
+  `cardsChangedAfter`, `facetsChangedAfter`; saving unchanged labels creates none) reaches only
+  versions frozen after it. A version frozen before 0016 gets its snapshot the next time a run freezes it.
   Spec 10 §3 updated.
 - D-111: 2026-10-01 M3a-T6 — eval routers use a process-local circuit breaker, so an evaluation
   never trips or reads the production breaker (spec 04 §1). The LLM fallback is off and the pinned

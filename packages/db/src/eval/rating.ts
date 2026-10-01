@@ -465,16 +465,16 @@ export async function nextPendingPosition(
 /**
  * Before a rating correction (spec 10 §2.1: "once frozen, … rating corrections … create a new
  * version manifest"), before new assignments (the manifest's assignment membership, `cause`
- * `'assignments'`) or before a rater's card change (`'cards'`; runs read cards from the version's
- * freeze-time ground truth): when the head dataset version is frozen, create the next open version in
- * this transaction, copying every row unchanged (the top-up path; serialized by the additions
- * lock). Idempotent: an open head is only share-locked, so a concurrent freeze waits until this
+ * `'assignments'`), before a rater's card change (`'cards'`) or before a facet label change
+ * (`'facets'`; runs read cards and labels from the version's freeze-time ground truth): when the
+ * head dataset version is frozen, create the next open version in this transaction, copying every
+ * row unchanged (the top-up path; serialized by the additions lock). Idempotent: an open head is only share-locked, so a concurrent freeze waits until this
  * transaction commits and its manifest then includes the change. Earlier runs keep the exact
  * ratings they froze in their own config. Returns the version created, or null when none was.
  */
 export async function openDatasetForCorrection(
   tx: Transaction,
-  cause: 'rating' | 'assignments' | 'cards' = 'rating',
+  cause: 'rating' | 'assignments' | 'cards' | 'facets' = 'rating',
 ): Promise<{ version: string; createdFrom: string } | null> {
   const head = await headDataset(tx);
   if (head === null) return null;
@@ -498,7 +498,9 @@ export async function openDatasetForCorrection(
         ? { correctionOf: current.version }
         : cause === 'assignments'
           ? { assignmentsAfter: current.version }
-          : { cardsChangedAfter: current.version }),
+          : cause === 'cards'
+            ? { cardsChangedAfter: current.version }
+            : { facetsChangedAfter: current.version }),
     },
   });
   await copySampleRows(tx, current.version, version);
@@ -668,7 +670,11 @@ export async function facetLabelsOf(
   return Object.fromEntries(result.rows.map((row) => [row.question_key, row.value]));
 }
 
-/** Upsert all fields of one article for one labeller (one row per field). */
+/**
+ * Upsert all fields of one article for one labeller (one row per field). A change under a frozen
+ * head first creates the next open version ({@link openDatasetForCorrection}), so it reaches the
+ * next runs; saving unchanged values creates none.
+ */
 export async function saveFacetLabels(
   tx: Transaction,
   input: {
@@ -678,7 +684,11 @@ export async function saveFacetLabels(
     now: Date;
   },
 ): Promise<void> {
-  for (const [questionKey, value] of Object.entries(input.values)) {
+  const current = await facetLabelsOf(tx, input.labeler, input.articleId);
+  const entries = Object.entries(input.values);
+  if (entries.every(([questionKey, value]) => current[questionKey] === value)) return;
+  await openDatasetForCorrection(tx, 'facets');
+  for (const [questionKey, value] of entries) {
     await tx.execute(sql`
       INSERT INTO eval.facet_labels (labeler, article_id, question_key, value, created_at)
       VALUES (${input.labeler}, ${input.articleId}::bigint, ${questionKey}, ${value},
