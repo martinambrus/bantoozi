@@ -866,7 +866,7 @@ function bestProduced(rows: readonly TranslationInput[]): AnalysisTranslation | 
       best = row;
     }
   }
-  return best === null ? null : frozenTranslation({ ...best, createdAt: new Date(0) });
+  return best === null ? null : frozenTranslation(best);
 }
 
 /** The frozen Call A and Call B states (spec 05 §3.1) of the snapshot and its translation. */

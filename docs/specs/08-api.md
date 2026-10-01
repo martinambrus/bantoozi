@@ -116,7 +116,8 @@ Every per-user query runs under row-level security, and every limit that bounds 
 
 **`request-code` decision table.** "Mode" is the effective signup mode: `settings['signup_mode']` if
 set, otherwise `SIGNUP_MODE` (spec 02 §2). It is read on every request, so an admin change applies
-to the next one, and no row reads the environment value alone.
+to the next one, and no row reads the environment value alone. A stored value that no longer parses
+is logged and treated as `closed` for signups (D-122).
 
 | Situation | Email sent |
 |---|---|
@@ -135,7 +136,8 @@ to the next one, and no row reads the environment value alone.
   **5** verify attempts per code.
   `challenge_nonce` is a fresh UUID generated before insert, not the database identity id.
 - The requested `locale` and the `inviteCode` are stored on the `login_codes` row.
-- A new request invalidates older unconsumed codes for the email.
+- A new request invalidates older unconsumed codes for the email (it sets their `consumed_at`;
+  D-122).
 - Serialize requests/verifications for a normalized email (transaction advisory lock plus challenge
   row lock). Compare digests in constant time; atomically consume the code, create/restore the user,
   consume any invite and create the session. Concurrent correct verifications cannot create two
@@ -145,7 +147,7 @@ to the next one, and no row reads the environment value alone.
   signup eligibility then; a code is not a reserved invite. Use the same generic error for expired,
   consumed, incorrect or ineligible codes. A login code created for an existing user must not become
   a signup authorization if that user was purged in the meantime.
-- Emails come from localized templates (en/sk) in `packages/shared/src/mail/templates/` (shared with
+- Emails come from localized templates (en/sk) in `packages/shared/src/server/mail/templates.ts` (shared with
   the worker's alert emails), with a plain-text and an HTML part.
 - Public responses disclose neither account existence nor SMTP outcome. After committing the code,
   attempt synchronous SMTP delivery with a bounded timeout and keep plaintext only in request
@@ -191,9 +193,9 @@ email never hits the unique constraint through the signup path.
 
 | Endpoint | Body | Behaviour |
 |---|---|---|
-| `GET /invites` | — | My invites `[{code, email, createdAt, expiresAt, usedAt, url}]` and `invitesLeft` |
-| `POST /invites` | `{email?, note?}` | Atomically requires/decrements `invites_left > 0` under the user lock. Creates a CSPRNG code (10 chars, Crockford base32, expires in 30 days; retry unique collisions). If `email` is given, sends the invite email after commit (below) → `201 {code, url: PUBLIC_BASE_URL + '/join?code=' + code, emailSent?: boolean}` |
-| `POST /waitlist` | `{email, locale?, note?}` | Public. Upsert → `202`. Rate-limited per IP |
+| `GET /invites` | — | `{items: [{code, email, createdAt, expiresAt, usedAt, url}], invitesLeft}` |
+| `POST /invites` | `{email?, note?}` | Atomically requires/decrements `invites_left > 0` under the user lock. Creates a CSPRNG code (10 chars, Crockford base32, expires in 30 days; retry unique collisions). If `email` is given, sends the invite email after commit (below) → `201 {code, url: PUBLIC_BASE_URL + '/join?code=' + code, emailSent?: boolean}`. No slot left → `409 QUOTA_EXCEEDED {limit: 'invites', invitesLeft: 0}` (D-122) |
+| `POST /waitlist` | `{email, locale?, note?}` | Public. Upsert → `202 {next: 'waitlisted'}`. Rate-limited per IP |
 
 **Invite email** follows the auth-mail pattern of §2.1: there is no mail queue, and the invite code
 never enters an outbox payload. After the invite commits, attempt bounded synchronous SMTP delivery.
@@ -249,7 +251,7 @@ response or `GET /invites`. `POST /admin/waitlist/:id/invite` sends and reports 
 | `GET /feed-preferences` | — | Own remembered preferences, including unsubscribed bookmark sources: `[{feedId,imagePolicy,effectiveImagesAllowed}]` |
 | `PUT /feed-preferences/:feedId` | `{imagePolicy:'inherit'\|'allow'\|'block'}` | Upsert durable `user_feed_preferences`; require owned subscription, bookmark source or already-owned preference, return the effective policy. Never changes inference mode |
 | `DELETE /subscriptions/:feedId` | — | Delete, then `refresh_feed_subscribers`, `refresh_feed_cards`, `user.rank {full}`. The user's pending/running `analysis_requests` for the feed lose their demand, and the worker cancels them on their next attempt or `house.reconcile` (the API role has no update grant; the worker owns completion). Completed ones stay for learning (spec 11 §5) |
-| `POST /subscriptions/:feedId/mark-read` | `{olderThan, datasetVersion}` | Same operation as `/articles/mark-read` with `filter.feedId` fixed by the path; same scope, cap, receipt and undo contract |
+| `POST /subscriptions/:feedId/mark-read` | `{olderThan, datasetVersion}` | Same operation as `/articles/mark-read` with `filter: {lane: 'all', feedId}` fixed by the path and the default `minTier` (`prefs.defaultTier`), so `datasetVersion` is the one `GET /articles?lane=all&feedId=<id>` returned for `asOf = olderThan`; same scope, cap, receipt and undo contract. A feed without the caller's subscription is `404` |
 | `POST /subscriptions/import-opml` | multipart `file` (≤ 1 MB) | spec 03 §11. `200 {added, existing, invalid: [...]}`. New subscriptions start off; no inference/card backfill. Existing subscriptions retain mode. Quota `opmlMaxFeeds` and `maxFeeds` |
 | `GET /subscriptions/export-opml` | — | `text/x-opml` attachment |
 | `POST /subscriptions/folders/rename` | `{from, to}` | Rename a folder across the user's subscriptions and in `preferences.folderOrder` → `200 {count}` |
@@ -378,7 +380,9 @@ for the same dataset version. `bookmarks` is computed separately using bookmark-
 Folder/feed counts are scoped counts, not sums of globally folded lane counts.
 
 **Outdated scores:** if any eligible row has a missing/stale `score_version` or `rank_revision`
-(spec 06 §7), request a debounced full rank via the outbox. Taking only the newest version would
+(spec 06 §7), request a debounced full rank via the outbox (`user.rank {full:true, reason:'list'}`,
+deduplicated per user, without advancing `users.rank_revision`: the rows are already outdated, and a
+bump from a read would make every later read outdated again). Taking only the newest version would
 miss partially updated batches. Serve existing scores immediately and return `rankingPending`.
 Eligibility includes the user's inference-demand policy (§4.1). Plain untrained articles may remain
 in New indefinitely with `rankingPending:false`; neither reading nor polling authorizes a model
@@ -518,18 +522,18 @@ but cannot itself cause inference.
 
 | Endpoint | Body | Effect |
 |---|---|---|
-| `/articles/:id/read` | `{}` | Set `read_at` (expand in the list, when `markReadOnExpand`) |
+| `/articles/:id/read` | `{trigger?: 'expand'}` | Set `read_at` (expand in the list, when `markReadOnExpand`). The list's expand side effect sends `trigger:'expand'` and is recorded with `signalOrigin:'expand'` (spec 06 §8.2), never as an individual explicit read; the client can only weaken the recorded origin this way, never claim consent |
 | `/articles/:id/unread` | `{}` | Clear `read_at` and `archived_at`, record `unread`; invalidate cluster seen-story ranking where needed |
 | `/articles/:id/unhide` | `{}` | Clear only `archived_at`, record `unhide`, preserve read/rating state and rerank. A Never card or block/mute rule may still hide it; expose that explanation rather than silently deleting the user's rule |
 | `/articles/:id/open` | `{}` | Require a non-null safe original URL; otherwise `400 VALIDATION_FAILED`. Set `opened_at` and `read_at`, and record a `feedback_events` `open` (the user opened the original URL) |
-| `/articles/:id/dwell` | `{ms}` | Integer 0..1,800,000; require a prior open, clamp to elapsed time since it. Set `dwell_ms = max(existing, ms)` and record `dwell`. Includes `prompt: boolean` from spec 06 §10; atomically set `feedback_prompted_at` when true so two tabs cannot prompt twice. Dwell is only a weak signal, never proof of reading |
-| `/articles/:id/rating` | `{rating: 1 \| -1 \| null, reason?, hide?: boolean, analysisRequestId?}` | Set explicit state, never toggle server-side. Reason enum is `off_topic\|clickbait\|seen\|shallow\|promo\|other`, allowed only for -1; null/+1 clears it. Null also clears `rated_at` and leaves read/archive state alone; only non-null ratings mark read if `markReadOnRate`. `hide:true` sets `archived_at`; false/absent does not clear it. Records `rate`/`unrate`, applies spec 06 §8.4. The response adds `exampleSuggestion: {cardId, side: 'yes' \| 'no'} \| null` from spec 06 §10; a non-null one is also stored in the `rate` event's `value`, where the suggestion limits count it |
+| `/articles/:id/dwell` | `{ms}` | Integer 0..1,800,000; require a prior open (`409 CONFLICT`, `details.reason: 'not_opened'`), clamp to elapsed time since it. Set `dwell_ms = max(existing, ms)` and record `dwell`. Includes `prompt: boolean` from spec 06 §10; atomically set `feedback_prompted_at` when true so two tabs cannot prompt twice. Dwell is only a weak signal, never proof of reading |
+| `/articles/:id/rating` | `{rating: 1 \| -1 \| null, reason?, hide?: boolean, analysisRequestId?, selection?: 'calibration'}` | Set explicit state, never toggle server-side. Reason enum is `off_topic\|clickbait\|seen\|shallow\|promo\|other`, allowed only for -1; null/+1 clears it. Null also clears `rated_at` and leaves read/archive state alone; only non-null ratings mark read if `markReadOnRate`. `hide:true` sets `archived_at`; false/absent does not clear it. Records `rate`/`unrate`, applies spec 06 §8.4. The response adds `exampleSuggestion: {cardId, side: 'yes' \| 'no'} \| null` from spec 06 §10; a non-null one is also stored in the `rate` event's `value`, where the suggestion limits count it. `selection:'calibration'` marks a rating of a calibration-round item; the event stores `selection: {method:'calibration', sourceLane}` (spec 06 §10) |
 | `/articles/:id/prompt-answer` | `{liked: boolean, analysisRequestId?}` | Store as a rating (`rating = liked ? 1 : -1`, `rated_at = now`), record `prompt_answer`, and apply the learn trigger |
 | `/articles/:id/bookmark` / `DELETE` of the same path | `{mediaPolicyFeedId?}` on POST; no body on DELETE | Set/clear bookmark and record the event. POST validates the chosen owned display feed, captures existing full trusted body transactionally or records pending status and a local capture intent. Return capture status immediately. Capture generation fences late completions after unbookmark/rebookmark; no inference demand is created |
 | `/articles/:id/bookmark/retry-capture` | `{captureGeneration}` | Explicit local fetch/extraction retry for an owned partial/failed bookmark; keep the existing snapshot readable until a replacement is safely captured, then bind atomically. No paid classification/translation call → `202 {item, mutationId}` |
 | `/articles/:id/labels` | `{labelId}` | Add to `label_ids`, remove from `label_suggestions`, record neutral organization only; no positive/negative preference-learning signal. **Cards are not changed** (spec 05 §5.1). Label examples are explicit (§7) |
 | `DELETE /articles/:id/labels/:labelId` | — | Remove it, record `unlabel` |
-| `/articles/:id/mute-story` | `{days: 1\|3\|7\|30}` | Create a cluster for the article if it has none, create a `mute_story` rule with `expires_at`, enqueue `user.rank {full}` → `201 {rule}` |
+| `/articles/:id/mute-story` | `{days: 1\|3\|7\|30}` | Create a cluster for the article if it has none, create a `mute_story` rule with `expires_at` through the `POST /rules` path (§8: live-rule quota, an existing live mute of the story is returned with the later of both expiries), enqueue `user.rank {full}` → `201 {rule}` in the §8 rule shape. No reader fence: it changes no reader state |
 | `/articles/mark-read` | `{targets: [{id, stateVersion, contentRevision}]}` **or** `{filter: {lane, feedId?, folder?, labelId?, minTier?, olderThan}, datasetVersion}` | Explicit targets ≤500; filter uses §5.1 query semantics with `status=unread` and an inclusive arrival cutoff (§5.1) captured when confirming. Materialize/lock the displayed representatives once; no later arrivals. Maximum 5,000 targets; reject an oversized set rather than silently truncate. A changed dataset returns `STALE_STATE`. → `200 {count, mutationId}` |
 | `/articles/rate-bulk` | `{targets: [{id, stateVersion, contentRevision, analysisRequestId?}][1..200], rating: 1 \| -1 \| null}` | One transaction using single-rating semantics, per-item feedback snapshots and one coalesced learn/rank intent → `200 {count, mutationId, items}`. Explicit un-rate is supported; exact undo uses the endpoint below |
 | `/articles/undo` | `{mutationId}` | Restore the original mutation's captured reader fields (§5.4) → `200 {count, mutationId, items}` |
@@ -558,7 +562,9 @@ enabling them never retroactively opts old events into learning.
 The mutation receipt stores the target ids, affected reader fields' **before** values and resulting
 state versions for read/unread/unhide/rating/bookmark/label and bulk actions. Undo is accepted for 10 minutes
 after commit only if the receipt belongs to the user, has not already been undone and every target
-still has the receipt's resulting state version. It restores only fields changed by that action,
+still has the receipt's resulting state version. A receipt without undo data (open, dwell, mute-story,
+a no-op) is `409 CONFLICT` with `details.reason: 'not_undoable'`; another user's or an unknown
+receipt is `404`. It restores only fields changed by that action,
 increments state versions, records an `undo` event referencing the original mutation and requests
 the same rank/learn invalidation. It never writes old ranking-cache fields or fabricates a rating.
 An intervening device action/deleted label/inaccessible article returns `409 STALE_STATE` atomically;
@@ -601,12 +607,15 @@ needed by still-valid undo receipts, so undo does not refer to content already d
 ## 7. Cards, library, suggestions, labels
 
 ```ts
-Card = { id, kind: 'interest', title /* title_override ?? card.title */, interest, notFor, strength,
-         scopeFeedId, origin, isPrivateFork, examplesYes, examplesNo, topicIds, lang, createdAt }
+Card = { id, kind: 'interest', title /* title_override ?? localized card.title */, titleOverride,
+         interest, notFor, strength, scopeFeedId, origin, isPrivateFork, examplesYes, examplesNo,
+         topicIds, lang, librarySlug, createdAt }
 Label = { id /* card id */, name, color, definition, notFor, examplesYes, examplesNo, count /* articles labelled */ }
 ```
 
-Library cards are localized to the user's locale from `i18n`. Cards are **immutable** (spec 05 §5.1),
+Library cards are localized to the user's locale from `i18n`: `GET /library` and suggestions show
+the localized title and interest; a held card (`Card`) shows the localized title only, because its
+interest is the stored text an edit starts from. Cards are **immutable** (spec 05 §5.1),
 so every endpoint that changes text or examples returns the card with its possibly **new id**. The web
 client must replace its cached id.
 
@@ -619,7 +628,7 @@ client must replace its cached id.
 | `POST /cards/:id/examples` | `{articleId, side: 'yes' \| 'no'}` | Add the article title as an example (private fork, new id) → `{card}`. Quota `maxForks` |
 | `POST /cards/:id/examples/remove` | `{side, text}` | Remove an example (new fork id) → `{card}` |
 | `POST /cards/from-article` | `{articleId, interest, notFor?, title?, strength}` | Shared text card plus a private fork with the article title as `examples_yes` → `201 {card}`. Quotas `maxCards`, `maxForks` |
-| `GET /library` | `?topic=&q=` | Public cards (`visibility = 'public'`), localized, grouped by L1 topic |
+| `GET /library` | `?topic=&q=&cursor=&limit=` | Current public cards (`visibility = 'public'`, not retired, not an older library version), localized, ordered by L1 topic then id, in the paginated envelope; each carries `l1TopicId`, `version` and `held` |
 | `POST /library/:id/adopt` | `{strength, scopeFeedId?}` | Hold a library card. A superseded library version is `409 CONFLICT {reason: 'superseded'}` (D-39) |
 | `GET /library/updates` | — | Available immutable semantic successors for the user's library holdings: `[{currentCardId,newCardId,librarySlug,fromVersion,toVersion,diff,hasPrivateCustomization}]`. Private forks receive advisory notices only |
 | `POST /library/:id/updates/:newId/apply` | `{expectedCurrentCardId}` | Explicitly accept a validated successor for an unchanged held library card; replace the holding, retain strength/scope/display override, refresh authorized demand and invalidate answers by new identity → `200 {card,idChange}`. Custom/private forks require the explicit editor; never overwrite their examples |
@@ -635,7 +644,10 @@ client must replace its cached id.
 | `DELETE /labels/:id` | — | Remove the label, and remove its id from the user's `label_ids`/`label_suggestions` |
 
 `GET /topics` → the taxonomy (id, parent, names, level) for the web client.
-PATCH/adopt/example routes return `200 {card}` or `200 {label}` with the final id; deletes return
+Create routes return `201 {card|label, idChange: null, translation}`; PATCH/adopt/example/update routes
+return `200 {card, idChange, translation}` or `200 {label, idChange, translation}` with the final id,
+where `translation` is the non-blocking card-text status of spec 07 §5 (`null` when no new text was
+submitted or the answer is a receipt replay); deletes return
 `204`. `notFor:null` clears the field; `scopeFeedId:null` means all feeds. Fork/re-point transactions
 return `idChange: {from, to} | null` so queued client references can be reconciled. A stale old id
 not currently held by the user returns `404`; it must not create another implicit holding. Quotas
@@ -662,7 +674,7 @@ nor grants permission to analyze other articles.
 | Endpoint | Body | Behaviour |
 |---|---|---|
 | `GET /rules` | — | `[{id, kind, value, displayValue, createdAt, expiresAt}]` |
-| `POST /rules` | `{kind, value, expiresInDays?}` | Validate `value` per kind (feed id owned by a subscription, domain syntax, keyword 2–100 chars). `mute_story` requires `expiresInDays` ∈ {1, 3, 7, 30}, as `/articles/:id/mute-story` does; other kinds may omit it. Quota `maxRules`. Enqueue `user.rank {full}` → `201` |
+| `POST /rules` | `{kind, value, expiresInDays?}` | Validate `value` per kind (feed id owned by a subscription, cluster id of a story carried by a subscription or on the reading list, domain syntax stored as its registrable domain, keyword 2–100 chars). `mute_story` requires `expiresInDays` ∈ {1, 3, 7, 30}, as `/articles/:id/mute-story` does; other kinds may omit it. A live rule of the same kind and value is returned instead of a second one, keeping the later expiry. Quota `maxRules` counts live (unexpired) rules. Enqueue `user.rank {full}` → `201 {rule}` |
 | `DELETE /rules/:id` | — | Delete, rank full → `204` |
 
 ---
@@ -671,25 +683,25 @@ nor grants permission to analyze other articles.
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /admin/overview` | users (total, active 7 d), feeds by status, articles ingested today, pipeline backlog per queue, engine status (breakers, spend today vs budget, LLM calls today), translation stats |
+| `GET /admin/overview` | users (total, active 7 d), feeds by status, articles ingested today, pipeline backlog per queue, engine status (breakers, spend today vs budget, LLM calls today), translation stats. Budget and caps are the effective settings; where a key is unset, the API reports the registry default, because worker-only env such as `DAILY_BUDGET_USD` is not API configuration |
 | `GET /admin/usage?days=30` | platform $/day by engine and kind (from `usage_daily`), and the top 20 users by attributed cost via `admin_usage_attribution(days)` (spec 02 §6, spec 04 §7) |
-| `GET /admin/settings` / `PATCH /admin/settings` | Allow-listed keys only (spec 02 §2 registry): `engine.daily_budget_usd`, `engine.llm_daily_cap`, `engine.prefilter_enabled`, `engine.laya`, `language_modes`, `card_text_mode`, `ranker.thresholds`, `translate.tier2_daily_cap`, `question_sets.active`, `signup_mode`. Each key is validated by its zod schema. **Side effects:** `ranker.thresholds` bumps `ranker.settings_version` and enqueues `user.rank {full}` for users active in the last 7 days, plus `user.learn` for users with an active model when `strengthWeights` or `model` changed (spec 06 §8.4); `question_sets.active.enrich` enqueues `house.reenrich`; `question_sets.active.match`, any `card_text_mode` change and any `engine.prefilter_enabled` change enqueue `house.rematch` (spec 05 §2); `card_text_mode = 'english'` also enqueues `house.translate-cards`, which translates missing cards and rematches them as their translations publish; `language_modes` changes enqueue `house.reenrich {lang}` for each language whose stored mode changed (the seed stores the initial modes, spec 02 §2), and `question_sets.active.cluster`/`.suggest` apply prospectively (spec 05 §2); each language added to or removed from `engine.laya` enqueues `house.reenrich {lang}`, because its enrich engine changes (spec 04 §9); `engine.prefilter_enabled` and `engine.laya` are set only after the recall validation (spec 05 §5.5) or replay (spec 10 §6) they require; a non-empty `engine.laya` is also refused unless `settings['worker.heartbeat']` has an entry younger than 90 s consuming both `.laya` queues, so producers never route work that nothing consumes (spec 11 §2). Likewise, a `language_modes` value of `translate` or `card_text_mode = 'english'` is refused unless a bounded API probe of `GET {LIBRETRANSLATE_URL}/languages` lists every language it needs (spec 11 §2) |
+| `GET /admin/settings` / `PATCH /admin/settings` | Allow-listed keys only (spec 02 §2 registry): `engine.daily_budget_usd`, `engine.llm_daily_cap`, `engine.prefilter_enabled`, `engine.laya`, `language_modes`, `card_text_mode`, `ranker.thresholds`, `translate.tier2_daily_cap`, `question_sets.active`, `signup_mode`. Each key is validated by its zod schema. **Side effects:** `ranker.thresholds` bumps `ranker.settings_version` and enqueues `user.rank {full}` for users active in the last 7 days, plus `user.learn` for those same recently active users when `strengthWeights` or `model` changed (spec 06 §8.4; the API cannot read other tenants' `user_models` under RLS, and the handler trains only when a user's model context or eligible samples changed); `question_sets.active.enrich` enqueues `house.reenrich`; `question_sets.active.match`, any `card_text_mode` change and any `engine.prefilter_enabled` change enqueue `house.rematch` (spec 05 §2); `card_text_mode = 'english'` also enqueues `house.translate-cards`, which translates missing cards and rematches them as their translations publish; `language_modes` changes enqueue `house.reenrich {lang}` for each language whose stored mode changed (the seed stores the initial modes, spec 02 §2), and `question_sets.active.cluster`/`.suggest` apply prospectively (spec 05 §2); each language added to or removed from `engine.laya` enqueues `house.reenrich {lang}`, because its enrich engine changes (spec 04 §9); `engine.prefilter_enabled` and `engine.laya` are set only after the recall validation (spec 05 §5.5) or replay (spec 10 §6) they require (an operator procedure; the API cannot verify it); a non-empty `engine.laya` is also refused unless `settings['worker.heartbeat']` has an entry younger than 90 s consuming both `.laya` queues, so producers never route work that nothing consumes (spec 11 §2). Likewise, a `language_modes` value of `translate` or `card_text_mode = 'english'` is refused unless a bounded API probe of `GET {LIBRETRANSLATE_URL}/languages` lists every language it needs (spec 11 §2): `{lang}→en` for each language newly set to `translate`, and for `card_text_mode = 'english'` every non-English `language_modes` language `→en`; the pairs are rechecked against the probe inside the settings transaction. A failed probe answers `503 ENGINE_UNAVAILABLE` with `details {engine:'libretranslate', reason, missing}` |
 | `POST /admin/translations/reprocess` | `{reasons?: ('no_key'\|'cap'\|'budget')[]}` (default all three): enqueue `house.retranslate-skipped` → `202 {queued: true}`. The only retry for a tier-2 translation skipped on an unchanged article revision, used after the Ollama key, cap or budget is restored (spec 07 §3) |
 | `POST /admin/engine/reset-breaker` | `{engine}`: writes `engine.circuit.resetRequested[engine] = now`. Worker routers close that breaker (including auth mode) within 10 s (spec 04 §5) |
 | `GET /admin/engine/credentials` | Metadata-only configuration status for `typesafe` (Jev) and `ollama`: `CredentialStatus[]`; never plaintext, ciphertext, key suffix or reversible secret material |
 | `PUT /admin/engine/credentials/:provider` | `{apiKey,expectedRevision}`. Encrypt and stage a candidate, preserving the active credential; save alone makes no provider call → `200 {credential:CredentialStatus}` |
 | `POST /admin/engine/credentials/:provider/validate` | `{candidateVersion,expectedRevision}`. Explicitly authorize the bounded capability/auth probe via `provider.validate`, respecting budget/accounting → `202 {credential:CredentialStatus}` |
-| `POST /admin/engine/credentials/:provider/activate` | `{candidateVersion,expectedRevision}`. Require a successful validation for this exact candidate/model/config, atomically activate and invalidate router credential caches → `200 {credential:CredentialStatus}` |
+| `POST /admin/engine/credentials/:provider/activate` | `{candidateVersion,expectedRevision}`. Require a successful validation for this exact candidate/model/config, atomically activate and invalidate router credential caches → `200 {credential:CredentialStatus}`. The API checks the exact candidate version, `valid` status and a validation at most 24 h old (`admin_activate_provider_credential`); it cannot compare the endpoint/model fingerprint, because the provider endpoint/model configuration is worker-only env, so that comparison stays with the worker CLI |
 | `DELETE /admin/engine/credentials/:provider` | Query `expectedRevision`; disable provider and erase stored active/candidate envelopes. Retain a disabled tombstone so env fallback cannot silently re-enable it → `200 {credential:CredentialStatus}` |
 | `GET /admin/feeds?status=&q=` / `PATCH /admin/feeds/:id` / `POST /admin/feeds/:id/reset` | Feed health; edit `fetch_options`; clear quarantine/dead |
 | `GET /admin/library/candidates?minHolders=3` | Promotion candidates: all non-retired `shared` interest cards, with holder counts from `admin_card_holders` (spec 02 §6), filtered to `holders ≥ minHolders`, sorted by holders descending, at most 100 |
 | `GET /admin/library` / `POST /admin/library` / `PATCH /admin/library/:id` | Manage library metadata; semantic text changes create a new immutable library version with predecessor identity (spec 05), never replace existing holders' text/examples |
-| `POST /admin/library/promotion-requests` | `{cardId,title,titleSk,topicIds}`. Require shared card and ≥3 holders; create a versioned exact-payload request addressed to its original creator → `201 {request}` |
-| `POST /admin/library/promote` | `{requestId,expectedVersion}`. Require shared card with ≥3 holders and either exact creator approval or audited ≥30-day creator inactivity (§9.2); recheck under lock and publish preserving unchanged text/id/answers. Decline, recent unapproved activity or missing/deleted provenance → `409 CONFLICT` |
-| `GET /admin/users?q=` / `PATCH /admin/users/:id` | Role, plan, `invites_left` |
-| `GET /admin/invites?status=unused\|used\|expired` / `POST /admin/invites` | List all invites; create `{count ≤ 50, email?, note?, expiresDays ≤ 90}` → codes |
-| `GET /admin/waitlist` / `POST /admin/waitlist/:id/invite` | Create an invite bound to that email, set the row's `invited_at` and `invite_code`, and email it (§2.2 invite email; returns `emailSent`) |
-| `POST /admin/ops-event` | `{kind: 'backup_ok' \| 'backup_failed' \| 'restore_ok' \| 'restore_failed' \| 'host_health', detail?}`. `host_health` uses spec 11's bounded structured disk/inode/heartbeat payload. Authenticated with the `METRICS_TOKEN` bearer and exempt from the CSRF header (§1); used by the host scripts in spec 11 §4. It appends to `settings['ops.events']` (the last 50 kept), which `house.alerts` reads |
+| `POST /admin/library/promotion-requests` | `{cardId,title,titleSk?,topicIds,slug?}`. Require shared card and ≥3 holders (checked by the API itself) and known topics; create a versioned exact-payload request addressed to its original creator → `201 {request}`. The proposed `slug` defaults to `<slugified title>-<cardId>` and is part of the disclosed payload |
+| `POST /admin/library/promote` | `{requestId,expectedVersion}`. Require shared card with ≥3 holders and either exact creator approval or audited ≥30-day creator inactivity (§9.2); recheck under lock and publish preserving unchanged text/id/answers; the same transaction records the promoted card as version 1 of its payload slug (`admin_publish_library_card_version`). Decline, recent unapproved activity or missing/deleted provenance → `409 CONFLICT` |
+| `GET /admin/users?q=` / `PATCH /admin/users/:id` | Role, plan, `invites_left` → `200 {user, sessionsRevoked}`. A plan change recomputes feed intervals with `refresh_feed_subscribers` over every feed with subscribers (a superset: the API cannot read the target user's subscriptions under RLS) |
+| `GET /admin/invites?status=unused\|used\|expired` / `POST /admin/invites` | List all invites; create `{count ≤ 50, email?, note?, expiresDays ≤ 90}` → `201 {items: Invite[], emailSent?}`. An `email` binds the invite, requires `count` 1 and sends the §2.2 invite email |
+| `GET /admin/waitlist` / `POST /admin/waitlist/:id/invite` | Create an invite bound to that email, set the row's `invited_at` and `invite_code`, and email it in the entry's locale (§2.2 invite email) → `200 {entry, invite, emailSent?}`. `emailSent` reports this request's delivery; a replayed receipt omits it and never re-sends |
+| `POST /admin/ops-event` | `{kind: 'backup_ok' \| 'backup_failed' \| 'restore_ok' \| 'restore_failed' \| 'host_health', detail?}`. `host_health` uses spec 11's bounded structured disk/inode/heartbeat payload. Authenticated with the `METRICS_TOKEN` bearer and exempt from the CSRF header (§1); used by the host scripts in spec 11 §4. It appends to `settings['ops.events']` (the last 50 kept), which `house.alerts` reads → `201 {kind, at, stored}`; `host_health` detail is stored as canonical JSON text (≤2000 characters) |
 
 **Admin write constraints:** validate every field with the shared schemas; no arbitrary JSON-to-SQL
 updates. Feed fetch options use spec 03's allowlist and may not disable SSRF checks or smuggle auth
@@ -779,7 +791,7 @@ authorship policy, not a forged user approval.
 
 ---
 
-## 11. Rate limits (`@fastify/rate-limit`; keyed as noted)
+## 11. Rate limits (API hooks over `rate_limit_hit()`, D-120; keyed as noted)
 
 | Route group | Limit |
 |---|---|
@@ -793,16 +805,21 @@ authorship policy, not a forged user approval.
 | `POST /subscriptions/:feedId/analyze` | 20 / hour per user; maximum 20 explicitly selected article revisions per request |
 | `POST /articles/:id/bookmark/retry-capture` | 20 / hour per user, plus safe-fetch host limits |
 | Provider credential stage/validate/activate/delete | 20 / hour per admin; validation additionally obeys shared engine admission |
+| `POST /admin/ops-event` | 30 / min per IP |
 | `GET /me/export` | 2 / hour per user |
-| `POST /cards`, `PATCH /cards/*`, `POST /cards/*/examples*`, `POST /labels*` | 60 / hour per user (each may trigger backfills) |
+| `POST /cards`, `POST /cards/from-article`, `PATCH /cards/*`, `POST /cards/*/examples*`, `POST /labels*`, `PATCH /labels/*` | 60 / hour per user, one shared bucket (each may trigger backfills) |
 
 All limits are enforced unless `RATE_LIMITS_ENABLED=false` (spec 01 §3). Only E2E and load-test
 environments with `NODE_ENV=test` set it to false. Config validation rejects `false` in production.
 Only Caddy's known internal proxy address/network is trusted for forwarded IP headers; never
-`trustProxy: true` for arbitrary clients. Limits are shared across API processes and restarts through
+`trustProxy: true` for arbitrary clients. The API trusts loopback and the RFC 1918 private ranges of the compose
+network, whose API port is not published elsewhere (D-121). Limits are shared across API processes and restarts through
 the DB-backed limiter: `rate_limit_hit()` over `rate_limit_buckets` (spec 02 §6), cleaned up by
 `house.purge-auth`.
 Send `Retry-After` for 429. Public waitlist upserts never expose whether an address already exists.
+Every limited response carries `X-RateLimit-Limit` (the tightest applicable maximum); a 429 adds
+`Retry-After` and `X-RateLimit-Reset` in seconds. `X-RateLimit-Remaining` is not sent, because
+`rate_limit_hit()` reports only whether a hit is allowed and when to retry (D-120).
 
 ---
 

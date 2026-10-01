@@ -39,7 +39,7 @@ pin exact versions (`save-exact`). Update this file in the same commit as any ve
 | HTTP API | fastify | 5.12.5 | api, eval |
 | Fastify zod adapter | fastify-type-provider-zod | 7.0.0 (peer: zod ≥ 4.1.5, @fastify/swagger ≥ 9.5.1, openapi-types 12.1.3) | api |
 | OpenAPI | @fastify/swagger | 9.9.0 | api |
-| Rate limiting | @fastify/rate-limit | 11.2.0 | api |
+| Multipart uploads (OPML import) | @fastify/multipart | 9.4.0 | api |
 | Metrics | prom-client | 15.1.3 | api, worker |
 | Outbound HTTP | undici | 8.11.2 (requires Node ≥ 22.19) | feeds, engine, translate |
 | Feed parsing | rss-parser | 3.13.0 | feeds |

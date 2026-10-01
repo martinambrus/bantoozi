@@ -522,10 +522,21 @@ archive operations are housekeeping, never stand-alone dislike evidence.
 that action, plus `staleAtFeedback` (boolean or null). Learning-relevant actions additionally record
 `features: {specSha,ratingSha,cards,values,sourceManifest,snapshotAt}` when valid inputs exist. Build
 it before applying the action, under the same content revision as the displayed score. `cards` lists
-every interest card (positive or never) the user held that applied to the item as `{id, strength, p}`,
-with the strength at that moment and `p = null` when the card had no usable answer; the card inputs
-and the cards-only baseline are derived from it at training time (§8.1). `values` holds the other
-inputs with their known masks, and the story-group id at that time.
+every interest card (positive or never) the user held that applied to the item as
+`{id, strength, p, engine}`, with the strength at that moment and `p = null` (and `engine = null`)
+when the card had no usable non-prefilter answer at the displayed revision; the card inputs and the
+cards-only baseline are derived from it at training time (§8.1), and `engine` lets the model keep
+only answers of its feature spec's engine family. `values` holds the other inputs as raw observed
+values (`facets`, `facetsEngine`, `wordCount`, `ageHours`, `lang`, `hasImage`, `hasVideo`,
+`bodyImageCount`, `author`, `sourceFeedId`) with `null` for unknown, and the story group at that
+time (`clusterId`, `clusterSize`). The API records this raw snapshot under
+`specSha = sha256('bantoozi:feature-snapshot:raw-v1')`, from which `FEATURE_SPEC_V1` derives its
+named inputs and masks at training time; `ratingSha` is
+`sha256(canonicalJson({specSha, settings}))` over the stored `engine.model_pin`,
+`question_sets.active`, `language_modes` and `card_text_mode` settings; `sourceManifest` is
+`{contentRevision, mediaRevision, inferenceFeedIds}` (the authorizing carriers); `snapshotAt` is
+the action time. Events without behavioral consent, expand/bulk reads and label events carry no
+`features`.
 For selected slow training, capture or reference `analysisRequestId`, immutable `input_sha` and the
 pre-feedback input snapshot before committing the first rating (spec 05 §1.1). `features` may be null
 while analysis is pending; once complete, a separate immutable derived feature snapshot may be
@@ -618,7 +629,11 @@ ranking until enough compatible feedback exists.
 
 - The API enqueues after **at least** `model.retrainEvery` (default 10) newly effective explicit
   feedback changes since the last processed cutoff, including a bulk operation that crosses the
-  boundary. Do not use `n % 10 == 0`; it misses batches and concurrent updates. Count event ids with
+  boundary. The processed cutoff is the largest `user_models.metrics.feedbackCutoffEventId` (the
+  newest `feedback_events.id` a stored model or attempt consumed, a decimal string) of the user;
+  the API counts the distinct articles with `rate`, `unrate` or `prompt_answer` events after it (all
+  of them when no model stored one). Label events never count. Do not use `n % 10 == 0`; it
+  misses batches and concurrent updates. Count event ids with
   deterministic effective-state reduction, not only current non-null `rated_at` rows.
 - Undo/unrate/deletion invalidates affected models immediately and enqueues learn even below ten.
   So does a model-context mismatch (§8.1). Every interest-card change, every behavioral-consent change
@@ -689,7 +704,10 @@ baseline (spec 10).
   - one member per cluster; exclude explicit hides and archived items; preserve the at-most-three-
     per-feed cap in the fill step and break ties by numeric article id. Return fewer than ten if
     necessary. Do not reoffer already answered items. Record source lane and selection method so
-    evaluation can separate deliberately uncertain examples from ordinary reading.
+    evaluation can separate deliberately uncertain examples from ordinary reading: the client rates
+    a calibration item with `selection:'calibration'` (spec 08 §5.3), and the `rate`/`unrate` event
+    stores `selection: {method:'calibration', sourceLane}` (the lane the item had when rated).
+    Retrieving the round records nothing.
 - **"Did you like it?" prompt** (from FeedIt's todo list), shown when the reader returns to the app
   after opening an article:
   - only if current `prefs.implicitFeedback=true`, the correlated dwell event was collected with

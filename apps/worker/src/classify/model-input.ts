@@ -2,8 +2,8 @@ import type { ClassificationArticle, TranslationRow } from '@bantoozi/db';
 import { registrableDomain } from '@bantoozi/feeds';
 import {
   buildArticleState,
-  effectiveStateVariant,
   stateSha256,
+  usableTranslationRow,
   type ArticleState,
   type ArticleStateInput,
   type StateCall,
@@ -71,10 +71,7 @@ export function usableTranslation(
   translations: readonly TranslationRow[],
   revision: string,
 ): TranslationRow | null {
-  const best = selectBestTranslation(translations, revision);
-  if (best === null) return null;
-  const texts = { title: best.title, excerpt: best.excerpt, bodyLead: best.bodyLead };
-  return effectiveStateVariant('translated', texts) === 'translated' ? best : null;
+  return usableTranslationRow(selectBestTranslation(translations, revision));
 }
 
 /** One built state and its hash (the `state_sha256` of every answer it produces). */

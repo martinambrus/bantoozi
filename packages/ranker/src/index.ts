@@ -4,8 +4,8 @@
  *
  * The M2 bootstrap (M2-T10) provides the card score, never-card and must-floor evaluation,
  * reader-specific match coverage, lanes and tiers, the lane policy preview, BM25, the view-scoped
- * inference projection and the score-version key. M5 adds `rankArticle` (rules, demotions,
- * explanations, label suggestions) and M7 the personal model.
+ * inference projection, the score-version key and (M4-T7) `suggestExample`. M5 adds `rankArticle`
+ * (rules, demotions, explanations, label suggestions) and M7 the personal model.
  */
 export const PACKAGE_NAME = '@bantoozi/ranker';
 
@@ -21,5 +21,6 @@ export * from './rank.js';
 export * from './rule-codes.js';
 export * from './rules.js';
 export * from './settings.js';
+export * from './suggest-example.js';
 export * from './types.js';
 export * from './version.js';

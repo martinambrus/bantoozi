@@ -7,10 +7,17 @@ export const PACKAGE_NAME = '@bantoozi/shared';
 
 export * from './cards.js';
 export * from './clock.js';
+export * from './dto/admin.js';
 export * from './dto/analysis.js';
+export * from './dto/articles.js';
+export * from './dto/auth.js';
+export * from './dto/cards.js';
 export * from './dto/common.js';
 export * from './dto/explain.js';
+export * from './dto/me.js';
 export * from './dto/provider-credentials.js';
+export * from './dto/rules.js';
+export * from './dto/subscriptions.js';
 export * from './errors.js';
 export * from './ids.js';
 export * from './jobs.js';

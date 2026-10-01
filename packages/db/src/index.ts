@@ -4,6 +4,7 @@
  */
 export const PACKAGE_NAME = '@bantoozi/db';
 
+export * from './api/index.js';
 export * from './cards/index.js';
 export * from './classify/index.js';
 export * from './client.js';

@@ -14,3 +14,5 @@ packages/db/drizzle/meta/
 CLAUDE.md
 # Claude Code's per-developer local settings (git-ignored), not project files.
 .claude/settings.local.json
+# The committed OpenAPI snapshot is written by the test (spec 08 §12), byte-exact.
+apps/api/test/__snapshots__/

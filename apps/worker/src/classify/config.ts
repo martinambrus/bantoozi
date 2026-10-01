@@ -5,7 +5,7 @@ import {
   type Executor,
   type QuestionSetKind,
 } from '@bantoozi/db';
-import { questionSetByVersion, type Question } from '@bantoozi/questions';
+import { languageModeFor, questionSetByVersion, type Question } from '@bantoozi/questions';
 import {
   parseSetting,
   readSetting,
@@ -146,8 +146,7 @@ export function languageModeOf(
   config: ClassificationConfig,
   lang: string | null,
 ): 'native' | 'translate' {
-  if (lang === null || lang === 'und') return 'native';
-  return config.languageModes[lang] ?? 'native';
+  return languageModeFor(config.languageModes, lang);
 }
 
 /** Whether a completion may still apply a Call A result read under `snapshot` (spec 05 §5.5 step 6). */

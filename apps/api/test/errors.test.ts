@@ -1,5 +1,7 @@
-import { AppError } from '@bantoozi/shared';
+import { AppError, type AppErrorCode } from '@bantoozi/shared';
 import Fastify from 'fastify';
+import { validatorCompiler } from 'fastify-type-provider-zod';
+import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
 
 import { registerErrorHandlers } from '../src/plugins/errors.js';
@@ -68,5 +70,58 @@ describe('error envelope (spec 08 §1)', () => {
     });
     expect(malformed.statusCode).toBe(400);
     expect(malformed.json().error.code).toBe('VALIDATION_FAILED');
+  });
+});
+
+describe('error mapping table (spec 08 §1)', () => {
+  const table: Record<string, number> = {
+    VALIDATION_FAILED: 400,
+    INVALID_CODE: 400,
+    UNAUTHENTICATED: 401,
+    FORBIDDEN: 403,
+    NOT_FOUND: 404,
+    CONFLICT: 409,
+    STALE_CURSOR: 409,
+    STALE_STATE: 409,
+    IDEMPOTENCY_CONFLICT: 409,
+    QUOTA_EXCEEDED: 409,
+    INVITE_REQUIRED: 403,
+    RATE_LIMITED: 429,
+    FEED_NOT_A_FEED: 422,
+    FEED_TIMEOUT: 422,
+    FEED_HTTP_404: 422,
+    ENGINE_UNAVAILABLE: 503,
+    INTERNAL: 500,
+  };
+
+  it.each(Object.entries(table))('%s → %i', async (code, status) => {
+    const server = Fastify({ logger: false });
+    registerErrorHandlers(server);
+    server.get('/e', async () => {
+      throw new AppError(code as AppErrorCode, 'x');
+    });
+    const res = await server.inject({ method: 'GET', url: '/e' });
+    expect(res.statusCode).toBe(status);
+    expect(res.json().error.code).toBe(code);
+  });
+
+  it('reports where a body failed zod validation without echoing values', async () => {
+    const server = Fastify({ logger: false });
+    server.setValidatorCompiler(validatorCompiler);
+    registerErrorHandlers(server);
+    server.post(
+      '/v',
+      { schema: { body: z.object({ email: z.string().email() }).strict() } },
+      async () => ({ ok: true }),
+    );
+    const res = await server.inject({
+      method: 'POST',
+      url: '/v',
+      payload: { email: 'secret-value', extra: 1 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('VALIDATION_FAILED');
+    expect(res.json().error.details.issues.length).toBeGreaterThan(0);
+    expect(res.body).not.toContain('secret-value');
   });
 });
