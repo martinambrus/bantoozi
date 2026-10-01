@@ -811,7 +811,14 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   does not. In translated-state runs (B1-T, E3, E3b, E4) an article whose translation failed or was
   unusable is answered on native text, tagged `variant: 'native'`, excluded from valid coverage and
   counted in `results.translationFallbacks`, so the run ends `partial`; a resume reuses an answer only
-  when its variant matches. Spec 10 §3 updated.
+  when its variant matches. Likewise in english-card runs (E2, E3b, E4) a card whose English text
+  could not be made (`failed`, `weak`, `unsupported`) is asked with its original text: its card and
+  score rows carry `cardTextFallback: true`, every pair scored with it is excluded from valid
+  coverage and `results.cardTextFallbacks` counts these cards per language (the card text is in the
+  immutable config, so only a new run repairs it). The freeze and the config capture (ratings,
+  cards, assignments, facet labels) run in one transaction under the dataset-additions lock and the
+  dataset row lock that rating writes take, so the config and the frozen version hold the same
+  ratings. Spec 10 §3 updated.
 - D-111: 2026-10-01 M3a-T6 — eval routers use a process-local circuit breaker, so an evaluation
   never trips or reads the production breaker (spec 04 §1). The LLM fallback is off and the pinned
   engine has no automatic fallback, so a run never mixes engines silently.

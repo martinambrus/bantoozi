@@ -541,6 +541,92 @@ describe('eval run (M3a-T6)', () => {
     // The gate's run check reads this as not eligible (status partial, sk coverage short).
   });
 
+  it("an English-card run whose card translation failed counts that rater's pairs as missing", async () => {
+    // Every LibreTranslate translation comes back empty: the Slovak card keeps its original text.
+    ctx.libretranslate.reset({ mode: 'fail' });
+    const { rt } = runtime(ctx, { EVAL_CACHE_DIR: await freshCache() });
+    let runId: string;
+    try {
+      const result = await runExperiment(rt, { experiment: 'E2', yes: true, gitSha: 'test' });
+      expect(result.status).toBe('partial');
+      runId = result.runId!;
+    } finally {
+      await rt.close();
+      ctx.libretranslate.reset();
+    }
+    const row = await runRow(ctx, runId);
+    const config = row.config as {
+      cards: Array<{ cardId: string; textStatus: string | null; interestEn: string | null }>;
+    };
+    expect(config.cards.find((c) => c.cardId === golden.cards.skBattery)).toMatchObject({
+      textStatus: 'failed',
+      interestEn: null,
+    });
+    const results = row.results as {
+      coverage: { byRater: Record<string, { expected: number; valid: number }> };
+      cardTextFallbacks: Record<string, number>;
+    };
+    expect(results.cardTextFallbacks).toEqual({ sk: 1 });
+    // Rater A holds the Slovak card: none of A's pairs is valid; rater B is unaffected.
+    const a = results.coverage.byRater[golden.raters.a]!;
+    expect(a.expected).toBeGreaterThan(0);
+    expect(a.valid).toBe(0);
+    const b = results.coverage.byRater[golden.raters.b]!;
+    expect(b.valid).toBe(b.expected);
+    const tagged = await ctx.owner.query<{ key: string; tagged: boolean; n: number }>(
+      `SELECT CASE WHEN question_key = 'card' THEN 'card' ELSE question_key END AS key,
+              coalesce((answer->>'cardTextFallback')::boolean, false) AS tagged, count(*)::int AS n
+         FROM eval.run_answers
+        WHERE run_id = $1 AND (card_id = $2 OR question_key = $3)
+        GROUP BY 1, 2`,
+      [runId, golden.cards.skBattery, `score.r${golden.raters.a}`],
+    );
+    expect(tagged.rows.length).toBe(2);
+    expect(tagged.rows.every((r) => r.tagged)).toBe(true);
+  });
+
+  it('freezes the dataset and reads the run config under one lock (no rating slips in between)', async () => {
+    const before = await ctx.owner.query<{ rater_id: string; article_id: string; rating: number }>(
+      `SELECT rater_id::text, article_id::text, rating FROM eval.ratings
+        WHERE rater_id = $1 ORDER BY article_id LIMIT 1`,
+      [golden.raters.a],
+    );
+    const target = before.rows[0]!;
+    // A rating write holding the lock every post-freeze correction takes, committed only after
+    // the run has reached its freeze.
+    const writer = await ctx.owner.connect();
+    let runId: string | null;
+    try {
+      await writer.query('BEGIN');
+      await writer.query(`SELECT pg_advisory_xact_lock(hashtext('eval.dataset.additions'))`);
+      await writer.query(
+        `UPDATE eval.ratings SET rating = $3 WHERE rater_id = $1 AND article_id = $2`,
+        [target.rater_id, target.article_id, -target.rating],
+      );
+      const { rt } = runtime(ctx);
+      const pending = runExperiment(rt, { experiment: 'B0', yes: true, gitSha: 'test' }).finally(
+        () => rt.close(),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await writer.query('COMMIT');
+      runId = (await pending).runId;
+      const config = (await runRow(ctx, runId!)).config as {
+        ratings: Array<{ raterId: string; articleId: string; rating: number }>;
+      };
+      const recorded = config.ratings.find(
+        (r) => r.raterId === target.rater_id && r.articleId === target.article_id,
+      );
+      expect(recorded?.rating).toBe(-target.rating);
+    } finally {
+      await writer.query('ROLLBACK').catch(() => undefined);
+      writer.release();
+      await ctx.owner.query(
+        `UPDATE eval.ratings SET rating = $3 WHERE rater_id = $1 AND article_id = $2`,
+        [target.rater_id, target.article_id, target.rating],
+      );
+    }
+  });
+
   it('`eval run B0 --yes` through the CLI', async () => {
     const out = await runCli(ctx, ['run', 'B0', '--yes', '--langs', 'en']);
     expect(out).toMatch(/B0 on golden-v1: estimated cost \$0\.0000/);

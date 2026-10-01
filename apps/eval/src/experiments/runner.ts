@@ -8,6 +8,7 @@ import {
   getRun,
   headDataset,
   latestFinishedRunId,
+  lockDatasetAdditions,
   loadEvalAssignments,
   loadEvalFacetLabels,
   loadEvalRaterCards,
@@ -177,6 +178,13 @@ export interface RunResults {
    * and are not valid coverage (the translated variant was never evaluated).
    */
   translationFallbacks?: Record<string, number>;
+  /**
+   * English-card runs only: distinct cards per card language whose English text could not be made
+   * (`failed`, `weak` or `unsupported`), so questions used the original text. Every pair scored
+   * with such a card is not valid coverage, and its card and score rows carry
+   * `cardTextFallback: true`.
+   */
+  cardTextFallbacks?: Record<string, number>;
   cost: {
     estimatedUsd: number;
     billedUsd: number;
@@ -300,13 +308,14 @@ export async function deployedRankerThresholds(db: Executor): Promise<Record<str
 /** The draft config of a new run, read from the rater tables (or from the base run for E6/E7). */
 async function draftConfig(
   rt: EvalRuntime,
+  db: Executor,
   def: ExperimentDefinition,
   options: RunExperimentOptions,
   dataset: DatasetRow,
   cardMode: CardTextMode,
   maxUsd: number,
 ): Promise<Omit<RunConfig, 'configSha'>> {
-  const sample = await loadSample(rt.db, dataset.version);
+  const sample = await loadSample(db, dataset.version);
   const sampleById = new Map(sample.map((row) => [row.articleId, row]));
   const allLangs = uniqSorted(sample.map((row) => row.lang)).sort();
   const common = {
@@ -334,14 +343,14 @@ async function draftConfig(
     },
     developmentOnly: def.developmentOnly,
     maxUsd,
-    rankerThresholds: await deployedRankerThresholds(rt.db),
+    rankerThresholds: await deployedRankerThresholds(db),
     runtime: runtimeInfo(),
   };
 
   if (def.baseExperiment !== null) {
     const baseRunId =
       options.baseRunId ??
-      (await latestFinishedRunId(rt.db, {
+      (await latestFinishedRunId(db, {
         datasetVersion: dataset.version,
         experiment: def.baseExperiment,
         statuses: ['complete', 'partial'],
@@ -351,7 +360,7 @@ async function draftConfig(
         `${def.id} builds on a finished ${def.baseExperiment} run of ${dataset.version}; run ${def.baseExperiment} first`,
       );
     }
-    const baseRun = await getRun(rt.db, baseRunId);
+    const baseRun = await getRun(db, baseRunId);
     if (baseRun === null || baseRun.datasetVersion !== dataset.version) {
       throw new EvalCommandError(`base run ${baseRunId} is not a run of ${dataset.version}`);
     }
@@ -389,16 +398,16 @@ async function draftConfig(
       row !== undefined && langs.includes(row.lang) && (!def.developmentOnly || row.split === 'dev')
     );
   };
-  const raters = await loadEvalRaters(rt.db, options.raterIds);
+  const raters = await loadEvalRaters(db, options.raterIds);
   if (options.raterIds !== undefined && raters.length !== new Set(options.raterIds).size) {
     throw new EvalCommandError('unknown rater id in --raters');
   }
   const raterIds = raters.map((r) => r.raterId);
   const [cards, assignments, ratings, labels] = await Promise.all([
-    loadEvalRaterCards(rt.db, raterIds),
-    loadEvalAssignments(rt.db, dataset.version, raterIds),
-    loadEvalRatings(rt.db, dataset.version, raterIds),
-    loadEvalFacetLabels(rt.db, dataset.version),
+    loadEvalRaterCards(db, raterIds),
+    loadEvalAssignments(db, dataset.version, raterIds),
+    loadEvalRatings(db, dataset.version, raterIds),
+    loadEvalFacetLabels(db, dataset.version),
   ]);
   const scopedRatings = ratings.filter((r) => inScope(r.articleId));
   // Every experiment of a language scope shares one cohort (rated pairs plus facet-labelled
@@ -549,8 +558,12 @@ function cardRow(
   key: string,
   result: CardResult,
   variant?: StateVariant,
+  cardTextFallback = false,
 ): RunAnswerInput {
-  const tag = variant === undefined ? {} : { variant };
+  const tag = {
+    ...(variant === undefined ? {} : { variant }),
+    ...(cardTextFallback ? { cardTextFallback: true } : {}),
+  };
   return {
     articleId,
     cardId,
@@ -566,6 +579,16 @@ function cardRow(
         }
       : { ok: false, reason: result.reason, ...tag },
   };
+}
+
+const CARD_TEXT_FALLBACK_STATUSES: ReadonlySet<string> = new Set(['failed', 'weak', 'unsupported']);
+
+/**
+ * Whether an English-card run asked this card with its original text because no `ok` English pair
+ * could be made (spec 07 §5): the English-card variant was never evaluated for it.
+ */
+export function cardTextFallback(card: RunCard, mode: CardTextMode): boolean {
+  return mode === 'english' && CARD_TEXT_FALLBACK_STATUSES.has(card.textStatus ?? '');
 }
 
 /**
@@ -734,7 +757,9 @@ async function processCardArticle(
       const state = buildState(input, 'match');
       const results = await askCards(env, { articleId, revision, state, cards: asks });
       for (const [cardId, result] of results) {
-        rows.push(cardRow(articleId, cardId, 'card', result, state.variant));
+        const card = cards.get(cardId);
+        const fallback = card !== undefined && cardTextFallback(card, plan.cardMode);
+        rows.push(cardRow(articleId, cardId, 'card', result, state.variant, fallback));
         const answer = cardAnswerOf(result);
         if (answer !== null) answers.set(cardId, answer);
       }
@@ -771,7 +796,9 @@ async function processE6(env: CallEnv, plan: Plan, out: Execution, sink: Sink | 
     for (const [cardId, result] of results) {
       // Keyed per rater: raters can share a card id (reused by text hash, D-100) while E6 gives
       // each rater's copy different examples, so a shared `card` key would overwrite (D-114).
-      rows.push(cardRow(articleId, cardId, e6AnswerKey(raterId), result));
+      const card = cards.find((c) => c.cardId === cardId);
+      const fallback = card !== undefined && cardTextFallback(card, plan.cardMode);
+      rows.push(cardRow(articleId, cardId, e6AnswerKey(raterId), result, undefined, fallback));
       const answer = cardAnswerOf(result);
       if (answer !== null) answers.set(cardId, answer);
     }
@@ -874,6 +901,7 @@ function scoreRows(
   rows: RunAnswerInput[];
   coverage: RunResults['coverage'];
   translationFallbacks: Record<string, number> | null;
+  cardTextFallbacks: Record<string, number> | null;
 } {
   const byLang: Record<string, { expected: number; valid: number }> = {};
   const byRater: Record<string, { expected: number; valid: number }> = {};
@@ -894,7 +922,12 @@ function scoreRows(
     for (const item of plan.e7 ?? []) {
       count(item.lang, item.raterId, out.e7Valid.get(`${item.raterId}|${item.articleId}`) === true);
     }
-    return { rows, coverage: { byLang, byRater }, translationFallbacks: null };
+    return {
+      rows,
+      coverage: { byLang, byRater },
+      translationFallbacks: null,
+      cardTextFallbacks: null,
+    };
   }
 
   const fallback = new Set<string>();
@@ -907,6 +940,20 @@ function scoreRows(
       const degraded = translationFallback(plan, item, out);
       translationFallbacks[item.lang] = (translationFallbacks[item.lang] ?? 0) + (degraded ? 1 : 0);
       if (degraded) fallback.add(articleId);
+    }
+  }
+
+  let cardTextFallbacks: Record<string, number> | null = null;
+  if (plan.cardMode === 'english') {
+    cardTextFallbacks = {};
+    const seenCards = new Set<string>();
+    for (const card of plan.config.cards) {
+      if (seenCards.has(card.cardId) || card.textStatus === 'english') continue;
+      seenCards.add(card.cardId);
+      const lang = card.lang ?? 'und';
+      if (lang === 'en') continue;
+      cardTextFallbacks[lang] =
+        (cardTextFallbacks[lang] ?? 0) + (cardTextFallback(card, plan.cardMode) ? 1 : 0);
     }
   }
 
@@ -926,11 +973,13 @@ function scoreRows(
   const snapshots = new Map([...plan.samples].map(([id, item]) => [id, item.snapshot]));
 
   for (const [raterId, articleIds] of pairsByRater) {
-    const cards = (
+    const raterCards =
       def.id === 'E6'
         ? (plan.e6?.cardsByRater.get(raterId) ?? [])
-        : (plan.cardsByRater.get(raterId) ?? [])
-    ).map((card) => rankCardOf(card, english));
+        : (plan.cardsByRater.get(raterId) ?? []);
+    const cards = raterCards.map((card) => rankCardOf(card, english));
+    // A score that used an untranslated card never evaluated the English-card variant.
+    const cardFallback = raterCards.some((card) => cardTextFallback(card, plan.cardMode));
     let chrono: Map<string, number> | null = null;
     let corpus: ReturnType<typeof bm25Corpus> | null = null;
     if (def.score === 'chrono') chrono = chronoScores(articleIds, snapshots);
@@ -970,15 +1019,18 @@ function scoreRows(
         valid = cardsComplete(cards, record);
       }
       const degraded = fallback.has(articleId);
-      count(item.lang, raterId, valid && !degraded);
+      count(item.lang, raterId, valid && !degraded && !cardFallback);
       rows.push({
         articleId,
         cardId: null,
         questionKey: `score.r${raterId}`,
-        answer:
-          plan.config.translation.articles === null || item.lang === 'en'
-            ? { ...row }
-            : { ...row, variant: degraded ? 'native' : 'translated' },
+        answer: {
+          ...row,
+          ...(plan.config.translation.articles === null || item.lang === 'en'
+            ? {}
+            : { variant: degraded ? 'native' : 'translated' }),
+          ...(cardFallback ? { cardTextFallback: true } : {}),
+        },
       });
     }
   }
@@ -996,7 +1048,7 @@ function scoreRows(
     }
     coverage.enrich = enrich;
   }
-  return { rows, coverage, translationFallbacks };
+  return { rows, coverage, translationFallbacks, cardTextFallbacks };
 }
 
 /** The per-language cost split of a run (`results.cost.byLang`, consumed by the G1 budget). */
@@ -1124,7 +1176,7 @@ export async function runExperiment(
     if (def.skipReason !== null) {
       return skipRun(rt, def, dataset, maxUsd, gitSha, options);
     }
-    config = await draftConfig(rt, def, options, dataset, cardMode, maxUsd);
+    config = await draftConfig(rt, rt.db, def, options, dataset, cardMode, maxUsd);
   }
 
   const cache = createEvalCache({ dir: rt.config.evalCacheDir, now: rt.now });
@@ -1156,10 +1208,20 @@ export async function runExperiment(
       if (!confirmed) return { runId: null, status: 'declined', estimate, results: null };
     }
 
-    // 2. Freeze before the first model call; a new run's inputs are read again after the freeze.
+    // 2. Freeze before the first model call; a new run's inputs are read again after the freeze,
+    // in the same transaction and under the dataset additions lock that every post-freeze rating
+    // correction takes (and the row lock an open-head rating write shares), so no rating, card or
+    // assignment can land between the freeze and the config snapshot (D-120).
     if (existingRunId === null && options.replay === undefined) {
-      dataset = await rt.db.transaction((tx) => freezeDataset(tx, dataset.version));
-      config = await draftConfig(rt, def, options, dataset, cardMode, maxUsd);
+      const version = dataset.version;
+      ({ dataset, config } = await rt.db.transaction(async (tx) => {
+        await lockDatasetAdditions(tx);
+        const frozenRow = await freezeDataset(tx, version);
+        return {
+          dataset: frozenRow,
+          config: await draftConfig(rt, tx, def, options, frozenRow, cardMode, maxUsd),
+        };
+      }));
     }
 
     const plan0 = await buildPlan(rt, def, config, { frozenTranslations: frozen, existing });
@@ -1258,6 +1320,7 @@ export async function runExperiment(
       ...(scored.translationFallbacks === null
         ? {}
         : { translationFallbacks: scored.translationFallbacks }),
+      ...(scored.cardTextFallbacks === null ? {} : { cardTextFallbacks: scored.cardTextFallbacks }),
       cost: {
         // Totals are the sums of the per-language split (identical up to float rounding to the
         // estimate printed above, the engine_calls sum and the live savings counter).
