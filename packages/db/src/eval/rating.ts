@@ -749,9 +749,9 @@ export async function facetLabelsOf(
 }
 
 /**
- * Upsert all fields of one article for one labeller (one row per field). A change under a frozen
- * head first creates the next open version ({@link openDatasetForCorrection}), so it reaches the
- * next runs; saving unchanged values creates none.
+ * Upsert all fields of one article for one labeller (one row per field). A change first opens the
+ * next version of every frozen lineage holding the article ({@link openDatasetForCorrection}), so it
+ * reaches the next runs; saving unchanged values creates none.
  */
 export async function saveFacetLabels(
   tx: Transaction,
@@ -765,7 +765,7 @@ export async function saveFacetLabels(
   const current = await facetLabelsOf(tx, input.labeler, input.articleId);
   const entries = Object.entries(input.values);
   if (entries.every(([questionKey, value]) => current[questionKey] === value)) return;
-  await openDatasetForCorrection(tx, 'facets');
+  await openDatasetForCorrection(tx, 'facets', input.articleId);
   for (const [questionKey, value] of entries) {
     await tx.execute(sql`
       INSERT INTO eval.facet_labels (labeler, article_id, question_key, value, created_at)

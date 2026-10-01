@@ -13,6 +13,7 @@ import {
   raterProgress,
   reissueRaterToken,
   revokeRater,
+  saveFacetLabels,
   setRaterFeeds,
   type RaterRow,
 } from '@bantoozi/db';
@@ -894,5 +895,24 @@ describe('rating corrections after a freeze (spec 10 §2.1)', () => {
       expect(child.params).toMatchObject({ correctionOf: child.parentVersion });
     // The head's lineage is opened last, so it stays the head.
     expect((await headDataset(rdb.db))!.parentVersion).toBe('golden-twin');
+
+    // A changed facet label also opens every frozen lineage that holds its article.
+    for (const child of children)
+      await rdb.db.transaction((tx) => freezeDataset(tx, child.version));
+    const articleId = (await loadSample(rdb.db, own.version))[0]!.articleId;
+    await rdb.db.transaction((tx) =>
+      saveFacetLabels(tx, {
+        labeler: 'owner',
+        articleId,
+        values: { 'facet.lineage': 'a' },
+        now: new Date(),
+      }),
+    );
+    const grandchildren = (await listDatasets(rdb.db)).filter((d) =>
+      children.some((c) => c.version === d.parentVersion),
+    );
+    expect(grandchildren.map((d) => d.parentVersion).sort()).toEqual(
+      children.map((c) => c.version).sort(),
+    );
   });
 });
