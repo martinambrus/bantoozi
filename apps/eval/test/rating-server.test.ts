@@ -2,7 +2,7 @@ import { parseHTML } from 'linkedom';
 import { describe, expect, it, vi } from 'vitest';
 
 import { clip, esc, safeExternalUrl } from '../src/rating-server/html.js';
-import { ratePage } from '../src/rating-server/pages.js';
+import { feedsPage, ratePage } from '../src/rating-server/pages.js';
 import { redactUrl } from '../src/rating-server/server.js';
 import { APP_JS } from '../src/rating-server/static-assets.js';
 
@@ -107,6 +107,36 @@ describe('html helpers', () => {
     expect(safeExternalUrl('javascript:alert(1)')).toBeNull();
     expect(safeExternalUrl('https://example.test/a?b=1')).toBe('https://example.test/a?b=1');
     expect(safeExternalUrl('not a url')).toBeNull();
+  });
+
+  it('links each feed and its site in a new tab, outside the checkbox label', () => {
+    const feed = (feedId: string, url: string, siteUrl: string | null) =>
+      ({ feedId, title: `Feed ${feedId}`, url, siteUrl, langHint: 'sk' }) as const;
+    const { document } = parseHTML(
+      feedsPage({
+        feeds: [
+          feed('1', 'https://a.example.test/rss', 'https://a.example.test/'),
+          feed('2', 'https://b.example.test/feed.xml', null),
+          feed('3', 'https://c.example.test/rss', 'javascript:alert(1)'),
+        ],
+        selected: new Set(),
+        state: { interestCards: 5, neverCards: 0, feeds: 0, assignments: 0 },
+        locked: false,
+        csrf: 'csrf',
+      }),
+    );
+    const links = [...document.querySelectorAll('.feeds a')];
+    expect(links.map((a) => [a.getAttribute('href'), a.textContent])).toEqual([
+      ['https://a.example.test/', 'https://a.example.test/ ↗'],
+      ['https://a.example.test/rss', 'feed ↗'],
+      ['https://b.example.test/feed.xml', 'https://b.example.test/feed.xml ↗'],
+      ['https://c.example.test/rss', 'https://c.example.test/rss ↗'],
+    ]);
+    for (const a of links) {
+      expect(a.getAttribute('target')).toBe('_blank');
+      expect(a.getAttribute('rel')).toBe('noopener noreferrer');
+      expect(a.closest('label')).toBeNull();
+    }
   });
 
   it('cuts excerpts to the limit', () => {

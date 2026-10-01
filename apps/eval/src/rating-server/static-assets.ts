@@ -83,6 +83,7 @@ legend { font-weight: 600; }
 .cards li { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem 0.75rem; margin: 0.5rem 0; }
 .feeds li { margin: 0.25rem 0; }
 .feeds label { font-weight: 400; display: flex; gap: 0.5rem; align-items: flex-start; margin: 0; }
+.feed-links { display: block; padding-left: 1.6rem; font-size: 0.85rem; overflow-wrap: anywhere; }
 .hints { padding-left: 1.2rem; }
 .skip { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0; }
 .skip input[type="text"] { flex: 1 1 10rem; width: auto; min-width: 0; }
