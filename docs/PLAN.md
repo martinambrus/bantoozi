@@ -730,17 +730,17 @@ Complete milestone M3a "Evaluation tooling and golden-set collection" exactly as
 
 **Tasks**
 
-| ID | Task | Needs | Lane | Specs |
-|---|---|---|---|---|
-| M3a-T1 | `eval` schema migration (incl. `eval.sample`, grants) and the eval system user | — | A | 02 §7 |
-| M3a-T2 | CLI skeleton; `feeds-golden.txt` (18–22 feeds per language); `ingest-sample` (worker heartbeat check, drain wait, `--watch`); `sample`; `status` | T1 | A | 10 §2.1 |
-| M3a-T3 | Rating server: rater add/token (`EVAL_PUBLIC_URL`), human identity + topic-profile registration, card-writing step, feed picking, assignments, blind rating UI | T1, T2 | B | 10 §2.2, §2.4 |
-| M3a-T4 | Facet labelling page | T3 | B | 10 §2.3 |
-| M3a-T5 | Metrics library, including cutoff precision/recall and the per-class lane distribution | — | C | 10 §4 |
-| M3a-T6 | Experiment runner (eval router with `budgetOverrideUsd`, `ignoreDailyCaps`, `kind:'eval'`, `EVAL_CACHE_DIR` cache, estimate, `--yes`/`--max-usd`); experiments B0, B1, B1-T, E1, E2, E3, E3b, E4, E6, E7 (E5 stub); `eval replay` | T1, T2 | D | 10 §3, §6 |
-| M3a-T7 | Report generator, decision rules, `apps/eval/config/g1.json` schema, `apply-g1` with the field → settings mapping | T2, T5, T6 | C | 10 §1, §5 |
-| M3a-T8 | `eval dry-run` in the separate `bantoozi_eval_dryrun` database: simulated raters and the fake engine → full report | T3–T7 | D | 10 all |
-| M3a-T9 | Real sample ingested and the rater onboarding kit | T2, T3 | A | 10 §2 |
+| ID | Task | Needs | Lane | Specs | Status |
+|---|---|---|---|---|---|
+| M3a-T1 | `eval` schema migration (incl. `eval.sample`, grants) and the eval system user | — | A | 02 §7 | ✓ `4aa39b6` |
+| M3a-T2 | CLI skeleton; `feeds-golden.txt` (18–22 feeds per language); `ingest-sample` (worker heartbeat check, drain wait, `--watch`); `sample`; `status` | T1 | A | 10 §2.1 | ✓ `56479a8`…`3998721` |
+| M3a-T3 | Rating server: rater add/token (`EVAL_PUBLIC_URL`), human identity + topic-profile registration, card-writing step, feed picking, assignments, blind rating UI | T1, T2 | B | 10 §2.2, §2.4 | ✓ `c8c35ea` |
+| M3a-T4 | Facet labelling page | T3 | B | 10 §2.3 | ✓ `c8c35ea` |
+| M3a-T5 | Metrics library, including cutoff precision/recall and the per-class lane distribution | — | C | 10 §4 | ✓ `98f3815` |
+| M3a-T6 | Experiment runner (eval router with `budgetOverrideUsd`, `ignoreDailyCaps`, `kind:'eval'`, `EVAL_CACHE_DIR` cache, estimate, `--yes`/`--max-usd`); experiments B0, B1, B1-T, E1, E2, E3, E3b, E4, E6, E7 (E5 stub); `eval replay` | T1, T2 | D | 10 §3, §6 | ✓ `221aa2a`, `7af5c20` |
+| M3a-T7 | Report generator, decision rules, `apps/eval/config/g1.json` schema, `apply-g1` with the field → settings mapping | T2, T5, T6 | C | 10 §1, §5 | ✓ `c4db504`, `193b5e3` |
+| M3a-T8 | `eval dry-run` in the separate `bantoozi_eval_dryrun` database: simulated raters and the fake engine → full report | T3–T7 | D | 10 all | ✓ `d5ba3fa` |
+| M3a-T9 | Real sample ingested and the rater onboarding kit | T2, T3 | A | 10 §2 | ✓ `7d2479e`, `5fd1188`; human rating step pending (§8.1) |
 
 **Done when:**
 
@@ -849,12 +849,12 @@ Complete milestone M3b "Run gate G1" as specified in docs/PLAN.md §9 and docs/s
 
 **Tasks**
 
-| ID | Task | Needs | Specs |
-|---|---|---|---|
-| M3b-T1 | Preflight: coverage/classes/facets and frozen split pass spec 10 readiness; actual model/MT capabilities verified; keys valid with budgeted tiny calls; total estimate printed | ratings | 10 §2–3 |
-| M3b-T2 | Run B0, B1, B1-T, E1, E2, E3, E3b, E4 (E5 only if Laya is installed), each with `--yes --max-usd <10 − spent so far>`; then the informational E6 and E7 if the remaining budget covers their estimates | T1 | 10 §3 |
-| M3b-T3 | Select/tune only on development groups; lock config and evaluate held-out production policy; report PASS/FAIL/INCONCLUSIVE; write `apps/eval/config/g1.json` (runs/snapshot/split hashes), commit | T2 | 10 §1, §4–5 |
-| M3b-T4 | On profile-scoped PASS: `apply-g1` to development; record the actual evidence scope and owner-approved initial-beta eligibility in `docs/DECISIONS.md` (daily budget recommendation, language modes, card text mode, thresholds, tier-2 cap; Q1 governs production cap increases). On FAIL/INCONCLUSIVE: write `docs/G1-FAIL.md` with the rule 1 details and the 20 worst-ranked liked articles | T3 | 10 §1, §5 |
+| ID | Task | Needs | Specs | Status |
+|---|---|---|---|---|
+| M3b-T1 | Preflight: coverage/classes/facets and frozen split pass spec 10 readiness; actual model/MT capabilities verified; keys valid with budgeted tiny calls; total estimate printed | ratings | 10 §2–3 | not started |
+| M3b-T2 | Run B0, B1, B1-T, E1, E2, E3, E3b, E4 (E5 only if Laya is installed), each with `--yes --max-usd <10 − spent so far>`; then the informational E6 and E7 if the remaining budget covers their estimates | T1 | 10 §3 | not started |
+| M3b-T3 | Select/tune only on development groups; lock config and evaluate held-out production policy; report PASS/FAIL/INCONCLUSIVE; write `apps/eval/config/g1.json` (runs/snapshot/split hashes), commit | T2 | 10 §1, §4–5 | not started |
+| M3b-T4 | On profile-scoped PASS: `apply-g1` to development; record the actual evidence scope and owner-approved initial-beta eligibility in `docs/DECISIONS.md` (daily budget recommendation, language modes, card text mode, thresholds, tier-2 cap; Q1 governs production cap increases). On FAIL/INCONCLUSIVE: write `docs/G1-FAIL.md` with the rule 1 details and the 20 worst-ranked liked articles | T3 | 10 §1, §5 | not started |
 
 **Milestone done when:** the report is committed and the goal evidence is printed. **A failed or
 inconclusive selected profile does not approve launch. An owner-pilot PASS satisfies the evaluation
@@ -895,19 +895,19 @@ Complete milestone M4 "HTTP API" exactly as specified in docs/PLAN.md §10 and d
 
 **Tasks**
 
-| ID | Task | Needs | Lane | Specs |
-|---|---|---|---|---|
-| M4-T1 | Plugins: errors, tenant (`req.withTx`, lazy), session auth, CSRF (bearer exemption), rate limit (`RATE_LIMITS_ENABLED`), zod provider, swagger | — | A | 08 §1, §11 |
-| M4-T2 | Auth, email (templates en/sk), invites, waitlist, admin bootstrap, restore on verify | T1 | A | 08 §2 |
-| M4-T3 | Me, preferences, sessions, export, delete | T1 | B | 08 §3 |
-| M4-T4 | Subscriptions: discovery, OPML, per-feed inference transitions/selection and image overrides, folders, eligible `refresh_*`/backfill | T1 | B | 08 §4; 03 §10–11 |
-| M4-T5 | Cards, library consent and opt-in upgrades, neutral labels, topics, eligible card-text translation through M2 lifecycle | T1 | C | 08 §7; 05 §5.1; 07 §5 |
-| M4-T6 | `GET /articles` (candidate set → folding → filters → sort), counts, details, calibration, lazy full rank | T1 | D | 08 §5.1–5.2; 06 §7, §10 |
-| M4-T7 | Article actions, retained bookmark snapshots, frozen-input training requests, exact undo, feedback/learn triggers and example suggestions (the pure `suggestExample` helper in `packages/ranker`) | T6 | D | 08 §5.3; 06 §7, §8.2, §8.4, §10 |
-| M4-T8 | Rules endpoints | T1 | C | 08 §8; 06 §3 |
-| M4-T9 | Admin endpoints (provider credentials/status/test/rotate/revoke, consent-gated promotion, settings, invites), ops/metrics and dev-mail | T1 | E | 08 §9–10; 02 §6 |
-| M4-T10 | Quota enforcement across endpoints | T4, T5, T8 | B | 08 §6 |
-| M4-T11 | Suites: RLS isolation, CSRF, write-path grants, enqueue, OpenAPI snapshot, operations list | T2–T10 | E | 08 §12 |
+| ID | Task | Needs | Lane | Specs | Status |
+|---|---|---|---|---|---|
+| M4-T1 | Plugins: errors, tenant (`req.withTx`, lazy), session auth, CSRF (bearer exemption), rate limit (`RATE_LIMITS_ENABLED`), zod provider, swagger | — | A | 08 §1, §11 | ✓ `fe21b42`, `828931f` |
+| M4-T2 | Auth, email (templates en/sk), invites, waitlist, admin bootstrap, restore on verify | T1 | A | 08 §2 | ✓ `e96dc0a` |
+| M4-T3 | Me, preferences, sessions, export, delete | T1 | B | 08 §3 | ✓ `7d0034e` |
+| M4-T4 | Subscriptions: discovery, OPML, per-feed inference transitions/selection and image overrides, folders, eligible `refresh_*`/backfill | T1 | B | 08 §4; 03 §10–11 | ✓ `cda217d` |
+| M4-T5 | Cards, library consent and opt-in upgrades, neutral labels, topics, eligible card-text translation through M2 lifecycle | T1 | C | 08 §7; 05 §5.1; 07 §5 | ✓ `b6299db` |
+| M4-T6 | `GET /articles` (candidate set → folding → filters → sort), counts, details, calibration, lazy full rank | T1 | D | 08 §5.1–5.2; 06 §7, §10 | ✓ `8bea329` |
+| M4-T7 | Article actions, retained bookmark snapshots, frozen-input training requests, exact undo, feedback/learn triggers and example suggestions (the pure `suggestExample` helper in `packages/ranker`) | T6 | D | 08 §5.3; 06 §7, §8.2, §8.4, §10 | ✓ `2cc2e38` |
+| M4-T8 | Rules endpoints | T1 | C | 08 §8; 06 §3 | ✓ `5523d86` |
+| M4-T9 | Admin endpoints (provider credentials/status/test/rotate/revoke, consent-gated promotion, settings, invites), ops/metrics and dev-mail | T1 | E | 08 §9–10; 02 §6 | ✓ `879292d`, `45e0990` |
+| M4-T10 | Quota enforcement across endpoints | T4, T5, T8 | B | 08 §6 | ✓ `cdb7d73` |
+| M4-T11 | Suites: RLS isolation, CSRF, write-path grants, enqueue, OpenAPI snapshot, operations list | T2–T10 | E | 08 §12 | ✓ `014eaf2`…`425c39c` |
 
 **Done when:**
 
@@ -1047,14 +1047,14 @@ Complete milestone M5 "Ranking and lanes" exactly as specified in docs/PLAN.md �
 
 **Tasks**
 
-| ID | Task | Needs | Lane | Specs |
-|---|---|---|---|---|
-| M5-T1 | Shared `RankerConfig` consumer and the settings override loader (using `RANKER_VERSION`/`scoreVersion` from M2-T10) | — | A | 06 §7, §11 |
-| M5-T2 | `rankArticle` with the normative precedence: rules, never, card score, demotions, BM25 path, floors and caps, story rule, label suggestions, `Explain` | T1 | A | 06 §1–6, §9 |
-| M5-T3 | Property tests and truth tables | T2 | B | 06 §12 |
-| M5-T4 | `user.rank` handler: context loading (window BM25 corpus, read clusters), the dirty set, batch loads, upserts; wired to the `jobs.ts` rank helpers (incremental vs full) | T2 | C | 06 §7; 03 §2 |
-| M5-T5 | Weak-translation escalation and `house.expire-rules` | T4 | C | 06 §7; 07 §3; 11 §6 |
-| M5-T6 | `ranking.e2e.test.ts`: fetch → enrich → match → rank with the fake TypeSafe server for two users | T4 | C | 06 all |
+| ID | Task | Needs | Lane | Specs | Status |
+|---|---|---|---|---|---|
+| M5-T1 | Shared `RankerConfig` consumer and the settings override loader (using `RANKER_VERSION`/`scoreVersion` from M2-T10) | — | A | 06 §7, §11 | ✓ `e9735a4` |
+| M5-T2 | `rankArticle` with the normative precedence: rules, never, card score, demotions, BM25 path, floors and caps, story rule, label suggestions, `Explain` | T1 | A | 06 §1–6, §9 | ✓ `0b37788` |
+| M5-T3 | Property tests and truth tables | T2 | B | 06 §12 | ✓ `b7ea36f` |
+| M5-T4 | `user.rank` handler: context loading (window BM25 corpus, read clusters), the dirty set, batch loads, upserts; wired to the `jobs.ts` rank helpers (incremental vs full) | T2 | C | 06 §7; 03 §2 | ✓ `e8bed97` |
+| M5-T5 | Weak-translation escalation and `house.expire-rules` | T4 | C | 06 §7; 07 §3; 11 §6 | ✓ `9277405` |
+| M5-T6 | `ranking.e2e.test.ts`: fetch → enrich → match → rank with the fake TypeSafe server for two users | T4 | C | 06 all | ✓ `e425105` |
 
 **Done when:**
 
