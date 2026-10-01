@@ -97,7 +97,11 @@ export function registerTenant(app: FastifyInstance): void {
   >(this: FastifyRequest): Promise<MutationOutcome<T> | null> {
     const key = idempotencyKey(this);
     const digest = requestDigest(this, app.services.config.sessionPepper);
-    return this.withTx(async (tx) => replayed<T>(await readMutation(tx, key), digest));
+    return this.withTx(async (tx) => {
+      // Waits for an in-flight mutation with the same key, so its committed receipt is seen.
+      await lockMutationKey(tx, key);
+      return replayed<T>(await readMutation(tx, key), digest);
+    });
   });
 
   app.decorateRequest('mutate', async function mutate<

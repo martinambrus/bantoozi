@@ -279,6 +279,45 @@ describe('POST /subscriptions (discovery, spec 03 §10)', () => {
     expect(other.json().error.code).toBe('IDEMPOTENCY_CONFLICT');
   });
 
+  it('replays a concurrent duplicate that committed while this request was discovering', async () => {
+    const alice = await createTestUser(h);
+    const url = 'https://concurrent.example.com/feed.xml';
+    web.route(url, { body: rssDocument('Concurrent'), contentType: 'application/rss+xml' });
+    const key = randomUUID();
+    const client = apiClient(h.server, alice);
+    let first: Promise<Awaited<ReturnType<typeof client.post>>> | undefined;
+    let second: Promise<Awaited<ReturnType<typeof client.post>>> | undefined;
+    let secondFetching!: () => void;
+    const secondReachedFetch = new Promise<void>((resolve) => {
+      secondFetching = resolve;
+    });
+    let calls = 0;
+    web.onFetch = async (fetched) => {
+      if (fetched !== url) return;
+      calls += 1;
+      if (calls === 1) {
+        // The first request is discovering: start the duplicate, past its receipt check.
+        second = client.post('/subscriptions', { url }, { idempotencyKey: key });
+        await secondReachedFetch;
+      } else if (calls === 2) {
+        secondFetching();
+        await first;
+        // The feed vanishes before the duplicate's own discovery completes.
+        web.route(url, { fail: 'FEED_HTTP_404', status: 404 });
+      }
+    };
+    try {
+      first = client.post('/subscriptions', { url }, { idempotencyKey: key });
+      const a = await first;
+      const b = await second!;
+      expect(a.statusCode, a.body).toBe(201);
+      expect(b.statusCode, b.body).toBe(201);
+      expect(b.json()).toEqual(a.json());
+    } finally {
+      web.onFetch = null;
+    }
+  });
+
   it('rejects invalid bodies with 400', async () => {
     const alice = await createTestUser(h);
     const client = apiClient(h.server, alice);

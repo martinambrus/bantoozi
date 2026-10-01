@@ -80,8 +80,9 @@ declare module 'fastify' {
     /**
      * The saved receipt of this request's `Idempotency-Key`, or `null` when there is none. Routes
      * that do slow outbound work before `mutate` (discovery) call it first, so a retry of a
-     * committed request is answered from its receipt without repeating that work. A receipt of a
-     * different request is an `IDEMPOTENCY_CONFLICT`, as in `mutate`.
+     * committed request is answered from its receipt without repeating that work. It waits for an
+     * in-flight mutation with the same key to finish. A receipt of a different request is an
+     * `IDEMPOTENCY_CONFLICT`, as in `mutate`.
      */
     savedOutcome<T>(): Promise<MutationOutcome<T> | null>;
   }

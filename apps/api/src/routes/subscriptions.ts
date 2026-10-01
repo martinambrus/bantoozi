@@ -102,6 +102,14 @@ function definedOnly<T extends object>(value: T): { [K in keyof T]?: Exclude<T[K
 }
 
 /** M4-T4: subscriptions, feed preferences, OPML, folders and analysis requests (spec 08 §4). */
+/** Answer a subscribe from a saved receipt (`201` created, otherwise `200`). */
+function replaySubscribe(
+  reply: FastifyReply,
+  saved: { status: number; body: SubscriptionEnvelope },
+): FastifyReply {
+  return reply.code(saved.status === 201 ? 201 : 200).send(saved.body);
+}
+
 export const subscriptionRoutes: FastifyPluginAsyncZod = async (app) => {
   const { clock } = app.services;
 
@@ -141,15 +149,22 @@ export const subscriptionRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       // A retry of a committed subscribe is answered from its receipt, without new discovery.
       const saved = await request.savedOutcome<SubscriptionEnvelope>();
-      if (saved !== null) return reply.code(saved.status === 201 ? 201 : 200).send(saved.body);
-      // Slow outbound work first: no transaction is open during discovery (spec 08 §1).
-      const discovered = await discover(
-        request.body.url,
-        app.services.discoverDeps,
-        clientGone(reply),
-      );
+      if (saved !== null) return replaySubscribe(reply, saved);
+      // Slow outbound work first: no transaction is open during discovery (spec 08 §1). A
+      // concurrent duplicate may have committed meanwhile: its receipt wins over a discovery
+      // failure or a candidate choice of this request.
+      let discovered: Awaited<ReturnType<typeof discover>>;
+      try {
+        discovered = await discover(request.body.url, app.services.discoverDeps, clientGone(reply));
+      } catch (error) {
+        const committed = await request.savedOutcome<SubscriptionEnvelope>();
+        if (committed !== null) return replaySubscribe(reply, committed);
+        throw error;
+      }
       const [candidate, ...others] = discovered.candidates;
       if (candidate === undefined || others.length > 0) {
+        const committed = await request.savedOutcome<SubscriptionEnvelope>();
+        if (committed !== null) return replaySubscribe(reply, committed);
         return reply.code(200).send({
           status: 'choose' as const,
           candidates: discovered.candidates.map((c) => ({
