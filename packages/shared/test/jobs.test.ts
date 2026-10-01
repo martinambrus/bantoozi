@@ -113,6 +113,7 @@ describe('jobs registry (spec 03 §2)', () => {
     expect(FEED_SCHEDULE_CRON).toBe('* * * * *');
     expect(HOUSE_CRON_SCHEDULES).toEqual({
       'house.rescore-degraded': { cron: '*/10 * * * *', everyMs: 600_000 },
+      'house.expire-rules': { cron: '5 * * * *', everyMs: 3_600_000 },
     });
     for (const queue of Object.keys(HOUSE_CRON_SCHEDULES)) {
       expect(HOUSE_CRON_QUEUES).toContain(queue);

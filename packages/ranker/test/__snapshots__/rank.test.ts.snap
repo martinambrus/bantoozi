@@ -1,0 +1,198 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Explain snapshots (spec 06 §6.2) > cards source 1`] = `
+{
+  "explain": {
+    "cards": [
+      {
+        "engine": "typesafe",
+        "id": "13",
+        "p": 0.55,
+        "strength": "never",
+        "title": "Card 13",
+      },
+      {
+        "engine": "typesafe",
+        "id": "10",
+        "p": 0.4,
+        "strength": "love",
+        "title": "Card 10",
+      },
+      {
+        "engine": "typesafe",
+        "id": "15",
+        "p": 0.3,
+        "strength": "like",
+        "title": "Electric cars",
+      },
+    ],
+    "cluster": {
+      "id": "44",
+      "size": 3,
+    },
+    "decidingCardId": "10",
+    "facets": {
+      "clickbait": 0.1,
+      "contentType": {
+        "choice": "news",
+        "p": 0.7,
+      },
+      "depth": 0.5,
+      "evergreen": 0.6,
+      "promotional": 0.05,
+      "timeSensitive": 0.2,
+      "topic": {
+        "l1": "science",
+        "l2": "science.energy",
+        "p": 0.6,
+      },
+    },
+    "inputs": {
+      "contentRevision": "3",
+      "contextSha": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "mediaRevision": "1",
+      "rankRevision": "7",
+    },
+    "lane": "for_you",
+    "p": 0.65,
+    "rules": [
+      {
+        "code": "boost_domain",
+        "ruleId": "77",
+      },
+    ],
+    "source": "cards",
+    "tier": 4,
+    "translation": {
+      "engine": "libretranslate",
+      "quality": "ok",
+    },
+    "v": 1,
+  },
+  "labelSuggestions": [],
+  "lane": "for_you",
+  "nextRankAt": null,
+  "pLike": 0.65,
+  "rulesFired": [
+    "boost_domain",
+  ],
+  "scoreSource": "cards",
+  "tier": 4,
+}
+`;
+
+exports[`Explain snapshots (spec 06 §6.2) > degraded source 1`] = `
+{
+  "explain": {
+    "cards": [],
+    "inputs": {
+      "contentRevision": "3",
+      "contextSha": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "mediaRevision": "1",
+      "rankRevision": "7",
+    },
+    "lane": "maybe",
+    "p": 0.4240972933269167,
+    "rules": [
+      {
+        "code": "degraded",
+      },
+    ],
+    "source": "degraded",
+    "tier": 2,
+    "v": 1,
+  },
+  "labelSuggestions": [],
+  "lane": "maybe",
+  "nextRankAt": null,
+  "pLike": 0.4240972933269167,
+  "rulesFired": [
+    "degraded",
+  ],
+  "scoreSource": "degraded",
+  "tier": 2,
+}
+`;
+
+exports[`Explain snapshots (spec 06 §6.2) > none source (inference not requested, and a hide rule with its rule id) 1`] = `
+{
+  "explain": {
+    "cards": [],
+    "inputs": {
+      "contentRevision": "3",
+      "contextSha": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "mediaRevision": "1",
+      "rankRevision": "7",
+    },
+    "lane": "new",
+    "p": null,
+    "rules": [
+      {
+        "code": "inference_not_requested",
+      },
+    ],
+    "source": "none",
+    "tier": null,
+    "v": 1,
+  },
+  "labelSuggestions": [],
+  "lane": "new",
+  "nextRankAt": null,
+  "pLike": null,
+  "rulesFired": [
+    "inference_not_requested",
+  ],
+  "scoreSource": "none",
+  "tier": null,
+}
+`;
+
+exports[`Explain snapshots (spec 06 §6.2) > none source (inference not requested, and a hide rule with its rule id) 2`] = `
+{
+  "explain": {
+    "cards": [],
+    "facets": {
+      "clickbait": 0.1,
+      "contentType": {
+        "choice": "news",
+        "p": 0.7,
+      },
+      "depth": 0.5,
+      "evergreen": 0.6,
+      "promotional": 0.05,
+      "timeSensitive": 0.2,
+      "topic": {
+        "l1": "science",
+        "l2": "science.energy",
+        "p": 0.6,
+      },
+    },
+    "inputs": {
+      "contentRevision": "3",
+      "contextSha": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "mediaRevision": "1",
+      "rankRevision": "7",
+    },
+    "lane": "hidden",
+    "p": null,
+    "rules": [
+      {
+        "code": "mute_keyword:lithium",
+        "ruleId": "88",
+      },
+    ],
+    "source": "none",
+    "tier": null,
+    "v": 1,
+  },
+  "labelSuggestions": [],
+  "lane": "hidden",
+  "nextRankAt": null,
+  "pLike": null,
+  "rulesFired": [
+    "mute_keyword:lithium",
+  ],
+  "scoreSource": "none",
+  "tier": null,
+}
+`;
