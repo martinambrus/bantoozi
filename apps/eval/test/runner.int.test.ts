@@ -301,6 +301,14 @@ describe('eval run (M3a-T6)', () => {
       E7: 'complete',
     });
 
+    // Gate inputs share one cohort (rated pairs plus facet-labelled articles, D-110).
+    const cohortOf = async (runId: string) =>
+      ((await runRow(ctx, runId)).config as { cohort: { sha: string } }).cohort.sha;
+    const e1Cohort = await cohortOf(e1RunId);
+    for (const id of ['B0', 'B1', 'B1-T', 'E2', 'E3', 'E3b'] as const) {
+      expect(await cohortOf(runIds[id]!)).toBe(e1Cohort);
+    }
+
     const e5 = await runRow(ctx, runIds['E5']!);
     expect(e5.results).toMatchObject({ status: 'skipped', reason: expect.stringMatching(/laya/) });
 

@@ -378,8 +378,10 @@ async function draftConfig(
     loadEvalFacetLabels(rt.db, dataset.version),
   ]);
   const scopedRatings = ratings.filter((r) => inScope(r.articleId));
-  const facetLabels =
-    def.score === 'cards' ? labels.filter((label) => inScope(label.articleId)) : [];
+  // Every experiment of a language scope shares one cohort (rated pairs plus facet-labelled
+  // articles), so the gate compares runs on identical ground truth (D-110); only card
+  // experiments ask Call A about the labelled articles.
+  const facetLabels = labels.filter((label) => inScope(label.articleId));
   const articleIds = uniqSorted([
     ...scopedRatings.map((r) => r.articleId),
     ...facetLabels.map((l) => l.articleId),
