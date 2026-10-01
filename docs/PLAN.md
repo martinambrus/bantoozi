@@ -264,7 +264,7 @@ flowchart TD
 | **M3a** Evaluation tooling & golden-set collection | M1, M2 | M4, M5 | yes, then a **human step** (§8.1) | M | not started |
 | **M3b** Run gate G1 | M3a + human ratings | M6, M7-T1…T6 | yes (needs API keys and network) | S | not started |
 | **M4** HTTP API | M1, M2 | M3a, M5 | yes | L | not started |
-| **M5** Ranking & lanes | M1, M2 | M3a, M4 | yes | M | not started |
+| **M5** Ranking & lanes | M1, M2 | M3a, M4 | yes | M | ✓ done 2026-10-01 (§11) |
 | **M6** Web app (PWA) | M4, M5 | M3b | yes | L | not started |
 | **M7** Personal learning & suggestions | M4, M5, M6 (its goal runs E2E), and **M3b for T7** (run T7 last, after M3b is merged) | M8 | yes | M | not started |
 | **M8** Operations & launch readiness | M4, M5, M6, and M3b applied; final launch gate also requires all M7 | M7 implementation only | mostly (one-time host setup is manual) | M | not started |
@@ -999,6 +999,19 @@ Complete milestone M4 "HTTP API" exactly as specified in docs/PLAN.md §10 and d
 ---
 
 ## 11. M5: Ranking and lanes
+
+**Status: done 2026-10-01** on branch `claude/m5-ranking-73oa0i` (`e9735a4` T1, `0b37788` T2,
+`b7ea36f` T3, `e8bed97` T4, `9277405` T5, `e425105` T6; PR #9 review and CI fixes `d74e8b4`,
+`f89f5d0`, `5c807e8`, `e555377`, `a4efe50`, `c37f098`). The full check passed after the last commit
+(worker integration 233 tests, including `rank.int.test.ts` 29 and `ranking.e2e.test.ts` 3);
+`packages/ranker` line coverage is 99.3 %. Deviations: D-140 and D-141 in `docs/DECISIONS.md`. No
+migrations. Merged to `main` on 2026-10-01 through PR #9 (merge commit `df39e98`). Handoffs: M4
+records user-specific invalidations with `recordRankIntents(..., {full: true})` (rate, undo, read,
+cards, rules, preferences, subscriptions), bumps `ranker.settings_version` with every
+`ranker.thresholds` change, and enqueues a full rank from `GET /articles` when an eligible row is
+outdated (`isRankCurrent`); M7 passes the active model as `ctx.model` and adds its context to
+`contextSha` (`apps/worker/src/rank/context.ts`, `model: null` today); M8 `house.reconcile`
+enqueues ranks for due `user_article.next_rank_at`.
 
 **Outcome:** each user's articles get lanes, tiers, rules, demotions, label suggestions and `explain`
 through the `user.rank` handler, with the normative precedence of spec 06 §2. It is triggered by
