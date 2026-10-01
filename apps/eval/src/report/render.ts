@@ -579,16 +579,16 @@ export function e6Score(run: RunData, config: PolicyConfig = DEFAULT_POLICY_CONF
       }
     }
     const cards = rankCardsOf(run.config.cards, item.raterId);
-    return cardScore(cards, { cardAnswers: answers as CardAnswers, inferenceFeedIds: [] }, config)
-      ?.score ?? null;
+    return (
+      cardScore(cards, { cardAnswers: answers as CardAnswers, inferenceFeedIds: [] }, config)
+        ?.score ?? null
+    );
   };
 }
 
 /** Runs that are never a scorer of their own in the tables (informational, replays, gate locks). */
 export function isTableRun(run: RunData): boolean {
-  return (
-    !['E6', 'E7', 'G1-gate'].includes(run.experiment) && !run.experiment.startsWith('replay:')
-  );
+  return !['E6', 'E7', 'G1-gate'].includes(run.experiment) && !run.experiment.startsWith('replay:');
 }
 
 /**
@@ -701,9 +701,7 @@ export function renderEvaluationReport(
   options: EvaluationReportOptions,
 ): string {
   const latest = latestRuns(model.runs);
-  const views = [...latest.values()]
-    .filter(isTableRun)
-    .map(runView);
+  const views = [...latest.values()].filter(isTableRun).map(runView);
   const baselineRun = latest.get(options.baselineExperiment ?? 'B1') ?? null;
   const baseline = baselineRun === null ? null : runView(baselineRun);
   const primary =

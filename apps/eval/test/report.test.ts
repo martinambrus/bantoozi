@@ -1,3 +1,4 @@
+import { DEFAULT_RANKER_CONFIG } from '@bantoozi/ranker';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -9,11 +10,11 @@ import {
 } from '../src/report/gate.js';
 import { renderGateReport } from '../src/report/gate-report.js';
 import { buildReportModel, latestRuns } from '../src/report/model.js';
-import { renderEvaluationReport } from '../src/report/render.js';
+import { e6Score, renderEvaluationReport, renderInformational } from '../src/report/render.js';
 import { parseRunData } from '../src/report/run-data.js';
 import { reliabilitySvg } from '../src/report/svg.js';
 import { calibration } from '../src/metrics/index.js';
-import { buildFixture, DATASET, makeRun, standardRuns } from './gate-fixtures.js';
+import { buildFixture, DATASET, makeRawRun, makeRun, standardRuns } from './gate-fixtures.js';
 
 /** M3a-T7: the report renders every table of spec 10 §4 and one reliability SVG per language. */
 
@@ -292,5 +293,83 @@ describe('run data and the reliability SVG', () => {
     expect(svg).toContain('a &lt;b&gt; &amp; &quot;c&quot;');
     expect(svg).not.toMatch(/href|<script|https?:\/\/(?!www\.w3\.org)/);
     expect(svg).not.toContain('\n\n');
+  });
+  it('scores E6 from its per-rater rerun answers and keeps replay runs out of the tables', () => {
+    const fixture = buildFixture();
+    // The runner's E6 shape: `e6.r<raterId>` rows with card_id = the card, no `card` rows.
+    const raw = makeRawRun(fixture, { id: '40', experiment: 'E6', signal: () => 0.9 });
+    const raterOfCard = new Map(
+      fixture.raters.map((r) => [fixture.cardIdOf(r.raterId), r.raterId]),
+    );
+    const answers = raw.answers.flatMap((row) =>
+      row.questionKey === 'card' && row.cardId !== null
+        ? [{ ...row, questionKey: `e6.r${raterOfCard.get(row.cardId)}` }]
+        : row.questionKey.startsWith('score.r')
+          ? []
+          : [row],
+    );
+    const devIds = [...fixture.sample.values()]
+      .filter((s) => s.split === 'dev')
+      .map((s) => s.articleId);
+    const e6 = parseRunData(
+      {
+        ...raw.run,
+        results: {
+          ...(raw.run.results as object),
+          e6: {
+            examplesAdded: { '901': { yes: 2, no: 1 } },
+            earlierArticleIds: [],
+            laterArticleIds: devIds,
+          },
+        },
+      },
+      answers,
+    );
+    expect(e6.cards.size).toBe(0);
+    expect(e6.scores.size).toBe(0);
+    const rated = fixture.ratings.find(
+      (r) =>
+        devIds.includes(r.articleId) &&
+        e6.extra.get(`e6.r${r.raterId}`)?.get(r.articleId)?.get(fixture.cardIdOf(r.raterId))?.ok ===
+          true,
+    )!;
+    const item = buildReportModel({
+      datasetVersion: DATASET.version,
+      runs: [e6],
+      sample: fixture.sample,
+    }).items.find((i) => i.raterId === rated.raterId && i.articleId === rated.articleId)!;
+    const result = e6.extra
+      .get(`e6.r${rated.raterId}`)
+      ?.get(rated.articleId)
+      ?.get(fixture.cardIdOf(rated.raterId));
+    // One `like` card: score = like weight × p.
+    expect(result?.ok).toBe(true);
+    const p = result?.ok === true ? result.p : Number.NaN;
+    expect(e6Score(e6)(item)).toBeCloseTo(DEFAULT_RANKER_CONFIG.strengthWeights.like * p, 10);
+
+    const replay = makeRun(fixture, { id: '41', experiment: 'replay:E1', signal: () => 0.1 });
+    const model = buildReportModel({
+      datasetVersion: DATASET.version,
+      runs: [...standardRuns(fixture), e6, replay],
+      sample: fixture.sample,
+    });
+    const informational = renderInformational(model);
+    const line = informational.split('\n').find((l) => l.startsWith('**E6 card examples**'))!;
+    expect(line).toMatch(/paired ΔAUC vs E1 [+−-]?\d/);
+    expect(line).toContain('card 901 +2/−1');
+    const markdown = renderEvaluationReport(model, {
+      title: 'r',
+      splits: ['dev'],
+      settings,
+      generatedAt,
+    });
+    // Listed under Runs and Operations, but never a scorer of the ranking/calibration/policy tables.
+    expect(markdown).toContain('| 41 | replay:E1 |');
+    const scorerTables = markdown.slice(
+      markdown.indexOf('## Ranking (development)'),
+      markdown.indexOf('## Operations'),
+    );
+    expect(scorerTables.length).toBeGreaterThan(0);
+    expect(scorerTables).not.toContain('replay:E1');
   });
 });
