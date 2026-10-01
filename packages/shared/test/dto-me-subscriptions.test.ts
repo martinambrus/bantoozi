@@ -67,6 +67,12 @@ describe('subscription request schemas', () => {
     expect(
       AnalyzeBodySchema.safeParse({ articles: [one, one], expectedInferenceVersion: '0' }).success,
     ).toBe(false);
+    // "1" and "01" name the same article.
+    const padded = { id: '01', contentRevision: '1' };
+    expect(
+      AnalyzeBodySchema.safeParse({ articles: [one, padded], expectedInferenceVersion: '0' })
+        .success,
+    ).toBe(false);
     const many = Array.from({ length: 21 }, (_, i) => ({
       id: String(i + 1),
       contentRevision: '1',

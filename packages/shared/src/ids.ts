@@ -47,6 +47,11 @@ export const BigIntStringSchema = z
   .string()
   .refine(isBigIntString, 'must be a decimal bigint string');
 
+/** True when no two ids name the same number (`"7"` and `"07"` are one id). */
+export function distinctIds(ids: readonly string[]): boolean {
+  return new Set(ids.map((id) => (isBigIntString(id) ? BigInt(id) : id))).size === ids.length;
+}
+
 /**
  * A positive database id (identity columns start at 1). One refinement: zod keeps running later
  * refinements after a failed one, and `BigInt('v1')` would throw instead of failing validation.

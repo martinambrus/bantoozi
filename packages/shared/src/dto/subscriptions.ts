@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { IdSchema, RevisionSchema, UuidSchema, UuidStringSchema } from '../ids.js';
+import { distinctIds, IdSchema, RevisionSchema, UuidSchema, UuidStringSchema } from '../ids.js';
 import { IMAGE_POLICIES } from '../policies/images.js';
 import { INFERENCE_MODES } from '../policies/inference.js';
 import { MAX_FOLDER_NAME_LENGTH } from '../preferences.js';
@@ -125,10 +125,7 @@ export const AnalyzeBodySchema = z
       .array(z.object({ id: IdSchema, contentRevision: IdSchema }).strict())
       .min(1)
       .max(MAX_ANALYZE_ARTICLES)
-      .refine(
-        (articles) => new Set(articles.map((a) => a.id)).size === articles.length,
-        'duplicate article',
-      ),
+      .refine((articles) => distinctIds(articles.map((a) => a.id)), 'duplicate article'),
     expectedInferenceVersion: RevisionSchema,
     startTraining: z.boolean().optional(),
   })

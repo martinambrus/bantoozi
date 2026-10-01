@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { IdSchema, RevisionSchema, UuidSchema, UuidStringSchema, isBigIntString } from '../ids.js';
+import { distinctIds, IdSchema, RevisionSchema, UuidSchema, UuidStringSchema } from '../ids.js';
 import { DEFAULT_PAGE_LIMIT, IsoTimestampSchema, MAX_PAGE_LIMIT } from './common.js';
 import { ExplainSchema, LaneSchema } from './explain.js';
 import { RuleSchema } from './rules.js';
@@ -336,8 +336,7 @@ export const MAX_RATE_BULK_TARGETS = 200;
 
 /** Each article at most once: one locked snapshot, one result version per article for undo. */
 const uniqueTargets = <T extends { id: string }>(targets: readonly T[]) =>
-  new Set(targets.map((target) => (isBigIntString(target.id) ? BigInt(target.id) : target.id)))
-    .size === targets.length;
+  distinctIds(targets.map((target) => target.id));
 
 export const MarkReadFilterSchema = z
   .object({
