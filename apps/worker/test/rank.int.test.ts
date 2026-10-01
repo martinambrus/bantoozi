@@ -620,6 +620,14 @@ describe('full runs, continuations and fences (spec 06 §7 step 5)', () => {
     let [continuation] = await h.payloads('user.rank', since);
     expect(continuation).toMatchObject({ userId: r.userId, reason: 'continuation' });
     expect(continuation?.['cursor']).toMatchObject({ articleId: ids[3] });
+    // The continuation commits in the same transaction as the page's last write.
+    const [intent] = await h.intents('user.rank', { since });
+    const xmins = await h.owner.query<{ outbox: string; row: string }>(
+      `SELECT (SELECT xmin::text FROM job_outbox WHERE id = $1) AS outbox,
+              (SELECT xmin::text FROM user_article WHERE user_id = $2 AND article_id = $3) AS row`,
+      [intent?.id, r.userId, ids[3]],
+    );
+    expect(xmins.rows[0]?.outbox).toBe(xmins.rows[0]?.row);
     expect(buildJobIntent('user.rank', parseJobPayload('user.rank', continuation)).send).toEqual({
       kind: 'send',
       singletonKey: `rank-cont:${r.userId}:${String((continuation?.['cursor'] as { arrival: string }).arrival)}:${ids[3]}`,

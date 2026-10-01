@@ -144,6 +144,8 @@ export function createUserRankHandler(
     let ranked = 0;
     let cursor: RankCursor | undefined = payload.cursor;
     let outcome: RunOutcome = 'done';
+    // Whether the continuation already committed with the run's last write.
+    let continued = false;
 
     pages: for (;;) {
       const page = await rankWindowPage(deps.db, {
@@ -161,6 +163,9 @@ export function createUserRankHandler(
         limit: pageSize,
       });
       const todo = page.filter((row) => row.dirty || row.recheck);
+      // Rank the whole page first, so its last write is known: a continuation (when the budget is
+      // spent) commits with that write, never in a separate transaction after it.
+      const batches: Array<{ writes: RankWrite[]; escalate: Set<string> }> = [];
       for (let i = 0; i < todo.length; i += batchSize) {
         const chunk = todo.slice(i, i + batchSize);
         const dirty = new Set(chunk.filter((row) => row.dirty).map((row) => row.articleId));
@@ -197,9 +202,19 @@ export function createUserRankHandler(
             nextRankAt: result.nextRankAt,
           });
         }
-        if (writes.length === 0) continue;
+        if (writes.length > 0) batches.push({ writes, escalate });
+      }
+      const last = page[page.length - 1];
+      const pageCursor =
+        last === undefined ? undefined : { arrival: last.arrival, articleId: last.articleId };
+      const morePages = pageCursor !== undefined && page.length === pageSize;
+      const spent = () => Date.now() - started >= budgetMs;
+      const checkpoint = { committed: false };
+      for (const [index, { writes, escalate }] of batches.entries()) {
         await options.beforeWrite?.(writes.map((write) => write.articleId));
+        const final = index === batches.length - 1;
         const result = await retryTransaction(deps.db, async (tx) => {
+          checkpoint.committed = false;
           const outcome = await writeRankBatch(tx, fence, writes);
           if (outcome.status === 'written') {
             const sender = workerOutbox(tx);
@@ -207,6 +222,10 @@ export function createUserRankHandler(
               if (escalate.has(articleId)) {
                 await enqueueTranslate(sender, { articleId, forceTier2: true });
               }
+            }
+            if (final && morePages && spent()) {
+              await enqueueRank(sender, continuationIntent(payload, forceBefore, pageCursor));
+              checkpoint.committed = true;
             }
           }
           return outcome;
@@ -218,16 +237,20 @@ export function createUserRankHandler(
         written += result.written.length;
         for (const id of result.movedArticleIds) moved.add(id);
       }
-      const last = page[page.length - 1];
-      if (last === undefined || page.length < pageSize) break;
-      cursor = { arrival: last.arrival, articleId: last.articleId };
-      if (Date.now() - started >= budgetMs) {
+      if (!morePages) break;
+      cursor = pageCursor;
+      if (checkpoint.committed || spent()) {
         outcome = 'continued';
+        continued = checkpoint.committed;
         break;
       }
     }
 
-    const followUp = followUpIntent(payload, outcome, forceBefore, cursor, moved.size > 0);
+    // A continuation not committed with a write (the page wrote nothing, or the budget ran out
+    // after its last write) is recorded here.
+    const followUp = continued
+      ? null
+      : followUpIntent(payload, outcome, forceBefore, cursor, moved.size > 0);
     if (followUp !== null) {
       await retryTransaction(deps.db, (tx) => enqueueRank(workerOutbox(tx), followUp));
     }
@@ -247,6 +270,20 @@ export function createUserRankHandler(
   };
 }
 
+/** The continuation of a run, resuming strictly below `cursor` (a full run's keeps its snapshot). */
+function continuationIntent(
+  payload: JobPayload<'user.rank'>,
+  forceBefore: Date | undefined,
+  cursor: RankCursor | undefined,
+): JobPayload<'user.rank'> {
+  return {
+    userId: payload.userId,
+    reason: 'continuation',
+    ...(cursor === undefined ? {} : { cursor }),
+    ...(forceBefore === undefined ? {} : { full: true, snapshotAt: forceBefore.toISOString() }),
+  };
+}
+
 /**
  * The job a run leaves behind: a continuation that resumes below the last visited position when the
  * budget ran out (a full run's keeps its snapshot), a replacement when the run was superseded, an
@@ -263,12 +300,7 @@ function followUpIntent(
     case 'gone':
       return null;
     case 'continued':
-      return {
-        userId: payload.userId,
-        reason: 'continuation',
-        ...(cursor === undefined ? {} : { cursor }),
-        ...(forceBefore === undefined ? {} : { full: true, snapshotAt: forceBefore.toISOString() }),
-      };
+      return continuationIntent(payload, forceBefore, cursor);
     case 'superseded':
       return { userId: payload.userId, reason: 'superseded' };
     case 'done':
