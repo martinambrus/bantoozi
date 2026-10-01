@@ -10,7 +10,7 @@ import {
 } from '@bantoozi/db';
 
 import { FACET_FIELDS, FACET_UNSURE_VALUES } from './facets.js';
-import { html, page, type SafeHtml } from './html.js';
+import { html, page, safeExternalUrl, type SafeHtml } from './html.js';
 import {
   MAX_INTEREST_CARDS,
   MAX_NEVER_CARDS,
@@ -214,6 +214,23 @@ ${v.notFor ?? ''}</textarea>
 
 // ── Step 2: feeds ─────────────────────────────────────────────────────────────────────────────────
 
+/** The feed's site and the feed itself, in a new tab and outside the label (no toggle on click). */
+function feedLinks(feed: GoldenFeed): SafeHtml {
+  const link = (href: string, text: string): SafeHtml =>
+    html`<a href="${href}" target="_blank" rel="noopener noreferrer">${text} ↗</a>`;
+  const site = safeExternalUrl(feed.siteUrl);
+  const source = safeExternalUrl(feed.url);
+  const links = [
+    ...(site === null ? [] : [link(site, site)]),
+    ...(source === null ? [] : [link(source, site === null ? source : 'feed')]),
+  ];
+  return links.length === 0
+    ? html``
+    : html`<span class="muted feed-links"
+        >${links.map((l, k) => (k === 0 ? l : html` · ${l}`))}</span
+      >`;
+}
+
 export function feedsPage(input: {
   feeds: readonly GoldenFeed[];
   selected: ReadonlySet<string>;
@@ -246,12 +263,9 @@ export function feedsPage(input: {
                       input.selected.has(feed.feedId) ? html` checked` : ''
                     }${input.locked ? html` disabled` : ''}
                   />
-                  <span
-                    >${feed.title ?? feed.url}<br /><span class="muted"
-                      >${feed.siteUrl ?? feed.url}</span
-                    ></span
-                  ></label
+                  <span>${feed.title ?? feed.url}</span></label
                 >
+                ${feedLinks(feed)}
               </li>`,
           )}
         </ul>
