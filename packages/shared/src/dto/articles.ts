@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { IdSchema, RevisionSchema, UuidSchema, UuidStringSchema } from '../ids.js';
+import { IdSchema, RevisionSchema, UuidSchema, UuidStringSchema, isBigIntString } from '../ids.js';
 import { DEFAULT_PAGE_LIMIT, IsoTimestampSchema, MAX_PAGE_LIMIT } from './common.js';
 import { ExplainSchema, LaneSchema } from './explain.js';
 import { RuleSchema } from './rules.js';
@@ -334,6 +334,11 @@ export const MAX_MARK_READ_TARGETS = 500;
 export const MAX_MARK_READ_FILTER_TARGETS = 5000;
 export const MAX_RATE_BULK_TARGETS = 200;
 
+/** Each article at most once: one locked snapshot, one result version per article for undo. */
+const uniqueTargets = <T extends { id: string }>(targets: readonly T[]) =>
+  new Set(targets.map((target) => (isBigIntString(target.id) ? BigInt(target.id) : target.id)))
+    .size === targets.length;
+
 export const MarkReadFilterSchema = z
   .object({
     lane: MarkReadLaneSchema,
@@ -346,7 +351,15 @@ export const MarkReadFilterSchema = z
 export type MarkReadFilter = z.infer<typeof MarkReadFilterSchema>;
 
 export const MarkReadBodySchema = z.union([
-  z.object({ targets: z.array(BulkTargetSchema).min(1).max(MAX_MARK_READ_TARGETS) }).strict(),
+  z
+    .object({
+      targets: z
+        .array(BulkTargetSchema)
+        .min(1)
+        .max(MAX_MARK_READ_TARGETS)
+        .refine(uniqueTargets, 'duplicate article'),
+    })
+    .strict(),
   z.object({ filter: MarkReadFilterSchema, datasetVersion: z.string().min(1).max(128) }).strict(),
 ]);
 export type MarkReadBody = z.infer<typeof MarkReadBodySchema>;
@@ -362,7 +375,11 @@ export const RateBulkTargetSchema = BulkTargetSchema.extend({
 
 export const RateBulkBodySchema = z
   .object({
-    targets: z.array(RateBulkTargetSchema).min(1).max(MAX_RATE_BULK_TARGETS),
+    targets: z
+      .array(RateBulkTargetSchema)
+      .min(1)
+      .max(MAX_RATE_BULK_TARGETS)
+      .refine(uniqueTargets, 'duplicate article'),
     rating: z.union([z.literal(1), z.literal(-1), z.null()]),
   })
   .strict();

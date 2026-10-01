@@ -677,6 +677,19 @@ describe('bulk actions', () => {
     expect(unread.rows[0]).toEqual({ n: 0 });
   });
 
+  it('rejects an article listed twice in rate-bulk and mark-read targets', async () => {
+    const { r, article } = await setup();
+    const twice = [
+      { id: article, ...freshFence },
+      { id: article, ...freshFence },
+    ];
+    const rated = await r.api.post('/articles/rate-bulk', { targets: twice, rating: 1 });
+    expect(rated.statusCode, rated.body).toBe(400);
+    const read = await r.api.post('/articles/mark-read', { targets: twice });
+    expect(read.statusCode, read.body).toBe(400);
+    expect(await events(h, r.user.id, article)).toEqual([]);
+  });
+
   it('rate-bulk applies single-rating semantics; null un-rates; undo restores', async () => {
     const { r, feed, article } = await setup();
     const second = await carriedArticle(h, [feed]);
