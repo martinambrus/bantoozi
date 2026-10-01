@@ -385,6 +385,17 @@ describe('GET /articles: cursors', () => {
     expect(ids(await list(r))).toContain(late);
   });
 
+  it('a requested rerank (rank_revision bump) between pages is STALE_CURSOR before any row moves', async () => {
+    const { r } = await sameScoreReader(3);
+    const first = await list(r, { limit: '2' });
+    await h.owner.query('UPDATE users SET rank_revision = rank_revision + 1 WHERE id = $1', [
+      r.user.id,
+    ]);
+    const res = await r.api.get('/articles', { query: { limit: '2', cursor: first.nextCursor! } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('STALE_CURSOR');
+  });
+
   it('a rerank between pages is STALE_CURSOR', async () => {
     const { r, articles } = await sameScoreReader(3);
     const first = await list(r, { limit: '2' });

@@ -237,12 +237,15 @@ function laneRowsCtes(lane: ArticleViewLane, status: ArticleStatus, minTier: num
 /**
  * `datasetVersion` (spec 08 §5.1): a digest of the view's rows ordered by id with every mutable
  * filter/sort field (lane, P, tier, read/archive state, arrival, publication date, story, labels,
- * eligibility), prefixed by the view itself. It is independent of the sort, so the list, the counts
- * (`lane=all`) and a mark-read filter over the same view and `asOf` agree. Reranking, cluster,
- * read/label changes and unsubscribing all change it.
+ * eligibility), prefixed by the view itself, the score version and the user's `rank_revision`. It
+ * is independent of the sort, so the list, the counts (`lane=all`) and a mark-read filter over the
+ * same view and `asOf` agree. Reranking (requested or done), cluster, read/label changes and
+ * unsubscribing all change it.
  */
-function digestExpr(prefix: string): SQL {
-  return sql`encode(sha256(convert_to(${prefix} || coalesce(string_agg(concat_ws('|',
+function digestExpr(prefix: string, user: string): SQL {
+  return sql`encode(sha256(convert_to(${prefix}
+      || coalesce((SELECT u.rank_revision::text FROM users u WHERE u.id = ${user}::uuid), '-')
+      || ${'\u0001'} || coalesce(string_agg(concat_ws('|',
       article_id, lane, coalesce(p_like::text, '-'), coalesce(tier::text, '-'),
       (read_at IS NOT NULL)::text, (archived_at IS NOT NULL)::text, ${micros(sql`arrival`)},
       coalesce(${micros(sql`published_at`)}::text, '-'), coalesce(story_cluster_id::text, '-'),
@@ -261,6 +264,7 @@ function viewPrefix(input: ArticleViewInput): string {
     scope.folder ?? '',
     scope.labelId ?? '',
     input.asOf.toISOString(),
+    input.scoreVersion,
     '',
   ].join('\u0001');
 }
@@ -346,7 +350,7 @@ export async function listArticlePage(
     keyed AS (SELECT rows.*, ${k1} AS k1, ${k2} AS k2 FROM rows),
     page AS (SELECT * FROM keyed ${after} ORDER BY k1 DESC, k2 DESC, article_id DESC
              LIMIT ${input.limit + 1}),
-    summary AS (SELECT ${digestExpr(viewPrefix(input))} AS dataset_version FROM rows),
+    summary AS (SELECT ${digestExpr(viewPrefix(input), user)} AS dataset_version FROM rows),
     pending AS (SELECT coalesce(bool_or(outdated), false) AS ranking_pending FROM proj)
     SELECT summary.dataset_version, pending.ranking_pending,
            p.article_id::text AS article_id, p.eligible, p.display_feed_id::text AS display_feed_id,
@@ -419,7 +423,7 @@ export async function articleViewIds(
       labelId: input.scope.labelId,
     })}
     ${laneRowsCtes(input.lane, input.status, input.minTier)}
-    SELECT ${digestExpr(viewPrefix(input))} AS dataset_version, count(*)::int AS total,
+    SELECT ${digestExpr(viewPrefix(input), user)} AS dataset_version, count(*)::int AS total,
            (array_agg(article_id::text ORDER BY article_id))[1:${options.maxIds}] AS ids
       FROM rows`,
   );
@@ -473,7 +477,7 @@ async function laneCounts(
            count(*) FILTER (WHERE lane = 'maybe')::int AS maybe,
            count(*) FILTER (WHERE lane = 'everything')::int AS everything,
            count(*) FILTER (WHERE lane = 'new')::int AS new,
-           ${digestExpr(viewPrefix({ ...input, lane: 'all' }))} AS dataset_version,
+           ${digestExpr(viewPrefix({ ...input, lane: 'all' }), user)} AS dataset_version,
            coalesce(bool_or(pending.ranking_pending), false) AS ranking_pending
       FROM rows LEFT JOIN pending ON pending.view_key = rows.view_key
      GROUP BY rows.view_key`);
@@ -542,7 +546,7 @@ async function emptyDigest(tx: TenantTx, input: ArticleViewInput): Promise<strin
              NULL::timestamptz AS arrival, NULL::timestamptz AS published_at,
              NULL::bigint AS story_cluster_id, NULL::bigint[] AS label_ids, NULL::boolean AS eligible
       WHERE false)
-    SELECT ${digestExpr(viewPrefix(input))} AS d FROM rows`);
+    SELECT ${digestExpr(viewPrefix(input), tenantUserId(tx))} AS d FROM rows`);
   return result.rows[0]?.d ?? '';
 }
 
