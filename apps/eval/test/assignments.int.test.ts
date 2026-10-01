@@ -400,6 +400,45 @@ describe('ensureAssignments', () => {
     expect(result.added).toBe(3);
   });
 
+  it('assigns nothing from top-up picks that are all rejected when they are locked', async () => {
+    const [feed] = await addGoldenFeeds(rdb, 'en', 1);
+    const ids = await addArticles(
+      rdb,
+      feed!.id,
+      'en',
+      3,
+      new Date(now.getTime() - DAY),
+      (i) => `rejected top-up ${i}`,
+    );
+    const { rater } = await addRater(rdb, { langs: ['en'], now });
+    await pick(rater.id, [feed!]);
+    // The ingest worker turns every candidate stale after the eligibility query has seen them, so
+    // the share lock waits for its commit and then rejects all of them.
+    const worker = await rdb.owner.connect();
+    let pending: ReturnType<typeof ensureAssignments> | undefined;
+    try {
+      await worker.query('BEGIN');
+      await worker.query(
+        `UPDATE articles SET pipeline_state = 'stale' WHERE id = ANY($1::bigint[])`,
+        [ids],
+      );
+      pending = ensureAssignments(rdb.db, {
+        raterId: rater.id,
+        langs: rater.langs,
+        now,
+        target: 3,
+      });
+      pending.catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      await worker.query('COMMIT');
+    } finally {
+      worker.release();
+    }
+    const result = await pending;
+    expect(result).toMatchObject({ added: 0, total: 0, toppedUp: [] });
+    expect(await listAssignments(rdb.db, rater.id, result.datasetVersion)).toEqual([]);
+  });
+
   it('drops a planned top-up article that no longer qualifies when it is locked', async () => {
     const [feed] = await addGoldenFeeds(rdb, 'en', 1);
     const [stale, moved, fine] = await addArticles(

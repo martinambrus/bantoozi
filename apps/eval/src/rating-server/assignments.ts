@@ -323,16 +323,18 @@ export async function ensureAssignments(
     // The top-up picks are share-locked and revalidated (language, pipeline state) before their
     // snapshots are built in this transaction: an article the ingest worker turned stale or failed
     // since the eligibility query is dropped, and the locked ones cannot change until commit.
-    const fallback = await lockTopUpArticles(
-      tx,
-      plan.picks.filter((p) => p.pool === 1),
-    );
-    if (fallback.length > 0) {
-      const added = await addTopUps(tx, fallback);
-      toppedUp = added.added;
-      createdFrom = added.createdFrom;
-      current = (await headDataset(tx)) ?? current;
-      // The top-ups are sample rows now (of the head version, which may be new): choose again.
+    const topUpPicks = plan.picks.filter((p) => p.pool === 1);
+    if (topUpPicks.length > 0) {
+      const fallback = await lockTopUpArticles(tx, topUpPicks);
+      if (fallback.length > 0) {
+        const added = await addTopUps(tx, fallback);
+        toppedUp = added.added;
+        createdFrom = added.createdFrom;
+        current = (await headDataset(tx)) ?? current;
+      }
+      // Choose again from the sample alone: the surviving top-ups are sample rows now (of the head
+      // version, which may be new), and a rejected pick never reaches the sample, so it is dropped
+      // rather than assigned without a sample row.
       plan = await choose(current.version, false);
     }
     let added = 0;

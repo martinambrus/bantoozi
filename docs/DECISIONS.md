@@ -813,7 +813,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   it: an independent lineage started by `eval sample --version` never strands earlier assignments.
   Spec 10 §2.2 updated. The planned top-up articles are share-locked (`FOR SHARE OF a`, in id
   order) and revalidated in that transaction (same language, not stale or failed) before their
-  snapshots are built. A no-longer-eligible article is dropped, and the ingest worker cannot change
+  snapshots are built. A no-longer-eligible article is dropped (whenever the plan held top-ups it is
+  rebuilt from the sample alone, so a rejected pick is never assigned), and the ingest worker cannot change
   a locked one until commit. `feed_items` is not table-locked here, unlike the sample draw: the rating
   request already holds the rater and additions locks, and a carrier added meanwhile changes no
   eligibility.
