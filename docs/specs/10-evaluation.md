@@ -73,7 +73,8 @@ settings, regardless of profile.
 
 - **Feed list:** `apps/eval/data/feeds-golden.txt`, 54–66 feeds: 18–22 each for English, Slovak and
   Czech. It mixes news, tech, science, sport, lifestyle, local and classifieds, and includes at least
-  one Google News feed and one feed with poor excerpts.
+  one Google News feed and one feed with poor excerpts. Format `<lang> <category> <url> [tag …]` with
+  tags `google-news`, `poor-excerpts`, `bot-sensitive`, `legacy-charset`; `#` starts a comment (D-99).
 - **`eval ingest-sample --feeds apps/eval/data/feeds-golden.txt`:**
   - creates or reuses the internal system user `eval@bantoozi.local` (role `user`, never logs in) and
     subscribes it to the feeds
@@ -86,15 +87,20 @@ settings, regardless of profile.
     user's presence marks the golden database: a worker without the flag refuses to start on it
     and stops when it appears; an ingest-only worker consumes only `feed.schedule`, `feed.fetch`
     and `article.extract` and stops its pipeline after extraction (D-96)
-  - fetches each feed once immediately, waits until the `article.extract` queue for these articles has
-    drained, and prints per-language article counts
+  - fetches each feed once immediately (a forced fetch for feeds already subscribed), waits until
+    every active golden feed has been fetched since the start and no golden article awaits
+    extraction (`--timeout`, default 60 min; a timeout reports the counts and exits 0 because the
+    worker keeps collecting), and prints per-language article counts (D-99)
   - **`--watch`** keeps the eval user subscribed and prints counts every 10 minutes, until stopped
   - between the first run and rating, the normal schedule keeps fetching, because the eval user is a
     subscriber
 - **Sample (`eval sample`):** up to 1,500 non-stale articles, 500/500/500 by detected language (fewer
   if a language runs short), stratified across feeds and collection days. Cap any one feed at 10% of
   its language sample; report actual availability instead of quietly replacing source diversity
-  with one prolific feed. Store sampling seed, timestamps and exclusions.
+  with one prolific feed. Store sampling seed, timestamps and exclusions. Eligible means extracted,
+  not `stale`/`failed`, with a detected language in the requested set; the 10% cap applies to the
+  size actually drawn (the largest size the feeds can fill under it); an open version only gains
+  rows, a frozen one never changes and the next draw creates the next version (D-98).
 - **Freeze:** `eval.sample.snapshot` stores immutable article input (title, excerpt, body lead used by
   the classifier, language, timestamps, carrier feeds, content revision and story-group id), with
   `snapshot_sha`. Freeze rater cards/strengths and assignment membership before the first model run.

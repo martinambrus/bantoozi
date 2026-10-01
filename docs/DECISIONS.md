@@ -703,3 +703,26 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   (the same story carried by several feeds under one title) on one side of the split. Near-duplicates
   with different titles are not grouped; spec 10 already requires a new split/version when such
   unclustered duplicates are found before G1. Spec 10 §2.1 updated.
+- D-98: 2026-10-01 M3a-T2 — spec 10 §2.1 sets the sample's targets, the 10% feed cap and the strata
+  but not eligibility, the cap's base or re-runs. Eligible articles are carried by the evaluation
+  user's feeds, are past extraction (not `ingested`, `stale` or `failed`) and have a detected
+  language in `--langs`; everything else is counted as an exclusion by kind. The cap is 10% of the
+  size actually drawn: the largest n ≤ target with Σ min(available, ⌊0.1·n⌋) ≥ n, so a short
+  language shrinks instead of filling from one feed. The draw is a seeded water-fill across feeds by
+  each article's oldest golden carrier, rotating over UTC collection days within a feed; the seed
+  defaults to the version name. An open version only gains rows (its stored target, cap and
+  languages are the defaults); a frozen version is never changed, and without `--version` a frozen
+  head leads to the next version (parent rows copied), created only when it adds articles. Every
+  draw appends its time, seed, window, per-language target/available/size/cap/feeds/days and
+  exclusions to `params.sampling[]`. Spec 10 §2.1 updated.
+- D-99: 2026-10-01 M3a-T2 — `ingest-sample` mechanics that spec 10 §2.1 leaves open. The feed list
+  is `<lang> <category> <url> [tags]` with tags `google-news`, `poor-excerpts`, `bot-sensitive` and
+  `legacy-charset` and `#` comments. Besides a heartbeat under 90 s with `evalIngestOnly` and no live
+  ordinary worker, the live ingest-only workers must consume `feed.fetch` and `article.extract`.
+  "Fetch once now" records the fetch through the subscription for a new feed and forces a
+  `feed.fetch` for an already subscribed active one. "Drained" means every active golden feed was
+  fetched since the start (5 s skew allowance), no golden article is still `ingested` and no
+  `article.extract` work is pending in the outbox or pg-boss; paused, dead and quarantined feeds are
+  not waited for. The default timeout is 60 minutes and a timeout exits 0 with the counts, because
+  the worker keeps collecting. `--watch` re-checks heartbeats every tick (a warning, not an exit) and
+  re-subscribes lost feeds. Spec 10 §2.1 updated.
