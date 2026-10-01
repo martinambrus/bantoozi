@@ -382,11 +382,23 @@ describe('security headers, CSRF and origin checks', () => {
       (await browser.post('/r/cards', card, { headers: { 'sec-fetch-site': 'cross-site' } }))
         .statusCode,
     ).toBe(403);
+    // `Origin: null` (an opaque origin) without same-origin fetch metadata.
+    for (const headers of [{ origin: 'null' }, { origin: 'null', 'sec-fetch-site': 'none' }]) {
+      expect((await browser.post('/r/cards', card, { headers })).statusCode).toBe(403);
+    }
     const cards = await rdb.owner.query('SELECT 1 FROM eval.rater_cards WHERE rater_id = $1', [
       rater.id,
     ]);
     expect(cards.rowCount).toBe(0);
     expect((await browser.post('/r/cards', card)).statusCode).toBe(303);
+    // A no-referrer page's same-origin form POST: browsers serialize its Origin as `null`.
+    const sameOrigin = { origin: 'null', 'sec-fetch-site': 'same-origin' };
+    const another = { interest: 'New tram and train lines in Bratislava', strength: 'like' };
+    expect((await browser.post('/r/cards', another, { headers: sameOrigin })).statusCode).toBe(303);
+    const saved = await rdb.owner.query('SELECT 1 FROM eval.rater_cards WHERE rater_id = $1', [
+      rater.id,
+    ]);
+    expect(saved.rowCount).toBe(2);
   });
 });
 

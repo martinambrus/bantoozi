@@ -88,7 +88,8 @@ import {
  *   revocation, so `eval rater revoke` / `eval rater token` end sessions at once.
  * - Every read and write is scoped to the session's rater (its assignments, cards, feeds) or, for
  *   facet labels, to its participant.
- * - POSTs need the session's CSRF token and a same-origin `Origin` (when the browser sends one).
+ * - POSTs need the session's CSRF token and a same-origin `Origin` (when the browser sends one;
+ *   `null`, which no-referrer pages send, only with `Sec-Fetch-Site: same-origin`).
  * - Every response carries a strict CSP (scripts and styles from `/static/` only, no inline code),
  *   `Referrer-Policy: no-referrer` and `frame-ancestors 'none'`; token-bearing URLs are redacted
  *   in logs.
@@ -334,7 +335,10 @@ export async function buildRatingServer(options: RatingServerOptions): Promise<F
       throw new HttpError(403, 'Forbidden', 'Cross-site requests are not accepted.');
     }
     const origin = req.headers.origin;
-    if (origin !== undefined) {
+    // Under `Referrer-Policy: no-referrer` browsers send `Origin: null` even on a same-origin form
+    // POST, so `null` passes only when the fetch metadata vouches for the same origin.
+    const sameOriginNull = origin === 'null' && site === 'same-origin';
+    if (origin !== undefined && !sameOriginNull) {
       const host = req.headers.host;
       const allowed = new Set([publicOrigin]);
       if (host !== undefined) {
