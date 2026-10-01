@@ -243,9 +243,9 @@ export function selectLanguageSample(input: SelectInput): SelectResult {
    * Repairs a draw that fell short of `n` with augmenting paths: to place an unchosen article
    * blocked by one full feed, a chosen article of that feed steps aside, and the room it frees on
    * its other feeds is offered on, recursively, until an article fits outright, so each path adds
-   * one article (`{D,X}` evicts `{A,X}`, `{A,Y}` evicts `{B,Y}`, `{B,Z}` fits). Exact packing under
-   * several caps is NP-hard, so the search is bounded in depth and work; the cap itself is never
-   * exceeded.
+   * one article (`{D,X}` evicts `{A,X}`, `{A,Y}` evicts `{B,Y}`, `{B,Z}` fits). A path has no length
+   * limit: every article is tried at most once per search, which bounds it. Exact packing under
+   * several caps is NP-hard, so only the total work is budgeted; the cap itself is never exceeded.
    */
   const augment = (n: number, result: ReturnType<typeof draw>) => {
     const limitOf = (feedId: string) => Math.max(result.cap, carrierExisting.get(feedId) ?? 0);
@@ -276,14 +276,13 @@ export function selectLanguageSample(input: SelectInput): SelectResult {
     let budget = 500_000;
     const pinned = new Set<string>();
     const visited = new Set<string>();
-    const place = (c: SelectItem, depth: number): boolean => {
+    const place = (c: SelectItem): boolean => {
       budget -= 1;
       if (budget <= 0) return false;
       if (fits(c)) {
         shift(c, 1);
         return true;
       }
-      if (depth === 0) return false;
       const full = carriersOf(c).filter((f) => (count.get(f) ?? 0) >= limitOf(f));
       if (full.length !== 1) return false;
       const f = full[0]!;
@@ -298,7 +297,7 @@ export function selectLanguageSample(input: SelectInput): SelectResult {
             for (const t of byCarrier.get(x) ?? []) {
               if (t === s || chosen.has(t.articleId) || visited.has(t.articleId)) continue;
               visited.add(t.articleId);
-              if (place(t, depth - 1)) return true;
+              if (place(t)) return true;
               if (budget <= 0) break;
             }
           }
@@ -318,7 +317,7 @@ export function selectLanguageSample(input: SelectInput): SelectResult {
         visited.clear();
         pinned.clear();
         visited.add(c.articleId);
-        if (place(c, 8)) {
+        if (place(c)) {
           progress = true;
           break;
         }

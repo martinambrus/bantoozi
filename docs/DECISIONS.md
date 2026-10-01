@@ -744,8 +744,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   up another feed's room while an exclusive one is left.
   A size still unfilled gets a bounded augmenting-path repair: an unchosen article blocked by one
   full feed displaces a chosen article of that feed, the room that article frees on its other feeds
-  is offered on recursively (depth 8) until an article fits outright, so each path adds one. Exact
-  packing under several caps is NP-hard, so the search is bounded; the cap is never exceeded. The draw also holds `feed_items` in SHARE mode
+  is offered on recursively until an article fits outright, so each path adds one. A path has no
+  length limit (each article is tried once per search). Exact packing under several caps is
+  NP-hard, so only the total work is budgeted; the cap is never exceeded. The draw also holds `feed_items` in SHARE mode
   until it commits, so no carrier is added between the selection and the snapshots.
   Otherwise English rows would stay under `langs: ['sk']`, or a sample would exceed its recorded
   target or cap. A parameter the version never recorded constrains nothing. The widened values are
@@ -912,7 +913,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   never caps and hides, and coverage. The variant side uses the variant's answers over the base
   run's. The denominator is every base item outside For You and New, hidden items included.
 - D-110: 2026-10-01 M3a-T6 — the run cohort is the rated pairs of the selected raters and
-  languages, plus facet-labelled articles for card experiments; E6/E7 use only development pairs of
+  languages, plus facet-labelled articles for card experiments; the gate checks a run limited to a
+  subset of the reference run's languages (E4 defaults to SK/CZ) against the reference cohort and
+  ratings restricted to that subset; E6/E7 use only development pairs of
   the base E1 run's frozen config. The run config adds `assignments` (the BM25 corpus),
   `developmentOnly`, `baseRunId` and `replay`, and records the exact card text sent: english mode
   translates the cards before the run row is written. A `translation` answer key freezes article

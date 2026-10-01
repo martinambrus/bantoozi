@@ -259,6 +259,43 @@ describe('selectLanguageSample', () => {
     }
   });
 
+  it('repairs a draw whose augmenting path needs more than eight displacements', () => {
+    // Cap 1 at size 19: strata S1..S12 offer {Si,X(i-1)} and {Si,Xi}, D offers {D,X0}, plus six
+    // exclusive strata. Only every {Si,Xi} with {D,X0} fills all nineteen, so a draw that took
+    // the lower article of every stratum needs a chain of twelve displacements.
+    const k = 12;
+    const day = '2026-09-10';
+    const pool: SelectItem[] = [
+      ...Array.from({ length: k }, (_, j) => [
+        { articleId: `s${j + 1}lo`, feedId: `S${j + 1}`, carriers: [`S${j + 1}`, `X${j}`], day },
+        {
+          articleId: `s${j + 1}hi`,
+          feedId: `S${j + 1}`,
+          carriers: [`S${j + 1}`, `X${j + 1}`],
+          day,
+        },
+      ]).flat(),
+      { articleId: 'dx', feedId: 'D', carriers: ['D', 'X0'], day },
+      ...Array.from({ length: 6 }, (_, f) => ({ articleId: `e${f}`, feedId: `f${f}`, day })),
+    ];
+    const want = [
+      ...Array.from({ length: k }, (_, j) => `s${j + 1}hi`),
+      'dx',
+      ...Array.from({ length: 6 }, (_, f) => `e${f}`),
+    ].sort();
+    for (let i = 0; i < 40; i += 1) {
+      const result = selectLanguageSample({
+        fresh: pool,
+        existing: [],
+        target: 19,
+        feedCapShare: 0.1,
+        seed: `s${i}`,
+      });
+      expect(result.size).toBe(19);
+      expect([...result.added].sort()).toEqual(want);
+    }
+  });
+
   it('draws nothing when no language article is eligible', () => {
     const result = selectLanguageSample({
       fresh: [],
