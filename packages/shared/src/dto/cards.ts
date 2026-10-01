@@ -101,7 +101,8 @@ export const UpdateCardBodySchema = z
     strength: CardStrengthSchema.optional(),
     scopeFeedId: IdSchema.nullable().optional(),
   })
-  .strict();
+  .strict()
+  .refine((patch) => Object.keys(patch).length > 0, 'empty patch');
 
 /** `POST /cards/:id/examples` and `POST /labels/:id/examples`. */
 export const AddExampleBodySchema = z
@@ -171,7 +172,8 @@ export const UpdateLabelBodySchema = z
     notFor: notFor.nullable().optional(),
     color: LabelColorSchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine((patch) => Object.keys(patch).length > 0, 'empty patch');
 
 export const LabelMutationResponseSchema = z
   .object({
