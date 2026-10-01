@@ -78,16 +78,19 @@ describe('health (spec 08 §10)', () => {
     }
   });
 
-  it('is 503 without leaking details when the database is unreachable', async () => {
+  it('is 503 without leaking details when the database is unreachable, with limits on', async () => {
     const url = new URL(testDb.urls.app);
     url.port = '1';
     const deadPool = createPool({ connectionString: url.toString(), max: 1 });
     const offline = await buildServer({
       db: createDatabase(deadPool),
-      config: testConfig({}, url.toString()),
+      // Rate limits on: the DB-backed limiter must not turn the probes into a 500.
+      config: testConfig({ RATE_LIMITS_ENABLED: 'true' }, url.toString()),
       libreTranslate: null,
     });
     try {
+      const live = await offline.inject({ method: 'GET', url: '/api/v1/healthz' });
+      expect(live.statusCode).toBe(200);
       const res = await offline.inject({ method: 'GET', url: '/api/v1/readyz' });
       expect(res.statusCode).toBe(503);
       expect(res.json()).toEqual({

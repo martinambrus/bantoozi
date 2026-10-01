@@ -90,7 +90,17 @@ const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
  */
 export function registerRateLimits(app: FastifyInstance, limiter: RateLimiter): void {
   app.addHook('onRequest', async (request, reply) => {
-    await apply(limiter, request, reply, [GLOBAL_IP_LIMIT]);
+    if (request.routeOptions.config.healthProbe !== true) {
+      await apply(limiter, request, reply, [GLOBAL_IP_LIMIT]);
+      return;
+    }
+    // Health probes stay limited, but must still answer while the limiter's database is down.
+    try {
+      await apply(limiter, request, reply, [GLOBAL_IP_LIMIT]);
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      request.log.warn({ err: error }, 'rate limit unavailable for a health probe');
+    }
   });
   app.addHook('preValidation', async (request, reply) => {
     const config = request.routeOptions.config;

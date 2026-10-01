@@ -29,7 +29,7 @@ export async function healthRoutes(
   app.get(
     '/healthz',
     {
-      config: { auth: 'public' },
+      config: { auth: 'public', healthProbe: true },
       schema: { tags: TAGS, summary: 'Liveness', response: { 200: HealthResponseSchema } },
     },
     async (_request, reply) => {
@@ -40,7 +40,7 @@ export async function healthRoutes(
   app.get(
     '/readyz',
     {
-      config: { auth: 'public' },
+      config: { auth: 'public', healthProbe: true },
       schema: {
         tags: TAGS,
         summary: 'Readiness: database reachable and migrations current',

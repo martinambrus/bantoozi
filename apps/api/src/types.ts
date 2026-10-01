@@ -58,6 +58,8 @@ declare module 'fastify' {
     rateLimits?: readonly RateLimitRule[];
     /** Skip the per-user mutation limit and the idempotency requirement (auth login/logout). */
     authFlow?: boolean;
+    /** `healthz`/`readyz`: the per-IP limit fails open when the database is unreachable. */
+    healthProbe?: boolean;
   }
 
   interface FastifyRequest {
