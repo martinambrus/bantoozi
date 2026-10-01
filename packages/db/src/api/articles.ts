@@ -523,6 +523,8 @@ export async function countArticles(
   const everything = lane?.everything ?? 0;
   const fresh = lane?.new ?? 0;
   const empty = await emptyDigest(tx, { ...input, lane: 'all' });
+  // With no visible row there is no grouped row either; outdated projections still count as pending.
+  const pending = lane === undefined ? await viewRankingPending(tx, input) : lane.ranking_pending;
   return {
     forYou,
     maybe,
@@ -533,8 +535,26 @@ export async function countArticles(
     scored: forYou + maybe + everything,
     total: forYou + maybe + everything + fresh,
     datasetVersion: lane?.dataset_version ?? empty,
-    rankingPending: lane?.ranking_pending ?? false,
+    rankingPending: pending,
   };
+}
+
+/** Whether some eligible projection of the `lane=all` view has a missing/outdated rank. */
+async function viewRankingPending(
+  tx: TenantTx,
+  input: Omit<ArticleViewInput, 'lane'>,
+): Promise<boolean> {
+  const result = await tx.execute<{ pending: boolean }>(sql`
+    ${projectionCtes({
+      user: tenantUserId(tx),
+      mode: singleMode(input.scope, 'all'),
+      asOf: input.asOf,
+      scoreVersion: input.scoreVersion,
+      bookmarks: false,
+      labelId: input.scope.labelId,
+    })}
+    SELECT coalesce(bool_or(outdated), false) AS pending FROM proj`);
+  return result.rows[0]?.pending ?? false;
 }
 
 /** The digest of an empty view (no grouped row exists to compute it from). */

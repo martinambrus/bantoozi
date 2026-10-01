@@ -488,6 +488,10 @@ describe('GET /articles/counts', () => {
     ]);
     expect(await rankRevision(h, r.user.id)).toBe(before);
     expect((await r.api.get('/articles/counts')).json().rankingPending).toBe(true);
+    // Read, so the default unread counts are empty: the outdated projection is still pending.
+    await h.owner.query(`UPDATE user_article SET read_at = now() WHERE user_id = $1`, [r.user.id]);
+    const unread = (await r.api.get('/articles/counts')).json();
+    expect(unread).toMatchObject({ total: 0, rankingPending: true });
 
     // A plain untrained article of an off feed is not pending.
     const quiet = await newReader(h);
