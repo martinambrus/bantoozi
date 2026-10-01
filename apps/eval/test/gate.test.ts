@@ -4,6 +4,7 @@ import {
   assessGateRuns,
   buildG1,
   composedCostPerArticle,
+  foreignEngineAnswers,
   confirmOnTest,
   developmentInput,
   gateLangs,
@@ -16,12 +17,14 @@ import { G1Schema, g1ConfigSha } from '../src/report/g1-schema.js';
 import { onSplit, runScore, type RatedItem } from '../src/report/items.js';
 import { buildReportModel, latestRuns, type ReportModel } from '../src/report/model.js';
 import { buildCells, macroAuc } from '../src/report/ranking.js';
-import type { RunData } from '../src/report/run-data.js';
+import { parseRunData, type RawAnswer, type RunData } from '../src/report/run-data.js';
 import {
   buildFixture,
   DATASET,
+  makeRawRun,
   makeRun,
   standardRuns,
+  standardSpecs,
   type Fixture,
   type RunSpec,
 } from './gate-fixtures.js';
@@ -259,6 +262,53 @@ describe('development selection and test confirmation', () => {
     expect(assessments.get('E4')?.reasons.join(' ')).toMatch(/engine other than the pinned one/);
     expect(assessments.get('B1')?.reasons).toContain('status partial');
     expect(assessments.get('E5')?.reasons).toEqual(['no run']);
+  });
+
+  it('audits Call A answers and per-rater card answers for the pinned engine', () => {
+    const fixture = buildFixture();
+    const rating = fixture.ratings[0]!;
+    const withRows = (experiment: string, rows: RawAnswer[]) => {
+      const spec = standardSpecs().find((x) => x.experiment === experiment)!;
+      const raw = makeRawRun(fixture, spec);
+      return parseRunData(raw.run, [...raw.answers, ...rows]);
+    };
+    const runs = standardRuns(fixture).map((run) => {
+      // E1: one Call A answer (it feeds the demotion cutoffs) came from the LLM fallback.
+      if (run.experiment === 'E1') {
+        return withRows('E1', [
+          {
+            articleId: rating.articleId,
+            cardId: null,
+            questionKey: 'enrich.clickbait',
+            answer: { ok: true, answer: { type: 'noul', p: 0.4 }, engine: 'llm' },
+          },
+        ]);
+      }
+      // E2: one rater's own copy of a shared card (`card.r<raterId>`) came from the LLM fallback.
+      if (run.experiment === 'E2') {
+        return withRows('E2', [
+          {
+            articleId: rating.articleId,
+            cardId: fixture.cardIdOf(rating.raterId),
+            questionKey: `card.r${rating.raterId}`,
+            answer: { ok: true, p: 0.4, engine: 'llm' },
+          },
+        ]);
+      }
+      return run;
+    });
+    const { assessments } = setup(fixture, runs);
+    expect(assessments.get('E1')?.eligible).toBe(false);
+    expect(assessments.get('E1')?.reasons).toContain(
+      '1 answers from an engine other than the pinned one',
+    );
+    expect(assessments.get('E2')?.eligible).toBe(false);
+    expect(assessments.get('E2')?.reasons).toContain(
+      '1 answers from an engine other than the pinned one',
+    );
+    // TypeSafe answers everywhere else: the other core candidates stay eligible.
+    expect(assessments.get('E3')?.eligible).toBe(true);
+    expect(foreignEngineAnswers(assessments.get('E3')!.run!)).toBe(0);
   });
 
   it('fails when the composition does not beat the baseline by 0.05', () => {

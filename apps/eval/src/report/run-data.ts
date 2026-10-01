@@ -225,6 +225,12 @@ export interface RunData {
    * translated-state run, which the runner's enrich coverage does not count either).
    */
   enrich: Map<string, Map<string, Answer | null>>;
+  /**
+   * articleId → enrich key → engine of every usable Call A answer (`typesafe` when untagged), kept
+   * beside `enrich` for the gate's pinned-engine audit (a native-text fallback answer still counts:
+   * its engine was used).
+   */
+  enrichEngines: Map<string, Map<string, string>>;
   /** Other keys (`e7.targeted`, `e7.generic`, …): key → articleId → cardId → result. */
   extra: Map<string, Map<string, Map<string, CardResult>>>;
   /** Answers that did not parse (counted, never silently dropped). */
@@ -292,6 +298,7 @@ export function parseRunData(run: RawRun, answers: readonly RawAnswer[]): RunDat
     scores: new Map(),
     cards: new Map(),
     enrich: new Map(),
+    enrichEngines: new Map(),
     extra: new Map(),
     malformed: 0,
   };
@@ -315,6 +322,12 @@ export function parseRunData(run: RawRun, answers: readonly RawAnswer[]): RunDat
     } else if (key.startsWith('enrich.')) {
       const parsed = okEnrich.safeParse(row.answer);
       if (!parsed.success && !failed.safeParse(row.answer).success) data.malformed += 1;
+      if (parsed.success) {
+        nested(data.enrichEngines, row.articleId).set(
+          key.slice('enrich.'.length),
+          parsed.data.engine ?? 'typesafe',
+        );
+      }
       nested(data.enrich, row.articleId).set(
         key.slice('enrich.'.length),
         parsed.success && !(translatedState && parsed.data.variant === 'native')

@@ -81,6 +81,27 @@ export const GATE_EXPERIMENTS = [
 /** Experiments whose answers must all come from the pinned Jev engine (spec 10 §3). */
 const PINNED_ENGINE = new Set(['E1', 'E2', 'E3', 'E3b', 'E4', 'E6', 'E7']);
 
+/**
+ * Usable answers of a run that came from an engine other than TypeSafe, across every answer source
+ * the metrics read: the shared `card` rows, every per-key card map in `extra` (the per-rater
+ * `card.r<raterId>` rows, `e6.r*`, `e7.*`) and the Call A (enrich) answers that drive the demotion
+ * cutoffs.
+ */
+export function foreignEngineAnswers(run: RunData): number {
+  let foreign = 0;
+  const cardMaps = [run.cards, ...run.extra.values()];
+  for (const byArticle of cardMaps) {
+    for (const answers of byArticle.values()) {
+      for (const answer of answers.values())
+        if (answer.ok && answer.engine !== 'typesafe') foreign += 1;
+    }
+  }
+  for (const engines of run.enrichEngines.values()) {
+    for (const engine of engines.values()) if (engine !== 'typesafe') foreign += 1;
+  }
+  return foreign;
+}
+
 export interface GateDataset {
   version: string;
   snapshotSha: string;
@@ -130,13 +151,7 @@ export function assessGateRuns(
       return out;
     };
     const informational = experiment === 'E6' || experiment === 'E7';
-    let foreign = 0;
-    if (PINNED_ENGINE.has(experiment)) {
-      for (const answers of run.cards.values()) {
-        for (const answer of answers.values())
-          if (answer.ok && answer.engine !== 'typesafe') foreign += 1;
-      }
-    }
+    const foreign = PINNED_ENGINE.has(experiment) ? foreignEngineAnswers(run) : 0;
     const eligibility = runEligibility({
       experiment,
       runId: run.id,
