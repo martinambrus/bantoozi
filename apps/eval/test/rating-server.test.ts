@@ -99,6 +99,33 @@ describe('keyboard handlers (static/app.js)', () => {
   });
 });
 
+describe('rate page navigation', () => {
+  it('offers Finish to /r on the last article, which a dislike or reason keeps in place', () => {
+    const { document } = parseHTML(
+      ratePage({
+        article: { feedTitle: null, title: 'Last', excerpt: null, url: null, date: null },
+        assignment: {
+          articleId: '7',
+          position: 2,
+          status: 'rated',
+          rating: -1,
+          reason: 'promo',
+          skipReason: null,
+        },
+        progress: { total: 3, pending: 0, rated: 3, skipped: 0, likes: 1, dislikes: 2 },
+        lastPosition: 2,
+        csrf: 'csrf',
+        askReason: false,
+      }),
+    );
+    const next = document.querySelector('#next');
+    expect(next?.getAttribute('href')).toBe('/r');
+    expect(next?.getAttribute('data-key')).toBe('j');
+    expect(next?.textContent).toContain('Finish');
+    expect(ratingDocument().document.querySelector('#next')?.getAttribute('href')).toBe('/r/a/2');
+  });
+});
+
 describe('html helpers', () => {
   it('escapes interpolated text and drops non-http links', () => {
     expect(esc(`<script>"x" & 'y'</script>`)).toBe(
