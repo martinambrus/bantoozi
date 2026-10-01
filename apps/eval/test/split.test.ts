@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { assignSplits, type SplitItem } from '../src/dataset/split.js';
+import { assignSplits, chooseDevGroups, type SplitItem } from '../src/dataset/split.js';
 
 const count = (splits: Map<string, string>, side: string) =>
   [...splits.values()].filter((value) => value === side).length;
@@ -37,5 +37,30 @@ describe('assignSplits', () => {
     // 10 known test articles + 20 new (one joins the known test group): 70 % of 30 is 21, so all
     // 19 fresh groups go to development.
     expect(count(first, 'dev')).toBe(19);
+  });
+
+  it('picks the whole-group subset nearest the target, not a greedy prefix', () => {
+    const sizes = new Map([
+      ['a', 1],
+      ['b', 39],
+      ['c', 92],
+    ]);
+    const size = (id: string) => sizes.get(id) ?? 0;
+    // Greedy in this order would take all three (91 → 52 → 40 from the target of 92).
+    expect(chooseDevGroups(['a', 'b', 'c'], size, 92)).toEqual(['c']);
+    expect(chooseDevGroups(['a', 'b', 'c'], size, 0)).toEqual([]);
+    expect(chooseDevGroups(['a', 'b', 'c'], size, 40).sort()).toEqual(['a', 'b']);
+    const items: SplitItem[] = [...sizes].flatMap(([group, n], g) =>
+      Array.from({ length: n }, (_, i) => ({
+        articleId: `${(g + 1) * 1000 + i}`,
+        lang: 'en',
+        storyGroupId: group,
+      })),
+    );
+    for (const seed of ['a', 'b', 'c', 'd']) {
+      const splits = assignSplits(items, seed);
+      expect(count(splits, 'dev')).toBe(92);
+      expect(count(splits, 'test')).toBe(40);
+    }
   });
 });

@@ -21,6 +21,43 @@ export function groupRank(seed: string, groupId: string): number {
   return Number.parseInt(sha256Hex(`${seed}\u0000${groupId}`).slice(0, 13), 16) / 2 ** 52;
 }
 
+/**
+ * The groups (in `ordered`) whose sizes sum nearest `target` (ties: the smaller sum). `from[sum]` is
+ * the first group, in order, that made `sum` reachable; walking it back yields one such subset.
+ */
+export function chooseDevGroups(
+  ordered: readonly string[],
+  size: (groupId: string) => number,
+  target: number,
+): string[] {
+  const total = ordered.reduce((sum, groupId) => sum + size(groupId), 0);
+  const from = new Int32Array(total + 1).fill(-1);
+  const reachable = new Uint8Array(total + 1);
+  reachable[0] = 1;
+  ordered.forEach((groupId, index) => {
+    const n = size(groupId);
+    if (n <= 0) return;
+    for (let sum = total; sum >= n; sum -= 1) {
+      if (reachable[sum] === 0 && reachable[sum - n] === 1) {
+        reachable[sum] = 1;
+        from[sum] = index;
+      }
+    }
+  });
+  let best = 0;
+  for (let sum = 0; sum <= total; sum += 1) {
+    if (reachable[sum] === 1 && Math.abs(sum - target) < Math.abs(best - target)) best = sum;
+  }
+  const chosen: string[] = [];
+  for (let sum = best; sum > 0;) {
+    const groupId = ordered[from[sum] ?? -1];
+    if (groupId === undefined) throw new Error(`split: no group reaches ${sum}`);
+    chosen.push(groupId);
+    sum -= size(groupId);
+  }
+  return chosen;
+}
+
 const byNumericId = (a: string, b: string) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0);
 
 /**
@@ -69,15 +106,13 @@ export function assignSplits(
     const ordered = [...groupIds].sort(
       (a, b) => groupRank(seed, a) - groupRank(seed, b) || (a < b ? -1 : a > b ? 1 : 0),
     );
-    // Whole groups in seeded order: a group goes to development when that brings the language's
-    // development article count closer to its target, otherwise to test.
-    let dev = langCounts.dev;
-    for (const groupId of ordered) {
-      const n = size(groupId);
-      const toDev = Math.abs(dev + n - wantDev) < Math.abs(dev - wantDev);
-      if (toDev) dev += n;
-      decided.set(groupId, toDev ? 'dev' : 'test');
+    // Whole groups: the subset whose article count lands nearest the development target (ties: the
+    // smaller count), chosen with a 0/1 knapsack over the seeded order, so among equal sums the
+    // groups that reach it first in that order win and the choice is deterministic.
+    for (const groupId of chooseDevGroups(ordered, size, wantDev - langCounts.dev)) {
+      decided.set(groupId, 'dev');
     }
+    for (const groupId of ordered) if (!decided.has(groupId)) decided.set(groupId, 'test');
   }
   const result = new Map<string, DatasetSplit>();
   for (const item of items) {

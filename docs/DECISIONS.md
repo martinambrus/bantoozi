@@ -703,9 +703,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   (the same story carried by several feeds under one title) on one side of the split. Near-duplicates
   with different titles are not grouped; spec 10 already requires a new split/version when such
   unclustered duplicates are found before G1. The 70 % share is measured in articles: whole groups
-  are placed in a seeded order, each going to development when that brings the language's
-  development article count closer to its target, so one story with many copies cannot unbalance
-  the sides. Spec 10 §2.1 updated.
+  are chosen as the subset whose article count lands nearest the language's development target
+  (a 0/1 knapsack over a seeded group order; ties take the smaller count), so one story with many
+  copies cannot unbalance the sides. Spec 10 §2.1 updated.
 - D-98: 2026-10-01 M3a-T2 — spec 10 §2.1 sets the sample's targets, the 10% feed cap and the strata
   but not eligibility, the cap's base or re-runs. Eligible articles are carried by the evaluation
   user's feeds, are past extraction (not `ingested`, `stale` or `failed`) and have a detected
