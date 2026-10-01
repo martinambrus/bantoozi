@@ -891,3 +891,29 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
 - D-119: 2026-10-01 M3a-T8 — on synthetic data with the fake engine, card experiments match about as
   well as keyword baselines (B1-T ≈ E3), so the dry-run gate may FAIL. It is a pipeline check, not
   evidence, and its verdict is printed as computed. The required check is that E1 beats B0.
+- D-140: 2026-10-01 M5-T2 — `ExplainSchema` limited a rule `code` to 64 characters, but spec 06 §3.2
+  makes a muted keyword part of its code (`mute_keyword:<value>`) and spec 08 §11 allows keywords of
+  up to 100 characters, so a valid mute could not be explained. The limit is now 200 characters,
+  enough for the prefix and any permitted keyword (also when it uses characters outside the BMP).
+  Spec 06 §6.2 updated.
+- D-141: 2026-10-01 M5-T4 — spec 06 §7 leaves several mechanics of the `user.rank` run open, and
+  two of its dirty-set signs are not durable. `explain.inputs.contextSha` had no recipe: it is now
+  the sha256 of the canonical JSON of the score version, rank revision, the classification context
+  (active enrich set, match set, card text mode, language modes, each held card's and label's
+  question hash) and the model context (`null` until M7), and degraded results add the BM25 corpus
+  fingerprint, which is how "corpus membership changed: rerank all degraded items" and a card's
+  newly translated text reach the dirty set. An input whose transaction began before the run's
+  snapshot can commit after it with an older timestamp, and an unscored item's coverage turns
+  unavailable without any new answer; such rows (inputs within 15 minutes before `scored_at`,
+  unscored `new` items with queued card work) are re-ranked but written only when the result
+  differs. Inputs are compared with `scored_at` at millisecond precision (the run's `now`), so an
+  input stamped later within that millisecond is such a recheck rather than dirty on every run. The run stops after a 5-minute budget and commits a continuation, in the transaction of the
+  page's last write and next to an incremental rank when an article moved, that resumes strictly
+  below its last window position (new optional `user.rank` field `cursor`, under its own
+  `rank-cont:` queue key so it neither swallows nor is swallowed by an event's rank); a full run's
+  also carries `snapshotAt` so it forces only rows scored before it. The ranking thresholds and
+  their version are read in one statement, and the BM25 corpus excludes archived articles. Writes serialize on a per-user advisory lock, keep the newer `scored_at`, and
+  skip articles whose content or media revision moved; a superseded run or a moved article enqueues
+  an incremental replacement, because the dirty set already holds every outdated row.
+  `user.rank` needs no model dependencies, so the worker registers it unconditionally. Specs 03
+  §2 and 06 §7 updated.

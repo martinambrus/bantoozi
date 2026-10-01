@@ -177,7 +177,17 @@ export const QUEUES = {
   }),
   'user.rank': spec({
     payload: z
-      .object({ userId: UuidSchema, reason: reasonSchema, full: z.boolean().optional() })
+      .object({
+        userId: UuidSchema,
+        reason: reasonSchema,
+        full: z.boolean().optional(),
+        // Set only on the continuation of a full run (spec 06 §7 step 5): the run's snapshot time;
+        // rows scored at or after it are not forced again.
+        snapshotAt: iso.optional(),
+        // Set only on a continuation: the last window position the previous run visited; the run
+        // resumes strictly below it.
+        cursor: z.object({ arrival: iso, articleId: IdSchema }).strict().optional(),
+      })
       .strict(),
     concurrency: 4,
     options: { policy: 'stately', retryLimit: 2 },
@@ -345,6 +355,15 @@ export function sendSpecFor<Q extends QueueName>(queue: Q, payload: JobPayload<Q
     case 'article.match':
       return { kind: 'send', singletonKey: `match:${id('articleId')}` };
     case 'user.rank':
+      if (p['cursor'] !== undefined) {
+        // A continuation has a key of its own per position: it never swallows, and is never
+        // swallowed by, an event's incremental or full rank.
+        const cursor = p['cursor'] as { arrival: string; articleId: string };
+        return {
+          kind: 'send',
+          singletonKey: `rank-cont:${id('userId')}:${cursor.arrival}:${cursor.articleId}`,
+        };
+      }
       return p['full'] === true
         ? { kind: 'send', singletonKey: `rank-full:${id('userId')}` }
         : { kind: 'debounced', key: `rank:${id('userId')}`, seconds: 3 };
@@ -475,6 +494,7 @@ export interface HouseCronSchedule {
 export const HOUSE_CRON_SCHEDULES: Readonly<Partial<Record<HouseCronQueue, HouseCronSchedule>>> =
   Object.freeze({
     'house.rescore-degraded': { cron: '*/10 * * * *', everyMs: 10 * 60_000 },
+    'house.expire-rules': { cron: '5 * * * *', everyMs: 60 * 60_000 },
   });
 
 /** Jobs that persist progress in `settings['house.progress']` (spec 02 §2, spec 11 §6). */

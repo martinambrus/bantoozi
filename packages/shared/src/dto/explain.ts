@@ -70,7 +70,7 @@ export const ExplainSchema = z
       .array(
         z
           .object({
-            code: z.string().min(1).max(64),
+            code: z.string().min(1).max(200),
             ruleId: BigIntStringSchema.optional(),
             cardId: BigIntStringSchema.optional(),
             detail: z.string().max(500).optional(),

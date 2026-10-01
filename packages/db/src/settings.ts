@@ -28,6 +28,21 @@ export async function readStoredSetting(db: Executor, key: string): Promise<unkn
 }
 
 /**
+ * Several stored values read in one statement, so they come from one snapshot: a writer that
+ * changes two of them in one transaction is seen either entirely or not at all. Missing keys are
+ * absent from the map.
+ */
+export async function readStoredSettings(
+  db: Executor,
+  keys: readonly string[],
+): Promise<Map<string, unknown>> {
+  const result = await db.execute<{ key: string; value: unknown }>(
+    sql`SELECT key, value FROM settings WHERE key = ANY(${sql.param([...keys])}::text[])`,
+  );
+  return new Map(result.rows.map((row) => [row.key, row.value]));
+}
+
+/**
  * Share-lock the rows of `settings` until the transaction ends, in key order: a writer of any of
  * them waits for this transaction, and a write in progress is waited for, so the values read after
  * this stay current until commit. A missing row cannot be locked, and its first write (an insert)
