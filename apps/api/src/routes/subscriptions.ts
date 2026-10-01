@@ -146,52 +146,58 @@ export const subscriptionRoutes: FastifyPluginAsyncZod = async (app) => {
         response: { 200: SubscribeOkSchema, 201: SubscriptionEnvelopeSchema },
       },
     },
-    async (request, reply) => {
-      // A retry of a committed subscribe is answered from its receipt, without new discovery.
-      const saved = await request.savedOutcome<SubscriptionEnvelope>();
-      if (saved !== null) return replaySubscribe(reply, saved);
-      // Slow outbound work first: no transaction is open during discovery (spec 08 §1). A
-      // concurrent duplicate may have committed meanwhile: its receipt wins over a discovery
-      // failure or a candidate choice of this request.
-      let discovered: Awaited<ReturnType<typeof discover>>;
-      try {
-        discovered = await discover(request.body.url, app.services.discoverDeps, clientGone(reply));
-      } catch (error) {
-        const committed = await request.savedOutcome<SubscriptionEnvelope>();
-        if (committed !== null) return replaySubscribe(reply, committed);
-        throw error;
-      }
-      const [candidate, ...others] = discovered.candidates;
-      if (candidate === undefined || others.length > 0) {
-        const committed = await request.savedOutcome<SubscriptionEnvelope>();
-        if (committed !== null) return replaySubscribe(reply, committed);
-        return reply.code(200).send({
-          status: 'choose' as const,
-          candidates: discovered.candidates.map((c) => ({
-            url: c.url,
-            title: c.title,
-            type: c.type,
-          })),
+    async (request, reply) =>
+      request.holdingKey(async () => {
+        // A retry of a committed subscribe is answered from its receipt, without new discovery; a
+        // concurrent duplicate waits for this request to settle first.
+        const saved = await request.savedOutcome<SubscriptionEnvelope>();
+        if (saved !== null) return replaySubscribe(reply, saved);
+        // Slow outbound work first: no transaction is open during discovery (spec 08 §1). A
+        // concurrent duplicate may have committed meanwhile: its receipt wins over a discovery
+        // failure or a candidate choice of this request.
+        let discovered: Awaited<ReturnType<typeof discover>>;
+        try {
+          discovered = await discover(
+            request.body.url,
+            app.services.discoverDeps,
+            clientGone(reply),
+          );
+        } catch (error) {
+          const committed = await request.savedOutcome<SubscriptionEnvelope>();
+          if (committed !== null) return replaySubscribe(reply, committed);
+          throw error;
+        }
+        const [candidate, ...others] = discovered.candidates;
+        if (candidate === undefined || others.length > 0) {
+          const committed = await request.savedOutcome<SubscriptionEnvelope>();
+          if (committed !== null) return replaySubscribe(reply, committed);
+          return reply.code(200).send({
+            status: 'choose' as const,
+            candidates: discovered.candidates.map((c) => ({
+              url: c.url,
+              title: c.title,
+              type: c.type,
+            })),
+          });
+        }
+        const title =
+          discovered.validated?.candidate.canonicalUrl === candidate.canonicalUrl
+            ? (discovered.validated.parsed.feed.title ?? candidate.title)
+            : candidate.title;
+        const outcome = await request.mutate(async (tx, { outbox, now }) => {
+          const result = await subscribe(tx, outbox, {
+            candidate,
+            title,
+            folder: request.body.folder ?? null,
+            asOf: now,
+          });
+          return {
+            status: result.created ? 201 : 200,
+            body: { subscription: result.subscription },
+          };
         });
-      }
-      const title =
-        discovered.validated?.candidate.canonicalUrl === candidate.canonicalUrl
-          ? (discovered.validated.parsed.feed.title ?? candidate.title)
-          : candidate.title;
-      const outcome = await request.mutate(async (tx, { outbox, now }) => {
-        const result = await subscribe(tx, outbox, {
-          candidate,
-          title,
-          folder: request.body.folder ?? null,
-          asOf: now,
-        });
-        return {
-          status: result.created ? 201 : 200,
-          body: { subscription: result.subscription },
-        };
-      });
-      return reply.code(outcome.status === 201 ? 201 : 200).send(outcome.body);
-    },
+        return reply.code(outcome.status === 201 ? 201 : 200).send(outcome.body);
+      }),
   );
 
   app.patch(

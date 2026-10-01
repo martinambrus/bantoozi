@@ -104,6 +104,26 @@ export function registerTenant(app: FastifyInstance): void {
     });
   });
 
+  // In-flight holders of a caller's Idempotency-Key in this process (one API container, spec 11).
+  const keyHolders = new Map<string, Promise<unknown>>();
+  app.decorateRequest('holdingKey', async function holdingKey<
+    T,
+  >(this: FastifyRequest, fn: () => Promise<T>): Promise<T> {
+    const auth = this.auth;
+    if (auth === null) throw unauthenticated();
+    const slot = `${auth.userId}:${idempotencyKey(this)}`;
+    for (let held = keyHolders.get(slot); held !== undefined; held = keyHolders.get(slot)) {
+      await held.catch(() => undefined);
+    }
+    const run = fn();
+    keyHolders.set(slot, run);
+    try {
+      return await run;
+    } finally {
+      keyHolders.delete(slot);
+    }
+  });
+
   app.decorateRequest('mutate', async function mutate<
     T,
   >(this: FastifyRequest, fn: (tx: TenantTx, ctx: MutationContext) => Promise<MutationOutcome<T>>): Promise<

@@ -87,5 +87,12 @@ declare module 'fastify' {
      * `IDEMPOTENCY_CONFLICT`, as in `mutate`.
      */
     savedOutcome<T>(): Promise<MutationOutcome<T> | null>;
+    /**
+     * Run `fn` while holding this caller's `Idempotency-Key` in this API process: a duplicate
+     * request waits until `fn` settles. Routes that do slow outbound work before `mutate` wrap the
+     * whole handler in it, so a concurrent duplicate replays the first request's receipt instead of
+     * repeating discovery.
+     */
+    holdingKey<T>(fn: () => Promise<T>): Promise<T>;
   }
 }

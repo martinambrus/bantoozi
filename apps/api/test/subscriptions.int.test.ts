@@ -279,12 +279,43 @@ describe('POST /subscriptions (discovery, spec 03 §10)', () => {
     expect(other.json().error.code).toBe('IDEMPOTENCY_CONFLICT');
   });
 
-  it('replays a concurrent duplicate that committed while this request was discovering', async () => {
+  it('holds a concurrent duplicate until the first request settles, without a second discovery', async () => {
+    const alice = await createTestUser(h);
+    const url = 'https://overlap.example.com/feed.xml';
+    web.route(url, { body: rssDocument('Overlap'), contentType: 'application/rss+xml' });
+    const key = randomUUID();
+    const client = apiClient(h.server, alice);
+    let second: Promise<Awaited<ReturnType<typeof client.post>>> | undefined;
+    let calls = 0;
+    web.onFetch = async (fetched) => {
+      if (fetched !== url) return;
+      calls += 1;
+      if (calls === 1) {
+        // The duplicate arrives while the first request is discovering; the feed then vanishes.
+        second = client.post('/subscriptions', { url }, { idempotencyKey: key });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    };
+    try {
+      const a = await client.post('/subscriptions', { url }, { idempotencyKey: key });
+      web.route(url, { fail: 'FEED_HTTP_404', status: 404 });
+      const b = await second!;
+      expect(a.statusCode, a.body).toBe(201);
+      expect(b.statusCode, b.body).toBe(201);
+      expect(b.json()).toEqual(a.json());
+      expect(calls).toBe(1);
+    } finally {
+      web.onFetch = null;
+    }
+  });
+
+  it('replays a duplicate on another API instance that committed while it was discovering', async () => {
     const alice = await createTestUser(h);
     const url = 'https://concurrent.example.com/feed.xml';
     web.route(url, { body: rssDocument('Concurrent'), contentType: 'application/rss+xml' });
     const key = randomUUID();
     const client = apiClient(h.server, alice);
+    const otherClient = apiClient(await h.buildAnother(), alice);
     let first: Promise<Awaited<ReturnType<typeof client.post>>> | undefined;
     let second: Promise<Awaited<ReturnType<typeof client.post>>> | undefined;
     let secondFetching!: () => void;
@@ -297,7 +328,7 @@ describe('POST /subscriptions (discovery, spec 03 §10)', () => {
       calls += 1;
       if (calls === 1) {
         // The first request is discovering: start the duplicate, past its receipt check.
-        second = client.post('/subscriptions', { url }, { idempotencyKey: key });
+        second = otherClient.post('/subscriptions', { url }, { idempotencyKey: key });
         await secondReachedFetch;
       } else if (calls === 2) {
         secondFetching();
