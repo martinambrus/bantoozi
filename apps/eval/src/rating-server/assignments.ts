@@ -2,16 +2,20 @@ import {
   appendAssignments,
   headDataset,
   listAssignments,
+  listRaterCards,
   listRaterFeedIds,
   lockRater,
+  openDatasetForCorrection,
   recentUnsampledCandidates,
   sampleCandidates,
   type AssignmentCandidate,
   type Database,
+  type Transaction,
 } from '@bantoozi/db';
 import { sha256Hex } from '@bantoozi/shared/server';
 
 import { addArticlesToDataset } from '../dataset/topup.js';
+import { countCards, readyToRate } from './steps.js';
 
 /**
  * Assignment building (spec 10 §2.2, step 3). On first entry, and again whenever the rater has
@@ -188,6 +192,14 @@ export interface EnsureAssignmentsResult {
   createdFrom: string | null;
 }
 
+/** The rater's card or feed step is incomplete (checked under the rater lock). */
+export class NotReadyError extends Error {
+  constructor() {
+    super('the rater has not finished the card and feed steps');
+    this.name = 'NotReadyError';
+  }
+}
+
 export class NoDatasetError extends Error {
   constructor() {
     super('no golden dataset yet: run `eval sample` first');
@@ -199,7 +211,9 @@ export class NoDatasetError extends Error {
  * Bring the rater's assignments up to `target` (idempotent; a no-op once the target is reached).
  * The top-up articles are added to the dataset first (their own transaction, serialized by the
  * dataset lock), then the assignments are chosen again from the sample under the rater's row lock,
- * so concurrent calls never assign twice.
+ * so concurrent calls never assign twice. Under that lock the card and feed steps are rechecked
+ * ({@link NotReadyError}), and a frozen head first gets its next open version, so a frozen
+ * version never gains assignments.
  */
 export async function ensureAssignments(
   db: Database,
@@ -209,6 +223,11 @@ export async function ensureAssignments(
     now: Date;
     target?: number;
     recentDays?: number;
+    /**
+     * Check the card and feed steps (spec 10 §2.2) under the rater lock. The rating app always
+     * passes true; synthetic callers (the dry run) build raters that skip the human steps.
+     */
+    requireReady?: boolean;
   },
 ): Promise<EnsureAssignmentsResult> {
   const target = input.target ?? ASSIGNMENTS_PER_RATER;
@@ -216,6 +235,14 @@ export async function ensureAssignments(
   const head = await headDataset(db);
   if (head === null) throw new NoDatasetError();
   const feedIds = await listRaterFeedIds(db, input.raterId);
+  const ready = async (executor: Database | Transaction, feeds: number) =>
+    readyToRate({
+      ...countCards(await listRaterCards(executor, input.raterId)),
+      feeds,
+      assignments: 0,
+    });
+  // Early exit before any top-up is added to the dataset; rechecked under the lock below.
+  if (input.requireReady === true && !(await ready(db, feedIds.length))) throw new NotReadyError();
   const existing = await listAssignments(db, input.raterId, head.version);
   let toppedUp: string[] = [];
   let createdFrom: string | null = null;
@@ -248,7 +275,13 @@ export async function ensureAssignments(
   }
   return db.transaction(async (tx) => {
     if (!(await lockRater(tx, input.raterId))) throw new Error(`rater ${input.raterId} is gone`);
-    const current = await headDataset(tx);
+    // Readiness and the picked feeds are re-read under the rater lock, which card and feed
+    // changes also take: a concurrent card deletion cannot slip in between check and insert.
+    const lockedFeedIds = await listRaterFeedIds(tx, input.raterId);
+    if (input.requireReady === true && !(await ready(tx, lockedFeedIds.length))) {
+      throw new NotReadyError();
+    }
+    let current = await headDataset(tx);
     if (current === null) throw new NoDatasetError();
     const assigned = await listAssignments(tx, input.raterId, current.version);
     let added = 0;
@@ -256,7 +289,7 @@ export async function ensureAssignments(
       const sample = await sampleCandidates(tx, {
         version: current.version,
         langs: input.langs,
-        feedIds,
+        feedIds: lockedFeedIds,
       });
       const plan = planAssignments({
         seed,
@@ -265,11 +298,20 @@ export async function ensureAssignments(
         existing: assigned,
         pools: [sample],
       });
-      added = await appendAssignments(
-        tx,
-        input.raterId,
-        plan.picks.map((p) => p.articleId),
-      );
+      if (plan.picks.length > 0) {
+        // A frozen version's assignment membership is final (its manifest records it): new
+        // assignments first open the next version, which copies the rows unchanged.
+        const opened = await openDatasetForCorrection(tx, 'assignments');
+        if (opened !== null) {
+          createdFrom ??= opened.createdFrom;
+          current = (await headDataset(tx)) ?? current;
+        }
+        added = await appendAssignments(
+          tx,
+          input.raterId,
+          plan.picks.map((p) => p.articleId),
+        );
+      }
     }
     return {
       added,

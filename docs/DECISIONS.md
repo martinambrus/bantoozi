@@ -760,7 +760,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   nothing is pending and the rater has fewer than 300. A rating change, or a skip that withdraws a
   rating, made while the head version is frozen first creates the next open version
   (`params.correctionOf`, rows copied unchanged) in the same transaction (spec 10 §2.1); ratings stay
-  current-state rows and each run freezes the ratings it used in its config. Spec 10 §2.2 updated.
+  current-state rows and each run freezes the ratings it used in its config. Adding assignments
+  while the head is frozen likewise first creates the next open version (`params.assignmentsAfter`),
+  even without a top-up, so a frozen version's assignments never change. The rating app rechecks the
+  card and feed steps under the rater row lock before assigning (a concurrent card deletion answers
+  409); synthetic dry-run raters skip that check. Spec 10 §2.2 updated.
 - D-105: 2026-10-01 M3a-T7 — spec 10 §2.3 asks for a predeclared adjudication step without defining
   it. Facet values use the labelling page's strings (yes/no, `0`–`4`, option ids); `uncertain` and
   `not_applicable` are excluded from accuracy. A label by the labeller `adjudicated` wins; otherwise a

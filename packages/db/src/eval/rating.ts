@@ -454,7 +454,8 @@ export async function nextPendingPosition(
 
 /**
  * Before a rating correction (spec 10 §2.1: "once frozen, … rating corrections … create a new
- * version manifest"): when the head dataset version is frozen, create the next open version in
+ * version manifest"), or before new assignments (the manifest's assignment membership, `cause`
+ * `'assignments'`): when the head dataset version is frozen, create the next open version in
  * this transaction, copying every row unchanged (the top-up path; serialized by the additions
  * lock). Idempotent: an open head is only share-locked, so a concurrent freeze waits until this
  * transaction commits and its manifest then includes the change. Earlier runs keep the exact
@@ -462,6 +463,7 @@ export async function nextPendingPosition(
  */
 export async function openDatasetForCorrection(
   tx: Transaction,
+  cause: 'rating' | 'assignments' = 'rating',
 ): Promise<{ version: string; createdFrom: string } | null> {
   const head = await headDataset(tx);
   if (head === null) return null;
@@ -479,7 +481,12 @@ export async function openDatasetForCorrection(
     version,
     parentVersion: current.version,
     seed: current.seed,
-    params: { ...current.params, correctionOf: current.version },
+    params: {
+      ...current.params,
+      ...(cause === 'rating'
+        ? { correctionOf: current.version }
+        : { assignmentsAfter: current.version }),
+    },
   });
   await copySampleRows(tx, current.version, version);
   return { version, createdFrom: current.version };

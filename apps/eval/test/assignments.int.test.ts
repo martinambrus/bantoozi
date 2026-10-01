@@ -1,14 +1,17 @@
 import { dropCreatedTestDatabases } from '@bantoozi/testing';
 import {
+  addRaterCard,
   freezeDataset,
   getDataset,
+  headDataset,
   listAssignments,
+  listDatasets,
   loadSample,
   setRaterFeeds,
 } from '@bantoozi/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ensureAssignments } from '../src/rating-server/assignments.js';
+import { ensureAssignments, NotReadyError } from '../src/rating-server/assignments.js';
 import {
   addArticles,
   addGoldenFeeds,
@@ -77,7 +80,11 @@ describe('ensureAssignments', () => {
   it('assigns 300 split equally across languages, topping up from recent articles into the open version', async () => {
     const { rater } = await addRater(rdb, { langs: ['sk', 'en'], now });
     await pick(rater.id, [...en, ...sk]);
-    const result = await ensureAssignments(rdb.db, { raterId: rater.id, langs: rater.langs, now });
+    const result = await ensureAssignments(rdb.db, {
+      raterId: rater.id,
+      langs: rater.langs,
+      now,
+    });
     expect(result).toMatchObject({
       added: 300,
       total: 300,
@@ -97,7 +104,11 @@ describe('ensureAssignments', () => {
     expect(rows.every((r) => typeof r.snapshot['storyGroupId'] === 'string')).toBe(true);
 
     // Idempotent: nothing more to add once the target is reached.
-    const again = await ensureAssignments(rdb.db, { raterId: rater.id, langs: rater.langs, now });
+    const again = await ensureAssignments(rdb.db, {
+      raterId: rater.id,
+      langs: rater.langs,
+      now,
+    });
     expect(again.added).toBe(0);
     expect(await listAssignments(rdb.db, rater.id, 'golden-v1')).toEqual(assigned);
   });
@@ -105,7 +116,12 @@ describe('ensureAssignments', () => {
   it('assigns only articles of the picked feeds and languages, in a deterministic order', async () => {
     const { rater } = await addRater(rdb, { langs: ['en'], now });
     await pick(rater.id, en.slice(0, 2));
-    await ensureAssignments(rdb.db, { raterId: rater.id, langs: rater.langs, now, target: 30 });
+    await ensureAssignments(rdb.db, {
+      raterId: rater.id,
+      langs: rater.langs,
+      now,
+      target: 30,
+    });
     const first = await listAssignments(rdb.db, rater.id, 'golden-v1');
     expect(first).toHaveLength(30);
     const sample = await loadSample(rdb.db, 'golden-v1', {
@@ -119,7 +135,12 @@ describe('ensureAssignments', () => {
     }
     // Rebuilding from the same inputs gives the same queue (seeded by the rater id).
     await rdb.owner.query('DELETE FROM eval.assignments WHERE rater_id = $1', [rater.id]);
-    await ensureAssignments(rdb.db, { raterId: rater.id, langs: rater.langs, now, target: 30 });
+    await ensureAssignments(rdb.db, {
+      raterId: rater.id,
+      langs: rater.langs,
+      now,
+      target: 30,
+    });
     const second = await listAssignments(rdb.db, rater.id, 'golden-v1');
     expect(second.map((a) => a.articleId)).toEqual(first.map((a) => a.articleId));
   });
@@ -168,7 +189,11 @@ describe('ensureAssignments', () => {
   it('assigns everything available when the pools run dry (fewer than the target)', async () => {
     const { rater } = await addRater(rdb, { langs: ['sk'], now });
     await pick(rater.id, sk.slice(0, 1));
-    const result = await ensureAssignments(rdb.db, { raterId: rater.id, langs: rater.langs, now });
+    const result = await ensureAssignments(rdb.db, {
+      raterId: rater.id,
+      langs: rater.langs,
+      now,
+    });
     // 20 sampled + 10 recent articles, all of which are in the sample by now.
     expect(result.total).toBe(30);
   });
@@ -210,5 +235,97 @@ describe('ensureAssignments', () => {
     const assigned = await listAssignments(rdb.db, rater.id, result.datasetVersion);
     expect(assigned.filter((a) => a.lang === 'en')).toHaveLength(20);
     expect(assigned.filter((a) => a.lang === 'sk')).toHaveLength(20);
+  });
+
+  it('rechecks card and feed readiness under the rater lock', async () => {
+    const { rater } = await addRater(rdb, { langs: ['en', 'sk'], now });
+    await pick(rater.id, [...en, ...sk]);
+    const cardIds: string[] = [];
+    await rdb.db.transaction(async (tx) => {
+      for (let i = 0; i < 5; i += 1) {
+        const card = await addRaterCard(tx, rater.id, {
+          title: null,
+          interest: `Readiness interest number ${i} about science`,
+          notFor: null,
+          strength: 'like',
+          examplesYes: [],
+          examplesNo: [],
+          lang: 'en',
+        });
+        cardIds.push(card.cardId);
+      }
+    });
+    // Hold the rater lock (as a concurrent card deletion would) and delete a card under it while
+    // ensureAssignments, which passed its early check, waits for the lock.
+    const client = await rdb.owner.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT 1 FROM eval.raters WHERE id = $1 FOR UPDATE', [rater.id]);
+      const pending = ensureAssignments(rdb.db, {
+        raterId: rater.id,
+        langs: rater.langs,
+        now,
+        target: 10,
+        requireReady: true,
+      });
+      const settled = pending.then(
+        () => 'ok',
+        (error: unknown) => error,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await client.query('DELETE FROM eval.rater_cards WHERE rater_id = $1 AND card_id = $2', [
+        rater.id,
+        cardIds[0],
+      ]);
+      await client.query('COMMIT');
+      expect(await settled).toBeInstanceOf(NotReadyError);
+    } finally {
+      client.release();
+    }
+    expect(await listAssignments(rdb.db, rater.id, null)).toEqual([]);
+    // Not ready from the start: refused before any top-up is added.
+    await expect(
+      ensureAssignments(rdb.db, {
+        raterId: rater.id,
+        langs: rater.langs,
+        now,
+        target: 10,
+        requireReady: true,
+      }),
+    ).rejects.toBeInstanceOf(NotReadyError);
+  });
+
+  it('opens the next version before assigning from a frozen head, even without top-ups', async () => {
+    const head = (await headDataset(rdb.db))!;
+    const frozen = await rdb.db.transaction((tx) => freezeDataset(tx, head.version));
+    const frozenRows = await loadSample(rdb.db, head.version);
+    const { rater } = await addRater(rdb, { langs: ['en'], now });
+    await pick(rater.id, en.slice(0, 2));
+    // 40 sampled English articles of these feeds: no top-up is needed for 10.
+    const result = await ensureAssignments(rdb.db, {
+      raterId: rater.id,
+      langs: rater.langs,
+      now,
+      target: 10,
+    });
+    expect(result).toMatchObject({ added: 10, toppedUp: [], createdFrom: head.version });
+    expect(result.datasetVersion).not.toBe(head.version);
+    const next = (await getDataset(rdb.db, result.datasetVersion))!;
+    expect(next).toMatchObject({ parentVersion: head.version, frozenAt: null });
+    expect(next.params).toMatchObject({ assignmentsAfter: head.version });
+    const after = (await getDataset(rdb.db, head.version))!;
+    expect(after.manifest).toEqual(frozen.manifest);
+    expect(await loadSample(rdb.db, head.version)).toEqual(frozenRows);
+    // Nothing to add: no version is created, even after the next freeze.
+    await rdb.db.transaction((tx) => freezeDataset(tx, next.version));
+    const versions = (await listDatasets(rdb.db)).length;
+    const again = await ensureAssignments(rdb.db, {
+      raterId: rater.id,
+      langs: rater.langs,
+      now,
+      target: 10,
+    });
+    expect(again.added).toBe(0);
+    expect((await listDatasets(rdb.db)).length).toBe(versions);
   });
 });

@@ -34,7 +34,12 @@ import { detectLanguage } from '@bantoozi/shared/server';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
-import { ASSIGNMENTS_PER_RATER, ensureAssignments, NoDatasetError } from './assignments.js';
+import {
+  ASSIGNMENTS_PER_RATER,
+  ensureAssignments,
+  NoDatasetError,
+  NotReadyError,
+} from './assignments.js';
 import { FACET_KEYS, FacetFormSchema, facetSeed, selectFacetSet, selectOverlap } from './facets.js';
 import { clip, safeExternalUrl } from './html.js';
 import {
@@ -701,10 +706,18 @@ export async function buildRatingServer(options: RatingServerOptions): Promise<F
         langs: s.rater.langs,
         now: now(),
         target,
+        requireReady: true,
       });
     } catch (error) {
       if (error instanceof NoDatasetError) {
         throw new HttpError(503, 'Not ready yet', 'The article sample is not ready yet.');
+      }
+      if (error instanceof NotReadyError) {
+        throw new HttpError(
+          409,
+          'Not ready',
+          `Write ${MIN_INTEREST_CARDS}–10 interest cards and pick at least ${MIN_FEEDS} feeds first.`,
+        );
       }
       throw error;
     }
