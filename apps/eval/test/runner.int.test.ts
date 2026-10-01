@@ -8,7 +8,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EXPERIMENT_IDS } from '../src/experiments/definitions.js';
 import { runExperiment } from '../src/experiments/runner.js';
 import { composedCostPerArticle } from '../src/report/gate.js';
+import { groundTruthSha } from '../src/report/items.js';
 import { loadDataset } from '../src/report/load.js';
+import { RunConfigSchema } from '../src/report/run-data.js';
 import {
   answerCounts,
   runCli,
@@ -872,5 +874,85 @@ describe('eval run (M3a-T6)', () => {
     } finally {
       ctx.libretranslate.reset();
     }
+  });
+
+  it("marks a resumed run's cost incomplete before any work, so a kill leaves a lower bound", async () => {
+    const env = { TYPESAFE_PRICE_PER_MTOK_USD: '200', EVAL_CACHE_DIR: await freshCache() };
+    const first = runtime(ctx, env);
+    let runId: string;
+    try {
+      const aborted = await runExperiment(first.rt, {
+        experiment: 'E1',
+        yes: true,
+        maxUsd: 1,
+        gitSha: 'test',
+        concurrency: 1,
+      });
+      expect(aborted.status).toBe('aborted');
+      runId = aborted.runId!;
+    } finally {
+      await first.rt.close();
+    }
+    const recorded = ((await runRow(ctx, runId)).results as { cost: { billedUsd: number } }).cost;
+    // Hold the resumed invocation's first engine request: the process could be killed now.
+    let seen!: () => void;
+    const firstRequest = new Promise<void>((resolve) => (seen = resolve));
+    ctx.typesafe.setOptions({
+      latencyMs: 1500,
+      statusOverride: () => {
+        seen();
+        return undefined;
+      },
+    });
+    const resumed = runtime(ctx, env);
+    try {
+      const pending = runExperiment(resumed.rt, {
+        experiment: 'E1',
+        yes: true,
+        resumeRunId: runId,
+        maxUsd: 1000,
+        gitSha: 'test',
+      });
+      await firstRequest;
+      const inFlight = (await runRow(ctx, runId)).results as {
+        status: string;
+        cost: { billedUsd: number; incomplete?: boolean };
+      };
+      expect(inFlight.status).toBe('running');
+      expect(inFlight.cost.incomplete).toBe(true);
+      expect(inFlight.cost.billedUsd).toBeCloseTo(recorded.billedUsd, 9);
+      ctx.typesafe.setOptions({ latencyMs: 0, statusOverride: undefined });
+      expect((await pending).status).toBe('complete');
+    } finally {
+      ctx.typesafe.setOptions({ latencyMs: 0, statusOverride: undefined });
+      await resumed.rt.close();
+    }
+    // Finished normally, the merged cost is complete again.
+    const final = ((await runRow(ctx, runId)).results as { cost: { incomplete?: boolean } }).cost;
+    expect(final.incomplete).toBeUndefined();
+  });
+
+  it("builds a frozen version's rater set from its captured truth (a later rater never joins)", async () => {
+    const b0 = async () => {
+      const { rt } = runtime(ctx);
+      try {
+        const result = await runExperiment(rt, { experiment: 'B0', yes: true, gitSha: 'test' });
+        const config = RunConfigSchema.parse((await runRow(ctx, result.runId!)).config);
+        return { version: config.datasetVersion, config };
+      } finally {
+        await rt.close();
+      }
+    };
+    const before = await b0();
+    const added = await ctx.owner.query<{ id: string }>(
+      `INSERT INTO eval.raters (name, participant_key, token_hash, token_expires_at, langs)
+       VALUES ('Late rater', gen_random_uuid(), md5(random()::text), now() + interval '30 days', '{en}')
+       RETURNING id::text AS id`,
+    );
+    const after = await b0();
+    expect(after.version).toBe(before.version);
+    expect(after.config.raters.map((r) => r.raterId)).not.toContain(added.rows[0]!.id);
+    expect(after.config.raters).toEqual(before.config.raters);
+    expect(groundTruthSha(after.config)).toBe(groundTruthSha(before.config));
   });
 });

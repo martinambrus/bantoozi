@@ -180,8 +180,8 @@ describe('eval schema (M3a-T1)', () => {
   it("keeps a frozen version's captured ground truth append-only", async () => {
     const truth = (version: string) =>
       ctx.workerPool.query(
-        `INSERT INTO eval.dataset_truth (dataset_version, ratings, assignments, cards, facet_labels)
-         VALUES ($1, '[]', '[]', '[]', '[]')`,
+        `INSERT INTO eval.dataset_truth (dataset_version, raters, ratings, assignments, cards, facet_labels)
+         VALUES ($1, '[]', '[]', '[]', '[]', '[]')`,
         [version],
       );
     await ctx.workerPool.query(

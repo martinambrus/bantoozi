@@ -638,9 +638,16 @@ export function replayDiff(input: {
     const precision = (p: typeof policy.base) => (p.forYou === 0 ? null : p.forYouLiked / p.forYou);
     const pb = precision(policy.base);
     const pr = precision(policy.replay);
-    if (pb !== null && pr !== null && pb - pr > MAX_FOR_YOU_PRECISION_DROP) {
+    if (pb !== null && pr === null) {
+      // The replay eliminates the lane the baseline filled: a fall to no precision at all.
+      verdict = 'fail';
+      reasons.push(`the For You lane is emptied (precision ${pb.toFixed(3)} → none)`);
+    } else if (pb !== null && pr !== null && pb - pr > MAX_FOR_YOU_PRECISION_DROP) {
       verdict = 'fail';
       reasons.push(`For You precision falls by ${(pb - pr).toFixed(3)}`);
+    } else if (pb === null && pr === null && verdict === 'pass') {
+      verdict = 'inconclusive';
+      reasons.push('For You precision is unsupported: the lane is empty on both sides');
     }
   }
   return {

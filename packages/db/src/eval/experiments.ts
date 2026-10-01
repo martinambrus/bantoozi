@@ -208,6 +208,8 @@ export async function loadEvalFacetLabels(
  * row per (rater, article), so after the freeze only this snapshot still describes the version.
  */
 export interface DatasetTruth {
+  /** The raters at the freeze (a rater added later never joins a run on this version). */
+  raters: EvalRaterRecord[];
   ratings: EvalRatingRecord[];
   assignments: EvalAssignmentRecord[];
   cards: EvalRaterCardRecord[];
@@ -224,14 +226,17 @@ export async function captureDatasetTruth(db: Executor, version: string): Promis
     sql`SELECT 1 FROM eval.dataset_truth WHERE dataset_version = ${version}`,
   );
   if (existing.rows.length > 0) return false;
-  const raterIds = (await loadEvalRaters(db)).map((r) => r.raterId);
+  const raters = await loadEvalRaters(db);
+  const raterIds = raters.map((r) => r.raterId);
   const ratings = await loadEvalRatings(db, version, raterIds);
   const assignments = await loadEvalAssignments(db, version, raterIds);
   const cards = await loadEvalRaterCards(db, raterIds);
   const facetLabels = await loadEvalFacetLabels(db, version);
   const inserted = await db.execute(sql`
-    INSERT INTO eval.dataset_truth (dataset_version, ratings, assignments, cards, facet_labels)
-    VALUES (${version}, ${JSON.stringify(ratings)}::jsonb, ${JSON.stringify(assignments)}::jsonb,
+    INSERT INTO eval.dataset_truth
+           (dataset_version, raters, ratings, assignments, cards, facet_labels)
+    VALUES (${version}, ${JSON.stringify(raters)}::jsonb, ${JSON.stringify(ratings)}::jsonb,
+            ${JSON.stringify(assignments)}::jsonb,
             ${JSON.stringify(cards)}::jsonb, ${JSON.stringify(facetLabels)}::jsonb)
     ON CONFLICT (dataset_version) DO NOTHING
     RETURNING 1`);
@@ -244,16 +249,18 @@ export async function loadDatasetTruth(
   version: string,
 ): Promise<DatasetTruth | null> {
   const result = await db.execute<{
+    raters: EvalRaterRecord[];
     ratings: Array<Omit<EvalRatingRecord, 'createdAt'> & { createdAt: string }>;
     assignments: EvalAssignmentRecord[];
     cards: EvalRaterCardRecord[];
     facet_labels: EvalFacetLabelRecord[];
   }>(sql`
-    SELECT ratings, assignments, cards, facet_labels FROM eval.dataset_truth
+    SELECT raters, ratings, assignments, cards, facet_labels FROM eval.dataset_truth
      WHERE dataset_version = ${version}`);
   const row = result.rows[0];
   if (row === undefined) return null;
   return {
+    raters: row.raters,
     ratings: row.ratings.map((r) => ({ ...r, createdAt: new Date(r.createdAt) })),
     assignments: row.assignments,
     cards: row.cards,

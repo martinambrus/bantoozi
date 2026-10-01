@@ -2377,6 +2377,12 @@
           "primaryKey": true,
           "notNull": true
         },
+        "raters": {
+          "name": "raters",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
         "ratings": {
           "name": "ratings",
           "type": "jsonb",

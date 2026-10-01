@@ -409,16 +409,20 @@ async function draftConfig(
       row !== undefined && langs.includes(row.lang) && (!def.developmentOnly || row.split === 'dev')
     );
   };
-  const raters = await loadEvalRaters(db, options.raterIds);
-  if (options.raterIds !== undefined && raters.length !== new Set(options.raterIds).size) {
+  // A frozen version's ground truth is the snapshot taken when it froze (D-110 addendum): the live
+  // rows may hold later raters, corrections or assignments that belong to a child version. Only
+  // the estimate of a legacy version frozen before that snapshot existed reads the live tables;
+  // the freeze transaction captures it before the config is read again.
+  const truth = dataset.frozenAt === null ? null : await loadDatasetTruth(db, dataset.version);
+  const wanted = options.raterIds === undefined ? null : new Set(options.raterIds);
+  const raters =
+    truth === null
+      ? await loadEvalRaters(db, options.raterIds)
+      : truth.raters.filter((r) => wanted === null || wanted.has(r.raterId));
+  if (wanted !== null && raters.length !== wanted.size) {
     throw new EvalCommandError('unknown rater id in --raters');
   }
   const raterIds = raters.map((r) => r.raterId);
-  // A frozen version's ground truth is the snapshot taken when it froze (D-110 addendum): the live
-  // rows may hold later corrections or assignments that belong to a child version. Only the
-  // estimate of a legacy version frozen before that snapshot existed reads the live tables; the
-  // freeze transaction captures it before the config is read again.
-  const truth = dataset.frozenAt === null ? null : await loadDatasetTruth(db, dataset.version);
   const [cards, assignments, ratings, labels] =
     truth === null
       ? await Promise.all([
@@ -1359,6 +1363,16 @@ export async function runExperiment(
     const id = runId;
     const sink: Sink = (rows) => upsertRunAnswers(rt.db, id, rows);
 
+    // A resume records its in-flight state before any work, for every experiment: the earlier
+    // invocations' cost carried and marked incomplete, so a kill at any point leaves a lower
+    // bound that the next resume keeps (D-122).
+    if (existingRunId !== null) {
+      await updateRunResults(rt.db, id, {
+        status: 'running',
+        cost: { ...(prior.cost ?? emptyRunCost()), incomplete: true },
+      });
+    }
+
     let out: Execution;
     try {
       out = await execute(
@@ -1558,6 +1572,19 @@ function inputsSha(config: Omit<RunConfig, 'configSha'>): string {
     assignments: config.assignments,
     facetLabels: config.facetLabels,
   });
+}
+
+function emptyRunCost(): RunCost {
+  return {
+    estimatedUsd: 0,
+    billedUsd: 0,
+    cacheHits: 0,
+    cacheMisses: 0,
+    cacheSavingsUsd: 0,
+    failedCallUsd: 0,
+    tokens: { input: 0, output: 0 },
+    byLang: {},
+  };
 }
 
 /** E5 and other stubs: a run row whose results say `skipped` and why (no freeze, no calls). */

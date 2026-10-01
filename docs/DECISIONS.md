@@ -770,7 +770,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   while the head is frozen likewise first creates the next open version (`params.assignmentsAfter`),
   even without a top-up, so a frozen version's assignments never change. The rating app rechecks the
   card and feed steps under the rater row lock before assigning (a concurrent card deletion answers
-  409); synthetic dry-run raters skip that check. Spec 10 §2.2 updated.
+  409); synthetic dry-run raters skip that check. Top-ups are planned and written in the same
+  transaction as the assignments, under the rater row lock, then the additions lock, then the dataset
+  row lock, from the feeds read under the rater lock, so a concurrent feed change never adds articles
+  from a dropped feed and a start rejected as not ready writes nothing. No path takes the additions
+  lock and then a rater lock. Spec 10 §2.2 updated.
 - D-105: 2026-10-01 M3a-T7 — spec 10 §2.3 asks for a predeclared adjudication step without defining
   it. Facet values use the labelling page's strings (yes/no, `0`–`4`, option ids); `uncertain` and
   `not_applicable` are excluded from accuracy. A label by the labeller `adjudicated` wins; otherwise a
@@ -868,8 +872,14 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   and when the estimate changes it prints it and applies the confirmation rule again (above $1 needs
   `--yes` or an interactive yes). A decline leaves no run row; the version stays frozen. Every
   dataset mutation takes the additions advisory lock before the dataset row lock, the order the
-  freeze and top-up paths use, so a mutation racing a freeze waits instead of deadlocking. Spec 10 §3
-  updated.
+  freeze and top-up paths use, so a mutation racing a freeze waits instead of deadlocking. A frozen
+  version's `eval.dataset_truth` row also captures its raters (id, name, participant, context name,
+  languages); runs on a frozen version take their rater set (and `--raters` filtering) from it, so a
+  rater added after the freeze never joins and the ground-truth hash stays stable. Every resumed
+  invocation records its in-flight state before any work (`status: 'running'`, the earlier cost
+  carried and marked `incomplete`), so a kill at any point leaves a lower bound. In a replay, a For
+  You lane the base fills but the replay empties is a fail; a lane empty on both sides makes For You
+  precision unsupported, so the replay is inconclusive. Spec 10 §3 updated.
 - D-111: 2026-10-01 M3a-T6 — eval routers use a process-local circuit breaker, so an evaluation
   never trips or reads the production breaker (spec 04 §1). The LLM fallback is off and the pinned
   engine has no automatic fallback, so a run never mixes engines silently.

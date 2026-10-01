@@ -244,6 +244,27 @@ describe('replayDiff', () => {
     expect(diff.policy.base.forYou).toBeGreaterThan(0);
     expect(diff.policy.replay.forYou).toBe(0);
     expect(diff.laneChange.changed).toBeGreaterThan(0);
+    // A thresholds-only change that empties the For You lane fails (AUC is unchanged).
+    expect(diff.verdict).toBe('fail');
+    expect(diff.reasons.some((r) => r.startsWith('the For You lane is emptied'))).toBe(true);
+  });
+
+  it('is inconclusive when the For You lane is empty on both sides', () => {
+    const empty = mergeRankerConfig({ lanes: { forYou: 0.95 } });
+    const diff = replayDiff({
+      config: f.config,
+      articles: f.articles,
+      base,
+      replay: base,
+      baseRanker: empty,
+      replayRanker: empty,
+      replayStatus: 'complete',
+    });
+    expect(diff.policy.base.forYou).toBe(0);
+    expect(diff.verdict).toBe('inconclusive');
+    expect(diff.reasons).toContain(
+      'For You precision is unsupported: the lane is empty on both sides',
+    );
   });
 
   it('is inconclusive without an eligible cell or with missing replay output', () => {

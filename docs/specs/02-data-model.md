@@ -1584,7 +1584,8 @@ CREATE TABLE eval.run_answers (run_id bigint NOT NULL REFERENCES eval.runs(id) O
   UNIQUE NULLS NOT DISTINCT (run_id, article_id, card_id, question_key));
 CREATE INDEX run_answers_run_idx ON eval.run_answers (run_id, article_id);
 CREATE TABLE eval.dataset_truth (dataset_version text PRIMARY KEY REFERENCES eval.datasets(version) ON DELETE RESTRICT,
-  ratings jsonb NOT NULL, assignments jsonb NOT NULL, cards jsonb NOT NULL, facet_labels jsonb NOT NULL,
+  raters jsonb NOT NULL, ratings jsonb NOT NULL, assignments jsonb NOT NULL, cards jsonb NOT NULL,
+  facet_labels jsonb NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now());  -- written once when the version freezes (D-110)
 GRANT USAGE ON SCHEMA eval TO bantoozi_worker;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA eval TO bantoozi_worker;
@@ -1598,7 +1599,8 @@ ALTER DEFAULT PRIVILEGES FOR ROLE bantoozi_owner IN SCHEMA eval GRANT USAGE, SEL
   `eval.datasets` version accepts no new sample rows and never changes or disappears, and an
   `eval.runs` row's experiment, dataset version, config, git sha and start time are immutable (only
   `finished_at` and `results` are written later). An `eval.dataset_truth` row (a frozen version's
-  ratings, assignments, cards and facet labels, captured in its freezing transaction) is inserted
+  raters (id, name, participant, context name, languages), ratings, assignments, cards and facet labels,
+  captured in its freezing transaction) is inserted
   only for a frozen version and never updated or deleted; runs on a frozen version read it instead
   of the live tables. `rater_sessions` has an index on `rater_id`.
 - The evaluation user `eval@bantoozi.local` (role `user`, no invites) marks a **golden database**
