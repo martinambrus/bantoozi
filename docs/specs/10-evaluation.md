@@ -442,7 +442,9 @@ additional ≥3-person requirement or unresolved owner waiver for this initial l
    translation gain and flag the English comparison as inconclusive. E4 must use the same selected
    card mode; tier-2 cap is 1000 only if its paired gain over tier 1 is ≥0.05 for SK or CS, else 300.
    Every paired gain in steps 2–3 (card mode, translate vs native, E4 vs tier 1) compares the two
-   runs on the items both scored; an item either run left unknown is dropped from both sides. A
+   runs on the items both scored; an item either run left unknown is dropped from both sides. The
+   test confirmation below does the same for the composition and the baseline (both macros, every
+   participant's win and the paired interval). A
    score answered on a fallback (native text in a translated-state run, or original card text in an
    English-card run) is unknown for these metrics and the threshold pool, as in coverage.
 4. **One global threshold object:** pool development examples from the per-language variants chosen

@@ -15,7 +15,7 @@ import { chooseCardMode, chooseLanguageMode } from '../src/report/decision.js';
 import { G1Schema, g1ConfigSha } from '../src/report/g1-schema.js';
 import { onSplit, runScore, type RatedItem } from '../src/report/items.js';
 import { buildReportModel, latestRuns, type ReportModel } from '../src/report/model.js';
-import { buildCells } from '../src/report/ranking.js';
+import { buildCells, macroAuc } from '../src/report/ranking.js';
 import type { RunData } from '../src/report/run-data.js';
 import {
   buildFixture,
@@ -271,6 +271,45 @@ describe('development selection and test confirmation', () => {
     const selection = select(model, assessments);
     const confirmation = confirmOnTest(model, assessments, selection, settings);
     expect(confirmation.decision.status).toBe('fail');
+  });
+  it('confirms on the test items both sides scored, so missing hard items cannot make a pass', () => {
+    const fixture = buildFixture();
+    const weak = { signal: () => 0.2 };
+    const runs = standardRuns(fixture, { E1: weak, E2: weak, E3: weak, E3b: weak, E4: weak });
+    const { model, assessments } = setup(fixture, runs);
+    const selection = select(model, assessments);
+    expect(selection.status).toBe('selected');
+    const composed = (lang: string) => assessments.get(selection.composition[lang]!)!.run!;
+    const baseline = assessments.get(selection.baseline!)!.run!;
+    // The baseline scores every item exactly like the composition: no real gain on any item.
+    baseline.scores.clear();
+    for (const item of model.items) {
+      const score = runScore(composed(item.lang), item);
+      let inner = baseline.scores.get(item.raterId);
+      if (inner === undefined) baseline.scores.set(item.raterId, (inner = new Map()));
+      inner.set(item.articleId, score);
+    }
+    // The composition loses its worst-ranked liked test items (within the 5% coverage allowance).
+    const test = onSplit(model.items, 'test');
+    for (const lang of ['en', 'sk']) {
+      const all = model.items.filter((i) => i.lang === lang).length;
+      const hard = test
+        .filter((i) => i.lang === lang && i.liked && runScore(composed(lang), i) !== null)
+        .sort((x, y) => runScore(composed(lang), x)! - runScore(composed(lang), y)!)
+        .slice(0, Math.floor(all * 0.04));
+      for (const item of hard) composed(lang).scores.get(item.raterId)!.set(item.articleId, null);
+    }
+    // Unpaired, each side on its own scored items, the composition would clear +0.05 and win.
+    const cells = buildCells(test, 'context');
+    const view = (item: RatedItem) => runScore(composed(item.lang), item);
+    const alone = macroAuc(cells, view).value!;
+    const base = macroAuc(cells, (item) => runScore(baseline, item)).value!;
+    expect(alone - base).toBeGreaterThanOrEqual(0.05);
+    // Paired, both sides are the same scores on the same items: no gain, no participant win.
+    const confirmation = confirmOnTest(model, assessments, selection, settings);
+    expect(confirmation.macro).toBeCloseTo(confirmation.baselineMacro!, 10);
+    expect(confirmation.decision.status).toBe('fail');
+    expect(confirmation.decision.reasons.join(' ')).toMatch(/does not beat the baseline/);
   });
 });
 

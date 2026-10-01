@@ -47,6 +47,7 @@ import {
   pairedMacroDelta,
   type BootstrapSettings,
   type Cell,
+  type ScoreFn,
 } from './ranking.js';
 import { assessReadiness, type Readiness } from './readiness.js';
 import { uncachedUsd } from './render.js';
@@ -338,6 +339,20 @@ function devMacro(cells: readonly Cell[], run: RunData | null): number | null {
 }
 
 /**
+ * Two score functions restricted to the items both score: an item either side leaves unknown is
+ * unknown on both, so comparisons of the two never rest on different observations.
+ */
+export function pairedScoreFns(a: ScoreFn, b: ScoreFn): { a: ScoreFn; b: ScoreFn } {
+  const both =
+    (own: ScoreFn, other: ScoreFn): ScoreFn =>
+    (item) => {
+      const s = own(item);
+      return s === null || other(item) === null ? null : s;
+    };
+  return { a: both(a, b), b: both(b, a) };
+}
+
+/**
  * Development macros of two runs compared as a paired gain (card mode, language mode, tier 2): both
  * are computed on the items both runs scored, so an item one side failed to score (up to 5% may be
  * missing) cannot create or erase a gain. With either run missing nothing is paired, and each side
@@ -349,11 +364,8 @@ export function pairedDevMacros(
   b: RunData | null,
 ): { a: number | null; b: number | null } {
   if (a === null || b === null) return { a: devMacro(cells, a), b: devMacro(cells, b) };
-  const both = (run: RunData, other: RunData) => (item: RatedItem) => {
-    const s = runScore(run, item);
-    return s === null || runScore(other, item) === null ? null : s;
-  };
-  return { a: macroAuc(cells, both(a, b)).value, b: macroAuc(cells, both(b, a)).value };
+  const paired = pairedScoreFns(scoreOf(a), scoreOf(b));
+  return { a: macroAuc(cells, paired.a).value, b: macroAuc(cells, paired.b).value };
 }
 
 /** Spec 10 §5 steps 1–5 on development data only. */
@@ -624,8 +636,13 @@ export function confirmOnTest(
   const composedView = compositionView('G1 composition', compositionRuns, null);
   const baselineRun = selection.baseline === null ? null : eligibleRun(runs, selection.baseline);
   const baselineView = baselineRun === null ? null : runView(baselineRun);
-  const macro = macroAuc(cells, composedView.score);
-  const base = baselineView === null ? null : macroAuc(cells, baselineView.score);
+  // The gate compares candidate and baseline on the items both scored (macro, participant wins and
+  // the paired interval): an item one side left unknown (up to 5% may be) cannot make the +0.05
+  // gain or a participant win. Without a baseline nothing is paired and the gate needs more data.
+  const paired =
+    baselineView === null ? null : pairedScoreFns(composedView.score, baselineView.score);
+  const macro = macroAuc(cells, paired?.a ?? composedView.score);
+  const base = paired === null ? null : macroAuc(cells, paired.b);
   const participantKeys = [...new Set(testItems.map((i) => i.participantKey))].sort();
   const participants = new Map(
     participantKeys.map((key) => [
@@ -640,10 +657,15 @@ export function confirmOnTest(
     selection.status !== 'selected'
       ? { status: 'needs_more_data' as const, reasons: selection.reasons }
       : confirmGate({ macro: macro.value, baselineMacro: base?.value ?? null, participants });
-  const delta = pairedMacroDelta(cells, composedView.score, baselineView?.score ?? (() => null), {
-    ...settings,
-    seed: `${settings.seed}:test:composition`,
-  });
+  const delta = pairedMacroDelta(
+    cells,
+    paired?.a ?? composedView.score,
+    paired?.b ?? (() => null),
+    {
+      ...settings,
+      seed: `${settings.seed}:test:composition`,
+    },
+  );
   const merged = mergeRankerConfig(selection.thresholds);
   return {
     decision,
