@@ -440,6 +440,30 @@ describe('settings (spec 08 §9, spec 02 §2)', () => {
     expect(second.json()).toEqual(first.json());
     expect((await outbox()).filter((j) => j.queue === 'house.rematch')).toHaveLength(1);
   });
+
+  it('replays a committed language change without probing LibreTranslate again', async () => {
+    lt.reset();
+    const key = crypto.randomUUID();
+    const modes = { en: 'native', sk: 'native', cs: 'translate' };
+    const first = await apiClient(ltServer, admin).patch(
+      '/admin/settings',
+      { language_modes: modes },
+      { idempotencyKey: key },
+    );
+    expect(first.statusCode, first.body).toBe(200);
+    // Another change moves the stored value away; the retry would now need a probe again.
+    const other = await apiClient(ltDownServer, admin).patch('/admin/settings', {
+      language_modes: { en: 'native', sk: 'native', cs: 'native' },
+    });
+    expect(other.statusCode, other.body).toBe(200);
+    const retry = await apiClient(ltDownServer, admin).patch(
+      '/admin/settings',
+      { language_modes: modes },
+      { idempotencyKey: key },
+    );
+    expect(retry.statusCode, retry.body).toBe(200);
+    expect(retry.json()).toEqual(first.json());
+  });
 });
 
 describe('engine operations (spec 08 §9)', () => {
