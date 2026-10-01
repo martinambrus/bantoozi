@@ -164,11 +164,16 @@ const okEnrich = z.looseObject({
   ok: z.literal(true),
   answer: AnswerSchema,
   engine: z.string().nullish(),
+  variant: z.string().nullish(),
 });
 const scoreAnswer = z.looseObject({
   score: z.number().nullable(),
   source: z.string().nullish(),
   decidingCardId: id.nullish(),
+  /** Translated-articles runs: `native` when the translation failed and native text was used. */
+  variant: z.string().nullish(),
+  /** English-card runs: a card of the rater kept its original text (failed or weak translation). */
+  cardTextFallback: z.boolean().nullish(),
 });
 
 /** A Call B answer of one card: usable `{p, engine}` or failed. */
@@ -204,11 +209,18 @@ export interface RunData {
   config: RunConfig;
   /** `null` while unfinished or when the stored results do not parse. */
   results: RunResults | null;
-  /** `score.r<raterId>` → articleId → score (null = unknown). */
+  /**
+   * `score.r<raterId>` → articleId → score (null = unknown). A fallback-tagged score (the runner's
+   * `variant: 'native'` translation fallback or `cardTextFallback: true`) never observed the run's
+   * advertised variant, so it is unknown here, exactly as the runner leaves it out of coverage.
+   */
   scores: Map<string, Map<string, number | null>>;
   /** articleId → cardId → Call B result (`card` rows). */
   cards: Map<string, Map<string, CardResult>>;
-  /** articleId → enrich key → Call A answer (null = failed). */
+  /**
+   * articleId → enrich key → Call A answer (null = failed, or answered on native text in a
+   * translated-state run, which the runner's enrich coverage does not count either).
+   */
   enrich: Map<string, Map<string, Answer | null>>;
   /** Other keys (`e7.targeted`, `e7.generic`, …): key → articleId → cardId → result. */
   extra: Map<string, Map<string, Map<string, CardResult>>>;
@@ -264,11 +276,16 @@ export function parseRunData(run: RawRun, answers: readonly RawAnswer[]): RunDat
     extra: new Map(),
     malformed: 0,
   };
+  const state = config.data.variant?.state;
+  const translatedState = state === 'lt' || state === 'glm';
   for (const row of answers) {
     const key = row.questionKey;
     if (key.startsWith('score.r')) {
       const parsed = scoreAnswer.safeParse(row.answer);
-      const score = parsed.success ? parsed.data.score : null;
+      const fallback =
+        parsed.success &&
+        (parsed.data.cardTextFallback === true || parsed.data.variant === 'native');
+      const score = parsed.success && !fallback ? parsed.data.score : null;
       if (!parsed.success) data.malformed += 1;
       const valid = score !== null && Number.isFinite(score) ? score : null;
       nested(data.scores, key.slice('score.r'.length)).set(row.articleId, valid);
@@ -281,7 +298,9 @@ export function parseRunData(run: RawRun, answers: readonly RawAnswer[]): RunDat
       if (!parsed.success && !failed.safeParse(row.answer).success) data.malformed += 1;
       nested(data.enrich, row.articleId).set(
         key.slice('enrich.'.length),
-        parsed.success ? parsed.data.answer : null,
+        parsed.success && !(translatedState && parsed.data.variant === 'native')
+          ? parsed.data.answer
+          : null,
       );
     } else if (row.cardId !== null) {
       const result = cardResult(row.answer);

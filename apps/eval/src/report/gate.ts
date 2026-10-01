@@ -337,6 +337,25 @@ function devMacro(cells: readonly Cell[], run: RunData | null): number | null {
   return run === null ? null : macroAuc(cells, scoreOf(run)).value;
 }
 
+/**
+ * Development macros of two runs compared as a paired gain (card mode, language mode, tier 2): both
+ * are computed on the items both runs scored, so an item one side failed to score (up to 5% may be
+ * missing) cannot create or erase a gain. With either run missing nothing is paired, and each side
+ * keeps its own macro (the gain is then unmeasured anyway).
+ */
+export function pairedDevMacros(
+  cells: readonly Cell[],
+  a: RunData | null,
+  b: RunData | null,
+): { a: number | null; b: number | null } {
+  if (a === null || b === null) return { a: devMacro(cells, a), b: devMacro(cells, b) };
+  const both = (run: RunData, other: RunData) => (item: RatedItem) => {
+    const s = runScore(run, item);
+    return s === null || runScore(other, item) === null ? null : s;
+  };
+  return { a: macroAuc(cells, both(a, b)).value, b: macroAuc(cells, both(b, a)).value };
+}
+
 /** Spec 10 §5 steps 1–5 on development data only. */
 export function selectOnDevelopment(input: DevelopmentInput): GateSelection {
   const reasons: string[] = [];
@@ -372,10 +391,11 @@ export function selectOnDevelopment(input: DevelopmentInput): GateSelection {
   const [asWrittenExp, englishExp] =
     family === 'native' ? (['E1', 'E2'] as const) : (['E3', 'E3b'] as const);
   const nonEnglishCells = contextCells.filter((c) => input.nonEnglishCardContexts.has(c.contextId));
-  const cardMode = chooseCardMode({
-    asWritten: nonEnglishCells.length === 0 ? null : devMacro(nonEnglishCells, run(asWrittenExp)),
-    english: nonEnglishCells.length === 0 ? null : devMacro(nonEnglishCells, run(englishExp)),
-  });
+  const cardPair =
+    nonEnglishCells.length === 0
+      ? { a: null, b: null }
+      : pairedDevMacros(nonEnglishCells, run(asWrittenExp), run(englishExp));
+  const cardMode = chooseCardMode({ asWritten: cardPair.a, english: cardPair.b });
 
   // Step 3: per-language modes within the selected card mode.
   const nativeExp: CoreCandidate = cardMode.mode === 'english' ? 'E2' : 'E1';
@@ -396,8 +416,7 @@ export function selectOnDevelopment(input: DevelopmentInput): GateSelection {
     );
     const bNative = cells.filter((c) => bilingualContexts.has(c.contextId));
     const bEnglish = langCells.filter((c) => c.lang === 'en' && bilingualContexts.has(c.contextId));
-    const native = devMacro(cells, nativeRun);
-    const translated = devMacro(cells, translatedRun);
+    const { a: native, b: translated } = pairedDevMacros(cells, nativeRun, translatedRun);
     languages.push(
       chooseLanguageMode({
         lang,
@@ -409,8 +428,12 @@ export function selectOnDevelopment(input: DevelopmentInput): GateSelection {
         },
       }),
     );
-    const e4Auc = e4Matches ? devMacro(cells, e4) : null;
-    tier2Gains[lang] = e4Auc === null || translated === null ? null : e4Auc - translated;
+    // The tier-2 gain pairs E4 with the translated state on their own common items.
+    const tier2Pair = e4Matches ? pairedDevMacros(cells, e4, translatedRun) : null;
+    tier2Gains[lang] =
+      tier2Pair === null || tier2Pair.a === null || tier2Pair.b === null
+        ? null
+        : tier2Pair.a - tier2Pair.b;
   }
   const tier2 = chooseTier2Cap(tier2Gains);
   const modes: Record<string, 'native' | 'translate' | null> = Object.fromEntries(

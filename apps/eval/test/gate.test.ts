@@ -8,11 +8,14 @@ import {
   developmentInput,
   gateLangs,
   gateReadiness,
+  pairedDevMacros,
   selectOnDevelopment,
 } from '../src/report/gate.js';
+import { chooseCardMode, chooseLanguageMode } from '../src/report/decision.js';
 import { G1Schema, g1ConfigSha } from '../src/report/g1-schema.js';
-import { onSplit, runScore } from '../src/report/items.js';
+import { onSplit, runScore, type RatedItem } from '../src/report/items.js';
 import { buildReportModel, latestRuns, type ReportModel } from '../src/report/model.js';
+import { buildCells } from '../src/report/ranking.js';
 import type { RunData } from '../src/report/run-data.js';
 import {
   buildFixture,
@@ -401,5 +404,72 @@ describe('budget over a mixed composition', () => {
     expect(
       composedCostPerArticle({ en: e1, sk: noCost }, devArticles, articleLang).usdPerArticle,
     ).toBeNull();
+  });
+});
+
+describe('paired development gains', () => {
+  // One supported context: 10 liked and 10 disliked articles. Both runs rank every like above
+  // every dislike except one hard disliked case (article 20), which both score above all likes.
+  const items: RatedItem[] = Array.from({ length: 20 }, (_, i) => {
+    const articleId = String(i + 1);
+    return {
+      key: `1:${articleId}`,
+      raterId: '1',
+      contextId: '1',
+      participantKey: 'owner',
+      articleId,
+      lang: 'sk',
+      split: 'dev',
+      groupId: `g${articleId}`,
+      firstSeenAt: i,
+      liked: i < 10,
+      title: null,
+    };
+  });
+  const cells = buildCells(items, 'context');
+  const scored = (id: string, missing: readonly string[]): RunData =>
+    ({
+      id,
+      scores: new Map([
+        [
+          '1',
+          new Map(
+            items.map((item, i) => [
+              item.articleId,
+              missing.includes(item.articleId) ? null : item.articleId === '20' ? 2 : 1 - i / 20,
+            ]),
+          ),
+        ],
+      ]),
+    }) as unknown as RunData;
+
+  it('compares two runs on the items both scored, so a one-sided missing hard case cannot flip a decision', () => {
+    const full = scored('a', []);
+    const lacksHardCase = scored('b', ['20']); // 1 of 20 missing: within the 5% coverage allowance
+    // Each side alone (no partner run): the run that skipped the hard case looks 0.1 better.
+    const alone = {
+      a: pairedDevMacros(cells, full, null).a,
+      b: pairedDevMacros(cells, lacksHardCase, null).a,
+    };
+    expect(alone.a).toBeCloseTo(0.9, 10);
+    expect(alone.b).toBe(1);
+    expect(chooseCardMode({ asWritten: alone.a, english: alone.b }).mode).toBe('english');
+    const paired = pairedDevMacros(cells, full, lacksHardCase);
+    expect(paired).toEqual({ a: 1, b: 1 });
+    expect(chooseCardMode({ asWritten: paired.a, english: paired.b })).toMatchObject({
+      mode: 'as_written',
+      gain: 0,
+    });
+    // Language mode: the translated run missing the hard case no longer earns `translate`.
+    const lang = pairedDevMacros(cells, full, lacksHardCase);
+    expect(
+      chooseLanguageMode({
+        lang: 'sk',
+        native: lang.a,
+        translated: lang.b,
+        bilingual: { native: null, english: null },
+      }),
+    ).toMatchObject({ mode: 'native', translationGain: 0 });
+    expect(pairedDevMacros(cells, lacksHardCase, null)).toEqual({ a: 1, b: null });
   });
 });

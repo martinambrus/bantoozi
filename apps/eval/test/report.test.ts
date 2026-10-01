@@ -282,6 +282,73 @@ describe('run data and the reliability SVG', () => {
     expect(run.malformed).toBe(1);
   });
 
+  it('reads fallback-tagged scores and native-text Call A answers of a variant run as unknown', () => {
+    const raw = (experiment: string, state: string, cards: string) => ({
+      id: '6',
+      experiment,
+      datasetVersion: 'v',
+      gitSha: 'x',
+      startedAt: generatedAt,
+      finishedAt: null,
+      config: {
+        experiment,
+        variant: { state, cards },
+        datasetVersion: 'v',
+        cohort: { articleIds: ['1', '2', '3'], sha: 's' },
+      },
+      results: null,
+    });
+    const depth = { type: 'noul', p: 0.7 };
+    const answers = [
+      // As the runner writes them (scoreRows): a translated score, a translation fallback answered
+      // on native text, and a score that used a card whose English translation failed.
+      {
+        articleId: '1',
+        cardId: null,
+        questionKey: 'score.r7',
+        answer: { score: 0.9, source: 'cards', variant: 'translated' },
+      },
+      {
+        articleId: '2',
+        cardId: null,
+        questionKey: 'score.r7',
+        answer: { score: 0.8, source: 'cards', variant: 'native' },
+      },
+      {
+        articleId: '3',
+        cardId: null,
+        questionKey: 'score.r7',
+        answer: { score: 0.7, source: 'cards', cardTextFallback: true },
+      },
+      {
+        articleId: '1',
+        cardId: null,
+        questionKey: 'enrich.depth',
+        answer: { ok: true, answer: depth, variant: 'lt' },
+      },
+      {
+        articleId: '2',
+        cardId: null,
+        questionKey: 'enrich.depth',
+        answer: { ok: true, answer: depth, variant: 'native' },
+      },
+    ];
+    const e3b = parseRunData(raw('E3b', 'lt', 'english'), answers);
+    expect(e3b.scores.get('7')).toEqual(
+      new Map([
+        ['1', 0.9],
+        ['2', null],
+        ['3', null],
+      ]),
+    );
+    expect(e3b.enrich.get('1')?.get('depth')).toEqual(depth);
+    expect(e3b.enrich.get('2')?.get('depth')).toBeNull();
+    expect(e3b.malformed).toBe(0);
+    // A native-state run tags every Call A answer `native`: those are its real observations.
+    const e1 = parseRunData(raw('E1', 'native', 'as_written'), answers.slice(3));
+    expect(e1.enrich.get('2')?.get('depth')).toEqual(depth);
+  });
+
   it('draws a self-contained SVG with escaped text', () => {
     const svg = reliabilitySvg(
       'a <b> & "c"',
