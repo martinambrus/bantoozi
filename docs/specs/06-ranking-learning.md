@@ -243,7 +243,7 @@ interface Explain {
   cards: { id: string; title: string; strength: Strength; p: number; engine: string }[];   // the user's cards with answers, p desc, ≤ 10
   facets?: { contentType: { choice: string; p: number }; topic: { l1: string; p: number; l2?: string };
              depth: number; clickbait: number; promotional: number; timeSensitive: number; evergreen: number };
-  rules: { code: string; ruleId?: string; cardId?: string; detail?: string }[];   // ids let the UI offer "undo"
+  rules: { code: string; ruleId?: string; cardId?: string; detail?: string }[];   // ids let the UI offer "undo"; code ≤ 200 chars (D-96)
   model?: { version: number; top: { feature: string; label: string; contribution: number }[] };   // top 3 by |contribution|
   translation?: { engine: string; quality: string };
   cluster?: { id: string; size: number };

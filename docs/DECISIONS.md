@@ -679,3 +679,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   like a settlement and then leaves the reservation charged for housekeeping. A released `suggest`
   reservation keeps its suggestion stamp (spec 05 §7), as a request cancelled after its send does.
   Specs 04 §1 and §4 and 11 §5 updated.
+- D-96: 2026-10-01 M5-T2 — `ExplainSchema` limited a rule `code` to 64 characters, but spec 06 §3.2
+  makes a muted keyword part of its code (`mute_keyword:<value>`) and spec 08 §11 allows keywords of
+  up to 100 characters, so a valid mute could not be explained. The limit is now 200 characters,
+  enough for the prefix and any permitted keyword (also when it uses characters outside the BMP).
+  Spec 06 §6.2 updated.
