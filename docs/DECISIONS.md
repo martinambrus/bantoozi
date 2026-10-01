@@ -749,6 +749,31 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   invite POSTs omit `emailSent` on a replayed receipt (the email is never re-sent). There is no admin
   audit table: admin mutations write structured `audit` log lines without secrets. Spec 08 §9 and §11
   updated.
+- D-128: 2026-10-01 M4-T7 — the frozen feature snapshot of spec 06 §8.2 stores raw inputs.
+  `features.cards` entries are `{id, strength, p, engine}` (`p`/`engine` null without a usable
+  non-prefilter answer); `specSha = sha256('bantoozi:feature-snapshot:raw-v1')`; `ratingSha` hashes
+  `{specSha, settings}` over `engine.model_pin`, `question_sets.active`, `language_modes` and
+  `card_text_mode`; `values` are the raw observed inputs, from which `FEATURE_SPEC_V1` derives its
+  named inputs at training time; `sourceManifest` is `{contentRevision, mediaRevision,
+  inferenceFeedIds}`. Events without behavioral consent, expand and bulk reads, and label events
+  carry no features. The retrain counter counts distinct articles with `rate`/`unrate`/
+  `prompt_answer` events after the largest `user_models.metrics.feedbackCutoffEventId`. M7 must read
+  this snapshot format and write `metrics.feedbackCutoffEventId`. Spec 06 §8.2 and §8.4 updated.
+- D-129: 2026-10-01 M4-T6/T7 — reader action details. `/read` accepts `{trigger?: 'expand'}`,
+  recorded as `signalOrigin: 'expand'` without features. A rating may carry `selection:
+  'calibration'`, stored as `{method: 'calibration', sourceLane}` on the event; fetching a
+  calibration round records nothing. `GET /articles` and `/counts` enqueue a catch-up `user.rank
+  {full: true, reason: 'list'}` for outdated eligible rows without advancing `rank_revision` (a bump
+  would make every later read outdated again). `/dwell` without a prior open answers `409 CONFLICT
+  {reason: 'not_opened'}`. Mute-story goes through the rules path (`201 {rule}`, live-rule quota, a
+  repeat returns the live rule with the later expiry, no reader fence). Undo of a non-undoable
+  receipt (open, dwell, mute-story, no-ops) answers `409 not_undoable`; a foreign or unknown receipt
+  404. `POST /subscriptions/:feedId/mark-read` is the filter `{lane: 'all', feedId}` with the default
+  `minTier`, so its `datasetVersion` is the one of `GET /articles?lane=all&feedId=…` at `asOf =
+  olderThan`; an unsubscribed feed is 404. An unbookmark's snapshot pin references its
+  `api_mutations` receipt, so mutations may run an `afterSave` step once the receipt row exists (not
+  on replay). `GET /subscriptions` unread counts use the same per-feed query builder as `GET
+  /articles/counts`. Specs 06 §10 and 08 §4, §5 updated.
 - D-140: 2026-10-01 M5-T2 — `ExplainSchema` limited a rule `code` to 64 characters, but spec 06 §3.2
   makes a muted keyword part of its code (`mute_keyword:<value>`) and spec 08 §11 allows keywords of
   up to 100 characters, so a valid mute could not be explained. The limit is now 200 characters,
