@@ -10,6 +10,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { buildServer } from '../src/server.js';
+import { testConfig } from './support/harness.js';
 
 let testDb: TestDatabase;
 let appPool: ReturnType<typeof createPool>;
@@ -27,7 +28,11 @@ beforeAll(async () => {
   });
   appPool = createPool({ connectionString: testDb.urls.app, max: 2 });
   ownerPool = createPool({ connectionString: testDb.urls.owner, max: 1 });
-  server = await buildServer({ db: createDatabase(appPool) });
+  server = await buildServer({
+    db: createDatabase(appPool),
+    config: testConfig({}, testDb.urls.app),
+    libreTranslate: null,
+  });
 });
 
 afterAll(async () => {
@@ -77,7 +82,11 @@ describe('health (spec 08 §10)', () => {
     const url = new URL(testDb.urls.app);
     url.port = '1';
     const deadPool = createPool({ connectionString: url.toString(), max: 1 });
-    const offline = await buildServer({ db: createDatabase(deadPool) });
+    const offline = await buildServer({
+      db: createDatabase(deadPool),
+      config: testConfig({}, url.toString()),
+      libreTranslate: null,
+    });
     try {
       const res = await offline.inject({ method: 'GET', url: '/api/v1/readyz' });
       expect(res.statusCode).toBe(503);

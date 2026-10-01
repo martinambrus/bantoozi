@@ -15,7 +15,7 @@ const pool = createPool({
   max: 10,
   applicationName: 'bantoozi-api',
 });
-const app = await buildServer({ db: createDatabase(pool), logger });
+const app = await buildServer({ db: createDatabase(pool), config, logger });
 
 await app.listen({
   port: config.apiPort,

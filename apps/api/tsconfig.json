@@ -12,6 +12,18 @@
     },
     {
       "path": "../../packages/db"
+    },
+    {
+      "path": "../../packages/feeds"
+    },
+    {
+      "path": "../../packages/questions"
+    },
+    {
+      "path": "../../packages/translate"
+    },
+    {
+      "path": "../../packages/ranker"
     }
   ]
 }

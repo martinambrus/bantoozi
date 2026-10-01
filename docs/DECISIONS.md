@@ -679,3 +679,16 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   like a settlement and then leaves the reservation charged for housekeeping. A released `suggest`
   reservation keeps its suggestion stamp (spec 05 §7), as a request cancelled after its send does.
   Specs 04 §1 and §4 and 11 §5 updated.
+- D-96: 2026-10-01 M4-T1 — spec 08 §11 named `@fastify/rate-limit`, but its store contract needs
+  the bucket's hit count and applies one limit per route, while `rate_limit_hit()` (spec 02 §6)
+  returns only `(allowed, retry_after_s)` and a route needs several limits at once (per IP, per user
+  mutation and its own group). The API therefore applies the limits in its own hooks over
+  `rate_limit_hit()` (`apps/api/src/plugins/rate-limit.ts`) and drops the package. Responses carry
+  `X-RateLimit-Limit`; a 429 adds `Retry-After` and `X-RateLimit-Reset`. `X-RateLimit-Remaining` is
+  not sent, because the function does not report it; adding a migration for it would collide with
+  the parallel M3a migration. Specs 08 §11 and 02 §6 updated.
+- D-97: 2026-10-01 M4-T1 — spec 08 §11 trusts forwarded IP headers only from Caddy's known internal
+  address/network. The API trusts loopback and the RFC 1918 private ranges the compose network uses
+  (`DEFAULT_TRUSTED_PROXIES`), never `trustProxy: true`; the API port is not published outside that
+  network (spec 11). A deployment that exposes the API port elsewhere passes a narrower list to
+  `buildServer`. Spec 08 §11 updated.

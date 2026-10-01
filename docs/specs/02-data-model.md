@@ -1433,7 +1433,7 @@ GRANT EXECUTE ON FUNCTION refresh_feed_cards(bigint[]), refresh_feed_subscribers
 p_max int)` as SECURITY DEFINER with a fixed trusted search path, explicit revoke from PUBLIC and
 execute only for `bantoozi_app`. One atomic upsert starts a new window when the old one has ended,
 otherwise increments `hits`, and returns `(allowed boolean, retry_after_s int)`. It backs the
-`@fastify/rate-limit` store, so limits hold across API processes and restarts. Keys never contain a
+API's rate-limit hooks (D-96), so limits hold across API processes and restarts. Keys never contain a
 plaintext email: per-email limits use an HMAC of the normalized address with `SESSION_PEPPER`.
 
 **Narrow API accounting helper.** The M0 hand-written migration also supplies

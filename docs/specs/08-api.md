@@ -779,7 +779,7 @@ authorship policy, not a forged user approval.
 
 ---
 
-## 11. Rate limits (`@fastify/rate-limit`; keyed as noted)
+## 11. Rate limits (API hooks over `rate_limit_hit()`, D-96; keyed as noted)
 
 | Route group | Limit |
 |---|---|
@@ -799,10 +799,14 @@ authorship policy, not a forged user approval.
 All limits are enforced unless `RATE_LIMITS_ENABLED=false` (spec 01 §3). Only E2E and load-test
 environments with `NODE_ENV=test` set it to false. Config validation rejects `false` in production.
 Only Caddy's known internal proxy address/network is trusted for forwarded IP headers; never
-`trustProxy: true` for arbitrary clients. Limits are shared across API processes and restarts through
+`trustProxy: true` for arbitrary clients. The API trusts loopback and the RFC 1918 private ranges of the compose
+network, whose API port is not published elsewhere (D-97). Limits are shared across API processes and restarts through
 the DB-backed limiter: `rate_limit_hit()` over `rate_limit_buckets` (spec 02 §6), cleaned up by
 `house.purge-auth`.
 Send `Retry-After` for 429. Public waitlist upserts never expose whether an address already exists.
+Every limited response carries `X-RateLimit-Limit` (the tightest applicable maximum); a 429 adds
+`Retry-After` and `X-RateLimit-Reset` in seconds. `X-RateLimit-Remaining` is not sent, because
+`rate_limit_hit()` reports only whether a hit is allowed and when to retry (D-96).
 
 ---
 

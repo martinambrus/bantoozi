@@ -17,11 +17,11 @@ export async function healthRoutes(
   app: FastifyInstance,
   options: HealthRoutesOptions,
 ): Promise<void> {
-  app.get('/healthz', async (_request, reply) => {
+  app.get('/healthz', { config: { auth: 'public' } }, async (_request, reply) => {
     await reply.header('cache-control', 'no-store').send({ status: 'ok' });
   });
 
-  app.get('/readyz', async (request, reply) => {
+  app.get('/readyz', { config: { auth: 'public' } }, async (request, reply) => {
     let database: ReadyCheck = 'ok';
     let migrations: ReadyCheck = 'pending';
     try {
