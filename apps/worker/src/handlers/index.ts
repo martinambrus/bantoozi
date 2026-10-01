@@ -12,7 +12,9 @@ import type { WorkerDeps } from './deps.js';
 import { createFeedFetchHandler } from './feed-fetch.js';
 import { createFeedScheduleHandler } from './feed-schedule.js';
 import { createProviderValidateHandler } from './provider-validate.js';
+import { createExpireRulesHandler } from './house-expire-rules.js';
 import { createRescoreDegradedHandler } from './house-rescore-degraded.js';
+import { createUserRankHandler } from './user-rank.js';
 
 /**
  * The handler map (spec 03 §2): one entry for every queue of `packages/shared` jobs.ts. A stage that
@@ -84,11 +86,21 @@ export const CLASSIFICATION_QUEUES = [
 /** M2 provider key validation (spec 04 §1.2): implemented when the worker has the probe dependencies. */
 export const PROVIDER_QUEUES = ['provider.validate'] as const satisfies readonly QueueName[];
 
-/** Queues with real handlers so far (M1 ingestion, M2 classification and key validation). */
+/**
+ * M5 ranking (spec 06 §7) and rule expiry (spec 11 §6): they read stored results only, so they need
+ * no model dependencies.
+ */
+export const RANKING_QUEUES = [
+  'user.rank',
+  'house.expire-rules',
+] as const satisfies readonly QueueName[];
+
+/** Queues with real handlers so far (M1 ingestion, M2 classification and key validation, M5 ranking). */
 export const IMPLEMENTED_QUEUES = [
   ...INGESTION_QUEUES,
   ...CLASSIFICATION_QUEUES,
   ...PROVIDER_QUEUES,
+  ...RANKING_QUEUES,
 ] as const satisfies readonly QueueName[];
 
 const implemented = <Q extends QueueName>(handle: QueueHandler<Q>): HandlerEntry<Q> => ({
@@ -107,6 +119,8 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
     'feed.fetch': implemented(createFeedFetchHandler(deps)),
     'article.extract': implemented(createArticleExtractHandler(deps)),
     'article.capture-bookmark': implemented(createCaptureBookmarkHandler(deps)),
+    'user.rank': implemented(createUserRankHandler(deps)),
+    'house.expire-rules': implemented(createExpireRulesHandler(deps)),
     ...(classification === undefined
       ? {}
       : {
