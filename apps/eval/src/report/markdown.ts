@@ -2,8 +2,9 @@ import type { BootstrapInterval } from '../metrics/index.js';
 
 /** Markdown helpers for the reports: tables, number formats and escaping. */
 
+/** A table cell: backslashes first, so an input `\|` cannot turn into an unescaped pipe. */
 export function escapeCell(value: string): string {
-  return value.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+  return value.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 }
 
 export function table(headers: readonly string[], rows: readonly (readonly string[])[]): string {

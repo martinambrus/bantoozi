@@ -9,6 +9,7 @@ import {
   selectOnDevelopment,
 } from '../src/report/gate.js';
 import { renderGateReport } from '../src/report/gate-report.js';
+import { escapeCell, table } from '../src/report/markdown.js';
 import { buildReportModel, latestRuns } from '../src/report/model.js';
 import { e6Score, renderEvaluationReport, renderInformational } from '../src/report/render.js';
 import { parseRunData } from '../src/report/run-data.js';
@@ -371,5 +372,16 @@ describe('run data and the reliability SVG', () => {
     );
     expect(scorerTables.length).toBeGreaterThan(0);
     expect(scorerTables).not.toContain('replay:E1');
+  });
+});
+
+describe('markdown cells', () => {
+  it('escapes backslashes before pipes, so no input can end a cell early', () => {
+    expect(escapeCell('a|b')).toBe('a\\|b');
+    expect(escapeCell('a\\|b')).toBe('a\\\\\\|b');
+    expect(escapeCell('line\nbreak')).toBe('line break');
+    const row = table(['x', 'y'], [['a\\|b', 'c']]).split('\n')[2]!;
+    // Only the outer pipes and the one between the two cells remain: the escaped pipe is not one.
+    expect(row.replace(/\\\\/g, '').replace(/\\\|/g, '').split('|')).toHaveLength(4);
   });
 });
