@@ -218,6 +218,10 @@ export async function runIngestSample(
   const sleep = deps.sleep ?? defaultSleep;
   const aborted = () => deps.signal?.aborted === true;
 
+  // Mark the database golden first, then check heartbeats: a starting worker writes its heartbeat
+  // first and then checks for the evaluation user, so of the two at least one sees the other and
+  // no ordinary worker consumes collection work (D-96).
+  await db.transaction((tx) => ensureEvalUser(tx));
   const check = await assertCollectionWorkers(db, now());
   if (check.ok) {
     out(`ingest-only worker(s) live: ${check.ingestOnly.map((w) => w.processId).join(', ')}\n`);

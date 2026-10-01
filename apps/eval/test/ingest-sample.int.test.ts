@@ -136,6 +136,12 @@ describe('eval ingest-sample worker precondition (spec 10 §2.1, D-96)', () => {
       ),
     ).rejects.toBeInstanceOf(WorkerPreconditionError);
     expect(await subscriptions()).toEqual([]);
+    // The database is marked golden before the heartbeat check, so an ordinary worker starting at
+    // the same time sees the evaluation user after writing its own heartbeat (D-96).
+    const evalUser = await ctx.owner.query(
+      `SELECT 1 FROM users WHERE email = 'eval@bantoozi.local'`,
+    );
+    expect(evalUser.rowCount).toBe(1);
   });
 });
 

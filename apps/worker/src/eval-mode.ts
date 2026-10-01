@@ -83,7 +83,7 @@ export interface Heartbeat {
 
 /**
  * Write the first heartbeat now, then every `intervalMs`. Rejects with `GoldenDatabaseError` when an
- * ordinary worker finds a golden database on that first beat (nothing is written then).
+ * ordinary worker finds a golden database right after that first write (the entry is removed again).
  */
 export async function startHeartbeat(options: HeartbeatOptions): Promise<Heartbeat> {
   const now = options.now ?? (() => new Date());
@@ -95,6 +95,9 @@ export async function startHeartbeat(options: HeartbeatOptions): Promise<Heartbe
       options.onGoldenDatabase(new GoldenDatabaseError());
       return;
     }
+    await write();
+  }
+  async function write(): Promise<void> {
     const at = now();
     const entry = parseSetting('worker.heartbeat', {
       [options.processId]: {
@@ -107,10 +110,15 @@ export async function startHeartbeat(options: HeartbeatOptions): Promise<Heartbe
     if (entry === undefined) throw new Error('heartbeat entry missing after validation');
     await recordWorkerHeartbeat(options.db, options.processId, entry, at);
   }
+  // Write first, then check: `ingest-sample` creates the evaluation user first and then reads
+  // heartbeats, so of two that start together at least one sees the other (D-96).
+  await write();
   if (!options.evalIngestOnly && (await isGoldenDatabase(options.db))) {
+    await removeWorkerHeartbeat(options.db, options.processId).catch((err: unknown) =>
+      options.logger.warn({ err }, 'removing the worker heartbeat failed'),
+    );
     throw new GoldenDatabaseError();
   }
-  await beat();
   const timer = setInterval(() => {
     if (stopped) return;
     beat().catch((err: unknown) => options.logger.warn({ err }, 'worker heartbeat failed'));

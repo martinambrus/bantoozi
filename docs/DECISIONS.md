@@ -694,8 +694,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `article.extract`, and its pipeline stops after extraction (no translate, enrich, cluster, match or
   rank intent, also for a new carrier); `ingest-sample` refuses to collect while any live heartbeat
   is not ingest-only. The worker heartbeat itself (spec 02 §2, every 30 s, entries older than an hour
-  pruned) is written by M3a because `ingest-sample` is its first reader. Specs 02 §7 and 10 §2.1
-  updated.
+  pruned) is written by M3a because `ingest-sample` is its first reader. Ordering closes the startup
+  race: a worker writes its first heartbeat, then checks for the evaluation user, and registers no
+  consumer until both are done; `ingest-sample` creates the evaluation user, then reads heartbeats,
+  and enqueues nothing before that check, so of a worker and a collection starting together at
+  least one sees the other. Specs 02 §7 and 10 §2.1 updated.
 - D-97: 2026-10-01 M3a-T2 — spec 10 §2.1 groups the split by story but the golden database runs no
   clustering (its worker is ingest-only, D-96), so most sampled articles have no `story_cluster_id`.
   A snapshot's story-group id is `c<story_cluster_id>` when the article is clustered and otherwise

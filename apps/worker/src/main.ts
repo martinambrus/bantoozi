@@ -94,41 +94,21 @@ await verifyQuestionSets(db).catch((error: unknown) => {
   throw error;
 });
 
-const boss = createBoss(config.databaseUrlWorker);
-boss.on('error', (err) => logger.error({ err }, 'pg-boss error'));
-await boss.start();
-const registration = await registerHandlers(boss, handlers, workerQueues, logger);
-if (registration.consuming.includes('feed.schedule')) {
-  // Every minute (spec 03 §3); pg-boss keeps one schedule row per queue across workers.
-  await boss.schedule('feed.schedule', FEED_SCHEDULE_CRON, {}, { tz: 'UTC' });
-}
-const houseSchedules = Object.entries(HOUSE_CRON_SCHEDULES) as Array<
-  [HouseCronQueue, HouseCronSchedule]
->;
-for (const [queue, schedule] of houseSchedules) {
-  if (registration.consuming.includes(queue)) {
-    await boss.schedule(queue, schedule.cron, {}, { tz: 'UTC' });
-  }
-}
-// Runs missed while no worker was up (spec 11 §6); the relay below delivers them.
-const overdue = await enqueueOverdueHousekeeping(
-  db,
-  registration.consuming,
-  settingsEnv,
-  new Date(),
-);
-if (overdue.length > 0) logger.info({ overdue }, 'overdue housekeeping enqueued');
-const relay = startOutboxRelay(db, pgBossBroker(boss), { handlers, logger });
+// The heartbeat starts before any consumer: it is written first and the golden-database check
+// follows it, while `eval ingest-sample` creates the evaluation user first and checks heartbeats
+// after it, so a worker and a collection that start together always see each other (D-96).
 let stopping = false;
 let heartbeat: Heartbeat | undefined;
+let boss: ReturnType<typeof createBoss> | undefined;
+let relay: ReturnType<typeof startOutboxRelay> | undefined;
 async function shutdown(signal: string): Promise<void> {
   if (stopping) return;
   stopping = true;
   logger.info({ signal }, 'worker stopping');
   try {
     await heartbeat?.stop();
-    await relay.stop();
-    await boss.stop({ graceful: true, timeout: 20_000, wait: true });
+    await relay?.stop();
+    await boss?.stop({ graceful: true, timeout: 20_000, wait: true });
     await models.close();
     await Promise.all([pool.end(), lockPool.end()]);
   } catch (error) {
@@ -140,7 +120,7 @@ try {
   heartbeat = await startHeartbeat({
     db,
     processId: `${hostname()}:${process.pid}`,
-    queues: registration.consuming,
+    queues: workerQueues,
     evalIngestOnly: config.evalIngestOnly,
     envCredentials: [
       ...(config.typesafeApiKey ? (['typesafe'] as const) : []),
@@ -155,12 +135,38 @@ try {
   });
 } catch (error) {
   // The database turned golden between the startup check and the first beat (or the beat failed):
-  // stop what already runs instead of serving it.
+  // nothing consumes yet, so stop before serving it.
   logger.error({ err: error }, 'worker heartbeat could not start');
   process.exitCode = 1;
   await shutdown('heartbeat-start');
 }
+
 if (!stopping) {
+  boss = createBoss(config.databaseUrlWorker);
+  boss.on('error', (err) => logger.error({ err }, 'pg-boss error'));
+  await boss.start();
+  const registration = await registerHandlers(boss, handlers, workerQueues, logger);
+  if (registration.consuming.includes('feed.schedule')) {
+    // Every minute (spec 03 §3); pg-boss keeps one schedule row per queue across workers.
+    await boss.schedule('feed.schedule', FEED_SCHEDULE_CRON, {}, { tz: 'UTC' });
+  }
+  const houseSchedules = Object.entries(HOUSE_CRON_SCHEDULES) as Array<
+    [HouseCronQueue, HouseCronSchedule]
+  >;
+  for (const [queue, schedule] of houseSchedules) {
+    if (registration.consuming.includes(queue)) {
+      await boss.schedule(queue, schedule.cron, {}, { tz: 'UTC' });
+    }
+  }
+  // Runs missed while no worker was up (spec 11 §6); the relay below delivers them.
+  const overdue = await enqueueOverdueHousekeeping(
+    db,
+    registration.consuming,
+    settingsEnv,
+    new Date(),
+  );
+  if (overdue.length > 0) logger.info({ overdue }, 'overdue housekeeping enqueued');
+  relay = startOutboxRelay(db, pgBossBroker(boss), { handlers, logger });
   logger.info({ ...registration, evalIngestOnly: config.evalIngestOnly }, 'worker started');
 }
 

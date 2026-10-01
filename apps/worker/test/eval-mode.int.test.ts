@@ -336,4 +336,42 @@ describe('golden database guard and heartbeat (M3a-T1, D-96)', () => {
     );
     expect(entries.rows[0]?.value?.['ordinary:2']).toBeUndefined();
   });
+
+  it('writes the first heartbeat before the golden check, so a concurrent collection sees it', async () => {
+    // The check reads after the write: a database turned golden in between is still refused, and a
+    // collection that marks it golden and then reads heartbeats finds this worker's entry.
+    const seen: string[] = [];
+    const spyDb = new Proxy(db, {
+      get(target, prop, receiver) {
+        const value = Reflect.get(target, prop, receiver) as unknown;
+        if (prop !== 'execute' || typeof value !== 'function') return value;
+        return async (...args: unknown[]) => {
+          const result = (await (value as (...a: unknown[]) => Promise<unknown>).apply(
+            target,
+            args,
+          )) as unknown;
+          const rows = await owner.query<{ value: Record<string, unknown> }>(
+            `SELECT value FROM settings WHERE key = 'worker.heartbeat'`,
+          );
+          seen.push(rows.rows[0]?.value?.['ordinary:3'] === undefined ? 'absent' : 'present');
+          return result;
+        };
+      },
+    });
+    await expect(
+      startHeartbeat({
+        db: spyDb,
+        processId: 'ordinary:3',
+        queues: ['article.enrich'],
+        evalIngestOnly: false,
+        envCredentials: [],
+        logger: silent,
+        onGoldenDatabase: () => {},
+        intervalMs: 3_600_000,
+      }),
+    ).rejects.toBeInstanceOf(GoldenDatabaseError);
+    // The entry existed when the golden check ran, and was removed afterwards.
+    expect(seen).toContain('present');
+    expect(seen.at(-1)).toBe('absent');
+  });
 });
