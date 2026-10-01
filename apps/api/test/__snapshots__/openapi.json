@@ -6076,7 +6076,7 @@
                               "code": {
                                 "type": "string",
                                 "minLength": 1,
-                                "maxLength": 64
+                                "maxLength": 200
                               },
                               "ruleId": {
                                 "type": "string"
