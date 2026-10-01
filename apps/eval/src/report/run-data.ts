@@ -215,7 +215,10 @@ export interface RunData {
    * advertised variant, so it is unknown here, exactly as the runner leaves it out of coverage.
    */
   scores: Map<string, Map<string, number | null>>;
-  /** articleId → cardId → Call B result (`card` rows). */
+  /**
+   * articleId → cardId → Call B result (`card` rows). A rater's own `card.r<raterId>` rows land in
+   * `extra`; read a rater's answers with `raterCardResults`.
+   */
   cards: Map<string, Map<string, CardResult>>;
   /**
    * articleId → enrich key → Call A answer (null = failed, or answered on native text in a
@@ -242,6 +245,22 @@ function nested<V>(map: Map<string, Map<string, V>>, key: string): Map<string, V
     map.set(key, inner);
   }
   return inner;
+}
+
+/**
+ * A rater's Call B results of one article: the shared `card` rows, overridden by that rater's own
+ * `card.r<raterId>` rows, which the runner writes when the rater's copy of a shared card id was asked
+ * with different text (an English-card translation frozen with another locale hint, D-112).
+ */
+export function raterCardResults(
+  run: RunData,
+  raterId: string,
+  articleId: string,
+): Map<string, CardResult> | undefined {
+  const shared = run.cards.get(articleId);
+  const own = run.extra.get(`card.r${raterId}`)?.get(articleId);
+  if (own === undefined) return shared;
+  return new Map([...(shared ?? new Map<string, CardResult>()), ...own]);
 }
 
 function cardResult(value: unknown): CardResult | null {

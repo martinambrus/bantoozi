@@ -2,6 +2,7 @@ import {
   DEFAULT_LLM_MAX_OUTPUT_TOKENS,
   estimateLlmCostUsd,
   estimateLlmInputTokens,
+  llmCostUsd,
   LLM_ENGINE_VERSION,
   typesafeCostUsd,
   type EngineOutcome,
@@ -30,6 +31,8 @@ import {
   assessTranslation,
   supportedSourceLanguages,
   TIER2_MAX_ATTEMPTS,
+  OLLAMA_PRICES,
+  tier2CostUsd,
   TIER2_OPTIONS,
   tier2SystemPrompt,
   toExternalCall,
@@ -123,6 +126,11 @@ export interface CallEnv {
   runId: string | null;
   /** The pinned engine; null for runs without engine calls. */
   engine: RunEngine | null;
+  /**
+   * `TYPESAFE_PRICE_PER_MTOK_USD` of this invocation: the price the eval router bills live Jev calls
+   * at, and so the price a cache hit is repriced at for the uncached equivalent (D-110 addendum).
+   */
+  typesafePricePerMTokUsd: number;
   translators: EvalTranslators;
   credentials: CredentialResolver;
   /** The tier-2 model of E4 (`OLLAMA_MODEL_FAST`). */
@@ -142,6 +150,51 @@ function addCost(env: CallEnv, articleId: string, field: keyof LangCost, usd: nu
   const lang = env.articleLang.get(articleId) ?? 'und';
   const cell = (env.stats.byLang[lang] ??= { estimateUsd: 0, cacheSavingsUsd: 0 });
   cell[field] += usd;
+}
+
+interface PricedHit {
+  model: string | null;
+  costUsd: number;
+  inputTokens?: number | undefined;
+  outputTokens?: number | undefined;
+}
+
+/**
+ * What a cache hit would cost if it were asked now (`cacheSavingsUsd`, the uncached cost G1 uses for
+ * the production budget): its stored token counts at the CURRENT price, with the pricing functions
+ * the live router uses (`typesafeCostUsd` at `TYPESAFE_PRICE_PER_MTOK_USD`, `llmCostUsd` from the
+ * Ollama price table), never the price recorded when it was cached, which the cache identity does
+ * not include. An entry without token counts (cached before they were stored) or of an unpriced
+ * model keeps its recorded cost (D-110 addendum).
+ */
+function engineHitUsd(env: CallEnv, engine: RunEngine, hit: PricedHit): number {
+  if (hit.inputTokens === undefined) return hit.costUsd;
+  if (engine.provider === 'typesafe') {
+    return typesafeCostUsd(hit.inputTokens, env.typesafePricePerMTokUsd);
+  }
+  if (engine.provider === 'llm' && hit.model !== null) {
+    try {
+      return llmCostUsd(
+        { inputTokens: hit.inputTokens, outputTokens: hit.outputTokens ?? 0 },
+        hit.model,
+      );
+    } catch {
+      return hit.costUsd;
+    }
+  }
+  return hit.costUsd;
+}
+
+/** A tier-2 translation hit at the current Ollama price table (tier 1 is free). */
+function translationHitUsd(hit: PricedHit & { engine: string }): number {
+  if (hit.engine !== 'ollama') return 0;
+  if (hit.inputTokens === undefined || hit.model === null) return hit.costUsd;
+  const price = Object.hasOwn(OLLAMA_PRICES, hit.model) ? OLLAMA_PRICES[hit.model] : undefined;
+  if (price === undefined) return hit.costUsd;
+  return tier2CostUsd(price, {
+    inputTokens: hit.inputTokens,
+    outputTokens: hit.outputTokens ?? 0,
+  });
 }
 
 const authorization = (env: CallEnv): InferenceAuthorization => ({
@@ -245,7 +298,7 @@ export async function askEnrich(
   });
   const hit = await lookup(env, manifest, EnrichValueSchema);
   if (hit !== null) {
-    addCost(env, input.articleId, 'cacheSavingsUsd', hit.costUsd);
+    addCost(env, input.articleId, 'cacheSavingsUsd', engineHitUsd(env, engine, hit));
     return { ok: true, engine: hit.engine, model: hit.model, answers: hit.answers, cached: true };
   }
   if (env.estimating) {
@@ -300,6 +353,9 @@ const CardValueSchema = z.object({
   model: z.string(),
   p: z.number().min(0).max(1),
   costUsd: z.number(),
+  /** This card's equal share of its pack's tokens (absent in entries cached before D-110's addendum). */
+  inputTokens: z.number().nonnegative().optional(),
+  outputTokens: z.number().nonnegative().optional(),
 });
 
 export type CardResult =
@@ -316,8 +372,8 @@ export interface CardAsk {
  * Call B for one article state: each card answer is cached under its own manifest (engine, model,
  * match set, state, `card_input_sha256`), the production cache identity of `card_answers`, so a
  * card shared by experiments or reruns is asked once. Uncached cards are packed exactly like
- * production (`packRequests`) and asked pack by pack; a pack's cost is shared equally by its cards
- * for the cache-savings figure.
+ * production (`packRequests`) and asked pack by pack; a pack's tokens (and cost) are shared equally
+ * by its cards, and a hit's share is repriced at the current price for the cache-savings figure.
  */
 export async function askCards(
   env: CallEnv,
@@ -347,7 +403,7 @@ export async function askCards(
       missing.push(card);
       continue;
     }
-    addCost(env, input.articleId, 'cacheSavingsUsd', hit.costUsd);
+    addCost(env, input.articleId, 'cacheSavingsUsd', engineHitUsd(env, engine, hit));
     results.set(card.cardId, {
       ok: true,
       p: hit.p,
@@ -448,6 +504,8 @@ export async function askCards(
           model: outcome.model,
           p: answer.p,
           costUsd: share,
+          inputTokens: outcome.usage.inputTokens / cards.length,
+          outputTokens: outcome.usage.outputTokens / cards.length,
         });
       }
       results.set(card.cardId, {
@@ -475,6 +533,8 @@ const TranslationValueSchema = z.object({
   model: z.string().nullable(),
   texts: TextsSchema,
   costUsd: z.number(),
+  inputTokens: z.number().nonnegative().optional(),
+  outputTokens: z.number().nonnegative().optional(),
 });
 
 export type TranslationResult =
@@ -572,7 +632,7 @@ export async function translateArticle(
   };
   const hit = await lookup(env, manifest, TranslationValueSchema);
   if (hit !== null) {
-    addCost(env, snapshot.articleId, 'cacheSavingsUsd', hit.costUsd);
+    addCost(env, snapshot.articleId, 'cacheSavingsUsd', translationHitUsd(hit));
     return {
       ok: true,
       translation: {
@@ -700,6 +760,8 @@ async function translateTier2(
         model: result.model,
         texts: result.texts,
         costUsd: result.attempt.costUsd,
+        inputTokens: result.attempt.inputTokens,
+        outputTokens: result.attempt.outputTokens,
       });
       return {
         ok: true,

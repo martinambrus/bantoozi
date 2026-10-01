@@ -34,7 +34,7 @@ import {
   type BootstrapSettings,
   type ScoreFn,
 } from './ranking.js';
-import type { RunData } from './run-data.js';
+import { raterCardResults, type RunData } from './run-data.js';
 import { reliabilitySvg } from './svg.js';
 
 /**
@@ -642,7 +642,7 @@ export function renderInformational(
               ? raterCards.filter((c) => c.cardId === item.targetedCardId)
               : raterCards;
           for (const card of targets) {
-            const before = e1.cards.get(item.articleId)?.get(card.cardId);
+            const before = raterCardResults(e1, item.raterId, item.articleId)?.get(card.cardId);
             const after = variantAnswers.get(card.cardId);
             if (before?.ok === true && after?.ok === true) deltas.push(after.p - before.p);
           }
@@ -653,7 +653,8 @@ export function renderInformational(
             let best: number | null = null;
             for (const card of raterCards) {
               const after =
-                variantAnswers.get(card.cardId) ?? e1.cards.get(item.articleId)?.get(card.cardId);
+                variantAnswers.get(card.cardId) ??
+                raterCardResults(e1, item.raterId, item.articleId)?.get(card.cardId);
               if (after?.ok !== true) continue;
               const strength = card.strength as 'must' | 'love' | 'like';
               const s = weights[strength] * after.p;

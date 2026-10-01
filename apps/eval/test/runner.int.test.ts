@@ -2,7 +2,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { openDatasetForCorrection, rateAssignment } from '@bantoozi/db';
+import { loadRunAnswers, openDatasetForCorrection, rateAssignment } from '@bantoozi/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { EXPERIMENT_IDS } from '../src/experiments/definitions.js';
@@ -10,7 +10,8 @@ import { runExperiment } from '../src/experiments/runner.js';
 import { composedCostPerArticle } from '../src/report/gate.js';
 import { groundTruthSha } from '../src/report/items.js';
 import { loadDataset } from '../src/report/load.js';
-import { RunConfigSchema } from '../src/report/run-data.js';
+import { parseRunConfig, withConfigSha } from '../src/experiments/run-config.js';
+import { parseRunData, raterCardResults, RunConfigSchema } from '../src/report/run-data.js';
 import {
   answerCounts,
   runCli,
@@ -1024,5 +1025,183 @@ describe('eval run (M3a-T6)', () => {
     // Only the missing or failed tasks were asked again.
     expect(resumed.requests).toBeLessThan(full.requests);
     expect(aborted.requests + resumed.requests).toBeLessThanOrEqual(full.requests);
+  });
+
+  it('asks a shared card id once per distinct English text and scores each rater on its own copy', async () => {
+    // Rater B holds A's battery card (shared by text hash, D-100; added in the E6 test above). An
+    // English-card run froze a different translation for B's copy (another locale hint): its Call B
+    // question differs, so it is asked separately and kept under B's own key (D-112 addendum).
+    const { rt } = runtime(ctx, { EVAL_CACHE_DIR: await freshCache() });
+    let baseId: string;
+    try {
+      const e2 = await runExperiment(rt, { experiment: 'E2', yes: true, gitSha: 'test' });
+      expect(e2.status).toBe('complete');
+      baseId = e2.runId!;
+    } finally {
+      await rt.close();
+    }
+    const { configSha: _sha, ...base } = parseRunConfig((await runRow(ctx, baseId)).config);
+    const copyOf = (raterId: string) =>
+      base.cards.find((c) => c.raterId === raterId && c.cardId === golden.cards.battery);
+    expect(copyOf(golden.raters.a)).toMatchObject({ textStatus: 'english', interestEn: null });
+    expect(copyOf(golden.raters.b)).toBeDefined();
+    const textB = 'Distant galaxy observations';
+    const config = withConfigSha({
+      ...base,
+      cards: base.cards.map((c) =>
+        c.raterId === golden.raters.b && c.cardId === golden.cards.battery
+          ? { ...c, interestEn: textB, textStatus: 'translated', lang: 'sk' }
+          : c,
+      ),
+    });
+    const insert = async () =>
+      (
+        await ctx.owner.query<{ id: string }>(
+          `INSERT INTO eval.runs (experiment, dataset_version, config, git_sha)
+           VALUES ('E2', $1, $2::jsonb, 'test') RETURNING id::text`,
+          [config.datasetVersion, JSON.stringify(config)],
+        )
+      ).rows[0]!.id;
+    const resume = async (runId: string) => {
+      const { rt: r } = runtime(ctx, { EVAL_CACHE_DIR: await freshCache() });
+      const before = ctx.typesafe.requestCount();
+      try {
+        const result = await runExperiment(r, {
+          experiment: 'E2',
+          resumeRunId: runId,
+          yes: true,
+          gitSha: 'test',
+        });
+        expect(result.status).toBe('complete');
+        return ctx.typesafe.requestCount() - before;
+      } finally {
+        await r.close();
+      }
+    };
+
+    const sentB = () =>
+      ctx.typesafe.requests.filter((r) => JSON.stringify(r.body).includes(textB)).length;
+    const sentBefore = sentB();
+    const runId = await insert();
+    expect(await resume(runId)).toBeGreaterThan(0);
+    // B's own text was sent (once per English article B rated).
+    expect(sentB() - sentBefore).toBeGreaterThan(0);
+
+    const rows = await loadRunAnswers(ctx.db, runId);
+    const keyB = `card.r${golden.raters.b}`;
+    const battery = rows.filter((r) => r.cardId === golden.cards.battery);
+    const astronomy = golden.articleIds.en.filter((id) =>
+      golden.titles.get(id)!.startsWith('Astronomy'),
+    );
+    for (const articleId of astronomy) {
+      const shared = battery.find((r) => r.articleId === articleId && r.questionKey === 'card');
+      const own = battery.find((r) => r.articleId === articleId && r.questionKey === keyB);
+      // A's copy (the battery text) misses an astronomy title; B's copy (galaxies) matches it.
+      expect(shared?.answer).toMatchObject({ ok: true, p: 0.1 });
+      expect(own?.answer).toMatchObject({ ok: true, p: 0.9 });
+    }
+    // Slovak articles are A's only: no rater-keyed row there.
+    expect(
+      battery.filter((r) => r.questionKey === keyB && golden.articleIds.sk.includes(r.articleId)),
+    ).toEqual([]);
+    // Only B's divergent copy is rater-keyed.
+    expect([
+      ...new Set(rows.filter((r) => r.questionKey.startsWith('card.r')).map((r) => r.cardId)),
+    ]).toEqual([golden.cards.battery]);
+
+    // The report reads each rater's own copy: B's override, A's shared answer.
+    const row = await runRow(ctx, runId);
+    const data = parseRunData(
+      {
+        id: runId,
+        experiment: row.experiment,
+        datasetVersion: config.datasetVersion,
+        config: row.config,
+        gitSha: 'test',
+        startedAt: new Date(),
+        finishedAt: new Date(),
+        results: row.results,
+      },
+      rows,
+    );
+    const article = astronomy[0]!;
+    expect(
+      raterCardResults(data, golden.raters.b, article)?.get(golden.cards.battery),
+    ).toMatchObject({ ok: true, p: 0.9 });
+    expect(
+      raterCardResults(data, golden.raters.a, article)?.get(golden.cards.battery),
+    ).toMatchObject({ ok: true, p: 0.1 });
+
+    // Resume reuse: a second run with the same config and the first run's Call A/B rows (another
+    // host, cleared cache) sends nothing and scores the same.
+    const again = await insert();
+    await ctx.owner.query(
+      `INSERT INTO eval.run_answers (run_id, article_id, card_id, question_key, answer)
+       SELECT $2, article_id, card_id, question_key, answer FROM eval.run_answers
+        WHERE run_id = $1 AND question_key NOT LIKE 'score.r%'`,
+      [runId, again],
+    );
+    expect(await resume(again)).toBe(0);
+    const scores = async (id: string) =>
+      (
+        await ctx.owner.query<{ k: string; s: string | null }>(
+          `SELECT article_id::text || question_key AS k, answer->>'score' AS s
+             FROM eval.run_answers WHERE run_id = $1 AND question_key LIKE 'score.r%' ORDER BY 1`,
+          [id],
+        )
+      ).rows;
+    expect(await scores(again)).toEqual(await scores(runId));
+  });
+
+  it('reprices cached answers at the current price for the uncached cost (cache savings)', async () => {
+    // The cache identity has no price: a run fully answered from the cache reports what its calls
+    // would cost NOW, from the stored token counts, not the cost recorded when they were cached.
+    const cacheDir = await freshCache();
+    type Cost = {
+      billedUsd: number;
+      cacheMisses: number;
+      cacheHits: number;
+      cacheSavingsUsd: number;
+      byLang: Record<string, { billedUsd: number; cacheSavingsUsd: number }>;
+    };
+    const e1 = async (price: string) => {
+      const { rt } = runtime(ctx, { TYPESAFE_PRICE_PER_MTOK_USD: price, EVAL_CACHE_DIR: cacheDir });
+      const before = ctx.typesafe.requestCount();
+      try {
+        const result = await runExperiment(rt, {
+          experiment: 'E1',
+          yes: true,
+          maxUsd: 1000,
+          gitSha: 'test',
+        });
+        expect(result.status).toBe('complete');
+        const row = await runRow(ctx, result.runId!);
+        return {
+          cost: (row.results as { cost: Cost }).cost,
+          estimate: result.estimate,
+          requests: ctx.typesafe.requestCount() - before,
+        };
+      } finally {
+        await rt.close();
+      }
+    };
+    const first = await e1('200');
+    expect(first.requests).toBeGreaterThan(0);
+    expect(first.cost.billedUsd).toBeGreaterThan(0);
+    expect(first.cost.cacheSavingsUsd).toBe(0);
+
+    // The price doubles; everything is cached, so nothing is sent or estimated.
+    const second = await e1('400');
+    expect(second.requests).toBe(0);
+    expect(second.estimate).toMatchObject({ estimatedUsd: 0, uncachedCalls: 0 });
+    expect(second.cost.cacheMisses).toBe(0);
+    expect(second.cost.billedUsd).toBe(0);
+    expect(second.cost.cacheSavingsUsd).toBeCloseTo(2 * first.cost.billedUsd, 9);
+    for (const [lang, cell] of Object.entries(first.cost.byLang)) {
+      expect(second.cost.byLang[lang]?.cacheSavingsUsd).toBeCloseTo(2 * cell.billedUsd, 9);
+    }
+    // Back at the original price the same hits are worth what they were billed.
+    const third = await e1('200');
+    expect(third.cost.cacheSavingsUsd).toBeCloseTo(first.cost.billedUsd, 9);
   });
 });

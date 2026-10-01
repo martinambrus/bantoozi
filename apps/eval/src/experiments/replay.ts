@@ -374,23 +374,36 @@ function answerIndex(rows: readonly RunAnswerRow[]) {
   const scores = new Map<string, number | null>();
   const cards = new Map<string, Map<string, { p: number; engine: string }>>();
   const enrich = new Map<string, Answer>();
+  /** `articleId|raterId|cardId` of a rater's own copy that failed: never the shared answer. */
+  const ownFailed = new Set<string>();
   for (const row of rows) {
     const value = row.answer as Record<string, unknown>;
-    if (row.questionKey.startsWith('score.r')) {
+    if (row.questionKey.startsWith('card.r') && row.cardId !== null && value['ok'] !== true) {
+      ownFailed.add(`${row.articleId}|${row.questionKey.slice('card.r'.length)}|${row.cardId}`);
+    } else if (row.questionKey.startsWith('score.r')) {
       const score = value['score'];
       scores.set(
         `${row.questionKey.slice('score.r'.length)}|${row.articleId}`,
         typeof score === 'number' ? score : null,
       );
-    } else if (row.questionKey === 'card' && row.cardId !== null && value['ok'] === true) {
-      const map = cards.get(row.articleId) ?? new Map<string, { p: number; engine: string }>();
+    } else if (
+      (row.questionKey === 'card' || row.questionKey.startsWith('card.r')) &&
+      row.cardId !== null &&
+      value['ok'] === true
+    ) {
+      // `card.r<raterId>`: that rater's copy of a shared card id, asked with its own text (D-112).
+      const at =
+        row.questionKey === 'card'
+          ? row.articleId
+          : `${row.articleId}|${row.questionKey.slice('card.r'.length)}`;
+      const map = cards.get(at) ?? new Map<string, { p: number; engine: string }>();
       map.set(row.cardId, { p: Number(value['p']), engine: String(value['engine']) });
-      cards.set(row.articleId, map);
+      cards.set(at, map);
     } else if (row.questionKey.startsWith('enrich.') && value['ok'] === true) {
       enrich.set(`${row.articleId}|${row.questionKey}`, value['answer'] as Answer);
     }
   }
-  return { scores, cards, enrich };
+  return { scores, cards, enrich, ownFailed };
 }
 
 /** The policy lane of an item (spec 06 §2 bootstrap subset, `applyLanePolicy`). */
@@ -495,10 +508,16 @@ export function replayDiff(input: {
         [
           ...(index.cards.get(rating.articleId) ??
             new Map<string, { p: number; engine: string }>()),
-        ].map(([cardId, a]) => [
-          cardId,
-          { p: a.p, engine: a.engine === 'llm' ? 'llm' : 'typesafe' },
-        ]),
+          ...(index.cards.get(`${rating.articleId}|${rating.raterId}`) ??
+            new Map<string, { p: number; engine: string }>()),
+        ]
+          .filter(
+            ([cardId]) => !index.ownFailed.has(`${rating.articleId}|${rating.raterId}|${cardId}`),
+          )
+          .map(([cardId, a]) => [
+            cardId,
+            { p: a.p, engine: a.engine === 'llm' ? 'llm' : 'typesafe' },
+          ]),
       ) as CardAnswers;
     const laneBase = policyLane(cards, answersOf(base), b, input.baseRanker);
     const laneReplay = policyLane(cards, answersOf(replay), r, input.replayRanker);
@@ -585,8 +604,8 @@ export function replayDiff(input: {
     const b = comparable(other, answer);
     if (a !== null && b !== null) add(key.slice(key.indexOf('|') + 1), b - a);
   }
-  for (const [articleId, map] of base.cards) {
-    const other = replay.cards.get(articleId);
+  for (const [at, map] of base.cards) {
+    const other = replay.cards.get(at);
     for (const [cardId, answer] of map) {
       const p = other?.get(cardId)?.p;
       if (p !== undefined) add('card', p - answer.p);

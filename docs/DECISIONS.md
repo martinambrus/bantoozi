@@ -821,6 +821,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   gain) is computed on the intersection of items both runs scored: each run's macro AUC uses only
   the items with a known score in both, so an item missing on one side (up to 5% may be) cannot
   create or erase a 0.02/0.05 gain. Without one of the runs the gain is unmeasured, as before. The
+  test confirmation pairs the same way: the composed macro, the baseline macro, every participant's
+  candidate and baseline AUC (the win check) and the paired bootstrap interval all use the test
+  items both the composition and the baseline scored, so items one side left unknown cannot make
+  the +0.05 gain, the 0.70 floor or a participant win. The per-view ranking tables of the report
+  stay diagnostic and keep each view's own scored items. The
   report reads a `score.r*` answer tagged as a fallback (`variant: 'native'` from a translation
   fallback, or `cardTextFallback: true`) as unknown, and a Call A answer tagged `variant: 'native'`
   in a translated-state (`lt`/`glm`) run as failed. This matches the runner, whose coverage already
@@ -893,6 +898,15 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   carried and marked `incomplete`), so a kill at any point leaves a lower bound. In a replay, a For
   You lane the base fills but the replay empties is a fail; a lane empty on both sides makes For You
   precision unsupported, so the replay is inconclusive. Spec 10 §3 updated.
+  Addendum (PR #10): the cache identity does not include the price, so a cache hit's uncached
+  equivalent (`cacheSavingsUsd`, overall and per language, in the estimate pass and in the run) is
+  computed from its stored token counts at the current price. The pricing functions are those of
+  the live router: `typesafeCostUsd` at this invocation's `TYPESAFE_PRICE_PER_MTOK_USD`, and
+  `llmCostUsd` or `tier2CostUsd` on the current Ollama price table; LibreTranslate costs nothing.
+  The recorded `costUsd` is not used. Call B entries store each card's equal share of its pack's
+  tokens, and tier-2 translation entries store their tokens. An entry cached before this (no token
+  counts), or one of an unpriced model, keeps its recorded cost. This needs no cache invalidation:
+  only the savings figure of such old entries can lag a price change.
 - D-111: 2026-10-01 M3a-T6 — eval routers use a process-local circuit breaker, so an evaluation
   never trips or reads the production breaker (spec 04 §1). The LLM fallback is off and the pinned
   engine has no automatic fallback, so a run never mixes engines silently.
@@ -903,6 +917,19 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   article's language; nonzero calls with no article go under `und`), and the run totals are the sums
   of this split. Estimates for translated variants
   use the native state as a size proxy.
+  Addendum (PR #10): Call B deduplicates the shared request set of an article on what is actually
+  sent (the card id, the built question's `card_input_sha256` and the card's text status), not on
+  the card id alone. Raters can share a card id (D-100) while an English-card run froze a different
+  translation for each copy (the rater's locale hint differs), and each distinct copy is asked. Two
+  copies of one card id never go into one request (packs key questions by card id), so they are
+  asked in separate rounds over the same state. The first rater (by id) holding the card id keeps
+  the shared `card` key. Every rater whose copy differs gets its own row, `card.r<raterId>` (card id
+  = the card), and is scored on it. The report reads a rater's answers as `card` overridden by that
+  rater's `card.r<raterId>` rows (`raterCardResults` in `report/run-data.ts`, used by the policy
+  lanes, the E7 table and the replay lanes), and the replay compares those rows like `card` rows. A
+  resume reuses a copy's stored answer when every row of that copy is stored. Rows are written per
+  article at once, so this means both or neither. The `cardTextFallbacks` count is per distinct
+  copy.
 - D-113: 2026-10-01 M3a-T6 — `eval replay` computes its paired ΔAUC with a story-group bootstrap; the
   macro is the plain mean over eligible cells (≥ 20 items, ≥ 5 of each class).
 - D-114: 2026-10-01 M3a-T6 — runner and replay conventions. A replay's run row has experiment

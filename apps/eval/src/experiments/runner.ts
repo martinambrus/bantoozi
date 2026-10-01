@@ -96,6 +96,7 @@ import {
   e7TargetedSentence,
   modelInputOf,
   steeredInput,
+  type BuiltCard,
   type FrozenTranslation,
 } from './states.js';
 import { currentGitSha, formatUsd, latencySummary, mapPool } from './util.js';
@@ -263,6 +264,12 @@ interface Plan {
 
 /** E6 rerun answers of one rater's cards (`card_id` = the card): `e6.r<raterId>`. */
 export const e6AnswerKey = (raterId: string) => `e6.r${raterId}`;
+
+/**
+ * A rater's own Call B answer of a shared card id whose copy was asked with different text than the
+ * first rater's (`card_id` = the card): `card.r<raterId>`; the report prefers it over `card`.
+ */
+export const raterCardAnswerKey = (raterId: string) => `card.r${raterId}`;
 
 const answerKey = (articleId: string, cardId: string | null, key: string) =>
   `${articleId}|${cardId ?? ''}|${key}`;
@@ -572,6 +579,11 @@ interface Execution {
   /** Card answers per article (the shared Call B), or per rater for E6. */
   answers: Map<string, Map<string, CardAnswer>>;
   raterAnswers: Map<string, Map<string, Map<string, CardAnswer>>>;
+  /**
+   * `raterId|articleId` → that rater's card answers, only for a rater whose copy of a shared card
+   * id was asked with different text (`card.r<raterId>` rows); everyone else reads `answers`.
+   */
+  raterCardAnswers: Map<string, Map<string, CardAnswer>>;
   translations: Map<string, FrozenTranslation | null>;
   enrichValid: Map<string, boolean>;
   e7Valid: Map<string, boolean>;
@@ -758,48 +770,114 @@ async function processCardArticle(
     }
   }
 
-  // Call B with the cards of every rater who rated the article, in one shared request set.
-  const raterIds = plan.ratersByArticle.get(articleId) ?? [];
+  // Call B with the cards of every rater who rated the article, in one shared request set. Raters
+  // can share a card id (reused by text hash, D-100) while English-card mode froze a different
+  // translation for each copy (the locale hint differs), so the set is deduplicated on what is
+  // actually sent (the built question and the text status), never on the card id alone (D-112
+  // addendum). The first rater (by id) of a card id keeps the shared `card` key; a rater whose copy
+  // differs gets its own `card.r<raterId>` row.
+  const raterIds = [...(plan.ratersByArticle.get(articleId) ?? [])].sort(compareIds);
   if (raterIds.length > 0) {
-    const cards = new Map<string, RunCard>();
+    interface Variant {
+      card: RunCard;
+      built: BuiltCard;
+      canonical: boolean;
+      raters: string[];
+    }
+    const variants = new Map<string, Variant>();
+    const owners = new Set<string>();
     for (const raterId of raterIds) {
       for (const card of plan.cardsByRater.get(raterId) ?? []) {
-        if (!cards.has(card.cardId)) cards.set(card.cardId, card);
+        const built = buildCardQuestion(card, plan.cardMode);
+        const id = `${card.cardId}|${built.sha256}|${card.textStatus ?? ''}`;
+        let variant = variants.get(id);
+        if (variant === undefined) {
+          variant = { card, built, canonical: !owners.has(card.cardId), raters: [] };
+          owners.add(card.cardId);
+          variants.set(id, variant);
+        }
+        variant.raters.push(raterId);
       }
     }
+    const keysOf = (variant: Variant) =>
+      variant.canonical ? ['card'] : variant.raters.map(raterCardAnswerKey);
     const answers = new Map<string, CardAnswer>();
-    const asks: CardAsk[] = [];
-    for (const card of [...cards.values()].sort((a, b) => compareIds(a.cardId, b.cardId))) {
-      const stored = plan.existing.get(answerKey(articleId, card.cardId, 'card'));
-      if (
-        stored?.['ok'] === true &&
-        typeof stored['p'] === 'number' &&
-        sameVariant(stored, input.variant)
-      ) {
-        answers.set(card.cardId, {
-          p: stored['p'],
-          engine: stored['engine'] === 'llm' ? 'llm' : 'typesafe',
+    const divergent = new Map<string, Map<string, CardAnswer | null>>();
+    const settle = (variant: Variant, answer: CardAnswer | null) => {
+      if (variant.canonical) {
+        if (answer !== null) answers.set(variant.card.cardId, answer);
+        return;
+      }
+      for (const raterId of variant.raters) {
+        const map = divergent.get(raterId) ?? new Map<string, CardAnswer | null>();
+        map.set(variant.card.cardId, answer);
+        divergent.set(raterId, map);
+      }
+    };
+    // Rounds of distinct card ids: a pack keys its questions by card id (spec 05 §5.2).
+    const rounds: Variant[][] = [];
+    const ordered = [...variants.values()].sort(
+      (a, b) =>
+        compareIds(a.card.cardId, b.card.cardId) ||
+        Number(b.canonical) - Number(a.canonical) ||
+        compareIds(a.raters[0] ?? '', b.raters[0] ?? ''),
+    );
+    for (const variant of ordered) {
+      const stored = keysOf(variant).map((key) =>
+        plan.existing.get(answerKey(articleId, variant.card.cardId, key)),
+      );
+      const first = stored[0];
+      const reusable = stored.every(
+        (value) =>
+          value?.['ok'] === true &&
+          typeof value['p'] === 'number' &&
+          sameVariant(value, input.variant),
+      );
+      if (reusable && first !== undefined) {
+        settle(variant, {
+          p: first['p'] as number,
+          engine: first['engine'] === 'llm' ? 'llm' : 'typesafe',
         });
         continue;
       }
-      asks.push({
-        cardId: card.cardId,
-        built: buildCardQuestion(card, plan.cardMode),
-        owner: card.visibility === 'private' ? card.ownerUserId : null,
-      });
+      const round = rounds.find((r) => r.every((v) => v.card.cardId !== variant.card.cardId));
+      if (round === undefined) rounds.push([variant]);
+      else round.push(variant);
     }
-    if (asks.length > 0) {
+    if (rounds.length > 0) {
       const state = buildState(input, 'match');
-      const results = await askCards(env, { articleId, revision, state, cards: asks });
-      for (const [cardId, result] of results) {
-        const card = cards.get(cardId);
-        const fallback = card !== undefined && cardTextFallback(card, plan.cardMode);
-        rows.push(cardRow(articleId, cardId, 'card', result, state.variant, fallback));
-        const answer = cardAnswerOf(result);
-        if (answer !== null) answers.set(cardId, answer);
+      for (const round of rounds) {
+        const results = await askCards(env, {
+          articleId,
+          revision,
+          state,
+          cards: round.map((variant) => ({
+            cardId: variant.card.cardId,
+            built: variant.built,
+            owner: variant.card.visibility === 'private' ? variant.card.ownerUserId : null,
+          })),
+        });
+        for (const variant of round) {
+          const cardId = variant.card.cardId;
+          const result = results.get(cardId);
+          if (result === undefined) continue;
+          const fallback = cardTextFallback(variant.card, plan.cardMode);
+          for (const key of keysOf(variant)) {
+            rows.push(cardRow(articleId, cardId, key, result, state.variant, fallback));
+          }
+          settle(variant, cardAnswerOf(result));
+        }
       }
     }
     out.answers.set(articleId, answers);
+    for (const [raterId, overrides] of divergent) {
+      const own = new Map(answers);
+      for (const [cardId, answer] of overrides) {
+        if (answer === null) own.delete(cardId);
+        else own.set(cardId, answer);
+      }
+      out.raterCardAnswers.set(`${raterId}|${articleId}`, own);
+    }
   }
   if (sink !== null && rows.length > 0) await sink(rows);
 }
@@ -919,6 +997,7 @@ async function execute(
   const out: Execution = {
     answers: new Map(),
     raterAnswers: new Map(),
+    raterCardAnswers: new Map(),
     translations: new Map(),
     enrichValid: new Map(),
     e7Valid: new Map(),
@@ -1011,10 +1090,12 @@ function scoreRows(
   let cardTextFallbacks: Record<string, number> | null = null;
   if (plan.cardMode === 'english') {
     cardTextFallbacks = {};
+    // One count per distinct card copy: raters sharing a card id may hold different translations.
     const seenCards = new Set<string>();
     for (const card of plan.config.cards) {
-      if (seenCards.has(card.cardId) || card.textStatus === 'english') continue;
-      seenCards.add(card.cardId);
+      const copy = `${card.cardId}|${card.textStatus ?? ''}|${card.lang ?? ''}`;
+      if (seenCards.has(copy) || card.textStatus === 'english') continue;
+      seenCards.add(copy);
       const lang = card.lang ?? 'und';
       if (lang === 'en') continue;
       cardTextFallbacks[lang] =
@@ -1078,7 +1159,9 @@ function scoreRows(
         const answers =
           def.id === 'E6'
             ? (out.raterAnswers.get(raterId)?.get(articleId) ?? new Map<string, CardAnswer>())
-            : (out.answers.get(articleId) ?? new Map<string, CardAnswer>());
+            : (out.raterCardAnswers.get(`${raterId}|${articleId}`) ??
+              out.answers.get(articleId) ??
+              new Map<string, CardAnswer>());
         const record = Object.fromEntries(answers);
         row = cardsScoreRow(cards, record);
         valid = cardsComplete(cards, record);
@@ -1177,6 +1260,7 @@ function newEnv(
     cache,
     runId: null,
     engine: plan.config.engine,
+    typesafePricePerMTokUsd: rt.config.typesafePricePerMtokUsd,
     translators,
     credentials: evalCredentials(rt.db, rt.config, services),
     ollamaModel: plan.config.translation.model ?? rt.config.ollamaModelFast,

@@ -12,7 +12,7 @@ import {
 
 import type { ReportLane } from '../metrics/index.js';
 import type { RatedItem } from './items.js';
-import type { RunCard, RunData } from './run-data.js';
+import { raterCardResults, type RunCard, type RunData } from './run-data.js';
 
 /**
  * The production-policy view of an item (spec 10 §3 "Per article and rater"): the rater's frozen
@@ -53,10 +53,12 @@ export function policyOutcome(
   run: RunData,
   articleId: string,
   config: PolicyConfig,
+  raterId?: string,
 ): PolicyOutcome {
   const answers: Record<string, { p: number; engine: 'typesafe' | 'llm' | 'laya' }> = {};
   const work: Record<string, 'exhausted'> = {};
-  const results = run.cards.get(articleId);
+  const results =
+    raterId === undefined ? run.cards.get(articleId) : raterCardResults(run, raterId, articleId);
   for (const card of cards) {
     const result = results?.get(card.cardId);
     if (result === undefined) continue;
@@ -110,7 +112,7 @@ export function policyLanes(
       rankCards = rankCardsOf(cards, item.raterId);
       byRater.set(item.raterId, rankCards);
     }
-    result.set(item.key, policyOutcome(rankCards, run, item.articleId, config));
+    result.set(item.key, policyOutcome(rankCards, run, item.articleId, config, item.raterId));
   }
   return result;
 }
