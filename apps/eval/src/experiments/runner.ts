@@ -1226,22 +1226,33 @@ export async function runExperiment(
       }
     }
     const frozen = options.replay?.translations ?? null;
-    const estimatePlan = await buildPlan(rt, def, config, { frozenTranslations: frozen, existing });
-    const estimateEnv = newEnv(rt, cache, estimatePlan, translators, services, true);
-    await execute(estimateEnv, estimatePlan, null, null, 1);
-    const estimate: CostEstimate = {
-      estimatedUsd: estimateEnv.stats.estimateUsd,
-      uncachedCalls: estimateEnv.stats.estimateCalls,
-      cacheHits: estimateEnv.stats.cacheHits,
+    const estimateFor = async (cfg: Omit<RunConfig, 'configSha'>) => {
+      const plan = await buildPlan(rt, def, cfg, { frozenTranslations: frozen, existing });
+      const envOf = newEnv(rt, cache, plan, translators, services, true);
+      await execute(envOf, plan, null, null, 1);
+      const value: CostEstimate = {
+        estimatedUsd: envOf.stats.estimateUsd,
+        uncachedCalls: envOf.stats.estimateCalls,
+        cacheHits: envOf.stats.cacheHits,
+      };
+      return { env: envOf, estimate: value };
     };
-    rt.out(
-      `${def.id} on ${dataset.version}: estimated cost ${formatUsd(estimate.estimatedUsd)} ` +
-        `(${estimate.uncachedCalls} uncached request(s), ${estimate.cacheHits} cache hit(s)); ` +
-        `cap ${formatUsd(maxUsd)}\n`,
-    );
-    if (estimate.estimatedUsd > CONFIRM_ABOVE_USD && options.yes !== true) {
-      const confirmed = options.confirm === undefined ? false : await options.confirm(estimate);
-      if (!confirmed) return { runId: null, status: 'declined', estimate, results: null };
+    /** Print an estimate and apply the confirmation rule; false when the run is declined. */
+    const announce = async (value: CostEstimate, revised: boolean): Promise<boolean> => {
+      rt.out(
+        `${def.id} on ${dataset.version}: ${revised ? 'revised estimate (the frozen inputs changed)' : 'estimated cost'} ` +
+          `${formatUsd(value.estimatedUsd)} ` +
+          `(${value.uncachedCalls} uncached request(s), ${value.cacheHits} cache hit(s)); ` +
+          `cap ${formatUsd(maxUsd)}\n`,
+      );
+      if (value.estimatedUsd > CONFIRM_ABOVE_USD && options.yes !== true) {
+        return options.confirm === undefined ? false : await options.confirm(value);
+      }
+      return true;
+    };
+    let { env: estimateEnv, estimate } = await estimateFor(config);
+    if (!(await announce(estimate, false))) {
+      return { runId: null, status: 'declined', estimate, results: null };
     }
 
     // 2. Freeze before the first model call; a new run's inputs are read again after the freeze,
@@ -1250,6 +1261,7 @@ export async function runExperiment(
     // assignment can land between the freeze and the config snapshot (D-120).
     if (existingRunId === null && options.replay === undefined) {
       const version = dataset.version;
+      const shown = inputsSha(config);
       ({ dataset, config } = await rt.db.transaction(async (tx) => {
         await lockDatasetAdditions(tx);
         const frozenRow = await freezeDataset(tx, version);
@@ -1258,6 +1270,22 @@ export async function runExperiment(
           config: await draftConfig(rt, tx, def, options, frozenRow, cardMode, maxUsd),
         };
       }));
+      // Ratings, assignments or cards may have changed while the estimate was shown: estimate
+      // the frozen inputs again and, when that differs, show it and ask again before any call
+      // (no run row exists yet; D-110 addendum).
+      if (inputsSha(config) !== shown) {
+        const revised = await estimateFor(config);
+        estimateEnv = revised.env;
+        if (
+          revised.estimate.estimatedUsd !== estimate.estimatedUsd ||
+          revised.estimate.uncachedCalls !== estimate.uncachedCalls
+        ) {
+          estimate = revised.estimate;
+          if (!(await announce(estimate, true))) {
+            return { runId: null, status: 'declined', estimate, results: null };
+          }
+        }
+      }
     }
 
     const plan0 = await buildPlan(rt, def, config, { frozenTranslations: frozen, existing });
@@ -1515,6 +1543,19 @@ async function invocationCost(
     tokens: { input: spend.inputTokens, output: spend.outputTokens },
     byLang,
   };
+}
+
+/** The run inputs an estimate depends on (cohort, raters, ground truth, cards, assignments). */
+function inputsSha(config: Omit<RunConfig, 'configSha'>): string {
+  return canonicalSha256({
+    langs: config.langs,
+    cohort: config.cohort,
+    raters: config.raters,
+    ratings: config.ratings,
+    cards: config.cards,
+    assignments: config.assignments,
+    facetLabels: config.facetLabels,
+  });
 }
 
 /** E5 and other stubs: a run row whose results say `skipped` and why (no freeze, no calls). */

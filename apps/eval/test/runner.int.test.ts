@@ -748,4 +748,54 @@ describe('eval run (M3a-T6)', () => {
       );
     }
   });
+
+  it('re-estimates and asks again when the frozen inputs differ from the estimated ones', async () => {
+    const opened = await ctx.db.transaction((tx) => openDatasetForCorrection(tx));
+    expect(opened).not.toBeNull();
+    const asked: number[] = [];
+    const requests = ctx.typesafe.requestCount();
+    // A price that puts the estimate above the $1 confirmation threshold.
+    const { rt, out } = runtime(ctx, {
+      TYPESAFE_PRICE_PER_MTOK_USD: '200',
+      EVAL_CACHE_DIR: await freshCache(),
+    });
+    let result;
+    try {
+      result = await runExperiment(rt, {
+        experiment: 'E1',
+        datasetVersion: opened!.version,
+        gitSha: 'test',
+        confirm: async (estimate) => {
+          asked.push(estimate.estimatedUsd);
+          if (asked.length === 1) {
+            // A card lands while the first estimate is on screen: more Call B questions.
+            await ctx.owner.query(
+              `INSERT INTO eval.rater_cards (rater_id, card_id, strength) VALUES ($1, $2, 'like')`,
+              [golden.raters.a, golden.cards.astronomy],
+            );
+            return true;
+          }
+          return false;
+        },
+      });
+    } finally {
+      await rt.close();
+      await ctx.owner.query(`DELETE FROM eval.rater_cards WHERE rater_id = $1 AND card_id = $2`, [
+        golden.raters.a,
+        golden.cards.astronomy,
+      ]);
+    }
+    expect(asked).toHaveLength(2);
+    expect(asked[1]!).toBeGreaterThan(asked[0]!);
+    expect(out()).toMatch(/revised estimate \(the frozen inputs changed\) \$\d+\.\d{2}/);
+    expect(result).toMatchObject({ runId: null, status: 'declined' });
+    expect(result.estimate.estimatedUsd).toBe(asked[1]);
+    // Declined before the run row and before any model call.
+    expect(ctx.typesafe.requestCount()).toBe(requests);
+    const rows = await ctx.owner.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM eval.runs WHERE dataset_version = $1`,
+      [opened!.version],
+    );
+    expect(rows.rows[0]!.n).toBe(0);
+  });
 });

@@ -858,7 +858,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   §6) uses the gate's aggregation: per-context cells with the gate's support rule, the hierarchical
   macro (supported contexts averaged within each participant, then participants weighted equally)
   and the gate's paired story-group bootstrap; the per rater × language cell rule (no drop above
-  0.03) is unchanged. Spec 10 §3 updated.
+  0.03) is unchanged. When the inputs captured in the freeze transaction differ from the estimated
+  ones, the runner estimates the frozen inputs again before any live call and records that estimate;
+  when it changes, it prints it and applies the confirmation rule again (above $1 needs `--yes` or an
+  interactive yes). A decline leaves no run row; the version stays frozen. Spec 10 §3 updated.
 - D-111: 2026-10-01 M3a-T6 — eval routers use a process-local circuit breaker, so an evaluation
   never trips or reads the production breaker (spec 04 §1). The LLM fallback is off and the pinned
   engine has no automatic fallback, so a run never mixes engines silently.
