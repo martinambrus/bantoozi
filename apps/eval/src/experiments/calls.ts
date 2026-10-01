@@ -85,6 +85,13 @@ export interface RunStats {
   cacheLookupMs: number[];
   /** The logical request ids of this invocation's calls (engine and translation). */
   logicalRequestIds: string[];
+  /** `estimateUsd` and `cacheSavingsUsd` split by the language of each call's article. */
+  byLang: Record<string, LangCost>;
+}
+
+export interface LangCost {
+  estimateUsd: number;
+  cacheSavingsUsd: number;
 }
 
 export function createRunStats(): RunStats {
@@ -99,6 +106,7 @@ export function createRunStats(): RunStats {
     latencyMs: {},
     cacheLookupMs: [],
     logicalRequestIds: [],
+    byLang: {},
   };
 }
 
@@ -124,6 +132,16 @@ export interface CallEnv {
   estimating: boolean;
   /** Monotonic milliseconds for latency. */
   clockMs: () => number;
+  /** Article id → sample language, for the per-language cost split (`und` when unknown). */
+  articleLang: ReadonlyMap<string, string>;
+}
+
+/** Add `usd` to a cost total and to its article language's share (totals = Σ byLang). */
+function addCost(env: CallEnv, articleId: string, field: keyof LangCost, usd: number): void {
+  env.stats[field] += usd;
+  const lang = env.articleLang.get(articleId) ?? 'und';
+  const cell = (env.stats.byLang[lang] ??= { estimateUsd: 0, cacheSavingsUsd: 0 });
+  cell[field] += usd;
 }
 
 const authorization = (env: CallEnv): InferenceAuthorization => ({
@@ -227,11 +245,16 @@ export async function askEnrich(
   });
   const hit = await lookup(env, manifest, EnrichValueSchema);
   if (hit !== null) {
-    env.stats.cacheSavingsUsd += hit.costUsd;
+    addCost(env, input.articleId, 'cacheSavingsUsd', hit.costUsd);
     return { ok: true, engine: hit.engine, model: hit.model, answers: hit.answers, cached: true };
   }
   if (env.estimating) {
-    env.stats.estimateUsd += requestEstimateUsd(engine, input.state.state, questions);
+    addCost(
+      env,
+      input.articleId,
+      'estimateUsd',
+      requestEstimateUsd(engine, input.state.state, questions),
+    );
     env.stats.estimateCalls += 1;
     return { ok: false, reason: 'estimate' };
   }
@@ -324,7 +347,7 @@ export async function askCards(
       missing.push(card);
       continue;
     }
-    env.stats.cacheSavingsUsd += hit.costUsd;
+    addCost(env, input.articleId, 'cacheSavingsUsd', hit.costUsd);
     results.set(card.cardId, {
       ok: true,
       p: hit.p,
@@ -375,7 +398,12 @@ export async function askCards(
       return card === undefined ? [] : [card];
     });
     if (env.estimating) {
-      env.stats.estimateUsd += requestEstimateUsd(engine, input.state.state, pack.questions);
+      addCost(
+        env,
+        input.articleId,
+        'estimateUsd',
+        requestEstimateUsd(engine, input.state.state, pack.questions),
+      );
       env.stats.estimateCalls += 1;
       for (const card of cards) results.set(card.cardId, { ok: false, reason: 'estimate' });
       continue;
@@ -544,7 +572,7 @@ export async function translateArticle(
   };
   const hit = await lookup(env, manifest, TranslationValueSchema);
   if (hit !== null) {
-    env.stats.cacheSavingsUsd += hit.costUsd;
+    addCost(env, snapshot.articleId, 'cacheSavingsUsd', hit.costUsd);
     return {
       ok: true,
       translation: {
@@ -603,7 +631,7 @@ async function translateTier2(
   const input = { model: env.ollamaModel, sourceLang: snapshot.lang, source };
   const estimate = translator.estimate(input);
   if (env.estimating) {
-    env.stats.estimateUsd += estimate.estimateUsd;
+    addCost(env, snapshot.articleId, 'estimateUsd', estimate.estimateUsd);
     env.stats.estimateCalls += 1;
     return { ok: false, reason: 'estimate' };
   }

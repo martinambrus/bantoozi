@@ -322,6 +322,7 @@ describe('renderReplayReport', () => {
           cacheSavingsUsd: 0.0123,
           failedCallUsd: 0,
           tokens: { input: 0, output: 0 },
+          byLang: { en: { estimatedUsd: 0, billedUsd: 0, cacheSavingsUsd: 0.0123 } },
         },
         latencyMs: {},
         cacheLookupMs: { p50: 0, p95: 0, n: 72 },

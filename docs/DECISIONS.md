@@ -811,7 +811,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   engine has no automatic fallback, so a run never mixes engines silently.
 - D-112: 2026-10-01 M3a-T6 — cache granularity for spec 10 §3. Call B is cached per card (state
   sha + card input sha + match question set), Call A per whole request and translations per source
-  sha and policy; a pack's cost is split equally across its cards. Estimates for translated variants
+  sha and policy; a pack's cost is split equally across its cards. Runs record `results.cost.byLang`
+  (estimated, billed and cache savings by article language; translations count against the source
+  article's language; nonzero calls with no article go under `und`), and the run totals are the sums
+  of this split. Estimates for translated variants
   use the native state as a size proxy.
 - D-113: 2026-10-01 M3a-T6 — `eval replay` computes its paired ΔAUC with a story-group bootstrap; the
   macro is the plain mean over eligible cells (≥ 20 items, ≥ 5 of each class).

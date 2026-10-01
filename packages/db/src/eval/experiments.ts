@@ -274,3 +274,33 @@ export async function runCallSpend(
     calls: Number(row.calls),
   };
 }
+
+export interface ArticleCallSpend {
+  /** Null for calls about no article (e.g. card-text translation). */
+  articleId: string | null;
+  billedUsd: number;
+  failedCallUsd: number;
+}
+
+/** {@link runCallSpend} per article (`engine_calls.article_id`), for the per-language cost split. */
+export async function runCallSpendByArticle(
+  db: Executor,
+  logicalRequestIds: readonly string[],
+): Promise<ArticleCallSpend[]> {
+  if (logicalRequestIds.length === 0) return [];
+  const result = await db.execute<{
+    article_id: string | null;
+    billed: string | null;
+    failed: string | null;
+  }>(sql`
+    SELECT article_id::text AS article_id, sum(cost_usd)::text AS billed,
+           sum(cost_usd) FILTER (WHERE status <> 'ok')::text AS failed
+      FROM engine_calls
+     WHERE logical_request_id = ANY(${sql.param([...logicalRequestIds])}::uuid[])
+     GROUP BY article_id`);
+  return result.rows.map((row) => ({
+    articleId: row.article_id,
+    billedUsd: Number(row.billed ?? 0),
+    failedCallUsd: Number(row.failed ?? 0),
+  }));
+}

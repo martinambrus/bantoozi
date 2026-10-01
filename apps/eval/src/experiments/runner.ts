@@ -17,9 +17,11 @@ import {
   loadSample,
   readStoredSetting,
   runCallSpend,
+  runCallSpendByArticle,
   updateRunResults,
   upsertRunAnswers,
   type DatasetRow,
+  type ArticleCallSpend,
   type DatasetSplit,
   type Executor,
   type RunAnswerInput,
@@ -46,6 +48,7 @@ import {
   type CallEnv,
   type CardAsk,
   type CardResult,
+  type LangCost,
   type RunStats,
 } from './calls.js';
 import { EXPERIMENTS, type ExperimentDefinition, type ExperimentId } from './definitions.js';
@@ -176,6 +179,11 @@ export interface RunResults {
     cacheSavingsUsd: number;
     failedCallUsd: number;
     tokens: { input: number; output: number };
+    /**
+     * The same costs split by the language of each call's article (translations by their source
+     * article; calls about no article under `und`). Every total is the sum of its split.
+     */
+    byLang: Record<string, { estimatedUsd: number; billedUsd: number; cacheSavingsUsd: number }>;
   };
   latencyMs: Record<string, { p50: number; p95: number; n: number }>;
   cacheLookupMs: { p50: number; p95: number; n: number };
@@ -924,6 +932,35 @@ function scoreRows(
   return { rows, coverage };
 }
 
+/** The per-language cost split of a run (`results.cost.byLang`, consumed by the G1 budget). */
+export function costByLang(
+  estimated: Readonly<Record<string, LangCost>>,
+  live: Readonly<Record<string, LangCost>>,
+  billed: readonly ArticleCallSpend[],
+  articleLang: ReadonlyMap<string, string>,
+): RunResults['cost']['byLang'] {
+  const out: RunResults['cost']['byLang'] = {};
+  const cell = (lang: string) =>
+    (out[lang] ??= { estimatedUsd: 0, billedUsd: 0, cacheSavingsUsd: 0 });
+  for (const [lang, c] of Object.entries(estimated)) cell(lang).estimatedUsd += c.estimateUsd;
+  for (const [lang, c] of Object.entries(live)) cell(lang).cacheSavingsUsd += c.cacheSavingsUsd;
+  for (const row of billed) {
+    if (row.billedUsd === 0 && row.articleId === null) continue;
+    const lang = row.articleId === null ? 'und' : (articleLang.get(row.articleId) ?? 'und');
+    cell(lang).billedUsd += row.billedUsd;
+  }
+  return out;
+}
+
+function sumOf(
+  byLang: RunResults['cost']['byLang'],
+  field: 'estimatedUsd' | 'billedUsd' | 'cacheSavingsUsd',
+): number {
+  let total = 0;
+  for (const lang of Object.keys(byLang).sort()) total += byLang[lang]?.[field] ?? 0;
+  return total;
+}
+
 function statusOf(
   abort: AbortState,
   coverage: RunResults['coverage'],
@@ -963,6 +1000,7 @@ function newEnv(
     abort: { aborted: false, reason: null },
     estimating,
     clockMs: () => performance.now(),
+    articleLang: new Map([...plan.samples].map(([id, item]) => [id, item.lang])),
   };
 }
 
@@ -1140,18 +1178,27 @@ export async function runExperiment(
     const scored = scoreRows(plan, out);
     if (scored.rows.length > 0) await upsertRunAnswers(rt.db, id, scored.rows);
     const spend = await runCallSpend(rt.db, env.stats.logicalRequestIds);
+    const byLang = costByLang(
+      estimateEnv.stats.byLang,
+      env.stats.byLang,
+      await runCallSpendByArticle(rt.db, env.stats.logicalRequestIds),
+      env.articleLang,
+    );
     const verdict = statusOf(env.abort, scored.coverage);
     const results: RunResults = {
       ...verdict,
       coverage: scored.coverage,
       cost: {
-        estimatedUsd: estimate.estimatedUsd,
-        billedUsd: spend.billedUsd,
+        // Totals are the sums of the per-language split (identical up to float rounding to the
+        // estimate printed above, the engine_calls sum and the live savings counter).
+        estimatedUsd: sumOf(byLang, 'estimatedUsd'),
+        billedUsd: sumOf(byLang, 'billedUsd'),
         cacheHits: env.stats.cacheHits,
         cacheMisses: env.stats.cacheMisses,
-        cacheSavingsUsd: env.stats.cacheSavingsUsd,
+        cacheSavingsUsd: sumOf(byLang, 'cacheSavingsUsd'),
         failedCallUsd: spend.failedCallUsd,
         tokens: { input: spend.inputTokens, output: spend.outputTokens },
+        byLang,
       },
       latencyMs: summarizeLatency(env.stats),
       cacheLookupMs: latencySummary(env.stats.cacheLookupMs),
@@ -1236,6 +1283,7 @@ async function skipRun(
       cacheSavingsUsd: 0,
       failedCallUsd: 0,
       tokens: { input: 0, output: 0 },
+      byLang: {},
     },
     latencyMs: {},
     cacheLookupMs: latencySummary([]),

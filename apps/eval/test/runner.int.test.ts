@@ -6,6 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { EXPERIMENT_IDS } from '../src/experiments/definitions.js';
 import { runExperiment } from '../src/experiments/runner.js';
+import { composedCostPerArticle } from '../src/report/gate.js';
+import { loadDataset } from '../src/report/load.js';
 import {
   answerCounts,
   runCli,
@@ -308,6 +310,60 @@ describe('eval run (M3a-T6)', () => {
     for (const id of ['B0', 'B1', 'B1-T', 'E2', 'E3', 'E3b'] as const) {
       expect(await cohortOf(runIds[id]!)).toBe(e1Cohort);
     }
+
+    // Costs are split by article language; every total is the sum of its split.
+    type Cost = {
+      estimatedUsd: number;
+      billedUsd: number;
+      cacheSavingsUsd: number;
+      byLang: Record<string, { estimatedUsd: number; billedUsd: number; cacheSavingsUsd: number }>;
+    };
+    const costOf = async (runId: string) =>
+      ((await runRow(ctx, runId)).results as { cost: Cost }).cost;
+    for (const id of [e1RunId, runIds['E3']!, runIds['E4']!, runIds['B0']!]) {
+      const cost = await costOf(id);
+      for (const field of ['estimatedUsd', 'billedUsd', 'cacheSavingsUsd'] as const) {
+        const sum = Object.values(cost.byLang).reduce((s, c) => s + c[field], 0);
+        expect(cost[field]).toBeCloseTo(sum, 12);
+      }
+      expect(Object.keys(cost.byLang).every((lang) => lang === 'en' || lang === 'sk')).toBe(true);
+    }
+    const e1Cost = await costOf(e1RunId);
+    expect(e1Cost.byLang['en']!.billedUsd).toBeGreaterThan(0);
+    expect(e1Cost.byLang['sk']!.billedUsd).toBeGreaterThan(0);
+    // Only card-text translations (free LibreTranslate) carry no article; nothing billed lands
+    // outside an article language, so no run records an 'und' bucket.
+    const orphan = await ctx.owner.query<{ usd: number }>(
+      `SELECT coalesce(sum(cost_usd), 0)::float8 AS usd FROM engine_calls WHERE article_id IS NULL`,
+    );
+    expect(orphan.rows[0]!.usd).toBe(0);
+    // E4 is SK/CS only: its tier-2 (GLM) translation and engine costs all fall on sk.
+    const e4Cost = await costOf(runIds['E4']!);
+    expect(Object.keys(e4Cost.byLang)).toEqual(['sk']);
+    expect(e4Cost.byLang['sk']!.billedUsd).toBeGreaterThan(0);
+    const tier2 = await ctx.owner.query<{ lang: string; usd: number }>(
+      `SELECT a.lang, sum(c.cost_usd)::float8 AS usd FROM engine_calls c JOIN articles a ON a.id = c.article_id
+        WHERE c.engine = 'llm' GROUP BY a.lang`,
+    );
+    expect(tier2.rows.map((r) => r.lang)).toEqual(['sk']);
+    expect(await costOf(runIds['B0']!)).toMatchObject({ billedUsd: 0, byLang: {} });
+
+    // The G1 budget reads the runner's split directly (lane C's gate, costBasis 'per_language').
+    const loaded = await loadDataset(ctx.db, 'golden-v1');
+    const runById = (id: string) => loaded.runs.find((r) => r.id === id) ?? null;
+    const articleLang = new Map([...loaded.sample].map(([id, info]) => [id, info.lang]));
+    const devArticles = new Map<string, string[]>();
+    for (const [id, info] of loaded.sample) {
+      if (info.split !== 'dev') continue;
+      devArticles.set(info.lang, [...(devArticles.get(info.lang) ?? []), id]);
+    }
+    const composed = composedCostPerArticle(
+      { en: runById(e1RunId), sk: runById(runIds['E3']!) },
+      devArticles,
+      articleLang,
+    );
+    expect(composed.basis).toBe('per_language');
+    expect(composed.usdPerArticle).toEqual(expect.any(Number));
 
     const e5 = await runRow(ctx, runIds['E5']!);
     expect(e5.results).toMatchObject({ status: 'skipped', reason: expect.stringMatching(/laya/) });
