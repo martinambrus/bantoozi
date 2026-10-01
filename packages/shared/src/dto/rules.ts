@@ -61,4 +61,7 @@ export const RuleSchema = z
 export type RuleDto = z.infer<typeof RuleSchema>;
 export const RuleListSchema = z.array(RuleSchema);
 
+/** `POST /rules` → `201 {rule}` (spec 08 §8), the shape `/articles/:id/mute-story` also returns. */
+export const CreateRuleResponseSchema = z.object({ rule: RuleSchema }).strict();
+
 export const RuleIdParamsSchema = z.object({ id: IdSchema }).strict();

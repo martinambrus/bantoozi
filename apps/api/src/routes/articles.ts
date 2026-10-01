@@ -255,7 +255,7 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
   // ── Views (T6) ──────────────────────────────────────────────────────────────────────────────
 
   app.get(
-    '/',
+    '',
     {
       schema: {
         tags: TAGS,

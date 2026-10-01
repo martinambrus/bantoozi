@@ -76,7 +76,7 @@ describe('POST /rules', () => {
       const before = await rankState(r.user.id);
       const res = await r.api.post('/rules', c.body);
       expect(res.statusCode, JSON.stringify(c.body)).toBe(201);
-      expect(res.json()).toMatchObject({
+      expect(res.json().rule).toMatchObject({
         id: expect.any(String),
         kind: c.body.kind,
         value: c.value,
@@ -149,7 +149,7 @@ describe('POST /rules', () => {
       expiresInDays: 3,
     });
     expect(keyword.statusCode).toBe(201);
-    expect(keyword.json().expiresAt).not.toBeNull();
+    expect(keyword.json().rule.expiresAt).not.toBeNull();
   });
 
   it('answers 404 for a feed or story the user cannot reference', async () => {
@@ -170,10 +170,11 @@ describe('POST /rules', () => {
 
   it('returns the live rule for a duplicate without using quota', async () => {
     const r = await reader();
-    const first = (await r.api.post('/rules', { kind: 'mute_keyword', value: 'Elections' })).json();
+    const first = (await r.api.post('/rules', { kind: 'mute_keyword', value: 'Elections' })).json()
+      .rule;
     const again = await r.api.post('/rules', { kind: 'mute_keyword', value: 'Elections' });
     expect(again.statusCode).toBe(201);
-    expect(again.json().id).toBe(first.id);
+    expect(again.json().rule.id).toBe(first.id);
     expect((await r.api.get('/rules')).json()).toHaveLength(1);
   });
 });
@@ -207,8 +208,10 @@ describe('DELETE /rules/:id', () => {
   it('deletes with a full-rank intent; foreign, missing and expired ids are 404', async () => {
     const a = await reader();
     const b = await reader();
-    const rule = (await a.api.post('/rules', { kind: 'block_author', value: 'Someone' })).json();
-    const foreign = (await b.api.post('/rules', { kind: 'block_author', value: 'Other' })).json();
+    const rule = (await a.api.post('/rules', { kind: 'block_author', value: 'Someone' })).json()
+      .rule;
+    const foreign = (await b.api.post('/rules', { kind: 'block_author', value: 'Other' })).json()
+      .rule;
     expect((await a.api.delete(`/rules/${foreign.id}`)).statusCode).toBe(404);
     expect((await a.api.delete('/rules/999999999')).statusCode).toBe(404);
     expect((await a.api.delete('/rules/x1')).statusCode).toBe(400);

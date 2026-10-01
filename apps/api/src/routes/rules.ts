@@ -9,7 +9,7 @@ import {
   RULE_VALUE_MAX,
   RuleIdParamsSchema,
   RuleListSchema,
-  RuleSchema,
+  CreateRuleResponseSchema,
   type RuleDto,
   type RuleKind,
 } from '@bantoozi/shared';
@@ -101,7 +101,7 @@ export const ruleRoutes: FastifyPluginAsyncZod = async (app) => {
         tags,
         summary: 'Create a rule (mute_story requires expiresInDays)',
         body: CreateRuleBodySchema,
-        response: { 201: RuleSchema },
+        response: { 201: CreateRuleResponseSchema },
       },
     },
     async (request, reply) => {
@@ -118,7 +118,7 @@ export const ruleRoutes: FastifyPluginAsyncZod = async (app) => {
           value,
           expiresInDays: expiresInDays ?? null,
         });
-        return { status: 201, body: ruleDto(rule) };
+        return { status: 201, body: { rule: ruleDto(rule) } };
       });
       await reply.code(201).send(outcome.body);
     },
