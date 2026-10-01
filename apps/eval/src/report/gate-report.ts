@@ -269,7 +269,7 @@ function renderSelection(model: ReportModel, s: GateSelection, lockedAt: Date | 
     ),
   );
   out.push(
-    `\nBudget: measured $${num(s.budget.costPer1000Usd, 4)} per 1,000 authorized uncached article revisions × (${s.budget.dailyRevisions} expected daily authorized revisions ÷ 1000) × 2, rounded up to $0.50, minimum $1 → **$${s.budget.value.toFixed(2)}/day** (${s.budget.status}). All-active/high-volume sensitivity (×5 revisions): $${Math.max(
+    `\nBudget: measured $${num(s.budget.costPer1000Usd, 4)} per 1,000 authorized uncached article revisions × (${s.budget.dailyRevisions} expected daily authorized revisions ÷ 1000) × 2, rounded up to $0.50, minimum $1 → **$${s.budget.value.toFixed(2)}/day** (${s.budget.status}; ${s.budget.costBasis === 'per_language' ? 'per-language costs of each composed run' : "each composed run's whole uncached cost charged to the languages it serves (upper bound; no per-language costs recorded)"}). All-active/high-volume sensitivity (×5 revisions): $${Math.max(
       1,
       Math.ceil((s.budget.costPer1000Usd ?? 0) * ((5 * s.budget.dailyRevisions) / 1000) * 2 * 2) /
         2,

@@ -106,6 +106,20 @@ export const RunResultsSchema = z.looseObject({
       cacheSavingsUsd: z.number().nullish(),
       failedCallUsd: z.number().nullish(),
       tokens: z.looseObject({ input: z.number(), output: z.number() }).nullish(),
+      /**
+       * Optional per-article-language split of the same costs (engine and translation calls
+       * attributed by their article's language). When present, the G1 budget uses it directly.
+       */
+      byLang: z
+        .record(
+          z.string(),
+          z.looseObject({
+            estimatedUsd: z.number().nullish(),
+            billedUsd: z.number().nullish(),
+            cacheSavingsUsd: z.number().nullish(),
+          }),
+        )
+        .nullish(),
     })
     .nullish(),
   latencyMs: z.record(z.string(), latency).nullish(),

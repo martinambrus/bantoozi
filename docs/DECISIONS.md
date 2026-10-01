@@ -782,7 +782,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   card mode's translated run per language; an E4 run in the other card mode is unmeasured. Budget:
   uncached cost = billed + cache savings, weighted by development language share, `--daily-revisions`
   default 1000, sensitivity ×5. `owner_pilot` requires exactly one participant key. g1
-  `language_modes` lists only measured languages plus `en`.
+  `language_modes` lists only measured languages plus `en`. Budget cost attribution: the per-article cost is the
+  development-share-weighted sum, over composed languages, of each language's uncached dollars per
+  article under its composed run, from `results.cost.byLang` (that language's own spend over its own
+  processed articles). A run without it charges its whole uncached cost to the processed articles of
+  the languages it serves (`costBasis: run_total`, an upper bound), so language-specific spend such as
+  E3's translation is never diluted over languages it does not serve. The G1 report states the basis.
 - D-108: 2026-10-01 M3a-T7 — `apply-g1` semantics spec 10 §1 leaves open. `language_modes` is merged
   over the stored modes (unmeasured languages keep theirs); `ranker.thresholds` is replaced whole. A
   key is written only when its effective value changes (a missing row counts as its default), so a

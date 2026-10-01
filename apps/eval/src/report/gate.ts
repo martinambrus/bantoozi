@@ -49,7 +49,7 @@ import {
   type Cell,
 } from './ranking.js';
 import { assessReadiness, type Readiness } from './readiness.js';
-import { processedArticles, uncachedUsd } from './render.js';
+import { uncachedUsd } from './render.js';
 import type { RunData } from './run-data.js';
 
 /**
@@ -181,7 +181,94 @@ export interface DevelopmentInput {
   nonEnglishCardContexts: ReadonlySet<string>;
   /** Contexts per language that also read English (bilingual comparisons). */
   raterLangs: ReadonlyMap<string, readonly string[]>;
+  /** Language of every sample article (both splits), to attribute a run's work to languages. */
+  articleLang: ReadonlyMap<string, string>;
   dailyRevisions: number;
+}
+
+/**
+ * How the budget's per-article cost was attributed to languages: `per_language` from the runs'
+ * recorded `cost.byLang`; `run_total` charges each composed run's whole uncached cost to the
+ * articles of the languages it serves (an upper bound when no per-language split is recorded).
+ */
+export type CostBasis = 'per_language' | 'run_total';
+
+/** Articles of `run` (any answer) whose sample language is in `langs`. */
+function processedArticlesIn(
+  run: RunData,
+  langs: ReadonlySet<string>,
+  articleLang: ReadonlyMap<string, string>,
+): number {
+  const ids = new Set<string>([...run.enrich.keys(), ...run.cards.keys()]);
+  for (const scores of run.scores.values()) for (const id of scores.keys()) ids.add(id);
+  for (const answers of run.extra.values()) for (const id of answers.keys()) ids.add(id);
+  let n = 0;
+  for (const id of ids) if (langs.has(articleLang.get(id) ?? '')) n += 1;
+  return n;
+}
+
+function uncachedOf(
+  cost:
+    | {
+        billedUsd?: number | null | undefined;
+        estimatedUsd?: number | null | undefined;
+        cacheSavingsUsd?: number | null | undefined;
+      }
+    | null
+    | undefined,
+): number | null {
+  if (cost === null || cost === undefined) return null;
+  if (cost.billedUsd === null || cost.billedUsd === undefined) return cost.estimatedUsd ?? null;
+  return cost.billedUsd + (cost.cacheSavingsUsd ?? 0);
+}
+
+/**
+ * The uncached $ per article of the composed configuration (spec 10 §5 budget): each language's
+ * per-article cost under the run composed for it, weighted by the language's development share.
+ * Language-specific spend (e.g. E3's translation of SK/CS) is never averaged over articles of
+ * languages the run does not serve. With `cost.byLang` recorded, a language's cost is its own
+ * uncached spend over its own processed articles. Without it, the run's whole uncached cost is
+ * charged to the articles of the languages it serves (`run_total`): never below the true cost,
+ * since the run's other-language spend only adds to it.
+ */
+export function composedCostPerArticle(
+  compositionRuns: Readonly<Record<string, RunData | null>>,
+  devArticles: ReadonlyMap<string, readonly string[]>,
+  articleLang: ReadonlyMap<string, string>,
+): { usdPerArticle: number | null; basis: CostBasis } {
+  let devTotal = 0;
+  for (const ids of devArticles.values()) devTotal += ids.length;
+  const share = (lang: string) =>
+    devTotal === 0 ? 0 : (devArticles.get(lang)?.length ?? 0) / devTotal;
+  const served = new Map<RunData, Set<string>>();
+  for (const [lang, source] of Object.entries(compositionRuns)) {
+    if (source === null || share(lang) === 0) continue;
+    const langs = served.get(source) ?? new Set<string>();
+    langs.add(lang);
+    served.set(source, langs);
+  }
+  const perLanguage = [...served].every(([run, langs]) =>
+    [...langs].every((lang) => uncachedOf(run.results?.cost?.byLang?.[lang]) !== null),
+  );
+  const basis: CostBasis = perLanguage ? 'per_language' : 'run_total';
+  let total = 0;
+  for (const [lang, source] of Object.entries(compositionRuns)) {
+    const w = share(lang);
+    if (w === 0) continue;
+    if (source === null) return { usdPerArticle: null, basis };
+    const langs = served.get(source) ?? new Set([lang]);
+    const usd = perLanguage
+      ? uncachedOf(source.results?.cost?.byLang?.[lang])
+      : uncachedUsd(source);
+    const articles = processedArticlesIn(
+      source,
+      perLanguage ? new Set([lang]) : langs,
+      articleLang,
+    );
+    if (usd === null || articles === 0) return { usdPerArticle: null, basis };
+    total += w * (usd / articles);
+  }
+  return { usdPerArticle: total, basis };
 }
 
 export interface GateSelection {
@@ -207,6 +294,7 @@ export interface GateSelection {
     value: number;
     status: 'measured' | 'unmeasured';
     costPer1000Usd: number | null;
+    costBasis: CostBasis;
     dailyRevisions: number;
   };
   runs: Record<string, string>;
@@ -355,29 +443,12 @@ export function selectOnDevelopment(input: DevelopmentInput): GateSelection {
   };
   mergeRankerConfig(thresholds);
 
-  // Budget: uncached $ per article of each language's composed run, weighted by sample share.
-  const sampleShare = new Map<string, number>();
-  let sampleTotal = 0;
-  for (const [lang, ids] of input.devArticles) {
-    sampleShare.set(lang, ids.length);
-    sampleTotal += ids.length;
-  }
-  let costPerArticle: number | null = 0;
-  for (const [lang, source] of Object.entries(compositionRuns)) {
-    const share = sampleTotal === 0 ? 0 : (sampleShare.get(lang) ?? 0) / sampleTotal;
-    if (share === 0) continue;
-    const usd = source === null ? null : uncachedUsd(source);
-    const articles = source === null ? 0 : processedArticles(source);
-    if (usd === null || articles === 0 || costPerArticle === null) {
-      costPerArticle = null;
-      continue;
-    }
-    costPerArticle += share * (usd / articles);
-  }
-  const costPer1000 = costPerArticle === null ? null : costPerArticle * 1000;
+  const cost = composedCostPerArticle(compositionRuns, input.devArticles, input.articleLang);
+  const costPer1000 = cost.usdPerArticle === null ? null : cost.usdPerArticle * 1000;
   const budget = {
     ...recommendDailyBudget(costPer1000, input.dailyRevisions),
     costPer1000Usd: costPer1000,
+    costBasis: cost.basis,
     dailyRevisions: input.dailyRevisions,
   };
 
@@ -448,7 +519,9 @@ export function developmentInput(
       .map((c) => c.raterId),
   );
   const devArticles = new Map<string, string[]>();
+  const articleLang = new Map<string, string>();
   for (const info of model.sample.values()) {
+    articleLang.set(info.articleId, info.lang);
     if (info.split !== 'dev') continue;
     devArticles.set(info.lang, [...(devArticles.get(info.lang) ?? []), info.articleId]);
   }
@@ -459,6 +532,7 @@ export function developmentInput(
     runs,
     langs: model.reference?.config.langs.length ? model.reference.config.langs : model.langs,
     devArticles,
+    articleLang,
     labels: model.labels,
     nonEnglishCardContexts: nonEnglish,
     raterLangs: new Map((model.reference?.config.raters ?? []).map((r) => [r.raterId, r.langs])),

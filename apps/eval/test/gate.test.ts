@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assessGateRuns,
   buildG1,
+  composedCostPerArticle,
   confirmOnTest,
   developmentInput,
   gateReadiness,
@@ -15,6 +16,7 @@ import type { RunData } from '../src/report/run-data.js';
 import {
   buildFixture,
   DATASET,
+  makeRun,
   standardRuns,
   type Fixture,
   type RunSpec,
@@ -243,5 +245,89 @@ describe('development selection and test confirmation', () => {
     const selection = select(model, assessments);
     const confirmation = confirmOnTest(model, assessments, selection, settings);
     expect(confirmation.decision.status).toBe('fail');
+  });
+});
+
+describe('budget over a mixed composition', () => {
+  // EN = E1 (native), SK = E3 (translate). E3's translation spend falls on SK articles only.
+  const fixture = buildFixture();
+  const articleLang = new Map([...fixture.sample.values()].map((i) => [i.articleId, i.lang]));
+  const devArticles = new Map<string, string[]>();
+  for (const info of fixture.sample.values()) {
+    if (info.split === 'dev')
+      devArticles.set(info.lang, [...(devArticles.get(info.lang) ?? []), info.articleId]);
+  }
+  const count = (lang: string) => [...articleLang.values()].filter((l) => l === lang).length;
+  const nEn = count('en');
+  const nSk = count('sk');
+  const devTotal = (devArticles.get('en')?.length ?? 0) + (devArticles.get('sk')?.length ?? 0);
+  const wEn = (devArticles.get('en')?.length ?? 0) / devTotal;
+  const wSk = 1 - wEn;
+  type Cost = { billedUsd: number; cacheSavingsUsd: number };
+  const withCost = (run: RunData, total: Cost, byLang?: Record<string, Cost>): RunData => ({
+    ...run,
+    results: {
+      ...run.results!,
+      cost: { ...run.results!.cost, ...total, ...(byLang === undefined ? {} : { byLang }) },
+    },
+  });
+  // E1: $0.40 billed + $0.10 saved per language. E3: $0.50 on EN, $2.00 on SK (translation).
+  const e1Lang = {
+    en: { billedUsd: 0.4, cacheSavingsUsd: 0.1 },
+    sk: { billedUsd: 0.4, cacheSavingsUsd: 0.1 },
+  };
+  const e3Lang = {
+    en: { billedUsd: 0.5, cacheSavingsUsd: 0 },
+    sk: { billedUsd: 1.5, cacheSavingsUsd: 0.5 },
+  };
+  const e1 = makeRun(fixture, { id: '14', experiment: 'E1', signal: () => 0.9 });
+  const e3 = makeRun(fixture, { id: '16', experiment: 'E3', state: 'lt', signal: () => 0.9 });
+  const trueCost = wEn * (0.5 / nEn) + wSk * (2.0 / nSk);
+  const dilutedCost = wEn * (1.0 / (nEn + nSk)) + wSk * (2.5 / (nEn + nSk));
+
+  it("uses each language's own cost when the runs record a per-language split", () => {
+    const result = composedCostPerArticle(
+      {
+        en: withCost(e1, { billedUsd: 0.8, cacheSavingsUsd: 0.2 }, e1Lang),
+        sk: withCost(e3, { billedUsd: 2.0, cacheSavingsUsd: 0.5 }, e3Lang),
+      },
+      devArticles,
+      articleLang,
+    );
+    expect(result.basis).toBe('per_language');
+    expect(result.usdPerArticle).toBeCloseTo(trueCost, 12);
+    // The whole-run average would understate it (the P1 regression).
+    expect(dilutedCost).toBeLessThan(trueCost);
+  });
+
+  it("charges a run's whole cost to its languages without a split (never below the true cost)", () => {
+    const result = composedCostPerArticle(
+      {
+        en: withCost(e1, { billedUsd: 0.8, cacheSavingsUsd: 0.2 }),
+        sk: withCost(e3, { billedUsd: 2.0, cacheSavingsUsd: 0.5 }),
+      },
+      devArticles,
+      articleLang,
+    );
+    expect(result.basis).toBe('run_total');
+    // EN: E1's $1.00 over EN articles only; SK: E3's $2.50 over SK articles only.
+    expect(result.usdPerArticle).toBeCloseTo(wEn * (1.0 / nEn) + wSk * (2.5 / nSk), 12);
+    expect(result.usdPerArticle!).toBeGreaterThanOrEqual(trueCost);
+  });
+
+  it("shares a run serving several languages over those languages' articles", () => {
+    const run = withCost(e1, { billedUsd: 0.8, cacheSavingsUsd: 0.2 });
+    const result = composedCostPerArticle({ en: run, sk: run }, devArticles, articleLang);
+    expect(result.usdPerArticle).toBeCloseTo(1.0 / (nEn + nSk), 12);
+  });
+
+  it('is unmeasured when a composed language has no run or no cost', () => {
+    expect(
+      composedCostPerArticle({ en: e1, sk: null }, devArticles, articleLang).usdPerArticle,
+    ).toBeNull();
+    const noCost: RunData = { ...e3, results: { ...e3.results!, cost: null } };
+    expect(
+      composedCostPerArticle({ en: e1, sk: noCost }, devArticles, articleLang).usdPerArticle,
+    ).toBeNull();
   });
 });
