@@ -189,6 +189,37 @@ describe('eval report and eval gate', () => {
     ).rejects.toThrow(/locked as multi_person_beta/);
   });
 
+  it("refuses a selection for another cohort once one cohort's lock revealed the test split", async () => {
+    // Cohort A was locked (another `--raters` choice), so `eval report` already shows this
+    // version's test split: a development selection for this cohort must not follow.
+    const [lock] = await findGateLocks(db, 'golden-v1');
+    const config = lock!.config as unknown as GateLockConfig;
+    await owner.query('DELETE FROM eval.runs WHERE id = $1', [lock!.id]);
+    await createGateLock(db, {
+      gitSha: 'x',
+      config: { ...config, profile: 'owner_pilot', cohortSha: 'cohort-a' },
+    });
+    const report = path.join(dir, 'cohort-a.md');
+    await evalCli(['report', '--out', report, '--resamples', '20']);
+    expect(await readFile(report, 'utf8')).toContain('## Ranking (test)');
+    const g1Path = path.join(dir, 'cohort-b.json');
+    await expect(
+      evalCli([
+        'gate',
+        '--profile',
+        'owner_pilot',
+        '--g1',
+        g1Path,
+        '--report',
+        path.join(dir, 'cohort-b.md'),
+        '--resamples',
+        '20',
+      ]),
+    ).rejects.toThrow(/locked for another cohort .* needs a new held-out dataset version/);
+    await expect(readFile(g1Path, 'utf8')).rejects.toThrow();
+    expect(await findGateLocks(db, 'golden-v1')).toHaveLength(1);
+  });
+
   it('writes an honest incomplete report and no g1.json when readiness is not met', async () => {
     const g1Path = path.join(dir, 'beta.json');
     const reportPath = path.join(dir, 'beta.md');

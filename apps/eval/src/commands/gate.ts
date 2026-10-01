@@ -173,14 +173,25 @@ export async function runGate(
       const sel = selection;
       lock = await rt.db.transaction(async (tx) => {
         await lockGateManifest(tx, dataset.version);
-        const existing = (await findGateLocks(tx, dataset.version)).filter((l) => {
+        // One lock fences the holdout for every cohort: `eval report` reveals the version's whole
+        // test split once any lock exists, so a selection under another manifest (another cohort)
+        // would be made after its test metrics could be read (D-106).
+        const locks = await findGateLocks(tx, dataset.version);
+        const sameManifest = (l: RunRow) => {
           const c = l.config as { cohortSha?: unknown; snapshotSha?: unknown; splitSha?: unknown };
           return (
             c.cohortSha === cohortSha &&
             c.snapshotSha === dataset.snapshotSha &&
             c.splitSha === dataset.splitSha
           );
-        });
+        };
+        const foreign = locks.find((l) => !sameManifest(l));
+        if (foreign !== undefined) {
+          throw new EvalCommandError(
+            `${dataset.version} is already locked for another cohort or split (lock run ${foreign.id}) and its test split is revealed; a selection for a different cohort needs a new held-out dataset version`,
+          );
+        }
+        const existing = locks;
         for (const l of existing) {
           const c = l.config as { profile?: unknown; configSha?: unknown };
           if (c.profile !== profile) {

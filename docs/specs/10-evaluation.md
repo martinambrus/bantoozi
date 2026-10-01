@@ -477,7 +477,9 @@ additional ≥3-person requirement or unresolved owner waiver for this initial l
      (too few flagged articles to judge). The other `demotion` fields keep their values.
 5. Freeze the selected per-language composition, baseline, thresholds and run ids in a selection
    manifest **before the CLI reveals test metrics**. No output-derived retuning is permitted under
-   the same test manifest.
+   the same test manifest. One lock reveals the version's test split for every cohort, so a
+   selection for another cohort (e.g. other `--raters`) on an already locked dataset version is
+   refused; it needs a new held-out dataset version (D-106).
 
 **Confirmation uses the test only:** evaluate the actual selected per-language composition (not just
 whichever single experiment won selection), against the locked B1/B1-T baseline on the same cohort.
