@@ -50,6 +50,7 @@ import {
   planInferenceModeChange,
   readUserPreferences,
   type AnalyzeResponse,
+  type OpmlImportReport,
   type SubscriptionEnvelope,
 } from '@bantoozi/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -509,6 +510,10 @@ export const subscriptionRoutes: FastifyPluginAsyncZod = async (app) => {
         throw new AppError('VALIDATION_FAILED', 'Expected a multipart upload with a file field');
       }
       const bytes = await file.toBuffer();
+      bindUploadDigest(request, bytes);
+      // A retry of a committed import replays its report without parsing the file again.
+      const saved = await request.savedOutcome<OpmlImportReport>();
+      if (saved !== null) return reply.code(200).send(saved.body);
       // Validate the whole document before any transaction (spec 03 §11): no network access.
       const decoded = decodeBody(bytes, file.mimetype);
       if (!decoded.ok) {
@@ -522,7 +527,6 @@ export const subscriptionRoutes: FastifyPluginAsyncZod = async (app) => {
       if (!parsed.ok) {
         throw new AppError('VALIDATION_FAILED', parsed.message, { details: { code: parsed.code } });
       }
-      bindUploadDigest(request, bytes);
       const outcome = await request.mutate(async (tx, { outbox }) => ({
         status: 200,
         body: await importOpml(tx, outbox, parsed),
