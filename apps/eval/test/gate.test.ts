@@ -6,6 +6,7 @@ import {
   composedCostPerArticle,
   confirmOnTest,
   developmentInput,
+  gateLangs,
   gateReadiness,
   selectOnDevelopment,
 } from '../src/report/gate.js';
@@ -248,6 +249,13 @@ describe('development selection and test confirmation', () => {
   });
 });
 
+describe('gate languages', () => {
+  it('keeps dataset languages a --langs subset run did not serve', () => {
+    const model = { langs: ['cs', 'en', 'sk'], reference: { config: { langs: ['en'] } } };
+    expect(gateLangs(model as unknown as ReportModel)).toEqual(['cs', 'en', 'sk']);
+  });
+});
+
 describe('budget over a mixed composition', () => {
   // EN = E1 (native), SK = E3 (translate). E3's translation spend falls on SK articles only.
   const fixture = buildFixture();
@@ -319,6 +327,48 @@ describe('budget over a mixed composition', () => {
     const run = withCost(e1, { billedUsd: 0.8, cacheSavingsUsd: 0.2 });
     const result = composedCostPerArticle({ en: run, sk: run }, devArticles, articleLang);
     expect(result.usdPerArticle).toBeCloseTo(1.0 / (nEn + nSk), 12);
+  });
+
+  it('is unmeasured when a run cost accounting is incomplete (a lower bound)', () => {
+    const incomplete = (run: RunData, byLang: Record<string, Cost>): RunData => {
+      const withSplit = withCost(run, { billedUsd: 0.8, cacheSavingsUsd: 0.2 }, byLang);
+      return {
+        ...withSplit,
+        results: { ...withSplit.results!, cost: { ...withSplit.results!.cost, incomplete: true } },
+      };
+    };
+    const result = composedCostPerArticle(
+      {
+        en: withCost(e1, { billedUsd: 0.8, cacheSavingsUsd: 0.2 }, e1Lang),
+        sk: incomplete(e3, e3Lang),
+      },
+      devArticles,
+      articleLang,
+    );
+    expect(result.usdPerArticle).toBeNull();
+  });
+
+  it('is unmeasured when a development language is missing from the composition', () => {
+    const run = withCost(e1, { billedUsd: 0.8, cacheSavingsUsd: 0.2 }, e1Lang);
+    expect(composedCostPerArticle({ en: run }, devArticles, articleLang).usdPerArticle).toBeNull();
+  });
+
+  it('is unmeasured when a composed run processed none of a language', () => {
+    const enOnly: RunData = {
+      ...withCost(e1, { billedUsd: 0.8, cacheSavingsUsd: 0.2 }),
+      enrich: new Map([...e1.enrich].filter(([id]) => articleLang.get(id) === 'en')),
+      cards: new Map([...e1.cards].filter(([id]) => articleLang.get(id) === 'en')),
+      scores: new Map(
+        [...e1.scores].map(([r, m]) => [
+          r,
+          new Map([...m].filter(([id]) => articleLang.get(id) === 'en')),
+        ]),
+      ),
+      extra: new Map(),
+    };
+    expect(
+      composedCostPerArticle({ en: enOnly, sk: enOnly }, devArticles, articleLang).usdPerArticle,
+    ).toBeNull();
   });
 
   it('is unmeasured when a composed language has no run or no cost', () => {

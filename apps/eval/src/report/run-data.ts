@@ -106,6 +106,8 @@ export const RunResultsSchema = z.looseObject({
       cacheSavingsUsd: z.number().nullish(),
       failedCallUsd: z.number().nullish(),
       tokens: z.looseObject({ input: z.number(), output: z.number() }).nullish(),
+      /** Set when an invocation ended without recording its cost: the figures are a lower bound. */
+      incomplete: z.boolean().nullish(),
       /**
        * Optional per-article-language split of the same costs (engine and translation calls
        * attributed by their article's language). When present, the G1 budget uses it directly.

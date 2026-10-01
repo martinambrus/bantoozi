@@ -554,7 +554,8 @@ export function processedArticles(run: RunData): number {
 /** What the run would have cost without the cache: billed plus cache savings. */
 export function uncachedUsd(run: RunData): number | null {
   const cost = run.results?.cost;
-  if (cost === null || cost === undefined) return null;
+  // An incomplete accounting is a lower bound, never a measured cost (D-110).
+  if (cost === null || cost === undefined || cost.incomplete === true) return null;
   if (cost.billedUsd === null || cost.billedUsd === undefined) return cost.estimatedUsd ?? null;
   return cost.billedUsd + (cost.cacheSavingsUsd ?? 0);
 }

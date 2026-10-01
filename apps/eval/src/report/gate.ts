@@ -160,8 +160,17 @@ export function assessGateRuns(
   return result;
 }
 
+/**
+ * The gate's languages: every language of the dataset plus any the reference run served, so a run
+ * limited to a subset (`--langs en`) leaves the others visible as unmeasured instead of dropping
+ * them from readiness, composition and the budget.
+ */
+export function gateLangs(model: ReportModel): string[] {
+  return [...new Set([...model.langs, ...(model.reference?.config.langs ?? [])])].sort();
+}
+
 export function gateReadiness(model: ReportModel, profile: Profile): Readiness {
-  return assessReadiness(profile, model.items, model.reference?.config.langs ?? model.langs);
+  return assessReadiness(profile, model.items, gateLangs(model));
 }
 
 // ── Development selection ───────────────────────────────────────────────────────────────────
@@ -240,6 +249,16 @@ export function composedCostPerArticle(
   for (const ids of devArticles.values()) devTotal += ids.length;
   const share = (lang: string) =>
     devTotal === 0 ? 0 : (devArticles.get(lang)?.length ?? 0) / devTotal;
+  // Every development language must be served by a run whose accounting is complete and that
+  // processed it; otherwise the budget is unmeasured, never an understated average.
+  for (const [lang, ids] of devArticles) {
+    if (ids.length === 0) continue;
+    const source = compositionRuns[lang];
+    if (source === null || source === undefined || source.results?.cost?.incomplete === true)
+      return { usdPerArticle: null, basis: 'run_total' };
+    if (processedArticlesIn(source, new Set([lang]), articleLang) === 0)
+      return { usdPerArticle: null, basis: 'run_total' };
+  }
   const served = new Map<RunData, Set<string>>();
   for (const [lang, source] of Object.entries(compositionRuns)) {
     if (source === null || share(lang) === 0) continue;
@@ -444,6 +463,11 @@ export function selectOnDevelopment(input: DevelopmentInput): GateSelection {
   mergeRankerConfig(thresholds);
 
   const cost = composedCostPerArticle(compositionRuns, input.devArticles, input.articleLang);
+  // Spec 10 §5: the budget is measured; without a measurement the gate cannot select.
+  if (cost.usdPerArticle === null)
+    reasons.push(
+      'budget unmeasured: a composed language has no run that processed it, or its cost accounting is incomplete',
+    );
   const costPer1000 = cost.usdPerArticle === null ? null : cost.usdPerArticle * 1000;
   const budget = {
     ...recommendDailyBudget(costPer1000, input.dailyRevisions),
@@ -530,7 +554,7 @@ export function developmentInput(
     dataset,
     devItems: onSplit(model.items, 'dev'),
     runs,
-    langs: model.reference?.config.langs.length ? model.reference.config.langs : model.langs,
+    langs: gateLangs(model),
     devArticles,
     articleLang,
     labels: model.labels,

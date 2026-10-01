@@ -798,6 +798,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   processed articles). A run without it charges its whole uncached cost to the processed articles of
   the languages it serves (`costBasis: run_total`, an upper bound), so language-specific spend such as
   E3's translation is never diluted over languages it does not serve. The G1 report states the basis.
+  The gate's languages are the dataset's languages plus any the reference run served, so a run
+  limited by `--langs` leaves the others unmeasured rather than dropped. The budget is unmeasured
+  when a development language has no composed run, its composed run processed none of it, or a
+  composed run's cost is `incomplete` (a lower bound after a crashed invocation); an unmeasured
+  budget is a selection reason, so the gate reports `needs_more_data` instead of passing.
 - D-108: 2026-10-01 M3a-T7 — `apply-g1` semantics spec 10 §1 leaves open. `language_modes` is merged
   over the stored modes (unmeasured languages keep theirs); `ranker.thresholds` is replaced whole. A
   key is written only when its effective value changes (a missing row counts as its default), so a
