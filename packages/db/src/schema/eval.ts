@@ -107,12 +107,17 @@ export const evalAssignments = evalSchema.table(
     articleId: int8('article_id').references(() => articles.id, { onDelete: 'restrict' }),
     position: integer('position').notNull(),
     status: text('status').notNull().default('pending'),
+    skipReason: text('skip_reason'),
   },
   (t) => [
     primaryKey({ columns: [t.raterId, t.articleId] }),
     unique('assignments_rater_id_position_key').on(t.raterId, t.position),
     check('assignments_position_check', sql`position >= 0`),
     check('assignments_status_check', sql`status IN ('pending','rated','skipped')`),
+    check(
+      'assignments_skip_reason_check',
+      sql`skip_reason IS NULL OR (status = 'skipped' AND length(skip_reason) <= 500)`,
+    ),
   ],
 );
 

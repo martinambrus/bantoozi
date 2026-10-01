@@ -1560,7 +1560,8 @@ CREATE TABLE eval.rater_feeds (rater_id bigint REFERENCES eval.raters(id) ON DEL
 CREATE TABLE eval.assignments (rater_id bigint REFERENCES eval.raters(id) ON DELETE CASCADE,
   article_id bigint REFERENCES articles(id) ON DELETE RESTRICT, position int NOT NULL CHECK (position >= 0),
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','rated','skipped')),
-  PRIMARY KEY (rater_id, article_id), UNIQUE (rater_id, position));
+  skip_reason text NULL CHECK (skip_reason IS NULL OR (status = 'skipped' AND length(skip_reason) <= 500)),
+  PRIMARY KEY (rater_id, article_id), UNIQUE (rater_id, position));  -- skip_reason: D-101
 CREATE TABLE eval.ratings (rater_id bigint REFERENCES eval.raters(id) ON DELETE CASCADE,
   article_id bigint REFERENCES articles(id) ON DELETE RESTRICT, rating smallint NOT NULL CHECK (rating IN (-1, 1)),
   reason text NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (rater_id, article_id));

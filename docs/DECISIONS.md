@@ -726,3 +726,35 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   not waited for. The default timeout is 60 minutes and a timeout exits 0 with the counts, because
   the worker keeps collecting. `--watch` re-checks heartbeats every tick (a warning, not an exit) and
   re-subscribes lost feeds. Spec 10 §2.1 updated.
+- D-100: 2026-10-01 M3a-T3 — spec 10 §2.2 asks for cards "before seeing any article" but not what
+  happens to later edits. The card and feed steps close (409) once the rater has any assignment, so
+  the cards a run freezes are the ones written before rating. The 5–10 limit counts must/love/like
+  cards; "never" cards are capped at 3. Cards are stored as `origin='user'`, `visibility='shared'`,
+  created by the evaluation user and reused by `text_hash`; the card language is detected from
+  interest plus not-for text (hint: the rater's first language) unless the rater chooses it. Spec 10
+  §2.2 updated.
+- D-101: 2026-10-01 M3a-T3 — spec 10 §2.2 stores an optional skip reason, but spec 02 §7 had no
+  column for it. `eval.assignments.skip_reason text NULL` (≤ 500 characters, only on a skipped row)
+  was added to migration 0015 before it shipped. A later rating clears it in the same update; a skip
+  withdraws an earlier rating, so a skip is never read as a dislike. Specs 02 §7 and 10 §2.2 updated.
+- D-102: 2026-10-01 M3a-T3 — spec 10 §2.4 does not say whether a link token can be exchanged
+  twice. It can, until it expires or is revoked, so a rater can sign in on a phone and a laptop; each
+  exchange creates its own session, and the token leaves the URL at once. Sessions last at most
+  min(30 days, token expiry). The cookie is SameSite=Lax (a link click from a mail client still
+  carries it after the redirect), and mutations need a per-session HMAC CSRF token and a same-origin
+  request. Exchange is limited to 20 attempts per client address per 10 minutes. `--participant` must
+  name an existing participant key, so a typo cannot create a phantom human. Spec 10 §2.4 updated.
+- D-103: 2026-10-01 M3a-T4 — spec 10 §2.3 names the owner as labeller and a 50-article overlap
+  without a selection rule. The owner is the participant of the earliest rater. The owner's set is up
+  to 100 articles per language of the head dataset version in seeded hash order (seed = dataset seed
+  + `:facets`); already-labelled articles always stay in it, so a growing sample never drops finished
+  work. The second labeller's 50 come from the owner's set, split equally across its languages with
+  round-robin top-up. Facet labels are keyed by participant; `uncertain` and `not_applicable` are
+  allowed for every field. Spec 10 §2.3 updated.
+- D-104: 2026-10-01 M3a-T3 — assignment details spec 10 §2.2 leaves open. The seed is
+  `rater:<id>`; a seeded hash order chooses within each language and a second seeded shuffle sets the
+  queue order. The sample is used in full before any top-up; the top-up pool is articles of the
+  rater's feeds first seen in the last 30 days that are not in the head version and not stale or
+  failed, added through the dataset top-up (a frozen head creates the next version) before
+  assignment. Assignments are built on "Start rating" and again from "Look for more articles" when
+  nothing is pending and the rater has fewer than 300. Spec 10 §2.2 updated.

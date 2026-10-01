@@ -1,0 +1,175 @@
+import { dropCreatedTestDatabases } from '@bantoozi/testing';
+import {
+  freezeDataset,
+  getDataset,
+  listAssignments,
+  loadSample,
+  setRaterFeeds,
+} from '@bantoozi/db';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { ensureAssignments } from '../src/rating-server/assignments.js';
+import {
+  addArticles,
+  addGoldenFeeds,
+  addRater,
+  createGoldenDataset,
+  setupRatingDb,
+  type GoldenFeedFixture,
+  type RatingDb,
+} from './rating-server-support.js';
+
+/**
+ * M3a-T3 (spec 10 §2.2): assignment building against the database: 300 per rater split equally
+ * across languages from the sample of the rater's feeds, top-ups from recent non-sampled articles
+ * that join the open dataset version, a top-up after the freeze that creates the next version and
+ * leaves the frozen one unchanged, idempotence and the deterministic order.
+ */
+
+const DAY = 86_400_000;
+const now = new Date();
+
+let rdb: RatingDb;
+let en: GoldenFeedFixture[];
+let sk: GoldenFeedFixture[];
+const sampled: string[] = [];
+
+beforeAll(async () => {
+  rdb = await setupRatingDb('eval-assign');
+  en = await addGoldenFeeds(rdb, 'en', 6);
+  sk = await addGoldenFeeds(rdb, 'sk', 6);
+  // 20 sampled articles per feed (120 per language) and 10 recent non-sampled ones per feed.
+  for (const feed of [...en, ...sk]) {
+    sampled.push(
+      ...(await addArticles(rdb, feed.id, feed.lang, 20, new Date(now.getTime() - 2 * DAY))),
+    );
+    await addArticles(
+      rdb,
+      feed.id,
+      feed.lang,
+      10,
+      new Date(now.getTime() - DAY),
+      (i) => `recent ${feed.id}-${i}`,
+    );
+  }
+  // One old article that is too old for a top-up.
+  await addArticles(rdb, en[0]!.id, 'en', 1, new Date(now.getTime() - 90 * DAY), () => 'ancient');
+  const created = await createGoldenDataset(rdb, sampled);
+  expect(created.added).toHaveLength(240);
+});
+
+afterAll(async () => {
+  await rdb?.close();
+  await dropCreatedTestDatabases();
+});
+
+async function pick(raterId: string, feeds: GoldenFeedFixture[]) {
+  await rdb.db.transaction((tx) =>
+    setRaterFeeds(
+      tx,
+      raterId,
+      feeds.map((f) => f.id),
+    ),
+  );
+}
+
+describe('ensureAssignments', () => {
+  it('assigns 300 split equally across languages, topping up from recent articles into the open version', async () => {
+    const { rater } = await addRater(rdb, { langs: ['sk', 'en'], now });
+    await pick(rater.id, [...en, ...sk]);
+    const result = await ensureAssignments(rdb.db, { raterId: rater.id, langs: rater.langs, now });
+    expect(result).toMatchObject({
+      added: 300,
+      total: 300,
+      datasetVersion: 'golden-v1',
+      createdFrom: null,
+    });
+    expect(result.toppedUp).toHaveLength(60);
+    const assigned = await listAssignments(rdb.db, rater.id, 'golden-v1');
+    expect(assigned.map((a) => a.position)).toEqual(Array.from({ length: 300 }, (_, i) => i));
+    expect(assigned.filter((a) => a.lang === 'sk')).toHaveLength(150);
+    expect(assigned.filter((a) => a.lang === 'en')).toHaveLength(150);
+    expect(assigned.every((a) => a.status === 'pending')).toBe(true);
+    // Every top-up received its frozen snapshot and split before it was assigned.
+    const rows = await loadSample(rdb.db, 'golden-v1', { articleIds: result.toppedUp });
+    expect(rows).toHaveLength(60);
+    expect(rows.every((r) => r.split === 'dev' || r.split === 'test')).toBe(true);
+    expect(rows.every((r) => typeof r.snapshot['storyGroupId'] === 'string')).toBe(true);
+
+    // Idempotent: nothing more to add once the target is reached.
+    const again = await ensureAssignments(rdb.db, { raterId: rater.id, langs: rater.langs, now });
+    expect(again.added).toBe(0);
+    expect(await listAssignments(rdb.db, rater.id, 'golden-v1')).toEqual(assigned);
+  });
+
+  it('assigns only articles of the picked feeds and languages, in a deterministic order', async () => {
+    const { rater } = await addRater(rdb, { langs: ['en'], now });
+    await pick(rater.id, en.slice(0, 2));
+    await ensureAssignments(rdb.db, { raterId: rater.id, langs: rater.langs, now, target: 30 });
+    const first = await listAssignments(rdb.db, rater.id, 'golden-v1');
+    expect(first).toHaveLength(30);
+    const sample = await loadSample(rdb.db, 'golden-v1', {
+      articleIds: first.map((a) => a.articleId),
+    });
+    const picked = new Set(en.slice(0, 2).map((f) => f.id));
+    for (const row of sample) {
+      expect(row.lang).toBe('en');
+      const carriers = row.snapshot['carrierFeeds'] as Array<{ feedId: string }>;
+      expect(carriers.some((c) => picked.has(c.feedId))).toBe(true);
+    }
+    // Rebuilding from the same inputs gives the same queue (seeded by the rater id).
+    await rdb.owner.query('DELETE FROM eval.assignments WHERE rater_id = $1', [rater.id]);
+    await ensureAssignments(rdb.db, { raterId: rater.id, langs: rater.langs, now, target: 30 });
+    const second = await listAssignments(rdb.db, rater.id, 'golden-v1');
+    expect(second.map((a) => a.articleId)).toEqual(first.map((a) => a.articleId));
+  });
+
+  it('a top-up after the first model run creates a new dataset version and leaves the frozen one unchanged', async () => {
+    const frozen = await rdb.db.transaction((tx) => freezeDataset(tx, 'golden-v1'));
+    const frozenRows = await loadSample(rdb.db, 'golden-v1');
+    expect(frozenRows).toHaveLength(300);
+
+    const { rater } = await addRater(rdb, { langs: ['en'], now });
+    await pick(rater.id, en);
+    // The sample holds 150 English articles of these feeds; 30 recent ones remain outside it.
+    const result = await ensureAssignments(rdb.db, {
+      raterId: rater.id,
+      langs: rater.langs,
+      now,
+      target: 170,
+    });
+    expect(result).toMatchObject({
+      added: 170,
+      datasetVersion: 'golden-v2',
+      createdFrom: 'golden-v1',
+    });
+    expect(result.toppedUp).toHaveLength(20);
+
+    const after = await getDataset(rdb.db, 'golden-v1');
+    expect(after?.frozenAt?.getTime()).toBe(frozen.frozenAt?.getTime());
+    expect(after?.manifest).toEqual(frozen.manifest);
+    expect(after?.snapshotSha).toBe(frozen.snapshotSha);
+    expect(await loadSample(rdb.db, 'golden-v1')).toEqual(frozenRows);
+
+    const v2 = await loadSample(rdb.db, 'golden-v2');
+    expect(v2).toHaveLength(320);
+    const v2ById = new Map(v2.map((r) => [r.articleId, r]));
+    for (const row of frozenRows) {
+      expect(v2ById.get(row.articleId)).toMatchObject({
+        snapshotSha: row.snapshotSha,
+        split: row.split,
+      });
+    }
+    for (const id of result.toppedUp) expect(v2ById.has(id)).toBe(true);
+    const assigned = await listAssignments(rdb.db, rater.id, 'golden-v2');
+    expect(assigned.every((a) => v2ById.has(a.articleId))).toBe(true);
+  });
+
+  it('assigns everything available when the pools run dry (fewer than the target)', async () => {
+    const { rater } = await addRater(rdb, { langs: ['sk'], now });
+    await pick(rater.id, sk.slice(0, 1));
+    const result = await ensureAssignments(rdb.db, { raterId: rater.id, langs: rater.langs, now });
+    // 20 sampled + 10 recent articles, all of which are in the sample by now.
+    expect(result.total).toBe(30);
+  });
+});

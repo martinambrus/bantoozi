@@ -139,7 +139,8 @@ settings, regardless of profile.
 - **Step 1 in the rating app: write interests first.** Before seeing any article, each context writes
   **5–10 interest cards** (and optionally 1–3 "never" cards) in their own words, in their preferred
   language. Stored as real `interest_cards` (visibility `shared`) and `eval.rater_cards`. The spec 05
-  authoring rules are shown as hints.
+  authoring rules are shown as hints. The card and feed steps close once the rater has any
+  assignment, so cards are final before the first article is seen (D-100).
 - **Step 2: pick feeds.** The rater ticks the golden feeds they would actually subscribe to (at least
   10) → `eval.rater_feeds`.
 - **Step 3: rate.** On first entry, the app builds the rater's `eval.assignments`:
@@ -147,7 +148,8 @@ settings, regardless of profile.
   - split **equally across the rater's `langs`**; a language short of its share is topped up from the
     others
   - if the sample has fewer than 300 for these feeds, all of them are assigned, topped up from
-    non-sampled recent articles of the rater's feeds (which are then added to `eval.sample`)
+    non-sampled recent articles of the rater's feeds (first seen within the last 30 days, excluding
+    stale/failed; D-104), which are then added to `eval.sample`
   - top-ups join the dataset version being built until its first model run freezes it; after that,
     a top-up creates the next version (spec 02 §7) with a recomputed manifest hash and never
     changes the frozen one
@@ -156,9 +158,11 @@ settings, regardless of profile.
   - **Blind:** no model output is shown.
   - The page shows the feed, title, excerpt (≤ 600 chars) and "open original".
   - Buttons: 👍 "I'd want to read this" / 👎 "Not for me", plus an optional reason (the spec 09 reason set).
-  - Keyboard: `+`/`-`, `1`–`6`, `j`/`k`.
+  - Keyboard: `+`/`-`, `1`–`6`, `j`/`k` (also `s` skip and `o` open original).
   - Progress is saved on every click (`eval.ratings`) and ratings can be changed.
-  - A rater may skip an article; persist `eval.assignments.status = skipped` (and an optional reason).
+  - A rater may skip an article; persist `eval.assignments.status = skipped` and an optional
+    `skip_reason` (≤ 500 characters). A later rating clears the reason; a skip withdraws an earlier
+    rating of that article (D-101).
     Rating sets `rated`, returning to a skipped article is supported, and pending remains distinct.
     Goal: ≥250 distinct article ratings per actual participant, with supported context/language
     cells (§5). Rating one article under three personas counts as one article toward participant
@@ -175,6 +179,9 @@ settings, regardless of profile.
   (Cohen's κ; weighted κ for ordinal depth) is a reference, not an absolute model-accuracy ceiling.
   Preserve both labels and use a predeclared adjudication step for disagreement; do not choose the
   label that agrees with a model. Include uncertain/not-applicable rather than forcing a false class.
+  The owner is the participant of the earliest rater; the owner's set is chosen in seeded hash order
+  and keeps already-labelled articles, and the second labeller's 50 are taken from it, split equally
+  across its languages (D-103).
 
 ### 2.4 Rating app (`apps/eval/src/rating-server`)
 
@@ -189,7 +196,9 @@ settings, regardless of profile.
   the revocation and also deletes those sessions, so no session from the old token survives.
   Neither touches assignments, ratings or cards, which deleting the rater would cascade. Exchange
   accepts only an unexpired, unrevoked token and creates a session row whose random cookie value is
-  stored hashed and whose expiry never exceeds the token's. Every request rechecks the session's
+  stored hashed and whose expiry never exceeds the token's. A link token may be exchanged on more
+  than one device until it expires or is revoked; "one-time" means it leaves the URL once
+  exchanged (D-102). Every request rechecks the session's
   expiry and the token's revocation. Every read/write is scoped to that rater's assignment; the
   worker DB role makes application-level ownership checks essential.
 - Uses `DATABASE_URL_WORKER`.

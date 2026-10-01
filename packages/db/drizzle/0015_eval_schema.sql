@@ -11,10 +11,12 @@ CREATE TABLE "eval"."assignments" (
 	"article_id" bigint,
 	"position" integer NOT NULL,
 	"status" text DEFAULT 'pending' NOT NULL,
+	"skip_reason" text,
 	CONSTRAINT "assignments_rater_id_article_id_pk" PRIMARY KEY("rater_id","article_id"),
 	CONSTRAINT "assignments_rater_id_position_key" UNIQUE("rater_id","position"),
 	CONSTRAINT "assignments_position_check" CHECK (position >= 0),
-	CONSTRAINT "assignments_status_check" CHECK (status IN ('pending','rated','skipped'))
+	CONSTRAINT "assignments_status_check" CHECK (status IN ('pending','rated','skipped')),
+	CONSTRAINT "assignments_skip_reason_check" CHECK (skip_reason IS NULL OR (status = 'skipped' AND length(skip_reason) <= 500))
 );
 --> statement-breakpoint
 CREATE TABLE "eval"."datasets" (

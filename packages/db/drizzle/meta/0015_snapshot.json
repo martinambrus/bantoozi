@@ -2293,6 +2293,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'pending'"
+        },
+        "skip_reason": {
+          "name": "skip_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
@@ -2353,6 +2359,10 @@
         "assignments_status_check": {
           "name": "assignments_status_check",
           "value": "status IN ('pending','rated','skipped')"
+        },
+        "assignments_skip_reason_check": {
+          "name": "assignments_skip_reason_check",
+          "value": "skip_reason IS NULL OR (status = 'skipped' AND length(skip_reason) <= 500)"
         }
       },
       "isRLSEnabled": false
