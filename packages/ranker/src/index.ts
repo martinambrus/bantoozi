@@ -17,5 +17,6 @@ export * from './lanes.js';
 export * from './policy.js';
 export * from './projection.js';
 export * from './rule-codes.js';
+export * from './settings.js';
 export * from './types.js';
 export * from './version.js';
