@@ -734,7 +734,11 @@ const CardTextValueSchema = z.object({
  * published only as a whole and only when its assessment is `ok`). Every outcome but a failed
  * call is cached; the card keeps its original text whenever no `ok` pair exists.
  */
-export async function translateCard(env: CallEnv, card: RunCard): Promise<RunCard> {
+export async function translateCard(
+  env: CallEnv,
+  card: RunCard,
+  locale: string | null = null,
+): Promise<RunCard> {
   const sources = await supportedSources(env);
   const manifest: CacheManifest = {
     v: EVAL_CACHE_VERSION,
@@ -743,6 +747,7 @@ export async function translateCard(env: CallEnv, card: RunCard): Promise<RunCar
     policy: TRANSLATION_POLICY_VERSION,
     interest: card.interest,
     notFor: card.notFor,
+    locale,
     supportedSources: sources === undefined ? null : [...sources].sort(),
   };
   const apply = (value: z.infer<typeof CardTextValueSchema>): RunCard => ({
@@ -759,7 +764,7 @@ export async function translateCard(env: CallEnv, card: RunCard): Promise<RunCar
   const result = await translateCardText(env.translators.libretranslate(), {
     interest: card.interest,
     notFor: card.notFor,
-    locale: null,
+    locale,
     supportedSources: sources,
   });
   await recordAttempts(env, result.attempts, {});

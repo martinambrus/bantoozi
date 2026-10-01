@@ -412,7 +412,11 @@ export interface PersonaCard {
   strength: CardStrength;
   lang: string;
   interest: string;
-  /** The English text the fake LibreTranslate returns for a non-English card. */
+  /**
+   * The English text the fake LibreTranslate returns for a non-English card. Non-English card
+   * texts are long enough for the unhinted language detector to read them as their language
+   * (spec 07 §5), so English-card runs really translate them.
+   */
   interestEn: string;
 }
 
@@ -469,21 +473,24 @@ export const PERSONAS: readonly Persona[] = [
         topic: 'football',
         strength: 'love',
         lang: 'sk',
-        interest: 'Futbalové prestupy, kluby Liverpool a Barcelona',
+        interest:
+          'Futbalové prestupy a zápasy, najmä kluby Liverpool a Barcelona, ktoré ma zaujímajú',
         interestEn: 'Football transfers, Liverpool and Barcelona clubs',
       },
       {
         topic: 'cooking',
         strength: 'like',
         lang: 'sk',
-        interest: 'Varenie, recepty a pečenie, reštaurácie Michelin a Ramsay',
+        interest:
+          'Varenie a pečenie doma, recepty na jedlá, ktoré ma zaujímajú, reštaurácie Michelin a Ramsay',
         interestEn: 'Cooking, recipes and baking, Michelin and Ramsay restaurants',
       },
       {
         topic: 'politics',
         strength: 'like',
         lang: 'sk',
-        interest: 'Voľby, parlament a koaličná politika, Brussels a NATO',
+        interest:
+          'Voľby do parlamentu a koaličná politika vlády, ktorá ma zaujíma, Brussels a NATO',
         interestEn: 'Elections, parliament and coalition politics, Brussels and NATO',
       },
     ],

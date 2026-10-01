@@ -179,8 +179,10 @@ export interface RunResults {
    */
   translationFallbacks?: Record<string, number>;
   /**
-   * English-card runs only: distinct cards per card language whose English text could not be made
-   * (`failed`, `weak` or `unsupported`), so questions used the original text. Every pair scored
+   * English-card runs only: distinct cards per card language whose attempted English translation
+   * failed or was weak (`failed`/`weak`), so questions used the original text. Cards production
+   * itself never translates (`english`, `undetermined`, `unconfirmed`, `unsupported`) are faithful
+   * to production and not counted. Every pair scored
    * with such a card is not valid coverage, and its card and score rows carry
    * `cardTextFallback: true`.
    */
@@ -581,11 +583,13 @@ function cardRow(
   };
 }
 
-const CARD_TEXT_FALLBACK_STATUSES: ReadonlySet<string> = new Set(['failed', 'weak', 'unsupported']);
+const CARD_TEXT_FALLBACK_STATUSES: ReadonlySet<string> = new Set(['failed', 'weak']);
 
 /**
- * Whether an English-card run asked this card with its original text because no `ok` English pair
- * could be made (spec 07 §5): the English-card variant was never evaluated for it.
+ * Whether an English-card run asked this card with its original text because its attempted
+ * translation failed or was weak (spec 07 §5): the English-card variant was never evaluated for it.
+ * A card production would not translate either (detected English, undetermined, unconfirmed or an
+ * unsupported language) is asked exactly as production asks it, so it is not a fallback.
  */
 export function cardTextFallback(card: RunCard, mode: CardTextMode): boolean {
   return mode === 'english' && CARD_TEXT_FALLBACK_STATUSES.has(card.textStatus ?? '');
@@ -1243,13 +1247,21 @@ export async function runExperiment(
     // 3. Card text in English mode is translated before the run is written, so the config
     // records the exact card text every question uses.
     if (existingRunId === null && options.replay === undefined && cardMode === 'english') {
+      // Production hints card detection with the user's locale (spec 07 §5); a rater has no UI
+      // locale here, so a rater with exactly one non-English language uses it as the hint.
+      const localeOf = new Map<string, string | null>();
+      for (const rater of config.raters) {
+        const others = [...new Set(rater.langs.filter((lang) => lang !== 'en'))];
+        localeOf.set(rater.raterId, others.length === 1 ? (others[0] ?? null) : null);
+      }
       const translated: RunCard[] = [];
       const byText = new Map<string, Promise<RunCard>>();
       for (const card of config.cards) {
-        const key = JSON.stringify([card.interest, card.notFor]);
+        const locale = localeOf.get(card.raterId) ?? null;
+        const key = JSON.stringify([card.interest, card.notFor, locale]);
         let pending = byText.get(key);
         if (pending === undefined) {
-          pending = translateCard(env, card);
+          pending = translateCard(env, card, locale);
           byText.set(key, pending);
         }
         const done = await pending;

@@ -2,6 +2,7 @@ import { normalizeText } from '@bantoozi/shared';
 import { describe, expect, it } from 'vitest';
 
 import { isDryRunDatabaseName } from '@bantoozi/db';
+import { translateCardText } from '@bantoozi/translate';
 
 import {
   cardTranslations,
@@ -100,6 +101,33 @@ describe('dry-run synthetic corpus', () => {
     expect(Object.keys(cards).length).toBeGreaterThan(0);
     for (const [sk, english] of Object.entries(cards)) {
       expect(sk).not.toBe(english);
+    }
+  });
+
+  it('non-English cards translate through production card-text rules (no fallback)', async () => {
+    // The fake LibreTranslate answers from the same map; the unhinted detector must read each card
+    // as its language, so English-card runs (B1-T, E2, E3b) really use the English text.
+    const map = cardTranslations();
+    const client = {
+      translate: (input: { fields: Array<{ field: string; text: string }> }) =>
+        Promise.resolve({
+          status: 'translated' as const,
+          translations: input.fields.map((f) => ({ field: f.field, text: map[f.text] ?? '' })),
+          attempts: [],
+        }),
+    } as unknown as Parameters<typeof translateCardText>[0];
+    for (const persona of PERSONAS) {
+      for (const card of persona.cards.filter((c) => c.lang !== 'en')) {
+        const result = await translateCardText(client, {
+          interest: card.interest,
+          supportedSources: new Set(['sk', 'cs']),
+        });
+        expect({ lang: result.lang, status: result.status, en: result.interestEn }).toEqual({
+          lang: card.lang,
+          status: 'translated',
+          en: card.interestEn,
+        });
+      }
     }
   });
 });
