@@ -34,7 +34,7 @@ export const RANK_CORPUS_PAGE = 2_000;
 
 const DAY_MS = 86_400_000;
 
-/** The version of the `contextSha` recipe (D-97); bump it when the hashed inputs change. */
+/** The version of the `contextSha` recipe (D-141); bump it when the hashed inputs change. */
 const CONTEXT_SHA_VERSION = 1;
 
 /** Normalized article texts of one document, the translation selected as `rankArticle` reads it. */
@@ -99,7 +99,7 @@ export function demotionState(
   };
 }
 
-/** A sha256 over the canonical JSON of the ranking context (D-97). */
+/** A sha256 over the canonical JSON of the ranking context (D-141). */
 function contextHash(value: Record<string, unknown>): string {
   return sha256Hex(canonicalJson({ v: CONTEXT_SHA_VERSION, ...value }));
 }
@@ -173,7 +173,7 @@ export async function loadRankContext(
     /**
      * The classification context the stored answers and facets were judged current under (active
      * sets, card text mode, language modes, each held card's question hash): part of `contextSha`,
-     * so a change, such as a card's newly translated text, makes every row dirty (D-97).
+     * so a change, such as a card's newly translated text, makes every row dirty (D-141).
      */
     classification: Record<string, unknown>;
   },

@@ -243,7 +243,7 @@ interface Explain {
   cards: { id: string; title: string; strength: Strength; p: number; engine: string }[];   // the user's cards with answers, p desc, ≤ 10
   facets?: { contentType: { choice: string; p: number }; topic: { l1: string; p: number; l2?: string };
              depth: number; clickbait: number; promotional: number; timeSensitive: number; evergreen: number };
-  rules: { code: string; ruleId?: string; cardId?: string; detail?: string }[];   // ids let the UI offer "undo"; code ≤ 200 chars (D-96)
+  rules: { code: string; ruleId?: string; cardId?: string; detail?: string }[];   // ids let the UI offer "undo"; code ≤ 200 chars (D-140)
   model?: { version: number; top: { feature: string; label: string; contribution: number }[] };   // top 3 by |contribution|
   translation?: { engine: string; quality: string };
   cluster?: { id: string; size: number };
@@ -354,7 +354,7 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
    never touched. Filter `label_suggestions` against current labels/assignments at write time so a
    concurrent label action is not undone. Commit batches plus a continuation through the outbox;
    completion is recorded only after the last batch, and a crash resumes safely.
-   **Run mechanics (D-97).** `explain.inputs.contextSha` is a sha256 of the canonical JSON of the
+   **Run mechanics (D-141).** `explain.inputs.contextSha` is a sha256 of the canonical JSON of the
    score version, the rank revision, the classification context the answers and facets are judged
    current under (active enrich set id, match set sha, card text mode, language modes, and each held
    card's and label's question hash) and the model context (`null` until M7); degraded results hash

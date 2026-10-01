@@ -679,12 +679,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   like a settlement and then leaves the reservation charged for housekeeping. A released `suggest`
   reservation keeps its suggestion stamp (spec 05 §7), as a request cancelled after its send does.
   Specs 04 §1 and §4 and 11 §5 updated.
-- D-96: 2026-10-01 M5-T2 — `ExplainSchema` limited a rule `code` to 64 characters, but spec 06 §3.2
+- D-140: 2026-10-01 M5-T2 — `ExplainSchema` limited a rule `code` to 64 characters, but spec 06 §3.2
   makes a muted keyword part of its code (`mute_keyword:<value>`) and spec 08 §11 allows keywords of
   up to 100 characters, so a valid mute could not be explained. The limit is now 200 characters,
   enough for the prefix and any permitted keyword (also when it uses characters outside the BMP).
   Spec 06 §6.2 updated.
-- D-97: 2026-10-01 M5-T4 — spec 06 §7 leaves several mechanics of the `user.rank` run open, and
+- D-141: 2026-10-01 M5-T4 — spec 06 §7 leaves several mechanics of the `user.rank` run open, and
   two of its dirty-set signs are not durable. `explain.inputs.contextSha` had no recipe: it is now
   the sha256 of the canonical JSON of the score version, rank revision, the classification context
   (active enrich set, match set, card text mode, language modes, each held card's and label's

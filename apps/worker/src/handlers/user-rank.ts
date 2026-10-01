@@ -34,7 +34,7 @@ export const RANK_PAGE = 5_000;
 /** Rows ranked and upserted per transaction (spec 06 §7 step 5). */
 export const RANK_WRITE_BATCH = 500;
 /**
- * Inputs written this long before a row's `scored_at` are checked again (D-97): a transaction that
+ * Inputs written this long before a row's `scored_at` are checked again (D-141): a transaction that
  * started before the run's snapshot can commit after it with an older timestamp.
  */
 export const RANK_RECHECK_MARGIN_MS = 15 * 60_000;
