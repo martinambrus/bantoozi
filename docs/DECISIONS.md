@@ -851,7 +851,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `LLM_FALLBACK_ENABLED` (spec 10 §6), `eval replay --against <B1 run> --engine llm` replays the
   fallback classifier on E1's variant with B1's frozen inputs, stored as `replay:E1` with
   `replay.baseline = 'keyword'`; only the AUC pass rules apply (B1 has no card answers or lane
-  policy), and a B1 base without `--engine llm` is refused. Spec 10 §3 updated.
+  policy), and a B1 base without `--engine llm` is refused. A replay's macro no-drop rule (spec 10
+  §6) uses the gate's aggregation: per-context cells with the gate's support rule, the hierarchical
+  macro (supported contexts averaged within each participant, then participants weighted equally)
+  and the gate's paired story-group bootstrap; the per rater × language cell rule (no drop above
+  0.03) is unchanged. Spec 10 §3 updated.
 - D-111: 2026-10-01 M3a-T6 — eval routers use a process-local circuit breaker, so an evaluation
   never trips or reads the production breaker (spec 04 §1). The LLM fallback is off and the pinned
   engine has no automatic fallback, so a run never mixes engines silently.

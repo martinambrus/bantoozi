@@ -382,3 +382,80 @@ describe('renderReplayReport', () => {
     expect(report).toContain('regression checks, not new independent quality proof');
   });
 });
+
+describe('replay macro AUC (the gate’s hierarchical macro, D-110)', () => {
+  // Raters 1–3 are reading contexts of participant p1, rater 4 the only context of p2. Each rates
+  // 20 English articles (10 liked at 0.50…0.68, 10 disliked at 0.30…0.39); the base misorders two
+  // pairs per rater (AUC 0.98).
+  const raters = ['1', '2', '3', '4'];
+  const participant = (raterId: string) => (raterId === '4' ? 'p2' : 'p1');
+  const idsOf = (raterId: string) =>
+    Array.from({ length: 20 }, (_, i) => String(2000 + Number(raterId) * 100 + i));
+  const f = fixture(2);
+  const config = withConfigSha({
+    ...f.config,
+    raters: raters.map((raterId) => ({
+      raterId,
+      participantKey: participant(raterId),
+      contextName: null,
+      langs: ['en'],
+    })),
+    cohort: { articleIds: raters.flatMap(idsOf), sha: 'c4' },
+    assignments: Object.fromEntries(raters.map((r) => [r, idsOf(r)])),
+    ratings: raters.flatMap((raterId) =>
+      idsOf(raterId).map((articleId, i) => ({
+        raterId,
+        articleId,
+        rating: i < 10 ? (1 as const) : (-1 as const),
+        reason: null,
+        createdAt: '2026-09-20T10:00:00.000Z',
+      })),
+    ),
+    cards: [],
+  });
+  const articles = new Map(
+    raters.flatMap(idsOf).map((id) => [id, { lang: 'en', storyGroupId: `g${id}` }]),
+  );
+  /** Scores with the disliked items at `overrides[k]` (else 0.30 + 0.01·k). */
+  const scores = (runId: string, overrides: (raterId: string) => Record<number, number>) =>
+    raters.flatMap((raterId) =>
+      idsOf(raterId).map((articleId, i): RunAnswerRow => {
+        const k = i - 10;
+        const p = i < 10 ? 0.5 + 0.02 * i : (overrides(raterId)[k] ?? 0.3 + 0.01 * k);
+        return {
+          runId,
+          articleId,
+          cardId: null,
+          questionKey: `score.r${raterId}`,
+          answer: { score: p },
+        };
+      }),
+    );
+  const base = scores('1', () => ({ 0: 0.51, 1: 0.505 }));
+  // p1's contexts each fix one misordered pair (+0.01); p2's context adds two (−0.02).
+  const replay = scores('2', (raterId) =>
+    raterId === '4' ? { 0: 0.51, 1: 0.505, 2: 0.515, 3: 0.518 } : { 0: 0.51 },
+  );
+
+  it('weights participants equally: three +0.01 contexts and one −0.02 context fail', () => {
+    const diff = replayDiff({
+      config,
+      articles,
+      base,
+      replay,
+      baseRanker: mergeRankerConfig({}),
+      replayRanker: mergeRankerConfig({}),
+      replayStatus: 'complete',
+    });
+    const deltas = Object.fromEntries(diff.cells.map((c) => [c.raterId, c.auc.delta]));
+    for (const raterId of ['1', '2', '3']) expect(deltas[raterId]).toBeCloseTo(0.01, 9);
+    expect(deltas['4']).toBeCloseTo(-0.02, 9);
+    // A flat mean over the four cells would be +0.0025; the hierarchical macro is −0.005.
+    expect(diff.macro.participants).toBe(2);
+    expect(diff.macro.delta).toBeCloseTo((0.01 - 0.02) / 2, 9);
+    expect(diff.macro.ci).not.toBeNull();
+    expect(diff.verdict).toBe('fail');
+    expect(diff.reasons).toContain('macro AUC drops by 0.005');
+    expect(diff.reasons.some((r) => r.includes('AUC drops by 0.020'))).toBe(false);
+  });
+});

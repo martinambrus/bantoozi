@@ -17,6 +17,8 @@ import {
 import { compareBigIntStrings } from '@bantoozi/shared';
 
 import { asSnapshot } from '../dataset/snapshot.js';
+import type { RatedItem } from '../report/items.js';
+import { buildCells, macroAuc, pairedMacroDelta, type ScoreFn } from '../report/ranking.js';
 import { EvalCommandError, type EvalRuntime } from '../runtime.js';
 import {
   isExperimentId,
@@ -336,7 +338,18 @@ export interface PolicyCounts {
 
 export interface ReplayDiff {
   cells: ReplayCell[];
-  macro: { base: number | null; replay: number | null; delta: number | null };
+  /**
+   * The gate's hierarchical macro AUC (spec 10 §4, D-110): supported reading contexts averaged
+   * within each participant, then participants equally; the delta and its interval come from the
+   * gate's paired story-group bootstrap on the same cells.
+   */
+  macro: {
+    base: number | null;
+    replay: number | null;
+    delta: number | null;
+    ci: [number, number] | null;
+    participants: number;
+  };
   /** Mean |Δp| per question key (`enrich.<key>`, `card`), with the number of compared answers. */
   deltaP: Array<{ key: string; meanAbs: number; n: number }>;
   laneChange: { changed: number; total: number };
@@ -439,6 +452,9 @@ export function replayDiff(input: {
   }
 
   const cellItems = new Map<string, { raterId: string; lang: string; items: ScoredItem[] }>();
+  // Every rated pair as the gate's rated item (the macro cells and bootstrap reuse the gate's).
+  const participantOf = new Map(input.config.raters.map((r) => [r.raterId, r.participantKey]));
+  const rated: RatedItem[] = [];
   let laneChanged = 0;
   let laneTotal = 0;
   const policy = {
@@ -457,6 +473,20 @@ export function replayDiff(input: {
     expected += 1;
     const b = base.scores.get(key) ?? null;
     const r = replay.scores.get(key) ?? null;
+    rated.push({
+      key,
+      raterId: rating.raterId,
+      contextId: rating.raterId,
+      participantKey: participantOf.get(rating.raterId) ?? rating.raterId,
+      articleId: rating.articleId,
+      lang: article.lang,
+      // Not read by the macro or the bootstrap (the replay compares the run's whole cohort).
+      split: 'dev',
+      groupId: article.storyGroupId,
+      firstSeenAt: 0,
+      liked: rating.rating === 1,
+      title: null,
+    });
     if (b !== null) baseValid += 1;
     if (r !== null) replayValid += 1;
     const cards = cardsByRater.get(rating.raterId) ?? [];
@@ -520,14 +550,24 @@ export function replayDiff(input: {
       };
     });
   const eligible = cells.filter((cell) => cell.eligible);
-  const mean = (values: number[]) =>
-    values.length === 0 ? null : values.reduce((s, v) => s + v, 0) / values.length;
-  const macroBase = mean(eligible.flatMap((c) => (c.auc.base === null ? [] : [c.auc.base])));
-  const macroReplay = mean(eligible.flatMap((c) => (c.auc.replay === null ? [] : [c.auc.replay])));
+  // The macro no-drop rule uses the gate's aggregation: context cells, hierarchical macro and the
+  // paired story-group bootstrap (report/ranking.ts), so a replay and the gate agree.
+  const contextCells = buildCells(rated, 'context');
+  const scoreFrom =
+    (index: typeof base): ScoreFn =>
+    (item) =>
+      index.scores.get(item.key) ?? null;
+  const macroBase = macroAuc(contextCells, scoreFrom(base));
+  const macroReplay = macroAuc(contextCells, scoreFrom(replay));
+  const delta = pairedMacroDelta(contextCells, scoreFrom(replay), scoreFrom(base), {
+    seed: `${input.config.seed}|macro`,
+  });
   const macro = {
-    base: macroBase,
-    replay: macroReplay,
-    delta: macroBase === null || macroReplay === null ? null : macroReplay - macroBase,
+    base: macroBase.value,
+    replay: macroReplay.value,
+    delta: delta.estimate,
+    ci: delta.lo === null || delta.hi === null ? null : ([delta.lo, delta.hi] as [number, number]),
+    participants: macroReplay.participants,
   };
 
   // Mean |Δp| per question key.
@@ -696,7 +736,11 @@ export function renderReplayReport(input: {
   }
   lines.push('');
   lines.push(
-    `Macro AUC over eligible cells: base ${fmt(diff.macro.base)}, replay ${fmt(diff.macro.replay)}, Δ ${fmt(diff.macro.delta)}.`,
+    `Macro AUC (hierarchical, as the gate: supported contexts within ${diff.macro.participants} participant(s), then participants): ` +
+      `base ${fmt(diff.macro.base)}, replay ${fmt(diff.macro.replay)}, Δ ${fmt(diff.macro.delta)}` +
+      (diff.macro.ci === null
+        ? '.'
+        : `, 95 % CI [${fmt(diff.macro.ci[0])}, ${fmt(diff.macro.ci[1])}] (paired story-group bootstrap).`),
   );
   lines.push('');
   lines.push('## Mean |Δp| per question key');
