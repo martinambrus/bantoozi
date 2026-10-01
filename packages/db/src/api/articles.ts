@@ -981,6 +981,9 @@ async function loadItemRows(
         SELECT r.id::text AS id, r.status FROM analysis_requests r
          WHERE r.user_id = ${user}::uuid AND r.article_id = a.id
            AND r.article_revision = a.content_revision
+           -- Only this view's feed and current inference version: another feed's request never
+           -- shows on a direct off-feed view (spec 06 §6.4).
+           AND r.feed_id = x.display_feed_id AND r.inference_version = s.inference_version
          ORDER BY r.created_at DESC LIMIT 1) req ON true`);
   const byId = new Map(result.rows.map((row) => [row.id, row]));
   const projected = contexts.map((context) => {

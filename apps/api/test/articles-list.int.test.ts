@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { createCard } from '@bantoozi/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -186,6 +188,41 @@ describe('GET /articles: lanes, statuses and tiers', () => {
     expect(ids(await list(r, { lane: 'for_you', feedId: active }))).toEqual([article]);
     const offView = await list(r, { lane: 'new', feedId: off });
     expect(offView.items.map((i) => [i.id, i.lane, i.pLike])).toEqual([[article, 'new', null]]);
+  });
+});
+
+describe('GET /articles: analysis status per view', () => {
+  it("never shows another feed's analysis request on a direct off-feed view", async () => {
+    const r = await newReader(h);
+    const off = await subscribedFeed(h, r.user.id, { mode: 'off' });
+    const training = await subscribedFeed(h, r.user.id, { mode: 'training' });
+    const article = await carriedArticle(h, [off, training]);
+    const requestId = randomUUID();
+    const client = await h.owner.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SELECT set_config('app.user_id', $1, true)", [r.user.id]);
+      await client.query(
+        `INSERT INTO analysis_requests (id, user_id, feed_id, article_id, article_revision,
+                                        inference_version, input_snapshot, input_sha)
+         SELECT $1, $2, $3, a.id, a.content_revision, s.inference_version, '{}'::jsonb,
+                encode(sha256(convert_to('{}'::jsonb::text, 'UTF8')), 'hex')
+           FROM articles a JOIN subscriptions s ON s.user_id = $2 AND s.feed_id = $3
+          WHERE a.id = $4`,
+        [requestId, r.user.id, training, article],
+      );
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+    const offView = await list(r, { lane: 'new', feedId: off });
+    expect(offView.items.map((i) => i.analysis)).toEqual([
+      { mode: 'off', status: 'not_requested', requestId: null },
+    ]);
+    const trainingView = await list(r, { lane: 'new', feedId: training });
+    expect(trainingView.items.map((i) => i.analysis)).toEqual([
+      { mode: 'training', status: 'pending', requestId },
+    ]);
   });
 });
 
