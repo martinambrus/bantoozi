@@ -65,10 +65,13 @@ export async function buildSampleRows(
     known.set(group, row.split);
     if (!groupLang.has(group)) groupLang.set(group, row.lang);
   }
+  // Article counts per side, each article counted under its story group's language.
   const knownCounts = new Map<string, { dev: number; test: number }>();
-  for (const [group, lang] of groupLang) {
+  for (const row of existing) {
+    const group = row.snapshot['storyGroupId'];
+    const lang = typeof group === 'string' ? (groupLang.get(group) ?? row.lang) : row.lang;
     const counts = knownCounts.get(lang) ?? { dev: 0, test: 0 };
-    counts[known.get(group) ?? 'dev'] += 1;
+    counts[row.split] += 1;
     knownCounts.set(lang, counts);
   }
   const splits = assignSplits(

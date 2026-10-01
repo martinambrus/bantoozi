@@ -114,7 +114,9 @@ settings, regardless of profile.
 - **Split before looking at outputs:** deterministic 70% development / 30% test, stratified by
   language and grouped by story (all duplicates and all raters' copies of a story stay together).
   The story-group id is `c<story_cluster_id>` for a clustered article and otherwise `t<sha16>` of
-  its normalized title, since the ingest-only golden database does not cluster (D-97).
+  its normalized title, since the ingest-only golden database does not cluster (D-97). The 70%
+  share counts articles, not story groups: whole groups are placed in a seeded order so each
+  language's development article count lands nearest its target.
   Persist `eval.sample.split` per `dataset_version` and a split-manifest hash. Unclustered duplicates
   found later require a new split/version before G1; do not move selected difficult items across the
   split.
