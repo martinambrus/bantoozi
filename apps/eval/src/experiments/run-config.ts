@@ -126,6 +126,11 @@ export const RunConfigSchema = z.object({
       baseRankerSource: z.enum(['base_run', 'settings']).optional(),
       /** The effective ranker config of the replay side (baseline + `--thresholds`). */
       replayRanker: z.record(z.string(), z.unknown()).optional(),
+      /**
+       * `keyword`: the compared run is the B1 keyword baseline of a first LLM fallback enablement
+       * (spec 10 §6); its scores have no card answers, so only the AUC rules apply.
+       */
+      baseline: z.enum(['run', 'keyword']).optional(),
     })
     .optional(),
   /**

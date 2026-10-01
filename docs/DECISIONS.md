@@ -837,7 +837,16 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   (each first creates the next open version: `correctionOf`, `assignmentsAfter`,
   `cardsChangedAfter`, `facetsChangedAfter`; saving unchanged labels creates none) reaches only
   versions frozen after it. A version frozen before 0016 gets its snapshot the next time a run freezes it.
-  Spec 10 §3 updated.
+  A resumed run's `results.cost` covers every invocation: billed, failed-call, token and cache
+  figures are summed, overall and per language; the estimate stays the first invocation's whole-run
+  estimate and `cost.invocations` counts the invocations. In-flight progress carries the earlier cost
+  forward; an invocation that ended without recording its cost (a crash) marks the cost `incomplete`
+  (a lower bound), because `engine_calls` cannot be attributed to a run afterwards. `--max-usd` stays
+  a per-invocation cap; a resume prints what earlier invocations billed. For the first enablement of
+  `LLM_FALLBACK_ENABLED` (spec 10 §6), `eval replay --against <B1 run> --engine llm` replays the
+  fallback classifier on E1's variant with B1's frozen inputs, stored as `replay:E1` with
+  `replay.baseline = 'keyword'`; only the AUC pass rules apply (B1 has no card answers or lane
+  policy), and a B1 base without `--engine llm` is refused. Spec 10 §3 updated.
 - D-111: 2026-10-01 M3a-T6 — eval routers use a process-local circuit breaker, so an evaluation
   never trips or reads the production breaker (spec 04 §1). The LLM fallback is off and the pinned
   engine has no automatic fallback, so a run never mixes engines silently.

@@ -208,6 +208,31 @@ describe('replayDiff', () => {
     expect(diff.reasons).toContain('the hard-hide false-negative rate increases');
   });
 
+  it('applies only the AUC rules against the B1 keyword baseline (first enablement)', () => {
+    const hiding = rows(
+      '2',
+      f.ids,
+      (i) => 0.6 + (i % 5) / 20,
+      (i) => 0.1 + (i % 7) / 20,
+      {
+        never: (i) => (i % 4 === 0 ? 0.95 : 0.02),
+        enrich: 0.8,
+      },
+    );
+    const diff = replayDiff({
+      config: f.config,
+      articles: f.articles,
+      base,
+      replay: hiding,
+      baseRanker: mergeRankerConfig({}),
+      replayRanker: mergeRankerConfig({}),
+      replayStatus: 'complete',
+      keywordBaseline: true,
+    });
+    expect(diff.policy.replay.hardHideFalseNegatives).toBeGreaterThan(0);
+    expect(diff.reasons).not.toContain('the hard-hide false-negative rate increases');
+  });
+
   it('applies proposed thresholds to the replay side only', () => {
     const same = rows(
       '2',

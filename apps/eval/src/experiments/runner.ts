@@ -34,6 +34,7 @@ import type { CardAnswer } from '@bantoozi/ranker';
 import { parseSetting, type CardTextMode, type JsonValue } from '@bantoozi/shared';
 import { canonicalSha256 } from '@bantoozi/shared/server';
 import { TRANSLATION_POLICY_VERSION } from '@bantoozi/translate';
+import { z } from 'zod';
 
 import { asSnapshot, type EvalSnapshot } from '../dataset/snapshot.js';
 import { EvalCommandError, type EvalRuntime } from '../runtime.js';
@@ -201,6 +202,13 @@ export interface RunResults {
      * article; calls about no article under `und`). Every total is the sum of its split.
      */
     byLang: Record<string, { estimatedUsd: number; billedUsd: number; cacheSavingsUsd: number }>;
+    /**
+     * Invocations this cost covers (a `--resume` adds one; D-122). Billed, failed-call, token and
+     * cache figures are summed over them; the estimate is the first invocation's whole-run one.
+     */
+    invocations?: number;
+    /** True when an earlier invocation ended without recording its cost (a crash): a lower bound. */
+    incomplete?: boolean;
   };
   latencyMs: Record<string, { p50: number; p95: number; n: number }>;
   cacheLookupMs: { p50: number; p95: number; n: number };
@@ -1173,6 +1181,7 @@ export async function runExperiment(
   let dataset: DatasetRow;
   let config: Omit<RunConfig, 'configSha'>;
   let existingRunId: string | null = null;
+  let prior: { cost: RunCost | null; incomplete: boolean } = { cost: null, incomplete: false };
   const cardMode: CardTextMode =
     def.variant.cards === 'selected' ? (options.cardTextMode ?? 'as_written') : def.variant.cards;
   if (options.replay !== undefined) {
@@ -1191,7 +1200,13 @@ export async function runExperiment(
     const { configSha: _sha, ...stored } = parseRunConfig(run.config);
     config = stored;
     existingRunId = run.id;
+    prior = priorRunCost(run.results);
     dataset = await resolveDataset(rt, run.datasetVersion);
+    // Information only: `--max-usd` caps this invocation (spec 10 §3); earlier ones spent this.
+    rt.out(
+      `run ${run.id}: earlier invocations billed ${formatUsd(prior.cost?.billedUsd ?? 0)}` +
+        `${prior.incomplete ? ' (as recorded; an earlier invocation recorded no cost, so this is a lower bound)' : ''}\n`,
+    );
   } else {
     dataset = await resolveDataset(rt, options.datasetVersion);
     if (def.skipReason !== null) {
@@ -1321,13 +1336,23 @@ export async function runExperiment(
         plan,
         sink,
         (done, total) =>
-          updateRunResults(rt.db, id, { status: 'running', progress: { done, total } }),
+          updateRunResults(rt.db, id, {
+            status: 'running',
+            progress: { done, total },
+            // Carried while in flight, so a crash of this invocation keeps the earlier ones' cost.
+            ...(prior.cost === null ? {} : { cost: { ...prior.cost, incomplete: true } }),
+          }),
         Math.max(1, options.concurrency ?? 4),
       );
     } catch (error) {
       await finishRun(rt.db, id, {
         status: 'aborted',
         reason: `error: ${error instanceof Error ? error.name : 'unknown'}`,
+        cost: mergeRunCost(
+          prior.cost,
+          await invocationCost(rt, env, estimateEnv),
+          prior.incomplete,
+        ),
       });
       throw error;
     }
@@ -1335,13 +1360,8 @@ export async function runExperiment(
     // 5. Scores and results.
     const scored = scoreRows(plan, out);
     if (scored.rows.length > 0) await upsertRunAnswers(rt.db, id, scored.rows);
-    const spend = await runCallSpend(rt.db, env.stats.logicalRequestIds);
-    const byLang = costByLang(
-      estimateEnv.stats.byLang,
-      env.stats.byLang,
-      await runCallSpendByArticle(rt.db, env.stats.logicalRequestIds),
-      env.articleLang,
-    );
+    const current = await invocationCost(rt, env, estimateEnv);
+    const cost = mergeRunCost(prior.cost, current, prior.incomplete);
     const verdict = statusOf(env.abort, scored.coverage);
     const results: RunResults = {
       ...verdict,
@@ -1350,18 +1370,7 @@ export async function runExperiment(
         ? {}
         : { translationFallbacks: scored.translationFallbacks }),
       ...(scored.cardTextFallbacks === null ? {} : { cardTextFallbacks: scored.cardTextFallbacks }),
-      cost: {
-        // Totals are the sums of the per-language split (identical up to float rounding to the
-        // estimate printed above, the engine_calls sum and the live savings counter).
-        estimatedUsd: sumOf(byLang, 'estimatedUsd'),
-        billedUsd: sumOf(byLang, 'billedUsd'),
-        cacheHits: env.stats.cacheHits,
-        cacheMisses: env.stats.cacheMisses,
-        cacheSavingsUsd: sumOf(byLang, 'cacheSavingsUsd'),
-        failedCallUsd: spend.failedCallUsd,
-        tokens: { input: spend.inputTokens, output: spend.outputTokens },
-        byLang,
-      },
+      cost,
       latencyMs: summarizeLatency(env.stats),
       cacheLookupMs: latencySummary(env.stats.cacheLookupMs),
       ...(plan.e6 === null
@@ -1387,13 +1396,125 @@ export async function runExperiment(
     };
     await finishRun(rt.db, id, results as unknown as Record<string, unknown>);
     rt.out(
-      `run ${id} ${results.status}: billed ${formatUsd(spend.billedUsd)}, ` +
-        `${env.stats.cacheHits} cache hit(s), ${env.stats.cacheMisses} miss(es)\n`,
+      `run ${id} ${results.status}: billed ${formatUsd(current.billedUsd)}, ` +
+        `${env.stats.cacheHits} cache hit(s), ${env.stats.cacheMisses} miss(es)` +
+        (cost.invocations === undefined
+          ? '\n'
+          : `; ${cost.invocations} invocations billed ${formatUsd(cost.billedUsd)}\n`),
     );
     return { runId: id, status: results.status, estimate, results };
   } finally {
     await translators.close();
   }
+}
+
+const LangCostSchema = z.object({
+  estimatedUsd: z.number(),
+  billedUsd: z.number(),
+  cacheSavingsUsd: z.number(),
+});
+const StoredCostSchema = z.object({
+  estimatedUsd: z.number(),
+  billedUsd: z.number(),
+  cacheHits: z.number(),
+  cacheMisses: z.number(),
+  cacheSavingsUsd: z.number(),
+  failedCallUsd: z.number(),
+  tokens: z.object({ input: z.number(), output: z.number() }),
+  byLang: z.record(z.string(), LangCostSchema).default({}),
+  invocations: z.number().int().positive().optional(),
+  incomplete: z.boolean().optional(),
+});
+type RunCost = RunResults['cost'];
+
+/**
+ * The cost an earlier invocation of a resumed run recorded, or `incomplete` when it recorded none
+ * (it crashed while `running`; its engine calls are not attributable to the run any more).
+ */
+export function priorRunCost(results: Record<string, unknown> | null): {
+  cost: RunCost | null;
+  incomplete: boolean;
+} {
+  const parsed = StoredCostSchema.safeParse(results?.['cost']);
+  if (parsed.success) {
+    const { invocations, incomplete, ...cost } = parsed.data;
+    return {
+      cost: { ...cost, ...(invocations === undefined ? {} : { invocations }) },
+      incomplete: incomplete === true,
+    };
+  }
+  return { cost: null, incomplete: true };
+}
+
+/**
+ * The cost of a resumed run (D-122): this invocation's billed, failed-call, token and cache figures
+ * added to the earlier invocations' (per language too); the estimate stays the first invocation's
+ * whole-run estimate when there is one. Totals remain the sums of the per-language split.
+ */
+export function mergeRunCost(
+  prior: RunCost | null,
+  current: RunCost,
+  incomplete: boolean,
+): RunCost {
+  if (prior === null) return incomplete ? { ...current, incomplete: true } : current;
+  const byLang: RunCost['byLang'] = {};
+  const cell = (lang: string) =>
+    (byLang[lang] ??= { estimatedUsd: 0, billedUsd: 0, cacheSavingsUsd: 0 });
+  const priorHasEstimate = Object.keys(prior.byLang).length > 0 || prior.estimatedUsd > 0;
+  for (const [lang, c] of Object.entries(prior.byLang)) {
+    const target = cell(lang);
+    target.estimatedUsd += c.estimatedUsd;
+    target.billedUsd += c.billedUsd;
+    target.cacheSavingsUsd += c.cacheSavingsUsd;
+  }
+  for (const [lang, c] of Object.entries(current.byLang)) {
+    const target = cell(lang);
+    if (!priorHasEstimate) target.estimatedUsd += c.estimatedUsd;
+    target.billedUsd += c.billedUsd;
+    target.cacheSavingsUsd += c.cacheSavingsUsd;
+  }
+  return {
+    estimatedUsd: sumOf(byLang, 'estimatedUsd'),
+    billedUsd: sumOf(byLang, 'billedUsd'),
+    cacheHits: prior.cacheHits + current.cacheHits,
+    cacheMisses: prior.cacheMisses + current.cacheMisses,
+    cacheSavingsUsd: sumOf(byLang, 'cacheSavingsUsd'),
+    failedCallUsd: prior.failedCallUsd + current.failedCallUsd,
+    tokens: {
+      input: prior.tokens.input + current.tokens.input,
+      output: prior.tokens.output + current.tokens.output,
+    },
+    byLang,
+    invocations: (prior.invocations ?? 1) + 1,
+    ...(incomplete || prior.incomplete === true ? { incomplete: true } : {}),
+  };
+}
+
+/** This invocation's cost: its own logical requests' engine calls, cache counters and estimate. */
+async function invocationCost(
+  rt: EvalRuntime,
+  env: CallEnv,
+  estimateEnv: CallEnv,
+): Promise<RunCost> {
+  const spend = await runCallSpend(rt.db, env.stats.logicalRequestIds);
+  const byLang = costByLang(
+    estimateEnv.stats.byLang,
+    env.stats.byLang,
+    await runCallSpendByArticle(rt.db, env.stats.logicalRequestIds),
+    env.articleLang,
+  );
+  return {
+    // Totals are the sums of the per-language split (identical up to float rounding to the
+    // estimate printed above, the engine_calls sum and the live savings counter).
+    estimatedUsd: sumOf(byLang, 'estimatedUsd'),
+    billedUsd: sumOf(byLang, 'billedUsd'),
+    cacheHits: env.stats.cacheHits,
+    cacheMisses: env.stats.cacheMisses,
+    cacheSavingsUsd: sumOf(byLang, 'cacheSavingsUsd'),
+    failedCallUsd: spend.failedCallUsd,
+    tokens: { input: spend.inputTokens, output: spend.outputTokens },
+    byLang,
+  };
 }
 
 /** E5 and other stubs: a run row whose results say `skipped` and why (no freeze, no calls). */

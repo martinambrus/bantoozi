@@ -213,6 +213,13 @@ describe('eval run (M3a-T6)', () => {
       await probe.rt.close();
     }
     expect(estimate).toBeGreaterThan(1);
+    const spentSoFar = async () =>
+      (
+        await ctx.owner.query<{ usd: number }>(
+          `SELECT coalesce(sum(cost_usd), 0)::float8 AS usd FROM engine_calls`,
+        )
+      ).rows[0]!.usd;
+    const s0 = await spentSoFar();
     const { rt } = runtime(ctx, env);
     let aborted;
     try {
@@ -234,6 +241,7 @@ describe('eval run (M3a-T6)', () => {
     expect((partial['card'] ?? 0) + (partial['enrich'] ?? 0)).toBeGreaterThan(0);
     const billed = (abortedRow.results as { cost: { billedUsd: number } }).cost.billedUsd;
     expect(billed).toBeLessThanOrEqual(estimate / 3 + 1e-9);
+    expect(billed).toBeCloseTo((await spentSoFar()) - s0, 9);
 
     // The CLI exits 3 on an abort (cap 0 with an uncached run of the same price).
     await expect(
@@ -243,6 +251,17 @@ describe('eval run (M3a-T6)', () => {
       }),
     ).rejects.toMatchObject({ name: 'EvalCommandError', exitCode: 3 });
 
+    type Cost = {
+      billedUsd: number;
+      estimatedUsd: number;
+      cacheSavingsUsd: number;
+      tokens: { input: number; output: number };
+      byLang: Record<string, { billedUsd: number }>;
+      invocations: number;
+      incomplete?: boolean;
+    };
+    const abortedCost = (abortedRow.results as { cost: Cost }).cost;
+    const s2 = await spentSoFar();
     const resumed = runtime(ctx, env);
     let done;
     try {
@@ -258,6 +277,22 @@ describe('eval run (M3a-T6)', () => {
     expect(done.runId).toBe(aborted.runId);
     expect(done.status).toBe('complete');
     expect(resumed.out()).toContain(`resuming run ${aborted.runId!}`);
+    // Information only: `--max-usd` caps each invocation (spec 10 §3).
+    expect(resumed.out()).toMatch(/earlier invocations billed \$[\d.]+\n/);
+    // The final cost covers both invocations (D-122): billed = first + resumed invocation.
+    const finalCost = ((await runRow(ctx, aborted.runId!)).results as { cost: Cost }).cost;
+    const resumedSpend = (await spentSoFar()) - s2;
+    expect(resumedSpend).toBeGreaterThan(0);
+    expect(finalCost.billedUsd).toBeCloseTo(abortedCost.billedUsd + resumedSpend, 9);
+    expect(finalCost.billedUsd).toBeCloseTo(
+      Object.values(finalCost.byLang).reduce((sum, c) => sum + c.billedUsd, 0),
+      9,
+    );
+    expect(finalCost.invocations).toBe(2);
+    expect(finalCost.incomplete).toBeUndefined();
+    expect(finalCost.estimatedUsd).toBeCloseTo(abortedCost.estimatedUsd, 9);
+    expect(finalCost.cacheSavingsUsd).toBeGreaterThanOrEqual(abortedCost.cacheSavingsUsd);
+    expect(finalCost.tokens.input).toBeGreaterThan(abortedCost.tokens.input);
     const full = await answerCounts(ctx, aborted.runId!);
     expect(full['card']).toBe(32 * 4 + 24);
     expect(full['score']).toBe(56);

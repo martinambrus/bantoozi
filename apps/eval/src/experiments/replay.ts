@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { getRun, loadRunAnswers, loadSample, type RunAnswerRow } from '@bantoozi/db';
 import { DEFAULT_LLM_MAX_OUTPUT_TOKENS } from '@bantoozi/engine';
-import { ENRICH_V1, type Answer } from '@bantoozi/questions';
+import { ENRICH_V1, MATCH_V1, type Answer } from '@bantoozi/questions';
 import {
   applyLanePolicy,
   evaluateNeverCards,
@@ -18,7 +18,13 @@ import { compareBigIntStrings } from '@bantoozi/shared';
 
 import { asSnapshot } from '../dataset/snapshot.js';
 import { EvalCommandError, type EvalRuntime } from '../runtime.js';
-import { isExperimentId, REPLAYABLE_EXPERIMENTS } from './definitions.js';
+import {
+  isExperimentId,
+  KEYWORD_BASELINE_EXPERIMENT,
+  KEYWORD_BASELINE_REPLAY,
+  REPLAYABLE_EXPERIMENTS,
+  type ExperimentId,
+} from './definitions.js';
 import { pairedAuc, type PairedAuc, type ScoredItem } from './paired-auc.js';
 import { parseRunConfig, type RunConfig, type RunEngine } from './run-config.js';
 import {
@@ -161,12 +167,25 @@ export async function replayRun(rt: EvalRuntime, options: ReplayOptions): Promis
     throw new EvalCommandError(`run ${base.id} has not finished; replay a finished run`);
   }
   const baseConfig = parseRunConfig(base.config);
-  const experiment = baseConfig.experiment;
-  if (!isExperimentId(experiment) || !REPLAYABLE_EXPERIMENTS.includes(experiment)) {
+  const baseExperiment = baseConfig.experiment;
+  const keyword = baseExperiment === KEYWORD_BASELINE_EXPERIMENT;
+  if (
+    !isExperimentId(baseExperiment) ||
+    !(REPLAYABLE_EXPERIMENTS.includes(baseExperiment) || keyword)
+  ) {
     throw new EvalCommandError(
-      `run ${base.id} (${base.experiment}) cannot be replayed; replayable: ${REPLAYABLE_EXPERIMENTS.join(', ')}`,
+      `run ${base.id} (${base.experiment}) cannot be replayed; replayable: ${REPLAYABLE_EXPERIMENTS.join(', ')}` +
+        ` (and ${KEYWORD_BASELINE_EXPERIMENT} with --engine llm for a first LLM fallback enablement)`,
     );
   }
+  if (keyword && options.engine !== 'llm') {
+    throw new EvalCommandError(
+      `a ${KEYWORD_BASELINE_EXPERIMENT} run is the baseline only for a first enablement of the LLM ` +
+        'fallback: replay it with --engine llm (spec 10 §6)',
+    );
+  }
+  // Against the keyword baseline the replay side is the fallback classifier on E1's variant.
+  const experiment: ExperimentId = keyword ? KEYWORD_BASELINE_REPLAY : baseExperiment;
   assertCompleteBase(base.id, base.results);
   const questionSet = options.questionSet ?? ENRICH_V1.version;
   if (questionSet !== ENRICH_V1.version) {
@@ -207,6 +226,16 @@ export async function replayRun(rt: EvalRuntime, options: ReplayOptions): Promis
   const { configSha: _sha, ...stored } = baseConfig;
   const config: Omit<RunConfig, 'configSha'> = {
     ...stored,
+    ...(keyword
+      ? {
+          experiment,
+          variant: { state: 'native', cards: 'as_written' } as RunConfig['variant'],
+          questionSets: {
+            enrich: { version: ENRICH_V1.version, sha: ENRICH_V1.sha256 },
+            match: { version: MATCH_V1.version, sha: MATCH_V1.sha256 },
+          },
+        }
+      : {}),
     engine,
     maxUsd,
     baseRunId: base.id,
@@ -220,6 +249,7 @@ export async function replayRun(rt: EvalRuntime, options: ReplayOptions): Promis
       baseRanker: { ...baseRanker },
       baseRankerSource: baseline.source,
       replayRanker: { ...replayRanker },
+      baseline: keyword ? 'keyword' : 'run',
     },
   };
   const translations = frozenTranslations(
@@ -258,6 +288,7 @@ export async function replayRun(rt: EvalRuntime, options: ReplayOptions): Promis
     baseRanker,
     replayRanker,
     replayStatus: run.status,
+    keywordBaseline: keyword,
   });
   const report = renderReplayReport({
     baseRunId: base.id,
@@ -391,6 +422,11 @@ export function replayDiff(input: {
   baseRanker: RankerConfig;
   replayRanker: RankerConfig;
   replayStatus: RunStatus | 'declined';
+  /**
+   * The base is the B1 keyword baseline (a first LLM fallback enablement): it has no card answers
+   * and so no lane policy, and only the AUC rules of the pass rule apply.
+   */
+  keywordBaseline?: boolean;
 }): ReplayDiff {
   const base = answerIndex(input.base);
   const replay = answerIndex(input.replay);
@@ -551,6 +587,8 @@ export function replayDiff(input: {
       verdict = 'fail';
       reasons.push(`macro AUC drops by ${(-macro.delta).toFixed(3)}`);
     }
+  }
+  if (verdict !== 'inconclusive' && input.keywordBaseline !== true) {
     const fnRate = (p: typeof policy.base) =>
       p.liked === 0 ? 0 : p.hardHideFalseNegatives / p.liked;
     if (fnRate(policy.replay) > fnRate(policy.base)) {
@@ -606,6 +644,13 @@ export function renderReplayReport(input: {
       `question set \`${input.change?.questionSet ?? ENRICH_V1.version}\`, thresholds ` +
       (thresholds === null ? 'unchanged' : `\`${JSON.stringify(thresholds)}\` (replay side only)`),
   );
+  if (input.change?.baseline === 'keyword') {
+    lines.push(
+      `- Baseline: the ${input.baseExperiment} keyword baseline of a first LLM fallback enablement ` +
+        '(spec 10 §6); the replay side is the fallback classifier on E1’s variant. Only the AUC ' +
+        'rules apply: the keyword baseline has no card answers, so its lane rows are informational.',
+    );
+  }
   if (input.change?.baseRanker !== undefined) {
     const source =
       input.change.baseRankerSource === 'settings'

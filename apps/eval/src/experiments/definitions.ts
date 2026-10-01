@@ -194,3 +194,11 @@ export function experimentDefinition(id: ExperimentId): ExperimentDefinition {
 
 /** The experiments a replay can re-run with a proposed change (spec 10 §6): Call B scorers. */
 export const REPLAYABLE_EXPERIMENTS: readonly ExperimentId[] = ['E1', 'E2', 'E3', 'E3b', 'E4'];
+
+/**
+ * The keyword baseline a first enablement of `LLM_FALLBACK_ENABLED` replays against (spec 10 §6:
+ * "or against the B1 keyword baseline for a first enablement"): only with `--engine llm`, whose
+ * replay side is the fallback classifier on E1's variant (native text, cards as written).
+ */
+export const KEYWORD_BASELINE_EXPERIMENT: ExperimentId = 'B1';
+export const KEYWORD_BASELINE_REPLAY: ExperimentId = 'E1';

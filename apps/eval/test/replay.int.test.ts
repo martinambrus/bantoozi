@@ -34,7 +34,7 @@ beforeAll(async () => {
   ctx = await setupRunnerTest();
   await seedGolden(ctx);
   reportDir = await mkdtemp(path.join(tmpdir(), 'bantoozi-eval-replay-'));
-  for (const experiment of ['E1', 'E3', 'B0'] as const) {
+  for (const experiment of ['E1', 'E3', 'B0', 'B1'] as const) {
     const { rt } = runtime(ctx);
     try {
       const result = await runExperiment(rt, { experiment, yes: true, gitSha: 'base' });
@@ -125,6 +125,58 @@ describe('eval replay (M3a-T6)', () => {
     );
     expect(calls.rows).toEqual([{ kind: 'eval', engine: 'llm' }]);
     expect(result.report).toContain('engine `llm`, model `glm-5.3-flash`');
+  });
+
+  it('replays the fallback classifier against the B1 keyword baseline (first enablement)', async () => {
+    // Only `--engine llm` may use the keyword baseline (spec 10 §6).
+    const refused = runtime(ctx);
+    try {
+      await expect(
+        replayRun(refused.rt, { againstRunId: runs['B1']!, yes: true, reportPath: null }),
+      ).rejects.toMatchObject({ message: /baseline only for a first enablement/ });
+    } finally {
+      await refused.rt.close();
+    }
+    const typesafeBefore = ctx.typesafe.requestCount();
+    const { rt } = runtime(ctx);
+    let result;
+    try {
+      result = await replayRun(rt, {
+        againstRunId: runs['B1']!,
+        engine: 'llm',
+        yes: true,
+        gitSha: 'replay',
+        reportPath: path.join(reportDir, 'b1.md'),
+      });
+    } finally {
+      await rt.close();
+    }
+    expect(ctx.typesafe.requestCount()).toBe(typesafeBefore);
+    expect(result.run.status).toBe('complete');
+    const row = await runRow(ctx, result.run.runId!);
+    expect(row.experiment).toBe('replay:E1');
+    expect(row.config).toMatchObject({
+      experiment: 'E1',
+      variant: { state: 'native', cards: 'as_written' },
+      questionSets: { enrich: { version: 'enrich-v1' } },
+      engine: { provider: 'llm', requiredEngine: 'llm' },
+      baseRunId: runs['B1'],
+      replay: { of: runs['B1'], engine: 'llm', baseline: 'keyword' },
+    });
+    // The same frozen cohort and ground truth as the keyword baseline.
+    const b1 = await runRow(ctx, runs['B1']!);
+    const cohort = (c: unknown) => (c as { cohort: { sha: string } }).cohort.sha;
+    expect(cohort(row.config)).toBe(cohort(b1.config));
+    const counts = await answerCounts(ctx, result.run.runId!);
+    expect(counts['score']).toBe(56);
+    expect(counts['card']).toBeGreaterThan(0);
+    expect(result.report).toContain(`# Replay ${result.run.runId!} vs run ${runs['B1']!} (B1)`);
+    expect(result.report).toContain('keyword baseline of a first LLM fallback enablement');
+    expect(result.verdict).not.toBeNull();
+    // Only the AUC rules apply against the keyword baseline.
+    expect(result.report).not.toMatch(
+      /hard-hide false-negative rate increases|For You precision falls/,
+    );
   });
 
   it('reuses the base run’s frozen translations (no LibreTranslate request)', async () => {
