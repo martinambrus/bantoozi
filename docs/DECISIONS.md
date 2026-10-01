@@ -875,6 +875,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   single answer from any other engine makes the run ineligible.
   The G1 report shows an unmeasured language as `native (unmeasured default, unvalidated)`, the
   value g1.json writes and apply-g1 applies, never as "current setting kept".
+  Step 1 ranks each candidate set (B1/B1-T, and E1/E2/E3/E3b) on the development items every eligible
+  candidate of that set scored, so no baseline or core candidate wins by missing harder items, and
+  the report's development macro column shows those set-paired values for these runs.
 - D-108: 2026-10-01 M3a-T7 — `apply-g1` semantics spec 10 §1 leaves open. `language_modes` is merged
   over the stored modes (a language outside the gate keeps its stored mode; unmeasured gate languages are written as `native`, D-107); `ranker.thresholds` is replaced whole. A
   key is written only when its effective value changes (a missing row counts as its default), so a
@@ -976,7 +979,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   declined at either prompt leaves the version open. No rating, card or assignment can land between
   the freeze and the config snapshot, and the card text is still translated before the run row. E6
   and E7 apply `--raters` to the base run's frozen raters, ratings, assignments and cards, and an id
-  that is not a base-run rater is refused (`unknown rater id in --raters`).
+  that is not a base-run rater is refused (`unknown rater id in --raters`). The inputs compared
+  between confirmation and freeze also cover the seed, the deployed `ranker.thresholds` (E6 plans
+  with them) and the base run id, so a change to any of them forces a new estimate.
 - D-111: 2026-10-01 M3a-T6 — eval routers use a process-local circuit breaker, so an evaluation
   never trips or reads the production breaker (spec 04 §1). The LLM fallback is off and the pinned
   engine has no automatic fallback, so a run never mixes engines silently.
@@ -1046,7 +1051,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `rankerThresholds` frozen in its config over the defaults (the stored setting for a config
   without them), the same helper as the replay baseline (`runRankerConfig`), never the defaults. E6
   suggestions and the E7 target read each rater's own E1 answers: that rater's `card.r<raterId>` copy
-  of a shared card id first (a failed copy counts as no answer), then the shared `card` answer.
+  of a shared card id first (a failed copy counts as no answer), then the shared `card` answer. An
+  article is an E7 candidate when the rater E7 picks for it has such answers, so a rater's own
+  successful copy keeps an article whose shared requests all failed.
 - D-115: 2026-10-01 M3a-T8 — the dry-run database is copied from the migrated test template
   (`TEST_ADMIN_DATABASE_URL` is used only to create and drop it, under the template advisory lock)
   and seeded by running the worker seed script as a subprocess against it. Only the names

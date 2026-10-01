@@ -105,6 +105,23 @@ describe('planE7', () => {
     ['2', [card('2', '20', 'like')]],
   ]);
 
+  it("keeps an article whose shared answers failed when the chosen rater's own copy answered", () => {
+    const own = new Map([['10', 0.4]]);
+    const plan = (answersOf?: (raterId: string, articleId: string) => Map<string, number>) =>
+      planE7({
+        seed: 's',
+        candidates: [{ articleId: '100', lang: 'en', raterIds: ['1'] }],
+        cardsByRater,
+        // No shared `card` answer for article 100 (every shared request failed).
+        answers: new Map(),
+        ...(answersOf === undefined ? {} : { answersOf }),
+      });
+    expect(plan()).toEqual([]);
+    expect(plan(() => own).map((item) => [item.articleId, item.targetedCardId])).toEqual([
+      ['100', '10'],
+    ]);
+  });
+
   it("targets with the chosen rater's own answers when they differ from the shared ones", () => {
     const answers = new Map([
       [

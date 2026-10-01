@@ -1405,4 +1405,51 @@ describe('eval run (M3a-T6)', () => {
       await rt.close();
     }
   });
+
+  it('estimates again when the deployed ranker thresholds change before the freeze', async () => {
+    // E6 suggests its card examples with the frozen thresholds: a change after the first prompt
+    // changes the Call B questions, so the run must be estimated and confirmed again.
+    const base = runtime(ctx);
+    let e1Id: string;
+    try {
+      const e1 = await runExperiment(base.rt, { experiment: 'E1', yes: true, gitSha: 'test' });
+      e1Id = e1.runId!;
+    } finally {
+      await base.rt.close();
+    }
+    await ctx.owner.query(`DELETE FROM settings WHERE key = 'ranker.thresholds'`);
+    const asked: number[] = [];
+    const { rt, out } = runtime(ctx, {
+      TYPESAFE_PRICE_PER_MTOK_USD: '200',
+      EVAL_CACHE_DIR: await freshCache(),
+    });
+    let result;
+    try {
+      result = await runExperiment(rt, {
+        experiment: 'E6',
+        baseRunId: e1Id,
+        gitSha: 'test',
+        maxUsd: 1000,
+        confirm: async (estimate) => {
+          asked.push(estimate.estimatedUsd);
+          if (asked.length === 1) {
+            await ctx.owner.query(
+              `INSERT INTO settings (key, value) VALUES ('ranker.thresholds', $1::jsonb)
+               ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+              [JSON.stringify({ lanes: { forYou: 0.95, maybe: 0.5 } })],
+            );
+            return true;
+          }
+          return false;
+        },
+      });
+    } finally {
+      await rt.close();
+      await ctx.owner.query(`DELETE FROM settings WHERE key = 'ranker.thresholds'`);
+    }
+    expect(asked).toHaveLength(2);
+    expect(asked[1]).not.toBe(asked[0]);
+    expect(out()).toMatch(/revised estimate/);
+    expect(result).toMatchObject({ runId: null, status: 'declined' });
+  });
 });

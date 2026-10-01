@@ -59,7 +59,10 @@ export function planE7(input: {
     input.answersOf ?? ((_raterId: string, articleId: string) => input.answers.get(articleId));
   const byLang = new Map<string, E7Candidate[]>();
   for (const candidate of input.candidates) {
-    if ((input.answers.get(candidate.articleId)?.size ?? 0) === 0) continue;
+    // Eligible when the rater E7 picks for the article has E1 answers there (its own `card.r`
+    // copies included): the pick does not depend on the answers, so it is made first.
+    const raterId = e7Rater(candidate.articleId, candidate.raterIds);
+    if (raterId === null || (answersOf(raterId, candidate.articleId)?.size ?? 0) === 0) continue;
     const list = byLang.get(candidate.lang) ?? [];
     list.push(candidate);
     byLang.set(candidate.lang, list);

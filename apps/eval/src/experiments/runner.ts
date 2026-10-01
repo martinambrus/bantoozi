@@ -1826,8 +1826,16 @@ async function invocationCost(
 }
 
 /** The run inputs an estimate depends on (cohort, raters, ground truth, cards, assignments). */
+/**
+ * The draft-config fields an estimate and plan depend on. A change between the confirmed estimate
+ * and the freeze (ground truth, the deployed `ranker.thresholds` that E6 suggests examples with,
+ * the base run a default `--base` resolves to, the seed) forces a new estimate (D-110 addendum).
+ */
 function inputsSha(config: Omit<RunConfig, 'configSha'>): string {
   return canonicalSha256({
+    seed: config.seed,
+    rankerThresholds: config.rankerThresholds ?? null,
+    baseRunId: config.baseRunId ?? null,
     langs: config.langs,
     cohort: config.cohort,
     raters: config.raters,
