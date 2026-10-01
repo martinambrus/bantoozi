@@ -11,6 +11,7 @@ import {
   lockDataset,
   lockDatasetAdditions,
   lockRater,
+  lockTopUpArticles,
   nextDatasetVersion,
   openDatasetForCorrection,
   recentUnsampledCandidates,
@@ -319,7 +320,13 @@ export async function ensureAssignments(
     let plan = await choose(current.version, true);
     let toppedUp: string[] = [];
     let createdFrom: string | null = null;
-    const fallback = plan.picks.filter((p) => p.pool === 1).map((p) => p.articleId);
+    // The top-up picks are share-locked and revalidated (language, pipeline state) before their
+    // snapshots are built in this transaction: an article the ingest worker turned stale or failed
+    // since the eligibility query is dropped, and the locked ones cannot change until commit.
+    const fallback = await lockTopUpArticles(
+      tx,
+      plan.picks.filter((p) => p.pool === 1),
+    );
     if (fallback.length > 0) {
       const added = await addTopUps(tx, fallback);
       toppedUp = added.added;

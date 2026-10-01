@@ -8,6 +8,7 @@ import {
   listDatasets,
   loadSample,
   lockDatasetAdditions,
+  lockTopUpArticles,
   openDatasetForCorrection,
   removeRaterCard,
   saveFacetLabels,
@@ -353,6 +354,72 @@ describe('ensureAssignments', () => {
     expect(inSample.rows[0]!.n).toBe('0');
     const assigned = await listAssignments(rdb.db, rater.id, result.datasetVersion);
     expect(assigned.map((a) => a.articleId).sort()).toEqual([...keptIds].sort());
+  });
+
+  it('share-locks the top-up articles until their snapshots are written', async () => {
+    const [feed] = await addGoldenFeeds(rdb, 'en', 1);
+    const ids = await addArticles(
+      rdb,
+      feed!.id,
+      'en',
+      3,
+      new Date(now.getTime() - DAY),
+      (i) => `locked top-up ${i}`,
+    );
+    const { rater } = await addRater(rdb, { langs: ['en'], now });
+    await pick(rater.id, [feed!]);
+    // Hold the additions lock, so ensureAssignments stops after locking its top-up articles.
+    const holder = await rdb.owner.connect();
+    const worker = await rdb.owner.connect();
+    let pending: ReturnType<typeof ensureAssignments> | undefined;
+    try {
+      await holder.query('BEGIN');
+      await holder.query(`SELECT pg_advisory_xact_lock(hashtext('eval.dataset.additions'))`);
+      pending = ensureAssignments(rdb.db, {
+        raterId: rater.id,
+        langs: rater.langs,
+        now,
+        target: 3,
+      });
+      pending.catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      // The ingest worker cannot turn a selected article stale before its snapshot is written.
+      await worker.query('BEGIN');
+      await worker.query(`SET LOCAL lock_timeout = '200ms'`);
+      await expect(
+        worker.query(`UPDATE articles SET pipeline_state = 'stale' WHERE id = $1`, [ids[0]]),
+      ).rejects.toMatchObject({ code: '55P03' });
+      await worker.query('ROLLBACK');
+      await holder.query('COMMIT');
+    } finally {
+      holder.release();
+      worker.release();
+    }
+    const result = await pending;
+    expect([...result.toppedUp].sort()).toEqual([...ids].sort());
+    expect(result.added).toBe(3);
+  });
+
+  it('drops a planned top-up article that no longer qualifies when it is locked', async () => {
+    const [feed] = await addGoldenFeeds(rdb, 'en', 1);
+    const [stale, moved, fine] = await addArticles(
+      rdb,
+      feed!.id,
+      'en',
+      3,
+      new Date(now.getTime() - DAY),
+      (i) => `revalidated top-up ${i}`,
+    );
+    await rdb.owner.query(`UPDATE articles SET pipeline_state = 'stale' WHERE id = $1`, [stale]);
+    await rdb.owner.query(`UPDATE articles SET lang = 'sk' WHERE id = $1`, [moved]);
+    const kept = await rdb.db.transaction((tx) =>
+      lockTopUpArticles(tx, [
+        { articleId: stale!, lang: 'en' },
+        { articleId: moved!, lang: 'en' },
+        { articleId: fine!, lang: 'en' },
+      ]),
+    );
+    expect(kept).toEqual([fine]);
   });
 
   it('opens the next version before assigning from a frozen head, even without top-ups', async () => {

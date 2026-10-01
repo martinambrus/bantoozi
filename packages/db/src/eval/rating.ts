@@ -343,6 +343,35 @@ export async function recentUnsampledCandidates(
   return result.rows.map((row) => ({ articleId: row.article_id, lang: row.lang }));
 }
 
+/**
+ * Share-lock planned top-up articles (`FOR SHARE OF a`, in id order) and return those that still
+ * qualify: the same language as planned, and not stale or failed. The ingest-only worker cannot
+ * change a locked article until the transaction ends, so the snapshots built afterwards in the same
+ * transaction see exactly what was revalidated here. Must run inside a transaction.
+ */
+export async function lockTopUpArticles(
+  tx: Transaction,
+  candidates: ReadonlyArray<{ articleId: string; lang: string }>,
+): Promise<string[]> {
+  if (candidates.length === 0) return [];
+  const planned = new Map(candidates.map((c) => [c.articleId, c.lang]));
+  const result = await tx.execute<{ id: string; lang: string | null; pipeline_state: string }>(sql`
+    SELECT a.id::text AS id, a.lang, a.pipeline_state
+      FROM articles a
+     WHERE a.id = ANY(${sql.param([...planned.keys()])}::bigint[])
+     ORDER BY a.id
+       FOR SHARE OF a`);
+  return result.rows
+    .filter(
+      (row) =>
+        row.lang !== null &&
+        row.lang === planned.get(row.id) &&
+        row.pipeline_state !== 'stale' &&
+        row.pipeline_state !== 'failed',
+    )
+    .map((row) => row.id);
+}
+
 /** Append assignments after the rater's last position; returns the number inserted. */
 export async function appendAssignments(
   tx: Transaction,
