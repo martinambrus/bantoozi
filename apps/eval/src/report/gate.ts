@@ -385,6 +385,27 @@ export function pairedDevMacros(
   return { a: macroAuc(cells, paired.a).value, b: macroAuc(cells, paired.b).value };
 }
 
+/**
+ * Development macros of a candidate set (the B1/B1-T baselines, the E1/E2/E3/E3b cores) on the
+ * items every eligible candidate of the set scored, so no candidate wins by missing harder items
+ * (each may miss up to 5%). A missing (ineligible) candidate is null and does not narrow the set.
+ */
+export function commonDevMacros(
+  cells: readonly Cell[],
+  runs: Readonly<Record<string, RunData | null>>,
+): Record<string, number | null> {
+  const present = Object.values(runs).filter((r): r is RunData => r !== null);
+  const scoredByAll = (item: RatedItem) => present.every((r) => runScore(r, item) !== null);
+  const out: Record<string, number | null> = {};
+  for (const [experiment, run] of Object.entries(runs)) {
+    out[experiment] =
+      run === null
+        ? null
+        : macroAuc(cells, (item) => (scoredByAll(item) ? runScore(run, item) : null)).value;
+  }
+  return out;
+}
+
 /** Spec 10 §5 steps 1–5 on development data only. */
 export function selectOnDevelopment(input: DevelopmentInput): GateSelection {
   const reasons: string[] = [];
@@ -398,6 +419,14 @@ export function selectOnDevelopment(input: DevelopmentInput): GateSelection {
   for (const e of ['B0', 'B1', 'B1-T', ...CORE_CANDIDATES, 'E4', 'E5']) {
     devMacroByRun[e] = devMacro(contextCells, run(e));
   }
+  // The baselines and the cores are each ranked on their set's common scored items.
+  const candidateSet = (experiments: readonly string[]) =>
+    Object.assign(
+      devMacroByRun,
+      commonDevMacros(contextCells, Object.fromEntries(experiments.map((e) => [e, run(e)]))),
+    );
+  candidateSet(['B1', 'B1-T']);
+  candidateSet(CORE_CANDIDATES);
   const baseline = selectBaseline(
     (['B1', 'B1-T'] as const).map((e) => ({
       experiment: e,

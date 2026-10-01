@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assessGateRuns,
   buildG1,
+  commonDevMacros,
   composedCostPerArticle,
   foreignEngineAnswers,
   confirmOnTest,
@@ -12,7 +13,7 @@ import {
   pairedDevMacros,
   selectOnDevelopment,
 } from '../src/report/gate.js';
-import { chooseCardMode, chooseLanguageMode } from '../src/report/decision.js';
+import { chooseCardMode, chooseLanguageMode, selectCore } from '../src/report/decision.js';
 import { G1Schema, g1ConfigSha } from '../src/report/g1-schema.js';
 import { onSplit, runScore, type RatedItem } from '../src/report/items.js';
 import { buildReportModel, latestRuns, type ReportModel } from '../src/report/model.js';
@@ -531,6 +532,34 @@ describe('paired development gains', () => {
         ],
       ]),
     }) as unknown as RunData;
+
+  it('ranks a candidate set on the items every candidate scored, so missing a hard case wins nothing', () => {
+    // E1 scores everything, including the hard case it ranks on top (0.9 alone, 1.0 without it).
+    const e1 = scored('e1', []);
+    // E2 misses the hard case and swaps one like below one dislike (89/90 on what it scored).
+    const e2 = scored('e2', ['20']);
+    e2.scores.get('1')!.set('10', 0.48);
+    const choose = (macros: Record<string, number | null>) =>
+      selectCore(
+        (['E1', 'E2', 'E3', 'E3b'] as const).map((experiment) => ({
+          experiment,
+          eligible: macros[experiment] !== null && macros[experiment] !== undefined,
+          devMacroAuc: macros[experiment] ?? null,
+        })),
+      );
+    const alone = {
+      E1: pairedDevMacros(cells, e1, null).a,
+      E2: pairedDevMacros(cells, e2, null).a,
+    };
+    expect(alone.E1).toBeCloseTo(0.9, 10);
+    expect(alone.E2).toBeCloseTo(89 / 90, 10);
+    expect(choose(alone)).toBe('E2');
+    const common = commonDevMacros(cells, { E1: e1, E2: e2, E3: null, E3b: null });
+    expect(common.E1).toBe(1);
+    expect(common.E2).toBeCloseTo(89 / 90, 10);
+    expect(common.E3).toBeNull();
+    expect(choose(common)).toBe('E1');
+  });
 
   it('compares two runs on the items both scored, so a one-sided missing hard case cannot flip a decision', () => {
     const full = scored('a', []);
