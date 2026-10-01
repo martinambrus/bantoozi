@@ -98,6 +98,8 @@ export interface RankStampInput extends RankWindowInput {
   /**
    * How far before `scored_at` an input timestamp still asks for a recheck: an input written by a
    * transaction that started before the run's snapshot can commit after it with an older timestamp.
+   * Inputs are compared with `scored_at` at its millisecond precision for dirtiness (the run's
+   * `now` is a JavaScript date), so an input stamped later within that millisecond is rechecked.
    */
   recheckMarginMs: number;
   /**
@@ -165,7 +167,7 @@ export async function rankWindowPage(
             OR (ua.explain->'inputs'->>'contextSha') IS DISTINCT FROM
                (CASE WHEN ua.score_source = 'degraded' THEN ${input.degradedContextSha}
                      ELSE ${input.contextSha} END)
-            OR ua.scored_at < i.input_at ${force}) IS TRUE AS dirty,
+            OR ua.scored_at < date_trunc('milliseconds', i.input_at) ${force}) IS TRUE AS dirty,
            (ua.scored_at < i.input_at + make_interval(secs => ${marginSeconds}::double precision)
             OR (ua.lane = 'new' AND ua.score_source = 'none'
                 AND NOT ('inference_not_requested' = ANY(ua.rules_fired))

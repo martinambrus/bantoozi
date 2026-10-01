@@ -304,6 +304,20 @@ describe('the dirty set covers each freshness trigger (spec 06 §7 step 2)', () 
     expect(after.explain?.cards[0]).toMatchObject({ id: r.cardId, p: 0.95 });
   });
 
+  it('an input stamped within the run`s millisecond is rechecked, not dirty forever', async () => {
+    const r = await reader();
+    const a = await matched(r.feedId, r.cardId, 0.4);
+    // The run's `now` has millisecond precision; the database stamps microseconds.
+    const now = new Date();
+    await h.owner.query(
+      `UPDATE card_answers SET answered_at = $2::timestamptz + interval '400 microseconds'
+        WHERE article_id = $1`,
+      [a, now.toISOString()],
+    );
+    expect((await rank(r.userId, { now })).written).toBe(1);
+    expect((await rank(r.userId, { now })).written).toBe(0);
+  });
+
   it('translated card text: a card translation changes the answer input and dirties the window', async () => {
     const r = await reader();
     const a = await matched(r.feedId, r.cardId, 0.9);
