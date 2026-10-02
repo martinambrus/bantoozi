@@ -1297,3 +1297,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   the runs before it) are only the contexts with an assignment in it (`loadRoundRaters`), so earlier
   rounds' contexts and cards stay out of its runs; its frozen manifest hashes those raters' cards
   only. Spec 10 §2.1 updated.
+- D-146: 2026-10-02 M3b — spec 10 §2.2 assigns each rater context up to 300 articles, and the
+  rating server already took the target as an option, but `eval serve-rating` could not set it.
+  With one participant the held-out test split stays small (91 ratings in the second G1 attempt), so
+  the owner may rate more. `eval serve-rating --assignments <n>` (1–1,000, default 300) sets the
+  per-context target; the equal language split, top-ups and every other rule are unchanged. Spec 10
+  §2.2 and RATERS.md updated.
