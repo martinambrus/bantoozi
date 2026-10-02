@@ -175,7 +175,7 @@ Then, per field with source length ≥ 20 chars:
 |---|---|
 | empty output | `fail` |
 | length ratio `len(out)/len(src)` outside [0.4, 2.5] | `fail` |
-| the same 3-gram repeated more than 4 times (a model loop) | `fail` |
+| the same 3-gram repeated more than max(4, 2 × the source's own most repeated 3-gram + 2) times (a model loop; D-144) | `fail` |
 | share of output tokens (len ≥ 4, normalized) that also appear in the source > 0.5 | `weak` (untranslated) |
 | `detectLanguage(out)` returns a known non-English language with confidence ≥ 0.1 | `weak` |
 

@@ -13,7 +13,9 @@ import type { TranslationField, TranslationQuality } from './types.js';
  *    source field needs a nonblank string, whatever its length; otherwise the article fails. An
  *    absent (blank) source field stays excluded. An entirely blank source is skipped, not `ok`.
  * 2. For each field whose source has at least 20 characters: a length ratio outside [0.4, 2.5]
- *    or a word 3-gram repeated more than 4 times (a model loop) fails; more than half of the output
+ *    or a model loop fails: a word 3-gram repeated more than max(4, 2 × the source's own most
+ *    repeated 3-gram + 2) times (a translation keeps the source's repetition, and English adds
+ *    function-word 3-grams such as "of the slovak" that Slovak and Czech lack; D-144); more than half of the output
  *    tokens (≥ 4 characters, normalized) also appearing in the source is weak (untranslated);
  *    `detectLanguage(output)` naming a known non-English language with confidence ≥ 0.1 is weak.
  * 3. The worst field wins. Shorter fields and a detector `und` are inconclusive: neither proves
@@ -27,8 +29,12 @@ export const ASSESSMENT_THRESHOLDS = Object.freeze({
   minSourceChars: 20,
   minLengthRatio: 0.4,
   maxLengthRatio: 2.5,
-  /** A 3-gram repeated MORE than this many times fails. */
+  /** A 3-gram repeated MORE than this many times fails, at least (D-144). */
   maxTrigramRepeats: 4,
+  /** The loop limit also allows this multiple of the source's own most repeated 3-gram… */
+  sourceTrigramRepeatsFactor: 2,
+  /** …plus this many repeats. */
+  sourceTrigramRepeatsSlack: 2,
   /** Tokens shorter than this are ignored by the untranslated-share check. */
   minTokenChars: 4,
   /** A shared-token share ABOVE this is weak. */
@@ -58,6 +64,8 @@ export interface FieldAssessment {
   outputChars?: number;
   lengthRatio?: number;
   maxTrigramRepeats?: number;
+  /** The source's own most repeated 3-gram count, which raises the loop limit (D-144). */
+  sourceMaxTrigramRepeats?: number;
   /** Absent when the output has no token of at least 4 characters. */
   sharedTokenShare?: number;
   detected?: { lang: string; confidence: number };
@@ -84,6 +92,18 @@ const round3 = (value: number): number => Math.round(value * 1000) / 1000;
 function tokens(text: string): string[] {
   const normalized = normalizeText(text);
   return normalized === '' ? [] : normalized.split(' ');
+}
+
+/**
+ * The most repeats a translation of a source whose most frequent 3-gram occurs `sourceRepeats`
+ * times may have before it counts as a model loop (D-144).
+ */
+export function trigramRepeatLimit(sourceRepeats: number): number {
+  const t = ASSESSMENT_THRESHOLDS;
+  return Math.max(
+    t.maxTrigramRepeats,
+    t.sourceTrigramRepeatsFactor * sourceRepeats + t.sourceTrigramRepeatsSlack,
+  );
 }
 
 /** How often the most frequent word 3-gram occurs. */
@@ -142,7 +162,8 @@ function assessField(source: string, output: unknown, present: boolean): FieldAs
     reasons.push('length_ratio');
   }
   const repeats = maxTrigramRepeats(outputText);
-  if (repeats > ASSESSMENT_THRESHOLDS.maxTrigramRepeats) reasons.push('repeated_trigram');
+  const sourceRepeats = maxTrigramRepeats(sourceText);
+  if (repeats > trigramRepeatLimit(sourceRepeats)) reasons.push('repeated_trigram');
   const share = sharedTokenShare(sourceText, outputText);
   if (share !== undefined && share > ASSESSMENT_THRESHOLDS.maxSharedTokenShare) {
     reasons.push('untranslated_share');
@@ -164,6 +185,7 @@ function assessField(source: string, output: unknown, present: boolean): FieldAs
     outputChars,
     lengthRatio: round3(lengthRatio),
     maxTrigramRepeats: repeats,
+    sourceMaxTrigramRepeats: sourceRepeats,
     ...(share === undefined ? {} : { sharedTokenShare: round3(share) }),
     detected: { lang: detected.lang, confidence: round3(detected.confidence) },
   };

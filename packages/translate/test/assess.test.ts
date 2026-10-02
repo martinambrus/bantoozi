@@ -22,6 +22,7 @@ import {
   ASSESSMENT_THRESHOLDS,
   assessTranslation,
   maxTrigramRepeats,
+  trigramRepeatLimit,
   sharedTokenShare,
   type TranslationAssessment,
 } from '../src/index.js';
@@ -180,6 +181,7 @@ describe('assessTranslation: the per-field checks (spec 07 §4 table)', () => {
           outputChars: 57,
           lengthRatio: 1.188,
           maxTrigramRepeats: 1,
+          sourceMaxTrigramRepeats: 1,
           sharedTokenShare: 0,
           detected: { lang: 'en', confidence: expect.any(Number) as number },
         },
@@ -232,6 +234,35 @@ describe('assessTranslation: the per-field checks (spec 07 §4 table)', () => {
       reasons: ['repeated_trigram'],
       maxTrigramRepeats: 5,
     });
+  });
+
+  it('allows the repetition a source already has, plus English function-word 3-grams (D-144)', () => {
+    expect([0, 1, 2, 5].map(trigramRepeatLimit)).toEqual([4, 4, 6, 12]);
+    // A listing that repeats "cena za dopravu" five times translates to "price for transport" ×5.
+    const listing = Array(5).fill('Disketa 3,5 palca, cena za dopravu 4 eur.').join(' ');
+    const listingEn = Array(5).fill('Floppy disk 3.5 inch, price for transport 4 euros.').join(' ');
+    expect(one(listing, listingEn).fields.title).toMatchObject({
+      result: 'ok',
+      maxTrigramRepeats: 5,
+      sourceMaxTrigramRepeats: 5,
+    });
+    // Slovak has no articles: "the su 37" recurs five times where the source's most repeated
+    // 3-gram ("na leteckych prehliadkach") occurs twice, within the limit of 6.
+    const jet =
+      'Su-37 na leteckých prehliadkach ohromilo. Na leteckých prehliadkach sa Su-37 otočilo. ' +
+      'Su-37 pristálo. Su-37 odletelo. Su-37 je späť.';
+    const jetEn =
+      'The Su-37 amazed at air shows. At air shows the Su-37 turned. The Su-37 landed. ' +
+      'The Su-37 flew away. The Su-37 is back.';
+    expect(one(jet, jetEn).fields.title).toMatchObject({
+      result: 'ok',
+      maxTrigramRepeats: 5,
+      sourceMaxTrigramRepeats: 2,
+    });
+    // A real loop still fails far beyond the source's own repetition.
+    expect(
+      one(listing, `${listingEn} ${Array(9).fill('price for transport').join(' ')}`).fields.title,
+    ).toMatchObject({ result: 'fail', reasons: ['repeated_trigram'] });
   });
 
   it('grades weak when more than half of the output tokens also appear in the source', () => {
