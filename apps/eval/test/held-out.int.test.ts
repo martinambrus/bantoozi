@@ -1,7 +1,11 @@
 import { dropCreatedTestDatabases } from '@bantoozi/testing';
 import {
+  ClosedRoundError,
   createDataset,
   freezeDataset,
+  headDataset,
+  listDatasets,
+  rateAssignment,
   insertSampleRows,
   loadSample,
   setRaterFeeds,
@@ -111,6 +115,28 @@ describe('held-out versions (D-145)', () => {
     await expect(
       ensureAssignments(rdb.db, { raterId: rater.id, langs: ['en'], now }),
     ).rejects.toBeInstanceOf(EarlierRoundError);
+
+    // A rating of that earlier-round article would reopen golden-v1 and take the head off the
+    // held-out version: refused, and nothing is created.
+    const before = (await listDatasets(rdb.db)).map((d) => d.version);
+    await expect(
+      rdb.db.transaction((tx) =>
+        rateAssignment(tx, { raterId: rater.id, position: 0, rating: 1, reason: null, now }),
+      ),
+    ).rejects.toBeInstanceOf(ClosedRoundError);
+    expect((await listDatasets(rdb.db)).map((d) => d.version)).toEqual(before);
+    expect((await headDataset(rdb.db))?.version).toBe('golden-v2');
+  });
+
+  it('never makes a closed round the head, even when it is the newest tip', async () => {
+    // A child of golden-v1 created after the held-out version (as a correction would have).
+    await createDataset(rdb.db, {
+      version: 'golden-v1-late',
+      parentVersion: 'golden-v1',
+      seed: 'seed-1',
+      params: {},
+    });
+    expect((await headDataset(rdb.db))?.version).toBe('golden-v2');
   });
 
   it('skips excluded articles added to the version, and refuses a direct insert', async () => {

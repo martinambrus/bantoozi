@@ -162,10 +162,43 @@ export async function lockDataset(tx: Transaction, version: string): Promise<Dat
  * The head version: the newest version of the lineage (no other version names it as parent), or
  * null when no dataset exists. With several unrelated lineages the most recently created head wins.
  */
+/**
+ * The versions of closed rounds (D-145): every version some version's `params.excludeVersions`
+ * names, and all their descendants. A closed round is never the head and takes no corrections.
+ */
+export const CLOSED_VERSIONS = sql`(
+  WITH RECURSIVE closed(version) AS (
+    SELECT jsonb_array_elements_text(x.params->'excludeVersions')
+      FROM eval.datasets x WHERE jsonb_typeof(x.params->'excludeVersions') = 'array'
+    UNION
+    SELECT child.version FROM eval.datasets child JOIN closed ON child.parent_version = closed.version
+  )
+  SELECT version FROM closed)`;
+
+/** A correction would only reach a closed round (D-145). */
+export class ClosedRoundError extends Error {
+  constructor(readonly versions: readonly string[]) {
+    super(
+      `${versions.join(', ')} ${versions.length === 1 ? 'is' : 'are'} closed: a held-out version excludes ${versions.length === 1 ? 'it' : 'them'}`,
+    );
+    this.name = 'ClosedRoundError';
+  }
+}
+
+export async function closedVersions(db: Executor): Promise<Set<string>> {
+  const result = await db.execute<{ version: string }>(
+    sql`SELECT version FROM ${CLOSED_VERSIONS} c`,
+  );
+  return new Set(result.rows.map((row) => row.version));
+}
+
 export async function headDataset(db: Executor): Promise<DatasetRow | null> {
+  // The newest lineage tip outside the closed rounds: a correction of an earlier round can never
+  // move the head off a held-out version (D-145).
   const result = await db.execute<DatasetDbRow>(sql`
     SELECT ${DATASET_COLUMNS} FROM eval.datasets d
      WHERE NOT EXISTS (SELECT 1 FROM eval.datasets c WHERE c.parent_version = d.version)
+       AND d.version NOT IN ${CLOSED_VERSIONS}
      ORDER BY d.created_at DESC, d.version DESC LIMIT 1`);
   const row = result.rows[0];
   return row === undefined ? null : toDataset(row);

@@ -1270,4 +1270,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   per-language limit so a rater's slots are not lost. Assignments belong to a rater context, not to a
   version, and a context's cards are final once it has any, so a held-out round is rated by new
   contexts (`eval rater add --participant <key>`): a context with assignments outside the held-out
-  version gets a "new round" message instead of an empty queue. Spec 10 §2.1 updated.
+  version gets a "new round" message instead of an empty queue. An excluded version and its descendants form a
+  closed round: `headDataset` never returns one (the newest tip would otherwise move the head back
+  to the old sample after a late correction), and a rating or label change that only a closed round
+  holds is refused with `ClosedRoundError` ("round closed" in the rating app) instead of opening its
+  next version; card changes skip closed tips. Spec 10 §2.1 updated.

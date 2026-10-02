@@ -14,6 +14,8 @@ import {
 import type { Executor, Transaction } from '../client.js';
 import { toDate, type RawTimestamp } from '../timestamps.js';
 import {
+  closedVersions,
+  ClosedRoundError,
   copySampleRows,
   createDataset,
   getDataset,
@@ -548,12 +550,19 @@ export async function openDatasetForCorrection(
   await lockDatasetAdditions(tx);
   const head = await headDataset(tx);
   const ids = articleIds === undefined ? [] : [articleIds].flat();
-  const tips =
+  const allTips =
     cause === 'cards'
       ? await lineageTips(tx, head, null)
       : ids.length === 0
         ? []
         : await lineageTips(tx, head, ids);
+  // A closed round (D-145) takes no change: its gate ran, and a held-out version replaced it. A
+  // rating or label that only an earlier round holds is refused rather than reopening that round.
+  const closed = await closedVersions(tx);
+  const tips = allTips.filter((t) => !closed.has(t.version));
+  if (cause !== 'cards' && allTips.length > 0 && tips.length === 0) {
+    throw new ClosedRoundError(allTips.map((t) => t.version));
+  }
   if (tips.length === 0) return head === null ? null : openNextVersion(tx, head, cause);
   // A head that holds the change but is open gets no next version: the other lineages' new
   // versions are dated just before it, so it stays the head. A head that holds none of the
