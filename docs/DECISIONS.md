@@ -1268,3 +1268,32 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   the 18 become 12 `ok` and 6 `weak`; a real loop (a phrase cycling well past its source) still
   fails. `TRANSLATION_POLICY_VERSION` is now `translate-policy-2`, so stored quality details and eval
   cache manifests tell the two rules apart. Spec 07 §4 updated.
+- D-145: 2026-10-02 M3b — spec 10 §5 requires a new held-out golden version for the next gate once
+  a version's test split is revealed, but `eval sample --version <new>` drew from every collected
+  article, so `golden-v2` could repeat `golden-v1`'s articles and stories (including revealed test
+  items and the owner's known likes). `eval sample --exclude-version <list>` leaves out every
+  article and story group (`snapshot.storyGroupId`, matched on each candidate's current title or
+  cluster) that the listed versions sampled, records the list in `params.excludeVersions`, and
+  counts the excluded articles. Only a frozen version can be excluded (an open one could still grow
+  into the successor). A version keeps its exclusions on every later draw and successor; adding one
+  to a version that already has rows, naming an unknown or open version, or the version itself is
+  refused. Every insertion path honours them: `insertSampleRows` refuses an excluded row, rating
+  top-ups and `addArticlesToDataset` drop them first, and the top-up pool filters them before its
+  per-language limit so a rater's slots are not lost. Assignments belong to a rater context, not to a
+  version, and a context's cards are final once it has any, so a held-out round is rated by new
+  contexts (`eval rater add --participant <key>`): a context with assignments outside the held-out
+  version gets a "new round" message instead of an empty queue. An excluded version and its descendants form a
+  closed round: `headDataset` never returns one (the newest tip would otherwise move the head back
+  to the old sample after a late correction), and a rating or label change that only a closed round
+  holds is refused with `ClosedRoundError` ("round closed" in the rating app) instead of opening its
+  next version; card changes skip closed tips. The footprint covers the whole round (the named
+  versions and all their descendants, such as top-up or correction children), and `eval sample`
+  refuses to draw into a closed version, and `insertSampleRows` refuses rows for one, so the
+  footprint cannot grow afterwards. Every skip of a closed round's article is refused too (not only one
+  that withdraws a rating). `ensureAssignments` takes the additions lock before it reads the head,
+  as the held-out draw does, so the head cannot change between its round check and its
+  assignments; its top-up pool is read in growing pages until each language has enough eligible
+  candidates or runs out. A held-out version's raters (its freeze-time ground truth and
+  the runs before it) are only the contexts with an assignment in it (`loadRoundRaters`), so earlier
+  rounds' contexts and cards stay out of its runs; its frozen manifest hashes those raters' cards
+  only. Spec 10 §2.1 updated.

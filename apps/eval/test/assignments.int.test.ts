@@ -369,13 +369,15 @@ describe('ensureAssignments', () => {
     );
     const { rater } = await addRater(rdb, { langs: ['en'], now });
     await pick(rater.id, [feed!]);
-    // Hold the additions lock, so ensureAssignments stops after locking its top-up articles.
+    // Share-lock the dataset rows, so ensureAssignments stops after locking its top-up articles,
+    // where addTopUps locks the head version's row for update (the additions lock is taken first
+    // and would stop it before the articles are locked).
     const holder = await rdb.owner.connect();
     const worker = await rdb.owner.connect();
     let pending: ReturnType<typeof ensureAssignments> | undefined;
     try {
       await holder.query('BEGIN');
-      await holder.query(`SELECT pg_advisory_xact_lock(hashtext('eval.dataset.additions'))`);
+      await holder.query('SELECT 1 FROM eval.datasets FOR SHARE');
       pending = ensureAssignments(rdb.db, {
         raterId: rater.id,
         langs: rater.langs,

@@ -7,7 +7,7 @@ import { EvalCommandError } from '../runtime.js';
 
 /**
  * `eval sample [--version golden-v1] [--seed <s>] [--per-lang 500] [--langs en,sk,cs]
- * [--feed-cap 0.1]` (spec 10 §2.1, M3a-T2): draw (or fill up) a golden dataset version in
+ * [--feed-cap 0.1] [--exclude-version golden-v1]` (spec 10 §2.1, M3a-T2; D-145): draw (or fill up) a golden dataset version in
  * `eval.sample`. Unset options keep the version's stored values; see `collection/sample.ts`.
  */
 
@@ -23,6 +23,11 @@ const OptionsSchema = z.object({
     .pipe(z.array(z.string().regex(/^[a-z]{2,3}$/)).min(1))
     .optional(),
   feedCap: z.coerce.number().gt(0).max(1).optional(),
+  excludeVersion: z
+    .string()
+    .transform((s) => s.split(',').map((v) => v.trim()))
+    .pipe(z.array(VersionSchema).min(1))
+    .optional(),
 });
 
 export function registerSample(program: Command, ctx: CliContext): void {
@@ -34,6 +39,10 @@ export function registerSample(program: Command, ctx: CliContext): void {
     .option('--per-lang <n>', 'articles per language (default 500)')
     .option('--langs <list>', 'languages, comma-separated (default en,sk,cs)')
     .option('--feed-cap <share>', 'largest share of a language sample one feed may hold (0.1)')
+    .option(
+      '--exclude-version <list>',
+      'leave out every article and story group these versions sampled (a held-out successor)',
+    )
     .action(async (raw: unknown) => {
       const parsed = OptionsSchema.safeParse(raw);
       if (!parsed.success) {
@@ -50,6 +59,7 @@ export function registerSample(program: Command, ctx: CliContext): void {
               ...(o.perLang === undefined ? {} : { perLang: o.perLang }),
               ...(o.langs === undefined ? {} : { langs: o.langs }),
               ...(o.feedCap === undefined ? {} : { feedCapShare: o.feedCap }),
+              ...(o.excludeVersion === undefined ? {} : { excludeVersions: o.excludeVersion }),
             },
             rt.now(),
           );

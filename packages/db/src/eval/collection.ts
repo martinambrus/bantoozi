@@ -230,6 +230,9 @@ export interface SampleCandidate {
   /** Every golden feed carrying it, in that order (`feedId` first). */
   carrierFeedIds: string[];
   firstSeenAt: Date;
+  /** The current title and story cluster, from which `storyGroupId` derives the story group. */
+  title: string;
+  storyClusterId: string | null;
 }
 
 /**
@@ -265,8 +268,11 @@ export async function loadSampleCandidates(
     pipeline_state: string;
     feed_ids: string[];
     first_seen_at: RawTimestamp;
+    title: string;
+    story_cluster_id: string | null;
   }>(sql`
-    SELECT a.id::text AS article_id, a.lang, a.pipeline_state, a.first_seen_at,
+    SELECT a.id::text AS article_id, a.lang, a.pipeline_state, a.first_seen_at, a.title,
+           a.story_cluster_id::text AS story_cluster_id,
            array_agg(fi.feed_id::text ORDER BY fi.first_seen_at, fi.feed_id) AS feed_ids
       FROM subscriptions s
       JOIN feed_items fi ON fi.feed_id = s.feed_id
@@ -281,5 +287,7 @@ export async function loadSampleCandidates(
     feedId: row.feed_ids[0] ?? '',
     carrierFeedIds: row.feed_ids,
     firstSeenAt: toDate(row.first_seen_at),
+    title: row.title,
+    storyClusterId: row.story_cluster_id,
   }));
 }

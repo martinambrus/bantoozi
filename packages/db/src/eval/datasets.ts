@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 import type { Executor, Transaction } from '../client.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
 
-import { captureDatasetTruth } from './experiments.js';
+import { captureDatasetTruth, loadRoundRaters } from './experiments.js';
 
 /**
  * Golden dataset versions (spec 10 §2.1, spec 02 §7, D-96). A version is a set of `eval.sample`
@@ -162,10 +162,43 @@ export async function lockDataset(tx: Transaction, version: string): Promise<Dat
  * The head version: the newest version of the lineage (no other version names it as parent), or
  * null when no dataset exists. With several unrelated lineages the most recently created head wins.
  */
+/**
+ * The versions of closed rounds (D-145): every version some version's `params.excludeVersions`
+ * names, and all their descendants. A closed round is never the head and takes no corrections.
+ */
+export const CLOSED_VERSIONS = sql`(
+  WITH RECURSIVE closed(version) AS (
+    SELECT jsonb_array_elements_text(x.params->'excludeVersions')
+      FROM eval.datasets x WHERE jsonb_typeof(x.params->'excludeVersions') = 'array'
+    UNION
+    SELECT child.version FROM eval.datasets child JOIN closed ON child.parent_version = closed.version
+  )
+  SELECT version FROM closed)`;
+
+/** A correction would only reach a closed round (D-145). */
+export class ClosedRoundError extends Error {
+  constructor(readonly versions: readonly string[]) {
+    super(
+      `${versions.join(', ')} ${versions.length === 1 ? 'is' : 'are'} closed: a held-out version excludes ${versions.length === 1 ? 'it' : 'them'}`,
+    );
+    this.name = 'ClosedRoundError';
+  }
+}
+
+export async function closedVersions(db: Executor): Promise<Set<string>> {
+  const result = await db.execute<{ version: string }>(
+    sql`SELECT version FROM ${CLOSED_VERSIONS} c`,
+  );
+  return new Set(result.rows.map((row) => row.version));
+}
+
 export async function headDataset(db: Executor): Promise<DatasetRow | null> {
+  // The newest lineage tip outside the closed rounds: a correction of an earlier round can never
+  // move the head off a held-out version (D-145).
   const result = await db.execute<DatasetDbRow>(sql`
     SELECT ${DATASET_COLUMNS} FROM eval.datasets d
      WHERE NOT EXISTS (SELECT 1 FROM eval.datasets c WHERE c.parent_version = d.version)
+       AND d.version NOT IN ${CLOSED_VERSIONS}
      ORDER BY d.created_at DESC, d.version DESC LIMIT 1`);
   const row = result.rows[0];
   return row === undefined ? null : toDataset(row);
@@ -198,6 +231,19 @@ export async function insertSampleRows(
   version: string,
   rows: readonly SampleRowInput[],
 ): Promise<number> {
+  // Every insertion path (the draw, rating top-ups, added articles) goes through here, so a
+  // held-out version can never gain an article or story group it excludes, and a closed round's
+  // footprint can never grow into one (D-145).
+  if (rows.length > 0 && (await closedVersions(tx)).has(version)) {
+    throw new ClosedRoundError([version]);
+  }
+  const excluded = await versionExclusions(tx, version);
+  const conflict = rows.find((row) => isExcludedRow(excluded, row));
+  if (conflict !== undefined) {
+    throw new Error(
+      `${version} excludes article ${conflict.articleId} (sampled by ${excluded.versions.join(', ')} or its story group)`,
+    );
+  }
   let inserted = 0;
   for (let i = 0; i < rows.length; i += 200) {
     const chunk = rows.slice(i, i + 200);
@@ -320,6 +366,77 @@ export async function storyGroupSplits(
   return new Map(result.rows.map((row) => [row.group_id, row.split]));
 }
 
+/**
+ * Every article and story group (`snapshot.storyGroupId`) the given versions and all their
+ * descendants (corrections, top-ups: the same round) sampled: a held-out successor drawn with
+ * `eval sample --exclude-version` leaves them out.
+ */
+export async function sampleFootprint(
+  db: Executor,
+  versions: readonly string[],
+): Promise<{ articleIds: Set<string>; storyGroupIds: Set<string> }> {
+  if (versions.length === 0) return { articleIds: new Set(), storyGroupIds: new Set() };
+  const result = await db.execute<{ article_id: string; group_id: string | null }>(sql`
+    WITH RECURSIVE round(version) AS (
+      SELECT unnest(${sql.param([...versions])}::text[])
+      UNION
+      SELECT d.version FROM eval.datasets d JOIN round r ON d.parent_version = r.version
+    )
+    SELECT DISTINCT article_id::text AS article_id, snapshot->>'storyGroupId' AS group_id
+      FROM eval.sample
+     WHERE dataset_version IN (SELECT version FROM round)`);
+  const articleIds = new Set<string>();
+  const storyGroupIds = new Set<string>();
+  for (const row of result.rows) {
+    articleIds.add(row.article_id);
+    if (row.group_id !== null) storyGroupIds.add(row.group_id);
+  }
+  return { articleIds, storyGroupIds };
+}
+
+export interface VersionExclusions {
+  /** `params.excludeVersions` of the version (D-145). */
+  versions: string[];
+  articleIds: Set<string>;
+  storyGroupIds: Set<string>;
+}
+
+/** The versions a dataset version excludes, and their sampled articles and story groups. */
+export async function versionExclusions(db: Executor, version: string): Promise<VersionExclusions> {
+  const dataset = await getDataset(db, version);
+  const raw = dataset?.params['excludeVersions'];
+  const versions =
+    Array.isArray(raw) && raw.every((v): v is string => typeof v === 'string') ? raw : [];
+  return { versions, ...(await sampleFootprint(db, versions)) };
+}
+
+/** Whether an article (by id, or by story group when known) falls under a version's exclusions. */
+export function isExcludedArticle(
+  excluded: Pick<VersionExclusions, 'articleIds' | 'storyGroupIds'>,
+  articleId: string,
+  storyGroupId: string | null,
+): boolean {
+  return (
+    excluded.articleIds.has(articleId) ||
+    (storyGroupId !== null && excluded.storyGroupIds.has(storyGroupId))
+  );
+}
+
+function isExcludedRow(excluded: VersionExclusions, row: SampleRowInput): boolean {
+  const group = row.snapshot['storyGroupId'];
+  return isExcludedArticle(excluded, row.articleId, typeof group === 'string' ? group : null);
+}
+
+/** Drop the rows a version's exclusions forbid (callers filter before {@link insertSampleRows}). */
+export async function withoutExcludedRows<R extends SampleRowInput>(
+  db: Executor,
+  version: string,
+  rows: readonly R[],
+): Promise<R[]> {
+  const excluded = await versionExclusions(db, version);
+  return rows.filter((row) => !isExcludedRow(excluded, row));
+}
+
 /** The manifest a freeze records, computed from the current rows. */
 export async function computeDatasetManifest(
   db: Executor,
@@ -347,9 +464,14 @@ export async function computeDatasetManifest(
       JOIN eval.sample s ON s.article_id = a.article_id AND s.dataset_version = ${version}
      ORDER BY a.rater_id, a.article_id`,
   );
+  // The cards of the version's round only, as its captured truth (D-145): on a held-out version
+  // the contexts assigned in it, otherwise every rater.
+  const roundRaterIds = (await loadRoundRaters(db, version)).map((r) => r.raterId);
   const cards = await db.execute<{ rater_id: string; card_id: string; strength: string }>(sql`
     SELECT rater_id::text AS rater_id, card_id::text AS card_id, strength
-      FROM eval.rater_cards ORDER BY rater_id, card_id`);
+      FROM eval.rater_cards
+     WHERE rater_id = ANY(${sql.param(roundRaterIds)}::bigint[])
+     ORDER BY rater_id, card_id`);
   return {
     version,
     articles: rows.rows.length,

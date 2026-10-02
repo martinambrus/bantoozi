@@ -17,6 +17,7 @@ import {
   lockRater,
   nextPendingPosition,
   ownerParticipantKey,
+  ClosedRoundError,
   rateAssignment,
   raterForSession,
   removeRaterCard,
@@ -37,6 +38,7 @@ import { z } from 'zod';
 import {
   ASSIGNMENTS_PER_RATER,
   ensureAssignments,
+  EarlierRoundError,
   NoDatasetError,
   NotReadyError,
 } from './assignments.js';
@@ -271,6 +273,19 @@ export async function buildRatingServer(options: RatingServerOptions): Promise<F
     );
   });
   app.setErrorHandler(async (error, req, reply) => {
+    if (error instanceof ClosedRoundError) {
+      // A change to a closed round (D-145): a held-out version replaced it.
+      return reply
+        .code(409)
+        .type('text/html; charset=utf-8')
+        .send(
+          messagePage(
+            'Round closed',
+            'This rating round is closed, so changes are no longer saved. A new round needs its ' +
+              'own link; ask for one.',
+          ),
+        );
+    }
     if (error instanceof HttpError) {
       return reply
         .code(error.status)
@@ -721,6 +736,14 @@ export async function buildRatingServer(options: RatingServerOptions): Promise<F
           409,
           'Not ready',
           `Write ${MIN_INTEREST_CARDS}–10 interest cards and pick at least ${MIN_FEEDS} feeds first.`,
+        );
+      }
+      if (error instanceof EarlierRoundError) {
+        throw new HttpError(
+          409,
+          'New round',
+          'This link belongs to an earlier rating round. A new round needs its own link with new ' +
+            'cards; ask for one.',
         );
       }
       throw error;

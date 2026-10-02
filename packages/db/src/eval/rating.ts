@@ -14,6 +14,8 @@ import {
 import type { Executor, Transaction } from '../client.js';
 import { toDate, type RawTimestamp } from '../timestamps.js';
 import {
+  closedVersions,
+  ClosedRoundError,
   copySampleRows,
   createDataset,
   getDataset,
@@ -288,6 +290,12 @@ export interface AssignmentCandidate {
   lang: string;
 }
 
+/** A top-up candidate, with the title and cluster its story group derives from (D-145). */
+export interface TopUpCandidate extends AssignmentCandidate {
+  title: string;
+  storyClusterId: string | null;
+}
+
 /**
  * Sample rows of `version` in the rater's languages whose frozen snapshot names one of `feedIds` as
  * a carrier feed (spec 10 §2.2: "articles from eval.sample carried by the rater's picked feeds").
@@ -331,13 +339,19 @@ export async function recentUnsampledCandidates(
     since: Date;
     limit: number;
   },
-): Promise<AssignmentCandidate[]> {
+): Promise<TopUpCandidate[]> {
   if (input.feedIds.length === 0 || input.langs.length === 0 || input.limit <= 0) return [];
   // The limit applies per language, so a language with many newer articles cannot crowd the others
   // out of the pool before the planner applies its equal language shares.
-  const result = await db.execute<{ article_id: string; lang: string }>(sql`
-    SELECT article_id, lang FROM (
-      SELECT a.id::text AS article_id, a.lang, recent.seen, a.id,
+  const result = await db.execute<{
+    article_id: string;
+    lang: string;
+    title: string;
+    story_cluster_id: string | null;
+  }>(sql`
+    SELECT article_id, lang, title, story_cluster_id FROM (
+      SELECT a.id::text AS article_id, a.lang, a.title, a.story_cluster_id::text AS story_cluster_id,
+             recent.seen, a.id,
              row_number() OVER (PARTITION BY a.lang ORDER BY recent.seen DESC, a.id DESC) AS rank
         FROM articles a
         JOIN (SELECT fi.article_id, max(fi.first_seen_at) AS seen
@@ -352,7 +366,12 @@ export async function recentUnsampledCandidates(
     ) ranked
      WHERE rank <= ${input.limit}
      ORDER BY seen DESC, id DESC`);
-  return result.rows.map((row) => ({ articleId: row.article_id, lang: row.lang }));
+  return result.rows.map((row) => ({
+    articleId: row.article_id,
+    lang: row.lang,
+    title: row.title,
+    storyClusterId: row.story_cluster_id,
+  }));
 }
 
 /**
@@ -531,12 +550,17 @@ export async function openDatasetForCorrection(
   await lockDatasetAdditions(tx);
   const head = await headDataset(tx);
   const ids = articleIds === undefined ? [] : [articleIds].flat();
-  const tips =
+  const allTips =
     cause === 'cards'
       ? await lineageTips(tx, head, null)
       : ids.length === 0
         ? []
         : await lineageTips(tx, head, ids);
+  // A closed round (D-145) takes no change: its gate ran, and a held-out version replaced it. A
+  // rating or label that only an earlier round holds is refused rather than reopening that round.
+  const closed = await closedVersions(tx);
+  const tips = allTips.filter((t) => !closed.has(t.version));
+  if (cause !== 'cards') assertOpenRound(allTips, closed);
   if (tips.length === 0) return head === null ? null : openNextVersion(tx, head, cause);
   // A head that holds the change but is open gets no next version: the other lineages' new
   // versions are dated just before it, so it stays the head. A head that holds none of the
@@ -549,6 +573,24 @@ export async function openDatasetForCorrection(
   for (const tip of tips) opened = await openNextVersion(tx, tip, cause, keepHead);
   // The preferred tip's (last) result: the head's next version, or null when the head was open.
   return opened;
+}
+
+/** Refuse a change whose articles only closed rounds hold (D-145). */
+function assertOpenRound(tips: readonly DatasetRow[], closed: ReadonlySet<string>): void {
+  if (tips.length > 0 && tips.every((t) => closed.has(t.version))) {
+    throw new ClosedRoundError(tips.map((t) => t.version));
+  }
+}
+
+/**
+ * Refuse any change to an article that only closed rounds hold (D-145), even one that opens no
+ * version (a first-time skip): an earlier round's context is read-only once a held-out version
+ * replaced it.
+ */
+export async function assertArticleInOpenRound(tx: Transaction, articleId: string): Promise<void> {
+  await lockDatasetAdditions(tx);
+  const head = await headDataset(tx);
+  assertOpenRound(await lineageTips(tx, head, [articleId]), await closedVersions(tx));
 }
 
 /** Create the next open version of `base` when it is frozen (see {@link openDatasetForCorrection}). */
@@ -690,8 +732,10 @@ export async function skipAssignment(
   const skipReason = trimmed === '' ? null : trimmed;
   const state = await assignmentState(tx, input.raterId, input.position);
   if (state === null) return null;
-  // A skip that withdraws a rating is a rating correction too.
+  // A skip that withdraws a rating is a rating correction too; any skip of a closed round's
+  // article is refused (D-145).
   if (state.rated) await openDatasetForCorrection(tx, 'rating', state.articleId);
+  else await assertArticleInOpenRound(tx, state.articleId);
   const assignment = await tx.execute<{ article_id: string }>(sql`
     UPDATE eval.assignments SET status = 'skipped', skip_reason = ${skipReason}
      WHERE rater_id = ${input.raterId}::bigint AND position = ${input.position}

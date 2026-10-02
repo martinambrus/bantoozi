@@ -303,6 +303,61 @@ describe('eval sample (M3a-T2)', () => {
     expect((await getDataset(ctx.db, 'golden-short-en'))?.params['langs']).toEqual(['en', 'fr']);
   });
 
+  it("draws a held-out successor without the excluded versions' articles or story groups (D-145)", async () => {
+    await sample(['--version', 'held-a', '--seed', 'ha', '--per-lang', '30']);
+    // Only a frozen version can be excluded: an open one could still grow into the successor.
+    await expect(sample(['--version', 'held-x', '--exclude-version', 'held-a'])).rejects.toThrow(
+      '--exclude-version held-a: the version is still open; freeze it first',
+    );
+    await ctx.db.transaction((tx) => freezeDataset(tx, 'held-a'));
+    const aRows = await loadSample(ctx.db, 'held-a');
+    const aGroups = new Set(aRows.map((r) => asSnapshot(r.snapshot).storyGroupId));
+    // A republished copy of one held-a story under a new id in another feed shares its group.
+    const aTitle = asSnapshot(aRows.find((r) => r.lang === 'en')!.snapshot).input.title;
+    const copy = await collected(ctx, {
+      feedIds: [feedsByLang['en']![5]!],
+      lang: 'en',
+      title: aTitle,
+    });
+
+    const held = await sample([
+      '--version',
+      'held-b',
+      '--seed',
+      'hb',
+      '--per-lang',
+      '30',
+      '--exclude-version',
+      'held-a',
+    ]);
+    expect(held.out).toMatch(/\d+ sampled by an excluded version or its story group/);
+    const bRows = await loadSample(ctx.db, 'held-b');
+    expect(bRows.length).toBeGreaterThan(0);
+    const aIds = new Set(aRows.map((r) => r.articleId));
+    for (const row of bRows) {
+      expect(aIds.has(row.articleId)).toBe(false);
+      expect(aGroups.has(asSnapshot(row.snapshot).storyGroupId)).toBe(false);
+    }
+    expect(bRows.map((r) => r.articleId)).not.toContain(copy);
+    expect((await getDataset(ctx.db, 'held-b'))?.params).toMatchObject({
+      excludeVersions: ['held-a'],
+    });
+
+    // A re-run keeps the stored exclusion; one that would add a new exclusion, an unknown
+    // version or the version itself is refused.
+    await sample(['--version', 'held-b', '--per-lang', '30']);
+    expect((await loadSample(ctx.db, 'held-b')).some((r) => aIds.has(r.articleId))).toBe(false);
+    await expect(sample(['--version', 'held-b', '--exclude-version', 'golden-c'])).rejects.toThrow(
+      'held-b was drawn without excluding golden-c',
+    );
+    await expect(sample(['--version', 'held-c', '--exclude-version', 'nope'])).rejects.toThrow(
+      '--exclude-version nope: no such dataset version',
+    );
+    await expect(sample(['--version', 'held-d', '--exclude-version', 'held-d'])).rejects.toThrow(
+      'held-d cannot exclude itself',
+    );
+  });
+
   it('refuses a draw on a database without collected articles', async () => {
     await expect(sample(['--version', 'golden-none', '--langs', 'fr'])).rejects.toMatchObject({
       name: 'EvalCommandError',
