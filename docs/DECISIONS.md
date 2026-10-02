@@ -1256,3 +1256,15 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   measures gemma as the tier-2 translator and its run records that model; the E4 variant keeps its
   `glm` id. Locked decision 7 (GLM for tier 2 and the fallback) is unchanged; production adopts
   another model only with the owner's approval after G1. Spec 04 §8 updated.
+- D-144: 2026-10-02 M3b — spec 07 §4 failed a translated field whose most frequent word 3-gram
+  occurs more than 4 times, as a model loop. In the golden sample every one of the 18 failed
+  translations (8 LibreTranslate, 10 Ollama `gemma4:31b`) failed only this check on `body_lead`
+  (about 1,400 characters) with 5–7 repeats, and none was a loop: the source already repeated a
+  3-gram up to 5 times (listings, budget figures), and English adds function-word 3-grams that
+  Slovak and Czech lack ("the su 37", "of the slovak", "year on year"). One such field made a whole
+  translated eval run partial (B1-T, E3, E3b, E4 in the first G1 attempt) and sends a production
+  article to tier 2 needlessly. A field now fails only above max(4, 2 × the source's own most
+  repeated 3-gram + 2) repeats; `quality_detail` records `sourceMaxTrigramRepeats`. Re-graded,
+  the 18 become 12 `ok` and 6 `weak`; a real loop (a phrase cycling well past its source) still
+  fails. `TRANSLATION_POLICY_VERSION` is now `translate-policy-2`, so stored quality details and eval
+  cache manifests tell the two rules apart. Spec 07 §4 updated.
