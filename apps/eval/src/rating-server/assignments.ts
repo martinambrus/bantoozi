@@ -20,6 +20,7 @@ import {
   versionExclusions,
   withoutExcludedRows,
   type AssignmentCandidate,
+  type TopUpCandidate,
   type Database,
   type Transaction,
 } from '@bantoozi/db';
@@ -296,6 +297,10 @@ export async function ensureAssignments(
   const seed = raterSeed(input.raterId);
   return db.transaction(async (tx) => {
     if (!(await lockRater(tx, input.raterId))) throw new Error(`rater ${input.raterId} is gone`);
+    // The additions lock before the head is read (rater lock first, as everywhere): a held-out draw
+    // takes it too, so the head cannot change between the round check and the assignments
+    // (D-145). The later takes in this transaction re-enter it.
+    await lockDatasetAdditions(tx);
     const feedIds = await listRaterFeedIds(tx, input.raterId);
     if (input.requireReady === true) {
       const ready = readyToRate({
@@ -328,21 +333,40 @@ export async function ensureAssignments(
       if (withTopUps) {
         // A held-out version's exclusions (D-145) apply to the top-up pool too, so a skipped
         // article does not keep a slot the rater could have had.
-        // With exclusions the whole window is read and filtered before the per-language limit,
-        // so excluded articles never use up the slots of eligible older ones.
+        // With exclusions, excluded articles must not use up the slots of eligible older ones:
+        // read the window in growing pages until every language has `target` eligible candidates
+        // or the window is exhausted, then apply the per-language limit.
         const excluded = await versionExclusions(tx, version);
         const filtering = excluded.versions.length > 0;
-        const recent = await recentUnsampledCandidates(tx, {
-          version,
-          langs: input.langs,
-          feedIds,
-          since: new Date(input.now.getTime() - (input.recentDays ?? TOP_UP_RECENT_DAYS) * DAY_MS),
-          limit: filtering ? Number.MAX_SAFE_INTEGER : target,
-        });
+        const since = new Date(
+          input.now.getTime() - (input.recentDays ?? TOP_UP_RECENT_DAYS) * DAY_MS,
+        );
+        let limit = target;
+        let eligible: TopUpCandidate[];
+        for (;;) {
+          const recent = await recentUnsampledCandidates(tx, {
+            version,
+            langs: input.langs,
+            feedIds,
+            since,
+            limit,
+          });
+          eligible = filtering
+            ? recent.filter((c) => !isExcludedArticle(excluded, c.articleId, storyGroupId(c)))
+            : recent;
+          const count = (list: readonly TopUpCandidate[], lang: string) =>
+            list.filter((c) => c.lang === lang).length;
+          // A language is done when it has `target` eligible candidates or its window ran out
+          // (fewer rows than the page asked for).
+          const done = input.langs.every(
+            (lang) => count(eligible, lang) >= target || count(recent, lang) < limit,
+          );
+          if (!filtering || done) break;
+          limit *= 4;
+        }
         const perLang = new Map<string, number>();
         pools.push(
-          recent
-            .filter((c) => !filtering || !isExcludedArticle(excluded, c.articleId, storyGroupId(c)))
+          eligible
             .filter((c) => {
               const n = (perLang.get(c.lang) ?? 0) + 1;
               perLang.set(c.lang, n);

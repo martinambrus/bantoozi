@@ -7,6 +7,7 @@ import {
   listDatasets,
   rateAssignment,
   sampleFootprint,
+  skipAssignment,
   insertSampleRows,
   loadSample,
   setRaterFeeds,
@@ -124,6 +125,10 @@ describe('held-out versions (D-145)', () => {
       rdb.db.transaction((tx) =>
         rateAssignment(tx, { raterId: rater.id, position: 0, rating: 1, reason: null, now }),
       ),
+    ).rejects.toBeInstanceOf(ClosedRoundError);
+    // A first-time skip of it, which opens no version, is refused too.
+    await expect(
+      rdb.db.transaction((tx) => skipAssignment(tx, { raterId: rater.id, position: 0 })),
     ).rejects.toBeInstanceOf(ClosedRoundError);
     expect((await listDatasets(rdb.db)).map((d) => d.version)).toEqual(before);
     expect((await headDataset(rdb.db))?.version).toBe('golden-v2');

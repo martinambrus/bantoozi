@@ -560,9 +560,7 @@ export async function openDatasetForCorrection(
   // rating or label that only an earlier round holds is refused rather than reopening that round.
   const closed = await closedVersions(tx);
   const tips = allTips.filter((t) => !closed.has(t.version));
-  if (cause !== 'cards' && allTips.length > 0 && tips.length === 0) {
-    throw new ClosedRoundError(allTips.map((t) => t.version));
-  }
+  if (cause !== 'cards') assertOpenRound(allTips, closed);
   if (tips.length === 0) return head === null ? null : openNextVersion(tx, head, cause);
   // A head that holds the change but is open gets no next version: the other lineages' new
   // versions are dated just before it, so it stays the head. A head that holds none of the
@@ -575,6 +573,24 @@ export async function openDatasetForCorrection(
   for (const tip of tips) opened = await openNextVersion(tx, tip, cause, keepHead);
   // The preferred tip's (last) result: the head's next version, or null when the head was open.
   return opened;
+}
+
+/** Refuse a change whose articles only closed rounds hold (D-145). */
+function assertOpenRound(tips: readonly DatasetRow[], closed: ReadonlySet<string>): void {
+  if (tips.length > 0 && tips.every((t) => closed.has(t.version))) {
+    throw new ClosedRoundError(tips.map((t) => t.version));
+  }
+}
+
+/**
+ * Refuse any change to an article that only closed rounds hold (D-145), even one that opens no
+ * version (a first-time skip): an earlier round's context is read-only once a held-out version
+ * replaced it.
+ */
+export async function assertArticleInOpenRound(tx: Transaction, articleId: string): Promise<void> {
+  await lockDatasetAdditions(tx);
+  const head = await headDataset(tx);
+  assertOpenRound(await lineageTips(tx, head, [articleId]), await closedVersions(tx));
 }
 
 /** Create the next open version of `base` when it is frozen (see {@link openDatasetForCorrection}). */
@@ -716,8 +732,10 @@ export async function skipAssignment(
   const skipReason = trimmed === '' ? null : trimmed;
   const state = await assignmentState(tx, input.raterId, input.position);
   if (state === null) return null;
-  // A skip that withdraws a rating is a rating correction too.
+  // A skip that withdraws a rating is a rating correction too; any skip of a closed round's
+  // article is refused (D-145).
   if (state.rated) await openDatasetForCorrection(tx, 'rating', state.articleId);
+  else await assertArticleInOpenRound(tx, state.articleId);
   const assignment = await tx.execute<{ article_id: string }>(sql`
     UPDATE eval.assignments SET status = 'skipped', skip_reason = ${skipReason}
      WHERE rater_id = ${input.raterId}::bigint AND position = ${input.position}

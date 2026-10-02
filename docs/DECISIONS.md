@@ -1289,4 +1289,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   next version; card changes skip closed tips. The footprint covers the whole round (the named
   versions and all their descendants, such as top-up or correction children), and `eval sample`
   refuses to draw into a closed version, and `insertSampleRows` refuses rows for one, so the
-  footprint cannot grow afterwards. Spec 10 §2.1 updated.
+  footprint cannot grow afterwards. Every skip of a closed round's article is refused too (not only one
+  that withdraws a rating). `ensureAssignments` takes the additions lock before it reads the head,
+  as the held-out draw does, so the head cannot change between its round check and its
+  assignments; its top-up pool is read in growing pages until each language has enough eligible
+  candidates or runs out. Spec 10 §2.1 updated.
