@@ -1267,4 +1267,7 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   to a version that already has rows, naming an unknown or open version, or the version itself is
   refused. Every insertion path honours them: `insertSampleRows` refuses an excluded row, rating
   top-ups and `addArticlesToDataset` drop them first, and the top-up pool filters them before its
-  per-language limit so a rater's slots are not lost. Spec 10 §2.1 updated.
+  per-language limit so a rater's slots are not lost. Assignments belong to a rater context, not to a
+  version, and a context's cards are final once it has any, so a held-out round is rated by new
+  contexts (`eval rater add --participant <key>`): a context with assignments outside the held-out
+  version gets a "new round" message instead of an empty queue. Spec 10 §2.1 updated.

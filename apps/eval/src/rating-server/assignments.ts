@@ -212,6 +212,18 @@ export class NotReadyError extends Error {
   }
 }
 
+/**
+ * A rater of an earlier round opened a held-out version (D-145). Assignments belong to the rater,
+ * not to a version, and a context's cards are final once it has any: a held-out round is rated by
+ * new contexts (`eval rater add --participant <key>`), whose cards are written for it.
+ */
+export class EarlierRoundError extends Error {
+  constructor(readonly version: string) {
+    super(`the rater's assignments belong to an earlier round than held-out ${version}`);
+    this.name = 'EarlierRoundError';
+  }
+}
+
 export class NoDatasetError extends Error {
   constructor() {
     super('no golden dataset yet: run `eval sample` first');
@@ -296,6 +308,11 @@ export async function ensureAssignments(
     let current = await headDataset(tx);
     if (current === null) throw new NoDatasetError();
     const existing = await listAssignments(tx, input.raterId, current.version);
+    if (existing.length > 0 && (await versionExclusions(tx, current.version)).versions.length > 0) {
+      const ids = existing.map((a) => a.articleId);
+      const inVersion = await loadSample(tx, current.version, { articleIds: ids });
+      if (inVersion.length < new Set(ids).size) throw new EarlierRoundError(current.version);
+    }
     if (existing.length >= target) {
       return {
         added: 0,

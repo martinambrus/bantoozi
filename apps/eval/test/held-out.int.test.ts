@@ -9,7 +9,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { addArticlesToDataset, buildSampleRows } from '../src/dataset/topup.js';
-import { ensureAssignments } from '../src/rating-server/assignments.js';
+import { EarlierRoundError, ensureAssignments } from '../src/rating-server/assignments.js';
 import {
   addArticles,
   addGoldenFeeds,
@@ -99,6 +99,18 @@ describe('held-out versions (D-145)', () => {
     expect(fresh.every((id) => ids.has(id))).toBe(true);
     for (const id of [...v1Ids, copyId]) expect(ids.has(id)).toBe(false);
     expect(result.total).toBe(fresh.length);
+  });
+
+  it('refuses a rater of an earlier round instead of leaving them without articles', async () => {
+    const rater = await raterOnBothFeeds();
+    // An assignment of a golden-v1 article: this context rated the earlier round.
+    await rdb.owner.query(
+      'INSERT INTO eval.assignments (rater_id, article_id, position) VALUES ($1, $2, 0)',
+      [rater.id, v1Ids[0]],
+    );
+    await expect(
+      ensureAssignments(rdb.db, { raterId: rater.id, langs: ['en'], now }),
+    ).rejects.toBeInstanceOf(EarlierRoundError);
   });
 
   it('skips excluded articles added to the version, and refuses a direct insert', async () => {

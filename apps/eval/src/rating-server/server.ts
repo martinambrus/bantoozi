@@ -37,6 +37,7 @@ import { z } from 'zod';
 import {
   ASSIGNMENTS_PER_RATER,
   ensureAssignments,
+  EarlierRoundError,
   NoDatasetError,
   NotReadyError,
 } from './assignments.js';
@@ -721,6 +722,14 @@ export async function buildRatingServer(options: RatingServerOptions): Promise<F
           409,
           'Not ready',
           `Write ${MIN_INTEREST_CARDS}–10 interest cards and pick at least ${MIN_FEEDS} feeds first.`,
+        );
+      }
+      if (error instanceof EarlierRoundError) {
+        throw new HttpError(
+          409,
+          'New round',
+          'This link belongs to an earlier rating round. A new round needs its own link with new ' +
+            'cards; ask for one.',
         );
       }
       throw error;
