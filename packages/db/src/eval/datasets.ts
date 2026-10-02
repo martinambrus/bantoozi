@@ -363,8 +363,9 @@ export async function storyGroupSplits(
 }
 
 /**
- * Every article and story group (`snapshot.storyGroupId`) the given versions sampled: a held-out
- * successor drawn with `eval sample --exclude-version` leaves them out.
+ * Every article and story group (`snapshot.storyGroupId`) the given versions and all their
+ * descendants (corrections, top-ups: the same round) sampled: a held-out successor drawn with
+ * `eval sample --exclude-version` leaves them out.
  */
 export async function sampleFootprint(
   db: Executor,
@@ -372,9 +373,14 @@ export async function sampleFootprint(
 ): Promise<{ articleIds: Set<string>; storyGroupIds: Set<string> }> {
   if (versions.length === 0) return { articleIds: new Set(), storyGroupIds: new Set() };
   const result = await db.execute<{ article_id: string; group_id: string | null }>(sql`
-    SELECT article_id::text AS article_id, snapshot->>'storyGroupId' AS group_id
+    WITH RECURSIVE round(version) AS (
+      SELECT unnest(${sql.param([...versions])}::text[])
+      UNION
+      SELECT d.version FROM eval.datasets d JOIN round r ON d.parent_version = r.version
+    )
+    SELECT DISTINCT article_id::text AS article_id, snapshot->>'storyGroupId' AS group_id
       FROM eval.sample
-     WHERE dataset_version = ANY(${sql.param([...versions])}::text[])`);
+     WHERE dataset_version IN (SELECT version FROM round)`);
   const articleIds = new Set<string>();
   const storyGroupIds = new Set<string>();
   for (const row of result.rows) {

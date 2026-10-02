@@ -1274,4 +1274,6 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   closed round: `headDataset` never returns one (the newest tip would otherwise move the head back
   to the old sample after a late correction), and a rating or label change that only a closed round
   holds is refused with `ClosedRoundError` ("round closed" in the rating app) instead of opening its
-  next version; card changes skip closed tips. Spec 10 §2.1 updated.
+  next version; card changes skip closed tips. The footprint covers the whole round (the named
+  versions and all their descendants, such as top-up or correction children), and `eval sample`
+  refuses to draw into a closed version, so the footprint cannot grow afterwards. Spec 10 §2.1 updated.

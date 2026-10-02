@@ -6,6 +6,7 @@ import {
   headDataset,
   listDatasets,
   rateAssignment,
+  sampleFootprint,
   insertSampleRows,
   loadSample,
   setRaterFeeds,
@@ -151,5 +152,50 @@ describe('held-out versions (D-145)', () => {
     await expect(
       rdb.db.transaction((tx) => insertSampleRows(tx, 'golden-v2', rows)),
     ).rejects.toThrow(`golden-v2 excludes article ${copyId}`);
+  });
+
+  it("excludes the whole round: articles of an excluded version's descendants too", async () => {
+    // A frozen round with a top-up child whose extra article is not in the parent (last test:
+    // the open child becomes the head).
+    const [r1] = await addArticles(
+      rdb,
+      feeds[0]!.id,
+      'en',
+      1,
+      new Date(now.getTime() - DAY),
+      () => 'round parent',
+    );
+    const [r2] = await addArticles(
+      rdb,
+      feeds[0]!.id,
+      'en',
+      1,
+      new Date(now.getTime() - DAY),
+      () => 'round child only',
+    );
+    const fp = async (versions: string[]) => (await sampleFootprint(rdb.db, versions)).articleIds;
+    await createDataset(rdb.db, { version: 'round-a', seed: 'ra', params: {} });
+    await rdb.db.transaction(async (tx) => {
+      await insertSampleRows(
+        tx,
+        'round-a',
+        (await buildSampleRows(tx, 'round-a', 'ra', [r1!])).rows,
+      );
+      await freezeDataset(tx, 'round-a');
+    });
+    await createDataset(rdb.db, {
+      version: 'round-a-v2',
+      parentVersion: 'round-a',
+      seed: 'ra',
+      params: {},
+    });
+    await rdb.db.transaction(async (tx) =>
+      insertSampleRows(
+        tx,
+        'round-a-v2',
+        (await buildSampleRows(tx, 'round-a-v2', 'ra', [r2!])).rows,
+      ),
+    );
+    expect([...(await fp(['round-a']))].sort()).toEqual([r1!, r2!].sort());
   });
 });

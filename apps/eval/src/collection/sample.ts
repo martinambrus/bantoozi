@@ -1,4 +1,5 @@
 import {
+  closedVersions,
   copySampleRows,
   createDataset,
   evalUserId,
@@ -226,6 +227,10 @@ export async function drawSample(
       }
     }
 
+    // A closed round (D-145) never grows: its footprint is what a held-out version excludes.
+    if ((await closedVersions(tx)).has(version)) {
+      throw new SampleError(`${version} belongs to a closed round: a held-out version excludes it`);
+    }
     const storedExcludes = excludeParam(stored);
     const requested = [...new Set(options.excludeVersions ?? [])];
     const added = requested.filter((v) => !storedExcludes.includes(v));
