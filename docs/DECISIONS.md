@@ -1247,3 +1247,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   collecting the golden sample (§8.1). Migration 0017 creates the queue as `bantoozi_owner` with
   pg-boss's defaults, like the jobs.ts queues; a database that already has it is unchanged. Spec 02
   §1.2 updated.
+- D-143: 2026-10-02 M3b-T1 — the owner's Ollama Cloud key is on the Free plan, which offers
+  `gemma4:31b` but not `glm-5.3-flash`, and every Ollama call needs a price-table entry (spend
+  guard, eval cost accounting), so neither the provider validation nor E4 could use it. Both price
+  tables (`OLLAMA_PRICE_TABLE`, `OLLAMA_PRICES`) now list `gemma4:31b` at the Ollama pricing
+  page's rates ($0.14 in / $0.40 out per MTok, rechecked with the GLM rates on 2026-10-02; table
+  version `2026-10-02`). The golden evaluation host sets `OLLAMA_MODEL_FAST=gemma4:31b`, so E4
+  measures gemma as the tier-2 translator and its run records that model; the E4 variant keeps its
+  `glm` id. Locked decision 7 (GLM for tier 2 and the fallback) is unchanged; production adopts
+  another model only with the owner's approval after G1. Spec 04 §8 updated.

@@ -81,6 +81,8 @@ export type PriceTable = Readonly<Record<string, ModelPrice>>;
 export const OLLAMA_PRICES: PriceTable = Object.freeze({
   'glm-5.3-flash': Object.freeze({ inputPerMTokUsd: 0.15, outputPerMTokUsd: 0.5 }),
   'glm-5.3': Object.freeze({ inputPerMTokUsd: 1.4, outputPerMTokUsd: 4.4 }),
+  // Reachable on the Free plan (D-143).
+  'gemma4:31b': Object.freeze({ inputPerMTokUsd: 0.14, outputPerMTokUsd: 0.4 }),
 });
 
 /** The model id format of `OLLAMA_MODEL_FAST`/`OLLAMA_MODEL_STRONG` (spec 01 §3). */

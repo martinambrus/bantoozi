@@ -587,6 +587,7 @@ describe('tier-2 admission estimate and prices (spec 04 §6.1, §8)', () => {
     expect(OLLAMA_PRICES).toEqual({
       'glm-5.3-flash': { inputPerMTokUsd: 0.15, outputPerMTokUsd: 0.5 },
       'glm-5.3': { inputPerMTokUsd: 1.4, outputPerMTokUsd: 4.4 },
+      'gemma4:31b': { inputPerMTokUsd: 0.14, outputPerMTokUsd: 0.4 },
     });
     expect(
       tier2CostUsd(OLLAMA_PRICES['glm-5.3']!, { inputTokens: 1_000_000, outputTokens: 1_000_000 }),

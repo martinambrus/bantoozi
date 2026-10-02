@@ -773,6 +773,7 @@ describe('spec 04 §8 cost and estimates', () => {
     expect(OLLAMA_PRICE_TABLE).toEqual({
       'glm-5.3-flash': { inputPerMTokUsd: 0.15, outputPerMTokUsd: 0.5 },
       'glm-5.3': { inputPerMTokUsd: 1.4, outputPerMTokUsd: 4.4 },
+      'gemma4:31b': { inputPerMTokUsd: 0.14, outputPerMTokUsd: 0.4 },
     });
     expect(Object.isFrozen(OLLAMA_PRICE_TABLE)).toBe(true);
   });
