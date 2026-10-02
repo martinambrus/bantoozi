@@ -1,6 +1,7 @@
-import { dropCreatedTestDatabases } from '@bantoozi/testing';
+import { createCard, dropCreatedTestDatabases } from '@bantoozi/testing';
 import {
   ClosedRoundError,
+  computeDatasetManifest,
   createDataset,
   freezeDataset,
   headDataset,
@@ -158,6 +159,15 @@ describe('held-out versions (D-145)', () => {
          JOIN eval.sample s ON s.article_id = a.article_id AND s.dataset_version = 'golden-v2'`,
     );
     expect(round.map((r) => r.raterId).sort()).toEqual(assigned.rows.map((r) => r.rater_id).sort());
+    // The manifest hashes the same round's cards only: none of an earlier-round context's.
+    const outsider = all.find((r) => !round.some((x) => x.raterId === r.raterId))!;
+    const card = await createCard(rdb.owner, { visibility: 'shared', origin: 'user' });
+    await rdb.owner.query(
+      `INSERT INTO eval.rater_cards (rater_id, card_id, strength) VALUES ($1, $2, 'like')`,
+      [outsider.raterId, card.id],
+    );
+    const manifest = await computeDatasetManifest(rdb.db, 'golden-v2');
+    expect(manifest.raterCards).toBe(0);
   });
 
   it('skips excluded articles added to the version, and refuses a direct insert', async () => {

@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 import type { Executor, Transaction } from '../client.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
 
-import { captureDatasetTruth } from './experiments.js';
+import { captureDatasetTruth, loadRoundRaters } from './experiments.js';
 
 /**
  * Golden dataset versions (spec 10 §2.1, spec 02 §7, D-96). A version is a set of `eval.sample`
@@ -464,9 +464,14 @@ export async function computeDatasetManifest(
       JOIN eval.sample s ON s.article_id = a.article_id AND s.dataset_version = ${version}
      ORDER BY a.rater_id, a.article_id`,
   );
+  // The cards of the version's round only, as its captured truth (D-145): on a held-out version
+  // the contexts assigned in it, otherwise every rater.
+  const roundRaterIds = (await loadRoundRaters(db, version)).map((r) => r.raterId);
   const cards = await db.execute<{ rater_id: string; card_id: string; strength: string }>(sql`
     SELECT rater_id::text AS rater_id, card_id::text AS card_id, strength
-      FROM eval.rater_cards ORDER BY rater_id, card_id`);
+      FROM eval.rater_cards
+     WHERE rater_id = ANY(${sql.param(roundRaterIds)}::bigint[])
+     ORDER BY rater_id, card_id`);
   return {
     version,
     articles: rows.rows.length,

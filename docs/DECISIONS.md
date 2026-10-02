@@ -1295,4 +1295,5 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   assignments; its top-up pool is read in growing pages until each language has enough eligible
   candidates or runs out. A held-out version's raters (its freeze-time ground truth and
   the runs before it) are only the contexts with an assignment in it (`loadRoundRaters`), so earlier
-  rounds' contexts and cards stay out of its runs. Spec 10 §2.1 updated.
+  rounds' contexts and cards stay out of its runs; its frozen manifest hashes those raters' cards
+  only. Spec 10 §2.1 updated.
