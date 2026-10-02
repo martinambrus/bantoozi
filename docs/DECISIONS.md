@@ -1256,3 +1256,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   measures gemma as the tier-2 translator and its run records that model; the E4 variant keeps its
   `glm` id. Locked decision 7 (GLM for tier 2 and the fallback) is unchanged; production adopts
   another model only with the owner's approval after G1. Spec 04 §8 updated.
+- D-145: 2026-10-02 M3b — spec 10 §5 requires a new held-out golden version for the next gate once
+  a version's test split is revealed, but `eval sample --version <new>` drew from every collected
+  article, so `golden-v2` could repeat `golden-v1`'s articles and stories (including revealed test
+  items and the owner's known likes). `eval sample --exclude-version <list>` leaves out every
+  article and story group (`snapshot.storyGroupId`, matched on each candidate's current title or
+  cluster) that the listed versions sampled, records the list in `params.excludeVersions`, and
+  counts the excluded articles. A version keeps its exclusions on every later draw and successor;
+  adding one to a version that already has rows, naming an unknown version or the version itself is
+  refused. Spec 10 §2.1 updated.

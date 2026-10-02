@@ -320,6 +320,28 @@ export async function storyGroupSplits(
   return new Map(result.rows.map((row) => [row.group_id, row.split]));
 }
 
+/**
+ * Every article and story group (`snapshot.storyGroupId`) the given versions sampled: a held-out
+ * successor drawn with `eval sample --exclude-version` leaves them out.
+ */
+export async function sampleFootprint(
+  db: Executor,
+  versions: readonly string[],
+): Promise<{ articleIds: Set<string>; storyGroupIds: Set<string> }> {
+  if (versions.length === 0) return { articleIds: new Set(), storyGroupIds: new Set() };
+  const result = await db.execute<{ article_id: string; group_id: string | null }>(sql`
+    SELECT article_id::text AS article_id, snapshot->>'storyGroupId' AS group_id
+      FROM eval.sample
+     WHERE dataset_version = ANY(${sql.param([...versions])}::text[])`);
+  const articleIds = new Set<string>();
+  const storyGroupIds = new Set<string>();
+  for (const row of result.rows) {
+    articleIds.add(row.article_id);
+    if (row.group_id !== null) storyGroupIds.add(row.group_id);
+  }
+  return { articleIds, storyGroupIds };
+}
+
 /** The manifest a freeze records, computed from the current rows. */
 export async function computeDatasetManifest(
   db: Executor,

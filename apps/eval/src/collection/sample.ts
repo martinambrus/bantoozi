@@ -2,11 +2,13 @@ import {
   copySampleRows,
   createDataset,
   evalUserId,
+  getDataset,
   headDataset,
   insertSampleRows,
   loadSample,
   loadSampleCandidates,
   lockSampleCarriers,
+  sampleFootprint,
   lockDataset,
   lockDatasetAdditions,
   unusedDatasetVersion,
@@ -17,7 +19,7 @@ import {
   type SampleCandidate,
 } from '@bantoozi/db';
 
-import { asSnapshot } from '../dataset/snapshot.js';
+import { asSnapshot, storyGroupId } from '../dataset/snapshot.js';
 import { buildSampleRows } from '../dataset/topup.js';
 import { selectLanguageSample, type SelectItem, type SelectResult } from './select.js';
 
@@ -39,6 +41,11 @@ import { selectLanguageSample, type SelectItem, type SelectResult } from './sele
  * widened constraint, and the draw only tops the sample up. Anything else (dropping a language,
  * lowering the target or the cap) would leave rows that violate the recorded parameters. That is
  * refused with a pointer to `--version <new>`, which starts a new lineage (D-98 addendum).
+ *
+ * `--exclude-version` (D-145) draws a held-out successor after a gate revealed a version's test
+ * split: no article and no story group the excluded versions sampled is drawn. The list is
+ * recorded in `params.excludeVersions` and kept by every later draw of the version and of its
+ * successors; a re-run may name only versions it already excludes.
  */
 
 export const DEFAULT_PER_LANG = 500;
@@ -54,6 +61,8 @@ export interface SampleOptions {
   perLang?: number;
   langs?: readonly string[];
   feedCapShare?: number;
+  /** Versions whose articles and story groups the draw leaves out (D-145). */
+  excludeVersions?: readonly string[];
 }
 
 export interface LangSampleReport extends Omit<SelectResult, 'added'> {
@@ -68,6 +77,8 @@ export interface SampleExclusions {
   otherLang: Record<string, number>;
   /** Articles without a detected language. */
   undetected: number;
+  /** Articles left out because an excluded version sampled them or their story group (D-145). */
+  excludedVersions?: number;
 }
 
 export type SampleOutcome =
@@ -99,6 +110,11 @@ const dayOf = (date: Date | string): string =>
 function numberParam(params: Record<string, unknown>, key: string): number | undefined {
   const value = params[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function excludeParam(params: Record<string, unknown>): string[] {
+  const value = params['excludeVersions'];
+  return Array.isArray(value) && value.every((v) => typeof v === 'string') ? value : [];
 }
 
 function langsParam(params: Record<string, unknown>): string[] | undefined {
@@ -210,6 +226,26 @@ export async function drawSample(
       }
     }
 
+    const storedExcludes = excludeParam(stored);
+    const requested = [...new Set(options.excludeVersions ?? [])];
+    const added = requested.filter((v) => !storedExcludes.includes(v));
+    if (added.length > 0 && base !== null) {
+      throw new SampleError(
+        `${base.version} was drawn without excluding ${added.join(', ')}; its rows may overlap ` +
+          'them, so start a held-out lineage with `--version <new> --exclude-version ...`',
+      );
+    }
+    const excludeVersions = [...storedExcludes, ...added].sort();
+    for (const excludedVersion of excludeVersions) {
+      if (excludedVersion === version) {
+        throw new SampleError(`${version} cannot exclude itself`);
+      }
+      if ((await getDataset(tx, excludedVersion)) === null) {
+        throw new SampleError(`--exclude-version ${excludedVersion}: no such dataset version`);
+      }
+    }
+    const footprint = await sampleFootprint(tx, excludeVersions);
+
     const existingRows = base === null ? [] : await loadSample(tx, base.version);
     await lockSampleCarriers(tx);
     const candidates = await loadSampleCandidates(tx, userId);
@@ -232,11 +268,19 @@ export async function drawSample(
 
     const fresh = new Map<string, SelectItem[]>(langs.map((l) => [l, []]));
     const excluded = new Map(langs.map((l) => [l, { pending: 0, stale: 0, failed: 0 }]));
-    const exclusions: SampleExclusions = { otherLang: {}, undetected: 0 };
+    const exclusions: SampleExclusions = {
+      otherLang: {},
+      undetected: 0,
+      ...(excludeVersions.length === 0 ? {} : { excludedVersions: 0 }),
+    };
     let windowFrom: Date | null = null;
     let windowTo: Date | null = null;
     for (const c of candidates) {
       if (existingIds.has(c.articleId)) continue;
+      if (footprint.articleIds.has(c.articleId) || footprint.storyGroupIds.has(storyGroupId(c))) {
+        exclusions.excludedVersions = (exclusions.excludedVersions ?? 0) + 1;
+        continue;
+      }
       if (c.lang === null || c.lang === 'und') {
         exclusions.undetected += 1;
         continue;
@@ -320,6 +364,7 @@ export async function drawSample(
           feedCapShare,
           langs,
           ...(parent === null ? {} : { sampleOf: parent.version }),
+          ...(excludeVersions.length === 0 ? {} : { excludeVersions }),
           sampling: [],
         },
       });
@@ -409,7 +454,10 @@ export function formatSampleOutcome(outcome: SampleOutcome): string {
     .join(', ');
   lines.push(
     `excluded: ${outcome.exclusions.undetected} without a detected language` +
-      (other === '' ? '' : `; other languages: ${other}`),
+      (other === '' ? '' : `; other languages: ${other}`) +
+      (outcome.exclusions.excludedVersions === undefined
+        ? ''
+        : `; ${outcome.exclusions.excludedVersions} sampled by an excluded version or its story group`),
   );
   for (const r of outcome.langs) {
     if (r.size >= r.target) continue;
