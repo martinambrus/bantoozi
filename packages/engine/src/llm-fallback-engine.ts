@@ -68,12 +68,14 @@ export interface LlmPrice {
 }
 
 /** Date the Ollama Cloud rates below were confirmed; recheck before G1 (spec 04 §8). */
-export const OLLAMA_PRICE_TABLE_VERSION = '2026-09-25';
+export const OLLAMA_PRICE_TABLE_VERSION = '2026-10-02';
 
 /** Ollama Cloud model prices (spec 04 §8), versioned by {@link OLLAMA_PRICE_TABLE_VERSION}. */
 export const OLLAMA_PRICE_TABLE: Readonly<Record<string, Readonly<LlmPrice>>> = Object.freeze({
   'glm-5.3-flash': Object.freeze({ inputPerMTokUsd: 0.15, outputPerMTokUsd: 0.5 }),
   'glm-5.3': Object.freeze({ inputPerMTokUsd: 1.4, outputPerMTokUsd: 4.4 }),
+  // Reachable on the Free plan (D-143).
+  'gemma4:31b': Object.freeze({ inputPerMTokUsd: 0.14, outputPerMTokUsd: 0.4 }),
 });
 
 /** JSON output tokenizes densely (digits, quotes, braces): about 2.5 characters per token. */

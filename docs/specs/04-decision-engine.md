@@ -630,8 +630,9 @@ property per question key. Every probability has `minimum: 0, maximum: 1`.
   `invalid_response` billed with its counts. The response's `model` is not compared (Ollama echoes
   aliases); the configured model is recorded (D-59).
 - Cost comes from the model price table in config: `glm-5.3-flash` $0.15 in / $0.50 out per MTok,
-  `glm-5.3` $1.40 / $4.40. These rates are confirmed by the [Ollama pricing page](https://ollama.com/pricing)
-  on 2026-09-25; pin the price-table version and recheck before G1. Use peak uncached rates for
+  `glm-5.3` $1.40 / $4.40, and `gemma4:31b` $0.14 / $0.40 (D-143). These rates are confirmed by the
+  [Ollama pricing page](https://ollama.com/pricing) on 2026-10-02; pin the price-table version and
+  recheck before G1. Use peak uncached rates for
   admission, account for billed thinking, and obey the subscribed account's concurrency limit.
 
 **Limits:**
