@@ -197,5 +197,28 @@ describe('held-out versions (D-145)', () => {
       ),
     );
     expect([...(await fp(['round-a']))].sort()).toEqual([r1!, r2!].sort());
+    // Once a held-out version excludes the round, its open child takes no more rows.
+    await createDataset(rdb.db, {
+      version: 'round-b',
+      seed: 'rb',
+      params: { excludeVersions: ['round-a'] },
+    });
+    const [r3] = await addArticles(
+      rdb,
+      feeds[0]!.id,
+      'en',
+      1,
+      new Date(now.getTime() - DAY),
+      () => 'late',
+    );
+    await expect(
+      rdb.db.transaction(async (tx) =>
+        insertSampleRows(
+          tx,
+          'round-a-v2',
+          (await buildSampleRows(tx, 'round-a-v2', 'ra', [r3!])).rows,
+        ),
+      ),
+    ).rejects.toBeInstanceOf(ClosedRoundError);
   });
 });

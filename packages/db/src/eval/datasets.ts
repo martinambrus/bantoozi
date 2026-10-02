@@ -232,7 +232,11 @@ export async function insertSampleRows(
   rows: readonly SampleRowInput[],
 ): Promise<number> {
   // Every insertion path (the draw, rating top-ups, added articles) goes through here, so a
-  // held-out version can never gain an article or story group it excludes (D-145).
+  // held-out version can never gain an article or story group it excludes, and a closed round's
+  // footprint can never grow into one (D-145).
+  if (rows.length > 0 && (await closedVersions(tx)).has(version)) {
+    throw new ClosedRoundError([version]);
+  }
   const excluded = await versionExclusions(tx, version);
   const conflict = rows.find((row) => isExcludedRow(excluded, row));
   if (conflict !== undefined) {
