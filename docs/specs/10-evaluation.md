@@ -109,8 +109,8 @@ settings, regardless of profile.
   rows, a frozen one never changes and the next draw creates the next version (D-98). A re-run may
   only widen the recorded parameters (more languages, a higher `--per-lang` or `--feed-cap`). Any
   other change is refused, and a new `--version` starts a new lineage. A held-out successor after a revealed
-  test split is drawn with `--version <new> --exclude-version <old>[,…]`: no article and no story
-  group an excluded version sampled is drawn, and the list is kept in the version's parameters for
+  test split is drawn with `--version <new> --exclude-version <old>[,…]` (frozen versions only): no
+  article and no story group an excluded version sampled is ever added, and the list is kept in the version's parameters for
   every later draw of it (D-145). The draw share-locks its
   candidate articles and the feed–article associations until it commits, so the worker cannot
   change an article or add a carrier between selection and snapshot.

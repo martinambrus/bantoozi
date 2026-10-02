@@ -1262,8 +1262,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   items and the owner's known likes). `eval sample --exclude-version <list>` leaves out every
   article and story group (`snapshot.storyGroupId`, matched on each candidate's current title or
   cluster) that the listed versions sampled, records the list in `params.excludeVersions`, and
-  counts the excluded articles. A version keeps its exclusions on every later draw and successor;
-  adding one to a version that already has rows, naming an unknown version or the version itself is
+  counts the excluded articles. Only a frozen version can be excluded (an open one could still grow
+  into the successor). A version keeps its exclusions on every later draw and successor; adding one
+  to a version that already has rows, naming an unknown or open version, or the version itself is
   refused. Every insertion path honours them: `insertSampleRows` refuses an excluded row, rating
-  top-ups and `addArticlesToDataset` drop them first, and the top-up pool skips them so a rater's
-  slots are not lost. Spec 10 §2.1 updated.
+  top-ups and `addArticlesToDataset` drop them first, and the top-up pool filters them before its
+  per-language limit so a rater's slots are not lost. Spec 10 §2.1 updated.

@@ -311,17 +311,26 @@ export async function ensureAssignments(
       if (withTopUps) {
         // A held-out version's exclusions (D-145) apply to the top-up pool too, so a skipped
         // article does not keep a slot the rater could have had.
+        // With exclusions the whole window is read and filtered before the per-language limit,
+        // so excluded articles never use up the slots of eligible older ones.
         const excluded = await versionExclusions(tx, version);
+        const filtering = excluded.versions.length > 0;
         const recent = await recentUnsampledCandidates(tx, {
           version,
           langs: input.langs,
           feedIds,
           since: new Date(input.now.getTime() - (input.recentDays ?? TOP_UP_RECENT_DAYS) * DAY_MS),
-          limit: target,
+          limit: filtering ? Number.MAX_SAFE_INTEGER : target,
         });
+        const perLang = new Map<string, number>();
         pools.push(
           recent
-            .filter((c) => !isExcludedArticle(excluded, c.articleId, storyGroupId(c)))
+            .filter((c) => !filtering || !isExcludedArticle(excluded, c.articleId, storyGroupId(c)))
+            .filter((c) => {
+              const n = (perLang.get(c.lang) ?? 0) + 1;
+              perLang.set(c.lang, n);
+              return n <= target;
+            })
             .map((c) => ({ articleId: c.articleId, lang: c.lang })),
         );
       }

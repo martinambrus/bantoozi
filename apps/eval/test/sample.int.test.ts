@@ -305,6 +305,11 @@ describe('eval sample (M3a-T2)', () => {
 
   it("draws a held-out successor without the excluded versions' articles or story groups (D-145)", async () => {
     await sample(['--version', 'held-a', '--seed', 'ha', '--per-lang', '30']);
+    // Only a frozen version can be excluded: an open one could still grow into the successor.
+    await expect(sample(['--version', 'held-x', '--exclude-version', 'held-a'])).rejects.toThrow(
+      '--exclude-version held-a: the version is still open; freeze it first',
+    );
+    await ctx.db.transaction((tx) => freezeDataset(tx, 'held-a'));
     const aRows = await loadSample(ctx.db, 'held-a');
     const aGroups = new Set(aRows.map((r) => asSnapshot(r.snapshot).storyGroupId));
     // A republished copy of one held-a story under a new id in another feed shares its group.
@@ -342,8 +347,8 @@ describe('eval sample (M3a-T2)', () => {
     // version or the version itself is refused.
     await sample(['--version', 'held-b', '--per-lang', '30']);
     expect((await loadSample(ctx.db, 'held-b')).some((r) => aIds.has(r.articleId))).toBe(false);
-    await expect(sample(['--version', 'held-a', '--exclude-version', 'held-b'])).rejects.toThrow(
-      'was drawn without excluding held-b',
+    await expect(sample(['--version', 'held-b', '--exclude-version', 'golden-c'])).rejects.toThrow(
+      'held-b was drawn without excluding golden-c',
     );
     await expect(sample(['--version', 'held-c', '--exclude-version', 'nope'])).rejects.toThrow(
       '--exclude-version nope: no such dataset version',

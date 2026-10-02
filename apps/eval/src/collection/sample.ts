@@ -240,8 +240,16 @@ export async function drawSample(
       if (excludedVersion === version) {
         throw new SampleError(`${version} cannot exclude itself`);
       }
-      if ((await getDataset(tx, excludedVersion)) === null) {
+      const excludedRow = await getDataset(tx, excludedVersion);
+      if (excludedRow === null) {
         throw new SampleError(`--exclude-version ${excludedVersion}: no such dataset version`);
+      }
+      // Only a frozen version's footprint is final: an open one could still gain the rows this
+      // version holds, and the separation would be lost silently.
+      if (excludedRow.frozenAt === null) {
+        throw new SampleError(
+          `--exclude-version ${excludedVersion}: the version is still open; freeze it first`,
+        );
       }
     }
     const footprint = await sampleFootprint(tx, excludeVersions);
