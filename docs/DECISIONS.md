@@ -1266,4 +1266,5 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   article to tier 2 needlessly. A field now fails only above max(4, 2 × the source's own most
   repeated 3-gram + 2) repeats; `quality_detail` records `sourceMaxTrigramRepeats`. Re-graded,
   the 18 become 12 `ok` and 6 `weak`; a real loop (a phrase cycling well past its source) still
-  fails. Spec 07 §4 updated.
+  fails. `TRANSLATION_POLICY_VERSION` is now `translate-policy-2`, so stored quality details and eval
+  cache manifests tell the two rules apart. Spec 07 §4 updated.
