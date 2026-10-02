@@ -13,7 +13,7 @@ import {
   loadEvalAssignments,
   loadEvalFacetLabels,
   loadEvalRaterCards,
-  loadEvalRaters,
+  loadRoundRaters,
   loadEvalRatings,
   loadRunAnswers,
   loadSample,
@@ -458,7 +458,7 @@ async function draftConfig(
   const wanted = options.raterIds === undefined ? null : new Set(options.raterIds);
   const raters =
     truth === null
-      ? await loadEvalRaters(db, options.raterIds)
+      ? await loadRoundRaters(db, dataset.version, options.raterIds)
       : truth.raters.filter((r) => wanted === null || wanted.has(r.raterId));
   if (wanted !== null && raters.length !== wanted.size) {
     throw new EvalCommandError('unknown rater id in --raters');

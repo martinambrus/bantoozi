@@ -1293,4 +1293,6 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   that withdraws a rating). `ensureAssignments` takes the additions lock before it reads the head,
   as the held-out draw does, so the head cannot change between its round check and its
   assignments; its top-up pool is read in growing pages until each language has enough eligible
-  candidates or runs out. Spec 10 §2.1 updated.
+  candidates or runs out. A held-out version's raters (its freeze-time ground truth and
+  the runs before it) are only the contexts with an assignment in it (`loadRoundRaters`), so earlier
+  rounds' contexts and cards stay out of its runs. Spec 10 §2.1 updated.

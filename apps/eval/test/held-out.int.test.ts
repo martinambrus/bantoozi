@@ -5,6 +5,7 @@ import {
   freezeDataset,
   headDataset,
   listDatasets,
+  loadRoundRaters,
   rateAssignment,
   sampleFootprint,
   skipAssignment,
@@ -143,6 +144,20 @@ describe('held-out versions (D-145)', () => {
       params: {},
     });
     expect((await headDataset(rdb.db))?.version).toBe('golden-v2');
+  });
+
+  it('scopes the held-out round to the contexts assigned in it', async () => {
+    // Raters of earlier tests: two hold golden-v2 assignments, one only a golden-v1 one, and a
+    // context without assignments.
+    await addRater(rdb, { langs: ['en'], now });
+    const round = await loadRoundRaters(rdb.db, 'golden-v2');
+    const all = await loadRoundRaters(rdb.db, 'golden-v1');
+    expect(all.length).toBeGreaterThan(round.length);
+    const assigned = await rdb.owner.query<{ rater_id: string }>(
+      `SELECT DISTINCT a.rater_id::text AS rater_id FROM eval.assignments a
+         JOIN eval.sample s ON s.article_id = a.article_id AND s.dataset_version = 'golden-v2'`,
+    );
+    expect(round.map((r) => r.raterId).sort()).toEqual(assigned.rows.map((r) => r.rater_id).sort());
   });
 
   it('skips excluded articles added to the version, and refuses a direct insert', async () => {

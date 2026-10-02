@@ -60,6 +60,29 @@ export interface EvalFacetLabelRecord {
 const raterFilter = (raterIds: readonly string[] | undefined, column = sql`r.id`) =>
   raterIds === undefined ? sql`` : sql` AND ${column} = ANY(${sql.param([...raterIds])}::bigint[])`;
 
+/**
+ * The raters of a version's round (D-145): on a held-out version (one with `excludeVersions`) only
+ * the contexts with an assignment in its sample, since earlier rounds' contexts are read-only and
+ * a held-out round is rated by new ones; on any other version every rater (or the given ids).
+ */
+export async function loadRoundRaters(
+  db: Executor,
+  version: string,
+  raterIds?: readonly string[],
+): Promise<EvalRaterRecord[]> {
+  const raters = await loadEvalRaters(db, raterIds);
+  const heldOut = await db.execute<{ held_out: boolean }>(sql`
+    SELECT jsonb_array_length(coalesce(params->'excludeVersions', '[]'::jsonb)) > 0 AS held_out
+      FROM eval.datasets WHERE version = ${version}`);
+  if (heldOut.rows[0]?.held_out !== true) return raters;
+  const result = await db.execute<{ rater_id: string }>(sql`
+    SELECT DISTINCT a.rater_id::text AS rater_id
+      FROM eval.assignments a
+      JOIN eval.sample s ON s.article_id = a.article_id AND s.dataset_version = ${version}`);
+  const inRound = new Set(result.rows.map((row) => row.rater_id));
+  return raters.filter((r) => inRound.has(r.raterId));
+}
+
 /** Raters (all, or the given ids), ordered by id. */
 export async function loadEvalRaters(
   db: Executor,
@@ -226,7 +249,7 @@ export async function captureDatasetTruth(db: Executor, version: string): Promis
     sql`SELECT 1 FROM eval.dataset_truth WHERE dataset_version = ${version}`,
   );
   if (existing.rows.length > 0) return false;
-  const raters = await loadEvalRaters(db);
+  const raters = await loadRoundRaters(db, version);
   const raterIds = raters.map((r) => r.raterId);
   const ratings = await loadEvalRatings(db, version, raterIds);
   const assignments = await loadEvalAssignments(db, version, raterIds);
