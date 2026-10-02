@@ -4,6 +4,7 @@ import {
   createDataset,
   headDataset,
   insertSampleRows,
+  isExcludedArticle,
   listAssignments,
   listRaterCards,
   listRaterFeedIds,
@@ -16,12 +17,15 @@ import {
   openDatasetForCorrection,
   recentUnsampledCandidates,
   sampleCandidates,
+  versionExclusions,
+  withoutExcludedRows,
   type AssignmentCandidate,
   type Database,
   type Transaction,
 } from '@bantoozi/db';
 import { sha256Hex } from '@bantoozi/shared/server';
 
+import { storyGroupId } from '../dataset/snapshot.js';
 import { buildSampleRows } from '../dataset/topup.js';
 import { countCards, readyToRate } from './steps.js';
 
@@ -244,7 +248,9 @@ async function addTopUps(
   }
   const present = new Set((await loadSample(tx, version, { articleIds })).map((r) => r.articleId));
   const missing = [...new Set(articleIds)].filter((id) => !present.has(id));
-  const { rows } = await buildSampleRows(tx, version, head.seed, missing);
+  const built = await buildSampleRows(tx, version, head.seed, missing);
+  // A held-out version never gains what it excludes (D-145); the pool already skipped them.
+  const rows = await withoutExcludedRows(tx, version, built.rows);
   await insertSampleRows(tx, version, rows);
   return { added: rows.map((r) => r.articleId), createdFrom };
 }
@@ -303,16 +309,20 @@ export async function ensureAssignments(
       const sample = await sampleCandidates(tx, { version, langs: input.langs, feedIds });
       const pools: AssignmentCandidate[][] = [sample];
       if (withTopUps) {
+        // A held-out version's exclusions (D-145) apply to the top-up pool too, so a skipped
+        // article does not keep a slot the rater could have had.
+        const excluded = await versionExclusions(tx, version);
+        const recent = await recentUnsampledCandidates(tx, {
+          version,
+          langs: input.langs,
+          feedIds,
+          since: new Date(input.now.getTime() - (input.recentDays ?? TOP_UP_RECENT_DAYS) * DAY_MS),
+          limit: target,
+        });
         pools.push(
-          await recentUnsampledCandidates(tx, {
-            version,
-            langs: input.langs,
-            feedIds,
-            since: new Date(
-              input.now.getTime() - (input.recentDays ?? TOP_UP_RECENT_DAYS) * DAY_MS,
-            ),
-            limit: target,
-          }),
+          recent
+            .filter((c) => !isExcludedArticle(excluded, c.articleId, storyGroupId(c)))
+            .map((c) => ({ articleId: c.articleId, lang: c.lang })),
         );
       }
       return planAssignments({ seed, langs: input.langs, target, existing, pools });

@@ -1264,4 +1264,6 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   cluster) that the listed versions sampled, records the list in `params.excludeVersions`, and
   counts the excluded articles. A version keeps its exclusions on every later draw and successor;
   adding one to a version that already has rows, naming an unknown version or the version itself is
-  refused. Spec 10 §2.1 updated.
+  refused. Every insertion path honours them: `insertSampleRows` refuses an excluded row, rating
+  top-ups and `addArticlesToDataset` drop them first, and the top-up pool skips them so a rater's
+  slots are not lost. Spec 10 §2.1 updated.

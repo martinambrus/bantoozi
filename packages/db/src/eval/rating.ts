@@ -288,6 +288,12 @@ export interface AssignmentCandidate {
   lang: string;
 }
 
+/** A top-up candidate, with the title and cluster its story group derives from (D-145). */
+export interface TopUpCandidate extends AssignmentCandidate {
+  title: string;
+  storyClusterId: string | null;
+}
+
 /**
  * Sample rows of `version` in the rater's languages whose frozen snapshot names one of `feedIds` as
  * a carrier feed (spec 10 §2.2: "articles from eval.sample carried by the rater's picked feeds").
@@ -331,13 +337,19 @@ export async function recentUnsampledCandidates(
     since: Date;
     limit: number;
   },
-): Promise<AssignmentCandidate[]> {
+): Promise<TopUpCandidate[]> {
   if (input.feedIds.length === 0 || input.langs.length === 0 || input.limit <= 0) return [];
   // The limit applies per language, so a language with many newer articles cannot crowd the others
   // out of the pool before the planner applies its equal language shares.
-  const result = await db.execute<{ article_id: string; lang: string }>(sql`
-    SELECT article_id, lang FROM (
-      SELECT a.id::text AS article_id, a.lang, recent.seen, a.id,
+  const result = await db.execute<{
+    article_id: string;
+    lang: string;
+    title: string;
+    story_cluster_id: string | null;
+  }>(sql`
+    SELECT article_id, lang, title, story_cluster_id FROM (
+      SELECT a.id::text AS article_id, a.lang, a.title, a.story_cluster_id::text AS story_cluster_id,
+             recent.seen, a.id,
              row_number() OVER (PARTITION BY a.lang ORDER BY recent.seen DESC, a.id DESC) AS rank
         FROM articles a
         JOIN (SELECT fi.article_id, max(fi.first_seen_at) AS seen
@@ -352,7 +364,12 @@ export async function recentUnsampledCandidates(
     ) ranked
      WHERE rank <= ${input.limit}
      ORDER BY seen DESC, id DESC`);
-  return result.rows.map((row) => ({ articleId: row.article_id, lang: row.lang }));
+  return result.rows.map((row) => ({
+    articleId: row.article_id,
+    lang: row.lang,
+    title: row.title,
+    storyClusterId: row.story_cluster_id,
+  }));
 }
 
 /**

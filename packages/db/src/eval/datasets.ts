@@ -198,6 +198,15 @@ export async function insertSampleRows(
   version: string,
   rows: readonly SampleRowInput[],
 ): Promise<number> {
+  // Every insertion path (the draw, rating top-ups, added articles) goes through here, so a
+  // held-out version can never gain an article or story group it excludes (D-145).
+  const excluded = await versionExclusions(tx, version);
+  const conflict = rows.find((row) => isExcludedRow(excluded, row));
+  if (conflict !== undefined) {
+    throw new Error(
+      `${version} excludes article ${conflict.articleId} (sampled by ${excluded.versions.join(', ')} or its story group)`,
+    );
+  }
   let inserted = 0;
   for (let i = 0; i < rows.length; i += 200) {
     const chunk = rows.slice(i, i + 200);
@@ -340,6 +349,49 @@ export async function sampleFootprint(
     if (row.group_id !== null) storyGroupIds.add(row.group_id);
   }
   return { articleIds, storyGroupIds };
+}
+
+export interface VersionExclusions {
+  /** `params.excludeVersions` of the version (D-145). */
+  versions: string[];
+  articleIds: Set<string>;
+  storyGroupIds: Set<string>;
+}
+
+/** The versions a dataset version excludes, and their sampled articles and story groups. */
+export async function versionExclusions(db: Executor, version: string): Promise<VersionExclusions> {
+  const dataset = await getDataset(db, version);
+  const raw = dataset?.params['excludeVersions'];
+  const versions =
+    Array.isArray(raw) && raw.every((v): v is string => typeof v === 'string') ? raw : [];
+  return { versions, ...(await sampleFootprint(db, versions)) };
+}
+
+/** Whether an article (by id, or by story group when known) falls under a version's exclusions. */
+export function isExcludedArticle(
+  excluded: Pick<VersionExclusions, 'articleIds' | 'storyGroupIds'>,
+  articleId: string,
+  storyGroupId: string | null,
+): boolean {
+  return (
+    excluded.articleIds.has(articleId) ||
+    (storyGroupId !== null && excluded.storyGroupIds.has(storyGroupId))
+  );
+}
+
+function isExcludedRow(excluded: VersionExclusions, row: SampleRowInput): boolean {
+  const group = row.snapshot['storyGroupId'];
+  return isExcludedArticle(excluded, row.articleId, typeof group === 'string' ? group : null);
+}
+
+/** Drop the rows a version's exclusions forbid (callers filter before {@link insertSampleRows}). */
+export async function withoutExcludedRows<R extends SampleRowInput>(
+  db: Executor,
+  version: string,
+  rows: readonly R[],
+): Promise<R[]> {
+  const excluded = await versionExclusions(db, version);
+  return rows.filter((row) => !isExcludedRow(excluded, row));
 }
 
 /** The manifest a freeze records, computed from the current rows. */

@@ -3,6 +3,7 @@ import {
   createDataset,
   headDataset,
   insertSampleRows,
+  withoutExcludedRows,
   loadArticleUrls,
   loadCarrierFeeds,
   loadClassificationArticles,
@@ -118,7 +119,13 @@ export async function addArticlesToDataset(
       (await loadSample(tx, version, { articleIds })).map((r) => r.articleId),
     );
     const missing = [...new Set(articleIds)].filter((id) => !present.has(id));
-    const { rows, skipped } = await buildSampleRows(tx, version, head.seed, missing);
+    const built = await buildSampleRows(tx, version, head.seed, missing);
+    const rows = await withoutExcludedRows(tx, version, built.rows);
+    const kept = new Set(rows.map((r) => r.articleId));
+    const skipped = [
+      ...built.skipped,
+      ...built.rows.filter((r) => !kept.has(r.articleId)).map((r) => r.articleId),
+    ];
     await insertSampleRows(tx, version, rows);
     return { version, createdFrom, added: rows.map((r) => r.articleId), skipped };
   });
