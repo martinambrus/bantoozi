@@ -46,7 +46,7 @@ feeds are shown to you.
 
 ### Step 3: rate
 
-You get up to 300 articles, split evenly across your languages, in a fixed random order. For each
+You get up to 300 articles (or the number the owner set), split evenly across your languages, in a fixed random order. For each
 one you see the feed, the title, a short excerpt and an "open original" link.
 
 - 👍 **I'd want to read this** (key `+`): you would open or save it if it appeared in your reader.
@@ -117,7 +117,7 @@ z nich.
 
 ### Krok 3: hodnoťte
 
-Dostanete najviac 300 článkov, rovnomerne rozdelených medzi vaše jazyky, v pevnom náhodnom poradí.
+Dostanete najviac 300 článkov (alebo počet, ktorý nastavil vlastník), rovnomerne rozdelených medzi vaše jazyky, v pevnom náhodnom poradí.
 Pri každom uvidíte zdroj, titulok, krátky úryvok a odkaz „otvoriť originál“.
 
 - 👍 **Chcel(a) by som si to prečítať** (kláves `+`): otvorili alebo uložili by ste si ho, keby sa

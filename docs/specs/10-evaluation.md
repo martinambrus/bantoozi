@@ -159,10 +159,11 @@ settings, regardless of profile.
 - **Step 2: pick feeds.** The rater ticks the golden feeds they would actually subscribe to (at least
   10) → `eval.rater_feeds`.
 - **Step 3: rate.** On first entry, the app builds the rater's `eval.assignments`:
-  - up to **300** articles from `eval.sample` carried by the rater's picked feeds
+  - up to **300** articles (`eval serve-rating --assignments <n>` sets another target, D-146) from
+    `eval.sample` carried by the rater's picked feeds
   - split **equally across the rater's `langs`**; a language short of its share is topped up from the
     others
-  - if the sample has fewer than 300 for these feeds, all of them are assigned, topped up from
+  - if the sample has fewer than the target for these feeds, all of them are assigned, topped up from
     non-sampled recent articles of the rater's feeds (first seen within the last 30 days, excluding
     stale/failed; D-104), which are then added to `eval.sample`
   - top-ups join the dataset version being built until its first model run freezes it; after that,
