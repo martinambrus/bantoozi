@@ -1,13 +1,24 @@
 import type { CardDto } from '@bantoozi/shared';
 import { screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { cardsKey } from '../../src/features/interests/queries.js';
+import { WhyThisSheet } from '../../src/features/why/why-this-sheet.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
-import { bodyOf, deferred, findToast } from '../article/harness.js';
+import { bodyOf, deferred, findToast, renderReader } from '../article/harness.js';
 import { cardResult, makeCard } from '../interests/support.js';
 import { USER_A_ID } from '../session/fixtures.js';
-import { HELD, checkUnhandled, makeExplain, renderDrawer } from './support.js';
+import {
+  HELD,
+  ITEM,
+  checkUnhandled,
+  drawerRoutes,
+  makeExplain,
+  renderDrawer,
+  settled,
+  track,
+} from './support.js';
 
 checkUnhandled();
 
@@ -268,5 +279,83 @@ describe('the interest rows', () => {
 
     expect(row(app, EV).getByText('Strength: Love')).toBeInTheDocument();
     expect(row(app, 'Solar power').getByText('Strength: Like')).toBeInTheDocument();
+  });
+});
+
+describe('the drawer opened again after a card took the place of another', () => {
+  function Reopenable() {
+    const [open, setOpen] = useState(true);
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(true)}>
+          Open the drawer again
+        </button>
+        <WhyThisSheet item={ITEM} open={open} onClose={() => setOpen(false)} />
+      </>
+    );
+  }
+
+  async function openDrawer(app: ReturnType<typeof renderReader>) {
+    await screen.findByRole('dialog', { name: 'Why this?' });
+    await settled(app);
+  }
+
+  const listed = (title: string) => within(screen.getByRole('listitem', { name: title }));
+
+  it('teaches the card that took its place, not the one the explanation still names', async () => {
+    const second = makeCard({ id: '36', title: EV, origin: 'fork', isPrivateFork: true });
+    const app = track(
+      renderReader(<Reopenable />, {
+        routes: {
+          ...drawerRoutes(),
+          'POST /cards/:id/examples': (_request, params) =>
+            params['id'] === '31'
+              ? forkOf31()
+              : json(200, cardResult(second, { from: '35', to: '36' })),
+        },
+      }),
+    );
+    await openDrawer(app);
+    await app.user.click(listed(EV).getByRole('button', { name: NOT_THIS }));
+    await findToast("Learned: this isn't EV battery tech");
+
+    await app.user.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await app.user.click(screen.getByRole('button', { name: 'Open the drawer again' }));
+    await openDrawer(app);
+    await app.user.click(listed(EV).getByRole('button', { name: EXACTLY }));
+
+    await waitFor(() => expect(app.calls('POST', '/cards/35/examples')).toHaveLength(1));
+    expect(bodyOf(app.calls('POST', '/cards/35/examples')[0]!)).toEqual({
+      articleId: '101',
+      side: 'yes',
+    });
+    expect(app.calls('POST', '/cards/31/examples')).toHaveLength(1);
+  });
+
+  it('keeps the moves of the other interests apart', async () => {
+    const solar = makeCard({ id: '37', title: 'Solar power', origin: 'fork', isPrivateFork: true });
+    const app = track(
+      renderReader(<Reopenable />, {
+        routes: {
+          ...drawerRoutes(),
+          'POST /cards/:id/examples': (_request, params) =>
+            params['id'] === '31'
+              ? forkOf31()
+              : json(200, cardResult(solar, { from: '32', to: '37' })),
+        },
+      }),
+    );
+    await openDrawer(app);
+    await app.user.click(listed(EV).getByRole('button', { name: NOT_THIS }));
+    await findToast("Learned: this isn't EV battery tech");
+    await app.user.click(screen.getByRole('button', { name: 'Close' }));
+    await app.user.click(screen.getByRole('button', { name: 'Open the drawer again' }));
+    await openDrawer(app);
+
+    await app.user.click(listed('Solar power').getByRole('button', { name: EXACTLY }));
+
+    await waitFor(() => expect(app.calls('POST', '/cards/32/examples')).toHaveLength(1));
+    expect(app.calls('POST', '/cards/35/examples')).toHaveLength(0);
   });
 });

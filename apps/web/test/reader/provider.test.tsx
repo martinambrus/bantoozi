@@ -440,6 +440,7 @@ describe('reader action toasts', () => {
       },
     });
     await user.click(rating === null ? like() : dislike());
+    if (rating !== null) await user.click(screen.getByRole('button', { name: 'Other' }));
     expect(await findToast(message)).toBeInTheDocument();
   });
 
@@ -462,6 +463,7 @@ describe('reader action toasts', () => {
     await user.click(screen.getAllByRole('button', { name: 'Like' })[0]!);
     await findToast('Marked as liked');
     await user.click(screen.getAllByRole('button', { name: 'Dislike' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Other' }));
     await findToast('Marked as disliked');
 
     expect(toasts.getSnapshot().map((toast) => toast.message)).toEqual(['Marked as disliked']);

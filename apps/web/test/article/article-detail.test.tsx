@@ -1,5 +1,5 @@
 import type { ArticleListItem, BookmarkSnapshot } from '@bantoozi/shared';
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useState, type ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
@@ -430,10 +430,18 @@ describe('ArticleDetail action bar', () => {
       },
     );
     await user.click(await screen.findByRole('button', { name: 'Dislike' }));
+    expect(calls('POST', '/articles/101/rating')).toHaveLength(0);
+    await user.click(
+      within(screen.getByRole('group', { name: 'Reason for the dislike' })).getByRole('button', {
+        name: 'Seen it',
+      }),
+    );
+    await waitFor(() => expect(calls('POST', '/articles/101/rating')).toHaveLength(1));
     expect(bodyOf(calls('POST', '/articles/101/rating')[0]!)).toEqual({
       stateVersion: '4',
       contentRevision: '2',
       rating: -1,
+      reason: 'seen',
       analysisRequestId: requestId,
     });
     await user.click(screen.getByRole('button', { name: 'Bookmark' }));
@@ -441,6 +449,29 @@ describe('ArticleDetail action bar', () => {
     expect(bodyOf(calls('POST', '/articles/101/bookmark')[0]!)).toMatchObject({
       contentRevision: '2',
       mediaPolicyFeedId: '7',
+    });
+  });
+
+  it('hides with a Shift+click on the like, as the row does', async () => {
+    const item = makeItem();
+    const { calls } = renderDetail(
+      item,
+      {},
+      {
+        routes: {
+          'POST /articles/:id/rating': () => ratingResponse(acked(item, { rating: 1 })),
+        },
+      },
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Like' }), { shiftKey: true });
+
+    await waitFor(() => expect(calls('POST', '/articles/101/rating')).toHaveLength(1));
+    expect(bodyOf(calls('POST', '/articles/101/rating')[0]!)).toEqual({
+      stateVersion: '4',
+      contentRevision: '2',
+      rating: 1,
+      hide: true,
     });
   });
 

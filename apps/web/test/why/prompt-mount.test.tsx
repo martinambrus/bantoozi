@@ -13,11 +13,12 @@ vi.mock('../../src/features/why/did-you-like-prompt.js', async () => {
   const { createElement } = await import('react');
   return { DidYouLikePrompt: () => createElement('p', null, 'The prompt is mounted') };
 });
-// The wizard reads queries; only the layout around it is under test.
+// The wizard and the reason bar read queries; only the layout around them is under test.
 vi.mock('../../src/features/onboarding/onboarding-page.js', async () => {
   const { createElement } = await import('react');
   return { OnboardingPage: () => createElement('h1', null, 'Welcome') };
 });
+vi.mock('../../src/features/article/reason-bar.js', () => ({ ReasonBar: () => null }));
 
 async function renderOnboarding(queryClient: QueryClient) {
   const router = createAppRouter(

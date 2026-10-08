@@ -11,6 +11,8 @@ import { meKey } from '../../src/api/query-keys.js';
 import { ToastProvider } from '../../src/components/toast/toast-provider.js';
 import { Toaster } from '../../src/components/toast/toaster.js';
 import { createToastStore } from '../../src/components/toast/toast-store.js';
+import { ReasonBar } from '../../src/features/article/reason-bar.js';
+import { forgetCardMoves } from '../../src/features/interests/card-moves.js';
 import { ReaderActionsProvider } from '../../src/features/reader/actions/provider.js';
 import { createI18n, type Language } from '../../src/i18n/index.js';
 import { fakeFetch, json, type RecordedRequest } from '../api/fake-fetch.js';
@@ -31,9 +33,10 @@ export interface ReaderHarnessOptions {
 
 /**
  * Renders `ui` the way the signed-in app does: the typed API client over a fake `fetch`, the query
- * cache with the account already known, toasts and the reader action provider.
+ * cache with the account already known, toasts, the reader action provider and the reason bar.
  */
 export function renderReader(ui: ReactNode, options: ReaderHarnessOptions = {}) {
+  forgetCardMoves();
   const me = options.me ?? makeMe();
   const fake = createFakeServer({ me, routes: options.routes ?? {} });
   const fetched = fakeFetch(fake.handler);
@@ -51,7 +54,10 @@ export function renderReader(ui: ReactNode, options: ReaderHarnessOptions = {}) 
         <QueryClientProvider client={queryClient}>
           <ApiProvider client={api}>
             <ToastProvider store={toasts}>
-              <ReaderActionsProvider accountId={accountId}>{children}</ReaderActionsProvider>
+              <ReaderActionsProvider accountId={accountId}>
+                {children}
+                <ReasonBar />
+              </ReaderActionsProvider>
               <Toaster />
             </ToastProvider>
           </ApiProvider>

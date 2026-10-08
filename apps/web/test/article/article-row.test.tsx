@@ -450,22 +450,34 @@ describe('ArticleRow rating and bookmark', () => {
     expect(screen.getByRole('button', { name: 'Like' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('dislikes without a reason', async () => {
+  it('holds a dislike for the reason bar and sends it with the reason that is picked', async () => {
     const item = makeItem();
     const { user, calls } = renderRow(
       item,
       {},
       {
         routes: {
-          'POST /articles/:id/rating': () => ratingResponse(acked(item, { rating: -1 })),
+          'POST /articles/:id/rating': () =>
+            ratingResponse(acked(item, { rating: -1, reason: 'clickbait' })),
         },
       },
     );
     await user.click(screen.getByRole('button', { name: 'Dislike' }));
+    expect(screen.getByRole('button', { name: 'Dislike' })).toHaveAttribute('aria-pressed', 'true');
+    expect(calls('POST', '/articles/101/rating')).toHaveLength(0);
+
+    await user.click(
+      within(screen.getByRole('group', { name: 'Reason for the dislike' })).getByRole('button', {
+        name: 'Clickbait',
+      }),
+    );
+
+    await waitFor(() => expect(calls('POST', '/articles/101/rating')).toHaveLength(1));
     expect(bodyOf(calls('POST', '/articles/101/rating')[0]!)).toEqual({
       stateVersion: '4',
       contentRevision: '2',
       rating: -1,
+      reason: 'clickbait',
     });
     expect(screen.getByRole('button', { name: 'Dislike' })).toHaveAttribute('aria-pressed', 'true');
   });

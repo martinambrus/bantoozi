@@ -13,6 +13,7 @@ import { Chip, ChipButton } from './chip-button.js';
 import { formatRelativeTime } from './format.js';
 import { httpUrl } from './http-url.js';
 import { LabelDot } from './label-dot.js';
+import { SwipeRow } from './swipe-row.js';
 import { topReasonText } from './top-reason.js';
 import { useArticleActions } from './use-article-actions.js';
 import { useLabels } from './use-labels.js';
@@ -62,10 +63,7 @@ export function ArticleRow({
   const reason = shown.topReason === null ? null : topReasonText(t, i18n.language, shown.topReason);
 
   return (
-    <article
-      aria-labelledby={titleId}
-      className="flex gap-3 rounded-xl border border-slate-300 bg-white p-3 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-    >
+    <SwipeRow item={shown} actions={actions} labelledBy={titleId}>
       {selection === undefined ? null : (
         <Checkbox
           className="w-11 shrink-0"
@@ -215,6 +213,6 @@ export function ArticleRow({
           className="size-20 shrink-0 rounded-lg object-cover"
         />
       )}
-    </article>
+    </SwipeRow>
   );
 }

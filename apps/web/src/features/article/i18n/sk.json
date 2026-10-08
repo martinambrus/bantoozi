@@ -99,12 +99,39 @@
     "inherit": "Použiť globálne nastavenie",
     "saved": "Nastavenie obrázkov je uložené"
   },
+  "reasonBar": {
+    "label": "Dôvod nepáčenia",
+    "disliked": "Nepáči sa vám: {{title}}",
+    "announce": "Nepáči sa vám: {{title}}. Vyberte dôvod klávesmi 1 až 6 alebo vráťte späť.",
+    "reasons": {
+      "off_topic": "Mimo témy",
+      "clickbait": "Klikbajt",
+      "seen": "Už videné",
+      "shallow": "Príliš plytké",
+      "promo": "Reklama",
+      "other": "Iné"
+    }
+  },
+  "swipe": {
+    "like": "Páči sa mi",
+    "removeLike": "Zrušiť „páči sa mi“",
+    "dislike": "Nepáči sa mi",
+    "removeDislike": "Zrušiť „nepáči sa mi“",
+    "bookmark": "Záložka",
+    "removeBookmark": "Odstrániť záložku",
+    "markRead": "Označiť ako prečítané",
+    "markUnread": "Označiť ako neprečítané"
+  },
   "toast": {
     "ratedUp": "Označené ako „páči sa mi“",
     "ratedDown": "Označené ako „nepáči sa mi“",
     "ratingRemoved": "Hodnotenie bolo odstránené",
     "stale": "Tento článok sa zmenil na inom zariadení, preto sa vaša zmena nepoužila.",
     "undoConflict": "Novšie zmeny sa zachovali.",
-    "undoRefused": "Toto sa už nedá vrátiť späť."
+    "undoRefused": "Toto sa už nedá vrátiť späť.",
+    "teachYes": "Naučiť „{{title}}“: presne toto",
+    "teachNo": "Naučiť „{{title}}“: nie toto",
+    "stopSuggesting": "Prestať navrhovať",
+    "suggestionsOff": "Navrhovanie učenia je vypnuté. Znova ho zapnete v Nastaveniach."
   }
 }

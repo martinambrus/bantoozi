@@ -56,6 +56,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
   const dismiss = useCallback(() => onDismiss(id), [onDismiss, id]);
   useAutoDismiss(toast, hovered || focused, dismiss);
   const { icon: Icon, classes } = TONES[toast.tone];
+  const wraps = actions.length > 1;
 
   return (
     <div
@@ -66,24 +67,32 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
       onBlur={() => setFocused(false)}
       className={cx(
         'pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-lg border-2 py-1 pl-3 pr-1 shadow-lg motion-safe:animate-toast-in',
+        wraps && 'flex-wrap',
         classes,
       )}
     >
       <Icon className="size-5" />
       <p className="flex-1 py-2 text-sm font-medium">{toast.message}</p>
-      {actions.map((action, index) => (
-        <Button
-          key={index}
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            action.onAction();
-            dismiss();
-          }}
+      {actions.length === 0 ? null : (
+        <div
+          data-toast-actions
+          className={wraps ? 'order-last flex w-full flex-wrap items-center gap-2' : 'contents'}
         >
-          {action.label}
-        </Button>
-      ))}
+          {actions.map((action, index) => (
+            <Button
+              key={index}
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                action.onAction();
+                dismiss();
+              }}
+            >
+              {action.label}
+            </Button>
+          ))}
+        </div>
+      )}
       <IconButton label={t('actions.dismiss')} onClick={dismiss}>
         <CloseIcon />
       </IconButton>
@@ -106,7 +115,7 @@ export function Toaster() {
       role="status"
       aria-live="polite"
       aria-atomic="false"
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-2 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-2 px-4 pt-4 pb-[calc(max(1rem,env(safe-area-inset-bottom))+var(--reason-bar-height,0px))]"
     >
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onDismiss={store.dismiss} />

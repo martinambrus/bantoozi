@@ -3,6 +3,7 @@ import { Outlet, createFileRoute, redirect } from '@tanstack/react-router';
 import { useCallback, useSyncExternalStore } from 'react';
 
 import { meKey } from '../../api/query-keys.js';
+import { ReasonBar } from '../../features/article/reason-bar.js';
 import { ReaderActionsProvider } from '../../features/reader/actions/provider.js';
 import { AccountEffects } from '../../features/shell/account-effects.js';
 import { DidYouLikePrompt } from '../../features/why/did-you-like-prompt.js';
@@ -45,6 +46,7 @@ function AuthedLayout() {
     <ReaderActionsProvider accountId={me.id}>
       {content}
       <DidYouLikePrompt />
+      <ReasonBar />
     </ReaderActionsProvider>
   );
 }

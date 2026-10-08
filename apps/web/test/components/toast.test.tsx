@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -142,6 +142,12 @@ describe('Toaster', () => {
     expect(region).toHaveTextContent('Saved');
   });
 
+  it('keeps the distance from the bottom that the reason bar asks for', () => {
+    renderToaster();
+
+    expect(screen.getByRole('status').className).toContain('var(--reason-bar-height,0px)');
+  });
+
   it('shows at most three toasts', () => {
     const store = renderToaster();
     act(() => {
@@ -235,6 +241,41 @@ describe('Toaster', () => {
       showWith(store, { actions: [...LABELS, 'Fourth'].map(named) });
       expect(actionLabels()).toEqual(LABELS);
       expect(screen.queryByRole('button', { name: 'Fourth' })).not.toBeInTheDocument();
+    });
+
+    it('lets the actions wrap below the message, with the dismiss button after them', () => {
+      const store = renderToaster();
+      showWith(store, { actions: LABELS.map(named) });
+
+      const toast = screen.getByText('Rated').closest('[data-tone]');
+      expect(toast).toHaveClass('flex-wrap');
+      const row = toast?.querySelector<HTMLElement>('[data-toast-actions]');
+      expect(row).toBeInTheDocument();
+      expect(
+        within(row!)
+          .getAllByRole('button')
+          .map((button) => button.textContent),
+      ).toEqual(LABELS);
+      expect(row!.previousElementSibling).toBe(screen.getByText('Rated'));
+      expect(row!.nextElementSibling).toBe(screen.getByRole('button', { name: 'Dismiss' }));
+    });
+
+    it('keeps a 44 px target for every control', () => {
+      const store = renderToaster();
+      showWith(store, { actions: LABELS.map(named) });
+
+      for (const button of screen.getAllByRole('button')) {
+        expect(button.className).toContain('min-h-11');
+      }
+      expect(screen.getByRole('button', { name: 'Dismiss' }).className).toContain('min-w-11');
+    });
+
+    it('keeps a toast with one action on one line', () => {
+      const store = renderToaster();
+      showWith(store, { action: named(UNDO) });
+
+      expect(screen.getByText('Rated').closest('[data-tone]')).not.toHaveClass('flex-wrap');
+      expect(screen.getByRole('button', { name: UNDO }).className).toContain('min-h-11');
     });
   });
 

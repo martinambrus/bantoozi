@@ -18,15 +18,18 @@ import { useApi } from '../../../api/context.js';
 import { meKey } from '../../../api/query-keys.js';
 import { errorMessage } from '../../../components/error-message.js';
 import { useToast, type ToastApi } from '../../../components/toast/toast-provider.js';
-import type { ToastInput } from '../../../components/toast/toast-store.js';
+import type { ToastAction, ToastInput } from '../../../components/toast/toast-store.js';
 import { onAccountReset } from '../../../session/reset.js';
 import { createReturnTracker, type ReturnTracker } from '../../article/dwell.js';
+import { createExampleOffers } from '../../article/example-offer.js';
 import { articleKeys } from '../../article/query-keys.js';
+import { createReasonBar, type ReasonBar } from '../../article/reason-bar-store.js';
 import { createReaderActions } from './store.js';
 import { createReaderTransport } from './transport.js';
 import type {
   ActionHandle,
   ActionResult,
+  ExampleSuggestion,
   ReaderAction,
   ReaderActions,
   UndoResult,
@@ -35,6 +38,8 @@ import type {
 const UNDO_TOAST_ID = 'reader-undo';
 /** Spec 09 §3.3: the undo toast after a rating stays for 5 seconds. */
 const UNDO_TOAST_MS = 5000;
+/** Spec 09 §3.3: the undo toast that carries an example suggestion stays for 8 seconds. */
+const OFFER_TOAST_MS = 8000;
 const FAILED_TOAST_MS = 8000;
 
 /** The reader did not ask for these (spec 09 §3.6), so their failure is not shown to them. */
@@ -51,10 +56,11 @@ interface Environment {
 /** Hears each settled action of the account, after the provider has shown its own toasts. */
 export type SettledListener = (handle: ActionHandle, result: ActionResult) => void;
 
-/** What one signed-in account owns: the store of its reader actions and the dwell tracker. */
+/** What one signed-in account owns: its reader action store, dwell tracker and reason bar. */
 interface Scope {
   readonly store: ReaderActions;
   readonly tracker: ReturnTracker;
+  readonly reasonBar: ReasonBar;
   /** Adds a listener for settled actions and returns its removal. */
   listen(listener: SettledListener): () => void;
   /** Undoes an acknowledged action by its receipt and says so when that is not possible. */
@@ -77,10 +83,23 @@ function ratingMessage(i18n: I18n, rating: 1 | -1 | null): string {
 function createScope({ api, queryClient, toast, i18n, accountId }: Environment): Scope {
   const toastIds = new Set<string>();
   const listeners = new Set<SettledListener>();
+  /** Counts the rating toasts asked for: an offer that comes after a newer toast is dropped. */
+  let latestOffer = 0;
+
+  /** Shows the toast and remembers it, so that an account reset takes it away. */
+  const tracked: Pick<ToastApi, 'show'> = {
+    show(input) {
+      const id = toast.show(input);
+      toastIds.add(id);
+      return id;
+    },
+  };
 
   function show(input: ToastInput): void {
-    toastIds.add(toast.show(input));
+    tracked.show(input);
   }
+
+  const offers = createExampleOffers({ api, queryClient, toast: tracked, i18n, accountId });
 
   async function undo(actionId: string): Promise<UndoResult> {
     const result = await store.undo(actionId);
@@ -103,21 +122,48 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
     return result;
   }
 
-  function offerUndo(handle: ActionHandle): void {
+  const isRecent = (handle: ActionHandle) => store.recent().some((entry) => entry.id === handle.id);
+
+  function offerUndo(handle: ActionHandle, suggestion: ExampleSuggestion | null): void {
     const { action } = handle;
     if (action.type !== 'rate') return;
-    if (!store.recent().some((entry) => entry.id === handle.id)) return;
-    show({
-      id: UNDO_TOAST_ID,
-      message: ratingMessage(i18n, action.rating),
-      tone: 'success',
-      durationMs: UNDO_TOAST_MS,
-      action: {
-        label: i18n.t('common:actions.undo'),
-        onAction: () => {
-          void undo(handle.id);
-        },
+    if (!isRecent(handle)) return;
+    latestOffer += 1;
+    const turn = latestOffer;
+    const message = ratingMessage(i18n, action.rating);
+    const undoAction: ToastAction = {
+      label: i18n.t('common:actions.undo'),
+      onAction: () => {
+        void undo(handle.id);
       },
+    };
+    const showPlain = () => {
+      show({
+        id: UNDO_TOAST_ID,
+        message,
+        tone: 'success',
+        durationMs: UNDO_TOAST_MS,
+        action: undoAction,
+      });
+    };
+    if (suggestion === null || !preferences().exampleSuggestions) {
+      showPlain();
+      return;
+    }
+    void offers.actionsFor(suggestion, handle.articleId).then((offered) => {
+      if (turn !== latestOffer || !isRecent(handle)) return;
+      if (offered === null) {
+        showPlain();
+        return;
+      }
+      show({
+        id: UNDO_TOAST_ID,
+        message,
+        tone: 'success',
+        durationMs: OFFER_TOAST_MS,
+        action: undoAction,
+        actions: offered,
+      });
     });
   }
 
@@ -125,7 +171,7 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
     switch (result.status) {
       case 'done':
         void queryClient.invalidateQueries({ queryKey: articleKeys.counts(accountId) });
-        offerUndo(handle);
+        offerUndo(handle, result.exampleSuggestion);
         return;
       case 'failed':
         if (IMPLICIT_ACTIONS.has(handle.action.type)) return;
@@ -167,10 +213,12 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
     store,
     implicitFeedback: () => preferences().implicitFeedback,
   });
+  const reasonBar = createReasonBar(store);
 
   return {
     store,
     tracker,
+    reasonBar,
     undo,
     listen(listener) {
       listeners.add(listener);
@@ -179,6 +227,9 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
       };
     },
     release() {
+      latestOffer += 1;
+      offers.release();
+      reasonBar.close();
       store.reset();
       tracker.clear();
       for (const id of toastIds) toast.dismiss(id);
@@ -274,6 +325,11 @@ export function useUndoAction(): (actionId: string) => Promise<UndoResult> {
   return useScope().undo;
 }
 
+/** The reason bar of the account: it holds a dislike until its reason is chosen (spec 09 §3.3). */
+export function useReasonBar(): ReasonBar {
+  return useScope().reasonBar;
+}
+
 /** The tracker that reports the time away after "Read original". */
 export function useReturnTracker(): ReturnTracker {
   return useScope().tracker;
@@ -281,7 +337,8 @@ export function useReturnTracker(): ReturnTracker {
 
 /**
  * Calls `listener` with each settled action of the account while the component is mounted, for
- * what follows an answer: a dwell's prompt, a rating's example suggestion (spec 09 §3.3, §3.6).
+ * what follows an answer: a dwell's prompt (spec 09 §3.6). A rating's example suggestion is
+ * offered by the provider itself, in the undo toast.
  */
 export function useSettledActions(listener: SettledListener): void {
   const { listen } = useScope();

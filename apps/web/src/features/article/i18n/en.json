@@ -93,12 +93,39 @@
     "inherit": "Use global setting",
     "saved": "Image setting saved"
   },
+  "reasonBar": {
+    "label": "Reason for the dislike",
+    "disliked": "Disliked: {{title}}",
+    "announce": "Disliked: {{title}}. Choose a reason with the keys 1 to 6, or undo.",
+    "reasons": {
+      "off_topic": "Off-topic",
+      "clickbait": "Clickbait",
+      "seen": "Seen it",
+      "shallow": "Too shallow",
+      "promo": "Promo",
+      "other": "Other"
+    }
+  },
+  "swipe": {
+    "like": "Like",
+    "removeLike": "Remove like",
+    "dislike": "Dislike",
+    "removeDislike": "Remove dislike",
+    "bookmark": "Bookmark",
+    "removeBookmark": "Remove bookmark",
+    "markRead": "Mark as read",
+    "markUnread": "Mark as unread"
+  },
   "toast": {
     "ratedUp": "Marked as liked",
     "ratedDown": "Marked as disliked",
     "ratingRemoved": "Rating removed",
     "stale": "This changed on another device, so your change wasn't applied.",
     "undoConflict": "Newer changes were kept.",
-    "undoRefused": "This can no longer be undone."
+    "undoRefused": "This can no longer be undone.",
+    "teachYes": "Teach {{title}}: this is it",
+    "teachNo": "Teach {{title}}: not this",
+    "stopSuggesting": "Stop suggesting",
+    "suggestionsOff": "Teaching suggestions are off. You can turn them back on in Settings."
   }
 }

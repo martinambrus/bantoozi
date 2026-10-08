@@ -8,11 +8,13 @@ import {
 } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
+import type { ApiClient } from '../../api/client.js';
 import { useApi } from '../../api/context.js';
 import { accountKey } from '../../api/query-keys.js';
 import type { RouteOutput } from '../../api/route.js';
 import { routes } from '../../api/routes.js';
 import { useAccountId } from '../../session/context.js';
+import { recordCardMove } from './card-moves.js';
 import { mergeById } from './merge-by-id.js';
 
 export type UpdateOffer = RouteOutput<typeof routes.libraryUpdateList>[number];
@@ -59,6 +61,18 @@ export function useCards() {
   const api = useApi();
   const accountId = useAccountId();
   return useQuery({
+    queryKey: cardsKey(accountId),
+    queryFn: ({ signal }) => api.call(routes.cardList, undefined, { signal }),
+  });
+}
+
+/** The cards the person holds as the cache has them, else as one read of the list gives them. */
+export function ensureCards(
+  queryClient: QueryClient,
+  api: ApiClient,
+  accountId: string,
+): Promise<CardDto[]> {
+  return queryClient.ensureQueryData({
     queryKey: cardsKey(accountId),
     queryFn: ({ signal }) => api.call(routes.cardList, undefined, { signal }),
   });
@@ -155,6 +169,7 @@ export function cardCache(queryClient: QueryClient, accountId: string) {
   };
   return {
     apply(result: { card: CardDto; idChange: IdChange | null }) {
+      if (result.idChange !== null) recordCardMove(accountId, result.idChange);
       queryClient.setQueryData<CardDto[]>(cardsKey(accountId), (cards) =>
         cards === undefined ? cards : mergeById(cards, result.card, result.idChange),
       );

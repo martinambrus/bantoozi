@@ -8,33 +8,37 @@ import {
   ThumbsUpIcon,
 } from '../../components/icons.js';
 import { IconButton } from '../../components/icon-button.js';
+import type { RateOptions } from './use-article-actions.js';
+import { useRatePress } from './use-rate-press.js';
 
 // A pressed button is filled and tinted, so it is not told from the others by colour alone.
 const PRESSED = 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900 dark:text-indigo-100';
 
 export interface RateButtonsProps {
   rating: 1 | -1 | null;
-  onRate: (pressed: 1 | -1) => void;
+  onRate: (pressed: 1 | -1, options?: RateOptions) => void;
 }
 
-/** 👍 / 👎 (spec 09 §3.3): both are toggles of the displayed rating. */
+/** 👍 / 👎 (spec 09 §3.3): both are toggles of the displayed rating; Shift or a long press also hides. */
 export function RateButtons({ rating, onRate }: RateButtonsProps) {
   const { t } = useTranslation('article');
+  const like = useRatePress((options) => onRate(1, options));
+  const dislike = useRatePress((options) => onRate(-1, options));
   return (
     <>
       <IconButton
+        {...like}
         label={t('actions.like')}
         aria-pressed={rating === 1}
         className={cx(rating === 1 && PRESSED)}
-        onClick={() => onRate(1)}
       >
         <ThumbsUpIcon fill={rating === 1 ? 'currentColor' : 'none'} />
       </IconButton>
       <IconButton
+        {...dislike}
         label={t('actions.dislike')}
         aria-pressed={rating === -1}
         className={cx(rating === -1 && PRESSED)}
-        onClick={() => onRate(-1)}
       >
         <ThumbsDownIcon fill={rating === -1 ? 'currentColor' : 'none'} />
       </IconButton>
