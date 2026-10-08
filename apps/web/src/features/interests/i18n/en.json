@@ -45,6 +45,8 @@
   "editor": {
     "createTitle": "New interest card",
     "editTitle": "Edit interest card",
+    "fromArticleTitle": "New card from this article",
+    "fromArticleHint": "Starts from the title of this article, which is kept as the first example of what you want to read.",
     "name": "Name (optional)",
     "interest": "I want to read about…",
     "notFor": "…but not about",

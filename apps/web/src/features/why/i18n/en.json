@@ -1,3 +1,99 @@
 {
-  "title": "Why this?"
+  "title": "Why this?",
+  "percent": "{{percent}} %",
+  "verdict": {
+    "lane": {
+      "for_you": "For you",
+      "maybe": "Maybe",
+      "everything": "Everything else",
+      "new": "New",
+      "hidden": "Hidden"
+    },
+    "tier": "tier {{tier}}",
+    "notAnalyzed": "Not analyzed yet",
+    "notAnalyzedHint": "Bantoozi hasn't scored this article, so there is nothing to explain yet."
+  },
+  "source": {
+    "cards": "Scored from your interest cards.",
+    "model": "Scored by your personal model, which learns from what you read and rate.",
+    "degraded": "Scored by keywords, because the analysis service wasn't available.",
+    "none": "No interest card or model has scored this article.",
+    "notRequested": "Classification wasn't requested for this article, so it has no score."
+  },
+  "translation": {
+    "ok": "Scored from a machine translation of the article.",
+    "weak": "Scored from a machine translation that may be inaccurate."
+  },
+  "cluster_one": "This story is covered by {{count}} article.",
+  "cluster_other": "This story is covered by {{count}} articles.",
+  "interests": {
+    "heading": "Your interests",
+    "none": "No interest card has judged this article yet.",
+    "strength": "Strength: {{strength}}",
+    "match": "Match for {{title}}",
+    "matchValue": "{{percent}} % match",
+    "notThis": "Not really about this",
+    "exactly": "Yes, exactly this",
+    "edit": "Edit card",
+    "learnedNot": "Learned: this isn't {{title}}",
+    "learnedYes": "Learned: this is {{title}}",
+    "gone": "This interest is gone, so it can't learn from this article.",
+    "forkLimit": "Teaching an interest needs a private copy of it, and you've reached your plan's limit of private cards: {{used}} of {{max}}."
+  },
+  "about": {
+    "heading": "About the article",
+    "type": "Type: {{type}}",
+    "topic": "Topic: {{topic}}",
+    "depth": "Depth",
+    "depthLevel": "Depth {{level}} of 5",
+    "clickbait": "Clickbait",
+    "promotional": "Promotional",
+    "timeSensitive": "Time-sensitive",
+    "never": {
+      "clickbait": "Never show me clickbait",
+      "promotional": "Never show me promotional content",
+      "stale": "Never show me outdated news"
+    },
+    "contentTypes": {
+      "news_report": "News report",
+      "analysis": "Analysis",
+      "opinion": "Opinion",
+      "tutorial": "Tutorial",
+      "review": "Review",
+      "listicle": "List article",
+      "press_release": "Press release",
+      "deal_or_ad": "Deal or ad",
+      "job_or_event": "Job or event",
+      "media": "Podcast, video or gallery",
+      "interview": "Interview",
+      "other": "Other"
+    }
+  },
+  "demote": {
+    "on": {
+      "clickbait": "Clickbait will be ranked lower from now on",
+      "promotional": "Promotional content will be ranked lower from now on",
+      "stale": "Outdated news will be ranked lower from now on"
+    },
+    "reset": "Back to automatic"
+  },
+  "rules": {
+    "heading": "Rules applied",
+    "forCard": "{{rule}}: {{card}}",
+    "reset": "Reset"
+  },
+  "model": {
+    "heading": "Your personal model"
+  },
+  "actions": {
+    "heading": "What you can do",
+    "makeCard": "Make a card from this",
+    "muteKeyword": "Mute a keyword"
+  },
+  "prompt": {
+    "title": "Did you like “{{title}}”?",
+    "yes": "Yes",
+    "no": "No",
+    "askLessOften": "Ask less often"
+  }
 }

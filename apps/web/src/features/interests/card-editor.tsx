@@ -45,10 +45,10 @@ const MAX: Record<TextKey, number> = {
 
 type Errors = Partial<Record<CardField, string>>;
 
-function valuesOf(card: CardDto | undefined): Values {
+function valuesOf(card: CardDto | undefined, articleTitle: string | undefined): Values {
   return {
     title: card?.title ?? '',
-    interest: card?.interest ?? '',
+    interest: card?.interest ?? articleTitle ?? '',
     notFor: card?.notFor ?? '',
     strength: card?.strength ?? DEFAULT_STRENGTH,
     scope: card?.scopeFeedId ?? '',
@@ -111,22 +111,26 @@ export interface CardEditorProps {
   card?: CardDto | undefined;
   /** An update the library offers for this card, shown above the form to review. */
   review?: UpdateOffer | undefined;
+  /** Without a card: the article the new card is made from, whose title starts the interest text. */
+  fromArticle?: { id: string; title: string } | undefined;
   onClose: () => void;
 }
 
 /** The sheet that creates a card or changes one. The parent shows it only while it is wanted. */
-export function CardEditor({ card, review, onClose }: CardEditorProps) {
+export function CardEditor({ card, review, fromArticle, onClose }: CardEditorProps) {
   const { t } = useTranslation('interests');
   const cache = useCardCache();
   const subscriptions = useSubscriptions();
   const create = useApiMutation(routes.cardCreate);
+  const createFromArticle = useApiMutation(routes.cardFromArticle);
   const update = useApiMutation(routes.cardUpdate);
-  const [values, setValues] = useState(() => valuesOf(card));
+  const source = card === undefined ? fromArticle : undefined;
+  const [values, setValues] = useState(() => valuesOf(card, source?.title));
   const [errors, setErrors] = useState<Errors>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [focusRequest, setFocusRequest] = useState<{ field: CardField } | null>(null);
   const fields = useRef<Partial<Record<CardField, HTMLElement | null>>>({});
-  const saving = create.isPending || update.isPending;
+  const saving = create.isPending || createFromArticle.isPending || update.isPending;
   const hints = checkAuthoring(values.interest);
   const hintsId = useId();
 
@@ -158,7 +162,12 @@ export function CardEditor({ card, review, onClose }: CardEditorProps) {
     setFailure(null);
     try {
       if (card === undefined) {
-        cache.apply(await create.mutateAsync({ body: createBody(values) }));
+        const body = createBody(values);
+        cache.apply(
+          source === undefined
+            ? await create.mutateAsync({ body })
+            : await createFromArticle.mutateAsync({ body: { ...body, articleId: source.id } }),
+        );
       } else {
         const body = changesOf(card, values);
         if (Object.keys(body).length > 0) {
@@ -181,12 +190,14 @@ export function CardEditor({ card, review, onClose }: CardEditorProps) {
   const flagged = [hints.severalTopics, hints.negation, hints.number];
   const hintTexts = [t('hints.oneTopic'), t('hints.noNot'), t('hints.noNumbers')];
   const hasExamples = card !== undefined && card.examplesYes.length + card.examplesNo.length > 0;
+  const createTitle = source === undefined ? t('editor.createTitle') : t('editor.fromArticleTitle');
 
   return (
     <Sheet
       open
       onClose={onClose}
-      title={card === undefined ? t('editor.createTitle') : t('editor.editTitle')}
+      title={card === undefined ? createTitle : t('editor.editTitle')}
+      description={source === undefined ? undefined : t('editor.fromArticleHint')}
       dismissible={!saving}
     >
       <form noValidate onSubmit={(event) => void save(event)} className="flex flex-col gap-4">
@@ -257,18 +268,20 @@ export function CardEditor({ card, review, onClose }: CardEditorProps) {
           onChange={(strength) => setValues((current) => ({ ...current, strength }))}
           hint={t('strength.hint')}
         />
-        <ScopeSelect
-          ref={(node) => {
-            fields.current.scopeFeedId = node;
-          }}
-          value={values.scope === '' ? null : values.scope}
-          subscriptions={subscriptions.data ?? []}
-          error={errors.scopeFeedId}
-          onChange={(feedId) => {
-            setValues((current) => ({ ...current, scope: feedId ?? '' }));
-            setErrors(({ scopeFeedId: _removed, ...rest }) => rest);
-          }}
-        />
+        {source !== undefined ? null : (
+          <ScopeSelect
+            ref={(node) => {
+              fields.current.scopeFeedId = node;
+            }}
+            value={values.scope === '' ? null : values.scope}
+            subscriptions={subscriptions.data ?? []}
+            error={errors.scopeFeedId}
+            onChange={(feedId) => {
+              setValues((current) => ({ ...current, scope: feedId ?? '' }));
+              setErrors(({ scopeFeedId: _removed, ...rest }) => rest);
+            }}
+          />
+        )}
         {!hasExamples ? null : (
           <section className="flex flex-col gap-2">
             <h3 className="text-sm font-medium">{t('editor.examples')}</h3>

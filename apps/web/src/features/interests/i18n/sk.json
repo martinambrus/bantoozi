@@ -45,6 +45,8 @@
   "editor": {
     "createTitle": "Nová karta záujmu",
     "editTitle": "Upraviť kartu záujmu",
+    "fromArticleTitle": "Nová karta z tohto článku",
+    "fromArticleHint": "Začína sa názvom tohto článku, ktorý sa zachová ako prvý príklad toho, o čom chcete čítať.",
     "name": "Názov (nepovinné)",
     "interest": "Chcem čítať o…",
     "notFor": "…ale nie o",

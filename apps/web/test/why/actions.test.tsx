@@ -1,0 +1,358 @@
+import type { CardDto, Me } from '@bantoozi/shared';
+import { screen, waitFor, within } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+
+import { FOCUS_RING } from '../../src/components/cx.js';
+import { cardsKey } from '../../src/features/interests/queries.js';
+import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
+import { bodyOf, findToast, makeItem, makeMe, makeRule } from '../article/harness.js';
+import { cardResult, makeCard } from '../interests/support.js';
+import { USER_A_ID } from '../session/fixtures.js';
+import { FACETS, checkUnhandled, makeExplain, renderDrawer } from './support.js';
+
+checkUnhandled();
+
+type Demote = Me['preferences']['demote'];
+
+function meWith(demote: Partial<Demote>): Me {
+  return makeMe({
+    preferences: {
+      demote: { clickbait: 'auto', promotional: 'auto', shallow: 'auto', stale: 'auto', ...demote },
+    },
+  });
+}
+
+const WITH_FACETS = makeExplain({ facets: FACETS });
+
+function ruleRow(app: Awaited<ReturnType<typeof renderDrawer>>, sentence: string) {
+  return within(app.panel.getByRole('listitem', { name: sentence }));
+}
+
+describe('"Never show me …"', () => {
+  it.each([
+    ['clickbait', 'clickbait', 'Clickbait will be ranked lower from now on'],
+    ['promotional', 'promotional', 'Promotional content will be ranked lower from now on'],
+    ['time-sensitive', 'stale', 'Outdated news will be ranked lower from now on'],
+  ] as const)('for %s switches demote.%s on', async (flag, key, message) => {
+    const button =
+      flag === 'clickbait'
+        ? 'Never show me clickbait'
+        : flag === 'promotional'
+          ? 'Never show me promotional content'
+          : 'Never show me outdated news';
+    const app = await renderDrawer({
+      explain: WITH_FACETS,
+      routes: { 'PATCH /me': () => json(200, meWith({ [key]: 'on' })) },
+    });
+
+    await app.user.click(app.panel.getByRole('button', { name: button }));
+
+    expect(await findToast(message)).toBeInTheDocument();
+    const requests = app.calls('PATCH', '/me');
+    expect(requests).toHaveLength(1);
+    expect(bodyOf(requests[0]!)).toEqual({ preferences: { demote: { [key]: 'on' } } });
+    expect(requests[0]!.headers.get('Idempotency-Key')).toMatch(UUID_V4);
+    expect(app.panel.queryByRole('button', { name: button })).toBeNull();
+    await waitFor(() => expect(app.calls('GET', '/articles/101')).toHaveLength(2));
+  });
+
+  it('takes the preference back to automatic from the toast', async () => {
+    let current = meWith({});
+    const app = await renderDrawer({
+      explain: WITH_FACETS,
+      routes: {
+        'PATCH /me': (request) => {
+          const { preferences } = bodyOf(request) as { preferences: { demote: Partial<Demote> } };
+          current = meWith(preferences.demote);
+          return json(200, current);
+        },
+      },
+    });
+    await app.user.click(app.panel.getByRole('button', { name: 'Never show me clickbait' }));
+    const toast = await findToast('Clickbait will be ranked lower from now on');
+
+    await app.user.click(within(toast).getByRole('button', { name: 'Undo' }));
+
+    await waitFor(() => expect(app.calls('PATCH', '/me')).toHaveLength(2));
+    expect(bodyOf(app.calls('PATCH', '/me')[1]!)).toEqual({
+      preferences: { demote: { clickbait: 'auto' } },
+    });
+    expect(
+      await app.panel.findByRole('button', { name: 'Never show me clickbait' }),
+    ).toBeInTheDocument();
+  });
+
+  it('is not offered for a preference that is already on', async () => {
+    const app = await renderDrawer({
+      me: meWith({ promotional: 'on' }),
+      explain: WITH_FACETS,
+    });
+
+    expect(app.panel.getByRole('button', { name: 'Never show me clickbait' })).toBeInTheDocument();
+    expect(
+      app.panel.queryByRole('button', { name: 'Never show me promotional content' }),
+    ).toBeNull();
+    expect(
+      app.panel.getByRole('button', { name: 'Never show me outdated news' }),
+    ).toBeInTheDocument();
+  });
+
+  it('says why when the preference cannot be saved and keeps the offer', async () => {
+    const app = await renderDrawer({
+      explain: WITH_FACETS,
+      routes: { 'PATCH /me': () => failure(500, 'INTERNAL') },
+    });
+
+    await app.user.click(app.panel.getByRole('button', { name: 'Never show me clickbait' }));
+
+    expect(await findToast('Something went wrong on our side. Try again.')).toHaveAttribute(
+      'data-tone',
+      'error',
+    );
+    expect(app.panel.getByRole('button', { name: 'Never show me clickbait' })).toBeEnabled();
+  });
+});
+
+describe('the rules that were applied', () => {
+  it('"Undo" deletes the rule, reloads the article and takes the rule off the list', async () => {
+    const app = await renderDrawer({
+      explain: makeExplain({
+        rules: [{ code: 'boost_feed', ruleId: '55' }, { code: 'seen_story' }],
+      }),
+      routes: { 'DELETE /rules/:id': () => noContent() },
+    });
+
+    await app.user.click(ruleRow(app, 'Boosted source').getByRole('button', { name: 'Undo' }));
+
+    expect(await findToast('Rule removed')).toBeInTheDocument();
+    expect(app.calls('DELETE', '/rules/55')).toHaveLength(1);
+    expect(app.calls('DELETE', '/rules/55')[0]!.headers.get('Idempotency-Key')).toMatch(UUID_V4);
+    expect(app.panel.queryByRole('listitem', { name: 'Boosted source' })).toBeNull();
+    expect(app.panel.getByRole('listitem', { name: 'Story already seen' })).toBeInTheDocument();
+    await waitFor(() => expect(app.calls('GET', '/articles/101')).toHaveLength(2));
+  });
+
+  it('offers "Undo" only for a rule that has an id', async () => {
+    const app = await renderDrawer({
+      explain: makeExplain({
+        rules: [
+          { code: 'boost_feed', ruleId: '55' },
+          { code: 'seen_story' },
+          { code: 'llm_answer' },
+        ],
+      }),
+    });
+
+    expect(
+      within(app.panel.getByRole('list', { name: 'Rules applied' })).getAllByRole('button'),
+    ).toHaveLength(1);
+    expect(ruleRow(app, 'Story already seen').queryByRole('button')).toBeNull();
+  });
+
+  it('keeps the rule on the list when it cannot be deleted', async () => {
+    const app = await renderDrawer({
+      explain: makeExplain({ rules: [{ code: 'block_feed', ruleId: '12' }] }),
+      routes: { 'DELETE /rules/:id': () => failure(404, 'NOT_FOUND') },
+    });
+
+    await app.user.click(ruleRow(app, 'Blocked source').getByRole('button', { name: 'Undo' }));
+
+    expect(await findToast("We couldn't find that.")).toHaveAttribute('data-tone', 'error');
+    expect(ruleRow(app, 'Blocked source').getByRole('button', { name: 'Undo' })).toBeEnabled();
+  });
+
+  it('"Reset" puts a demotion back to automatic', async () => {
+    const app = await renderDrawer({
+      me: meWith({ clickbait: 'on' }),
+      explain: makeExplain({ rules: [{ code: 'demote:clickbait' }, { code: 'demote:stale' }] }),
+      routes: { 'PATCH /me': () => json(200, meWith({})) },
+    });
+
+    await app.user.click(ruleRow(app, 'Demoted: clickbait').getByRole('button', { name: 'Reset' }));
+
+    expect(await findToast('Back to automatic')).toBeInTheDocument();
+    const requests = app.calls('PATCH', '/me');
+    expect(requests).toHaveLength(1);
+    expect(bodyOf(requests[0]!)).toEqual({ preferences: { demote: { clickbait: 'auto' } } });
+    expect(app.panel.queryByRole('listitem', { name: 'Demoted: clickbait' })).toBeNull();
+    expect(app.panel.getByRole('listitem', { name: 'Demoted: outdated' })).toBeInTheDocument();
+    await waitFor(() => expect(app.calls('GET', '/articles/101')).toHaveLength(2));
+  });
+
+  it('offers no "Reset" for a demotion the preference leaves to automatic', async () => {
+    const app = await renderDrawer({
+      explain: makeExplain({ rules: [{ code: 'demote:shallow' }] }),
+    });
+
+    expect(app.panel.getByRole('listitem', { name: 'Demoted: shallow' })).toBeInTheDocument();
+    expect(ruleRow(app, 'Demoted: shallow').queryByRole('button')).toBeNull();
+  });
+});
+
+describe('make a card from this', () => {
+  const TITLE = 'Solid-state batteries reach the pilot line';
+
+  it('starts the editor from the title and creates the card from the article', async () => {
+    const created = makeCard({
+      id: '41',
+      title: TITLE,
+      interest: TITLE,
+      origin: 'fork',
+      isPrivateFork: true,
+      examplesYes: [TITLE],
+    });
+    const app = await renderDrawer({
+      routes: { 'POST /cards/from-article': () => json(201, cardResult(created)) },
+    });
+
+    await app.user.click(app.panel.getByRole('button', { name: 'Make a card from this' }));
+
+    const editor = await screen.findByRole('dialog', { name: 'New card from this article' });
+    expect(within(editor).getByLabelText('I want to read about…')).toHaveValue(TITLE);
+    await app.user.click(within(editor).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(app.calls('POST', '/cards/from-article')).toHaveLength(1));
+    const [request] = app.calls('POST', '/cards/from-article');
+    expect(bodyOf(request!)).toEqual({ articleId: '101', interest: TITLE, strength: 'like' });
+    expect(request!.headers.get('Idempotency-Key')).toMatch(UUID_V4);
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'New card from this article' })).toBeNull(),
+    );
+    expect(
+      app.queryClient.getQueryData<CardDto[]>(cardsKey(USER_A_ID))?.map((card) => card.id),
+    ).toEqual(['31', '32', '33', '41']);
+    expect(app.calls('POST', '/cards')).toHaveLength(0);
+  });
+});
+
+describe('mute a keyword', () => {
+  it('lists the words of the title, once each and without their punctuation', async () => {
+    const app = await renderDrawer({
+      item: makeItem({ title: '“Batteries”: the new batteries, the old (and cheap) cars!' }),
+    });
+
+    await app.user.click(app.panel.getByRole('button', { name: 'Mute a keyword' }));
+
+    const words = within(await screen.findByRole('menu', { name: 'Mute a keyword' }))
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent);
+    expect(words).toEqual(['Batteries', 'the', 'new', 'old', 'and', 'cheap', 'cars']);
+  });
+
+  it('creates a mute_keyword rule for the chosen word and can take it back', async () => {
+    const app = await renderDrawer({
+      routes: {
+        'POST /rules': () => json(201, { rule: makeRule('77', 'mute_keyword', 'batteries') }),
+        'DELETE /rules/:id': () => noContent(),
+      },
+    });
+
+    await app.user.click(app.panel.getByRole('button', { name: 'Mute a keyword' }));
+    await app.user.click(await screen.findByRole('menuitem', { name: 'batteries' }));
+
+    const toast = await findToast('Muted keyword: “batteries”');
+    const [request] = app.calls('POST', '/rules');
+    expect(bodyOf(request!)).toEqual({ kind: 'mute_keyword', value: 'batteries' });
+    expect(request!.headers.get('Idempotency-Key')).toMatch(UUID_V4);
+    await waitFor(() => expect(app.calls('GET', '/articles/101')).toHaveLength(2));
+
+    await app.user.click(within(toast).getByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(app.calls('DELETE', '/rules/77')).toHaveLength(1));
+    expect(await findToast('Rule removed')).toBeInTheDocument();
+  });
+
+  it('says why when the rule cannot be created', async () => {
+    const app = await renderDrawer({
+      routes: {
+        'POST /rules': () =>
+          failure(409, 'QUOTA_EXCEEDED', { limit: 'maxRules', used: 200, max: 200 }),
+      },
+    });
+
+    await app.user.click(app.panel.getByRole('button', { name: 'Mute a keyword' }));
+    await app.user.click(await screen.findByRole('menuitem', { name: 'pilot' }));
+
+    expect(
+      await findToast("You've reached your plan's limit for rules: 200 of 200."),
+    ).toHaveAttribute('data-tone', 'error');
+  });
+
+  it('is not offered for a title without a usable word', async () => {
+    const app = await renderDrawer({ item: makeItem({ title: '? !' }) });
+
+    expect(app.panel.queryByRole('button', { name: 'Mute a keyword' })).toBeNull();
+  });
+});
+
+describe('boost and block', () => {
+  it.each([
+    ['Boost this feed', { kind: 'boost_feed', value: '7' }, 'Boosted source: Example Weekly'],
+    ['Block this feed', { kind: 'block_feed', value: '7' }, 'Blocked source: Example Weekly'],
+    ['Block this author', { kind: 'block_author', value: 'Jane Doe' }, 'Blocked author: Jane Doe'],
+  ])('%s creates the rule and can take it back', async (name, body, message) => {
+    const app = await renderDrawer({
+      routes: {
+        'POST /rules': () => json(201, { rule: makeRule('88', body.kind, body.value) }),
+        'DELETE /rules/:id': () => noContent(),
+      },
+    });
+
+    await app.user.click(app.panel.getByRole('button', { name }));
+
+    const toast = await findToast(message);
+    expect(bodyOf(app.calls('POST', '/rules')[0]!)).toEqual(body);
+    await app.user.click(within(toast).getByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(app.calls('DELETE', '/rules/88')).toHaveLength(1));
+  });
+
+  it('offers neither without a feed or an author to base a rule on', async () => {
+    const app = await renderDrawer({ item: makeItem({ feed: null, author: null }) });
+
+    for (const name of ['Boost this feed', 'Block this feed', 'Block this author']) {
+      expect(app.panel.queryByRole('button', { name })).toBeNull();
+    }
+    expect(app.panel.getByRole('button', { name: 'Make a card from this' })).toBeInTheDocument();
+  });
+});
+
+describe('accessibility', () => {
+  it('names every control and gives it a 44 px target and a focus ring', async () => {
+    const app = await renderDrawer({
+      me: meWith({ promotional: 'on' }),
+      explain: makeExplain({
+        facets: FACETS,
+        rules: [{ code: 'boost_feed', ruleId: '55' }, { code: 'demote:promotional' }],
+      }),
+    });
+
+    const controls = within(app.dialog).getAllByRole('button');
+    expect(controls.length).toBeGreaterThanOrEqual(12);
+    for (const control of controls) {
+      expect(control).toHaveAccessibleName();
+      expect(control.className).toContain('min-h-11');
+      for (const token of FOCUS_RING.split(' ')) expect(control.className).toContain(token);
+    }
+    await app.user.click(app.panel.getByRole('button', { name: 'Mute a keyword' }));
+    for (const item of await screen.findAllByRole('menuitem')) {
+      expect(item).toHaveAccessibleName();
+      expect(item.className).toContain('min-h-11');
+    }
+  });
+
+  it('gives the buttons of a row the name of the interest or rule they belong to', async () => {
+    const app = await renderDrawer({
+      explain: makeExplain({ rules: [{ code: 'boost_feed', ruleId: '55' }] }),
+    });
+
+    const notThis = within(app.panel.getByRole('listitem', { name: 'EV battery tech' })).getByRole(
+      'button',
+      { name: 'Not really about this' },
+    );
+    expect(notThis).toHaveAccessibleDescription('EV battery tech');
+    expect(
+      within(app.panel.getByRole('listitem', { name: 'Boosted source' })).getByRole('button', {
+        name: 'Undo',
+      }),
+    ).toHaveAccessibleDescription('Boosted source');
+  });
+});
