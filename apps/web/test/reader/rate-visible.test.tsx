@@ -343,6 +343,18 @@ describe('Like all and Dislike all', () => {
     ).toHaveAttribute('aria-disabled', 'true');
   });
 
+  it('load the unread numbers of the feeds again', async () => {
+    const writes = writeRoutes();
+    const { app } = await feed(THREE, { routes: writes.routes });
+    const dialog = await ask(app);
+    const asked = app.calls('GET /subscriptions').length;
+
+    await app.user.click(within(dialog).getByRole('button', { name: 'Like all' }));
+
+    await findToast('Rated 3 articles');
+    await waitFor(() => expect(app.calls('GET /subscriptions').length).toBeGreaterThan(asked));
+  });
+
   it('say how many were rated in a toast that stays for 5 seconds', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const writes = writeRoutes();

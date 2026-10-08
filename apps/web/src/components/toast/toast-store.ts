@@ -57,6 +57,20 @@ function actionsOf({ action, actions = [] }: ToastInput): readonly ToastAction[]
   return (action === undefined ? actions : [action, ...actions]).slice(0, MAX_TOAST_ACTIONS);
 }
 
+/**
+ * At most `MAX_TOASTS`, the newest last: the oldest toast that times out goes first, so one that
+ * waits to be dismissed (an update to reload for) goes only when every other one waits too.
+ */
+function fitting(list: Toast[]): Toast[] {
+  while (list.length > MAX_TOASTS) {
+    const timed = list.findIndex(
+      (toast, index) => toast.durationMs !== null && index < list.length - 1,
+    );
+    list.splice(Math.max(timed, 0), 1);
+  }
+  return list;
+}
+
 /** Toasts as an external store: `useSyncExternalStore` friendly, with a snapshot that only changes on change. */
 export function createToastStore(): ToastStore {
   let toasts: readonly Toast[] = [];
@@ -88,7 +102,7 @@ export function createToastStore(): ToastStore {
       set(
         toasts.some((existing) => existing.id === toast.id)
           ? toasts.map((existing) => (existing.id === toast.id ? toast : existing))
-          : [...toasts, toast].slice(-MAX_TOASTS),
+          : fitting([...toasts, toast]),
       );
       return toast.id;
     },

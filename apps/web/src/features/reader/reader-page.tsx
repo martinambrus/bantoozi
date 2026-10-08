@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 
 import { Sheet } from '../../components/sheet.js';
 import { useAccountId, useMe } from '../../session/context.js';
-import { articleKeys } from '../article/query-keys.js';
 import { DeadFeedBanner } from '../feeds/dead-feed-banner.js';
 import { WhyThisSheet } from '../why/why-this-sheet.js';
 import { useObserveItems, useReaderActions } from './actions/provider.js';
@@ -13,7 +12,7 @@ import { ArticleList, useVisibleRows } from './article-list.js';
 import { DetailPane } from './detail-pane.js';
 import { ReaderHeader } from './header.js';
 import type { ScopedLane } from './lanes.js';
-import { useCounts } from './queries.js';
+import { unreadKeys, useCounts } from './queries.js';
 import { ReaderShortcuts } from './shortcuts/reader-shortcuts.js';
 import { LaneSwitcher, ReaderSidebar } from './sidebar.js';
 import { useArticleList } from './use-article-list.js';
@@ -115,10 +114,9 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
 
   const { reload, poll } = list;
   const refreshCounts = useCallback(() => {
-    void queryClient.refetchQueries(
-      { queryKey: articleKeys.counts(accountId), type: 'active' },
-      { cancelRefetch: false },
-    );
+    for (const queryKey of unreadKeys(accountId)) {
+      void queryClient.refetchQueries({ queryKey, type: 'active' }, { cancelRefetch: false });
+    }
   }, [queryClient, accountId]);
   const refresh = useCallback(() => {
     void reload();

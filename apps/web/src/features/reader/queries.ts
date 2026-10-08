@@ -6,6 +6,7 @@ import { useApi } from '../../api/context.js';
 import { routes } from '../../api/routes.js';
 import { useAccountId } from '../../session/context.js';
 import { articleKeys } from '../article/query-keys.js';
+import { subscriptionsKey } from '../feeds/subscriptions.js';
 import { scopeOf, usesSort, usesTier, type ReaderView, type ViewScope } from './view.js';
 
 export const PAGE_SIZE = 30;
@@ -37,6 +38,11 @@ export function articleListKey(
   sort: ListFilter['sort'],
 ) {
   return [...articleKeys.all(accountId), 'list', which, { minTier, sort }] as const;
+}
+
+/** What says how much is unread: the counts of the lanes, and each feed's in `GET /subscriptions`. */
+export function unreadKeys(accountId: string) {
+  return [articleKeys.counts(accountId), subscriptionsKey(accountId)] as const;
 }
 
 export function countsQueryOptions(

@@ -168,6 +168,16 @@ describe('polling while the server works', () => {
     expect(lists(app)).toBe(listed);
   });
 
+  it('asks for the unread numbers of the feeds with each poll of the counts', async () => {
+    const { app } = await openReader({ path: '/read/for_you', items: [item(1)] });
+    const feeds = () => app.calls('GET /subscriptions').length;
+    const asked = feeds();
+
+    await advance(35_000);
+
+    expect(feeds()).toBe(asked + 1);
+  });
+
   it('does not count an article that nobody asked to analyse as work in progress', async () => {
     const { app } = await openReader({
       path: '/read/for_you',

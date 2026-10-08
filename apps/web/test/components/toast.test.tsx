@@ -93,6 +93,21 @@ describe('createToastStore', () => {
     expect(store.getSnapshot().map((toast) => toast.message)).toEqual(['two', 'three', 'four']);
   });
 
+  it('lets the oldest toast that times out go before one that waits to be dismissed', () => {
+    const store = createToastStore();
+    store.show({ id: 'update', message: 'kept', tone: 'info', durationMs: null });
+    for (const message of ['one', 'two', 'three']) store.show({ message, tone: 'info' });
+    expect(store.getSnapshot().map((toast) => toast.message)).toEqual(['kept', 'two', 'three']);
+  });
+
+  it('lets the oldest go when every toast waits to be dismissed', () => {
+    const store = createToastStore();
+    for (const message of ['one', 'two', 'three', 'four']) {
+      store.show({ message, tone: 'info', durationMs: null });
+    }
+    expect(store.getSnapshot().map((toast) => toast.message)).toEqual(['two', 'three', 'four']);
+  });
+
   it('lists action first, then actions, and keeps at most three in all', () => {
     const [a, b, c, d] = [named('A'), named('B'), named('C'), named('D')];
     const actionsOf = (input: Pick<ToastInput, 'action' | 'actions'>) => {

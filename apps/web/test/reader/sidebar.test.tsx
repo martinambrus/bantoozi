@@ -1,10 +1,11 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { makeLabel } from '../article/harness.js';
+import { findToast, makeLabel, ratingResponse, undoResponse } from '../article/harness.js';
 import { makeSubscription, type SubscriptionOverrides } from '../feeds/support.js';
 import { makeMe } from '../session/fixtures.js';
-import { createReaderHarness, sidebar } from './support.js';
+import { acked } from './actions/fake-transport.js';
+import { createReaderHarness, item, rowOf, sidebar } from './support.js';
 
 const { open } = createReaderHarness();
 
@@ -346,5 +347,49 @@ describe('the reader sidebar on a narrow screen', () => {
 
     await waitFor(() => expect(app.router.state.location.pathname).toBe('/read/feed/2'));
     expect(screen.queryByRole('dialog', { name: 'Feeds and labels' })).toBeNull();
+  });
+});
+
+describe('the unread numbers of the feeds', () => {
+  const verge = (unread: number) =>
+    feed('7', 'Verge', null, { unread: { forYou: 0, maybe: 0, everything: 0, new: unread } });
+  const story = item(1, { feed: { id: '7', title: 'Verge', iconUrl: null } });
+  const liked = acked(story, { rating: 1 });
+
+  async function openFeed() {
+    const opened = await open({
+      path: '/read/feed/7',
+      items: [story],
+      subscriptions: [verge(2)],
+      routes: {
+        'POST /articles/:id/rating': () => ratingResponse(liked),
+        'POST /articles/undo': () => undoResponse(acked(liked, { rating: null })),
+      },
+    });
+    expect(await screen.findByRole('link', { name: 'Verge Unread: 2' })).toBeInTheDocument();
+    return opened;
+  }
+
+  it('follow a rating the person makes, without a reload', async () => {
+    const { app, state } = await openFeed();
+    state.subscriptions = [verge(1)];
+
+    await app.user.click(within(rowOf('Article 1')).getByRole('button', { name: 'Like' }));
+
+    expect(await screen.findByRole('link', { name: 'Verge Unread: 1' })).toBeInTheDocument();
+  });
+
+  it('follow the undo of a rating', async () => {
+    const { app, state } = await openFeed();
+    state.subscriptions = [verge(1)];
+    await app.user.click(within(rowOf('Article 1')).getByRole('button', { name: 'Like' }));
+    await screen.findByRole('link', { name: 'Verge Unread: 1' });
+    state.subscriptions = [verge(2)];
+
+    await app.user.click(
+      within(await findToast('Marked as liked')).getByRole('button', { name: 'Undo' }),
+    );
+
+    expect(await screen.findByRole('link', { name: 'Verge Unread: 2' })).toBeInTheDocument();
   });
 });

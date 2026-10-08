@@ -32,6 +32,8 @@ import { onAccountReset } from '../../../session/reset.js';
 import { createReturnTracker, type ReturnTracker } from '../../article/dwell.js';
 import { createExampleOffers } from '../../article/example-offer.js';
 import { articleKeys } from '../../article/query-keys.js';
+import { subscriptionsKey } from '../../feeds/subscriptions.js';
+import { unreadKeys } from '../queries.js';
 import { createReasonBar, type ReasonBar } from '../../article/reason-bar-store.js';
 import { createReaderActions } from './store.js';
 import { createReaderTransport } from './transport.js';
@@ -127,6 +129,7 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
       void queryClient.invalidateQueries({
         queryKey: filtered ? articleKeys.all(accountId) : articleKeys.counts(accountId),
       });
+      void queryClient.invalidateQueries({ queryKey: subscriptionsKey(accountId) });
     }
     switch (result.status) {
       case 'conflict':
@@ -195,7 +198,8 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
   function showOutcome(handle: ActionHandle, result: ActionResult): void {
     switch (result.status) {
       case 'done':
-        void queryClient.invalidateQueries({ queryKey: articleKeys.counts(accountId) });
+        for (const queryKey of unreadKeys(accountId))
+          void queryClient.invalidateQueries({ queryKey });
         offerUndo(handle, result.exampleSuggestion);
         return;
       case 'failed':
