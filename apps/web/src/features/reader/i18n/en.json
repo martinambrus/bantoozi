@@ -1,3 +1,98 @@
 {
-  "title": "Reader"
+  "lanes": {
+    "for_you": "For you",
+    "maybe": "Maybe",
+    "everything": "Everything else",
+    "new": "New",
+    "bookmarks": "Bookmarks",
+    "hidden": "Hidden",
+    "all": "All",
+    "helpMeLearn": "help me learn"
+  },
+  "sidebar": {
+    "label": "Reader navigation",
+    "lanes": "Lanes",
+    "feeds": "Feeds",
+    "labels": "Labels",
+    "noFeeds": "No feeds yet.",
+    "noLabels": "No labels yet.",
+    "feedsFailed": "The feeds couldn't be loaded.",
+    "labelsFailed": "The labels couldn't be loaded.",
+    "retryFeeds": "Retry loading feeds",
+    "retryLabels": "Retry loading labels",
+    "unread": "Unread:",
+    "saved": "Saved:",
+    "everythingToggle": "Everything else lane"
+  },
+  "topBar": {
+    "label": "Lane switcher",
+    "browse": "Browse feeds and labels",
+    "browseTitle": "Feeds and labels"
+  },
+  "header": {
+    "unread": "Unread: {{value}}",
+    "saved": "Saved: {{value}}",
+    "hidden": "Hidden: {{value}}",
+    "feed": "Feed",
+    "label": "Label",
+    "show": "Show",
+    "showHidden": "Show hidden",
+    "refresh": "Refresh",
+    "markAll": "Mark all read",
+    "tier": "Minimum tier",
+    "tierValue": "Tier {{tier}} and above",
+    "tierShort": "{{tier}}+",
+    "sort": "Sort by",
+    "sortScore": "Score",
+    "sortDate": "Date",
+    "simple": "Simple mode"
+  },
+  "markAll": {
+    "title": "Mark all as read?",
+    "confirm": "Mark as read",
+    "body_one": "{{count}} unread article in “{{view}}” will be marked as read.",
+    "body_other": "{{count}} unread articles in “{{view}}” will be marked as read.",
+    "changed": "The list changed while you were deciding, so the number is up to date now.",
+    "done_one": "Marked {{count}} as read",
+    "done_other": "Marked {{count}} as read",
+    "tooMany": "That's more than {{max}} articles at once. Raise the minimum tier or pick a smaller view, then try again.",
+    "view": "{{name}} · {{lane}}"
+  },
+  "list": {
+    "loadMore": "Load more"
+  },
+  "pane": {
+    "label": "Article",
+    "empty": "Select an article to read it here."
+  },
+  "empty": {
+    "forYou": {
+      "title": "You're all caught up",
+      "body": "New articles that match your interests will show up here."
+    },
+    "maybe": {
+      "title": "Nothing to decide",
+      "body": "Articles Bantoozi is unsure about will show up here. Rate them to help it learn."
+    },
+    "everything": {
+      "title": "Nothing else to read",
+      "body": "Articles that don't match your interests will show up here."
+    },
+    "new": {
+      "title": "No new articles",
+      "body": "Articles that haven't been scored yet will show up here."
+    },
+    "bookmarks": {
+      "title": "No bookmarks yet",
+      "body": "Bookmark an article to keep a copy of it here."
+    },
+    "hidden": {
+      "title": "Nothing is hidden",
+      "body": "Articles you hide will show up here, so you can bring them back."
+    },
+    "scoped": {
+      "title": "No unread articles",
+      "body": "Everything in this view has been read. Pick another lane to see more."
+    }
+  }
 }

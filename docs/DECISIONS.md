@@ -1318,3 +1318,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   publication request, read once per query through the existing `admin_list_card_publication_requests`
   definer function (the requests table has tenant RLS), so no migration is needed. Cards created in
   the library, and new semantic versions, have `null`. Spec 08 §9 updated.
+- D-152: 2026-10-08 M6-T2 — spec 09 §1 polled the list and the counts every 5 s while a visible
+  page has `rankingPending` or pending selected analysis requests, else every 30 s. Refetching an
+  idle list every 30 s re-sorts it and drops rows under the reader (an item read or rated on another
+  device, a newly scored arrival), so the idle poll refreshes the counts only. The list is reloaded
+  by the 5-second busy poll, the Refresh control in the header and navigation. Spec 09 §1 updated.

@@ -85,7 +85,9 @@ policy. The normal global/per-feed image preference remains unchanged.
 
 **Refresh and errors:** poll list/counts every 5 seconds only while a visible page has
 `rankingPending`/explicit pending analysis requests, back off to 30 seconds when idle, and pause
-offline/background polling. New items in off/unselected training feeds are not unfinished jobs and
+offline/background polling. The idle 30-second poll refreshes the counts only; the visible list is
+reloaded by the 5-second busy poll, the Refresh control and navigation, so rows do not move or
+vanish under the reader (D-152). New items in off/unselected training feeds are not unfinished jobs and
 must not cause endless polling or "AI is working" messages.
 Cancel obsolete queries on route changes. No SSE infrastructure is required for the first version.
 Refresh from page one on `STALE_CURSOR`; de-duplicate ids and preserve selection/scroll by id.

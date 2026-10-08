@@ -1,3 +1,102 @@
 {
-  "title": "Čítačka"
+  "lanes": {
+    "for_you": "Pre vás",
+    "maybe": "Možno",
+    "everything": "Všetko ostatné",
+    "new": "Nové",
+    "bookmarks": "Záložky",
+    "hidden": "Skryté",
+    "all": "Všetky",
+    "helpMeLearn": "pomôžte mi učiť sa"
+  },
+  "sidebar": {
+    "label": "Navigácia čítačky",
+    "lanes": "Zoznamy",
+    "feeds": "Zdroje",
+    "labels": "Štítky",
+    "noFeeds": "Zatiaľ žiadne zdroje.",
+    "noLabels": "Zatiaľ žiadne štítky.",
+    "feedsFailed": "Zdroje sa nepodarilo načítať.",
+    "labelsFailed": "Štítky sa nepodarilo načítať.",
+    "retryFeeds": "Znova načítať zdroje",
+    "retryLabels": "Znova načítať štítky",
+    "unread": "Neprečítané:",
+    "saved": "Uložené:",
+    "everythingToggle": "Zoznam Všetko ostatné"
+  },
+  "topBar": {
+    "label": "Prepínač zoznamov",
+    "browse": "Prehľadávať zdroje a štítky",
+    "browseTitle": "Zdroje a štítky"
+  },
+  "header": {
+    "unread": "Neprečítané: {{value}}",
+    "saved": "Uložené: {{value}}",
+    "hidden": "Skryté: {{value}}",
+    "feed": "Zdroj",
+    "label": "Štítok",
+    "show": "Zobraziť",
+    "showHidden": "Zobraziť skryté",
+    "refresh": "Obnoviť",
+    "markAll": "Označiť všetko ako prečítané",
+    "tier": "Minimálna úroveň",
+    "tierValue": "Úroveň {{tier}} a vyššie",
+    "tierShort": "{{tier}}+",
+    "sort": "Zoradiť podľa",
+    "sortScore": "Skóre",
+    "sortDate": "Dátum",
+    "simple": "Jednoduchý režim"
+  },
+  "markAll": {
+    "title": "Označiť všetko ako prečítané?",
+    "confirm": "Označiť ako prečítané",
+    "body_one": "{{count}} neprečítaný článok v zozname „{{view}}“ sa označí ako prečítaný.",
+    "body_few": "{{count}} neprečítané články v zozname „{{view}}“ sa označia ako prečítané.",
+    "body_many": "{{count}} neprečítaného článku v zozname „{{view}}“ sa označí ako prečítané.",
+    "body_other": "{{count}} neprečítaných článkov v zozname „{{view}}“ sa označí ako prečítané.",
+    "changed": "Zoznam sa medzitým zmenil, takže číslo je teraz aktuálne.",
+    "done_one": "Označené ako prečítané: {{count}}",
+    "done_few": "Označené ako prečítané: {{count}}",
+    "done_many": "Označené ako prečítané: {{count}}",
+    "done_other": "Označené ako prečítané: {{count}}",
+    "tooMany": "Naraz sa dá označiť najviac {{max}} článkov. Zvýšte minimálnu úroveň alebo vyberte menší zoznam a skúste to znova.",
+    "view": "{{name}} · {{lane}}"
+  },
+  "list": {
+    "loadMore": "Načítať viac"
+  },
+  "pane": {
+    "label": "Článok",
+    "empty": "Vyberte článok a prečítajte si ho tu."
+  },
+  "empty": {
+    "forYou": {
+      "title": "Všetko ste si prečítali",
+      "body": "Nové články zodpovedajúce vašim záujmom sa zobrazia tu."
+    },
+    "maybe": {
+      "title": "Nie je o čom rozhodovať",
+      "body": "Články, v ktorých si Bantoozi nie je istý, sa zobrazia tu. Ohodnoťte ich a pomôžete mu učiť sa."
+    },
+    "everything": {
+      "title": "Nič ďalšie na čítanie",
+      "body": "Články, ktoré nezodpovedajú vašim záujmom, sa zobrazia tu."
+    },
+    "new": {
+      "title": "Žiadne nové články",
+      "body": "Články, ktoré ešte neboli ohodnotené, sa zobrazia tu."
+    },
+    "bookmarks": {
+      "title": "Zatiaľ žiadne záložky",
+      "body": "Pridajte článok medzi záložky a jeho kópia sa uchová tu."
+    },
+    "hidden": {
+      "title": "Nič nie je skryté",
+      "body": "Články, ktoré skryjete, sa zobrazia tu, aby ste ich mohli vrátiť."
+    },
+    "scoped": {
+      "title": "Žiadne neprečítané články",
+      "body": "Všetko v tomto zozname je prečítané. Vyberte iný zoznam a uvidíte viac."
+    }
+  }
 }

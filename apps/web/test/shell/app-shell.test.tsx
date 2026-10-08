@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { meKey } from '../../src/api/query-keys.js';
 import { createI18n } from '../../src/i18n/index.js';
 import { failure, noContent } from '../api/fake-fetch.js';
-import { createHarness } from '../auth/harness.js';
+import { READER_READS, createHarness } from '../auth/harness.js';
 import { makeMe } from '../session/fixtures.js';
 import type { ApiRouteHandler } from '../support/app.js';
 
@@ -17,7 +17,7 @@ const { open } = createHarness();
 type App = Awaited<ReturnType<typeof open>>;
 
 function signedIn(me = ada, logout: ApiRouteHandler = () => noContent()) {
-  return { me, routes: { [LOGOUT]: logout } };
+  return { me, routes: { ...READER_READS, [LOGOUT]: logout } };
 }
 
 async function openAccountMenu(app: App, name = 'Ada Lovelace') {

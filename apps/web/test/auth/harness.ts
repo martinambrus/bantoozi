@@ -9,6 +9,36 @@ import { renderApp, type ApiRouteHandler, type FakeServer } from '../support/app
 export const EMAIL = 'ada@example.com';
 export const CODE = '123456';
 
+const AS_OF = '2026-05-31T10:00:00.000Z';
+
+/** What the reader asks for when a test lands on it by the way: nothing to read, nothing to count. */
+export const READER_READS: Record<string, ApiRouteHandler> = {
+  'GET /subscriptions': () => json(200, []),
+  'GET /labels': () => json(200, []),
+  'GET /articles/counts': () =>
+    json(200, {
+      forYou: 0,
+      maybe: 0,
+      everything: 0,
+      new: 0,
+      bookmarks: 0,
+      hidden: 0,
+      scored: 0,
+      total: 0,
+      asOf: AS_OF,
+      datasetVersion: 'empty',
+      rankingPending: false,
+    }),
+  'GET /articles': () =>
+    json(200, {
+      items: [],
+      nextCursor: null,
+      asOf: AS_OF,
+      datasetVersion: 'empty',
+      rankingPending: false,
+    }),
+};
+
 /**
  * A fake API for the sign-in flow: `request-code` always answers 202 like the real one, and a
  * correct `verify` signs `account` in (so the `/me` that follows knows it). Pass `routes` to
@@ -21,6 +51,7 @@ export function signInServer(options: {
   const server: FakeServer = {
     me: null,
     routes: {
+      ...READER_READS,
       'POST /auth/request-code': () => json(202, { next: 'check_email' }),
       'POST /auth/verify': () => {
         server.me = options.account;
