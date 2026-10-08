@@ -1,0 +1,259 @@
+import type {
+  ArticleListItem,
+  MarkReadFilter,
+  RatingReason,
+  UserPreferences,
+} from '@bantoozi/shared';
+
+import type { ApiError } from '../../../api/errors.js';
+
+/**
+ * The per-user fields of an article that reader actions change (spec 08 §5.3). Action responses are
+ * global projections, so only these fields are ever taken from them; everything else in a row (lane,
+ * tier, pLike, topReason, analysis, labelSuggestions, cluster, feed, images) belongs to the view.
+ */
+export const READER_FIELDS = [
+  'stateVersion',
+  'contentRevision',
+  'readAt',
+  'rating',
+  'reason',
+  'bookmarkedAt',
+  'archivedAt',
+  'labelIds',
+  'bookmarkCapture',
+] as const satisfies readonly (keyof ArticleListItem)[];
+
+export type ReaderState = Pick<ArticleListItem, (typeof READER_FIELDS)[number]>;
+
+/** One user intent on one article (spec 08 §5.3). */
+export type ReaderAction =
+  | { type: 'read'; trigger?: 'expand' }
+  | { type: 'unread' }
+  | { type: 'unhide' }
+  | {
+      type: 'rate';
+      rating: 1 | -1 | null;
+      /** Only with rating -1. */
+      reason?: RatingReason;
+      /** SHIFT + rate: also archive. */
+      hide?: boolean;
+      analysisRequestId?: string;
+      selection?: 'calibration';
+    }
+  | { type: 'promptAnswer'; liked: boolean; analysisRequestId?: string }
+  /** Spec 09 §1: always the feed the reader is looking at (`item.feed.id`). */
+  | { type: 'bookmark'; mediaPolicyFeedId?: string }
+  | { type: 'unbookmark' }
+  | { type: 'addLabel'; labelId: string }
+  | { type: 'removeLabel'; labelId: string }
+  | { type: 'retryCapture'; captureGeneration: string }
+  | { type: 'open' }
+  | { type: 'dwell'; ms: number };
+
+/** Server-undoable action types (spec 08 §5.4); open, dwell and retryCapture are not. */
+export const UNDOABLE_ACTIONS = [
+  'read',
+  'unread',
+  'unhide',
+  'rate',
+  'promptAnswer',
+  'bookmark',
+  'unbookmark',
+  'addLabel',
+  'removeLabel',
+] as const satisfies readonly ReaderAction['type'][];
+
+/** The fence a request carries; `snapshotId` only in the saved-bookmark view. */
+export interface Fence {
+  stateVersion: string;
+  contentRevision: string;
+  snapshotId?: string;
+}
+
+/**
+ * - `held`: optimistic, not sendable until `release` (the dislike reason bar, spec 09 §3.3);
+ * - `queued`: waiting for an earlier action on the same article;
+ * - `sending`: its request is in flight (body and key are frozen from the first send on);
+ * - `done` / `stale` / `failed` / `cancelled`: settled.
+ */
+export type ActionStatus =
+  'held' | 'queued' | 'sending' | 'done' | 'stale' | 'failed' | 'cancelled';
+
+export interface ExampleSuggestion {
+  cardId: string;
+  side: 'yes' | 'no';
+}
+
+export type ActionResult =
+  | {
+      status: 'done';
+      item: ArticleListItem;
+      mutationId: string;
+      /** Rating responses only; always null for replayed actions (spec 09 §3.3). */
+      exampleSuggestion: ExampleSuggestion | null;
+      /** Dwell responses only (spec 09 §3.6). */
+      prompt: boolean;
+      /** Set when the server refused the request id as obsolete and the rating was resent without it. */
+      droppedAnalysisRequestId: string | null;
+    }
+  /** 409 STALE_STATE: the server's reader state was adopted and this action rolled back. */
+  | { status: 'stale'; item: ArticleListItem | null }
+  /** Rolled back after the final attempt. */
+  | { status: 'failed'; error: ApiError }
+  | { status: 'cancelled' };
+
+export interface ActionHandle {
+  /** Client id; also the action's Idempotency-Key once sent. */
+  readonly id: string;
+  readonly articleId: string;
+  readonly action: ReaderAction;
+  readonly status: ActionStatus;
+  /** The server receipt, once acknowledged. */
+  readonly mutationId: string | null;
+  readonly createdAt: number;
+  readonly replayed: boolean;
+  readonly result: Promise<ActionResult>;
+}
+
+export interface DispatchOptions {
+  /** Apply the optimistic change now but send only on `release` (reason bar). */
+  hold?: boolean;
+  /** Saved-bookmark view: fence against the snapshot (spec 08 §5.2). */
+  snapshot?: { id: string; contentRevision: string };
+  /** Offline replay: never surface an example suggestion (spec 09 §3.3). */
+  replayed?: boolean;
+}
+
+export type BulkInput =
+  | { kind: 'markRead'; items: readonly ArticleListItem[] }
+  /** Mark all read: `items` are the loaded unread rows the filter covers (optimistic only). */
+  | {
+      kind: 'markReadFilter';
+      filter: MarkReadFilter;
+      datasetVersion: string;
+      items: readonly ArticleListItem[];
+    }
+  | { kind: 'rateBulk'; items: readonly ArticleListItem[]; rating: 1 | -1 | null };
+
+export type BulkResult =
+  | { status: 'done'; mutationId: string; count: number }
+  | { status: 'stale'; items: ArticleListItem[]; reason: string | null }
+  | { status: 'failed'; error: ApiError };
+
+export type UndoResult =
+  | { status: 'undone'; items: ArticleListItem[] }
+  /** Cancelled before it was sent: nothing reached the server. */
+  | { status: 'cancelled' }
+  /** 409 STALE_STATE: newer changes were kept; their state was adopted. */
+  | { status: 'conflict'; items: ArticleListItem[] }
+  /** 409 CONFLICT `{reason}` (not_undoable, already_undone, expired) or 404 (`unknown`). */
+  | { status: 'refused'; reason: 'not_undoable' | 'already_undone' | 'expired' | 'unknown' }
+  | { status: 'failed'; error: ApiError };
+
+export interface RecentAction {
+  /** Action or bulk id. */
+  id: string;
+  kind: ReaderAction['type'] | BulkInput['kind'];
+  articleIds: readonly string[];
+  /** Acknowledgement time (epoch ms); undo is offered until +10 minutes. */
+  at: number;
+  mutationId: string;
+}
+
+/** Responses the transport returns; it throws `ApiError` on failure (src/api/errors.ts). */
+export interface ActionResponse {
+  item: ArticleListItem;
+  mutationId: string;
+  exampleSuggestion?: ExampleSuggestion | null;
+  prompt?: boolean;
+}
+
+export interface ReaderTransport {
+  send(
+    articleId: string,
+    action: ReaderAction,
+    fence: Fence,
+    idempotencyKey: string,
+    signal: AbortSignal,
+  ): Promise<ActionResponse>;
+  markRead(
+    body:
+      | { targets: { id: string; stateVersion: string; contentRevision: string }[] }
+      | { filter: MarkReadFilter; datasetVersion: string },
+    idempotencyKey: string,
+    signal: AbortSignal,
+  ): Promise<{ count: number; mutationId: string }>;
+  rateBulk(
+    body: {
+      targets: {
+        id: string;
+        stateVersion: string;
+        contentRevision: string;
+        analysisRequestId?: string;
+      }[];
+      rating: 1 | -1 | null;
+    },
+    idempotencyKey: string,
+    signal: AbortSignal,
+  ): Promise<{ count: number; mutationId: string; items: ArticleListItem[] }>;
+  undo(
+    mutationId: string,
+    idempotencyKey: string,
+    signal: AbortSignal,
+  ): Promise<{ count: number; mutationId: string; items: ArticleListItem[] }>;
+}
+
+export interface ReaderActionsOptions {
+  transport: ReaderTransport;
+  /** Current preferences; `markReadOnRate` shapes the optimistic rating. */
+  preferences: () => Pick<UserPreferences, 'markReadOnRate'>;
+  /** Epoch ms; injectable for tests. */
+  now?: () => number;
+  /** Idempotency keys and action ids; defaults to `crypto.randomUUID`. */
+  newId?: () => string;
+  /** Transient failures (network, 429, 5xx) are retried this many times with backoff. Default 2. */
+  maxRetries?: number;
+  /** Backoff before retry `n` (1-based) when no Retry-After is given. Default 500 ms × 2^(n−1). */
+  backoffMs?: (attempt: number) => number;
+  /** Called once per settled action (toasts, count invalidation). */
+  onSettled?: (handle: ActionHandle, result: ActionResult) => void;
+}
+
+/**
+ * The reader's single write path (spec 09 §1, §3.3; spec 08 §5.3–5.4): optimistic overlay, one queue
+ * per article with fences chained from the latest acknowledged state, rollback of only the failed
+ * action, holds for the reason bar, and undo through server receipts.
+ */
+export interface ReaderActions {
+  /** Feed server data (list/detail query results) into the known per-article state. */
+  observe(items: readonly ArticleListItem[]): void;
+  /**
+   * The item as the reader should see it: the newest known server state (by `stateVersion`) with the
+   * optimistic changes of unsettled actions applied in order. Returns the same object when nothing
+   * changes, so React memoization holds.
+   */
+  view<T extends ArticleListItem>(item: T): T;
+  dispatch(item: ArticleListItem, action: ReaderAction, options?: DispatchOptions): ActionHandle;
+  /** Finalize a held action (e.g. the chosen reason, SHIFT-hide) and queue it for sending. */
+  release(actionId: string, patch?: { reason?: RatingReason; hide?: boolean }): void;
+  /** Drop a held or not-yet-sent action and its optimistic change; false once it was sent. */
+  cancel(actionId: string): boolean;
+  /** Re-queue a failed action with its original body and key. */
+  retry(actionId: string): ActionHandle | null;
+  undo(actionId: string): Promise<UndoResult>;
+  bulk(input: BulkInput): Promise<BulkResult>;
+  /** Acknowledged undoable actions of the last 10 minutes, newest first. */
+  recent(): readonly RecentAction[];
+  get(actionId: string): ActionHandle | undefined;
+  subscribe(listener: () => void): () => void;
+  /** Increments on every change of displayed state or recent actions. */
+  getVersion(): number;
+  /** Account reset: abort in-flight requests, ignore their answers, forget everything. */
+  reset(): void;
+}
+
+/** FeedIt: rating an item again in the same direction un-rates it (spec 09 §3.3). */
+export function nextRating(current: 1 | -1 | null, pressed: 1 | -1): 1 | -1 | null {
+  return current === pressed ? null : pressed;
+}
