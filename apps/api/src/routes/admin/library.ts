@@ -82,6 +82,14 @@ function toLibraryCard(row: AdminLibraryCardRow): AdminLibraryCard {
     holders: row.holders,
     retiredAt: isoOrNull(row.retiredAt),
     createdAt: iso(row.createdAt),
+    publication:
+      row.publication === null
+        ? null
+        : {
+            requestId: row.publication.requestId,
+            authorizationKind: row.publication.authorizationKind,
+            promotedAt: iso(row.publication.promotedAt),
+          },
   };
 }
 

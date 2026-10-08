@@ -1102,6 +1102,12 @@ export interface AdminLibraryCardRow {
   holders: number;
   retiredAt: Date | null;
   createdAt: Date;
+  /** The card's latest promoted publication request; null for a library-origin card. */
+  publication: {
+    requestId: string;
+    authorizationKind: 'creator_approval' | 'creator_inactive_30d';
+    promotedAt: Date;
+  } | null;
 }
 
 type LibraryRow = {
@@ -1115,6 +1121,9 @@ type LibraryRow = {
   holders: number | null;
   retired_at: RawTimestamp | null;
   created_at: RawTimestamp;
+  publication_request_id: string | null;
+  publication_kind: 'creator_approval' | 'creator_inactive_30d' | null;
+  publication_promoted_at: RawTimestamp | null;
 };
 
 const strings = (value: unknown): string[] =>
@@ -1139,6 +1148,16 @@ function toLibraryCard(row: LibraryRow): AdminLibraryCardRow {
     holders: row.holders ?? 0,
     retiredAt: toDateOrNull(row.retired_at),
     createdAt: toDate(row.created_at),
+    publication:
+      row.publication_request_id === null ||
+      row.publication_kind === null ||
+      row.publication_promoted_at === null
+        ? null
+        : {
+            requestId: row.publication_request_id,
+            authorizationKind: row.publication_kind,
+            promotedAt: toDate(row.publication_promoted_at),
+          },
   };
 }
 
@@ -1146,12 +1165,18 @@ const LIBRARY_SELECT = (where: SQL, tail: SQL) => sql`
   WITH cards AS (
     SELECT c.* FROM interest_cards c
      WHERE c.visibility = 'public' AND c.kind = 'interest' AND ${where}
-     ${tail})
+     ${tail}),
+  promotions AS MATERIALIZED (
+    SELECT DISTINCT ON (r.card_id) r.card_id, r.id, r.authorization_kind, r.promoted_at
+      FROM admin_list_card_publication_requests('promoted') r
+     ORDER BY r.card_id, r.promoted_at DESC, r.id DESC)
   SELECT c.id::text AS card_id, c.slug, v.version, c.title, c.body, c.topic_ids, c.i18n,
-         h.holders, c.retired_at, c.created_at
+         h.holders, c.retired_at, c.created_at, p.id::text AS publication_request_id,
+         p.authorization_kind AS publication_kind, p.promoted_at AS publication_promoted_at
     FROM cards c
     LEFT JOIN library_card_versions v ON v.card_id = c.id
     LEFT JOIN admin_card_holders(ARRAY(SELECT id FROM cards)) h ON h.card_id = c.id
+    LEFT JOIN promotions p ON p.card_id = c.id
    ORDER BY c.id`;
 
 /** Public library cards (every version), ordered by id after `afterId`, searchable by title/slug. */

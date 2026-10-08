@@ -1311,3 +1311,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   other model: the fake TypeSafe server's `jev-fake` in the E2E suite, or a newer pinned Jev version
   in production. The API now reads the same variable as the worker; the production pinning rule
   applies to it too. Spec 01 §3 and `.env.example` updated.
+- D-151: 2026-10-08 M6-T7 — spec 09 §8 asks the admin library to show a published record's actual
+  authorization basis and audit time, but `GET /admin/library` (spec 08 §9) returned no provenance;
+  only the promote response named the basis. Every admin library card now carries
+  `publication: {requestId, authorizationKind, promotedAt} | null` from its latest promoted
+  publication request, read once per query through the existing `admin_list_card_publication_requests`
+  definer function (the requests table has tenant RLS), so no migration is needed. Cards created in
+  the library, and new semantic versions, have `null`. Spec 08 §9 updated.

@@ -541,6 +541,15 @@ export const AdminLibraryCardSchema = z
     holders: Count,
     retiredAt: IsoTimestampSchema.nullable(),
     createdAt: IsoTimestampSchema,
+    /** The promotion that published a shared card (spec 09 §8); null for a library-origin card. */
+    publication: z
+      .object({
+        requestId: IdSchema,
+        authorizationKind: AuthorizationKindSchema,
+        promotedAt: IsoTimestampSchema,
+      })
+      .strict()
+      .nullable(),
   })
   .strict();
 export type AdminLibraryCard = z.infer<typeof AdminLibraryCardSchema>;
