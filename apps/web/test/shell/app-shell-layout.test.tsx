@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ToastProvider } from '../../src/components/toast/toast-provider.js';
 import { AppShellLayout, type AppShellUser } from '../../src/features/shell/app-shell-layout.js';
 import { createI18n, type Language } from '../../src/i18n/index.js';
 
@@ -64,7 +65,9 @@ async function renderShell({
   await router.load();
   render(
     <I18nextProvider i18n={createI18n(language)}>
-      <RouterProvider router={router} />
+      <ToastProvider>
+        <RouterProvider router={router} />
+      </ToastProvider>
     </I18nextProvider>,
   );
   return { onLogout, router };

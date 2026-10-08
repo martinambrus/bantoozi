@@ -172,7 +172,7 @@ describe('the menu item', () => {
     await openMore(app, 'Verge');
 
     const entry = await screen.findByRole('menuitem', { name: /^Rate these visible articles/ });
-    expect(entry).toBeDisabled();
+    expect(entry).toHaveAttribute('aria-disabled', 'true');
     expect(entry).toHaveTextContent('No unread articles are loaded in this view.');
     expect(entry).toHaveAccessibleName(
       'Rate these visible articles No unread articles are loaded in this view.',
@@ -340,7 +340,7 @@ describe('Like all and Dislike all', () => {
     await openMore(app, 'Verge');
     expect(
       await screen.findByRole('menuitem', { name: /^Rate these visible articles/ }),
-    ).toBeDisabled();
+    ).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('say how many were rated in a toast that stays for 5 seconds', async () => {
@@ -511,7 +511,7 @@ describe('in Slovak', () => {
     await openMore(app, 'Verge', 'Viac');
 
     const entry = await screen.findByRole('menuitem', { name: /^Ohodnotiť viditeľné články/ });
-    expect(entry).toBeDisabled();
+    expect(entry).toHaveAttribute('aria-disabled', 'true');
     expect(entry).toHaveTextContent('V tomto zozname nie sú načítané žiadne neprečítané články.');
   });
 });

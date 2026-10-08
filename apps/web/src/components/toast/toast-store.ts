@@ -33,6 +33,20 @@ export interface ToastStore {
   dismiss: (id: string) => void;
   subscribe: (listener: () => void) => () => void;
   getSnapshot: () => readonly Toast[];
+  /**
+   * Starts, or carries on, the countdown of a toast on screen and returns the milliseconds it has
+   * left, or null when it stays until dismissed. The time already spent is kept here, by id, so
+   * whatever shows the toast next (the region moves between the page and a modal) does not start over.
+   */
+  resume: (id: string) => number | null;
+  /** Stops the countdown and keeps the time that is left. */
+  pause: (id: string) => void;
+}
+
+/** `left` is what remained when the countdown last started; `since` is when, or null while it is paused. */
+interface Countdown {
+  left: number | null;
+  since: number | null;
 }
 
 export const DEFAULT_TOAST_DURATION_MS = 5000;
@@ -48,9 +62,13 @@ export function createToastStore(): ToastStore {
   let toasts: readonly Toast[] = [];
   let counter = 0;
   const listeners = new Set<() => void>();
+  const countdowns = new Map<string, Countdown>();
 
   function set(next: readonly Toast[]) {
     toasts = next;
+    for (const id of countdowns.keys()) {
+      if (!next.some((toast) => toast.id === id)) countdowns.delete(id);
+    }
     for (const listener of [...listeners]) listener();
   }
 
@@ -66,6 +84,7 @@ export function createToastStore(): ToastStore {
         actions,
         durationMs: input.durationMs === undefined ? DEFAULT_TOAST_DURATION_MS : input.durationMs,
       };
+      countdowns.set(toast.id, { left: toast.durationMs, since: null });
       set(
         toasts.some((existing) => existing.id === toast.id)
           ? toasts.map((existing) => (existing.id === toast.id ? toast : existing))
@@ -83,5 +102,17 @@ export function createToastStore(): ToastStore {
       };
     },
     getSnapshot: () => toasts,
+    resume(id) {
+      const countdown = countdowns.get(id);
+      if (countdown === undefined || countdown.left === null) return null;
+      countdown.since ??= Date.now();
+      return Math.max(0, countdown.left - (Date.now() - countdown.since));
+    },
+    pause(id) {
+      const countdown = countdowns.get(id);
+      if (countdown === undefined || countdown.left === null || countdown.since === null) return;
+      countdown.left = Math.max(0, countdown.left - (Date.now() - countdown.since));
+      countdown.since = null;
+    },
   };
 }

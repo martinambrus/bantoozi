@@ -16,7 +16,7 @@ export function Checkbox({ label, hint, error, id: idProp, className, ...rest }:
     <div className={cx('flex flex-col', className)}>
       <label
         htmlFor={field.id}
-        className="flex min-h-11 cursor-pointer items-center gap-3 text-base text-slate-900 dark:text-slate-100"
+        className="flex min-h-11 min-w-11 cursor-pointer items-center gap-3 text-base text-slate-900 dark:text-slate-100"
       >
         <input
           {...rest}

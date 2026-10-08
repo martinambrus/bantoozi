@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
@@ -6,6 +13,7 @@ import { Button } from '../button.js';
 import { cx } from '../cx.js';
 import { IconButton } from '../icon-button.js';
 import { CheckIcon, CloseIcon, InfoIcon, WarningIcon } from '../icons.js';
+import { toastControls } from './toast-outlets.js';
 import { useToastOutlets, useToastStore } from './toast-provider.js';
 import type { Toast, ToastTone } from './toast-store.js';
 
@@ -29,37 +37,48 @@ const TONES: Record<ToastTone, { icon: typeof InfoIcon; classes: string }> = {
 };
 
 /**
- * Counts a toast down while neither hovered nor focused. Time already spent is kept across pauses,
- * and a toast shown again under its id (a new object) starts over.
+ * Counts a toast down while neither hovered nor focused. The time already spent is kept in the
+ * store, so the item that replaces this one when the region moves between the page and a modal
+ * carries on where it stopped; a toast shown again under its id starts over.
  */
 function useAutoDismiss(toast: Toast, paused: boolean, dismiss: () => void) {
-  const clock = useRef<{ toast: Toast; remaining: number | null } | null>(null);
+  const store = useToastStore();
+  const { id } = toast;
   useEffect(() => {
-    if (clock.current?.toast !== toast) clock.current = { toast, remaining: toast.durationMs };
-    const state = clock.current;
-    const remaining = state.remaining;
-    if (paused || remaining === null) return;
-    const startedAt = Date.now();
-    const timer = setTimeout(dismiss, remaining);
+    if (paused) return;
+    const left = store.resume(id);
+    if (left === null) return;
+    const timer = setTimeout(dismiss, left);
     return () => {
       clearTimeout(timer);
-      state.remaining = Math.max(0, remaining - (Date.now() - startedAt));
+      store.pause(id);
     };
-  }, [toast, paused, dismiss]);
+  }, [store, id, toast, paused, dismiss]);
 }
 
 function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string) => void }) {
   const { t } = useTranslation('common');
+  const outlets = useToastOutlets();
+  const root = useRef<HTMLDivElement>(null);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const { id, actions } = toast;
   const dismiss = useCallback(() => onDismiss(id), [onDismiss, id]);
   useAutoDismiss(toast, hovered || focused, dismiss);
+
+  // This item took the place of one in the other outlet that had the focus, and the focus goes on.
+  useLayoutEffect(() => {
+    const control = outlets.takeFocus(id);
+    if (control !== null && root.current !== null) toastControls(root.current)[control]?.focus();
+  }, [outlets, id]);
+
   const { icon: Icon, classes } = TONES[toast.tone];
   const wraps = actions.length > 1;
 
   return (
     <div
+      ref={root}
+      data-toast-id={id}
       data-tone={toast.tone}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -110,6 +129,12 @@ export function Toaster() {
   const outlets = useToastOutlets();
   const toasts = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const outlet = useSyncExternalStore(outlets.subscribe, outlets.getSnapshot, outlets.getSnapshot);
+
+  // The items in a new outlet have had their turn to take a focus that was passed on; no other will.
+  useLayoutEffect(() => {
+    outlets.dropFocus();
+  }, [outlets, outlet]);
+
   const region = (
     <div
       role="status"

@@ -153,7 +153,12 @@ export function ArticleRow({
             {reason === null ? null : onWhyThis === undefined ? (
               <Chip>{reason}</Chip>
             ) : (
-              <ChipButton onClick={onWhyThis}>{reason}</ChipButton>
+              <ChipButton
+                aria-label={t('row.reasonChip', { reason, action: t('detail.whyThis') })}
+                onClick={onWhyThis}
+              >
+                {reason}
+              </ChipButton>
             )}
             {otherSources <= 0 ? null : otherFeeds.length === 0 ? (
               <Chip>{t('row.cluster', { count: otherSources })}</Chip>

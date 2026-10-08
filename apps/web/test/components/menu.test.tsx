@@ -85,23 +85,27 @@ describe('Menu', () => {
     expect(screen.getByRole('menuitem', { name: 'Delete' })).toHaveFocus();
   });
 
-  it('moves focus with the arrow keys, wrapping and skipping disabled items', async () => {
+  it('moves focus with the arrow keys, wrapping and passing through disabled items', async () => {
     const user = userEvent.setup();
     renderMenu();
     await user.click(trigger());
     expect(focusedItemName()).toBe('Rename');
 
     await user.keyboard('{ArrowDown}');
+    expect(focusedItemName()).toBe('Archive');
+    await user.keyboard('{ArrowDown}');
     expect(focusedItemName()).toBe('Delete');
     await user.keyboard('{ArrowDown}');
     expect(focusedItemName()).toBe('Rename');
     await user.keyboard('{ArrowUp}');
     expect(focusedItemName()).toBe('Delete');
     await user.keyboard('{ArrowUp}');
+    expect(focusedItemName()).toBe('Archive');
+    await user.keyboard('{ArrowUp}');
     expect(focusedItemName()).toBe('Rename');
   });
 
-  it('jumps to the first and last enabled item with Home and End', async () => {
+  it('jumps to the first and last item with Home and End', async () => {
     const user = userEvent.setup();
     renderMenu();
     await user.click(trigger());
@@ -115,7 +119,7 @@ describe('Menu', () => {
     const user = userEvent.setup();
     const { onRename, onDelete } = renderMenu();
     await user.click(trigger());
-    await user.keyboard('{ArrowDown}{Enter}');
+    await user.keyboard('{ArrowDown}{ArrowDown}{Enter}');
     expect(onDelete).toHaveBeenCalledTimes(1);
     expect(onRename).not.toHaveBeenCalled();
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
@@ -148,9 +152,41 @@ describe('Menu', () => {
     const { onArchive } = renderMenu();
     await user.click(trigger());
     const archive = screen.getByRole('menuitem', { name: 'Archive' });
-    expect(archive).toBeDisabled();
+    expect(archive).toHaveAttribute('aria-disabled', 'true');
     await user.click(archive);
     expect(onArchive).not.toHaveBeenCalled();
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+  });
+
+  it('marks a disabled item as unavailable without taking it out of the keyboard order', async () => {
+    const user = userEvent.setup();
+    renderMenu();
+    await user.click(trigger());
+    const archive = screen.getByRole('menuitem', { name: 'Archive' });
+    expect(archive).toHaveAttribute('aria-disabled', 'true');
+    expect(archive).not.toBeDisabled();
+    expect(archive).toHaveClass('min-h-11');
+    expect(archive.className).toMatch(/focus-visible:outline/);
+    for (const name of ['Rename', 'Delete']) {
+      expect(screen.getByRole('menuitem', { name })).not.toHaveAttribute('aria-disabled');
+    }
+  });
+
+  it('reaches a disabled item with the arrow keys and does nothing when it is chosen', async () => {
+    const user = userEvent.setup();
+    const { onArchive, onRename, onDelete } = renderMenu();
+    await user.click(trigger());
+    await user.keyboard('{ArrowDown}');
+    const archive = screen.getByRole('menuitem', { name: 'Archive' });
+    expect(archive).toHaveFocus();
+
+    await user.keyboard('{Enter}');
+    await user.keyboard(' ');
+    expect(onArchive).not.toHaveBeenCalled();
+    expect(onRename).not.toHaveBeenCalled();
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    expect(archive).toHaveFocus();
   });
 
   it('closes on Escape and refocuses the trigger', async () => {
@@ -193,7 +229,7 @@ describe('Menu', () => {
     expect(trigger()).toHaveFocus();
   });
 
-  it('can be closed from the trigger when no item can take the focus', async () => {
+  it('opens on a disabled item when that is all there is, and closes on Escape', async () => {
     const user = userEvent.setup();
     render(
       <I18nextProvider i18n={createI18n('en')}>
@@ -212,7 +248,7 @@ describe('Menu', () => {
     );
     await user.click(trigger());
     expect(screen.getByRole('menu')).toBeInTheDocument();
-    expect(trigger()).toHaveFocus();
+    expect(screen.getByRole('menuitem', { name: 'Archive' })).toHaveFocus();
 
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();

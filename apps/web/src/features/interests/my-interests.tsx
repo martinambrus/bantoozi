@@ -1,5 +1,5 @@
 import type { CardDto, Subscription } from '@bantoozi/shared';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApiMutation } from '../../api/mutation.js';
@@ -128,6 +128,7 @@ export function MyInterests() {
   const deleteCard = useApiMutation(routes.cardDelete);
   const [editing, setEditing] = useState<CardDto | 'new' | null>(null);
   const [deleting, setDeleting] = useState<CardDto | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const headingId = useId();
 
   async function remove(card: CardDto) {
@@ -162,7 +163,12 @@ export function MyInterests() {
           subscriptions.isLoading ? (
             <LoadingState />
           ) : (
-            <ul aria-label={t('mine.listLabel')} className="flex flex-col gap-3">
+            <ul
+              ref={listRef}
+              tabIndex={-1}
+              aria-label={t('mine.listLabel')}
+              className="flex flex-col gap-3 outline-none"
+            >
               {list.map((card) => (
                 <CardRow
                   key={card.id}
@@ -179,6 +185,7 @@ export function MyInterests() {
       {editing === null ? null : (
         <CardEditor
           card={editing === 'new' ? undefined : editing}
+          returnFocus={() => listRef.current}
           onClose={() => setEditing(null)}
         />
       )}

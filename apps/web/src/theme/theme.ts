@@ -14,7 +14,28 @@ export function applyTheme(theme: ResolvedTheme, root: HTMLElement = document.do
   root.style.colorScheme = theme;
 }
 
-let current: ThemePreference = 'system';
+/** Where the preference is kept for public/theme.js, which paints the page before the app starts. */
+export const THEME_STORAGE_KEY = 'bantoozi:theme';
+
+function readStored(): ThemePreference {
+  try {
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return stored === 'dark' || stored === 'light' ? stored : 'system';
+  } catch {
+    return 'system';
+  }
+}
+
+function writeStored(preference: ThemePreference) {
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, preference);
+  } catch {
+    // Without storage the page script follows the system until the app has started.
+  }
+}
+
+// Starting from what the script painted keeps the first frame of the app from undoing it.
+let current: ThemePreference = readStored();
 const listeners = new Set<() => void>();
 
 /** The chosen preference (the account's `theme` setting once it is loaded). */
@@ -23,6 +44,7 @@ export const themePreference = {
   set(next: ThemePreference) {
     if (next === current) return;
     current = next;
+    writeStored(next);
     for (const listener of [...listeners]) listener();
   },
   subscribe(listener: () => void) {

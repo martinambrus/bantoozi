@@ -27,6 +27,49 @@ function focusFirst(dialog: HTMLDialogElement) {
   dialog.focus();
 }
 
+/** How long after a modal closes its opener is still watched for leaving the page. */
+const OPENER_WATCH_MS = 1000;
+
+// A fallback target is somewhere to be, not something to scroll to.
+const STAY = { preventScroll: true };
+
+function focusIfPossible(element: HTMLElement | null | undefined, options?: FocusOptions): boolean {
+  if (element === null || element === undefined || !element.isConnected) return false;
+  element.focus(options);
+  return document.activeElement === element;
+}
+
+type ReturnFocus = (() => HTMLElement | null) | undefined;
+
+// Where the focus goes when the opener cannot have it: what the page names, else the modal that is
+// still open (the page behind it is inert), else its main landmark. It is never left on the body,
+// which a keyboard or a screen reader cannot read from. A focus that the page or the person has
+// already put somewhere stays there.
+function focusFallback(returnFocus: ReturnFocus) {
+  const active = document.activeElement;
+  if (active !== null && active !== document.body) return;
+  if (focusIfPossible(returnFocus?.(), STAY)) return;
+  const inner = Array.from(document.querySelectorAll<HTMLDialogElement>('dialog[open]')).at(-1);
+  if (inner === undefined) focusIfPossible(document.querySelector('main'), STAY);
+  else focusFirst(inner);
+}
+
+// A list can re-render only when its query settles, after the modal that edited it has closed and
+// handed the focus back; the focus is lost with the opener then.
+function watchOpener(opener: HTMLElement, onGone: () => void) {
+  const observer = new MutationObserver(() => {
+    if (opener.isConnected) return;
+    stop();
+    onGone();
+  });
+  const timer = setTimeout(stop, OPENER_WATCH_MS);
+  function stop() {
+    observer.disconnect();
+    clearTimeout(timer);
+  }
+  observer.observe(document.body, { childList: true, subtree: true });
+}
+
 export interface ModalProps {
   open: boolean;
   /** Asked for by Escape, the close button and the browser's own close gestures. */
@@ -38,6 +81,12 @@ export interface ModalProps {
   showCloseButton?: boolean | undefined;
   /** False while a request is in flight: every way to close it is ignored. */
   dismissible?: boolean | undefined;
+  /**
+   * Where the focus goes on closing when the element that opened the modal is gone (its row was
+   * deleted or replaced). Without one, or when it names nothing that can take the focus, the
+   * page's `<main>` does.
+   */
+  returnFocus?: ReturnFocus;
 }
 
 interface ModalSurfaceProps extends ModalProps {
@@ -65,6 +114,7 @@ function OpenModal({
   children,
   showCloseButton = true,
   dismissible = true,
+  returnFocus,
   surfaceClassName,
   contentClassName,
   side,
@@ -74,6 +124,11 @@ function OpenModal({
   const toastOutletRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const descriptionId = useId();
+
+  const returnFocusRef = useRef(returnFocus);
+  useEffect(() => {
+    returnFocusRef.current = returnFocus;
+  });
 
   useEffect(() => lockScroll(), []);
 
@@ -86,7 +141,11 @@ function OpenModal({
     if (!dialog.contains(document.activeElement)) focusFirst(dialog);
     return () => {
       dialog.close();
-      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+      if (opener instanceof HTMLElement && opener !== document.body && focusIfPossible(opener)) {
+        watchOpener(opener, () => focusFallback(returnFocusRef.current));
+      } else {
+        focusFallback(returnFocusRef.current);
+      }
     };
   }, []);
 

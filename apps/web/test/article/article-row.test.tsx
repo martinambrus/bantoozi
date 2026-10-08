@@ -306,6 +306,8 @@ const REASONS: [string, TopReason, string, string][] = [
 ];
 
 describe.each(['en', 'sk'] as const)('ArticleRow reason chip in %s', (language) => {
+  const whyThis = language === 'en' ? 'Why this?' : 'Prečo toto?';
+
   it.each(REASONS)('renders the reason: %s', (_name, topReason, en, sk) => {
     renderRow(
       makeItem({ topReason, analysis: { mode: 'active', status: 'complete', requestId: null } }),
@@ -314,19 +316,46 @@ describe.each(['en', 'sk'] as const)('ArticleRow reason chip in %s', (language) 
     );
     expect(screen.getByText(language === 'en' ? en : sk)).toBeInTheDocument();
   });
+
+  it.each(REASONS)(
+    'names its button by the reason and then what it opens: %s',
+    (_name, topReason, en, sk) => {
+      const reason = language === 'en' ? en : sk;
+      renderRow(
+        makeItem({ topReason, analysis: { mode: 'active', status: 'complete', requestId: null } }),
+        { onWhyThis: vi.fn() },
+        { language },
+      );
+      const chip = screen.getByText(reason).closest('button');
+      expect(chip).not.toBeNull();
+      expect(chip).toHaveAccessibleName(`${reason}, ${whyThis}`);
+      expect(chip).toHaveTextContent(reason);
+    },
+  );
 });
 
 describe('ArticleRow reason chip', () => {
   it('is plain text without a "Why this?" handler and a button with one', async () => {
     const plain = renderRow(makeItem());
     expect(screen.getByText('EV battery tech · 0.82')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'EV battery tech · 0.82' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /EV battery tech/ })).toBeNull();
     plain.unmount();
 
     const onWhyThis = vi.fn();
     const { user } = renderRow(makeItem(), { onWhyThis });
-    await user.click(screen.getByRole('button', { name: 'EV battery tech · 0.82' }));
+    await user.click(screen.getByRole('button', { name: 'EV battery tech · 0.82, Why this?' }));
     expect(onWhyThis).toHaveBeenCalledOnce();
+  });
+
+  it('says in its name what it opens, with the visible text first, in both languages', () => {
+    const english = renderRow(makeItem(), { onWhyThis: vi.fn() });
+    expect(screen.getByRole('button', { name: 'EV battery tech · 0.82, Why this?' })).toBeVisible();
+    english.unmount();
+
+    renderRow(makeItem(), { onWhyThis: vi.fn() }, { language: 'sk' });
+    expect(
+      screen.getByRole('button', { name: 'EV battery tech · 0,82, Prečo toto?' }),
+    ).toBeVisible();
   });
 
   it('is absent for an article without a reason', () => {

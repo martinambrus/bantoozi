@@ -531,7 +531,10 @@ describe('ArticleDetail action bar', () => {
   it('says there are no labels to choose from', async () => {
     const { user } = renderDetail(ITEM, {}, { routes: labelRoute() });
     await user.click(await screen.findByRole('button', { name: 'Labels' }));
-    expect(await screen.findByRole('menuitem', { name: 'You have no labels yet' })).toBeDisabled();
+    expect(await screen.findByRole('menuitem', { name: 'You have no labels yet' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
 
   it('opens "Why this?" when a handler is given', async () => {

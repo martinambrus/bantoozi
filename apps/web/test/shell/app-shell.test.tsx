@@ -263,6 +263,26 @@ describe('the signed-in app shell', () => {
       await waitFor(() => expect(isDark()).toBe(true));
     });
 
+    it('is kept where the page script reads it before the app starts, and is "system" after signing out', async () => {
+      const app = await open({
+        path: '/read/for_you',
+        server: signedIn(makeMe({ displayName: 'Ada Lovelace', preferences: { theme: 'dark' } })),
+      });
+      await waitFor(() => expect(localStorage.getItem('bantoozi:theme')).toBe('dark'));
+
+      act(() => {
+        app.queryClient.setQueryData(
+          meKey(),
+          makeMe({ displayName: 'Ada Lovelace', preferences: { theme: 'light' } }),
+        );
+      });
+      await waitFor(() => expect(localStorage.getItem('bantoozi:theme')).toBe('light'));
+
+      await signOut(app);
+      await waitFor(() => expect(pathname(app)).toBe('/login'));
+      expect(localStorage.getItem('bantoozi:theme')).toBe('system');
+    });
+
     it('is applied on the onboarding screen too', async () => {
       await open({
         path: '/onboarding',

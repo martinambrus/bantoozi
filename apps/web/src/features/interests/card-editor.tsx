@@ -9,6 +9,7 @@ import { routes } from '../../api/routes.js';
 import { Badge } from '../../components/badge.js';
 import { Button } from '../../components/button.js';
 import { cx } from '../../components/cx.js';
+import type { ModalProps } from '../../components/modal.js';
 import { Sheet } from '../../components/sheet.js';
 import { TextArea } from '../../components/text-area.js';
 import { TextField } from '../../components/text-field.js';
@@ -113,11 +114,13 @@ export interface CardEditorProps {
   review?: UpdateOffer | undefined;
   /** Without a card: the article the new card is made from, whose title starts the interest text. */
   fromArticle?: { id: string; title: string } | undefined;
+  /** Where the focus goes on closing when the row that opened the editor is gone. */
+  returnFocus?: ModalProps['returnFocus'];
   onClose: () => void;
 }
 
 /** The sheet that creates a card or changes one. The parent shows it only while it is wanted. */
-export function CardEditor({ card, review, fromArticle, onClose }: CardEditorProps) {
+export function CardEditor({ card, review, fromArticle, returnFocus, onClose }: CardEditorProps) {
   const { t } = useTranslation('interests');
   const cache = useCardCache();
   const subscriptions = useSubscriptions();
@@ -199,6 +202,7 @@ export function CardEditor({ card, review, fromArticle, onClose }: CardEditorPro
       title={card === undefined ? createTitle : t('editor.editTitle')}
       description={source === undefined ? undefined : t('editor.fromArticleHint')}
       dismissible={!saving}
+      returnFocus={returnFocus}
     >
       <form noValidate onSubmit={(event) => void save(event)} className="flex flex-col gap-4">
         {review === undefined ? null : (

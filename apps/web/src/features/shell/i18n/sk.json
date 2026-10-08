@@ -14,5 +14,9 @@
     "label": "Ponuka účtu: {{name}}"
   },
   "offlineBanner": "Ste offline. Niektoré funkcie vyžadujú pripojenie.",
+  "connectivity": {
+    "offline": "Ste offline.",
+    "online": "Ste znova online."
+  },
   "signedOutOffline": "Na tomto zariadení ste odhlásený. Bantoozi vás dokončí odhlásiť, keď budete znova online."
 }

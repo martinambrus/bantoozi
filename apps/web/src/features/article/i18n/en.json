@@ -15,7 +15,8 @@
     "addLabel": "Add label {{name}}",
     "cluster_one": "+{{count}} source",
     "cluster_other": "+{{count}} sources",
-    "clusterFeeds": "Also reported by"
+    "clusterFeeds": "Also reported by",
+    "reasonChip": "{{reason}}, {{action}}"
   },
   "actions": {
     "like": "Like",

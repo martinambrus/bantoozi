@@ -14,5 +14,9 @@
     "label": "Account menu: {{name}}"
   },
   "offlineBanner": "You're offline. Some features need a connection.",
+  "connectivity": {
+    "offline": "You're offline.",
+    "online": "You're back online."
+  },
   "signedOutOffline": "Signed out on this device. Bantoozi will finish signing you out when you are back online."
 }

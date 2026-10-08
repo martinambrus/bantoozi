@@ -17,7 +17,8 @@
     "cluster_few": "+{{count}} zdroje",
     "cluster_many": "+{{count}} zdroja",
     "cluster_other": "+{{count}} zdrojov",
-    "clusterFeeds": "Informujú o tom aj"
+    "clusterFeeds": "Informujú o tom aj",
+    "reasonChip": "{{reason}}, {{action}}"
   },
   "actions": {
     "like": "Páči sa mi",

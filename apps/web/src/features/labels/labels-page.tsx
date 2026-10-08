@@ -1,5 +1,5 @@
 import type { LabelDto } from '@bantoozi/shared';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApiMutation } from '../../api/mutation.js';
@@ -103,6 +103,7 @@ export function LabelsPage() {
   const deleteLabel = useApiMutation(routes.labelDelete);
   const [editing, setEditing] = useState<LabelDto | 'new' | null>(null);
   const [deleting, setDeleting] = useState<LabelDto | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
 
   async function remove(label: LabelDto) {
     await deleteLabel.mutateAsync({ params: { id: label.id } });
@@ -128,7 +129,12 @@ export function LabelsPage() {
         empty={<EmptyState title={t('emptyTitle')} body={t('emptyBody')} />}
       >
         {(list) => (
-          <ul aria-label={t('listLabel')} className="flex flex-col gap-3">
+          <ul
+            ref={listRef}
+            tabIndex={-1}
+            aria-label={t('listLabel')}
+            className="flex flex-col gap-3 outline-none"
+          >
             {list.map((label) => (
               <LabelRow key={label.id} label={label} onEdit={setEditing} onDelete={setDeleting} />
             ))}
@@ -138,6 +144,7 @@ export function LabelsPage() {
       {editing === null ? null : (
         <LabelEditor
           label={editing === 'new' ? undefined : editing}
+          returnFocus={() => listRef.current}
           onClose={() => setEditing(null)}
         />
       )}

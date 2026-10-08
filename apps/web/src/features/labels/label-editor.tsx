@@ -8,6 +8,7 @@ import type { RouteInput } from '../../api/route.js';
 import { routes } from '../../api/routes.js';
 import { Button } from '../../components/button.js';
 import { CONTROL_CLASSES, FieldHelp, LABEL_CLASSES, useFieldIds } from '../../components/field.js';
+import type { ModalProps } from '../../components/modal.js';
 import { Sheet } from '../../components/sheet.js';
 import { TextArea } from '../../components/text-area.js';
 import { TextField } from '../../components/text-field.js';
@@ -156,11 +157,13 @@ function ColorField({
 export interface LabelEditorProps {
   /** The label to change; without one the editor creates a label. */
   label?: LabelDto | undefined;
+  /** Where the focus goes on closing when the row that opened the editor is gone. */
+  returnFocus?: ModalProps['returnFocus'];
   onClose: () => void;
 }
 
 /** The sheet that creates a label or changes one. The parent shows it only while it is wanted. */
-export function LabelEditor({ label, onClose }: LabelEditorProps) {
+export function LabelEditor({ label, returnFocus, onClose }: LabelEditorProps) {
   const { t } = useTranslation('labels');
   const cache = useLabelCache();
   const create = useApiMutation(routes.labelCreate);
@@ -227,6 +230,7 @@ export function LabelEditor({ label, onClose }: LabelEditorProps) {
       onClose={onClose}
       title={label === undefined ? t('editor.createTitle') : t('editor.editTitle')}
       dismissible={!saving}
+      returnFocus={returnFocus}
     >
       <form noValidate onSubmit={(event) => void save(event)} className="flex flex-col gap-4">
         <TextField

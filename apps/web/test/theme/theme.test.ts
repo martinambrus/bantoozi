@@ -6,6 +6,7 @@ import { applyTheme, resolveTheme, themePreference } from '../../src/theme/theme
 import { ThemeSync } from '../../src/theme/theme-sync.js';
 
 const DARK_QUERY = '(prefers-color-scheme: dark)';
+const STORAGE_KEY = 'bantoozi:theme';
 const root = document.documentElement;
 
 describe('resolveTheme', () => {
@@ -78,6 +79,123 @@ describe('themePreference', () => {
     themePreference.set('light');
     expect(listener).toHaveBeenCalledTimes(1);
     expect(themePreference.get()).toBe('light');
+  });
+});
+
+describe('themePreference in the browser storage', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    themePreference.set('system');
+    localStorage.clear();
+  });
+
+  it('writes each chosen preference where the page script reads it', () => {
+    themePreference.set('dark');
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('dark');
+    themePreference.set('light');
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('light');
+    themePreference.set('system');
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('system');
+  });
+
+  it('writes a preference once, and not again while it stays the current one', () => {
+    const write = vi.spyOn(Storage.prototype, 'setItem');
+    themePreference.set('dark');
+    themePreference.set('dark');
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledWith(STORAGE_KEY, 'dark');
+  });
+
+  it('still changes the preference, and tells its subscribers, when the storage refuses the write', () => {
+    const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('full', 'QuotaExceededError');
+    });
+    const listener = vi.fn();
+    themePreference.subscribe(listener);
+    expect(() => themePreference.set('dark')).not.toThrow();
+    expect(write).toHaveBeenCalledWith(STORAGE_KEY, 'dark');
+    expect(themePreference.get()).toBe('dark');
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('still changes the preference when merely reaching for the storage throws', () => {
+    const reach = vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+    expect(() => themePreference.set('dark')).not.toThrow();
+    expect(reach).toHaveBeenCalled();
+    expect(themePreference.get()).toBe('dark');
+  });
+});
+
+describe('the preference when the app starts', () => {
+  const realMatchMedia = window.matchMedia;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.resetModules();
+    window.matchMedia = realMatchMedia;
+    localStorage.clear();
+    root.classList.remove('dark');
+    root.style.colorScheme = '';
+  });
+
+  async function startFresh() {
+    vi.resetModules();
+    return {
+      theme: await import('../../src/theme/theme.js'),
+      sync: await import('../../src/theme/theme-sync.js'),
+    };
+  }
+
+  it.each(['dark', 'light', 'system'] as const)('is the stored %s', async (stored) => {
+    localStorage.setItem(STORAGE_KEY, stored);
+    const read = vi.spyOn(Storage.prototype, 'getItem');
+    const { theme } = await startFresh();
+    expect(read).toHaveBeenCalledWith(STORAGE_KEY);
+    expect(theme.themePreference.get()).toBe(stored);
+  });
+
+  it.each([[null], ['sepia'], ['']] as const)(
+    'is the system choice for a stored %j',
+    async (stored) => {
+      if (stored !== null) localStorage.setItem(STORAGE_KEY, stored);
+      const read = vi.spyOn(Storage.prototype, 'getItem');
+      const { theme } = await startFresh();
+      expect(read).toHaveBeenCalledWith(STORAGE_KEY);
+      expect(theme.themePreference.get()).toBe('system');
+    },
+  );
+
+  it('is the system choice when the storage cannot be read', async () => {
+    localStorage.setItem(STORAGE_KEY, 'dark');
+    const read = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+    const { theme } = await startFresh();
+    expect(read).toHaveBeenCalledWith(STORAGE_KEY);
+    expect(theme.themePreference.get()).toBe('system');
+  });
+
+  it('is kept by ThemeSync, so the dark page the script painted does not turn light', async () => {
+    localStorage.setItem(STORAGE_KEY, 'dark');
+    window.matchMedia = vi.fn(() => ({
+      matches: false,
+      media: DARK_QUERY,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+    root.classList.add('dark');
+    const { sync } = await startFresh();
+
+    render(createElement(sync.ThemeSync));
+
+    expect(root).toHaveClass('dark');
+    expect(root.style.colorScheme).toBe('dark');
   });
 });
 

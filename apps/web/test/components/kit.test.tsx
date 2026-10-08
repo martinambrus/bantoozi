@@ -192,6 +192,30 @@ describe('Checkbox', () => {
     expect(checkbox).toBeChecked();
     expect(onChange).toHaveBeenCalledTimes(1);
   });
+
+  it('has a label row of at least 44 by 44 px, whether the label shows or not', () => {
+    renderUi(
+      <>
+        <Checkbox label="Hide read items" />
+        <Checkbox label={<VisuallyHidden>Select Solid-state batteries</VisuallyHidden>} />
+      </>,
+    );
+    for (const name of ['Hide read items', 'Select Solid-state batteries']) {
+      const row = screen.getByRole('checkbox', { name }).closest('label');
+      expect(row).toHaveClass('min-h-11', 'min-w-11');
+    }
+  });
+
+  it('toggles from anywhere in the row when the label is hidden', async () => {
+    const user = userEvent.setup();
+    renderUi(<Checkbox label={<VisuallyHidden>Select Solid-state batteries</VisuallyHidden>} />);
+    const checkbox = screen.getByRole('checkbox', { name: 'Select Solid-state batteries' });
+    const row = checkbox.closest('label');
+    expect(row).not.toBeNull();
+
+    await user.click(row!);
+    expect(checkbox).toBeChecked();
+  });
 });
 
 describe('Switch', () => {

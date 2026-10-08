@@ -11,7 +11,7 @@ import { VERGE } from './surfaces.js';
 
 const { open } = createReaderHarness();
 
-const CHIP = 'EV battery tech · 0.82';
+const CHIP = 'EV battery tech · 0.82, Why this?';
 const ROWS = [item(1), item(2)];
 
 /** What the drawer reads: the detail of the article asked for, the cards and the taxonomy. */
@@ -118,7 +118,7 @@ describe('Why this? from a row', () => {
 
     await app.user.click(
       within(screen.getByRole('article', { name: 'Article 1' })).getByRole('button', {
-        name: 'Blocked website',
+        name: 'Blocked website, Why this?',
       }),
     );
 

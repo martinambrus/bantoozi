@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -45,10 +46,15 @@ export function useToastOutlets(): ToastOutlets {
 /**
  * Lets the element in `ref` host the toast region while the calling component is mounted. A modal
  * does this, because the rest of the page is inert while it is open. Without a `<ToastProvider>`
- * it does nothing.
+ * it does nothing. A toast control that has the focus when the component mounts passes it on to
+ * the same control in the new outlet.
  */
 export function useRegisterToastOutlet(ref: RefObject<HTMLElement | null>): void {
   const outlets = useContext(ToastOutletsContext);
+  // Before the modal takes the focus into itself, which the effect below comes too late for.
+  useLayoutEffect(() => {
+    outlets?.holdFocus();
+  }, [outlets]);
   useEffect(() => {
     const outlet = ref.current;
     if (outlets === null || outlet === null) return;

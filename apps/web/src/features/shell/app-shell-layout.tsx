@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '../../components/button.js';
@@ -8,6 +8,7 @@ import { IconButton } from '../../components/icon-button.js';
 import { ChevronDownIcon, MenuIcon, OfflineIcon } from '../../components/icons.js';
 import { Menu, MenuItem } from '../../components/menu.js';
 import { Sheet } from '../../components/sheet.js';
+import { useToast } from '../../components/toast/toast-provider.js';
 
 export interface AppShellUser {
   displayName: string | null;
@@ -105,8 +106,22 @@ function UserMenu({ user, onLogout }: Pick<AppShellLayoutProps, 'user' | 'onLogo
 /** The signed-in frame (spec 09 §1): landmarks, a skip link, the section navigation and the account menu. */
 export function AppShellLayout({ user, onLogout, offline, children }: AppShellLayoutProps) {
   const { t } = useTranslation('shell');
+  const toast = useToast();
   const [navOpen, setNavOpen] = useState(false);
   const admin = user.role === 'admin';
+
+  // The banner is in the page, which an open modal makes inert: only a toast reaches a person there.
+  const wasOffline = useRef(offline === true);
+  useEffect(() => {
+    const isOffline = offline === true;
+    if (isOffline === wasOffline.current) return;
+    wasOffline.current = isOffline;
+    toast.show({
+      id: 'connectivity',
+      message: t(isOffline ? 'connectivity.offline' : 'connectivity.online'),
+      tone: isOffline ? 'info' : 'success',
+    });
+  }, [offline, toast, t]);
 
   return (
     <div className="flex min-h-screen flex-col">

@@ -37,14 +37,15 @@ export interface MenuProps {
 
 const MenuContext = createContext<{ close: () => void } | null>(null);
 
-function enabledItems(panel: HTMLElement | null): HTMLElement[] {
-  return Array.from(panel?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? []);
+function menuItems(panel: HTMLElement | null): HTMLElement[] {
+  return Array.from(panel?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
 }
 
 /**
  * A menu button (WAI-ARIA menu button pattern): the arrow keys, Home and End move between the
- * enabled items, Enter or Space activate one, and Escape or Tab close the menu and refocus the
- * trigger. A press outside closes it and leaves the focus where the user put it.
+ * items (a disabled one included, so a keyboard can reach and read it), Enter or Space activate
+ * one, and Escape or Tab close the menu and refocus the trigger. A press outside closes it and
+ * leaves the focus where the user put it.
  */
 export function Menu({ trigger, header, align = 'start', children }: MenuProps) {
   const [open, setOpen] = useState(false);
@@ -62,7 +63,7 @@ export function Menu({ trigger, header, align = 'start', children }: MenuProps) 
 
   useEffect(() => {
     if (!open) return;
-    const items = enabledItems(panelRef.current);
+    const items = menuItems(panelRef.current);
     (initialFocus === 'last' ? items[items.length - 1] : items[0])?.focus();
     function onPointerDown(event: PointerEvent) {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
@@ -73,7 +74,7 @@ export function Menu({ trigger, header, align = 'start', children }: MenuProps) 
 
   function openAt(which: 'first' | 'last') {
     if (open) {
-      const items = enabledItems(panelRef.current);
+      const items = menuItems(panelRef.current);
       (which === 'last' ? items[items.length - 1] : items[0])?.focus();
       return;
     }
@@ -92,7 +93,7 @@ export function Menu({ trigger, header, align = 'start', children }: MenuProps) 
   }
 
   function onPanelKeyDown(event: KeyboardEvent<HTMLElement>) {
-    const items = enabledItems(panelRef.current);
+    const items = menuItems(panelRef.current);
     const current = items.indexOf(document.activeElement as HTMLElement);
     let target: HTMLElement | undefined;
     switch (event.key) {
@@ -174,7 +175,7 @@ export interface MenuItemProps {
   children: ReactNode;
 }
 
-/** An action in a {@link Menu}; choosing it closes the menu. */
+/** An action in a {@link Menu}; choosing it closes the menu. A disabled one does nothing. */
 export function MenuItem({
   onSelect,
   disabled = false,
@@ -188,13 +189,14 @@ export function MenuItem({
       type="button"
       role="menuitem"
       tabIndex={-1}
-      disabled={disabled}
+      aria-disabled={disabled ? true : undefined}
       onClick={() => {
+        if (disabled) return;
         onSelect();
         menu.close();
       }}
       className={cx(
-        'flex min-h-11 w-full cursor-pointer items-center rounded-md px-3 text-start text-sm font-medium hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent dark:hover:bg-slate-800 dark:disabled:hover:bg-transparent',
+        'flex min-h-11 w-full cursor-pointer items-center rounded-md px-3 text-start text-sm font-medium hover:bg-slate-100 aria-disabled:cursor-not-allowed aria-disabled:opacity-60 aria-disabled:hover:bg-transparent dark:hover:bg-slate-800 dark:aria-disabled:hover:bg-transparent',
         tone === 'danger' ? 'text-red-700 dark:text-red-300' : 'text-slate-900 dark:text-slate-100',
         FOCUS_RING,
       )}
