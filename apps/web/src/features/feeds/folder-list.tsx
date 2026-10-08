@@ -193,6 +193,7 @@ export function FolderList({ subscriptions }: { subscriptions: readonly Subscrip
   const [announcement, setAnnouncement] = useState('');
   const root = useRef<HTMLDivElement>(null);
   const refocus = useRef<{ folder: string; control: Control } | null>(null);
+  const refocusFeed = useRef<{ feedId: string; folder: string | null } | null>(null);
   const saving = update.isPending;
 
   const groups = useMemo(
@@ -218,6 +219,21 @@ export function FolderList({ subscriptions }: { subscriptions: readonly Subscrip
         ?.focus();
     }
     if (unsavedOrder === null) refocus.current = null;
+  });
+
+  // Saving settings can move a feed to another folder, where its settings button is a new element;
+  // once the list shows the move, the focus goes to that one.
+  useLayoutEffect(() => {
+    const wanted = refocusFeed.current;
+    if (wanted === null || settingsFeedId !== null) return;
+    const row = subscriptions.find((subscription) => subscription.feed.id === wanted.feedId);
+    if (row !== undefined && row.folder !== wanted.folder) return;
+    refocusFeed.current = null;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body && active.isConnected) return;
+    Array.from(root.current?.querySelectorAll<HTMLElement>('[data-feed-settings]') ?? [])
+      .find((element) => element.dataset['feedSettings'] === wanted.feedId)
+      ?.focus();
   });
 
   function save(order: string[], moved: string) {
@@ -332,6 +348,9 @@ export function FolderList({ subscriptions }: { subscriptions: readonly Subscrip
           key={settings.feed.id}
           subscription={settings}
           folders={folders}
+          onSaved={(saved) => {
+            refocusFeed.current = { feedId: saved.feed.id, folder: saved.folder };
+          }}
           onClose={() => setSettingsFeedId(null)}
         />
       )}

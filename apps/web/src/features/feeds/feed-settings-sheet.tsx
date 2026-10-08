@@ -85,10 +85,17 @@ export interface FeedSettingsSheetProps {
   subscription: Subscription;
   /** The folders to choose from, in the order they are listed. */
   folders: readonly string[];
+  /** The settings were saved; the sheet closes next. */
+  onSaved: (saved: Subscription) => void;
   onClose: () => void;
 }
 
-export function FeedSettingsSheet({ subscription, folders, onClose }: FeedSettingsSheetProps) {
+export function FeedSettingsSheet({
+  subscription,
+  folders,
+  onSaved,
+  onClose,
+}: FeedSettingsSheetProps) {
   const { t } = useTranslation('feeds');
   const me = useMe();
   const toast = useToast();
@@ -114,6 +121,7 @@ export function FeedSettingsSheet({ subscription, folders, onClose }: FeedSettin
             message: t('settings.saved', { title: displayTitle(saved) }),
             tone: 'success',
           });
+          onSaved(saved);
           onClose();
         },
       },

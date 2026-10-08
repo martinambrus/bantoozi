@@ -51,6 +51,7 @@ export function FeedRow({ subscription, onOpenSettings }: FeedRowProps) {
           variant="secondary"
           size="sm"
           aria-label={t('row.settingsFor', { title })}
+          data-feed-settings={feed.id}
           onClick={() => onOpenSettings(feed.id)}
         >
           {t('row.settings')}

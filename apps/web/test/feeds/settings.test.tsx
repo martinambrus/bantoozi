@@ -191,6 +191,19 @@ describe('the feed settings', () => {
       expect(patches(app)).toEqual([{ folder: null }]);
     });
 
+    it('gives the focus back to the settings button of a feed that moved to another folder', async () => {
+      const { app, sheet } = await openSettings({ title: 'Beta' });
+
+      await app.user.selectOptions(within(sheet).getByLabelText('Folder'), 'Tech');
+      await saveChange(app, sheet);
+
+      const tech = await screen.findByRole('region', { name: 'Tech' });
+      await waitFor(() =>
+        expect(within(tech).getByRole('button', { name: 'Settings for Beta' })).toHaveFocus(),
+      );
+      expect(screen.queryByRole('region', { name: 'News' })).toBeNull();
+    });
+
     it('creates a new folder by name', async () => {
       const { app, sheet } = await openSettings();
       expect(within(sheet).queryByLabelText('New folder name')).toBeNull();
