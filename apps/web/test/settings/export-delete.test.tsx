@@ -360,6 +360,18 @@ describe('export (spec 09 §7)', () => {
       expect(download()).toBeEnabled();
     });
 
+    it('ends the session when the server answers 401, as every other call does', async () => {
+      stubExportFetch(
+        () => new Response(JSON.stringify({ error: { code: 'UNAUTHORIZED' } }), { status: 401 }),
+      );
+      const { user, queryClient } = await open();
+
+      await user.click(download());
+
+      await waitFor(() => expect(queryClient.getQueryData(meKey())).toBeNull());
+      expect(saved).toHaveLength(0);
+    });
+
     it('lets the person try again after an error, and the error goes away', async () => {
       let failing = true;
       stubExportFetch(() =>

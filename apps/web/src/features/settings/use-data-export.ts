@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { parseRetryAfter } from '../../api/client.js';
 import { routes } from '../../api/routes.js';
-import { useMe } from '../../session/context.js';
+import { useMe, useSession } from '../../session/context.js';
 
 const EXPORT_URL = `/api/v1${routes.meExport.path}`;
 /** The browser reads the object URL when the download starts; this is far longer than that takes. */
@@ -93,6 +93,7 @@ function saveFile(file: Blob, filename: string) {
  */
 export function useDataExport() {
   const { timezone } = useMe();
+  const session = useSession();
   const [state, setState] = useState<ExportState>({ phase: 'idle' });
   const running = useRef<AbortController | null>(null);
 
@@ -109,6 +110,8 @@ export function useDataExport() {
         signal: controller.signal,
       });
       if (!response.ok) {
+        // The API client would end the session on a 401; this request does not go through it.
+        if (response.status === 401) session.unauthorized();
         setState({ phase: 'failed', problem: problemOf(response) });
         return;
       }
@@ -129,7 +132,7 @@ export function useDataExport() {
     } finally {
       running.current = null;
     }
-  }, [timezone]);
+  }, [timezone, session]);
 
   const cancel = useCallback(() => running.current?.abort(), []);
 

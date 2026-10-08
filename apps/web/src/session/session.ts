@@ -38,6 +38,8 @@ export interface Session {
   logout: () => Promise<void>;
   /** Drops everything private: the query cache, the registered stores, the other tabs' memory. */
   resetAccountState: () => Promise<void>;
+  /** Ends the session after a 401 that did not come through `api`, such as the streamed export. */
+  unauthorized: () => void;
   /** Calls `listener` when someone signs in or out; returns the function that stops it. */
   subscribe: (listener: () => void) => () => void;
   dispose: () => void;
@@ -159,6 +161,7 @@ export function createSession(options: SessionOptions): Session {
     verifyCode,
     logout,
     resetAccountState: () => reset('logout'),
+    unauthorized: handleUnauthorized,
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
