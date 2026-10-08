@@ -1,3 +1,105 @@
 {
-  "title": "Welcome to Bantoozi"
+  "step": "Step {{step}} of {{total}}",
+  "back": "Back",
+  "continue": "Continue",
+  "welcome": {
+    "title": "Welcome to Bantoozi",
+    "how": "How Bantoozi works",
+    "lines": {
+      "interests": "You say what you want to read about. Your interests, not training, rank the articles, so there is nothing to train first.",
+      "lanes": "Articles are sorted into For you, Maybe, Everything else and New. New holds the ones that are not analyzed yet, and you can read them right away.",
+      "why": "Press “Why this?” on any article to see why it is where it is."
+    },
+    "start": "Get started"
+  },
+  "feeds": {
+    "title": "Add your feeds",
+    "lead": "Fetching and reading work without any AI, and every new feed starts with classification Off. You decide later, feed by feed, whether anything is analyzed.",
+    "yours": "Your feeds",
+    "count_one": "You follow {{count}} feed.",
+    "count_other": "You follow {{count}} feeds.",
+    "needOne": "Add at least one feed to continue."
+  },
+  "bundles": {
+    "title": "Starter bundles",
+    "lead": "Not sure where to start? Add a ready-made group of feeds. Adding a bundle never turns classification on.",
+    "add_one": "Add this feed",
+    "add_other": "Add these {{count}} feeds",
+    "addNamed_one": "Add this feed: {{name}}",
+    "addNamed_other": "Add these {{count}} feeds: {{name}}",
+    "results": "Feeds added from this bundle",
+    "summary": "Added {{added}}, already there {{existing}}, failed {{failed}}.",
+    "notTried": "The rest were not tried.",
+    "needsChoice": "This website offers several feeds. Add it from the address field above to choose one.",
+    "status": {
+      "waiting": "Waiting",
+      "adding": "Adding…",
+      "added": "Added",
+      "existing": "Already there",
+      "failed": "Couldn't add",
+      "skipped": "Not tried"
+    }
+  },
+  "interests": {
+    "title": "What do you want to read about?",
+    "lead": "Pick a few topics or describe your own. Your interests decide what appears in “For you”.",
+    "like": {
+      "title": "Pick topics you like",
+      "lead": "Press a topic to add it, and press it again to take it away."
+    },
+    "never": {
+      "title": "Never show me…",
+      "lead": "Optional. Articles about these topics are hidden or pushed far down."
+    },
+    "blockedByNever": "You already chose this under “Never show me…”.",
+    "blockedByLike": "You already chose this under “Pick topics you like”.",
+    "more": "Show more topics",
+    "describe": {
+      "title": "Or describe it yourself",
+      "label": "Describe something you want to read about",
+      "hint": "For example: “Electric cars and batteries”, “Slovak politics” or “Beginner Rust tutorials”.",
+      "submit": "Add interest",
+      "added": "Added “{{title}}”."
+    },
+    "warn": {
+      "title": "Continue without interests?",
+      "body": "Without an interest, “For you” stays empty until Bantoozi has learned from what you read and rate. You can add interests later under Interests.",
+      "back": "Add interests",
+      "confirm": "Continue anyway"
+    }
+  },
+  "calibrate": {
+    "title": "Choose articles to teach Bantoozi",
+    "lead": "Pick a few articles you would enjoy reading. Bantoozi analyzes only the ones you choose and learns from them. You can skip this step and do it later.",
+    "feed": "Choose a feed",
+    "articles": "Articles from this feed",
+    "noArticles": "No articles from this feed yet",
+    "noArticlesBody": "They appear once the feed has been fetched. You can finish now and choose articles later.",
+    "status": {
+      "pending": "Waiting for analysis",
+      "running": "Being analyzed",
+      "complete": "Analyzed",
+      "failed": "Analysis failed",
+      "cancelled": "Analysis cancelled"
+    },
+    "progress": {
+      "title": "Progress",
+      "analyzed_one": "{{done}} of {{count}} selected article analyzed",
+      "analyzed_other": "{{done}} of {{count}} selected articles analyzed",
+      "scored": "{{scored}} scored of {{total}} available",
+      "note": "Analysis runs in the background. You can finish at any time."
+    },
+    "round": {
+      "title": "Rate a few articles",
+      "lead": "These were analyzed from your selection. Like or dislike them to show Bantoozi what you want.",
+      "list": "Articles to rate",
+      "empty": "No articles are ready to rate yet."
+    },
+    "automatic": {
+      "title": "Automatic classification",
+      "lead": "Optional, and separate from the selection above. When you enable it for a feed, new articles from that feed are analyzed as they arrive. Articles already in the feed stay manual: only the ones you choose are analyzed."
+    },
+    "skip": "Skip for now",
+    "finish": "Finish"
+  }
 }

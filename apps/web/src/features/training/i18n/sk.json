@@ -1,3 +1,27 @@
 {
-  "title": "Učenie"
+  "panel": {
+    "title": "Články na analýzu",
+    "selected": "Vybrané články",
+    "count": "Vybrané: {{selected}} z {{max}}",
+    "hint": "Vyberte najviac {{max}} článkov. Nič sa neanalyzuje, kým nestlačíte tlačidlo.",
+    "offNote": "Tým sa zdroj prepne na trénovanie: analyzujú sa iba články, ktoré vyberiete.",
+    "none": "Vyberte články na analýzu",
+    "start_one": "Spustiť trénovanie a analyzovať tento článok",
+    "start_few": "Spustiť trénovanie a analyzovať tieto {{count}} články",
+    "start_many": "Spustiť trénovanie a analyzovať týchto {{count}} článku",
+    "start_other": "Spustiť trénovanie a analyzovať týchto {{count}} článkov",
+    "analyze_one": "Analyzovať {{count}} vybraný článok",
+    "analyze_few": "Analyzovať {{count}} vybrané články",
+    "analyze_many": "Analyzovať {{count}} vybraného článku",
+    "analyze_other": "Analyzovať {{count}} vybraných článkov"
+  },
+  "limit": "Naraz môžete vybrať najviac {{max}} článkov.",
+  "errors": {
+    "changed_one": "{{count}} vybraný článok sa zmenil a vyradili sme ho z výberu. Skontrolujte zoznam a potom analýzu spustite znova.",
+    "changed_few": "{{count}} vybrané články sa zmenili a vyradili sme ich z výberu. Skontrolujte zoznam a potom analýzu spustite znova.",
+    "changed_many": "{{count}} vybraného článku sa zmenilo a vyradili sme ich z výberu. Skontrolujte zoznam a potom analýzu spustite znova.",
+    "changed_other": "{{count}} vybraných článkov sa zmenilo a vyradili sme ich z výberu. Skontrolujte zoznam a potom analýzu spustite znova.",
+    "version": "Nastavenie klasifikácie tohto zdroja sa zmenilo. Skontrolujte ho a potom analýzu spustite znova.",
+    "gone": "Vybrané články už z tohto zdroja nie sú dostupné. Načítajte zoznam znova a vyberte články odznova."
+  }
 }

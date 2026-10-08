@@ -21,7 +21,12 @@ function opmlProblemKey(code: unknown): string | null {
   return null;
 }
 
-export function OpmlSection() {
+export interface OpmlSectionProps {
+  /** Whether the export link is offered; the first-run wizard has nothing to export yet. */
+  exportable?: boolean;
+}
+
+export function OpmlSection({ exportable = true }: OpmlSectionProps) {
   const { t } = useTranslation('feeds');
   const cache = useSubscriptionsCache();
   const headingId = useId();
@@ -77,15 +82,17 @@ export function OpmlSection() {
       </form>
       {upload.error === null ? null : <ImportFailure error={upload.error} />}
       {report === null ? null : <ImportReport report={report} />}
-      <div>
-        <a
-          href={EXPORT_HREF}
-          download
-          className={cx(BUTTON_BASE, BUTTON_VARIANTS.secondary, 'px-4 text-sm')}
-        >
-          {t('opml.export')}
-        </a>
-      </div>
+      {exportable ? (
+        <div>
+          <a
+            href={EXPORT_HREF}
+            download
+            className={cx(BUTTON_BASE, BUTTON_VARIANTS.secondary, 'px-4 text-sm')}
+          >
+            {t('opml.export')}
+          </a>
+        </div>
+      ) : null}
     </section>
   );
 }

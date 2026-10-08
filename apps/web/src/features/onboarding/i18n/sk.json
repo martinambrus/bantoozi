@@ -1,3 +1,113 @@
 {
-  "title": "Vitaj v Bantoozi"
+  "step": "Krok {{step}} zo {{total}}",
+  "back": "Späť",
+  "continue": "Pokračovať",
+  "welcome": {
+    "title": "Vitajte v Bantoozi",
+    "how": "Ako Bantoozi funguje",
+    "lines": {
+      "interests": "Poviete, o čom chcete čítať. Články radia vaše záujmy, nie tréning, takže nie je čo najprv trénovať.",
+      "lanes": "Články sa zaraďujú do skupín Pre vás, Možno, Všetko ostatné a Nové. V skupine Nové sú tie, ktoré sa ešte neanalyzovali, a môžete ich čítať hneď.",
+      "why": "Pri ktoromkoľvek článku stlačte „Prečo toto?“ a uvidíte, prečo je práve tam, kde je."
+    },
+    "start": "Začať"
+  },
+  "feeds": {
+    "title": "Pridajte svoje zdroje",
+    "lead": "Načítavanie a čítanie funguje bez akejkoľvek umelej inteligencie a každý nový zdroj začína s vypnutou klasifikáciou. O tom, či sa niečo analyzuje, rozhodnete neskôr, pre každý zdroj zvlášť.",
+    "yours": "Vaše zdroje",
+    "count_one": "Odoberáte {{count}} zdroj.",
+    "count_few": "Odoberáte {{count}} zdroje.",
+    "count_many": "Odoberáte {{count}} zdroja.",
+    "count_other": "Odoberáte {{count}} zdrojov.",
+    "needOne": "Ak chcete pokračovať, pridajte aspoň jeden zdroj."
+  },
+  "bundles": {
+    "title": "Štartovacie balíky",
+    "lead": "Neviete, kde začať? Pridajte hotovú skupinu zdrojov. Pridanie balíka nikdy nezapne klasifikáciu.",
+    "add_one": "Pridať tento zdroj",
+    "add_few": "Pridať tieto {{count}} zdroje",
+    "add_many": "Pridať týchto {{count}} zdroja",
+    "add_other": "Pridať týchto {{count}} zdrojov",
+    "addNamed_one": "Pridať tento zdroj: {{name}}",
+    "addNamed_few": "Pridať tieto {{count}} zdroje: {{name}}",
+    "addNamed_many": "Pridať týchto {{count}} zdroja: {{name}}",
+    "addNamed_other": "Pridať týchto {{count}} zdrojov: {{name}}",
+    "results": "Zdroje pridané z tohto balíka",
+    "summary": "Pridané: {{added}}, už v zozname: {{existing}}, zlyhalo: {{failed}}.",
+    "notTried": "Ostatné sme už nepridávali.",
+    "needsChoice": "Táto stránka ponúka viac zdrojov. Pridajte ju z poľa s adresou vyššie a vyberte si jeden.",
+    "status": {
+      "waiting": "Čaká",
+      "adding": "Pridáva sa…",
+      "added": "Pridané",
+      "existing": "Už v zozname",
+      "failed": "Nepodarilo sa pridať",
+      "skipped": "Nevyskúšané"
+    }
+  },
+  "interests": {
+    "title": "O čom chcete čítať?",
+    "lead": "Vyberte niekoľko tém alebo popíšte vlastné. Vaše záujmy určujú, čo sa zobrazí v časti Pre vás.",
+    "like": {
+      "title": "Vyberte témy, ktoré sa vám páčia",
+      "lead": "Stlačením témy ju pridáte, ďalším stlačením ju odoberiete."
+    },
+    "never": {
+      "title": "Nikdy mi neukazovať…",
+      "lead": "Nepovinné. Články o týchto témach sa skryjú alebo posunú ďaleko nadol."
+    },
+    "blockedByNever": "Túto tému ste už vybrali v časti „Nikdy mi neukazovať…“.",
+    "blockedByLike": "Túto tému ste už vybrali v časti „Vyberte témy, ktoré sa vám páčia“.",
+    "more": "Zobraziť ďalšie témy",
+    "describe": {
+      "title": "Alebo ju popíšte po svojom",
+      "label": "Popíšte niečo, o čom chcete čítať",
+      "hint": "Napríklad: „Elektromobily a batérie“, „Slovenská politika“ alebo „Rust pre začiatočníkov“.",
+      "submit": "Pridať záujem",
+      "added": "Pridali sme „{{title}}“."
+    },
+    "warn": {
+      "title": "Pokračovať bez záujmov?",
+      "body": "Bez záujmov zostane časť Pre vás prázdna, kým sa Bantoozi niečo nenaučí z vášho čítania a hodnotenia. Záujmy môžete pridať neskôr v sekcii Záujmy.",
+      "back": "Pridať záujmy",
+      "confirm": "Pokračovať aj tak"
+    }
+  },
+  "calibrate": {
+    "title": "Vyberte články, z ktorých sa Bantoozi naučí",
+    "lead": "Vyberte niekoľko článkov, ktoré by ste radi čítali. Bantoozi analyzuje iba tie, ktoré vyberiete, a učí sa z nich. Tento krok môžete preskočiť a vrátiť sa k nemu neskôr.",
+    "feed": "Vyberte zdroj",
+    "articles": "Články z tohto zdroja",
+    "noArticles": "Tento zdroj zatiaľ nemá žiadne články",
+    "noArticlesBody": "Zobrazia sa po načítaní zdroja. Môžete teraz skončiť a články vybrať neskôr.",
+    "status": {
+      "pending": "Čaká na analýzu",
+      "running": "Analyzuje sa",
+      "complete": "Analyzovaný",
+      "failed": "Analýza zlyhala",
+      "cancelled": "Analýza bola zrušená"
+    },
+    "progress": {
+      "title": "Priebeh",
+      "analyzed_one": "Analyzované: {{done}} z {{count}} vybraného článku",
+      "analyzed_few": "Analyzované: {{done}} z {{count}} vybraných článkov",
+      "analyzed_many": "Analyzované: {{done}} z {{count}} vybraných článkov",
+      "analyzed_other": "Analyzované: {{done}} z {{count}} vybraných článkov",
+      "scored": "Vyhodnotené: {{scored}} z {{total}} dostupných",
+      "note": "Analýza beží na pozadí. Skončiť môžete kedykoľvek."
+    },
+    "round": {
+      "title": "Ohodnoťte niekoľko článkov",
+      "lead": "Tieto články sa analyzovali z vášho výberu. Označte, čo sa vám páči a čo nie, aby Bantoozi vedelo, čo chcete.",
+      "list": "Články na ohodnotenie",
+      "empty": "Zatiaľ nie sú pripravené žiadne články na ohodnotenie."
+    },
+    "automatic": {
+      "title": "Automatická klasifikácia",
+      "lead": "Nepovinná a nezávislá od výberu vyššie. Keď ju zapnete pre zdroj, nové články z neho sa analyzujú hneď po príchode. Články, ktoré už v zdroji sú, zostávajú na ručný výber: analyzujú sa iba tie, ktoré vyberiete."
+    },
+    "skip": "Teraz preskočiť",
+    "finish": "Dokončiť"
+  }
 }
