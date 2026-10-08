@@ -667,3 +667,29 @@ describe('bulk ordering', () => {
     expect(transport.markReads).toHaveLength(0);
   });
 });
+
+describe('a long Retry-After', () => {
+  it('is not waited out above 30 s: the action fails after its one request', async () => {
+    const { store, transport, advance } = rig();
+    const handle = store.dispatch(makeItem(), rate(1));
+    await flush();
+    nth(transport.sends, 0).reject(apiError(429, 'RATE_LIMITED', undefined, 30_001));
+    expect(await outcome(handle.result)).toMatchObject({
+      status: 'failed',
+      error: { status: 429, retryAfterMs: 30_001 },
+    });
+    await advance(60_000);
+    expect(transport.sends).toHaveLength(1);
+  });
+
+  it('is waited out at exactly 30 s', async () => {
+    const { store, transport, advance } = rig();
+    store.dispatch(makeItem(), rate(1));
+    await flush();
+    nth(transport.sends, 0).reject(apiError(429, 'RATE_LIMITED', undefined, 30_000));
+    await advance(29_999);
+    expect(transport.sends).toHaveLength(1);
+    await advance(1);
+    expect(transport.sends).toHaveLength(2);
+  });
+});

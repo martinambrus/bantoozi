@@ -224,7 +224,7 @@ export interface ReaderActionsOptions {
   maxRetries?: number;
   /**
    * Backoff before retry `n` (1-based). Default 500 ms × 2^(n−1). A `retryAfterMs` on the error
-   * replaces it for that attempt.
+   * replaces it for that attempt; one above 30 s is not waited out, and the request fails at once.
    */
   backoffMs?: (attempt: number) => number;
   /** Called once per settled action (toasts, count invalidation). */

@@ -29,6 +29,8 @@ import {
 
 const UNDO_WINDOW_MS = 10 * 60_000;
 const DEFAULT_MAX_RETRIES = 2;
+/** A longer Retry-After is not waited out in the background; the request fails at once. */
+const MAX_RETRY_AFTER_MS = 30_000;
 
 const UNDOABLE = new Set<ReaderAction['type']>(UNDOABLE_ACTIONS);
 const ItemsSchema = ArticleListItemSchema.array();
@@ -270,8 +272,9 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
     });
   }
 
-  function waitBefore(error: unknown, retry: number): number {
-    return isApiError(error) && error.retryAfterMs !== null ? error.retryAfterMs : backoffMs(retry);
+  function waitBefore(error: unknown, retry: number): number | null {
+    if (!isApiError(error) || error.retryAfterMs === null) return backoffMs(retry);
+    return error.retryAfterMs > MAX_RETRY_AFTER_MS ? null : error.retryAfterMs;
   }
 
   async function attempt<T>(epoch: number, call: () => Promise<T>): Promise<T> {
@@ -280,7 +283,9 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
         return await call();
       } catch (error) {
         if (epoch !== generation || retry > maxRetries || !isRetryable(error)) throw error;
-        await sleep(waitBefore(error, retry));
+        const wait = waitBefore(error, retry);
+        if (wait === null) throw error;
+        await sleep(wait);
         if (epoch !== generation) throw error;
       }
     }
