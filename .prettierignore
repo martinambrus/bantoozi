@@ -16,3 +16,6 @@ CLAUDE.md
 .claude/settings.local.json
 # The committed OpenAPI snapshot is written by the test (spec 08 §12), byte-exact.
 apps/api/test/__snapshots__/
+# G1 artifacts written by `eval gate`, byte-exact: `apply-g1 --report` checks the report's hash.
+apps/eval/reports/*-decision.md
+apps/eval/config/g1.json

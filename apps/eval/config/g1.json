@@ -1,0 +1,61 @@
+{
+  "language_modes": {
+    "en": "native",
+    "cs": "native",
+    "sk": "native"
+  },
+  "card_text_mode": "as_written",
+  "ranker_thresholds": {
+    "lanes": {
+      "forYou": 0.65,
+      "maybe": 0.35
+    },
+    "tiers": [
+      0.25,
+      0.45,
+      0.65,
+      0.85
+    ],
+    "demotion": {
+      "clickbait": 0.8,
+      "promotional": 0.8,
+      "shallowDepth": 0.45,
+      "staleTimeSensitive": 0.75
+    }
+  },
+  "recommended_daily_budget_usd": 1,
+  "translate_tier2_daily_cap": 300,
+  "laya_track_recommended": true,
+  "runs": {
+    "B0": "25",
+    "B1": "26",
+    "E1": "28",
+    "E2": "29",
+    "E6": "34",
+    "E7": "35"
+  },
+  "notes": "Assisted evidence (D-147, spec 10 §2.2/§2.3): the golden-v3 cards were drafted by Claude (Opus 5.5) from the owner's own description and approved unchanged by the owner, which may overstate what self-written cards achieve; the facet labels (and so the selected demotion cutoffs) are Claude's, labeller claude-opus-5.5, blind to Jev and the ratings, not human labels. owner_pilot: one actual participant; one-person evidence, not multi-person validation.",
+  "dataset": {
+    "version": "golden-v3",
+    "snapshotSha": "a355734e597af5ea7a7d2f724f494959c30496f2badb741f5d1c8abedd1ca09b",
+    "splitSha": "0ba04a1249570e9208a00efc790a04590b392288dbbd9ce54c41fa9b86619619"
+  },
+  "selection": {
+    "developmentRunIds": [
+      "25",
+      "26",
+      "28",
+      "29",
+      "34",
+      "35"
+    ],
+    "lockedAt": "2026-10-08T17:12:04.183Z",
+    "configSha": "5cb74d4daaef19288df7a6e69267f6ee4a556e29dab6db241da48be3ec4bfeb6"
+  },
+  "gate": {
+    "profile": "owner_pilot",
+    "participants": 1,
+    "status": "pass",
+    "reportSha": "3154f860031dc9fc94bfa698a0193a33781073deac44777f649d64a144f68ea1"
+  }
+}

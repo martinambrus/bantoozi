@@ -116,10 +116,13 @@ requires hand-labelling thousands of items.
    ⚠️ **Check the teacher's terms first.** Some providers restrict using outputs to train models that compete
    with them. Read the TypeSafe and LLM-provider terms before distilling.
 2. **Real user ratings.** Nothing is migrated from FeedIt (PLAN §2, decision 4). Ratings come from the new
-   `golden-v1` set built in M3a ([spec 10 §2](./specs/10-evaluation.md)), and later from opted-in production feedback. They can't
+   G1 golden set (the version `apps/eval/config/g1.json` names, `golden-v3` since the 2026-10-08
+   pass; [spec 10 §2](./specs/10-evaluation.md)), and later from opted-in production feedback. They can't
    supervise the enrichment questions, but they are the **ground truth for the end-to-end ranking eval**,
    and paired with the raters' cards they are positive and negative examples for card matching.
-3. **Human spot checks.** The hand-labelled Call A items in `golden-v1` (about 100 per language), grown to
+3. **Spot checks.** The labelled Call A items of the golden sets: the owner's human labels on
+   `golden-v1` and the owner-pilot assisted labels on `golden-v2`/`golden-v3` (about 100 per language
+   each, D-147; keep the two sources apart), grown to
    about 200–300 per language before fine-tuning, are the clean test set. Never train on these.
 
 ---
@@ -192,7 +195,8 @@ sits on top of whichever engine produced the features.
 ## 6. Recommendation
 
 1. **Extend the G1 evaluation** (PLAN §9, experiment E5 in [spec 10 §3](./specs/10-evaluation.md)) with Laya. It's cheap, since everything runs on the new
-   `golden-v1` set. Compare, per language (EN / SK / CZ):
+   G1 golden set (`g1.json`'s `dataset.version`, so the Laya decision uses the cohort of the G1
+   result that triggered it). Compare, per language (EN / SK / CZ):
    - Jev with native text
    - Jev with English questions and native state
    - Jev with a machine-translated state
