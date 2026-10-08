@@ -5,7 +5,7 @@ import { IconButton } from '../../components/icon-button.js';
 import { CloseIcon } from '../../components/icons.js';
 import { Sheet } from '../../components/sheet.js';
 import { ArticleDetail } from '../article/article-detail.js';
-import type { ReaderView } from './view.js';
+import { detailScope, type ReaderView } from './view.js';
 
 export interface DetailPaneProps {
   view: ReaderView;
@@ -14,29 +14,34 @@ export interface DetailPaneProps {
   /** A wide screen shows the article beside the list, a narrow one in a sheet over it. */
   desktop: boolean;
   onClose: () => void;
+  /** Opens the "Why this?" drawer for the article. */
+  onWhyThis: (item: ArticleListItem) => void;
 }
 
 function DetailOfView({
   view,
   item,
-}: Pick<DetailPaneProps, 'view' | 'item'> & { item: ArticleListItem }) {
+  onWhyThis,
+}: Pick<DetailPaneProps, 'view' | 'onWhyThis'> & { item: ArticleListItem }) {
+  const { sourceFeedId, saved } = detailScope(view);
   return (
     <ArticleDetail
       item={item}
-      sourceFeedId={view.kind === 'feed' ? view.feedId : undefined}
-      saved={view.lane === 'bookmarks'}
+      sourceFeedId={sourceFeedId}
+      saved={saved}
+      onWhyThis={() => onWhyThis(item)}
     />
   );
 }
 
 /** The expanded article of the list (spec 09 §3.1): a pane beside it, or a sheet from the bottom. */
-export function DetailPane({ view, item, desktop, onClose }: DetailPaneProps) {
+export function DetailPane({ view, item, desktop, onClose, onWhyThis }: DetailPaneProps) {
   const { t } = useTranslation('reader');
 
   if (!desktop) {
     return (
       <Sheet open={item !== null} onClose={onClose} title={item?.title ?? ''} side="bottom">
-        {item === null ? null : <DetailOfView view={view} item={item} />}
+        {item === null ? null : <DetailOfView view={view} item={item} onWhyThis={onWhyThis} />}
       </Sheet>
     );
   }
@@ -58,7 +63,7 @@ export function DetailPane({ view, item, desktop, onClose }: DetailPaneProps) {
               <CloseIcon />
             </IconButton>
           </div>
-          <DetailOfView view={view} item={item} />
+          <DetailOfView view={view} item={item} onWhyThis={onWhyThis} />
         </>
       )}
     </aside>

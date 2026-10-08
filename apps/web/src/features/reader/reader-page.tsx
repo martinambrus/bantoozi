@@ -7,8 +7,9 @@ import { Sheet } from '../../components/sheet.js';
 import { useAccountId, useMe } from '../../session/context.js';
 import { articleKeys } from '../article/query-keys.js';
 import { DeadFeedBanner } from '../feeds/dead-feed-banner.js';
+import { WhyThisSheet } from '../why/why-this-sheet.js';
 import { useObserveItems, useReaderActions } from './actions/provider.js';
-import { ArticleList } from './article-list.js';
+import { ArticleList, useVisibleRows } from './article-list.js';
 import { DetailPane } from './detail-pane.js';
 import { ReaderHeader } from './header.js';
 import type { ScopedLane } from './lanes.js';
@@ -18,7 +19,7 @@ import { useArticleList } from './use-article-list.js';
 import { useDesktop } from './use-desktop.js';
 import { usePolling } from './use-polling.js';
 import { useViewTitle } from './use-view-title.js';
-import { scopeOf, viewKey, type ReaderView } from './view.js';
+import { detailScope, scopeOf, viewKey, type ReaderView } from './view.js';
 
 export interface ReaderPageProps {
   view: ReaderView;
@@ -78,6 +79,7 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
   const { preferences } = useMe();
   const { title, subscription } = useViewTitle(view);
   const list = useArticleList(view, preferences);
+  const rows = useVisibleRows(view, list);
   const scoped = useCounts(scopeOf(view), preferences.defaultTier);
   useObserveItems(list.items);
 
@@ -96,6 +98,18 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
     if (preferences.markReadOnExpand && shown.readAt === null) {
       store.dispatch(shown, { type: 'read', trigger: 'expand' });
     }
+  }
+
+  // The article whose "Why this?" drawer is open, as the list had it when the drawer was opened.
+  const [explaining, setExplaining] = useState<ArticleListItem | null>(null);
+  const explained =
+    explaining === null
+      ? null
+      : (list.items.find((candidate) => candidate.id === explaining.id) ?? explaining);
+  const { sourceFeedId, saved } = detailScope(view);
+
+  function explain(item: ArticleListItem) {
+    setExplaining(item);
   }
 
   const { reload, poll } = list;
@@ -128,6 +142,7 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
         subscription={subscription}
         counts={scoped.data}
         items={list.items}
+        visible={rows.staying}
         onLaneChange={onLaneChange}
         refresh={refresh}
       />
@@ -138,12 +153,29 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
         <ArticleList
           view={view}
           list={list}
+          rows={rows}
           expandedId={expanded?.id ?? null}
           onToggle={toggle}
+          onWhyThis={explain}
           simple={preferences.simpleMode}
         />
-        <DetailPane view={view} item={expanded} desktop={desktop} onClose={() => setOpened(null)} />
+        <DetailPane
+          view={view}
+          item={expanded}
+          desktop={desktop}
+          onClose={() => setOpened(null)}
+          onWhyThis={explain}
+        />
       </div>
+      {explained === null ? null : (
+        <WhyThisSheet
+          item={explained}
+          sourceFeedId={sourceFeedId}
+          saved={saved}
+          open
+          onClose={() => setExplaining(null)}
+        />
+      )}
     </div>
   );
 }

@@ -45,7 +45,12 @@
     "sort": "Sort by",
     "sortScore": "Score",
     "sortDate": "Date",
-    "simple": "Simple mode"
+    "simple": "Simple mode",
+    "recentActions": "Recent actions",
+    "rateVisible_one": "Rate this visible article",
+    "rateVisible_other": "Rate these {{count}} visible articles",
+    "rateVisibleNone": "Rate these visible articles",
+    "rateVisibleNoneWhy": "No unread articles are loaded in this view."
   },
   "markAll": {
     "title": "Mark all as read?",
@@ -57,6 +62,53 @@
     "done_other": "Marked {{count}} as read",
     "tooMany": "That's more than {{max}} articles at once. Raise the minimum tier or pick a smaller view, then try again.",
     "view": "{{name}} · {{lane}}"
+  },
+  "rateVisible": {
+    "title_one": "Rate this visible article?",
+    "title_other": "Rate these {{count}} visible articles?",
+    "body_one": "Your rating will be saved for the {{count}} unread article that is listed in “{{view}}” right now.",
+    "body_other": "Your rating will be saved for the {{count}} unread articles that are listed in “{{view}}” right now.",
+    "bodyFirst": "Your rating will be saved for the first {{max}} unread articles that are listed in “{{view}}” right now.",
+    "capped": "The list shows {{shown}} unread articles. Only the first {{max}} are rated.",
+    "notLoaded": "Articles that haven't been loaded are not included.",
+    "likeAll": "Like all",
+    "dislikeAll": "Dislike all",
+    "done_one": "Rated {{count}} article",
+    "done_other": "Rated {{count}} articles"
+  },
+  "recent": {
+    "title": "Recent actions",
+    "description": "Each action can be undone for 10 minutes.",
+    "list": "Actions you can undo",
+    "emptyTitle": "Nothing to undo",
+    "emptyBody": "What you do in the reader shows up here for 10 minutes.",
+    "articles_one": "{{count}} article",
+    "articles_other": "{{count}} articles",
+    "kind": {
+      "read": "Marked as read",
+      "unread": "Marked as unread",
+      "unhide": "Unhidden",
+      "rate": "Rating changed",
+      "promptAnswer": "Answered a question",
+      "bookmark": "Bookmarked",
+      "unbookmark": "Bookmark removed",
+      "addLabel": "Label added",
+      "removeLabel": "Label removed",
+      "markRead": "Marked as read",
+      "markReadFilter": "Marked everything in a view as read",
+      "rateBulk": "Rated",
+      "other": "Changed an article"
+    }
+  },
+  "hidden": {
+    "causes": "Why “{{title}}” is hidden",
+    "byYou": "Hidden by you",
+    "unhide": "Unhide",
+    "byRule": "Hidden by a rule: {{reason}}",
+    "byRuleBare": "Hidden by a rule",
+    "toRules": "Go to Rules",
+    "toInterests": "Go to Interests",
+    "none": "Not hidden any more. It leaves this list when the list is loaded again."
   },
   "list": {
     "loadMore": "Load more"

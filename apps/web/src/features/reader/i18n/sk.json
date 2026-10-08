@@ -45,7 +45,14 @@
     "sort": "Zoradiť podľa",
     "sortScore": "Skóre",
     "sortDate": "Dátum",
-    "simple": "Jednoduchý režim"
+    "simple": "Jednoduchý režim",
+    "recentActions": "Nedávne akcie",
+    "rateVisible_one": "Ohodnotiť tento viditeľný článok",
+    "rateVisible_few": "Ohodnotiť tieto {{count}} viditeľné články",
+    "rateVisible_many": "Ohodnotiť týchto {{count}} viditeľného článku",
+    "rateVisible_other": "Ohodnotiť týchto {{count}} viditeľných článkov",
+    "rateVisibleNone": "Ohodnotiť viditeľné články",
+    "rateVisibleNoneWhy": "V tomto zozname nie sú načítané žiadne neprečítané články."
   },
   "markAll": {
     "title": "Označiť všetko ako prečítané?",
@@ -61,6 +68,61 @@
     "done_other": "Označené ako prečítané: {{count}}",
     "tooMany": "Naraz sa dá označiť najviac {{max}} článkov. Zvýšte minimálnu úroveň alebo vyberte menší zoznam a skúste to znova.",
     "view": "{{name}} · {{lane}}"
+  },
+  "rateVisible": {
+    "title_one": "Ohodnotiť tento viditeľný článok?",
+    "title_few": "Ohodnotiť tieto {{count}} viditeľné články?",
+    "title_many": "Ohodnotiť týchto {{count}} viditeľného článku?",
+    "title_other": "Ohodnotiť týchto {{count}} viditeľných článkov?",
+    "body_one": "Vaše hodnotenie sa uloží pre {{count}} neprečítaný článok, ktorý je teraz v zozname „{{view}}“.",
+    "body_few": "Vaše hodnotenie sa uloží pre {{count}} neprečítané články, ktoré sú teraz v zozname „{{view}}“.",
+    "body_many": "Vaše hodnotenie sa uloží pre {{count}} neprečítaného článku, ktorý je teraz v zozname „{{view}}“.",
+    "body_other": "Vaše hodnotenie sa uloží pre {{count}} neprečítaných článkov, ktoré sú teraz v zozname „{{view}}“.",
+    "bodyFirst": "Vaše hodnotenie sa uloží pre prvých {{max}} neprečítaných článkov, ktoré sú teraz v zozname „{{view}}“.",
+    "capped": "Zoznam zobrazuje {{shown}} neprečítaných článkov. Ohodnotených bude len prvých {{max}}.",
+    "notLoaded": "Články, ktoré sa ešte nenačítali, sa nezahrnú.",
+    "likeAll": "Označiť všetky ako „páči sa mi“",
+    "dislikeAll": "Označiť všetky ako „nepáči sa mi“",
+    "done_one": "Ohodnotené: {{count}}",
+    "done_few": "Ohodnotené: {{count}}",
+    "done_many": "Ohodnotené: {{count}}",
+    "done_other": "Ohodnotené: {{count}}"
+  },
+  "recent": {
+    "title": "Nedávne akcie",
+    "description": "Každú akciu môžete vrátiť späť do 10 minút.",
+    "list": "Akcie, ktoré môžete vrátiť späť",
+    "emptyTitle": "Nie je čo vrátiť späť",
+    "emptyBody": "To, čo v čítačke urobíte, sa tu zobrazí na 10 minút.",
+    "articles_one": "{{count}} článok",
+    "articles_few": "{{count}} články",
+    "articles_many": "{{count}} článku",
+    "articles_other": "{{count}} článkov",
+    "kind": {
+      "read": "Označené ako prečítané",
+      "unread": "Označené ako neprečítané",
+      "unhide": "Skrytie zrušené",
+      "rate": "Hodnotenie zmenené",
+      "promptAnswer": "Odpoveď na otázku",
+      "bookmark": "Pridané do záložiek",
+      "unbookmark": "Záložka odstránená",
+      "addLabel": "Štítok pridaný",
+      "removeLabel": "Štítok odobratý",
+      "markRead": "Označené ako prečítané",
+      "markReadFilter": "Všetko v zozname označené ako prečítané",
+      "rateBulk": "Ohodnotené",
+      "other": "Zmena článku"
+    }
+  },
+  "hidden": {
+    "causes": "Prečo je článok „{{title}}“ skrytý",
+    "byYou": "Skryté vami",
+    "unhide": "Zrušiť skrytie",
+    "byRule": "Skryté pravidlom: {{reason}}",
+    "byRuleBare": "Skryté pravidlom",
+    "toRules": "Prejsť na Pravidlá",
+    "toInterests": "Prejsť na Záujmy",
+    "none": "Skrytie bolo zrušené. Zo zoznamu zmizne, keď sa zoznam načíta znova."
   },
   "list": {
     "loadMore": "Načítať viac"

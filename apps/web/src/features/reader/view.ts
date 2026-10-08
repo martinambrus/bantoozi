@@ -28,6 +28,17 @@ export function scopeOf(view: ReaderView): ViewScope {
   }
 }
 
+/** The feed whose projection of an article is asked for, or the saved copy (spec 08 §5.2). */
+export function detailScope(view: ReaderView): {
+  sourceFeedId: string | undefined;
+  saved: boolean;
+} {
+  return {
+    sourceFeedId: view.kind === 'feed' ? view.feedId : undefined,
+    saved: view.lane === 'bookmarks',
+  };
+}
+
 /** Tells two views apart, whatever their names contain. */
 export function viewKey(view: ReaderView): string {
   const { feedId, folder, labelId } = scopeOf(view);

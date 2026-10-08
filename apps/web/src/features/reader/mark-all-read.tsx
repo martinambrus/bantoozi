@@ -11,7 +11,7 @@ import { errorMessage } from '../../components/error-message.js';
 import { useToast } from '../../components/toast/toast-provider.js';
 import { useAccountId, useMe } from '../../session/context.js';
 import { articleKeys } from '../article/query-keys.js';
-import { useReaderActions } from './actions/provider.js';
+import { useReaderActions, useUndoAction } from './actions/provider.js';
 import { countsQueryOptions } from './queries.js';
 import { countOf, type ViewScope } from './view.js';
 
@@ -53,6 +53,7 @@ export function MarkAllRead({ lane, scope, name, count, items, onChanged }: Mark
   const queryClient = useQueryClient();
   const accountId = useAccountId();
   const store = useReaderActions();
+  const undoAction = useUndoAction();
   const toast = useToast();
   const { defaultTier: minTier } = useMe().preferences;
   const [ask, setAsk] = useState<Ask | null>(null);
@@ -94,25 +95,9 @@ export function MarkAllRead({ lane, scope, name, count, items, onChanged }: Mark
   }
 
   async function undo(actionId: string) {
-    const result = await store.undo(actionId);
-    switch (result.status) {
-      case 'undone':
-        void queryClient.invalidateQueries({ queryKey: articleKeys.all(accountId) });
-        return;
-      case 'conflict':
-        toast.show({ message: t('article:toast.undoConflict'), tone: 'info' });
-        void queryClient.invalidateQueries({ queryKey: articleKeys.all(accountId) });
-        return;
-      case 'refused':
-        toast.show({ message: t('article:toast.undoRefused'), tone: 'info' });
-        return;
-      case 'failed':
-        if (result.error.kind !== 'aborted') {
-          toast.show({ message: errorMessage(t, result.error), tone: 'error' });
-        }
-        return;
-      case 'cancelled':
-        return;
+    const result = await undoAction(actionId);
+    if (result.status === 'undone' || result.status === 'conflict') {
+      void queryClient.invalidateQueries({ queryKey: articleKeys.all(accountId) });
     }
   }
 

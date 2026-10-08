@@ -10,6 +10,7 @@ import { EmptyState } from '../../components/states/empty-state.js';
 import { QueryState } from '../../components/states/query-state.js';
 import { ArticleRow } from '../article/article-row.js';
 import { useReaderActions } from './actions/provider.js';
+import { HiddenCauses } from './hidden-causes.js';
 import { isCursorRefused, type useArticleList } from './use-article-list.js';
 import { listsUnread, type ReaderView } from './view.js';
 
@@ -107,6 +108,30 @@ function useExitingRows(
   return { visible, leaving };
 }
 
+type ReaderList = ReturnType<typeof useArticleList>;
+
+export interface VisibleRows {
+  /** The rows the list shows, those on their way out included. */
+  visible: readonly ArticleListItem[];
+  /** The ids of the rows that are on their way out. */
+  leaving: ReadonlySet<string>;
+  /** The rows the list shows and keeps. */
+  staying: readonly ArticleListItem[];
+  listRef: React.RefObject<HTMLUListElement | null>;
+}
+
+/** The rows the view shows, worked out beside the page so that the header counts the same ones. */
+export function useVisibleRows(view: ReaderView, list: ReaderList): VisibleRows {
+  const listRef = useRef<HTMLUListElement>(null);
+  const { visible, leaving } = useExitingRows(
+    list.items,
+    list.query.data?.pages[0],
+    listRef,
+    listsUnread(view.lane),
+  );
+  return { visible, leaving, staying: visible.filter((item) => !leaving.has(item.id)), listRef };
+}
+
 /** Calls `onReach` when the element the returned ref is put on comes near the viewport. */
 function useSentinel(enabled: boolean, onReach: () => void) {
   const ref = useRef<HTMLDivElement>(null);
@@ -146,23 +171,27 @@ function EmptyView({ view }: { view: ReaderView }) {
 
 export interface ArticleListProps {
   view: ReaderView;
-  list: ReturnType<typeof useArticleList>;
+  list: ReaderList;
+  rows: VisibleRows;
   expandedId: string | null;
   onToggle: (item: ArticleListItem) => void;
+  /** Opens the "Why this?" drawer for the article of a row. */
+  onWhyThis: (item: ArticleListItem) => void;
   simple: boolean;
 }
 
 /** The rows of the view with the means to load more of them (spec 09 §3.1). */
-export function ArticleList({ view, list, expandedId, onToggle, simple }: ArticleListProps) {
+export function ArticleList({
+  view,
+  list,
+  rows: { visible, leaving, listRef },
+  expandedId,
+  onToggle,
+  onWhyThis,
+  simple,
+}: ArticleListProps) {
   const { t } = useTranslation('reader');
-  const { query, items, canLoadMore, loadMore, reload } = list;
-  const listRef = useRef<HTMLUListElement>(null);
-  const { visible, leaving } = useExitingRows(
-    items,
-    query.data?.pages[0],
-    listRef,
-    listsUnread(view.lane),
-  );
+  const { query, canLoadMore, loadMore, reload } = list;
   const sentinel = useSentinel(canLoadMore, () => void loadMore());
   const failed = query.isError && query.data !== undefined && !isCursorRefused(query.error);
 
@@ -194,8 +223,10 @@ export function ArticleList({ view, list, expandedId, onToggle, simple }: Articl
                   item={item}
                   expanded={item.id === expandedId}
                   onToggleExpand={() => onToggle(item)}
+                  onWhyThis={() => onWhyThis(item)}
                   simple={simple}
                 />
+                {view.lane === 'hidden' ? <HiddenCauses item={item} /> : null}
               </li>
             ))}
           </ul>
