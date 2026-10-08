@@ -1,3 +1,150 @@
 {
-  "title": "Feeds"
+  "title": "Feeds",
+  "empty": {
+    "title": "Add your first feed",
+    "body": "Paste the address of a website or a feed above, or import an OPML file below."
+  },
+  "add": {
+    "title": "Add a feed",
+    "label": "Website or feed address",
+    "hint": "Paste a website or a feed link. If the website offers several feeds, you can choose one.",
+    "submit": "Add feed",
+    "added": "Added “{{title}}”.",
+    "existing": "You're already subscribed to “{{title}}”.",
+    "chooser": {
+      "title": "Choose a feed",
+      "lead": "This website offers several feeds. Which one do you want to add?",
+      "add": "Add {{title}}"
+    }
+  },
+  "folders": {
+    "list": "Folders",
+    "none": "No folder",
+    "all": "All feeds",
+    "feedCount_one": "{{count}} feed",
+    "feedCount_other": "{{count}} feeds",
+    "moveUp": "Move {{folder}} up",
+    "moveDown": "Move {{folder}} down",
+    "moved": "Moved {{folder}} to position {{position}} of {{total}}.",
+    "rename": "Rename",
+    "renameFolder": "Rename folder {{folder}}"
+  },
+  "rename": {
+    "title": "Rename folder",
+    "label": "Folder name",
+    "merge": "A folder with this name already exists. Its feeds will be merged with this one.",
+    "submit": "Rename"
+  },
+  "row": {
+    "statusLabel": "Feed status:",
+    "classificationLabel": "Classification:",
+    "neverUpdated": "Not updated yet",
+    "updated": "Updated {{when}}",
+    "lastError": "Last error: {{reason}}",
+    "unreadLabel": "Unread articles",
+    "noUnread": "No unread articles",
+    "unread": {
+      "forYou": "For you",
+      "maybe": "Maybe",
+      "everything": "Everything else",
+      "new": "New"
+    },
+    "settingsFor": "Settings for {{title}}",
+    "settings": "Settings"
+  },
+  "status": {
+    "active": "Working",
+    "quarantined": "Having problems",
+    "dead": "Stopped",
+    "paused": "Paused"
+  },
+  "mode": {
+    "off": "Off",
+    "training": "Training: selected articles",
+    "active": "Active: new articles"
+  },
+  "errors": {
+    "unknown": "We couldn't fetch it."
+  },
+  "settings": {
+    "title": "Feed settings",
+    "titleLabel": "Title",
+    "titleHint": "Leave empty to use the feed's own title, “{{title}}”.",
+    "folder": "Folder",
+    "noFolder": "No folder",
+    "newFolderOption": "New folder…",
+    "newFolder": "New folder name",
+    "allowDuplicates": "Allow duplicates",
+    "allowDuplicatesHint": "Off: a story that several of your feeds carry is shown only once.",
+    "hidden": "Hide from sidebar",
+    "hiddenHint": "Leaves this feed out of the sidebar and the combined lists, such as For you. It keeps updating.",
+    "images": "Images from this feed",
+    "imagesInherit": "Use my global setting",
+    "imagesAllow": "Always allow",
+    "imagesBlock": "Always block",
+    "imagesHintOn": "Your global setting loads images from all feeds. “Always block” overrides it for this feed.",
+    "imagesHintOff": "Your global setting blocks images from all feeds. “Always allow” still works for this feed.",
+    "saved": "Saved the settings of “{{title}}”."
+  },
+  "classification": {
+    "title": "Classification",
+    "help": {
+      "off": "Off and Training are selection only: nothing is analysed unless you select it. Switch to training to choose articles to analyse.",
+      "training": "Training is selection only: nothing is analysed unless you select it. Choose articles in this feed to teach Bantoozi what you like.",
+      "active": "New articles from this feed are classified automatically. Older articles stay as they are unless you select them."
+    },
+    "since": "Automatic classification has been on since {{date}}.",
+    "switchBack": "Switching back or turning classification off stops new analysis for this feed. Work that is already running can still finish, because other subscribers of this feed may share it.",
+    "toTraining": "Switch to training",
+    "enable": "Enable automatic classification",
+    "backToTraining": "Back to training",
+    "turnOff": "Turn classification off",
+    "changed": "Classification is now: {{mode}}.",
+    "stale": "This setting was changed from another device. We've reloaded it. Check the current setting and try again."
+  },
+  "unsubscribe": {
+    "action": "Unsubscribe",
+    "title": "Unsubscribe from “{{title}}”?",
+    "body": "You'll stop receiving its articles. Bookmarks you saved from it and your image setting for it are kept.",
+    "confirm": "Unsubscribe",
+    "done": "Unsubscribed from “{{title}}”."
+  },
+  "deadFeed": {
+    "message": "This feed stopped working on {{date}}: {{reason}}",
+    "messageUndated": "This feed stopped working: {{reason}}"
+  },
+  "opml": {
+    "title": "Import and export",
+    "file": "OPML file",
+    "fileHint": "An .opml or .xml file exported from another feed reader.",
+    "import": "Import",
+    "export": "Export OPML",
+    "report": {
+      "title": "Import finished",
+      "added_one": "Added {{count}} feed.",
+      "added_other": "Added {{count}} feeds.",
+      "noneAdded": "No feeds were added.",
+      "existing_one": "{{count}} feed was already in your list.",
+      "existing_other": "{{count}} feeds were already in your list.",
+      "invalid_one": "{{count}} entry couldn't be imported",
+      "invalid_other": "{{count}} entries couldn't be imported",
+      "entry": "Entry {{number}}",
+      "noAddress": "no address"
+    },
+    "reasons": {
+      "invalid_url": "This isn't a valid web address.",
+      "unsupported_scheme": "Only http and https addresses are supported.",
+      "credentials": "The address contains a username or password, which isn't allowed.",
+      "credential_param": "The address contains a secret key or token, which isn't allowed.",
+      "blocked_address": "The address points to a network that can't be used for feeds.",
+      "too_long": "The address is too long.",
+      "missing_url": "The entry has no feed address.",
+      "quota_exceeded": "Your plan's feed limit was reached before this entry."
+    },
+    "errors": {
+      "invalid": "That file isn't a valid OPML file. Export it again from your other reader and try once more.",
+      "tooLarge": "That OPML file is too large. Split it into smaller files and import them one at a time.",
+      "tooManyFeeds": "This file lists {{used}} feeds, but your plan allows importing {{max}} at a time. Split the file and import it in parts."
+    }
+  }
 }
