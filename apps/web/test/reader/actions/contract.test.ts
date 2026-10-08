@@ -562,6 +562,7 @@ describe('recent bulk actions', () => {
         articleIds: ['101', '102'],
         at: T0,
         mutationId: mid(5),
+        count: 40,
       },
     ]);
   });

@@ -7,6 +7,9 @@ import type {
 
 import type { ApiError } from '../../../api/errors.js';
 
+/** Spec 09 §3.3: the API undoes an action for 10 minutes after it was acknowledged. */
+export const UNDO_WINDOW_MS = 10 * 60_000;
+
 /**
  * The per-user fields of an article that reader actions change (spec 08 §5.3). Action responses are
  * global projections, so only these fields are ever taken from them; everything else in a row (lane,
@@ -167,6 +170,10 @@ export interface RecentAction {
   /** Acknowledgement time (epoch ms); undo is offered until +10 minutes. */
   at: number;
   mutationId: string;
+  /** What a rating, single or bulk, set the articles to. */
+  rating?: 1 | -1 | null;
+  /** How many articles a bulk action changed, as the server counted them. */
+  count?: number;
 }
 
 /** Responses the transport returns; it throws `ApiError` on failure (src/api/errors.ts). */

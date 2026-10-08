@@ -10,7 +10,6 @@ import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { errorMessage } from '../../components/error-message.js';
 import { useToast } from '../../components/toast/toast-provider.js';
 import { useAccountId, useMe } from '../../session/context.js';
-import { articleKeys } from '../article/query-keys.js';
 import { useReaderActions, useUndoAction } from './actions/provider.js';
 import { countsQueryOptions } from './queries.js';
 import { countOf, type ViewScope } from './view.js';
@@ -94,13 +93,6 @@ export function MarkAllRead({ lane, scope, name, count, items, onChanged }: Mark
     }
   }
 
-  async function undo(actionId: string) {
-    const result = await undoAction(actionId);
-    if (result.status === 'undone' || result.status === 'conflict') {
-      void queryClient.invalidateQueries({ queryKey: articleKeys.all(accountId) });
-    }
-  }
-
   async function confirm() {
     if (ask === null) return;
     const result = await store.bulk({
@@ -120,7 +112,7 @@ export function MarkAllRead({ lane, scope, name, count, items, onChanged }: Mark
           action:
             entry === undefined
               ? undefined
-              : { label: t('common:actions.undo'), onAction: () => void undo(entry.id) },
+              : { label: t('common:actions.undo'), onAction: () => void undoAction(entry.id) },
         });
         onChanged();
         return;

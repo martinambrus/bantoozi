@@ -1,19 +1,17 @@
 import type { ArticleListItem } from '@bantoozi/shared';
-import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useMemo, useReducer, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '../../components/button.js';
 import { Sheet } from '../../components/sheet.js';
 import { EmptyState } from '../../components/states/empty-state.js';
-import { useAccountId } from '../../session/context.js';
 import { formatRelativeTime } from '../article/format.js';
-import { articleKeys } from '../article/query-keys.js';
 import { useReaderActions, useUndoAction } from './actions/provider.js';
-import type { RecentAction } from './actions/types.js';
+import { UNDO_WINDOW_MS, type RecentAction } from './actions/types.js';
 
-/** Spec 09 §3.3: the API undoes an action for 10 minutes after it was acknowledged. */
-const UNDO_WINDOW_MS = 10 * 60_000;
+function ratingWord(rating: 1 | -1 | null): 'like' | 'dislike' | 'none' {
+  return rating === 1 ? 'like' : rating === -1 ? 'dislike' : 'none';
+}
 /** How often the times of the entries are worded again. */
 const REFRESH_MS = 30_000;
 
@@ -46,32 +44,22 @@ interface EntryProps {
 function Entry({ entry, row, now }: EntryProps) {
   const { t, i18n } = useTranslation('reader');
   const undo = useUndoAction();
-  const queryClient = useQueryClient();
-  const accountId = useAccountId();
   const [undoing, setUndoing] = useState(false);
   const textId = useId();
   const when = new Date(entry.at).toISOString();
-  const count = entry.articleIds.length;
-  // Mark all read covers the view, and the ids hold only the loaded rows of it.
-  const subject =
-    entry.kind === 'markReadFilter' || count === 0
-      ? null
-      : count === 1 && row !== undefined
-        ? row.title
-        : t('recent.articles', { count });
+  const what =
+    entry.rating === undefined
+      ? t([`recent.kind.${entry.kind}`, 'recent.kind.other'])
+      : t(`recent.rating.${ratingWord(entry.rating)}`);
+  // A bulk action counts what the server changed; Mark all read covers rows that were never loaded.
+  const count = entry.count ?? entry.articleIds.length;
+  const titled = count === 1 && row !== undefined && entry.kind !== 'markReadFilter';
+  const subject = count === 0 ? null : titled ? row.title : t('recent.articles', { count });
 
   async function takeBack() {
     setUndoing(true);
     try {
-      const result = await undo(entry.id);
-      if (result.status === 'undone' || result.status === 'conflict') {
-        void queryClient.invalidateQueries({
-          queryKey:
-            entry.kind === 'markReadFilter'
-              ? articleKeys.all(accountId)
-              : articleKeys.counts(accountId),
-        });
-      }
+      await undo(entry.id);
     } finally {
       setUndoing(false);
     }
@@ -80,12 +68,9 @@ function Entry({ entry, row, now }: EntryProps) {
   return (
     <li className="flex items-center justify-between gap-3 py-3">
       <div id={textId} className="flex min-w-0 flex-col gap-0.5">
-        <span className="font-medium">{t([`recent.kind.${entry.kind}`, 'recent.kind.other'])}</span>
+        <span className="font-medium">{what}</span>
         {subject === null ? null : (
-          <span
-            lang={count === 1 ? (row?.lang ?? undefined) : undefined}
-            className="break-words text-sm"
-          >
+          <span lang={titled ? (row.lang ?? undefined) : undefined} className="break-words text-sm">
             {subject}
           </span>
         )}

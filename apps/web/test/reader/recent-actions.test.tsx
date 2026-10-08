@@ -7,7 +7,14 @@ import { failure, json } from '../api/fake-fetch.js';
 import { deferred, findToast } from '../article/harness.js';
 import { makeMe } from '../session/fixtures.js';
 import { bodyOf } from '../support/app.js';
-import { createReaderHarness, countsQueries, item, listQueries, rowTitles } from './support.js';
+import {
+  AS_OF,
+  createReaderHarness,
+  countsQueries,
+  item,
+  listQueries,
+  rowTitles,
+} from './support.js';
 import {
   VERGE,
   bookmarkOf,
@@ -153,11 +160,11 @@ describe('the entries', () => {
     const sheet = await openRecent(app, 'Verge');
 
     const [bulk, bookmark, rating] = await entries(sheet, 3);
-    expect(within(bulk!).getByText('Rated')).toBeVisible();
+    expect(within(bulk!).getByText('Marked as liked')).toBeVisible();
     expect(within(bulk!).getByText('2 articles')).toBeVisible();
     expect(within(bookmark!).getByText('Bookmarked')).toBeVisible();
     expect(within(bookmark!).getByText('Article 2')).toBeVisible();
-    expect(within(rating!).getByText('Rating changed')).toBeVisible();
+    expect(within(rating!).getByText('Marked as liked')).toBeVisible();
     expect(within(rating!).getByText('Article 1')).toBeVisible();
     for (const entry of [bulk!, bookmark!, rating!]) {
       expect(within(entry).getByText('now')).toBeVisible();
@@ -187,7 +194,7 @@ describe('the entries', () => {
     expect(within(entry!).queryByText('Article 1')).toBeNull();
   });
 
-  it('word Mark all read without a count, because the rows that are loaded are not all it marked', async () => {
+  it('count what Mark all read marked as the server answered, not the rows that were loaded', async () => {
     const { app } = await open({
       path: '/read/for_you',
       items: [item(1), item(2), item(3)],
@@ -206,7 +213,52 @@ describe('the entries', () => {
 
     const [entry] = await entries(sheet, 1);
     expect(within(entry!).getByText('Marked everything in a view as read')).toBeVisible();
-    expect(entry).not.toHaveTextContent(/\d+ articles?/);
+    expect(within(entry!).getByText('40 articles')).toBeVisible();
+  });
+
+  it('name a dislike', async () => {
+    const writes = writeRoutes();
+    const { app } = await open({
+      path: '/read/for_you',
+      items: [item(1), item(2)],
+      routes: writes.routes,
+    });
+    await screen.findByRole('article', { name: 'Article 2' });
+    await app.user.click(
+      within(screen.getByRole('article', { name: 'Article 1' })).getByRole('button', {
+        name: 'Dislike',
+      }),
+    );
+    await app.user.click(
+      within(screen.getByRole('group', { name: 'Reason for the dislike' })).getByRole('button', {
+        name: 'Off-topic',
+      }),
+    );
+    await findToast('Marked as disliked');
+
+    const sheet = await openRecent(app);
+
+    const [entry] = await entries(sheet, 1);
+    expect(within(entry!).getByText('Marked as disliked')).toBeVisible();
+    expect(within(entry!).getByText('Article 1')).toBeVisible();
+  });
+
+  it('name a rating that was taken back', async () => {
+    const writes = writeRoutes();
+    const { app } = await open({
+      path: '/read/bookmarks',
+      items: [item(1, { rating: 1, readAt: AS_OF, bookmarkedAt: AS_OF })],
+      routes: writes.routes,
+    });
+    await screen.findByRole('article', { name: 'Article 1' });
+    await app.user.click(likeOf('Article 1'));
+    await findToast('Rating removed');
+
+    const sheet = await openRecent(app, 'Bookmarks');
+
+    const [entry] = await entries(sheet, 1);
+    expect(within(entry!).getByText('Rating removed')).toBeVisible();
+    expect(within(entry!).getByText('Article 1')).toBeVisible();
   });
 });
 
@@ -232,7 +284,7 @@ describe('Undo', () => {
     await waitFor(() => expect(app.calls(UNDO)).toHaveLength(1));
     expect(bodyOf(app.calls(UNDO)[0]!)).toEqual({ mutationId: writes.issued[1] });
     const [rest] = await entries(sheet, 1);
-    expect(within(rest!).getByText('Rating changed')).toBeVisible();
+    expect(within(rest!).getByText('Marked as liked')).toBeVisible();
     expect(within(sheet).queryByText('Bookmarked')).toBeNull();
     expect(app.calls(UNDO)).toHaveLength(1);
   });
@@ -340,6 +392,26 @@ describe('Undo', () => {
     await waitFor(() => expect(entriesOf(sheet)).toHaveLength(0));
   });
 
+  it('loads the counts again after the Undo of a rating toast', async () => {
+    const writes = writeRoutes();
+    const { app } = await open({
+      path: '/read/for_you',
+      items: [item(1), item(2)],
+      routes: { ...writes.routes, ...undoRoute(item(1)) },
+    });
+    await screen.findByRole('article', { name: 'Article 2' });
+    const before = countsQueries(app).length;
+    await app.user.click(likeOf('Article 1'));
+    const toast = await findToast('Marked as liked');
+    await waitFor(() => expect(countsQueries(app).length).toBeGreaterThan(before));
+    const counted = countsQueries(app).length;
+
+    await app.user.click(within(toast).getByRole('button', { name: 'Undo' }));
+
+    await waitFor(() => expect(app.calls(UNDO)).toHaveLength(1));
+    await waitFor(() => expect(countsQueries(app).length).toBeGreaterThan(counted));
+  });
+
   it('still loads the list again when the Undo of the Mark all read toast finds newer changes', async () => {
     const { app } = await open({
       path: '/read/for_you',
@@ -390,7 +462,7 @@ describe('time', () => {
     const [newer, older] = await entries(sheet, 2);
     expect(within(newer!).getByText('Bookmarked')).toBeVisible();
     expect(within(newer!).getByText('now')).toBeVisible();
-    expect(within(older!).getByText('Rating changed')).toBeVisible();
+    expect(within(older!).getByText('Marked as liked')).toBeVisible();
     expect(within(older!).getByText('6 minutes ago')).toBeVisible();
 
     await act(async () => {
@@ -400,7 +472,7 @@ describe('time', () => {
     const [left] = await entries(sheet, 1);
     expect(within(left!).getByText('Bookmarked')).toBeVisible();
     expect(within(left!).getByText('5 minutes ago')).toBeVisible();
-    expect(within(sheet).queryByText('Rating changed')).toBeNull();
+    expect(within(sheet).queryByText('Marked as liked')).toBeNull();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(6 * MINUTE);
     });
@@ -480,7 +552,7 @@ describe('in Slovak', () => {
     const sheet = await screen.findByRole('dialog', { name: 'Nedávne akcie' });
 
     const [bulk, bookmark] = await entries(sheet, 2);
-    expect(within(bulk!).getByText('Ohodnotené')).toBeVisible();
+    expect(within(bulk!).getByText('Označené ako „páči sa mi“')).toBeVisible();
     expect(within(bulk!).getByText('3 články')).toBeVisible();
     expect(within(bulk!).getByText('teraz')).toBeVisible();
     expect(within(bookmark!).getByText('Pridané do záložiek')).toBeVisible();
@@ -510,6 +582,11 @@ describe('the words of an entry', () => {
     const i18n = createI18n(language);
     for (const kind of Object.keys(KINDS)) {
       expect(i18n.getResource(language, 'reader', `recent.kind.${kind}`)).toEqual(
+        expect.any(String),
+      );
+    }
+    for (const rating of ['like', 'dislike', 'none']) {
+      expect(i18n.getResource(language, 'reader', `recent.rating.${rating}`)).toEqual(
         expect.any(String),
       );
     }

@@ -112,6 +112,11 @@
       "markReadFilter": "Všetko v zozname označené ako prečítané",
       "rateBulk": "Ohodnotené",
       "other": "Zmena článku"
+    },
+    "rating": {
+      "like": "Označené ako „páči sa mi“",
+      "dislike": "Označené ako „nepáči sa mi“",
+      "none": "Hodnotenie odstránené"
     }
   },
   "hidden": {

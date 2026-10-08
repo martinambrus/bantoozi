@@ -102,7 +102,16 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
   const offers = createExampleOffers({ api, queryClient, toast: tracked, i18n, accountId });
 
   async function undo(actionId: string): Promise<UndoResult> {
+    // Mark all read covered more than the loaded rows, so the list is loaded again as well.
+    const filtered = store
+      .recent()
+      .some((entry) => entry.id === actionId && entry.kind === 'markReadFilter');
     const result = await store.undo(actionId);
+    if (result.status === 'undone' || result.status === 'conflict') {
+      void queryClient.invalidateQueries({
+        queryKey: filtered ? articleKeys.all(accountId) : articleKeys.counts(accountId),
+      });
+    }
     switch (result.status) {
       case 'conflict':
         show({ message: i18n.t('article:toast.undoConflict'), tone: 'info' });

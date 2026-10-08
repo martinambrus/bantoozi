@@ -11,6 +11,7 @@ import {
 import { ApiError, isApiError, isRetryable } from '../../../api/errors.js';
 import {
   READER_FIELDS,
+  UNDO_WINDOW_MS,
   UNDOABLE_ACTIONS,
   type ActionHandle,
   type ActionResponse,
@@ -27,7 +28,6 @@ import {
   type UndoResult,
 } from './types.js';
 
-const UNDO_WINDOW_MS = 10 * 60_000;
 const DEFAULT_MAX_RETRIES = 2;
 /** A longer Retry-After is not waited out in the background; the request fails at once. */
 const MAX_RETRY_AFTER_MS = 30_000;
@@ -338,6 +338,7 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
         articleIds: [handle.articleId],
         at: now(),
         mutationId: response.mutationId,
+        ...(handle.action.type === 'rate' ? { rating: handle.action.rating } : {}),
       });
     }
     settle(slot, entry, {
@@ -643,6 +644,8 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
         articleIds: input.items.map((item) => item.id),
         at: now(),
         mutationId,
+        count,
+        ...(input.kind === 'rateBulk' ? { rating: input.rating } : {}),
       });
     }
     return release({ status: 'done', mutationId, count });

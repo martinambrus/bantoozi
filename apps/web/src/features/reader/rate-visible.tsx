@@ -83,13 +83,6 @@ export function RateVisibleDialog({ asked, name, onClose }: RateVisibleDialogPro
   const count = asked.items.length;
   const capped = asked.shown > count;
 
-  async function takeBack(actionId: string) {
-    const result = await undo(actionId);
-    if (result.status === 'undone' || result.status === 'conflict') {
-      void queryClient.invalidateQueries({ queryKey: articleKeys.counts(accountId) });
-    }
-  }
-
   async function rate(rating: 1 | -1) {
     setPending(rating);
     setFailure(null);
@@ -105,7 +98,7 @@ export function RateVisibleDialog({ asked, name, onClose }: RateVisibleDialogPro
           action:
             entry === undefined
               ? undefined
-              : { label: t('common:actions.undo'), onAction: () => void takeBack(entry.id) },
+              : { label: t('common:actions.undo'), onAction: () => void undo(entry.id) },
         });
         void queryClient.invalidateQueries({ queryKey: articleKeys.counts(accountId) });
         onClose();

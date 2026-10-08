@@ -98,6 +98,11 @@
       "markReadFilter": "Marked everything in a view as read",
       "rateBulk": "Rated",
       "other": "Changed an article"
+    },
+    "rating": {
+      "like": "Marked as liked",
+      "dislike": "Marked as disliked",
+      "none": "Rating removed"
     }
   },
   "hidden": {
