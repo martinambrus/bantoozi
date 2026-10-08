@@ -24,8 +24,11 @@ import { ImagePolicyPanel } from './image-policy-panel.js';
 import { articleKeys } from './query-keys.js';
 import { useArticleActions } from './use-article-actions.js';
 
-/** A capture in progress is asked about at the idle polling rate while visible (spec 09 §1). */
-const CAPTURE_POLL_MS = 30_000;
+/**
+ * A capture in progress is work the reader asked for, so while the page is visible it is asked
+ * about at the rate of pending analysis (spec 09 §1) until it is done.
+ */
+const CAPTURE_POLL_MS = 5_000;
 
 export interface ArticleDetailProps {
   /** The article as the list holds it; the detail adds its body to it. */

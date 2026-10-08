@@ -752,7 +752,7 @@ describe('ArticleDetail capture', () => {
       vi.useRealTimers();
     });
 
-    it('asks again every 30 seconds until it is done', async () => {
+    it('asks again every 5 seconds until it is done', async () => {
       vi.useFakeTimers({
         toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
       });
@@ -780,9 +780,9 @@ describe('ArticleDetail capture', () => {
       expect(await screen.findByText('Saving article')).toBeInTheDocument();
       expect(calls('GET', '/articles/101')).toHaveLength(1);
 
-      await act(() => vi.advanceTimersByTimeAsync(25_000));
+      await act(() => vi.advanceTimersByTimeAsync(4_000));
       expect(calls('GET', '/articles/101')).toHaveLength(1);
-      await act(() => vi.advanceTimersByTimeAsync(6_000));
+      await act(() => vi.advanceTimersByTimeAsync(1_500));
 
       expect(await screen.findByText('Full text saved')).toBeInTheDocument();
       expect(calls('GET', '/articles/101')).toHaveLength(2);
