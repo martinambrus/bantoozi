@@ -1316,7 +1316,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   not human ones: labeller `claude-opus-5.5`, from the title, excerpt and body lead the classifier
   sees, following the `enrich-v1` definitions, blind to Jev's answers and to the ratings, and stored
   through `saveFacetLabels` under that separate labeller id. They tune and check only the demotion
-  cutoffs; the pass rule uses the owner's ratings.
+  cutoffs; the pass rule uses the owner's ratings. Spec 10 §2.2 and PLAN §8.1 now allow
+  owner-approved assisted card drafting for the owner pilot only; locked decision 3 (no LLM card
+  authoring in the product) is unchanged.
 - D-148: 2026-10-08 M3b-T4 — G1 decision and initial-beta eligibility (owner-approved 2026-10-08).
   Evidence scope: `owner_pilot`, one participant, one context, 449 ratings on `golden-v3` (141
   held-out: 61 likes, 80 dislikes; cs 34, en 54, sk 53 test ratings, all languages measured). Test
@@ -1332,7 +1334,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   translation failures); Laya track recommended for Slovak (native falls short of English on the
   bilingual comparison). The owner approves initial invite-only beta eligibility under Q13 on this
   evidence; Q1 still governs production budget-cap increases, and every other M8 launch requirement
-  applies. Operational notes for M7/M8: Jev occasionally returns a score 0.01 outside spec 04's 0.02
+  applies. The locked baseline is B1: B1-T was ineligible (one LibreTranslate fallback in the
+  owner's corpus left it with no valid score), so the B1-versus-B1-T comparison is unmeasured and
+  ΔAUC is over B1 only; spec 10 §5 now states that an ineligible, unselected candidate does not
+  block the profile (the pass rule itself is absolute: macro AUC ≥ 0.70). Operational notes for M7/M8: Jev occasionally returns a score 0.01 outside spec 04's 0.02
   consistency tolerance (an `invalid_response`, recovered by resuming the run), the Ollama Free plan
   rate-limits long runs (recovered by resuming), and Jev attempts cost 1–8 % more than their
   reservation estimate. Total M3b spend $1.21 (round 3: $0.51).
@@ -1345,7 +1350,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   selected training is the owner's explicit calibration choice, bounded per feed and one-off;
   newly active arrivals are the fetched articles of feeds the owner switches to automatic
   classification, at most the fetched volume above; explicitly requested history is user-initiated
-  and one-off; reusable cache hits are about zero with one user. At the measured $0.2290 per 1,000
-  revisions with the ×2 margin, the $1.00 cap covers about 2,180 authorized revisions a day, about
-  twice the owner's all-active volume, and the ×5 sensitivity is $2.50/day. M8 replaces this with a
+  and one-off; reusable cache hits are about zero with one user. The report's $0.2290 per 1,000
+  divides E1's spend over all 656 processed articles, including facet-only articles that get Call A
+  but no card call; over the 449 rated articles that received the full production policy it is at
+  most $0.335 per 1,000 (a generator gap for M8). At that rate with the ×2 margin the $1.00 cap
+  still covers about 1,490 authorized revisions a day, above the owner's all-active volume, and the
+  ×5 sensitivity is $3.50/day. M8 replaces this with a
   forecast from real usage before any cap increase (Q1).

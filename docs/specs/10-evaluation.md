@@ -156,6 +156,13 @@ settings, regardless of profile.
   language. Stored as real `interest_cards` (visibility `shared`) and `eval.rater_cards`. The spec 05
   authoring rules are shown as hints. The card and feed steps close once the rater has any
   assignment, so cards are final before the first article is seen (D-100).
+- **Owner-pilot card drafting (D-147):** for the `owner_pilot` profile the owner may have an
+  assistant draft the cards from the owner's own description of their interests, without the
+  assistant seeing any article of the round; the owner approves or edits every card before it is
+  entered, and the cards then count as the owner's. The report and `docs/DECISIONS.md` must say so,
+  because assisted drafting may overstate what self-written cards achieve. This is evaluation
+  practice only: the product never writes cards for users (locked decision 3), and the
+  `multi_person_beta` profile keeps self-written cards.
 - **Step 2: pick feeds.** The rater ticks the golden feeds they would actually subscribe to (at least
   10) → `eval.rater_feeds`.
 - **Step 3: rate.** On first entry, the app builds the rater's `eval.assignments`:
@@ -429,7 +436,14 @@ baselines and test confirmation below.
   each class. Count participant keys, never persona rows, in readiness and win requirements.
 
 Incomplete engine variants or inadequate class support within a chosen profile yields
-`needs_more_data` for that profile. With only the owner, produce the honest pilot report. Q13 has approved that narrower evidence for
+`needs_more_data` for that profile: a candidate run that is incomplete (below 95% coverage, or
+`partial`) is ineligible and cannot be selected, and the profile is `needs_more_data` when no
+eligible keyword baseline (B1/B1-T) or no eligible core candidate (E1/E2/E3/E3b) remains, when the
+composed configuration would need an ineligible run, or when readiness or class support fails. An
+ineligible candidate that is not selected does not block the profile; the report lists it and the
+comparison it leaves unmeasured (D-148). B1-T in particular is unmeasured whenever any article of a
+rater's corpus falls back to native text, because one untranslated document changes the corpus
+statistics behind all of that rater's scores. With only the owner, produce the honest pilot report. Q13 has approved that narrower evidence for
 the initial invite-only beta: `owner_pilot` + `pass` clears the evaluation launch gate and can be
 applied to production. It still must satisfy every owner-pilot readiness/quality/coverage/cost rule;
 adding personas never increases the actual participant count or repairs missing labels. There is no
