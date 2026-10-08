@@ -24,7 +24,13 @@ import { createReturnTracker, type ReturnTracker } from '../../article/dwell.js'
 import { articleKeys } from '../../article/query-keys.js';
 import { createReaderActions } from './store.js';
 import { createReaderTransport } from './transport.js';
-import type { ActionHandle, ActionResult, ReaderAction, ReaderActions } from './types.js';
+import type {
+  ActionHandle,
+  ActionResult,
+  ReaderAction,
+  ReaderActions,
+  UndoResult,
+} from './types.js';
 
 const UNDO_TOAST_ID = 'reader-undo';
 /** Spec 09 §3.3: the undo toast after a rating stays for 5 seconds. */
@@ -51,6 +57,8 @@ interface Scope {
   readonly tracker: ReturnTracker;
   /** Adds a listener for settled actions and returns its removal. */
   listen(listener: SettledListener): () => void;
+  /** Undoes an acknowledged action by its receipt and says so when that is not possible. */
+  undo(actionId: string): Promise<UndoResult>;
   /** Aborts what is in flight and forgets everything, toasts that offer to act on it included. */
   release(): void;
 }
@@ -74,24 +82,25 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
     toastIds.add(toast.show(input));
   }
 
-  async function undo(actionId: string): Promise<void> {
+  async function undo(actionId: string): Promise<UndoResult> {
     const result = await store.undo(actionId);
     switch (result.status) {
       case 'conflict':
         show({ message: i18n.t('article:toast.undoConflict'), tone: 'info' });
-        return;
+        break;
       case 'refused':
         show({ message: i18n.t('article:toast.undoRefused'), tone: 'info' });
-        return;
+        break;
       case 'failed':
         if (result.error.kind !== 'aborted') {
           show({ message: errorMessage(i18n.t, result.error), tone: 'error' });
         }
-        return;
+        break;
       case 'undone':
       case 'cancelled':
-        return;
+        break;
     }
+    return result;
   }
 
   function offerUndo(handle: ActionHandle): void {
@@ -162,6 +171,7 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
   return {
     store,
     tracker,
+    undo,
     listen(listener) {
       listeners.add(listener);
       return () => {
@@ -253,6 +263,15 @@ export function useObserveItems(items: readonly ArticleListItem[]): void {
   useLayoutEffect(() => {
     store.observe(items);
   }, [store, items]);
+}
+
+/**
+ * Undo by receipt for the surfaces that offer it besides the rating toast (spec 09 §3.3: the
+ * recent-action menu, bulk actions). It shows why an undo did not go through; the result says
+ * what happened, for a caller that has more to refresh.
+ */
+export function useUndoAction(): (actionId: string) => Promise<UndoResult> {
+  return useScope().undo;
 }
 
 /** The tracker that reports the time away after "Read original". */

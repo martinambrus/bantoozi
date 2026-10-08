@@ -7,6 +7,7 @@ import {
   useObserveItems,
   useReaderActions,
   useReaderItem,
+  useUndoAction,
 } from '../../src/features/reader/actions/provider.js';
 import type { ReaderActions } from '../../src/features/reader/actions/types.js';
 import { failure, json, noContent } from '../api/fake-fetch.js';
@@ -351,6 +352,56 @@ describe('reader actions provider', () => {
     renderReader(<Shown />);
     expect(seen.at(-1)).toBe(item);
   });
+});
+
+describe('the undo other surfaces offer', () => {
+  function UndoLatest() {
+    const store = useReaderActions();
+    const undo = useUndoAction();
+    return (
+      <button type="button" onClick={() => void undo(store.recent()[0]!.id)}>
+        Undo the latest
+      </button>
+    );
+  }
+
+  it.each([
+    [
+      'refuses it',
+      () => failure(409, 'CONFLICT', { reason: 'expired' }),
+      'This can no longer be undone.',
+    ],
+    [
+      'kept newer changes',
+      () => failure(409, 'STALE_STATE', { items: [] }),
+      'Newer changes were kept.',
+    ],
+  ] as const)(
+    'sends the receipt and says so when the server %s',
+    async (_case, answer, message) => {
+      const item = makeItem();
+      const app = renderReader(
+        <>
+          <ArticleRow item={item} expanded={false} onToggleExpand={() => {}} simple={false} />
+          <UndoLatest />
+        </>,
+        {
+          routes: {
+            'POST /articles/:id/rating': () => ratingResponse(acked(item, { rating: 1 })),
+            'POST /articles/undo': answer,
+          },
+        },
+      );
+      await app.user.click(like());
+      await findToast('Marked as liked');
+
+      await app.user.click(screen.getByRole('button', { name: 'Undo the latest' }));
+
+      expect(await findToast(message)).toBeInTheDocument();
+      expect(app.calls('POST', '/articles/undo')).toHaveLength(1);
+      expect(bodyOf(app.calls('POST', '/articles/undo')[0]!)).toEqual({ mutationId: MUTATION_ID });
+    },
+  );
 });
 
 describe('reader action toasts', () => {
