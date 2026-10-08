@@ -144,7 +144,7 @@ describe('useApiMutation', () => {
     await inAct(() => result.current.mutateAsync(variables));
 
     expect(keyOf(requests[0])).toBeNull();
-    expect(result.current.variables).toEqual(variables);
+    await waitFor(() => expect(result.current.variables).toEqual(variables));
   });
 
   it('mutates a route that takes no input without arguments', async () => {
