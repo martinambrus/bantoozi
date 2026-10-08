@@ -55,6 +55,8 @@ interface ActionEntry {
 interface BulkOverlay {
   readonly kind: 'bulk';
   readonly apply: (state: ReaderState) => ReaderState;
+  /** Called when it may have reached the head of one of its articles' queues. */
+  readonly onHead: () => void;
 }
 
 interface Slot {
@@ -198,6 +200,8 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
   const listeners = new Set<() => void>();
   const inflight = new Set<AbortController>();
   const sleepers = new Set<() => void>();
+  /** Bulk actions waiting for their turn; a reset lets them go. */
+  const waiting = new Set<() => void>();
   const views = new WeakMap<
     ArticleListItem,
     { slot: Slot; rev: number; result: ArticleListItem }
@@ -374,9 +378,11 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
     }
   }
 
+  // Bulk actions take their place in the queue of every article they cover.
   function pump(slot: Slot): void {
-    const head = slot.entries.find((entry): entry is ActionEntry => entry.kind === 'action');
-    if (head?.handle.status === 'queued') void run(slot, head);
+    const head = slot.entries[0];
+    if (head?.kind === 'bulk') head.onHead();
+    else if (head?.handle.status === 'queued') void run(slot, head);
   }
 
   function dispatch(
@@ -523,21 +529,57 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
     const id = newId();
     const stamp = new Date(now()).toISOString();
     const markRead = preferences().markReadOnRate;
+    const covered: { id: string; slot: Slot }[] = [];
+    let reachHead!: () => void;
+    const turn = new Promise<void>((resolve) => {
+      reachHead = resolve;
+    });
     const overlay: BulkOverlay = {
       kind: 'bulk',
       apply: (state) =>
         input.kind === 'rateBulk'
           ? applyAction(state, { type: 'rate', rating: input.rating }, stamp, markRead)
           : applyAction(state, { type: 'read' }, stamp, markRead),
+      onHead: () => {
+        if (covered.every(({ slot }) => slot.entries[0] === overlay)) reachHead();
+      },
     };
-    const probes: BulkProbe[] = input.items.map((item) => {
+    for (const item of input.items) {
       learn(item.id, item);
       const slot = slotOf(item.id);
       slot.entries.push(overlay);
       slot.rev += 1;
-      return { id: item.id, slot, known: slot.known };
-    });
+      covered.push({ id: item.id, slot });
+    }
     bump();
+
+    // Sent once every earlier action on its articles has settled, so that its fences are current.
+    waiting.add(reachHead);
+    overlay.onHead();
+    await turn;
+    waiting.delete(reachHead);
+    if (epoch !== generation) {
+      return {
+        status: 'failed',
+        error: new ApiError({
+          kind: 'aborted',
+          status: null,
+          code: 'ABORTED',
+          message: 'The account was reset before the request was sent.',
+        }),
+      };
+    }
+
+    const probes: BulkProbe[] = covered.map(({ id: articleId, slot }) => ({
+      id: articleId,
+      slot,
+      known: slot.known,
+    }));
+    const release = <R>(result: R): R => {
+      for (const { slot } of probes) pump(slot);
+      bump();
+      return result;
+    };
 
     const targets = probes.map(({ id: articleId, known }) => ({
       id: articleId,
@@ -570,14 +612,10 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
     }
     if (!outcome.ok) {
       const { error } = outcome;
-      if (!isStale(error)) {
-        bump();
-        return { status: 'failed', error };
-      }
+      if (!isStale(error)) return release({ status: 'failed', error });
       const rows = detailItems(error);
       adopt(rows);
-      bump();
-      return { status: 'stale', items: rows, reason: error.reason ?? null };
+      return release({ status: 'stale', items: rows, reason: error.reason ?? null });
     }
 
     const { count, mutationId } = outcome.value;
@@ -602,8 +640,7 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
         mutationId,
       });
     }
-    bump();
-    return { status: 'done', mutationId, count };
+    return release({ status: 'done', mutationId, count });
   }
 
   function recent(): readonly RecentAction[] {
@@ -619,6 +656,7 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
     for (const controller of inflight) controller.abort();
     inflight.clear();
     for (const wake of [...sleepers]) wake();
+    for (const go of [...waiting]) go();
     for (const slot of slots.values()) {
       for (const entry of slot.entries) {
         if (entry.kind === 'action') {

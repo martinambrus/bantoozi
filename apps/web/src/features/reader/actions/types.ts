@@ -260,6 +260,12 @@ export interface ReaderActions {
    * is `refused` 'not_undoable' with no request.
    */
   undo(actionId: string): Promise<UndoResult>;
+  /**
+   * A bulk takes its place in the queue of every article it covers: it is sent once every earlier
+   * action on them has settled (a held one holds it until released or cancelled), fenced at their
+   * acknowledged states, and later actions on them wait for it. A reset while it waits resolves it
+   * as `failed` (an `aborted` error) without a request.
+   */
   bulk(input: BulkInput): Promise<BulkResult>;
   /**
    * Acknowledged undoable actions and bulk actions (both mark-read forms, rate-bulk) of the last

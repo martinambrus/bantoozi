@@ -585,3 +585,85 @@ describe('markRead acknowledgement', () => {
     expect(store.view(read).readAt).toBe(EARLIER);
   });
 });
+
+describe('bulk ordering', () => {
+  it('sends a bulk after an earlier action on one of its articles, fenced at its acknowledged version', async () => {
+    const { store, transport } = rig();
+    const first = makeItem({ id: '101', stateVersion: '4' });
+    const second = makeItem({ id: '102', stateVersion: '7' });
+    store.dispatch(first, rate(1));
+    const pending = store.bulk({ kind: 'markRead', items: [first, second] });
+    await flush();
+    expect(transport.markReads).toHaveLength(0);
+    expect(store.view(second).readAt).not.toBeNull();
+    nth(transport.sends, 0).resolve({
+      item: acked(first, { rating: 1, readAt: SERVER_TIME }),
+      mutationId: mid(1),
+    });
+    await flush();
+    const call = nth(transport.markReads, 0);
+    expect(call.body).toEqual({
+      targets: [
+        { id: '101', stateVersion: '5', contentRevision: '2' },
+        { id: '102', stateVersion: '7', contentRevision: '2' },
+      ],
+    });
+    call.resolve({ count: 1, mutationId: mid(2) });
+    expect(await outcome(pending)).toEqual({ status: 'done', mutationId: mid(2), count: 1 });
+  });
+
+  it('sends an action on an article after a bulk that covers it, fenced at the version the bulk left', async () => {
+    const { store, transport } = rig();
+    const item = makeItem({ id: '101', stateVersion: '4' });
+    const pending = store.bulk({ kind: 'markRead', items: [item] });
+    await flush();
+    store.dispatch(item, { type: 'bookmark' });
+    await flush();
+    expect(transport.sends).toHaveLength(0);
+    nth(transport.markReads, 0).resolve({ count: 1, mutationId: mid(1) });
+    await outcome(pending);
+    await flush();
+    expect(nth(transport.sends, 0).fence.stateVersion).toBe('5');
+  });
+
+  it('waits for a held action ahead of it until that action is released and acknowledged', async () => {
+    const { store, transport } = rig();
+    const item = makeItem();
+    const held = store.dispatch(item, rate(-1), { hold: true });
+    void store.bulk({ kind: 'rateBulk', items: [item], rating: 1 });
+    await flush();
+    expect(transport.calls).toHaveLength(0);
+    store.release(held.id);
+    await flush();
+    expect(transport.calls.map((call) => call.method)).toEqual(['send']);
+    nth(transport.sends, 0).resolve({ item: acked(item, { rating: -1 }), mutationId: mid(1) });
+    await flush();
+    expect(transport.calls.map((call) => call.method)).toEqual(['send', 'rateBulk']);
+    expect(targetsOf(nth(transport.rateBulks, 0))).toEqual([
+      { id: '101', stateVersion: '5', contentRevision: '2' },
+    ]);
+  });
+
+  it('goes as soon as a held action ahead of it is cancelled', async () => {
+    const { store, transport } = rig();
+    const item = makeItem();
+    const held = store.dispatch(item, rate(-1), { hold: true });
+    void store.bulk({ kind: 'markRead', items: [item] });
+    await flush();
+    expect(store.cancel(held.id)).toBe(true);
+    await flush();
+    expect(transport.calls.map((call) => call.method)).toEqual(['markRead']);
+  });
+
+  it('fails a bulk still waiting for its turn when the account is reset, and sends nothing', async () => {
+    const { store, transport } = rig();
+    const item = makeItem();
+    store.dispatch(item, rate(1));
+    const pending = store.bulk({ kind: 'markRead', items: [item] });
+    await flush();
+    store.reset();
+    expect(await outcome(pending)).toMatchObject({ status: 'failed', error: { kind: 'aborted' } });
+    await flush();
+    expect(transport.markReads).toHaveLength(0);
+  });
+});
