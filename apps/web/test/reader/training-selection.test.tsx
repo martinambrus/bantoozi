@@ -614,6 +614,24 @@ describe('where the focus goes when the selection is sent', () => {
     expect(list).toHaveAttribute('tabindex', '-1');
     expect(document.activeElement).toBe(list);
   });
+
+  it('stays where the person took it while the articles were sent', async () => {
+    const answer = deferred<Response>();
+    const { app } = await openFeed([item(1), item(2), item(3)], {
+      routes: { [ANALYZE]: () => answer.promise },
+    });
+    await choose(app, 'Article 1');
+    await app.user.click(sendButton('Analyze selected 1 article'));
+    const box = boxOf('Article 3');
+    act(() => {
+      box.focus();
+    });
+
+    answer.resolve(accepted(1));
+
+    await waitFor(() => expect(panel()).toBeNull());
+    expect(box).toHaveFocus();
+  });
 });
 
 describe('taking a chosen article out', () => {
@@ -677,6 +695,31 @@ describe('taking a chosen article out', () => {
 
     expect(panel()).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('puts the focus on the button of the next title, and on the row of the last title', async () => {
+    const { app } = await openFeed([item(1), item(2)]);
+    await choose(app, 'Article 1', 'Article 2');
+
+    await app.user.click(removeButton('Article 1'));
+    expect(removeButton('Article 2')).toHaveFocus();
+    await app.user.click(removeButton('Article 2'));
+
+    expect(panel()).toBeNull();
+    expect(document.activeElement).toBe(titleOf('Article 2'));
+  });
+
+  it('puts the focus on the list when the last title taken out has no row any more', async () => {
+    const { app, served } = await openFeed([item(1), item(2)]);
+    await choose(app, 'Article 2');
+    served.items = [item(1)];
+    await reload(app);
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'Article 2' })).toBeNull());
+
+    await app.user.click(removeButton('Article 2'));
+
+    expect(panel()).toBeNull();
+    expect(document.activeElement).toBe(rowOf('Article 1').closest('ul'));
   });
 });
 

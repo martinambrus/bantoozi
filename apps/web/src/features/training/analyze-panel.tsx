@@ -7,7 +7,7 @@ import type {
   Subscription,
 } from '@bantoozi/shared';
 import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { isApiError } from '../../api/errors.js';
@@ -34,6 +34,11 @@ export interface AnalyzePanelProps {
   onDrop?: ((articleIds: readonly string[]) => void) | undefined;
   /** Takes one article out of the selection; the titles have no button for it without this. */
   onRemove?: ((articleId: string) => void) | undefined;
+  /**
+   * Takes the focus the panel is about to lose: once the articles it sent are accepted (their ids,
+   * in order) or once its last title is taken out (that id). Without it the panel keeps the focus.
+   */
+  returnFocus?: ((articleIds: readonly string[]) => void) | undefined;
 }
 
 type Refusal =
@@ -108,6 +113,28 @@ function withRequests(
 const sameArticles = (a: readonly ArticleListItem[], b: readonly ArticleListItem[]) =>
   a.length === b.length && a.every((article, index) => article.id === b[index]?.id);
 
+/** The focus is in `section`, or nowhere: moving it then takes it from nothing the person chose. */
+function focusWithin(section: HTMLElement): boolean {
+  const active = document.activeElement;
+  return active === null || active === document.body || section.contains(active);
+}
+
+/** The focus is nowhere, or on a control of `section` that can no longer take it. */
+function focusLost(section: HTMLElement): boolean {
+  const active = document.activeElement;
+  return (
+    active === null ||
+    active === document.body ||
+    (section.contains(active) && active.matches(':disabled'))
+  );
+}
+
+/** Where the focus goes once the selection is no longer `from`: a title's button, else the panel. */
+interface Refocus {
+  from: readonly ArticleListItem[];
+  to: string | null;
+}
+
 /**
  * The selected articles of one feed, named in full, and the one button that sends them to be
  * analyzed (spec 09 §3.2). A feed that is off is switched to training by that same request.
@@ -119,6 +146,7 @@ export function AnalyzePanel({
   onSubmitted,
   onDrop,
   onRemove,
+  returnFocus,
 }: AnalyzePanelProps) {
   const { t } = useTranslation('training');
   const queryClient = useQueryClient();
@@ -127,6 +155,9 @@ export function AnalyzePanel({
   const analyze = useApiMutation(routes.subscriptionsAnalyze);
   const hintId = useId();
   const sending = useRef(false);
+  const section = useRef<HTMLElement>(null);
+  const removers = useRef(new Map<string, HTMLButtonElement>());
+  const refocus = useRef<Refocus | null>(null);
   const [seen, setSeen] = useState(items);
   const [movedOn, setMovedOn] = useState<unknown>(null);
 
@@ -150,6 +181,16 @@ export function AnalyzePanel({
     }
   }
 
+  useEffect(() => {
+    const pending = refocus.current;
+    if (pending === null || pending.from === items) return;
+    refocus.current = null;
+    const panel = section.current;
+    if (panel === null || !focusLost(panel)) return;
+    const button = pending.to === null ? undefined : removers.current.get(pending.to);
+    (button ?? panel).focus();
+  }, [items]);
+
   function refreshArticles() {
     void queryClient.invalidateQueries({ queryKey: articleKeys.all(accountId) });
   }
@@ -161,48 +202,68 @@ export function AnalyzePanel({
     );
   }
 
-  function send() {
+  function accepted(sent: readonly ArticleListItem[], requests: AnalyzeResponse['requests']) {
+    void subscriptions.refresh();
+    recordRequests(requests);
+    refreshArticles();
+    const panel = section.current;
+    if (returnFocus === undefined) refocus.current = { from: sent, to: null };
+    else if (panel !== null && focusWithin(panel)) {
+      returnFocus(requests.map(({ articleId }) => articleId));
+    }
+    onSubmitted(requests);
+  }
+
+  function refused(sent: readonly ArticleListItem[], error: unknown) {
+    const reason = refusalOf(error);
+    switch (reason.kind) {
+      case 'changed':
+        refocus.current = { from: sent, to: null };
+        onDrop?.(reason.articleIds);
+        refreshArticles();
+        break;
+      case 'version':
+      case 'conflict':
+        void subscriptions.refresh();
+        break;
+      case 'gone':
+        refreshArticles();
+        break;
+      case 'other':
+        break;
+    }
+  }
+
+  // The answer is acted on even when the panel is gone by then: the cache still has to know.
+  async function send() {
     if (empty || sending.current) return;
     sending.current = true;
-    analyze.mutate(
-      {
+    const sent = items;
+    let requests: AnalyzeResponse['requests'];
+    try {
+      ({ requests } = await analyze.mutateAsync({
         params: { feedId: subscription.feed.id },
         body: {
-          articles: items.map(({ id, contentRevision }) => ({ id, contentRevision })),
+          articles: sent.map(({ id, contentRevision }) => ({ id, contentRevision })),
           expectedInferenceVersion: subscription.inferenceVersion,
           ...(off ? { startTraining: true } : {}),
         },
-      },
-      {
-        onSuccess: ({ requests }) => {
-          void subscriptions.refresh();
-          recordRequests(requests);
-          refreshArticles();
-          onSubmitted(requests);
-        },
-        onError: (error) => {
-          const refused = refusalOf(error);
-          switch (refused.kind) {
-            case 'changed':
-              onDrop?.(refused.articleIds);
-              refreshArticles();
-              break;
-            case 'version':
-            case 'conflict':
-              void subscriptions.refresh();
-              break;
-            case 'gone':
-              refreshArticles();
-              break;
-            case 'other':
-              break;
-          }
-        },
-        onSettled: () => {
-          sending.current = false;
-        },
-      },
-    );
+      }));
+    } catch (error) {
+      refused(sent, error);
+      return;
+    } finally {
+      sending.current = false;
+    }
+    accepted(sent, requests);
+  }
+
+  function remove(articleId: string) {
+    const index = items.findIndex((item) => item.id === articleId);
+    const next = items[index + 1] ?? items[index - 1];
+    if (next === undefined && returnFocus !== undefined) returnFocus([articleId]);
+    else refocus.current = { from: items, to: next?.id ?? null };
+    onRemove?.(articleId);
   }
 
   function problem(): string | null {
@@ -223,7 +284,12 @@ export function AnalyzePanel({
   const message = analyze.error === movedOn ? null : problem();
 
   return (
-    <section aria-label={t('panel.title')} className="flex flex-col gap-3">
+    <section
+      ref={section}
+      aria-label={t('panel.title')}
+      tabIndex={-1}
+      className="flex flex-col gap-3 outline-none"
+    >
       <p className="text-sm font-medium">
         {t('panel.count', { selected: items.length, max: MAX_SELECTED_ARTICLES })}
       </p>
@@ -238,8 +304,16 @@ export function AnalyzePanel({
                 <span className="min-w-0 break-words">{item.title}</span>
                 {onRemove === undefined ? null : (
                   <IconButton
+                    ref={(button) => {
+                      if (button !== null) removers.current.set(item.id, button);
+                      return () => {
+                        removers.current.delete(item.id);
+                      };
+                    }}
                     label={t('panel.remove', { title: item.title })}
-                    onClick={() => onRemove(item.id)}
+                    onClick={() => {
+                      remove(item.id);
+                    }}
                   >
                     <CloseIcon className="size-4" />
                   </IconButton>
@@ -259,7 +333,9 @@ export function AnalyzePanel({
           disabled={empty}
           loading={analyze.isPending}
           aria-describedby={hint === null ? undefined : hintId}
-          onClick={send}
+          onClick={() => {
+            void send();
+          }}
         >
           {empty
             ? t('panel.none')

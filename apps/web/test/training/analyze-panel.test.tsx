@@ -683,3 +683,216 @@ describe('the message about a refused request', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(CHANGED);
   });
 });
+
+describe('where the focus goes', () => {
+  const region = () => screen.getByRole('region', { name: 'Articles to analyze' });
+  const remove = (n: number) => screen.getByRole('button', { name: `Remove Article ${n}` });
+  const box = (n: number) => screen.getByRole('checkbox', { name: `Choose Article ${n}` });
+  const titleList = () => screen.queryByRole('list', { name: 'Selected articles' });
+  const answered = (...numbers: number[]) =>
+    json(202, {
+      requests: numbers.map((n) => ({ id: requestId(n), articleId: String(n), status: 'pending' })),
+    });
+  const refusing = (...articleIds: string[]) => ({
+    [ROUTE]: () => failure(409, 'STALE_STATE', { articleIds }),
+  });
+
+  /** The panel over four articles, `numbers` of them chosen, with an API that answers `routes`. */
+  async function choosing(numbers: number[], routes: Record<string, ApiRouteHandler> = {}) {
+    const view = renderReader(<Choosing among={many(4)} />, {
+      routes: { [ROUTE]: accepted, ...routes },
+    });
+    for (const number of numbers) await view.user.click(box(number));
+    return view;
+  }
+
+  it('is the button of the next title once a title is taken out', async () => {
+    const view = await choosing([1, 2, 3]);
+
+    await view.user.click(remove(2));
+
+    expect(remove(3)).toHaveFocus();
+  });
+
+  it('is the button of the title before once the last title is taken out', async () => {
+    const view = await choosing([1, 2, 3]);
+
+    await view.user.click(remove(3));
+
+    expect(remove(2)).toHaveFocus();
+  });
+
+  it('is the panel once its only title is taken out', async () => {
+    const view = await choosing([1]);
+
+    await view.user.click(remove(1));
+
+    expect(region()).toHaveFocus();
+  });
+
+  it('is the panel once the articles it sent are accepted', async () => {
+    const view = await choosing([1, 2]);
+
+    await view.user.click(send('Analyze selected 2 articles'));
+
+    await waitFor(() => expect(titleList()).toBeNull());
+    expect(region()).toHaveFocus();
+  });
+
+  it('is the panel once a refusal took out every title', async () => {
+    const view = await choosing([1], refusing('1'));
+
+    await view.user.click(send('Analyze selected 1 article'));
+
+    expect(await screen.findByRole('alert')).toBeVisible();
+    expect(region()).toHaveFocus();
+  });
+
+  it('stays on the button when a refusal leaves titles to send', async () => {
+    const view = await choosing([1, 2], refusing('1'));
+
+    await view.user.click(send('Analyze selected 2 articles'));
+
+    expect(await screen.findByRole('alert')).toBeVisible();
+    expect(send('Analyze selected 1 article')).toHaveFocus();
+  });
+
+  it('stays where the person took it while the articles were sent', async () => {
+    const answer = deferred<Response>();
+    const view = await choosing([1, 2], { [ROUTE]: () => answer.promise });
+    await view.user.click(send('Analyze selected 2 articles'));
+    act(() => {
+      box(4).focus();
+    });
+
+    answer.resolve(answered(1, 2));
+
+    await waitFor(() => expect(titleList()).toBeNull());
+    expect(box(4)).toHaveFocus();
+  });
+});
+
+describe('handing the focus on', () => {
+  const sentAll = () =>
+    json(202, {
+      requests: picked.map(({ id }) => ({
+        id: requestId(Number(id)),
+        articleId: id,
+        status: 'pending',
+      })),
+    });
+
+  it('names the articles sent, in order, before it tells who is waiting for them', async () => {
+    const returnFocus = vi.fn();
+    const view = renderPanel({ returnFocus });
+
+    await view.user.click(send());
+
+    await waitFor(() => expect(view.onSubmitted).toHaveBeenCalledTimes(1));
+    expect(returnFocus).toHaveBeenCalledTimes(1);
+    expect(returnFocus).toHaveBeenCalledWith(['1', '2', '3']);
+    expect(returnFocus.mock.invocationCallOrder[0]).toBeLessThan(
+      view.onSubmitted.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('names the last title taken out', async () => {
+    const returnFocus = vi.fn();
+    const onRemove = vi.fn();
+    const view = renderPanel({ items: picked.slice(1, 2), onRemove, returnFocus });
+
+    await view.user.click(screen.getByRole('button', { name: 'Remove A <b>bold</b> claim' }));
+
+    expect(returnFocus).toHaveBeenCalledTimes(1);
+    expect(returnFocus).toHaveBeenCalledWith(['2']);
+    expect(onRemove).toHaveBeenCalledWith('2');
+  });
+
+  it('is not asked while other titles are left', async () => {
+    const returnFocus = vi.fn();
+    const view = renderPanel({ onRemove: vi.fn(), returnFocus });
+
+    await view.user.click(screen.getByRole('button', { name: 'Remove A <b>bold</b> claim' }));
+
+    expect(returnFocus).not.toHaveBeenCalled();
+  });
+
+  it('is not asked for a focus the person took elsewhere while the articles were sent', async () => {
+    const answer = deferred<Response>();
+    const returnFocus = vi.fn();
+    const onSubmitted = vi.fn();
+    const view = renderReader(
+      <>
+        <button type="button">Elsewhere</button>
+        <AnalyzePanel
+          subscription={off}
+          items={picked}
+          onSubmitted={onSubmitted}
+          returnFocus={returnFocus}
+        />
+      </>,
+      { routes: { [ROUTE]: () => answer.promise } },
+    );
+    await view.user.click(send());
+    const elsewhere = screen.getByRole('button', { name: 'Elsewhere' });
+    act(() => {
+      elsewhere.focus();
+    });
+
+    answer.resolve(sentAll());
+
+    await waitFor(() => expect(onSubmitted).toHaveBeenCalledTimes(1));
+    expect(returnFocus).not.toHaveBeenCalled();
+    expect(elsewhere).toHaveFocus();
+  });
+
+  it('is not asked once the panel is gone', async () => {
+    const answer = deferred<Response>();
+    const returnFocus = vi.fn();
+    const view = renderPanel({ returnFocus }, { routes: { [ROUTE]: () => answer.promise } });
+    await view.user.click(send());
+    await waitFor(() => expect(analyzed(view)).toHaveLength(1));
+
+    view.unmount();
+    answer.resolve(sentAll());
+
+    await waitFor(() => expect(view.onSubmitted).toHaveBeenCalledTimes(1));
+    expect(returnFocus).not.toHaveBeenCalled();
+  });
+});
+
+describe('an answer that comes after the panel is gone', () => {
+  it('still gives the cached articles their requests, refreshes them and hands the requests on', async () => {
+    const answer = deferred<Response>();
+    const view = renderPanel(
+      { items: picked.slice(0, 1) },
+      { routes: { [ROUTE]: () => answer.promise } },
+    );
+    const stale = seed(view);
+    const listed = [...articleKeys.all(USER_A_ID), 'list', 'for_you'];
+    view.queryClient.setQueryData<ArticleListResponse>(listed, page(picked));
+    await view.user.click(send());
+    await waitFor(() => expect(analyzed(view)).toHaveLength(1));
+
+    view.unmount();
+    answer.resolve(
+      json(202, { requests: [{ id: requestId(1), articleId: '1', status: 'pending' }] }),
+    );
+
+    await waitFor(() => expect(view.onSubmitted).toHaveBeenCalledTimes(1));
+    expect(view.onSubmitted).toHaveBeenCalledWith([
+      { id: requestId(1), articleId: '1', status: 'pending' },
+    ]);
+    expect(
+      view.queryClient
+        .getQueryData<ArticleListResponse>(listed)!
+        .items.map(({ analysis }) => analysis),
+    ).toEqual([
+      { mode: 'off', status: 'pending', requestId: requestId(1) },
+      picked[1]!.analysis,
+      picked[2]!.analysis,
+    ]);
+    expect(stale.articlesStale()).toBe(true);
+    expect(stale.subscriptionsStale()).toBe(true);
+  });
+});

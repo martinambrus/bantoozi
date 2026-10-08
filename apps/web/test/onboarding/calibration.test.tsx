@@ -351,6 +351,23 @@ describe('analyzing the chosen articles', () => {
     expect(screen.queryByRole('list', { name: 'Selected articles' })).not.toBeInTheDocument();
     expect(opened.app.calls(ANALYZE)).toHaveLength(0);
   });
+
+  it('keeps the focus in the panel as titles are taken out and once they are sent', async () => {
+    const opened = await openStep();
+    await choose(opened, 1, 2, 3);
+    const panel = screen.getByRole('region', { name: 'Articles to analyze' });
+
+    await opened.app.user.click(within(panel).getByRole('button', { name: 'Remove Article 2' }));
+    expect(within(panel).getByRole('button', { name: 'Remove Article 3' })).toHaveFocus();
+    await opened.app.user.click(
+      screen.getByRole('button', { name: 'Start training and analyze these 2' }),
+    );
+
+    await waitFor(() =>
+      expect(within(panel).queryByRole('list', { name: 'Selected articles' })).toBeNull(),
+    );
+    expect(panel).toHaveFocus();
+  });
 });
 
 describe('progress while the requests run', () => {
