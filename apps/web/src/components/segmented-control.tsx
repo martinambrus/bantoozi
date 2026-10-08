@@ -65,7 +65,7 @@ export function SegmentedControl<V extends string>({
     event.preventDefault();
     if (target === undefined) return;
     const next = target.value;
-    onValueChange(next);
+    if (next !== value) onValueChange(next);
     const radios = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]'));
     radios.find((radio) => radio.dataset['value'] === next)?.focus();
   }
@@ -95,7 +95,9 @@ export function SegmentedControl<V extends string>({
               data-value={option.value}
               tabIndex={option.value === tabStop ? 0 : -1}
               disabled={option.disabled}
-              onClick={() => onValueChange(option.value)}
+              onClick={() => {
+                if (option.value !== value) onValueChange(option.value);
+              }}
               className={cx(
                 'inline-flex min-h-11 cursor-pointer items-center justify-center rounded-md px-4 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60',
                 selected

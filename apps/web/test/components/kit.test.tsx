@@ -321,6 +321,28 @@ describe('SegmentedControl', () => {
     expect(radio('Dark')).toHaveFocus();
   });
 
+  it('reports a change only when another option is chosen', async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    renderUi(
+      <SegmentedControl
+        label="Theme"
+        options={options}
+        value="system"
+        onValueChange={onValueChange}
+      />,
+    );
+
+    await user.click(radio('System'));
+    radio('System').focus();
+    await user.keyboard('{Home}');
+    expect(onValueChange).not.toHaveBeenCalled();
+
+    await user.click(radio('Dark'));
+    expect(onValueChange).toHaveBeenCalledTimes(1);
+    expect(onValueChange).toHaveBeenCalledWith('dark');
+  });
+
   it('jumps to the first and last enabled option with Home and End', async () => {
     const user = userEvent.setup();
     renderUi(<Harness initial="dark" />);
