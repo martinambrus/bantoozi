@@ -75,6 +75,17 @@ describe('profile (spec 09 §7)', () => {
     expect(zone()).toHaveValue('UTC');
   });
 
+  it('offers UTC, which the browser does not list, to an account in another zone', async () => {
+    await openSettings({ me: makeMe({ email: EMAIL, timezone: 'Europe/Prague' }) });
+
+    const values = within(zone())
+      .getAllByRole('option')
+      .map((item) => item.getAttribute('value'));
+    expect(values).toContain('UTC');
+    expect(values).toContain('Europe/Prague');
+    expect(new Set(values).size).toBe(values.length);
+  });
+
   it('offers the three themes', async () => {
     await openSettings();
 

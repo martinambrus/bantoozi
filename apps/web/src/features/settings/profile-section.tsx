@@ -55,7 +55,10 @@ function patchOf(draft: Draft, me: Me): MePatch {
   return patch;
 }
 
-/** Every zone the browser knows, and the account's own even when the browser does not list it. */
+/**
+ * Every zone the browser knows, UTC (which the browsers leave out of that list), and the account's
+ * own even when the browser does not list it.
+ */
 function timeZones(current: string): string[] {
   let known: string[] = [];
   try {
@@ -63,7 +66,8 @@ function timeZones(current: string): string[] {
   } catch {
     // A browser without the list still shows the zone that is in use.
   }
-  return known.includes(current) ? known : [current, ...known];
+  const zones = known.includes('UTC') ? known : ['UTC', ...known];
+  return zones.includes(current) ? zones : [current, ...zones];
 }
 
 export function ProfileSection() {
