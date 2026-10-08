@@ -125,6 +125,11 @@ export interface DispatchOptions {
   replayed?: boolean;
 }
 
+/**
+ * At most 500 items for `markRead` and 200 for `rateBulk` (spec 08 §5.3); `bulk()` rejects larger
+ * inputs with a RangeError and sends nothing. `rateBulk` never sends `analysisRequestId`: rating the
+ * visible items is a rating convenience, not a selected analysis (spec 09 §3.3).
+ */
 export type BulkInput =
   | { kind: 'markRead'; items: readonly ArticleListItem[] }
   /** Mark all read: `items` are the loaded unread rows the filter covers (optimistic only). */
@@ -212,9 +217,15 @@ export interface ReaderActionsOptions {
   now?: () => number;
   /** Idempotency keys and action ids; defaults to `crypto.randomUUID`. */
   newId?: () => string;
-  /** Transient failures (network, 429, 5xx) are retried this many times with backoff. Default 2. */
+  /**
+   * Transient failures (network, 429, 5xx) of actions, bulk requests and undo requests are retried
+   * this many times with backoff, under the same key and body. Default 2.
+   */
   maxRetries?: number;
-  /** Backoff before retry `n` (1-based) when no Retry-After is given. Default 500 ms × 2^(n−1). */
+  /**
+   * Backoff before retry `n` (1-based). Default 500 ms × 2^(n−1). A `retryAfterMs` on the error
+   * replaces it for that attempt.
+   */
   backoffMs?: (attempt: number) => number;
   /** Called once per settled action (toasts, count invalidation). */
   onSettled?: (handle: ActionHandle, result: ActionResult) => void;
@@ -231,7 +242,8 @@ export interface ReaderActions {
   /**
    * The item as the reader should see it: the newest known server state (by `stateVersion`) with the
    * optimistic changes of unsettled actions applied in order. Returns the same object when nothing
-   * changes, so React memoization holds.
+   * changes, so React memoization holds: repeated calls with the same item object return the same
+   * result object until `getVersion()` changes.
    */
   view<T extends ArticleListItem>(item: T): T;
   dispatch(item: ArticleListItem, action: ReaderAction, options?: DispatchOptions): ActionHandle;
@@ -239,17 +251,30 @@ export interface ReaderActions {
   release(actionId: string, patch?: { reason?: RatingReason; hide?: boolean }): void;
   /** Drop a held or not-yet-sent action and its optimistic change; false once it was sent. */
   cancel(actionId: string): boolean;
-  /** Re-queue a failed action with its original body and key. */
+  /** Re-queue a `failed` action with its original body and key; null for any other status. */
   retry(actionId: string): ActionHandle | null;
+  /**
+   * Held or queued: cancelled locally (`cancelled`, no request). In flight: waits for the ack, then
+   * undoes. An unknown id, or an action that settled without a receipt (`failed`, `stale`), is
+   * `refused` 'unknown' with no request; an acknowledged no-op (its `stateVersion` did not change)
+   * is `refused` 'not_undoable' with no request.
+   */
   undo(actionId: string): Promise<UndoResult>;
   bulk(input: BulkInput): Promise<BulkResult>;
-  /** Acknowledged undoable actions of the last 10 minutes, newest first. */
+  /**
+   * Acknowledged undoable actions and bulk actions (both mark-read forms, rate-bulk) of the last
+   * 10 minutes, newest first, without server no-ops. Expiry is lazy: an entry past 10 minutes is
+   * dropped when read, without a notification.
+   */
   recent(): readonly RecentAction[];
   get(actionId: string): ActionHandle | undefined;
   subscribe(listener: () => void): () => void;
   /** Increments on every change of displayed state or recent actions. */
   getVersion(): number;
-  /** Account reset: abort in-flight requests, ignore their answers, forget everything. */
+  /**
+   * Account reset: abort in-flight requests, ignore their answers, forget everything. The `result`
+   * of every unsettled action resolves as `cancelled`, without `onSettled`.
+   */
   reset(): void;
 }
 
