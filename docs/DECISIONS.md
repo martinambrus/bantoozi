@@ -1323,3 +1323,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   idle list every 30 s re-sorts it and drops rows under the reader (an item read or rated on another
   device, a newly scored arrival), so the idle poll refreshes the counts only. The list is reloaded
   by the 5-second busy poll, the Refresh control in the header and navigation. Spec 09 §1 updated.
+- D-153: 2026-10-08 M6-T9 — spec 09 §9 scenario 9 expected remembered images to load "in
+  list/detail", but spec 03 §6.3 removes embedded images from the stored display HTML for the beta
+  and spec 09 §3.2 gives the detail no image of its own, so the only article image is the list
+  thumbnail (`image_url`). The scenario checks the thumbnails in the list and, in the detail and the
+  saved view, the image note and `effectiveImagesAllowed`, and that a blocked image is never
+  requested. Spec 09 §9 updated.

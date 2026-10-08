@@ -449,8 +449,10 @@ Test files are named `*.pw.ts` so Vitest never picks them up (spec 01 §6).
    no archived image/media/attachment binary or embedded image data is included, even when that
    feed allows normal remote images. Partial/failed capture remains visibly distinct, and another
    account cannot read the snapshot.
-9. **Remembered images:** global images off, per-feed Always allow → images load in list/detail;
-   reload/login on another context and unsubscribe → bookmarked saved view keeps that source choice.
+9. **Remembered images:** global images off, per-feed Always allow → the list's thumbnails load and
+   the detail no longer says that this feed's images are blocked (stored article HTML holds no images
+   in the beta, spec 03 §6.3; D-153); reload/login on another context and unsubscribe → bookmarked
+   saved view keeps that source choice.
    Always block overrides global on. Inherit resets to the global value; no blocked placeholder
    secretly triggers a network request.
 10. **Credentials:** admin stages a fixture key, validation fails and the old key remains active;
