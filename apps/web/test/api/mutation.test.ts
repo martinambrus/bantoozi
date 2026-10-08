@@ -98,6 +98,111 @@ describe('useApiMutation', () => {
     expect(keyOf(requests[1])).not.toBe(keyOf(requests[0]));
   });
 
+  describe('a failed intent sent again', () => {
+    const report = { added: 1, existing: 0, invalid: [] };
+
+    it('keeps the key when the same input comes back in a new object', async () => {
+      let attempt = 0;
+      const { wrapper, requests } = setup(() => {
+        attempt += 1;
+        if (attempt === 1) throw new TypeError('Failed to fetch');
+        return json(200, makeMe({ displayName: 'Ann' }));
+      });
+      const { result } = renderHook(() => useApiMutation(routes.meUpdate), { wrapper });
+
+      await inAct(() =>
+        result.current.mutateAsync({ body: { displayName: 'Ann' } }).catch(() => {}),
+      );
+      await inAct(() => result.current.mutateAsync({ body: { displayName: 'Ann' } }));
+
+      expect(requests).toHaveLength(2);
+      expect(keyOf(requests[0])).toMatch(UUID_V4);
+      expect(keyOf(requests[1])).toBe(keyOf(requests[0]));
+    });
+
+    it('keeps it after a refusal too, since nothing of a refused request was kept', async () => {
+      let attempt = 0;
+      const { wrapper, requests } = setup(() => {
+        attempt += 1;
+        return attempt === 1 ? failure(409, 'QUOTA_EXCEEDED') : json(200, makeMe());
+      });
+      const { result } = renderHook(() => useApiMutation(routes.meUpdate), { wrapper });
+
+      await inAct(() => result.current.mutateAsync(rename).catch(() => {}));
+      await inAct(() => result.current.mutateAsync({ ...rename }));
+
+      expect(keyOf(requests[1])).toBe(keyOf(requests[0]));
+    });
+
+    it('makes a new key for another input', async () => {
+      const { wrapper, requests } = setup(() => {
+        throw new TypeError('Failed to fetch');
+      });
+      const { result } = renderHook(() => useApiMutation(routes.meUpdate), { wrapper });
+
+      await inAct(() =>
+        result.current.mutateAsync({ body: { displayName: 'Ann' } }).catch(() => {}),
+      );
+      await inAct(() =>
+        result.current.mutateAsync({ body: { displayName: 'Bea' } }).catch(() => {}),
+      );
+
+      expect(keyOf(requests[1])).not.toBe(keyOf(requests[0]));
+    });
+
+    it('makes a new key once the intent has succeeded', async () => {
+      let attempt = 0;
+      const { wrapper, requests } = setup(() => {
+        attempt += 1;
+        if (attempt === 1) throw new TypeError('Failed to fetch');
+        return json(200, makeMe());
+      });
+      const { result } = renderHook(() => useApiMutation(routes.meUpdate), { wrapper });
+
+      await inAct(() => result.current.mutateAsync({ ...rename }).catch(() => {}));
+      await inAct(() => result.current.mutateAsync({ ...rename }));
+      await inAct(() => result.current.mutateAsync({ ...rename }));
+
+      expect(keyOf(requests[1])).toBe(keyOf(requests[0]));
+      expect(keyOf(requests[2])).not.toBe(keyOf(requests[1]));
+    });
+
+    it('makes a new key after the server says the key belongs to another request', async () => {
+      let attempt = 0;
+      const { wrapper, requests } = setup(() => {
+        attempt += 1;
+        if (attempt === 1) throw new TypeError('Failed to fetch');
+        return attempt === 2 ? failure(409, 'IDEMPOTENCY_CONFLICT') : json(200, makeMe());
+      });
+      const { result } = renderHook(() => useApiMutation(routes.meUpdate), { wrapper });
+
+      await inAct(() => result.current.mutateAsync({ ...rename }).catch(() => {}));
+      await inAct(() => result.current.mutateAsync({ ...rename }).catch(() => {}));
+      await inAct(() => result.current.mutateAsync({ ...rename }));
+
+      expect(keyOf(requests[1])).toBe(keyOf(requests[0]));
+      expect(keyOf(requests[2])).not.toBe(keyOf(requests[1]));
+    });
+
+    it('never matches a file: each upload gets its own key', async () => {
+      let attempt = 0;
+      const { wrapper, requests } = setup(() => {
+        attempt += 1;
+        if (attempt === 1) throw new TypeError('Failed to fetch');
+        return json(200, report);
+      });
+      const { result } = renderHook(() => useApiMutation(routes.subscriptionsImportOpml), {
+        wrapper,
+      });
+      const file = new File(['<opml/>'], 'feeds.opml', { type: 'text/x-opml' });
+
+      await inAct(() => result.current.mutateAsync({ body: { file } }).catch(() => {}));
+      await inAct(() => result.current.mutateAsync({ body: { file } }));
+
+      expect(keyOf(requests[1])).not.toBe(keyOf(requests[0]));
+    });
+  });
+
   it('sends the key the caller gives', async () => {
     const { wrapper, requests } = setup(() => json(200, makeMe()));
     const { result } = renderHook(() => useApiMutation(routes.meUpdate), { wrapper });

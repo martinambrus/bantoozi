@@ -390,7 +390,7 @@ describe('creating a card', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     const keys = app.calls('POST /cards').map((request) => request.headers.get('Idempotency-Key'));
     expect(keys).toHaveLength(2);
-    expect(keys[0]).not.toBe(keys[1]);
+    expect(keys[1]).toBe(keys[0]);
   });
 
   it('closes without a request on Cancel and on Escape', async () => {
