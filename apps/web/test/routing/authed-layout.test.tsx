@@ -9,8 +9,15 @@ import { createI18n } from '../../src/i18n/index.js';
 import { createAppRouter } from '../../src/router.js';
 import { makeMe } from '../session/fixtures.js';
 
-// The wizard page is the simplest screen below the `_authed` layout. Only i18next is provided,
-// which shows the layout needs neither a QueryClientProvider nor a SessionProvider.
+// The layout is under test, so the screen below it and the prompt it mounts, which read queries, are
+// stood in for. Only i18next is provided, which shows the layout itself needs neither a
+// QueryClientProvider nor a SessionProvider.
+vi.mock('../../src/features/onboarding/onboarding-page.js', async () => {
+  const { createElement } = await import('react');
+  return { OnboardingPage: () => createElement('h1', null, 'Welcome') };
+});
+vi.mock('../../src/features/why/did-you-like-prompt.js', () => ({ DidYouLikePrompt: () => null }));
+
 async function renderOnboarding(queryClient: QueryClient) {
   const router = createAppRouter(
     { queryClient, loadMe: () => Promise.resolve(makeMe()) },

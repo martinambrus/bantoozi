@@ -1,6 +1,6 @@
 import type { ArticleListItem, Me } from '@bantoozi/shared';
-import { QueryClientContext, useQueryClient } from '@tanstack/react-query';
-import { useContext, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApiMutation } from '../../api/mutation.js';
@@ -22,7 +22,11 @@ const LESS_OFTEN: Partial<Record<FeedbackPrompt, FeedbackPrompt>> = {
   occasionally: 'never',
 };
 
-function Prompt() {
+/**
+ * "Did you like it?" (spec 09 §3.6): after the reader came back from an original and the server
+ * asked for a prompt, one question at a time.
+ */
+export function DidYouLikePrompt() {
   const { t } = useTranslation('why');
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -93,13 +97,4 @@ function Prompt() {
       </div>
     </Sheet>
   );
-}
-
-/**
- * "Did you like it?" (spec 09 §3.6): after the reader came back from an original and the server
- * asked for a prompt, one question at a time. The authed layout renders it without any provider
- * of its own in its tests, so it waits for a query client before it listens to anything.
- */
-export function DidYouLikePrompt() {
-  return useContext(QueryClientContext) === undefined ? null : <Prompt />;
 }
