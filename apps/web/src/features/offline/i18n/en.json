@@ -37,5 +37,14 @@
   "replay": {
     "expired_one": "{{count}} offline change expired and was not sent",
     "expired_other": "{{count}} offline changes expired and were not sent"
+  },
+  "saved": {
+    "line": "Offline. Showing articles saved on this device at {{time}}."
+  },
+  "article": {
+    "connect": "Connect to load this article"
+  },
+  "waiting": {
+    "badge": "Waiting to sync"
   }
 }

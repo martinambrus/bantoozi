@@ -4,8 +4,8 @@ import {
   type ArticleListItem,
   type BookmarkSnapshot,
 } from '@bantoozi/shared';
-import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApi } from '../../api/context.js';
@@ -14,8 +14,19 @@ import { Button } from '../../components/button.js';
 import { ExternalIcon } from '../../components/icons.js';
 import { SafeHtml } from '../../components/safe-html.js';
 import { QueryState } from '../../components/states/query-state.js';
+import { saveDetail } from '../../offline/cache.js';
+import type { OfflineDetail } from '../../offline/projection.js';
 import { useAccountId } from '../../session/context.js';
-import { useObserveItems, useReaderItem, useReturnTracker } from '../reader/actions/provider.js';
+import { ConnectToLoad } from '../offline/connect-to-load.js';
+import { listItemOf, useSavedDetail } from '../offline/saved-copy.js';
+import { useLostConnection, useReconnect } from '../offline/use-connection.js';
+import { WaitingToSync } from '../offline/waiting-to-sync.js';
+import {
+  useObserveItems,
+  useReaderItem,
+  useReturnTracker,
+  useWaitingChanges,
+} from '../reader/actions/provider.js';
 import { Paragraphs, SavedCopy } from './article-body.js';
 import { CapturePanel } from './capture-panel.js';
 import { DetailActions } from './detail-actions.js';
@@ -52,7 +63,7 @@ function freshest(row: ArticleListItem, detail: ArticleListItem | undefined): Ar
 }
 
 interface DetailContentProps {
-  data: ArticleDetailDto;
+  data: Pick<ArticleDetailDto, 'translation' | 'lang' | 'excerptHtml' | 'bodyLead'>;
   imagesAllowed: boolean;
   snapshot: BookmarkSnapshot | null;
 }
@@ -96,6 +107,31 @@ function DetailContent({ data, imagesAllowed, snapshot }: DetailContentProps) {
   );
 }
 
+interface DetailBodyProps {
+  detail: UseQueryResult<ArticleDetailDto>;
+  /** What the device kept of the article, once looked for, while there is no connection. */
+  offline: OfflineDetail | null | undefined;
+  lost: boolean;
+  imagesAllowed: boolean;
+  snapshot: BookmarkSnapshot | null;
+}
+
+/** The text of the article: from the server, else from the device, else a word about the connection. */
+function DetailBody({ detail, offline, lost, imagesAllowed, snapshot }: DetailBodyProps) {
+  if (!lost) {
+    return (
+      <QueryState query={detail}>
+        {(loaded) => (
+          <DetailContent data={loaded} imagesAllowed={imagesAllowed} snapshot={snapshot} />
+        )}
+      </QueryState>
+    );
+  }
+  if (offline === undefined) return null;
+  if (offline === null) return <ConnectToLoad onRetry={() => void detail.refetch()} />;
+  return <DetailContent data={offline} imagesAllowed={imagesAllowed} snapshot={snapshot} />;
+}
+
 function DetailView({ item: row, sourceFeedId, saved = false, onWhyThis }: ArticleDetailProps) {
   const { t } = useTranslation('article');
   const api = useApi();
@@ -117,19 +153,34 @@ function DetailView({ item: row, sourceFeedId, saved = false, onWhyThis }: Artic
         { signal },
       ),
   });
-  const { data, refetch } = detail;
+  const { data, dataUpdatedAt, refetch } = detail;
+
+  useEffect(() => {
+    if (data !== undefined) void saveDetail(accountId, data);
+  }, [accountId, data, dataUpdatedAt]);
+
+  const lost = useLostConnection(detail);
+  const kept = useSavedDetail(accountId, row.id, lost);
+  const offline = lost ? kept : undefined;
+  const retry = useCallback(() => void refetch({ cancelRefetch: false }), [refetch]);
+  useReconnect(lost, retry);
+  const offlineItem = useMemo(() => (offline ? listItemOf(offline) : undefined), [offline]);
+  const content = data ?? offline ?? undefined;
 
   const observed = useMemo(() => (data === undefined ? [] : [data]), [data]);
   useObserveItems(observed);
-  const shown = useReaderItem(freshest(row, data));
+  const shown = useReaderItem(freshest(row, data ?? offlineItem));
+
+  const waiting = useWaitingChanges(row.id);
+  const bookmarkWaiting = waiting.some((change) => change.action.type === 'bookmark');
 
   // The saved copy in the Bookmarks view, and then the fence of every action (spec 08 §5.2).
-  const snapshot = saved ? (data?.bookmarkSnapshot ?? null) : null;
+  const snapshot = saved ? (content?.bookmarkSnapshot ?? null) : null;
   const fence =
     snapshot === null ? undefined : { id: snapshot.id, contentRevision: snapshot.contentRevision };
   const actions = useArticleActions(shown, fence);
   // Until the saved copy is known, the fence of an action would be a guess.
-  const ready = !saved || data !== undefined;
+  const ready = !saved || content !== undefined;
 
   const capturePending = shown.bookmarkedAt !== null && shown.bookmarkCapture?.status === 'pending';
   useEffect(() => {
@@ -161,16 +212,15 @@ function DetailView({ item: row, sourceFeedId, saved = false, onWhyThis }: Artic
           {t('detail.by', { author: shown.author })}
         </p>
       )}
-      <QueryState query={detail}>
-        {(loaded) => (
-          <DetailContent
-            data={loaded}
-            imagesAllowed={shown.effectiveImagesAllowed}
-            snapshot={snapshot}
-          />
-        )}
-      </QueryState>
-      {shown.bookmarkedAt === null || shown.bookmarkCapture === null ? null : (
+      <DetailBody
+        detail={detail}
+        offline={offline}
+        lost={lost}
+        imagesAllowed={shown.effectiveImagesAllowed}
+        snapshot={snapshot}
+      />
+      {waiting.length === 0 ? null : <WaitingToSync />}
+      {bookmarkWaiting || shown.bookmarkedAt === null || shown.bookmarkCapture === null ? null : (
         <CapturePanel capture={shown.bookmarkCapture} onRetry={actions.retryCapture} />
       )}
       {imageFeedId === null ? null : <ImagePolicyPanel feedId={imageFeedId} />}

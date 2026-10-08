@@ -9,6 +9,7 @@ import { WarningIcon } from '../../components/icons.js';
 import { EmptyState } from '../../components/states/empty-state.js';
 import { QueryState } from '../../components/states/query-state.js';
 import { ArticleRow } from '../article/article-row.js';
+import { SavedNotice } from '../offline/saved-notice.js';
 import { useReaderActions } from './actions/provider.js';
 import { HiddenCauses } from './hidden-causes.js';
 import { useFeedTraining } from './training-selection.js';
@@ -192,15 +193,17 @@ export function ArticleList({
   simple,
 }: ArticleListProps) {
   const { t } = useTranslation('reader');
-  const { query, canLoadMore, loadMore, reload } = list;
+  const { query, canLoadMore, loadMore, reload, saved, looking } = list;
   const training = useFeedTraining(view, listRef);
   const sentinel = useSentinel(canLoadMore, () => void loadMore());
   const failed = query.isError && query.data !== undefined && !isCursorRefused(query.error);
 
+  if (looking) return null;
+
   return (
     <QueryState
       query={{
-        data: query.data === undefined ? undefined : visible,
+        data: query.data === undefined && saved === null ? undefined : visible,
         error: query.error,
         status: query.status,
         refetch: () => void reload(),
@@ -210,6 +213,7 @@ export function ArticleList({
     >
       {(rows) => (
         <div className="flex flex-col gap-3">
+          {saved === null ? null : <SavedNotice savedAt={saved.savedAt} />}
           {training.panel}
           <ul ref={listRef} role="list" tabIndex={-1} className="flex flex-col gap-3 outline-none">
             {rows.map((item) => (

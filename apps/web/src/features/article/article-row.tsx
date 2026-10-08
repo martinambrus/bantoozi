@@ -7,7 +7,8 @@ import { Checkbox } from '../../components/checkbox.js';
 import { FOCUS_RING, cx } from '../../components/cx.js';
 import { PlusIcon } from '../../components/icons.js';
 import { VisuallyHidden } from '../../components/visually-hidden.js';
-import { useReaderItem } from '../reader/actions/provider.js';
+import { WaitingToSync } from '../offline/waiting-to-sync.js';
+import { useReaderItem, useWaitingChanges } from '../reader/actions/provider.js';
 import { BookmarkButton, RateButtons } from './article-buttons.js';
 import { Chip, ChipButton } from './chip-button.js';
 import { formatRelativeTime } from './format.js';
@@ -56,6 +57,8 @@ export function ArticleRow({
   const shown = useReaderItem(item);
   const actions = useArticleActions(shown);
   const titleId = useId();
+  const waitingId = useId();
+  const waiting = useWaitingChanges(item.id).length > 0;
   const [clusterOpen, setClusterOpen] = useState(false);
 
   const labels = useLabels(shown.labelIds.length + shown.labelSuggestions.length > 0);
@@ -118,6 +121,7 @@ export function ArticleRow({
           </span>
           {shown.translationAvailable ? <Badge>{t('row.translated')}</Badge> : null}
           {analysis === null ? null : <Badge tone={analysis.tone}>{t(analysis.label)}</Badge>}
+          {waiting ? <WaitingToSync id={waitingId} /> : null}
         </div>
 
         <h3 className="text-base leading-snug">
@@ -126,6 +130,7 @@ export function ArticleRow({
             type="button"
             lang={shown.lang ?? undefined}
             aria-expanded={expanded}
+            aria-describedby={waiting ? waitingId : undefined}
             onClick={onToggleExpand}
             className={cx(
               'min-h-11 w-full cursor-pointer rounded-md py-1 text-start',

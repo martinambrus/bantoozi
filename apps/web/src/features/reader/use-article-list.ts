@@ -5,12 +5,15 @@ import {
   useQueryClient,
   type InfiniteData,
 } from '@tanstack/react-query';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 
 import { useApi } from '../../api/context.js';
 import { isApiError } from '../../api/errors.js';
 import { routes } from '../../api/routes.js';
+import { saveView } from '../../offline/cache.js';
 import { useAccountId } from '../../session/context.js';
+import { useSavedList } from '../offline/saved-copy.js';
+import { useLostConnection, useReconnect } from '../offline/use-connection.js';
 import { PAGE_SIZE, articleListKey, listFilter } from './queries.js';
 import { viewKey, type ReaderView } from './view.js';
 
@@ -32,7 +35,8 @@ function refusesCursor(error: unknown): boolean {
  * The pages of a view (spec 09 §1, §3.1). A list the reader asks to start again, or whose next page
  * was refused, starts from page one, because a cursor belongs to the list it came from. Nothing
  * refetches it on focus, reconnect or mount: a list that moves while it is read is worse than one
- * that is a little old.
+ * that is a little old. Where there is no connection and the list was never loaded, the rows the
+ * device kept stand in for it until the connection is back and the list is loaded.
  */
 export function useArticleList(
   view: ReaderView,
@@ -81,9 +85,9 @@ export function useArticleList(
     refetchOnReconnect: false,
   });
 
-  const { data, fetchNextPage, hasNextPage, isFetching, isPlaceholderData } = query;
+  const { data, dataUpdatedAt, fetchNextPage, hasNextPage, isFetching, isPlaceholderData } = query;
 
-  const items = useMemo(() => {
+  const loaded = useMemo(() => {
     const seen = new Set<string>();
     const unique: ArticleListItem[] = [];
     for (const item of (data?.pages ?? []).flatMap((page) => page.items)) {
@@ -93,6 +97,15 @@ export function useArticleList(
     }
     return unique;
   }, [data]);
+
+  useEffect(() => {
+    const first = data?.pages[0];
+    if (first === undefined || isPlaceholderData) return;
+    void saveView(accountId, which, loaded, {
+      asOf: first.asOf,
+      datasetVersion: first.datasetVersion,
+    });
+  }, [accountId, which, data, dataUpdatedAt, loaded, isPlaceholderData]);
 
   const reload = useCallback(async () => {
     queryClient.setQueryData<Pages>(queryKey, (current) =>
@@ -110,6 +123,12 @@ export function useArticleList(
     [queryClient, queryKey],
   );
 
+  const lost = useLostConnection(query);
+  const kept = useSavedList(accountId, which, lost);
+  const saved = lost && kept ? kept : null;
+  const retry = useCallback(() => void poll(), [poll]);
+  useReconnect(saved !== null, retry);
+
   const canLoadMore = hasNextPage && !isPlaceholderData;
   const loadMore = useCallback(async () => {
     if (!canLoadMore || isFetching) return;
@@ -119,7 +138,11 @@ export function useArticleList(
 
   return {
     query,
-    items,
+    items: saved === null ? loaded : saved.items,
+    /** The copy the device kept, while it is what the list shows. */
+    saved,
+    /** Whether the copy the device kept is still being looked for. */
+    looking: lost && kept === undefined,
     rankingPending: data?.pages.at(-1)?.rankingPending ?? false,
     canLoadMore,
     loadMore,
