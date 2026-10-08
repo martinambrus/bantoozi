@@ -26,7 +26,7 @@ function inside(target: EventTarget | null, selector: string): boolean {
  * something else took it already.
  */
 export function keyIgnored(event: KeyboardEvent): boolean {
-  return shortcutBlocked(event) || inside(event.target, '[role="menu"]');
+  return shortcutBlocked(event);
 }
 
 /** CTRL+M, the one chord of the reader: Simple mode, as in FeedIt. */

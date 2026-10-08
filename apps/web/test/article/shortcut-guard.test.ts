@@ -63,6 +63,14 @@ describe('shortcutBlocked', () => {
     expect(press({}, document.querySelector('[contenteditable="plaintext-only"]')!)).toBe(true);
   });
 
+  it('blocks a key pressed in an open menu, or on one of its items', () => {
+    const menu = add('div', { role: 'menu' });
+    const item = add('button', { role: 'menuitem' }, menu);
+
+    expect(press({}, menu)).toBe(true);
+    expect(press({}, item)).toBe(true);
+  });
+
   it('lets a key through that is pressed where editing was switched off', () => {
     expect(press({}, add('div', { contenteditable: 'false' }))).toBe(false);
   });
