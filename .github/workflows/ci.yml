@@ -103,15 +103,18 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: playwright-${{ runner.os }}-chromium-firefox-webkit-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: Install Playwright Chromium
-        run: pnpm --filter @bantoozi/web exec playwright install --with-deps chromium
+      - name: Install Playwright browsers
+        run: pnpm --filter @bantoozi/web exec playwright install --with-deps chromium firefox webkit
 
-      # Starts the whole stack against a throwaway database and tears it down (spec 09 §9).
+      # Starts the whole stack against a throwaway database and tears it down (spec 09 §9). Firefox
+      # and WebKit run the critical sign-in and offline flows (spec 01 §1).
       - name: End-to-end tests
         run: pnpm e2e
         timeout-minutes: 20
+        env:
+          E2E_ALL_ENGINES: '1'
 
       - name: Upload end-to-end report
         if: failure()

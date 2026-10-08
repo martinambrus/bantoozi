@@ -37,6 +37,20 @@ const SERVICE_ENV: Record<string, string> = {
 
 const SHUTDOWN = { signal: 'SIGTERM', timeout: 10_000 } as const;
 
+// CI also runs the sign-in and offline flows of cross-browser.pw.ts in Firefox and WebKit (spec 01
+// §1); a local run needs only Chromium.
+const OTHER_ENGINES =
+  process.env['E2E_ALL_ENGINES'] === '1'
+    ? [
+        {
+          name: 'firefox',
+          testMatch: 'cross-browser.pw.ts',
+          use: { ...devices['Desktop Firefox'] },
+        },
+        { name: 'webkit', testMatch: 'cross-browser.pw.ts', use: { ...devices['Desktop Safari'] } },
+      ]
+    : [];
+
 export default defineConfig({
   testDir: 'e2e',
   testMatch: '**/*.pw.ts',
@@ -49,7 +63,7 @@ export default defineConfig({
   // A worker answers requests itself, out of reach of the routes and counters the specs rely on; a
   // spec that needs one opts in with `serviceWorkers: 'allow'`.
   use: { baseURL: URLS.app, serviceWorkers: 'block', trace: 'retain-on-failure' },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }, ...OTHER_ENGINES],
   webServer: [
     {
       name: 'fixtures',
