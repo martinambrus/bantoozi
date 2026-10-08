@@ -18,7 +18,10 @@
     "yours": "Your feeds",
     "count_one": "You follow {{count}} feed.",
     "count_other": "You follow {{count}} feeds.",
-    "needOne": "Add at least one feed to continue."
+    "needOne": "Add at least one feed to continue.",
+    "showAll_one": "Show all {{count}} feed",
+    "showAll_other": "Show all {{count}} feeds",
+    "showFewer": "Show fewer"
   },
   "bundles": {
     "title": "Starter bundles",

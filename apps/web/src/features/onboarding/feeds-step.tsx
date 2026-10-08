@@ -1,5 +1,5 @@
 import type { Subscription } from '@bantoozi/shared';
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '../../components/button.js';
@@ -13,9 +13,16 @@ import { StarterBundles } from './starter-bundles.js';
 import { StepFooter } from './step-footer.js';
 import type { StepProps } from './steps.js';
 
+/** How many feeds the list shows before the rest is asked for; a large OPML import is long. */
+const SHOWN_FEEDS = 10;
+
 function YourFeeds({ subscriptions }: { subscriptions: readonly Subscription[] }) {
   const { t } = useTranslation('onboarding');
   const headingId = useId();
+  const listId = useId();
+  const [all, setAll] = useState(false);
+  const folds = subscriptions.length > SHOWN_FEEDS;
+  const shown = folds && !all ? subscriptions.slice(0, SHOWN_FEEDS) : subscriptions;
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
       <h2 id={headingId} className="text-lg font-semibold">
@@ -27,11 +34,12 @@ function YourFeeds({ subscriptions }: { subscriptions: readonly Subscription[] }
             {t('feeds.count', { count: subscriptions.length })}
           </p>
           <ul
+            id={listId}
             role="list"
             aria-labelledby={headingId}
             className="divide-y divide-slate-200 dark:divide-slate-700"
           >
-            {subscriptions.map((subscription) => (
+            {shown.map((subscription) => (
               <li
                 key={subscription.feed.id}
                 className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2"
@@ -41,6 +49,20 @@ function YourFeeds({ subscriptions }: { subscriptions: readonly Subscription[] }
               </li>
             ))}
           </ul>
+          {folds ? (
+            <div>
+              <Button
+                variant="secondary"
+                aria-expanded={all}
+                aria-controls={listId}
+                onClick={() => {
+                  setAll(!all);
+                }}
+              >
+                {all ? t('feeds.showFewer') : t('feeds.showAll', { count: subscriptions.length })}
+              </Button>
+            </div>
+          ) : null}
         </>
       )}
     </section>

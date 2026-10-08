@@ -90,6 +90,39 @@ describe('welcome (spec 09 §4 step 1)', () => {
 });
 
 describe('feeds (spec 09 §4 step 2)', () => {
+  it('lists the first ten feeds and the rest on request', async () => {
+    const subscriptions = Array.from({ length: 12 }, (_, index) =>
+      feed(String(index + 1), `Feed ${index + 1}`),
+    );
+    const { app } = await openWizard('/onboarding?step=feeds', { subscriptions });
+
+    const yours = await screen.findByRole('list', { name: 'Your feeds' });
+    expect(within(yours).getAllByRole('listitem')).toHaveLength(10);
+    expect(screen.getByText('You follow 12 feeds.')).toBeVisible();
+    const toggle = screen.getByRole('button', { name: 'Show all 12 feeds' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    await app.user.click(toggle);
+
+    expect(within(yours).getAllByRole('listitem')).toHaveLength(12);
+    expect(screen.getByRole('button', { name: 'Show fewer' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
+  });
+
+  it('shows ten feeds or fewer without a toggle', async () => {
+    const subscriptions = Array.from({ length: 10 }, (_, index) =>
+      feed(String(index + 1), `Feed ${index + 1}`),
+    );
+    await openWizard('/onboarding?step=feeds', { subscriptions });
+
+    const yours = await screen.findByRole('list', { name: 'Your feeds' });
+    expect(within(yours).getAllByRole('listitem')).toHaveLength(10);
+    expect(screen.queryByRole('button', { name: /^Show (all|fewer)/ })).toBeNull();
+  });
+
   it('offers an OPML import and nothing to export', async () => {
     await openWizard('/onboarding?step=feeds');
 

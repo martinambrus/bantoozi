@@ -20,7 +20,12 @@
     "count_few": "Odoberáte {{count}} zdroje.",
     "count_many": "Odoberáte {{count}} zdroja.",
     "count_other": "Odoberáte {{count}} zdrojov.",
-    "needOne": "Ak chcete pokračovať, pridajte aspoň jeden zdroj."
+    "needOne": "Ak chcete pokračovať, pridajte aspoň jeden zdroj.",
+    "showAll_one": "Zobraziť {{count}} zdroj",
+    "showAll_few": "Zobraziť všetky {{count}} zdroje",
+    "showAll_many": "Zobraziť všetkých {{count}} zdroja",
+    "showAll_other": "Zobraziť všetkých {{count}} zdrojov",
+    "showFewer": "Zobraziť menej"
   },
   "bundles": {
     "title": "Štartovacie balíky",
