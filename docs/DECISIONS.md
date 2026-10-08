@@ -1303,6 +1303,71 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   the owner may rate more. `eval serve-rating --assignments <n>` (1–1,000, default 300) sets the
   per-context target; the equal language split, top-ups and every other rule are unchanged. Spec 10
   §2.2 and RATERS.md updated.
+- D-147: 2026-10-08 M3b — how the G1 golden set was collected, deviating from spec 10 §2.2–§2.3
+  with the owner's approval. (1) Rounds: `golden-v1` (owner-written cards, 300 ratings) and
+  `golden-v2` (300 ratings) failed G1 and were closed (D-145); `golden-v3` (450 assignments: 449 rated, 1 skipped;
+  `serve-rating --assignments 450`, D-146) passed. Each round used a new rater context of the one
+  owner participant, so the evidence is one person's. (2) Cards: for rounds 2 and 3 Claude (Opus 5.5)
+  drafted 10 interest and 2 never cards from the owner's free-text description of his interests,
+  without seeing any article of the round; the owner approved them unchanged, and they were entered
+  through the rating app. Spec 10 expects raters to write their own cards; LLM-drafted cards may be
+  better formulated than a typical user's, so the result may overstate what self-written cards
+  achieve. (3) Facet labels for `golden-v2` and `golden-v3` (100 per language each) are LLM labels,
+  not human ones: labeller `claude-opus-5.5`, from the title, excerpt and body lead the classifier
+  sees, following the `enrich-v1` definitions, blind to Jev's answers and to the ratings, and stored
+  through `saveFacetLabels` under that separate labeller id. They tune and check only the demotion
+  cutoffs; the pass rule uses the owner's ratings. Spec 10 §2.2 and PLAN §8.1 now allow
+  owner-approved assisted card drafting for the owner pilot only, and spec 10 §2.3 and PLAN §8.1
+  assisted facet labels under their own labeller id; `g1.json`'s notes disclose both. Locked
+  decision 3 (no LLM card authoring or labelling teachers in the product) is unchanged.
+- D-148: 2026-10-08 M3b-T4 — G1 decision and initial-beta eligibility (owner-approved 2026-10-08).
+  Evidence scope: `owner_pilot`, one participant, one context, 449 ratings on `golden-v3` (141
+  held-out: 61 likes, 80 dislikes; cs 34, en 54, sk 53 test ratings, all languages measured). Test
+  macro AUC 0.709 (95% CI [0.623, 0.793]) against the 0.70 rule, a narrow pass decided by the point
+  estimate; ΔAUC over the locked B1 baseline +0.192 [0.089, 0.295] (the interval on the report's
+  test-confirmation decision line, which is canonical; the per-scorer table row comes from a separate
+  bootstrap pass and reads [0.086, 0.289], a report-generator inconsistency left for M8); cs 0.837, en 0.642, sk 0.704. It
+  is one-person evidence and never multi-person validation. Applied settings (`eval apply-g1`):
+  language modes en/sk/cs native; card text mode `as_written` (unmeasured: all cards English); lanes
+  For You 0.65 and Maybe 0.35 (defaults kept, precision targets unmet on development); tiers default;
+  demotion cutoffs clickbait 0.8 and promotional 0.8 (defaults; unmet/unmeasured), shallow depth
+  0.45 and stale time-sensitive 0.75 (selected on development); recommended daily budget $1.00
+  (measured $0.2290 per 1,000 authorized uncached article revisions); tier-2 cap 300 (unmeasured: the
+  LibreTranslate runs E3/E3b and the Ollama run E4 stayed partial because of a few genuine
+  translation failures); Laya track recommended for Slovak (native falls short of English on the
+  bilingual comparison). Owner-review item the report's list omits: at the selected shallow-depth
+  cutoff (≤ 0.45) English test precision is 0.778 (7 of 9 flagged), below the 0.80 bar, while the
+  pooled precision is 0.909 and cs/sk are 1.000/0.875; the threshold schema is global, so the
+  cutoff stays 0.45 and M7/M8 should watch English shallow demotions. The owner approves initial invite-only beta eligibility under Q13 on this
+  evidence; Q1 still governs production budget-cap increases, and every other M8 launch requirement
+  applies. The locked baseline is B1: B1-T was ineligible (one LibreTranslate fallback in the
+  owner's corpus left it with no valid score), so the B1-versus-B1-T comparison is unmeasured and
+  ΔAUC is over B1 only; spec 10 §5 now states that an ineligible, unselected candidate does not
+  block the profile (the pass rule itself is absolute: macro AUC ≥ 0.70). Operational notes for M7/M8: Jev occasionally returns a score 0.01 outside spec 04's 0.02
+  consistency tolerance (an `invalid_response`, recovered by resuming the run), the Ollama Free plan
+  rate-limits long runs (recovered by resuming), and Jev attempts cost 1–8 % more than their
+  reservation estimate. Total M3b spend $1.21 (round 3: $0.51).
+  Budget forecast behind the $1.00/day (spec 10 §5 asks for the breakdown; the gate report prints
+  only the aggregate and a ×5 sensitivity, a report-generator gap left for M8): the gate assumed
+  1,000 authorized uncached article revisions per day (`--daily-revisions` default). For the initial
+  owner-only beta the components are: total fetched volume about 1,000–1,400 articles a day for the
+  owner's 25 feeds (the 66 golden feeds fetched about 3,200–3,800 a day, roughly 50 per feed,
+  dominated by a few classifieds and sports feeds); off feeds add no provider calls (spec 05 §9);
+  selected training is the owner's explicit calibration choice, bounded per feed and one-off;
+  newly active arrivals are the fetched articles of feeds the owner switches to automatic
+  classification, at most the fetched volume above; selected training and explicitly requested
+  history both go through `POST /subscriptions/:feedId/analyze` (spec 08 §11: at most 20 selected
+  revisions per request and 20 requests an hour, so at most 400 revisions an hour), and the owner's
+  expected use is calibration of about 5 requests (100 revisions) per newly trained feed plus a few
+  history requests (about 100 revisions) on a heavy day; reusable cache hits are about zero with one user. The report's $0.2290 per 1,000
+  divides E1's spend over all 656 processed articles, including facet-only articles that get Call A
+  but no card call; over the 449 rated articles that received the full production policy it is at
+  most $0.335 per 1,000 (a generator gap for M8). At that rate with the ×2 margin the $1.00 cap
+  still covers about 1,490 authorized revisions a day: above the owner's all-active arrivals, and
+  about at the cap on a heavy day that adds calibration and history (about 1,200–1,600). Beyond the
+  cap the spend guard defers further calls to the next day (spec 04), so the cap bounds spend
+  rather than promising same-day coverage of every one-off request. The ×5 sensitivity is $3.50/day. M8 replaces this with a
+  forecast from real usage before any cap increase (Q1).
 - D-150: 2026-10-08 M6-T9 — `TYPESAFE_MODEL` is registered for the API as well (spec 01 §3 said
   worker and eval). The API freezes `settings['engine.model_pin'].model` into each explicit analysis
   request and, until a worker has recorded the pin (M8, spec 05 §2), falls back to
