@@ -12,6 +12,11 @@ export function SessionProvider({ session, children }: { session: Session; child
   return <SessionContext.Provider value={session}>{children}</SessionContext.Provider>;
 }
 
+/** The session, or null where a screen is rendered without a `<SessionProvider>`. */
+export function useOptionalSession(): Session | null {
+  return useContext(SessionContext);
+}
+
 /** The session for the screens that sign in and out. */
 export function useSession(): Session {
   const session = useContext(SessionContext);

@@ -1,13 +1,15 @@
 import type { Me } from '@bantoozi/shared';
-import { act, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Language } from '../../src/i18n/index.js';
 import { offlineDb } from '../../src/offline/db.js';
 import { OFFLINE_DB } from '../../src/offline/names.js';
+import { noContent } from '../api/fake-fetch.js';
 import { READER_READS, createHarness } from '../auth/harness.js';
 import { freshIndexedDb } from '../offline/support.js';
 import { makeMe } from '../session/fixtures.js';
+import type { ApiRouteHandler } from '../support/app.js';
 import { libraries } from './fake-register.js';
 
 vi.mock('virtual:pwa-register/react', () => import('./fake-register.js'));
@@ -42,11 +44,18 @@ afterEach(() => {
 });
 
 /** Boots the app and checks that it asked for its service worker, once. */
-async function boot(options: { path?: string; me?: Me | null; language?: Language } = {}) {
-  const { path = '/login', me = null, language } = options;
+async function boot(
+  options: {
+    path?: string;
+    me?: Me | null;
+    language?: Language;
+    routes?: Record<string, ApiRouteHandler>;
+  } = {},
+) {
+  const { path = '/login', me = null, language, routes } = options;
   const app = await open({
     path,
-    server: { me, routes: READER_READS },
+    server: { me, routes: { ...READER_READS, ...routes } },
     ...(language === undefined ? {} : { language }),
   });
   expect(libraries).toHaveLength(1);
@@ -194,6 +203,21 @@ describe('a new version of the app', () => {
     });
 
     expect(toastCount()).toBe(0);
+  });
+
+  it('stays when the account signs out', async () => {
+    const { app, library } = await boot({
+      path: '/read/for_you',
+      me: makeMe({ displayName: 'Ada Lovelace' }),
+      routes: { 'POST /auth/logout': () => noContent() },
+    });
+    act(() => library.waiting());
+
+    await app.user.click(screen.getByRole('button', { name: 'Account menu: Ada Lovelace' }));
+    await app.user.click(screen.getByRole('menuitem', { name: 'Sign out' }));
+
+    await waitFor(() => expect(app.router.state.location.pathname).toBe('/login'));
+    expect(updateToast()).toHaveTextContent(COPY.en.ready);
   });
 
   it('is one toast however often a worker waits', async () => {

@@ -5,8 +5,8 @@ import { meKey } from '../../src/api/query-keys.js';
 import { createI18n } from '../../src/i18n/index.js';
 import { PENDING_LOGOUT_KEY } from '../../src/offline/names.js';
 import { failure, noContent } from '../api/fake-fetch.js';
-import { READER_READS, createHarness } from '../auth/harness.js';
-import { makeMe } from '../session/fixtures.js';
+import { CODE, READER_READS, createHarness, signInServer } from '../auth/harness.js';
+import { USER_B_ID, makeMe } from '../session/fixtures.js';
 import type { ApiRouteHandler } from '../support/app.js';
 
 const LOGOUT = 'POST /auth/logout';
@@ -14,6 +14,7 @@ const NOT_SIGNED_OUT_ON_SERVER =
   'Signed out on this device. Bantoozi will finish signing you out when you are back online.';
 
 const ada = makeMe({ displayName: 'Ada Lovelace', email: 'ada@example.com' });
+const grace = makeMe({ id: USER_B_ID, displayName: 'Grace Hopper', email: 'grace@example.com' });
 
 const { open } = createHarness();
 
@@ -189,6 +190,52 @@ describe('the signed-in app shell', () => {
       expect(app.calls(LOGOUT)).toHaveLength(2);
       expect(screen.queryByText(NOT_SIGNED_OUT_ON_SERVER)).toBeNull();
     });
+
+    it('takes the toasts of the account with it', async () => {
+      const answers: Array<() => Response> = [() => failure(403, 'FORBIDDEN'), () => noContent()];
+      const app = await open({
+        path: '/read/for_you',
+        server: signedIn(ada, () => answers.shift()!()),
+      });
+      await signOut(app);
+      await screen.findByText("You don't have permission to do that.");
+
+      await signOut(app);
+
+      await waitFor(() => expect(pathname(app)).toBe('/login'));
+      expect(screen.queryByText("You don't have permission to do that.")).toBeNull();
+    });
+
+    it.each([
+      ['another account', grace],
+      ['the same account', ada],
+    ])(
+      'keeps the note about an offline sign-out off the screens of %s that signs in next',
+      async (_name, next) => {
+        const logouts = [
+          () => Promise.reject(new TypeError('Failed to fetch')),
+          () => Promise.resolve(noContent()),
+        ];
+        const server = signInServer({
+          account: next,
+          routes: { [LOGOUT]: () => logouts.shift()!() },
+        });
+        server.me = ada;
+        const app = await open({ path: '/read/for_you', server });
+        await signOut(app);
+        expect(await screen.findByText(NOT_SIGNED_OUT_ON_SERVER)).toBeVisible();
+
+        await app.user.type(screen.getByLabelText('Email'), next.email);
+        await app.user.click(screen.getByRole('button', { name: 'Send code' }));
+        await app.user.type(await screen.findByLabelText('Code'), CODE);
+        await app.user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+        const menu = `Account menu: ${next.displayName ?? next.email}`;
+        expect(await screen.findByRole('button', { name: menu })).toBeVisible();
+        expect(screen.queryByText(NOT_SIGNED_OUT_ON_SERVER)).toBeNull();
+        expect(app.calls(LOGOUT)).toHaveLength(2);
+      },
+    );
 
     it('signs out even when the session had already ended', async () => {
       const app = await open({

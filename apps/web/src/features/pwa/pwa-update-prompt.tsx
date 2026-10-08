@@ -57,6 +57,7 @@ export function PwaUpdatePrompt() {
       message: notice === 'update' ? t('update.ready') : t('update.otherTab'),
       tone: 'info',
       durationMs: null,
+      device: true,
       action: {
         label: t('update.reload'),
         onAction: () => {
