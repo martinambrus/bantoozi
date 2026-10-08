@@ -1,3 +1,104 @@
 {
-  "title": "Article"
+  "row": {
+    "unread": "Unread",
+    "read": "Read",
+    "translated": "Translated",
+    "notAnalyzed": "Not analyzed",
+    "select": "Select {{title}}",
+    "labels": "Labels",
+    "addLabel": "Add label {{name}}",
+    "cluster_one": "+{{count}} source",
+    "cluster_other": "+{{count}} sources",
+    "clusterFeeds": "Also reported by"
+  },
+  "actions": {
+    "like": "Like",
+    "dislike": "Dislike",
+    "bookmark": "Bookmark"
+  },
+  "reason": {
+    "card": "{{title}} · {{p}}",
+    "model": "Model: {{label}}",
+    "keyword": "Keyword match (model unavailable)",
+    "rule": {
+      "must": "Matches a must-see interest",
+      "never": "Hidden by a never-show interest",
+      "never_soft": "Held back by a never-show interest",
+      "mute_keyword": "Muted keyword: “{{keyword}}”",
+      "mute_story": "Muted story",
+      "block_feed": "Blocked source",
+      "block_domain": "Blocked website",
+      "block_author": "Blocked author",
+      "boost_feed": "Boosted source",
+      "boost_domain": "Boosted website",
+      "demote_clickbait": "Demoted: clickbait",
+      "demote_promotional": "Demoted: promotional",
+      "demote_shallow": "Demoted: shallow",
+      "demote_stale": "Demoted: outdated",
+      "degraded": "Keyword match (model unavailable)",
+      "llm_answer": "Judged by AI",
+      "seen_story": "Story already seen",
+      "pending_cards": "Interests still being matched",
+      "inference_not_requested": "Not analyzed",
+      "unknown": "Ranking rule"
+    }
+  },
+  "detail": {
+    "actions": "Article actions",
+    "noPreview": "No preview is available for this article.",
+    "by": "By {{author}}",
+    "readOriginal": "Read original",
+    "showTranslation": "Show English translation",
+    "showOriginal": "Show original",
+    "labels": "Labels",
+    "noLabels": "You have no labels yet",
+    "labelAdd": "Add label {{name}}",
+    "labelRemove": "Remove label {{name}}",
+    "whyThis": "Why this?",
+    "muteStory": "Mute story",
+    "muteFor_one": "Mute for {{count}} day",
+    "muteFor_other": "Mute for {{count}} days",
+    "blockFeed": "Block this feed",
+    "blockDomain": "Block this website",
+    "blockAuthor": "Block this author",
+    "boostFeed": "Boost this feed"
+  },
+  "rules": {
+    "mutedStory_one": "Story muted for {{count}} day",
+    "mutedStory_other": "Story muted for {{count}} days",
+    "blockedFeed": "Blocked source: {{target}}",
+    "blockedDomain": "Blocked website: {{target}}",
+    "blockedAuthor": "Blocked author: {{target}}",
+    "boostedFeed": "Boosted source: {{target}}",
+    "removed": "Rule removed"
+  },
+  "capture": {
+    "pending": "Saving article",
+    "saved": "Full text saved",
+    "partial": "Partial text saved",
+    "failed": "Could not capture article",
+    "retry": "Retry capture",
+    "limits": "The site may have shown only a teaser, required a subscription or been unavailable.",
+    "media": "Text and formatting saved; images and other media are not archived"
+  },
+  "saved": {
+    "heading": "Saved copy",
+    "capturedOn": "Saved on {{date}}",
+    "source": "Original source"
+  },
+  "images": {
+    "blocked": "Images from this feed aren't loaded.",
+    "allow": "Always show images from this feed",
+    "block": "Always block",
+    "inherit": "Use global setting",
+    "saved": "Image setting saved"
+  },
+  "toast": {
+    "ratedUp": "Marked as liked",
+    "ratedDown": "Marked as disliked",
+    "ratingRemoved": "Rating removed",
+    "stale": "This changed on another device, so your change wasn't applied.",
+    "undoConflict": "Newer changes were kept.",
+    "undoRefused": "This can no longer be undone."
+  }
 }

@@ -3,6 +3,7 @@ import { Outlet, createFileRoute, redirect } from '@tanstack/react-router';
 import { useCallback, useSyncExternalStore } from 'react';
 
 import { meKey } from '../../api/query-keys.js';
+import { ReaderActionsProvider } from '../../features/reader/actions/provider.js';
 import { AccountEffects } from '../../features/shell/account-effects.js';
 
 // Spec 09 §2: every screen except login, join and waitlist needs a session; the first-run wizard
@@ -29,10 +30,17 @@ function AuthedLayout() {
   );
   const me = useSyncExternalStore(subscribe, () => queryClient.getQueryData<Me | null>(meKey()));
   if (me === null) return null;
-  return (
+  const content = (
     <>
       <AccountEffects me={me} />
       <Outlet />
     </>
+  );
+  // Before the account has been asked for there is no id to scope the reader actions to, and only
+  // screens that need no account render then.
+  return me === undefined ? (
+    content
+  ) : (
+    <ReaderActionsProvider accountId={me.id}>{content}</ReaderActionsProvider>
   );
 }
