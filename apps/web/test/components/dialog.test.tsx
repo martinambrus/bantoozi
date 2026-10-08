@@ -333,7 +333,7 @@ describe('ConfirmDialog', () => {
     expect(confirm).toBeEnabled();
     expect(confirm).not.toHaveAttribute('aria-busy');
     expect(screen.getByRole('button', { name: 'Keep it' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Keep it' })).toHaveFocus();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Keep it' })).toHaveFocus());
   });
 
   it('closes on Escape while idle', async () => {
