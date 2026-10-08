@@ -1,3 +1,172 @@
 {
-  "title": "Záujmy"
+  "title": "Záujmy",
+  "lead": "Povedzte Bantoozi, o čom chcete čítať. Vaše karty určujú, čo vám ukáže ako prvé.",
+  "tabs": {
+    "label": "Sekcie záujmov",
+    "mine": "Moje záujmy",
+    "suggestions": "Návrhy",
+    "library": "Knižnica",
+    "updates": "Aktualizácie knižnice",
+    "requests": "Žiadosti o zverejnenie"
+  },
+  "strength": {
+    "label": "Sila",
+    "must": "Určite",
+    "love": "Milujem",
+    "like": "Páči sa mi",
+    "never": "Nikdy",
+    "hint": "Určite: zodpovedajúce články majú vždy najvyššiu prioritu. Milujem a Páči sa mi: zodpovedajúce články sa radia vyššie, Milujem viac ako Páči sa mi. Nikdy: zodpovedajúce články sa skryjú alebo posunú nižšie."
+  },
+  "scope": {
+    "label": "Platí pre",
+    "all": "Všetky zdroje",
+    "other": "Iný zdroj"
+  },
+  "mine": {
+    "heading": "Moje záujmy",
+    "new": "Nová karta záujmu",
+    "listLabel": "Vaše karty záujmov",
+    "emptyTitle": "Zatiaľ nemáte žiadne karty záujmov",
+    "emptyBody": "Pridajte kartu a povedzte, o čom chcete čítať, alebo si nejaké vyberte z knižnice.",
+    "browseLibrary": "Prezrieť knižnicu"
+  },
+  "card": {
+    "notFor": "Ale nie: {{text}}",
+    "origin": {
+      "library": "Z knižnice",
+      "fork": "Vaša vlastná verzia"
+    },
+    "examplesMore": "Viac takých",
+    "examplesLess": "Nie takéto",
+    "removeExample": "Odobrať príklad: {{text}}",
+    "deleteTitle": "Zmazať túto kartu?",
+    "deleteBody": "Karta „{{title}}“ sa odstráni z vašich záujmov. Články sa odteraz radia bez nej."
+  },
+  "editor": {
+    "createTitle": "Nová karta záujmu",
+    "editTitle": "Upraviť kartu záujmu",
+    "name": "Názov (nepovinné)",
+    "interest": "Chcem čítať o…",
+    "notFor": "…ale nie o",
+    "counter": "{{used}} / {{max}}",
+    "examples": "Príklady",
+    "examplesHint": "Príklady ukazujú, čo myslíte a čo nie. Môžete ich odobrať z karty v sekcii Moje záujmy.",
+    "review": "Navrhovaná aktualizácia z knižnice",
+    "errors": {
+      "required": "Toto pole nemôže byť prázdne.",
+      "interestRequired": "Popíšte, o čom chcete čítať.",
+      "interestTooShort": "Popíšte to aspoň {{min}} znakmi.",
+      "tooLong": "Použite najviac {{max}} znakov.",
+      "characters": "Tento text obsahuje znaky, ktoré sa nedajú použiť.",
+      "notSubscribed": "Tento zdroj už neodoberáte.",
+      "invalid": "Táto hodnota nie je platná."
+    },
+    "conflicts": {
+      "alreadyHeld": "Kartu s týmto textom už máte, ale s inou silou, rozsahom alebo názvom. Nájdete ju v sekcii Moje záujmy a môžete ju zmeniť.",
+      "contention": "Táto karta sa zmenila počas ukladania. Skúste ju uložiť znova.",
+      "targetHeld": "Kartu s týmto textom už máte, ale s inou silou, rozsahom alebo názvom. Upravte radšej tú kartu alebo najprv zosúlaďte jej nastavenia."
+    }
+  },
+  "hints": {
+    "heading": "Ako napísať dobrú kartu",
+    "oneTopic": "Popíšte jednu tému",
+    "noNot": "Vyhnite sa slovu „nie“ v hlavnom texte; použite pole „ale nie“",
+    "noNumbers": "Vynechajte dátumy a číselné limity, napríklad ceny, dĺžky alebo vek; aktuálnosť riešime za vás",
+    "check": "Skontrolujte"
+  },
+  "suggestions": {
+    "heading": "Návrhy",
+    "lead": "Karty, ktoré by sa vám podľa Bantoozi mohli páčiť, na základe toho, čo čítate a hodnotíte.",
+    "emptyTitle": "Zatiaľ žiadne návrhy",
+    "emptyBody": "Navrhované karty sa zobrazia, keď sa Bantoozi z vášho čítania niečo naučí. Medzitým môžete prezrieť knižnicu."
+  },
+  "library": {
+    "heading": "Knižnica",
+    "lead": "Hotové karty zoradené podľa tém. Pridajte tie, ktoré zodpovedajú tomu, čo čítate.",
+    "topic": "Téma",
+    "allTopics": "Všetky témy",
+    "allOf": "Všetko z témy {{topic}}",
+    "search": "Hľadať v knižnici",
+    "searchButton": "Hľadať",
+    "emptyTitle": "Nenašli sa žiadne karty",
+    "emptyBody": "Skúste inú tému alebo iné slová.",
+    "loadMore": "Načítať ďalšie",
+    "other": "Iné",
+    "addAs": "Pridať ako",
+    "held": "Už vo vašich záujmoch",
+    "alreadyHeld": "Túto kartu už máte."
+  },
+  "updates": {
+    "heading": "Aktualizácie knižnice",
+    "lead": "Aktualizácie sa nikdy neuplatnia samy. Vaša karta zostane taká, aká je, kým nejakú neuplatníte.",
+    "listLabel": "Dostupné aktualizácie",
+    "available": "K dispozícii je verzia {{version}}",
+    "currentVersion": "Aktuálna verzia {{version}}",
+    "newVersion": "Nová verzia {{version}}",
+    "fields": {
+      "title": "Názov",
+      "interest": "Chcem čítať o…",
+      "notFor": "…ale nie o",
+      "examplesYes": "Viac takých",
+      "examplesNo": "Nie takéto"
+    },
+    "none": "Nič",
+    "added": "Pridané",
+    "removed": "Odobraté",
+    "apply": "Uplatniť túto aktualizáciu",
+    "applyNote": "Uplatnením sa karta prepne na novú verziu. Vaša sila, rozsah a názov zostanú rovnaké.",
+    "keep": "Ponechať moju aktuálnu verziu",
+    "customize": "Radšej upraviť",
+    "privateNote": "Táto karta obsahuje vaše vlastné úpravy alebo príklady, preto ju aktualizácia nemôže nahradiť. Upravte ju a porovnajte novú verziu so svojimi zmenami.",
+    "emptyTitle": "Žiadne aktualizácie knižnice",
+    "emptyBody": "Keď knižnica zverejní novú verziu karty, ktorú máte, zobrazí sa tu.",
+    "kept_one": "Rozhodli ste sa ponechať aktuálnu verziu {{count}} karty. Vráti sa sem, len ak knižnica zverejní novšiu verziu.",
+    "kept_few": "Rozhodli ste sa ponechať aktuálne verzie {{count}} kariet. Vrátia sa sem, len ak knižnica zverejní novšiu verziu.",
+    "kept_many": "Rozhodli ste sa ponechať aktuálne verzie {{count}} kariet. Vrátia sa sem, len ak knižnica zverejní novšiu verziu.",
+    "kept_other": "Rozhodli ste sa ponechať aktuálne verzie {{count}} kariet. Vrátia sa sem, len ak knižnica zverejní novšiu verziu.",
+    "errors": {
+      "privateHolding": "Táto karta obsahuje vaše vlastné úpravy alebo príklady, preto ju aktualizácia nemôže nahradiť. Použite Radšej upraviť a skontrolujte ich.",
+      "holdingMismatch": "Táto karta sa zmenila po ponúknutí aktualizácie. Zoznam sme obnovili.",
+      "targetHeld": "Novú verziu už máte s inými nastaveniami. Upravte radšej túto kartu.",
+      "gone": "Táto aktualizácia už nie je dostupná. Zoznam sme obnovili."
+    }
+  },
+  "requests": {
+    "heading": "Žiadosti o zverejnenie",
+    "lead": "Bantoozi sa pýta, kým sa niektorá z vašich kariet zaradí do verejnej knižnice. Každá žiadosť ukazuje presne to, čo by sa zverejnilo.",
+    "listLabel": "Žiadosti",
+    "about": {
+      "heading": "Ako funguje zverejnenie",
+      "reuse": "Opätovné použitie nie je zverejnenie. Ak dvaja ľudia napíšu rovnakú kartu, Bantoozi ju môže použiť interne; tým sa nezaradí do verejnej knižnice.",
+      "listing": "Verejný záznam umožní každému nájsť kartu v knižnici. Stane sa to len pre presnú kartu zobrazenú v žiadosti.",
+      "version": "Schválenie platí len pre zobrazenú verziu. Ak sa význam karty neskôr zmení, bude potrebné nové schválenie.",
+      "silence": "Neodpovedať neznamená súhlasiť.",
+      "inactivity": "Správca môže kartu zverejniť po aspoň 30 dňoch, počas ktorých ste Bantoozi nepoužívali, ak ste ju neodmietli. Keď sa do Bantoozi vrátite, toto obdobie sa začne odznova."
+    },
+    "status": {
+      "pending": "Čaká na vašu odpoveď",
+      "approved": "Schválené",
+      "rejected": "Odmietnuté",
+      "expired": "Platnosť vypršala",
+      "promoted": "Zverejnené"
+    },
+    "item": {
+      "publicTitle": "Verejný názov",
+      "titleIn": "Názov v jazyku: {{language}}",
+      "interestIn": "Text v jazyku: {{language}}",
+      "notForIn": "„Ale nie“ v jazyku: {{language}}",
+      "interest": "Chcem čítať o…",
+      "definition": "Definícia",
+      "label": "Štítok",
+      "notFor": "…ale nie o",
+      "examplesYes": "Viac takých",
+      "examplesNo": "Nie takéto",
+      "topics": "Témy"
+    },
+    "approve": "Schváliť",
+    "decline": "Odmietnuť",
+    "changed": "Táto žiadosť sa medzitým zmenila. Vidíte jej aktuálny stav.",
+    "emptyTitle": "Žiadne žiadosti o zverejnenie",
+    "emptyBody": "Ak bude chcieť Bantoozi zverejniť niektorú z vašich kariet, žiadosť sa zobrazí tu."
+  }
 }

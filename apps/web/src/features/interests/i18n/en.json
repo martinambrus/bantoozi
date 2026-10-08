@@ -1,3 +1,170 @@
 {
-  "title": "Interests"
+  "title": "Interests",
+  "lead": "Tell Bantoozi what you want to read about. Your cards shape what it shows you first.",
+  "tabs": {
+    "label": "Interests sections",
+    "mine": "My interests",
+    "suggestions": "Suggestions",
+    "library": "Library",
+    "updates": "Library updates",
+    "requests": "Publication requests"
+  },
+  "strength": {
+    "label": "Strength",
+    "must": "Must",
+    "love": "Love",
+    "like": "Like",
+    "never": "Never",
+    "hint": "Must: matching articles always get top priority. Love and Like: matching articles rank higher, Love more than Like. Never: matching articles are hidden or pushed down."
+  },
+  "scope": {
+    "label": "Applies to",
+    "all": "All feeds",
+    "other": "Another feed"
+  },
+  "mine": {
+    "heading": "My interests",
+    "new": "New interest card",
+    "listLabel": "Your interest cards",
+    "emptyTitle": "No interest cards yet",
+    "emptyBody": "Add a card to say what you want to read about, or pick some from the library.",
+    "browseLibrary": "Browse the library"
+  },
+  "card": {
+    "notFor": "But not: {{text}}",
+    "origin": {
+      "library": "From the library",
+      "fork": "Your own version"
+    },
+    "examplesMore": "More like this",
+    "examplesLess": "Not like this",
+    "removeExample": "Remove example: {{text}}",
+    "deleteTitle": "Delete this card?",
+    "deleteBody": "“{{title}}” will be removed from your interests. Articles are ranked without it from now on."
+  },
+  "editor": {
+    "createTitle": "New interest card",
+    "editTitle": "Edit interest card",
+    "name": "Name (optional)",
+    "interest": "I want to read about…",
+    "notFor": "…but not about",
+    "counter": "{{used}} / {{max}}",
+    "examples": "Examples",
+    "examplesHint": "Examples show what you do and don't mean. You can remove them from the card in My interests.",
+    "review": "Proposed update from the library",
+    "errors": {
+      "required": "This can't be empty.",
+      "interestRequired": "Describe what you want to read about.",
+      "interestTooShort": "Describe it in at least {{min}} characters.",
+      "tooLong": "Keep this to {{max}} characters or fewer.",
+      "characters": "This text contains characters that can't be used.",
+      "notSubscribed": "You're no longer subscribed to that feed.",
+      "invalid": "This value isn't valid."
+    },
+    "conflicts": {
+      "alreadyHeld": "You already have a card with this text, with a different strength, scope or name. Find it in My interests to change it.",
+      "contention": "This card changed while you were saving it. Try saving again.",
+      "targetHeld": "You already have a card with this text, but with a different strength, scope or name. Edit that card instead, or make its settings match first."
+    }
+  },
+  "hints": {
+    "heading": "Writing a good card",
+    "oneTopic": "Describe one topic",
+    "noNot": "Avoid “not” in the main text; use the “but not” field",
+    "noNumbers": "Leave out dates and number limits such as prices, lengths or ages; freshness is handled for you",
+    "check": "Check this"
+  },
+  "suggestions": {
+    "heading": "Suggestions",
+    "lead": "Cards Bantoozi thinks you might like, based on what you read and rate.",
+    "emptyTitle": "No suggestions right now",
+    "emptyBody": "Suggested cards appear here once Bantoozi has learned from your reading. You can also browse the library."
+  },
+  "library": {
+    "heading": "Library",
+    "lead": "Ready-made cards grouped by topic. Add the ones that fit what you read.",
+    "topic": "Topic",
+    "allTopics": "All topics",
+    "allOf": "All of {{topic}}",
+    "search": "Search the library",
+    "searchButton": "Search",
+    "emptyTitle": "No cards found",
+    "emptyBody": "Try another topic or other words.",
+    "loadMore": "Load more",
+    "other": "Other",
+    "addAs": "Add as",
+    "held": "In your interests",
+    "alreadyHeld": "You already have this card."
+  },
+  "updates": {
+    "heading": "Library updates",
+    "lead": "Updates are never applied by themselves. Your card stays as it is until you apply one.",
+    "listLabel": "Available updates",
+    "available": "Version {{version}} available",
+    "currentVersion": "Current version {{version}}",
+    "newVersion": "New version {{version}}",
+    "fields": {
+      "title": "Name",
+      "interest": "I want to read about…",
+      "notFor": "…but not about",
+      "examplesYes": "More like this",
+      "examplesNo": "Not like this"
+    },
+    "none": "Nothing",
+    "added": "Added",
+    "removed": "Removed",
+    "apply": "Apply this update",
+    "applyNote": "Applying switches this card to the new version. Your strength, scope and name stay as they are.",
+    "keep": "Keep my current version",
+    "customize": "Customize instead",
+    "privateNote": "This card has your own changes or examples, so the update can't replace it. Customize it to review the new version against your changes.",
+    "emptyTitle": "No library updates",
+    "emptyBody": "When the library publishes a new version of a card you hold, it appears here.",
+    "kept_one": "You chose to keep your current version of {{count}} card. It comes back only if the library publishes a newer version.",
+    "kept_other": "You chose to keep your current version of {{count}} cards. They come back only if the library publishes a newer version.",
+    "errors": {
+      "privateHolding": "This card has your own changes or examples, so the update can't replace it. Use Customize instead to review them.",
+      "holdingMismatch": "This card changed after the update was offered. The list has been refreshed.",
+      "targetHeld": "You already have the new version with other settings. Edit that card instead.",
+      "gone": "This update is no longer available. The list has been refreshed."
+    }
+  },
+  "requests": {
+    "heading": "Publication requests",
+    "lead": "Bantoozi asks before one of your cards is listed in the public library. Each request shows exactly what would be published.",
+    "listLabel": "Requests",
+    "about": {
+      "heading": "How publication works",
+      "reuse": "Reuse is not publication. If two people write the same card, Bantoozi can reuse it internally; that does not list it in the public library.",
+      "listing": "A public listing makes the card findable in the library by everyone. It happens only for the exact card shown in a request.",
+      "version": "Approving covers only the version shown. If the card's meaning changes later, it needs a new approval.",
+      "silence": "Not responding is not approval.",
+      "inactivity": "An administrator may publish a card after at least 30 days in which you haven't used Bantoozi, unless you have declined. Coming back to Bantoozi starts that period again."
+    },
+    "status": {
+      "pending": "Waiting for your answer",
+      "approved": "Approved",
+      "rejected": "Declined",
+      "expired": "Expired",
+      "promoted": "Published"
+    },
+    "item": {
+      "publicTitle": "Public title",
+      "titleIn": "Title in {{language}}",
+      "interestIn": "Text in {{language}}",
+      "notForIn": "“But not” in {{language}}",
+      "interest": "I want to read about…",
+      "definition": "Definition",
+      "label": "Label",
+      "notFor": "…but not about",
+      "examplesYes": "More like this",
+      "examplesNo": "Not like this",
+      "topics": "Topics"
+    },
+    "approve": "Approve",
+    "decline": "Decline",
+    "changed": "This request changed in the meantime. What you see now is its current state.",
+    "emptyTitle": "No publication requests",
+    "emptyBody": "If Bantoozi wants to list one of your cards publicly, the request appears here."
+  }
 }

@@ -1,3 +1,45 @@
 {
-  "title": "Labels"
+  "title": "Labels",
+  "lead": "Labels organize your articles. They never mean “like” or “dislike”: adding a label does not turn on classification or teach Bantoozi what you prefer.",
+  "leadExamples": "Examples on a label only teach what the label means, and only for articles you have already chosen to analyze.",
+  "new": "New label",
+  "listLabel": "Your labels",
+  "emptyTitle": "No labels yet",
+  "emptyBody": "Create a label to sort articles into groups of your own.",
+  "count_one": "{{count}} article",
+  "count_other": "{{count}} articles",
+  "notFor": "But not: {{text}}",
+  "colorSwatch": "Colour {{color}}",
+  "examplesMore": "More like this",
+  "examplesLess": "Not like this",
+  "removeExample": "Remove example: {{text}}",
+  "deleteTitle": "Delete this label?",
+  "deleteBody_one": "“{{name}}” will be removed from {{count}} article. The article stays in your reader.",
+  "deleteBody_other": "“{{name}}” will be removed from {{count}} articles. The articles stay in your reader.",
+  "editor": {
+    "createTitle": "New label",
+    "editTitle": "Edit label",
+    "name": "Name",
+    "definition": "Definition",
+    "notFor": "But not (optional)",
+    "color": "Colour",
+    "colorHint": "A six-digit hex colour, for example #64748b.",
+    "counter": "{{used}} / {{max}}",
+    "examples": "Examples",
+    "examplesHint": "Examples show what the label does and doesn't mean. You can remove them from the label in the list.",
+    "errors": {
+      "nameRequired": "Enter a name for the label.",
+      "definitionRequired": "Describe what belongs under this label.",
+      "definitionTooShort": "Describe it in at least {{min}} characters.",
+      "tooLong": "Keep this to {{max}} characters or fewer.",
+      "characters": "This text contains characters that can't be used.",
+      "colorInvalid": "Use a colour like #64748b: a # and six hexadecimal digits.",
+      "invalid": "This value isn't valid."
+    },
+    "conflicts": {
+      "alreadyHeld": "You already have a label with this name and definition. Find it in your list to change it.",
+      "contention": "This label changed while you were saving it. Try saving again.",
+      "targetHeld": "You already have a label with this name and definition. Edit that label instead."
+    }
+  }
 }
