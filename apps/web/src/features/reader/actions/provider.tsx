@@ -15,10 +15,19 @@ import { useTranslation } from 'react-i18next';
 
 import type { ApiClient } from '../../../api/client.js';
 import { useApi } from '../../../api/context.js';
+import { isApiError } from '../../../api/errors.js';
 import { meKey } from '../../../api/query-keys.js';
+import { routes } from '../../../api/routes.js';
 import { errorMessage } from '../../../components/error-message.js';
 import { useToast, type ToastApi } from '../../../components/toast/toast-provider.js';
 import type { ToastAction, ToastInput } from '../../../components/toast/toast-store.js';
+import { setRecordsState } from '../../../offline/queue.js';
+import {
+  REPLAY_EVENT,
+  createActionQueue,
+  createReplayer,
+  type AccountCheck,
+} from '../../../offline/replay.js';
 import { onAccountReset } from '../../../session/reset.js';
 import { createReturnTracker, type ReturnTracker } from '../../article/dwell.js';
 import { createExampleOffers } from '../../article/example-offer.js';
@@ -26,13 +35,14 @@ import { articleKeys } from '../../article/query-keys.js';
 import { createReasonBar, type ReasonBar } from '../../article/reason-bar-store.js';
 import { createReaderActions } from './store.js';
 import { createReaderTransport } from './transport.js';
-import type {
-  ActionHandle,
-  ActionResult,
-  ExampleSuggestion,
-  ReaderAction,
-  ReaderActions,
-  UndoResult,
+import {
+  OFFLINE_ERROR_CODE,
+  type ActionHandle,
+  type ActionResult,
+  type ExampleSuggestion,
+  type ReaderAction,
+  type ReaderActions,
+  type UndoResult,
 } from './types.js';
 
 const UNDO_TOAST_ID = 'reader-undo';
@@ -41,6 +51,8 @@ const UNDO_TOAST_MS = 5000;
 /** Spec 09 §3.3: the undo toast that carries an example suggestion stays for 8 seconds. */
 const OFFER_TOAST_MS = 8000;
 const FAILED_TOAST_MS = 8000;
+const OFFLINE_TOAST_ID = 'offline-needs-connection';
+const EXPIRED_TOAST_ID = 'offline-expired';
 
 /** The reader did not ask for these (spec 09 §3.6), so their failure is not shown to them. */
 const IMPLICIT_ACTIONS: ReadonlySet<ReaderAction['type']> = new Set(['open', 'dwell']);
@@ -65,6 +77,10 @@ interface Scope {
   listen(listener: SettledListener): () => void;
   /** Undoes an acknowledged action by its receipt and says so when that is not possible. */
   undo(actionId: string): Promise<UndoResult>;
+  /** Shows the changes kept on the device as pending, then replays them (spec 09 §1). */
+  start(): Promise<void>;
+  /** One replay of the changes kept on the device; nothing happens while another is running. */
+  replay(): Promise<void>;
   /** Aborts what is in flight and forgets everything, toasts that offer to act on it included. */
   release(): void;
 }
@@ -184,6 +200,19 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
         return;
       case 'failed':
         if (IMPLICIT_ACTIONS.has(handle.action.type)) return;
+        if (result.error.code === OFFLINE_ERROR_CODE) {
+          show({
+            id: OFFLINE_TOAST_ID,
+            message: i18n.t(
+              result.error.details?.['eligible'] === true
+                ? 'article:toast.offlineOptIn'
+                : 'article:toast.offlineNeedsConnection',
+            ),
+            tone: 'error',
+            durationMs: FAILED_TOAST_MS,
+          });
+          return;
+        }
         show({
           id: `save-failed:${handle.id}`,
           message: i18n.t('common:toast.saveFailed'),
@@ -213,10 +242,44 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
 
   const preferences = () =>
     queryClient.getQueryData<Me | null>(meKey())?.preferences ?? DEFAULT_USER_PREFERENCES;
+  const queue = createActionQueue({ accountId });
   const store = createReaderActions({
     transport: createReaderTransport(api),
     preferences,
     onSettled,
+    queue,
+  });
+
+  /** Spec 09 §1: asks the server, fresh, who is signed in before anything kept is sent. */
+  async function verify(): Promise<AccountCheck> {
+    try {
+      const me = await api.call(routes.meGet);
+      return me.id === accountId ? 'same' : 'other';
+    } catch (error) {
+      return isApiError(error) && error.kind === 'http' && error.status === 401
+        ? 'unauthorized'
+        : 'unreachable';
+    }
+  }
+
+  /** Counts the releases: a replay that began before one is not carried on after it. */
+  let lifetime = 0;
+  /** Replays are on from `start` until the scope is released. */
+  let replaying = false;
+
+  const replayer = createReplayer({
+    queue,
+    target: store.offline,
+    verify,
+    epoch: () => lifetime,
+    onExpired(count) {
+      show({
+        id: EXPIRED_TOAST_ID,
+        message: i18n.t('offline:replay.expired', { count }),
+        tone: 'info',
+        durationMs: FAILED_TOAST_MS,
+      });
+    },
   });
   const tracker = createReturnTracker({
     store,
@@ -229,6 +292,14 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
     tracker,
     reasonBar,
     undo,
+    async start() {
+      replaying = true;
+      await replayer.restore();
+      await replayer.run();
+    },
+    async replay() {
+      if (replaying) await replayer.run();
+    },
     listen(listener) {
       listeners.add(listener);
       return () => {
@@ -236,10 +307,13 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
       };
     },
     release() {
+      lifetime += 1;
+      replaying = false;
       latestOffer += 1;
       offers.release();
       reasonBar.close();
       store.reset();
+      queue.close();
       tracker.clear();
       for (const id of toastIds) toast.dismiss(id);
       toastIds.clear();
@@ -254,6 +328,10 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
 interface Holder {
   readonly accountId: string;
   scope: Scope | null;
+  /** The kept changes are being frozen after the session ended; the scope is released after it. */
+  freezing: Promise<void> | null;
+  /** Stops the triggers of the replay; set by the first component that uses the scope. */
+  stopReplaying: (() => void) | null;
 }
 
 const HolderContext = createContext<Holder | null>(null);
@@ -264,19 +342,59 @@ export interface ReaderActionsProviderProps {
 }
 
 function AccountScope({ accountId, children }: ReaderActionsProviderProps) {
-  const [holder] = useState<Holder>(() => ({ accountId, scope: null }));
+  const [holder] = useState<Holder>(() => ({
+    accountId,
+    scope: null,
+    freezing: null,
+    stopReplaying: null,
+  }));
 
   useEffect(() => {
-    const unregister = onAccountReset(() => {
+    const release = () => {
       holder.scope?.release();
+    };
+    const unregister = onAccountReset(async (reason) => {
+      if (reason === 'unauthorized') {
+        holder.freezing = setRecordsState(holder.accountId, 'frozen').then(
+          () => undefined,
+          () => undefined,
+        );
+        await holder.freezing;
+      }
+      release();
     });
     return () => {
       unregister();
-      holder.scope?.release();
+      holder.stopReplaying?.();
+      holder.stopReplaying = null;
+      if (holder.freezing === null) release();
+      else void holder.freezing.then(release, release);
     };
   }, [holder]);
 
   return <HolderContext value={holder}>{children}</HolderContext>;
+}
+
+/**
+ * Shows the changes the account kept on the device and replays them: now, when the browser says it
+ * is online again, when the page is shown again and when something asks for it (spec 09 §1).
+ */
+function replayOn(scope: Scope): () => void {
+  void scope.start();
+  const onTrigger = () => {
+    void scope.replay();
+  };
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') void scope.replay();
+  };
+  window.addEventListener('online', onTrigger);
+  window.addEventListener(REPLAY_EVENT, onTrigger);
+  document.addEventListener('visibilitychange', onVisible);
+  return () => {
+    window.removeEventListener('online', onTrigger);
+    window.removeEventListener(REPLAY_EVENT, onTrigger);
+    document.removeEventListener('visibilitychange', onVisible);
+  };
 }
 
 /**
@@ -302,7 +420,11 @@ function useScope(): Scope {
     throw new Error('The reader actions need a <ReaderActionsProvider> above them');
   }
   holder.scope ??= createScope({ api, queryClient, toast, i18n, accountId: holder.accountId });
-  return holder.scope;
+  const { scope } = holder;
+  useEffect(() => {
+    holder.stopReplaying ??= replayOn(scope);
+  }, [holder, scope]);
+  return scope;
 }
 
 /** The reader's single write path (`dispatch`, `undo`, `retry`, …) of the signed-in account. */
@@ -314,6 +436,16 @@ export function useReaderActions(): ReaderActions {
 export function useReaderItem<T extends ArticleListItem>(item: T): T {
   const { store } = useScope();
   const read = () => store.view(item);
+  return useSyncExternalStore(store.subscribe, read, read);
+}
+
+/**
+ * The changes of the account kept on the device and not yet sent (spec 09 §1), the earliest made
+ * first; of one article when given. Follows the store, and is the same array until it changes.
+ */
+export function useWaitingChanges(articleId?: string): readonly ActionHandle[] {
+  const { store } = useScope();
+  const read = () => store.offline.waiting(articleId);
   return useSyncExternalStore(store.subscribe, read, read);
 }
 

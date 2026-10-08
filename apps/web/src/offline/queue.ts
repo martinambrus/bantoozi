@@ -1,3 +1,4 @@
+import type { RecordPatch } from '../features/reader/actions/types.js';
 import { offlineDatabaseMightExist, offlineDb, type OfflineDb } from './db.js';
 import { isOfflineEnabled } from './device.js';
 import { clearsOf } from './epoch.js';
@@ -44,6 +45,36 @@ export async function listRecords(accountId: string): Promise<QueueRecord[]> {
     );
   } catch {
     return [];
+  }
+}
+
+/**
+ * Changes fields of a kept record and says whether it is still there: false only when it is known
+ * to be gone (sent by another tab, discarded), in which case it is not brought back. A browser that
+ * cannot be asked is taken to still have it.
+ */
+export async function patchRecord(
+  accountId: string,
+  id: string,
+  patch: RecordPatch,
+): Promise<boolean> {
+  if (!isAccountId(accountId)) return false;
+  if (!(await offlineDatabaseMightExist())) return false;
+  const opened = await offlineDb();
+  if (!opened.available) return true;
+  try {
+    const tx = opened.db.transaction('queue', 'readwrite');
+    const key = rowKey(accountId, id);
+    const current = await tx.store.get(key);
+    if (current === undefined) {
+      await tx.done;
+      return false;
+    }
+    if (Object.keys(patch).length > 0) await tx.store.put({ ...current, ...patch }, key);
+    await tx.done;
+    return true;
+  } catch {
+    return true;
   }
 }
 

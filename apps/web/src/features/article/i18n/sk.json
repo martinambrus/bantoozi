@@ -139,6 +139,8 @@
     "teachYes": "Naučiť „{{title}}“: presne toto",
     "teachNo": "Naučiť „{{title}}“: nie toto",
     "stopSuggesting": "Prestať navrhovať",
-    "suggestionsOff": "Navrhovanie učenia je vypnuté. Znova ho zapnete v Nastaveniach."
+    "suggestionsOff": "Navrhovanie učenia je vypnuté. Znova ho zapnete v Nastaveniach.",
+    "offlineOptIn": "Táto zmena vyžaduje pripojenie. Čítanie offline si môžete zapnúť v Nastaveniach.",
+    "offlineNeedsConnection": "Táto zmena vyžaduje pripojenie."
   }
 }

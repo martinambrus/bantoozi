@@ -1,5 +1,5 @@
 import { screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { meKey } from '../../src/api/query-keys.js';
 import { saveDetail, saveView, setOfflineEnabled } from '../../src/offline/cache.js';
@@ -261,6 +261,11 @@ describe('the sign-out button', () => {
   }
 
   it('without a connection wipes the device, goes to /login and says what is left to do', async () => {
+    // Offline, the unsent change seeded here stays unsent; online, the app would send it at once.
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    onTestFinished(() => {
+      online.mockRestore();
+    });
     await seed(A);
     const app = await open({
       path: '/read/for_you',

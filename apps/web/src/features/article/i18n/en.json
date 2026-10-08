@@ -133,6 +133,8 @@
     "teachYes": "Teach {{title}}: this is it",
     "teachNo": "Teach {{title}}: not this",
     "stopSuggesting": "Stop suggesting",
-    "suggestionsOff": "Teaching suggestions are off. You can turn them back on in Settings."
+    "suggestionsOff": "Teaching suggestions are off. You can turn them back on in Settings.",
+    "offlineOptIn": "This change needs a connection. You can turn on offline reading in Settings.",
+    "offlineNeedsConnection": "This change needs a connection."
   }
 }

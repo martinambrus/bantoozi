@@ -6,6 +6,7 @@ import type {
 } from '@bantoozi/shared';
 
 import type { ApiError } from '../../../api/errors.js';
+import type { QueueRecord } from '../../../offline/types.js';
 
 /** Spec 09 §3.3: the API undoes an action for 10 minutes after it was acknowledged. */
 export const UNDO_WINDOW_MS = 10 * 60_000;
@@ -67,6 +68,23 @@ export const UNDOABLE_ACTIONS = [
   'removeLabel',
 ] as const satisfies readonly ReaderAction['type'][];
 
+/**
+ * The actions that may wait on the device for a connection (spec 09 §1); every other one needs it
+ * and fails at once without it.
+ */
+export const OFFLINE_ACTIONS = [
+  'read',
+  'unread',
+  'rate',
+  'bookmark',
+  'unbookmark',
+  'addLabel',
+  'removeLabel',
+] as const satisfies readonly ReaderAction['type'][];
+
+/** The `code` of the error of an action refused because the browser has no connection. */
+export const OFFLINE_ERROR_CODE = 'OFFLINE';
+
 /** The fence a request carries; `snapshotId` only in the saved-bookmark view. */
 export interface Fence {
   stateVersion: string;
@@ -78,10 +96,12 @@ export interface Fence {
  * - `held`: optimistic, not sendable until `release` (the dislike reason bar, spec 09 §3.3);
  * - `queued`: waiting for an earlier action on the same article;
  * - `sending`: its request is in flight (body and key are frozen from the first send on);
+ * - `waiting`: kept on the device because the server could not be reached; the change stays shown
+ *   until a replay sends it (spec 09 §1);
  * - `done` / `stale` / `failed` / `cancelled`: settled.
  */
 export type ActionStatus =
-  'held' | 'queued' | 'sending' | 'done' | 'stale' | 'failed' | 'cancelled';
+  'held' | 'queued' | 'sending' | 'waiting' | 'done' | 'stale' | 'failed' | 'cancelled';
 
 export interface ExampleSuggestion {
   cardId: string;
@@ -219,6 +239,39 @@ export interface ReaderTransport {
   ): Promise<{ count: number; mutationId: string; items: ArticleListItem[] }>;
 }
 
+/** A change to a kept record. */
+export type RecordPatch = Partial<Pick<QueueRecord, 'key' | 'action' | 'fence' | 'after'>>;
+
+/** How a kept record ended, as the account's other tabs are told (spec 09 §1). */
+export type SettledNote =
+  | { id: string; outcome: 'done'; item: ArticleListItem; mutationId: string }
+  | { id: string; outcome: 'stale'; item: ArticleListItem | null }
+  | { id: string; outcome: 'failed'; status: number | null; code: string }
+  | { id: string; outcome: 'cancelled' };
+
+/**
+ * What the store needs of the device's queue store (spec 09 §1): where the changes of an account
+ * are kept until they are sent, and which tab sends them.
+ */
+export interface ActionQueue {
+  readonly accountId: string;
+  /** Whether the account chose offline reading; only then are changes kept on the device. */
+  enabled(): boolean;
+  /** Whether the browser says it has a connection. */
+  online(): boolean;
+  /** Keeps the record; false when it could not be kept. */
+  save(record: QueueRecord): Promise<boolean>;
+  /** Changes a kept record; false when it is no longer there. */
+  change(id: string, patch: RecordPatch): Promise<boolean>;
+  remove(id: string): Promise<void>;
+  /** Tells the account's other tabs how a record ended. */
+  announce(note: SettledNote): void;
+  /** Hears the account's other tabs; returns the function that stops listening. */
+  hear(listener: (note: SettledNote) => void): () => void;
+  /** Runs `work` while this tab is the one that sends kept records. */
+  hold<T>(work: () => Promise<T>): Promise<T>;
+}
+
 export interface ReaderActionsOptions {
   transport: ReaderTransport;
   /** Current preferences; `markReadOnRate` shapes the optimistic rating. */
@@ -239,6 +292,35 @@ export interface ReaderActionsOptions {
   backoffMs?: (attempt: number) => number;
   /** Called once per settled action (toasts, count invalidation). */
   onSettled?: (handle: ActionHandle, result: ActionResult) => void;
+  /**
+   * Where changes wait for a connection. Without it every action is sent at once, whatever the
+   * connection, and nothing is kept on the device.
+   */
+  queue?: ActionQueue;
+}
+
+/**
+ * The store's side of offline reading (spec 09 §1): the changes kept on the device because the
+ * server could not be reached, and what a replay does with them.
+ */
+export interface OfflineControl {
+  /**
+   * The changes kept on the device and not yet sent (status `waiting`, and those queued behind
+   * them), earliest first; of one article when given. The same array until something changes.
+   */
+  waiting(articleId?: string): readonly ActionHandle[];
+  /** A point in time for `adopt`: records written after it are not taken for gone. */
+  mark(): number;
+  /**
+   * Makes the store agree with the queue store: shows the records it has no change for as
+   * `waiting` changes, and settles the changes whose record is gone, written before `mark`, as
+   * cancelled (another tab sent or discarded them).
+   */
+  adopt(records: readonly QueueRecord[], mark?: number): void;
+  /** Drops the unsent kept changes made at or before `cutoff` (epoch ms); returns how many. */
+  expire(cutoff: number): number;
+  /** Sends the waiting changes, article by article, each in the order it was made; resolves when none can go on. */
+  drain(): Promise<void>;
 }
 
 /**
@@ -287,6 +369,12 @@ export interface ReaderActions {
    */
   recent(): readonly RecentAction[];
   get(actionId: string): ActionHandle | undefined;
+  readonly offline: OfflineControl;
+  /**
+   * What the store still holds: settled actions leave once their undo window (10 minutes) is over,
+   * or at the next dispatch, bulk or observation when they cannot be undone.
+   */
+  retained(): { actions: number; recents: number };
   subscribe(listener: () => void): () => void;
   /** Increments on every change of displayed state or recent actions. */
   getVersion(): number;

@@ -33,5 +33,9 @@
     "body_other": "{{count}} changes have not been sent yet and will be discarded.",
     "clear": "Clear and discard",
     "off": "Turn off and discard"
+  },
+  "replay": {
+    "expired_one": "{{count}} offline change expired and was not sent",
+    "expired_other": "{{count}} offline changes expired and were not sent"
   }
 }

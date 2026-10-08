@@ -39,5 +39,11 @@
     "body_other": "{{count}} zmien ešte nebolo odoslaných a bude zahodených.",
     "clear": "Vymazať a zahodiť",
     "off": "Vypnúť a zahodiť"
+  },
+  "replay": {
+    "expired_one": "{{count}} zmena vykonaná offline vypršala a nebola odoslaná",
+    "expired_few": "{{count}} zmeny vykonané offline vypršali a neboli odoslané",
+    "expired_many": "{{count}} zmien vykonaných offline vypršalo a nebolo odoslaných",
+    "expired_other": "{{count}} zmien vykonaných offline vypršalo a nebolo odoslaných"
   }
 }

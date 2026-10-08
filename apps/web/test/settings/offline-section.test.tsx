@@ -1,5 +1,5 @@
 import { screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { readMe, saveDetail, saveView, setOfflineEnabled } from '../../src/offline/cache.js';
 import { resetOfflineDb } from '../../src/offline/db.js';
@@ -29,12 +29,22 @@ const toggle = (name = 'Keep articles on this device') =>
 const clearButton = () =>
   within(offline()).getByRole('button', { name: 'Clear downloaded articles' });
 
+/** Unsent actions stay unsent only while the browser is offline: online, the app sends them at once. */
+async function unsent(...ids: string[]) {
+  const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+  onTestFinished(() => {
+    online.mockRestore();
+  });
+  for (const id of ids) await putRecord(makeRecord(id));
+}
+
 /** An account that chose offline reading, with 3 list items, 1 opened article and `records` unsent actions. */
 async function storedArticles(records = 0) {
   await setOfflineEnabled(A, true);
   await saveView(A, 'view', itemList(3), VIEW);
   await saveDetail(A, fullDetail({ id: '50' }));
-  for (let index = 1; index <= records; index += 1) await putRecord(makeRecord(`m${index}`));
+  if (records > 0)
+    await unsent(...Array.from({ length: records }, (_unused, index) => `m${index + 1}`));
 }
 
 const discardDialog = () => screen.findByRole('dialog', { name: 'Discard unsent changes?' });
@@ -97,7 +107,7 @@ describe('the Offline reading section', () => {
   it('uses the singular for one article and one change', async () => {
     await setOfflineEnabled(A, true);
     await saveDetail(A, fullDetail({ id: '50' }));
-    await putRecord(makeRecord('m1'));
+    await unsent('m1');
 
     await openSettings();
 
