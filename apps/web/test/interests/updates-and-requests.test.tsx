@@ -459,7 +459,7 @@ describe('library updates', () => {
       });
 
       expect(keptKeys()).toEqual([]);
-      expect(window.localStorage.getItem('someone-else:interests:keep:5:2')).toBeNull();
+      expect(window.localStorage.getItem('someone-else:interests:keep:5:2')).toBe('1');
       expect(window.localStorage.getItem('unrelated')).toBe('value');
     });
 

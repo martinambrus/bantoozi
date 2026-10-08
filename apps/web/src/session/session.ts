@@ -3,10 +3,22 @@ import { hashKey, isCancelledError, type QueryClient } from '@tanstack/react-que
 import type { i18n as I18n } from 'i18next';
 
 import { createApiClient, type ApiClient } from '../api/client.js';
-import { isApiError } from '../api/errors.js';
+import { isApiError, isRetryable } from '../api/errors.js';
 import { meKey } from '../api/query-keys.js';
 import { routes } from '../api/routes.js';
+import { clearAccount, readMe, saveMe } from '../offline/cache.js';
+import {
+  clearLastAccount,
+  clearLogoutPending,
+  isLogoutPending,
+  isOfflineEnabled,
+  markLogoutPending,
+  readLastAccount,
+  writeLastAccount,
+} from '../offline/device.js';
+import { clearAccountKeys, forgetAccountMemory } from './local-keys.js';
 import { meQueryOptions } from './me.js';
+import { OfflineStartupError } from './offline-start.js';
 import { runResetHooks, type ResetReason } from './reset.js';
 
 /** Tabs of one browser tell each other here that the account state was dropped. */
@@ -26,16 +38,31 @@ export interface RequestCodeInput {
   locale: string;
 }
 
+export interface LogoutResult {
+  /**
+   * False when the server could not be reached: the device is signed out, the session of the
+   * server is ended as soon as the connection is back.
+   */
+  serverSignedOut: boolean;
+}
+
 export interface Session {
   /** The app's client: a 401 on any of its calls ends the session. */
   readonly api: ApiClient;
-  /** The signed-in account or null, for the router context. */
+  /**
+   * The signed-in account or null, for the router context. Without a connection it is the account
+   * that chose offline reading, for 24 hours; otherwise it throws `OfflineStartupError`.
+   */
   loadMe: () => Promise<Me | null>;
   requestCode: (input: RequestCodeInput) => Promise<RequestCodeResponse>;
   /** Signs in. An account other than the one this device knew drops the old one's state first. */
   verifyCode: (input: { email: string; code: string }) => Promise<Me>;
-  /** Ends the server session, then drops the state. Navigating away is up to the caller. */
-  logout: () => Promise<void>;
+  /**
+   * Drops the state of the device and ends the server session. Without a connection (or after a
+   * 5xx or 429) the device is signed out at once and the server session is ended later.
+   * Navigating away is up to the caller.
+   */
+  logout: () => Promise<LogoutResult>;
   /** Drops everything private: the query cache, the registered stores, the other tabs' memory. */
   resetAccountState: () => Promise<void>;
   /** Ends the session after a 401 that did not come through `api`, such as the streamed export. */
@@ -61,11 +88,17 @@ export function createSession(options: SessionOptions): Session {
   const channel =
     typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(SESSION_CHANNEL);
 
-  // The account of the last `Me` seen. Unlike the cache it survives a 401, so signing back in as
-  // the same account is not a switch while signing in as another one is.
-  let knownAccountId: string | undefined;
+  // The account of the last `Me` seen, from an earlier visit of the page too. Unlike the cache it
+  // survives a 401, so signing back in as the same account is not a switch while signing in as
+  // another one is.
+  let knownAccountId: string | undefined = readLastAccount()?.id;
   // undefined until the first answer: learning who is signed in at startup is not a change.
   let signedInId = idInCache();
+  // True while the saved account is put back in the cache, which must not renew its 24 hours.
+  let restoring = false;
+  // The removal of the previous account's data after another account arrived.
+  let switching: Promise<void> | null = null;
+  let finishing: Promise<void> | null = null;
 
   function idInCache(): string | null | undefined {
     const me = queryClient.getQueryData<Me | null>(meKey());
@@ -82,12 +115,20 @@ export function createSession(options: SessionOptions): Session {
       const previousAccountId = knownAccountId;
       knownAccountId = me.id;
       applyLocale(me);
+      if (!restoring) {
+        writeLastAccount(me.id);
+        void saveMe(me.id, me);
+      }
       // A `/me` answer for another account (a window that shares the cookie but not the channel
-      // signed in): the old account's state goes before the new one is shown.
+      // signed in): the old account's data goes before the new one is shown.
       if (previousAccountId !== undefined && previousAccountId !== me.id) {
-        queueMicrotask(() => {
-          void reset('account_switch');
+        const removal = Promise.resolve().then(async () => {
+          await reset('account_switch', previousAccountId);
           queryClient.setQueryData(meKey(), me);
+        });
+        switching = removal;
+        void removal.finally(() => {
+          if (switching === removal) switching = null;
         });
       }
     }
@@ -109,13 +150,26 @@ export function createSession(options: SessionOptions): Session {
     };
   }
 
-  function reset(reason: ResetReason): Promise<void> {
+  /** What leaves the device with the account: nothing on a 401, only memory for another tab's reset. */
+  async function removeFromDevice(reason: ResetReason, accountId: string | undefined) {
+    if (reason === 'logout') clearLastAccount();
+    if (accountId === undefined || reason === 'unauthorized') return;
+    if (reason === 'remote') {
+      forgetAccountMemory(accountId);
+      return;
+    }
+    clearAccountKeys(accountId);
+    await clearAccount(accountId);
+  }
+
+  function reset(reason: ResetReason, accountId: string | undefined = knownAccountId) {
     queryClient.clear();
     queryClient.setQueryData(meKey(), null);
     if (reason === 'logout' || reason === 'remote') knownAccountId = undefined;
     const hooksDone = runResetHooks(reason);
+    const removed = removeFromDevice(reason, accountId);
     if (reason !== 'remote') channel?.postMessage({ type: 'reset' });
-    return hooksDone;
+    return Promise.all([hooksDone, removed]).then(() => undefined);
   }
 
   // The answer 401 of the `/me` probe itself arrives while nobody is known yet: nothing to drop.
@@ -123,32 +177,88 @@ export function createSession(options: SessionOptions): Session {
     if (queryClient.getQueryData<Me | null>(meKey())) void reset('unauthorized');
   }
 
-  async function loadMe(): Promise<Me | null> {
-    try {
-      return await queryClient.ensureQueryData(meQuery);
-    } catch (error) {
-      // A reset removes the query being fetched and leaves the signed-out answer in its place.
-      if (isCancelledError(error)) return queryClient.getQueryData<Me | null>(meKey()) ?? null;
-      throw error;
-    }
-  }
-
-  async function verifyCode(input: { email: string; code: string }): Promise<Me> {
-    const { user } = await api.call(routes.authVerify, { body: input });
-    if (knownAccountId !== undefined && knownAccountId !== user.id) await reset('account_switch');
-    knownAccountId = user.id;
-    queryClient.setQueryData(meKey(), user);
-    return user;
-  }
-
-  async function logout(): Promise<void> {
+  async function endServerSession(): Promise<void> {
     try {
       await api.call(routes.authLogout);
     } catch (error) {
       // Already signed out is the state we are after.
       if (!isApiError(error) || error.status !== 401) throw error;
     }
-    await reset('logout');
+  }
+
+  /** Ends the server session of a sign-out that was made without a connection. */
+  function finishPendingLogout(): Promise<void> {
+    if (!isLogoutPending()) return Promise.resolve();
+    finishing ??= endServerSession()
+      .then(clearLogoutPending)
+      .finally(() => {
+        finishing = null;
+      });
+    return finishing;
+  }
+
+  function finishQuietly() {
+    finishPendingLogout().catch(() => undefined);
+  }
+
+  window.addEventListener('online', finishQuietly);
+  if (navigator.onLine !== false) finishQuietly();
+
+  async function restoreOffline(cause: unknown): Promise<Me> {
+    const last = readLastAccount();
+    const saved = last !== null && isOfflineEnabled(last.id) ? await readMe(last.id) : null;
+    if (saved === null) throw new OfflineStartupError({ cause });
+    restoring = true;
+    try {
+      queryClient.setQueryData(meKey(), saved.me);
+    } finally {
+      restoring = false;
+    }
+    return saved.me;
+  }
+
+  async function loadMe(): Promise<Me | null> {
+    // Someone signed out without a connection: nobody is signed in, whatever the server still says.
+    if (isLogoutPending()) return null;
+    await switching;
+    try {
+      const me = await queryClient.ensureQueryData(meQuery);
+      await switching;
+      return me;
+    } catch (error) {
+      // A reset removes the query being fetched and leaves the signed-out answer in its place.
+      if (isCancelledError(error)) return queryClient.getQueryData<Me | null>(meKey()) ?? null;
+      if (isApiError(error) && error.kind === 'network') return restoreOffline(error);
+      throw error;
+    }
+  }
+
+  async function verifyCode(input: { email: string; code: string }): Promise<Me> {
+    await finishPendingLogout();
+    const { user } = await api.call(routes.authVerify, { body: input });
+    if (knownAccountId !== undefined && knownAccountId !== user.id) {
+      await reset('account_switch', knownAccountId);
+    }
+    knownAccountId = user.id;
+    queryClient.setQueryData(meKey(), user);
+    return user;
+  }
+
+  async function logout(): Promise<LogoutResult> {
+    const accountId = knownAccountId;
+    let serverSignedOut = true;
+    try {
+      await api.call(routes.authLogout);
+    } catch (error) {
+      // Already signed out is the state we are after.
+      if (!isApiError(error) || error.status !== 401) {
+        if (!isRetryable(error)) throw error;
+        serverSignedOut = false;
+      }
+    }
+    if (!serverSignedOut) markLogoutPending();
+    await reset('logout', accountId);
+    return { serverSignedOut };
   }
 
   return {
@@ -170,6 +280,7 @@ export function createSession(options: SessionOptions): Session {
     },
     dispose: () => {
       stopWatchingCache();
+      window.removeEventListener('online', finishQuietly);
       channel?.close();
       listeners.clear();
     },

@@ -1,18 +1,25 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { meKey } from '../../src/api/query-keys.js';
 import { createI18n } from '../../src/i18n/index.js';
+import { PENDING_LOGOUT_KEY } from '../../src/offline/names.js';
 import { failure, noContent } from '../api/fake-fetch.js';
 import { READER_READS, createHarness } from '../auth/harness.js';
 import { makeMe } from '../session/fixtures.js';
 import type { ApiRouteHandler } from '../support/app.js';
 
 const LOGOUT = 'POST /auth/logout';
+const NOT_SIGNED_OUT_ON_SERVER =
+  'Signed out on this device. Bantoozi will finish signing you out when you are back online.';
 
 const ada = makeMe({ displayName: 'Ada Lovelace', email: 'ada@example.com' });
 
 const { open } = createHarness();
+
+afterEach(() => {
+  localStorage.clear();
+});
 
 type App = Awaited<ReturnType<typeof open>>;
 
@@ -132,45 +139,55 @@ describe('the signed-in app shell', () => {
     });
 
     it.each([
-      [
-        'a server error',
-        () => failure(500, 'INTERNAL'),
-        'Something went wrong on our side. Try again.',
-      ],
-      [
-        'a network failure',
-        () => Promise.reject(new TypeError('Failed to fetch')),
-        "You seem to be offline, or the server can't be reached.",
-      ],
+      ['a network failure', () => Promise.reject(new TypeError('Failed to fetch'))],
+      ['a server error', () => failure(500, 'INTERNAL')],
+      ['a rate limit', () => failure(429, 'RATE_LIMITED')],
     ] as const)(
-      'stays signed in and shows an error toast after %s',
-      async (_name, logout, message) => {
+      'signs out on this device after %s and says what is left to do',
+      async (_name, logout) => {
         const app = await open({ path: '/read/for_you', server: signedIn(ada, logout) });
 
         await signOut(app);
 
-        expect(await screen.findByText(message)).toBeVisible();
-        expect(pathname(app)).toBe('/read/for_you');
-        expect(screen.getByRole('button', { name: 'Account menu: Ada Lovelace' })).toBeVisible();
-        expect(primaryNav()).toBeVisible();
-        expect(app.queryClient.getQueryData(meKey())).toEqual(ada);
+        await waitFor(() => expect(pathname(app)).toBe('/login'));
+        expect(await screen.findByText(NOT_SIGNED_OUT_ON_SERVER)).toBeVisible();
         expect(app.calls(LOGOUT)).toHaveLength(1);
+        expect(app.queryClient.getQueryData(meKey())).toBeNull();
+        expect(screen.queryByRole('navigation', { name: 'Main navigation' })).toBeNull();
+        expect(localStorage.getItem(PENDING_LOGOUT_KEY)).not.toBeNull();
       },
     );
 
-    it('signs out on a second try after a failure', async () => {
-      const answers: Array<() => Response> = [() => failure(500, 'INTERNAL'), () => noContent()];
+    it('stays signed in and shows an error toast after a refusal that is not about the connection', async () => {
+      const app = await open({
+        path: '/read/for_you',
+        server: signedIn(ada, () => failure(403, 'FORBIDDEN')),
+      });
+
+      await signOut(app);
+
+      expect(await screen.findByText("You don't have permission to do that.")).toBeVisible();
+      expect(pathname(app)).toBe('/read/for_you');
+      expect(screen.getByRole('button', { name: 'Account menu: Ada Lovelace' })).toBeVisible();
+      expect(app.queryClient.getQueryData(meKey())).toEqual(ada);
+      expect(screen.queryByText(NOT_SIGNED_OUT_ON_SERVER)).toBeNull();
+      expect(localStorage.getItem(PENDING_LOGOUT_KEY)).toBeNull();
+    });
+
+    it('signs out on a second try after such a refusal', async () => {
+      const answers: Array<() => Response> = [() => failure(403, 'FORBIDDEN'), () => noContent()];
       const app = await open({
         path: '/read/for_you',
         server: signedIn(ada, () => answers.shift()!()),
       });
       await signOut(app);
-      await screen.findByText('Something went wrong on our side. Try again.');
+      await screen.findByText("You don't have permission to do that.");
 
       await signOut(app);
 
       await waitFor(() => expect(pathname(app)).toBe('/login'));
       expect(app.calls(LOGOUT)).toHaveLength(2);
+      expect(screen.queryByText(NOT_SIGNED_OUT_ON_SERVER)).toBeNull();
     });
 
     it('signs out even when the session had already ended', async () => {

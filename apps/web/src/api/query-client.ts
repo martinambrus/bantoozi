@@ -20,13 +20,15 @@ function retryDelay(failureCount: number, error: unknown): number {
 
 /**
  * Spec 09 §1: queries retry network failures, 5xx and 429 up to twice and nothing else; a mutation
- * is never retried automatically, because only its user knows whether the intent still stands.
+ * is never retried automatically, because only its user knows whether the intent still stands. A
+ * mutation does not wait for the connection either: without one it fails at once, where the
+ * person sees it, instead of staying paused out of sight.
  */
 export function createQueryClient(): QueryClient {
   return new QueryClient({
     defaultOptions: {
       queries: { retry: shouldRetry, retryDelay },
-      mutations: { retry: false },
+      mutations: { retry: false, networkMode: 'always' },
     },
   });
 }

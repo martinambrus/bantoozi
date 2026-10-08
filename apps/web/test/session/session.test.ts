@@ -6,6 +6,8 @@ import { createQueryClient } from '../../src/api/query-client.js';
 import { accountKey, meKey } from '../../src/api/query-keys.js';
 import { routes } from '../../src/api/routes.js';
 import { createI18n, type Language } from '../../src/i18n/index.js';
+import { PENDING_LOGOUT_KEY } from '../../src/offline/names.js';
+import { OfflineStartupError } from '../../src/session/offline-start.js';
 import { onAccountReset, type ResetReason } from '../../src/session/reset.js';
 import { SESSION_CHANNEL, createSession, type Session } from '../../src/session/session.js';
 import {
@@ -59,6 +61,7 @@ afterEach(() => {
   for (const channel of channels.splice(0)) channel.close();
   for (const stop of unregister.splice(0)) stop();
   document.documentElement.lang = '';
+  localStorage.clear();
 });
 
 function start(server: Server = { me: null }, language: Language = 'en') {
@@ -141,7 +144,7 @@ describe('loadMe', () => {
     await expect(session.loadMe()).resolves.toEqual(userA);
   });
 
-  it('rejects when the server cannot be reached', async () => {
+  it('rejects when the server cannot be reached and nothing is kept for an offline start', async () => {
     const fake = fakeFetch(() => {
       throw new TypeError('Failed to fetch');
     });
@@ -149,7 +152,22 @@ describe('loadMe', () => {
     const session = createSession({ queryClient, i18n: createI18n(), fetch: fake.fetch });
     sessions.push(session);
 
-    await expect(session.loadMe()).rejects.toMatchObject({ kind: 'network' });
+    const outcome = await session.loadMe().catch((error: unknown) => error);
+
+    expect(outcome).toBeInstanceOf(OfflineStartupError);
+    expect(outcome).toMatchObject({ cause: { kind: 'network' } });
+  });
+
+  it('rejects any other failure of the server as it is', async () => {
+    const fake = fakeFetch(() => failure(500, 'INTERNAL'));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const session = createSession({ queryClient, i18n: createI18n(), fetch: fake.fetch });
+    sessions.push(session);
+
+    const outcome = await session.loadMe().catch((error: unknown) => error);
+
+    expect(outcome).not.toBeInstanceOf(OfflineStartupError);
+    expect(outcome).toMatchObject({ kind: 'http', status: 500 });
   });
 });
 
@@ -287,7 +305,7 @@ describe('verifyCode', () => {
 
     await vi.waitFor(() => expect(resets).toEqual(['account_switch']));
     expect(queryClient.getQueryData(accountKey(USER_A_ID, 'articles', 'list'))).toBeUndefined();
-    expect(queryClient.getQueryData(meKey())).toEqual(userB);
+    await vi.waitFor(() => expect(queryClient.getQueryData(meKey())).toEqual(userB));
     await vi.waitFor(() => expect(tab.heard).toEqual([{ type: 'reset' }]));
   });
 
@@ -367,13 +385,13 @@ describe('logout', () => {
     server.me = null;
     const resets = recordResets();
 
-    await expect(session.logout()).resolves.toBeUndefined();
+    await expect(session.logout()).resolves.toEqual({ serverSignedOut: true });
 
     expect(queryClient.getQueryData(meKey())).toBeNull();
     expect(resets).toEqual(['unauthorized', 'logout']);
   });
 
-  it('keeps everything when the server cannot be reached', async () => {
+  it('signs out on this device when the server cannot be reached, and finishes it later', async () => {
     const resets = recordResets();
     let offline = false;
     const fake = fakeFetch((request) => {
@@ -386,10 +404,11 @@ describe('logout', () => {
     await session.loadMe();
     offline = true;
 
-    await expect(session.logout()).rejects.toMatchObject({ kind: 'network' });
+    await expect(session.logout()).resolves.toEqual({ serverSignedOut: false });
 
-    expect(queryClient.getQueryData(meKey())).toEqual(userA);
-    expect(resets).toEqual([]);
+    expect(queryClient.getQueryData(meKey())).toBeNull();
+    expect(resets).toEqual(['logout']);
+    expect(localStorage.getItem(PENDING_LOGOUT_KEY)).not.toBeNull();
   });
 });
 

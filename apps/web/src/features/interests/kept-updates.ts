@@ -1,7 +1,7 @@
 import { useCallback, useSyncExternalStore } from 'react';
 
-import { onAccountReset } from '../../session/reset.js';
 import { useAccountId } from '../../session/context.js';
+import { onAccountKeysCleared } from '../../session/local-keys.js';
 import type { UpdateOffer } from './queries.js';
 
 /**
@@ -43,24 +43,10 @@ function store(key: string) {
   changed();
 }
 
-function forgetAll() {
-  remembered.clear();
-  try {
-    const keys: string[] = [];
-    for (let index = 0; index < window.localStorage.length; index += 1) {
-      const key = window.localStorage.key(index);
-      if (key?.includes(MARKER)) keys.push(key);
-    }
-    for (const key of keys) window.localStorage.removeItem(key);
-  } catch {
-    // Storage that cannot be read holds nothing that could be shown again.
-  }
+// The keys go with the account's other local keys; the copies in this tab go with them.
+onAccountKeysCleared((accountId) => {
+  for (const key of [...remembered]) if (key.startsWith(`${accountId}:`)) remembered.delete(key);
   changed();
-}
-
-// Whatever the reason, the choices of an account do not outlive its state on this device.
-onAccountReset(() => {
-  forgetAll();
 });
 
 function subscribe(listener: () => void) {

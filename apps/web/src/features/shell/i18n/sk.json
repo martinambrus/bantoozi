@@ -13,5 +13,6 @@
   "userMenu": {
     "label": "Ponuka účtu: {{name}}"
   },
-  "offlineBanner": "Ste offline. Niektoré funkcie vyžadujú pripojenie."
+  "offlineBanner": "Ste offline. Niektoré funkcie vyžadujú pripojenie.",
+  "signedOutOffline": "Na tomto zariadení ste odhlásený. Bantoozi vás dokončí odhlásiť, keď budete znova online."
 }

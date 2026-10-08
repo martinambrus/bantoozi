@@ -1,6 +1,6 @@
 import { normalizeEmail } from '@bantoozi/shared';
 import { useNavigate } from '@tanstack/react-router';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApiMutation } from '../../api/mutation.js';
@@ -10,6 +10,7 @@ import { Dialog } from '../../components/dialog.js';
 import { errorMessage } from '../../components/error-message.js';
 import { TextField } from '../../components/text-field.js';
 import { useToast } from '../../components/toast/toast-provider.js';
+import { countRecords } from '../../offline/queue.js';
 import { useMe, useSession } from '../../session/context.js';
 import { Alert, Hint, SettingsSection } from './section.js';
 
@@ -23,8 +24,19 @@ function DeleteDialog({ onClose }: { onClose: () => void }) {
   const [typed, setTyped] = useState('');
   const [failure, setFailure] = useState<unknown>(null);
   const [signingOut, setSigningOut] = useState(false);
+  const [unsent, setUnsent] = useState(0);
   const busy = remove.isPending || signingOut;
   const confirmed = normalizeEmail(typed) === normalizeEmail(me.email);
+
+  useEffect(() => {
+    let current = true;
+    void countRecords(me.id).then((count) => {
+      if (current) setUnsent(count);
+    });
+    return () => {
+      current = false;
+    };
+  }, [me.id]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -57,6 +69,11 @@ function DeleteDialog({ onClose }: { onClose: () => void }) {
       dismissible={!busy}
     >
       <form noValidate onSubmit={(event) => void submit(event)} className="flex flex-col gap-4">
+        {unsent === 0 ? null : (
+          <p role="status" className="text-sm font-medium">
+            {t('delete.dialog.unsent', { count: unsent })}
+          </p>
+        )}
         <TextField
           label={t('delete.dialog.confirmLabel', { email: me.email })}
           value={typed}

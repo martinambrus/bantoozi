@@ -1,7 +1,7 @@
 import type { FeedInfo } from '@bantoozi/shared';
 import { useSyncExternalStore } from 'react';
 
-import { onAccountReset } from '../../session/reset.js';
+import { onAccountKeysCleared } from '../../session/local-keys.js';
 
 type DismissedFeed = Pick<FeedInfo, 'id' | 'lastErrorAt'>;
 
@@ -80,15 +80,9 @@ export function useNoticeDismissed(accountId: string, feed: DismissedFeed): bool
   );
 }
 
-// Signing out or switching accounts forgets the dismissals; a session that merely ended keeps
-// them, because the same account may come back, and another tab has already cleared its storage.
-onAccountReset((reason) => {
-  if (reason === 'unauthorized') return;
-  remembered.clear();
-  if (reason !== 'remote') {
-    guarded(() => {
-      for (const key of storedKeys()) if (key.includes(`:${MARK}:`)) localStorage.removeItem(key);
-    }, undefined);
-  }
+// The keys go with the account's other local keys; the copies in this tab go with them.
+onAccountKeysCleared((accountId) => {
+  const prefix = `${accountId}:`;
+  for (const key of [...remembered]) if (key.startsWith(prefix)) remembered.delete(key);
   notify();
 });

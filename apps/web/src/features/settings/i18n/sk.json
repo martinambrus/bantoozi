@@ -217,7 +217,11 @@
       "body": "Odhlásime vás všade. Ak sa do 7 dní prihlásite znova, účet sa obnoví. Potom sa natrvalo odstráni.",
       "confirmLabel": "Na potvrdenie napíšte {{email}}",
       "confirm": "Odstrániť účet",
-      "failed": "Váš účet sa neodstránil. {{reason}}"
+      "failed": "Váš účet sa neodstránil. {{reason}}",
+      "unsent_one": "{{count}} zmena ešte nebola odoslaná a bude stratená.",
+      "unsent_few": "{{count}} zmeny ešte neboli odoslané a budú stratené.",
+      "unsent_many": "{{count}} zmien ešte nebolo odoslaných a bude stratených.",
+      "unsent_other": "{{count}} zmien ešte nebolo odoslaných a bude stratených."
     },
     "done": "Váš účet je odstránený. Ak sa do 7 dní prihlásite znova, obnoví sa."
   }

@@ -12,7 +12,7 @@ import { meKey } from '../../src/api/query-keys.js';
 import { DeadFeedBanner } from '../../src/features/feeds/dead-feed-banner.js';
 import { createI18n, type Language } from '../../src/i18n/index.js';
 import { ToastProvider } from '../../src/components/toast/toast-provider.js';
-import { runResetHooks, type ResetReason } from '../../src/session/reset.js';
+import { clearAccountKeys, forgetAccountMemory } from '../../src/session/local-keys.js';
 import { failure, fakeFetch, noContent } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
 import { USER_A_ID, USER_B_ID, makeMe } from '../session/fixtures.js';
@@ -36,7 +36,7 @@ function deadFeed(overrides: Partial<FeedInfo> = {}): FeedInfo {
 
 afterEach(async () => {
   vi.restoreAllMocks();
-  await runResetHooks('logout');
+  clearAccountKeys(USER_A_ID);
   localStorage.clear();
 });
 
@@ -201,7 +201,7 @@ describe('DeadFeedBanner', () => {
     });
   });
 
-  describe('the dismissals when the account state is dropped', () => {
+  describe('the dismissals when the account is removed from the device', () => {
     async function dismissed() {
       const view = renderBanner(deadFeed());
       await view.user.click(screen.getByRole('button', { name: 'Dismiss' }));
@@ -209,26 +209,45 @@ describe('DeadFeedBanner', () => {
       return view;
     }
 
-    it.each(['logout', 'account_switch'] as const)('are forgotten on %s', async (reason) => {
+    it('are forgotten with the stored keys of the account', async () => {
       await dismissed();
 
-      await act(async () => runResetHooks(reason));
+      await act(async () => clearAccountKeys(USER_A_ID));
 
       expect(dismissalKeys()).toEqual([]);
       expect(screen.getByText(message())).toBeVisible();
     });
 
-    it.each(['unauthorized', 'remote'] as const satisfies readonly ResetReason[])(
-      'are kept on %s, because the same account can come back',
-      async (reason) => {
-        await dismissed();
+    it('are forgotten from memory too, when the browser would not store them', async () => {
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new DOMException('full', 'QuotaExceededError');
+      });
+      const { user } = renderBanner(deadFeed());
+      await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+      expect(screen.queryByText(message())).not.toBeInTheDocument();
 
-        await act(async () => runResetHooks(reason));
+      await act(async () => clearAccountKeys(USER_A_ID));
 
-        expect(dismissalKeys()).toHaveLength(1);
-        expect(screen.queryByText(message())).not.toBeInTheDocument();
-      },
-    );
+      expect(screen.getByText(message())).toBeVisible();
+    });
+
+    it('are kept when the keys of another account are cleared', async () => {
+      await dismissed();
+
+      await act(async () => clearAccountKeys(USER_B_ID));
+
+      expect(dismissalKeys()).toHaveLength(1);
+      expect(screen.queryByText(message())).not.toBeInTheDocument();
+    });
+
+    it('are kept in storage when only the memory of this tab is dropped, because another tab cleared it', async () => {
+      await dismissed();
+
+      await act(async () => forgetAccountMemory(USER_A_ID));
+
+      expect(dismissalKeys()).toHaveLength(1);
+      expect(screen.queryByText(message())).not.toBeInTheDocument();
+    });
   });
 
   describe('Unsubscribe', () => {

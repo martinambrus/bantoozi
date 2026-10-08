@@ -1,5 +1,5 @@
-import { MutationObserver, QueryObserver } from '@tanstack/react-query';
-import { describe, expect, it, vi } from 'vitest';
+import { MutationObserver, QueryObserver, onlineManager } from '@tanstack/react-query';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '../../src/api/errors.js';
 import { createQueryClient } from '../../src/api/query-client.js';
@@ -127,5 +127,31 @@ describe('createQueryClient', () => {
 
     expect(await outcome).toBeInstanceOf(ApiError);
     expect(mutationFn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a mutation made while the browser is offline', () => {
+  afterEach(() => {
+    onlineManager.setOnline(true);
+  });
+
+  it('fails at once instead of waiting unseen for the connection', async () => {
+    onlineManager.setOnline(false);
+    const mutationFn = vi.fn(() => Promise.reject(network()));
+    const mutation = new MutationObserver(createQueryClient(), { mutationFn });
+
+    const outcome = mutation.mutate().catch((error: unknown) => error);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mutationFn).toHaveBeenCalledTimes(1);
+    expect(mutation.getCurrentResult().isPaused).toBe(false);
+    expect(await outcome).toBeInstanceOf(ApiError);
+  });
+
+  it('is not paused by default, whichever screen starts it', () => {
+    expect(createQueryClient().getDefaultOptions().mutations).toMatchObject({
+      networkMode: 'always',
+      retry: false,
+    });
   });
 });

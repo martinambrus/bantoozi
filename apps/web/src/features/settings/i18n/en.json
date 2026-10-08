@@ -215,7 +215,9 @@
       "body": "This signs you out everywhere. Sign in again within 7 days to restore your account. After that it is deleted for good.",
       "confirmLabel": "Type {{email}} to confirm",
       "confirm": "Delete account",
-      "failed": "Your account was not deleted. {{reason}}"
+      "failed": "Your account was not deleted. {{reason}}",
+      "unsent_one": "{{count}} change has not been sent yet and will be lost.",
+      "unsent_other": "{{count}} changes have not been sent yet and will be lost."
     },
     "done": "Your account is deleted. Sign in again within 7 days to restore it."
   }

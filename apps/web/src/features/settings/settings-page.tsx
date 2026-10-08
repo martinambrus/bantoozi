@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
+import { OfflineSection } from '../offline/offline-section.js';
 import { DeleteAccountSection } from './delete-account-section.js';
 import { ExportSection } from './export-section.js';
 import { InvitesSection } from './invites-section.js';
@@ -14,6 +15,7 @@ export function SettingsPage() {
       <h1 className="text-2xl font-bold">{t('title')}</h1>
       <ProfileSection />
       <PreferencesSection />
+      <OfflineSection />
       <SessionsSection />
       <InvitesSection />
       <ExportSection />
