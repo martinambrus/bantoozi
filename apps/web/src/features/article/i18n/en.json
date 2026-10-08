@@ -4,6 +4,12 @@
     "read": "Read",
     "translated": "Translated",
     "notAnalyzed": "Not analyzed",
+    "analysis": {
+      "pending": "Queued for analysis",
+      "running": "Analyzing",
+      "failed": "Analysis failed",
+      "cancelled": "Analysis cancelled"
+    },
     "select": "Select {{title}}",
     "labels": "Labels",
     "addLabel": "Add label {{name}}",

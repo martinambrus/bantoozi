@@ -11,6 +11,7 @@ import { QueryState } from '../../components/states/query-state.js';
 import { ArticleRow } from '../article/article-row.js';
 import { useReaderActions } from './actions/provider.js';
 import { HiddenCauses } from './hidden-causes.js';
+import { useFeedTraining } from './training-selection.js';
 import { isCursorRefused, type useArticleList } from './use-article-list.js';
 import { listsUnread, type ReaderView } from './view.js';
 
@@ -192,6 +193,7 @@ export function ArticleList({
 }: ArticleListProps) {
   const { t } = useTranslation('reader');
   const { query, canLoadMore, loadMore, reload } = list;
+  const training = useFeedTraining(view);
   const sentinel = useSentinel(canLoadMore, () => void loadMore());
   const failed = query.isError && query.data !== undefined && !isCursorRefused(query.error);
 
@@ -208,6 +210,7 @@ export function ArticleList({
     >
       {(rows) => (
         <div className="flex flex-col gap-3">
+          {training.panel}
           <ul ref={listRef} role="list" className="flex flex-col gap-3">
             {rows.map((item) => (
               <li
@@ -225,6 +228,7 @@ export function ArticleList({
                   onToggleExpand={() => onToggle(item)}
                   onWhyThis={() => onWhyThis(item)}
                   simple={simple}
+                  selection={training.selectionOf(item)}
                 />
                 {view.lane === 'hidden' ? <HiddenCauses item={item} /> : null}
               </li>

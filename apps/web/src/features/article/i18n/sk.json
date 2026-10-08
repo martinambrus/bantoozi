@@ -4,6 +4,12 @@
     "read": "Prečítané",
     "translated": "Preložené",
     "notAnalyzed": "Neanalyzované",
+    "analysis": {
+      "pending": "Čaká na analýzu",
+      "running": "Analyzuje sa",
+      "failed": "Analýza zlyhala",
+      "cancelled": "Analýza bola zrušená"
+    },
     "select": "Vybrať {{title}}",
     "labels": "Štítky",
     "addLabel": "Pridať štítok {{name}}",

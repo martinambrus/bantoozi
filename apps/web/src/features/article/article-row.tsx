@@ -2,7 +2,7 @@ import type { ArticleListItem, LabelDto } from '@bantoozi/shared';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Badge } from '../../components/badge.js';
+import { Badge, type BadgeTone } from '../../components/badge.js';
 import { Checkbox } from '../../components/checkbox.js';
 import { FOCUS_RING, cx } from '../../components/cx.js';
 import { PlusIcon } from '../../components/icons.js';
@@ -17,6 +17,19 @@ import { SwipeRow } from './swipe-row.js';
 import { topReasonText } from './top-reason.js';
 import { useArticleActions } from './use-article-actions.js';
 import { useLabels } from './use-labels.js';
+
+/** Where the analysis of an article stands in words (spec 09 §3.2); a finished one needs none. */
+const ANALYSIS_BADGES: Record<
+  ArticleListItem['analysis']['status'],
+  { tone: BadgeTone; label: string } | null
+> = {
+  not_requested: { tone: 'neutral', label: 'row.notAnalyzed' },
+  pending: { tone: 'info', label: 'row.analysis.pending' },
+  running: { tone: 'info', label: 'row.analysis.running' },
+  complete: null,
+  failed: { tone: 'danger', label: 'row.analysis.failed' },
+  cancelled: { tone: 'neutral', label: 'row.analysis.cancelled' },
+};
 
 export interface ArticleRowProps {
   item: ArticleListItem;
@@ -61,6 +74,7 @@ export function ArticleRow({
   const otherSources = shown.cluster === null ? 0 : shown.cluster.size - 1;
   const otherFeeds = shown.cluster?.otherFeeds ?? [];
   const reason = shown.topReason === null ? null : topReasonText(t, i18n.language, shown.topReason);
+  const analysis = ANALYSIS_BADGES[shown.analysis.status];
 
   return (
     <SwipeRow item={shown} actions={actions} labelledBy={titleId}>
@@ -103,7 +117,7 @@ export function ArticleRow({
             {unread ? t('row.unread') : t('row.read')}
           </span>
           {shown.translationAvailable ? <Badge>{t('row.translated')}</Badge> : null}
-          {shown.analysis.status === 'not_requested' ? <Badge>{t('row.notAnalyzed')}</Badge> : null}
+          {analysis === null ? null : <Badge tone={analysis.tone}>{t(analysis.label)}</Badge>}
         </div>
 
         <h3 className="text-base leading-snug">

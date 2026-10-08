@@ -110,6 +110,59 @@ describe('ArticleRow content', () => {
     expect(screen.queryByText('Not analyzed') !== null).toBe(shown);
   });
 
+  describe.each([
+    [
+      'en',
+      {
+        not_requested: 'Not analyzed',
+        pending: 'Queued for analysis',
+        running: 'Analyzing',
+        failed: 'Analysis failed',
+        cancelled: 'Analysis cancelled',
+      },
+    ],
+    [
+      'sk',
+      {
+        not_requested: 'Neanalyzované',
+        pending: 'Čaká na analýzu',
+        running: 'Analyzuje sa',
+        failed: 'Analýza zlyhala',
+        cancelled: 'Analýza bola zrušená',
+      },
+    ],
+  ] as const)('analysis status in %s', (language, words) => {
+    const REQUEST = '3f1c2b64-8a5e-4c63-9f0e-5d7a9b1c2e30';
+    const requested = (status: ArticleListItem['analysis']['status']) =>
+      makeItem({ analysis: { mode: 'training', status, requestId: REQUEST } });
+
+    it.each([
+      ['pending', 'info'],
+      ['running', 'info'],
+      ['failed', 'danger'],
+      ['cancelled', 'neutral'],
+    ] as const)('says %s in its own words and in no other, tinted %s', (status, tone) => {
+      renderRow(requested(status), {}, { language });
+
+      const badge = within(row()).getByText(words[status]);
+      expect(badge).toHaveAttribute('data-tone', tone);
+      for (const [other, word] of Object.entries(words)) {
+        if (other !== status) expect(within(row()).queryByText(word), other).toBeNull();
+      }
+    });
+
+    it('says nothing once the analysis is complete', () => {
+      const under = renderRow(requested('pending'), {}, { language });
+      expect(within(row()).getByText(words.pending)).toBeInTheDocument();
+      under.unmount();
+
+      renderRow(requested('complete'), {}, { language });
+      for (const word of Object.values(words)) {
+        expect(within(row()).queryByText(word), word).toBeNull();
+      }
+    });
+  });
+
   it('asks to toggle when the title is pressed', async () => {
     const { user, onToggleExpand } = renderRow(makeItem());
     const title = screen.getByRole('button', { name: TITLE });
