@@ -1336,3 +1336,16 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   consistency tolerance (an `invalid_response`, recovered by resuming the run), the Ollama Free plan
   rate-limits long runs (recovered by resuming), and Jev attempts cost 1–8 % more than their
   reservation estimate. Total M3b spend $1.21 (round 3: $0.51).
+  Budget forecast behind the $1.00/day (spec 10 §5 asks for the breakdown; the gate report prints
+  only the aggregate and a ×5 sensitivity, a report-generator gap left for M8): the gate assumed
+  1,000 authorized uncached article revisions per day (`--daily-revisions` default). For the initial
+  owner-only beta the components are: total fetched volume about 1,000–1,400 articles a day for the
+  owner's 25 feeds (the 66 golden feeds fetched about 3,200–3,800 a day, roughly 50 per feed,
+  dominated by a few classifieds and sports feeds); off feeds add no provider calls (spec 05 §9);
+  selected training is the owner's explicit calibration choice, bounded per feed and one-off;
+  newly active arrivals are the fetched articles of feeds the owner switches to automatic
+  classification, at most the fetched volume above; explicitly requested history is user-initiated
+  and one-off; reusable cache hits are about zero with one user. At the measured $0.2290 per 1,000
+  revisions with the ×2 margin, the $1.00 cap covers about 2,180 authorized revisions a day, about
+  twice the owner's all-active volume, and the ×5 sensitivity is $2.50/day. M8 replaces this with a
+  forecast from real usage before any cap increase (Q1).
