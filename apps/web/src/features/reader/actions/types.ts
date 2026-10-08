@@ -128,7 +128,10 @@ export interface DispatchOptions {
 /**
  * At most 500 items for `markRead` and 200 for `rateBulk` (spec 08 §5.3); `bulk()` rejects larger
  * inputs with a RangeError and sends nothing. `rateBulk` never sends `analysisRequestId`: rating the
- * visible items is a rating convenience, not a selected analysis (spec 09 §3.3).
+ * visible items is a rating convenience, not a selected analysis (spec 09 §3.3). After a mark-read
+ * (either form), the given rows the store knew as unread take `readAt` and `stateVersion + 1`; the
+ * server leaves rows that were already read untouched. A bulk that changed nothing (`count` 0) is
+ * not listed in `recent()`.
  */
 export type BulkInput =
   | { kind: 'markRead'; items: readonly ArticleListItem[] }
@@ -240,10 +243,10 @@ export interface ReaderActions {
   /** Feed server data (list/detail query results) into the known per-article state. */
   observe(items: readonly ArticleListItem[]): void;
   /**
-   * The item as the reader should see it: the newest known server state (by `stateVersion`) with the
-   * optimistic changes of unsettled actions applied in order. Returns the same object when nothing
-   * changes, so React memoization holds: repeated calls with the same item object return the same
-   * result object until `getVersion()` changes.
+   * The item as the reader should see it: the newest known server state (by `stateVersion`, then
+   * `contentRevision`) with the optimistic changes of unsettled actions applied in order. Returns
+   * the same object when nothing changes, so React memoization holds: repeated calls with the same
+   * item object return the same result object until `getVersion()` changes.
    */
   view<T extends ArticleListItem>(item: T): T;
   dispatch(item: ArticleListItem, action: ReaderAction, options?: DispatchOptions): ActionHandle;
@@ -251,7 +254,10 @@ export interface ReaderActions {
   release(actionId: string, patch?: { reason?: RatingReason; hide?: boolean }): void;
   /** Drop a held or not-yet-sent action and its optimistic change; false once it was sent. */
   cancel(actionId: string): boolean;
-  /** Re-queue a `failed` action with its original body and key; null for any other status. */
+  /**
+   * Re-queue a `failed` action with its original body and key and return its new handle (same id);
+   * a handle kept from before stays `failed`. Null for any other status.
+   */
   retry(actionId: string): ActionHandle | null;
   /**
    * Held or queued: cancelled locally (`cancelled`, no request). In flight: waits for the ack, then
