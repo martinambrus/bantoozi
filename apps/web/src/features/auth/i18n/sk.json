@@ -1,3 +1,43 @@
 {
-  "title": "Prihlásenie"
+  "title": "Prihlásenie",
+  "flow": {
+    "email": "E-mail",
+    "inviteCode": "Kód pozvánky",
+    "sendCode": "Poslať kód",
+    "code": "Kód",
+    "signIn": "Prihlásiť sa",
+    "sendNewCode": "Poslať nový kód",
+    "differentEmail": "Použiť iný e-mail",
+    "codeSent": "Poslali sme kód na adresu {{email}}. Zadajte ho nižšie a pokračujte.",
+    "newCodeSent": "Poslali sme nový kód na adresu {{email}}.",
+    "invalidCode": "Tento kód nie je platný. Skontrolujte najnovší e-mail, ktorý sme vám poslali, alebo si nechajte poslať nový kód.",
+    "rateLimited_one": "Príliš veľa pokusov. Skúste to znova o {{count}} minútu.",
+    "rateLimited_few": "Príliš veľa pokusov. Skúste to znova o {{count}} minúty.",
+    "rateLimited_many": "Príliš veľa pokusov. Skúste to znova o {{count}} minúty.",
+    "rateLimited_other": "Príliš veľa pokusov. Skúste to znova o {{count}} minút."
+  },
+  "login": {
+    "lead": "Zadajte svoj e-mail a pošleme vám kód na prihlásenie.",
+    "noAccount": "Nemáte účet?",
+    "waitlist": "Zapísať sa do poradovníka"
+  },
+  "join": {
+    "title": "Pripojte sa k Bantoozi",
+    "lead": "Bantoozi je zatiaľ len na pozvánky. Zadajte kód pozvánky a svoj e-mail a pošleme vám kód na dokončenie registrácie.",
+    "haveAccount": "Už máte účet?",
+    "signIn": "Prihlásiť sa",
+    "noInvite": "Nemáte kód pozvánky?",
+    "waitlist": "Zapísať sa do poradovníka"
+  },
+  "waitlist": {
+    "title": "Požiadať o pozvánku",
+    "lead": "Bantoozi je zatiaľ len na pozvánky. Nechajte nám svoj e-mail a pošleme vám pozvánku, keď sa uvoľní miesto.",
+    "note": "Poznámka (nepovinné)",
+    "noteHint": "Najviac {{max}} znakov.",
+    "submit": "Zapísať sa do poradovníka",
+    "doneTitle": "Ste v poradovníku",
+    "doneBody": "Keď bude vaša pozvánka pripravená, pošleme ju na adresu {{email}}.",
+    "haveAccount": "Už máte účet?",
+    "signIn": "Prihlásiť sa"
+  }
 }

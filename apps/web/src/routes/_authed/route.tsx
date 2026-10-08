@@ -1,7 +1,9 @@
+import type { Me } from '@bantoozi/shared';
 import { Outlet, createFileRoute, redirect } from '@tanstack/react-router';
 import { useCallback, useSyncExternalStore } from 'react';
 
 import { meKey } from '../../api/query-keys.js';
+import { AccountEffects } from '../../features/shell/account-effects.js';
 
 // Spec 09 §2: every screen except login, join and waitlist needs a session; the first-run wizard
 // runs while `preferences.onboardingCompletedAt` is null.
@@ -25,9 +27,12 @@ function AuthedLayout() {
     (notify: () => void) => queryClient.getQueryCache().subscribe(notify),
     [queryClient],
   );
-  const signedOut = useSyncExternalStore(
-    subscribe,
-    () => queryClient.getQueryData(meKey()) === null,
+  const me = useSyncExternalStore(subscribe, () => queryClient.getQueryData<Me | null>(meKey()));
+  if (me === null) return null;
+  return (
+    <>
+      <AccountEffects me={me} />
+      <Outlet />
+    </>
   );
-  return signedOut ? null : <Outlet />;
 }
