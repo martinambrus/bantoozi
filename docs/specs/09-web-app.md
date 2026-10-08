@@ -34,7 +34,10 @@ mobile-first, installable, works in English and Slovak, and never makes the read
   - reader mutations made offline are queued in the same account-scoped store with original
     mutation id, expected state version, creation time and optimistic before-state. Only read/unread,
     rating, bookmark and existing-label actions can queue offline; bulk operations, edits to
-    interests/feeds/settings, login and account deletion require a connection
+    interests/feeds/settings, login and account deletion require a connection, and a bulk action is
+    also refused while an article it covers has a change waiting on the device (D-156). Undo of a
+    queued change whose request never left cancels it on the device; once its request may have left
+    (the record is marked before it is sent), Undo waits for the replay and uses the receipt
   - replay runs on startup, `online` and foreground return; Background Sync is optional acceleration,
     not a dependency. Replay at most 24 hours after creation, in order per article, with one elected
     tab/service-worker dispatcher. Serialize dependent versions after acknowledged local actions;

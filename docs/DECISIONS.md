@@ -1407,3 +1407,13 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   available as Shift-click or a long press on Like. Spec 09 §3.4 updated. Addendum (M6-T9): on the US
   layout `+` is Shift + `=`, so typing `+` likes and hides, and `=` likes; the keyboard smoke scenario
   presses both.
+- D-156: 2026-10-08 M6-T8 — spec 09 §1 lets read/unread, rating, bookmark and existing-label actions
+  queue offline and leaves bulk operations to a connection, but says nothing about a bulk action
+  that covers an article whose change still waits on the device, or about Undo of a queued change.
+  A bulk action is refused while an article it covers has a waiting change, online too (the reader
+  says the change needs a connection), because it would act on a state the server has not seen; it
+  is never queued. Undo of a waiting change whose request never left cancels it on the device with no
+  request (the changes of the same article behind it take over its expected version), as spec 09
+  §3.3 does for a dislike held for its reason. The record is marked before its request leaves, so
+  after a reload Undo of a change the server may have waits for the replay and uses the receipt.
+  Spec 09 §1 updated.
