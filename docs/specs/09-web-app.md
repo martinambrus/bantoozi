@@ -412,13 +412,19 @@ Plain tables and forms, no polish needed:
    **fake TypeSafe server** (spec 04 §10, `latencyMs: 50`) on fixed test ports.
 2. `apps/api` and 3. `apps/worker`, each with:
    - `NODE_ENV=test`, `SIGNUP_MODE=open`, `RATE_LIMITS_ENABLED=false`, `FETCH_ALLOW_PRIVATE=true`
-   - `MAIL_TRANSPORT=log`, `SESSION_PEPPER=test`
-   - `TYPESAFE_API_KEY=test`, `TYPESAFE_BASE_URL=<fake server URL>`
+   - `MAIL_TRANSPORT=log`, `SESSION_PEPPER=test`, `LOG_LEVEL=warn`
+   - `TYPESAFE_API_KEY=test`, `TYPESAFE_BASE_URL=<fake server URL>`, `TYPESAFE_MODEL=jev-fake`
+   - `OLLAMA_BASE_URL` and `LIBRETRANSLATE_URL` pointing at a closed loopback port, and an empty
+     `OLLAMA_API_KEY`, so no variable can reach a live host
    - `PUBLIC_BASE_URL=http://localhost:<preview port>`, so the browser's `Origin` passes the CSRF check
      (spec 08 §1)
-   - `DATABASE_URL*` for `bantoozi_e2e_<runId>`
+   - `API_PORT`, `ADMIN_EMAILS=<the E2E admin address>`, and `PROVIDER_MASTER_KEY_ID` /
+     `PROVIDER_MASTER_KEYS` with a random key per run
+   - `DATABASE_URL` and `DATABASE_URL_WORKER` for `bantoozi_e2e_<runId>`
 4. `pnpm --filter @bantoozi/web exec vite build && pnpm --filter @bantoozi/web exec vite preview --port <preview port>`,
-   with the preview server proxying `/api` to the API.
+   with `NODE_ENV=production`, `BANTOOZI_API_PROXY=<API URL>` (the preview server proxies `/api` to
+   the API) and `BANTOOZI_PREVIEW_IMG_SRC=<fixture feed origins>` (added to the preview CSP's
+   `img-src`, because the fixtures serve images from loopback http ports).
 
 Test files are named `*.pw.ts` so Vitest never picks them up (spec 01 §6).
 
