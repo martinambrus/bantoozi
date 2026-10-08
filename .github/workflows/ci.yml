@@ -62,13 +62,56 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Show test Postgres logs
+        if: failure()
+        run: docker compose -f infra/compose.test.yml logs --no-color --tail 200
+
+  # The end-to-end suite (spec 01 §7 step 7) runs beside the checks above, so neither waits for the
+  # other; it builds what it runs and starts its own test Postgres.
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      FORCE_COLOR: '0'
+      PG_TEST_PORT: '5433'
+      TEST_ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5433/postgres
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Start test Postgres
+        run: pnpm db:test:up
+
+      # The browser download is kept per lockfile; the system libraries are installed every time.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Install Playwright Chromium
         run: pnpm --filter @bantoozi/web exec playwright install --with-deps chromium
 
       # Starts the whole stack against a throwaway database and tears it down (spec 09 §9).
       - name: End-to-end tests
         run: pnpm e2e
-        timeout-minutes: 15
+        timeout-minutes: 20
 
       - name: Upload end-to-end report
         if: failure()
