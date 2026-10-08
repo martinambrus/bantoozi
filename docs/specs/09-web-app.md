@@ -236,7 +236,8 @@ technology shortcuts. Shortcut sequences expire after one second and announce pe
 not on a control; on a focused button or link it keeps its own meaning, so on the title it opens or
 closes the item; `o` always opens the original (D-154). On keyboard layouts where Shift changes the
 like key (Slovak, Czech), Shift + like cannot be typed; rate and hide with Shift-click or a long press
-on Like there (D-155).
+on Like there. Where `+` itself needs Shift (US English), typing `+` likes and hides, and `=` likes
+(D-155).
 
 ### 3.5 "Why this?" drawer (successor of FeedIt's detailed-training modal)
 

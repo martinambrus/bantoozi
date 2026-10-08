@@ -1339,4 +1339,6 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   and Czech layouts the `+` and `=` keys are unshifted and Shift turns them into `1` and `%`, so Shift
   + like cannot be typed there (Shift + `-` gives `_`, which the reader takes as dislike and hide).
   The keys are not remapped, because `1`-`6` pick the reason of a dislike; like and hide stays
-  available as Shift-click or a long press on Like. Spec 09 §3.4 updated.
+  available as Shift-click or a long press on Like. Spec 09 §3.4 updated. Addendum (M6-T9): on the US
+  layout `+` is Shift + `=`, so typing `+` likes and hides, and `=` likes; the keyboard smoke scenario
+  presses both.

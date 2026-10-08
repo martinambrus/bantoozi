@@ -1,4 +1,4 @@
-import { stateOf } from './flow-support/articles.js';
+import { stateOf, type ArticleState } from './flow-support/articles.js';
 import {
   articleRow,
   openNewLane,
@@ -11,14 +11,16 @@ import {
 import { newAccount } from './reader-support/accounts.js';
 import { subscribe, waitForExtraction } from './reader-support/api.js';
 import { articlePane } from './reader-support/ui.js';
+import { callJson } from './support/api.js';
 import { expect, test } from './support/test.js';
 
 /**
  * Spec 09 §9, scenario 5 (spec 09 §3.4): `j` and `k` move the focus between the rows, `=` likes the
- * focused article, `-` dislikes it and a digit picks the reason, `b` bookmarks it. Each key is
- * checked on the screen and through the API, and no other article is touched.
+ * focused article, `-` dislikes it and a digit picks the reason, `b` bookmarks it, and `+` (Shift
+ * and `=` on a US keyboard) likes and hides it (D-155). Each key is checked on the screen and
+ * through the API, and no other article is touched.
  */
-test('keyboard: j and k move, = likes, - and a digit dislike with a reason, b bookmarks', async ({
+test('keyboard: j and k move, = likes, - and a digit dislike with a reason, b bookmarks, + likes and hides', async ({
   browse,
   control,
 }) => {
@@ -112,6 +114,30 @@ test('keyboard: j and k move, = likes, - and a digit dislike with a reason, b bo
       .not.toBeNull();
     expect(await stateOf(user, third)).toMatchObject({ rating: null, reason: null });
     await expect(articleRow(page, third)).toBeVisible();
+  });
+
+  await test.step('+ (Shift and = on a US keyboard) likes the focused article and hides it', async () => {
+    await page.keyboard.press('Shift+Equal');
+    await expect(articleRow(page, third)).toHaveCount(0);
+    await expect
+      .poll(
+        async () => {
+          const hidden = await callJson<{ items: ArticleState[] }>(
+            user,
+            'GET',
+            '/api/v1/articles',
+            {
+              params: { lane: 'hidden', status: 'all', limit: 100 },
+            },
+          );
+          const item = hidden.items.find((entry) => entry.title === third);
+          return item === undefined
+            ? null
+            : { rating: item.rating, hidden: item.archivedAt !== null };
+        },
+        { message: 'the API holds the like and the hide' },
+      )
+      .toEqual({ rating: 1, hidden: true });
   });
 
   await test.step('no key touched an article it was not on', async () => {

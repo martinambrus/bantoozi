@@ -73,11 +73,12 @@ test('a subscribed feed reaches New without any inference call', async ({
             '/api/v1/articles',
             { params: { lane: 'new' } },
           );
-          return list.items.map((item) => item.title).sort();
+          return list.items.map((item) => item.title);
         },
         { timeout: 30_000, intervals: [500, 1_000] },
       )
-      .toEqual(titles);
+      // The specs share the run's database: articles other specs added to this feed may be there too.
+      .toEqual(expect.arrayContaining(titles));
   });
 
   await test.step('the worker extracts the three article pages', async () => {
@@ -85,7 +86,10 @@ test('a subscribed feed reaches New without any inference call', async ({
       .poll(
         async () => {
           const states = await control.articleStates(tech.url);
-          return states.map((state) => `${state.title}: ${state.pipelineState}`).sort();
+          return states
+            .filter((state) => titles.includes(state.title))
+            .map((state) => `${state.title}: ${state.pipelineState}`)
+            .sort();
         },
         { timeout: 30_000, intervals: [500, 1_000] },
       )
