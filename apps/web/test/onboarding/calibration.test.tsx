@@ -373,6 +373,24 @@ describe('progress while the requests run', () => {
   });
 });
 
+describe('stepping back', () => {
+  it('keeps the progress of the sent articles when the person returns', async () => {
+    const opened = await openStep();
+    await submit(opened, 1, 2);
+    expect(await screen.findByText('0 of 2 selected articles analyzed')).toBeVisible();
+
+    await opened.app.user.click(screen.getByRole('button', { name: 'Back' }));
+    await screen.findByRole('heading', { level: 1, name: 'What do you want to read about?' });
+    act(() => {
+      opened.app.router.history.back();
+    });
+    await screen.findByRole('heading', { level: 1, name: 'Choose articles to teach Bantoozi' });
+
+    expect(await screen.findByText('0 of 2 selected articles analyzed')).toBeVisible();
+    expect(opened.app.calls(ANALYZE)).toHaveLength(1);
+  });
+});
+
 describe('in Slovak', () => {
   it('words the selection, the button and the progress for a Slovak account', async () => {
     const { server } = wizardServer({

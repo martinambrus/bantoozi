@@ -1,7 +1,8 @@
 import { useNavigate } from '@tanstack/react-router';
-import { useCallback, useLayoutEffect, useRef } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import type { Batch } from './batch.js';
 import { CalibrateStep } from './calibrate-step.js';
 import { FeedsStep } from './feeds-step.js';
 import { GatedStep } from './gated-step.js';
@@ -14,7 +15,14 @@ export interface OnboardingPageProps {
   step?: Step | undefined;
 }
 
-function StepContent({ step, go }: { step: Step; go: GoToStep }) {
+interface StepContentProps {
+  step: Step;
+  go: GoToStep;
+  batch: Batch | null;
+  onBatch: (update: (current: Batch | null) => Batch) => void;
+}
+
+function StepContent({ step, go, batch, onBatch }: StepContentProps) {
   switch (step) {
     case 'welcome':
       return <WelcomeStep go={go} />;
@@ -25,7 +33,9 @@ function StepContent({ step, go }: { step: Step; go: GoToStep }) {
     case 'calibrate':
       return (
         <GatedStep go={go}>
-          {(subscriptions) => <CalibrateStep go={go} subscriptions={subscriptions} />}
+          {(subscriptions) => (
+            <CalibrateStep go={go} subscriptions={subscriptions} batch={batch} onBatch={onBatch} />
+          )}
         </GatedStep>
       );
   }
@@ -40,6 +50,8 @@ export function OnboardingPage({ step = 'welcome' }: OnboardingPageProps) {
   const navigate = useNavigate();
   const heading = useRef<HTMLHeadingElement>(null);
   const shown = useRef(step);
+  // The articles sent to be analyzed outlive the calibration step, so Back and forward keep them.
+  const [batch, setBatch] = useState<Batch | null>(null);
 
   // A change of step moves the focus to its heading, so a screen reader starts reading there.
   useLayoutEffect(() => {
@@ -70,7 +82,7 @@ export function OnboardingPage({ step = 'welcome' }: OnboardingPageProps) {
           {t(`${step}.title`)}
         </h1>
       </div>
-      <StepContent step={step} go={go} />
+      <StepContent step={step} go={go} batch={batch} onBatch={setBatch} />
     </main>
   );
 }

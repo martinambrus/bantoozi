@@ -22,18 +22,20 @@ import { useFinish } from './use-finish.js';
 export interface CalibrateStepProps extends StepProps {
   /** The feeds the account follows; there is at least one. */
   subscriptions: readonly Subscription[];
+  /** The articles sent to be analyzed so far, kept by the wizard. */
+  batch: Batch | null;
+  onBatch: (update: (current: Batch | null) => Batch) => void;
 }
 
 /**
  * The last step (spec 09 §4 step 4): the person picks articles of a feed to have analyzed, rates a
  * few of them, and finishes. Nothing is analyzed or classified except by the buttons that say so.
  */
-export function CalibrateStep({ go, subscriptions }: CalibrateStepProps) {
+export function CalibrateStep({ go, subscriptions, batch, onBatch }: CalibrateStepProps) {
   const { t } = useTranslation('onboarding');
   const selection = useArticleSelection();
   const finishing = useFinish();
   const [feedId, setFeedId] = useState(() => subscriptions[0]?.feed.id ?? '');
-  const [batch, setBatch] = useState<Batch | null>(null);
   const progress = useBatchProgress(batch);
   const roundOpen = useRoundOpen(batch, progress);
   const automaticId = useId();
@@ -67,7 +69,7 @@ export function CalibrateStep({ go, subscriptions }: CalibrateStepProps) {
         onDrop={selection.remove}
         onSubmitted={(requests) => {
           const now = Date.now();
-          setBatch((current) => joinBatch(current, subscription.feed.id, requests, now));
+          onBatch((current) => joinBatch(current, subscription.feed.id, requests, now));
           selection.clear();
         }}
       />
