@@ -1,7 +1,14 @@
-import { test as base, type APIRequestContext } from '@playwright/test';
+import {
+  test as base,
+  type APIRequestContext,
+  type BrowserContext,
+  type BrowserContextOptions,
+  type Page,
+} from '@playwright/test';
 
-import { apiLogin, newApiContext } from './api.js';
+import { apiLogin, callJson, newApiContext } from './api.js';
 import { Control } from './control.js';
+import { URLS } from './env.js';
 
 export { expect } from '@playwright/test';
 
@@ -12,9 +19,25 @@ export interface Api {
   login(email: string): Promise<APIRequestContext>;
 }
 
+export interface BrowseOptions {
+  /** False leaves the first-run wizard to do; by default it is marked done through the API. */
+  onboarded?: boolean;
+  /** Extra options of the browser context, e.g. a phone viewport. */
+  context?: BrowserContextOptions;
+}
+
+export interface Browse {
+  /**
+   * A page in a browser context of its own, signed in as `email` (open signup creates the account)
+   * with the session the API sign-in made.
+   */
+  as(email: string, options?: BrowseOptions): Promise<Page>;
+}
+
 interface Fixtures {
   control: Control;
   api: Api;
+  browse: Browse;
 }
 
 export const test = base.extend<Fixtures>({
@@ -43,5 +66,27 @@ export const test = base.extend<Fixtures>({
       },
     });
     await Promise.all(contexts.map((context) => context.dispose()));
+  },
+
+  browse: async ({ browser, api }, use) => {
+    const contexts: BrowserContext[] = [];
+    await use({
+      async as(email, { onboarded = true, context: options = {} } = {}) {
+        const request = await api.login(email);
+        if (onboarded) {
+          await callJson<unknown>(request, 'PATCH', '/api/v1/me', {
+            data: { preferences: { onboardingCompletedAt: new Date().toISOString() } },
+          });
+        }
+        const context = await browser.newContext({
+          baseURL: URLS.app,
+          ...options,
+          storageState: await request.storageState(),
+        });
+        contexts.push(context);
+        return context.newPage();
+      },
+    });
+    await Promise.all(contexts.map((context) => context.close()));
   },
 });

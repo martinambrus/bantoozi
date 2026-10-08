@@ -96,3 +96,16 @@ test('a subscribed feed reaches New without any inference call', async ({
     expect(await control.fakeCount()).toBe(0);
   });
 });
+
+test('a browser signed in through the API opens the reader, or the wizard before onboarding', async ({
+  browse,
+}) => {
+  const reader = await browse.as(EMAILS.reader);
+  await reader.goto('/read/new');
+  await expect(reader).toHaveURL(/\/read\/new$/);
+  await expect(reader.getByRole('heading', { level: 1, name: 'New' })).toBeVisible();
+
+  const newcomer = await browse.as('newcomer@example.com', { onboarded: false });
+  await newcomer.goto('/read/new');
+  await expect(newcomer).toHaveURL(/\/onboarding/);
+});
