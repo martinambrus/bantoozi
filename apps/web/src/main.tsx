@@ -1,20 +1,6 @@
+// zod is configured before any schema exists (src/zod-jitless.ts). Importing the app statically
+// would not keep that order in the build: the schemas sit in a chunk that this module imports, and
+// an imported chunk runs before the module's own code. The app is therefore loaded afterwards.
 import './zod-jitless.js';
 
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-
-import { App, createAppServices } from './app.js';
-import { createI18n, detectLanguage } from './i18n/index.js';
-import './styles.css';
-
-const i18n = createI18n(detectLanguage(navigator.languages));
-document.documentElement.lang = i18n.language;
-const services = createAppServices({ i18n });
-
-const root = document.getElementById('root');
-if (root === null) throw new Error('missing #root element');
-createRoot(root).render(
-  <StrictMode>
-    <App services={services} />
-  </StrictMode>,
-);
+await import('./start.js');

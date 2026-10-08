@@ -7,11 +7,23 @@ test('the preview serves the login page under the production CSP', async ({ page
   page.on('console', (message) => {
     if (/content security policy/i.test(message.text())) violations.push(message.text());
   });
+  // Chromium reports some violations (a blocked eval among them) only as an event, not on the console.
+  await page.exposeFunction('reportViolation', (violation: string) => {
+    violations.push(violation);
+  });
+  await page.addInitScript(() => {
+    document.addEventListener('securitypolicyviolation', (event) => {
+      const report = (window as unknown as { reportViolation: (violation: string) => void })
+        .reportViolation;
+      report(`${event.effectiveDirective} blocked ${event.blockedURI} at ${event.sourceFile}`);
+    });
+  });
 
   const response = await page.goto('/login');
   expect(response?.status()).toBe(200);
   expect(response?.headers()['content-security-policy']).toContain("script-src 'self'");
 
+  await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
   await page.waitForLoadState('networkidle');
   expect(violations).toEqual([]);
 });
