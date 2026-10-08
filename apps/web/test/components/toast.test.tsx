@@ -4,7 +4,11 @@ import { I18nextProvider } from 'react-i18next';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ToastProvider, useToast } from '../../src/components/toast/toast-provider.js';
-import { createToastStore, type ToastStore } from '../../src/components/toast/toast-store.js';
+import {
+  createToastStore,
+  type ToastInput,
+  type ToastStore,
+} from '../../src/components/toast/toast-store.js';
 import { Toaster } from '../../src/components/toast/toaster.js';
 import { createI18n, type Language } from '../../src/i18n/index.js';
 
@@ -17,6 +21,10 @@ function renderToaster(store: ToastStore = createToastStore(), language: Languag
     </I18nextProvider>,
   );
   return store;
+}
+
+function named(label: string) {
+  return { label, onAction: vi.fn() };
 }
 
 function advance(ms: number) {
@@ -83,6 +91,29 @@ describe('createToastStore', () => {
     const store = createToastStore();
     for (const message of ['one', 'two', 'three', 'four']) store.show({ message, tone: 'info' });
     expect(store.getSnapshot().map((toast) => toast.message)).toEqual(['two', 'three', 'four']);
+  });
+
+  it('lists action first, then actions, and keeps at most three in all', () => {
+    const [a, b, c, d] = [named('A'), named('B'), named('C'), named('D')];
+    const actionsOf = (input: Pick<ToastInput, 'action' | 'actions'>) => {
+      const store = createToastStore();
+      store.show({ message: 'Rated', tone: 'info', ...input });
+      return store.getSnapshot()[0]?.actions;
+    };
+    expect(actionsOf({})).toEqual([]);
+    expect(actionsOf({ action: a })).toEqual([a]);
+    expect(actionsOf({ actions: [a, b] })).toEqual([a, b]);
+    expect(actionsOf({ action: a, actions: [b, c] })).toEqual([a, b, c]);
+    expect(actionsOf({ actions: [a, b, c, d] })).toEqual([a, b, c]);
+    expect(actionsOf({ action: d, actions: [a, b, c] })).toEqual([d, a, b]);
+  });
+
+  it('keeps the first action on the toast as its action', () => {
+    const [a, b] = [named('A'), named('B')];
+    const store = createToastStore();
+    store.show({ id: 'many', message: 'many', tone: 'info', actions: [a, b] });
+    store.show({ id: 'none', message: 'none', tone: 'info' });
+    expect(store.getSnapshot().map((toast) => toast.action)).toEqual([a, undefined]);
   });
 
   it('lasts 5 s by default and stays when durationMs is null', () => {
@@ -153,6 +184,58 @@ describe('Toaster', () => {
     expect(seen).toEqual([1]);
     expect(screen.queryByText('Rated')).not.toBeInTheDocument();
     expect(store.getSnapshot()).toEqual([]);
+  });
+
+  describe('with several actions', () => {
+    const UNDO = 'Undo';
+    const TEACH = 'Teach EV battery tech';
+    const STOP = 'Stop suggesting';
+    const LABELS = [UNDO, TEACH, STOP];
+
+    function showWith(store: ToastStore, input: Pick<ToastInput, 'action' | 'actions'>) {
+      act(() => {
+        store.show({ message: 'Rated', tone: 'info', durationMs: null, ...input });
+      });
+    }
+
+    function actionLabels() {
+      const buttons = screen.getAllByRole('button');
+      expect(buttons.at(-1)).toHaveAccessibleName('Dismiss');
+      return buttons.slice(0, -1).map((button) => button.textContent);
+    }
+
+    it('renders one button per action, in order, before the dismiss button', () => {
+      const store = renderToaster();
+      showWith(store, { actions: LABELS.map(named) });
+      expect(actionLabels()).toEqual(LABELS);
+    });
+
+    it.each(LABELS)('runs "%s" once, and only it, then dismisses the toast', async (label) => {
+      const user = userEvent.setup();
+      const store = renderToaster();
+      const actions = LABELS.map(named);
+      showWith(store, { actions });
+
+      await user.click(screen.getByRole('button', { name: label }));
+      expect(actions.map((action) => action.onAction.mock.calls.length)).toEqual(
+        LABELS.map((other) => (other === label ? 1 : 0)),
+      );
+      expect(screen.queryByText('Rated')).not.toBeInTheDocument();
+      expect(store.getSnapshot()).toEqual([]);
+    });
+
+    it('puts action before actions', () => {
+      const store = renderToaster();
+      showWith(store, { action: named(UNDO), actions: [named(TEACH), named(STOP)] });
+      expect(actionLabels()).toEqual(LABELS);
+    });
+
+    it('shows only the first three of four actions', () => {
+      const store = renderToaster();
+      showWith(store, { actions: [...LABELS, 'Fourth'].map(named) });
+      expect(actionLabels()).toEqual(LABELS);
+      expect(screen.queryByRole('button', { name: 'Fourth' })).not.toBeInTheDocument();
+    });
   });
 
   it('dismisses with a labelled icon button, in both languages', async () => {

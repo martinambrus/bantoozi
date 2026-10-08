@@ -11,6 +11,8 @@ export interface ToastInput {
   message: string;
   tone: ToastTone;
   action?: ToastAction | undefined;
+  /** Shown after `action`; a toast keeps at most MAX_TOAST_ACTIONS in all and drops the rest. */
+  actions?: readonly ToastAction[] | undefined;
   /** Milliseconds on screen (default 5000); null keeps it until dismissed. */
   durationMs?: number | null | undefined;
 }
@@ -19,7 +21,10 @@ export interface Toast {
   id: string;
   message: string;
   tone: ToastTone;
+  /** The first of `actions`, for readers of the single-action shape. */
   action?: ToastAction | undefined;
+  /** `action` first, then `actions`. */
+  actions: readonly ToastAction[];
   durationMs: number | null;
 }
 
@@ -32,6 +37,11 @@ export interface ToastStore {
 
 export const DEFAULT_TOAST_DURATION_MS = 5000;
 export const MAX_TOASTS = 3;
+export const MAX_TOAST_ACTIONS = 3;
+
+function actionsOf({ action, actions = [] }: ToastInput): readonly ToastAction[] {
+  return (action === undefined ? actions : [action, ...actions]).slice(0, MAX_TOAST_ACTIONS);
+}
 
 /** Toasts as an external store: `useSyncExternalStore` friendly, with a snapshot that only changes on change. */
 export function createToastStore(): ToastStore {
@@ -47,11 +57,13 @@ export function createToastStore(): ToastStore {
   return {
     show(input) {
       counter += 1;
+      const actions = actionsOf(input);
       const toast: Toast = {
         id: input.id ?? `toast-${counter}`,
         message: input.message,
         tone: input.tone,
-        action: input.action,
+        action: actions[0],
+        actions,
         durationMs: input.durationMs === undefined ? DEFAULT_TOAST_DURATION_MS : input.durationMs,
       };
       set(

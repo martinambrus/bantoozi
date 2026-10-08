@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '../button.js';
 import { cx } from '../cx.js';
 import { IconButton } from '../icon-button.js';
 import { CheckIcon, CloseIcon, InfoIcon, WarningIcon } from '../icons.js';
-import { useToastStore } from './toast-provider.js';
+import { useToastOutlets, useToastStore } from './toast-provider.js';
 import type { Toast, ToastTone } from './toast-store.js';
 
 // Each tone has its own icon, so the tone never rides on colour alone.
@@ -51,7 +52,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
   const { t } = useTranslation('common');
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
-  const { id, action } = toast;
+  const { id, actions } = toast;
   const dismiss = useCallback(() => onDismiss(id), [onDismiss, id]);
   useAutoDismiss(toast, hovered || focused, dismiss);
   const { icon: Icon, classes } = TONES[toast.tone];
@@ -70,8 +71,9 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
     >
       <Icon className="size-5" />
       <p className="flex-1 py-2 text-sm font-medium">{toast.message}</p>
-      {action === undefined ? null : (
+      {actions.map((action, index) => (
         <Button
+          key={index}
           size="sm"
           variant="secondary"
           onClick={() => {
@@ -81,7 +83,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
         >
           {action.label}
         </Button>
-      )}
+      ))}
       <IconButton label={t('actions.dismiss')} onClick={dismiss}>
         <CloseIcon />
       </IconButton>
@@ -89,11 +91,17 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
   );
 }
 
-/** The live region toasts appear in. It stays in the page while empty, so assistive technology announces what is added. */
+/**
+ * The live region toasts appear in. It stays in the page while empty, so assistive technology
+ * announces what is added. While a modal is open the page is inert and nothing in it is announced,
+ * so the one region moves into the topmost modal.
+ */
 export function Toaster() {
   const store = useToastStore();
+  const outlets = useToastOutlets();
   const toasts = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
-  return (
+  const outlet = useSyncExternalStore(outlets.subscribe, outlets.getSnapshot, outlets.getSnapshot);
+  const region = (
     <div
       role="status"
       aria-live="polite"
@@ -105,4 +113,5 @@ export function Toaster() {
       ))}
     </div>
   );
+  return outlet === null ? region : createPortal(region, outlet);
 }

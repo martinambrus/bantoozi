@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { cx } from './cx.js';
 import { IconButton } from './icon-button.js';
 import { CloseIcon } from './icons.js';
+import { lockScroll } from './scroll-lock.js';
+import { useRegisterToastOutlet } from './toast/toast-provider.js';
 
 const FOCUSABLE = [
   'a[href]',
@@ -49,6 +51,8 @@ interface ModalSurfaceProps extends ModalProps {
 /**
  * A native modal `<dialog>`: the browser makes the rest of the page inert (the focus trap) and puts
  * the dialog in the top layer. It is mounted only while open, so each opening starts from scratch.
+ * While open it also stops the page behind it from scrolling and hosts the toast region, which the
+ * inert page could not announce.
  */
 export function Modal({ open, ...props }: ModalSurfaceProps) {
   return open ? <OpenModal {...props} /> : null;
@@ -67,8 +71,11 @@ function OpenModal({
 }: Omit<ModalSurfaceProps, 'open'>) {
   const { t } = useTranslation('common');
   const ref = useRef<HTMLDialogElement>(null);
+  const toastOutletRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const descriptionId = useId();
+
+  useEffect(() => lockScroll(), []);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -82,6 +89,8 @@ function OpenModal({
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
     };
   }, []);
+
+  useRegisterToastOutlet(toastOutletRef);
 
   // The control that started the work is disabled while it runs, which drops the focus to the page
   // behind: Escape would then reach the browser instead of this dialog. The dialog holds the focus
@@ -147,6 +156,7 @@ function OpenModal({
           <CloseIcon />
         </IconButton>
       ) : null}
+      <div ref={toastOutletRef} />
     </dialog>
   );
 }
