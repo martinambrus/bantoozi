@@ -113,3 +113,44 @@ test('a browser signed in through the API opens the reader, or the wizard before
   await newcomer.goto('/read/new');
   await expect(newcomer).toHaveURL(/\/onboarding/);
 });
+
+// What Playwright logs when a page calls `navigator.serviceWorker.register` in a context that
+// blocks service workers: the only sign that the app asked for its worker.
+const BLOCKED_REGISTRATION = 'Service Worker registration blocked by Playwright';
+
+test('the smoke contexts block service workers, and the app asks for its worker without a sound', async ({
+  page,
+  browse,
+}) => {
+  const reader = await browse.as(EMAILS.reader);
+  const visits = [
+    { name: 'the page fixture on /login', visitor: page, path: '/login' },
+    { name: 'a browse.as page on /read/new', visitor: reader, path: '/read/new' },
+  ];
+
+  for (const { name, visitor, path } of visits) {
+    await test.step(name, async () => {
+      const warnings: string[] = [];
+      const errors: string[] = [];
+      visitor.on('console', (message) => {
+        if (message.type() === 'warning') warnings.push(message.text());
+      });
+      visitor.on('pageerror', (error) => errors.push(error.message));
+
+      await visitor.goto(path);
+      await expect(visitor.getByRole('heading', { level: 1 })).toBeVisible();
+      await visitor.waitForLoadState('networkidle');
+
+      const scopes = await visitor.evaluate(async () =>
+        (await navigator.serviceWorker.getRegistrations()).map(
+          (registration) => registration.scope,
+        ),
+      );
+      expect(scopes).toEqual([]);
+      await expect
+        .poll(() => warnings, { message: 'the app asks for its service worker' })
+        .toContain(BLOCKED_REGISTRATION);
+      expect(errors).toEqual([]);
+    });
+  }
+});

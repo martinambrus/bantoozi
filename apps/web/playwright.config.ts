@@ -46,7 +46,9 @@ export default defineConfig({
   retries: process.env['CI'] ? 1 : 0,
   timeout: 90_000,
   reporter: process.env['CI'] ? [['list'], ['html', { open: 'never' }]] : 'list',
-  use: { baseURL: URLS.app, trace: 'retain-on-failure' },
+  // A worker answers requests itself, out of reach of the routes and counters the specs rely on; a
+  // spec that needs one opts in with `serviceWorkers: 'allow'`.
+  use: { baseURL: URLS.app, serviceWorkers: 'block', trace: 'retain-on-failure' },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
     {

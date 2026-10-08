@@ -22,7 +22,10 @@ export interface Api {
 export interface BrowseOptions {
   /** False leaves the first-run wizard to do; by default it is marked done through the API. */
   onboarded?: boolean;
-  /** Extra options of the browser context, e.g. a phone viewport. */
+  /**
+   * Extra options of the browser context, e.g. a phone viewport. Service workers are blocked, as in
+   * the `page` fixture, unless this says `serviceWorkers: 'allow'`.
+   */
   context?: BrowserContextOptions;
 }
 
@@ -80,6 +83,7 @@ export const test = base.extend<Fixtures>({
         }
         const context = await browser.newContext({
           baseURL: URLS.app,
+          serviceWorkers: 'block',
           ...options,
           storageState: await request.storageState(),
         });

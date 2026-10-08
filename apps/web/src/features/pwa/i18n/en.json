@@ -1,0 +1,7 @@
+{
+  "update": {
+    "ready": "A new version of Bantoozi is ready.",
+    "otherTab": "Bantoozi was updated in another tab. Reload to keep using it offline.",
+    "reload": "Reload"
+  }
+}

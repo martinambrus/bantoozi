@@ -43,7 +43,8 @@ export default defineConfig({
     tailwindcss(),
     // Spec 09 §1: the service worker precaches the versioned public app shell only. The app
     // registers it through `virtual:pwa-register/react` (an inline register script would break the
-    // CSP), and src/sw/sw.ts adds the navigation fallback and the optional Background Sync hook.
+    // CSP), and src/sw/sw.ts adds the navigation fallback. There is no Background Sync hook: the
+    // page replays queued actions on startup, `online` and foreground return.
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src/sw',
