@@ -16,3 +16,5 @@ apps/web/playwright-report/
 apps/eval/reports/*
 !apps/eval/reports/.gitkeep
 !apps/eval/reports/*-decision.md
+# TanStack Router generator temp files
+.tanstack/

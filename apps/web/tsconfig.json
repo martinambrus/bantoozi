@@ -10,7 +10,7 @@
     "moduleResolution": "Bundler",
     "customConditions": ["bantoozi-source"],
     "jsx": "react-jsx",
-    "types": ["vite/client"]
+    "types": ["vite/client", "vite-plugin-pwa/react"]
   },
   "include": ["src", "test"]
 }

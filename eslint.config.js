@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import comments from '@eslint-community/eslint-plugin-eslint-comments/configs';
 import js from '@eslint/js';
 import boundaries from 'eslint-plugin-boundaries';
+import reactHooks from 'eslint-plugin-react-hooks';
 import { defineConfig, globalIgnores } from 'eslint/config';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
@@ -113,8 +114,9 @@ export default defineConfig(
   },
   {
     files: ['apps/web/**/*.{ts,tsx}'],
-    ignores: ['apps/web/*.config.ts'],
+    ignores: ['apps/web/*.config.ts', 'apps/web/e2e/**'],
     languageOptions: { globals: { ...globals.browser } },
+    plugins: { 'react-hooks': reactHooks },
     rules: {
       // Credential crypto and every other Node-only shared module stay out of the web bundle
       // (spec 01 §3, "Credential code boundary").
@@ -130,10 +132,33 @@ export default defineConfig(
               group: ['node:*'],
               message: 'Node built-ins are not available in the web client.',
             },
+            {
+              group: ['@bantoozi/testing', '@bantoozi/testing/*'],
+              message: 'Test fixtures and servers are for Playwright specs only.',
+            },
           ],
         },
       ],
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'error',
+      // Feed HTML enters the DOM only through the DOMPurify component (spec 09 §1, spec 11 §7).
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']",
+          message: 'Render untrusted HTML only through src/components/safe-html.tsx.',
+        },
+      ],
     },
+  },
+  {
+    files: ['apps/web/src/components/safe-html.tsx'],
+    rules: { 'no-restricted-syntax': 'off' },
+  },
+  {
+    // Playwright specs and their helpers run in Node and drive the browser (spec 01 §6).
+    files: ['apps/web/e2e/**/*.ts'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
   {
     files: ['apps/*/src/**/*.{ts,tsx}', 'packages/*/src/**/*.ts'],

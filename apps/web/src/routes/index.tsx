@@ -1,7 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router';
-
-import { HomePage } from '../features/home/home-page.js';
+import { createFileRoute, redirect } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/')({
-  component: HomePage,
+  beforeLoad: () => {
+    throw redirect({ to: '/read/$lane', params: { lane: 'for_you' } });
+  },
 });

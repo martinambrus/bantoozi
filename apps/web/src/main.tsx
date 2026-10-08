@@ -1,3 +1,5 @@
+import './zod-jitless.js';
+
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { StrictMode } from 'react';
@@ -10,8 +12,8 @@ import './styles.css';
 
 const i18n = createI18n(detectLanguage(navigator.languages));
 document.documentElement.lang = i18n.language;
-const router = createAppRouter();
 const queryClient = new QueryClient();
+const router = createAppRouter({ queryClient, loadMe: () => Promise.resolve(null) });
 
 const root = document.getElementById('root');
 if (root === null) throw new Error('missing #root element');
