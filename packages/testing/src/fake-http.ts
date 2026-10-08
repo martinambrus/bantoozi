@@ -96,11 +96,11 @@ export function checkLatency(ms: number | undefined, name: string): void {
   }
 }
 
-/** Listens on 127.0.0.1 with a random port; returns the base URL. */
-export async function listenLoopback(server: Server): Promise<string> {
+/** Listens on 127.0.0.1 (a random port unless `wanted` is given); returns the base URL. */
+export async function listenLoopback(server: Server, wanted = 0): Promise<string> {
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => resolve());
+    server.listen(wanted, '127.0.0.1', () => resolve());
   });
   const { port } = server.address() as AddressInfo;
   return `http://127.0.0.1:${port}`;

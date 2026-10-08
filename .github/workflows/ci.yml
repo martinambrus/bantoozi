@@ -62,7 +62,23 @@ jobs:
       - name: Build
         run: pnpm build
 
-      # E2E (`pnpm e2e`) is added in M6 (spec 01 §7 step 7).
+      - name: Install Playwright Chromium
+        run: pnpm --filter @bantoozi/web exec playwright install --with-deps chromium
+
+      # Starts the whole stack against a throwaway database and tears it down (spec 09 §9).
+      - name: End-to-end tests
+        run: pnpm e2e
+        timeout-minutes: 15
+
+      - name: Upload end-to-end report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          if-no-files-found: ignore
 
       - name: Show test Postgres logs
         if: failure()
