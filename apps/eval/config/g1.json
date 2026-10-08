@@ -34,7 +34,7 @@
     "E6": "34",
     "E7": "35"
   },
-  "notes": "owner_pilot: one actual participant; one-person evidence, not multi-person validation.",
+  "notes": "Assisted evidence (D-147, spec 10 §2.2/§2.3): the golden-v3 cards were drafted by Claude (Opus 5.5) from the owner's own description and approved unchanged by the owner, which may overstate what self-written cards achieve; the facet labels (and so the selected demotion cutoffs) are Claude's, labeller claude-opus-5.5, blind to Jev and the ratings, not human labels. owner_pilot: one actual participant; one-person evidence, not multi-person validation.",
   "dataset": {
     "version": "golden-v3",
     "snapshotSha": "a355734e597af5ea7a7d2f724f494959c30496f2badb741f5d1c8abedd1ca09b",
@@ -56,6 +56,6 @@
     "profile": "owner_pilot",
     "participants": 1,
     "status": "pass",
-    "reportSha": "e896c7fcb7a40d075b0e7640e507581b75282facb36dff1991a81ac110eb282e"
+    "reportSha": "3154f860031dc9fc94bfa698a0193a33781073deac44777f649d64a144f68ea1"
   }
 }

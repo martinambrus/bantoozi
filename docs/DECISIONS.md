@@ -1317,13 +1317,16 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   sees, following the `enrich-v1` definitions, blind to Jev's answers and to the ratings, and stored
   through `saveFacetLabels` under that separate labeller id. They tune and check only the demotion
   cutoffs; the pass rule uses the owner's ratings. Spec 10 §2.2 and PLAN §8.1 now allow
-  owner-approved assisted card drafting for the owner pilot only; locked decision 3 (no LLM card
-  authoring in the product) is unchanged.
+  owner-approved assisted card drafting for the owner pilot only, and spec 10 §2.3 and PLAN §8.1
+  assisted facet labels under their own labeller id; `g1.json`'s notes disclose both. Locked
+  decision 3 (no LLM card authoring or labelling teachers in the product) is unchanged.
 - D-148: 2026-10-08 M3b-T4 — G1 decision and initial-beta eligibility (owner-approved 2026-10-08).
   Evidence scope: `owner_pilot`, one participant, one context, 449 ratings on `golden-v3` (141
   held-out: 61 likes, 80 dislikes; cs 34, en 54, sk 53 test ratings, all languages measured). Test
   macro AUC 0.709 (95% CI [0.623, 0.793]) against the 0.70 rule, a narrow pass decided by the point
-  estimate; ΔAUC over the locked B1 baseline +0.192 [0.089, 0.295]; cs 0.837, en 0.642, sk 0.704. It
+  estimate; ΔAUC over the locked B1 baseline +0.192 [0.089, 0.295] (the interval on the report's
+  test-confirmation decision line, which is canonical; the per-scorer table row comes from a separate
+  bootstrap pass and reads [0.086, 0.289], a report-generator inconsistency left for M8); cs 0.837, en 0.642, sk 0.704. It
   is one-person evidence and never multi-person validation. Applied settings (`eval apply-g1`):
   language modes en/sk/cs native; card text mode `as_written` (unmeasured: all cards English); lanes
   For You 0.65 and Maybe 0.35 (defaults kept, precision targets unmet on development); tiers default;

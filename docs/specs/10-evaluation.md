@@ -159,8 +159,9 @@ settings, regardless of profile.
 - **Owner-pilot card drafting (D-147):** for the `owner_pilot` profile the owner may have an
   assistant draft the cards from the owner's own description of their interests, without the
   assistant seeing any article of the round; the owner approves or edits every card before it is
-  entered, and the cards then count as the owner's. The report and `docs/DECISIONS.md` must say so,
-  because assisted drafting may overstate what self-written cards achieve. This is evaluation
+  entered, and the cards then count as the owner's. `docs/DECISIONS.md` and the decision file's
+  notes (`g1.json`, which the gate writes next to the hash-pinned report) must say so, because
+  assisted drafting may overstate what self-written cards achieve. This is evaluation
   practice only: the product never writes cards for users (locked decision 3), and the
   `multi_person_beta` profile keeps self-written cards.
 - **Step 2: pick feeds.** The rater ticks the golden feeds they would actually subscribe to (at least
@@ -209,6 +210,12 @@ settings, regardless of profile.
   The owner is the participant of the earliest rater; the owner's set is chosen in seeded hash order
   and keeps already-labelled articles, and the second labeller's 50 are taken from it, split equally
   across its languages (D-103).
+- **Owner-pilot assisted labels (D-147):** for the `owner_pilot` profile the owner may have an
+  assistant label the owner's set instead, from the same title, excerpt and body lead the classifier
+  sees, blind to the engine's answers and to the ratings, stored under its own labeller id (not the
+  owner's). The report's "adjudicated" labels are then that labeller's, and the demotion cutoffs
+  they select are validated against assisted labels, not human ones; `docs/DECISIONS.md` and the
+  decision file's notes must say so. The `multi_person_beta` profile keeps human labellers.
 
 ### 2.4 Rating app (`apps/eval/src/rating-server`)
 
