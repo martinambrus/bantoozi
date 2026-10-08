@@ -1,5 +1,5 @@
 import { MutationObserver, QueryObserver, onlineManager } from '@tanstack/react-query';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { ApiError } from '../../src/api/errors.js';
 import { createQueryClient } from '../../src/api/query-client.js';
@@ -95,6 +95,33 @@ describe('createQueryClient', () => {
 
     expect(calls).toHaveBeenCalledTimes(1);
     expect(observer.getCurrentResult().status).toBe('error');
+  });
+
+  it('does not retry a network failure while the browser says it is offline', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    onTestFinished(() => {
+      vi.restoreAllMocks();
+    });
+    const { calls, observer } = observe(() => Promise.reject(network()));
+
+    await afterMs(0);
+
+    expect(calls).toHaveBeenCalledTimes(1);
+    expect(observer.getCurrentResult().status).toBe('error');
+  });
+
+  it('still retries a 503 while the browser says it is offline', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    onTestFinished(() => {
+      vi.restoreAllMocks();
+    });
+    const { calls } = observe(() => Promise.reject(http(503)));
+
+    await afterMs(1000);
+
+    expect(calls).toHaveBeenCalledTimes(2);
   });
 
   it('never retries sooner than Retry-After', async () => {

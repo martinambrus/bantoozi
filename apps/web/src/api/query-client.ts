@@ -9,6 +9,8 @@ const MAX_RETRY_AFTER_MS = 30_000;
 
 function shouldRetry(failureCount: number, error: unknown): boolean {
   if (failureCount >= MAX_RETRIES || !isRetryable(error)) return false;
+  // Waiting out the backoff cannot help while the browser has no connection at all.
+  if (isApiError(error) && error.kind === 'network' && navigator.onLine === false) return false;
   return !isApiError(error) || (error.retryAfterMs ?? 0) <= MAX_RETRY_AFTER_MS;
 }
 
