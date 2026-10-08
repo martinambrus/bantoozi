@@ -1,3 +1,509 @@
 {
-  "title": "Administrácia"
+  "title": "Administrácia",
+  "nav": {
+    "label": "Sekcie administrácie",
+    "overview": "Prehľad",
+    "usage": "Využitie",
+    "settings": "Nastavenia",
+    "providers": "Účty poskytovateľov",
+    "feeds": "Zdroje",
+    "library": "Knižnica",
+    "users": "Používatelia",
+    "invites": "Pozvánky",
+    "waitlist": "Čakacia listina"
+  },
+  "common": {
+    "loadMore": "Načítať viac",
+    "search": "Hľadať"
+  },
+  "overview": {
+    "tiles": {
+      "users": "Používatelia",
+      "active7d": "Aktívni za posledných 7 dní: {{value}}",
+      "feeds": "Zdroje",
+      "feedStatus": {
+        "active": "Aktívne: {{value}}",
+        "quarantined": "V karanténe: {{value}}",
+        "dead": "Mŕtve: {{value}}",
+        "paused": "Pozastavené: {{value}}"
+      },
+      "articles": "Články dnes",
+      "spend": "Výdavky dnes",
+      "llm": "Volania LLM dnes",
+      "tier2": "Preklady 2. úrovne dnes",
+      "ofCap": "{{used}} z {{cap}}"
+    },
+    "engines": {
+      "title": "Motory",
+      "typesafe": "Jev (typesafe)",
+      "llm": "Záložný LLM"
+    },
+    "breaker": {
+      "closed": "Zatvorený",
+      "open": "Otvorený",
+      "half_open": "Polootvorený",
+      "auth": "Chyba overenia",
+      "explain": {
+        "closed": "Volania poskytovateľa prechádzajú.",
+        "open": "Volania sú pozastavené, pretože poskytovateľ opakovane zlyháva.",
+        "half_open": "Povolené je jedno skúšobné volanie, aby sa zistilo, či sa poskytovateľ zotavil.",
+        "auth": "Poskytovateľ kľúč odmietol. Volania ostanú pozastavené, kým sa istič neresetuje."
+      },
+      "pausedUntil": "Pozastavené do:",
+      "lastReset": "Posledný požadovaný reset:",
+      "waiting": "Čaká sa, kým worker reset použije…",
+      "stalled": "Worker reset zatiaľ nepoužil. Skontrolujte, či worker beží.",
+      "reset": "Resetovať istič",
+      "resetTitle": "Resetovať istič pre {{engine}}?",
+      "resetBody": "Volania poskytovateľa sa obnovia, keď worker reset použije. Worker ho použije do približne 10 sekúnd. Ak poskytovateľ stále zlyháva, istič sa opäť otvorí.",
+      "circuitInvalid": "Uložený stav ističa je neplatný, preto ho odtiaľto nemožno resetovať."
+    },
+    "queues": {
+      "title": "Fronty úloh",
+      "queue": "Fronta",
+      "waiting": "Čaká",
+      "retrying": "Opakuje sa",
+      "running": "Beží",
+      "failed": "Zlyhalo",
+      "empty": "Žiadna fronta nehlási žiadne úlohy."
+    },
+    "translations": {
+      "title": "Preklady",
+      "caption": "Preklady za posledných 24 hodín",
+      "engine": "Motor",
+      "quality": "Kvalita",
+      "stored": "Uložené",
+      "engines": {
+        "libretranslate": "LibreTranslate",
+        "ollama": "Ollama"
+      },
+      "qualities": {
+        "ok": "OK",
+        "weak": "Slabá",
+        "fail": "Zlyhala"
+      },
+      "empty": "Za posledných 24 hodín sa neuložili žiadne preklady.",
+      "reprocess": "Spracovať preklady znova",
+      "reprocessHint": "Znova preloží články, ktorých preklad sa preskočil, napríklad keď bola prekladová služba nedostupná.",
+      "queued": "Opätovné spracovanie preskočených prekladov je zaradené do fronty."
+    }
+  },
+  "usage": {
+    "period": "Obdobie",
+    "last_one": "Posledný {{count}} deň",
+    "last_few": "Posledné {{count}} dni",
+    "last_many": "Posledného {{count}} dňa",
+    "last_other": "Posledných {{count}} dní",
+    "spend": "Výdavky",
+    "noSpend": "V tomto období sa nezaznamenali žiadne výdavky.",
+    "chart": {
+      "title_one": "Denné náklady, posledný deň",
+      "title_few": "Denné náklady, posledné {{count}} dni",
+      "title_many": "Denné náklady, posledného {{count}} dňa",
+      "title_other": "Denné náklady, posledných {{count}} dní",
+      "summary": "Výdavky od {{from}} do {{to}}: spolu {{total}}, najviac {{day}} ({{max}}).",
+      "summaryOneDay": "Výdavky {{day}}: {{total}}."
+    },
+    "topUsers": {
+      "title": "Najnáročnejší používatelia",
+      "caption": "Najnáročnejší používatelia podľa odhadovaných nákladov",
+      "user": "Používateľ",
+      "direct": "Priame",
+      "shared": "Zdieľané",
+      "total": "Spolu",
+      "noEmail": "Bez uloženého e-mailu",
+      "empty": "V tomto období nie je používateľom pripísané žiadne využitie.",
+      "estimate": "Náklady zdieľané medzi používateľmi sa rozdeľujú podľa využitia, preto ide o odhady."
+    }
+  },
+  "settings": {
+    "intro": "Každé nastavenie je hodnota JSON. Upravte jedno, skontrolujte ho a uložte samostatne; ostatné editory to neovplyvní.",
+    "rankerVersion": "Verzia nastavení rankera: {{value}}",
+    "default": "Predvolené (neuložené)",
+    "stored": "Uložené, naposledy zmenené",
+    "save": "Uložiť {{key}}",
+    "revert": "Vrátiť {{key}}",
+    "saved": "{{key}} je uložené.",
+    "unchanged": "{{key}} už mal túto hodnotu.",
+    "notJson": "Toto nie je platný JSON.",
+    "notAccepted": "Neprijaté: {{reason}}",
+    "rankerInvalid": "Zlúčená konfigurácia rankera je neplatná: {{reason}}",
+    "errors": {
+      "libreNotConfigured": "LibreTranslate nie je nakonfigurovaný, preto sa zmeny jazykov nedajú uložiť.",
+      "libreMissing": "LibreTranslate neuvádza tieto jazykové dvojice: {{pairs}}.",
+      "libreUnavailable": "LibreTranslate nevedel potvrdiť jazyky ({{reason}}), preto sa zmeny jazykov nedajú uložiť.",
+      "rankerRejected": "Server zamietol zlúčenú konfiguráciu rankera.",
+      "unknownQuestionSet": "Neznáma sada otázok pre „{{kind}}“.",
+      "settingsChanged": "Nastavenia sa počas ukladania zmenili. Načítali sa najnovšie hodnoty; skontrolujte svoju úpravu a uložte znova.",
+      "layaWorkerMissing": "Žiadny bežiaci worker nespracúva fronty Laya, preto sa engine.laya nedá nastaviť."
+    }
+  },
+  "providers": {
+    "intro": "Kľúče sú uložené zašifrované a po odoslaní sa už nikdy nezobrazia. Pripravte nový kľúč, overte ho malým testovacím volaním a potom ho aktivujte. Aktívny kľúč funguje, kým sa nový neaktivuje.",
+    "names": {
+      "typesafe": "Jev (typesafe)",
+      "ollama": "Ollama"
+    },
+    "source": {
+      "label": "Nakonfigurovaný zdroj",
+      "none": "Nenakonfigurované",
+      "env": "Kľúč v prostredí workera",
+      "db": "Uložený zašifrovane v databáze"
+    },
+    "state": "Stav",
+    "enabled": "Zapnuté",
+    "disabled": "Vypnuté",
+    "activeKey": "Aktívny kľúč",
+    "candidateKey": "Pripravený kľúč",
+    "none": "Žiadny",
+    "version": "Verzia {{version}}",
+    "candidateStatus": {
+      "pending": "Čaká",
+      "validating": "Overuje sa…",
+      "valid": "Platný",
+      "invalid": "Neplatný"
+    },
+    "validatedAt": "Naposledy overené",
+    "capabilities": {
+      "label": "Schopnosti",
+      "model": "Model: {{value}}",
+      "concurrency": "Limit súbežnosti: {{value}}",
+      "flag": "{{name}}: {{value}}"
+    },
+    "yes": "áno",
+    "no": "nie",
+    "lastError": {
+      "invalid_response": "Poskytovateľ odpovedal, ale nie v očakávanom formáte. Skontrolujte, či sú koncový bod a model správne.",
+      "rate_limited": "Poskytovateľ obmedzuje počet požiadaviek. Overte znova o niekoľko minút.",
+      "timeout": "Poskytovateľ neodpovedal včas. Overte znova.",
+      "provider_unavailable": "Poskytovateľ je momentálne nedostupný. Overte znova neskôr.",
+      "not_configured": "Worker nemá pre tohto poskytovateľa nastavený koncový bod ani model.",
+      "probe_budget_exceeded": "Overenie dosiahlo svoj limit výdavkov skôr, než sa skončilo. Overte znova.",
+      "decrypt_failed": "Worker nedokázal dešifrovať pripravený kľúč. Pripravte kľúč znova.",
+      "budget_unavailable": "Denný rozpočet je vyčerpaný, preto sa neuskutočnilo žiadne testovacie volanie. Overte znova, keď bude rozpočet k dispozícii.",
+      "auth_rejected": "Poskytovateľ kľúč odmietol. Skontrolujte, či je správny a stále aktívny, a potom ho pripravte znova.",
+      "request_rejected": "Poskytovateľ odmietol testovaciu požiadavku, napríklad preto, že model nie je pre tento kľúč dostupný.",
+      "provider_error": "Poskytovateľ počas overovania vrátil chybu.",
+      "cost_overrun": "Testovacie volanie stálo viac, než sa čakalo, a bolo zastavené. Overte znova.",
+      "credential_unavailable": "Worker nedokázal načítať pripravený kľúč. Overte znova alebo pripravte kľúč znova.",
+      "unknown": "Overenie sa zastavilo s kódom {{code}}."
+    },
+    "keyLabel": "Nový kľúč API pre {{provider}}",
+    "stage": "Pripraviť kľúč",
+    "staged": "Kľúč je pripravený. Teraz ho overte.",
+    "validate": "Overiť",
+    "validateHint": "Overenie uskutoční malé testovacie volanie poskytovateľa v rámci denného rozpočtu. Môže trvať niekoľko sekúnd.",
+    "activate": "Aktivovať",
+    "activateHint": "Overenie platí 24 hodín. Aktivácia nahradí aktívny kľúč; dovtedy aktívny kľúč naďalej funguje.",
+    "activated": "Kľúč je aktivovaný. Odteraz sa používa.",
+    "disable": "Vypnúť",
+    "disableTitle": "Vypnúť {{provider}}?",
+    "disableBody": "Vypnutie zabráni Bantoozi používať tohto poskytovateľa. Kľúč u poskytovateľa nezruší: zrušte ho aj vo svojom účte u poskytovateľa.",
+    "disableConfirm": "Vypnúť poskytovateľa",
+    "disabledToast": "Poskytovateľ je vypnutý.",
+    "problems": {
+      "changed": "Tento prístupový údaj sa medzitým zmenil. Zobrazuje sa najnovší stav; skontrolujte ho a skúste to znova.",
+      "keyring": "Úložisko kľúčov nie je na serveri nastavené (chýba hlavný kľúč), preto sa kľúče nedajú uložiť.",
+      "keyRejected": "Server tento kľúč neprijal. Skontrolujte, či ste vložili celý kľúč bez medzier.",
+      "noCandidate": "Už neexistuje žiadny pripravený kľúč. Zobrazuje sa najnovší stav."
+    }
+  },
+  "feeds": {
+    "statusFilter": "Stav",
+    "allStatuses": "Všetky stavy",
+    "status": {
+      "active": "Aktívny",
+      "quarantined": "V karanténe",
+      "dead": "Mŕtvy",
+      "paused": "Pozastavený"
+    },
+    "search": "Hľadať zdroje",
+    "resetHint": "Reset vymaže sériu chýb zdroja v karanténe alebo mŕtveho zdroja a čoskoro ho znova stiahne. Zdroj zlúčený do iného zdroja sa resetovať nedá.",
+    "columns": {
+      "feed": "Zdroj",
+      "status": "Stav",
+      "subscribers": "Odberatelia",
+      "errors": "Chyby",
+      "lastSuccess": "Posledný úspech",
+      "nextFetch": "Ďalšie sťahovanie",
+      "actions": "Akcie"
+    },
+    "until": "Do",
+    "mergedInto": "Zlúčený do zdroja {{id}}",
+    "noErrors": "Žiadne",
+    "errors": "{{code}}, {{streak}} po sebe",
+    "unknownError": "Neznáma chyba",
+    "reset": "Resetovať",
+    "resetLabel": "Resetovať {{name}}",
+    "resetDone": "Zdroj je resetovaný. Čoskoro sa znova stiahne.",
+    "resetMerged": "Tento zdroj bol zlúčený do iného zdroja a nedá sa resetovať. Zoznam sa obnovil.",
+    "optionsButton": "Možnosti",
+    "optionsLabel": "Upraviť možnosti zdroja {{name}}",
+    "empty": "Týmto filtrom nezodpovedá žiadny zdroj.",
+    "options": {
+      "title": "Možnosti sťahovania pre {{name}}",
+      "agent": "Prepísanie User-Agent",
+      "agentHint": "Pošle sa namiesto štandardného User-Agent pri sťahovaní tohto zdroja. Nechajte prázdne, ak chcete použiť štandardný.",
+      "agentAscii": "Použite iba tlačiteľné znaky ASCII.",
+      "agentTooLong": "Použite najviac 200 znakov.",
+      "strong": "Náročný zdroj: prekladať silnejším modelom",
+      "strongHint": "Prekladá tento zdroj väčším modelom Ollama, ktorý je pomalší a náročnejší na výpočty.",
+      "save": "Uložiť možnosti",
+      "saved": "Možnosti sťahovania sú uložené."
+    }
+  },
+  "users": {
+    "search": "Hľadať používateľov",
+    "columns": {
+      "user": "Používateľ",
+      "role": "Rola",
+      "plan": "Plán",
+      "invites": "Zostávajúce pozvánky",
+      "lastActive": "Naposledy aktívny",
+      "joined": "Pripojil sa",
+      "actions": "Akcie"
+    },
+    "roles": {
+      "user": "Používateľ",
+      "admin": "Správca"
+    },
+    "deleted": "Zmazaný",
+    "editLabel": "Upraviť {{email}}",
+    "edit": {
+      "title": "Upraviť {{email}}",
+      "role": "Rola",
+      "plan": "Plán",
+      "invites": "Zostávajúce pozvánky",
+      "bootstrap": "Uvedený v ADMIN_EMAILS: zrušenie role platí len do jeho ďalšieho prihlásenia.",
+      "invitesInvalid": "Zadajte celé číslo od 0 do {{max}}.",
+      "lastAdmin": "Toto je jediný aktívny správca, preto sa rola nedá odobrať. Najprv urobte správcom iný účet.",
+      "save": "Uložiť používateľa"
+    },
+    "saved": "Používateľ je uložený.",
+    "savedSessions_one": "Používateľ je uložený. {{count}} relácia bola odhlásená.",
+    "savedSessions_few": "Používateľ je uložený. {{count}} relácie boli odhlásené.",
+    "savedSessions_many": "Používateľ je uložený. {{count}} relácie bolo odhlásených.",
+    "savedSessions_other": "Používateľ je uložený. {{count}} relácií bolo odhlásených.",
+    "empty": "Nikto nevyhovuje."
+  },
+  "invites": {
+    "statusFilter": "Stav",
+    "allStatuses": "Všetky stavy",
+    "status": {
+      "unused": "Nepoužitá",
+      "used": "Použitá",
+      "expired": "Vypršaná"
+    },
+    "columns": {
+      "code": "Kód",
+      "email": "E-mail",
+      "note": "Poznámka",
+      "status": "Stav",
+      "created": "Vytvorená",
+      "expires": "Vyprší"
+    },
+    "empty": "Žiadne pozvánky nevyhovujú.",
+    "form": {
+      "title": "Vytvoriť pozvánky",
+      "count": "Počet pozvánok",
+      "email": "E-mail (voliteľné)",
+      "note": "Poznámka (voliteľné)",
+      "days": "Platí (dni, voliteľné)",
+      "submit": "Vytvoriť pozvánky",
+      "countInvalid": "Zadajte celé číslo od 1 do {{max}}.",
+      "countWithEmail": "Pozvánka pre jednu e-mailovú adresu sa vytvára vždy samostatne.",
+      "daysInvalid": "Zadajte celé číslo od 1 do {{max}}.",
+      "emailInvalid": "Zadajte platnú e-mailovú adresu.",
+      "noteTooLong": "Použite najviac {{max}} znakov."
+    },
+    "result": {
+      "title": "Nové pozvánky",
+      "created_one": "Vytvorená {{count}} pozvánka.",
+      "created_few": "Vytvorené {{count}} pozvánky.",
+      "created_many": "Vytvorených {{count}} pozvánky.",
+      "created_other": "Vytvorených {{count}} pozvánok.",
+      "emailed": "Pozvánka bola poslaná aj e-mailom na {{email}}.",
+      "emailFailed": "E-mail sa nepodarilo odoslať. Odkaz zdieľajte sami."
+    }
+  },
+  "waitlist": {
+    "columns": {
+      "email": "E-mail",
+      "language": "Jazyk",
+      "note": "Poznámka",
+      "joined": "Pridaný",
+      "status": "Stav",
+      "actions": "Akcie"
+    },
+    "locales": {
+      "en": "Angličtina",
+      "sk": "Slovenčina"
+    },
+    "waiting": "Čaká",
+    "invited": "Pozvaný",
+    "invite": "Pozvať",
+    "inviteLabel": "Pozvať {{email}}",
+    "result": {
+      "title": "Pozvánka vytvorená",
+      "for": "Pozvánka pre {{email}}"
+    },
+    "accountExists": "Táto adresa už má účet, preto ju nemožno pozvať.",
+    "empty": "Na čakacej listine nikto nie je."
+  },
+  "library": {
+    "search": "Hľadať karty knižnice",
+    "create": "Vytvoriť kartu knižnice",
+    "created": "Karta knižnice je vytvorená.",
+    "saved": "Karta knižnice je uložená.",
+    "savedVersion": "Uložené ako nová verzia (verzia {{version}}). Čitatelia, ktorí majú predchádzajúcu verziu, si ju ponechajú, kým sa nerozhodnú aktualizovať.",
+    "version": "Verzia {{version}}",
+    "holders_one": "{{count}} držiteľ",
+    "holders_few": "{{count}} držitelia",
+    "holders_many": "{{count}} držiteľa",
+    "holders_other": "{{count}} držiteľov",
+    "retired": "Vyradená",
+    "superseded": "Nahradená verziou {{version}}",
+    "editLabel": "Upraviť {{title}}",
+    "cards": {
+      "title": "Karty knižnice",
+      "empty": "Žiadne karty knižnice nevyhovujú."
+    },
+    "fields": {
+      "interest": "Záujem",
+      "notFor": "Nie",
+      "examplesYes": "Príklady na zobrazenie",
+      "examplesNo": "Príklady na vynechanie",
+      "topics": "Témy",
+      "skTitle": "Slovenský názov",
+      "skInterest": "Slovenský záujem"
+    },
+    "publication": {
+      "label": "Zverejnenie",
+      "original": "Vytvorená v knižnici",
+      "on": "Zverejnené"
+    },
+    "basis": {
+      "creator_approval": "Schválené tvorcom",
+      "creator_inactive_30d": "Zverejnené po 30 dňoch nečinnosti tvorcu"
+    },
+    "edit": {
+      "title": "Upraviť {{title}} (verzia {{version}})",
+      "titleUnversioned": "Upraviť {{title}}",
+      "versionHint": "Zmena záujmu, textu „ale nie“ alebo príkladov vytvorí novú verziu tejto karty. Čitatelia, ktorí už majú aktuálnu verziu, si ju ponechajú, kým sa nerozhodnú aktualizovať. Názov, témy, slovenské texty a vyradenie menia kartu priamo."
+    },
+    "form": {
+      "slug": "Slug",
+      "slugHint": "Malé písmená, číslice a spojovníky. Slug pomenúva kartu v knižnici a neskôr sa nedá zmeniť.",
+      "title": "Názov",
+      "interest": "Záujem",
+      "notFor": "Ale nie (voliteľné)",
+      "examplesYes": "Príklady, čo zobraziť (jeden na riadok)",
+      "examplesNo": "Príklady, čo vynechať (jeden na riadok)",
+      "skTitle": "Slovenský názov (voliteľné)",
+      "skInterest": "Slovenský záujem (voliteľné)",
+      "topics": "ID tém (oddelené čiarkou)",
+      "topicsHint": "ID z taxonómie tém, napríklad science.space. Najviac 10.",
+      "retired": "Vyradená",
+      "retiredHint": "Vyradená karta sa už v knižnici neponúka.",
+      "create": "Vytvoriť kartu",
+      "save": "Uložiť zmeny"
+    },
+    "fieldErrors": {
+      "slug": "Použite malé písmená, číslice a spojovníky, začínajúce písmenom alebo číslicou (najviac 100 znakov).",
+      "title": "Zadajte názov s 1 až 60 znakmi.",
+      "interest": "Zadajte 3 až 300 znakov.",
+      "notFor": "Zadajte najviac 300 znakov.",
+      "examplesYes": "Zadajte najviac 5 príkladov po najviac 200 znakov, jeden na riadok.",
+      "examplesNo": "Zadajte najviac 5 príkladov po najviac 200 znakov, jeden na riadok.",
+      "topicIds": "Zadajte najviac 10 ID tém, napríklad science.space, oddelených čiarkami."
+    },
+    "problems": {
+      "slugTaken": "Tento slug už používa iná karta knižnice.",
+      "textExists": "Karta s presne týmto textom už existuje (karta knižnice, verzia alebo zdieľaná karta).",
+      "notLatest": "Existuje novšia verzia tejto karty. Zoznam sa obnovil; upravte najnovšiu verziu.",
+      "notShared": "Táto karta sa už nezdieľa, preto ju nemožno navrhnúť.",
+      "insufficientHolders_one": "Túto kartu drží iba {{count}} čitateľ; potrební sú aspoň {{min}}.",
+      "insufficientHolders_few": "Túto kartu držia iba {{count}} čitatelia; potrební sú aspoň {{min}}.",
+      "insufficientHolders_many": "Túto kartu drží iba {{count}} čitateľa; potrební sú aspoň {{min}}.",
+      "insufficientHolders_other": "Túto kartu drží iba {{count}} čitateľov; potrební sú aspoň {{min}}.",
+      "unknownTopics": "Neznáme témy: {{topics}}."
+    },
+    "candidates": {
+      "title": "Kandidáti na zverejnenie",
+      "intro": "Zdieľané karty, ktoré drží aspoň traja čitatelia. Zverejnením sa karta objaví vo verejnej knižnici; nikdy sa to nestane samo.",
+      "empty": "Zatiaľ žiadne zdieľané karty nemajú dosť držiteľov.",
+      "listing": "Navrhovaný záznam",
+      "slug": "Slug",
+      "publicTitle": "Verejný názov",
+      "skTitle": "Slovenský názov",
+      "requested": "Požiadané",
+      "answered": "Tvorca odpovedal",
+      "expires": "Vyprší",
+      "publishedOn": "Zverejnené"
+    },
+    "eligibility": {
+      "approved": {
+        "label": "Schválené tvorcom",
+        "explain": "Pôvodný tvorca schválil presne tento záznam."
+      },
+      "inactive": {
+        "label": "Vhodné po 30 dňoch nečinnosti",
+        "explain": "Tvorca na túto žiadosť neodpovedal a bol nečinný aspoň 30 dní. Zverejnenie na tomto základe je vaše vlastné rozhodnutie; nezaznamenáva sa ako schválenie tvorcu."
+      },
+      "awaiting_approval": {
+        "label": "Čaká na schválenie",
+        "explain": "Tvorca bol aktívny za posledných 30 dní, preto musí presne tento záznam najprv schváliť. Dovtedy karta ostáva zdieľaná."
+      },
+      "declined": {
+        "label": "Zamietnuté",
+        "explain": "Tvorca žiadosť zamietol. Zamietnutie ostáva vetom, kým tvorca neschváli neskôr; nová žiadosť ho neprebije."
+      },
+      "unknown_creator": {
+        "label": "Neznámy tvorca",
+        "explain": "Pôvodný tvorca je neznámy alebo zmazaný, preto karta ostáva pozastavená."
+      },
+      "no_request": {
+        "label": "Zatiaľ bez žiadosti",
+        "explain": "Pre túto kartu zatiaľ neexistuje žiadosť o zverejnenie. Vytvorte ju, aby ste oslovili pôvodného tvorcu."
+      },
+      "insufficient_holders": {
+        "label": "Málo držiteľov",
+        "explain": "Túto kartu teraz drží príliš málo čitateľov, preto ju nemožno zverejniť."
+      },
+      "expired": {
+        "label": "Žiadosť vypršala",
+        "explain": "Žiadosť vypršala. Vytvorte novú žiadosť, aby ste tvorcu oslovili znova."
+      },
+      "stale_payload": {
+        "label": "Text karty sa zmenil",
+        "explain": "Text karty alebo záznam sa po vytvorení žiadosti zmenil, preto sa skoršia odpoveď už nepočíta. Vytvorte novú žiadosť."
+      },
+      "promoted": {
+        "label": "Zverejnené",
+        "explain": "Táto karta je už vo verejnej knižnici."
+      }
+    },
+    "promote": {
+      "button": "Zverejniť",
+      "label": "Zverejniť {{title}}",
+      "title": "Zverejniť „{{title}}“ vo verejnej knižnici?",
+      "bodyApproved": "Pôvodný tvorca schválil presne tento záznam. Pri potvrdení sa záznam a aktivita tvorcu znova skontrolujú.",
+      "bodyInactive": "Tvorca na túto žiadosť neodpovedal a bol nečinný aspoň 30 dní. Zverejňujete výlučne na tomto základe. Aktivita sa pri potvrdení znova skontroluje: ak bol tvorca medzitým opäť aktívny, zverejnenie sa zamietne.",
+      "confirmApproved": "Zverejniť so schválením tvorcu",
+      "confirmInactive": "Zverejniť po 30 dňoch nečinnosti",
+      "done": "Zverejnené: „{{title}}“. {{basis}}.",
+      "conflict": "Vhodnosť tejto karty sa zmenila, napríklad preto, že sa tvorca vrátil alebo žiadosť zamietol. Zoznam sa obnovil; skontrolujte nový stav."
+    },
+    "requests": {
+      "button": "Vytvoriť žiadosť o zverejnenie",
+      "label": "Vytvoriť žiadosť o zverejnenie pre {{title}}",
+      "title": "Vytvoriť žiadosť o zverejnenie",
+      "intro": "Navrhne pre kartu presne tento verejný záznam. Pôvodný tvorca je požiadaný o jeho schválenie. Ak bol nečinný 30 dní, môžete zverejniť aj bez odpovede; zamietnutie ostáva vetom.",
+      "publicTitle": "Verejný názov",
+      "slug": "Slug (voliteľné)",
+      "slugHint": "Nechajte prázdne, ak chcete použiť vygenerovaný slug.",
+      "submit": "Vytvoriť žiadosť",
+      "created": "Žiadosť je vytvorená. Pôvodný tvorca na ňu môže odpovedať."
+    }
+  }
 }
