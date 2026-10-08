@@ -1,4 +1,5 @@
 import { RULE_EXPIRY_DAYS, type ArticleListItem } from '@bantoozi/shared';
+import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '../../components/button.js';
@@ -12,8 +13,12 @@ import {
   MoreIcon,
   TagIcon,
 } from '../../components/icons.js';
-import { Menu, MenuItem } from '../../components/menu.js';
+import { Menu, MenuItem, type MenuTriggerProps } from '../../components/menu.js';
 import { VisuallyHidden } from '../../components/visually-hidden.js';
+import {
+  useLabelPickerRequest,
+  type LabelPickerRequest,
+} from '../reader/shortcuts/label-picker.js';
 import { BookmarkButton, RateButtons } from './article-buttons.js';
 import { LabelDot } from './label-dot.js';
 import type { ArticleActions } from './use-article-actions.js';
@@ -22,19 +27,35 @@ import { useRuleActions } from './use-rule-actions.js';
 
 const noop = () => {};
 
+/** The button of the label picker; the "l" key presses it once for its article. */
+function LabelTrigger({ articleId, ...trigger }: MenuTriggerProps & { articleId: string }) {
+  const { t } = useTranslation('article');
+  const request = useLabelPickerRequest();
+  const answered = useRef<LabelPickerRequest | null>(null);
+  const { ref } = trigger;
+
+  useEffect(() => {
+    if (request === null || request.articleId !== articleId || answered.current === request) return;
+    answered.current = request;
+    const button = ref.current;
+    if (button !== null && button.getAttribute('aria-expanded') !== 'true') button.click();
+    request.done();
+  }, [request, articleId, ref]);
+
+  return (
+    <Button {...trigger} variant="secondary">
+      <TagIcon className="size-4" />
+      {t('detail.labels')}
+    </Button>
+  );
+}
+
 function LabelMenu({ item, actions }: { item: ArticleListItem; actions: ArticleActions }) {
   const { t, i18n } = useTranslation('article');
   const labels = useLabels(true);
 
   return (
-    <Menu
-      trigger={(props) => (
-        <Button {...props} variant="secondary">
-          <TagIcon className="size-4" />
-          {t('detail.labels')}
-        </Button>
-      )}
-    >
+    <Menu trigger={(props) => <LabelTrigger {...props} articleId={item.id} />}>
       {labels.data === undefined ? (
         <MenuItem disabled onSelect={noop}>
           {labels.isError ? errorMessage(i18n.t, labels.error) : t('common:states.loading')}

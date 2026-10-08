@@ -15,6 +15,8 @@
     "feeds": "Zdroje",
     "labels": "Štítky",
     "noFeeds": "Zatiaľ žiadne zdroje.",
+    "filter": "Filtrovať zdroje",
+    "noMatch": "Filtru nezodpovedá žiadny zdroj.",
     "noLabels": "Zatiaľ žiadne štítky.",
     "feedsFailed": "Zdroje sa nepodarilo načítať.",
     "labelsFailed": "Štítky sa nepodarilo načítať.",
@@ -164,6 +166,50 @@
     "scoped": {
       "title": "Žiadne neprečítané články",
       "body": "Všetko v tomto zozname je prečítané. Vyberte iný zoznam a uvidíte viac."
+    }
+  },
+  "shortcuts": {
+    "title": "Klávesové skratky",
+    "groups": {
+      "moving": "Pohyb",
+      "lanes": "Prejsť na zoznam",
+      "article": "Aktuálny článok",
+      "reader": "Čítačka"
+    },
+    "rows": {
+      "next": "Nasledujúci článok",
+      "previous": "Predchádzajúci článok",
+      "filter": "Filtrovať zdroje",
+      "open": "Otvoriť originál na novej karte",
+      "like": "Páči sa mi",
+      "dislike": "Nepáči sa mi, potom vybrať dôvod",
+      "hide": "Ohodnotiť a skryť",
+      "bookmark": "Pridať záložku alebo ju odstrániť",
+      "labels": "Vybrať štítky",
+      "why": "Prečo toto?",
+      "mute": "Stlmiť príbeh: 1, 3 alebo 7 dní, alebo 0 pre 30 dní",
+      "read": "Označiť ako prečítané alebo neprečítané",
+      "markAll": "Označiť všetko ako prečítané",
+      "simple": "Zapnúť alebo vypnúť jednoduchý režim",
+      "help": "Zobraziť tento zoznam"
+    },
+    "words": {
+      "then": "potom",
+      "or": "alebo",
+      "plus": "+",
+      "to": "až",
+      "withRating": "s klávesom hodnotenia"
+    },
+    "note": "Klávesy fungujú na širokej obrazovke, keď sa nič nepíše. Shift s klávesom hodnotenia článok aj skryje; ak + vyžaduje Shift, stlačte = a článok sa neskryje.",
+    "pending": {
+      "g": "Stlačené {{pressed}}. Ďalej: {{options}}.",
+      "gLead": "Prejsť na",
+      "m": "Stlačené {{pressed}}. Stlmiť príbeh na: {{options}}.",
+      "mLead": "Stlmiť príbeh na",
+      "days_one": "{{count}} deň",
+      "days_few": "{{count}} dni",
+      "days_many": "{{count}} dňa",
+      "days_other": "{{count}} dní"
     }
   }
 }

@@ -15,6 +15,8 @@
     "feeds": "Feeds",
     "labels": "Labels",
     "noFeeds": "No feeds yet.",
+    "filter": "Filter feeds",
+    "noMatch": "No feeds match your filter.",
     "noLabels": "No labels yet.",
     "feedsFailed": "The feeds couldn't be loaded.",
     "labelsFailed": "The labels couldn't be loaded.",
@@ -150,6 +152,48 @@
     "scoped": {
       "title": "No unread articles",
       "body": "Everything in this view has been read. Pick another lane to see more."
+    }
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "groups": {
+      "moving": "Moving around",
+      "lanes": "Go to a lane",
+      "article": "The current article",
+      "reader": "The reader"
+    },
+    "rows": {
+      "next": "Next article",
+      "previous": "Previous article",
+      "filter": "Filter the feeds",
+      "open": "Open the original in a new tab",
+      "like": "Like",
+      "dislike": "Dislike, then pick a reason",
+      "hide": "Rate and hide",
+      "bookmark": "Bookmark or remove the bookmark",
+      "labels": "Choose labels",
+      "why": "Why this?",
+      "mute": "Mute the story: 1, 3 or 7 days, or 0 for 30 days",
+      "read": "Mark as read or unread",
+      "markAll": "Mark all as read",
+      "simple": "Switch Simple mode on or off",
+      "help": "Show this list"
+    },
+    "words": {
+      "then": "then",
+      "or": "or",
+      "plus": "+",
+      "to": "to",
+      "withRating": "with a rating key"
+    },
+    "note": "The keys work on a wide screen when nothing is being typed. Shift with a rating key also hides the article; where + needs Shift, press = to like without hiding.",
+    "pending": {
+      "g": "{{pressed}} pressed. Next: {{options}}.",
+      "gLead": "Go to",
+      "m": "{{pressed}} pressed. Mute the story for: {{options}}.",
+      "mLead": "Mute the story for",
+      "days_one": "{{count}} day",
+      "days_other": "{{count}} days"
     }
   }
 }

@@ -14,6 +14,7 @@ import { DetailPane } from './detail-pane.js';
 import { ReaderHeader } from './header.js';
 import type { ScopedLane } from './lanes.js';
 import { useCounts } from './queries.js';
+import { ReaderShortcuts } from './shortcuts/reader-shortcuts.js';
 import { LaneSwitcher, ReaderSidebar } from './sidebar.js';
 import { useArticleList } from './use-article-list.js';
 import { useDesktop } from './use-desktop.js';
@@ -135,48 +136,56 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
   usePolling({ busy, refreshList, refreshCounts });
 
   return (
-    <div className="flex flex-col gap-4">
-      <ReaderHeader
-        view={view}
-        title={title}
-        subscription={subscription}
-        counts={scoped.data}
-        items={list.items}
-        visible={rows.staying}
-        onLaneChange={onLaneChange}
-        refresh={refresh}
-      />
-      {subscription === undefined ? null : (
-        <DeadFeedBanner feed={subscription.feed} title={title} />
-      )}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
-        <ArticleList
+    <ReaderShortcuts
+      rows={rows}
+      list={list}
+      expanded={expanded}
+      onExpand={toggle}
+      onWhyThis={explain}
+    >
+      <div className="flex flex-col gap-4">
+        <ReaderHeader
           view={view}
-          list={list}
-          rows={rows}
-          expandedId={expanded?.id ?? null}
-          onToggle={toggle}
-          onWhyThis={explain}
-          simple={preferences.simpleMode}
+          title={title}
+          subscription={subscription}
+          counts={scoped.data}
+          items={list.items}
+          visible={rows.staying}
+          onLaneChange={onLaneChange}
+          refresh={refresh}
         />
-        <DetailPane
-          view={view}
-          item={expanded}
-          desktop={desktop}
-          onClose={() => setOpened(null)}
-          onWhyThis={explain}
-        />
+        {subscription === undefined ? null : (
+          <DeadFeedBanner feed={subscription.feed} title={title} />
+        )}
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
+          <ArticleList
+            view={view}
+            list={list}
+            rows={rows}
+            expandedId={expanded?.id ?? null}
+            onToggle={toggle}
+            onWhyThis={explain}
+            simple={preferences.simpleMode}
+          />
+          <DetailPane
+            view={view}
+            item={expanded}
+            desktop={desktop}
+            onClose={() => setOpened(null)}
+            onWhyThis={explain}
+          />
+        </div>
+        {explained === null ? null : (
+          <WhyThisSheet
+            item={explained}
+            sourceFeedId={sourceFeedId}
+            saved={saved}
+            open
+            onClose={() => setExplaining(null)}
+          />
+        )}
       </div>
-      {explained === null ? null : (
-        <WhyThisSheet
-          item={explained}
-          sourceFeedId={sourceFeedId}
-          saved={saved}
-          open
-          onClose={() => setExplaining(null)}
-        />
-      )}
-    </div>
+    </ReaderShortcuts>
   );
 }
 

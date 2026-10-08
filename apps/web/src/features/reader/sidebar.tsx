@@ -1,4 +1,4 @@
-import type { ArticleCounts, Subscription } from '@bantoozi/shared';
+import { normalizeText, type ArticleCounts, type Subscription } from '@bantoozi/shared';
 import { Link } from '@tanstack/react-router';
 import { useId, useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -18,10 +18,11 @@ import { useMe } from '../../session/context.js';
 import { LabelDot } from '../article/label-dot.js';
 import { useLabels } from '../article/use-labels.js';
 import { ClassificationBadge } from '../feeds/feed-status.js';
-import { displayTitle, groupByFolder } from '../feeds/folders.js';
+import { displayTitle, groupByFolder, type FolderGroup } from '../feeds/folders.js';
 import { useSubscriptions } from '../feeds/subscriptions.js';
+import { FeedFilter } from './feed-filter.js';
 import type { Lane } from './lanes.js';
-import { useEverythingOpen } from './reader-state.js';
+import { useEverythingOpen, useFeedFilter } from './reader-state.js';
 import { countOf } from './view.js';
 
 // The current view is bold, tinted and has a bar, so it never rides on colour alone.
@@ -215,10 +216,17 @@ function FeedLink({
   );
 }
 
+/** A folder, and those of its feeds whose titles match the filter. */
+interface Shown {
+  group: FolderGroup;
+  feeds: Subscription[];
+}
+
 function FeedsSection({ onNavigate }: { onNavigate?: (() => void) | undefined }) {
   const { t, i18n } = useTranslation('reader');
   const { folderOrder } = useMe().preferences;
   const subscriptions = useSubscriptions();
+  const [filter] = useFeedFilter();
   const groups = useMemo(
     () =>
       groupByFolder(
@@ -228,6 +236,18 @@ function FeedsSection({ onNavigate }: { onNavigate?: (() => void) | undefined })
       ),
     [subscriptions.data, folderOrder, i18n.language],
   );
+  const shown = useMemo((): Shown[] => {
+    const wanted = normalizeText(filter);
+    return groups.flatMap((group) => {
+      const feeds =
+        wanted === ''
+          ? group.feeds
+          : group.feeds.filter((subscription) =>
+              normalizeText(displayTitle(subscription)).includes(wanted),
+            );
+      return feeds.length === 0 ? [] : [{ group, feeds }];
+    });
+  }, [groups, filter]);
 
   return (
     <Section title={t('sidebar.feeds')}>
@@ -244,50 +264,55 @@ function FeedsSection({ onNavigate }: { onNavigate?: (() => void) | undefined })
         }
         if (groups.length === 0) return <p className={MUTED}>{t('sidebar.noFeeds')}</p>;
         return (
-          <ul role="list" aria-labelledby={headingId} className="flex flex-col">
-            {groups.map((group) =>
-              group.name === null ? (
-                group.feeds.map((subscription) => (
-                  <FeedLink
-                    key={subscription.feed.id}
-                    subscription={subscription}
-                    onNavigate={onNavigate}
-                  />
-                ))
-              ) : (
-                <li key={group.name}>
-                  <Link
-                    to="/read/folder/$name"
-                    params={{ name: group.name }}
-                    activeOptions={CURRENT}
-                    onClick={onNavigate}
-                    className={LINK}
-                  >
-                    <span className="truncate">{group.name}</span>
-                    <Count
-                      label={t('sidebar.unread')}
-                      value={group.feeds.reduce(
-                        (sum, subscription) => sum + unreadOf(subscription),
-                        0,
-                      )}
-                    />
-                  </Link>
-                  <ul
-                    role="list"
-                    className="ms-3 flex flex-col border-s border-slate-200 dark:border-slate-700"
-                  >
-                    {group.feeds.map((subscription) => (
+          <>
+            <FeedFilter noMatch={shown.length === 0} />
+            {shown.length === 0 ? null : (
+              <ul role="list" aria-labelledby={headingId} className="flex flex-col">
+                {shown.map(({ group, feeds }) =>
+                  group.name === null ? (
+                    feeds.map((subscription) => (
                       <FeedLink
                         key={subscription.feed.id}
                         subscription={subscription}
                         onNavigate={onNavigate}
                       />
-                    ))}
-                  </ul>
-                </li>
-              ),
+                    ))
+                  ) : (
+                    <li key={group.name}>
+                      <Link
+                        to="/read/folder/$name"
+                        params={{ name: group.name }}
+                        activeOptions={CURRENT}
+                        onClick={onNavigate}
+                        className={LINK}
+                      >
+                        <span className="truncate">{group.name}</span>
+                        <Count
+                          label={t('sidebar.unread')}
+                          value={group.feeds.reduce(
+                            (sum, subscription) => sum + unreadOf(subscription),
+                            0,
+                          )}
+                        />
+                      </Link>
+                      <ul
+                        role="list"
+                        className="ms-3 flex flex-col border-s border-slate-200 dark:border-slate-700"
+                      >
+                        {feeds.map((subscription) => (
+                          <FeedLink
+                            key={subscription.feed.id}
+                            subscription={subscription}
+                            onNavigate={onNavigate}
+                          />
+                        ))}
+                      </ul>
+                    </li>
+                  ),
+                )}
+              </ul>
             )}
-          </ul>
+          </>
         );
       }}
     </Section>

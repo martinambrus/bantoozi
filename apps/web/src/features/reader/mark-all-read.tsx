@@ -1,6 +1,6 @@
 import type { ArticleListItem, MarkReadLane } from '@bantoozi/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApi } from '../../api/context.js';
@@ -12,6 +12,7 @@ import { useToast } from '../../components/toast/toast-provider.js';
 import { useAccountId, useMe } from '../../session/context.js';
 import { useReaderActions, useUndoAction } from './actions/provider.js';
 import { countsQueryOptions } from './queries.js';
+import { useReaderTargets } from './reader-state.js';
 import { countOf, type ViewScope } from './view.js';
 
 const TOAST_ID = 'reader-mark-all-read';
@@ -55,6 +56,7 @@ export function MarkAllRead({ lane, scope, name, count, items, onChanged }: Mark
   const undoAction = useUndoAction();
   const toast = useToast();
   const { defaultTier: minTier } = useMe().preferences;
+  const { markAllRead } = useReaderTargets();
   const [ask, setAsk] = useState<Ask | null>(null);
   const [preparing, setPreparing] = useState(false);
   const askingAgain = useRef(false);
@@ -146,11 +148,20 @@ export function MarkAllRead({ lane, scope, name, count, items, onChanged }: Mark
     setAsk(null);
   }
 
+  const disabled = count === undefined || count === 0;
+  // The Shift+A shortcut asks as the button does, and only while the button could be pressed.
+  useEffect(() => {
+    markAllRead.current = disabled || preparing ? null : () => void open();
+    return () => {
+      markAllRead.current = null;
+    };
+  });
+
   return (
     <>
       <Button
         variant="secondary"
-        disabled={count === undefined || count === 0}
+        disabled={disabled}
         loading={preparing}
         onClick={() => void open()}
       >
