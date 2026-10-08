@@ -839,7 +839,7 @@ All other launch gates remain required. Failures/coverage gaps are reported with
 
 **Needs:** active Jev/Ollama credentials through the encrypted database resolver (or authorized
 first-use environment bootstrap), LibreTranslate running (`--profile translate`),
-network access, and the isolated golden database holding `golden-v1`. Preflight verifies the installed MT language
+network access, and the isolated golden database holding the golden versions (`golden-v1`…`v3` by 2026-10-08). Preflight verifies the installed MT language
 paths and both providers' actual model/response capabilities; unsupported experiment variants are
 reported as blocked, never replaced by mislabeled native/fallback output.
 
@@ -1186,7 +1186,7 @@ from unexplained likes. Learning curves are verified on the golden set.
 
 **Scheduling:** T1–T6 can start once M4, M5 and M6 are merged. M6 is needed because the M7 goal
 runs the E2E suite. **T7 needs M3b merged** (it reads
-`apps/eval/config/g1.json` `runs` and the dedicated evaluation database's `golden-v1`). An owner-pilot artifact is usable, with its
+`apps/eval/config/g1.json` `runs` and the dedicated evaluation database's dataset named by its `dataset.version`, `golden-v3` since the 2026-10-08 G1 pass). An owner-pilot artifact is usable, with its
 actual human count reported; a PASS satisfies the initial beta's evaluation gate. If M3b is not merged yet, finish T1–T6
 and stop with the report marking T7 "blocked on M3b". Run the goal again afterwards.
 
@@ -1206,7 +1206,7 @@ Complete milestone M7 "Personal learning and suggestions" exactly as specified i
 | M7-T4 | `user.learn` handler, version retention (active + 3 newest), **`house.nightly-learn`** (learn and suggest enqueues) | T2, T3 | C | 06 §8.4; 11 §6 |
 | M7-T5 | Model scoring in `rankArticle` and `Explain.model`; the model-context check; the LLM-answer exclusion rule | T3 | A | 06 §2, §8.1 |
 | M7-T6 | `user.suggest` handler only (it is scheduled by T4) | — | B | 05 §7 |
-| M7-T7 | Learning-curve check on golden-v1 (stored answers of the g1 `runs`) | T3, M3b | D | 06 §8.3; 10 §1, §3 |
+| M7-T7 | Learning-curve check on the G1 dataset (`g1.json` `dataset.version`, `golden-v3`; stored answers of the g1 `runs`) | T3, M3b | D | 06 §8.3; 10 §1, §3 |
 
 **Done when:**
 

@@ -1352,11 +1352,16 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   dominated by a few classifieds and sports feeds); off feeds add no provider calls (spec 05 §9);
   selected training is the owner's explicit calibration choice, bounded per feed and one-off;
   newly active arrivals are the fetched articles of feeds the owner switches to automatic
-  classification, at most the fetched volume above; explicitly requested history is user-initiated
-  and one-off; reusable cache hits are about zero with one user. The report's $0.2290 per 1,000
+  classification, at most the fetched volume above; selected training and explicitly requested
+  history both go through `POST /subscriptions/:feedId/analyze` (spec 08 §11: at most 20 selected
+  revisions per request and 20 requests an hour, so at most 400 revisions an hour), and the owner's
+  expected use is calibration of about 5 requests (100 revisions) per newly trained feed plus a few
+  history requests (about 100 revisions) on a heavy day; reusable cache hits are about zero with one user. The report's $0.2290 per 1,000
   divides E1's spend over all 656 processed articles, including facet-only articles that get Call A
   but no card call; over the 449 rated articles that received the full production policy it is at
   most $0.335 per 1,000 (a generator gap for M8). At that rate with the ×2 margin the $1.00 cap
-  still covers about 1,490 authorized revisions a day, above the owner's all-active volume, and the
-  ×5 sensitivity is $3.50/day. M8 replaces this with a
+  still covers about 1,490 authorized revisions a day: above the owner's all-active arrivals, and
+  about at the cap on a heavy day that adds calibration and history (about 1,200–1,600). Beyond the
+  cap the spend guard defers further calls to the next day (spec 04), so the cap bounds spend
+  rather than promising same-day coverage of every one-off request. The ×5 sensitivity is $3.50/day. M8 replaces this with a
   forecast from real usage before any cap increase (Q1).
