@@ -24,6 +24,7 @@ Element.prototype.setPointerCapture ??= () => {};
 Element.prototype.releasePointerCapture ??= () => {};
 Element.prototype.hasPointerCapture ??= () => false;
 Element.prototype.scrollIntoView ??= () => {};
+window.scrollTo = () => {};
 window.matchMedia ??= (query: string) => ({
   matches: false,
   media: query,
