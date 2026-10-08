@@ -1303,3 +1303,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   the owner may rate more. `eval serve-rating --assignments <n>` (1–1,000, default 300) sets the
   per-context target; the equal language split, top-ups and every other rule are unchanged. Spec 10
   §2.2 and RATERS.md updated.
+- D-150: 2026-10-08 M6-T9 — `TYPESAFE_MODEL` is registered for the API as well (spec 01 §3 said
+  worker and eval). The API freezes `settings['engine.model_pin'].model` into each explicit analysis
+  request and, until a worker has recorded the pin (M8, spec 05 §2), falls back to
+  `TYPESAFE_MODEL`. The registry gave the API no such variable, so it always froze the default
+  `jev-1.13.0`, and the worker refused every request (`context_unavailable`) as soon as it ran any
+  other model: the fake TypeSafe server's `jev-fake` in the E2E suite, or a newer pinned Jev version
+  in production. The API now reads the same variable as the worker; the production pinning rule
+  applies to it too. Spec 01 §3 and `.env.example` updated.

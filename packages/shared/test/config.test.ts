@@ -138,6 +138,24 @@ describe('loadConfig (spec 01 §3)', () => {
     ).toBe(true);
   });
 
+  it('gives the api the Jev model it freezes into analysis requests (D-150)', () => {
+    expect(loadConfig({ process: 'api', env: api }).typesafeModel).toBe('jev-1.13.0');
+    expect(
+      loadConfig({ process: 'api', env: { ...api, TYPESAFE_MODEL: 'jev-1.14.0' } }).typesafeModel,
+    ).toBe('jev-1.14.0');
+    const prod = {
+      ...api,
+      NODE_ENV: 'production',
+      SESSION_PEPPER: 'p'.repeat(32),
+      SMTP_URL: 'smtp://mail.example.com:587',
+      PUBLIC_BASE_URL: 'https://bantoozi.example',
+      TYPESAFE_MODEL: 'jev-latest',
+    };
+    expect(problemsOf(() => loadConfig({ process: 'api', env: prod }))).toEqual([
+      'TYPESAFE_MODEL: must be a pinned version (e.g. jev-1.13.0) in production',
+    ]);
+  });
+
   it('refuses RATE_LIMITS_ENABLED=false in production and allows it only with NODE_ENV=test', () => {
     const prod = {
       ...api,
