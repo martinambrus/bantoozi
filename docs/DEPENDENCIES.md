@@ -74,6 +74,12 @@ pin exact versions (`save-exact`). Update this file in the same commit as any ve
 | `libretranslate/libretranslate:latest` (pushed 2026-09-03) | `sha256:7e7b72b0983c9d5f1e041ddac962ebfc1c20595e04366689cadff72069040027` | `infra/compose.dev.yml` (`translate` profile) |
 | `caddy:2` (v2.11.4) | `sha256:0c994536bddb66445885237f1a5dcc1916bccea922661c76b4e9fc24061f9b52` | production compose (M8); `infra/caddy/Caddyfile` validated with it |
 
+## Security overrides (root `pnpm.overrides`)
+
+| Override | Why | Remove when |
+|---|---|---|
+| `source-map-js@<1.2.2` → `1.2.2` | GHSA-68fv-2mgg-jv7q (high) fails `pnpm audit --prod --audit-level high` in CI; reached through `packages/feeds` → sanitize-html 2.17.7 → postcss 8.5.28, whose `^1.2.1` range already allows the fix (M6, 2026-10-08) | postcss resolves `source-map-js` ≥ 1.2.2 on its own |
+
 ## Workspace resolution
 
 Library packages publish `dist/` (built by `tsc -b`) and also expose a `bantoozi-source` export
