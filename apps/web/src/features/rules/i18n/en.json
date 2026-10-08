@@ -1,3 +1,78 @@
 {
-  "title": "Rules"
+  "title": "Rules",
+  "intro": "Rules hide or boost articles in every list. They take effect straight away.",
+  "groups": {
+    "mute_keyword": "Muted keywords",
+    "mute_story": "Muted stories",
+    "block_feed": "Blocked sources",
+    "block_domain": "Blocked domains",
+    "block_author": "Blocked authors",
+    "boost_feed": "Boosted sources",
+    "boost_domain": "Boosted domains"
+  },
+  "empty": {
+    "title": "No rules yet",
+    "body": "Mute, block or boost from an article's menu, or add a rule below."
+  },
+  "list": {
+    "added": "Added",
+    "delete": "Delete rule: {{value}}"
+  },
+  "expires": {
+    "expired": "Expired",
+    "soon": "Expires in less than a minute",
+    "minutes_one": "Expires in {{count}} minute",
+    "minutes_other": "Expires in {{count}} minutes",
+    "hours_one": "Expires in {{count}} hour",
+    "hours_other": "Expires in {{count}} hours",
+    "days_one": "Expires in {{count}} day",
+    "days_other": "Expires in {{count}} days"
+  },
+  "delete": {
+    "title": "Delete this rule?",
+    "body": "{{kind}}: {{value}}. Bantoozi will stop applying it and rank your articles again.",
+    "confirm": "Delete rule"
+  },
+  "add": {
+    "title": "Add a rule",
+    "kind": "Rule type",
+    "kinds": {
+      "mute_keyword": "Mute a keyword",
+      "block_domain": "Block a domain",
+      "boost_domain": "Boost a domain",
+      "block_author": "Block an author"
+    },
+    "values": {
+      "mute_keyword": {
+        "label": "Keyword or phrase",
+        "hint": "Hides articles whose title or summary contains it. Use {{min}} to {{max}} characters."
+      },
+      "block_domain": {
+        "label": "Domain",
+        "hint": "Hides every article from this website, for example example.com."
+      },
+      "boost_domain": {
+        "label": "Domain",
+        "hint": "Always shows articles from this website in For you, for example example.com."
+      },
+      "block_author": {
+        "label": "Author name",
+        "hint": "Hides articles written by this author."
+      }
+    },
+    "expires": "Expires",
+    "never": "Never",
+    "after_one": "After {{count}} day",
+    "after_other": "After {{count}} days",
+    "submit": "Add rule",
+    "added": "Rule added.",
+    "errors": {
+      "empty": "Enter a value.",
+      "keyword": "Use {{min}} to {{max}} characters.",
+      "domain": "Enter a website name such as example.com, without http:// or a path.",
+      "author": "Use at most {{max}} characters.",
+      "invalid": "That value isn't valid.",
+      "expiry": "That duration isn't valid."
+    }
+  }
 }
