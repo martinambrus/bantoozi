@@ -182,6 +182,39 @@ describe('/login', () => {
     });
   });
 
+  describe('when the code is not six digits', () => {
+    it.each(['12 345', '1234567', '12345a'])(
+      'refuses %j without asking the API and says what a code looks like',
+      async (typed) => {
+        const app = await open({ path: '/login', server: signInServer({ account: member }) });
+        await sendCode(app);
+
+        await enterCode(app, typed);
+
+        const alert = await screen.findByRole('alert');
+        expect(alert).toHaveTextContent('Enter the 6-digit code from the email.');
+        const code = screen.getByLabelText('Code');
+        expect(code).toHaveAccessibleDescription(alert.textContent ?? '');
+        expect(code).toHaveFocus();
+        expect(app.calls(VERIFY)).toHaveLength(0);
+        expect(pathname(app)).toBe('/login');
+      },
+    );
+
+    it('sends the code once it is corrected', async () => {
+      const app = await open({ path: '/login', server: signInServer({ account: member }) });
+      await sendCode(app);
+      await enterCode(app, '12345');
+      await screen.findByRole('alert');
+
+      await app.user.type(screen.getByLabelText('Code'), '6');
+      await app.user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+      await waitFor(() => expect(pathname(app)).toBe('/read/for_you'));
+      expect(app.calls(VERIFY).map(bodyOf)).toEqual([{ email: EMAIL, code: CODE }]);
+    });
+  });
+
   describe('when the code is wrong', () => {
     it('stays on the code step and tells the visitor what to do', async () => {
       const app = await open({

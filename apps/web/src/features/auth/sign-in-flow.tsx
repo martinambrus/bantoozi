@@ -1,3 +1,4 @@
+import { LoginCodeSchema } from '@bantoozi/shared';
 import { useMutation } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useRef, useState, type FormEvent } from 'react';
@@ -36,6 +37,7 @@ export function SignInFlow({ redirect, invite }: SignInFlowProps) {
   const [email, setEmail] = useState('');
   const [inviteCode, setInviteCode] = useState(invite?.code ?? '');
   const [code, setCode] = useState('');
+  const [malformed, setMalformed] = useState(false);
   // Focus moves to the email only when the visitor comes back to it, not when the page opens.
   const [cameBack, setCameBack] = useState(false);
 
@@ -77,17 +79,27 @@ export function SignInFlow({ redirect, invite }: SignInFlowProps) {
     event.preventDefault();
     if (verifying || sending) return;
     sendCode.reset();
+    // Anything but six digits is refused by the API as a malformed request, not as a wrong code.
+    const wellFormed = LoginCodeSchema.safeParse(code).success;
+    setMalformed(!wellFormed);
+    if (!wellFormed) {
+      verify.reset();
+      codeInput.current?.focus();
+      return;
+    }
     verify.mutate();
   }
 
   function sendNewCode() {
     verify.reset();
+    setMalformed(false);
     sendCode.mutate({ resend: true }, { onSuccess: () => codeInput.current?.focus() });
   }
 
   function changeEmail() {
     sendCode.reset();
     verify.reset();
+    setMalformed(false);
     setCode('');
     setCameBack(true);
     setStep('email');
@@ -142,7 +154,13 @@ export function SignInFlow({ redirect, invite }: SignInFlowProps) {
         name="code"
         value={code}
         onChange={(event) => setCode(event.target.value)}
-        error={codeRejected ? <span role="alert">{t('flow.invalidCode')}</span> : undefined}
+        error={
+          malformed ? (
+            <span role="alert">{t('flow.codeFormat')}</span>
+          ) : codeRejected ? (
+            <span role="alert">{t('flow.invalidCode')}</span>
+          ) : undefined
+        }
         required
         inputMode="numeric"
         autoComplete="one-time-code"

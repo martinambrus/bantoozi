@@ -11,6 +11,7 @@
     "codeSent": "Poslali sme kód na adresu {{email}}. Zadajte ho nižšie a pokračujte.",
     "newCodeSent": "Poslali sme nový kód na adresu {{email}}.",
     "invalidCode": "Tento kód nie je platný. Skontrolujte najnovší e-mail, ktorý sme vám poslali, alebo si nechajte poslať nový kód.",
+    "codeFormat": "Zadajte 6-miestny kód z e-mailu.",
     "rateLimited_one": "Príliš veľa pokusov. Skúste to znova o {{count}} minútu.",
     "rateLimited_few": "Príliš veľa pokusov. Skúste to znova o {{count}} minúty.",
     "rateLimited_many": "Príliš veľa pokusov. Skúste to znova o {{count}} minúty.",
