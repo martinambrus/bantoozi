@@ -72,7 +72,9 @@ describe('/login', () => {
     expect(bodyOf(requests[0]!)).toEqual({ email: EMAIL, locale: 'en' });
     expect(requests[0]!.headers.has('Idempotency-Key')).toBe(false);
     expect(
-      screen.getByText(`We sent a code to ${EMAIL}. Enter it below to continue.`),
+      screen.getByText(
+        `If ${EMAIL} can use Bantoozi, we've emailed it a code. Enter the code below to continue.`,
+      ),
     ).toBeVisible();
     expect(code).toHaveAttribute('inputmode', 'numeric');
     expect(code).toHaveAttribute('autocomplete', 'one-time-code');
@@ -475,7 +477,9 @@ describe('/login', () => {
 
       await app.user.click(screen.getByRole('button', { name: 'Send a new code' }));
 
-      expect(await screen.findByText(`We sent a new code to ${EMAIL}.`)).toBeVisible();
+      expect(
+        await screen.findByText(`If ${EMAIL} can use Bantoozi, we've emailed it a new code.`),
+      ).toBeVisible();
       expect(app.calls(REQUEST_CODE).map((request) => bodyOf(request))).toEqual([
         { email: EMAIL, locale: 'en' },
         { email: EMAIL, locale: 'en' },
@@ -496,12 +500,14 @@ describe('/login', () => {
       });
       await sendCode(app);
       await app.user.click(screen.getByRole('button', { name: 'Send a new code' }));
-      await screen.findByText(`We sent a new code to ${EMAIL}.`);
+      await screen.findByText(`If ${EMAIL} can use Bantoozi, we've emailed it a new code.`);
 
       await enterCode(app);
 
       await screen.findByRole('alert');
-      expect(screen.queryByText(`We sent a new code to ${EMAIL}.`)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(`If ${EMAIL} can use Bantoozi, we've emailed it a new code.`),
+      ).not.toBeInTheDocument();
     });
 
     it('shows why a new code could not be sent', async () => {
@@ -557,7 +563,9 @@ describe('/login', () => {
       ]);
       expect(screen.getByLabelText('Code')).toHaveValue('');
       expect(
-        screen.getByText(`We sent a code to ${EMAIL}. Enter it below to continue.`),
+        screen.getByText(
+          `If ${EMAIL} can use Bantoozi, we've emailed it a code. Enter the code below to continue.`,
+        ),
       ).toBeVisible();
     });
   });

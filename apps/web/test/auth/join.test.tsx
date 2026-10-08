@@ -58,7 +58,9 @@ describe('/join', () => {
     expect(bodyOf(requests[0]!)).toEqual({ email: EMAIL, inviteCode: 'ABC123', locale: 'en' });
     expect(requests[0]!.headers.has('Idempotency-Key')).toBe(false);
     expect(
-      screen.getByText(`We sent a code to ${EMAIL}. Enter it below to continue.`),
+      screen.getByText(
+        `If ${EMAIL} can use Bantoozi, we've emailed it a code. Enter the code below to continue.`,
+      ),
     ).toBeVisible();
     expect(screen.queryByLabelText('Invite code')).not.toBeInTheDocument();
     expect(code).toHaveFocus();
@@ -80,7 +82,7 @@ describe('/join', () => {
     await sendCode(app);
 
     await app.user.click(screen.getByRole('button', { name: 'Send a new code' }));
-    await screen.findByText(`We sent a new code to ${EMAIL}.`);
+    await screen.findByText(`If ${EMAIL} can use Bantoozi, we've emailed it a new code.`);
     await app.user.click(screen.getByRole('button', { name: 'Use a different email' }));
 
     expect(screen.getByLabelText('Invite code')).toHaveValue('ABC123');

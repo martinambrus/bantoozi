@@ -25,8 +25,8 @@ function isInvalidCode(error: unknown): boolean {
 
 /**
  * Sign in with an emailed code (spec 09 §2): the email first, then the code. The server answers a
- * code request the same way whether or not the account exists, so the second step never claims
- * more than that a code was sent.
+ * code request the same way whether or not the address may sign in (spec 08 §2), and sends a code
+ * only when it may, so the second step says a code was sent only on that condition.
  */
 export function SignInFlow({ redirect, invite }: SignInFlowProps) {
   const { t, i18n } = useTranslation('auth');
