@@ -254,7 +254,7 @@ describe('what is kept on the device', () => {
     expect(transport.seen[0]).toEqual({ record: undefined, holding: 0 });
   });
 
-  it('writes the record in full: key, fence of the state acted on, before-state, time, stamp, snapshot', async () => {
+  it('writes the record in full: key, fence of the state acted on, before-state, time, stamp, snapshot, and the mark of a request that left', async () => {
     const { store, queue } = rig();
     const item = makeItem();
     const action: ReaderAction = {
@@ -282,6 +282,7 @@ describe('what is kept on the device', () => {
       stamp: new Date(T0).toISOString(),
       markRead: true,
       snapshot: { id: 's1', contentRevision: '9' },
+      sent: true,
       state: 'pending',
       attempts: 0,
       nextAttemptAt: T0,
@@ -1244,21 +1245,50 @@ describe('undoing a change whose send may have reached the server', () => {
     expect(kit.transport.undos).toHaveLength(1);
   });
 
+  it('waits for the replay too when the page loaded again while the first request was out', async () => {
+    const kit = rig();
+    const item = makeItem();
+    const handle = kit.store.dispatch(item, { type: 'rate', rating: 1 });
+    await settleAll();
+    expect(kit.transport.sends).toHaveLength(1);
+
+    const store = reload(kit);
+    const undone = watching(store, handle.id);
+    await settleAll();
+
+    expect(undone.result).toBeUndefined();
+    expect(store.get(handle.id)?.status).toBe('waiting');
+    expect(kit.queue.records.has(handle.id)).toBe(true);
+    expect(kit.queue.announced).toEqual([]);
+
+    const draining = store.offline.drain();
+    await settleAll();
+    expect(sendAt(kit.transport, 1).key).toBe(handle.id);
+    ack(sendAt(kit.transport, 1), item, { rating: 1 });
+    await draining;
+    await settleAll();
+    expect(kit.transport.undos).toHaveLength(1);
+  });
+
   it.each([
     ['a 503', apiError(503, 'UNAVAILABLE')],
     ['a 429', apiError(429, 'RATE_LIMITED')],
     ['a 401', apiError(401, 'UNAUTHENTICATED')],
-  ])('marks the record after %s too', async (_name, error) => {
-    const { store, queue, transport } = rig();
-    const handle = store.dispatch(makeItem(), { type: 'rate', rating: 1 });
-    await settleAll();
-    expect(queue.records.get(handle.id)).not.toHaveProperty('sent');
-    sendAt(transport, 0).reject(error);
-    await settleAll();
+  ])(
+    'marks the record before its request leaves, and keeps the mark after %s',
+    async (_name, error) => {
+      const { store, queue, transport } = rig();
+      const handle = store.dispatch(makeItem(), { type: 'rate', rating: 1 });
+      await settleAll();
+      expect(transport.sends).toHaveLength(1);
+      expect(queue.records.get(handle.id)).toMatchObject({ sent: true });
+      sendAt(transport, 0).reject(error);
+      await settleAll();
 
-    expect(handle.status).toBe('waiting');
-    expect(queue.records.get(handle.id)).toMatchObject({ sent: true });
-  });
+      expect(handle.status).toBe('waiting');
+      expect(queue.records.get(handle.id)).toMatchObject({ sent: true });
+    },
+  );
 
   it('does not mark a record whose change only waited for a connection', async () => {
     const { store, queue } = rig({ online: false });

@@ -63,7 +63,7 @@ interface ActionEntry {
   before: ReaderState | null;
   /** A record of this change is kept in the queue store, or is being written. */
   stored: boolean;
-  /** The change was sent and then kept on the device, so the server may have it. */
+  /** A request of the change may have left, so the server may have it. */
   sent: boolean;
   /** The id of the earlier kept change on the same article that this one follows. */
   after: string | null;
@@ -656,6 +656,16 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
         park(slot, entry);
         return;
       }
+      // From here the server may get the change, so an Undo after a reload must not cancel it.
+      if (!entry.sent) {
+        entry.sent = true;
+        const marked = await write(() => port().change(handle.id, { sent: true }));
+        if (epoch !== generation) return;
+        if (!marked || entry.elsewhere !== null) {
+          settleElsewhere(slot, entry);
+          return;
+        }
+      }
     }
 
     const fence = (entry.fence ??= fenceFor(slot.known, entry.snapshot));
@@ -694,8 +704,6 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
       if (item !== null) learn(handle.articleId, item);
       drop(slot, entry, { status: 'stale', item });
     } else if (entry.stored && (isRetryable(outcome.error) || isUnauthorized(outcome.error))) {
-      entry.sent = true;
-      void write(() => port().change(handle.id, { sent: true }));
       park(slot, entry);
     } else {
       drop(slot, entry, { status: 'failed', error: outcome.error });
