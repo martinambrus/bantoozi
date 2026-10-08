@@ -4,7 +4,11 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createReaderActions } from '../../src/features/reader/actions/store.js';
-import { UNDO_WINDOW_MS, type ReaderAction } from '../../src/features/reader/actions/types.js';
+import {
+  UNDO_WINDOW_MS,
+  type ReaderAction,
+  type UndoResult,
+} from '../../src/features/reader/actions/types.js';
 import { writeOfflineEnabled } from '../../src/offline/device.js';
 import { putRecord } from '../../src/offline/queue.js';
 import { UUID_V4, json } from '../api/fake-fetch.js';
@@ -14,6 +18,7 @@ import { makeMe } from '../session/fixtures.js';
 import { page, resetPage } from './replay-page.js';
 import {
   FakeLocks,
+  TITLE,
   bookmarkOf,
   connection,
   createArticleServer,
@@ -30,6 +35,7 @@ import {
   storedRecords,
   toastTexts,
   until,
+  type Tab,
 } from './replay-support.js';
 import {
   A,
@@ -814,5 +820,246 @@ describe('12. settled actions', () => {
     expect(store.get(opened.id)).toBeUndefined();
     expect(store.get(sending.id)?.status).toBe('sending');
     expect(store.retained().actions).toBe(1);
+  });
+});
+
+/** Asks the tab's store to undo, without waiting for the answer; `result` is read once it has come. */
+function undoInTab(actionId: string): { result: UndoResult | undefined } {
+  const watched: { result: UndoResult | undefined } = { result: undefined };
+  act(() => {
+    void page.tabs[0]!.store.undo(actionId).then((result) => {
+      watched.result = result;
+    });
+  });
+  return watched;
+}
+
+/** The ids of the changes the tab keeps, earliest first, once there are `count` of them. */
+async function keptIds(count: number): Promise<string[]> {
+  await until(() => expect(page.tabs[0]!.store.offline.waiting()).toHaveLength(count));
+  return page.tabs[0]!.store.offline.waiting().map((handle) => handle.id);
+}
+
+describe('13. undoing a change that was never sent', () => {
+  it('cancels a rating made offline at once: no request, no record, the row as it was', async () => {
+    writeOfflineEnabled(A, true);
+    const server = createArticleServer([ITEM]);
+    const net = connection(server);
+    const tab = await openTab(server);
+    net.drop();
+    await tab.user.click(likeOf(tab));
+    await recordsReach(idb.factory, 1);
+    const [id] = await keptIds(1);
+
+    const undone = undoInTab(id!);
+
+    await until(() => expect(isPressed(likeOf(tab))).toBe(false));
+    expect(undone.result).toEqual({ status: 'cancelled' });
+    await until(async () => expect(await storedRecords(idb.factory)).toEqual([]));
+    expect(server.arrivals).toEqual([]);
+    expect(errorToasts()).toEqual([]);
+
+    net.restore();
+    await flushIo();
+    expect(server.arrivals).toEqual([]);
+    expect(isPressed(likeOf(tab))).toBe(false);
+    expect(await storedRecords(idb.factory)).toEqual([]);
+  });
+
+  it('cancels it at once after the page was loaded again in between', async () => {
+    writeOfflineEnabled(A, true);
+    const server = createArticleServer([ITEM]);
+    const net = connection(server);
+    const first = await openTab(server);
+    net.drop();
+    await first.user.click(likeOf(first));
+    await recordsReach(idb.factory, 1);
+    first.unmount();
+
+    resetPage([ITEM]);
+    const reloaded = await openTab(server);
+    await until(() => expect(isPressed(likeOf(reloaded))).toBe(true));
+    const [id] = await keptIds(1);
+    const undone = undoInTab(id!);
+
+    await until(() => expect(isPressed(likeOf(reloaded))).toBe(false));
+    expect(undone.result).toEqual({ status: 'cancelled' });
+    await until(async () => expect(await storedRecords(idb.factory)).toEqual([]));
+    net.restore();
+    await flushIo();
+    expect(server.arrivals).toEqual([]);
+  });
+
+  it('leaves the bookmark that waited behind a cancelled rating, sent once with its original fence', async () => {
+    writeOfflineEnabled(A, true);
+    const server = createArticleServer([ITEM]);
+    const net = connection(server);
+    const tab = await openTab(server);
+    net.drop();
+    await tab.user.click(likeOf(tab));
+    await tab.user.click(bookmarkOf(tab));
+    const records = await recordsReach(idb.factory, 2);
+    const rating = records.find((record) => record.action.type === 'rate')!;
+    const bookmark = records.find((record) => record.action.type === 'bookmark')!;
+    await keptIds(2);
+
+    const undone = undoInTab(rating.id);
+
+    await until(() => expect(isPressed(likeOf(tab))).toBe(false));
+    expect(undone.result).toEqual({ status: 'cancelled' });
+    const [kept] = await recordsReach(idb.factory, 1);
+    expect(kept).toMatchObject({
+      id: bookmark.id,
+      action: { type: 'bookmark' },
+      fence: FENCE,
+      after: null,
+    });
+    expect(isPressed(bookmarkOf(tab))).toBe(true);
+    expect(server.arrivals).toEqual([]);
+
+    net.restore();
+
+    await until(() => expect(server.of('bookmark')).toHaveLength(1));
+    await until(async () => expect(await storedRecords(idb.factory)).toEqual([]));
+    expect(server.arrivals).toHaveLength(1);
+    expect(server.of('bookmark')[0]).toMatchObject({ key: bookmark.id, fields: FENCE });
+    expect(server.effects.map((effect) => effect.kind)).toEqual(['bookmark']);
+    expect(isPressed(likeOf(tab))).toBe(false);
+    expect(isPressed(bookmarkOf(tab))).toBe(true);
+    expect(errorToasts()).toEqual([]);
+  });
+
+  it('does not cancel a rating whose answer was lost: its record says it was sent, the replay sends it again and its receipt undoes it', async () => {
+    writeOfflineEnabled(A, true);
+    const server = createArticleServer([ITEM]);
+    server.routes['POST /articles/undo'] = () =>
+      json(200, {
+        count: 1,
+        mutationId: crypto.randomUUID(),
+        items: [server.change('101', { rating: null })],
+      });
+    connection(server);
+    const tab = await openTab(server);
+    const user = fakeTimers();
+    server.fault({ when: 'after', act: 'network' }, { kinds: ['rating'], times: 3 });
+
+    await user.click(likeOf(tab));
+    await advance(0);
+    await advance(500);
+    await advance(1000);
+    await advance(5000);
+    const [record] = await recordsReach(idb.factory, 1);
+    expect(record).toMatchObject({ sent: true });
+    expect(server.effects).toHaveLength(1);
+    const [id] = await keptIds(1);
+
+    const undone = undoInTab(id!);
+    await advance(0);
+
+    expect(undone.result).toBeUndefined();
+    expect(await storedRecords(idb.factory)).toHaveLength(1);
+    expect(isPressed(likeOf(tab))).toBe(true);
+    expect(tab.calls('POST /articles/undo')).toHaveLength(0);
+
+    requestReplayEvent();
+    await advance(0);
+
+    await until(() => expect(undone.result).toMatchObject({ status: 'undone' }));
+    expect(server.of('rating')).toHaveLength(4);
+    expect(new Set(server.of('rating').map((arrival) => arrival.key))).toEqual(
+      new Set([record!.id]),
+    );
+    expect(server.effects).toHaveLength(1);
+    expect(tab.calls('POST /articles/undo')).toHaveLength(1);
+    expect(await storedRecords(idb.factory)).toEqual([]);
+    await until(() => expect(isPressed(likeOf(tab))).toBe(false));
+  });
+});
+
+describe('14. unsent changes discarded in Settings', () => {
+  async function ratedOffline() {
+    writeOfflineEnabled(A, true);
+    const server = createArticleServer([ITEM]);
+    Object.assign(server.routes, {
+      'GET /auth/sessions': () => json(200, []),
+      'GET /invites': () => json(200, { items: [], invitesLeft: 3 }),
+      'GET /feed-preferences': () => json(200, []),
+      'GET /subscriptions': () => json(200, []),
+    });
+    const net = connection(server);
+    const tab = await openTab(server);
+    net.drop();
+    await tab.user.click(likeOf(tab));
+    await recordsReach(idb.factory, 1);
+    await keptIds(1);
+    expect(isPressed(likeOf(tab))).toBe(true);
+    return { server, net, tab, store: page.tabs[0]!.store };
+  }
+
+  async function openOfflineSection(tab: Tab) {
+    await act(async () => {
+      await tab.router.navigate({ to: '/settings' });
+    });
+    return screen.findByRole('region', { name: 'Offline reading' });
+  }
+
+  async function backToTheReader(tab: Tab) {
+    await act(async () => {
+      await tab.router.navigate({ to: '/read/$lane', params: { lane: 'for_you' } });
+    });
+    await tab.root.findByRole('article', { name: TITLE });
+  }
+
+  it('stops showing the rating, offline, once offline reading is turned off and the change discarded', async () => {
+    const { server, tab, store } = await ratedOffline();
+    const region = await openOfflineSection(tab);
+
+    await tab.user.click(
+      within(region).getByRole('switch', { name: 'Keep articles on this device' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Discard unsent changes?' });
+    await tab.user.click(within(dialog).getByRole('button', { name: 'Turn off and discard' }));
+
+    await until(async () => expect(await storedRecords(idb.factory)).toEqual([]));
+    await until(() => expect(store.offline.waiting()).toEqual([]));
+    expect(store.view(ITEM)).toEqual(ITEM);
+    await backToTheReader(tab);
+    expect(isPressed(likeOf(tab))).toBe(false);
+    expect(server.arrivals).toEqual([]);
+    expect(errorToasts()).toEqual([]);
+  });
+
+  it('stops showing the rating, offline, once the downloads are cleared and the change discarded', async () => {
+    const { server, tab, store } = await ratedOffline();
+    const region = await openOfflineSection(tab);
+
+    await tab.user.click(within(region).getByRole('button', { name: 'Clear downloaded articles' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Discard unsent changes?' });
+    await tab.user.click(within(dialog).getByRole('button', { name: 'Clear and discard' }));
+
+    await until(async () => expect(await storedRecords(idb.factory)).toEqual([]));
+    await until(() => expect(store.offline.waiting()).toEqual([]));
+    expect(store.view(ITEM)).toEqual(ITEM);
+    await backToTheReader(tab);
+    expect(isPressed(likeOf(tab))).toBe(false);
+    expect(server.arrivals).toEqual([]);
+    expect(errorToasts()).toEqual([]);
+  });
+
+  it('keeps showing the rating when the discard is cancelled', async () => {
+    const { server, tab, store } = await ratedOffline();
+    const region = await openOfflineSection(tab);
+
+    await tab.user.click(within(region).getByRole('button', { name: 'Clear downloaded articles' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Discard unsent changes?' });
+    await tab.user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    requestReplayEvent();
+    await flushIo();
+
+    expect(store.offline.waiting()).toHaveLength(1);
+    expect(await storedRecords(idb.factory)).toHaveLength(1);
+    await backToTheReader(tab);
+    expect(isPressed(likeOf(tab))).toBe(true);
+    expect(server.arrivals).toEqual([]);
   });
 });

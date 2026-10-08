@@ -5,6 +5,7 @@ import { readMe, saveDetail, saveView, setOfflineEnabled } from '../../src/offli
 import { resetOfflineDb } from '../../src/offline/db.js';
 import { isOfflineEnabled } from '../../src/offline/device.js';
 import { listRecords, putRecord } from '../../src/offline/queue.js';
+import { REPLAY_EVENT } from '../../src/offline/replay.js';
 import {
   A,
   B,
@@ -213,6 +214,64 @@ describe('the Offline reading section', () => {
       await waitFor(() => expect(toggle()).toHaveAttribute('aria-checked', 'false'));
       expect(isOfflineEnabled(A)).toBe(false);
       expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]);
+    });
+  });
+
+  describe('after unsent changes were discarded', () => {
+    /** The page replays when something asks for it; this counts the asking. */
+    const replayRequests = () => {
+      const heard = vi.fn();
+      window.addEventListener(REPLAY_EVENT, heard);
+      onTestFinished(() => {
+        window.removeEventListener(REPLAY_EVENT, heard);
+      });
+      return heard;
+    };
+
+    it('asks the page for a replay once Turn off and discard is confirmed, and not before', async () => {
+      await storedArticles(2);
+      const heard = replayRequests();
+      const { user } = await openSettings();
+      await within(offline()).findByText('4 articles stored on this device');
+      await user.click(toggle());
+      const dialog = await discardDialog();
+      expect(heard).not.toHaveBeenCalled();
+
+      await user.click(within(dialog).getByRole('button', { name: 'Turn off and discard' }));
+
+      await waitFor(() => expect(toggle()).toHaveAttribute('aria-checked', 'false'));
+      expect(await listRecords(A)).toEqual([]);
+      expect(heard).toHaveBeenCalledTimes(1);
+    });
+
+    it('asks the page for a replay once Clear and discard is confirmed, and not before', async () => {
+      await storedArticles(2);
+      const heard = replayRequests();
+      const { user } = await openSettings();
+      await within(offline()).findByText('4 articles stored on this device');
+      await user.click(clearButton());
+      const dialog = await discardDialog();
+      expect(heard).not.toHaveBeenCalled();
+
+      await user.click(within(dialog).getByRole('button', { name: 'Clear and discard' }));
+
+      expect(await within(offline()).findByText('0 articles stored on this device')).toBeVisible();
+      expect(await listRecords(A)).toEqual([]);
+      expect(heard).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not ask when the discard is cancelled', async () => {
+      await storedArticles(2);
+      const heard = replayRequests();
+      const { user } = await openSettings();
+      await within(offline()).findByText('4 articles stored on this device');
+      await user.click(clearButton());
+
+      await user.click(within(await discardDialog()).getByRole('button', { name: 'Cancel' }));
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(heard).not.toHaveBeenCalled();
+      expect(await listRecords(A)).toHaveLength(2);
     });
   });
 

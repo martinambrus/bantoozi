@@ -240,7 +240,7 @@ export interface ReaderTransport {
 }
 
 /** A change to a kept record. */
-export type RecordPatch = Partial<Pick<QueueRecord, 'key' | 'action' | 'fence' | 'after'>>;
+export type RecordPatch = Partial<Pick<QueueRecord, 'key' | 'action' | 'fence' | 'after' | 'sent'>>;
 
 /** How a kept record ended, as the account's other tabs are told (spec 09 §1). */
 export type SettledNote =
@@ -341,7 +341,11 @@ export interface ReaderActions {
   dispatch(item: ArticleListItem, action: ReaderAction, options?: DispatchOptions): ActionHandle;
   /** Finalize a held action (e.g. the chosen reason, SHIFT-hide) and queue it for sending. */
   release(actionId: string, patch?: { reason?: RatingReason; hide?: boolean }): void;
-  /** Drop a held or not-yet-sent action and its optimistic change; false once it was sent. */
+  /**
+   * Drop a held or not-yet-sent action and its optimistic change; false once it was sent. A change
+   * kept on the device that waits for a replay and was never sent is dropped too, with its record;
+   * one that was sent and then kept (the server may have it) is not.
+   */
   cancel(actionId: string): boolean;
   /**
    * Re-queue a `failed` action with its original body and key and return its new handle (same id);
@@ -349,10 +353,11 @@ export interface ReaderActions {
    */
   retry(actionId: string): ActionHandle | null;
   /**
-   * Held or queued: cancelled locally (`cancelled`, no request). In flight: waits for the ack, then
-   * undoes. An unknown id, or an action that settled without a receipt (`failed`, `stale`), is
-   * `refused` 'unknown' with no request; an acknowledged no-op (its `stateVersion` did not change)
-   * is `refused` 'not_undoable' with no request.
+   * Held or queued, or kept on the device and never sent: cancelled locally (`cancelled`, no
+   * request). In flight, or kept after it was sent: waits for the ack (for the latter, the one a
+   * replay gets), then undoes. An unknown id, or an action that settled without a receipt
+   * (`failed`, `stale`), is `refused` 'unknown' with no request; an acknowledged no-op (its
+   * `stateVersion` did not change) is `refused` 'not_undoable' with no request.
    */
   undo(actionId: string): Promise<UndoResult>;
   /**

@@ -14,6 +14,7 @@ import {
   type ReaderState,
   type RecordPatch,
   type SettledNote,
+  type UndoResult,
 } from '../../../src/features/reader/actions/types.js';
 import type { QueueRecord } from '../../../src/offline/types.js';
 import {
@@ -1058,5 +1059,362 @@ describe('what the store lets go of', () => {
     store.observe([]);
     expect(store.get(handle.id)).toBeUndefined();
     expect(store.retained()).toEqual({ actions: 0, recents: 0 });
+  });
+});
+
+/** The page loads again: a new store over the same queue store and server, showing what was kept. */
+function reload(kit: Rig): ReaderActions {
+  kit.store.reset();
+  let counter = 100;
+  const store = createReaderActions({
+    transport: kit.transport,
+    queue: kit.queue,
+    preferences: () => ({ markReadOnRate: true }),
+    now: () => kit.clock.now,
+    newId: () => `id-${(counter += 1)}`,
+    maxRetries: 0,
+    backoffMs: () => 0,
+  });
+  store.offline.adopt([...kit.queue.records.values()], store.offline.mark());
+  return store;
+}
+
+/** Asks for the undo without waiting for it: what it answers is read from `result` when it has. */
+function watching(store: ReaderActions, actionId: string): { result: UndoResult | undefined } {
+  const watched: { result: UndoResult | undefined } = { result: undefined };
+  void store.undo(actionId).then((result) => {
+    watched.result = result;
+  });
+  return watched;
+}
+
+describe('undoing a change that waits on the device and was never sent', () => {
+  it.each([
+    ['without a connection', false],
+    ['with the connection back before the replay', true],
+  ])('cancels it at once, %s', async (_name, online) => {
+    const { store, queue, transport, settled } = rig({ online: false });
+    const item = makeItem();
+    const handle = store.dispatch(item, { type: 'rate', rating: 1 });
+    await settleAll();
+    expect(handle.status).toBe('waiting');
+    queue.onlineNow = online;
+
+    const undone = watching(store, handle.id);
+    await settleAll();
+
+    expect(handle.status).toBe('cancelled');
+    expect(undone.result).toEqual({ status: 'cancelled' });
+    expect(await handle.result).toEqual({ status: 'cancelled' });
+    expect(transport.calls).toEqual([]);
+    expect(queue.records.size).toBe(0);
+    expect(queue.announced).toEqual([{ id: handle.id, outcome: 'cancelled' }]);
+    expect(store.view(item)).toEqual(item);
+    expect(store.offline.waiting()).toEqual([]);
+    expect(settled.map(({ result }) => result.status)).toEqual(['cancelled']);
+  });
+
+  it('cancels a change of an earlier page at once while online, before the replay has sent it', async () => {
+    const { store, queue, transport } = rig();
+    const item = makeItem();
+    const record = recordOf({ id: 'r1' });
+    queue.records.set('r1', record);
+    store.offline.adopt([record]);
+    expect(store.view(item).rating).toBe(1);
+
+    const undone = watching(store, 'r1');
+    await settleAll();
+
+    expect(store.get('r1')?.status).toBe('cancelled');
+    expect(undone.result).toEqual({ status: 'cancelled' });
+    expect(transport.calls).toEqual([]);
+    expect(queue.records.size).toBe(0);
+    expect(queue.announced).toEqual([{ id: 'r1', outcome: 'cancelled' }]);
+    expect(store.view(item)).toEqual(item);
+  });
+
+  it('cancels it at once after the page loaded again in between', async () => {
+    const kit = rig({ online: false });
+    const item = makeItem();
+    const made = kit.store.dispatch(item, { type: 'bookmark' });
+    await settleAll();
+
+    const store = reload(kit);
+    expect(store.offline.waiting().map((waiting) => waiting.id)).toEqual([made.id]);
+    const undone = watching(store, made.id);
+    await settleAll();
+
+    expect(store.get(made.id)?.status).toBe('cancelled');
+    expect(undone.result).toEqual({ status: 'cancelled' });
+    expect(kit.transport.calls).toEqual([]);
+    expect(kit.queue.records.size).toBe(0);
+    expect(store.view(item)).toEqual(item);
+  });
+
+  it('cancels a change that is behind one that was sent, and leaves the sent one alone', async () => {
+    const { store, queue, transport } = rig();
+    const item = makeItem();
+    const sent = recordOf({ id: 'r1', sent: true, createdAt: T0 - 2000 });
+    const unsent = recordOf({
+      id: 'r2',
+      action: { type: 'bookmark' },
+      fence: null,
+      after: 'r1',
+      createdAt: T0 - 1000,
+    });
+    for (const record of [sent, unsent]) queue.records.set(record.id, record);
+    store.offline.adopt([sent, unsent]);
+
+    const bookmark = watching(store, 'r2');
+    const rating = watching(store, 'r1');
+    await settleAll();
+
+    expect(store.get('r2')?.status).toBe('cancelled');
+    expect(bookmark.result).toEqual({ status: 'cancelled' });
+    expect(store.get('r1')?.status).toBe('waiting');
+    expect(rating.result).toBeUndefined();
+    expect([...queue.records.keys()]).toEqual(['r1']);
+    expect(transport.calls).toEqual([]);
+    expect(store.view(item)).toMatchObject({ rating: 1, bookmarkedAt: null });
+  });
+});
+
+describe('undoing a change whose send may have reached the server', () => {
+  async function lost(kit: Rig, item: ArticleListItem) {
+    const handle = kit.store.dispatch(item, { type: 'rate', rating: 1 });
+    await settleAll();
+    sendAt(kit.transport, 0).reject(networkError());
+    await settleAll();
+    expect(handle.status).toBe('waiting');
+    return handle;
+  }
+
+  it('waits for the replay to send it again under its key, and only then undoes it by its receipt', async () => {
+    const kit = rig();
+    const { store, queue, transport } = kit;
+    const item = makeItem();
+    const handle = await lost(kit, item);
+    expect(queue.records.get(handle.id)).toMatchObject({ sent: true });
+
+    const undone = watching(store, handle.id);
+    await settleAll();
+
+    expect(undone.result).toBeUndefined();
+    expect(handle.status).toBe('waiting');
+    expect(queue.records.has(handle.id)).toBe(true);
+    expect(queue.announced).toEqual([]);
+    expect(transport.sends).toHaveLength(1);
+    expect(store.view(item).rating).toBe(1);
+
+    const draining = store.offline.drain();
+    await settleAll();
+    expect(sendAt(transport, 1)).toMatchObject({ key: handle.id, fence: FENCE });
+    ack(sendAt(transport, 1), item, { rating: 1 });
+    await draining;
+    await settleAll();
+
+    expect(transport.undos).toHaveLength(1);
+    expect(transport.undos[0]?.body).toEqual({ mutationId: mutation(2) });
+    transport.undos[0]?.resolve({ count: 1, mutationId: mutation(9), items: [item] });
+    await settleAll();
+    expect(undone.result).toMatchObject({ status: 'undone' });
+  });
+
+  it('does the same after the page loaded again in between, which its record remembers', async () => {
+    const kit = rig();
+    const item = makeItem();
+    const handle = await lost(kit, item);
+
+    const store = reload(kit);
+    const undone = watching(store, handle.id);
+    await settleAll();
+
+    expect(undone.result).toBeUndefined();
+    expect(store.get(handle.id)?.status).toBe('waiting');
+    expect(kit.queue.records.has(handle.id)).toBe(true);
+    expect(kit.queue.announced).toEqual([]);
+    expect(kit.transport.sends).toHaveLength(1);
+
+    const draining = store.offline.drain();
+    await settleAll();
+    expect(sendAt(kit.transport, 1).key).toBe(handle.id);
+    ack(sendAt(kit.transport, 1), item, { rating: 1 });
+    await draining;
+    await settleAll();
+    expect(kit.transport.undos).toHaveLength(1);
+  });
+
+  it.each([
+    ['a 503', apiError(503, 'UNAVAILABLE')],
+    ['a 429', apiError(429, 'RATE_LIMITED')],
+    ['a 401', apiError(401, 'UNAUTHENTICATED')],
+  ])('marks the record after %s too', async (_name, error) => {
+    const { store, queue, transport } = rig();
+    const handle = store.dispatch(makeItem(), { type: 'rate', rating: 1 });
+    await settleAll();
+    expect(queue.records.get(handle.id)).not.toHaveProperty('sent');
+    sendAt(transport, 0).reject(error);
+    await settleAll();
+
+    expect(handle.status).toBe('waiting');
+    expect(queue.records.get(handle.id)).toMatchObject({ sent: true });
+  });
+
+  it('does not mark a record whose change only waited for a connection', async () => {
+    const { store, queue } = rig({ online: false });
+    const handle = store.dispatch(makeItem(), { type: 'rate', rating: 1 });
+    await settleAll();
+
+    expect(handle.status).toBe('waiting');
+    expect(queue.records.get(handle.id)).not.toHaveProperty('sent');
+    expect(queue.log).toEqual([`save:${handle.id}`]);
+  });
+});
+
+describe('cancelling a change that another change of the article waits behind', () => {
+  it('leaves the later change kept on the state the cancelled one acted on, and sends only it at the next replay', async () => {
+    const { store, queue, transport } = rig({ online: false });
+    const item = makeItem();
+    const like = store.dispatch(item, { type: 'rate', rating: 1 });
+    const bookmark = store.dispatch(item, { type: 'bookmark' });
+    await settleAll();
+    expect(queue.records.get(bookmark.id)).toMatchObject({ after: like.id, fence: null });
+
+    const undone = watching(store, like.id);
+    await settleAll();
+
+    expect(like.status).toBe('cancelled');
+    expect(undone.result).toEqual({ status: 'cancelled' });
+    expect(queue.records.has(like.id)).toBe(false);
+    expect(queue.records.get(bookmark.id)).toMatchObject({ after: null, fence: FENCE });
+    expect(store.view(item)).toMatchObject({ rating: null, bookmarkedAt: expect.any(String) });
+    expect(store.offline.waiting().map((waiting) => waiting.id)).toEqual([bookmark.id]);
+    expect(transport.calls).toEqual([]);
+
+    queue.onlineNow = true;
+    const draining = store.offline.drain();
+    await settleAll();
+    expect(transport.sends).toHaveLength(1);
+    expect(sendAt(transport, 0)).toMatchObject({
+      key: bookmark.id,
+      fence: FENCE,
+      action: { type: 'bookmark' },
+    });
+    ack(sendAt(transport, 0), item, { bookmarkedAt: '2026-10-08T08:00:00.000Z' });
+    await draining;
+    await settleAll();
+
+    expect(transport.sends).toHaveLength(1);
+    expect(queue.records.size).toBe(0);
+    expect(store.offline.waiting()).toEqual([]);
+  });
+
+  it('hands over the fence the cancelled change had, not the state learned since', async () => {
+    const { store, queue, transport } = rig({ online: false });
+    const item = makeItem();
+    const like = store.dispatch(item, { type: 'rate', rating: 1 });
+    const bookmark = store.dispatch(item, { type: 'bookmark' });
+    await settleAll();
+    store.observe([makeItem({ stateVersion: '6' })]);
+
+    const undone = watching(store, like.id);
+    await settleAll();
+
+    expect(like.status).toBe('cancelled');
+    expect(undone.result).toEqual({ status: 'cancelled' });
+    expect(queue.records.get(bookmark.id)).toMatchObject({ after: null, fence: FENCE });
+    queue.onlineNow = true;
+    const draining = store.offline.drain();
+    await settleAll();
+    expect(sendAt(transport, 0)).toMatchObject({ key: bookmark.id, fence: FENCE });
+    ack(sendAt(transport, 0), item, { bookmarkedAt: '2026-10-08T08:00:00.000Z' });
+    await draining;
+  });
+
+  it('does the same for the changes of an earlier page', async () => {
+    const { store, queue, transport } = rig();
+    const item = makeItem();
+    const first = recordOf({ id: 'r1', createdAt: T0 - 2000 });
+    const second = recordOf({
+      id: 'r2',
+      action: { type: 'bookmark' },
+      fence: null,
+      after: 'r1',
+      createdAt: T0 - 1000,
+    });
+    for (const record of [first, second]) queue.records.set(record.id, record);
+    store.offline.adopt([first, second]);
+
+    const undone = watching(store, 'r1');
+    await settleAll();
+
+    expect(store.get('r1')?.status).toBe('cancelled');
+    expect(undone.result).toEqual({ status: 'cancelled' });
+    expect(queue.records.get('r2')).toMatchObject({ after: null, fence: FENCE });
+    expect(transport.calls).toEqual([]);
+
+    const draining = store.offline.drain();
+    await settleAll();
+    expect(transport.sends).toHaveLength(1);
+    expect(sendAt(transport, 0)).toMatchObject({ key: 'r2', fence: FENCE });
+    ack(sendAt(transport, 0), item, { bookmarkedAt: '2026-10-08T08:00:00.000Z' });
+    await draining;
+    expect(queue.records.size).toBe(0);
+  });
+
+  it('has the change behind it follow what the cancelled one followed', async () => {
+    const { store, queue, transport } = rig();
+    const item = makeItem();
+    const first = recordOf({ id: 'r1', action: { type: 'read' }, createdAt: T0 - 3000 });
+    const middle = recordOf({ id: 'r2', fence: null, after: 'r1', createdAt: T0 - 2000 });
+    const last = recordOf({
+      id: 'r3',
+      action: { type: 'bookmark' },
+      fence: null,
+      after: 'r2',
+      createdAt: T0 - 1000,
+    });
+    for (const record of [first, middle, last]) queue.records.set(record.id, record);
+    store.offline.adopt([first, middle, last]);
+
+    const undone = watching(store, 'r2');
+    await settleAll();
+
+    expect(store.get('r2')?.status).toBe('cancelled');
+    expect(undone.result).toEqual({ status: 'cancelled' });
+    expect(queue.records.get('r3')).toMatchObject({ after: 'r1', fence: null });
+    expect(queue.records.get('r1')).toMatchObject({ after: null, fence: FENCE });
+
+    const draining = store.offline.drain();
+    await settleAll();
+    const next = ack(sendAt(transport, 0), item, { readAt: '2026-10-08T08:00:00.000Z' });
+    await settleAll();
+    expect(sendAt(transport, 1)).toMatchObject({
+      key: 'r3',
+      fence: { stateVersion: next.stateVersion, contentRevision: next.contentRevision },
+    });
+    ack(sendAt(transport, 1), next, { bookmarkedAt: '2026-10-08T08:00:01.000Z' });
+    await draining;
+    await settleAll();
+
+    expect(transport.sends.map((call) => call.key)).toEqual(['r1', 'r3']);
+    expect(queue.records.size).toBe(0);
+  });
+
+  it('has the changes queued behind a cancelled one on this page follow what it followed', async () => {
+    const { store, queue } = rig({ online: false });
+    const item = makeItem();
+    const first = store.dispatch(item, { type: 'read' });
+    const middle = store.dispatch(item, { type: 'rate', rating: 1 });
+    const last = store.dispatch(item, { type: 'bookmark' });
+    await settleAll();
+    expect(queue.records.get(last.id)).toMatchObject({ after: middle.id });
+    expect([first.status, middle.status, last.status]).toEqual(['waiting', 'queued', 'queued']);
+
+    expect(store.cancel(middle.id)).toBe(true);
+    await settleAll();
+
+    expect(queue.records.get(last.id)).toMatchObject({ after: first.id, fence: null });
+    expect(queue.records.get(first.id)).toMatchObject({ after: null, fence: FENCE });
   });
 });

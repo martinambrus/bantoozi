@@ -9,6 +9,7 @@ import {
 } from '../../offline/cache.js';
 import { offlineDb } from '../../offline/db.js';
 import { isOfflineEnabled } from '../../offline/device.js';
+import { requestReplay } from '../../offline/replay.js';
 import { useMe } from '../../session/context.js';
 
 const NOTHING: OfflineUsage = { articles: 0, bytes: 0, unsent: 0 };
@@ -80,6 +81,7 @@ export function useOfflineReading() {
       run(async () => {
         const done = await setOfflineEnabled(me.id, false);
         setEnabled(isOfflineEnabled(me.id));
+        if (done) requestReplay();
         return done;
       }),
     /** Removes the stored articles and unsent changes; the choice and the account stay. */
@@ -87,6 +89,7 @@ export function useOfflineReading() {
       run(async () => {
         const done = await clearAccount(me.id);
         if (!done) return false;
+        requestReplay();
         await saveMe(me.id, me);
         setCleared(true);
         return true;

@@ -10,7 +10,7 @@ import {
 import type { ReaderActions } from '../../src/features/reader/actions/types.js';
 import { createI18n } from '../../src/i18n/index.js';
 import { writeOfflineEnabled } from '../../src/offline/device.js';
-import { putRecord } from '../../src/offline/queue.js';
+import { deleteRecord, putRecord } from '../../src/offline/queue.js';
 import type * as QueueModule from '../../src/offline/queue.js';
 import { requestReplay } from '../../src/offline/replay.js';
 import { runResetHooks } from '../../src/session/reset.js';
@@ -182,6 +182,46 @@ describe('the replay triggers of the provider', () => {
     await until(async () => expect(await storedRecords(idb.factory)).toEqual([]));
     expect(server.of('rating')).toHaveLength(1);
     expect(calls('GET', '/me')).toHaveLength(1);
+  });
+
+  it('stops showing the changes whose records were discarded, offline, with no request', async () => {
+    writeOfflineEnabled(A, true);
+    await putRecord(rate('r1', '101'));
+    online = false;
+    const { requests } = mount();
+    await until(() => expect(waitingStatuses()).toBe('waiting'));
+    expect(shownRating()).toBe('1');
+
+    await deleteRecord(A, 'r1');
+    act(() => {
+      requestReplay();
+    });
+
+    await until(() => expect(waitingStatuses()).toBe(''));
+    expect(shownRating()).toBe('null');
+    expect(control.store?.offline.waiting()).toEqual([]);
+    expect(requests).toEqual([]);
+    expect(await storedRecords(idb.factory)).toEqual([]);
+  });
+
+  it('keeps showing the changes whose records remain, offline', async () => {
+    writeOfflineEnabled(A, true);
+    await putRecord(rate('r1', '101'));
+    await putRecord(rate('r2', '102'));
+    online = false;
+    const { requests } = mount();
+    await until(() => expect(waitingStatuses()).toBe('waiting'));
+
+    await deleteRecord(A, 'r2');
+    act(() => {
+      requestReplay();
+    });
+    await flushIo();
+
+    expect(waitingStatuses()).toBe('waiting');
+    expect(shownRating()).toBe('1');
+    expect(control.store?.offline.waiting().map((handle) => handle.id)).toEqual(['r1']);
+    expect(requests).toEqual([]);
   });
 
   it('shows the changes of an earlier page as waiting changes of their article', async () => {

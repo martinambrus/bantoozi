@@ -24,6 +24,8 @@ export interface QueueRecord {
   stamp: string;
   markRead: boolean;
   snapshot?: { id: string; contentRevision: string };
+  /** Set once the change was sent and then kept on the device: the server may have it. */
+  sent?: true;
   state: 'pending' | 'sending' | 'frozen';
   attempts: number;
   nextAttemptAt: number;

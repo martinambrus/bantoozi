@@ -243,7 +243,11 @@ export interface ReplayerOptions {
 export interface Replayer {
   /** Shows the account's kept changes in the store; needs no connection. */
   restore(): Promise<void>;
-  /** One replay (spec 09 §1). A replay that is already running makes this call return at once. */
+  /**
+   * One replay (spec 09 §1). A replay that is already running makes this call return at once.
+   * Without a connection nothing is sent; while the store shows kept changes it only makes them
+   * agree with the records that remain.
+   */
   run(): Promise<void>;
 }
 
@@ -289,7 +293,12 @@ export function createReplayer(options: ReplayerOptions): Replayer {
   }
 
   async function run(): Promise<void> {
-    if (running || !queue.online()) return;
+    if (running) return;
+    if (!queue.online()) {
+      // Nothing is sent without a connection, but changes shown here may have been discarded since.
+      if (target.waiting().length > 0) await restore();
+      return;
+    }
     running = true;
     try {
       await queue.tryHold(replay);

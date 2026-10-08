@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { OfflineControl, SettledNote } from '../../src/features/reader/actions/types.js';
+import type {
+  ActionHandle,
+  OfflineControl,
+  SettledNote,
+} from '../../src/features/reader/actions/types.js';
 import { writeOfflineEnabled } from '../../src/offline/device.js';
 import { LIMITS } from '../../src/offline/names.js';
 import { deleteRecord, listRecords, patchRecord, putRecord } from '../../src/offline/queue.js';
@@ -368,6 +372,14 @@ describe('changing a kept record', () => {
     });
   });
 
+  it('keeps the mark that a request was made, and nothing else changes', async () => {
+    const record = await kept();
+
+    expect(await patchRecord(A, 'r1', { sent: true })).toBe(true);
+
+    expect(await listRecords(A)).toEqual([{ ...record, sent: true }]);
+  });
+
   it('only looks when it is given nothing to change', async () => {
     const record = await kept();
 
@@ -411,6 +423,8 @@ describe('the replayer', () => {
     records: QueueRecord[];
     epoch: number;
     verifying: Promise<void> | null;
+    /** How many kept changes the target shows. */
+    kept: number;
   }
 
   function kit(overrides: Partial<Kit> = {}) {
@@ -423,6 +437,7 @@ describe('the replayer', () => {
       records: [makeRecord('r1')],
       epoch: 0,
       verifying: null,
+      kept: 0,
       ...overrides,
     };
     const queue = {
@@ -441,7 +456,7 @@ describe('the replayer', () => {
       },
     } as unknown as ReplayQueue;
     const target: OfflineControl = {
-      waiting: () => [],
+      waiting: () => Array.from({ length: state.kept }, () => ({}) as ActionHandle),
       mark: () => 7,
       adopt: (records, mark) => {
         state.calls.push(`adopt:${records.length}:${mark}`);
@@ -485,6 +500,30 @@ describe('the replayer', () => {
     await replayer.run();
 
     expect(state.calls).toEqual([]);
+  });
+
+  it.each([
+    ['the records that remain', [makeRecord('r1')], 'adopt:1:7'],
+    ['none when all were discarded', [], 'adopt:0:7'],
+  ])(
+    'reconciles with %s while offline when it shows kept changes, and sends and asks nobody',
+    async (_name, records, adopted) => {
+      const { state, replayer } = kit({ online: false, kept: 2, records });
+
+      await replayer.run();
+
+      expect(state.calls).toEqual(['list', adopted]);
+    },
+  );
+
+  it('shows nothing when the page let go of the account while it was reading offline', async () => {
+    const { state, replayer } = kit({ online: false, kept: 1 });
+
+    const running = replayer.run();
+    state.epoch += 1;
+    await running;
+
+    expect(state.calls).toEqual(['list']);
   });
 
   it('asks the server who is signed in, then sends the changes of that account after dropping the old ones', async () => {

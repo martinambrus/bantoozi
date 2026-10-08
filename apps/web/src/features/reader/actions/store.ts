@@ -63,6 +63,8 @@ interface ActionEntry {
   before: ReaderState | null;
   /** A record of this change is kept in the queue store, or is being written. */
   stored: boolean;
+  /** The change was sent and then kept on the device, so the server may have it. */
+  sent: boolean;
   /** The id of the earlier kept change on the same article that this one follows. */
   after: string | null;
   /** The record holds the fence. */
@@ -692,6 +694,8 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
       if (item !== null) learn(handle.articleId, item);
       drop(slot, entry, { status: 'stale', item });
     } else if (entry.stored && (isRetryable(outcome.error) || isUnauthorized(outcome.error))) {
+      entry.sent = true;
+      void write(() => port().change(handle.id, { sent: true }));
       park(slot, entry);
     } else {
       drop(slot, entry, { status: 'failed', error: outcome.error });
@@ -805,6 +809,7 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
       undoable: false,
       before: null,
       stored: false,
+      sent: false,
       after: null,
       fenced: false,
       saving: null,
@@ -847,11 +852,33 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
     bump();
   }
 
+  /**
+   * What a kept change leaves to the ones behind it when it is cancelled: they follow what it
+   * followed, and the one that becomes the head acts on the state it acted on.
+   */
+  function handOver(slot: Slot, entry: ActionEntry): void {
+    const index = slot.entries.indexOf(entry);
+    const behind = slot.entries.slice(index + 1);
+    for (const other of behind) {
+      if (other.kind !== 'action' || !other.stored || other.after !== entry.handle.id) continue;
+      other.after = entry.after;
+      void write(() => port().change(other.handle.id, { after: entry.after }));
+    }
+    const next = behind[0];
+    if (index === 0 && next?.kind === 'action' && next.stored && !next.fenced) {
+      next.fence ??= entry.fence;
+    }
+  }
+
   function cancel(actionId: string): boolean {
     const entry = actions.get(actionId);
     if (entry === undefined) return false;
-    if (entry.handle.status !== 'held' && entry.handle.status !== 'queued') return false;
-    settle(slotOf(entry.handle.articleId), entry, { status: 'cancelled' });
+    const { status } = entry.handle;
+    const neverSent = status === 'waiting' && !entry.sent;
+    if (status !== 'held' && status !== 'queued' && !neverSent) return false;
+    const slot = slotOf(entry.handle.articleId);
+    if (entry.stored) handOver(slot, entry);
+    settle(slot, entry, { status: 'cancelled' });
     return true;
   }
 
@@ -908,10 +935,7 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
       if (listed === undefined) return { status: 'refused', reason: 'unknown' };
       return requestUndo(listed.mutationId, actionId);
     }
-    if (entry.handle.status === 'held' || entry.handle.status === 'queued') {
-      cancel(actionId);
-      return { status: 'cancelled' };
-    }
+    if (cancel(actionId)) return { status: 'cancelled' };
     const result = await entry.handle.result;
     if (result.status === 'cancelled') return { status: 'cancelled' };
     if (result.status !== 'done') return { status: 'refused', reason: 'unknown' };
@@ -1120,6 +1144,7 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
       undoable: false,
       before: record.before,
       stored: true,
+      sent: record.sent === true,
       after: record.after,
       fenced: record.fence !== null,
       saving: Promise.resolve(true),
