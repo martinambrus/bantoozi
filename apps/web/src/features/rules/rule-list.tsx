@@ -13,7 +13,7 @@ import { EmptyState } from '../../components/states/empty-state.js';
 import { QueryState } from '../../components/states/query-state.js';
 import { countdown, useNow, type Countdown } from './countdown.js';
 import { Time } from './format.js';
-import { useRules, useRulesKey } from './use-rules.js';
+import { useRefreshAfterRuleChange, useRules, useRulesKey } from './use-rules.js';
 
 const REFRESH_MS = 60_000;
 
@@ -132,6 +132,7 @@ export function RuleList({ onRemoved }: { onRemoved: () => void }) {
   const query = useRules();
   const queryClient = useQueryClient();
   const rulesKey = useRulesKey();
+  const refresh = useRefreshAfterRuleChange();
   const remove = useApiMutation(routes.ruleDelete, { networkMode: 'always' });
   const [pending, setPending] = useState<RuleDto | null>(null);
   const removed = useRef(false);
@@ -157,7 +158,7 @@ export function RuleList({ onRemoved }: { onRemoved: () => void }) {
     queryClient.setQueryData<RuleDto[]>([...rulesKey, 'list'], (items) =>
       items?.filter((item) => item.id !== pending.id),
     );
-    void queryClient.invalidateQueries({ queryKey: rulesKey });
+    refresh();
   }
 
   return (

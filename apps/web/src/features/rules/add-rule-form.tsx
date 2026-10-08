@@ -5,7 +5,6 @@ import {
   RULE_VALUE_MAX,
   type RuleKind,
 } from '@bantoozi/shared';
-import { useQueryClient } from '@tanstack/react-query';
 import { useId, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -17,7 +16,7 @@ import { errorMessage } from '../../components/error-message.js';
 import { CheckIcon, WarningIcon } from '../../components/icons.js';
 import { Select } from '../../components/select.js';
 import { TextField } from '../../components/text-field.js';
-import { useRulesKey } from './use-rules.js';
+import { useRefreshAfterRuleChange } from './use-rules.js';
 
 /** The kinds made here; muting a story or blocking and boosting a feed start in the reader. */
 const ADDABLE_KINDS = [
@@ -44,8 +43,7 @@ function fieldFailure(error: unknown): FieldFailure | null {
 
 export function AddRuleForm() {
   const { t } = useTranslation('rules');
-  const queryClient = useQueryClient();
-  const rulesKey = useRulesKey();
+  const refresh = useRefreshAfterRuleChange();
   const create = useApiMutation(routes.ruleCreate, { networkMode: 'always' });
   const headingId = useId();
   const [kind, setKind] = useState<AddableKind>('mute_keyword');
@@ -98,7 +96,7 @@ export function AddRuleForm() {
     }
     setValue('');
     setAdded(true);
-    void queryClient.invalidateQueries({ queryKey: rulesKey });
+    refresh();
   }
 
   return (

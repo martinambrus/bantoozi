@@ -2,6 +2,7 @@ import type { CreateRuleBody, Me, RuleDto } from '@bantoozi/shared';
 import { act, configure, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { articleKeys } from '../../src/features/article/query-keys.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
 import { makeMe } from '../session/fixtures.js';
@@ -428,6 +429,33 @@ describe('the rules page (spec 09 §6)', () => {
         expect(screen.getByRole('heading', { level: 1, name: 'Rules' })).toHaveFocus(),
       );
       expect(screen.queryByRole('dialog')).toBeNull();
+    });
+  });
+
+  describe('the reader after a change', () => {
+    it('marks the cached articles stale after a rule is added and after one is deleted', async () => {
+      const me = makeMe();
+      const app = await open([rule({ id: '7', displayValue: 'bitcoin', value: 'bitcoin' })], {
+        me,
+      });
+      await screen.findByText('bitcoin');
+      const probe = [...articleKeys.all(me.id), 'probe'];
+      const stale = () => app.queryClient.getQueryState(probe)?.isInvalidated;
+
+      app.queryClient.setQueryData(probe, 1);
+      await app.user.type(form().getByLabelText('Keyword or phrase'), 'nft');
+      await app.user.click(form().getByRole('button', { name: 'Add rule' }));
+      expect(await form().findByText('Rule added.')).toBeVisible();
+      await waitFor(() => expect(stale()).toBe(true));
+
+      app.queryClient.setQueryData(probe, 2);
+      expect(stale()).toBe(false);
+      await app.user.click(screen.getByRole('button', { name: 'Delete rule: bitcoin' }));
+      await app.user.click(
+        within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete rule' }),
+      );
+      await waitFor(() => expect(screen.queryByText('bitcoin')).toBeNull());
+      await waitFor(() => expect(stale()).toBe(true));
     });
   });
 
