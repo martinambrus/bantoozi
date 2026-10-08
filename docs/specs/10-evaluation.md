@@ -548,7 +548,7 @@ by `apply-g1` and the normal production settings flow (§1); owner-pilot scope r
 `eval replay --against <runId> [--model jev-x.y.z] [--engine llm --llm-model <model>] [--question-set enrich-v2] [--thresholds file.json]`
 
 - Re-runs the G1 variant with the proposed change on the `dataset_version` of the run it compares
-  against (`golden-v1` for the G1 runs), cached where possible. The replay is stored as an
+  against (for the G1 runs, `g1.json`'s `dataset.version`: `golden-v3` since the 2026-10-08 pass), cached where possible. The replay is stored as an
   `eval.runs` row with experiment `replay:<experiment>`; a replay that fails the pass rule exits
   with code 4 and an inconclusive one with code 5 (D-114). The base run must be complete with full coverage; the baseline policy is the
   `ranker.thresholds` frozen with the base run (or stored at replay time for older runs), and
@@ -626,7 +626,8 @@ until a separate schema/API/retention/consent design and privacy notice are appr
   raw contributions and invalidate/rebuild derived evaluation versions. Do not promise both
   irreversible anonymization and individual deletion without a defined tradeoff.
 - Keep train/development/test boundaries by user and story; production feedback is selection-biased
-  and does not replace blind golden-v1 ratings. Replays run on both appropriate frozen versions.
+  and does not replace the blind G1 ratings (the dataset `g1.json` names: `golden-v3`). Replays run on
+  both appropriate frozen versions.
 
 ## 9. Required evaluation tests
 

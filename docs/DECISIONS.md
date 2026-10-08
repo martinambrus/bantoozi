@@ -1305,7 +1305,7 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   §2.2 and RATERS.md updated.
 - D-147: 2026-10-08 M3b — how the G1 golden set was collected, deviating from spec 10 §2.2–§2.3
   with the owner's approval. (1) Rounds: `golden-v1` (owner-written cards, 300 ratings) and
-  `golden-v2` (300 ratings) failed G1 and were closed (D-145); `golden-v3` (450 ratings,
+  `golden-v2` (300 ratings) failed G1 and were closed (D-145); `golden-v3` (450 assignments: 449 rated, 1 skipped;
   `serve-rating --assignments 450`, D-146) passed. Each round used a new rater context of the one
   owner participant, so the evidence is one person's. (2) Cards: for rounds 2 and 3 Claude (Opus 5.5)
   drafted 10 interest and 2 never cards from the owner's free-text description of his interests,
@@ -1335,7 +1335,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   (measured $0.2290 per 1,000 authorized uncached article revisions); tier-2 cap 300 (unmeasured: the
   LibreTranslate runs E3/E3b and the Ollama run E4 stayed partial because of a few genuine
   translation failures); Laya track recommended for Slovak (native falls short of English on the
-  bilingual comparison). The owner approves initial invite-only beta eligibility under Q13 on this
+  bilingual comparison). Owner-review item the report's list omits: at the selected shallow-depth
+  cutoff (≤ 0.45) English test precision is 0.778 (7 of 9 flagged), below the 0.80 bar, while the
+  pooled precision is 0.909 and cs/sk are 1.000/0.875; the threshold schema is global, so the
+  cutoff stays 0.45 and M7/M8 should watch English shallow demotions. The owner approves initial invite-only beta eligibility under Q13 on this
   evidence; Q1 still governs production budget-cap increases, and every other M8 launch requirement
   applies. The locked baseline is B1: B1-T was ineligible (one LibreTranslate fallback in the
   owner's corpus left it with no valid score), so the B1-versus-B1-T comparison is unmeasured and
