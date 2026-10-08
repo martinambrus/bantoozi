@@ -14,8 +14,7 @@ import { createHarness } from '../auth/harness.js';
 import { makeMe } from '../session/fixtures.js';
 import { bodyOf, type ApiRouteHandler, type FakeServer } from '../support/app.js';
 
-// Every test boots the whole app; on a busy machine the defaults (5 s a test, 1 s a query) are too tight.
-vi.setConfig({ testTimeout: 30_000 });
+// Every test boots the whole app; on a busy machine a query can take longer than the default 1 s.
 configure({ asyncUtilTimeout: 5_000 });
 
 export const harness = createHarness();
