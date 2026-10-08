@@ -261,8 +261,8 @@ flowchart TD
 | **M0** Foundations | — | — | yes | M | ✓ done 2026-09-25 (§5) |
 | **M1** Ingestion core | M0 | M2 | yes (the fixture server is local) | L | ✓ done 2026-09-26 (§6) |
 | **M2** Decision engine & classification | M0 | M1 | yes (fixtures and the fake engine only) | L | ✓ done 2026-09-26 (§7) |
-| **M3a** Evaluation tooling & golden-set collection | M1, M2 | M4, M5 | yes, then a **human step** (§8.1) | M | ✓ done 2026-10-01 (§8); human step pending |
-| **M3b** Run gate G1 | M3a + human ratings | M6, M7-T1…T6 | yes (needs API keys and network) | S | not started |
+| **M3a** Evaluation tooling & golden-set collection | M1, M2 | M4, M5 | yes, then a **human step** (§8.1) | M | ✓ done 2026-10-01 (§8); human step done 2026-10-08 (§8.1) |
+| **M3b** Run gate G1 | M3a + human ratings | M6, M7-T1…T6 | yes (needs API keys and network) | S | ✓ done 2026-10-08 (§9): `owner_pilot` PASS |
 | **M4** HTTP API | M1, M2 | M3a, M5 | yes | L | ✓ done 2026-10-01 (§10) |
 | **M5** Ranking & lanes | M1, M2 | M3a, M4 | yes | M | ✓ done 2026-10-01 (§11) |
 | **M6** Web app (PWA) | M4, M5 | M3b | yes | L | not started |
@@ -826,6 +826,8 @@ a monitoring command; a background `--watch` process is not completion evidence.
    content/cards/feeds (spec 10). An eval-schema-only dump cannot restore its public-table foreign
    keys. Continue to M3b only when the coverage/split preflight in spec 10 passes.
 
+Done 2026-10-08 in three held-out rounds (`golden-v1`…`v3`, one participant; D-147). See §9.
+
 ---
 
 ## 9. M3b: Run gate G1
@@ -851,14 +853,22 @@ Complete milestone M3b "Run gate G1" as specified in docs/PLAN.md §9 and docs/s
 
 | ID | Task | Needs | Specs | Status |
 |---|---|---|---|---|
-| M3b-T1 | Preflight: coverage/classes/facets and frozen split pass spec 10 readiness; actual model/MT capabilities verified; keys valid with budgeted tiny calls; total estimate printed | ratings | 10 §2–3 | not started |
-| M3b-T2 | Run B0, B1, B1-T, E1, E2, E3, E3b, E4 (E5 only if Laya is installed), each with `--yes --max-usd <10 − spent so far>`; then the informational E6 and E7 if the remaining budget covers their estimates | T1 | 10 §3 | not started |
-| M3b-T3 | Select/tune only on development groups; lock config and evaluate held-out production policy; report PASS/FAIL/INCONCLUSIVE; write `apps/eval/config/g1.json` (runs/snapshot/split hashes), commit | T2 | 10 §1, §4–5 | not started |
-| M3b-T4 | On profile-scoped PASS: `apply-g1` to development; record the actual evidence scope and owner-approved initial-beta eligibility in `docs/DECISIONS.md` (daily budget recommendation, language modes, card text mode, thresholds, tier-2 cap; Q1 governs production cap increases). On FAIL/INCONCLUSIVE: write `docs/G1-FAIL.md` with the rule 1 details and the 20 worst-ranked liked articles | T3 | 10 §1, §5 | not started |
+| M3b-T1 | Preflight: coverage/classes/facets and frozen split pass spec 10 readiness; actual model/MT capabilities verified; keys valid with budgeted tiny calls; total estimate printed | ratings | 10 §2–3 | ✓ 2026-10-08 |
+| M3b-T2 | Run B0, B1, B1-T, E1, E2, E3, E3b, E4 (E5 only if Laya is installed), each with `--yes --max-usd <10 − spent so far>`; then the informational E6 and E7 if the remaining budget covers their estimates | T1 | 10 §3 | ✓ 2026-10-08 |
+| M3b-T3 | Select/tune only on development groups; lock config and evaluate held-out production policy; report PASS/FAIL/INCONCLUSIVE; write `apps/eval/config/g1.json` (runs/snapshot/split hashes), commit | T2 | 10 §1, §4–5 | ✓ 2026-10-08 |
+| M3b-T4 | On profile-scoped PASS: `apply-g1` to development; record the actual evidence scope and owner-approved initial-beta eligibility in `docs/DECISIONS.md` (daily budget recommendation, language modes, card text mode, thresholds, tier-2 cap; Q1 governs production cap increases). On FAIL/INCONCLUSIVE: write `docs/G1-FAIL.md` with the rule 1 details and the 20 worst-ranked liked articles | T3 | 10 §1, §5 | ✓ 2026-10-08 |
 
 **Milestone done when:** the report is committed and the goal evidence is printed. **A failed or
 inconclusive selected profile does not approve launch. An owner-pilot PASS satisfies the evaluation
 gate for development/M7 and the initial beta; M8's other launch requirements still apply (§4).**
+
+**Result (2026-10-08):** `owner_pilot` **PASS** on the third held-out round, `golden-v3` (test macro
+AUC 0.709 vs B1 0.517, ΔAUC +0.192 [0.089, 0.295]; cs 0.837, en 0.642, sk 0.704 over 141 held-out
+ratings). `golden-v1` (0.561) and `golden-v2` (0.676) failed and are closed rounds (D-145); their
+artifacts were not committed. Report `apps/eval/reports/G1-2026-10-08-decision.md`, decision file
+`apps/eval/config/g1.json`, applied to the golden evaluation database with `eval apply-g1`. Evidence
+scope, method deviations and the owner-approved initial-beta eligibility: D-147, D-148. Total
+evaluation spend $1.21 of the $10 cap.
 
 ---
 

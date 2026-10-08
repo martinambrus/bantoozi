@@ -1303,3 +1303,36 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   the owner may rate more. `eval serve-rating --assignments <n>` (1–1,000, default 300) sets the
   per-context target; the equal language split, top-ups and every other rule are unchanged. Spec 10
   §2.2 and RATERS.md updated.
+- D-147: 2026-10-08 M3b — how the G1 golden set was collected, deviating from spec 10 §2.2–§2.3
+  with the owner's approval. (1) Rounds: `golden-v1` (owner-written cards, 300 ratings) and
+  `golden-v2` (300 ratings) failed G1 and were closed (D-145); `golden-v3` (450 ratings,
+  `serve-rating --assignments 450`, D-146) passed. Each round used a new rater context of the one
+  owner participant, so the evidence is one person's. (2) Cards: for rounds 2 and 3 Claude (Opus 5.5)
+  drafted 10 interest and 2 never cards from the owner's free-text description of his interests,
+  without seeing any article of the round; the owner approved them unchanged, and they were entered
+  through the rating app. Spec 10 expects raters to write their own cards; LLM-drafted cards may be
+  better formulated than a typical user's, so the result may overstate what self-written cards
+  achieve. (3) Facet labels for `golden-v2` and `golden-v3` (100 per language each) are LLM labels,
+  not human ones: labeller `claude-opus-5.5`, from the title, excerpt and body lead the classifier
+  sees, following the `enrich-v1` definitions, blind to Jev's answers and to the ratings, and stored
+  through `saveFacetLabels` under that separate labeller id. They tune and check only the demotion
+  cutoffs; the pass rule uses the owner's ratings.
+- D-148: 2026-10-08 M3b-T4 — G1 decision and initial-beta eligibility (owner-approved 2026-10-08).
+  Evidence scope: `owner_pilot`, one participant, one context, 449 ratings on `golden-v3` (141
+  held-out: 61 likes, 80 dislikes; cs 34, en 54, sk 53 test ratings, all languages measured). Test
+  macro AUC 0.709 (95% CI [0.623, 0.793]) against the 0.70 rule, a narrow pass decided by the point
+  estimate; ΔAUC over the locked B1 baseline +0.192 [0.089, 0.295]; cs 0.837, en 0.642, sk 0.704. It
+  is one-person evidence and never multi-person validation. Applied settings (`eval apply-g1`):
+  language modes en/sk/cs native; card text mode `as_written` (unmeasured: all cards English); lanes
+  For You 0.65 and Maybe 0.35 (defaults kept, precision targets unmet on development); tiers default;
+  demotion cutoffs clickbait 0.8 and promotional 0.8 (defaults; unmet/unmeasured), shallow depth
+  0.45 and stale time-sensitive 0.75 (selected on development); recommended daily budget $1.00
+  (measured $0.21 per 1,000 authorized article revisions); tier-2 cap 300 (unmeasured: the
+  LibreTranslate runs E3/E3b and the Ollama run E4 stayed partial because of a few genuine
+  translation failures); Laya track recommended for Slovak (native falls short of English on the
+  bilingual comparison). The owner approves initial invite-only beta eligibility under Q13 on this
+  evidence; Q1 still governs production budget-cap increases, and every other M8 launch requirement
+  applies. Operational notes for M7/M8: Jev occasionally returns a score 0.01 outside spec 04's 0.02
+  consistency tolerance (an `invalid_response`, recovered by resuming the run), the Ollama Free plan
+  rate-limits long runs (recovered by resuming), and Jev attempts cost 1–8 % more than their
+  reservation estimate. Total M3b spend $1.21 (round 3: $0.51).
