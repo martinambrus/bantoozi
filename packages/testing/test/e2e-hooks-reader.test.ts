@@ -43,6 +43,8 @@ describe('reader SQL hooks', () => {
       'analysisRequests',
       'markSnapshotCold',
       'clearArticleText',
+      'engineCalls',
+      'articleFeedback',
     ]);
   });
 
@@ -187,6 +189,84 @@ describe('reader SQL hooks', () => {
         { articleId: '5', snapshotId: '5' },
       ]) {
         await expect(runSqlHook(db, 'clearArticleText', params)).rejects.toBeInstanceOf(
+          HookParamsError,
+        );
+      }
+      expect(calls).toEqual([]);
+    });
+  });
+
+  describe('engineCalls', () => {
+    it('lists the provider calls made for one account through a bound email', async () => {
+      const rows = [
+        { id: '3', articleId: '5', kind: 'enrich', engine: 'typesafe', status: 'ok' },
+        { id: '4', articleId: '5', kind: 'match', engine: 'typesafe', status: 'ok' },
+      ];
+      const { db, calls } = recordingDb(rows);
+      await expect(runSqlHook(db, 'engineCalls', { email: EMAIL })).resolves.toBe(rows);
+      const { text, values } = onlyQuery(calls);
+      expect(values).toEqual([EMAIL]);
+      expect(text).not.toContain(EMAIL);
+      expect(text).toContain('FROM engine_calls');
+      expect(text).toContain('JOIN users');
+      expect(text).toContain('ORDER BY');
+      expect(text).not.toMatch(/INSERT|UPDATE|DELETE|DROP|TRUNCATE/);
+    });
+
+    it('refuses invalid parameters without querying', async () => {
+      const { db, calls } = recordingDb();
+      for (const params of [
+        ...NOT_AN_OBJECT,
+        {},
+        { email: 1 },
+        { email: '' },
+        { email: 'no-at-sign' },
+        { email: "x'; DROP TABLE users; --@example.com" },
+        { email: EMAIL, articleId: '5' },
+      ]) {
+        await expect(runSqlHook(db, 'engineCalls', params)).rejects.toBeInstanceOf(HookParamsError);
+      }
+      expect(calls).toEqual([]);
+    });
+  });
+
+  describe('articleFeedback', () => {
+    it('lists one account’s events of one article through bound values', async () => {
+      const rows = [
+        { id: '9', kind: 'rate', rating: 1, reason: null, analysisRequestId: 'u' },
+        { id: '10', kind: 'unrate', rating: null, reason: null, analysisRequestId: null },
+      ];
+      const { db, calls } = recordingDb(rows);
+      await expect(
+        runSqlHook(db, 'articleFeedback', { email: EMAIL, articleId: ID }),
+      ).resolves.toBe(rows);
+      const { text, values } = onlyQuery(calls);
+      expect(values).toEqual([EMAIL, ID]);
+      expect(text).not.toContain(EMAIL);
+      expect(text).not.toContain(ID);
+      expect(text).toContain('FROM feedback_events');
+      expect(text).toContain("e.value ->> 'analysisRequestId'");
+      expect(text).toContain('$2::bigint');
+      expect(text).toContain('ORDER BY');
+      expect(text).not.toMatch(/INSERT|UPDATE|DELETE|DROP|TRUNCATE/);
+    });
+
+    it('refuses invalid parameters without querying', async () => {
+      const { db, calls } = recordingDb();
+      for (const params of [
+        ...NOT_AN_OBJECT,
+        {},
+        { email: EMAIL },
+        { articleId: ID },
+        { email: 1, articleId: ID },
+        { email: 'no-at-sign', articleId: ID },
+        { email: EMAIL, articleId: 5 },
+        { email: EMAIL, articleId: '0' },
+        { email: EMAIL, articleId: '012' },
+        { email: EMAIL, articleId: '5; DROP TABLE articles' },
+        { email: EMAIL, articleId: ID, kind: 'rate' },
+      ]) {
+        await expect(runSqlHook(db, 'articleFeedback', params)).rejects.toBeInstanceOf(
           HookParamsError,
         );
       }

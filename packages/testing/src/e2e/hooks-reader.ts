@@ -71,6 +71,71 @@ const analysisRequests: Hook<{ email: string }> = {
   },
 };
 
+export interface EngineCallRow {
+  id: string;
+  articleId: string | null;
+  kind: string;
+  engine: string;
+  status: string;
+}
+
+/**
+ * The provider calls made on one account's behalf, oldest first: the audit row of every attempt the
+ * worker sent, with the article it was about. The fake TypeSafe server only counts the requests it
+ * receives, so this tells which article each of them was for.
+ */
+const engineCalls: Hook<{ email: string }> = {
+  parse: (params) => ({ email: emailAddress(record(params, ['email'])['email'], 'email') }),
+  async run(db, { email }) {
+    const { rows } = await db.query(
+      `SELECT c.id::text AS "id", c.article_id::text AS "articleId", c.kind AS "kind",
+              c.engine AS "engine", c.status AS "status"
+         FROM engine_calls c
+         JOIN users u ON u.id = c.user_id
+        WHERE u.email = $1
+        ORDER BY c.id`,
+      [email],
+    );
+    return rows as EngineCallRow[];
+  },
+};
+
+export interface FeedbackEventRow {
+  id: string;
+  kind: string;
+  rating: number | null;
+  reason: string | null;
+  analysisRequestId: string | null;
+}
+
+/**
+ * The feedback events one account stored for one article, oldest first, with what a rating carries:
+ * the rating, the reason of a dislike and the analysis request a selected article was rated under.
+ * The API shows the outcome of a rating but not the request id it was stored with.
+ */
+const feedbackEvents: Hook<{ email: string; articleId: string }> = {
+  parse(params) {
+    const fields = record(params, ['email', 'articleId']);
+    return {
+      email: emailAddress(fields['email'], 'email'),
+      articleId: databaseId(fields['articleId'], 'articleId'),
+    };
+  },
+  async run(db, { email, articleId }) {
+    const { rows } = await db.query(
+      `SELECT e.id::text AS "id", e.kind AS "kind", e.value -> 'rating' AS "rating",
+              e.value ->> 'reason' AS "reason",
+              e.value ->> 'analysisRequestId' AS "analysisRequestId"
+         FROM feedback_events e
+         JOIN users u ON u.id = e.user_id
+        WHERE u.email = $1 AND e.article_id = $2::bigint
+        ORDER BY e.id`,
+      [email, articleId],
+    );
+    return rows as FeedbackEventRow[];
+  },
+};
+
 /**
  * What `house.purge-bodies` does to a bookmark snapshot at 30 days (spec 11 §5.2), which M8 has not
  * built yet: the snapshot is marked cold and the redundant hot copy of the article's full text and
@@ -134,4 +199,6 @@ export const READER_HOOKS: readonly NamedHook[] = [
   ['analysisRequests', runner(analysisRequests)],
   ['markSnapshotCold', runner(markSnapshotCold)],
   ['clearArticleText', runner(clearArticleText)],
+  ['engineCalls', runner(engineCalls)],
+  ['articleFeedback', runner(feedbackEvents)],
 ];
