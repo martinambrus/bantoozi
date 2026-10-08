@@ -1,3 +1,17 @@
 {
-  "title": "Bantoozi"
+  "title": "Bantoozi",
+  "nav": {
+    "label": "Hlavná navigácia",
+    "reader": "Čítačka",
+    "interests": "Záujmy",
+    "labels": "Štítky",
+    "feeds": "Zdroje",
+    "rules": "Pravidlá",
+    "settings": "Nastavenia",
+    "admin": "Správa"
+  },
+  "userMenu": {
+    "label": "Ponuka účtu: {{name}}"
+  },
+  "offlineBanner": "Ste offline. Niektoré funkcie vyžadujú pripojenie."
 }

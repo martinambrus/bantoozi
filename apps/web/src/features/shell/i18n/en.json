@@ -1,3 +1,17 @@
 {
-  "title": "Bantoozi"
+  "title": "Bantoozi",
+  "nav": {
+    "label": "Main navigation",
+    "reader": "Reader",
+    "interests": "Interests",
+    "labels": "Labels",
+    "feeds": "Feeds",
+    "rules": "Rules",
+    "settings": "Settings",
+    "admin": "Admin"
+  },
+  "userMenu": {
+    "label": "Account menu: {{name}}"
+  },
+  "offlineBanner": "You're offline. Some features need a connection."
 }

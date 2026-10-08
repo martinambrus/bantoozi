@@ -1,4 +1,77 @@
 {
   "appName": "Bantoozi",
-  "language": "Jazyk"
+  "language": "Jazyk",
+  "skipToContent": "Preskočiť na obsah",
+  "actions": {
+    "save": "Uložiť",
+    "cancel": "Zrušiť",
+    "close": "Zavrieť",
+    "retry": "Skúsiť znova",
+    "undo": "Vrátiť späť",
+    "delete": "Zmazať",
+    "confirm": "Potvrdiť",
+    "dismiss": "Skryť",
+    "back": "Späť",
+    "next": "Ďalej",
+    "edit": "Upraviť",
+    "add": "Pridať",
+    "remove": "Odobrať",
+    "signOut": "Odhlásiť sa",
+    "menu": "Ponuka",
+    "more": "Viac"
+  },
+  "states": {
+    "loading": "Načítava sa…",
+    "emptyTitle": "Zatiaľ tu nič nie je",
+    "offlineTitle": "Ste offline",
+    "offlineBody": "Skontrolujte pripojenie a skúste to znova.",
+    "errorTitle": "Niečo sa pokazilo",
+    "quotaTitle": "Dosiahnutý limit plánu"
+  },
+  "toast": {
+    "saveFailed": "Nepodarilo sa uložiť — skúste to znova"
+  },
+  "errors": {
+    "VALIDATION_FAILED": "Niektoré údaje nie sú platné. Skontrolujte ich a skúste to znova.",
+    "INVALID_CODE": "Tento kód je neplatný alebo mu vypršala platnosť.",
+    "UNAUTHENTICATED": "Na pokračovanie sa prihláste.",
+    "FORBIDDEN": "Na túto akciu nemáte oprávnenie.",
+    "NOT_FOUND": "Hľadanú položku sa nepodarilo nájsť.",
+    "CONFLICT": "Táto zmena koliduje s novšou zmenou. Obnovte stránku a skúste to znova.",
+    "STALE_CURSOR": "Zoznam sa medzitým zmenil. Obnovte ho a pokračujte.",
+    "STALE_STATE": "Toto sa zmenilo na inom zariadení. Obnovte zobrazenie.",
+    "IDEMPOTENCY_CONFLICT": "Táto požiadavka sa už použila pre inú akciu. Skúste to znova.",
+    "QUOTA_EXCEEDED": "Dosiahli ste limit svojho plánu pre {{limit}}: {{used}} z {{max}}.",
+    "QUOTA_EXCEEDED_GENERIC": "Dosiahli ste limit svojho plánu.",
+    "INVITE_REQUIRED": "Bantoozi je zatiaľ len na pozvánky. Na registráciu potrebujete kód pozvánky.",
+    "RATE_LIMITED": "Príliš veľa požiadaviek. Chvíľu počkajte a skúste to znova.",
+    "ENGINE_UNAVAILABLE": "Služba analýzy je momentálne nedostupná. Skúste to neskôr.",
+    "STAGE_UNAVAILABLE": "Táto časť Bantoozi zatiaľ nie je dostupná.",
+    "INTERNAL": "Na našej strane nastala chyba. Skúste to znova.",
+    "FEED_BLOCKED_ADDRESS": "Túto adresu nie je možné použiť ako zdroj.",
+    "FEED_DNS_ERROR": "Túto webovú stránku sa nepodarilo nájsť.",
+    "FEED_TIMEOUT": "Webová stránka neodpovedala včas.",
+    "FEED_TLS_ERROR": "S touto webovou stránkou sa nepodarilo nadviazať zabezpečené spojenie.",
+    "FEED_CONNECTION_ERROR": "S touto webovou stránkou sa nepodarilo spojiť.",
+    "FEED_TOO_LARGE": "Tento zdroj je príliš veľký.",
+    "FEED_TOO_MANY_REDIRECTS": "Táto adresa má príliš veľa presmerovaní.",
+    "FEED_INVALID_URL": "Toto nie je platná adresa zdroja.",
+    "FEED_DECODE_ERROR": "Nepodarilo sa prečítať kódovanie textu tohto zdroja.",
+    "FEED_NOT_A_FEED": "Na tejto adrese nie je žiadny zdroj.",
+    "FEED_PARSE_ERROR": "Tento zdroj sa nepodarilo prečítať.",
+    "FEED_ORIGIN_COOLDOWN": "Webová stránka nás požiadala o spomalenie. Skúste to neskôr.",
+    "FEED_HTTP": "Webová stránka odpovedala chybou ({{status}}).",
+    "NETWORK": "Ste offline alebo sa nepodarilo spojiť so serverom.",
+    "INVALID_RESPONSE": "Server poslal odpoveď, ktorej sa nepodarilo porozumieť. Skúste to znova.",
+    "ABORTED": "Požiadavka bola zrušená.",
+    "UNKNOWN": "Niečo sa pokazilo. Skúste to znova."
+  },
+  "quota": {
+    "maxFeeds": "zdroje",
+    "maxCards": "karty záujmov",
+    "maxLabels": "štítky",
+    "maxForks": "súkromné karty",
+    "maxRules": "pravidlá",
+    "opmlMaxFeeds": "zdroje na jeden import OPML"
+  }
 }
