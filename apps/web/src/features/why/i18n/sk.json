@@ -77,12 +77,19 @@
       "promotional": "Reklamný obsah sa odteraz zaradí nižšie",
       "stale": "Zastarané správy sa odteraz zaradia nižšie"
     },
+    "off": {
+      "clickbait": "Klikbajt sa už nebude zaraďovať nižšie",
+      "promotional": "Reklamný obsah sa už nebude zaraďovať nižšie",
+      "shallow": "Povrchné články sa už nebudú zaraďovať nižšie",
+      "stale": "Zastarané správy sa už nebudú zaraďovať nižšie"
+    },
     "reset": "Späť na automatické nastavenie"
   },
   "rules": {
     "heading": "Použité pravidlá",
     "forCard": "{{rule}}: {{card}}",
-    "reset": "Obnoviť"
+    "reset": "Obnoviť",
+    "turnOff": "Vypnúť"
   },
   "model": {
     "heading": "Váš osobný model"

@@ -75,12 +75,19 @@
       "promotional": "Promotional content will be ranked lower from now on",
       "stale": "Outdated news will be ranked lower from now on"
     },
+    "off": {
+      "clickbait": "Clickbait won't be ranked lower any more",
+      "promotional": "Promotional content won't be ranked lower any more",
+      "shallow": "Shallow articles won't be ranked lower any more",
+      "stale": "Outdated news won't be ranked lower any more"
+    },
     "reset": "Back to automatic"
   },
   "rules": {
     "heading": "Rules applied",
     "forCard": "{{rule}}: {{card}}",
-    "reset": "Reset"
+    "reset": "Reset",
+    "turnOff": "Turn off"
   },
   "model": {
     "heading": "Your personal model"

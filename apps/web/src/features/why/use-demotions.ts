@@ -7,27 +7,33 @@ import { meKey } from '../../api/query-keys.js';
 import { routes } from '../../api/routes.js';
 import { errorMessage } from '../../components/error-message.js';
 import { useToast } from '../../components/toast/toast-provider.js';
-import { useAccountId } from '../../session/context.js';
+import { useAccountId, useMe } from '../../session/context.js';
 import { articleKeys } from '../article/query-keys.js';
 
-export type DemotionFlag = keyof Me['preferences']['demote'];
+type Demote = Me['preferences']['demote'];
+
+export type DemotionFlag = keyof Demote;
+
+type Setting = Demote[DemotionFlag];
 
 /** The demotions the drawer offers to switch on; depth has no meter of its own. */
 export type NeverShowFlag = Exclude<DemotionFlag, 'shallow'>;
 
 /**
  * The quality demotions of the ranking (spec 06 §5): "on" always ranks that kind of article lower,
- * "auto" leaves it to the ranker. They change the ranking, so the articles are loaded again.
+ * "off" never does, "auto" leaves it to the ranker. They change the ranking, so the articles are
+ * loaded again.
  */
 export function useDemotions() {
   const { t } = useTranslation('why');
   const toast = useToast();
   const queryClient = useQueryClient();
   const accountId = useAccountId();
+  const me = useMe();
 
   const update = useApiMutation(routes.meUpdate, {
-    onSuccess: (me) => {
-      queryClient.setQueryData<Me | null>(meKey(), me);
+    onSuccess: (updated) => {
+      queryClient.setQueryData<Me | null>(meKey(), updated);
       void queryClient.invalidateQueries({ queryKey: articleKeys.all(accountId) });
     },
     onError: (error) => {
@@ -35,8 +41,12 @@ export function useDemotions() {
     },
   });
 
-  const send = (flag: DemotionFlag, value: 'on' | 'auto', then: () => void) => {
-    update.mutate({ body: { preferences: { demote: { [flag]: value } } } }, { onSuccess: then });
+  // The answer may come after the drawer has closed. `mutate` would drop its own callbacks then,
+  // the promise still settles; a failure has been shown by `onError` already.
+  const send = (flag: DemotionFlag, value: Setting, then: () => void) => {
+    update
+      .mutateAsync({ body: { preferences: { demote: { [flag]: value } } } })
+      .then(then, () => {});
   };
 
   function reset(flag: DemotionFlag, then: () => void = () => {}) {
@@ -46,18 +56,41 @@ export function useDemotions() {
     });
   }
 
+  /** "Off" again after a change was taken back: confirmed, with nothing left to undo. */
+  function backOff(flag: DemotionFlag) {
+    send(flag, 'off', () => {
+      toast.show({ message: t(`demote.off.${flag}`), tone: 'info' });
+    });
+  }
+
   return {
     /** A change is on its way; another would race it. */
     pending: update.isPending,
     neverShow: (flag: NeverShowFlag) => {
+      // The meters offer this while the setting is "auto" or "off"; the undo puts that back.
+      const wasOff = me.preferences.demote[flag] === 'off';
       send(flag, 'on', () => {
         toast.show({
           message: t(`demote.on.${flag}`),
           tone: 'success',
-          action: { label: t('common:actions.undo'), onAction: () => reset(flag) },
+          action: {
+            label: t('common:actions.undo'),
+            onAction: () => (wasOff ? backOff(flag) : reset(flag)),
+          },
         });
       });
     },
     reset,
+    /** Stops a demotion the ranker applies by itself ("auto"); the undo hands it back. */
+    turnOff: (flag: DemotionFlag, then: () => void = () => {}) => {
+      send(flag, 'off', () => {
+        toast.show({
+          message: t(`demote.off.${flag}`),
+          tone: 'success',
+          action: { label: t('common:actions.undo'), onAction: () => reset(flag) },
+        });
+        then();
+      });
+    },
   };
 }

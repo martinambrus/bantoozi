@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { FOCUS_RING } from '../../src/components/cx.js';
 import { cardsKey } from '../../src/features/interests/queries.js';
+import { WhyThisSheet } from '../../src/features/why/why-this-sheet.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
 import { bodyOf, findToast, makeItem, makeMe, makeRule } from '../article/harness.js';
 import { cardResult, makeCard } from '../interests/support.js';
@@ -23,6 +24,12 @@ function meWith(demote: Partial<Demote>): Me {
 }
 
 const WITH_FACETS = makeExplain({ facets: FACETS });
+
+/** PATCH /me as the server answers it: the demotions it was sent, the others automatic. */
+function savesDemotions(request: Parameters<typeof bodyOf>[0]) {
+  const { preferences } = bodyOf(request) as { preferences: { demote: Partial<Demote> } };
+  return json(200, meWith(preferences.demote));
+}
 
 function ruleRow(app: Awaited<ReturnType<typeof renderDrawer>>, sentence: string) {
   return within(app.panel.getByRole('listitem', { name: sentence }));
@@ -80,6 +87,46 @@ describe('"Never show me …"', () => {
     expect(
       await app.panel.findByRole('button', { name: 'Never show me clickbait' }),
     ).toBeInTheDocument();
+  });
+
+  it('puts back a preference that was off', async () => {
+    const app = await renderDrawer({
+      me: meWith({ clickbait: 'off' }),
+      explain: WITH_FACETS,
+      routes: { 'PATCH /me': savesDemotions },
+    });
+    await app.user.click(app.panel.getByRole('button', { name: 'Never show me clickbait' }));
+    const toast = await findToast('Clickbait will be ranked lower from now on');
+
+    await app.user.click(within(toast).getByRole('button', { name: 'Undo' }));
+
+    expect(await findToast("Clickbait won't be ranked lower any more")).toBeInTheDocument();
+    expect(app.calls('PATCH', '/me')).toHaveLength(2);
+    expect(bodyOf(app.calls('PATCH', '/me')[1]!)).toEqual({
+      preferences: { demote: { clickbait: 'off' } },
+    });
+  });
+
+  it('confirms with an undo when the answer comes after the drawer has closed', async () => {
+    let answer: (response: Response) => void = () => {};
+    const app = await renderDrawer({
+      explain: WITH_FACETS,
+      routes: {
+        'PATCH /me': () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      },
+    });
+    await app.user.click(app.panel.getByRole('button', { name: 'Never show me clickbait' }));
+    await waitFor(() => expect(app.calls('PATCH', '/me')).toHaveLength(1));
+
+    app.rerender(<WhyThisSheet item={app.item} open={false} onClose={app.onClose} />);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    answer(json(200, meWith({ clickbait: 'on' })));
+
+    const toast = await findToast('Clickbait will be ranked lower from now on');
+    expect(within(toast).getByRole('button', { name: 'Undo' })).toBeInTheDocument();
   });
 
   it('is not offered for a preference that is already on', async () => {
@@ -179,13 +226,41 @@ describe('the rules that were applied', () => {
     await waitFor(() => expect(app.calls('GET', '/articles/101')).toHaveLength(2));
   });
 
-  it('offers no "Reset" for a demotion the preference leaves to automatic', async () => {
+  it('"Turn off" stops an automatic demotion, and its undo hands it back', async () => {
     const app = await renderDrawer({
       explain: makeExplain({ rules: [{ code: 'demote:shallow' }] }),
+      routes: { 'PATCH /me': savesDemotions },
+    });
+    expect(ruleRow(app, 'Demoted: shallow').queryByRole('button', { name: 'Reset' })).toBeNull();
+
+    await app.user.click(
+      ruleRow(app, 'Demoted: shallow').getByRole('button', { name: 'Turn off' }),
+    );
+
+    const toast = await findToast("Shallow articles won't be ranked lower any more");
+    expect(bodyOf(app.calls('PATCH', '/me')[0]!)).toEqual({
+      preferences: { demote: { shallow: 'off' } },
+    });
+    expect(app.panel.queryByRole('listitem', { name: 'Demoted: shallow' })).toBeNull();
+    await waitFor(() => expect(app.calls('GET', '/articles/101')).toHaveLength(2));
+
+    await app.user.click(within(toast).getByRole('button', { name: 'Undo' }));
+
+    expect(await findToast('Back to automatic')).toBeInTheDocument();
+    expect(app.calls('PATCH', '/me')).toHaveLength(2);
+    expect(bodyOf(app.calls('PATCH', '/me')[1]!)).toEqual({
+      preferences: { demote: { shallow: 'auto' } },
+    });
+  });
+
+  it('offers nothing for a demotion that is already off', async () => {
+    const app = await renderDrawer({
+      me: meWith({ stale: 'off' }),
+      explain: makeExplain({ rules: [{ code: 'demote:stale' }] }),
     });
 
-    expect(app.panel.getByRole('listitem', { name: 'Demoted: shallow' })).toBeInTheDocument();
-    expect(ruleRow(app, 'Demoted: shallow').queryByRole('button')).toBeNull();
+    expect(app.panel.getByRole('listitem', { name: 'Demoted: outdated' })).toBeInTheDocument();
+    expect(ruleRow(app, 'Demoted: outdated').queryByRole('button')).toBeNull();
   });
 });
 

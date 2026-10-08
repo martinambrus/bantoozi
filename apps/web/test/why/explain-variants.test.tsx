@@ -57,7 +57,7 @@ describe('the Why-this drawer renders every Explain variant', () => {
       - <meter "Promotional" 10 %> [Never show me promotional content]
       - <meter "Time-sensitive" 35 %> [Never show me outdated news]
       ## Rules applied
-      - Demoted: clickbait
+      - Demoted: clickbait [Turn off]
       - Boosted source [Undo]
       - Matches a must-see interest: EV battery tech
       - Held back by a never-show interest: Football
@@ -348,7 +348,7 @@ describe('the Why-this drawer renders every Explain variant', () => {
       - <meter "Reklamný obsah" 10 %> [Nikdy mi neukazovať reklamný obsah]
       - <meter "Časovo citlivé" 35 %> [Nikdy mi neukazovať zastarané správy]
       ## Použité pravidlá
-      - Znížená priorita: klikbajt
+      - Znížená priorita: klikbajt [Vypnúť]
       - Uprednostnený zdroj [Vrátiť späť]
       - Zhoduje sa so záujmom „musím vidieť“: EV battery tech
       ## Čo môžete urobiť

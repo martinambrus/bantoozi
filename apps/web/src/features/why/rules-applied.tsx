@@ -80,10 +80,17 @@ export function RulesApplied({ explain }: { explain: Explain }) {
         run: () => removal.remove(ruleId, () => takeBack(key)),
         busy: removal.pending,
       };
-    } else if (flag !== null && me.preferences.demote[flag] !== 'auto') {
+    } else if (flag !== null && me.preferences.demote[flag] === 'on') {
       action = {
         label: t('rules.reset'),
         run: () => demotions.reset(flag, () => takeBack(key)),
+        busy: demotions.pending,
+      };
+    } else if (flag !== null && me.preferences.demote[flag] === 'auto') {
+      // The ranker applied it by itself; a demotion that is off already was ranked before that.
+      action = {
+        label: t('rules.turnOff'),
+        run: () => demotions.turnOff(flag, () => takeBack(key)),
         busy: demotions.pending,
       };
     }
