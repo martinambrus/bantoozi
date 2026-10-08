@@ -59,7 +59,7 @@ function InviteForm({ left, onCreated }: { left: number; onCreated: (invite: New
   const { t } = useTranslation('settings');
   const queryClient = useQueryClient();
   const key = useInvitesKey();
-  const create = useApiMutation(routes.inviteCreate, { networkMode: 'always' });
+  const create = useApiMutation(routes.inviteCreate);
   const titleId = useId();
   const [email, setEmail] = useState('');
   const [note, setNote] = useState('');

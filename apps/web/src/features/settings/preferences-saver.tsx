@@ -90,7 +90,7 @@ export function usePreferenceSaver(): PreferenceSaver {
 export function PreferenceSaverProvider({ children }: { children: ReactNode }) {
   const me = useMe();
   const queryClient = useQueryClient();
-  const update = useApiMutation(routes.meUpdate, { networkMode: 'always' });
+  const update = useApiMutation(routes.meUpdate);
   const [pending, setPending] = useState<ReadonlyMap<SettingId, SettingValues[SettingId]>>(
     new Map(),
   );

@@ -133,7 +133,7 @@ export function RuleList({ onRemoved }: { onRemoved: () => void }) {
   const queryClient = useQueryClient();
   const rulesKey = useRulesKey();
   const refresh = useRefreshAfterRuleChange();
-  const remove = useApiMutation(routes.ruleDelete, { networkMode: 'always' });
+  const remove = useApiMutation(routes.ruleDelete);
   const [pending, setPending] = useState<RuleDto | null>(null);
   const removed = useRef(false);
 

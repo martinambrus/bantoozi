@@ -44,7 +44,7 @@ function fieldFailure(error: unknown): FieldFailure | null {
 export function AddRuleForm() {
   const { t } = useTranslation('rules');
   const refresh = useRefreshAfterRuleChange();
-  const create = useApiMutation(routes.ruleCreate, { networkMode: 'always' });
+  const create = useApiMutation(routes.ruleCreate);
   const headingId = useId();
   const [kind, setKind] = useState<AddableKind>('mute_keyword');
   const [value, setValue] = useState('');

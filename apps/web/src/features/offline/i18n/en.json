@@ -1,5 +1,4 @@
 {
-  "title": "Offline",
   "start": {
     "title": "You're offline",
     "body": "Bantoozi can't reach the server, and this device has no saved copy of your account. Connect to the internet and try again.",

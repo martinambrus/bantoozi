@@ -74,7 +74,7 @@ export function ProfileSection() {
   const { t } = useTranslation('settings');
   const me = useMe();
   const queryClient = useQueryClient();
-  const update = useApiMutation(routes.meUpdate, { networkMode: 'always' });
+  const update = useApiMutation(routes.meUpdate);
   const [draft, setDraft] = useState(() => draftOf(me));
   const [synced, setSynced] = useState(me);
   const [saved, setSaved] = useState(false);

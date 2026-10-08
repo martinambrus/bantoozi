@@ -78,7 +78,10 @@ export async function renderApp(options: {
   const fake = createFakeServer(options.server);
   const fetched = fakeFetch(fake.handler);
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false, networkMode: 'always' },
+    },
   });
   const services = createAppServices({
     i18n: createI18n(options.language ?? 'en'),

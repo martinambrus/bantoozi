@@ -75,7 +75,7 @@ function SessionList({ sessions }: { sessions: readonly SessionDto[] }) {
   const navigate = useNavigate();
   const account = useSession();
   const key = useSessionsKey();
-  const revoke = useApiMutation(routes.authSessionRevoke, { networkMode: 'always' });
+  const revoke = useApiMutation(routes.authSessionRevoke);
   const [pending, setPending] = useState<SessionDto | null>(null);
   const list = useRef<HTMLUListElement>(null);
   const revoked = useRef(false);
