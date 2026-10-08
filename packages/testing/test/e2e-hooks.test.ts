@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   HookParamsError,
+  hookMap,
   runSqlHook,
   sqlHookNames,
   UnknownHookError,
@@ -22,8 +23,20 @@ function recordingDb(rows: unknown[] = []): { db: HookDb; calls: Array<[string, 
 }
 
 describe('SQL hooks', () => {
-  it('start with articleStates', () => {
-    expect(sqlHookNames()).toEqual(['articleStates']);
+  it('start with articleStates and list each name once', () => {
+    const names = sqlHookNames();
+    expect(names[0]).toBe('articleStates');
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('refuses a hook name that two modules list', () => {
+    const run = () => Promise.resolve(null);
+    expect(() =>
+      hookMap([
+        ['same', run],
+        ['same', run],
+      ]),
+    ).toThrow('SQL hook "same" is listed twice');
   });
 
   it('articleStates returns the rows of one parameterised query', async () => {

@@ -6,42 +6,22 @@
  * application roles see nothing there).
  */
 
-/** The part of `pg.Pool` the hooks use. */
-export interface HookDb {
-  query(text: string, values?: unknown[]): Promise<{ rows: unknown[] }>;
-}
+import { ADMIN_HOOKS } from './hooks-admin.js';
+import {
+  httpUrl,
+  record,
+  runner,
+  type Hook,
+  type HookDb,
+  type HookRunner,
+  type NamedHook,
+} from './hooks-kit.js';
+import { READER_HOOKS } from './hooks-reader.js';
 
-export class HookParamsError extends Error {
-  override readonly name = 'HookParamsError';
-}
+export { HookParamsError, type HookDb } from './hooks-kit.js';
 
 export class UnknownHookError extends Error {
   override readonly name = 'UnknownHookError';
-}
-
-interface Hook<P> {
-  parse(params: unknown): P;
-  run(db: HookDb, params: P): Promise<unknown>;
-}
-
-function record(params: unknown, allowed: readonly string[]): Record<string, unknown> {
-  if (typeof params !== 'object' || params === null || Array.isArray(params)) {
-    throw new HookParamsError('parameters must be a JSON object');
-  }
-  const unknown = Object.keys(params).filter((key) => !allowed.includes(key));
-  if (unknown.length > 0) throw new HookParamsError(`unknown parameter: ${unknown.join(', ')}`);
-  return params as Record<string, unknown>;
-}
-
-function httpUrl(value: unknown, name: string): string {
-  if (typeof value !== 'string' || value.length === 0 || value.length > 2048) {
-    throw new HookParamsError(`${name} must be a URL of at most 2048 characters`);
-  }
-  const url = URL.parse(value);
-  if (url === null || (url.protocol !== 'http:' && url.protocol !== 'https:')) {
-    throw new HookParamsError(`${name} must be an http(s) URL`);
-  }
-  return value;
 }
 
 export interface ArticleState {
@@ -69,13 +49,17 @@ const articleStates: Hook<{ feedUrl: string }> = {
   },
 };
 
-type HookRunner = (db: HookDb, params: unknown) => Promise<unknown>;
-
-function runner<P>(hook: Hook<P>): HookRunner {
-  return (db, params) => hook.run(db, hook.parse(params));
+/** The hooks by name; a name listed twice is a mistake that must not pick one silently. */
+export function hookMap(hooks: readonly NamedHook[]): ReadonlyMap<string, HookRunner> {
+  const map = new Map<string, HookRunner>();
+  for (const [name, run] of hooks) {
+    if (map.has(name)) throw new Error(`SQL hook "${name}" is listed twice`);
+    map.set(name, run);
+  }
+  return map;
 }
 
-const HOOKS = new Map<string, HookRunner>([['articleStates', runner(articleStates)]]);
+const HOOKS = hookMap([['articleStates', runner(articleStates)], ...READER_HOOKS, ...ADMIN_HOOKS]);
 
 export function sqlHookNames(): string[] {
   return [...HOOKS.keys()];
