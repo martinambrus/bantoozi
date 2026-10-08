@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useLayoutEffect,
+  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -41,10 +42,15 @@ interface Environment {
   accountId: string;
 }
 
+/** Hears each settled action of the account, after the provider has shown its own toasts. */
+export type SettledListener = (handle: ActionHandle, result: ActionResult) => void;
+
 /** What one signed-in account owns: the store of its reader actions and the dwell tracker. */
 interface Scope {
   readonly store: ReaderActions;
   readonly tracker: ReturnTracker;
+  /** Adds a listener for settled actions and returns its removal. */
+  listen(listener: SettledListener): () => void;
   /** Aborts what is in flight and forgets everything, toasts that offer to act on it included. */
   release(): void;
 }
@@ -62,6 +68,7 @@ function ratingMessage(i18n: I18n, rating: 1 | -1 | null): string {
 
 function createScope({ api, queryClient, toast, i18n, accountId }: Environment): Scope {
   const toastIds = new Set<string>();
+  const listeners = new Set<SettledListener>();
 
   function show(input: ToastInput): void {
     toastIds.add(toast.show(input));
@@ -105,7 +112,7 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
     });
   }
 
-  function onSettled(handle: ActionHandle, result: ActionResult): void {
+  function showOutcome(handle: ActionHandle, result: ActionResult): void {
     switch (result.status) {
       case 'done':
         void queryClient.invalidateQueries({ queryKey: articleKeys.counts(accountId) });
@@ -135,6 +142,11 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
     }
   }
 
+  function onSettled(handle: ActionHandle, result: ActionResult): void {
+    showOutcome(handle, result);
+    for (const listener of [...listeners]) listener(handle, result);
+  }
+
   const preferences = () =>
     queryClient.getQueryData<Me | null>(meKey())?.preferences ?? DEFAULT_USER_PREFERENCES;
   const store = createReaderActions({
@@ -150,6 +162,12 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
   return {
     store,
     tracker,
+    listen(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
     release() {
       store.reset();
       tracker.clear();
@@ -240,4 +258,23 @@ export function useObserveItems(items: readonly ArticleListItem[]): void {
 /** The tracker that reports the time away after "Read original". */
 export function useReturnTracker(): ReturnTracker {
   return useScope().tracker;
+}
+
+/**
+ * Calls `listener` with each settled action of the account while the component is mounted, for
+ * what follows an answer: a dwell's prompt, a rating's example suggestion (spec 09 §3.3, §3.6).
+ */
+export function useSettledActions(listener: SettledListener): void {
+  const { listen } = useScope();
+  const latest = useRef(listener);
+  useLayoutEffect(() => {
+    latest.current = listener;
+  });
+  useEffect(
+    () =>
+      listen((handle, result) => {
+        latest.current(handle, result);
+      }),
+    [listen],
+  );
 }
