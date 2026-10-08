@@ -16,6 +16,7 @@ import {
   type HookRunner,
   type NamedHook,
 } from './hooks-kit.js';
+import { PWA_HOOKS } from './hooks-pwa.js';
 import { READER_HOOKS } from './hooks-reader.js';
 
 export { HookParamsError, type HookDb } from './hooks-kit.js';
@@ -59,7 +60,12 @@ export function hookMap(hooks: readonly NamedHook[]): ReadonlyMap<string, HookRu
   return map;
 }
 
-const HOOKS = hookMap([['articleStates', runner(articleStates)], ...READER_HOOKS, ...ADMIN_HOOKS]);
+const HOOKS = hookMap([
+  ['articleStates', runner(articleStates)],
+  ...READER_HOOKS,
+  ...ADMIN_HOOKS,
+  ...PWA_HOOKS,
+]);
 
 export function sqlHookNames(): string[] {
   return [...HOOKS.keys()];
