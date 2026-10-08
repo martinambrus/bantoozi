@@ -1327,7 +1327,7 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   For You 0.65 and Maybe 0.35 (defaults kept, precision targets unmet on development); tiers default;
   demotion cutoffs clickbait 0.8 and promotional 0.8 (defaults; unmet/unmeasured), shallow depth
   0.45 and stale time-sensitive 0.75 (selected on development); recommended daily budget $1.00
-  (measured $0.21 per 1,000 authorized article revisions); tier-2 cap 300 (unmeasured: the
+  (measured $0.2290 per 1,000 authorized uncached article revisions); tier-2 cap 300 (unmeasured: the
   LibreTranslate runs E3/E3b and the Ollama run E4 stayed partial because of a few genuine
   translation failures); Laya track recommended for Slovak (native falls short of English on the
   bilingual comparison). The owner approves initial invite-only beta eligibility under Q13 on this
