@@ -1329,3 +1329,14 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   thumbnail (`image_url`). The scenario checks the thumbnails in the list and, in the detail and the
   saved view, the image note and `effectiveImagesAllowed`, and that a blocked image is never
   requested. Spec 09 §9 updated.
+- D-154: 2026-10-08 M6-T3 — spec 09 §3.4 maps both `o` and `Enter` to "open the original". The
+  reader's `j`/`k` move the focus to the item's title button, so that a screen reader announces the
+  item and the focus stays visible; taking `Enter` from a focused button or link would break the
+  keyboard contract of those controls (spec 09 §1 accessibility, WCAG 2.1.1). `Enter` therefore opens
+  the original only while the focus is not on a control; on the title button it opens or closes the
+  item as the button does, and `o` always opens the original. Spec 09 §3.4 updated.
+- D-155: 2026-10-08 M6-T3 — spec 09 §3.4 lists "Shift + like/dislike: rate and hide". On the Slovak
+  and Czech layouts the `+` and `=` keys are unshifted and Shift turns them into `1` and `%`, so Shift
+  + like cannot be typed there (Shift + `-` gives `_`, which the reader takes as dislike and hide).
+  The keys are not remapped, because `1`-`6` pick the reason of a dislike; like and hide stays
+  available as Shift-click or a long press on Like. Spec 09 §3.4 updated.
