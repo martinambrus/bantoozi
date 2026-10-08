@@ -2,6 +2,7 @@
   "panel": {
     "title": "Články na analýzu",
     "selected": "Vybrané články",
+    "remove": "Odobrať z výberu: {{title}}",
     "count": "Vybrané: {{selected}} z {{max}}",
     "hint": "Vyberte najviac {{max}} článkov. Nič sa neanalyzuje, kým nestlačíte tlačidlo.",
     "offNote": "Tým sa zdroj prepne na trénovanie: analyzujú sa iba články, ktoré vyberiete.",

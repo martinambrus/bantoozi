@@ -193,7 +193,7 @@ export function ArticleList({
 }: ArticleListProps) {
   const { t } = useTranslation('reader');
   const { query, canLoadMore, loadMore, reload } = list;
-  const training = useFeedTraining(view);
+  const training = useFeedTraining(view, listRef);
   const sentinel = useSentinel(canLoadMore, () => void loadMore());
   const failed = query.isError && query.data !== undefined && !isCursorRefused(query.error);
 
@@ -211,7 +211,7 @@ export function ArticleList({
       {(rows) => (
         <div className="flex flex-col gap-3">
           {training.panel}
-          <ul ref={listRef} role="list" className="flex flex-col gap-3">
+          <ul ref={listRef} role="list" tabIndex={-1} className="flex flex-col gap-3 outline-none">
             {rows.map((item) => (
               <li
                 key={item.id}

@@ -67,6 +67,7 @@ export function CalibrateStep({ go, subscriptions, batch, onBatch }: CalibrateSt
         subscription={subscription}
         items={selection.items}
         onDrop={selection.remove}
+        onRemove={(articleId) => selection.remove([articleId])}
         onSubmitted={(requests) => {
           const now = Date.now();
           onBatch((current) => joinBatch(current, subscription.feed.id, requests, now));

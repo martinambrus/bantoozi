@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { FOCUS_RING } from '../../src/components/cx.js';
 import { failure, json } from '../api/fake-fetch.js';
-import { findToast } from '../article/harness.js';
+import { deferred, findToast, makeDetail } from '../article/harness.js';
 import { makeSubscription } from '../feeds/support.js';
 import { requestId } from '../onboarding/support.js';
 import { makeMe } from '../session/fixtures.js';
@@ -49,6 +49,13 @@ const numbered = (count: number) => titles(count).map((_title, i) => item(i + 1)
 interface Served {
   /** What `GET /articles?feedId=7` answers; the fake API changes it as the worker would. */
   items: ArticleListItem[];
+  /** While it is set, the reads of the articles are answered only once it settles. */
+  hold?: Promise<unknown> | undefined;
+}
+
+/** Answers after `served.hold`, if there is one. */
+function afterHold(served: Served, answer: () => Response) {
+  return served.hold === undefined ? answer() : served.hold.then(answer);
 }
 
 /** `POST /subscriptions/:feedId/analyze` as the API answers it: 202, and the articles are requested. */
@@ -82,15 +89,29 @@ async function openFeed(rows: ArticleListItem[], options: FeedOptions = {}) {
     subscriptions,
     items: rows,
     list: (request) =>
-      json(
-        200,
-        page(
-          request.query.get('feedId') === '7' && request.query.get('lane') !== 'new'
-            ? served.items
-            : [elsewhere],
+      afterHold(served, () =>
+        json(
+          200,
+          page(
+            request.query.get('feedId') === '7' && request.query.get('lane') !== 'new'
+              ? served.items
+              : [elsewhere],
+          ),
         ),
       ),
-    routes: { [ANALYZE]: accepts(served), ...rest.routes },
+    routes: {
+      [ANALYZE]: accepts(served),
+      'GET /articles/:id': (_request, params) =>
+        afterHold(served, () =>
+          json(
+            200,
+            makeDetail(
+              served.items.find((row) => row.id === params['id']) ?? item(params['id'] ?? '0'),
+            ),
+          ),
+        ),
+      ...rest.routes,
+    },
   });
   await screen.findByRole('article', { name: rows[0]?.title ?? '' });
   // The sidebar lists the feeds once the subscriptions are in, and so does the page.
@@ -124,6 +145,26 @@ const namedIn = (region: HTMLElement) =>
     .map((entry) => entry.textContent);
 
 const sendButton = (name: string | RegExp) => screen.getByRole('button', { name });
+
+/** The button that opens the row of `title`, which is where the focus is meant to land. */
+const titleOf = (title: string) => rowOf(title).querySelector('h3 button');
+
+const removeButton = (title: string) =>
+  within(screen.getByRole('region', { name: 'Articles to analyze' })).getByRole('button', {
+    name: `Remove ${title}`,
+  });
+
+/** The list is read again, as it is when something else the person did makes it stale. */
+async function reload(app: App) {
+  await act(async () => {
+    await app.queryClient.refetchQueries({ type: 'active' });
+  });
+}
+
+const accepted = (...ids: number[]) =>
+  json(202, {
+    requests: ids.map((id) => ({ id: requestId(id), articleId: String(id), status: 'pending' })),
+  });
 
 async function go(app: App, to: string, params: Record<string, string> = {}) {
   await act(async () => {
@@ -415,6 +456,61 @@ describe('sending the selected articles', () => {
     expect(liked('3')?.body).not.toHaveProperty('analysisRequestId');
   });
 
+  it('carries the request of a sent article with its like before the list is loaded again', async () => {
+    const { app, served } = await openFeed([item(1), item(2), item(3)]);
+    await choose(app, 'Article 1', 'Article 2');
+    const reloaded = deferred<void>();
+    served.hold = reloaded.promise;
+    const loaded = listQueries(app).length;
+
+    await app.user.click(sendButton('Analyze selected 2 articles'));
+
+    await waitFor(() => expect(listQueries(app).length).toBeGreaterThan(loaded));
+    // A rated row leaves an unread list after a moment, so what the rows say is read first.
+    const shown = titles(3).map((title) => within(rowOf(title)).queryByText(/analysis|analyzed/i));
+    await app.user.click(likeOf('Article 1'));
+    await app.user.click(likeOf('Article 3'));
+
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
+    const bodies = app.calls(RATE).map((request) => ({
+      url: request.pathname,
+      body: bodyOf(request) as Record<string, unknown>,
+    }));
+    const liked = (id: string) => bodies.find(({ url }) => url === `/api/v1/articles/${id}/rating`);
+    expect(liked('1')?.body).toMatchObject({ rating: 1, analysisRequestId: requestId(1) });
+    expect(liked('3')?.body).toMatchObject({ rating: 1 });
+    expect(liked('3')?.body).not.toHaveProperty('analysisRequestId');
+    expect(shown.map((badge) => badge?.textContent)).toEqual([
+      'Queued for analysis',
+      'Queued for analysis',
+      'Not analyzed',
+    ]);
+    reloaded.resolve(undefined);
+  });
+
+  it('carries the request of the open article with a like from its detail before it is loaded again', async () => {
+    const { app, served } = await openFeed([item(1), item(2)]);
+    await app.user.click(screen.getByRole('button', { name: 'Article 1' }));
+    const pane = await screen.findByRole('complementary', { name: 'Article' });
+    await within(pane).findByRole('button', { name: 'Read original' });
+    await choose(app, 'Article 1');
+    const reloaded = deferred<void>();
+    served.hold = reloaded.promise;
+    const loaded = listQueries(app).length;
+
+    await app.user.click(sendButton('Analyze selected 1 article'));
+
+    await waitFor(() => expect(listQueries(app).length).toBeGreaterThan(loaded));
+    await app.user.click(within(pane).getByRole('button', { name: 'Like' }));
+
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(1));
+    expect(bodyOf(app.calls(RATE)[0]!)).toMatchObject({
+      rating: 1,
+      analysisRequestId: requestId(1),
+    });
+    reloaded.resolve(undefined);
+  });
+
   it('drops the articles the API found changed, says how many, and lets the person choose again', async () => {
     const refused: ApiRouteHandler = () => failure(409, 'STALE_STATE', { articleIds: ['2'] });
     const { app, server, served } = await openFeed([item(1), item(2), item(3)], {
@@ -469,6 +565,249 @@ describe('sending the selected articles', () => {
   });
 });
 
+describe('where the focus goes when the selection is sent', () => {
+  it('is the title of the first article sent, in the order they were chosen', async () => {
+    const { app } = await openFeed([item(1), item(2), item(3)]);
+    await choose(app, 'Article 3', 'Article 2');
+    await app.user.click(sendButton('Analyze selected 2 articles'));
+
+    await waitFor(() => expect(panel()).toBeNull());
+
+    expect(document.activeElement).toBe(titleOf('Article 3'));
+    await waitFor(() => expect(app.queryClient.isFetching()).toBe(0));
+    expect(await within(rowOf('Article 2')).findByText('Queued for analysis')).toBeVisible();
+    expect(document.activeElement).toBe(titleOf('Article 3'));
+  });
+
+  it('is the title of the first article sent that the list still has', async () => {
+    const answer = deferred<Response>();
+    const { app, served } = await openFeed([item(1), item(2), item(3)], {
+      routes: { [ANALYZE]: () => answer.promise },
+    });
+    await choose(app, 'Article 1', 'Article 2');
+    await app.user.click(sendButton('Analyze selected 2 articles'));
+    served.items = [item(2), item(3)];
+    await reload(app);
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'Article 1' })).toBeNull());
+
+    answer.resolve(accepted(1, 2));
+
+    await waitFor(() => expect(panel()).toBeNull());
+    expect(document.activeElement).toBe(titleOf('Article 2'));
+  });
+
+  it('is the list when none of the articles sent is in it any more', async () => {
+    const answer = deferred<Response>();
+    const { app, served } = await openFeed([item(1), item(2), item(3)], {
+      routes: { [ANALYZE]: () => answer.promise },
+    });
+    await choose(app, 'Article 1', 'Article 2');
+    await app.user.click(sendButton('Analyze selected 2 articles'));
+    served.items = [item(3)];
+    await reload(app);
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'Article 2' })).toBeNull());
+
+    answer.resolve(accepted(1, 2));
+
+    await waitFor(() => expect(panel()).toBeNull());
+    const list = rowOf('Article 3').closest('ul');
+    expect(list).toHaveAttribute('tabindex', '-1');
+    expect(document.activeElement).toBe(list);
+  });
+});
+
+describe('taking a chosen article out', () => {
+  it('has a button on each title that takes that article out and nothing else', async () => {
+    const { app } = await openFeed([item(1), item(2), item(3)]);
+    await choose(app, 'Article 1', 'Article 2', 'Article 3');
+
+    await app.user.click(removeButton('Article 2'));
+
+    const region = screen.getByRole('region', { name: 'Articles to analyze' });
+    expect(namedIn(region)).toEqual(['Article 1', 'Article 3']);
+    expect(ticked(titles(3))).toEqual(['Article 1', 'Article 3']);
+    expect(within(region).getByText('2 of 20 selected')).toBeVisible();
+    expect(sendButton('Analyze selected 2 articles')).toBeEnabled();
+    expect(app.calls(ANALYZE)).toHaveLength(0);
+  });
+
+  it('takes out an article whose row has left the list, and sends the rest', async () => {
+    const { app, served } = await openFeed([item(1), item(2), item(3)]);
+    await choose(app, 'Article 1', 'Article 2', 'Article 3');
+    served.items = [item(1)];
+    await reload(app);
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'Article 3' })).toBeNull());
+    const region = screen.getByRole('region', { name: 'Articles to analyze' });
+    expect(namedIn(region)).toEqual(['Article 1', 'Article 2', 'Article 3']);
+
+    await app.user.click(removeButton('Article 3'));
+
+    expect(namedIn(region)).toEqual(['Article 1', 'Article 2']);
+    await app.user.click(sendButton('Analyze selected 2 articles'));
+    await waitFor(() => expect(app.calls(ANALYZE)).toHaveLength(1));
+    expect(
+      (bodyOf(app.calls(ANALYZE)[0]!) as { articles: { id: string }[] }).articles.map(
+        ({ id }) => id,
+      ),
+    ).toEqual(['1', '2']);
+  });
+
+  it('takes the panel away with the last title', async () => {
+    const { app } = await openFeed([item(1), item(2)]);
+    await choose(app, 'Article 1', 'Article 2');
+
+    await app.user.click(removeButton('Article 1'));
+    expect(panel()).not.toBeNull();
+    await app.user.click(removeButton('Article 2'));
+
+    expect(panel()).toBeNull();
+    expect(ticked(titles(2))).toEqual([]);
+    expect(app.calls(ANALYZE)).toHaveLength(0);
+  });
+
+  it('takes the panel away with the last title after a refusal dropped some', async () => {
+    const { app } = await openFeed([item(1), item(2)], {
+      routes: { [ANALYZE]: () => failure(409, 'STALE_STATE', { articleIds: ['2'] }) },
+    });
+    await choose(app, 'Article 1', 'Article 2');
+    await app.user.click(sendButton('Analyze selected 2 articles'));
+    expect(await screen.findByRole('alert')).toBeVisible();
+
+    await app.user.click(removeButton('Article 1'));
+
+    expect(panel()).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
+describe('the message about a refused request', () => {
+  const REFUSED = '1 selected article changed and was removed from your selection.';
+  const refusing = (articleIds: string[]) => ({
+    [ANALYZE]: () => failure(409, 'STALE_STATE', { articleIds }),
+  });
+
+  /** Chooses 1 to 3, has `articleIds` refused as changed, and waits until the list was read again. */
+  async function refused(articleIds: string[]) {
+    const opened = await openFeed([item(1), item(2), item(3), item(4)], {
+      routes: refusing(articleIds),
+    });
+    await choose(opened.app, 'Article 1', 'Article 2', 'Article 3');
+    const loaded = listQueries(opened.app).length;
+    await opened.app.user.click(sendButton('Analyze selected 3 articles'));
+    expect(await screen.findByRole('alert')).toHaveTextContent(REFUSED);
+    await waitFor(() => expect(listQueries(opened.app).length).toBeGreaterThan(loaded));
+    await waitFor(() => expect(opened.app.queryClient.isFetching()).toBe(0));
+    return opened;
+  }
+
+  it('stays after the articles it names were dropped, for as long as the selection is the same', async () => {
+    await refused(['2']);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(REFUSED);
+    expect(namedIn(screen.getByRole('region', { name: 'Articles to analyze' }))).toEqual([
+      'Article 1',
+      'Article 3',
+    ]);
+  });
+
+  it('is gone when the person chooses another article', async () => {
+    const { app } = await refused(['2']);
+
+    await choose(app, 'Article 4');
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(ticked(titles(4))).toEqual(['Article 1', 'Article 3', 'Article 4']);
+  });
+
+  it('is gone when the person chooses an article the refusal dropped', async () => {
+    const { app } = await refused(['2']);
+
+    await choose(app, 'Article 2');
+
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('is gone when the person chooses the last article again, which makes the selection that was sent', async () => {
+    const { app } = await refused(['3']);
+    expect(namedIn(screen.getByRole('region', { name: 'Articles to analyze' }))).toEqual([
+      'Article 1',
+      'Article 2',
+    ]);
+
+    await choose(app, 'Article 3');
+
+    expect(namedIn(screen.getByRole('region', { name: 'Articles to analyze' }))).toEqual([
+      'Article 1',
+      'Article 2',
+      'Article 3',
+    ]);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('is gone when the person takes a chosen article off its row', async () => {
+    const { app } = await refused(['2']);
+
+    await choose(app, 'Article 1');
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(ticked(titles(4))).toEqual(['Article 3']);
+  });
+
+  it('is gone when the person takes a title out of the panel', async () => {
+    const { app } = await refused(['2']);
+
+    await app.user.click(removeButton('Article 3'));
+
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('stays, with the panel, when it emptied the selection, and is gone when the person chooses one', async () => {
+    const { app } = await openFeed([item(1), item(2)], { routes: refusing(['1']) });
+    await choose(app, 'Article 1');
+    await app.user.click(sendButton('Analyze selected 1 article'));
+    expect(await screen.findByRole('alert')).toHaveTextContent(REFUSED);
+    await waitFor(() => expect(app.queryClient.isFetching()).toBe(0));
+    expect(screen.getByRole('alert')).toHaveTextContent(REFUSED);
+    expect(panel()).not.toBeNull();
+
+    await choose(app, 'Article 2');
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(
+      within(screen.getByRole('region', { name: 'Articles to analyze' })).getByText(
+        '1 of 20 selected',
+      ),
+    ).toBeVisible();
+  });
+
+  it('about anything else than changed articles stays until the person changes the selection', async () => {
+    const { app } = await openFeed([item(1), item(2), item(3)], {
+      routes: { [ANALYZE]: () => failure(429, 'RATE_LIMITED') },
+    });
+    await choose(app, 'Article 1', 'Article 2');
+    await app.user.click(sendButton('Analyze selected 2 articles'));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Too many requests. Wait a moment and try again.');
+    await app.user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(app.queryClient.isFetching()).toBe(0));
+    expect(screen.getByRole('alert')).toBe(alert);
+
+    await choose(app, 'Article 3');
+
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('is shown again by the next refusal after the person moved on', async () => {
+    const { app } = await refused(['2']);
+    await choose(app, 'Article 4');
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    await app.user.click(sendButton('Analyze selected 3 articles'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(REFUSED);
+  });
+});
+
 describe('what the controls offer', () => {
   it('names every control, makes it 44 px high and gives it a focus ring', async () => {
     const { app } = await openFeed([item(1), item(2)]);
@@ -495,6 +834,36 @@ describe('what the controls offer', () => {
     expect(ticked(titles(2))).toEqual([]);
     expect(panel()).toBeNull();
   });
+
+  it('names the button of each title, makes it 44 px and gives it a focus ring', async () => {
+    const { app } = await openFeed([item(1), item(2)]);
+    await choose(app, 'Article 1', 'Article 2');
+
+    const region = screen.getByRole('region', { name: 'Articles to analyze' });
+    const buttons = within(region).getAllByRole('button', { name: /^Remove / });
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Remove Article 1',
+      'Remove Article 2',
+    ]);
+    for (const button of buttons) {
+      expect(button.className).toContain('min-h-11');
+      expect(button.className).toContain('min-w-11');
+      for (const token of FOCUS_RING.split(' ')) expect(button.className).toContain(token);
+    }
+  });
+
+  it('can take a title out from the keyboard', async () => {
+    const { app } = await openFeed([item(1), item(2)]);
+    await choose(app, 'Article 1', 'Article 2');
+
+    removeButton('Article 1').focus();
+    await app.user.keyboard('{Enter}');
+
+    expect(ticked(titles(2))).toEqual(['Article 2']);
+    expect(namedIn(screen.getByRole('region', { name: 'Articles to analyze' }))).toEqual([
+      'Article 2',
+    ]);
+  });
 });
 
 describe('in Slovak', () => {
@@ -515,5 +884,21 @@ describe('in Slovak', () => {
     expect(within(rowOf('Article 3')).getByText('Čaká na analýzu')).toBeVisible();
     expect(within(rowOf('Article 4')).getByText('Analýza zlyhala')).toBeVisible();
     expect(within(rowOf('Article 2')).getByText('Neanalyzované')).toBeVisible();
+  });
+
+  it('names the button that takes a title out of the selection', async () => {
+    const { app } = await openFeed([item(1), item(2)], { me: makeMe({ locale: 'sk' }) });
+    await choose(app, 'Article 1', 'Article 2');
+    const region = screen.getByRole('region', { name: 'Články na analýzu' });
+
+    await app.user.click(
+      within(region).getByRole('button', { name: 'Odobrať z výberu: Article 1' }),
+    );
+
+    expect(within(region).getByText('Vybrané: 1 z 20')).toBeVisible();
+    expect(
+      within(region).queryByRole('button', { name: 'Odobrať z výberu: Article 1' }),
+    ).not.toBeInTheDocument();
+    expect(ticked(titles(2))).toEqual(['Article 2']);
   });
 });

@@ -297,6 +297,60 @@ describe('analyzing the chosen articles', () => {
       screen.getByRole('button', { name: 'Start training and analyze this article' }),
     ).toBeVisible();
   });
+
+  it('keeps that message until the person chooses or takes out an article', async () => {
+    const opened = await openStep({
+      routes: { [ANALYZE]: () => failure(409, 'STALE_STATE', { articleIds: ['2'] }) },
+    });
+    await box('Article 1');
+    const loaded = opened.app.calls('GET /articles').length;
+    await submit(opened, 1, 2, 3);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '1 selected article changed and was removed from your selection.',
+    );
+    await waitFor(() => expect(opened.app.calls('GET /articles').length).toBeGreaterThan(loaded));
+    expect(screen.getByRole('alert')).toBeVisible();
+
+    await opened.app.user.click(await box('Article 4'));
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await opened.app.user.click(
+      screen.getByRole('button', { name: 'Start training and analyze these 3' }),
+    );
+    expect(await screen.findByRole('alert')).toBeVisible();
+
+    await opened.app.user.click(screen.getByRole('button', { name: 'Remove Article 4' }));
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('takes a chosen article out with the button beside its title', async () => {
+    const opened = await openStep();
+    await choose(opened, 3, 1, 2);
+    const panel = screen.getByRole('region', { name: 'Articles to analyze' });
+
+    await opened.app.user.click(within(panel).getByRole('button', { name: 'Remove Article 1' }));
+
+    expect(
+      within(within(panel).getByRole('list', { name: 'Selected articles' }))
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(['Article 3', 'Article 2']);
+    expect(await box('Article 1')).not.toBeChecked();
+    expect(await box('Article 3')).toBeChecked();
+    expect(within(panel).getByText('2 of 20 selected')).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: 'Start training and analyze these 2' }),
+    ).toBeEnabled();
+
+    await opened.app.user.click(within(panel).getByRole('button', { name: 'Remove Article 3' }));
+    await opened.app.user.click(within(panel).getByRole('button', { name: 'Remove Article 2' }));
+
+    expect(within(panel).getByText('0 of 20 selected')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Select articles to analyze' })).toBeDisabled();
+    expect(screen.queryByRole('list', { name: 'Selected articles' })).not.toBeInTheDocument();
+    expect(opened.app.calls(ANALYZE)).toHaveLength(0);
+  });
 });
 
 describe('progress while the requests run', () => {
@@ -416,6 +470,26 @@ describe('in Slovak', () => {
     expect(await screen.findByText('Analyzované: 0 z 2 vybraných článkov')).toBeVisible();
     expect(await screen.findByText('Vyhodnotené: 0 z 12 dostupných')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Dokončiť' })).toBeVisible();
+  });
+
+  it('names the button that takes a title out of the selection', async () => {
+    const { server } = wizardServer({
+      me: makeMe({ locale: 'sk', preferences: { onboardingCompletedAt: null } }),
+      subscriptions: [alpha()],
+      articles: { '1': articles(1, 3) },
+      feedCounts: { '1': counts({ new: 3, scored: 0, total: 3 }) },
+    });
+    const app = await open({ path: '/onboarding?step=calibrate', server, language: 'sk' });
+    await app.user.click(await box('Article 1'));
+    await app.user.click(await box('Article 2'));
+
+    await app.user.click(screen.getByRole('button', { name: 'Odobrať z výberu: Article 1' }));
+
+    expect(screen.getByText('Vybrané: 1 z 20')).toBeVisible();
+    expect(await box('Article 1')).not.toBeChecked();
+    expect(
+      screen.queryByRole('button', { name: 'Odobrať z výberu: Article 1' }),
+    ).not.toBeInTheDocument();
   });
 });
 

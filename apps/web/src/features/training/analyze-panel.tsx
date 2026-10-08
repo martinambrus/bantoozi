@@ -1,6 +1,13 @@
-import type { AnalyzeResponse, ArticleListItem, Subscription } from '@bantoozi/shared';
-import { useQueryClient } from '@tanstack/react-query';
-import { useId, useRef } from 'react';
+import type {
+  AnalyzeResponse,
+  ArticleCounts,
+  ArticleDetail,
+  ArticleListItem,
+  ArticleListResponse,
+  Subscription,
+} from '@bantoozi/shared';
+import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
+import { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { isApiError } from '../../api/errors.js';
@@ -8,6 +15,8 @@ import { useApiMutation } from '../../api/mutation.js';
 import { routes } from '../../api/routes.js';
 import { Button } from '../../components/button.js';
 import { errorMessage } from '../../components/error-message.js';
+import { IconButton } from '../../components/icon-button.js';
+import { CloseIcon } from '../../components/icons.js';
 import { useAccountId } from '../../session/context.js';
 import { articleKeys } from '../article/query-keys.js';
 import { InlineAlert } from '../feeds/inline-alert.js';
@@ -23,6 +32,8 @@ export interface AnalyzePanelProps {
   onSubmitted: (requests: AnalyzeResponse['requests']) => void;
   /** The ids of selected articles the API found changed; they cannot be analyzed as chosen. */
   onDrop?: ((articleIds: readonly string[]) => void) | undefined;
+  /** Takes one article out of the selection; the titles have no button for it without this. */
+  onRemove?: ((articleId: string) => void) | undefined;
 }
 
 type Refusal =
@@ -50,12 +61,65 @@ function refusalOf(error: unknown): Refusal {
   return { kind: 'other' };
 }
 
+type Requests = ReadonlyMap<string, AnalyzeResponse['requests'][number]>;
+
+/** What the article queries hold: the pages of a list, a list, one article, or the counts. */
+type CachedArticles =
+  InfiniteData<ArticleListResponse> | ArticleListResponse | ArticleDetail | ArticleCounts;
+
+/** The article with the request it was just given; the same object if it was not sent. */
+function requested<T extends ArticleListItem>(article: T, requests: Requests): T {
+  const request = requests.get(article.id);
+  return request === undefined
+    ? article
+    : {
+        ...article,
+        analysis: { ...article.analysis, status: request.status, requestId: request.id },
+      };
+}
+
+function requestedList(list: ArticleListResponse, requests: Requests): ArticleListResponse {
+  const items = list.items.map((article) => requested(article, requests));
+  return items.some((article, index) => article !== list.items[index]) ? { ...list, items } : list;
+}
+
+/** What the cached articles become once `requests` are made; undefined where none was sent. */
+function withRequests(
+  cached: CachedArticles | undefined,
+  requests: Requests,
+): CachedArticles | undefined {
+  if (cached === undefined) return undefined;
+  let next: CachedArticles;
+  if ('pages' in cached) {
+    const pages = cached.pages.map((list) => requestedList(list, requests));
+    next = pages.some((list, index) => list !== cached.pages[index])
+      ? { ...cached, pages }
+      : cached;
+  } else if ('items' in cached) {
+    next = requestedList(cached, requests);
+  } else if ('analysis' in cached) {
+    next = requested(cached, requests);
+  } else {
+    return undefined;
+  }
+  return next === cached ? undefined : next;
+}
+
+const sameArticles = (a: readonly ArticleListItem[], b: readonly ArticleListItem[]) =>
+  a.length === b.length && a.every((article, index) => article.id === b[index]?.id);
+
 /**
  * The selected articles of one feed, named in full, and the one button that sends them to be
  * analyzed (spec 09 §3.2). A feed that is off is switched to training by that same request.
  * Nothing here selects anything or sends anything but on that button.
  */
-export function AnalyzePanel({ subscription, items, onSubmitted, onDrop }: AnalyzePanelProps) {
+export function AnalyzePanel({
+  subscription,
+  items,
+  onSubmitted,
+  onDrop,
+  onRemove,
+}: AnalyzePanelProps) {
   const { t } = useTranslation('training');
   const queryClient = useQueryClient();
   const accountId = useAccountId();
@@ -63,6 +127,8 @@ export function AnalyzePanel({ subscription, items, onSubmitted, onDrop }: Analy
   const analyze = useApiMutation(routes.subscriptionsAnalyze);
   const hintId = useId();
   const sending = useRef(false);
+  const [seen, setSeen] = useState(items);
+  const [movedOn, setMovedOn] = useState<unknown>(null);
 
   const off = subscription.inferenceMode === 'off';
   const empty = items.length === 0;
@@ -73,8 +139,26 @@ export function AnalyzePanel({ subscription, items, onSubmitted, onDrop }: Analy
       : null;
   const refusal = analyze.error === null ? null : refusalOf(analyze.error);
 
+  // A refusal is about the selection that was sent: the person adding or removing an article ends
+  // it, but dropping the articles it names is its own doing.
+  if (seen !== items) {
+    setSeen(items);
+    const named = refusal?.kind === 'changed' ? refusal.articleIds : [];
+    const dropped = seen.filter((article) => !named.includes(article.id));
+    if (analyze.error !== null && !sameArticles(items, seen) && !sameArticles(items, dropped)) {
+      setMovedOn(analyze.error);
+    }
+  }
+
   function refreshArticles() {
     void queryClient.invalidateQueries({ queryKey: articleKeys.all(accountId) });
+  }
+
+  function recordRequests(made: AnalyzeResponse['requests']) {
+    const requests: Requests = new Map(made.map((request) => [request.articleId, request]));
+    queryClient.setQueriesData<CachedArticles>({ queryKey: articleKeys.all(accountId) }, (cached) =>
+      withRequests(cached, requests),
+    );
   }
 
   function send() {
@@ -92,6 +176,7 @@ export function AnalyzePanel({ subscription, items, onSubmitted, onDrop }: Analy
       {
         onSuccess: ({ requests }) => {
           void subscriptions.refresh();
+          recordRequests(requests);
           refreshArticles();
           onSubmitted(requests);
         },
@@ -135,7 +220,7 @@ export function AnalyzePanel({ subscription, items, onSubmitted, onDrop }: Analy
     }
   }
 
-  const message = problem();
+  const message = analyze.error === movedOn ? null : problem();
 
   return (
     <section aria-label={t('panel.title')} className="flex flex-col gap-3">
@@ -148,8 +233,18 @@ export function AnalyzePanel({ subscription, items, onSubmitted, onDrop }: Analy
           className="flex list-decimal flex-col gap-1 ps-6 text-sm"
         >
           {items.map((item) => (
-            <li key={item.id} className="break-words">
-              {item.title}
+            <li key={item.id}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="min-w-0 break-words">{item.title}</span>
+                {onRemove === undefined ? null : (
+                  <IconButton
+                    label={t('panel.remove', { title: item.title })}
+                    onClick={() => onRemove(item.id)}
+                  >
+                    <CloseIcon className="size-4" />
+                  </IconButton>
+                )}
+              </div>
             </li>
           ))}
         </ol>

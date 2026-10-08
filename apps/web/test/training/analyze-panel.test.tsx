@@ -1,14 +1,28 @@
-import type { ArticleListItem, Subscription } from '@bantoozi/shared';
+import type {
+  ArticleDetail,
+  ArticleListItem,
+  ArticleListResponse,
+  Subscription,
+} from '@bantoozi/shared';
+import type { InfiniteData } from '@tanstack/react-query';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { FOCUS_RING } from '../../src/components/cx.js';
 import { articleKeys } from '../../src/features/article/query-keys.js';
 import { subscriptionsKey } from '../../src/features/feeds/subscriptions.js';
 import { AnalyzePanel, type AnalyzePanelProps } from '../../src/features/training/analyze-panel.js';
+import { useArticleSelection } from '../../src/features/training/selection.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
-import { deferred, renderReader, type ReaderHarnessOptions } from '../article/harness.js';
+import {
+  deferred,
+  makeDetail,
+  renderReader,
+  type ReaderHarnessOptions,
+} from '../article/harness.js';
 import { makeSubscription } from '../feeds/support.js';
-import { article, requestId } from '../onboarding/support.js';
+import { article, counts, requestId } from '../onboarding/support.js';
+import { page } from '../reader/support.js';
 import { USER_A_ID } from '../session/fixtures.js';
 import { bodyOf, type ApiRouteHandler } from '../support/app.js';
 
@@ -397,5 +411,275 @@ describe('when the server refuses', () => {
     await view.user.click(send());
 
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  });
+});
+
+describe('after the requests are accepted', () => {
+  const sibling = article('9', 'Another story');
+  const state = (status: string, n: number) => ({ id: requestId(n), articleId: String(n), status });
+
+  it('gives every cached copy of a sent article the request it was given, and no other article', async () => {
+    const view = renderPanel(
+      { items: picked.slice(0, 2) },
+      {
+        routes: {
+          [ROUTE]: () => json(202, { requests: [state('pending', 1), state('complete', 2)] }),
+        },
+      },
+    );
+    const [first, second] = picked as [ArticleListItem, ArticleListItem, ArticleListItem];
+    const listed = [...articleKeys.all(USER_A_ID), 'list', 'for_you'];
+    const picker = [...articleKeys.all(USER_A_ID), 'training', 'list', '1'];
+    const opened = articleKeys.detail(USER_A_ID, '1', {});
+    const fromFeed = articleKeys.detail(USER_A_ID, '1', { sourceFeedId: '1' });
+    const saved = articleKeys.detail(USER_A_ID, '2', { saved: true });
+    const other = articleKeys.detail(USER_A_ID, '9', {});
+    const tally = [...articleKeys.counts(USER_A_ID), { minTier: 1 }];
+    const cache = view.queryClient;
+    cache.setQueryData<InfiniteData<ArticleListResponse>>(listed, {
+      pages: [page([first, sibling]), page([second])],
+      pageParams: [undefined, 'c1'],
+    });
+    cache.setQueryData<ArticleListResponse>(picker, page([second, sibling]));
+    cache.setQueryData<ArticleDetail>(opened, makeDetail(first));
+    cache.setQueryData<ArticleDetail>(fromFeed, makeDetail(first, { excerptHtml: '<p>Feed</p>' }));
+    cache.setQueryData<ArticleDetail>(saved, makeDetail(second));
+    cache.setQueryData<ArticleDetail>(other, makeDetail(sibling));
+    cache.setQueryData(tally, counts());
+
+    await view.user.click(send());
+
+    await waitFor(() => expect(view.onSubmitted).toHaveBeenCalledTimes(1));
+    const asked = { mode: 'off', status: 'pending', requestId: requestId(1) };
+    const done = { mode: 'off', status: 'complete', requestId: requestId(2) };
+    const pages = cache.getQueryData<InfiniteData<ArticleListResponse>>(listed)!.pages;
+    expect(pages[0]!.items.map(({ id, analysis }) => [id, analysis])).toEqual([
+      ['1', asked],
+      ['9', sibling.analysis],
+    ]);
+    expect(pages[1]!.items.map(({ analysis }) => analysis)).toEqual([done]);
+    expect(
+      cache.getQueryData<ArticleListResponse>(picker)!.items.map(({ analysis }) => analysis),
+    ).toEqual([done, sibling.analysis]);
+    expect(cache.getQueryData<ArticleDetail>(opened)!.analysis).toEqual(asked);
+    expect(cache.getQueryData<ArticleDetail>(fromFeed)).toEqual({
+      ...makeDetail(first, { excerptHtml: '<p>Feed</p>' }),
+      analysis: asked,
+    });
+    expect(cache.getQueryData<ArticleDetail>(saved)!.analysis).toEqual(done);
+    expect(cache.getQueryData<ArticleDetail>(other)).toEqual(makeDetail(sibling));
+    expect(cache.getQueryData(tally)).toEqual(counts());
+  });
+
+  it('does that before it tells who is waiting for the answer', async () => {
+    const listed = [...articleKeys.all(USER_A_ID), 'list', 'for_you'];
+    const known: ArticleListResponse[] = [];
+    const view = renderPanel(
+      {
+        items: picked.slice(0, 1),
+        onSubmitted: () => {
+          known.push(view.queryClient.getQueryData<ArticleListResponse>(listed)!);
+        },
+      },
+      { routes: { [ROUTE]: () => json(202, { requests: [state('running', 1)] }) } },
+    );
+    view.queryClient.setQueryData<ArticleListResponse>(listed, page(picked));
+
+    await view.user.click(send());
+
+    await waitFor(() => expect(known).toHaveLength(1));
+    expect(known[0]!.items.map(({ analysis }) => analysis.status)).toEqual([
+      'running',
+      'not_requested',
+      'not_requested',
+    ]);
+  });
+
+  it('leaves the cache as it was when the request is refused', async () => {
+    const view = renderPanel(
+      { items: picked.slice(0, 1) },
+      { routes: { [ROUTE]: () => failure(429, 'RATE_LIMITED') } },
+    );
+    const listed = [...articleKeys.all(USER_A_ID), 'list', 'for_you'];
+    view.queryClient.setQueryData<ArticleListResponse>(listed, page(picked));
+
+    await view.user.click(send());
+
+    await screen.findByRole('alert');
+    expect(
+      view.queryClient
+        .getQueryData<ArticleListResponse>(listed)!
+        .items.map(({ analysis }) => analysis.status),
+    ).toEqual(['not_requested', 'not_requested', 'not_requested']);
+  });
+});
+
+describe('taking a title out of the selection', () => {
+  it('has a button on each title that names the article to take out', async () => {
+    const onRemove = vi.fn();
+    const view = renderPanel({ onRemove });
+    const list = screen.getByRole('list', { name: 'Selected articles' });
+
+    expect(
+      within(list)
+        .getAllByRole('button')
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual(titles.map((title) => `Remove ${title}`));
+    expect(
+      within(list)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(titles);
+    await view.user.click(within(list).getByRole('button', { name: 'Remove A <b>bold</b> claim' }));
+
+    expect(onRemove).toHaveBeenCalledTimes(1);
+    expect(onRemove).toHaveBeenCalledWith('2');
+    expect(view.requests).toHaveLength(0);
+  });
+
+  it('has no button when nobody can take the article out', () => {
+    renderPanel();
+
+    expect(
+      within(screen.getByRole('list', { name: 'Selected articles' })).queryAllByRole('button'),
+    ).toEqual([]);
+  });
+
+  it('is 44 px wide and high and shows a focus ring', () => {
+    renderPanel({ onRemove: vi.fn() });
+
+    const buttons = within(screen.getByRole('list', { name: 'Selected articles' })).getAllByRole(
+      'button',
+    );
+    expect(buttons).toHaveLength(3);
+    for (const button of buttons) {
+      expect(button.className).toContain('min-h-11');
+      expect(button.className).toContain('min-w-11');
+      for (const token of FOCUS_RING.split(' ')) expect(button.className).toContain(token);
+    }
+  });
+
+  it('is named in Slovak', () => {
+    renderPanel({ onRemove: vi.fn() }, { language: 'sk' });
+
+    expect(
+      within(screen.getByRole('list', { name: 'Vybrané články' }))
+        .getAllByRole('button')
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual(titles.map((title) => `Odobrať z výberu: ${title}`));
+  });
+});
+
+/** The panel over a selection that changes, with a checkbox for each article that can be chosen. */
+function Choosing({ among }: { among: readonly ArticleListItem[] }) {
+  const selection = useArticleSelection();
+  return (
+    <>
+      {among.map((candidate) => (
+        <label key={candidate.id}>
+          <input
+            type="checkbox"
+            checked={selection.has(candidate.id)}
+            onChange={(event) => selection.toggle(candidate, event.target.checked)}
+          />
+          {`Choose ${candidate.title}`}
+        </label>
+      ))}
+      <AnalyzePanel
+        subscription={training}
+        items={selection.items}
+        onDrop={selection.remove}
+        onRemove={(articleId) => selection.remove([articleId])}
+        onSubmitted={() => selection.clear()}
+      />
+    </>
+  );
+}
+
+describe('the message about a refused request', () => {
+  const CHANGED = '1 selected article changed and was removed from your selection.';
+  const changed = (...articleIds: string[]) => ({
+    [ROUTE]: () => failure(409, 'STALE_STATE', { articleIds }),
+  });
+
+  type Chosen = ReturnType<typeof renderReader>;
+  const box = (n: number) => screen.getByRole('checkbox', { name: `Choose Article ${n}` });
+  const chosen = () =>
+    within(screen.getByRole('list', { name: 'Selected articles' }))
+      .getAllByRole('listitem')
+      .map((item) => item.textContent);
+
+  async function choose(view: Chosen, ...numbers: number[]) {
+    for (const number of numbers) await view.user.click(box(number));
+  }
+
+  /** Chooses 1 to 3 of four articles and sends them to an API that answers with `routes`. */
+  async function refused(routes: Record<string, ApiRouteHandler>) {
+    const view = renderReader(<Choosing among={many(4)} />, { routes });
+    await choose(view, 1, 2, 3);
+    await view.user.click(send('Analyze selected 3 articles'));
+    await screen.findByRole('alert');
+    return view;
+  }
+
+  it('stays after the articles it names were dropped', async () => {
+    await refused(changed('2'));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(CHANGED);
+    expect(chosen()).toEqual(['Article 1', 'Article 3']);
+  });
+
+  it.each([
+    ['chooses another article', (view: Chosen) => choose(view, 4)],
+    ['chooses an article that was dropped', (view: Chosen) => choose(view, 2)],
+    ['takes an article off the choice', (view: Chosen) => choose(view, 1)],
+    [
+      'takes a title out of the panel',
+      (view: Chosen) => view.user.click(screen.getByRole('button', { name: 'Remove Article 3' })),
+    ],
+  ])('goes when the person %s', async (_name, change) => {
+    const view = await refused(changed('2'));
+
+    await change(view);
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('goes when the person chooses the article that was last, which makes the selection that was sent', async () => {
+    const view = await refused(changed('3'));
+    expect(chosen()).toEqual(['Article 1', 'Article 2']);
+
+    await choose(view, 3);
+
+    expect(chosen()).toEqual(['Article 1', 'Article 2', 'Article 3']);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('stays after a refusal that dropped nothing, until the person changes the selection', async () => {
+    const view = await refused({ [ROUTE]: () => failure(429, 'RATE_LIMITED') });
+    expect(screen.getByRole('alert')).toHaveTextContent('Too many requests');
+    expect(chosen()).toEqual(['Article 1', 'Article 2', 'Article 3']);
+
+    await choose(view, 4);
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('comes back with the next refusal once the person has moved on', async () => {
+    const view = await refused(changed('2'));
+    await choose(view, 4);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    await view.user.click(send('Analyze selected 3 articles'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(CHANGED);
+  });
+
+  it('is not ended by a selection that stays as it is', async () => {
+    const view = await refused(changed('2'));
+
+    view.rerender(<Choosing among={many(4)} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(CHANGED);
   });
 });
