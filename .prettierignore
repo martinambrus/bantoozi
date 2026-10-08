@@ -14,6 +14,8 @@ packages/db/drizzle/meta/
 CLAUDE.md
 # Claude Code's per-developer local settings (git-ignored), not project files.
 .claude/settings.local.json
+# Claude Code's agent worktrees (excluded from git locally): copies of the repository, not project files.
+.claude/worktrees/
 # The committed OpenAPI snapshot is written by the test (spec 08 §12), byte-exact.
 apps/api/test/__snapshots__/
 # G1 artifacts written by `eval gate`, byte-exact: `apply-g1 --report` checks the report's hash.
