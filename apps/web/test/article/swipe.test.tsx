@@ -141,9 +141,9 @@ async function advance(ms: number) {
 }
 
 describe('following the finger', () => {
-  it('leaves vertical scrolling to the browser', () => {
+  it('leaves vertical scrolling and pinch-zoom to the browser', () => {
     renderRow();
-    expect(row()).toHaveClass('touch-pan-y');
+    expect(row()).toHaveClass('touch-pan-y', 'touch-pinch-zoom');
   });
 
   it('starts only when the finger has gone more than 10 px sideways', () => {

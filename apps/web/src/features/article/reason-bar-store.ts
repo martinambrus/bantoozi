@@ -25,6 +25,8 @@ export interface ReasonBar {
   open(pending: PendingDislike): void;
   /** Sends the open dislike with `reason`. */
   pick(reason: RatingReason): void;
+  /** Sends the open dislike without a reason, as when the time is up. */
+  expire(): void;
   /** Takes the open dislike back: nothing is sent. */
   undo(): void;
   /** Stops the countdown while the pointer or the focus is in the bar, and goes on after it. */
@@ -61,8 +63,7 @@ export function createReasonBar(store: ReaderActions): ReasonBar {
     startedAt = Date.now();
     timer = setTimeout(() => {
       timer = null;
-      const closing = finish();
-      if (closing !== null) store.release(closing.actionId);
+      expire();
     }, remaining);
   }
 
@@ -75,6 +76,11 @@ export function createReasonBar(store: ReaderActions): ReasonBar {
     remaining = REASON_BAR_MS;
     if (closing !== null) notify();
     return closing;
+  }
+
+  function expire(): void {
+    const closing = finish();
+    if (closing !== null) store.release(closing.actionId);
   }
 
   store.subscribe(() => {
@@ -105,6 +111,7 @@ export function createReasonBar(store: ReaderActions): ReasonBar {
       const closing = finish();
       if (closing !== null) store.release(closing.actionId, { reason });
     },
+    expire,
     undo() {
       const closing = finish();
       if (closing !== null) store.cancel(closing.actionId);

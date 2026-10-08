@@ -126,6 +126,23 @@ export function ReasonBar() {
     };
   }, [bar, open]);
 
+  // A page that is hidden may never come back, so its dislike does not wait for the reason.
+  useEffect(() => {
+    if (!open) return;
+    function onHidden(): void {
+      if (document.visibilityState === 'hidden') bar.expire();
+    }
+    function onPageHide(): void {
+      bar.expire();
+    }
+    document.addEventListener('visibilitychange', onHidden);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', onHidden);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, [bar, open]);
+
   const content = (
     <>
       <div aria-live="polite" className="sr-only">

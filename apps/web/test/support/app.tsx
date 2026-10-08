@@ -5,6 +5,7 @@ import { render } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { App, createAppServices } from '../../src/app.js';
+import { forgetCardMoves } from '../../src/features/interests/card-moves.js';
 import { createI18n, type Language } from '../../src/i18n/index.js';
 import { failure, fakeFetch, json, type RecordedRequest } from '../api/fake-fetch.js';
 
@@ -73,6 +74,7 @@ export async function renderApp(options: {
   server: FakeServer;
   language?: Language;
 }) {
+  forgetCardMoves();
   const fake = createFakeServer(options.server);
   const fetched = fakeFetch(fake.handler);
   const queryClient = new QueryClient({

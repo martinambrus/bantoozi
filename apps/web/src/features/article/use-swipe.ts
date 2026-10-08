@@ -40,7 +40,7 @@ export interface SwipeOptions {
 /**
  * The swipe of a row with a thumb or a pen (spec 09 §3.3): the content follows the finger, the
  * action shows past 15 % of the width, and lifting the finger past 35 % runs it. The browser keeps
- * vertical scrolling (`touch-action: pan-y` on the row) and cancels the pointer when it takes over.
+ * vertical scrolling and pinch-zoom (`touch-action: pan-y pinch-zoom` on the row) and cancels the pointer when it takes over.
  */
 export function useSwipe({ resolve, run }: SwipeOptions) {
   const gesture = useRef<Gesture | null>(null);

@@ -1,7 +1,7 @@
 import type { ArticleListItem } from '@bantoozi/shared';
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import { useState } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { FOCUS_RING } from '../../src/components/cx.js';
 import { Sheet } from '../../src/components/sheet.js';
@@ -399,6 +399,51 @@ describe('the dislike reason bar', () => {
       rating: -1,
       reason: 'promo',
     });
+  });
+
+  it.each([
+    [
+      'the page is hidden',
+      () => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+        document.dispatchEvent(new Event('visibilitychange'));
+      },
+    ],
+    ['the page goes away', () => window.dispatchEvent(new Event('pagehide'))],
+  ])('sends the held dislike at once, without a reason, when %s', async (_, leave) => {
+    onTestFinished(() => {
+      Reflect.deleteProperty(document, 'visibilityState');
+    });
+    const item = makeItem();
+    const { calls } = renderRows([item], { routes: answers(item) });
+    fireEvent.click(dislike());
+
+    act(leave);
+    await advance(0);
+
+    expect(calls('POST', '/articles/101/rating')).toHaveLength(1);
+    expect(bodyOf(calls('POST', '/articles/101/rating')[0]!)).toEqual({
+      stateVersion: '4',
+      contentRevision: '2',
+      rating: -1,
+    });
+    expect(queryBar()).toBeNull();
+    await advance(60_000);
+    expect(calls('POST', '/articles/101/rating')).toHaveLength(1);
+  });
+
+  it('keeps waiting when the page becomes visible', async () => {
+    const item = makeItem();
+    const { calls } = renderRows([item], { routes: answers(item) });
+    fireEvent.click(dislike());
+
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await advance(0);
+
+    expect(calls('POST', '/articles/101/rating')).toHaveLength(0);
+    expect(bar()).toBeInTheDocument();
   });
 
   it('closes without sending anything when the account is reset', async () => {

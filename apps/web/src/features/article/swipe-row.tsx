@@ -98,7 +98,7 @@ export function SwipeRow({ item, actions, labelledBy, children }: SwipeRowProps)
     <article
       aria-labelledby={labelledBy}
       {...handlers}
-      className="relative touch-pan-y overflow-hidden rounded-xl border border-slate-300 dark:border-slate-700"
+      className="relative touch-pan-y touch-pinch-zoom overflow-hidden rounded-xl border border-slate-300 dark:border-slate-700"
     >
       {drag?.shows === true ? <Feedback drag={drag} item={item} /> : null}
       <div

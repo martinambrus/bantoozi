@@ -1,5 +1,6 @@
 import type { CardDto, IdChange, Subscription } from '@bantoozi/shared';
 import {
+  queryOptions,
   useInfiniteQuery,
   useQuery,
   useQueryClient,
@@ -57,13 +58,17 @@ export function articlesKey(accountId: string) {
   return accountKey(accountId, 'articles');
 }
 
-export function useCards() {
-  const api = useApi();
-  const accountId = useAccountId();
-  return useQuery({
+function cardsQuery(api: ApiClient, accountId: string) {
+  return queryOptions({
     queryKey: cardsKey(accountId),
     queryFn: ({ signal }) => api.call(routes.cardList, undefined, { signal }),
   });
+}
+
+export function useCards() {
+  const api = useApi();
+  const accountId = useAccountId();
+  return useQuery(cardsQuery(api, accountId));
 }
 
 /** The cards the person holds as the cache has them, else as one read of the list gives them. */
@@ -72,10 +77,7 @@ export function ensureCards(
   api: ApiClient,
   accountId: string,
 ): Promise<CardDto[]> {
-  return queryClient.ensureQueryData({
-    queryKey: cardsKey(accountId),
-    queryFn: ({ signal }) => api.call(routes.cardList, undefined, { signal }),
-  });
+  return queryClient.ensureQueryData(cardsQuery(api, accountId));
 }
 
 export function useSubscriptions() {
