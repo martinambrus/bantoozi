@@ -157,7 +157,8 @@
       "pending": "Pending",
       "validating": "Validating…",
       "valid": "Valid",
-      "invalid": "Invalid"
+      "invalid": "Invalid",
+      "expired": "Expired"
     },
     "validatedAt": "Last validated",
     "capabilities": {
@@ -201,7 +202,8 @@
       "changed": "This credential changed in the meantime. The latest state is shown; check it and try again.",
       "keyring": "Key storage is not set up on the server (no master key), so keys cannot be saved.",
       "keyRejected": "The server did not accept this key. Check that you pasted the whole key without spaces.",
-      "noCandidate": "There is no staged key any more. The latest state is shown."
+      "noCandidate": "There is no staged key any more. The latest state is shown.",
+      "expired": "This validation is older than 24 hours, so the key cannot be activated. Validate it again first."
     }
   },
   "feeds": {

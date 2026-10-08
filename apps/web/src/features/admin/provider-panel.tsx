@@ -15,7 +15,12 @@ import { TextField } from '../../components/text-field.js';
 import { useToast } from '../../components/toast/toast-provider.js';
 import { Alert, Fact, Facts, Hint } from './admin-ui.js';
 import { Time } from './format.js';
-import { KNOWN_ERROR_CODES, snapshotOf, type ValidationWatch } from './provider-status.js';
+import {
+  KNOWN_ERROR_CODES,
+  snapshotOf,
+  validationExpired,
+  type ValidationWatch,
+} from './provider-status.js';
 
 const STATUS_TONES: Record<NonNullable<CredentialStatus['candidateStatus']>, BadgeTone> = {
   pending: 'neutral',
@@ -26,9 +31,15 @@ const STATUS_TONES: Record<NonNullable<CredentialStatus['candidateStatus']>, Bad
 
 type Action = 'stage' | 'validate' | 'activate' | 'revoke';
 
-/** Says what went wrong without ever repeating what was typed. */
-function problemMessage(t: TFunction, error: unknown, action: Action): string {
+/**
+ * Says what went wrong without ever repeating what was typed. The server refuses an expired
+ * validation with the same conflict as a changed credential, so the panel tells them apart.
+ */
+function problemMessage(t: TFunction, error: unknown, action: Action, expired: boolean): string {
   if (isApiError(error)) {
+    if (error.status === 409 && action === 'activate' && expired) {
+      return t('providers.problems.expired');
+    }
     if (error.status === 409) return t('providers.problems.changed');
     if (error.status === 503 && error.details?.['reason'] === 'keyring_unavailable') {
       return t('providers.problems.keyring');
@@ -85,7 +96,7 @@ export function ProviderPanel({
   const busy = staging || validate.isPending || activate.isPending || revoke.isPending;
 
   function fail(error: unknown, action: Action) {
-    setProblem(problemMessage(t, error, action));
+    setProblem(problemMessage(t, error, action, validationExpired(credential, Date.now())));
     if (isApiError(error) && (error.status === 409 || error.status === 404)) onStale();
   }
 
@@ -155,6 +166,7 @@ export function ProviderPanel({
   }
 
   const { capabilities } = credential;
+  const expired = validationExpired(credential, Date.now());
   return (
     <section
       aria-labelledby={headingId}
@@ -183,7 +195,9 @@ export function ProviderPanel({
           ) : (
             <>
               <span>{t('providers.version', { version: candidateVersion })}</span>{' '}
-              {candidateStatus === null ? null : (
+              {candidateStatus === null ? null : expired ? (
+                <Badge tone="warning">{t('providers.candidateStatus.expired')}</Badge>
+              ) : (
                 <Badge tone={STATUS_TONES[candidateStatus]}>
                   {t(`providers.candidateStatus.${candidateStatus}`)}
                 </Badge>
@@ -260,7 +274,7 @@ export function ProviderPanel({
           <div className="flex flex-col items-start gap-2">
             <Button
               loading={activate.isPending}
-              disabled={busy || candidateStatus !== 'valid'}
+              disabled={busy || candidateStatus !== 'valid' || expired}
               onClick={() => void activateCandidate()}
             >
               {t('providers.activate')}

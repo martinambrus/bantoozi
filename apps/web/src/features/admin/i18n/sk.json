@@ -161,7 +161,8 @@
       "pending": "Čaká",
       "validating": "Overuje sa…",
       "valid": "Platný",
-      "invalid": "Neplatný"
+      "invalid": "Neplatný",
+      "expired": "Vypršalo"
     },
     "validatedAt": "Naposledy overené",
     "capabilities": {
@@ -205,7 +206,8 @@
       "changed": "Tento prístupový údaj sa medzitým zmenil. Zobrazuje sa najnovší stav; skontrolujte ho a skúste to znova.",
       "keyring": "Úložisko kľúčov nie je na serveri nastavené (chýba hlavný kľúč), preto sa kľúče nedajú uložiť.",
       "keyRejected": "Server tento kľúč neprijal. Skontrolujte, či ste vložili celý kľúč bez medzier.",
-      "noCandidate": "Už neexistuje žiadny pripravený kľúč. Zobrazuje sa najnovší stav."
+      "noCandidate": "Už neexistuje žiadny pripravený kľúč. Zobrazuje sa najnovší stav.",
+      "expired": "Toto overenie je staršie ako 24 hodín, preto sa kľúč nedá aktivovať. Najprv ho overte znova."
     }
   },
   "feeds": {

@@ -2,6 +2,8 @@ import type { CredentialStatus, Provider } from '@bantoozi/shared';
 
 /** How often the credential list is read while a validation is running (spec 09 §8). */
 export const VALIDATION_POLL_MS = 2000;
+/** The server activates a candidate only while its validation is at most this old. */
+export const VALIDATION_LIFETIME_MS = 86_400_000;
 /** A queued validation that no worker has picked up is looked for this long, then left alone. */
 const VALIDATION_WATCH_MS = 120_000;
 
@@ -42,6 +44,15 @@ export function validationRunning(
       snapshotOf(credential) === watch.snapshot
     );
   });
+}
+
+/** A `valid` candidate whose validation is too old to activate: it has to be validated again. */
+export function validationExpired(credential: CredentialStatus, now: number): boolean {
+  return (
+    credential.candidateStatus === 'valid' &&
+    credential.validatedAt !== null &&
+    now - Date.parse(credential.validatedAt) > VALIDATION_LIFETIME_MS
+  );
 }
 
 export const KNOWN_ERROR_CODES: readonly string[] = [

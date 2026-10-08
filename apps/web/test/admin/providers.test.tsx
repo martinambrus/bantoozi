@@ -19,7 +19,12 @@ async function render(options: Parameters<typeof renderApp>[0]) {
   return guard(await renderApp(options));
 }
 
+/** An hour after the fixtures' validation time: a validation counts for 24 hours. */
+const NOW = Date.parse(T1) + 3_600_000;
+const DAY_MS = 86_400_000;
+
 beforeEach(() => {
+  vi.useFakeTimers({ now: NOW, toFake: ['Date'], shouldAdvanceTime: true });
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
 });
 
@@ -310,7 +315,7 @@ describe('provider accounts (spec 09 §8)', () => {
   );
 
   it('explains validation, then polls every 2 seconds while it runs and stops once it is valid', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers({ now: NOW, shouldAdvanceTime: true });
     const server: Server = { items: [jevCredential(), ollamaCredential()] };
     let reads = 0;
     const app = await openProviders(server, {
@@ -366,7 +371,7 @@ describe('provider accounts (spec 09 §8)', () => {
   });
 
   it('stops polling at an inconclusive result and offers to validate again', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers({ now: NOW, shouldAdvanceTime: true });
     const server: Server = { items: [jevCredential(), ollamaCredential()] };
     let reads = 0;
     const app = await openProviders(server, {
@@ -449,6 +454,49 @@ describe('provider accounts (spec 09 §8)', () => {
 
     expect(await panel().findByRole('alert')).toHaveTextContent(CHANGED_MESSAGE);
     expect(app.calls('GET /admin/engine/credentials')).toHaveLength(2);
+    expect(panel().getByRole('button', { name: 'Activate' })).toBeDisabled();
+  });
+
+  it('shows a validation older than 24 hours as expired and does not offer to activate it', async () => {
+    await openProviders({
+      items: [
+        jevCredential({
+          candidateStatus: 'valid',
+          validatedAt: new Date(NOW - DAY_MS - 60_000).toISOString(),
+        }),
+        ollamaCredential(),
+      ],
+    });
+
+    expect(panel().getByText('Expired')).toBeVisible();
+    expect(panel().queryByText('Valid')).toBeNull();
+    expect(panel().getByRole('button', { name: 'Activate' })).toBeDisabled();
+    expect(panel().getByRole('button', { name: 'Validate' })).toBeEnabled();
+  });
+
+  it('says to validate again when the validation expired while the page was open', async () => {
+    const server: Server = {
+      items: [
+        jevCredential({
+          candidateStatus: 'valid',
+          validatedAt: new Date(NOW - DAY_MS + 30_000).toISOString(),
+        }),
+        ollamaCredential(),
+      ],
+    };
+    const app = await openProviders(server, {
+      'POST /admin/engine/credentials/:provider/activate': () =>
+        failure(409, 'CONFLICT', { sqlState: 'BZ409' }),
+    });
+    expect(panel().getByText('Valid')).toBeVisible();
+    vi.setSystemTime(NOW + 60_000);
+
+    await app.user.click(panel().getByRole('button', { name: 'Activate' }));
+
+    expect(await panel().findByRole('alert')).toHaveTextContent(
+      'This validation is older than 24 hours, so the key cannot be activated. Validate it again first.',
+    );
+    expect(await panel().findByText('Expired')).toBeVisible();
     expect(panel().getByRole('button', { name: 'Activate' })).toBeDisabled();
   });
 
