@@ -72,7 +72,7 @@ settings, regardless of profile.
 
 ---
 
-## 2. Building the golden set `golden-v1`
+## 2. Building the golden set (`golden-v1`, and held-out successors)
 
 ### 2.1 Feeds and articles
 

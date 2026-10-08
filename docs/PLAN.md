@@ -815,7 +815,7 @@ a monitoring command; a background `--watch` process is not completion evidence.
 1. Keep the dedicated evaluation worker/database running with `EVAL_INGEST_ONLY=true` so candidate
    articles keep growing; do not mutate frozen rated samples. `ingest-sample --watch` monitors it.
 2. Start the rating server on the dev box (`pnpm evaluate serve-rating`) and expose
-   it through a tunnel (`docs/eval/TUNNEL.md`). `golden-v1` lives in a dedicated evaluation database on the dev host.
+   it through a tunnel (`docs/eval/TUNNEL.md`). The golden versions (`golden-v1`…) live in a dedicated evaluation database on the dev host.
 3. Add the owner (`eval rater add --name … --langs …`) for `owner_pilot`; additional raters are
    optional for the initial beta. A later `multi_person_beta` profile uses 3–5 independent people.
 4. Each rater writes 5–10 interests (the owner pilot may use owner-approved assisted drafting, spec 10 §2.2 and D-147), picks ≥ 10 feeds, and rates ≥ 250 articles.
