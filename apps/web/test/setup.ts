@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import 'fake-indexeddb/auto';
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
 
 import '../src/zod-jitless.js';
@@ -12,6 +12,9 @@ import '../src/zod-jitless.js';
 (globalThis as { jest?: unknown }).jest = {
   advanceTimersByTime: (ms: number) => vi.advanceTimersByTime(ms),
 };
+
+// A screen's route chunk and first query can take more than the default second on a busy machine.
+configure({ asyncUtilTimeout: 5000 });
 
 afterEach(() => {
   cleanup();
