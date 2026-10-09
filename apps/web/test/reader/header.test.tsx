@@ -15,6 +15,7 @@ import {
   item,
   listQueries,
   page,
+  rowOf,
   rowTitles,
 } from './support.js';
 
@@ -615,6 +616,42 @@ describe('Mark all read', () => {
 
     expect(await screen.findByText("You're all caught up")).toBeVisible();
     expect(app.calls(MARK_READ)).toHaveLength(1);
+  });
+
+  it('shows as read only the loaded articles that had arrived by the instant it counted', async () => {
+    const late = item(3, { firstSeenAt: '2026-05-31T10:07:00.000Z' });
+    let rows = [item(1), item(2)];
+    const { app } = await open({
+      path: '/read/for_you',
+      list: (request) =>
+        json(
+          200,
+          request.query.get('limit') === '1'
+            ? page([item(1)], { asOf: PROBE_AS_OF, datasetVersion: 'd-lane' })
+            : page(rows),
+        ),
+      routes: {
+        [MARK_READ]: () => {
+          const read = { readAt: PROBE_AS_OF, stateVersion: '5' };
+          rows = [late, item(1, read), item(2, read)];
+          return json(200, { count: 2, mutationId: MUTATION_ID });
+        },
+      },
+    });
+    await screen.findByRole('article', { name: 'Article 2' });
+    await app.user.click(screen.getByRole('button', { name: 'Mark all read' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Mark all as read?' });
+
+    // While the question is open, a poll brings an article that arrived after it counted.
+    rows = [late, item(1), item(2)];
+    await act(() => app.queryClient.refetchQueries({ type: 'active' }));
+    await screen.findByRole('article', { name: 'Article 3' });
+    await app.user.click(within(dialog).getByRole('button', { name: 'Mark as read' }));
+
+    await findToast('Marked 2 as read');
+    await waitFor(() => expect(within(rowOf('Article 1')).getByText('Read')).toBeVisible());
+    expect(within(rowOf('Article 2')).getByText('Read')).toBeVisible();
+    expect(within(rowOf('Article 3')).getByText('Unread')).toBeVisible();
   });
 
   it('asks again with the new number when the list changed meanwhile', async () => {

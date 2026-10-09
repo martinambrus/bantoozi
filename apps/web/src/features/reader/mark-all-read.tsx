@@ -97,11 +97,16 @@ export function MarkAllRead({ lane, scope, name, count, items, onChanged }: Mark
 
   async function confirm() {
     if (ask === null) return;
+    // The server marks only what had arrived by `asOf`. A row the list took in since then, which a
+    // poll brings while the question is open, stays unread there, so it is not shown read here.
+    const cutoff = Date.parse(ask.asOf);
     const result = await store.bulk({
       kind: 'markReadFilter',
       filter: { lane, ...scope, minTier, olderThan: ask.asOf },
       datasetVersion: ask.datasetVersion,
-      items: items.filter((item) => store.view(item).readAt === null),
+      items: items.filter(
+        (item) => store.view(item).readAt === null && Date.parse(item.firstSeenAt) <= cutoff,
+      ),
     });
     switch (result.status) {
       case 'done': {
