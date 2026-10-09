@@ -142,6 +142,7 @@ export function AdminFeedsPage() {
       toast.show({ message: t('feeds.resetDone'), tone: 'success' });
       void refresh('feeds');
     } catch (error) {
+      if (session.currentSignIn() !== signIn) return;
       setNotice(
         conflictReason(error) === 'merged' ? t('feeds.resetMerged') : errorMessage(t, error),
       );

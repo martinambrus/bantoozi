@@ -106,6 +106,7 @@ export function SettingEditor({
         tone: 'success',
       });
     } catch (error) {
+      if (session.currentSignIn() !== signIn) return;
       setFailure(error);
       if (conflictReason(error) === 'settings_changed') onStale();
     }

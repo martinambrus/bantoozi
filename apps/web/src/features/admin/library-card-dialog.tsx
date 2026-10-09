@@ -153,6 +153,7 @@ export function LibraryCardDialog({ card, onClose, onChanged }: LibraryCardDialo
       onChanged();
       onClose();
     } catch (error) {
+      if (session.currentSignIn() !== signIn) return;
       setFailure(error);
       if (conflictReason(error) === 'not_latest_version') onChanged();
     }

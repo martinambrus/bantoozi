@@ -22,6 +22,7 @@ import { Select } from '../../components/select.js';
 import { EmptyState } from '../../components/states/empty-state.js';
 import { QueryState } from '../../components/states/query-state.js';
 import { TextField } from '../../components/text-field.js';
+import { useSession } from '../../session/context.js';
 import {
   Alert,
   Cell,
@@ -61,6 +62,7 @@ function wholeNumber(text: string, min: number, max: number): number | null {
 
 function CreateInvites({ onCreated }: { onCreated: (created: Created) => void }) {
   const { t } = useTranslation('admin');
+  const session = useSession();
   const refresh = useRefresh();
   const create = useApiMutation(routes.adminInviteCreate);
   const [count, setCount] = useState('1');
@@ -111,8 +113,10 @@ function CreateInvites({ onCreated }: { onCreated: (created: Created) => void })
 
     const editsSent = edits.current;
     setFailure(null);
+    const signIn = session.currentSignIn();
     try {
       const result = await create.mutateAsync({ body: parsed.data });
+      if (session.currentSignIn() !== signIn) return;
       // A form edited while the invites were on their way is the next ones: it stays as it is.
       if (edits.current === editsSent) {
         setCount('1');

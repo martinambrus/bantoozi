@@ -259,6 +259,7 @@ export function AdminOverviewPage() {
   const { t } = useTranslation('admin');
   const api = useApi();
   const queryClient = useQueryClient();
+  const session = useSession();
   const adminKey = useAdminKey();
   const reset = useApiMutation(routes.adminEngineResetBreaker);
   const [watch, setWatch] = useState<ResetWatch | null>(null);
@@ -283,8 +284,10 @@ export function AdminOverviewPage() {
 
   async function resetBreaker(engine: BreakerEngine) {
     setNotice(null);
+    const signIn = session.currentSignIn();
     try {
       const result = await reset.mutateAsync({ body: { engine } });
+      if (session.currentSignIn() !== signIn) return;
       const key = adminKey('overview');
       setWatch({ engine, requestedAt: result.resetRequestedAt, startedAt: Date.now() });
       void queryClient.invalidateQueries({ queryKey: key });

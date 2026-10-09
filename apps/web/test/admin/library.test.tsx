@@ -935,6 +935,37 @@ describe('admin library (spec 09 §8)', () => {
       expect(screen.queryByText('Library card saved.')).toBeNull();
       expect(app.queryClient.getQueryState(cards)?.isInvalidated).toBe(false);
     });
+
+    it('refreshes nothing when the card is refused once the sign-in has ended (409 not_latest_version)', async () => {
+      const answer = gate();
+      const { app, server } = await openWithServer(
+        { cards: [solar], candidates: [] },
+        {
+          'PATCH /admin/library/:id': async () => {
+            await answer.opened;
+            return failure(409, 'CONFLICT', { reason: 'not_latest_version' });
+          },
+        },
+      );
+      await app.user.click(
+        within(article('Solar power')).getByRole('button', { name: 'Edit Solar power' }),
+      );
+      const dialog = await screen.findByRole('dialog');
+      await app.user.clear(within(dialog).getByLabelText('Title'));
+      await app.user.type(within(dialog).getByLabelText('Title'), 'Solar energy');
+      await app.user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+      await waitFor(() => expect(app.calls('PATCH /admin/library/:id')).toHaveLength(1));
+
+      server.me = null;
+      await act(() => app.session.resetAccountState());
+      // The list as the next sign-in of this account has loaded it by now.
+      const cards = accountKey(adminMe().id, 'admin', 'library', 'cards');
+      app.queryClient.setQueryData(cards, { pages: [], pageParams: [] });
+      answer.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(app.queryClient.getQueryState(cards)?.isInvalidated).toBe(false);
+    });
   });
 
   describe('lists', () => {

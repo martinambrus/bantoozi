@@ -11,6 +11,7 @@ import { Button } from '../../components/button.js';
 import { errorMessage } from '../../components/error-message.js';
 import { EmptyState } from '../../components/states/empty-state.js';
 import { QueryState } from '../../components/states/query-state.js';
+import { useSession } from '../../session/context.js';
 import { Alert, Cell, DataTable, LoadMore, PageTitle, RowHeader } from './admin-ui.js';
 import { Time } from './format.js';
 import { InviteResult } from './invite-result.js';
@@ -21,6 +22,7 @@ type WaitlistEntry = z.infer<typeof AdminWaitlistEntrySchema>;
 export function AdminWaitlistPage() {
   const { t } = useTranslation('admin');
   const api = useApi();
+  const session = useSession();
   const refresh = useRefresh();
   const invite = useApiMutation(routes.adminWaitlistInvite);
   const [inviting, setInviting] = useState<string | null>(null);
@@ -34,8 +36,11 @@ export function AdminWaitlistPage() {
   async function inviteEntry(entry: WaitlistEntry) {
     setNotice(null);
     setInviting(entry.id);
+    const signIn = session.currentSignIn();
     try {
-      setInvited(await invite.mutateAsync({ params: { id: entry.id } }));
+      const result = await invite.mutateAsync({ params: { id: entry.id } });
+      if (session.currentSignIn() !== signIn) return;
+      setInvited(result);
       void refresh('waitlist');
     } catch (error) {
       setNotice(

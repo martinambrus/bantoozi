@@ -220,6 +220,34 @@ describe('admin settings editors (spec 09 §8)', () => {
     ).toBeUndefined();
   });
 
+  it('reloads nothing when the save is refused once the sign-in has ended (409 settings_changed)', async () => {
+    const answer = gate();
+    const server: FakeServer = {
+      me: adminMe(),
+      routes: adminRoutes({
+        'PATCH /admin/settings': async () => {
+          await answer.opened;
+          return failure(409, 'CONFLICT', { reason: 'settings_changed' });
+        },
+      }),
+    };
+    const app = await render({ path: '/admin/settings', server });
+    await screen.findByRole('textbox', { name: BUDGET });
+    await replaceText(app, BUDGET, '7.5');
+    await app.user.click(save(BUDGET));
+    await vi.waitFor(() => expect(app.calls('PATCH /admin/settings')).toHaveLength(1));
+
+    server.me = null;
+    await act(() => app.session.resetAccountState());
+    // The settings as the next sign-in of this account has loaded them by now.
+    const settings = accountKey(adminMe().id, 'admin', 'settings');
+    app.queryClient.setQueryData(settings, makeSettings());
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(app.queryClient.getQueryState(settings)?.isInvalidated).toBe(false);
+  });
+
   it('says when the saved value was already in effect', async () => {
     const state = { values: { ...SETTINGS_VALUES } };
     const app = await openSettings({ 'PATCH /admin/settings': applyingPatch(state) });

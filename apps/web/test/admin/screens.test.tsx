@@ -282,6 +282,33 @@ describe('overview (spec 09 §8)', () => {
 
     expect(screen.queryByText('Reprocessing of the skipped translations is queued.')).toBeNull();
   });
+
+  it('refreshes nothing when the breaker reset is answered once the sign-in has ended', async () => {
+    const answer = gate();
+    const { app, server } = await openWithServer('/admin', {
+      'POST /admin/engine/reset-breaker': async () => {
+        await answer.opened;
+        return json(200, { engine: 'typesafe', resetRequestedAt: REQUESTED });
+      },
+    });
+    await screen.findByRole('group', { name: ENGINE });
+    await app.user.click(inGroup(ENGINE).getByRole('button', { name: 'Reset breaker' }));
+    await app.user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Reset breaker' }),
+    );
+    await vi.waitFor(() => expect(app.calls('POST /admin/engine/reset-breaker')).toHaveLength(1));
+
+    server.me = null;
+    await act(() => app.session.resetAccountState());
+    // The overview as the next sign-in of this account has loaded it by now.
+    const overview = accountKey(adminMe().id, 'admin', 'overview');
+    app.queryClient.setQueryData(overview, makeOverview());
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(screen.queryByText('Waiting for the worker to apply the reset…')).toBeNull();
+    expect(app.queryClient.getQueryState(overview)?.isInvalidated).toBe(false);
+  });
 });
 
 describe('usage (spec 09 §8)', () => {
@@ -680,6 +707,30 @@ describe('feeds (spec 09 §8)', () => {
     expect(screen.queryByText('Fetch options saved.')).toBeNull();
     expect(app.queryClient.getQueryState(feeds)?.isInvalidated).toBe(false);
   });
+
+  it('refreshes nothing when the feed reset is refused once the sign-in has ended (409 merged)', async () => {
+    const answer = gate();
+    const { app, server } = await openWithServer('/admin/feeds', {
+      'GET /admin/feeds': () => json(200, page([broken])),
+      'POST /admin/feeds/:id/reset': async () => {
+        await answer.opened;
+        return failure(409, 'CONFLICT', { reason: 'merged' });
+      },
+    });
+    await screen.findByRole('table', { name: 'Feeds' });
+    await app.user.click(inRow(/Broken Blog/).getByRole('button', { name: 'Reset Broken Blog' }));
+    await vi.waitFor(() => expect(app.calls('POST /admin/feeds/:id/reset')).toHaveLength(1));
+
+    server.me = null;
+    await act(() => app.session.resetAccountState());
+    // The list as the next sign-in of this account has loaded it by now.
+    const feeds = accountKey(adminMe().id, 'admin', 'feeds');
+    app.queryClient.setQueryData(feeds, { pages: [], pageParams: [] });
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(app.queryClient.getQueryState(feeds)?.isInvalidated).toBe(false);
+  });
 });
 
 describe('users (spec 09 §8)', () => {
@@ -1068,6 +1119,30 @@ describe('invites (spec 09 §8)', () => {
       'Too many requests. Wait a moment and try again.',
     );
   });
+
+  it('shows and refreshes nothing when the invites are created once the sign-in has ended', async () => {
+    const answer = gate();
+    const { app, server } = await openWithServer('/admin/invites', {
+      'POST /admin/invites': async () => {
+        await answer.opened;
+        return json(201, { items: [makeInviteDto()], emailSent: true });
+      },
+    });
+    await screen.findByRole('table', { name: 'Invites' });
+    await app.user.click(screen.getByRole('button', { name: 'Create invites' }));
+    await vi.waitFor(() => expect(app.calls('POST /admin/invites')).toHaveLength(1));
+
+    server.me = null;
+    await act(() => app.session.resetAccountState());
+    // The list as the next sign-in of this account has loaded it by now.
+    const invites = accountKey(adminMe().id, 'admin', 'invites');
+    app.queryClient.setQueryData(invites, { pages: [], pageParams: [] });
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(screen.queryByRole('region', { name: 'New invites' })).toBeNull();
+    expect(app.queryClient.getQueryState(invites)?.isInvalidated).toBe(false);
+  });
 });
 
 describe('waitlist (spec 09 §8)', () => {
@@ -1142,6 +1217,32 @@ describe('waitlist (spec 09 §8)', () => {
       'This address already has an account, so it cannot be invited.',
     );
     expect(screen.queryByRole('region', { name: 'Invite created' })).toBeNull();
+  });
+
+  it('shows and refreshes nothing when the person is invited once the sign-in has ended', async () => {
+    const answer = gate();
+    const invite = makeInviteDto({ email: 'wait@example.com' });
+    const { app, server } = await openWithServer('/admin/waitlist', {
+      'POST /admin/waitlist/:id/invite': async () => {
+        await answer.opened;
+        const entry = makeWaitlistEntry({ invitedAt: T1, inviteCode: invite.code });
+        return json(200, { entry, invite, emailSent: true });
+      },
+    });
+    await screen.findByRole('table', { name: 'Waitlist' });
+    await app.user.click(screen.getByRole('button', { name: 'Invite wait@example.com' }));
+    await vi.waitFor(() => expect(app.calls('POST /admin/waitlist/:id/invite')).toHaveLength(1));
+
+    server.me = null;
+    await act(() => app.session.resetAccountState());
+    // The list as the next sign-in of this account has loaded it by now.
+    const waitlist = accountKey(adminMe().id, 'admin', 'waitlist');
+    app.queryClient.setQueryData(waitlist, { pages: [], pageParams: [] });
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(screen.queryByRole('region', { name: 'Invite created' })).toBeNull();
+    expect(app.queryClient.getQueryState(waitlist)?.isInvalidated).toBe(false);
   });
 });
 
