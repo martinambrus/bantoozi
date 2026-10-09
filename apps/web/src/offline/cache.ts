@@ -193,7 +193,9 @@ export async function setOfflineEnabled(
     const opened = await offlineDb();
     return opened.available && lasts() && writeOfflineEnabled(accountId, true);
   }
-  // Off before the removal, so nothing new is stored while the rows go.
+  // Off before the removal, so nothing new is stored while the rows go. The choice counts from
+  // here: a sign-out keeps it (spec 09 §1), so the account signing in again while the rows go
+  // finds offline reading off, as the person left it.
   const off = writeOfflineEnabled(accountId, false);
   const cleared = await clearAccount(accountId);
   // Rows that stay keep the choice on: turning it off can be tried again, and turning it on later
