@@ -101,7 +101,10 @@ export function writeOfflineEnabled(accountId: string, on: boolean): boolean {
   return !isOfflineEnabled(accountId);
 }
 
-/** The accounts whose stored rows could not be removed: they count as gone and go at the next start. */
+/**
+ * The accounts whose stored rows could not be removed: they count as gone until a start or a
+ * sign-in removes them.
+ */
 export function pendingPurges(): string[] {
   const raw = read(PENDING_PURGE_KEY);
   if (raw === null) return [];

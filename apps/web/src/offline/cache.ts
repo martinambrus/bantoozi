@@ -365,7 +365,8 @@ export async function readMe(accountId: string): Promise<{ me: Me; savedAt: numb
 /**
  * Removes every row of the account from every store, in one transaction over its key range. The
  * account's choice to read offline is not data and stays. True when nothing of it is left; rows
- * that could not be removed count as gone from then on and are removed again at the next start.
+ * that could not be removed count as gone from then on and are removed again at the next start or
+ * sign-in.
  */
 export async function clearAccount(accountId: string): Promise<boolean> {
   if (!isAccountId(accountId)) return true;
@@ -375,7 +376,7 @@ export async function clearAccount(accountId: string): Promise<boolean> {
   return cleared;
 }
 
-/** Removes again the rows that could not be removed before (spec 09 §1), as the page starts. */
+/** Removes again the rows that could not be removed before (spec 09 §1), at start and sign-in. */
 export async function finishPendingPurges(): Promise<void> {
   for (const accountId of pendingPurges()) await clearAccount(accountId);
 }

@@ -118,6 +118,15 @@ export function createSession(options: SessionOptions): Session {
     if (i18n.language !== me.locale) void i18n.changeLanguage(me.locale);
   }
 
+  /**
+   * Keeps the account for an offline start. What a sign-out could not remove from the device goes
+   * first: until it is gone, nothing of that account can be stored or read.
+   */
+  async function keepForOffline(me: Me) {
+    await finishPendingPurges();
+    await saveMe(me.id, me);
+  }
+
   function meChanged(me: Me | null) {
     if (me !== null) {
       const previousAccountId = knownAccountId;
@@ -125,7 +134,7 @@ export function createSession(options: SessionOptions): Session {
       applyLocale(me);
       if (!restoring) {
         writeLastAccount(me.id);
-        void saveMe(me.id, me);
+        void keepForOffline(me);
       }
       // A `/me` answer for another account (a window that shares the cookie but not the channel
       // signed in): the old account's data goes before the new one is shown.

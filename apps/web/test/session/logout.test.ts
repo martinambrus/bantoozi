@@ -3,7 +3,13 @@ import { IDBObjectStore as FakeIDBObjectStore } from 'fake-indexeddb';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { meKey } from '../../src/api/query-keys.js';
-import { readView, saveDetail, saveView, setOfflineEnabled } from '../../src/offline/cache.js';
+import {
+  readMe,
+  readView,
+  saveDetail,
+  saveView,
+  setOfflineEnabled,
+} from '../../src/offline/cache.js';
 import { LAST_ACCOUNT_KEY, PENDING_LOGOUT_KEY } from '../../src/offline/names.js';
 import { listRecords, putRecord } from '../../src/offline/queue.js';
 import { failure, noContent } from '../api/fake-fetch.js';
@@ -95,6 +101,31 @@ describe('signing out', () => {
     sessions.start({ me: null });
 
     await vi.waitFor(async () => expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]));
+  });
+
+  it('removes what could not be removed at sign-out when the account signs in again on the same page, and keeps it from then on', async () => {
+    const { session } = sessions.start({ me: userA, verifiesAs: userA });
+    await session.loadMe();
+    await seed(A);
+    const stuck = vi.spyOn(FakeIDBObjectStore.prototype, 'delete').mockImplementation(() => {
+      throw new DOMException('The disk is not available.', 'UnknownError');
+    });
+    onTestFinished(() => {
+      stuck.mockRestore();
+    });
+    await session.logout();
+    expect(rowsOf(await dumpDatabase(idb.factory), A)).not.toEqual([]);
+    stuck.mockRestore();
+
+    await session.verifyCode({ email: 'ada@example.com', code: '123456' });
+
+    await vi.waitFor(async () => expect(await readMe(A)).toMatchObject({ me: userA }));
+    const kept = rowsOf(await dumpDatabase(idb.factory), A).map(
+      ([store, key]) => `${store} ${key}`,
+    );
+    expect(kept).toEqual([`meta ${A}:manifest`, `meta ${A}:me`]);
+    expect(await saveView(A, 'view', itemList(1), VIEW)).toBe(true);
+    expect(await readView(A, 'view')).not.toBeNull();
   });
 
   it.each([
