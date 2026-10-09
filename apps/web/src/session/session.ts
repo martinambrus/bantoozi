@@ -102,7 +102,16 @@ function resetMessage(reason: ResetReason, accountId: string | undefined, at: nu
  */
 export function createSession(options: SessionOptions): Session {
   const { queryClient, i18n } = options;
-  const api = createApiClient({ fetch: options.fetch, onUnauthorized: handleUnauthorized });
+  // Counts the changes of who is signed in. A request is sent in the sign-in counted then, and a 401
+  // to it after a sign-out, or after another sign-in, is about a session that has ended already.
+  let signIns = 0;
+  const api = createApiClient({
+    fetch: options.fetch,
+    session: () => signIns,
+    onUnauthorized: (sentIn) => {
+      if (sentIn === signIns) handleUnauthorized();
+    },
+  });
   const meQuery = meQueryOptions(api);
   const listeners = new Set<() => void>();
   const channel =
@@ -171,7 +180,10 @@ export function createSession(options: SessionOptions): Session {
     const id = me?.id ?? null;
     const previous = signedInId;
     signedInId = id;
-    if (previous !== undefined && previous !== id) listeners.forEach((listener) => listener());
+    if (previous !== undefined && previous !== id) {
+      signIns += 1;
+      listeners.forEach((listener) => listener());
+    }
   }
 
   const stopWatchingCache = queryClient.getQueryCache().subscribe((event) => {

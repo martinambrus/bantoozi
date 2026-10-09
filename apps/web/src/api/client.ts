@@ -10,8 +10,13 @@ export interface ApiClientOptions {
   /** Looked up on the global at each call when absent, so a test or a polyfill can swap it. */
   fetch?: typeof fetch | undefined;
   baseUrl?: string | undefined;
-  /** Runs on a 401 from a route that depends on the session, before the error is thrown. */
-  onUnauthorized?: (() => void) | undefined;
+  /** Read as each request is sent: the session it is sent in, which `onUnauthorized` is told. */
+  session?: (() => unknown) | undefined;
+  /**
+   * Runs on a 401 from a route that depends on the session, before the error is thrown, with the
+   * session the request was sent in: a 401 to a session that has ended since is no news.
+   */
+  onUnauthorized?: ((sentIn: unknown) => void) | undefined;
 }
 
 export interface ApiClient {
@@ -38,6 +43,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     callOptions: CallOptions = {},
   ): Promise<unknown> {
     const url = baseUrl + pathOf(route, input.params) + queryOf(input.query);
+    const sentIn = options.session?.();
     let response: Response;
     let body = '';
     try {
@@ -48,7 +54,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     }
 
     if (!response.ok) {
-      if (response.status === 401 && route.auth !== 'public') options.onUnauthorized?.();
+      if (response.status === 401 && route.auth !== 'public') options.onUnauthorized?.(sentIn);
       throw httpError(response, body);
     }
     if (route.response === null) return undefined;

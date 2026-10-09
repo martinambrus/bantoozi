@@ -460,6 +460,27 @@ describe('401', () => {
     expect(order).toEqual(['hook', 'thrown']);
   });
 
+  it('tells the hook the session the request was sent in', async () => {
+    let session = 'first';
+    let answer: (response: Response) => void = () => undefined;
+    const fake = fakeFetch(
+      () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const onUnauthorized = vi.fn();
+    const client = createApiClient({ fetch: fake.fetch, session: () => session, onUnauthorized });
+    const call = settle(client.call(routes.cardList));
+    await vi.waitFor(() => expect(fake.requests).toHaveLength(1));
+
+    session = 'second';
+    answer(failure(401, 'UNAUTHENTICATED'));
+    await call;
+
+    expect(onUnauthorized).toHaveBeenCalledWith('first');
+  });
+
   it('still throws without a hook', async () => {
     const fake = fakeFetch(() => failure(401, 'UNAUTHENTICATED'));
     const error = await failureOf(createApiClient({ fetch: fake.fetch }).call(routes.meGet));

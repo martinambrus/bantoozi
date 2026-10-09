@@ -433,6 +433,62 @@ describe('a 401', () => {
     await vi.waitFor(() => expect(tab.heard).toEqual([{ type: 'reset' }]));
   });
 
+  describe('to a request sent before a sign-out', () => {
+    /** Signed in as A with a card list request that the server answers 401 once released. */
+    async function sentBeforeSignOut() {
+      const server: Server = { me: userA };
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const fake = fakeFetch(async (request) => {
+        if (request.method === 'GET' && request.pathname === '/api/v1/cards') {
+          await held;
+          return failure(401, 'UNAUTHENTICATED');
+        }
+        return api(server)(request);
+      });
+      const queryClient = createQueryClient();
+      const session = createSession({ queryClient, i18n: createI18n(), fetch: fake.fetch });
+      sessions.push(session);
+      await session.loadMe();
+      const late = session.api.call(routes.cardList).catch((error: unknown) => error);
+      await vi.waitFor(() =>
+        expect(requestsTo(fake.requests, 'GET /api/v1/cards')).toHaveLength(1),
+      );
+      await session.logout();
+      return { session, queryClient, server, release, late };
+    }
+
+    it('leaves another account signed in since alone', async () => {
+      const { session, queryClient, server, release, late } = await sentBeforeSignOut();
+      server.verifiesAs = userB;
+      await session.verifyCode({ email: 'b@example.com', code: '123456' });
+      const resets = recordResets();
+
+      release();
+      await expect(late).resolves.toMatchObject({ status: 401 });
+      await settle();
+
+      expect(resets).toEqual([]);
+      expect(queryClient.getQueryData(meKey())).toEqual(userB);
+    });
+
+    it('leaves the same account signed in again alone', async () => {
+      const { session, queryClient, server, release, late } = await sentBeforeSignOut();
+      server.verifiesAs = userA;
+      await session.verifyCode({ email: 'a@example.com', code: '123456' });
+      const resets = recordResets();
+
+      release();
+      await expect(late).resolves.toMatchObject({ status: 401 });
+      await settle();
+
+      expect(resets).toEqual([]);
+      expect(queryClient.getQueryData(meKey())).toEqual(userA);
+    });
+  });
+
   it('changes nothing when nobody is signed in', async () => {
     const resets = recordResets();
     const tab = otherTab();
