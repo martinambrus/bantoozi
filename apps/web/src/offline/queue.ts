@@ -1,6 +1,6 @@
 import type { RecordPatch } from '../features/reader/actions/types.js';
 import { offlineDatabaseMightExist, offlineDb, type OfflineDb } from './db.js';
-import { isOfflineEnabled } from './device.js';
+import { isOfflineEnabled, isPurgePending } from './device.js';
 import { clearsOf } from './epoch.js';
 import { accountRange, isAccountId, rowKey } from './names.js';
 import type { QueueRecord } from './types.js';
@@ -21,7 +21,9 @@ async function existing(): Promise<OfflineDb | null> {
 /** Keeps the record, replacing the one with its id. False while the account has not chosen offline reading. */
 export async function putRecord(record: QueueRecord): Promise<boolean> {
   const { accountId } = record;
-  if (!isAccountId(accountId) || !isOfflineEnabled(accountId)) return false;
+  if (!isAccountId(accountId) || !isOfflineEnabled(accountId) || isPurgePending(accountId)) {
+    return false;
+  }
   const clears = clearsOf(accountId);
   const opened = await offlineDb();
   if (!opened.available) return false;
@@ -34,9 +36,12 @@ export async function putRecord(record: QueueRecord): Promise<boolean> {
   }
 }
 
+/** Whether the account's records can be read: not while rows that could not be removed count as gone. */
+const readable = (accountId: string) => isAccountId(accountId) && !isPurgePending(accountId);
+
 /** The account's records, the earliest made first. */
 export async function listRecords(accountId: string): Promise<QueueRecord[]> {
-  const db = isAccountId(accountId) ? await existing() : null;
+  const db = readable(accountId) ? await existing() : null;
   if (db === null) return [];
   try {
     const records = await db.getAll('queue', accountRange(accountId));
@@ -89,7 +94,7 @@ export async function deleteRecord(accountId: string, id: string): Promise<void>
 }
 
 export async function countRecords(accountId: string): Promise<number> {
-  const db = isAccountId(accountId) ? await existing() : null;
+  const db = readable(accountId) ? await existing() : null;
   if (db === null) return 0;
   try {
     return await db.count('queue', accountRange(accountId));

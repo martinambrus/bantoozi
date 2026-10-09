@@ -6,7 +6,7 @@ import { createApiClient, type ApiClient } from '../api/client.js';
 import { isApiError, isRetryable } from '../api/errors.js';
 import { meKey } from '../api/query-keys.js';
 import { routes } from '../api/routes.js';
-import { clearAccount, readMe, saveMe } from '../offline/cache.js';
+import { clearAccount, finishPendingPurges, readMe, saveMe } from '../offline/cache.js';
 import {
   clearLastAccount,
   clearLogoutPending,
@@ -229,6 +229,8 @@ export function createSession(options: SessionOptions): Session {
 
   window.addEventListener('online', finishQuietly);
   if (navigator.onLine !== false) finishQuietly();
+  // What an earlier sign-out could not remove from the device goes now.
+  void finishPendingPurges();
 
   async function restoreOffline(cause: unknown): Promise<Me> {
     const last = readLastAccount();

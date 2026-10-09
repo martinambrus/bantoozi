@@ -3,7 +3,13 @@ import type { IDBPTransaction } from 'idb';
 
 import { isNewerState, pickReader, type ReaderState } from '../features/reader/actions/types.js';
 import { offlineDatabaseMightExist, offlineDb } from './db.js';
-import { isOfflineEnabled, writeOfflineEnabled } from './device.js';
+import {
+  isOfflineEnabled,
+  isPurgePending,
+  pendingPurges,
+  setPurgePending,
+  writeOfflineEnabled,
+} from './device.js';
 import { clearsOf, noteClear } from './epoch.js';
 import { entryOf, isExpired, plan, splitEntry, usageOf, utf8Length } from './ledger.js';
 import { LIMITS, STORES, accountRange, isAccountId, rowKey } from './names.js';
@@ -88,7 +94,9 @@ async function write(
   accountId: string,
   rowsAt: (now: number, tx: CacheTx<'readwrite'>) => Row[] | Promise<Row[]>,
 ): Promise<boolean> {
-  if (!isAccountId(accountId) || !isOfflineEnabled(accountId)) return false;
+  if (!isAccountId(accountId) || !isOfflineEnabled(accountId) || isPurgePending(accountId)) {
+    return false;
+  }
   const clears = clearsOf(accountId);
   const opened = await offlineDb();
   if (!opened.available) return false;
@@ -141,7 +149,9 @@ async function load<T>(
   accountId: string,
   read: (tx: CacheTx<'readonly'>) => Promise<T>,
 ): Promise<{ value: T; now: number } | undefined> {
-  if (!isAccountId(accountId) || !isOfflineEnabled(accountId)) return undefined;
+  if (!isAccountId(accountId) || !isOfflineEnabled(accountId) || isPurgePending(accountId)) {
+    return undefined;
+  }
   if (!(await offlineDatabaseMightExist())) return undefined;
   const opened = await offlineDb();
   if (!opened.available) return undefined;
@@ -346,11 +356,23 @@ export async function readMe(accountId: string): Promise<{ me: Me; savedAt: numb
 
 /**
  * Removes every row of the account from every store, in one transaction over its key range. The
- * account's choice to read offline is not data and stays. True when nothing of it is left.
+ * account's choice to read offline is not data and stays. True when nothing of it is left; rows
+ * that could not be removed count as gone from then on and are removed again at the next start.
  */
 export async function clearAccount(accountId: string): Promise<boolean> {
   if (!isAccountId(accountId)) return true;
   noteClear(accountId);
+  const cleared = await removeRows(accountId);
+  setPurgePending(accountId, !cleared);
+  return cleared;
+}
+
+/** Removes again the rows that could not be removed before (spec 09 §1), as the page starts. */
+export async function finishPendingPurges(): Promise<void> {
+  for (const accountId of pendingPurges()) await clearAccount(accountId);
+}
+
+async function removeRows(accountId: string): Promise<boolean> {
   if (!(await offlineDatabaseMightExist())) return true;
   const opened = await offlineDb();
   if (!opened.available) return false;
@@ -381,7 +403,8 @@ export async function offlineUsage(accountId: string): Promise<OfflineUsage> {
 async function loadManifest(
   accountId: string,
 ): Promise<{ manifest: Manifest | undefined; now: number } | undefined> {
-  if (!isAccountId(accountId) || !(await offlineDatabaseMightExist())) return undefined;
+  if (!isAccountId(accountId) || isPurgePending(accountId)) return undefined;
+  if (!(await offlineDatabaseMightExist())) return undefined;
   const opened = await offlineDb();
   if (!opened.available) return undefined;
   try {

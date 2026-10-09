@@ -1,9 +1,16 @@
-import { LAST_ACCOUNT_KEY, PENDING_LOGOUT_KEY, enabledKey, isAccountId } from './names.js';
+import {
+  LAST_ACCOUNT_KEY,
+  PENDING_LOGOUT_KEY,
+  PENDING_PURGE_KEY,
+  enabledKey,
+  isAccountId,
+} from './names.js';
 
 /**
  * What this device remembers outside the offline database, in localStorage: the account that last
- * signed in, whether a sign-out still has to reach the server, and each account's choice to keep
- * articles for offline reading. None of it is a token or a cookie.
+ * signed in, whether a sign-out still has to reach the server, each account's choice to keep
+ * articles for offline reading, and the accounts whose stored rows could not be removed yet. None
+ * of it is a token or a cookie.
  */
 
 export interface LastAccount {
@@ -92,4 +99,31 @@ export function writeOfflineEnabled(accountId: string, on: boolean): boolean {
   if (on) return write(enabledKey(accountId), '1');
   remove(enabledKey(accountId));
   return !isOfflineEnabled(accountId);
+}
+
+/** The accounts whose stored rows could not be removed: they count as gone and go at the next start. */
+export function pendingPurges(): string[] {
+  const raw = read(PENDING_PURGE_KEY);
+  if (raw === null) return [];
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (Array.isArray(value)) {
+      return value.filter((id): id is string => typeof id === 'string' && isAccountId(id));
+    }
+  } catch {
+    // A list that cannot be read counts as empty.
+  }
+  return [];
+}
+
+export function isPurgePending(accountId: string): boolean {
+  return pendingPurges().includes(accountId);
+}
+
+export function setPurgePending(accountId: string, pending: boolean): void {
+  if (!isAccountId(accountId) || isPurgePending(accountId) === pending) return;
+  const others = pendingPurges().filter((id) => id !== accountId);
+  const next = pending ? [...others, accountId] : others;
+  if (next.length === 0) remove(PENDING_PURGE_KEY);
+  else write(PENDING_PURGE_KEY, JSON.stringify(next));
 }

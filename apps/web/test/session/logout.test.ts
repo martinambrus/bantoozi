@@ -1,10 +1,11 @@
 import { screen, waitFor } from '@testing-library/react';
+import { IDBObjectStore as FakeIDBObjectStore } from 'fake-indexeddb';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { meKey } from '../../src/api/query-keys.js';
-import { saveDetail, saveView, setOfflineEnabled } from '../../src/offline/cache.js';
+import { readView, saveDetail, saveView, setOfflineEnabled } from '../../src/offline/cache.js';
 import { LAST_ACCOUNT_KEY, PENDING_LOGOUT_KEY } from '../../src/offline/names.js';
-import { putRecord } from '../../src/offline/queue.js';
+import { listRecords, putRecord } from '../../src/offline/queue.js';
 import { failure, noContent } from '../api/fake-fetch.js';
 import { READER_READS, createHarness } from '../auth/harness.js';
 import {
@@ -71,6 +72,29 @@ describe('signing out', () => {
 
     expect(isPending()).toBe(false);
     expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]);
+  });
+
+  it('removes at the next start what could not be removed at sign-out, and uses none of it meanwhile', async () => {
+    const { session } = sessions.start({ me: userA });
+    await session.loadMe();
+    await seed(A);
+    const stuck = vi.spyOn(FakeIDBObjectStore.prototype, 'delete').mockImplementation(() => {
+      throw new DOMException('The disk is not available.', 'UnknownError');
+    });
+    onTestFinished(() => {
+      stuck.mockRestore();
+    });
+
+    await expect(session.logout()).resolves.toEqual({ serverSignedOut: true });
+
+    expect(rowsOf(await dumpDatabase(idb.factory), A)).not.toEqual([]);
+    expect(await readView(A, 'view')).toBeNull();
+    expect(await listRecords(A)).toEqual([]);
+
+    stuck.mockRestore();
+    sessions.start({ me: null });
+
+    await vi.waitFor(async () => expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]));
   });
 
   it.each([

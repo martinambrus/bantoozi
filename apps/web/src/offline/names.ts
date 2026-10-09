@@ -16,6 +16,8 @@ export const LIMITS = {
 export const LAST_ACCOUNT_KEY = 'bantoozi:offline:last-account';
 /** Set while a sign-out made without a connection still has to reach the server. */
 export const PENDING_LOGOUT_KEY = 'bantoozi:offline:pending-logout';
+/** The accounts whose stored rows could not be removed yet, as a JSON array of ids. */
+export const PENDING_PURGE_KEY = 'bantoozi:offline:pending-purge';
 
 const ENABLED_PREFIX = 'bantoozi:offline:enabled:';
 
