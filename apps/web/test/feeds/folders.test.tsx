@@ -5,8 +5,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { meKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
+import { gate } from '../interests/support.js';
 import { makeMe } from '../session/fixtures.js';
-import { bodyOf } from '../support/app.js';
+import { bodyOf, type ApiRouteHandler } from '../support/app.js';
 import {
   LIST,
   RENAME,
@@ -452,6 +453,35 @@ describe('renaming a folder', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Rename folder Technology' })).toHaveFocus(),
     );
+  });
+
+  it('sends no request for the feeds or the account when the answer comes after signing in again', async () => {
+    const { app, server, dialog } = await openRename();
+    const renamed = server.routes[RENAME] as ApiRouteHandler;
+    const answer = gate();
+    server.routes[RENAME] = async (request, params) => {
+      const response = await renamed(request, params);
+      await answer.opened;
+      return response;
+    };
+    const field = within(dialog).getByLabelText('Folder name');
+    await app.user.clear(field);
+    await app.user.type(field, 'Technology');
+    await app.user.click(within(dialog).getByRole('button', { name: 'Rename' }));
+    await waitFor(() => expect(app.calls(RENAME)).toHaveLength(1));
+    const me = app.queryClient.getQueryData<Me>(meKey());
+
+    await act(() => app.session.resetAccountState());
+    act(() => {
+      app.queryClient.setQueryData(meKey(), me);
+    });
+    await screen.findAllByRole('heading', { level: 3 });
+    const asked = () => ({ feeds: app.calls(LIST).length, account: app.calls('GET /me').length });
+    const loaded = asked();
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(asked()).toEqual(loaded);
   });
 
   it('sends the name without the spaces around it', async () => {

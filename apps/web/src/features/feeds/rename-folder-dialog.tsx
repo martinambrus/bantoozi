@@ -10,6 +10,7 @@ import { Button } from '../../components/button.js';
 import { Dialog } from '../../components/dialog.js';
 import { errorMessage } from '../../components/error-message.js';
 import { TextField } from '../../components/text-field.js';
+import { useSession } from '../../session/context.js';
 import { InlineAlert } from './inline-alert.js';
 import { useSubscriptionsCache } from './subscriptions.js';
 
@@ -21,7 +22,10 @@ export interface RenameFolderDialogProps {
   onRenamed: (name: string) => void;
 }
 
-/** Renames a folder for all its feeds; the dialog closes once the renamed list is on screen. */
+/**
+ * Renames a folder for all its feeds; the dialog closes once the renamed list is on screen. An
+ * answer that comes after the sign-in that asked has ended changes nothing.
+ */
 export function RenameFolderDialog({
   folder,
   folders,
@@ -30,12 +34,15 @@ export function RenameFolderDialog({
 }: RenameFolderDialogProps) {
   const { t } = useTranslation('feeds');
   const queryClient = useQueryClient();
+  const session = useSession();
   const cache = useSubscriptionsCache();
   const [name, setName] = useState(folder);
   const rename = useApiMutation(routes.subscriptionsRenameFolder, {
+    onMutate: () => session.currentSignIn(),
     // The API renames the folder inside `preferences.folderOrder` as well. The cache hands new data
     // to the screen one tick after it has it; the dialog closes only once the screen shows it.
-    onSuccess: async () => {
+    onSuccess: async (_answer, _variables, signIn) => {
+      if (session.currentSignIn() !== signIn) return;
       await Promise.all([cache.refresh(), queryClient.invalidateQueries({ queryKey: meKey() })]);
       await new Promise((resolve) => setTimeout(resolve, 0));
     },
