@@ -1,5 +1,5 @@
 import type { CardDto, LibraryCardDto } from '@bantoozi/shared';
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
@@ -427,6 +427,31 @@ describe('adding a card', () => {
       await within(await rowOf('EV battery tech')).findByText('In your interests'),
     ).toBeVisible();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('does not add the newer version once the sign-in that asked for it has ended', async () => {
+    const answer = gate();
+    const app = await openLibrary({
+      'GET /library': page([battery]),
+      'POST /library/:id/adopt': async () => {
+        await answer.opened;
+        return failure(409, 'CONFLICT', {
+          reason: 'superseded',
+          cardId: '501',
+          currentCardId: '505',
+        });
+      },
+    });
+    const row = await rowOf('EV battery tech');
+
+    await app.user.click(within(row).getByRole('button', { name: 'Add' }));
+    await waitFor(() => expect(app.calls('POST /library/:id/adopt')).toHaveLength(1));
+
+    await act(() => app.session.resetAccountState());
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(app.calls('POST /library/:id/adopt')).toHaveLength(1);
   });
 
   it('says so when the person already has the card', async () => {

@@ -10,6 +10,7 @@ import { Button } from '../../components/button.js';
 import { errorMessage } from '../../components/error-message.js';
 import { CheckIcon, PlusIcon } from '../../components/icons.js';
 import { Select } from '../../components/select.js';
+import { useSession } from '../../session/context.js';
 import { conflictReason } from './card-errors.js';
 import { useCardCache } from './queries.js';
 import { DEFAULT_STRENGTH, STRENGTHS, isStrength, type Strength } from './strengths.js';
@@ -31,6 +32,7 @@ export interface AdoptControlProps {
 export function AdoptControl({ card, onMessage }: AdoptControlProps) {
   const { t } = useTranslation('interests');
   const cache = useCardCache();
+  const session = useSession();
   const adopt = useApiMutation(routes.libraryAdopt);
   const [strength, setStrength] = useState<Strength>(DEFAULT_STRENGTH);
   const [busy, setBusy] = useState(false);
@@ -41,6 +43,7 @@ export function AdoptControl({ card, onMessage }: AdoptControlProps) {
 
   async function add() {
     if (busy) return;
+    const signIn = session.currentSignIn();
     setBusy(true);
     onMessage(null);
     try {
@@ -50,6 +53,9 @@ export function AdoptControl({ card, onMessage }: AdoptControlProps) {
       } catch (error) {
         const current = supersededBy(error);
         if (current === undefined) throw error;
+        // Once the sign-in that asked has ended, the request would go out with the cookie of
+        // whoever signs in next, who asked for nothing.
+        if (session.currentSignIn() !== signIn) return;
         // A newer version took its place: what the person wants is the current one.
         await adoptAs(current);
         cache.hold([card.id, current]);
