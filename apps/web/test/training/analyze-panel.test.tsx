@@ -211,11 +211,40 @@ describe('sending the selection', () => {
     await waitFor(() => expect(view.onSubmitted).toHaveBeenCalledTimes(1));
     expect(view.onSubmitted).toHaveBeenCalledWith(
       picked.map(({ id }) => ({ id: requestId(Number(id)), articleId: id, status: 'pending' })),
+      ['1', '2', '3'],
     );
     expect(stale.subscriptionsStale()).toBe(true);
     expect(stale.articlesStale()).toBe(true);
     expect(view.onDrop).not.toHaveBeenCalled();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('names the articles that were sent, though more are selected when it is answered', async () => {
+    const answer = deferred<Response>();
+    const view = renderPanel({}, { routes: { [ROUTE]: () => answer.promise } });
+    await view.user.click(send());
+    await waitFor(() => expect(analyzed(view)).toHaveLength(1));
+
+    view.rerender(
+      <AnalyzePanel
+        subscription={off}
+        items={[...picked, article('4', 'Fourth story')]}
+        onSubmitted={view.onSubmitted}
+        onDrop={view.onDrop}
+      />,
+    );
+    answer.resolve(
+      json(202, {
+        requests: picked.map(({ id }) => ({
+          id: requestId(Number(id)),
+          articleId: id,
+          status: 'pending',
+        })),
+      }),
+    );
+
+    await waitFor(() => expect(view.onSubmitted).toHaveBeenCalledTimes(1));
+    expect(view.onSubmitted.mock.calls[0]?.[1]).toEqual(['1', '2', '3']);
   });
 
   it('sends once however often the button is pressed while it is sending', async () => {
@@ -590,7 +619,7 @@ function Choosing({ among }: { among: readonly ArticleListItem[] }) {
         items={selection.items}
         onDrop={selection.remove}
         onRemove={(articleId) => selection.remove([articleId])}
-        onSubmitted={() => selection.clear()}
+        onSubmitted={(_requests, sentIds) => selection.remove(sentIds)}
       />
     </>
   );
@@ -757,6 +786,36 @@ describe('where the focus goes', () => {
     expect(send('Analyze selected 1 article')).toHaveFocus();
   });
 
+  it('stays on the button of a title chosen while the articles were sent', async () => {
+    const answer = deferred<Response>();
+    const view = await choosing([1, 2], { [ROUTE]: () => answer.promise });
+    await view.user.click(send('Analyze selected 2 articles'));
+    await view.user.click(box(3));
+    act(() => {
+      remove(3).focus();
+    });
+
+    answer.resolve(answered(1, 2));
+
+    await waitFor(() => expect(titleList()).toHaveTextContent(/^Article 3/));
+    expect(remove(3)).toHaveFocus();
+  });
+
+  it('is the panel when its button for an article sent goes, and one chosen meanwhile stays', async () => {
+    const answer = deferred<Response>();
+    const view = await choosing([1, 2], { [ROUTE]: () => answer.promise });
+    await view.user.click(send('Analyze selected 2 articles'));
+    await view.user.click(box(3));
+    act(() => {
+      remove(1).focus();
+    });
+
+    answer.resolve(answered(1, 2));
+
+    await waitFor(() => expect(titleList()).toHaveTextContent(/^Article 3/));
+    expect(region()).toHaveFocus();
+  });
+
   it('stays where the person took it while the articles were sent', async () => {
     const answer = deferred<Response>();
     const view = await choosing([1, 2], { [ROUTE]: () => answer.promise });
@@ -806,6 +865,27 @@ describe('handing the focus on', () => {
     expect(returnFocus).toHaveBeenCalledTimes(1);
     expect(returnFocus).toHaveBeenCalledWith(['2']);
     expect(onRemove).toHaveBeenCalledWith('2');
+  });
+
+  it('is not asked while an article chosen meanwhile keeps the panel', async () => {
+    const answer = deferred<Response>();
+    const returnFocus = vi.fn();
+    const view = renderPanel({ returnFocus }, { routes: { [ROUTE]: () => answer.promise } });
+    await view.user.click(send());
+    await waitFor(() => expect(analyzed(view)).toHaveLength(1));
+
+    view.rerender(
+      <AnalyzePanel
+        subscription={off}
+        items={[...picked, article('4', 'Fourth story')]}
+        onSubmitted={view.onSubmitted}
+        returnFocus={returnFocus}
+      />,
+    );
+    answer.resolve(sentAll());
+
+    await waitFor(() => expect(view.onSubmitted).toHaveBeenCalledTimes(1));
+    expect(returnFocus).not.toHaveBeenCalled();
   });
 
   it('is not asked while other titles are left', async () => {
@@ -880,9 +960,10 @@ describe('an answer that comes after the panel is gone', () => {
     );
 
     await waitFor(() => expect(view.onSubmitted).toHaveBeenCalledTimes(1));
-    expect(view.onSubmitted).toHaveBeenCalledWith([
-      { id: requestId(1), articleId: '1', status: 'pending' },
-    ]);
+    expect(view.onSubmitted).toHaveBeenCalledWith(
+      [{ id: requestId(1), articleId: '1', status: 'pending' }],
+      ['1'],
+    );
     expect(
       view.queryClient
         .getQueryData<ArticleListResponse>(listed)!

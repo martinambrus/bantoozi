@@ -20,9 +20,9 @@ export interface FeedTraining {
 }
 
 /**
- * The panel is gone once the articles are sent or its last title is taken out, so the focus goes to
- * the title of the first of those articles that the list still has, else to the list, and never
- * falls to the page.
+ * The panel is gone once the articles sent were all that was chosen or its last title is taken out,
+ * so the focus goes to the title of the first of those articles that the list still has, else to
+ * the list, and never falls to the page.
  */
 function focusFirstListed(list: HTMLElement | null, articleIds: readonly string[]): void {
   const rows = Array.from(list?.children ?? []);
@@ -75,9 +75,10 @@ export function useFeedTraining(
             returnFocus={(articleIds) => {
               focusFirstListed(listRef.current, articleIds);
             }}
-            onSubmitted={() => {
+            onSubmitted={(_requests, sentIds) => {
               setRefused(false);
-              selection.clear();
+              // An article chosen while the request was on its way stays chosen.
+              selection.remove(sentIds);
             }}
           />
         </div>

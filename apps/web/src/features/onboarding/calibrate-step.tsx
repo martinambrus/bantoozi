@@ -68,10 +68,11 @@ export function CalibrateStep({ go, subscriptions, batch, onBatch }: CalibrateSt
         items={selection.items}
         onDrop={selection.remove}
         onRemove={(articleId) => selection.remove([articleId])}
-        onSubmitted={(requests) => {
+        onSubmitted={(requests, sentIds) => {
           const now = Date.now();
           onBatch((current) => joinBatch(current, subscription.feed.id, requests, now));
-          selection.clear();
+          // An article chosen while the request was on its way stays chosen.
+          selection.remove(sentIds);
         }}
       />
       {progress === null ? null : <ProgressReport progress={progress} />}

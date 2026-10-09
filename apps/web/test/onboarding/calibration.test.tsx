@@ -3,7 +3,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { UUID_V4, failure } from '../api/fake-fetch.js';
-import { restoreVisibility, setVisibility } from '../article/harness.js';
+import { deferred, restoreVisibility, setVisibility } from '../article/harness.js';
 import { createHarness } from '../auth/harness.js';
 import { makeMe } from '../session/fixtures.js';
 import { bodyOf } from '../support/app.js';
@@ -51,7 +51,7 @@ async function openStep(options: WizardOptions = {}) {
   });
   const app = await open({ path: '/onboarding?step=calibrate', server });
   await screen.findByRole('heading', { level: 1, name: 'Choose articles to teach Bantoozi' });
-  return { app, state };
+  return { app, state, server };
 }
 
 const box = (title: string) => screen.findByRole('checkbox', { name: title });
@@ -259,6 +259,40 @@ describe('analyzing the chosen articles', () => {
       ],
       expectedInferenceVersion: '4',
     });
+  });
+
+  it('keeps an article chosen while the others were being sent', async () => {
+    const opened = await openStep();
+    const { app, server } = opened;
+    const answer = deferred<void>();
+    const analyze = server.routes[ANALYZE]!;
+    server.routes[ANALYZE] = async (request, params) => {
+      await answer.promise;
+      return analyze(request, params);
+    };
+    await choose(opened, 1, 2);
+    await app.user.click(
+      screen.getByRole('button', { name: 'Start training and analyze these 2' }),
+    );
+    await waitFor(() => expect(app.calls(ANALYZE)).toHaveLength(1));
+
+    await choose(opened, 3);
+    answer.resolve(undefined);
+
+    expect(await screen.findByText('0 of 2 selected articles analyzed')).toBeVisible();
+    const panel = screen.getByRole('region', { name: 'Articles to analyze' });
+    expect(
+      within(within(panel).getByRole('list', { name: 'Selected articles' }))
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(['Article 3']);
+    expect(within(panel).getByText('1 of 20 selected')).toBeVisible();
+    expect(await box('Article 3')).toBeChecked();
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /^(Start training and analyze|Analyze selected)/ }),
+      ).toBeEnabled(),
+    );
   });
 
   it('refuses a 21st article and says so', async () => {

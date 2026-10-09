@@ -28,15 +28,19 @@ export interface AnalyzePanelProps {
   subscription: Subscription;
   /** The selected articles, in the order they are sent. */
   items: readonly ArticleListItem[];
-  /** The requests the API made, once it has accepted them. */
-  onSubmitted: (requests: AnalyzeResponse['requests']) => void;
+  /**
+   * The requests the API made, once it has accepted them, and the ids of the articles that were
+   * sent, in order: the selection may have grown meanwhile, and only these are done with.
+   */
+  onSubmitted: (requests: AnalyzeResponse['requests'], articleIds: readonly string[]) => void;
   /** The ids of selected articles the API found changed; they cannot be analyzed as chosen. */
   onDrop?: ((articleIds: readonly string[]) => void) | undefined;
   /** Takes one article out of the selection; the titles have no button for it without this. */
   onRemove?: ((articleId: string) => void) | undefined;
   /**
-   * Takes the focus the panel is about to lose: once the articles it sent are accepted (their ids,
-   * in order) or once its last title is taken out (that id). Without it the panel keeps the focus.
+   * Takes the focus the panel is about to lose: once the articles it sent are accepted and no other
+   * is chosen (their ids, in order) or once its last title is taken out (that id). Without it the
+   * panel keeps the focus.
    */
   returnFocus?: ((articleIds: readonly string[]) => void) | undefined;
 }
@@ -158,6 +162,11 @@ export function AnalyzePanel({
   const section = useRef<HTMLElement>(null);
   const removers = useRef(new Map<string, HTMLButtonElement>());
   const refocus = useRef<Refocus | null>(null);
+  // The selection as it is now, for the answer to one sent from an earlier selection.
+  const selected = useRef(items);
+  useEffect(() => {
+    selected.current = items;
+  });
   const [seen, setSeen] = useState(items);
   const [movedOn, setMovedOn] = useState<unknown>(null);
 
@@ -203,15 +212,16 @@ export function AnalyzePanel({
   }
 
   function accepted(sent: readonly ArticleListItem[], requests: AnalyzeResponse['requests']) {
+    const sentIds = sent.map(({ id }) => id);
     void subscriptions.refresh();
     recordRequests(requests);
     refreshArticles();
     const panel = section.current;
-    if (returnFocus === undefined) refocus.current = { from: sent, to: null };
-    else if (panel !== null && focusWithin(panel)) {
-      returnFocus(requests.map(({ articleId }) => articleId));
-    }
-    onSubmitted(requests);
+    // Articles chosen while these were on their way stay chosen, and the panel stays with them.
+    const stays = selected.current.some(({ id }) => !sentIds.includes(id));
+    if (returnFocus === undefined || stays) refocus.current = { from: sent, to: null };
+    else if (panel !== null && focusWithin(panel)) returnFocus(sentIds);
+    onSubmitted(requests, sentIds);
   }
 
   function refused(sent: readonly ArticleListItem[], error: unknown) {

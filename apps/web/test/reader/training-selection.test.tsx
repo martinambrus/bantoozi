@@ -436,6 +436,29 @@ describe('sending the selected articles', () => {
     expect(app.calls(ANALYZE)).toHaveLength(1);
   });
 
+  it('keeps an article chosen while the others were being sent, and the panel with it', async () => {
+    const { app, server } = await openFeed([item(1), item(2), item(3), item(4)]);
+    const answer = deferred<void>();
+    const accept = server.routes[ANALYZE]!;
+    server.routes[ANALYZE] = async (request, params) => {
+      await answer.promise;
+      return accept(request, params);
+    };
+    await choose(app, 'Article 1', 'Article 2');
+    await app.user.click(sendButton('Analyze selected 2 articles'));
+    await waitFor(() => expect(app.calls(ANALYZE)).toHaveLength(1));
+
+    await choose(app, 'Article 3');
+    answer.resolve(undefined);
+
+    expect(await within(rowOf('Article 1')).findByText('Queued for analysis')).toBeVisible();
+    const region = screen.getByRole('region', { name: 'Articles to analyze' });
+    expect(namedIn(region)).toEqual(['Article 3']);
+    expect(within(region).getByText('1 of 20 selected')).toBeVisible();
+    expect(ticked(titles(4))).toEqual(['Article 3']);
+    await waitFor(() => expect(sendButton('Analyze selected 1 article')).toBeEnabled());
+  });
+
   it('carries the request of a selected article with its like, and none with a sibling’s', async () => {
     const { app } = await openFeed([item(1), item(2), item(3)]);
     await choose(app, 'Article 1');
@@ -613,6 +636,42 @@ describe('where the focus goes when the selection is sent', () => {
     const list = rowOf('Article 3').closest('ul');
     expect(list).toHaveAttribute('tabindex', '-1');
     expect(document.activeElement).toBe(list);
+  });
+
+  it('stays on the button of a title chosen meanwhile, which keeps the panel', async () => {
+    const answer = deferred<Response>();
+    const { app } = await openFeed([item(1), item(2), item(3)], {
+      routes: { [ANALYZE]: () => answer.promise },
+    });
+    await choose(app, 'Article 1', 'Article 2');
+    await app.user.click(sendButton('Analyze selected 2 articles'));
+    await choose(app, 'Article 3');
+    act(() => {
+      removeButton('Article 3').focus();
+    });
+
+    answer.resolve(accepted(1, 2));
+
+    await waitFor(() => expect(namedIn(panel()!)).toEqual(['Article 3']));
+    expect(removeButton('Article 3')).toHaveFocus();
+  });
+
+  it('is the panel when its button for an article sent goes, and one chosen meanwhile stays', async () => {
+    const answer = deferred<Response>();
+    const { app } = await openFeed([item(1), item(2), item(3)], {
+      routes: { [ANALYZE]: () => answer.promise },
+    });
+    await choose(app, 'Article 1', 'Article 2');
+    await app.user.click(sendButton('Analyze selected 2 articles'));
+    await choose(app, 'Article 3');
+    act(() => {
+      removeButton('Article 1').focus();
+    });
+
+    answer.resolve(accepted(1, 2));
+
+    await waitFor(() => expect(namedIn(panel()!)).toEqual(['Article 3']));
+    expect(panel()).toHaveFocus();
   });
 
   it('stays where the person took it while the articles were sent', async () => {
