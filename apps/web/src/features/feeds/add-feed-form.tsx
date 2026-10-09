@@ -23,6 +23,8 @@ export function AddFeedForm() {
   const input = useRef<HTMLInputElement>(null);
   const [address, setAddress] = useState('');
   const [candidates, setCandidates] = useState<Candidates | null>(null);
+  // What the field held when the website's feeds were asked for: a chosen one clears only that.
+  const discoveredFor = useRef('');
   const [added, setAdded] = useState<{ title: string; existing: boolean } | null>(null);
   // The list learns of a new subscription even when the answer comes after the form is gone (the
   // page was left); a choice of candidates changes nothing yet.
@@ -41,8 +43,9 @@ export function AddFeedForm() {
     // The API answers 201 for a new subscription and 200 for an existing one, with the same body;
     // the client only hands on the body, so the list it showed before tells them apart.
     const knownFeeds = new Set(cache.known()?.map((subscription) => subscription.feed.id));
-    // The answer clears the field only if it still holds this text; one typed meanwhile stays.
-    const sent = address;
+    // The answer clears the field only if it still holds the text it answers; one typed meanwhile
+    // stays.
+    const sent = fromChooser ? discoveredFor.current : address;
     setAdded(null);
     if (!fromChooser) setCandidates(null);
     subscribe.mutate(
@@ -50,6 +53,7 @@ export function AddFeedForm() {
       {
         onSuccess: (result) => {
           if ('status' in result) {
+            discoveredFor.current = sent;
             setCandidates(result.candidates);
             return;
           }

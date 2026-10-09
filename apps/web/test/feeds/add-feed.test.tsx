@@ -299,6 +299,55 @@ describe('adding a feed', () => {
       expect(addressField()).toHaveValue('next.example');
     });
 
+    it('keeps an address typed while a website’s feeds were looked for, when one is chosen', async () => {
+      const { app, server } = await openFeeds();
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      server.routes[CREATE] = async (request) => {
+        const { url } = bodyOf(request) as { url: string };
+        if (url !== 'example.com') {
+          return json(201, {
+            subscription: makeSubscription({ feed: { id: '8', title: 'Main feed' } }),
+          });
+        }
+        await held;
+        return json(200, { status: 'choose', candidates: CANDIDATES });
+      };
+
+      await submit(app, 'example.com');
+      await waitFor(() => expect(app.calls(CREATE)).toHaveLength(1));
+      await app.user.clear(addressField());
+      await app.user.type(addressField(), 'next.example');
+      release();
+      const chooser = await screen.findByRole('region', { name: 'Choose a feed' });
+      await app.user.click(within(chooser).getByRole('button', { name: 'Add Main feed' }));
+
+      expect(await screen.findByText(/^Added “Main feed”\./)).toBeVisible();
+      expect(addressField()).toHaveValue('next.example');
+    });
+
+    it('keeps an address typed after a website’s feeds were shown, when one is chosen', async () => {
+      const { app, server } = await openFeeds();
+      server.routes[CREATE] = (request) => {
+        const { url } = bodyOf(request) as { url: string };
+        return url === 'example.com'
+          ? json(200, { status: 'choose', candidates: CANDIDATES })
+          : json(201, {
+              subscription: makeSubscription({ feed: { id: '8', title: 'Main feed' } }),
+            });
+      };
+
+      await submit(app, 'example.com');
+      const chooser = await screen.findByRole('region', { name: 'Choose a feed' });
+      await app.user.type(addressField(), '/blog');
+      await app.user.click(within(chooser).getByRole('button', { name: 'Add Main feed' }));
+
+      expect(await screen.findByText(/^Added “Main feed”\./)).toBeVisible();
+      expect(addressField()).toHaveValue('example.com/blog');
+    });
+
     it('still refreshes the list when the answer comes after the page was left', async () => {
       const { app, server } = await openFeeds();
       let release: () => void = () => undefined;
