@@ -163,6 +163,31 @@ describe('admin settings editors (spec 09 §8)', () => {
     expect(save(LLM_CAP)).toBeDisabled();
   });
 
+  it('keeps an edit made while the save was on its way, still to be saved', async () => {
+    const state = { values: { ...SETTINGS_VALUES } };
+    const apply = applyingPatch(state);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const app = await openSettings({
+      'PATCH /admin/settings': async (request, params) => {
+        await held;
+        return apply(request, params);
+      },
+    });
+    await replaceText(app, BUDGET, '7.5');
+    await app.user.click(save(BUDGET));
+
+    await app.user.type(editor(BUDGET), '5');
+    release();
+
+    expect(await screen.findByText(`Saved ${BUDGET}.`)).toBeVisible();
+    expect(editor(BUDGET)).toHaveValue('7.55');
+    expect(save(BUDGET)).toBeEnabled();
+    expect(bodyOf(app.calls('PATCH /admin/settings')[0]!)).toEqual({ [BUDGET]: 7.5 });
+  });
+
   it('says when the saved value was already in effect', async () => {
     const state = { values: { ...SETTINGS_VALUES } };
     const app = await openSettings({ 'PATCH /admin/settings': applyingPatch(state) });

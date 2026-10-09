@@ -85,13 +85,15 @@ export function SettingEditor({
 
   async function save() {
     if (!checked.ok) return;
+    const sent = text;
     setFailure(null);
     try {
       const result = await update.mutateAsync({
         body: { [settingKey]: checked.value } as AdminSettingsPatch,
       });
       onSaved(result);
-      setEdit(null);
+      // Text edited while the save was on its way stays, still to be saved.
+      setEdit((current) => (current === sent ? null : current));
       toast.show({
         message: t(result.changed.includes(settingKey) ? 'settings.saved' : 'settings.unchanged', {
           key: settingKey,
