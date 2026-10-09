@@ -393,6 +393,24 @@ describe('analysis.process fences (spec 03 §2.2, spec 05 §1.1)', () => {
     expect(await h.facetRow(t.articleId)).toBeNull();
   });
 
+  it('a request still queued when its feed is switched off is cancelled at claim, before any call', async () => {
+    const t = await trainee({ cards: 1 });
+    const { requestId } = await h.select(t.userId, t.feedId, t.articleId);
+    await h.setMode(t.userId, t.feedId, 'off');
+    const since = await h.mark();
+
+    await processRequest(requestId);
+
+    expect(requestAsks(requestId)).toEqual([]);
+    expect(await h.analysis(requestId)).toMatchObject({
+      status: 'cancelled',
+      lastErrorCode: 'revoked',
+      resultSnapshot: null,
+    });
+    expect(await h.facetRow(t.articleId)).toBeNull();
+    expect(await h.payloads('user.rank', since)).toEqual([]);
+  });
+
   it('a mode version change during the last call fences completion: cancelled, nothing published', async () => {
     const t = await trainee({ cards: 1 });
     const { requestId } = await h.select(t.userId, t.feedId, t.articleId);
