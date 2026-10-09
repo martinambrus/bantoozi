@@ -328,6 +328,21 @@ describe('a sign-out that has not reached the server', () => {
       await vi.waitFor(() => expect(isPending()).toBe(false));
     });
 
+    it('waits no longer than a timer can hold, so a far Retry-After does not send it again at once', async () => {
+      const { session, requests } = sessions.start({
+        me: userA,
+        logout: () => failure(503, 'UNAVAILABLE', undefined, { 'retry-after': '9999999999' }),
+      });
+      await session.loadMe();
+      fakeTimers();
+      await expect(session.logout()).resolves.toEqual({ serverSignedOut: false });
+
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+      expect(requestsTo(requests, 'POST /api/v1/auth/logout')).toHaveLength(1);
+      expect(isPending()).toBe(true);
+    });
+
     it('waits twice as long after each failure while the server keeps failing', async () => {
       signedOutOffline();
       let answer = () => failure(500, 'INTERNAL');

@@ -5,6 +5,7 @@ import type { i18n as I18n } from 'i18next';
 import { createApiClient, type ApiClient } from '../api/client.js';
 import { isApiError, isRetryable } from '../api/errors.js';
 import { meKey } from '../api/query-keys.js';
+import { retryLaterMs } from '../api/retry-later.js';
 import { routes } from '../api/routes.js';
 import {
   clearAccount,
@@ -31,11 +32,6 @@ import { runResetHooks, type ResetReason } from './reset.js';
 export const SESSION_CHANNEL = 'bantoozi:session';
 
 const ME_HASH = hashKey(meKey());
-
-/** The first wait before a refused sign-out is sent again; it doubles after each failure. */
-const LOGOUT_RETRY_FIRST_MS = 2_000;
-/** The longest wait between two tries. */
-const LOGOUT_RETRY_MAX_MS = 5 * 60_000;
 
 export interface SessionOptions {
   queryClient: QueryClient;
@@ -248,15 +244,14 @@ export function createSession(options: SessionOptions): Session {
   /**
    * Sends a sign-out the server refused for now (network, 5xx, 429) again while the browser reports
    * a connection: a server that answers again sends no `online` event. The wait doubles up to five
-   * minutes and is never shorter than the server's Retry-After (spec 09 §1).
+   * minutes and is never shorter than the server's Retry-After (`retryLaterMs`, spec 09 §1).
    */
   function retryLogoutLater(error: unknown) {
     clearTimeout(logoutRetry);
     if (disposed || !isRetryable(error) || navigator.onLine === false) return;
-    const backoff = Math.min(LOGOUT_RETRY_FIRST_MS * 2 ** logoutFailures, LOGOUT_RETRY_MAX_MS);
     logoutFailures += 1;
-    const asked = isApiError(error) ? (error.retryAfterMs ?? 0) : 0;
-    logoutRetry = setTimeout(finishQuietly, Math.max(backoff, asked));
+    const asked = isApiError(error) ? error.retryAfterMs : null;
+    logoutRetry = setTimeout(finishQuietly, retryLaterMs(logoutFailures, asked));
   }
 
   function finishQuietly() {
