@@ -88,6 +88,12 @@ function CardRow({ card, subscriptions, onEdit, onDelete }: CardRowProps) {
     }
   }
 
+  // A removal gives the card a new id, so a request for the old one would fail, or its answer would
+  // bring the old card back beside the new one: nothing else is sent for the card while a removal
+  // is on its way, and no removal, edit or deletion starts while a change is.
+  const removingExample = removing !== null;
+  const busy = removingExample || update.isPending;
+
   async function remove(side: ExampleSide, text: string) {
     setRemoving(exampleKey(side, text));
     try {
@@ -131,9 +137,14 @@ function CardRow({ card, subscriptions, onEdit, onDelete }: CardRowProps) {
           label: (text) => t('card.removeExample', { text }),
           onRemove: (side, text) => void remove(side, text),
           removing,
+          held: update.isPending,
         }}
       />
-      <div className="flex flex-wrap items-end gap-4">
+      <fieldset
+        disabled={removingExample}
+        role="none"
+        className="flex min-w-0 flex-wrap items-end gap-4"
+      >
         <StrengthControl
           value={card.strength}
           onChange={(strength) => {
@@ -145,12 +156,22 @@ function CardRow({ card, subscriptions, onEdit, onDelete }: CardRowProps) {
           subscriptions={subscriptions}
           onChange={(scopeFeedId) => void change({ scopeFeedId })}
         />
-      </div>
+      </fieldset>
       <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" aria-describedby={titleId} onClick={() => onEdit(card)}>
+        <Button
+          variant="secondary"
+          aria-describedby={titleId}
+          disabled={busy}
+          onClick={() => onEdit(card)}
+        >
           {t('common:actions.edit')}
         </Button>
-        <Button variant="ghost" aria-describedby={titleId} onClick={() => onDelete(card)}>
+        <Button
+          variant="ghost"
+          aria-describedby={titleId}
+          disabled={busy}
+          onClick={() => onDelete(card)}
+        >
           <TrashIcon className="size-4" />
           {t('common:actions.delete')}
         </Button>

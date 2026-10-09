@@ -651,6 +651,70 @@ describe('examples', () => {
     expect(app.calls('POST /cards/:id/examples/remove')).toHaveLength(1);
   });
 
+  it('takes no strength, scope, edit or deletion while an example is being removed', async () => {
+    let answer!: () => void;
+    const app = await openMine(
+      { cards: [garden] },
+      {
+        'POST /cards/:id/examples/remove': async () => {
+          await new Promise<void>((resolve) => {
+            answer = resolve;
+          });
+          return json(
+            200,
+            cardResult({ ...garden, id: '202', examplesYes: [] }, { from: '102', to: '202' }),
+          );
+        },
+      },
+    );
+    const row = await rowOf('Gardening');
+
+    await app.user.click(
+      within(row).getByRole('button', { name: 'Remove example: How I grew tomatoes on a balcony' }),
+    );
+    await waitFor(() => expect(app.calls('POST /cards/:id/examples/remove')).toHaveLength(1));
+
+    expect(within(row).getByRole('radio', { name: 'Like' })).toBeDisabled();
+    expect(within(row).getByLabelText('Applies to')).toBeDisabled();
+    expect(within(row).getByRole('button', { name: 'Edit' })).toBeDisabled();
+    expect(within(row).getByRole('button', { name: 'Delete' })).toBeDisabled();
+
+    answer();
+    const moved = await rowOf('Gardening');
+    await waitFor(() => expect(within(moved).getByRole('radio', { name: 'Like' })).toBeEnabled());
+    expect(app.calls('PATCH /cards/:id')).toHaveLength(0);
+  });
+
+  it('removes no example and starts no edit or deletion while a strength change is on its way', async () => {
+    let answer!: () => void;
+    const app = await openMine(
+      { cards: [garden] },
+      {
+        'PATCH /cards/:id': async () => {
+          await new Promise<void>((resolve) => {
+            answer = resolve;
+          });
+          return json(200, cardResult({ ...garden, strength: 'like' }));
+        },
+      },
+    );
+    const row = await rowOf('Gardening');
+    const lawn = () =>
+      within(row).getByRole('button', { name: 'Remove example: Lawn care schedule' });
+
+    await app.user.click(within(row).getByRole('radio', { name: 'Like' }));
+    await waitFor(() => expect(app.calls('PATCH /cards/:id')).toHaveLength(1));
+
+    expect(lawn()).toBeDisabled();
+    expect(within(row).getByRole('button', { name: 'Edit' })).toBeDisabled();
+    expect(within(row).getByRole('button', { name: 'Delete' })).toBeDisabled();
+    expect(within(row).getByRole('radio', { name: 'Must' })).toBeEnabled();
+
+    answer();
+    await waitFor(() => expect(lawn()).toBeEnabled());
+    expect(app.calls('POST /cards/:id/examples/remove')).toHaveLength(0);
+  });
+
   it('keeps the example and says why when removing it fails', async () => {
     const app = await openMine(
       { cards: [garden] },

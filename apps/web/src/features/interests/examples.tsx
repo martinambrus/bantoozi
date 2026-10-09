@@ -16,6 +16,8 @@ export interface ExampleRemoval {
    * it: each removal gives the card or label a new id, which the next one is sent for.
    */
   removing: string | null;
+  /** True while another request for the card or label is on its way, which a removal waits for. */
+  held?: boolean | undefined;
 }
 
 export interface ExampleListsProps {
@@ -65,7 +67,7 @@ function ExampleSection({
             {removal === undefined ? null : (
               <IconButton
                 label={removal.label(text)}
-                disabled={removal.removing !== null}
+                disabled={removal.removing !== null || removal.held === true}
                 onClick={() => removal.onRemove(side, text)}
               >
                 <CloseIcon className="size-4" />

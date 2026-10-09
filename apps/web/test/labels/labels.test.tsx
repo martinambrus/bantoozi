@@ -614,6 +614,34 @@ describe('removing an example', () => {
     );
   });
 
+  it('starts no edit or deletion while an example is being removed', async () => {
+    let answer!: () => void;
+    const app = await openLabels([readLater], {
+      'POST /labels/:id/examples/remove': async () => {
+        await new Promise<void>((resolve) => {
+          answer = resolve;
+        });
+        return json(
+          200,
+          labelResult({ ...readLater, id: '72', examplesYes: [] }, { from: '31', to: '72' }),
+        );
+      },
+    });
+    const row = await rowOf('Read later');
+
+    await app.user.click(
+      within(row).getByRole('button', { name: 'Remove example: A long essay about ferries' }),
+    );
+    await waitFor(() => expect(app.calls('POST /labels/:id/examples/remove')).toHaveLength(1));
+
+    expect(within(row).getByRole('button', { name: 'Edit' })).toBeDisabled();
+    expect(within(row).getByRole('button', { name: 'Delete' })).toBeDisabled();
+
+    answer();
+    const moved = await rowOf('Read later');
+    await waitFor(() => expect(within(moved).getByRole('button', { name: 'Edit' })).toBeEnabled());
+  });
+
   it('swaps the id in the list when removing an example gives the label a new id', async () => {
     const app = await openLabels([readLater, recipes], {
       'POST /labels/:id/examples/remove': () =>

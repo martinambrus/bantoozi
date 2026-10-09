@@ -82,11 +82,22 @@ function LabelRow({ label, onEdit, onDelete }: LabelRowProps) {
           removing,
         }}
       />
+      {/* A removal gives the label a new id: an edit or a deletion sent for the old one would fail. */}
       <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" aria-describedby={titleId} onClick={() => onEdit(label)}>
+        <Button
+          variant="secondary"
+          aria-describedby={titleId}
+          disabled={removing !== null}
+          onClick={() => onEdit(label)}
+        >
           {t('common:actions.edit')}
         </Button>
-        <Button variant="ghost" aria-describedby={titleId} onClick={() => onDelete(label)}>
+        <Button
+          variant="ghost"
+          aria-describedby={titleId}
+          disabled={removing !== null}
+          onClick={() => onDelete(label)}
+        >
           <TrashIcon className="size-4" />
           {t('common:actions.delete')}
         </Button>
