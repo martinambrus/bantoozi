@@ -265,7 +265,7 @@ flowchart TD
 | **M3b** Run gate G1 | M3a + human ratings | M6, M7-T1…T6 | yes (needs API keys and network) | S | ✓ done 2026-10-08 (§9): `owner_pilot` PASS |
 | **M4** HTTP API | M1, M2 | M3a, M5 | yes | L | ✓ done 2026-10-01 (§10) |
 | **M5** Ranking & lanes | M1, M2 | M3a, M4 | yes | M | ✓ done 2026-10-01 (§11) |
-| **M6** Web app (PWA) | M4, M5 | M3b | yes | L | not started |
+| **M6** Web app (PWA) | M4, M5 | M3b | yes | L | ✓ done 2026-10-09 (§12) |
 | **M7** Personal learning & suggestions | M4, M5, M6 (its goal runs E2E), and **M3b for T7** (run T7 last, after M3b is merged) | M8 | yes | M | not started |
 | **M8** Operations & launch readiness | M4, M5, M6, and M3b applied; final launch gate also requires all M7 | M7 implementation only | mostly (one-time host setup is manual) | M | not started |
 | **M9** Optional extensions | launch | — | per item | — | not started |
@@ -1118,6 +1118,24 @@ is ≥ 80 %.
 
 ## 12. M6: Web app (PWA)
 
+**Status: done 2026-10-09** on branch `claude/project-thread-w5x5cc` (212 commits from `07810b3` on;
+each task's commits are in the table below; PR #22 review and CI fixes `f3dd5a1`…`a5fc86b`). The
+full check passed after the last commit (web 4070 tests in 129 files, and `pnpm e2e` 38 tests,
+including the eleven smoke scenarios, `pwa.pw.ts` 15 and `a11y.pw.ts` 4; CI and the Codex review
+were green on `a5fc86b`). Deviations: D-150…D-160 in `docs/DECISIONS.md`. No migrations. Merged to
+`main` on 2026-10-09 through PR #22 (merge commit `acb47a6`); the M6 report is in the PR
+description. Handoffs: M7 builds on the reader's example suggestions and the "Did you like it?"
+prompt; `pnpm e2e` starts the API, the worker, the fixture feeds and the fake TypeSafe server
+through Playwright `webServer`, and `E2E_PORT_BASE` moves every port so worktrees can run side by
+side; M7-T7 needs the golden database on the owner's machine. M8: `e2e/env.pw.ts` checks the
+production CSP of spec 11; `bookmark-mirror.pw.ts` simulates the 30-day compression of a bookmark
+copy with SQL until `house.purge-bodies` (M8-T2); M8-T7 checks the starter bundle URLs, which were
+written without a live check. Open: one preferences writer per account, so saves of a preference
+from two screens go out in order (an owner decision); selecting an article before extraction also
+starts the automatic chain in the worker (a design item); low: a saved offline list row can show an
+older title under a newer content revision until the next list load; five small focus and form items
+listed in the M6 report.
+
 **Outcome:** the full reader experience of spec 09: login, join and onboarding; lanes with swipe and
 keyboard training; "Why this?"; the feeds, interests, labels, rules and settings screens; admin; PWA
 offline; E2E smoke tests in CI.
@@ -1132,17 +1150,17 @@ Complete milestone M6 "Web app" exactly as specified in docs/PLAN.md §12 and do
 
 **Tasks**
 
-| ID | Task | Needs | Lane | Specs |
-|---|---|---|---|---|
-| M6-T1 | App shell: API client, router, i18n (per feature), theme, layout, auth guard, login/join/waitlist | — | A | 09 §1–2 |
-| M6-T2 | Reader: lanes, counts, list items (structured `topReason`), tier slider, sorts, mark-all-read, Simple mode, clusters, optimistic updates, undo | T1 | A | 09 §3.1–3.3 |
-| M6-T3 | Swipe gestures, reason bar, the example-suggestion toast action, keyboard shortcuts and overlay | T2 | B | 09 §3.3–3.4 |
-| M6-T4 | "Why this?" drawer and its actions; the "Did you like it?" prompt | T2 | B | 09 §3.5–3.6 |
-| M6-T5 | Onboarding wizard (feeds default off, interests, explicit selected-article training, optional enable, `onboardingCompletedAt`) | T2 | C | 09 §4 |
-| M6-T6 | Feeds manager (folders), Interests (cards, library, suggestions, editor), Labels, Rules, Settings | T1 | C | 09 §5–7 |
-| M6-T7 | Admin UI including provider credential lifecycle and consent status | T1 | D | 09 §8 |
-| M6-T8 | PWA: manifest, service worker, account-scoped offline store, foreground replay plus optional Background Sync; accessibility pass | T2, T9 | D | 09 §1, §9 (PWA check) |
-| M6-T9 | Playwright environment (`webServer`) and eleven smoke scenarios (PWA test belongs to T8), added to CI | T2–T7 | E | 09 §9; 01 §7 |
+| ID | Task | Needs | Lane | Specs | Status |
+|---|---|---|---|---|---|
+| M6-T1 | App shell: API client, router, i18n (per feature), theme, layout, auth guard, login/join/waitlist | — | A | 09 §1–2 | ✓ `07810b3`…`f4ddadd` (35) |
+| M6-T2 | Reader: lanes, counts, list items (structured `topReason`), tier slider, sorts, mark-all-read, Simple mode, clusters, optimistic updates, undo | T1 | A | 09 §3.1–3.3 | ✓ `fcf90e0`…`5bd1944` (27) |
+| M6-T3 | Swipe gestures, reason bar, the example-suggestion toast action, keyboard shortcuts and overlay | T2 | B | 09 §3.3–3.4 | ✓ `775a7b6`…`eeb8519` (8) |
+| M6-T4 | "Why this?" drawer and its actions; the "Did you like it?" prompt | T2 | B | 09 §3.5–3.6 | ✓ `ea0bdc0`…`eb4372d` (9) |
+| M6-T5 | Onboarding wizard (feeds default off, interests, explicit selected-article training, optional enable, `onboardingCompletedAt`) | T2 | C | 09 §4 | ✓ `7349f63`…`dd0bd5a` (8) |
+| M6-T6 | Feeds manager (folders), Interests (cards, library, suggestions, editor), Labels, Rules, Settings | T1 | C | 09 §5–7 | ✓ `ea596e6`…`ed891a7` (51) |
+| M6-T7 | Admin UI including provider credential lifecycle and consent status | T1 | D | 09 §8 | ✓ `b9efa52`…`4988f06` (13) |
+| M6-T8 | PWA: manifest, service worker, account-scoped offline store, foreground replay plus optional Background Sync; accessibility pass | T2, T9 | D | 09 §1, §9 (PWA check) | ✓ `71fe310`…`a5fc86b` (38) |
+| M6-T9 | Playwright environment (`webServer`) and eleven smoke scenarios (PWA test belongs to T8), added to CI | T2–T7 | E | 09 §9; 01 §7 | ✓ `7fc3790`…`9ec3ee3` (18) |
 
 **Done when:**
 
