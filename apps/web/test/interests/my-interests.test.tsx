@@ -467,6 +467,82 @@ describe('changing the strength', () => {
     expect(screen.queryByText('Too many requests. Wait a moment and try again.')).toBeNull();
   });
 
+  it('keeps the strength the account shows after signing in again when the earlier answer comes', async () => {
+    const answer = gate();
+    const held = [rust];
+    const app = await openMine(
+      { cards: held },
+      {
+        'PATCH /cards/:id': async (request) => {
+          await answer.opened;
+          return json(200, cardResult({ ...rust, ...(bodyOf(request) as Partial<CardDto>) }));
+        },
+      },
+    );
+    await app.user.click(
+      within(await rowOf('Rust programming')).getByRole('radio', { name: 'Must' }),
+    );
+    await waitFor(() => expect(app.calls('PATCH /cards/:id')).toHaveLength(1));
+    const me = app.queryClient.getQueryData<Me>(meKey());
+
+    await act(() => app.session.resetAccountState());
+    // Signed in again, the account holds the card at another strength.
+    held[0] = { ...rust, strength: 'never' };
+    act(() => {
+      app.queryClient.setQueryData(meKey(), me);
+    });
+    expect(
+      within(await rowOf('Rust programming')).getByRole('radio', { name: 'Never' }),
+    ).toBeChecked();
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(app.queryClient.getQueryData<CardDto[]>(CARDS_KEY)?.[0]?.strength).toBe('never');
+    expect(
+      within(screen.getByRole('listitem', { name: 'Rust programming' })).getByRole('radio', {
+        name: 'Never',
+      }),
+    ).toBeChecked();
+  });
+
+  it('takes nothing back after signing in again when the earlier save fails', async () => {
+    const answer = gate();
+    const held = [rust];
+    const app = await openMine(
+      { cards: held },
+      {
+        'PATCH /cards/:id': async () => {
+          await answer.opened;
+          return failure(429, 'RATE_LIMITED');
+        },
+      },
+    );
+    await app.user.click(
+      within(await rowOf('Rust programming')).getByRole('radio', { name: 'Never' }),
+    );
+    await waitFor(() => expect(app.calls('PATCH /cards/:id')).toHaveLength(1));
+    const me = app.queryClient.getQueryData<Me>(meKey());
+
+    await act(() => app.session.resetAccountState());
+    // Signed in again, the account holds the card at the strength that was sent.
+    held[0] = { ...rust, strength: 'never' };
+    act(() => {
+      app.queryClient.setQueryData(meKey(), me);
+    });
+    expect(
+      within(await rowOf('Rust programming')).getByRole('radio', { name: 'Never' }),
+    ).toBeChecked();
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(app.queryClient.getQueryData<CardDto[]>(CARDS_KEY)?.[0]?.strength).toBe('never');
+    expect(
+      within(screen.getByRole('listitem', { name: 'Rust programming' })).getByRole('radio', {
+        name: 'Never',
+      }),
+    ).toBeChecked();
+  });
+
   it('takes a waiting change back to what the server holds when it fails after the one before it', async () => {
     const answers = [gate(), gate()];
     let sent = 0;

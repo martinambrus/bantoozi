@@ -3,7 +3,7 @@ import { useCallback, useMemo } from 'react';
 
 import { isApiError } from '../../api/errors.js';
 import { accountKey } from '../../api/query-keys.js';
-import { useAccountId } from '../../session/context.js';
+import { useAccountId, useSignInLasts } from '../../session/context.js';
 
 /** Query keys of the admin screens, all under the signed-in account (spec 09 §1). */
 export function useAdminKey() {
@@ -15,14 +15,20 @@ export function useAdminKey() {
   );
 }
 
-/** Marks everything cached under one admin screen as stale and loads what is on screen again. */
+/**
+ * Marks everything cached under one admin screen as stale and loads what is on screen again.
+ * Nothing, once the sign-in the screen was mounted in has ended.
+ */
 export function useRefresh() {
   const queryClient = useQueryClient();
   const adminKey = useAdminKey();
+  const lasts = useSignInLasts();
   return useCallback(
-    (...parts: readonly unknown[]) =>
-      queryClient.invalidateQueries({ queryKey: adminKey(...parts) }),
-    [queryClient, adminKey],
+    (...parts: readonly unknown[]) => {
+      if (!lasts()) return Promise.resolve();
+      return queryClient.invalidateQueries({ queryKey: adminKey(...parts) });
+    },
+    [queryClient, adminKey, lasts],
   );
 }
 

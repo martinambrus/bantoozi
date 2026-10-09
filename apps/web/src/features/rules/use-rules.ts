@@ -4,7 +4,7 @@ import { useCallback } from 'react';
 import { useApi } from '../../api/context.js';
 import { accountKey } from '../../api/query-keys.js';
 import { routes } from '../../api/routes.js';
-import { useAccountId } from '../../session/context.js';
+import { useAccountId, useSignInLasts } from '../../session/context.js';
 import { articleKeys } from '../article/query-keys.js';
 
 /** Everything cached for the rules of the signed-in account. */
@@ -23,13 +23,16 @@ export function useRules() {
 
 /**
  * After a rule is added or deleted: the rules load again, and so does every article view, since a
- * rule changes what the reader shows and in which order.
+ * rule changes what the reader shows and in which order. Nothing loads again once the sign-in the
+ * screen was mounted in has ended.
  */
 export function useRefreshAfterRuleChange(): () => void {
   const queryClient = useQueryClient();
   const accountId = useAccountId();
+  const lasts = useSignInLasts();
   return useCallback(() => {
+    if (!lasts()) return;
     void queryClient.invalidateQueries({ queryKey: accountKey(accountId, 'rules') });
     void queryClient.invalidateQueries({ queryKey: articleKeys.all(accountId) });
-  }, [queryClient, accountId]);
+  }, [queryClient, accountId, lasts]);
 }

@@ -1,6 +1,6 @@
 import type { Me } from '@bantoozi/shared';
 import { useQuery } from '@tanstack/react-query';
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
 
 import { useApi } from '../api/context.js';
 import { meQueryOptions } from './me.js';
@@ -15,6 +15,21 @@ export function SessionProvider({ session, children }: { session: Session; child
 /** The session, or null where a screen is rendered without a `<SessionProvider>`. */
 export function useOptionalSession(): Session | null {
   return useContext(SessionContext);
+}
+
+/**
+ * Whether the sign-in this component was mounted in still lasts. Everything under `_authed` unmounts
+ * when it ends, but an answer can come later, and the same account, signed in again, loads its cache
+ * under the same keys: what such an answer would write there belongs to a sign-in that has ended.
+ * Without a `<SessionProvider>`, it always lasts.
+ */
+export function useSignInLasts(): () => boolean {
+  const session = useOptionalSession();
+  const [signIn] = useState(() => session?.currentSignIn());
+  return useCallback(
+    () => session === null || session.currentSignIn() === signIn,
+    [session, signIn],
+  );
 }
 
 /** The session for the screens that sign in and out. */

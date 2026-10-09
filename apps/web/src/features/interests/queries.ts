@@ -15,7 +15,7 @@ import { useApi } from '../../api/context.js';
 import { accountKey } from '../../api/query-keys.js';
 import type { RouteOutput } from '../../api/route.js';
 import { routes } from '../../api/routes.js';
-import { useAccountId } from '../../session/context.js';
+import { useAccountId, useSignInLasts } from '../../session/context.js';
 import { recordCardMove } from './card-moves.js';
 import { mergeById } from './merge-by-id.js';
 
@@ -164,14 +164,20 @@ function holdLibraryCard(data: InfiniteData<LibraryPage> | undefined, ids: reado
  * Keeps the caches in step with what a card mutation just did. Cards are immutable, so an answer
  * can carry an `idChange`: the list takes the new id in the old one's place. Every change can
  * alter what the reader shows (rankings, explanations that name cards), so the account's article
- * queries are marked stale after each one.
+ * queries are marked stale after each one. With `lasts`, nothing changes once the sign-in the
+ * screen was mounted in has ended.
  */
-export function cardCache(queryClient: QueryClient, accountId: string) {
+export function cardCache(
+  queryClient: QueryClient,
+  accountId: string,
+  lasts: () => boolean = () => true,
+) {
   const refreshArticles = () => {
     void queryClient.invalidateQueries({ queryKey: articlesKey(accountId) });
   };
   return {
     apply(result: { card: CardDto; idChange: IdChange | null }) {
+      if (!lasts()) return;
       if (result.idChange !== null) recordCardMove(accountId, result.idChange);
       writeQueryData<CardDto[]>(queryClient, cardsKey(accountId), (cards) =>
         cards === undefined ? cards : mergeById(cards, result.card, result.idChange),
@@ -180,6 +186,7 @@ export function cardCache(queryClient: QueryClient, accountId: string) {
       refreshArticles();
     },
     remove(id: string) {
+      if (!lasts()) return;
       writeQueryData<CardDto[]>(queryClient, cardsKey(accountId), (cards) =>
         cards?.filter((card) => card.id !== id),
       );
@@ -188,6 +195,7 @@ export function cardCache(queryClient: QueryClient, accountId: string) {
     },
     /** Shows a change before the server has answered; `undo` takes back only what it changed. */
     patch(id: string, changes: Partial<Pick<CardDto, 'strength' | 'scopeFeedId'>>) {
+      if (!lasts()) return undefined;
       const before = queryClient
         .getQueryData<CardDto[]>(cardsKey(accountId))
         ?.find((card) => card.id === id);
@@ -202,6 +210,7 @@ export function cardCache(queryClient: QueryClient, accountId: string) {
       before: Pick<CardDto, 'strength' | 'scopeFeedId'>,
       changes: Partial<Pick<CardDto, 'strength' | 'scopeFeedId'>>,
     ) {
+      if (!lasts()) return;
       writeQueryData<CardDto[]>(queryClient, cardsKey(accountId), (cards) =>
         cards?.map((card) => {
           if (card.id !== id) return card;
@@ -217,13 +226,16 @@ export function cardCache(queryClient: QueryClient, accountId: string) {
       );
     },
     refreshCards() {
+      if (!lasts()) return;
       void queryClient.invalidateQueries({ queryKey: cardsKey(accountId) });
     },
     refreshUpdates() {
+      if (!lasts()) return;
       void queryClient.invalidateQueries({ queryKey: updatesKey(accountId) });
     },
     /** The person now holds these library cards. */
     hold(ids: readonly string[]) {
+      if (!lasts()) return;
       writeQueriesData<InfiniteData<LibraryPage>>(queryClient, libraryKey(accountId), (data) =>
         holdLibraryCard(data, ids),
       );
@@ -232,24 +244,29 @@ export function cardCache(queryClient: QueryClient, accountId: string) {
       );
     },
     refreshLibrary() {
+      if (!lasts()) return;
       void queryClient.invalidateQueries({ queryKey: libraryKey(accountId) });
     },
     dropSuggestion(cardId: string) {
+      if (!lasts()) return;
       writeQueryData<Suggestion[]>(queryClient, suggestionsKey(accountId), (list) =>
         list?.filter((suggestion) => suggestion.card.id !== cardId),
       );
     },
     /** The server's answer to a response replaces the publication request it was about. */
     replaceRequest(request: PublicationRequest) {
+      if (!lasts()) return;
       writeQueryData<PublicationRequest[]>(queryClient, requestsKey(accountId), (list) =>
         list?.map((candidate) => (candidate.id === request.id ? request : candidate)),
       );
     },
     refreshRequests() {
+      if (!lasts()) return;
       void queryClient.invalidateQueries({ queryKey: requestsKey(accountId) });
     },
     /** The library update of this held card has been dealt with. */
     dropOffer(currentCardId: string) {
+      if (!lasts()) return;
       writeQueryData<UpdateOffer[]>(queryClient, updatesKey(accountId), (list) =>
         list?.filter((offer) => offer.currentCardId !== currentCardId),
       );
@@ -260,5 +277,6 @@ export function cardCache(queryClient: QueryClient, accountId: string) {
 export function useCardCache() {
   const queryClient = useQueryClient();
   const accountId = useAccountId();
-  return useMemo(() => cardCache(queryClient, accountId), [queryClient, accountId]);
+  const lasts = useSignInLasts();
+  return useMemo(() => cardCache(queryClient, accountId, lasts), [queryClient, accountId, lasts]);
 }
