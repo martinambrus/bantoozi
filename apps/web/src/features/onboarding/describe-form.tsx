@@ -1,5 +1,5 @@
 import { CARD_LIMITS } from '@bantoozi/shared';
-import { useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApiMutation } from '../../api/mutation.js';
@@ -29,10 +29,16 @@ export function DescribeForm() {
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [added, setAdded] = useState<string | null>(null);
+  // What the field holds now, for an answer that comes after the person has typed on.
+  const latest = useRef(text);
+  useEffect(() => {
+    latest.current = text;
+  });
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (sending.current) return;
+    const sent = text;
     const interest = text.trim();
     setAdded(null);
     setFailure(null);
@@ -46,12 +52,15 @@ export function DescribeForm() {
     try {
       const result = await create.mutateAsync({ body: { interest, strength: 'like' } });
       cache.apply(result);
-      setText('');
+      // Text typed while the interest was being created stays, for the next one.
+      setText((current) => (current === sent ? '' : current));
       setAdded(result.card.title);
     } catch (error) {
       const issue = cardFieldIssue(error);
-      if (issue?.field === 'interest') setFieldError(cardFieldMessage(t, issue));
-      else setFailure(saveMessage(t, error));
+      // A refusal of the description is about the text that was sent, not about newer text.
+      if (issue?.field === 'interest' && latest.current === sent) {
+        setFieldError(cardFieldMessage(t, issue));
+      } else setFailure(saveMessage(t, error));
     } finally {
       sending.current = false;
     }

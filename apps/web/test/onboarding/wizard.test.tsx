@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
+import { gate } from '../interests/support.js';
 import { makeMe } from '../session/fixtures.js';
 import { bodyOf } from '../support/app.js';
 import { BUNDLES, type StarterBundle } from '../../src/features/onboarding/bundles.js';
@@ -554,6 +555,40 @@ describe('interests (spec 09 §4 step 3)', () => {
     expect(field).toHaveValue('');
   });
 
+  it('keeps what was typed while the interest was being created', async () => {
+    const { app, server, state } = await openWizard('/onboarding?step=interests', options);
+    const field = await screen.findByLabelText('Describe something you want to read about');
+    const answer = gate();
+    const create = server.routes['POST /cards']!;
+    server.routes['POST /cards'] = async (request, params) => {
+      await answer.opened;
+      return create(request, params);
+    };
+    await app.user.type(field, 'Slovak mountain huts');
+    await app.user.click(screen.getByRole('button', { name: 'Add interest' }));
+    await waitFor(() => expect(app.calls('POST /cards')).toHaveLength(1));
+
+    await app.user.clear(field);
+    await app.user.type(field, 'Alpine lakes');
+    answer.release();
+
+    expect(await screen.findByText('Added “Slovak mountain huts”.')).toBeVisible();
+    expect(field).toHaveValue('Alpine lakes');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add interest' })).toBeEnabled());
+    await app.user.click(screen.getByRole('button', { name: 'Add interest' }));
+
+    expect(await screen.findByText('Added “Alpine lakes”.')).toBeVisible();
+    expect(app.calls('POST /cards').map((call) => bodyOf(call))).toStrictEqual([
+      { interest: 'Slovak mountain huts', strength: 'like' },
+      { interest: 'Alpine lakes', strength: 'like' },
+    ]);
+    expect(state.cards.map((card) => card.interest)).toEqual([
+      'Slovak mountain huts',
+      'Alpine lakes',
+    ]);
+    expect(field).toHaveValue('');
+  });
+
   it('does not send a description that is empty or too short', async () => {
     const { app } = await openWizard('/onboarding?step=interests', options);
     const field = await screen.findByLabelText('Describe something you want to read about');
@@ -584,6 +619,52 @@ describe('interests (spec 09 §4 step 3)', () => {
     expect(
       await screen.findByText(/You already have a card with this text, with a different strength/),
     ).toBeVisible();
+  });
+
+  describe('a description the API refuses for its characters', () => {
+    const REFUSED = "This text contains characters that can't be used.";
+
+    /** Sends "Slovak mountain huts" to an API that answers once the test lets it. */
+    async function sent() {
+      const answer = gate();
+      const opened = await openWizard('/onboarding?step=interests', {
+        ...options,
+        routes: {
+          'POST /cards': async () => {
+            await answer.opened;
+            return failure(400, 'VALIDATION_FAILED', { field: 'interest', reason: 'characters' });
+          },
+        },
+      });
+      const field = await screen.findByLabelText('Describe something you want to read about');
+      await opened.app.user.type(field, 'Slovak mountain huts');
+      await opened.app.user.click(screen.getByRole('button', { name: 'Add interest' }));
+      await waitFor(() => expect(opened.app.calls('POST /cards')).toHaveLength(1));
+      return { app: opened.app, field, answer };
+    }
+
+    it('is told on the field while it still holds that text', async () => {
+      const { field, answer } = await sent();
+
+      answer.release();
+
+      await waitFor(() => expect(field).toBeInvalid());
+      expect(field).toHaveAccessibleDescription(expect.stringContaining(REFUSED));
+      expect(field).toHaveValue('Slovak mountain huts');
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('is told as a failure of the request, not on a field typed in meanwhile', async () => {
+      const { app, field, answer } = await sent();
+      await app.user.clear(field);
+      await app.user.type(field, 'Alpine lakes');
+
+      answer.release();
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(REFUSED);
+      expect(field).not.toBeInvalid();
+      expect(field).toHaveValue('Alpine lakes');
+    });
   });
 
   it('warns before continuing without an interest, and then allows it', async () => {
