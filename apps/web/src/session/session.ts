@@ -247,7 +247,10 @@ export function createSession(options: SessionOptions): Session {
         // Every request of this tab goes out as that account from now on. A tab that shows another
         // one takes it as a `/me` answer for it would, the earlier account removed first; a tab that
         // shows nobody stays signed out, unless it is removing an earlier account to show another,
-        // which asks who is signed in once that is done (`switchAccount`).
+        // which asks who is signed in once that is done (`switchAccount`). A tab that shows the
+        // same account goes on as it is: the same person is signed in, so its sign-in lasts and what
+        // waits there still goes out, now with the new cookie; a 401 to a request sent before is no
+        // news.
         cookies += 1;
         const shown = idInCache();
         if (typeof shown !== 'string') return;
