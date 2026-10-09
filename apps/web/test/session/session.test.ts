@@ -492,6 +492,38 @@ describe('a 401', () => {
     });
   });
 
+  it('to a request sent before another tab signed in as the same account leaves this tab signed in', async () => {
+    // The other tab's sign-in replaced the session cookie the request went out with.
+    const server: Server = { me: userA };
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fake = fakeFetch(async (request) => {
+      if (request.method === 'GET' && request.pathname === '/api/v1/cards') {
+        await held;
+        return failure(401, 'UNAUTHENTICATED');
+      }
+      return api(server)(request);
+    });
+    const queryClient = createQueryClient();
+    const session = createSession({ queryClient, i18n: createI18n(), fetch: fake.fetch });
+    sessions.push(session);
+    await session.loadMe();
+    const late = session.api.call(routes.cardList).catch((error: unknown) => error);
+    await vi.waitFor(() => expect(requestsTo(fake.requests, 'GET /api/v1/cards')).toHaveLength(1));
+    otherTab().channel.postMessage({ type: 'signed-in', me: userA });
+    await settle();
+    const resets = recordResets();
+
+    release();
+    await expect(late).resolves.toMatchObject({ status: 401 });
+    await settle();
+
+    expect(resets).toEqual([]);
+    expect(queryClient.getQueryData(meKey())).toEqual(userA);
+  });
+
   it('changes nothing when nobody is signed in', async () => {
     const resets = recordResets();
     const tab = otherTab();
@@ -522,7 +554,7 @@ describe('a 401', () => {
       const { session, queryClient } = await startSignedIn(userA);
       const resets = recordResets();
 
-      session.unauthorized(session.currentSignIn());
+      session.unauthorized(session.currentCookie());
 
       await vi.waitFor(() => expect(queryClient.getQueryData(meKey())).toBeNull());
       expect(resets).toEqual(['unauthorized']);
@@ -530,17 +562,32 @@ describe('a 401', () => {
 
     it('leaves another account signed in since alone', async () => {
       const { session, queryClient, server } = await startSignedIn(userA);
-      const sentIn = session.currentSignIn();
+      const sentWith = session.currentCookie();
       await session.logout();
       server.verifiesAs = userB;
       await session.verifyCode({ email: 'b@example.com', code: '123456' });
       const resets = recordResets();
 
-      session.unauthorized(sentIn);
+      session.unauthorized(sentWith);
       await settle();
 
       expect(resets).toEqual([]);
       expect(queryClient.getQueryData(meKey())).toEqual(userB);
+    });
+
+    it('leaves this tab signed in when another tab signed in as the same account since', async () => {
+      const { session, queryClient } = await startSignedIn(userA);
+      const sentWith = session.currentCookie();
+      otherTab().channel.postMessage({ type: 'signed-in', me: userA });
+      await vi.waitFor(() => expect(session.currentCookie()).not.toBe(sentWith));
+      const resets = recordResets();
+
+      session.unauthorized(sentWith);
+      await settle();
+
+      expect(resets).toEqual([]);
+      expect(queryClient.getQueryData(meKey())).toEqual(userA);
+      expect(session.currentSignIn()).toBe(0);
     });
   });
 });

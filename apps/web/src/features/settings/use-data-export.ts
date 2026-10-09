@@ -91,7 +91,7 @@ export function useDataExport() {
     const controller = new AbortController();
     running.current = controller;
     setState({ phase: 'downloading', bytes: 0 });
-    const sentIn = session.currentSignIn();
+    const sentWith = session.currentCookie();
     try {
       const response = await fetch(EXPORT_URL, {
         credentials: 'same-origin',
@@ -99,7 +99,7 @@ export function useDataExport() {
       });
       if (!response.ok) {
         // The API client would end the session on a 401; this request does not go through it.
-        if (response.status === 401) session.unauthorized(sentIn);
+        if (response.status === 401) session.unauthorized(sentWith);
         setState({ phase: 'failed', problem: problemOf(response) });
         return;
       }

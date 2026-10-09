@@ -81,13 +81,19 @@ export interface Session {
   logout: () => Promise<LogoutResult>;
   /** Drops everything private: the query cache, the registered stores, the other tabs' memory. */
   resetAccountState: () => Promise<void>;
-  /** Which sign-in a request sent now belongs to, for `unauthorized`. */
+  /** Which sign-in lasts now. It changes with who is signed in, so work begun earlier can tell. */
   currentSignIn: () => number;
   /**
-   * Ends the session after a 401 that did not come through `api`, such as the streamed export, if
-   * the request was sent in the sign-in that still lasts (`currentSignIn()` as it was sent).
+   * Which session cookie a request sent now goes out with, for `unauthorized`: there is a new one
+   * at every sign-in and sign-out, in another tab and as the same account too.
    */
-  unauthorized: (sentIn: number) => void;
+  currentCookie: () => number;
+  /**
+   * Ends the session after a 401 that did not come through `api`, such as the streamed export, if
+   * the request went out with the session cookie that is still current (`currentCookie()` as it was
+   * sent).
+   */
+  unauthorized: (sentWith: number) => void;
   /** Calls `listener` when someone signs in or out; returns the function that stops it. */
   subscribe: (listener: () => void) => () => void;
   dispose: () => void;
@@ -126,12 +132,15 @@ function resetMessage(reason: ResetReason, accountId: string | undefined, at: nu
  */
 export function createSession(options: SessionOptions): Session {
   const { queryClient, i18n } = options;
-  // Counts the changes of who is signed in. A request is sent in the sign-in counted then, and a 401
-  // to it after a sign-out, or after another sign-in, is about a session that has ended already.
+  // Counts the changes of who is signed in.
   let signIns = 0;
+  // Counts the session cookies: one more at every change of who is signed in, and at every sign-in
+  // of this tab or another, as the same account too. A request goes out with the cookie counted
+  // then, and a 401 to it after another cookie came is about a session that has ended already.
+  let cookies = 0;
   const api = createApiClient({
     fetch: options.fetch,
-    session: () => signIns,
+    session: () => cookies,
     onUnauthorized: unauthorizedIn,
   });
   const meQuery = meQueryOptions(api);
@@ -206,6 +215,7 @@ export function createSession(options: SessionOptions): Session {
     signedInId = id;
     if (previous !== undefined && previous !== id) {
       signIns += 1;
+      cookies += 1;
       listeners.forEach((listener) => listener());
     }
   }
@@ -223,6 +233,7 @@ export function createSession(options: SessionOptions): Session {
         // Every request of this tab goes out as that account from now on. A tab that shows another
         // one takes it as a `/me` answer for it would, the earlier account removed first; a tab that
         // shows nobody stays signed out.
+        cookies += 1;
         const shown = idInCache();
         if (typeof shown !== 'string') return;
         const signedIn = MeSchema.safeParse(message.me);
@@ -284,9 +295,9 @@ export function createSession(options: SessionOptions): Session {
     if (queryClient.getQueryData<Me | null>(meKey())) void reset('unauthorized');
   }
 
-  /** A 401 to a request sent in another sign-in than the current one is about an ended session. */
-  function unauthorizedIn(sentIn: unknown) {
-    if (sentIn === signIns) handleUnauthorized();
+  /** A 401 to a request sent with another session cookie than the current one is no news. */
+  function unauthorizedIn(sentWith: unknown) {
+    if (sentWith === cookies) handleUnauthorized();
   }
 
   async function endServerSession(): Promise<void> {
@@ -392,6 +403,7 @@ export function createSession(options: SessionOptions): Session {
         clearLogoutPending();
       }
       const answer = await api.call(routes.authVerify, { body: input });
+      cookies += 1;
       // The session cookie of the browser is this account's now. The other tabs hear of the
       // sign-ins in the order they took the lock, so the last one they hear of holds the cookie.
       channel?.postMessage({ type: 'signed-in', me: answer.user });
@@ -432,6 +444,7 @@ export function createSession(options: SessionOptions): Session {
     logout,
     resetAccountState: () => reset('logout'),
     currentSignIn: () => signIns,
+    currentCookie: () => cookies,
     unauthorized: unauthorizedIn,
     subscribe: (listener) => {
       listeners.add(listener);

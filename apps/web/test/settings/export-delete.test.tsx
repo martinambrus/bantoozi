@@ -373,7 +373,7 @@ describe('export (spec 09 §7)', () => {
       expect(saved).toHaveLength(0);
     });
 
-    it('ends only the sign-in it was asked in, not one that began while it was on its way', async () => {
+    it('ends only the session it was asked in, not one that began while it was on its way', async () => {
       let answer!: (response: Response) => void;
       stubExportFetch(
         () =>
@@ -382,10 +382,10 @@ describe('export (spec 09 §7)', () => {
           }),
       );
       const { user, session } = await open();
-      const signIn = vi.spyOn(session, 'currentSignIn').mockReturnValue(7);
+      const cookie = vi.spyOn(session, 'currentCookie').mockReturnValue(7);
       const told = vi.spyOn(session, 'unauthorized');
       await user.click(download());
-      signIn.mockReturnValue(8);
+      cookie.mockReturnValue(8);
 
       answer(new Response(JSON.stringify({ error: { code: 'UNAUTHORIZED' } }), { status: 401 }));
 
