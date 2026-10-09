@@ -8,6 +8,7 @@ import { makeMe } from '../session/fixtures.js';
 import { bodyOf, type ApiRouteHandler } from '../support/app.js';
 import {
   cardResult,
+  gate,
   interestsServer,
   makeCard,
   makeLibraryCard,
@@ -330,6 +331,42 @@ describe('adding a card', () => {
     await app.user.click(screen.getByRole('link', { name: 'My interests' }));
     const mine = await rowOf('EV battery tech');
     expect(within(mine).getByRole('radio', { name: 'Love' })).toBeChecked();
+  });
+
+  it('keeps the strength as it was chosen while the card is being added', async () => {
+    const answer = gate();
+    const app = await openLibrary({
+      'GET /library': page([battery]),
+      'POST /library/:id/adopt': async () => {
+        await answer.opened;
+        return json(
+          200,
+          cardResult(
+            makeCard({
+              id: '601',
+              title: 'EV battery tech',
+              strength: 'love',
+              origin: 'library',
+              librarySlug: 'ev-batteries',
+            }),
+          ),
+        );
+      },
+    });
+    const row = await rowOf('EV battery tech');
+    await app.user.selectOptions(within(row).getByLabelText('Add as'), 'Love');
+    await app.user.click(within(row).getByRole('button', { name: 'Add' }));
+    await waitFor(() => expect(app.calls('POST /library/:id/adopt')).toHaveLength(1));
+
+    const strength = within(row).getByLabelText('Add as');
+    expect(strength).toBeDisabled();
+    await app.user.selectOptions(strength, 'Never');
+    expect(strength).toHaveValue('love');
+    answer.release();
+
+    expect(await within(row).findByText('In your interests')).toBeVisible();
+    expect(app.calls('POST /library/:id/adopt')).toHaveLength(1);
+    expect(bodyOf(app.calls('POST /library/:id/adopt')[0]!)).toEqual({ strength: 'love' });
   });
 
   it('does not offer to add what the person already holds', async () => {

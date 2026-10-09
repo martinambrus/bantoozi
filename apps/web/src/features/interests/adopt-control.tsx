@@ -82,6 +82,8 @@ export function AdoptControl({ card, onMessage }: AdoptControlProps) {
       <Select
         label={t('library.addAs')}
         value={strength}
+        // The card is added at the strength that was chosen when Add was pressed.
+        disabled={busy}
         onChange={(event) => {
           if (isStrength(event.target.value)) setStrength(event.target.value);
         }}
