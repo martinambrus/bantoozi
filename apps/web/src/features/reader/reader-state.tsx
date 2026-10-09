@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { useApi } from '../../api/context.js';
 import { errorMessage } from '../../components/error-message.js';
 import { useToast } from '../../components/toast/toast-provider.js';
+import { useSession } from '../../session/context.js';
 import { createSettingsWriter, type SettingsWriter } from './settings-writer.js';
 import { createTargets, type ReaderTargets } from './shortcuts/targets.js';
 
@@ -37,6 +38,7 @@ const ReaderStateContext = createContext<ReaderState | null>(null);
 export function ReaderStateProvider({ children }: { children: ReactNode }) {
   const api = useApi();
   const queryClient = useQueryClient();
+  const session = useSession();
   const toast = useToast();
   const { i18n } = useTranslation();
   const [everythingOpen, setEverythingOpen] = useState(true);
@@ -46,6 +48,7 @@ export function ReaderStateProvider({ children }: { children: ReactNode }) {
     createSettingsWriter({
       api,
       queryClient,
+      currentSignIn: session.currentSignIn,
       onRefused: (error) => toast.show({ message: errorMessage(i18n.t, error), tone: 'error' }),
     }),
   );

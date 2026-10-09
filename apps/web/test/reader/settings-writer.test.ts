@@ -40,7 +40,12 @@ describe('the reader settings writer', () => {
     const before = makeMe();
     queryClient.setQueryData<Me | null>(meKey(), before);
     const { api, answers } = heldApi();
-    const writer = createSettingsWriter({ api, queryClient, onRefused: () => {} });
+    const writer = createSettingsWriter({
+      api,
+      queryClient,
+      currentSignIn: () => 0,
+      onRefused: () => {},
+    });
 
     writer.change({ sort: 'date' });
     // Another save (the Why drawer) lands while this one is on its way; this request was made
@@ -70,7 +75,12 @@ describe('the reader settings writer', () => {
       queryFn: () => new Promise<Me | null>((resolve) => reads.push(resolve)),
     });
     const { api, answers } = heldApi();
-    const writer = createSettingsWriter({ api, queryClient, onRefused: () => {} });
+    const writer = createSettingsWriter({
+      api,
+      queryClient,
+      currentSignIn: () => 0,
+      onRefused: () => {},
+    });
 
     writer.change({ sort: 'date' });
     answers[0]!({ ...before, preferences: { ...before.preferences, sort: 'date' } });
@@ -93,16 +103,24 @@ describe('the reader settings writer', () => {
     function signedInAsA() {
       const queryClient = new QueryClient();
       queryClient.setQueryData<Me | null>(meKey(), a);
+      // Counted as the session counts sign-ins: at each change of the account in the cache.
+      let signIns = 0;
+      const setMe = (me: Me | null) => {
+        const shown = queryClient.getQueryData<Me | null>(meKey())?.id ?? null;
+        if (shown !== (me?.id ?? null)) signIns += 1;
+        queryClient.setQueryData<Me | null>(meKey(), me);
+      };
       const { api, requests } = settledApi();
       const refusals: unknown[] = [];
       const writer = createSettingsWriter({
         api,
         queryClient,
+        currentSignIn: () => signIns,
         onRefused: (error) => refusals.push(error),
       });
       const preferences = () => queryClient.getQueryData<Me>(meKey())!.preferences;
-      const signInAsB = () => queryClient.setQueryData<Me | null>(meKey(), b);
-      return { queryClient, requests, refusals, writer, preferences, signInAsB };
+      const signInAsB = () => setMe(b);
+      return { requests, refusals, writer, preferences, setMe, signInAsB };
     }
 
     it('puts none of its settings back into the next account when the save is refused', async () => {
@@ -150,19 +168,33 @@ describe('the reader settings writer', () => {
     });
 
     it('forgets what it put aside, should the same account sign in again', async () => {
-      const { queryClient, requests, writer, preferences } = signedInAsA();
+      const { requests, writer, preferences, setMe } = signedInAsA();
       const saved: Me = { ...a, preferences: { ...a.preferences, sort: 'date' } };
       writer.change({ sort: 'date' });
-      queryClient.setQueryData<Me | null>(meKey(), null);
+      setMe(null);
       requests[0]!.answer(saved);
       await settle();
 
-      queryClient.setQueryData<Me | null>(meKey(), saved);
+      setMe(saved);
       writer.change({ sort: 'score' });
       requests[1]!.refuse(new Error('refused'));
       await settle();
 
       expect(preferences().sort).toBe('date');
+    });
+
+    it('sends none of what it put aside when the same account signed out and in again meanwhile', async () => {
+      const { requests, writer, preferences, setMe } = signedInAsA();
+      writer.change({ sort: 'date' });
+      writer.change({ simpleMode: true });
+      setMe(null);
+      setMe(a);
+
+      requests[0]!.answer({ ...a, preferences: { ...a.preferences, sort: 'date' } });
+      await settle();
+
+      expect(requests.map(({ body }) => body)).toEqual([{ preferences: { sort: 'date' } }]);
+      expect(preferences()).toEqual(a.preferences);
     });
   });
 });

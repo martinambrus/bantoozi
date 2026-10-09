@@ -19,6 +19,8 @@ export interface SettingsWriter {
 export interface SettingsWriterOptions {
   api: ApiClient;
   queryClient: QueryClient;
+  /** The sign-in that lasts now (`Session.currentSignIn`). */
+  currentSignIn: () => number;
   /** Told when a save was refused, after the settings it covered are back. */
   onRefused: (error: unknown) => void;
 }
@@ -44,20 +46,21 @@ function without(settings: Settings, keys: readonly Setting[]): Settings {
 export function createSettingsWriter({
   api,
   queryClient,
+  currentSignIn,
   onRefused,
 }: SettingsWriterOptions): SettingsWriter {
   let sending = false;
   let waiting: Settings = {};
   // What the account holds for each setting that is not saved yet, to put back if saving fails.
   let confirmed: Settings = {};
-  // The account `waiting` and `confirmed` belong to.
-  let owner: string | null = null;
+  // The account and the sign-in `waiting` and `confirmed` belong to.
+  let owner: { account: string; signIn: number } | null = null;
 
   const account = () => queryClient.getQueryData<Me | null>(meKey()) ?? null;
 
-  // An account that has signed out leaves nothing to save or to put back, should it sign in again.
-  function forget(account: string | null): void {
-    if (owner !== account) return;
+  // A sign-in that has ended leaves nothing to save or to put back, should the account sign in again.
+  function forget(ended: typeof owner): void {
+    if (owner !== ended) return;
     owner = null;
     waiting = {};
     confirmed = {};
@@ -76,11 +79,14 @@ export function createSettingsWriter({
         const body = waiting;
         const sentFor = owner;
         waiting = {};
-        // What an account changed is saved for that account only: after a sign-out, or with
-        // another account signed in, it is dropped, and the answer to it changes nothing here.
+        // What an account changed is saved in that sign-in only: after a sign-out, with another
+        // account signed in, or in a later sign-in, it is dropped, and the answer to it changes
+        // nothing here.
         const signedIn = () => {
           const me = account();
-          return me !== null && me.id === sentFor ? me : null;
+          return me !== null && me.id === sentFor?.account && currentSignIn() === sentFor.signIn
+            ? me
+            : null;
         };
         if (signedIn() === null) {
           forget(sentFor);
@@ -124,10 +130,12 @@ export function createSettingsWriter({
     change(patch) {
       const me = account();
       if (me === null) return;
-      // What another account left unsaved is not this one's to save or to put back.
-      if (me.id !== owner) {
+      // What another account or an earlier sign-in left unsaved is not this one's to save or to put
+      // back.
+      const signIn = currentSignIn();
+      if (owner?.account !== me.id || owner.signIn !== signIn) {
         forget(owner);
-        owner = me.id;
+        owner = { account: me.id, signIn };
       }
       confirmed = { ...pick(me.preferences, keysOf(patch)), ...confirmed };
       waiting = { ...waiting, ...patch };
