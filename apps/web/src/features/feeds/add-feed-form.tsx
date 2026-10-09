@@ -24,7 +24,13 @@ export function AddFeedForm() {
   const [address, setAddress] = useState('');
   const [candidates, setCandidates] = useState<Candidates | null>(null);
   const [added, setAdded] = useState<{ title: string; existing: boolean } | null>(null);
-  const subscribe = useApiMutation(routes.subscriptionsCreate);
+  // The list learns of a new subscription even when the answer comes after the form is gone (the
+  // page was left); a choice of candidates changes nothing yet.
+  const subscribe = useApiMutation(routes.subscriptionsCreate, {
+    onSuccess: (result) => {
+      if (!('status' in result)) void cache.refresh();
+    },
+  });
 
   useEffect(() => {
     if (candidates !== null) chooserHeading.current?.focus();
@@ -35,6 +41,8 @@ export function AddFeedForm() {
     // The API answers 201 for a new subscription and 200 for an existing one, with the same body;
     // the client only hands on the body, so the list it showed before tells them apart.
     const knownFeeds = new Set(cache.known()?.map((subscription) => subscription.feed.id));
+    // The answer clears the field only if it still holds this text; one typed meanwhile stays.
+    const sent = address;
     setAdded(null);
     if (!fromChooser) setCandidates(null);
     subscribe.mutate(
@@ -47,13 +55,12 @@ export function AddFeedForm() {
           }
           const { subscription } = result;
           setCandidates(null);
-          setAddress('');
+          setAddress((current) => (current === sent ? '' : current));
           if (fromChooser) input.current?.focus();
           setAdded({
             title: displayTitle(subscription),
             existing: knownFeeds.has(subscription.feed.id),
           });
-          void cache.refresh();
         },
       },
     );

@@ -1,11 +1,13 @@
 import type { Subscription } from '@bantoozi/shared';
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import { subscriptionsKey } from '../../src/features/feeds/subscriptions.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
+import { USER_A_ID } from '../session/fixtures.js';
 import { bodyOf } from '../support/app.js';
-import { CREATE, feedsServer, makeSubscription, type FeedsServerOptions } from './support.js';
+import { CREATE, LIST, feedsServer, makeSubscription, type FeedsServerOptions } from './support.js';
 
 const { open } = createHarness();
 
@@ -108,6 +110,7 @@ describe('adding a feed', () => {
     expect(within(chooser).getByText('atom')).toBeVisible();
     expect(screen.queryByText(/^Added/)).not.toBeInTheDocument();
     expect(app.calls(CREATE)).toHaveLength(1);
+    expect(app.calls(LIST)).toHaveLength(1);
 
     await app.user.click(within(chooser).getByRole('button', { name: 'Add Main feed' }));
 
@@ -120,6 +123,7 @@ describe('adding a feed', () => {
     expect(keys[1]).toMatch(UUID_V4);
     expect(keys[1]).not.toBe(keys[0]);
     expect(screen.queryByRole('region', { name: 'Choose a feed' })).not.toBeInTheDocument();
+    expect(addressField()).toHaveValue('');
     expect(addressField()).toHaveFocus();
     expect(await screen.findByRole('heading', { level: 3, name: 'Main feed' })).toBeVisible();
   });
@@ -245,6 +249,77 @@ describe('adding a feed', () => {
       expect(app.calls(CREATE)).toHaveLength(1);
       answer(json(201, { subscription: makeSubscription({ feed: { id: '4', title: 'Slow' } }) }));
       expect(await screen.findByText(/^Added “Slow”\./)).toBeVisible();
+    });
+
+    it('keeps an address typed while the request was on its way', async () => {
+      const { app, server } = await openFeeds();
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      server.routes[CREATE] = async () => {
+        await held;
+        return json(201, { subscription: makeSubscription({ feed: { id: '4', title: 'Slow' } }) });
+      };
+
+      await submit(app, 'slow.example');
+      await waitFor(() => expect(app.calls(CREATE)).toHaveLength(1));
+      await app.user.clear(addressField());
+      await app.user.type(addressField(), 'next.example');
+      release();
+
+      expect(await screen.findByText(/^Added “Slow”\./)).toBeVisible();
+      expect(addressField()).toHaveValue('next.example');
+    });
+
+    it('keeps an address typed while a chosen feed was on its way', async () => {
+      const { app, server } = await openFeeds();
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      server.routes[CREATE] = async (request) => {
+        const { url } = bodyOf(request) as { url: string };
+        if (url === 'example.com') return json(200, { status: 'choose', candidates: CANDIDATES });
+        await held;
+        return json(201, {
+          subscription: makeSubscription({ feed: { id: '8', title: 'Main feed' } }),
+        });
+      };
+
+      await submit(app, 'example.com');
+      const chooser = await screen.findByRole('region', { name: 'Choose a feed' });
+      await app.user.click(within(chooser).getByRole('button', { name: 'Add Main feed' }));
+      await waitFor(() => expect(app.calls(CREATE)).toHaveLength(2));
+      await app.user.clear(addressField());
+      await app.user.type(addressField(), 'next.example');
+      release();
+
+      expect(await screen.findByText(/^Added “Main feed”\./)).toBeVisible();
+      expect(addressField()).toHaveValue('next.example');
+    });
+
+    it('still refreshes the list when the answer comes after the page was left', async () => {
+      const { app, server } = await openFeeds();
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      server.routes[CREATE] = async () => {
+        await held;
+        return json(201, { subscription: makeSubscription({ feed: { id: '4', title: 'Slow' } }) });
+      };
+
+      await submit(app, 'slow.example');
+      await waitFor(() => expect(app.calls(CREATE)).toHaveLength(1));
+      server.routes['GET /labels'] = () => json(200, []);
+      await act(async () => {
+        await app.router.navigate({ to: '/labels' });
+      });
+      release();
+
+      await waitFor(() => expect(app.queryClient.isMutating()).toBe(0));
+      expect(app.queryClient.getQueryState(subscriptionsKey(USER_A_ID))?.isInvalidated).toBe(true);
     });
   });
 
