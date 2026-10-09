@@ -9,6 +9,7 @@ import { failure, json, noContent } from '../api/fake-fetch.js';
 import type { ApiRouteHandler } from '../support/app.js';
 import { FAR_ZONE } from '../support/zones.js';
 import { acked } from '../reader/actions/fake-transport.js';
+import { USER_B_ID } from '../session/fixtures.js';
 import {
   MUTATION_ID,
   actionResponse,
@@ -649,6 +650,106 @@ describe('ArticleDetail rules', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'Block this feed' }));
     await undoToast(user, 'Blocked source: Example Weekly');
     expect(await findToast("We couldn't find that.")).toBeInTheDocument();
+  });
+
+  describe('answered once another account has signed in', () => {
+    const later = () => new Promise((resolve) => setTimeout(resolve, 50));
+
+    it('confirms no rule, so its Undo cannot reach the account signed in now', async () => {
+      const answer = deferred<void>();
+      const { user, calls, signInAgain } = renderDetail(
+        ITEM,
+        {},
+        {
+          routes: {
+            ...ruleRoutes('block_feed', '7'),
+            'POST /rules': async () => {
+              await answer.promise;
+              return json(201, { rule: makeRule('55', 'block_feed', '7') });
+            },
+          },
+        },
+      );
+      await user.click(await screen.findByRole('button', { name: 'More' }));
+      await user.click(await screen.findByRole('menuitem', { name: 'Block this feed' }));
+      await waitFor(() => expect(calls('POST', '/rules')).toHaveLength(1));
+
+      signInAgain(makeMe({ id: USER_B_ID }));
+      answer.resolve();
+      await later();
+
+      expect(screen.queryByText('Blocked source: Example Weekly')).toBeNull();
+    });
+
+    it('confirms no muted story', async () => {
+      const answer = deferred<void>();
+      const { user, calls, signInAgain } = renderDetail(
+        ITEM,
+        {},
+        {
+          routes: {
+            ...ruleRoutes('mute_story', '9'),
+            'POST /articles/:id/mute-story': async () => {
+              await answer.promise;
+              return json(201, { rule: makeRule('55', 'mute_story', '9') });
+            },
+          },
+        },
+      );
+      await user.click(await screen.findByRole('button', { name: 'Mute story' }));
+      await user.click(await screen.findByRole('menuitem', { name: 'Mute for 1 day' }));
+      await waitFor(() => expect(calls('POST', '/articles/101/mute-story')).toHaveLength(1));
+
+      signInAgain(makeMe({ id: USER_B_ID }));
+      answer.resolve();
+      await later();
+
+      expect(screen.queryByText('Story muted for 1 day')).toBeNull();
+    });
+
+    it('reports no refusal', async () => {
+      const answer = deferred<void>();
+      const { user, calls, signInAgain } = renderDetail(
+        ITEM,
+        {},
+        {
+          routes: {
+            'POST /rules': async () => {
+              await answer.promise;
+              return failure(409, 'QUOTA_EXCEEDED', { limit: 'maxRules', used: 200, max: 200 });
+            },
+          },
+        },
+      );
+      await user.click(await screen.findByRole('button', { name: 'More' }));
+      await user.click(await screen.findByRole('menuitem', { name: 'Block this feed' }));
+      await waitFor(() => expect(calls('POST', '/rules')).toHaveLength(1));
+
+      signInAgain(makeMe({ id: USER_B_ID }));
+      answer.resolve();
+      await later();
+
+      expect(
+        screen.queryByText("You've reached your plan's limit for rules: 200 of 200."),
+      ).toBeNull();
+    });
+
+    it('takes back nothing from a toast of the earlier sign-in', async () => {
+      const { user, calls, signInAgain } = renderDetail(
+        ITEM,
+        {},
+        { routes: ruleRoutes('block_feed', '7') },
+      );
+      await user.click(await screen.findByRole('button', { name: 'More' }));
+      await user.click(await screen.findByRole('menuitem', { name: 'Block this feed' }));
+      const toast = await findToast('Blocked source: Example Weekly');
+
+      signInAgain(makeMe({ id: USER_B_ID }));
+      await user.click(within(toast).getByRole('button', { name: 'Undo' }));
+      await later();
+
+      expect(calls('DELETE', '/rules/55')).toHaveLength(0);
+    });
   });
 });
 
