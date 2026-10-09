@@ -112,6 +112,34 @@ describe('an opened article offline that was opened before', () => {
 
     expect(await screen.findByText('The saved excerpt.')).toBeVisible();
   });
+
+  it('follows the image setting of the feed it is opened from, not of the feed its copy came through', async () => {
+    // Opened online through feed 5, which shows images.
+    const throughFeed5 = makeItem({
+      feed: { id: '5', title: 'Pictures Daily', iconUrl: null },
+      mediaPolicyFeedId: '5',
+      effectiveImagesAllowed: true,
+    });
+    await keep(
+      {
+        excerptHtml:
+          '<p>The saved excerpt.</p><p><img src="https://images.example.test/chart.png" alt="A chart"></p>',
+      },
+      throughFeed5,
+    );
+    connection().lose();
+
+    // Opened now from feed 7, which blocks them.
+    const row = makeItem({ mediaPolicyFeedId: '7', effectiveImagesAllowed: false });
+    renderReader(<ArticleDetail item={row} sourceFeedId="7" />, {
+      routes: { 'GET /articles/:id': unreachable },
+    });
+
+    expect(await screen.findByText('The saved excerpt.')).toBeVisible();
+    expect(screen.getByText('A chart')).toBeVisible();
+    expect(document.querySelector('img')).toBeNull();
+    expect(screen.getByText("Images from this feed aren't loaded.")).toBeVisible();
+  });
 });
 
 describe('an opened article offline that was never opened', () => {

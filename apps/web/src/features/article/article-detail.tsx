@@ -62,6 +62,31 @@ function freshest(row: ArticleListItem, detail: ArticleListItem | undefined): Ar
   return byState > 0 || (byState === 0 && byContent >= 0) ? detail : row;
 }
 
+/**
+ * The device's copy of the article as a row of this view. The copy may have been read through
+ * another feed, so what the server projects for the feed of the view (spec 08 §5.2: the feed, the
+ * arrival, the ranking, the analysis and the image setting) comes from the row. A bookmark keeps the
+ * image setting of the feed it was saved from in every view, so a bookmarked copy keeps its own.
+ */
+function viewedCopy(saved: OfflineDetail, row: ArticleListItem): ArticleListItem {
+  const copy = listItemOf(saved);
+  const media = copy.bookmarkedAt === null ? row : copy;
+  return {
+    ...copy,
+    feed: row.feed,
+    firstSeenAt: row.firstSeenAt,
+    lane: row.lane,
+    tier: row.tier,
+    pLike: row.pLike,
+    topReason: row.topReason,
+    labelSuggestions: row.labelSuggestions,
+    analysis: row.analysis,
+    cluster: row.cluster,
+    mediaPolicyFeedId: media.mediaPolicyFeedId,
+    effectiveImagesAllowed: media.effectiveImagesAllowed,
+  };
+}
+
 interface DetailContentProps {
   data: Pick<ArticleDetailDto, 'translation' | 'lang' | 'excerptHtml' | 'bodyLead'>;
   imagesAllowed: boolean;
@@ -164,7 +189,10 @@ function DetailView({ item: row, sourceFeedId, saved = false, onWhyThis }: Artic
   const offline = lost ? kept : undefined;
   const retry = useCallback(() => void refetch({ cancelRefetch: false }), [refetch]);
   useReconnect(lost, retry);
-  const offlineItem = useMemo(() => (offline ? listItemOf(offline) : undefined), [offline]);
+  const offlineItem = useMemo(
+    () => (offline ? viewedCopy(offline, row) : undefined),
+    [offline, row],
+  );
   const content = data ?? offline ?? undefined;
 
   const observed = useMemo(() => (data === undefined ? [] : [data]), [data]);
