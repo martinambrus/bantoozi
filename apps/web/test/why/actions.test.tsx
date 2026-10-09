@@ -219,6 +219,29 @@ describe('the rules that were applied', () => {
     expect(ruleRow(app, 'Story already seen').queryByRole('button')).toBeNull();
   });
 
+  it('confirms nothing when the deletion is answered once another account has signed in', async () => {
+    const answer = gate();
+    const app = await renderDrawer({
+      explain: makeExplain({ rules: [{ code: 'boost_feed', ruleId: '55' }] }),
+      routes: {
+        'DELETE /rules/:id': async () => {
+          await answer.opened;
+          return noContent();
+        },
+      },
+    });
+    await app.user.click(ruleRow(app, 'Boosted source').getByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(app.calls('DELETE', '/rules/55')).toHaveLength(1));
+
+    app.rerender(<WhyThisSheet item={app.item} open={false} onClose={app.onClose} />);
+    app.signInAgain(makeMe({ id: USER_B_ID }));
+    answer.release();
+    await waitFor(() => expect(app.queryClient.isMutating()).toBe(0));
+    await settled(app);
+
+    expect(screen.queryByText('Rule removed')).toBeNull();
+  });
+
   it('keeps the rule on the list when it cannot be deleted', async () => {
     const app = await renderDrawer({
       explain: makeExplain({ rules: [{ code: 'block_feed', ruleId: '12' }] }),
@@ -500,6 +523,69 @@ describe('mute a keyword', () => {
     await app.user.click(within(toast).getByRole('button', { name: 'Undo' }));
     await waitFor(() => expect(app.calls('DELETE', '/rules/77')).toHaveLength(1));
     expect(await findToast('Rule removed')).toBeInTheDocument();
+  });
+
+  it('confirms nothing when the answer comes once another account has signed in', async () => {
+    const answer = gate();
+    const app = await renderDrawer({
+      routes: {
+        'POST /rules': async (request) => {
+          await answer.opened;
+          return mutes(request);
+        },
+      },
+    });
+    await mute(app, 'batteries');
+    await waitFor(() => expect(app.calls('POST', '/rules')).toHaveLength(1));
+
+    app.rerender(<WhyThisSheet item={app.item} open={false} onClose={app.onClose} />);
+    app.signInAgain(makeMe({ id: USER_B_ID }));
+    answer.release();
+    await waitFor(() => expect(app.queryClient.isMutating()).toBe(0));
+    await settled(app);
+
+    expect(screen.queryByText('Muted keyword: “batteries”')).toBeNull();
+  });
+
+  it('reports no refusal that comes once another account has signed in', async () => {
+    const answer = gate();
+    const app = await renderDrawer({
+      routes: {
+        'POST /rules': async () => {
+          await answer.opened;
+          return failure(409, 'QUOTA_EXCEEDED', { limit: 'maxRules', used: 200, max: 200 });
+        },
+      },
+    });
+    await mute(app, 'pilot');
+    await waitFor(() => expect(app.calls('POST', '/rules')).toHaveLength(1));
+
+    app.rerender(<WhyThisSheet item={app.item} open={false} onClose={app.onClose} />);
+    app.signInAgain(makeMe({ id: USER_B_ID }));
+    answer.release();
+    await waitFor(() => expect(app.queryClient.isMutating()).toBe(0));
+    await settled(app);
+
+    expect(
+      screen.queryByText("You've reached your plan's limit for rules: 200 of 200."),
+    ).toBeNull();
+  });
+
+  it('takes back nothing from its toast once another account has signed in', async () => {
+    const app = await renderDrawer({
+      routes: { 'POST /rules': mutes, 'DELETE /rules/:id': () => noContent() },
+    });
+    await mute(app, 'batteries');
+    await findToast('Muted keyword: “batteries”');
+
+    // The toast moves out of the drawer when it closes.
+    app.rerender(<WhyThisSheet item={app.item} open={false} onClose={app.onClose} />);
+    app.signInAgain(makeMe({ id: USER_B_ID }));
+    const toast = await findToast('Muted keyword: “batteries”');
+    await app.user.click(within(toast).getByRole('button', { name: 'Undo' }));
+    await settled(app);
+
+    expect(app.calls('DELETE', '/rules/77')).toHaveLength(0);
   });
 
   it('says why when the rule cannot be created', async () => {

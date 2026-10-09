@@ -10,7 +10,7 @@ import { errorMessage } from '../../components/error-message.js';
 import { ChevronDownIcon, EyeOffIcon, PlusIcon } from '../../components/icons.js';
 import { Menu, MenuItem } from '../../components/menu.js';
 import { useToast } from '../../components/toast/toast-provider.js';
-import { useAccountId } from '../../session/context.js';
+import { useAccountId, useSession } from '../../session/context.js';
 import { articleKeys } from '../article/query-keys.js';
 import { useRuleActions } from '../article/use-rule-actions.js';
 import { CardEditor } from '../interests/card-editor.js';
@@ -24,21 +24,32 @@ function MuteKeyword({ words }: { words: string[] }) {
   const { t: tArticle } = useTranslation('article');
   const toast = useToast();
   const queryClient = useQueryClient();
+  const session = useSession();
   const accountId = useAccountId();
   const removal = useRuleRemoval();
 
   const create = useApiMutation(routes.ruleCreate, {
     // Each mute is confirmed here: a callback of one `mutate` call is dropped when a second mute
-    // starts before the first is answered, and when the drawer closes.
-    onSuccess: ({ rule }, variables) => {
+    // starts before the first is answered, and when the drawer closes. What is answered after the
+    // sign-in that asked has ended shows nothing, and its toast takes nothing back then: the next
+    // account cannot see the rule.
+    onMutate: () => session.currentSignIn(),
+    onSuccess: ({ rule }, variables, signIn) => {
+      if (session.currentSignIn() !== signIn) return;
       void queryClient.invalidateQueries({ queryKey: articleKeys.all(accountId) });
       toast.show({
         message: tArticle('reason.rule.mute_keyword', { keyword: variables.body.value }),
         tone: 'success',
-        action: { label: t('common:actions.undo'), onAction: () => removal.remove(rule.id) },
+        action: {
+          label: t('common:actions.undo'),
+          onAction: () => {
+            if (session.currentSignIn() === signIn) removal.remove(rule.id);
+          },
+        },
       });
     },
-    onError: (error) => {
+    onError: (error, _variables, signIn) => {
+      if (session.currentSignIn() !== signIn) return;
       toast.show({ message: errorMessage(t, error), tone: 'error' });
     },
   });
