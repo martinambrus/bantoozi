@@ -3,9 +3,10 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { articleKeys } from '../../src/features/article/query-keys.js';
+import { RateVisibleDialog } from '../../src/features/reader/rate-visible.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
-import { deferred, findToast } from '../article/harness.js';
-import { USER_A_ID, makeMe } from '../session/fixtures.js';
+import { deferred, findToast, renderReader } from '../article/harness.js';
+import { USER_A_ID, USER_B_ID, makeMe } from '../session/fixtures.js';
 import { bodyOf } from '../support/app.js';
 import { acked } from './actions/fake-transport.js';
 import {
@@ -490,6 +491,32 @@ describe('when the request does not go through', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(app.calls(RATE_BULK)).toHaveLength(1);
     expect(screen.queryByText(/^Rated \d+ articles?$/)).toBeNull();
+  });
+});
+
+describe('when the sign-in that asked has ended', () => {
+  it('shows nothing and closes nothing when the ratings are answered', async () => {
+    const answer = deferred<Response>();
+    const onClose = vi.fn();
+    const { user, calls, signInAgain } = renderReader(
+      <RateVisibleDialog asked={{ items: THREE, shown: 3 }} name="Verge" onClose={onClose} />,
+      { routes: { [RATE_BULK]: () => answer.promise } },
+    );
+    await user.click(await screen.findByRole('button', { name: 'Like all' }));
+    await waitFor(() => expect(calls('POST', '/articles/rate-bulk')).toHaveLength(1));
+
+    signInAgain(makeMe({ id: USER_B_ID }));
+    answer.resolve(
+      json(200, {
+        count: 3,
+        mutationId: receipt(1),
+        items: THREE.map((row) => acked(row, { rating: 1, readAt: AS_OF })),
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(screen.queryByText('Rated 3 articles')).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
 

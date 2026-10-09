@@ -10,7 +10,7 @@ import { errorMessage } from '../../components/error-message.js';
 import { WarningIcon } from '../../components/icons.js';
 import { MenuItem } from '../../components/menu.js';
 import { useToast } from '../../components/toast/toast-provider.js';
-import { useAccountId } from '../../session/context.js';
+import { useAccountId, useSession } from '../../session/context.js';
 import { useReaderActions, useUndoAction } from './actions/provider.js';
 import { unreadKeys } from './queries.js';
 
@@ -69,7 +69,8 @@ export interface RateVisibleDialogProps {
 
 /**
  * "Rate these N visible articles" (spec 09 §3.3): asks first, with the number of articles the list
- * showed when it was opened, then rates just those. It sends no analysis request.
+ * showed when it was opened, then rates just those. It sends no analysis request. An answer that
+ * comes after the sign-in that asked has ended shows nothing.
  */
 export function RateVisibleDialog({ asked, name, onClose }: RateVisibleDialogProps) {
   const { t } = useTranslation('reader');
@@ -77,6 +78,7 @@ export function RateVisibleDialog({ asked, name, onClose }: RateVisibleDialogPro
   const undo = useUndoAction();
   const toast = useToast();
   const queryClient = useQueryClient();
+  const session = useSession();
   const accountId = useAccountId();
   const [pending, setPending] = useState<1 | -1 | null>(null);
   const [failure, setFailure] = useState<ApiError | null>(null);
@@ -86,7 +88,9 @@ export function RateVisibleDialog({ asked, name, onClose }: RateVisibleDialogPro
   async function rate(rating: 1 | -1) {
     setPending(rating);
     setFailure(null);
+    const signIn = session.currentSignIn();
     const result = await store.bulk({ kind: 'rateBulk', items: asked.items, rating });
+    if (session.currentSignIn() !== signIn) return;
     switch (result.status) {
       case 'done': {
         const entry = store.recent().find((recent) => recent.mutationId === result.mutationId);

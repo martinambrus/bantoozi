@@ -2,10 +2,19 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest';
 
 import { meKey } from '../../src/api/query-keys.js';
+import { MarkAllRead } from '../../src/features/reader/mark-all-read.js';
+import { ReaderStateProvider } from '../../src/features/reader/reader-state.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
-import { MUTATION_ID, deferred, findToast, makeLabel, undoResponse } from '../article/harness.js';
+import {
+  MUTATION_ID,
+  deferred,
+  findToast,
+  makeLabel,
+  renderReader,
+  undoResponse,
+} from '../article/harness.js';
 import { makeSubscription } from '../feeds/support.js';
-import { makeMe } from '../session/fixtures.js';
+import { USER_B_ID, makeMe } from '../session/fixtures.js';
 import { bodyOf } from '../support/app.js';
 import {
   AS_OF,
@@ -754,5 +763,117 @@ describe('Mark all read', () => {
     await findToast(
       "That's more than 5000 articles at once. Raise the minimum tier or pick a smaller view, then try again.",
     );
+  });
+
+  describe('once the sign-in that asked has ended', () => {
+    const later = () => new Promise((resolve) => setTimeout(resolve, 100));
+
+    it('asks for nothing more when the probe of a lane is answered', async () => {
+      const probe = deferred<Response>();
+      const { app, server } = await open({
+        path: '/read/for_you',
+        items: [item(1)],
+        list: (request) =>
+          request.query.get('limit') === '1' ? probe.promise : json(200, page([item(1)])),
+      });
+      await screen.findByRole('article', { name: 'Article 1' });
+      await app.user.click(screen.getByRole('button', { name: 'Mark all read' }));
+      await waitFor(() =>
+        expect(listQueries(app).some((query) => query['limit'] === '1')).toBe(true),
+      );
+
+      server.me = null;
+      await act(() => app.session.resetAccountState());
+      probe.resolve(json(200, page([item(1)], { asOf: PROBE_AS_OF, datasetVersion: 'd-lane' })));
+      await later();
+
+      expect(countsQueries(app).filter((query) => 'asOf' in query)).toEqual([]);
+    });
+
+    it('shows no error when the end of the sign-in cancels the count', async () => {
+      const held = deferred<Response>();
+      let asking = false;
+      const { app, server } = await open({
+        path: '/read/feed/7',
+        items: [item(1)],
+        subscriptions: [makeSubscription({ feed: { id: '7', title: 'Verge' } })],
+        routes: {
+          'GET /articles/counts': (request) =>
+            asking && request.query.has('feedId')
+              ? held.promise
+              : json(200, request.query.has('feedId') ? { ...COUNTS, total: 9 } : COUNTS),
+        },
+      });
+      await within(await headerOf('Verge')).findByText('Unread: 9');
+      asking = true;
+      await app.user.click(screen.getByRole('button', { name: 'Mark all read' }));
+      await waitFor(() =>
+        expect(countsQueries(app).filter((query) => query['feedId'] === '7')).toHaveLength(2),
+      );
+
+      server.me = null;
+      await act(() => app.session.resetAccountState());
+      held.resolve(json(200, { ...COUNTS, total: 9 }));
+      await later();
+
+      expect(screen.queryByText('Something went wrong. Try again.')).toBeNull();
+    });
+
+    describe('while marking', () => {
+      function renderQuestion(answer: Promise<Response>) {
+        return renderReader(
+          <ReaderStateProvider>
+            <MarkAllRead
+              lane="all"
+              scope={{ feedId: '7' }}
+              name="Verge"
+              count={3}
+              items={[item(1), item(2), item(3)]}
+              onChanged={() => undefined}
+            />
+          </ReaderStateProvider>,
+          {
+            routes: {
+              'GET /articles/counts': () => json(200, { ...COUNTS, total: 3 }),
+              [MARK_READ]: () => answer,
+            },
+          },
+        );
+      }
+
+      async function confirmMarking(app: ReturnType<typeof renderQuestion>) {
+        await app.user.click(screen.getByRole('button', { name: 'Mark all read' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Mark all as read?' });
+        await app.user.click(within(dialog).getByRole('button', { name: 'Mark as read' }));
+        await waitFor(() => expect(app.calls('POST', '/articles/mark-read')).toHaveLength(1));
+      }
+
+      it('confirms nothing when the answer comes', async () => {
+        const answer = deferred<Response>();
+        const app = renderQuestion(answer.promise);
+        await confirmMarking(app);
+
+        app.signInAgain(makeMe({ id: USER_B_ID }));
+        answer.resolve(json(200, { count: 3, mutationId: MUTATION_ID }));
+        await later();
+
+        expect(screen.queryByText('Marked 3 as read')).toBeNull();
+      });
+
+      it('asks for no new number when the answer is that the list changed', async () => {
+        const answer = deferred<Response>();
+        const app = renderQuestion(answer.promise);
+        await confirmMarking(app);
+        const counted = app.calls('GET', '/articles/counts').length;
+
+        app.signInAgain(makeMe({ id: USER_B_ID }));
+        answer.resolve(
+          failure(409, 'STALE_STATE', { reason: 'dataset_changed', datasetVersion: 'd-after' }),
+        );
+        await later();
+
+        expect(app.calls('GET', '/articles/counts')).toHaveLength(counted);
+      });
+    });
   });
 });

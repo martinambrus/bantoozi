@@ -9,7 +9,7 @@ import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { errorMessage } from '../../components/error-message.js';
 import { useToast } from '../../components/toast/toast-provider.js';
-import { useAccountId, useMe } from '../../session/context.js';
+import { useAccountId, useMe, useSession } from '../../session/context.js';
 import { useReaderActions, useUndoAction } from './actions/provider.js';
 import { countsQueryOptions } from './queries.js';
 import { useReaderTargets } from './reader-state.js';
@@ -45,12 +45,14 @@ export interface MarkAllReadProps {
  * "Mark all read" (spec 09 §3.1): asks first, with the number of articles it would mark, then marks
  * the whole view, not only the loaded rows. The server compares the view's `datasetVersion` at the
  * `olderThan` instant with the one the reader confirmed, so the number and the version come from
- * the same instant; a view that changed meanwhile asks again with the new number.
+ * the same instant; a view that changed meanwhile asks again with the new number. An answer that
+ * comes after the sign-in that asked has ended shows nothing and asks for nothing more.
  */
 export function MarkAllRead({ lane, scope, name, count, items, onChanged }: MarkAllReadProps) {
   const { t } = useTranslation('reader');
   const api = useApi();
   const queryClient = useQueryClient();
+  const session = useSession();
   const accountId = useAccountId();
   const store = useReaderActions();
   const undoAction = useUndoAction();
@@ -64,7 +66,7 @@ export function MarkAllRead({ lane, scope, name, count, items, onChanged }: Mark
   // The `datasetVersion` of the counts is that of `lane = all`. Any other lane has a digest of its
   // own, which only a list of that lane can tell, and the counts at the instant of that list say how
   // many articles it covers.
-  async function prepare(): Promise<Omit<Ask, 'changed'>> {
+  async function prepare(lasts: () => boolean): Promise<Omit<Ask, 'changed'> | null> {
     if (lane === 'all') {
       const counts = await queryClient.fetchQuery(
         countsQueryOptions(api, accountId, scope, minTier),
@@ -74,6 +76,7 @@ export function MarkAllRead({ lane, scope, name, count, items, onChanged }: Mark
     const probe = await api.call(routes.articleList, {
       query: { lane, ...scope, minTier, limit: 1 },
     });
+    if (!lasts()) return null;
     const counts = await api.call(routes.articleCounts, {
       query: { ...scope, minTier, asOf: probe.asOf },
     });
@@ -85,11 +88,14 @@ export function MarkAllRead({ lane, scope, name, count, items, onChanged }: Mark
   }
 
   async function open() {
+    const signIn = session.currentSignIn();
+    const lasts = () => session.currentSignIn() === signIn;
     setPreparing(true);
     try {
-      setAsk({ ...(await prepare()), changed: false });
+      const prepared = await prepare(lasts);
+      if (prepared !== null) setAsk({ ...prepared, changed: false });
     } catch (error) {
-      toast.show({ message: errorMessage(t, error), tone: 'error' });
+      if (lasts()) toast.show({ message: errorMessage(t, error), tone: 'error' });
     } finally {
       setPreparing(false);
     }
@@ -97,6 +103,8 @@ export function MarkAllRead({ lane, scope, name, count, items, onChanged }: Mark
 
   async function confirm() {
     if (ask === null) return;
+    const signIn = session.currentSignIn();
+    const lasts = () => session.currentSignIn() === signIn;
     // The server marks only what had arrived by `asOf`. A row the list took in since then, which a
     // poll brings while the question is open, stays unread there, so it is not shown read here.
     const cutoff = Date.parse(ask.asOf);
@@ -108,6 +116,7 @@ export function MarkAllRead({ lane, scope, name, count, items, onChanged }: Mark
         (item) => store.view(item).readAt === null && Date.parse(item.firstSeenAt) <= cutoff,
       ),
     });
+    if (!lasts()) return;
     switch (result.status) {
       case 'done': {
         const entry = store.recent().find((recent) => recent.mutationId === result.mutationId);
@@ -124,11 +133,14 @@ export function MarkAllRead({ lane, scope, name, count, items, onChanged }: Mark
         onChanged();
         return;
       }
-      case 'stale':
-        setAsk({ ...(await prepare()), changed: true });
+      case 'stale': {
+        const prepared = await prepare(lasts);
+        if (prepared === null) return;
+        setAsk({ ...prepared, changed: true });
         // The dialog closes itself once this returns; this one stays, with the new number.
         askingAgain.current = true;
         return;
+      }
       case 'failed': {
         const { error } = result;
         if (error.kind === 'aborted') return;
