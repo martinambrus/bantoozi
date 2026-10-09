@@ -280,9 +280,12 @@ export function createSession(options: SessionOptions): Session {
   // What an earlier sign-out could not remove from the device goes now.
   void finishPendingPurges();
 
-  async function restoreOffline(cause: unknown): Promise<Me> {
+  async function restoreOffline(cause: unknown): Promise<Me | null> {
+    const before = resets;
     const last = readLastAccount();
     const saved = last !== null && isOfflineEnabled(last.id) ? await readMe(last.id) : null;
+    // A reset while the saved account was read (a sign-out in another tab) is not taken back.
+    if (resets !== before) return queryClient.getQueryData<Me | null>(meKey()) ?? null;
     if (saved === null) throw new OfflineStartupError({ cause });
     restoring = true;
     try {
