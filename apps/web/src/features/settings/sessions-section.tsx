@@ -13,7 +13,7 @@ import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { FOCUS_RING, cx } from '../../components/cx.js';
 import { QueryState } from '../../components/states/query-state.js';
-import { useAccountId } from '../../session/context.js';
+import { useAccountId, useSession } from '../../session/context.js';
 import { useSignOut } from '../shell/use-sign-out.js';
 import { Time, useMoment } from './format.js';
 import { SettingsSection } from './section.js';
@@ -72,6 +72,7 @@ function SessionRow({
 function SessionList({ sessions }: { sessions: readonly SessionDto[] }) {
   const { t } = useTranslation('settings');
   const queryClient = useQueryClient();
+  const session = useSession();
   const signOut = useSignOut();
   const key = useSessionsKey();
   const revoke = useApiMutation(routes.authSessionRevoke);
@@ -95,12 +96,14 @@ function SessionList({ sessions }: { sessions: readonly SessionDto[] }) {
       await signOut();
       return;
     }
+    const signIn = session.currentSignIn();
     try {
       await revoke.mutateAsync({ params: { id: pending.id } });
     } catch (error) {
       // Already gone is what was asked for.
       if (!(isApiError(error) && error.status === 404)) throw error;
     }
+    if (session.currentSignIn() !== signIn) return;
     revoked.current = true;
     queryClient.setQueryData<SessionDto[]>(key, (items) =>
       items?.filter((item) => item.id !== pending.id),

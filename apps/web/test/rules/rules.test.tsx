@@ -2,9 +2,11 @@ import type { CreateRuleBody, Me, RuleDto } from '@bantoozi/shared';
 import { act, configure, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { meKey } from '../../src/api/query-keys.js';
 import { articleKeys } from '../../src/features/article/query-keys.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
+import { gate } from '../interests/support.js';
 import { makeMe } from '../session/fixtures.js';
 import { bodyOf, type ApiRouteHandler } from '../support/app.js';
 
@@ -399,6 +401,52 @@ describe('the rules page (spec 09 §6)', () => {
       expect(screen.queryByRole('alert')).toBeNull();
       expect(app.calls('GET /rules')).toHaveLength(2);
     });
+
+    it.each([
+      ['a rule', () => noContent()],
+      ['a rule that is gone already', () => failure(404, 'NOT_FOUND')],
+    ])(
+      'keeps the list the account shows when the answer to deleting %s comes after signing in again',
+      async (_rule, respond) => {
+        const held = gate();
+        const api = rulesApi(
+          [rule({ id: '7' }), rule({ id: '8', displayValue: 'nft', value: 'nft' })],
+          {
+            'DELETE /rules/:id': async (_request, params) => {
+              await held.opened;
+              api.state.rules = api.state.rules.filter((item) => item.id !== params['id']);
+              return respond();
+            },
+          },
+        );
+        const app = await boot({ path: '/rules', server: { me: makeMe(), routes: api.routes } });
+        await app.user.click(await screen.findByRole('button', { name: 'Delete rule: bitcoin' }));
+        await app.user.click(
+          within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete rule' }),
+        );
+        await waitFor(() => expect(app.calls('DELETE /rules/:id')).toHaveLength(1));
+        const me = app.queryClient.getQueryData<Me>(meKey());
+
+        await act(() => app.session.resetAccountState());
+        act(() => {
+          app.queryClient.setQueryData(meKey(), me);
+        });
+        await waitFor(() => expect(screen.getByText('bitcoin')).toBeVisible());
+        const loaded = app.calls('GET /rules').length;
+        held.release();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        expect({
+          deletable: screen
+            .getAllByRole('button', { name: /^Delete rule: / })
+            .map((button) => button.getAttribute('aria-label')),
+          requests: app.calls('GET /rules').length,
+        }).toEqual({
+          deletable: ['Delete rule: bitcoin', 'Delete rule: nft'],
+          requests: loaded,
+        });
+      },
+    );
 
     it('moves the focus to the page title, since the button that opened the dialog is gone', async () => {
       const app = await open([

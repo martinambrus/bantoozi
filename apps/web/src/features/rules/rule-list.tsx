@@ -11,6 +11,7 @@ import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { EmptyState } from '../../components/states/empty-state.js';
 import { QueryState } from '../../components/states/query-state.js';
+import { useSession } from '../../session/context.js';
 import { countdown, useNow, type Countdown } from './countdown.js';
 import { Time } from './format.js';
 import { useRefreshAfterRuleChange, useRules, useRulesKey } from './use-rules.js';
@@ -131,6 +132,7 @@ export function RuleList({ onRemoved }: { onRemoved: () => void }) {
   const { t } = useTranslation('rules');
   const query = useRules();
   const queryClient = useQueryClient();
+  const session = useSession();
   const rulesKey = useRulesKey();
   const refresh = useRefreshAfterRuleChange();
   const remove = useApiMutation(routes.ruleDelete);
@@ -148,12 +150,14 @@ export function RuleList({ onRemoved }: { onRemoved: () => void }) {
 
   async function confirmDelete() {
     if (pending === null) return;
+    const signIn = session.currentSignIn();
     try {
       await remove.mutateAsync({ params: { id: pending.id } });
     } catch (error) {
       // Already gone elsewhere is what was asked for.
       if (!(isApiError(error) && error.status === 404)) throw error;
     }
+    if (session.currentSignIn() !== signIn) return;
     removed.current = true;
     queryClient.setQueryData<RuleDto[]>([...rulesKey, 'list'], (items) =>
       items?.filter((item) => item.id !== pending.id),

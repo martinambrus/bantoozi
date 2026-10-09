@@ -13,7 +13,7 @@ import { Button } from '../../components/button.js';
 import { errorMessage } from '../../components/error-message.js';
 import { QueryState } from '../../components/states/query-state.js';
 import { TextField } from '../../components/text-field.js';
-import { useAccountId } from '../../session/context.js';
+import { useAccountId, useSession } from '../../session/context.js';
 import { Time } from './format.js';
 import { Alert, Hint, SettingsSection } from './section.js';
 
@@ -58,6 +58,7 @@ function isInviteQuota(error: unknown): boolean {
 function InviteForm({ left, onCreated }: { left: number; onCreated: (invite: NewInvite) => void }) {
   const { t } = useTranslation('settings');
   const queryClient = useQueryClient();
+  const session = useSession();
   const key = useInvitesKey();
   const create = useApiMutation(routes.inviteCreate);
   const titleId = useId();
@@ -89,9 +90,11 @@ function InviteForm({ left, onCreated }: { left: number; onCreated: (invite: New
     attempt.current = sending;
 
     const editsSent = edits.current;
+    const signIn = session.currentSignIn();
     setFailure(null);
     try {
       const created = await create.mutateAsync({ body: parsed.data, idempotencyKey: sending.key });
+      if (session.currentSignIn() !== signIn) return;
       attempt.current = null;
       // A form edited while the invite was on its way is the next invite: it stays as it is.
       if (edits.current === editsSent) {
@@ -105,6 +108,7 @@ function InviteForm({ left, onCreated }: { left: number; onCreated: (invite: New
         emailSent: created.emailSent,
       });
     } catch (error) {
+      if (session.currentSignIn() !== signIn) return;
       setFailure(error);
       if (!isInviteQuota(error)) return;
     }

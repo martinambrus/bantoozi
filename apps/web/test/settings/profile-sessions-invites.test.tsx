@@ -635,6 +635,49 @@ describe('sessions (spec 09 §7)', () => {
       await waitFor(() => expect(sessions().queryByText(PHONE)).toBeNull());
       expect(screen.queryByRole('dialog')).toBeNull();
     });
+
+    it.each([
+      ['a session', () => noContent()],
+      ['a session that is gone already', () => failure(404, 'NOT_FOUND')],
+    ])(
+      'keeps the list the account shows when the answer to revoking %s comes after signing in again',
+      async (_session, respond) => {
+        const held = deferred();
+        const api = sessionsApi([CURRENT, PHONE_SESSION], {
+          'DELETE /auth/sessions/:id': async (_request, params) => {
+            await held.promise;
+            api.state.sessions = api.state.sessions.filter((item) => item.id !== params['id']);
+            return respond();
+          },
+        });
+        const { user, calls, session, queryClient } = await openSettings({ routes: api.routes });
+        await sessions().findByText(PHONE);
+        await user.click(rowOf(PHONE).getByRole('button', { name: /^Revoke session: / }));
+        const dialog = await screen.findByRole('dialog', { name: 'Revoke this session?' });
+        await user.click(within(dialog).getByRole('button', { name: 'Revoke session' }));
+        await waitFor(() => expect(calls('DELETE /auth/sessions/:id')).toHaveLength(1));
+        const me = queryClient.getQueryData<Me>(meKey());
+
+        await act(() => session.resetAccountState());
+        act(() => {
+          queryClient.setQueryData(meKey(), me);
+        });
+        await waitFor(() => expect(sessions().getByText(PHONE)).toBeVisible());
+        const loaded = calls('GET /auth/sessions').length;
+        held.release();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        expect({
+          listed: sessions()
+            .getAllByRole('listitem')
+            .map((item) => item.textContent),
+          requests: calls('GET /auth/sessions').length,
+        }).toEqual({
+          listed: [expect.stringContaining(FIREFOX), expect.stringContaining(PHONE)],
+          requests: loaded,
+        });
+      },
+    );
   });
 
   describe('revoking this device', () => {
@@ -957,6 +1000,45 @@ describe('invites (spec 09 §7, spec 08 §2.2)', () => {
 
       await waitFor(() => expect(calls('GET /me').length).toBeGreaterThan(before));
     });
+
+    it.each([
+      ['an invite', undefined],
+      [
+        'an invite when none are left',
+        () => failure(409, 'QUOTA_EXCEEDED', { limit: 'invites', invitesLeft: 0 }),
+      ],
+    ])(
+      'sends no request for the invites or the account when the answer to creating %s comes after signing in again',
+      async (_invite, refuse) => {
+        const held = deferred();
+        const api = invitesApi([], 3);
+        const makeInvite = api.routes['POST /invites'] as ApiRouteHandler;
+        api.routes['POST /invites'] = async (request, params) => {
+          await held.promise;
+          return refuse === undefined ? makeInvite(request, params) : refuse();
+        };
+        const { user, calls, session, queryClient } = await openSettings({ routes: api.routes });
+        await invites().findByText('Invites left: 3');
+        await user.click(create());
+        await waitFor(() => expect(calls('POST /invites')).toHaveLength(1));
+        const me = queryClient.getQueryData<Me>(meKey());
+
+        await act(() => session.resetAccountState());
+        act(() => {
+          queryClient.setQueryData(meKey(), me);
+        });
+        await waitFor(() => expect(invites().getByText('Invites left: 3')).toBeVisible());
+        const asked = () => ({
+          invites: calls('GET /invites').length,
+          account: calls('GET /me').length,
+        });
+        const loaded = asked();
+        held.release();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        expect(asked()).toEqual(loaded);
+      },
+    );
 
     it('sends the address, normalised, and the note, trimmed, and says the email went out', async () => {
       const api = invitesApi([], 3);
