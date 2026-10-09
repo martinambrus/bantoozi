@@ -11,7 +11,10 @@ export interface ExampleRemoval {
   /** The accessible name of the button that removes one example. */
   label: (text: string) => string;
   onRemove: (side: ExampleSide, text: string) => void;
-  /** The example whose removal is under way, as `exampleKey` makes it. */
+  /**
+   * The example whose removal is under way, as `exampleKey` makes it. The other examples wait for
+   * it: each removal gives the card or label a new id, which the next one is sent for.
+   */
   removing: string | null;
 }
 
@@ -62,7 +65,7 @@ function ExampleSection({
             {removal === undefined ? null : (
               <IconButton
                 label={removal.label(text)}
-                disabled={removal.removing === exampleKey(side, text)}
+                disabled={removal.removing !== null}
                 onClick={() => removal.onRemove(side, text)}
               >
                 <CloseIcon className="size-4" />

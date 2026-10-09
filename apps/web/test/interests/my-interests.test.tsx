@@ -623,6 +623,34 @@ describe('examples', () => {
     );
   });
 
+  it('removes one example at a time: the other remove buttons wait for the answer', async () => {
+    let answer!: () => void;
+    const app = await openMine(
+      { cards: [garden] },
+      {
+        'POST /cards/:id/examples/remove': async () => {
+          await new Promise<void>((resolve) => {
+            answer = resolve;
+          });
+          return json(200, cardResult({ ...garden, examplesYes: [] }));
+        },
+      },
+    );
+    const row = await rowOf('Gardening');
+    const lawn = () =>
+      within(row).getByRole('button', { name: 'Remove example: Lawn care schedule' });
+
+    await app.user.click(
+      within(row).getByRole('button', { name: 'Remove example: How I grew tomatoes on a balcony' }),
+    );
+    await waitFor(() => expect(app.calls('POST /cards/:id/examples/remove')).toHaveLength(1));
+    expect(lawn()).toBeDisabled();
+
+    answer();
+    await waitFor(() => expect(lawn()).toBeEnabled());
+    expect(app.calls('POST /cards/:id/examples/remove')).toHaveLength(1);
+  });
+
   it('keeps the example and says why when removing it fails', async () => {
     const app = await openMine(
       { cards: [garden] },

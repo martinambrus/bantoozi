@@ -573,6 +573,47 @@ describe('removing an example', () => {
     });
   });
 
+  it('removes one example at a time, so the next removal is sent for the label the first one made', async () => {
+    let answer!: () => void;
+    const app = await openLabels([readLater], {
+      'POST /labels/:id/examples/remove': async (request) => {
+        const { side } = bodyOf(request) as { side: 'yes' | 'no' };
+        if (side === 'no')
+          return json(
+            200,
+            labelResult(
+              { ...readLater, id: '73', examplesYes: [], examplesNo: [] },
+              { from: '72', to: '73' },
+            ),
+          );
+        await new Promise<void>((resolve) => {
+          answer = resolve;
+        });
+        return json(
+          200,
+          labelResult({ ...readLater, id: '72', examplesYes: [] }, { from: '31', to: '72' }),
+        );
+      },
+    });
+    const removeButton = async (text: string) =>
+      within(await rowOf('Read later')).getByRole('button', { name: `Remove example: ${text}` });
+
+    await app.user.click(await removeButton('A long essay about ferries'));
+    await waitFor(() => expect(app.calls('POST /labels/:id/examples/remove')).toHaveLength(1));
+    expect(await removeButton('Weather alert')).toBeDisabled();
+    await app.user.click(await removeButton('Weather alert'));
+    expect(app.calls('POST /labels/:id/examples/remove')).toHaveLength(1);
+
+    answer();
+    await waitFor(async () => expect(await removeButton('Weather alert')).toBeEnabled());
+    await app.user.click(await removeButton('Weather alert'));
+
+    await waitFor(() => expect(app.calls('POST /labels/:id/examples/remove')).toHaveLength(2));
+    expect(app.calls('POST /labels/:id/examples/remove')[1]!.pathname).toBe(
+      '/api/v1/labels/72/examples/remove',
+    );
+  });
+
   it('swaps the id in the list when removing an example gives the label a new id', async () => {
     const app = await openLabels([readLater, recipes], {
       'POST /labels/:id/examples/remove': () =>
