@@ -6,6 +6,7 @@ import { subscriptionsKey } from '../../src/features/feeds/subscriptions.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
 import { USER_A_ID, makeMe } from '../session/fixtures.js';
+import { gate } from '../interests/support.js';
 import { bodyOf, type FakeServer } from '../support/app.js';
 import {
   DELETE_FEED,
@@ -787,6 +788,27 @@ describe('the feed settings', () => {
       );
       expect(screen.getByRole('heading', { level: 3, name: 'Beta' })).toBeVisible();
       expect(await screen.findByText('Unsubscribed from “Alpha”.')).toBeVisible();
+    });
+
+    it('confirms nothing when the answer comes once the sign-in has ended', async () => {
+      const { app, server, sheet } = await openSettings();
+      const answer = gate();
+      const remove = server.routes[DELETE_FEED]!;
+      server.routes[DELETE_FEED] = async (request, params) => {
+        await answer.opened;
+        return remove(request, params);
+      };
+
+      const confirm = await askToUnsubscribe(app, sheet);
+      await app.user.click(within(confirm).getByRole('button', { name: 'Unsubscribe' }));
+      await waitFor(() => expect(app.calls(DELETE_FEED)).toHaveLength(1));
+
+      server.me = null;
+      await act(() => app.session.resetAccountState());
+      answer.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(screen.queryByText('Unsubscribed from “Alpha”.')).toBeNull();
     });
 
     it('names the feed by the title it is shown with', async () => {

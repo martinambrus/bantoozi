@@ -12,7 +12,9 @@ import { meKey } from '../../src/api/query-keys.js';
 import { DeadFeedBanner } from '../../src/features/feeds/dead-feed-banner.js';
 import { createI18n, type Language } from '../../src/i18n/index.js';
 import { ToastProvider } from '../../src/components/toast/toast-provider.js';
+import { SessionProvider } from '../../src/session/context.js';
 import { clearAccountKeys, forgetAccountMemory } from '../../src/session/local-keys.js';
+import type { Session } from '../../src/session/session.js';
 import { failure, fakeFetch, noContent } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
 import { USER_A_ID, USER_B_ID, makeMe } from '../session/fixtures.js';
@@ -53,11 +55,15 @@ function renderBanner(feed: FeedInfo, language: Language = 'en') {
   );
   const api = createApiClient({ fetch: fake.fetch });
   const i18n = createI18n(language);
+  // The session as far as the banner uses it: one sign-in, which lasts.
+  const session = { currentSignIn: () => 0 } as Partial<Session> as Session;
   const wrapper = ({ children }: { children: ReactNode }) => (
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={queryClient}>
         <ApiProvider client={api}>
-          <ToastProvider>{children}</ToastProvider>
+          <SessionProvider session={session}>
+            <ToastProvider>{children}</ToastProvider>
+          </SessionProvider>
         </ApiProvider>
       </QueryClientProvider>
     </I18nextProvider>
