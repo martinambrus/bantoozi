@@ -49,8 +49,18 @@ export function createSettingsWriter({
   let waiting: Settings = {};
   // What the account holds for each setting that is not saved yet, to put back if saving fails.
   let confirmed: Settings = {};
+  // The account `waiting` and `confirmed` belong to.
+  let owner: string | null = null;
 
   const account = () => queryClient.getQueryData<Me | null>(meKey()) ?? null;
+
+  // An account that has signed out leaves nothing to save or to put back, should it sign in again.
+  function forget(account: string | null): void {
+    if (owner !== account) return;
+    owner = null;
+    waiting = {};
+    confirmed = {};
+  }
 
   function show(me: Me, preferences: Settings): void {
     const next: Me = { ...me, preferences: { ...me.preferences, ...preferences } };
@@ -63,26 +73,42 @@ export function createSettingsWriter({
     try {
       while (keysOf(waiting).length > 0) {
         const body = waiting;
+        const sentFor = owner;
         waiting = {};
+        // What an account changed is saved for that account only: after a sign-out, or with
+        // another account signed in, it is dropped, and the answer to it changes nothing here.
+        const signedIn = () => {
+          const me = account();
+          return me !== null && me.id === sentFor ? me : null;
+        };
+        if (signedIn() === null) {
+          forget(sentFor);
+          continue;
+        }
         // A setting the reader has moved again since stays as they left it.
         const settled = () => keysOf(body).filter((key) => !(key in waiting));
         const moved = () => keysOf(body).filter((key) => key in waiting);
         try {
           const updated = await api.call(routes.meUpdate, { body: { preferences: body } });
-          confirmed = { ...without(confirmed, settled()), ...pick(updated.preferences, moved()) };
-          // A sign-out or another account in the meantime must not get this account back. Only
-          // what this request sent is taken: what another save changed since may be newer than the
-          // rest of the answer.
-          const me = account();
-          if (me?.id === updated.id) {
-            show(me, { ...pick(updated.preferences, keysOf(body)), ...waiting });
+          const me = signedIn();
+          if (me === null) {
+            forget(sentFor);
+            continue;
           }
+          confirmed = { ...without(confirmed, settled()), ...pick(updated.preferences, moved()) };
+          // Only what this request sent is taken: what another save changed since may be newer
+          // than the rest of the answer.
+          show(me, { ...pick(updated.preferences, keysOf(body)), ...waiting });
           if ('defaultTier' in body) {
             void queryClient.invalidateQueries({ queryKey: subscriptionsKey(updated.id) });
           }
         } catch (error) {
-          const me = account();
-          if (me !== null) show(me, pick({ ...me.preferences, ...confirmed }, settled()));
+          const me = signedIn();
+          if (me === null) {
+            forget(sentFor);
+            continue;
+          }
+          show(me, pick({ ...me.preferences, ...confirmed }, settled()));
           confirmed = without(confirmed, settled());
           onRefused(error);
         }
@@ -96,6 +122,11 @@ export function createSettingsWriter({
     change(patch) {
       const me = account();
       if (me === null) return;
+      // What another account left unsaved is not this one's to save or to put back.
+      if (me.id !== owner) {
+        forget(owner);
+        owner = me.id;
+      }
       confirmed = { ...pick(me.preferences, keysOf(patch)), ...confirmed };
       waiting = { ...waiting, ...patch };
       show(me, patch);
