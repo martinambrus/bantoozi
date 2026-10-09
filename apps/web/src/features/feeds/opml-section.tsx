@@ -9,6 +9,7 @@ import { Button } from '../../components/button.js';
 import { errorMessage, quotaDetails } from '../../components/error-message.js';
 import { saveFile } from '../../components/save-file.js';
 import { TextField } from '../../components/text-field.js';
+import { useSession } from '../../session/context.js';
 import { InlineAlert } from './inline-alert.js';
 import { useSubscriptionsCache } from './subscriptions.js';
 
@@ -30,6 +31,7 @@ export interface OpmlSectionProps {
 export function OpmlSection({ exportable = true }: OpmlSectionProps) {
   const { t } = useTranslation('feeds');
   const cache = useSubscriptionsCache();
+  const session = useSession();
   const headingId = useId();
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -50,10 +52,14 @@ export function OpmlSection({ exportable = true }: OpmlSectionProps) {
 
   function exportOpml() {
     if (download.isPending) return;
-    // Saved even when the page was left meanwhile, as a download the browser had begun would be;
-    // a failure shows below the button.
+    const signIn = session.currentSignIn();
+    // Saved even when the page was left meanwhile, as a download the browser had begun would be,
+    // but not once the sign-in that asked has ended; a failure shows below the button.
     download.mutateAsync().then(
-      (opml) => saveFile(new Blob([opml], { type: 'text/x-opml' }), EXPORT_FILENAME),
+      (opml) => {
+        if (session.currentSignIn() !== signIn) return;
+        saveFile(new Blob([opml], { type: 'text/x-opml' }), EXPORT_FILENAME);
+      },
       () => {},
     );
   }

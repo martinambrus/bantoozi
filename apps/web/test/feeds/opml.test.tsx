@@ -6,6 +6,7 @@ import { meKey } from '../../src/api/query-keys.js';
 import { subscriptionsKey } from '../../src/features/feeds/subscriptions.js';
 import { UUID_V4, failure, json, text } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
+import { gate } from '../interests/support.js';
 import { USER_A_ID } from '../session/fixtures.js';
 import { IMPORT_OPML, LIST, feedsServer, makeSubscription } from './support.js';
 
@@ -365,6 +366,25 @@ describe('exporting OPML', () => {
     expect(blobs[0]?.type).toBe('text/x-opml');
     expect(await blobs[0]?.text()).toBe(OPML);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('saves nothing when the export comes once the sign-in has ended', async () => {
+    const { app, server } = await openFeeds();
+    const answer = gate();
+    server.routes[EXPORT_OPML] = async () => {
+      await answer.opened;
+      return text(200, OPML, { 'content-type': 'text/x-opml' });
+    };
+
+    await app.user.click(exportButton());
+    await waitFor(() => expect(app.calls(EXPORT_OPML)).toHaveLength(1));
+
+    server.me = null;
+    await act(() => app.session.resetAccountState());
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(saved).toHaveLength(0);
   });
 
   it('saves nothing and says why when the server cannot export', async () => {
