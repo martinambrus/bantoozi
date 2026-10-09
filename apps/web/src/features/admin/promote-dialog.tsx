@@ -5,6 +5,7 @@ import { useApiMutation } from '../../api/mutation.js';
 import { routes } from '../../api/routes.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { useToast } from '../../components/toast/toast-provider.js';
+import { useSession } from '../../session/context.js';
 import { eligibilityKey } from './library-eligibility.js';
 import { isStatus } from './use-admin.js';
 
@@ -19,21 +20,25 @@ export interface PromoteDialogProps {
 
 /**
  * Spec 09 §8: the confirmation names the basis the administrator is acting on. Inactivity is
- * worded as the administrator's decision, never as the creator's approval.
+ * worded as the administrator's decision, never as the creator's approval. An answer that comes
+ * after the sign-in that asked has ended shows nothing.
  */
 export function PromoteDialog({ candidate, onClose, onPromoted, onConflict }: PromoteDialogProps) {
   const { t } = useTranslation('admin');
   const toast = useToast();
+  const session = useSession();
   const promote = useApiMutation(routes.adminLibraryPromote);
   const { request } = candidate;
   const approved = eligibilityKey(candidate.promotionEligibility) === 'approved';
 
   async function confirm() {
     if (request === null) return;
+    const signIn = session.currentSignIn();
     try {
       const result = await promote.mutateAsync({
         body: { requestId: request.id, expectedVersion: request.version },
       });
+      if (session.currentSignIn() !== signIn) return;
       toast.show({
         message: t('library.promote.done', {
           title: candidate.title,
@@ -43,6 +48,7 @@ export function PromoteDialog({ candidate, onClose, onPromoted, onConflict }: Pr
       });
       onPromoted();
     } catch (error) {
+      if (session.currentSignIn() !== signIn) return;
       if (!isStatus(error, 409)) throw error;
       onConflict();
     }

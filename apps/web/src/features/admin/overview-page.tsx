@@ -13,6 +13,7 @@ import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { errorMessage } from '../../components/error-message.js';
 import { QueryState } from '../../components/states/query-state.js';
 import { useToast } from '../../components/toast/toast-provider.js';
+import { useSession } from '../../session/context.js';
 import { Alert, Cell, DataTable, Hint, PageTitle, RowHeader, SectionTitle } from './admin-ui.js';
 import { Time, useFormat } from './format.js';
 import { useAdminKey } from './use-admin.js';
@@ -199,13 +200,17 @@ function EngineCard({
   );
 }
 
+/** An answer that comes after the sign-in that asked has ended shows nothing. */
 function Translations({ overview }: { overview: AdminOverview }) {
   const { t } = useTranslation('admin');
   const format = useFormat();
   const toast = useToast();
+  const session = useSession();
   const [failure, setFailure] = useState<unknown>(null);
   const reprocess = useApiMutation(routes.adminTranslationsReprocess, {
-    onSuccess: () => {
+    onMutate: () => session.currentSignIn(),
+    onSuccess: (_answer, _variables, signIn) => {
+      if (session.currentSignIn() !== signIn) return;
       setFailure(null);
       toast.show({ message: t('overview.translations.queued'), tone: 'success' });
     },

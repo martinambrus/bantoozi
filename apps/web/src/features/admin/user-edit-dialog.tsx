@@ -10,6 +10,7 @@ import { errorMessage } from '../../components/error-message.js';
 import { Select } from '../../components/select.js';
 import { TextField } from '../../components/text-field.js';
 import { useToast } from '../../components/toast/toast-provider.js';
+import { useSession } from '../../session/context.js';
 import { Alert } from './admin-ui.js';
 import { conflictReason } from './use-admin.js';
 
@@ -28,9 +29,11 @@ export interface UserEditDialogProps {
   onSaved: () => void;
 }
 
+/** An answer that comes after the sign-in that asked has ended shows nothing. */
 export function UserEditDialog({ user, onClose, onSaved }: UserEditDialogProps) {
   const { t } = useTranslation('admin');
   const toast = useToast();
+  const session = useSession();
   const update = useApiMutation(routes.adminUserUpdate);
   const [role, setRole] = useState(user.role);
   const [plan, setPlan] = useState(user.plan);
@@ -55,8 +58,10 @@ export function UserEditDialog({ user, onClose, onSaved }: UserEditDialogProps) 
       ...(plan === user.plan ? {} : { plan: plan as AdminUserPatch['plan'] }),
       ...(invitesLeft === user.invitesLeft ? {} : { invitesLeft }),
     };
+    const signIn = session.currentSignIn();
     try {
       const result = await update.mutateAsync({ params: { id: user.id }, body: patch });
+      if (session.currentSignIn() !== signIn) return;
       toast.show({
         message:
           result.sessionsRevoked > 0

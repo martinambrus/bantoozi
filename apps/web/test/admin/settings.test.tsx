@@ -1,10 +1,12 @@
 import { ADMIN_PATCHABLE_SETTING_KEYS, type AdminSettings } from '@bantoozi/shared';
-import { screen, within } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import type { UserEvent } from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { accountKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
-import { bodyOf, renderApp, type ApiRouteHandler } from '../support/app.js';
+import { gate } from '../interests/support.js';
+import { bodyOf, renderApp, type ApiRouteHandler, type FakeServer } from '../support/app.js';
 import { SETTINGS_VALUES, adminMe, adminRoutes, makeSettings, unhandledGuard } from './support.js';
 
 const BUDGET = 'engine.daily_budget_usd';
@@ -186,6 +188,36 @@ describe('admin settings editors (spec 09 §8)', () => {
     expect(editor(BUDGET)).toHaveValue('7.55');
     expect(save(BUDGET)).toBeEnabled();
     expect(bodyOf(app.calls('PATCH /admin/settings')[0]!)).toEqual({ [BUDGET]: 7.5 });
+  });
+
+  it('adopts and confirms nothing when the save is answered once the sign-in has ended', async () => {
+    const state = { values: { ...SETTINGS_VALUES } };
+    const apply = applyingPatch(state);
+    const answer = gate();
+    const server: FakeServer = {
+      me: adminMe(),
+      routes: adminRoutes({
+        'PATCH /admin/settings': async (request, params) => {
+          await answer.opened;
+          return apply(request, params);
+        },
+      }),
+    };
+    const app = await render({ path: '/admin/settings', server });
+    await screen.findByRole('textbox', { name: BUDGET });
+    await replaceText(app, BUDGET, '7.5');
+    await app.user.click(save(BUDGET));
+    await vi.waitFor(() => expect(app.calls('PATCH /admin/settings')).toHaveLength(1));
+
+    server.me = null;
+    await act(() => app.session.resetAccountState());
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(screen.queryByText(`Saved ${BUDGET}.`)).toBeNull();
+    expect(
+      app.queryClient.getQueryData(accountKey(adminMe().id, 'admin', 'settings')),
+    ).toBeUndefined();
   });
 
   it('says when the saved value was already in effect', async () => {

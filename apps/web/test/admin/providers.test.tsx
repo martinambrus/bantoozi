@@ -2,8 +2,10 @@ import type { CredentialStatus } from '@bantoozi/shared';
 import { act, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { accountKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
-import { bodyOf, renderApp, type ApiRouteHandler } from '../support/app.js';
+import { gate } from '../interests/support.js';
+import { bodyOf, renderApp, type ApiRouteHandler, type FakeServer } from '../support/app.js';
 import { T1, adminMe, adminRoutes, makeCredential, unhandledGuard } from './support.js';
 
 const SECRET = 'sk-test-SECRET-9f3a7c41';
@@ -58,6 +60,34 @@ async function openProviders(server: Server, routes: Record<string, ApiRouteHand
   });
   await screen.findByRole('region', { name: JEV });
   return app;
+}
+
+/** `openProviders`, also giving the fake API, so that a test can end the sign-in. */
+async function openWithServer(credentials: Server, routes: Record<string, ApiRouteHandler> = {}) {
+  const server: FakeServer = {
+    me: adminMe(),
+    routes: adminRoutes({
+      'GET /admin/engine/credentials': () => json(200, { items: credentials.items }),
+      ...routes,
+    }),
+  };
+  const app = await render({ path: '/admin/providers', server });
+  await screen.findByRole('region', { name: JEV });
+  return { app, server };
+}
+
+type App = Awaited<ReturnType<typeof renderApp>>;
+
+/**
+ * Ends the sign-in and has the cache hold `loaded`, as it would once the next sign-in of this
+ * account has loaded the credentials; the key of that entry is returned.
+ */
+async function endSignIn(app: App, server: FakeServer, loaded: Server) {
+  server.me = null;
+  await act(() => app.session.resetAccountState());
+  const key = accountKey(adminMe().id, 'admin', 'credentials');
+  app.queryClient.setQueryData(key, { items: loaded.items });
+  return key;
 }
 
 const panel = (name: string = JEV) => within(screen.getByRole('region', { name }));
@@ -597,6 +627,175 @@ describe('provider accounts (spec 09 §8)', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(panel().queryByRole('button', { name: 'Disable' })).toBeNull();
   });
+
+  it('confirms nothing when the key is staged once the sign-in has ended', async () => {
+    const answer = gate();
+    const credentials: Server = {
+      items: [jevCredential({ candidateVersion: null, candidateStatus: null }), ollamaCredential()],
+    };
+    const { app, server } = await openWithServer(credentials, {
+      'PUT /admin/engine/credentials/:provider': async () => {
+        await answer.opened;
+        return json(200, {
+          credential: jevCredential({
+            revision: '6',
+            candidateVersion: '6',
+            candidateStatus: 'pending',
+          }),
+        });
+      },
+    });
+    await app.user.type(panel().getByLabelText(KEY_LABEL), SECRET);
+    await app.user.click(panel().getByRole('button', { name: 'Stage key' }));
+    await vi.waitFor(() =>
+      expect(app.calls('PUT /admin/engine/credentials/:provider')).toHaveLength(1),
+    );
+
+    const key = await endSignIn(app, server, credentials);
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(screen.queryByText(STAGED_MESSAGE)).toBeNull();
+    expect(app.queryClient.getQueryData(key)).toEqual({ items: credentials.items });
+  });
+
+  it('adopts nothing when the validation is requested once the sign-in has ended', async () => {
+    const answer = gate();
+    const credentials: Server = { items: [jevCredential(), ollamaCredential()] };
+    const { app, server } = await openWithServer(credentials, {
+      'POST /admin/engine/credentials/:provider/validate': async () => {
+        await answer.opened;
+        return json(202, { credential: jevCredential({ candidateStatus: 'validating' }) });
+      },
+    });
+    await app.user.click(panel().getByRole('button', { name: 'Validate' }));
+    await vi.waitFor(() =>
+      expect(app.calls('POST /admin/engine/credentials/:provider/validate')).toHaveLength(1),
+    );
+
+    const key = await endSignIn(app, server, credentials);
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(app.queryClient.getQueryData(key)).toEqual({ items: credentials.items });
+  });
+
+  it('confirms nothing when the key is activated once the sign-in has ended', async () => {
+    const answer = gate();
+    const credentials: Server = {
+      items: [jevCredential({ candidateStatus: 'valid', validatedAt: T1 }), ollamaCredential()],
+    };
+    const { app, server } = await openWithServer(credentials, {
+      'POST /admin/engine/credentials/:provider/activate': async () => {
+        await answer.opened;
+        return json(200, {
+          credential: jevCredential({
+            revision: '6',
+            activeVersion: '4',
+            candidateVersion: null,
+            candidateStatus: null,
+          }),
+        });
+      },
+    });
+    await app.user.click(panel().getByRole('button', { name: 'Activate' }));
+    await vi.waitFor(() =>
+      expect(app.calls('POST /admin/engine/credentials/:provider/activate')).toHaveLength(1),
+    );
+
+    const key = await endSignIn(app, server, credentials);
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(screen.queryByText('Key activated. It is used from now on.')).toBeNull();
+    expect(app.queryClient.getQueryData(key)).toEqual({ items: credentials.items });
+  });
+
+  it('confirms nothing when the provider is disabled once the sign-in has ended', async () => {
+    const answer = gate();
+    const credentials: Server = { items: [jevCredential(), ollamaCredential()] };
+    const { app, server } = await openWithServer(credentials, {
+      'DELETE /admin/engine/credentials/:provider': async () => {
+        await answer.opened;
+        return json(200, {
+          credential: makeCredential('typesafe', { source: 'db', enabled: false, revision: '6' }),
+        });
+      },
+    });
+    await app.user.click(panel().getByRole('button', { name: 'Disable' }));
+    await app.user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Disable provider' }),
+    );
+    await vi.waitFor(() =>
+      expect(app.calls('DELETE /admin/engine/credentials/:provider')).toHaveLength(1),
+    );
+
+    const key = await endSignIn(app, server, credentials);
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(screen.queryByText('Provider disabled.')).toBeNull();
+    expect(app.queryClient.getQueryData(key)).toEqual({ items: credentials.items });
+  });
+
+  it.each([
+    [
+      'staging the key',
+      'PUT /admin/engine/credentials/:provider',
+      async (app: App) => {
+        await app.user.type(panel().getByLabelText(KEY_LABEL), SECRET);
+        await app.user.click(panel().getByRole('button', { name: 'Stage key' }));
+      },
+    ],
+    [
+      'requesting a validation',
+      'POST /admin/engine/credentials/:provider/validate',
+      async (app: App) => {
+        await app.user.click(panel().getByRole('button', { name: 'Validate' }));
+      },
+    ],
+    [
+      'activating the key',
+      'POST /admin/engine/credentials/:provider/activate',
+      async (app: App) => {
+        await app.user.click(panel().getByRole('button', { name: 'Activate' }));
+      },
+    ],
+    [
+      'disabling the provider',
+      'DELETE /admin/engine/credentials/:provider',
+      async (app: App) => {
+        await app.user.click(panel().getByRole('button', { name: 'Disable' }));
+        await app.user.click(
+          within(await screen.findByRole('dialog')).getByRole('button', {
+            name: 'Disable provider',
+          }),
+        );
+      },
+    ],
+  ])(
+    'refreshes nothing when %s is refused once the sign-in has ended',
+    async (_change, route, start) => {
+      const answer = gate();
+      const credentials: Server = {
+        items: [jevCredential({ candidateStatus: 'valid', validatedAt: T1 }), ollamaCredential()],
+      };
+      const { app, server } = await openWithServer(credentials, {
+        [route]: async () => {
+          await answer.opened;
+          return failure(409, 'CONFLICT', { sqlState: 'BZ409' });
+        },
+      });
+      await start(app);
+      await vi.waitFor(() => expect(app.calls(route)).toHaveLength(1));
+
+      const key = await endSignIn(app, server, credentials);
+      answer.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(app.queryClient.getQueryState(key)?.isInvalidated).toBe(false);
+    },
+  );
 
   it('shows the error state when the credentials cannot be loaded', async () => {
     await render({

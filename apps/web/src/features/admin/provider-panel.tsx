@@ -13,6 +13,7 @@ import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { errorMessage } from '../../components/error-message.js';
 import { TextField } from '../../components/text-field.js';
 import { useToast } from '../../components/toast/toast-provider.js';
+import { useSession } from '../../session/context.js';
 import { Alert, Fact, Facts, Hint } from './admin-ui.js';
 import { Time } from './format.js';
 import {
@@ -70,6 +71,7 @@ export interface ProviderPanelProps {
   onValidationRequested: (watch: ValidationWatch) => void;
 }
 
+/** An answer that comes after the sign-in that asked has ended shows nothing. */
 export function ProviderPanel({
   credential,
   onCredential,
@@ -79,6 +81,7 @@ export function ProviderPanel({
   const { t } = useTranslation('admin');
   const api = useApi();
   const toast = useToast();
+  const session = useSession();
   const headingId = useId();
   const { provider, candidateVersion, candidateStatus } = credential;
   const name = t(`providers.names.${provider}`);
@@ -108,14 +111,17 @@ export function ProviderPanel({
     setApiKey('');
     setStaging(true);
     setProblem(null);
+    const signIn = session.currentSignIn();
     try {
       const result = await api.call(routes.adminCredentialStage, {
         params: { provider },
         body: { apiKey: key, expectedRevision: credential.revision },
       });
+      if (session.currentSignIn() !== signIn) return;
       onCredential(result.credential);
       toast.show({ message: t('providers.staged'), tone: 'success' });
     } catch (error) {
+      if (session.currentSignIn() !== signIn) return;
       fail(error, 'stage');
     } finally {
       setStaging(false);
@@ -125,14 +131,17 @@ export function ProviderPanel({
   async function requestValidation() {
     if (candidateVersion === null) return;
     setProblem(null);
+    const signIn = session.currentSignIn();
     try {
       const result = await validate.mutateAsync({
         params: { provider },
         body: { candidateVersion, expectedRevision: credential.revision },
       });
+      if (session.currentSignIn() !== signIn) return;
       onValidationRequested({ snapshot: snapshotOf(credential), startedAt: Date.now() });
       onCredential(result.credential);
     } catch (error) {
+      if (session.currentSignIn() !== signIn) return;
       fail(error, 'validate');
     }
   }
@@ -140,28 +149,34 @@ export function ProviderPanel({
   async function activateCandidate() {
     if (candidateVersion === null) return;
     setProblem(null);
+    const signIn = session.currentSignIn();
     try {
       const result = await activate.mutateAsync({
         params: { provider },
         body: { candidateVersion, expectedRevision: credential.revision },
       });
+      if (session.currentSignIn() !== signIn) return;
       onCredential(result.credential);
       toast.show({ message: t('providers.activated'), tone: 'success' });
     } catch (error) {
+      if (session.currentSignIn() !== signIn) return;
       fail(error, 'activate');
     }
   }
 
   async function disable() {
     setProblem(null);
+    const signIn = session.currentSignIn();
     try {
       const result = await revoke.mutateAsync({
         params: { provider },
         query: { expectedRevision: credential.revision },
       });
+      if (session.currentSignIn() !== signIn) return;
       onCredential(result.credential);
       toast.show({ message: t('providers.disabledToast'), tone: 'success' });
     } catch (error) {
+      if (session.currentSignIn() !== signIn) return;
       fail(error, 'revoke');
     }
   }

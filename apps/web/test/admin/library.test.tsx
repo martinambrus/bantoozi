@@ -1,9 +1,11 @@
 import type { AdminLibraryCard, LibraryCandidate } from '@bantoozi/shared';
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { accountKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
-import { bodyOf, renderApp, type ApiRouteHandler } from '../support/app.js';
+import { gate } from '../interests/support.js';
+import { bodyOf, renderApp, type ApiRouteHandler, type FakeServer } from '../support/app.js';
 import {
   T1,
   T2,
@@ -163,6 +165,26 @@ async function openLibrary(server: LibraryServer, routes: Record<string, ApiRout
   await screen.findByRole('heading', { level: 3, name: 'Promotion candidates' });
   await waitFor(() => expect(screen.queryByRole('status', { name: 'Loading…' })).toBeNull());
   return app;
+}
+
+/** `openLibrary`, also giving the fake API, so that a test can end the sign-in. */
+async function openWithServer(
+  library: LibraryServer,
+  routes: Record<string, ApiRouteHandler> = {},
+) {
+  const server: FakeServer = {
+    me: adminMe(),
+    routes: adminRoutes({
+      'GET /admin/library': () => json(200, page(library.cards)),
+      'GET /admin/library/candidates': () => json(200, { items: library.candidates }),
+      ...routes,
+    }),
+  };
+  const app = await render({ path: '/admin/library', server });
+  await screen.findByRole('heading', { level: 3, name: 'Library cards' });
+  await screen.findByRole('heading', { level: 3, name: 'Promotion candidates' });
+  await waitFor(() => expect(screen.queryByRole('status', { name: 'Loading…' })).toBeNull());
+  return { app, server };
 }
 
 describe('admin library (spec 09 §8)', () => {
@@ -423,6 +445,85 @@ describe('admin library (spec 09 §8)', () => {
       );
       expect(screen.getByRole('dialog')).toBeVisible();
     });
+
+    it('confirms nothing when the promotion is answered once the sign-in has ended', async () => {
+      const answer = gate();
+      const { app, server } = await openWithServer(
+        { cards: [chess], candidates: [approvedJazz] },
+        {
+          'POST /admin/library/promote': async () => {
+            await answer.opened;
+            return json(200, {
+              request: makeRequest({
+                id: '12',
+                cardId: '502',
+                cardTitle: 'Jazz',
+                status: 'promoted',
+                authorizationKind: 'creator_inactive_30d',
+                promotedAt: T2,
+                promotionEligibility: {
+                  status: 'promoted',
+                  basis: 'creator_inactive_30d',
+                  reason: null,
+                },
+              }),
+              cardId: '502',
+              authorizationKind: 'creator_inactive_30d',
+            });
+          },
+        },
+      );
+      await app.user.click(within(article('Jazz')).getByRole('button', { name: 'Promote Jazz' }));
+      await app.user.click(
+        within(await screen.findByRole('dialog')).getByRole('button', {
+          name: 'Promote after 30 days of inactivity',
+        }),
+      );
+      await waitFor(() => expect(app.calls('POST /admin/library/promote')).toHaveLength(1));
+
+      server.me = null;
+      await act(() => app.session.resetAccountState());
+      // The list as the next sign-in of this account has loaded it by now.
+      const candidates = accountKey(adminMe().id, 'admin', 'library', 'candidates');
+      app.queryClient.setQueryData(candidates, [approvedJazz]);
+      answer.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(
+        screen.queryByText('Promoted “Jazz”. Published after 30 days of creator inactivity.'),
+      ).toBeNull();
+      expect(app.queryClient.getQueryState(candidates)?.isInvalidated).toBe(false);
+    });
+
+    it('refreshes nothing when the promotion is refused once the sign-in has ended (409)', async () => {
+      const answer = gate();
+      const { app, server } = await openWithServer(
+        { cards: [chess], candidates: [approvedJazz] },
+        {
+          'POST /admin/library/promote': async () => {
+            await answer.opened;
+            return failure(409, 'CONFLICT', { sqlState: 'BZ409' });
+          },
+        },
+      );
+      await app.user.click(within(article('Jazz')).getByRole('button', { name: 'Promote Jazz' }));
+      await app.user.click(
+        within(await screen.findByRole('dialog')).getByRole('button', {
+          name: 'Promote after 30 days of inactivity',
+        }),
+      );
+      await waitFor(() => expect(app.calls('POST /admin/library/promote')).toHaveLength(1));
+
+      server.me = null;
+      await act(() => app.session.resetAccountState());
+      // The list as the next sign-in of this account has loaded it by now.
+      const candidates = accountKey(adminMe().id, 'admin', 'library', 'candidates');
+      app.queryClient.setQueryData(candidates, [approvedJazz]);
+      answer.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(app.queryClient.getQueryState(candidates)?.isInvalidated).toBe(false);
+    });
   });
 
   describe('promotion requests', () => {
@@ -541,6 +642,41 @@ describe('admin library (spec 09 §8)', () => {
       await app.user.click(within(dialog).getByRole('button', { name: 'Create request' }));
 
       expect(await within(dialog).findByRole('alert')).toHaveTextContent(message);
+    });
+
+    it('confirms nothing when the request is created once the sign-in has ended', async () => {
+      const answer = gate();
+      const { app, server } = await openWithServer(
+        { cards: [chess], candidates: [sailing] },
+        {
+          'POST /admin/library/promotion-requests': async () => {
+            await answer.opened;
+            return json(201, { request: makeRequest({ cardId: '506', cardTitle: 'Sailing' }) });
+          },
+        },
+      );
+      await app.user.click(
+        within(article('Sailing')).getByRole('button', {
+          name: 'Create promotion request for Sailing',
+        }),
+      );
+      await app.user.click(
+        within(await screen.findByRole('dialog')).getByRole('button', { name: 'Create request' }),
+      );
+      await waitFor(() =>
+        expect(app.calls('POST /admin/library/promotion-requests')).toHaveLength(1),
+      );
+
+      server.me = null;
+      await act(() => app.session.resetAccountState());
+      // The list as the next sign-in of this account has loaded it by now.
+      const candidates = accountKey(adminMe().id, 'admin', 'library', 'candidates');
+      app.queryClient.setQueryData(candidates, [sailing]);
+      answer.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(screen.queryByText(/Request created/)).toBeNull();
+      expect(app.queryClient.getQueryState(candidates)?.isInvalidated).toBe(false);
     });
   });
 
@@ -766,6 +902,38 @@ describe('admin library (spec 09 §8)', () => {
         'A newer version of this card exists. The list was refreshed; edit the newest version.',
       );
       expect(app.calls('GET /admin/library')).toHaveLength(2);
+    });
+
+    it('confirms nothing when the card is saved once the sign-in has ended', async () => {
+      const answer = gate();
+      const { app, server } = await openWithServer(
+        { cards: [solar], candidates: [] },
+        {
+          'PATCH /admin/library/:id': async () => {
+            await answer.opened;
+            return json(200, { card: { ...solar, title: 'Solar energy' }, idChange: null });
+          },
+        },
+      );
+      await app.user.click(
+        within(article('Solar power')).getByRole('button', { name: 'Edit Solar power' }),
+      );
+      const dialog = await screen.findByRole('dialog');
+      await app.user.clear(within(dialog).getByLabelText('Title'));
+      await app.user.type(within(dialog).getByLabelText('Title'), 'Solar energy');
+      await app.user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+      await waitFor(() => expect(app.calls('PATCH /admin/library/:id')).toHaveLength(1));
+
+      server.me = null;
+      await act(() => app.session.resetAccountState());
+      // The list as the next sign-in of this account has loaded it by now.
+      const cards = accountKey(adminMe().id, 'admin', 'library', 'cards');
+      app.queryClient.setQueryData(cards, { pages: [], pageParams: [] });
+      answer.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(screen.queryByText('Library card saved.')).toBeNull();
+      expect(app.queryClient.getQueryState(cards)?.isInvalidated).toBe(false);
     });
   });
 

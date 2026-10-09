@@ -8,6 +8,7 @@ import { Button } from '../../components/button.js';
 import { Dialog } from '../../components/dialog.js';
 import { TextField } from '../../components/text-field.js';
 import { useToast } from '../../components/toast/toast-provider.js';
+import { useSession } from '../../session/context.js';
 import { Alert, Hint } from './admin-ui.js';
 import {
   fieldMessage,
@@ -23,6 +24,7 @@ export interface PromotionRequestDialogProps {
   onCreated: () => void;
 }
 
+/** An answer that comes after the sign-in that asked has ended shows nothing. */
 export function PromotionRequestDialog({
   candidate,
   onClose,
@@ -30,6 +32,7 @@ export function PromotionRequestDialog({
 }: PromotionRequestDialogProps) {
   const { t } = useTranslation('admin');
   const toast = useToast();
+  const session = useSession();
   const create = useApiMutation(routes.adminLibraryPromotionRequest);
   const [title, setTitle] = useState(candidate.title);
   const [titleSk, setTitleSk] = useState('');
@@ -60,8 +63,10 @@ export function PromotionRequestDialog({
       return;
     }
     setErrors({});
+    const signIn = session.currentSignIn();
     try {
       await create.mutateAsync({ body: parsed.data });
+      if (session.currentSignIn() !== signIn) return;
       toast.show({ message: t('library.requests.created'), tone: 'success' });
       onCreated();
       onClose();

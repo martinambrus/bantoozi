@@ -13,6 +13,7 @@ import { Select } from '../../components/select.js';
 import { EmptyState } from '../../components/states/empty-state.js';
 import { QueryState } from '../../components/states/query-state.js';
 import { useToast } from '../../components/toast/toast-provider.js';
+import { useSession } from '../../session/context.js';
 import {
   Alert,
   Cell,
@@ -113,10 +114,12 @@ function FeedRow({
   );
 }
 
+/** An answer that comes after the sign-in that asked has ended shows nothing. */
 export function AdminFeedsPage() {
   const { t } = useTranslation('admin');
   const api = useApi();
   const toast = useToast();
+  const session = useSession();
   const refresh = useRefresh();
   const { status, q } = route.useSearch();
   const navigate = route.useNavigate();
@@ -132,8 +135,10 @@ export function AdminFeedsPage() {
   async function resetFeed(feed: AdminFeed) {
     setNotice(null);
     setResetting(feed.id);
+    const signIn = session.currentSignIn();
     try {
       await reset.mutateAsync({ params: { id: feed.id } });
+      if (session.currentSignIn() !== signIn) return;
       toast.show({ message: t('feeds.resetDone'), tone: 'success' });
       void refresh('feeds');
     } catch (error) {

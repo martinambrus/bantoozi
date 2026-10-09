@@ -10,6 +10,7 @@ import { Dialog } from '../../components/dialog.js';
 import { errorMessage } from '../../components/error-message.js';
 import { TextField } from '../../components/text-field.js';
 import { useToast } from '../../components/toast/toast-provider.js';
+import { useSession } from '../../session/context.js';
 import { Alert } from './admin-ui.js';
 
 export interface FeedOptionsDialogProps {
@@ -19,9 +20,11 @@ export interface FeedOptionsDialogProps {
   onSaved: () => void;
 }
 
+/** An answer that comes after the sign-in that asked has ended shows nothing. */
 export function FeedOptionsDialog({ feed, name, onClose, onSaved }: FeedOptionsDialogProps) {
   const { t } = useTranslation('admin');
   const toast = useToast();
+  const session = useSession();
   const update = useApiMutation(routes.adminFeedUpdate);
   const initialAgent = feed.fetchOptions.userAgent ?? '';
   const initialStrong = feed.fetchOptions.translateStrong === true;
@@ -47,8 +50,10 @@ export function FeedOptionsDialog({ feed, name, onClose, onSaved }: FeedOptionsD
     }
     setAgentError(undefined);
     setFailure(null);
+    const signIn = session.currentSignIn();
     try {
       await update.mutateAsync({ params: { id: feed.id }, body: { fetchOptions: parsed.data } });
+      if (session.currentSignIn() !== signIn) return;
       toast.show({ message: t('feeds.options.saved'), tone: 'success' });
       onSaved();
       onClose();

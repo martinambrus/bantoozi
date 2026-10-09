@@ -2,8 +2,10 @@ import type { AdminOverview } from '@bantoozi/shared';
 import { act, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { accountKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
-import { bodyOf, renderApp, type ApiRouteHandler } from '../support/app.js';
+import { gate } from '../interests/support.js';
+import { bodyOf, renderApp, type ApiRouteHandler, type FakeServer } from '../support/app.js';
 import {
   T1,
   T2,
@@ -35,6 +37,12 @@ afterEach(() => {
 
 async function open(path: string, routes: Record<string, ApiRouteHandler> = {}) {
   return guard(await renderApp({ path, server: { me: adminMe(), routes: adminRoutes(routes) } }));
+}
+
+/** `open`, also giving the fake API, so that a test can end the sign-in. */
+async function openWithServer(path: string, routes: Record<string, ApiRouteHandler> = {}) {
+  const server: FakeServer = { me: adminMe(), routes: adminRoutes(routes) };
+  return { app: guard(await renderApp({ path, server })), server };
 }
 
 const inGroup = (name: string) => within(screen.getByRole('group', { name }));
@@ -254,6 +262,25 @@ describe('overview (spec 09 §8)', () => {
     const [request] = app.calls('POST /admin/translations/reprocess');
     expect(bodyOf(request!)).toEqual({});
     expect(request!.headers.get('Idempotency-Key')).toMatch(UUID_V4);
+  });
+
+  it('confirms nothing when the reprocessing is queued once the sign-in has ended', async () => {
+    const answer = gate();
+    const { app, server } = await openWithServer('/admin', {
+      'POST /admin/translations/reprocess': async () => {
+        await answer.opened;
+        return json(202, { queued: true });
+      },
+    });
+    await app.user.click(await screen.findByRole('button', { name: 'Reprocess translations' }));
+    await vi.waitFor(() => expect(app.calls('POST /admin/translations/reprocess')).toHaveLength(1));
+
+    server.me = null;
+    await act(() => app.session.resetAccountState());
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(screen.queryByText('Reprocessing of the skipped translations is queued.')).toBeNull();
   });
 });
 
@@ -601,6 +628,58 @@ describe('feeds (spec 09 §8)', () => {
     expect(within(dialog).getByText('Use printable ASCII characters only.')).toBeVisible();
     expect(app.calls('PATCH /admin/feeds/:id')).toHaveLength(0);
   });
+
+  it('confirms nothing when the feed is reset once the sign-in has ended', async () => {
+    const answer = gate();
+    const { app, server } = await openWithServer('/admin/feeds', {
+      'GET /admin/feeds': () => json(200, page([broken])),
+      'POST /admin/feeds/:id/reset': async () => {
+        await answer.opened;
+        return json(200, { feed: { ...broken, status: 'active' as const, consecutiveErrors: 0 } });
+      },
+    });
+    await screen.findByRole('table', { name: 'Feeds' });
+    await app.user.click(inRow(/Broken Blog/).getByRole('button', { name: 'Reset Broken Blog' }));
+    await vi.waitFor(() => expect(app.calls('POST /admin/feeds/:id/reset')).toHaveLength(1));
+
+    server.me = null;
+    await act(() => app.session.resetAccountState());
+    // The list as the next sign-in of this account has loaded it by now.
+    const feeds = accountKey(adminMe().id, 'admin', 'feeds');
+    app.queryClient.setQueryData(feeds, { pages: [], pageParams: [] });
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(screen.queryByText('Feed reset. It will be fetched again soon.')).toBeNull();
+    expect(app.queryClient.getQueryState(feeds)?.isInvalidated).toBe(false);
+  });
+
+  it('confirms nothing when the options are saved once the sign-in has ended', async () => {
+    const answer = gate();
+    const { app, server } = await openWithServer('/admin/feeds', {
+      'PATCH /admin/feeds/:id': async () => {
+        await answer.opened;
+        return json(200, { feed: makeFeed({ fetchOptions: { userAgent: 'BantooziBot/1.0' } }) });
+      },
+    });
+    await screen.findByRole('table', { name: 'Feeds' });
+    await app.user.click(screen.getByRole('button', { name: 'Edit options of Example News' }));
+    const dialog = await screen.findByRole('dialog');
+    await app.user.type(within(dialog).getByLabelText('User-Agent override'), 'BantooziBot/1.0');
+    await app.user.click(within(dialog).getByRole('button', { name: 'Save options' }));
+    await vi.waitFor(() => expect(app.calls('PATCH /admin/feeds/:id')).toHaveLength(1));
+
+    server.me = null;
+    await act(() => app.session.resetAccountState());
+    // The list as the next sign-in of this account has loaded it by now.
+    const feeds = accountKey(adminMe().id, 'admin', 'feeds');
+    app.queryClient.setQueryData(feeds, { pages: [], pageParams: [] });
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(screen.queryByText('Fetch options saved.')).toBeNull();
+    expect(app.queryClient.getQueryState(feeds)?.isInvalidated).toBe(false);
+  });
 });
 
 describe('users (spec 09 §8)', () => {
@@ -733,6 +812,33 @@ describe('users (spec 09 §8)', () => {
     expect(within(dialog).getByLabelText('Invites left')).toBeInvalid();
     expect(within(dialog).getByText('Enter a whole number from 0 to 10000.')).toBeVisible();
     expect(app.calls('PATCH /admin/users/:id')).toHaveLength(0);
+  });
+
+  it('confirms nothing when the user is saved once the sign-in has ended', async () => {
+    const answer = gate();
+    const { app, server } = await openWithServer('/admin/users', {
+      'PATCH /admin/users/:id': async () => {
+        await answer.opened;
+        return json(200, { user: { ...makeUser(), plan: 'admin' }, sessionsRevoked: 0 });
+      },
+    });
+    await screen.findByRole('table', { name: 'Users' });
+    await app.user.click(screen.getByRole('button', { name: 'Edit reader@example.com' }));
+    const dialog = await screen.findByRole('dialog');
+    await app.user.selectOptions(within(dialog).getByLabelText('Plan'), 'admin');
+    await app.user.click(within(dialog).getByRole('button', { name: 'Save user' }));
+    await vi.waitFor(() => expect(app.calls('PATCH /admin/users/:id')).toHaveLength(1));
+
+    server.me = null;
+    await act(() => app.session.resetAccountState());
+    // The list as the next sign-in of this account has loaded it by now.
+    const users = accountKey(adminMe().id, 'admin', 'users');
+    app.queryClient.setQueryData(users, { pages: [], pageParams: [] });
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(screen.queryByText('User saved.')).toBeNull();
+    expect(app.queryClient.getQueryState(users)?.isInvalidated).toBe(false);
   });
 });
 

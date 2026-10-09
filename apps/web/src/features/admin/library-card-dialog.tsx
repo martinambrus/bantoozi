@@ -16,6 +16,7 @@ import { Dialog } from '../../components/dialog.js';
 import { TextArea } from '../../components/text-area.js';
 import { TextField } from '../../components/text-field.js';
 import { useToast } from '../../components/toast/toast-provider.js';
+import { useSession } from '../../session/context.js';
 import { Alert, Hint } from './admin-ui.js';
 import {
   fieldMessage,
@@ -117,9 +118,11 @@ export interface LibraryCardDialogProps {
   onChanged: () => void;
 }
 
+/** An answer that comes after the sign-in that asked has ended shows nothing. */
 export function LibraryCardDialog({ card, onClose, onChanged }: LibraryCardDialogProps) {
   const { t } = useTranslation('admin');
   const toast = useToast();
+  const session = useSession();
   const create = useApiMutation(routes.adminLibraryCreate);
   const update = useApiMutation(routes.adminLibraryUpdate);
   const [form, setForm] = useState(() => formOf(card));
@@ -142,8 +145,10 @@ export function LibraryCardDialog({ card, onClose, onChanged }: LibraryCardDialo
   }
 
   async function finish(send: () => Promise<SaveResult>, saved: (result: SaveResult) => string) {
+    const signIn = session.currentSignIn();
     try {
       const result = await send();
+      if (session.currentSignIn() !== signIn) return;
       toast.show({ message: saved(result), tone: 'success' });
       onChanged();
       onClose();

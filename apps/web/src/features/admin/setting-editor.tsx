@@ -14,6 +14,7 @@ import { Button } from '../../components/button.js';
 import { errorMessage } from '../../components/error-message.js';
 import { TextArea } from '../../components/text-area.js';
 import { useToast } from '../../components/toast/toast-provider.js';
+import { useSession } from '../../session/context.js';
 import { Alert, Hint } from './admin-ui.js';
 import { Time } from './format.js';
 import { checkSetting } from './settings-validation.js';
@@ -57,6 +58,7 @@ export interface SettingEditorProps {
   onStale: () => void;
 }
 
+/** An answer that comes after the sign-in that asked has ended shows nothing. */
 export function SettingEditor({
   settingKey,
   value,
@@ -66,6 +68,7 @@ export function SettingEditor({
 }: SettingEditorProps) {
   const { t } = useTranslation('admin');
   const toast = useToast();
+  const session = useSession();
   const update = useApiMutation(routes.adminSettingsUpdate);
   const [failure, setFailure] = useState<unknown>(null);
   // Null until the text is touched, so an editor nobody edited follows the latest value.
@@ -86,11 +89,13 @@ export function SettingEditor({
   async function save() {
     if (!checked.ok) return;
     const sent = text;
+    const signIn = session.currentSignIn();
     setFailure(null);
     try {
       const result = await update.mutateAsync({
         body: { [settingKey]: checked.value } as AdminSettingsPatch,
       });
+      if (session.currentSignIn() !== signIn) return;
       onSaved(result);
       // Text edited while the save was on its way stays, still to be saved.
       setEdit((current) => (current === sent ? null : current));
