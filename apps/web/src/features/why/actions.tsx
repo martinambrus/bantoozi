@@ -28,8 +28,15 @@ function MuteKeyword({ words }: { words: string[] }) {
   const removal = useRuleRemoval();
 
   const create = useApiMutation(routes.ruleCreate, {
-    onSuccess: () => {
+    // Each mute is confirmed here: a callback of one `mutate` call is dropped when a second mute
+    // starts before the first is answered, and when the drawer closes.
+    onSuccess: ({ rule }, variables) => {
       void queryClient.invalidateQueries({ queryKey: articleKeys.all(accountId) });
+      toast.show({
+        message: tArticle('reason.rule.mute_keyword', { keyword: variables.body.value }),
+        tone: 'success',
+        action: { label: t('common:actions.undo'), onAction: () => removal.remove(rule.id) },
+      });
     },
     onError: (error) => {
       toast.show({ message: errorMessage(t, error), tone: 'error' });
@@ -37,18 +44,7 @@ function MuteKeyword({ words }: { words: string[] }) {
   });
 
   const mute = (keyword: string) => {
-    create.mutate(
-      { body: { kind: 'mute_keyword', value: keyword } },
-      {
-        onSuccess: ({ rule }) => {
-          toast.show({
-            message: tArticle('reason.rule.mute_keyword', { keyword }),
-            tone: 'success',
-            action: { label: t('common:actions.undo'), onAction: () => removal.remove(rule.id) },
-          });
-        },
-      },
-    );
+    create.mutate({ body: { kind: 'mute_keyword', value: keyword } });
   };
 
   return (

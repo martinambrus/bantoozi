@@ -7,7 +7,7 @@ import { cardsKey } from '../../src/features/interests/queries.js';
 import { WhyThisSheet } from '../../src/features/why/why-this-sheet.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
 import { bodyOf, findToast, makeItem, makeMe, makeRule } from '../article/harness.js';
-import { cardResult, makeCard } from '../interests/support.js';
+import { cardResult, gate, makeCard } from '../interests/support.js';
 import { USER_A_ID } from '../session/fixtures.js';
 import { FACETS, checkUnhandled, makeExplain, renderDrawer } from './support.js';
 
@@ -331,6 +331,69 @@ describe('mute a keyword', () => {
     expect(request!.headers.get('Idempotency-Key')).toMatch(UUID_V4);
     await waitFor(() => expect(app.calls('GET', '/articles/101')).toHaveLength(2));
 
+    await app.user.click(within(toast).getByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(app.calls('DELETE', '/rules/77')).toHaveLength(1));
+    expect(await findToast('Rule removed')).toBeInTheDocument();
+  });
+
+  /** `POST /rules` as the API answers a mute: the rule gets the id its word has here. */
+  const RULE_IDS: Record<string, string> = { batteries: '77', pilot: '78' };
+  function mutes(request: Parameters<typeof bodyOf>[0]) {
+    const { value } = bodyOf(request) as { value: string };
+    return json(201, { rule: makeRule(RULE_IDS[value] ?? '79', 'mute_keyword', value) });
+  }
+
+  async function mute(app: Awaited<ReturnType<typeof renderDrawer>>, word: string) {
+    await app.user.click(app.panel.getByRole('button', { name: 'Mute a keyword' }));
+    await app.user.click(await screen.findByRole('menuitem', { name: word }));
+  }
+
+  it('confirms two words muted in quick succession, each undo taking back its own rule', async () => {
+    const first = gate();
+    const app = await renderDrawer({
+      routes: {
+        'POST /rules': async (request) => {
+          if ((bodyOf(request) as { value: string }).value === 'batteries') await first.opened;
+          return mutes(request);
+        },
+        'DELETE /rules/:id': () => noContent(),
+      },
+    });
+
+    await mute(app, 'batteries');
+    await waitFor(() => expect(app.calls('POST', '/rules')).toHaveLength(1));
+    await mute(app, 'pilot');
+    const pilot = await findToast('Muted keyword: “pilot”');
+    first.release();
+    const batteries = await findToast('Muted keyword: “batteries”');
+
+    await app.user.click(within(batteries).getByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(app.calls('DELETE', '/rules/77')).toHaveLength(1));
+    expect(app.calls('DELETE', '/rules/78')).toHaveLength(0);
+    await app.user.click(within(pilot).getByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(app.calls('DELETE', '/rules/78')).toHaveLength(1));
+    expect(app.calls('DELETE', '/rules/77')).toHaveLength(1);
+  });
+
+  it('confirms with an undo when the answer comes after the drawer has closed', async () => {
+    const answer = gate();
+    const app = await renderDrawer({
+      routes: {
+        'POST /rules': async (request) => {
+          await answer.opened;
+          return mutes(request);
+        },
+        'DELETE /rules/:id': () => noContent(),
+      },
+    });
+    await mute(app, 'batteries');
+    await waitFor(() => expect(app.calls('POST', '/rules')).toHaveLength(1));
+
+    app.rerender(<WhyThisSheet item={app.item} open={false} onClose={app.onClose} />);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    answer.release();
+
+    const toast = await findToast('Muted keyword: “batteries”');
     await app.user.click(within(toast).getByRole('button', { name: 'Undo' }));
     await waitFor(() => expect(app.calls('DELETE', '/rules/77')).toHaveLength(1));
     expect(await findToast('Rule removed')).toBeInTheDocument();
