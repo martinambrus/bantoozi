@@ -26,7 +26,8 @@ const queues = new WeakMap<QueryClient, Promise<void>>();
  * The quality demotions of the ranking (spec 06 §5): "on" always ranks that kind of article lower,
  * "off" never does, "auto" leaves it to the ranker. They change the ranking, so the articles are
  * loaded again. The drawer holds one for all its sections, so none of them offers a change while
- * another's is on its way.
+ * another's is on its way. An answer that comes after the sign-in that asked has ended changes
+ * nothing.
  */
 export function useDemotions() {
   const { t } = useTranslation('why');
@@ -37,7 +38,9 @@ export function useDemotions() {
   const me = useMe();
 
   const update = useApiMutation(routes.meUpdate, {
-    onSuccess: () => {
+    onMutate: () => session.currentSignIn(),
+    onSuccess: (_answer, _variables, signIn) => {
+      if (session.currentSignIn() !== signIn) return;
       void queryClient.invalidateQueries({ queryKey: articleKeys.all(accountId) });
     },
   });

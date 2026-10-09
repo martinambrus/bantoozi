@@ -3,6 +3,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { FOCUS_RING } from '../../src/components/cx.js';
+import { articleKeys } from '../../src/features/article/query-keys.js';
 import { cardsKey } from '../../src/features/interests/queries.js';
 import { WhyThisSheet } from '../../src/features/why/why-this-sheet.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
@@ -150,6 +151,33 @@ describe('"Never show me …"', () => {
     await settled(app);
 
     expect(screen.queryByText('Clickbait will be ranked lower from now on')).toBeNull();
+  });
+
+  it('sends no request for the articles when the answer comes after signing in again', async () => {
+    const answer = gate();
+    const app = await renderDrawer({
+      explain: WITH_FACETS,
+      routes: {
+        'PATCH /me': async () => {
+          await answer.opened;
+          return json(200, meWith({ clickbait: 'on' }));
+        },
+      },
+    });
+    await app.user.click(app.panel.getByRole('button', { name: 'Never show me clickbait' }));
+    await waitFor(() => expect(app.calls('PATCH', '/me')).toHaveLength(1));
+
+    app.signInAgain(makeMe());
+    const listedAfter = [...articleKeys.all(USER_A_ID), 'list', 'for_you'];
+    app.queryClient.setQueryData(listedAfter, { items: [] });
+    answer.release();
+    await waitFor(() => expect(app.queryClient.isMutating()).toBe(0));
+    await settled(app);
+
+    expect({
+      detailRequests: app.calls('GET', '/articles/101').length,
+      listInvalidated: app.queryClient.getQueryState(listedAfter)?.isInvalidated,
+    }).toEqual({ detailRequests: 1, listInvalidated: false });
   });
 
   it('is not offered for a preference that is already on', async () => {
