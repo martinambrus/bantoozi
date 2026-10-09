@@ -264,7 +264,7 @@ describe('verifyCode', () => {
       code: '123456',
     });
     expect(resets).toEqual([]);
-    expect(tab.heard).toEqual([]);
+    expect(tab.heard).toEqual([{ type: 'signed-in', me: userA }]);
   });
 
   it('leaves the state alone when the code is wrong', async () => {
@@ -293,7 +293,10 @@ describe('verifyCode', () => {
     expect(queryClient.getQueryData(meKey())).toEqual(userB);
     expect(keysOf(queryClient)).toEqual([meKey()]);
     await vi.waitFor(() =>
-      expect(tab.heard).toEqual([{ type: 'reset', removed: USER_A_ID, at: expect.any(Number) }]),
+      expect(tab.heard).toEqual([
+        { type: 'signed-in', me: userB },
+        { type: 'reset', removed: USER_A_ID, at: expect.any(Number) },
+      ]),
     );
   });
 

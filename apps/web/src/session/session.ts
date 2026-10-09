@@ -1,4 +1,4 @@
-import type { Me, RequestCodeResponse } from '@bantoozi/shared';
+import { MeSchema, type Me, type RequestCodeResponse } from '@bantoozi/shared';
 import { hashKey, isCancelledError, type QueryClient } from '@tanstack/react-query';
 import type { i18n as I18n } from 'i18next';
 
@@ -68,7 +68,8 @@ export interface Session {
   requestCode: (input: RequestCodeInput) => Promise<RequestCodeResponse>;
   /**
    * Signs in once no sign-out of any tab is on its way. An account other than the one this device
-   * knew drops the old one's state first.
+   * knew drops the old one's state first. The other tabs are told: one that shows another account
+   * takes this one.
    */
   verifyCode: (input: { email: string; code: string }) => Promise<Me>;
   /**
@@ -101,6 +102,16 @@ interface ResetMessage {
 
 function isResetMessage(data: unknown): data is ResetMessage {
   return typeof data === 'object' && data !== null && 'type' in data && data.type === 'reset';
+}
+
+interface SignedInMessage {
+  type: 'signed-in';
+  /** The account the sending tab signed in as. */
+  me?: unknown;
+}
+
+function isSignedInMessage(data: unknown): data is SignedInMessage {
+  return typeof data === 'object' && data !== null && 'type' in data && data.type === 'signed-in';
 }
 
 /** What the other tabs are told of a reset. */
@@ -208,6 +219,21 @@ export function createSession(options: SessionOptions): Session {
   if (channel !== null) {
     channel.onmessage = (event: MessageEvent<unknown>) => {
       const message = event.data;
+      if (isSignedInMessage(message)) {
+        // Every request of this tab goes out as that account from now on. A tab that shows another
+        // one takes it as a `/me` answer for it would, the earlier account removed first; a tab that
+        // shows nobody stays signed out.
+        const shown = idInCache();
+        if (typeof shown !== 'string') return;
+        const signedIn = MeSchema.safeParse(message.me);
+        if (!signedIn.success) {
+          // A tab of another version of the app: this one asks who is signed in.
+          void queryClient.refetchQueries({ queryKey: meKey(), exact: true });
+        } else if (signedIn.data.id !== shown) {
+          queryClient.setQueryData(meKey(), signedIn.data);
+        }
+        return;
+      }
       if (!isResetMessage(message)) return;
       // A write of this tab must not bring back what the other tab removed.
       if (typeof message.removed === 'string' && typeof message.at === 'number') {
@@ -365,7 +391,11 @@ export function createSession(options: SessionOptions): Session {
         if (isRetryable(error)) throw error;
         clearLogoutPending();
       }
-      return api.call(routes.authVerify, { body: input });
+      const answer = await api.call(routes.authVerify, { body: input });
+      // The session cookie of the browser is this account's now. The other tabs hear of the
+      // sign-ins in the order they took the lock, so the last one they hear of holds the cookie.
+      channel?.postMessage({ type: 'signed-in', me: answer.user });
+      return answer;
     });
     if (knownAccountId !== undefined && knownAccountId !== user.id) {
       await reset('account_switch', knownAccountId);

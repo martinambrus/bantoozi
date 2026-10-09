@@ -198,6 +198,48 @@ describe('when another account signs in', () => {
   });
 });
 
+describe('when another tab signs in', () => {
+  // The tabs share one session cookie, so every request goes out as the account signed in last.
+  it('a tab that shows another account takes the new one, once the earlier one is removed', async () => {
+    // Both tabs started signed out, so neither knew an account when the other signed in.
+    const first = sessions.start({ me: null, verifiesAs: userA });
+    const second = sessions.start({ me: null, verifiesAs: userB });
+    await first.session.loadMe();
+    await second.session.loadMe();
+    await first.session.verifyCode({ email: userA.email, code: '123456' });
+    await seed(A);
+
+    await verifyAsB(second.session);
+
+    await vi.waitFor(() => expect(first.queryClient.getQueryData(meKey())).toEqual(userB));
+    expect(await rowsOfAccount(A)).toEqual([]);
+    expect(localKeysOf(A)).toEqual([]);
+  });
+
+  it('leaves a tab that shows nobody signed out', async () => {
+    const first = sessions.start({ me: null, verifiesAs: userA });
+    const second = sessions.start({ me: null });
+    await first.session.loadMe();
+    await second.session.loadMe();
+
+    await first.session.verifyCode({ email: userA.email, code: '123456' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(second.queryClient.getQueryData(meKey())).toBeNull();
+  });
+
+  it('asks who is signed in when it cannot read the account the other tab sent', async () => {
+    const { session, queryClient, server } = sessions.start({ me: userA });
+    await session.loadMe();
+    server.me = userB;
+    const other = new BroadcastChannel(SESSION_CHANNEL);
+
+    other.postMessage({ type: 'signed-in', me: { id: B } });
+    await vi.waitFor(() => expect(queryClient.getQueryData(meKey())).toEqual(userB));
+    other.close();
+  });
+});
+
 describe('when the person signs out', () => {
   it('removes the rows and the stored keys of the account, and nobody elses', async () => {
     const { session } = sessions.start({ me: userA });
