@@ -643,6 +643,31 @@ describe('another tab', () => {
     expect(tab.heard).toEqual([{ type: 'reset', removed: USER_A_ID, at: expect.any(Number) }]);
   });
 
+  it('asks who is signed in, and stays, when the reset removed an account it no longer shows', async () => {
+    const tab = otherTab();
+    const { queryClient, requests } = await startSignedIn(userB);
+    const resets = recordResets();
+
+    tab.channel.postMessage({ type: 'reset', removed: USER_A_ID, at: Date.now() });
+
+    await vi.waitFor(() => expect(requestsTo(requests, 'GET /api/v1/me')).toHaveLength(2));
+    await settle();
+    expect(resets).toEqual([]);
+    expect(queryClient.getQueryData(meKey())).toEqual(userB);
+  });
+
+  it('signs out when that sign-out ended the session of the account it shows too', async () => {
+    const tab = otherTab();
+    const { queryClient, server } = await startSignedIn(userB);
+    const resets = recordResets();
+    server.me = null;
+
+    tab.channel.postMessage({ type: 'reset', removed: USER_A_ID, at: Date.now() });
+
+    await vi.waitFor(() => expect(queryClient.getQueryData(meKey())).toBeNull());
+    expect(resets).toEqual(['unauthorized']);
+  });
+
   it('stops listening after dispose', async () => {
     const tab = otherTab();
     const { session, queryClient } = await startSignedIn(userA);

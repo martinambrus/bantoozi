@@ -200,6 +200,17 @@ export function createSession(options: SessionOptions): Session {
       if (typeof message.removed === 'string' && typeof message.at === 'number') {
         void clearedElsewhere(message.removed, message.at);
       }
+      // A tab that shows another account by now, signed in through the shared cookie, asks who is
+      // signed in instead: the sign-out in the other tab may or may not have ended that session.
+      const shown = idInCache();
+      if (
+        typeof message.removed === 'string' &&
+        typeof shown === 'string' &&
+        shown !== message.removed
+      ) {
+        void queryClient.refetchQueries({ queryKey: meKey(), exact: true });
+        return;
+      }
       void reset('remote');
     };
   }
