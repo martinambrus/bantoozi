@@ -739,5 +739,127 @@ describe('the rules page (spec 09 §6)', () => {
       expect(screen.getAllByText('bitcoin')).toHaveLength(1);
       expect(screen.queryByText('Expires in 1 day')).toBeNull();
     });
+
+    it('keeps a value typed while the rule was on its way, still to be added', async () => {
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const app = await open([], {
+        routes: {
+          'POST /rules': async () => {
+            await held;
+            return json(201, { rule: rule({ id: '9' }) });
+          },
+        },
+      });
+      await screen.findByText('No rules yet');
+      await app.user.type(form().getByLabelText('Keyword or phrase'), 'bitcoin');
+      await app.user.click(form().getByRole('button', { name: 'Add rule' }));
+      await waitFor(() => expect(app.calls('POST /rules')).toHaveLength(1));
+
+      await app.user.type(form().getByLabelText('Keyword or phrase'), ' cash');
+      release();
+
+      expect(await form().findByText('Rule added.')).toBeVisible();
+      expect(form().getByLabelText('Keyword or phrase')).toHaveValue('bitcoin cash');
+      expect(bodyOf(app.calls('POST /rules')[0]!)).toEqual({
+        kind: 'mute_keyword',
+        value: 'bitcoin',
+      });
+    });
+
+    it('shows a rejected value as a general failure when it was edited while the rule was on its way', async () => {
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const app = await open([], {
+        routes: {
+          'POST /rules': async () => {
+            await held;
+            return failure(400, 'VALIDATION_FAILED', { field: 'value', reason: 'domain' });
+          },
+        },
+      });
+      await screen.findByText('No rules yet');
+      await app.user.selectOptions(form().getByLabelText('Rule type'), 'Block a domain');
+      await app.user.type(form().getByLabelText('Domain'), 'https://spam.example/x');
+      await app.user.click(form().getByRole('button', { name: 'Add rule' }));
+      await waitFor(() => expect(app.calls('POST /rules')).toHaveLength(1));
+
+      await app.user.clear(form().getByLabelText('Domain'));
+      await app.user.type(form().getByLabelText('Domain'), 'spam.example');
+      release();
+
+      await waitFor(() => {
+        expect(form().getByLabelText('Domain')).toBeValid();
+        expect(form().getByRole('alert')).toHaveTextContent(
+          "Some of the information isn't valid. Check it and try again.",
+        );
+      });
+      expect(form().getByLabelText('Domain')).toHaveValue('spam.example');
+    });
+
+    it('shows a rejected expiry as a general failure when it was changed while the rule was on its way', async () => {
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const app = await open([], {
+        routes: {
+          'POST /rules': async () => {
+            await held;
+            return failure(400, 'VALIDATION_FAILED', { field: 'expiresInDays' });
+          },
+        },
+      });
+      await screen.findByText('No rules yet');
+      await app.user.type(form().getByLabelText('Keyword or phrase'), 'bitcoin');
+      await app.user.selectOptions(form().getByLabelText('Expires'), 'After 3 days');
+      await app.user.click(form().getByRole('button', { name: 'Add rule' }));
+      await waitFor(() => expect(app.calls('POST /rules')).toHaveLength(1));
+
+      await app.user.selectOptions(form().getByLabelText('Expires'), 'After 7 days');
+      release();
+
+      await waitFor(() => {
+        expect(form().getByLabelText('Expires')).toBeValid();
+        expect(form().getByRole('alert')).toHaveTextContent(
+          "Some of the information isn't valid. Check it and try again.",
+        );
+      });
+      expect(form().getByLabelText('Expires')).toHaveValue('7');
+    });
+
+    it('shows a rejected value as a general failure when the rule type was changed while the rule was on its way', async () => {
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const app = await open([], {
+        routes: {
+          'POST /rules': async () => {
+            await held;
+            return failure(400, 'VALIDATION_FAILED', { field: 'value', reason: 'keyword' });
+          },
+        },
+      });
+      await screen.findByText('No rules yet');
+      await app.user.type(form().getByLabelText('Keyword or phrase'), 'x');
+      await app.user.click(form().getByRole('button', { name: 'Add rule' }));
+      await waitFor(() => expect(app.calls('POST /rules')).toHaveLength(1));
+
+      await app.user.selectOptions(form().getByLabelText('Rule type'), 'Block a domain');
+      release();
+
+      await waitFor(() => {
+        expect(form().getByLabelText('Domain')).toBeValid();
+        expect(form().getByRole('alert')).toHaveTextContent(
+          "Some of the information isn't valid. Check it and try again.",
+        );
+      });
+      expect(form().getByLabelText('Domain')).toHaveValue('x');
+    });
   });
 });

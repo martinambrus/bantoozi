@@ -5,7 +5,7 @@ import {
   RULE_VALUE_MAX,
   type RuleKind,
 } from '@bantoozi/shared';
-import { useId, useState, type FormEvent } from 'react';
+import { useId, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { isApiError } from '../../api/errors.js';
@@ -53,8 +53,11 @@ export function AddRuleForm() {
   const [expiryError, setExpiryError] = useState<string | undefined>();
   const [failure, setFailure] = useState<unknown>(null);
   const [added, setAdded] = useState(false);
+  // Counts the edits, so an answer can tell whether the form changed while it was on its way.
+  const edits = useRef(0);
 
   function edited() {
+    edits.current += 1;
     setValueError(undefined);
     setExpiryError(undefined);
     setFailure(null);
@@ -83,18 +86,22 @@ export function AddRuleForm() {
       return;
     }
     const days = RULE_EXPIRY_DAYS.find((choice) => String(choice) === expiry);
+    const typed = value;
+    const editsSent = edits.current;
     try {
       await create.mutateAsync({
         body: { kind, value: text, ...(days === undefined ? {} : { expiresInDays: days }) },
       });
     } catch (error) {
-      const found = fieldFailure(error);
+      // A field error names what was sent; once the form changed it would point at other text.
+      const found = edits.current === editsSent ? fieldFailure(error) : null;
       if (found?.field === 'value') setValueError(valueMessage(found.reason));
       else if (found?.field === 'expiresInDays') setExpiryError(t('add.errors.expiry'));
       else setFailure(error);
       return;
     }
-    setValue('');
+    // Text typed while the rule was on its way stays, for the next rule.
+    setValue((current) => (current === typed ? '' : current));
     setAdded(true);
     refresh();
   }
