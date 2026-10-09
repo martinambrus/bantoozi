@@ -67,6 +67,8 @@ function InviteForm({ left, onCreated }: { left: number; onCreated: (invite: New
   const [failure, setFailure] = useState<unknown>(null);
   // A request that failed is sent again under its key, so the server never makes two of one invite.
   const attempt = useRef<{ signature: string; key: string } | null>(null);
+  // Counts the edits, so an answer can tell whether the form changed while it was on its way.
+  const edits = useRef(0);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -86,15 +88,16 @@ function InviteForm({ left, onCreated }: { left: number; onCreated: (invite: New
         : { signature, key: crypto.randomUUID() };
     attempt.current = sending;
 
-    const sentEmail = email;
-    const sentNote = note;
+    const editsSent = edits.current;
     setFailure(null);
     try {
       const created = await create.mutateAsync({ body: parsed.data, idempotencyKey: sending.key });
       attempt.current = null;
-      // A field edited while the invite was on its way keeps its text, for the next invite.
-      setEmail((current) => (current === sentEmail ? '' : current));
-      setNote((current) => (current === sentNote ? '' : current));
+      // A form edited while the invite was on its way is the next invite: it stays as it is.
+      if (edits.current === editsSent) {
+        setEmail('');
+        setNote('');
+      }
       onCreated({
         code: created.code,
         url: created.url,
@@ -129,6 +132,7 @@ function InviteForm({ left, onCreated }: { left: number; onCreated: (invite: New
         value={email}
         onChange={(event) => {
           setEmail(event.target.value);
+          edits.current += 1;
           setEmailInvalid(false);
           setFailure(null);
         }}
@@ -140,6 +144,7 @@ function InviteForm({ left, onCreated }: { left: number; onCreated: (invite: New
         value={note}
         onChange={(event) => {
           setNote(event.target.value);
+          edits.current += 1;
           setFailure(null);
         }}
       />

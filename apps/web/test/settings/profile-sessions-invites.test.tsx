@@ -1080,7 +1080,7 @@ describe('invites (spec 09 §7, spec 08 §2.2)', () => {
       expect(calls('POST /invites')).toHaveLength(1);
     });
 
-    it('keeps a note edited while the invite was on its way, and clears the address that was sent', async () => {
+    it('keeps the form as it was left when the note was edited while the invite was on its way', async () => {
       const gate = deferred();
       const api = invitesApi([], 3);
       const original = api.routes['POST /invites'] as ApiRouteHandler;
@@ -1099,14 +1099,14 @@ describe('invites (spec 09 §7, spec 08 §2.2)', () => {
       gate.release();
 
       expect(await invites().findByRole('group', { name: 'New invite' })).toBeVisible();
-      expect(emailField()).toHaveValue('');
+      expect(emailField()).toHaveValue('friend@example.com');
       expect(noteField()).toHaveValue('For Alice and Bob');
       expect(bodiesOf(calls('POST /invites'))).toEqual([
         { email: 'friend@example.com', note: 'For Alice' },
       ]);
     });
 
-    it('keeps an address edited while the invite was on its way, and clears the note that was sent', async () => {
+    it('keeps the form as it was left when the address was edited while the invite was on its way', async () => {
       const gate = deferred();
       const api = invitesApi([], 3);
       const original = api.routes['POST /invites'] as ApiRouteHandler;
@@ -1127,7 +1127,7 @@ describe('invites (spec 09 §7, spec 08 §2.2)', () => {
 
       expect(await invites().findByRole('group', { name: 'New invite' })).toBeVisible();
       expect(emailField()).toHaveValue('other@example.com');
-      expect(noteField()).toHaveValue('');
+      expect(noteField()).toHaveValue('For Alice');
       expect(bodiesOf(calls('POST /invites'))).toEqual([
         { email: 'friend@example.com', note: 'For Alice' },
       ]);
