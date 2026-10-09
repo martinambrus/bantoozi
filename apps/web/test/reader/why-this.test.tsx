@@ -84,6 +84,22 @@ describe('Why this? from a row', () => {
     expect(queryOf(detailCalls(app)[0]!)).toEqual({ sourceFeedId: '7' });
   });
 
+  it('asks for the article through the feed a folder shows it from', async () => {
+    const rows = [item(1, { feed: { id: '9', title: 'Tech Daily', iconUrl: null } })];
+    const { app } = await open({
+      path: '/read/folder/Tech',
+      items: rows,
+      routes: drawerReads(rows),
+    });
+    await screen.findByRole('article', { name: 'Article 1' });
+
+    await app.user.click(chipOf('Article 1'));
+
+    await screen.findByRole('dialog', { name: 'Why this?' });
+    expect(detailCalls(app)).toHaveLength(1);
+    expect(queryOf(detailCalls(app)[0]!)).toEqual({ sourceFeedId: '9' });
+  });
+
   it('asks for the saved copy from the Bookmarks view', async () => {
     const saved = [item(1, { bookmarkedAt: '2026-05-30T09:00:00.000Z' })];
     const { app } = await open({

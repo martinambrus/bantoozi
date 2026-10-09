@@ -1,4 +1,9 @@
-import type { ArticleCounts, ArticleViewLane, MarkReadLane } from '@bantoozi/shared';
+import type {
+  ArticleCounts,
+  ArticleListItem,
+  ArticleViewLane,
+  MarkReadLane,
+} from '@bantoozi/shared';
 
 import type { Lane, ScopedLane } from './lanes.js';
 
@@ -28,13 +33,21 @@ export function scopeOf(view: ReaderView): ViewScope {
   }
 }
 
-/** The feed whose projection of an article is asked for, or the saved copy (spec 08 §5.2). */
-export function detailScope(view: ReaderView): {
+/**
+ * The feed whose projection of an article is asked for, or the saved copy (spec 08 §5.2). A folder
+ * shows the article from one of its own feeds, which the global view need not pick, so the detail
+ * asks for the feed of the row: its title and image choice are then the row's.
+ */
+export function detailScope(
+  view: ReaderView,
+  item: Pick<ArticleListItem, 'feed'>,
+): {
   sourceFeedId: string | undefined;
   saved: boolean;
 } {
   return {
-    sourceFeedId: view.kind === 'feed' ? view.feedId : undefined,
+    sourceFeedId:
+      view.kind === 'feed' ? view.feedId : view.kind === 'folder' ? item.feed?.id : undefined,
     saved: view.lane === 'bookmarks',
   };
 }

@@ -23,7 +23,7 @@ function DetailOfView({
   item,
   onWhyThis,
 }: Pick<DetailPaneProps, 'view' | 'onWhyThis'> & { item: ArticleListItem }) {
-  const { sourceFeedId, saved } = detailScope(view);
+  const { sourceFeedId, saved } = detailScope(view, item);
   return (
     <ArticleDetail
       item={item}

@@ -432,6 +432,18 @@ describe('opening an article', () => {
     });
   });
 
+  it('asks for the detail through the feed a folder shows the article from', async () => {
+    const { app } = await open({
+      path: '/read/folder/Tech',
+      items: [item(1, { feed: { id: '9', title: 'Tech Daily', iconUrl: null } })],
+    });
+
+    await expand(app, 'Article 1');
+
+    await waitFor(() => expect(detailCalls(app)).toHaveLength(1));
+    expect(Object.fromEntries(detailCalls(app)[0]!.query)).toEqual({ sourceFeedId: '9' });
+  });
+
   it('asks for the saved copy of an article of the Bookmarks view', async () => {
     const { app } = await open({
       path: '/read/bookmarks',

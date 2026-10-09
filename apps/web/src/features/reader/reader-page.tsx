@@ -106,7 +106,6 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
     explaining === null
       ? null
       : (list.items.find((candidate) => candidate.id === explaining.id) ?? explaining);
-  const { sourceFeedId, saved } = detailScope(view);
 
   function explain(item: ArticleListItem) {
     setExplaining(item);
@@ -176,8 +175,7 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
         {explained === null ? null : (
           <WhyThisSheet
             item={explained}
-            sourceFeedId={sourceFeedId}
-            saved={saved}
+            {...detailScope(view, explained)}
             open
             onClose={() => setExplaining(null)}
           />
