@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
+import { writeQueryData } from '../../api/cache-writes.js';
 import type { ApiClient } from '../../api/client.js';
 import { useApi } from '../../api/context.js';
 import { accountKey } from '../../api/query-keys.js';
@@ -172,14 +173,14 @@ export function cardCache(queryClient: QueryClient, accountId: string) {
   return {
     apply(result: { card: CardDto; idChange: IdChange | null }) {
       if (result.idChange !== null) recordCardMove(accountId, result.idChange);
-      queryClient.setQueryData<CardDto[]>(cardsKey(accountId), (cards) =>
+      writeQueryData<CardDto[]>(queryClient, cardsKey(accountId), (cards) =>
         cards === undefined ? cards : mergeById(cards, result.card, result.idChange),
       );
       void queryClient.invalidateQueries({ queryKey: updatesKey(accountId) });
       refreshArticles();
     },
     remove(id: string) {
-      queryClient.setQueryData<CardDto[]>(cardsKey(accountId), (cards) =>
+      writeQueryData<CardDto[]>(queryClient, cardsKey(accountId), (cards) =>
         cards?.filter((card) => card.id !== id),
       );
       void queryClient.invalidateQueries({ queryKey: updatesKey(accountId) });
@@ -190,7 +191,7 @@ export function cardCache(queryClient: QueryClient, accountId: string) {
       const before = queryClient
         .getQueryData<CardDto[]>(cardsKey(accountId))
         ?.find((card) => card.id === id);
-      queryClient.setQueryData<CardDto[]>(cardsKey(accountId), (cards) =>
+      writeQueryData<CardDto[]>(queryClient, cardsKey(accountId), (cards) =>
         cards?.map((card) => (card.id === id ? { ...card, ...changes } : card)),
       );
       return before;
@@ -201,7 +202,7 @@ export function cardCache(queryClient: QueryClient, accountId: string) {
       before: Pick<CardDto, 'strength' | 'scopeFeedId'>,
       changes: Partial<Pick<CardDto, 'strength' | 'scopeFeedId'>>,
     ) {
-      queryClient.setQueryData<CardDto[]>(cardsKey(accountId), (cards) =>
+      writeQueryData<CardDto[]>(queryClient, cardsKey(accountId), (cards) =>
         cards?.map((card) => {
           if (card.id !== id) return card;
           const restored = { ...card };
@@ -227,7 +228,7 @@ export function cardCache(queryClient: QueryClient, accountId: string) {
         { queryKey: libraryKey(accountId) },
         (data) => holdLibraryCard(data, ids),
       );
-      queryClient.setQueryData<Suggestion[]>(suggestionsKey(accountId), (list) =>
+      writeQueryData<Suggestion[]>(queryClient, suggestionsKey(accountId), (list) =>
         list?.filter((suggestion) => !ids.includes(suggestion.card.id)),
       );
     },
@@ -235,13 +236,13 @@ export function cardCache(queryClient: QueryClient, accountId: string) {
       void queryClient.invalidateQueries({ queryKey: libraryKey(accountId) });
     },
     dropSuggestion(cardId: string) {
-      queryClient.setQueryData<Suggestion[]>(suggestionsKey(accountId), (list) =>
+      writeQueryData<Suggestion[]>(queryClient, suggestionsKey(accountId), (list) =>
         list?.filter((suggestion) => suggestion.card.id !== cardId),
       );
     },
     /** The server's answer to a response replaces the publication request it was about. */
     replaceRequest(request: PublicationRequest) {
-      queryClient.setQueryData<PublicationRequest[]>(requestsKey(accountId), (list) =>
+      writeQueryData<PublicationRequest[]>(queryClient, requestsKey(accountId), (list) =>
         list?.map((candidate) => (candidate.id === request.id ? request : candidate)),
       );
     },
@@ -250,7 +251,7 @@ export function cardCache(queryClient: QueryClient, accountId: string) {
     },
     /** The library update of this held card has been dealt with. */
     dropOffer(currentCardId: string) {
-      queryClient.setQueryData<UpdateOffer[]>(updatesKey(accountId), (list) =>
+      writeQueryData<UpdateOffer[]>(queryClient, updatesKey(accountId), (list) =>
         list?.filter((offer) => offer.currentCardId !== currentCardId),
       );
     },

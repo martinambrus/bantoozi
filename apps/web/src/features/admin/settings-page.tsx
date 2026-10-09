@@ -7,6 +7,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
+import { writeQueryData } from '../../api/cache-writes.js';
 import { useApi } from '../../api/context.js';
 import { routes } from '../../api/routes.js';
 import { QueryState } from '../../components/states/query-state.js';
@@ -34,7 +35,7 @@ export function AdminSettingsPage() {
    */
   function adopt(key: AdminSettingKey, result: AdminSettingsPatchResult) {
     const { values, stored, rankerSettingsVersion } = result;
-    queryClient.setQueryData<AdminSettings>(adminKey('settings'), (current) => {
+    writeQueryData<AdminSettings>(queryClient, adminKey('settings'), (current) => {
       if (current === undefined) return { values, stored, rankerSettingsVersion };
       const saved = stored.filter((entry) => entry.key === key);
       return {

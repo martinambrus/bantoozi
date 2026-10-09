@@ -78,6 +78,28 @@ describe('where a card went', () => {
   );
 });
 
+describe('the cards cache', () => {
+  it('asks again for the cards when a `GET /cards` that read them before a change is on its way', async () => {
+    const queryClient = new QueryClient();
+    const key = cardsKey(USER_A_ID);
+    const kept = makeCard({ id: '31' });
+    queryClient.setQueryData(key, [kept]);
+    const reads: Array<(cards: ReturnType<typeof makeCard>[]) => void> = [];
+    void queryClient.fetchQuery({
+      queryKey: key,
+      queryFn: () => new Promise<ReturnType<typeof makeCard>[]>((resolve) => reads.push(resolve)),
+    });
+    const added = makeCard({ id: '35', title: 'Added' });
+
+    cardCache(queryClient, USER_A_ID).apply(cardResult(added));
+    reads[0]!([kept]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(queryClient.getQueryData(key)).toEqual([kept, added]);
+    expect(reads).toHaveLength(2);
+  });
+});
+
 describe('the moves the cards cache records', () => {
   const FORK = makeCard({
     id: '35',

@@ -2,6 +2,7 @@ import type { Subscription } from '@bantoozi/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
+import { writeQueryData } from '../../api/cache-writes.js';
 import { useApi } from '../../api/context.js';
 import { accountKey } from '../../api/query-keys.js';
 import { routes } from '../../api/routes.js';
@@ -30,12 +31,12 @@ export function useSubscriptionsCache() {
     return {
       known: () => queryClient.getQueryData<Subscription[]>(key),
       replace: (subscription: Subscription) =>
-        queryClient.setQueryData<Subscription[]>(key, (list) =>
+        writeQueryData<Subscription[]>(queryClient, key, (list) =>
           list?.map((item) => (item.feed.id === subscription.feed.id ? subscription : item)),
         ),
       /** Takes in only the classification fields of an answer: the rest can predate the list. */
       mergeInference: (subscription: Subscription) =>
-        queryClient.setQueryData<Subscription[]>(key, (list) =>
+        writeQueryData<Subscription[]>(queryClient, key, (list) =>
           list?.map((item) =>
             item.feed.id === subscription.feed.id
               ? {
@@ -48,7 +49,7 @@ export function useSubscriptionsCache() {
           ),
         ),
       remove: (feedId: string) =>
-        queryClient.setQueryData<Subscription[]>(key, (list) =>
+        writeQueryData<Subscription[]>(queryClient, key, (list) =>
           list?.filter((item) => item.feed.id !== feedId),
         ),
       refresh: () => queryClient.invalidateQueries({ queryKey: key }),

@@ -7,6 +7,7 @@ import {
 } from '@bantoozi/shared';
 import { queryOptions, type QueryClient } from '@tanstack/react-query';
 
+import { readAgainIfFetching } from '../api/cache-writes.js';
 import type { ApiClient } from '../api/client.js';
 import { isApiError } from '../api/errors.js';
 import { meKey } from '../api/query-keys.js';
@@ -72,13 +73,9 @@ export function withSavedFields(current: Me, patch: MePatch, saved: Me): Me {
   };
 }
 
-/**
- * Asks for the account again if a `GET /me` is on its way once a save's answer is shown: it may have
- * read the account before the save, and writing the cache leaves it running, so its answer would
- * put the saved fields back as they were. The new request reads them as saved.
- */
+/** Asks for the account again if a `GET /me` that may have read it before a save is on its way. */
 export function readMeAfterSave(queryClient: QueryClient): void {
-  void queryClient.refetchQueries({ queryKey: meKey(), exact: true, fetchStatus: 'fetching' });
+  readAgainIfFetching(queryClient, meKey());
 }
 
 /**

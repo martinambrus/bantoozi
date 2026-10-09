@@ -2,6 +2,7 @@ import type { IdChange, LabelDto } from '@bantoozi/shared';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
+import { writeQueryData } from '../../api/cache-writes.js';
 import { useApi } from '../../api/context.js';
 import { accountKey } from '../../api/query-keys.js';
 import { routes } from '../../api/routes.js';
@@ -33,13 +34,13 @@ export function labelCache(queryClient: QueryClient, accountId: string) {
   };
   return {
     apply(result: { label: LabelDto; idChange: IdChange | null }) {
-      queryClient.setQueryData<LabelDto[]>(labelsKey(accountId), (labels) =>
+      writeQueryData<LabelDto[]>(queryClient, labelsKey(accountId), (labels) =>
         labels === undefined ? labels : mergeById(labels, result.label, result.idChange),
       );
       refreshArticles();
     },
     remove(id: string) {
-      queryClient.setQueryData<LabelDto[]>(labelsKey(accountId), (labels) =>
+      writeQueryData<LabelDto[]>(queryClient, labelsKey(accountId), (labels) =>
         labels?.filter((label) => label.id !== id),
       );
       refreshArticles();

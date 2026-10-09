@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { writeQueryData } from '../../api/cache-writes.js';
 import { useApi } from '../../api/context.js';
 import { routes } from '../../api/routes.js';
 import { QueryState } from '../../components/states/query-state.js';
@@ -35,7 +36,7 @@ export function AdminProvidersPage() {
   });
 
   function replace(credential: CredentialStatus) {
-    queryClient.setQueryData<CredentialItems>(adminKey('credentials'), (current) =>
+    writeQueryData<CredentialItems>(queryClient, adminKey('credentials'), (current) =>
       current === undefined
         ? current
         : {
