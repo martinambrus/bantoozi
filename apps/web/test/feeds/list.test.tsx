@@ -104,6 +104,23 @@ describe('the feed list', () => {
       expect(updated.tagName).toBe('TIME');
       expect(updated).toHaveAttribute('datetime', lastSuccessAt);
     });
+
+    it.each([
+      ['en', 'Updated now'],
+      ['sk', 'Aktualizované teraz'],
+    ] as const)('reads a feed fetched half a minute ago as now, in %s', async (language, line) => {
+      const { server } = feedsServer({
+        me: makeMe({ locale: language }),
+        subscriptions: [
+          makeSubscription({ feed: { id: '1', title: 'Alpha', lastSuccessAt: ago(30_000) } }),
+        ],
+      });
+      await open({ path: '/feeds', server, language });
+
+      const row = await findRow('Alpha');
+
+      expect(row.querySelector('time')?.textContent).toBe(line);
+    });
   });
 
   describe('the last error', () => {

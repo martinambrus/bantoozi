@@ -25,33 +25,3 @@ export function showsLastError(feed: FeedInfo): boolean {
     feed.lastSuccessAt === null || Date.parse(feed.lastErrorAt) > Date.parse(feed.lastSuccessAt)
   );
 }
-
-const UNITS: ReadonlyArray<readonly [Intl.RelativeTimeFormatUnit, number]> = [
-  ['year', 31_536_000],
-  ['month', 2_592_000],
-  ['week', 604_800],
-  ['day', 86_400],
-  ['hour', 3_600],
-  ['minute', 60],
-  ['second', 1],
-];
-
-/** "3 hours ago": the largest whole unit, rounded down; a time ahead of `now` counts as now. */
-export function relativeTime(iso: string, language: string, now: number): string {
-  const seconds = Math.min(0, Math.round((Date.parse(iso) - now) / 1000));
-  const [unit, size] = UNITS.find(([, floor]) => -seconds >= floor) ?? (['second', 1] as const);
-  return new Intl.RelativeTimeFormat(language, { numeric: 'auto' }).format(
-    Math.trunc(seconds / size),
-    unit,
-  );
-}
-
-/** A calendar date in the reader's language and time zone, e.g. "Oct 1, 2026". */
-export function formatDate(iso: string, language: string, timeZone: string): string {
-  const date = new Date(iso);
-  try {
-    return new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeZone }).format(date);
-  } catch {
-    return new Intl.DateTimeFormat(language, { dateStyle: 'medium' }).format(date);
-  }
-}

@@ -4,9 +4,10 @@ import { useTranslation } from 'react-i18next';
 
 import { Button } from '../../components/button.js';
 import { WarningIcon } from '../../components/icons.js';
+import { formatDate } from '../../i18n/dates.js';
 import { useMe } from '../../session/context.js';
 import { dismissNotice, useNoticeDismissed } from './dead-feed-dismissals.js';
-import { feedErrorReason, formatDate } from './feed-format.js';
+import { feedErrorReason } from './feed-format.js';
 import { feedTitle } from './folders.js';
 import { UnsubscribeDialog } from './unsubscribe-dialog.js';
 

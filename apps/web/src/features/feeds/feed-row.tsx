@@ -2,8 +2,9 @@ import type { Subscription } from '@bantoozi/shared';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '../../components/button.js';
+import { formatRelativeTime } from '../../i18n/dates.js';
 import { DeadFeedBanner } from './dead-feed-banner.js';
-import { feedErrorReason, relativeTime, showsLastError } from './feed-format.js';
+import { feedErrorReason, showsLastError } from './feed-format.js';
 import { ClassificationBadge, HealthBadge, UnreadCounts } from './feed-status.js';
 import { displayTitle } from './folders.js';
 
@@ -35,7 +36,7 @@ export function FeedRow({ subscription, onOpenSettings }: FeedRowProps) {
                 className="text-sm text-slate-600 dark:text-slate-300"
               >
                 {t('row.updated', {
-                  when: relativeTime(feed.lastSuccessAt, i18n.language, Date.now()),
+                  when: formatRelativeTime(feed.lastSuccessAt, Date.now(), i18n.language),
                 })}
               </time>
             )}

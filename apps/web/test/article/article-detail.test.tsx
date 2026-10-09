@@ -7,6 +7,7 @@ import { FOCUS_RING } from '../../src/components/cx.js';
 import { ArticleDetail } from '../../src/features/article/article-detail.js';
 import { failure, json, noContent } from '../api/fake-fetch.js';
 import type { ApiRouteHandler } from '../support/app.js';
+import { FAR_ZONE } from '../support/zones.js';
 import { acked } from '../reader/actions/fake-transport.js';
 import {
   MUTATION_ID,
@@ -854,6 +855,27 @@ describe('ArticleDetail saved copy', () => {
     expect(source).toHaveAttribute('target', '_blank');
     expect(source).toHaveAttribute('rel', 'noopener noreferrer');
   });
+
+  it.each([
+    ['en', 'Saved on Jun 2, 2026'],
+    ['sk', 'Uložené 2. 6. 2026'],
+  ] as const)(
+    'writes the day it was saved in the time zone of the account, in %s',
+    async (language, line) => {
+      renderDetail(
+        SAVED,
+        { saved: true },
+        {
+          language,
+          me: makeMe({ timezone: FAR_ZONE }),
+          routes: detailRoute(SAVED, { bookmarkSnapshot: SNAPSHOT }),
+        },
+      );
+      await screen.findByText('The saved version of the article.');
+
+      expect(screen.getByText(/^(Saved on|Uložené) /).textContent).toBe(line);
+    },
+  );
 
   it('has no source link when the source address was lost', async () => {
     renderSaved({ sourceUrl: null });
