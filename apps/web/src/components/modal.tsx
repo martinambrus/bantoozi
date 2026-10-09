@@ -79,7 +79,10 @@ export interface ModalProps {
   description?: ReactNode;
   children?: ReactNode;
   showCloseButton?: boolean | undefined;
-  /** False while a request is in flight: every way to close it is ignored. */
+  /**
+   * False while a request is in flight: every way to close it is ignored, and its controls take no
+   * input, so nothing is changed after what was sent and then dropped when it closes.
+   */
   dismissible?: boolean | undefined;
   /**
    * Where the focus goes on closing when the element that opened the modal is gone (its row was
@@ -203,7 +206,9 @@ function OpenModal({
             </div>
           )}
         </div>
-        {children}
+        <fieldset disabled={!dismissible} role="none" className="contents">
+          {children}
+        </fieldset>
       </div>
       {showCloseButton ? (
         <IconButton

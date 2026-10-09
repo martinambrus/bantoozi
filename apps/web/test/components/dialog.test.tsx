@@ -158,6 +158,37 @@ describe('Dialog', () => {
       screen.getByRole('button', { name: createI18n('sk').t('common:actions.close') }),
     ).toBeInTheDocument();
   });
+
+  it('takes no input while its work keeps it open, and takes it again after', () => {
+    const content = (
+      <>
+        <label>
+          Name
+          <input />
+        </label>
+        <button type="button">Save</button>
+      </>
+    );
+    const view = renderWithI18n(
+      <Dialog open onClose={() => undefined} title="Rename folder" dismissible={false}>
+        {content}
+      </Dialog>,
+    );
+
+    expect(screen.getByLabelText('Name')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+
+    view.rerender(
+      <I18nextProvider i18n={createI18n('en')}>
+        <Dialog open onClose={() => undefined} title="Rename folder">
+          {content}
+        </Dialog>
+      </I18nextProvider>,
+    );
+
+    expect(screen.getByLabelText('Name')).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+  });
 });
 
 describe('Sheet', () => {

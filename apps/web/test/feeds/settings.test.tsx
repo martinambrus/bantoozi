@@ -361,6 +361,34 @@ describe('the feed settings', () => {
       answer(json(200, { subscription: makeSubscription({ feed: { id: '5', title: 'Alpha' } }) }));
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     });
+
+    it('takes no other change while the save is on its way, and takes them again after a failure', async () => {
+      const { app, server, sheet } = await openSettings();
+      let answer: (response: Response) => void = () => undefined;
+      server.routes[UPDATE_FEED] = () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve;
+        });
+      await app.user.click(within(sheet).getByRole('switch', { name: 'Hide from sidebar' }));
+
+      await app.user.click(save(sheet));
+
+      await waitFor(() => expect(app.calls(UPDATE_FEED)).toHaveLength(1));
+      const duplicates = within(sheet).getByRole('switch', { name: 'Allow duplicates' });
+      expect(duplicates).toBeDisabled();
+      expect(within(sheet).getByLabelText('Title')).toBeDisabled();
+      expect(within(sheet).getByLabelText('Folder')).toBeDisabled();
+      expect(within(sheet).getByRole('radio', { name: 'Always block' })).toBeDisabled();
+
+      answer(failure(500, 'INTERNAL'));
+
+      expect(await within(sheet).findByRole('alert')).toBeVisible();
+      expect(duplicates).toBeEnabled();
+      expect(within(sheet).getByRole('switch', { name: 'Hide from sidebar' })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
+    });
   });
 
   describe('images', () => {

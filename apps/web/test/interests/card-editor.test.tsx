@@ -451,6 +451,27 @@ describe('editing a card', () => {
     expect(request.headers.get('Idempotency-Key')).toMatch(UUID_V4);
   });
 
+  it('takes no other edit while the save is on its way', async () => {
+    let answer: (response: Response) => void = () => undefined;
+    const { app, form } = await openEdit(card, {
+      'PATCH /cards/:id': () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve;
+        }),
+    });
+    await app.user.type(form.getByLabelText(LABELS.interest), ' and its tools');
+
+    await app.user.click(form.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(app.calls('PATCH /cards/:id')).toHaveLength(1));
+    expect(form.getByLabelText(LABELS.interest)).toBeDisabled();
+    expect(form.getByLabelText(LABELS.notFor)).toBeDisabled();
+    expect(form.getByRole('radio', { name: 'Like' })).toBeDisabled();
+    expect(form.getByLabelText(LABELS.scope)).toBeDisabled();
+    answer(saved({ interest: 'The Rust programming language and its tools' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
   it('clears the name override, the but-not text and the scope with null', async () => {
     const { app, form } = await openEdit(card, {
       'PATCH /cards/:id': () => saved({ titleOverride: null, notFor: null, scopeFeedId: null }),
