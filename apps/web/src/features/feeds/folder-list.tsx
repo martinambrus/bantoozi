@@ -184,7 +184,13 @@ export function FolderList({ subscriptions }: { subscriptions: readonly Subscrip
   const { t, i18n } = useTranslation('feeds');
   const me = useMe();
   const queryClient = useQueryClient();
-  const update = useApiMutation(routes.meUpdate);
+  // The account learns the saved order even when the answer comes after the list is gone (the page
+  // was left); only the order shown and the announcement need the list.
+  const update = useApiMutation(routes.meUpdate, {
+    onSuccess: (updated, variables) => {
+      storeSavedMe(queryClient, variables?.body ?? {}, updated);
+    },
+  });
   const [unsavedOrder, setUnsavedOrder] = useState<string[] | null>(null);
   const [dragged, setDragged] = useState<string | null>(null);
   const [target, setTarget] = useState<string | null>(null);
@@ -244,8 +250,7 @@ export function FolderList({ subscriptions }: { subscriptions: readonly Subscrip
     update.mutate(
       { body: patch },
       {
-        onSuccess: (updated) => {
-          storeSavedMe(queryClient, patch, updated);
+        onSuccess: () => {
           setUnsavedOrder(null);
           setAnnouncement(
             t('folders.moved', {

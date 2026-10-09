@@ -1,7 +1,8 @@
-import type { Subscription } from '@bantoozi/shared';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import type { Me, Subscription } from '@bantoozi/shared';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { meKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
 import { makeMe } from '../session/fixtures.js';
@@ -311,6 +312,37 @@ describe('the move buttons', () => {
     await app.user.keyboard('{Enter}');
 
     await waitFor(() => expect(folderNames()).toEqual(['A', 'C', 'B']));
+  });
+
+  it('still keeps the saved order in the account when the answer comes after the page was left', async () => {
+    const { app, server } = await openFolders({
+      folderOrder: ['A', 'B', 'C'],
+      subscriptions: threeFolders,
+    });
+    const save = patchMeLikeTheApi(server);
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.routes[UPDATE_ME] = async (request, params) => {
+      await held;
+      return save(request, params);
+    };
+
+    await app.user.click(screen.getByRole('button', { name: 'Move B up' }));
+    await waitFor(() => expect(app.calls(UPDATE_ME)).toHaveLength(1));
+    server.routes['GET /labels'] = () => json(200, []);
+    await act(async () => {
+      await app.router.navigate({ to: '/labels' });
+    });
+    release();
+
+    await waitFor(() => expect(app.queryClient.isMutating()).toBe(0));
+    expect(app.queryClient.getQueryData<Me>(meKey())?.preferences.folderOrder).toEqual([
+      'B',
+      'A',
+      'C',
+    ]);
   });
 });
 
