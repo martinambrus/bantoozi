@@ -852,6 +852,109 @@ describe('deleting the account (spec 09 §7)', () => {
       expect(readLastAccount()?.id).toBe(USER_A_ID);
       expect(screen.queryByText(/Your account is deleted/)).toBeNull();
     });
+
+    it('keeps the choice to keep the articles of the account another tab signed in again after that 401', async () => {
+      const gate = deferred();
+      writeOfflineEnabled(USER_A_ID, true);
+      const { user, calls, session } = await openDialog({
+        routes: {
+          'DELETE /me': async () => {
+            await gate.promise;
+            return noContent();
+          },
+        },
+      });
+      await user.type(typed(), EMAIL);
+      await user.click(confirm());
+      await waitFor(() => expect(calls('DELETE /me')).toHaveLength(1));
+      act(() => {
+        session.unauthorized(session.currentCookie());
+      });
+      const other = new BroadcastChannel(SESSION_CHANNEL);
+      onTestFinished(() => other.close());
+
+      // Another tab signs in as the account again.
+      const cookie = session.currentCookie();
+      other.postMessage({ type: 'signed-in', me: makeMe() });
+      await waitFor(() => expect(session.currentCookie()).toBe(cookie + 1));
+      gate.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(isOfflineEnabled(USER_A_ID)).toBe(true);
+    });
+
+    it('leaves alone the account that another tab signed in again after that 401, when a 401 of a third tab is heard late', async () => {
+      const gate = deferred();
+      writeOfflineEnabled(USER_A_ID, true);
+      const { user, calls, session } = await openDialog({
+        routes: {
+          'DELETE /me': async () => {
+            await gate.promise;
+            return noContent();
+          },
+        },
+      });
+      await user.type(typed(), EMAIL);
+      await user.click(confirm());
+      await waitFor(() => expect(calls('DELETE /me')).toHaveLength(1));
+      act(() => {
+        session.unauthorized(session.currentCookie());
+      });
+      const other = new BroadcastChannel(SESSION_CHANNEL);
+      const third = new BroadcastChannel(SESSION_CHANNEL);
+      onTestFinished(() => {
+        other.close();
+        third.close();
+      });
+
+      // Another tab signs in as the account again; the 401 a third tab heard before comes after it.
+      const cookie = session.currentCookie();
+      other.postMessage({ type: 'signed-in', me: makeMe() });
+      await waitFor(() => expect(session.currentCookie()).toBe(cookie + 1));
+      third.postMessage({ type: 'reset', account: USER_A_ID });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      gate.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(readLastAccount()?.id).toBe(USER_A_ID);
+      expect(isOfflineEnabled(USER_A_ID)).toBe(true);
+      expect(screen.queryByText(/Your account is deleted/)).toBeNull();
+    });
+
+    it('leaves alone the account that another tab signed in again while the deletion was on its way, which restores it', async () => {
+      const gate = deferred();
+      writeOfflineEnabled(USER_A_ID, true);
+      const { user, calls, session, queryClient } = await openDialog({
+        routes: {
+          'DELETE /me': async () => {
+            await gate.promise;
+            return noContent();
+          },
+        },
+      });
+      await user.type(typed(), EMAIL);
+      await user.click(confirm());
+      await waitFor(() => expect(calls('DELETE /me')).toHaveLength(1));
+      const other = new BroadcastChannel(SESSION_CHANNEL);
+      const heard: unknown[] = [];
+      other.onmessage = (event: MessageEvent<unknown>) => heard.push(event.data);
+      onTestFinished(() => other.close());
+
+      // Another tab signs in as the account again, which restores it.
+      const cookie = session.currentCookie();
+      other.postMessage({ type: 'signed-in', me: makeMe() });
+      await waitFor(() => expect(session.currentCookie()).toBe(cookie + 1));
+      gate.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(heard).toEqual([]);
+      expect(readLastAccount()?.id).toBe(USER_A_ID);
+      expect(isOfflineEnabled(USER_A_ID)).toBe(true);
+      expect(queryClient.getQueryData<Me>(meKey())?.id).toBe(USER_A_ID);
+      expect(screen.queryByRole('heading', { level: 1, name: 'Sign in' })).toBeNull();
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.queryByText(/Your account is deleted/)).toBeNull();
+    });
   });
 
   describe('when it cannot be done', () => {

@@ -22,6 +22,7 @@ import {
   markLogoutPending,
   readLastAccount,
   writeLastAccount,
+  writeOfflineEnabled,
 } from '../offline/device.js';
 import { clearAccountKeys, forgetAccountMemory } from './local-keys.js';
 import { meQueryOptions } from './me.js';
@@ -82,12 +83,15 @@ export interface Session {
   /** Drops everything private: the query cache, the registered stores, the other tabs' memory. */
   resetAccountState: () => Promise<void>;
   /**
-   * After the account was deleted, drops its state as `resetAccountState` does, if the sign-in
-   * `signIn` (`currentSignIn()` when the deletion was asked for) lasts, or a 401 ended it, which
-   * left the account's rows on the device. Another sign-in since, or a sign-out that removed the
-   * account already, is left as it is. Answers whether the account was dropped here.
+   * After the account was deleted, forgets that this device kept its articles, unless the account
+   * has signed in again since, in any tab, which restored it: all of it stays then. Drops its state
+   * as `resetAccountState` does if the sign-in `signIn` lasts with the session cookie `cookie`
+   * (`currentSignIn()` and `currentCookie()` when the deletion was asked for), or a 401 ended it,
+   * which left the account's rows on the device; another account signed in since, or a sign-out
+   * that removed the account already, is left as it is. Answers whether the account was dropped
+   * here.
    */
-  dropDeletedAccount: (accountId: string, signIn: number) => Promise<boolean>;
+  dropDeletedAccount: (accountId: string, signIn: number, cookie: number) => Promise<boolean>;
   /** Which sign-in lasts now. It changes with who is signed in, so work begun earlier can tell. */
   currentSignIn: () => number;
   /**
@@ -487,13 +491,21 @@ export function createSession(options: SessionOptions): Session {
     return user;
   }
 
-  async function dropDeletedAccount(accountId: string, signIn: number): Promise<boolean> {
-    if (knownAccountId !== accountId) return false;
+  async function dropDeletedAccount(
+    accountId: string,
+    signIn: number,
+    cookie: number,
+  ): Promise<boolean> {
+    const lasts = signIns === signIn && cookies === cookie;
     // A 401 since is the deletion too, which ended every session of the account: the tab is signed
     // out, and what the 401 kept of the account goes now. Not once any tab has signed in since that
     // 401: the account itself, signed in again, is restored.
     const endedBy401 = signIns === signIn + 1 && idInCache() === null && cookies === cookieAfter401;
-    if (signIns !== signIn && !endedBy401) return false;
+    // Signed in again since, in this tab or another, the account is restored: all of it stays.
+    if (knownAccountId === accountId && !lasts && !endedBy401) return false;
+    // Unlike a sign-out, a deletion also forgets that this device kept the account's articles.
+    writeOfflineEnabled(accountId, false);
+    if (knownAccountId !== accountId) return false;
     await reset('logout', accountId);
     return true;
   }

@@ -10,7 +10,6 @@ import { Dialog } from '../../components/dialog.js';
 import { errorMessage } from '../../components/error-message.js';
 import { TextField } from '../../components/text-field.js';
 import { useToast } from '../../components/toast/toast-provider.js';
-import { writeOfflineEnabled } from '../../offline/device.js';
 import { countRecords } from '../../offline/queue.js';
 import { useMe, useSession } from '../../session/context.js';
 import { Alert, Hint, SettingsSection } from './section.js';
@@ -44,6 +43,7 @@ function DeleteDialog({ onClose }: { onClose: () => void }) {
     if (!confirmed || busy) return;
     setFailure(null);
     const signIn = session.currentSignIn();
+    const cookie = session.currentCookie();
     try {
       await remove.mutateAsync();
     } catch (error) {
@@ -51,11 +51,14 @@ function DeleteDialog({ onClose }: { onClose: () => void }) {
       return;
     }
     setSigningOut(true);
-    // Unlike a sign-out, a deletion also forgets that this device kept the account's articles.
-    writeOfflineEnabled(me.id, false);
     // Another account, or this one again, may have signed in while the deletion was on its way: what
-    // the tab shows then is not the deleted account's to drop.
-    if (!(await session.dropDeletedAccount(me.id, signIn))) return;
+    // the tab shows then is not the deleted account's to drop, and the account, signed in again, is
+    // restored.
+    if (!(await session.dropDeletedAccount(me.id, signIn, cookie))) {
+      setSigningOut(false);
+      onClose();
+      return;
+    }
     toast.show({
       id: 'account-deleted',
       message: t('delete.done'),
