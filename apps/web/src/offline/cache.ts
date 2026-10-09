@@ -287,10 +287,25 @@ export async function readView(accountId: string, viewKey: string): Promise<Stor
   };
 }
 
+/**
+ * Keeps an opened article. Only the Bookmarks view reads the saved copy of a bookmark, so the article
+ * read from another view keeps the copy stored for the same bookmark instead of dropping it.
+ */
 export function saveDetail(accountId: string, detail: ArticleDetail): Promise<boolean> {
-  return write(accountId, (now) => [
-    { store: 'details', name: detail.id, value: { detail: projectDetail(detail), savedAt: now } },
-  ]);
+  return write(accountId, async (now, tx) => {
+    let kept = projectDetail(detail);
+    if (kept.bookmarkSnapshot === null && kept.bookmarkedAt !== null) {
+      const stored = await tx.objectStore('details').get(rowKey(accountId, detail.id));
+      if (
+        stored !== undefined &&
+        !isExpired(stored.savedAt, now) &&
+        stored.detail.bookmarkedAt === kept.bookmarkedAt
+      ) {
+        kept = { ...kept, bookmarkSnapshot: stored.detail.bookmarkSnapshot };
+      }
+    }
+    return [{ store: 'details', name: detail.id, value: { detail: kept, savedAt: now } }];
+  });
 }
 
 export async function readDetail(

@@ -1,4 +1,4 @@
-import type { ArticleListItem } from '@bantoozi/shared';
+import type { ArticleDetail, ArticleListItem } from '@bantoozi/shared';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -546,5 +546,53 @@ describe('rows that hold a newer state', () => {
     setClock(T0 + DAY + 1);
 
     expect(await first('view')).toMatchObject({ stateVersion: '5' });
+  });
+});
+
+describe('the saved copy of a bookmark', () => {
+  const SNAPSHOT = fullDetail().bookmarkSnapshot;
+  /** The article as a view other than Bookmarks reads it: bookmarked, without the saved copy. */
+  const fromLane = (overrides: Partial<ArticleDetail> = {}) =>
+    fullDetail({ bookmarkSnapshot: null, ...overrides });
+
+  it('stays when the article is saved again as another view reads it', async () => {
+    await setOfflineEnabled(A, true);
+    await saveDetail(A, fullDetail());
+    await saveDetail(A, fromLane({ bodyLead: 'The newer lead.' }));
+
+    const detail = await readDetail(A, '101');
+    expect(detail?.bodyLead).toBe('The newer lead.');
+    expect(detail?.bookmarkSnapshot).toEqual(SNAPSHOT);
+  });
+
+  it('is replaced by the copy the Bookmarks view reads next', async () => {
+    await setOfflineEnabled(A, true);
+    await saveDetail(A, fullDetail());
+    const next = { ...SNAPSHOT!, id: '10', text: 'The text saved again.' };
+    await saveDetail(A, fullDetail({ bookmarkSnapshot: next }));
+
+    expect((await readDetail(A, '101'))?.bookmarkSnapshot).toEqual(next);
+  });
+
+  it('goes with the bookmark, and does not pass to a later bookmark', async () => {
+    await setOfflineEnabled(A, true);
+    await saveDetail(A, fullDetail());
+    await saveDetail(A, fromLane({ bookmarkedAt: null }));
+    expect((await readDetail(A, '101'))?.bookmarkSnapshot).toBeNull();
+
+    await saveDetail(A, fullDetail());
+    await saveDetail(A, fromLane({ bookmarkedAt: '2026-06-01T10:00:00.000Z' }));
+    expect((await readDetail(A, '101'))?.bookmarkSnapshot).toBeNull();
+  });
+
+  it('is not taken from a copy that has expired', async () => {
+    setClock(T0);
+    await setOfflineEnabled(A, true);
+    await saveDetail(A, fullDetail());
+    setClock(T0 + DAY);
+
+    await saveDetail(A, fromLane());
+
+    expect((await readDetail(A, '101'))?.bookmarkSnapshot).toBeNull();
   });
 });
