@@ -13,6 +13,10 @@ declare let self: ServiceWorkerGlobalScope;
 // never pass through this cache. Private offline data lives in the account-scoped IndexedDB store.
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
+// Activating drops the precached files this version no longer has. A tab still running an earlier
+// version keeps the code it has loaded and is asked to reload (spec 09 §1: no reader reloads without
+// asking). Should it open a screen whose code is gone before then, the router reloads the page once
+// (`lazyRouteComponent`), and the reload runs this version, offline too.
 
 // Navigations fall back to the app shell, except the API and the static /privacy and /bot pages
 // (spec 11 §3) that Caddy serves itself.
