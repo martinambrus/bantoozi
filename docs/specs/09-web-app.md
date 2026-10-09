@@ -453,7 +453,9 @@ Test files are named `*.pw.ts` so Vitest never picks them up (spec 01 §6).
 5. **Keyboard:** `j`, `k`, `+`, `-`, `b` work on the list.
 6. **Mobile viewport:** a swipe right likes the item.
 7. **Automatic mode:** explicit enable applies to new arrivals only. Old backlog stays unselected;
-   switch Off while a request is queued and verify stale work cannot restart inference for that user.
+   switch Off while a request is outstanding and verify stale work cannot restart inference for that
+   user. The E2E holds the request's model call in flight; a request still queued is the worker
+   integration test's case (D-158).
 8. **Bookmark mirror:** capture a fixture's full body, unsubscribe, make its original URL fail and
    simulate snapshot compression after 30 days. Saved view and export retain the same text/HTML;
    no archived image/media/attachment binary or embedded image data is included, even when that

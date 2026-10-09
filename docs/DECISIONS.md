@@ -1424,3 +1424,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   account switch keep it, so the same account signing in again on this device finds offline reading
   as it left it, while any other account starts with it off; account deletion removes it with the
   account's stores (spec 09 §9: deletion clears every local private store). Spec 09 §1 updated.
+- D-158: 2026-10-09 M6-T9 — spec 09 §9 scenario 7 switches Off "while a request is queued". The
+  worker claims a queued `analysis.process` job within moments, so an E2E run cannot hold a request
+  in the queue without stopping the worker. The scenario instead slows the fake model and switches
+  Off while the request's call is in flight: the request ends `cancelled`/`revoked` and no model call
+  follows. The queued case, switched off before the worker claims it, is covered by
+  apps/worker/test/analysis.int.test.ts ("a request still queued when its feed is switched off is
+  cancelled at claim, before any call"). Spec 09 §9 updated.
