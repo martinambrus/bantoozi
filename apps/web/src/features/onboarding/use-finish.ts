@@ -55,18 +55,21 @@ export function useFinish(): Finishing {
       if (busy.current) return;
       busy.current = true;
       setState({ pressed: button, error: null });
+      const signIn = session.currentSignIn();
+      const lasts = () => session.currentSignIn() === signIn;
       try {
         const saved = queryClient.getQueryData<Me | null>(meKey())?.preferences;
         if (saved?.onboardingCompletedAt === null) {
           // The same time on every attempt, so a repeated request is the same request.
           completedAt.current ??= new Date().toISOString();
           const patch = { preferences: { onboardingCompletedAt: completedAt.current } };
-          const signIn = session.currentSignIn();
           const updated = await mutateAsync({ body: patch });
-          if (session.currentSignIn() !== signIn) return;
+          if (!lasts()) return;
           storeSavedMe(queryClient, patch, updated);
         }
-        await navigate({ to: '/read/$lane', params: { lane: await firstLane() } });
+        const lane = await firstLane();
+        if (!lasts()) return;
+        await navigate({ to: '/read/$lane', params: { lane } });
         setState({ pressed: null, error: null });
       } catch (error) {
         setState({ pressed: null, error });

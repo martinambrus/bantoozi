@@ -861,6 +861,39 @@ describe('finishing (spec 09 §4 step 5)', () => {
     expect(navigate).not.toHaveBeenCalledWith(expect.objectContaining({ to: '/read/$lane' }));
   });
 
+  it.each([
+    ['a newcomer', newcomer()],
+    ['an account that had completed it', makeMe()],
+  ])(
+    'goes nowhere for %s when the sign-in ends while the lane to open is chosen',
+    async (_who, me) => {
+      const answer = gate();
+      let holding = false;
+      const { app, server } = await openWizard('/onboarding?step=calibrate', {
+        ...options,
+        me,
+        routes: {
+          'GET /articles/counts': async () => {
+            if (holding) await answer.opened;
+            return json(200, counts({ forYou: 4, new: 9 }));
+          },
+        },
+      });
+      const navigate = vi.spyOn(app.router, 'navigate');
+      const counted = app.calls('GET /articles/counts').length;
+      holding = true;
+      await app.user.click(await screen.findByRole('button', { name: 'Finish' }));
+      await waitFor(() => expect(app.calls('GET /articles/counts')).toHaveLength(counted + 1));
+
+      server.me = null;
+      await act(() => app.session.resetAccountState());
+      answer.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(navigate).not.toHaveBeenCalledWith(expect.objectContaining({ to: '/read/$lane' }));
+    },
+  );
+
   it('stays in the wizard, and sends the same request again, when saving fails', async () => {
     let attempts = 0;
     const { app } = await openWizard('/onboarding?step=calibrate', {
