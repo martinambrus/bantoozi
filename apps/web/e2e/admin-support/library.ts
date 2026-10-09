@@ -111,8 +111,16 @@ export async function expectRefused(response: APIResponse, why: string): Promise
 
 // ── The /admin/library screen ─────────────────────────────────────────────────────────────────
 
+/**
+ * Opens the screen, searching for `search`. The router reads a search value as JSON, so the text
+ * is quoted as the router itself writes it: a tag such as `78953e65` would otherwise be a number.
+ */
 export async function openLibrary(page: Page, search?: string): Promise<void> {
-  await page.goto(search === undefined ? '/admin/library' : `/admin/library?q=${search}`);
+  await page.goto(
+    search === undefined
+      ? '/admin/library'
+      : `/admin/library?q=${encodeURIComponent(JSON.stringify(search))}`,
+  );
   await expect(page.getByRole('heading', { level: 3, name: 'Promotion candidates' })).toBeVisible();
 }
 
