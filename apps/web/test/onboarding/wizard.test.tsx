@@ -1,5 +1,5 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
@@ -833,6 +833,32 @@ describe('finishing (spec 09 §4 step 5)', () => {
 
     await waitFor(() => expect(app.router.state.location.pathname).toBe('/read/new'));
     expect(app.calls('PATCH /me')).toHaveLength(1);
+  });
+
+  it('asks for nothing and goes nowhere when the answer comes once the sign-in has ended', async () => {
+    const answer = gate();
+    const { app, server } = await openWizard('/onboarding?step=calibrate', {
+      ...options,
+      counts: counts({ forYou: 4, new: 9 }),
+      routes: {
+        'PATCH /me': async () => {
+          await answer.opened;
+          return json(200, makeMe());
+        },
+      },
+    });
+    const navigate = vi.spyOn(app.router, 'navigate');
+    await app.user.click(await screen.findByRole('button', { name: 'Finish' }));
+    await waitFor(() => expect(app.calls('PATCH /me')).toHaveLength(1));
+
+    server.me = null;
+    await act(() => app.session.resetAccountState());
+    const counted = app.calls('GET /articles/counts').length;
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(app.calls('GET /articles/counts')).toHaveLength(counted);
+    expect(navigate).not.toHaveBeenCalledWith(expect.objectContaining({ to: '/read/$lane' }));
   });
 
   it('stays in the wizard, and sends the same request again, when saving fails', async () => {

@@ -23,7 +23,8 @@ export interface Finishing {
 
 /**
  * Closes the wizard (spec 09 §4 step 5): saves that it is done, once, then opens For you when it
- * has articles for the person and New otherwise. It starts no classification and no analysis.
+ * has articles for the person and New otherwise. It starts no classification and no analysis. An
+ * answer that comes after the sign-in that asked has ended goes nowhere.
  */
 export function useFinish(): Finishing {
   const api = useApi();
@@ -62,7 +63,8 @@ export function useFinish(): Finishing {
           const patch = { preferences: { onboardingCompletedAt: completedAt.current } };
           const signIn = session.currentSignIn();
           const updated = await mutateAsync({ body: patch });
-          if (session.currentSignIn() === signIn) storeSavedMe(queryClient, patch, updated);
+          if (session.currentSignIn() !== signIn) return;
+          storeSavedMe(queryClient, patch, updated);
         }
         await navigate({ to: '/read/$lane', params: { lane: await firstLane() } });
         setState({ pressed: null, error: null });
