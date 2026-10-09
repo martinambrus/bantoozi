@@ -407,6 +407,42 @@ describe('when another tab drops its account', () => {
     await vi.waitFor(() => expect(requestsTo(shown.requests, 'GET /api/v1/me')).toHaveLength(2));
     expect(shown.queryClient.getQueryData(meKey())).toEqual(userB);
   });
+
+  it('a 401 there leaves the account known here, so another account signing in here removes its rows first', async () => {
+    const { session, queryClient, server } = sessions.start({ me: userA });
+    await session.loadMe();
+    await seed(A);
+    const other = new BroadcastChannel(SESSION_CHANNEL);
+    onTestFinished(() => other.close());
+
+    other.postMessage({ type: 'reset', account: A });
+    await vi.waitFor(() => expect(queryClient.getQueryData(meKey())).toBeNull());
+    server.verifiesAs = userB;
+    await verifyAsB(session);
+
+    expect(await rowsOfAccount(A)).toEqual([]);
+    expect(localKeysOf(A)).toEqual([]);
+  });
+
+  it('a 401 there keeps the rows when the same account signs in here again', async () => {
+    const { session, queryClient, server } = sessions.start({ me: userA });
+    await session.loadMe();
+    await seed(A);
+    // Signing in saves the account itself again, so the rows of `meta` are left out.
+    const kept = async () => (await rowsOfAccount(A)).filter(([store]) => store !== 'meta');
+    const before = await kept();
+    expect(before.length).toBeGreaterThan(0);
+    const other = new BroadcastChannel(SESSION_CHANNEL);
+    onTestFinished(() => other.close());
+
+    other.postMessage({ type: 'reset', account: A });
+    await vi.waitFor(() => expect(queryClient.getQueryData(meKey())).toBeNull());
+    server.verifiesAs = userA;
+    await session.verifyCode({ email: 'a@example.com', code: '123456' });
+
+    expect(await kept()).toEqual(before);
+    expect(localKeysOf(A)).toHaveLength(2);
+  });
 });
 
 describe('when the person signs out', () => {

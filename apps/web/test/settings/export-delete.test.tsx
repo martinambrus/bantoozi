@@ -788,6 +788,38 @@ describe('deleting the account (spec 09 §7)', () => {
       await waitFor(() => expect(readLastAccount()).toBeNull());
     });
 
+    it('drops what a 401 in another tab left of the account when the deletion ended the session before it was answered', async () => {
+      const gate = deferred();
+      writeOfflineEnabled(USER_A_ID, true);
+      const { user, calls, queryClient } = await openDialog({
+        routes: {
+          'DELETE /me': async () => {
+            await gate.promise;
+            return noContent();
+          },
+        },
+      });
+      await user.type(typed(), EMAIL);
+      await user.click(confirm());
+      await waitFor(() => expect(calls('DELETE /me')).toHaveLength(1));
+      const other = new BroadcastChannel(SESSION_CHANNEL);
+      onTestFinished(() => other.close());
+
+      // The server ended every session of the account; another tab heard a 401.
+      other.postMessage({ type: 'reset', account: USER_A_ID });
+      await waitFor(() => expect(queryClient.getQueryData(meKey())).toBeNull());
+      expect(readLastAccount()?.id).toBe(USER_A_ID);
+      gate.release();
+
+      expect(
+        await screen.findByText(
+          'Your account is deleted. Sign in again within 7 days to restore it.',
+        ),
+      ).toBeVisible();
+      await waitFor(() => expect(readLastAccount()).toBeNull());
+      expect(isOfflineEnabled(USER_A_ID)).toBe(false);
+    });
+
     it('leaves alone the account that another tab signed in again after that 401, which restores it', async () => {
       const gate = deferred();
       const { user, calls, session } = await openDialog({

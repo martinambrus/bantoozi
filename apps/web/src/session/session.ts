@@ -291,7 +291,16 @@ export function createSession(options: SessionOptions): Session {
         arriving.ask = true;
         return;
       }
+      // A 401 there kept the account's rows on the device, so this tab still knows the account: a
+      // sign-in of another one here removes them first. While this tab showed the account, the 401
+      // ended its session as one of its own would, and a deletion answered here drops the rows.
+      const after401 = typeof message.account === 'string' && typeof message.removed !== 'string';
+      const known = knownAccountId;
       void reset('remote');
+      if (after401) {
+        knownAccountId = known;
+        if (typeof shown === 'string') cookieAfter401 = cookies;
+      }
     };
   }
 
