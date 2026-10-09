@@ -13,9 +13,10 @@ import type { QueueRecord } from '../../../offline/types.js';
 import {
   OFFLINE_ACTIONS,
   OFFLINE_ERROR_CODE,
-  READER_FIELDS,
   UNDO_WINDOW_MS,
   UNDOABLE_ACTIONS,
+  isNewerState,
+  pickReader,
   type ActionHandle,
   type ActionQueue,
   type ActionResponse,
@@ -106,18 +107,6 @@ interface BulkProbe {
   readonly id: string;
   readonly slot: Slot;
   readonly known: ReaderState;
-}
-
-function pickReader(source: ReaderState): ReaderState {
-  return Object.fromEntries(READER_FIELDS.map((field) => [field, source[field]])) as ReaderState;
-}
-
-function isNewer(a: ReaderState, b: ReaderState): boolean {
-  const byVersion = compareBigIntStrings(a.stateVersion, b.stateVersion);
-  return (
-    byVersion > 0 ||
-    (byVersion === 0 && compareBigIntStrings(a.contentRevision, b.contentRevision) > 0)
-  );
 }
 
 function applyAction(
@@ -295,6 +284,9 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
   /** Every write to the queue store goes through here, so that they happen in the order asked. */
   let disk: Promise<unknown> = Promise.resolve();
   let stopHearing: (() => void) | null = null;
+  /** Newer states of known articles, waiting to be written onto the saved rows. */
+  let fresh = new Map<string, ReaderState>();
+  let freshQueued = false;
 
   const online = (): boolean => queue === null || queue.online();
   const canWaitOnceChosen = (action: ReaderAction): boolean =>
@@ -319,16 +311,32 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
     for (const listener of [...listeners]) listener();
   }
 
-  function learn(id: string, state: ReaderState): boolean {
+  /** Takes a first or newer state; `save` is false for one the server has not confirmed. */
+  function learn(id: string, state: ReaderState, save = true): boolean {
     const slot = slots.get(id);
     if (slot === undefined) {
       slots.set(id, { known: pickReader(state), entries: [], rev: 0 });
       return true;
     }
-    if (!isNewer(state, slot.known)) return false;
+    if (!isNewerState(state, slot.known)) return false;
     slot.known = pickReader(state);
     slot.rev += 1;
+    if (save) keep(id, slot.known);
     return true;
+  }
+
+  /** The states learned in one task are written together, once it is over. */
+  function keep(id: string, state: ReaderState): void {
+    if (queue === null) return;
+    fresh.set(id, state);
+    if (freshQueued) return;
+    freshQueued = true;
+    queueMicrotask(() => {
+      freshQueued = false;
+      const states = fresh;
+      fresh = new Map();
+      if (states.size > 0 && queue.enabled()) void queue.saveStates(states);
+    });
   }
 
   function slotOf(id: string): Slot {
@@ -350,7 +358,7 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
   function view<T extends ArticleListItem>(item: T): T {
     const slot = slots.get(item.id);
     if (slot === undefined) return item;
-    const knownIsNewer = isNewer(slot.known, item);
+    const knownIsNewer = isNewerState(slot.known, item);
     if (!knownIsNewer && slot.entries.length === 0) return item;
     const cached = views.get(item);
     if (cached !== undefined && cached.slot === slot && cached.rev === slot.rev) {
@@ -787,7 +795,7 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
     dispatchOptions: DispatchOptions = {},
   ): ActionHandle {
     sweep();
-    learn(item.id, item);
+    learn(item.id, item, false);
     const slot = slotOf(item.id);
     const id = newId();
     const createdAt = now();
@@ -996,7 +1004,7 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
       },
     };
     for (const item of input.items) {
-      learn(item.id, item);
+      learn(item.id, item, false);
       const slot = slotOf(item.id);
       slot.entries.push(overlay);
       slot.rev += 1;
@@ -1115,7 +1123,7 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
   }
 
   function restoreEntry(record: QueueRecord): void {
-    learn(record.articleId, record.before);
+    learn(record.articleId, record.before, false);
     const slot = slotOf(record.articleId);
     let resolve!: (result: ActionResult) => void;
     const result = new Promise<ActionResult>((settled) => {
@@ -1276,6 +1284,7 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
     slots.clear();
     actions.clear();
     recents = [];
+    fresh = new Map();
     stopHearing?.();
     stopHearing = null;
     bump();

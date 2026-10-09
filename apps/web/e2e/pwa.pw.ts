@@ -960,6 +960,17 @@ installedTest(
       expect(worker).toEqual({ scope: `${URLS.app}/`, script: `${URLS.app}/sw.js` });
     });
 
+    await test.step('the worker controls the page that installed it, without a reload and without an update notice', async () => {
+      await expect
+        .poll(() => workerControls(page), {
+          message: 'the worker answers for the page that installed it',
+        })
+        .toBe(true);
+      await staysTrueFor(1_500, async () => {
+        await expect(page.locator('[data-toast-id="pwa-update"]')).toHaveCount(0);
+      });
+    });
+
     await test.step('the manifest link leads to a manifest with its name, start address, display mode and icons', async () => {
       const { url, contentType, manifest } = await linkedManifest(page);
       expect(url).toBe(`${URLS.app}/manifest.webmanifest`);
@@ -1104,6 +1115,71 @@ installedTest(
         expect(sent).toEqual([robotId]);
       });
       await expectState(device, robotId, { rating: 1 }, 'the like is still the saved rating');
+    });
+  },
+);
+
+installedTest(
+  'a like made offline on an article this device opened online first is accepted on reconnect: the API shows it liked, with one rating event and no notice of a change on another device',
+  async ({ installed, control, api }) => {
+    installedTest.setTimeout(150_000);
+    const reader = await startInstalledReader({ installed, control }, 'pwa-opened');
+    const { page, user, email } = reader;
+    const quantum = titleAbout(reader, 'quantum');
+    const quantumId = await idOf(user, quantum);
+    const me = await callJson<MeResponse>(user, 'GET', '/api/v1/me');
+    const articleIds = [...(await everyArticle(user)).keys()].sort();
+    const device = await api.login(email);
+    const sent = watchRatingRequests(page);
+
+    await test.step('one online visit leaves the list on the device, and opening the article reads it', async () => {
+      await workerReady(page);
+      await keepArticlesOnThisDevice(page);
+      await page.goto('/read/new');
+      for (const item of reader.items) await expect(rowOf(page, item.title)).toBeVisible();
+      await openArticle(page, quantum);
+      await expectState(
+        device,
+        quantumId,
+        (state) => state.readAt !== null,
+        'opening the article reads it',
+      );
+      await expect
+        .poll(() => savedOnDevice(page, me.id), {
+          message: 'the device keeps the list and the opened article',
+        })
+        .toEqual({ account: true, items: articleIds, views: 1, details: [quantumId], unsent: 0 });
+    });
+
+    await test.step('offline, the reload shows the saved list and the like waits on the device', async () => {
+      await goOffline(page);
+      await page.reload();
+      await expect(page.getByRole('heading', { level: 1, name: 'New' })).toBeVisible();
+      for (const item of reader.items) await expect(rowOf(page, item.title)).toBeVisible();
+      await rowButton(page, quantum, 'Like').click();
+      await expect
+        .poll(async () => (await savedOnDevice(page, me.id)).unsent, {
+          message: 'the like is kept on the device',
+        })
+        .toBe(1);
+      expect(sent).toEqual([]);
+    });
+
+    await test.step('back online, the like reaches the server once and nothing says it was refused', async () => {
+      await comeBackOnline(page);
+      await expectState(device, quantumId, { rating: 1 }, 'the like reaches the server');
+      await expect
+        .poll(async () => (await savedOnDevice(page, me.id)).unsent, {
+          message: 'nothing is left to send',
+        })
+        .toBe(0);
+      await staysTrueFor(1_500, async () => {
+        expect(await ratingEventsFor(control, email, quantumId)).toHaveLength(1);
+        expect(sent).toEqual([quantumId]);
+        await expect(
+          toastWith(page, "This changed on another device, so your change wasn't applied."),
+        ).toHaveCount(0);
+      });
     });
   },
 );

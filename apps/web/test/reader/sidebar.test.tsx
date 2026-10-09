@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import { failure, json } from '../api/fake-fetch.js';
 import { findToast, makeLabel, ratingResponse, undoResponse } from '../article/harness.js';
 import { makeSubscription, type SubscriptionOverrides } from '../feeds/support.js';
 import { makeMe } from '../session/fixtures.js';
@@ -405,5 +406,109 @@ describe('the unread numbers of the feeds', () => {
     );
 
     expect(await screen.findByRole('link', { name: 'Verge Unread: 2' })).toBeInTheDocument();
+  });
+});
+
+describe('the reader sidebar without a connection', () => {
+  const unreachable = () => Promise.reject(new TypeError('Failed to fetch'));
+  const pending = () => new Promise<Response>(() => {});
+  const goOffline = () => vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+  /** Everything the sidebar says, as one text. */
+  const said = (name = 'Reader navigation') =>
+    screen.getByRole('navigation', { name }).textContent ?? '';
+
+  it('says the feeds and the labels load once the device is back online, and keeps Retry', async () => {
+    goOffline();
+
+    await open({
+      path: '/read/for_you',
+      routes: { 'GET /subscriptions': unreachable, 'GET /labels': unreachable },
+    });
+
+    await waitFor(() => {
+      expect(said()).toContain('The feeds load once the device is back online.');
+      expect(said()).toContain('The labels load once the device is back online.');
+    });
+    expect(said()).not.toContain("couldn't be loaded");
+    const nav = within(sidebar());
+    expect(nav.getByRole('button', { name: 'Retry loading feeds' })).toBeVisible();
+    expect(nav.getByRole('button', { name: 'Retry loading labels' })).toBeVisible();
+  });
+
+  it('says it in Slovak', async () => {
+    goOffline();
+
+    await open({
+      path: '/read/for_you',
+      me: makeMe({ locale: 'sk' }),
+      routes: { 'GET /subscriptions': unreachable, 'GET /labels': unreachable },
+    });
+
+    await waitFor(() => {
+      expect(said('Navigácia čítačky')).toContain(
+        'Zdroje sa načítajú, keď bude zariadenie znova online.',
+      );
+      expect(said('Navigácia čítačky')).toContain(
+        'Štítky sa načítajú, keď bude zariadenie znova online.',
+      );
+    });
+    expect(said('Navigácia čítačky')).not.toContain('nepodarilo načítať');
+    const nav = within(screen.getByRole('navigation', { name: 'Navigácia čítačky' }));
+    expect(nav.getByRole('button', { name: 'Znova načítať zdroje' })).toBeVisible();
+    expect(nav.getByRole('button', { name: 'Znova načítať štítky' })).toBeVisible();
+  });
+
+  it('says so instead of loading while the requests have not been answered', async () => {
+    goOffline();
+
+    await open({
+      path: '/read/for_you',
+      routes: { 'GET /subscriptions': pending, 'GET /labels': pending },
+    });
+
+    await waitFor(() => {
+      expect(said()).toContain('The feeds load once the device is back online.');
+      expect(said()).toContain('The labels load once the device is back online.');
+    });
+    expect(said()).not.toContain('Loading…');
+  });
+
+  it('loads the feeds and the labels when Retry is pressed and they can be reached', async () => {
+    goOffline();
+    let reachable = false;
+    const answer = (body: unknown) => () => (reachable ? json(200, body) : unreachable());
+    const { app } = await open({
+      path: '/read/for_you',
+      routes: {
+        'GET /subscriptions': answer([feed('2', 'Verge', null)]),
+        'GET /labels': answer([makeLabel('11', 'Climate')]),
+      },
+    });
+    await waitFor(() => {
+      expect(said()).toContain('The feeds load once the device is back online.');
+      expect(said()).toContain('The labels load once the device is back online.');
+    });
+    reachable = true;
+
+    await app.user.click(within(sidebar()).getByRole('button', { name: 'Retry loading feeds' }));
+    await app.user.click(within(sidebar()).getByRole('button', { name: 'Retry loading labels' }));
+
+    expect(await screen.findByRole('link', { name: 'Verge' })).toBeVisible();
+    expect(await screen.findByRole('link', { name: 'Climate' })).toBeVisible();
+  });
+
+  it('keeps the words for a failure when the browser says it is online', async () => {
+    await open({
+      path: '/read/for_you',
+      routes: {
+        'GET /subscriptions': () => failure(500, 'INTERNAL'),
+        'GET /labels': () => failure(500, 'INTERNAL'),
+      },
+    });
+
+    const nav = within(sidebar());
+    expect(await nav.findByText("The feeds couldn't be loaded.")).toBeVisible();
+    expect(nav.getByText("The labels couldn't be loaded.")).toBeVisible();
+    expect(nav.queryByText(/back online/)).toBeNull();
   });
 });

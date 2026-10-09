@@ -1,6 +1,7 @@
 import { MeSchema, type ArticleDetail, type ArticleListItem, type Me } from '@bantoozi/shared';
 import type { IDBPTransaction } from 'idb';
 
+import { isNewerState, pickReader, type ReaderState } from '../features/reader/actions/types.js';
 import { offlineDatabaseMightExist, offlineDb } from './db.js';
 import { isOfflineEnabled, writeOfflineEnabled } from './device.js';
 import { clearsOf, noteClear } from './epoch.js';
@@ -83,7 +84,10 @@ function abort(tx: { abort: () => void }) {
  * False when nothing was stored: the choice is off, the data was cleared meanwhile, the database
  * is unavailable or the limits leave no room.
  */
-async function write(accountId: string, rowsAt: (now: number) => Row[]): Promise<boolean> {
+async function write(
+  accountId: string,
+  rowsAt: (now: number, tx: CacheTx<'readwrite'>) => Row[] | Promise<Row[]>,
+): Promise<boolean> {
   if (!isAccountId(accountId) || !isOfflineEnabled(accountId)) return false;
   const clears = clearsOf(accountId);
   const opened = await offlineDb();
@@ -93,17 +97,19 @@ async function write(accountId: string, rowsAt: (now: number) => Row[]): Promise
   let stored = false;
   try {
     const now = Date.now();
-    const rows = rowsAt(now);
-    const planned = rows.map((row) => ({
-      entry: entryOf(row.store, row.name),
-      bytes: utf8Length(JSON.stringify(row.value)),
-    }));
     const tx = opened.db.transaction(CACHE_STORES, 'readwrite');
     const finished = tx.done.then(
       () => true,
       () => false,
     );
     try {
+      const made = rowsAt(now, tx);
+      // A plain list is not awaited, so that the next request is made in the same task.
+      const rows = Array.isArray(made) ? made : await made;
+      const planned = rows.map((row) => ({
+        entry: entryOf(row.store, row.name),
+        bytes: utf8Length(JSON.stringify(row.value)),
+      }));
       const meta = tx.objectStore('meta');
       const manifestKey = rowKey(accountId, MANIFEST);
       const found = await meta.get(manifestKey);
@@ -169,6 +175,24 @@ export async function setOfflineEnabled(accountId: string, on: boolean): Promise
   return off && cleared;
 }
 
+/** The saved rows of these articles that have not expired, by article id. */
+async function heldItems(
+  tx: CacheTx<'readwrite'>,
+  accountId: string,
+  ids: readonly string[],
+  now: number,
+): Promise<Map<string, ItemRow>> {
+  const found = await Promise.all(
+    ids.map((id) => tx.objectStore('items').get(rowKey(accountId, id))),
+  );
+  const held = new Map<string, ItemRow>();
+  found.forEach((row, index) => {
+    const id = ids[index];
+    if (id !== undefined && row !== undefined && !isExpired(row.savedAt, now)) held.set(id, row);
+  });
+  return held;
+}
+
 /** Keeps a list (at most 200 items, in order) under `viewKey`, with the dataset it was read from. */
 export function saveView(
   accountId: string,
@@ -176,14 +200,28 @@ export function saveView(
   items: readonly ArticleListItem[],
   view: ViewMeta,
 ): Promise<boolean> {
-  return write(accountId, (now) => {
+  return write(accountId, async (now, tx) => {
     const kept = items.slice(0, LIMITS.maxItems);
+    const held = await heldItems(
+      tx,
+      accountId,
+      kept.map((item) => item.id),
+      now,
+    );
     // The bottom of the list is saved first, so it is the first to go when room is needed.
-    const rows: Row[] = [...kept].reverse().map((item) => ({
-      store: 'items',
-      name: item.id,
-      value: { item: projectItem(item), savedAt: now },
-    }));
+    const rows: Row[] = [...kept].reverse().map((item) => {
+      const listed = projectItem(item);
+      // A saved row that holds a newer state than the list is kept.
+      const newer = held.get(item.id)?.item;
+      return {
+        store: 'items',
+        name: item.id,
+        value: {
+          item: newer !== undefined && isNewerState(newer, listed) ? newer : listed,
+          savedAt: now,
+        },
+      };
+    });
     rows.push({
       store: 'views',
       name: viewKey,
@@ -194,6 +232,27 @@ export function saveView(
         savedAt: now,
       },
     });
+    return rows;
+  });
+}
+
+/** Writes newer reader states onto saved rows the device already holds; it never adds a row. */
+export function saveReaderStates(
+  accountId: string,
+  states: ReadonlyMap<string, ReaderState>,
+): Promise<boolean> {
+  return write(accountId, async (now, tx) => {
+    const held = await heldItems(tx, accountId, [...states.keys()], now);
+    const rows: Row[] = [];
+    for (const [id, state] of states) {
+      const row = held.get(id);
+      if (row === undefined || !isNewerState(state, row.item)) continue;
+      rows.push({
+        store: 'items',
+        name: id,
+        value: { item: { ...row.item, ...pickReader(state) }, savedAt: now },
+      });
+    }
     return rows;
   });
 }

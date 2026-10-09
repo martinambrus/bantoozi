@@ -1,6 +1,7 @@
 import { ArticleListItemSchema } from '@bantoozi/shared';
 
 import type { ActionQueue, OfflineControl, SettledNote } from '../features/reader/actions/types.js';
+import { saveReaderStates } from './cache.js';
 import { isOfflineEnabled } from './device.js';
 import { LIMITS } from './names.js';
 import {
@@ -198,6 +199,7 @@ export function createActionQueue(options: ActionQueueOptions): ReplayQueue {
     save: (record) => putRecord(record),
     change: (id, patch) => patchRecord(accountId, id, patch),
     remove: (id) => deleteRecord(accountId, id),
+    saveStates: (states) => saveReaderStates(accountId, states),
     announce(note) {
       channel?.postMessage({ accountId, note });
     },

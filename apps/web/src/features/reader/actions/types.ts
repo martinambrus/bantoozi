@@ -1,8 +1,9 @@
-import type {
-  ArticleListItem,
-  MarkReadFilter,
-  RatingReason,
-  UserPreferences,
+import {
+  compareBigIntStrings,
+  type ArticleListItem,
+  type MarkReadFilter,
+  type RatingReason,
+  type UserPreferences,
 } from '@bantoozi/shared';
 
 import type { ApiError } from '../../../api/errors.js';
@@ -29,6 +30,21 @@ export const READER_FIELDS = [
 ] as const satisfies readonly (keyof ArticleListItem)[];
 
 export type ReaderState = Pick<ArticleListItem, (typeof READER_FIELDS)[number]>;
+
+export function pickReader(source: ReaderState): ReaderState {
+  return Object.fromEntries(READER_FIELDS.map((field) => [field, source[field]])) as ReaderState;
+}
+
+type Version = Pick<ReaderState, 'stateVersion' | 'contentRevision'>;
+
+/** Whether `a` is a newer state than `b`: by `stateVersion`, then by `contentRevision`. */
+export function isNewerState(a: Version, b: Version): boolean {
+  const byVersion = compareBigIntStrings(a.stateVersion, b.stateVersion);
+  return (
+    byVersion > 0 ||
+    (byVersion === 0 && compareBigIntStrings(a.contentRevision, b.contentRevision) > 0)
+  );
+}
 
 /** One user intent on one article (spec 08 §5.3). */
 export type ReaderAction =
@@ -264,6 +280,8 @@ export interface ActionQueue {
   /** Changes a kept record; false when it is no longer there. */
   change(id: string, patch: RecordPatch): Promise<boolean>;
   remove(id: string): Promise<void>;
+  /** Writes newer server states onto saved rows the device holds; false when it could not. */
+  saveStates(states: ReadonlyMap<string, ReaderState>): Promise<boolean>;
   /** Tells the account's other tabs how a record ended. */
   announce(note: SettledNote): void;
   /** Hears the account's other tabs; returns the function that stops listening. */

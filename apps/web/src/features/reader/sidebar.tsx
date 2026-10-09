@@ -13,6 +13,7 @@ import {
   MenuIcon,
   WarningIcon,
 } from '../../components/icons.js';
+import { useOnline } from '../../components/states/use-online.js';
 import { VisuallyHidden } from '../../components/visually-hidden.js';
 import { useMe } from '../../session/context.js';
 import { LabelDot } from '../article/label-dot.js';
@@ -226,6 +227,7 @@ function FeedsSection({ onNavigate }: { onNavigate?: (() => void) | undefined })
   const { t, i18n } = useTranslation('reader');
   const { folderOrder } = useMe().preferences;
   const subscriptions = useSubscriptions();
+  const online = useOnline();
   const [filter] = useFeedFilter();
   const groups = useMemo(
     () =>
@@ -253,9 +255,9 @@ function FeedsSection({ onNavigate }: { onNavigate?: (() => void) | undefined })
     <Section title={t('sidebar.feeds')}>
       {(headingId) => {
         if (subscriptions.data === undefined) {
-          return subscriptions.isError ? (
+          return !online || subscriptions.isError ? (
             <>
-              <p className={MUTED}>{t('sidebar.feedsFailed')}</p>
+              <p className={MUTED}>{t(online ? 'sidebar.feedsFailed' : 'sidebar.feedsOffline')}</p>
               <Retry label={t('sidebar.retryFeeds')} onRetry={() => void subscriptions.refetch()} />
             </>
           ) : (
@@ -322,14 +324,17 @@ function FeedsSection({ onNavigate }: { onNavigate?: (() => void) | undefined })
 function LabelsSection({ onNavigate }: { onNavigate?: (() => void) | undefined }) {
   const { t } = useTranslation('reader');
   const labels = useLabels(true);
+  const online = useOnline();
 
   return (
     <Section title={t('sidebar.labels')}>
       {(headingId) => {
         if (labels.data === undefined) {
-          return labels.isError ? (
+          return !online || labels.isError ? (
             <>
-              <p className={MUTED}>{t('sidebar.labelsFailed')}</p>
+              <p className={MUTED}>
+                {t(online ? 'sidebar.labelsFailed' : 'sidebar.labelsOffline')}
+              </p>
               <Retry label={t('sidebar.retryLabels')} onRetry={() => void labels.refetch()} />
             </>
           ) : (

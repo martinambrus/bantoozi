@@ -1,3 +1,4 @@
+import type { ArticleListItem } from '@bantoozi/shared';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -459,5 +460,91 @@ describe('clearing an account', () => {
 
     expect(await idb.factory.databases()).toHaveLength(1);
     expect(ids((await readView(B, 'view'))?.items)).toEqual(['1', '2']);
+  });
+});
+
+describe('rows that hold a newer state', () => {
+  const READ = '2026-10-08T07:30:00.000Z';
+  const row = (version: string, patch: Partial<ArticleListItem> = {}) =>
+    fullItem({ id: '1', stateVersion: version, ...patch });
+  const first = async (view: string) => (await readView(A, view))?.items[0];
+
+  it('are not taken back by a list that was read before that state', async () => {
+    await setOfflineEnabled(A, true);
+    await saveView(A, 'later', [row('5', { rating: 1, reason: null, readAt: READ })], VIEW);
+
+    await saveView(A, 'earlier', [row('4', { rating: null, reason: null, readAt: null })], VIEW);
+
+    expect(await first('later')).toMatchObject({ stateVersion: '5', rating: 1, readAt: READ });
+    expect(await first('earlier')).toMatchObject({ stateVersion: '5', rating: 1, readAt: READ });
+  });
+
+  it('are replaced by a list that holds the same state or a newer one', async () => {
+    await setOfflineEnabled(A, true);
+    await saveView(A, 'view', [row('5', { title: 'Stored' })], VIEW);
+
+    await saveView(A, 'view', [row('5', { title: 'Same state' })], VIEW);
+    expect((await first('view'))?.title).toBe('Same state');
+
+    await saveView(A, 'view', [row('6', { title: 'Newer state' })], VIEW);
+    expect(await first('view')).toMatchObject({ title: 'Newer state', stateVersion: '6' });
+  });
+
+  it('are compared by content revision when the state versions are equal', async () => {
+    await setOfflineEnabled(A, true);
+    await saveView(A, 'view', [row('5', { contentRevision: '3', title: 'Revision 3' })], VIEW);
+
+    await saveView(A, 'view', [row('5', { contentRevision: '2', title: 'Revision 2' })], VIEW);
+    expect(await first('view')).toMatchObject({ contentRevision: '3', title: 'Revision 3' });
+
+    await saveView(A, 'view', [row('5', { contentRevision: '4', title: 'Revision 4' })], VIEW);
+    expect(await first('view')).toMatchObject({ contentRevision: '4', title: 'Revision 4' });
+  });
+
+  it('are compared as numbers, not as text', async () => {
+    await setOfflineEnabled(A, true);
+    await saveView(A, 'view', [row('10', { title: 'Tenth' })], VIEW);
+
+    await saveView(A, 'view', [row('9', { title: 'Ninth' })], VIEW);
+
+    expect(await first('view')).toMatchObject({ stateVersion: '10', title: 'Tenth' });
+  });
+
+  it('are kept one by one, and the others of the list are written as before', async () => {
+    await setOfflineEnabled(A, true);
+    const at = (id: string, version: string) => fullItem({ id, stateVersion: version });
+    await saveView(A, 'view', [at('1', '5'), at('2', '5')], VIEW);
+
+    await saveView(A, 'other', [at('1', '4'), at('2', '6'), at('3', '1')], VIEW);
+
+    const items = (await readView(A, 'other'))?.items ?? [];
+    expect(items.map((item) => [item.id, item.stateVersion])).toEqual([
+      ['1', '5'],
+      ['2', '6'],
+      ['3', '1'],
+    ]);
+  });
+
+  it('do not hold a list back once they have expired', async () => {
+    setClock(T0);
+    await setOfflineEnabled(A, true);
+    await saveView(A, 'view', [row('5', { title: 'Stored' })], VIEW);
+    setClock(T0 + DAY + 1);
+
+    await saveView(A, 'view', [row('4', { title: 'Fresh' })], VIEW);
+
+    expect(await first('view')).toMatchObject({ stateVersion: '4', title: 'Fresh' });
+  });
+
+  it('are as old as the last list that holds them, which keeps them from expiring early', async () => {
+    setClock(T0);
+    await setOfflineEnabled(A, true);
+    await saveView(A, 'view', [row('5')], VIEW);
+    setClock(T0 + DAY - 1000);
+    await saveView(A, 'view', [row('4')], VIEW);
+
+    setClock(T0 + DAY + 1);
+
+    expect(await first('view')).toMatchObject({ stateVersion: '5' });
   });
 });

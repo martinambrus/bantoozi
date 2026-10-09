@@ -26,3 +26,6 @@ registerRoute(
 self.addEventListener('message', (event: ExtendableMessageEvent) => {
   if ((event.data as { type?: string } | null)?.type === 'SKIP_WAITING') void self.skipWaiting();
 });
+
+// The first worker controls its own page too; the update prompt acts on updates only.
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));

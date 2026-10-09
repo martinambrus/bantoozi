@@ -80,7 +80,7 @@ export async function workerReady(page: Page): Promise<void> {
   });
 }
 
-/** Whether the service worker answers for this document, as only a load after it is active does. */
+/** Whether a service worker controls this page: the first one claims the page that installs it. */
 export function workerControls(page: Page): Promise<boolean> {
   return page.evaluate(() => navigator.serviceWorker.controller !== null);
 }

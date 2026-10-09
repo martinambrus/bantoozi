@@ -20,6 +20,8 @@
     "noLabels": "Zatiaľ žiadne štítky.",
     "feedsFailed": "Zdroje sa nepodarilo načítať.",
     "labelsFailed": "Štítky sa nepodarilo načítať.",
+    "feedsOffline": "Zdroje sa načítajú, keď bude zariadenie znova online.",
+    "labelsOffline": "Štítky sa načítajú, keď bude zariadenie znova online.",
     "retryFeeds": "Znova načítať zdroje",
     "retryLabels": "Znova načítať štítky",
     "unread": "Neprečítané:",

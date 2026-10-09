@@ -48,6 +48,8 @@ class FakeQueue implements ActionQueue {
   readonly records = new Map<string, QueueRecord>();
   readonly log: string[] = [];
   readonly announced: SettledNote[] = [];
+  /** The states the store asked to have written onto the saved copy, one entry per request. */
+  readonly stateBatches: Map<string, ReaderState>[] = [];
   private readonly listeners = new Set<(note: SettledNote) => void>();
   enabledNow = true;
   onlineNow = true;
@@ -76,6 +78,11 @@ class FakeQueue implements ActionQueue {
     this.log.push(`remove:${id}`);
     this.records.delete(id);
     return Promise.resolve();
+  }
+
+  saveStates(states: ReadonlyMap<string, ReaderState>): Promise<boolean> {
+    this.stateBatches.push(new Map(states));
+    return Promise.resolve(true);
   }
 
   announce(note: SettledNote): void {
@@ -1446,5 +1453,173 @@ describe('cancelling a change that another change of the article waits behind', 
 
     expect(queue.records.get(last.id)).toMatchObject({ after: first.id, fence: null });
     expect(queue.records.get(first.id)).toMatchObject({ after: null, fence: FENCE });
+  });
+});
+
+describe('the saved copy of the articles', () => {
+  const READ = '2026-10-08T07:30:00.000Z';
+  const article = (id: string, patch: Partial<ArticleListItem> = {}) => makeItem({ id, ...patch });
+
+  it('is given the newer states the store learns of the articles it knew, in one batch', async () => {
+    const { store, queue } = rig();
+    const [one, two, three] = [article('1'), article('2'), article('3')] as const;
+    store.observe([one, two, three]);
+    const readOne = acked(one, { readAt: READ });
+    const ratedTwo = acked(two, { rating: 1 });
+
+    store.observe([readOne, ratedTwo, three]);
+    await settleAll();
+
+    expect(queue.stateBatches).toEqual([
+      new Map([
+        ['1', readerOf(readOne)],
+        ['2', readerOf(ratedTwo)],
+      ]),
+    ]);
+  });
+
+  it('is given the newest state of an article that is learned twice in a row', async () => {
+    const { store, queue } = rig();
+    const one = article('1');
+    store.observe([one]);
+    const second = acked(acked(one), { readAt: READ });
+
+    store.observe([acked(one)]);
+    store.observe([second]);
+    await settleAll();
+
+    expect(queue.stateBatches).toEqual([new Map([['1', readerOf(second)]])]);
+  });
+
+  it('is given only a newer state of an article it knew, not a first sight nor an equal or older state', async () => {
+    const { store, queue } = rig();
+    const [one, two] = [article('1'), article('2')] as const;
+    store.observe([one, two]);
+    const newerTwo = acked(two, { readAt: READ });
+
+    store.observe([
+      one,
+      article('1', { stateVersion: '3' }),
+      article('1', { contentRevision: '1' }),
+      article('9'),
+      newerTwo,
+    ]);
+    await settleAll();
+
+    expect(queue.stateBatches).toEqual([new Map([['2', readerOf(newerTwo)]])]);
+  });
+
+  it('is given the content revision when the state versions are equal and it is newer', async () => {
+    const { store, queue } = rig();
+    const one = article('1');
+    store.observe([one]);
+    const revised = article('1', { contentRevision: '3' });
+
+    store.observe([revised]);
+    await settleAll();
+
+    expect(queue.stateBatches).toEqual([new Map([['1', readerOf(revised)]])]);
+  });
+
+  it('is given the answer to a change, as the server gave it', async () => {
+    const { store, queue, transport } = rig();
+    const item = article('1');
+    const handle = store.dispatch(item, { type: 'rate', rating: 1 });
+    await settleAll();
+    const next = ack(sendAt(transport, 0), item, { rating: 1, readAt: READ });
+    await handle.result;
+    await settleAll();
+
+    expect(queue.stateBatches).toEqual([new Map([['1', readerOf(next)]])]);
+  });
+
+  it('is given what the server sent when it refused a change as stale', async () => {
+    const { store, queue, transport } = rig();
+    const item = article('1');
+    const theirs = article('1', { stateVersion: '6', rating: -1 });
+    const handle = store.dispatch(item, { type: 'rate', rating: 1 });
+    await settleAll();
+    sendAt(transport, 0).reject(apiError(409, 'STALE_STATE', { item: theirs }));
+    await handle.result;
+    await settleAll();
+
+    expect(queue.stateBatches).toEqual([new Map([['1', readerOf(theirs)]])]);
+  });
+
+  it('is given nothing while the account has not chosen offline reading, and what is learned once it has', async () => {
+    const { store, queue } = rig({ enabled: false });
+    const [one, two] = [article('1'), article('2')] as const;
+    store.observe([one, two]);
+
+    store.observe([acked(one, { readAt: READ })]);
+    await settleAll();
+    expect(queue.stateBatches).toEqual([]);
+
+    queue.enabledNow = true;
+    const newerTwo = acked(two, { readAt: READ });
+    store.observe([newerTwo]);
+    await settleAll();
+
+    expect(queue.stateBatches).toEqual([new Map([['2', readerOf(newerTwo)]])]);
+  });
+
+  it('is given nothing more once the store is released, however soon after it learned', async () => {
+    const { store, queue } = rig();
+    const [one, two] = [article('1'), article('2')] as const;
+    store.observe([one, two]);
+    const readOne = acked(one, { readAt: READ });
+    store.observe([readOne]);
+    await settleAll();
+
+    store.observe([acked(two, { readAt: READ })]);
+    store.reset();
+    await settleAll();
+
+    expect(queue.stateBatches).toEqual([new Map([['1', readerOf(readOne)]])]);
+  });
+
+  it('is given the state of the server under a change that waits, never the change', async () => {
+    const { store, queue } = rig({ online: false });
+    const one = article('1');
+    store.observe([one]);
+    store.dispatch(one, { type: 'rate', rating: 1 });
+    await settleAll();
+    expect(store.offline.waiting()).toHaveLength(1);
+    expect(queue.stateBatches).toEqual([]);
+
+    const theirs = acked(one, { rating: -1, reason: 'clickbait' });
+    store.observe([theirs]);
+    await settleAll();
+
+    expect(queue.stateBatches).toEqual([new Map([['1', readerOf(theirs)]])]);
+    expect(store.view(theirs).rating).toBe(1);
+  });
+
+  it('is not given the state a change of an earlier page was made on', async () => {
+    const { store, queue } = rig({ online: false });
+    const [one, two] = [article('1'), article('2')] as const;
+    store.observe([one, two]);
+    const before = { ...readerOf(one), stateVersion: '9', rating: 1 as const };
+    const newerTwo = acked(two, { readAt: READ });
+
+    store.offline.adopt([recordOf({ id: 'earlier', articleId: '1', before })]);
+    store.observe([newerTwo]);
+    await settleAll();
+
+    expect(store.offline.waiting()).toHaveLength(1);
+    expect(queue.stateBatches).toEqual([new Map([['2', readerOf(newerTwo)]])]);
+  });
+
+  it('is not given the item a change is made on, which may show other changes', async () => {
+    const { store, queue } = rig({ online: false });
+    const [one, two] = [article('1'), article('2')] as const;
+    store.observe([one, two]);
+    const newerTwo = acked(two, { readAt: READ });
+
+    store.dispatch(acked(one, { readAt: READ }), { type: 'bookmark' });
+    store.observe([newerTwo]);
+    await settleAll();
+
+    expect(queue.stateBatches).toEqual([new Map([['2', readerOf(newerTwo)]])]);
   });
 });

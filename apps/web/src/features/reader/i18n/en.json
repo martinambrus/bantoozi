@@ -20,6 +20,8 @@
     "noLabels": "No labels yet.",
     "feedsFailed": "The feeds couldn't be loaded.",
     "labelsFailed": "The labels couldn't be loaded.",
+    "feedsOffline": "The feeds load once the device is back online.",
+    "labelsOffline": "The labels load once the device is back online.",
     "retryFeeds": "Retry loading feeds",
     "retryLabels": "Retry loading labels",
     "unread": "Unread:",
