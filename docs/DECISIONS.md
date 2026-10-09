@@ -1438,3 +1438,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   edit it. Every admin library card now also carries `latestVersion`, the newest version of its
   slug read from `library_card_versions` (`null` for a card that is no version), and the page marks
   a card superseded when `latestVersion` is above its `version`. No migration. Spec 08 §9 updated.
+- D-160: 2026-10-09 M6-T8 — spec 09 §1 ran the replay on startup, `online` and foreground return
+  and asked for bounded backoff with Retry-After, but a server that answers again after an outage
+  sends no `online` event: a kept change whose tries failed, or whose `/me` check failed, while the
+  browser stayed online waited until a reload, a return to the page or another trigger. While kept
+  changes wait and the browser reports a connection, the page now replays again by itself: 2 s
+  after the replay or send that left them waiting, twice as long after each retry up to five
+  minutes, never sooner than the Retry-After of the refusal (of a change or of the `/me` check),
+  and never while offline or after the page let go of the account. Spec 09 §1 updated.

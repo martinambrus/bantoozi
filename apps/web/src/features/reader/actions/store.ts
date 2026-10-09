@@ -287,6 +287,8 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
   /** Newer states of known articles, waiting to be written onto the saved rows. */
   let fresh = new Map<string, ReaderState>();
   let freshQueued = false;
+  /** A server that refused a kept change for now asked not to be sent it again before this moment. */
+  let notBefore = 0;
 
   const online = (): boolean => queue === null || queue.online();
   const canWaitOnceChosen = (action: ReaderAction): boolean =>
@@ -635,7 +637,9 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
   }
 
   /** The server could not be reached: the change stays on the device, and shown, for a replay. */
-  function park(slot: Slot, entry: ActionEntry): void {
+  function park(slot: Slot, entry: ActionEntry, refusal?: ApiError): void {
+    const asked = refusal?.retryAfterMs ?? null;
+    if (asked !== null) notBefore = Math.max(notBefore, now() + asked);
     entry.handle.status = 'waiting';
     entry.handle.replayed = true;
     slot.rev += 1;
@@ -712,7 +716,7 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
       if (item !== null) learn(handle.articleId, item);
       drop(slot, entry, { status: 'stale', item });
     } else if (entry.stored && (isRetryable(outcome.error) || isUnauthorized(outcome.error))) {
-      park(slot, entry);
+      park(slot, entry, outcome.error);
     } else {
       drop(slot, entry, { status: 'failed', error: outcome.error });
     }
@@ -1223,6 +1227,7 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
       return list;
     },
     mark: () => durable,
+    notBefore: () => notBefore,
     adopt(records, mark = -1) {
       if (queue === null) return;
       const listed = new Set(records.map((record) => record.id));

@@ -330,6 +330,11 @@ export interface OfflineControl {
   /** A point in time for `adopt`: records written after it are not taken for gone. */
   mark(): number;
   /**
+   * The moment (epoch ms) before which a server that refused a kept change for now asked not to be
+   * sent it again (its Retry-After); 0 when none asked.
+   */
+  notBefore(): number;
+  /**
    * Makes the store agree with the queue store: shows the records it has no change for as
    * `waiting` changes, and settles the changes whose record is gone, written before `mark`, as
    * cancelled (another tab sent or discarded them).

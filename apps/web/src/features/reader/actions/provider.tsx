@@ -17,6 +17,7 @@ import type { ApiClient } from '../../../api/client.js';
 import { useApi } from '../../../api/context.js';
 import { isApiError } from '../../../api/errors.js';
 import { meKey } from '../../../api/query-keys.js';
+import { retryLaterMs } from '../../../api/retry-later.js';
 import { routes } from '../../../api/routes.js';
 import { errorMessage } from '../../../components/error-message.js';
 import { useToast, type ToastApi } from '../../../components/toast/toast-provider.js';
@@ -303,15 +304,20 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
     queue,
   });
 
+  /** The server refused the account check for now and asked not to be asked before this moment. */
+  let checkNotBefore = 0;
+
   /** Spec 09 §1: asks the server, fresh, who is signed in before anything kept is sent. */
   async function verify(): Promise<AccountCheck> {
     try {
       const me = await api.call(routes.meGet);
       return me.id === accountId ? 'same' : 'other';
     } catch (error) {
-      return isApiError(error) && error.kind === 'http' && error.status === 401
-        ? 'unauthorized'
-        : 'unreachable';
+      if (isApiError(error) && error.kind === 'http' && error.status === 401) return 'unauthorized';
+      if (isApiError(error) && error.retryAfterMs !== null) {
+        checkNotBefore = Math.max(checkNotBefore, Date.now() + error.retryAfterMs);
+      }
+      return 'unreachable';
     }
   }
 
@@ -319,6 +325,11 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
   let lifetime = 0;
   /** Replays are on from `start` until the scope is released. */
   let replaying = false;
+  /** Replays under way: the next retry is planned when the last of them ends. */
+  let running = 0;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The retries made in a row while kept changes kept waiting. */
+  let retries = 0;
 
   const replayer = createReplayer({
     queue,
@@ -340,6 +351,51 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
   });
   const reasonBar = createReasonBar(store);
 
+  function stopRetrying(): void {
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
+  }
+
+  /**
+   * Spec 09 §1: a server that answers again sends no `online` event, so while kept changes wait and
+   * the browser reports a connection, the page replays again by itself: 2 s after the replay or the
+   * send that left them waiting, then twice as long each time up to five minutes, and never sooner
+   * than the server asked. Nothing waiting ends it, and so does the end of the scope.
+   */
+  function retryLater(): void {
+    if (running > 0) return;
+    if (store.offline.waiting().length === 0) {
+      stopRetrying();
+      retries = 0;
+      return;
+    }
+    if (!replaying || retryTimer !== undefined || !queue.online()) return;
+    const asked = Math.max(checkNotBefore, store.offline.notBefore()) - Date.now();
+    retryTimer = setTimeout(
+      () => {
+        retryTimer = undefined;
+        retries += 1;
+        void replayNow();
+      },
+      retryLaterMs(retries + 1, asked > 0 ? asked : null),
+    );
+  }
+
+  async function replayNow(): Promise<void> {
+    if (!replaying) return;
+    stopRetrying();
+    running += 1;
+    try {
+      await replayer.run();
+    } finally {
+      running -= 1;
+      retryLater();
+    }
+  }
+
+  // A change sent from the page, not by a replay, can be left waiting too.
+  store.subscribe(retryLater);
+
   return {
     store,
     tracker,
@@ -348,11 +404,9 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
     async start() {
       replaying = true;
       await replayer.restore();
-      await replayer.run();
+      await replayNow();
     },
-    async replay() {
-      if (replaying) await replayer.run();
-    },
+    replay: replayNow,
     listen(listener) {
       listeners.add(listener);
       return () => {
@@ -362,6 +416,7 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
     release() {
       lifetime += 1;
       replaying = false;
+      stopRetrying();
       latestOffer += 1;
       offers.release();
       reasonBar.close();
@@ -430,7 +485,8 @@ function AccountScope({ accountId, children }: ReaderActionsProviderProps) {
 
 /**
  * Shows the changes the account kept on the device and replays them: now, when the browser says it
- * is online again, when the page is shown again and when something asks for it (spec 09 §1).
+ * is online again, when the page is shown again and when something asks for it (spec 09 §1). The
+ * scope replays again by itself while they wait online (`retryLater`).
  */
 function replayOn(scope: Scope): () => void {
   void scope.start();

@@ -36,16 +36,16 @@ function matchPath(pattern: string, pathname: string): Record<string, string> | 
 }
 
 /**
- * A fake API: `GET /me` from `server.me`, every other operation from `server.routes`, and 404
- * `NOT_FOUND` for anything unhandled (listed in `unhandled`, so a test can assert there was none).
- * Mutate `server` during a test to change later answers.
+ * A fake API: `GET /me` from `server.me` unless the test routes it itself, every other operation
+ * from `server.routes`, and 404 `NOT_FOUND` for anything unhandled (listed in `unhandled`, so a test
+ * can assert there was none). Mutate `server` during a test to change later answers.
  */
 export function createFakeServer(server: FakeServer) {
   const unhandled: string[] = [];
   const handler = (request: RecordedRequest) => {
     const path = request.pathname.replace(/^\/api\/v1/, '');
     const operation = `${request.method} ${path}`;
-    if (operation === 'GET /me') {
+    if (operation === 'GET /me' && server.routes['GET /me'] === undefined) {
       return server.me === null ? failure(401, 'UNAUTHENTICATED') : json(200, server.me);
     }
     for (const [key, route] of Object.entries(server.routes)) {

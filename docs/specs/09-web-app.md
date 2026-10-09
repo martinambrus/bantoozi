@@ -39,11 +39,14 @@ mobile-first, installable, works in English and Slovak, and never makes the read
     also refused while an article it covers has a change waiting on the device (D-156). Undo of a
     queued change whose request never left cancels it on the device; once its request may have left
     (the record is marked before it is sent), Undo waits for the replay and uses the receipt
-  - replay runs on startup, `online` and foreground return; Background Sync is optional acceleration,
-    not a dependency. Replay at most 24 hours after creation, in order per article, with one elected
-    tab/service-worker dispatcher. Serialize dependent versions after acknowledged local actions;
-    stop on a cross-device stale version and offer refresh/review. Retry network/5xx/429 with bounded
-    backoff and Retry-After, never blindly retry 400/403/404/409. Freeze on 401 pending reauthentication
+  - replay runs on startup, `online` and foreground return, and again by itself while kept changes
+    wait and the browser reports a connection: 2 s after the replay or send that left them waiting,
+    doubling up to 5 minutes, never sooner than the Retry-After of the refusal (D-160). Background
+    Sync is optional acceleration, not a dependency. Replay at most 24 hours after creation, in
+    order per article, with one elected tab/service-worker dispatcher. Serialize dependent versions
+    after acknowledged local actions; stop on a cross-device stale version and offer refresh/review.
+    Retry network/5xx/429 with bounded backoff and Retry-After, never blindly retry
+    400/403/404/409. Freeze on 401 pending reauthentication
   - reconnect verifies `/me` before replay; work queued for A is never submitted under B. Logout,
     account deletion or account switch immediately clears in-memory queries, private IndexedDB,
     pending mutations and any legacy private caches and broadcasts the reset to all tabs. Explicit

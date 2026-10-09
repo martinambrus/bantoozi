@@ -458,6 +458,7 @@ describe('the replayer', () => {
     const target: OfflineControl = {
       waiting: () => Array.from({ length: state.kept }, () => ({}) as ActionHandle),
       mark: () => 7,
+      notBefore: () => 0,
       adopt: (records, mark) => {
         state.calls.push(`adopt:${records.length}:${mark}`);
       },

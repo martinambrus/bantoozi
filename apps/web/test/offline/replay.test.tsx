@@ -11,7 +11,7 @@ import {
 } from '../../src/features/reader/actions/types.js';
 import { writeOfflineEnabled } from '../../src/offline/device.js';
 import { putRecord } from '../../src/offline/queue.js';
-import { UUID_V4, json } from '../api/fake-fetch.js';
+import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
 import { findToast } from '../article/harness.js';
 import { FakeTransport, acked, makeItem } from '../reader/actions/fake-transport.js';
 import { makeMe } from '../session/fixtures.js';
@@ -292,7 +292,6 @@ describe('4. an answer that is lost', () => {
     expect(server.of('rating')).toHaveLength(2);
     await advance(1000);
     expect(server.of('rating')).toHaveLength(3);
-    await advance(5000);
 
     expect(failedToasts()).toEqual([]);
     expect(isPressed(likeOf(tab))).toBe(true);
@@ -561,7 +560,7 @@ describe('8. refusals and failures during a replay', () => {
     await advance(0);
     await advance(500);
     await advance(1000);
-    await advance(5000);
+    await advance(1999);
 
     expect(server.of('rating')).toHaveLength(3);
     expect(await storedRecords(idb.factory)).toHaveLength(1);
@@ -577,6 +576,143 @@ describe('8. refusals and failures during a replay', () => {
       new Set([record.id]),
     );
     expect(isPressed(likeOf(tab))).toBe(true);
+  });
+});
+
+describe('8b. a record kept while the browser stays online', () => {
+  // A server that answers again sends no `online` event: only the page can replay again.
+  async function keptOnline(server: ReturnType<typeof createArticleServer>) {
+    writeOfflineEnabled(A, true);
+    const net = connection(server);
+    const tab = await openTab(server);
+    net.drop();
+    await tab.user.click(likeOf(tab));
+    const [record] = await recordsReach(idb.factory, 1);
+    fakeTimers();
+    return { net, tab, record: record! };
+  }
+
+  it('is replayed 2 s after the replay that kept it, then twice as long each time, until it is sent', async () => {
+    const server = createArticleServer([ITEM]);
+    const { net, tab, record } = await keptOnline(server);
+    server.fault({ when: 'before', act: 'network' }, { kinds: ['rating'], times: 6 });
+
+    net.restore();
+    await advance(0);
+    await advance(500);
+    await advance(1000);
+    expect(server.of('rating')).toHaveLength(3);
+    await advance(1999);
+    expect(server.of('rating')).toHaveLength(3);
+
+    await advance(1);
+    expect(server.of('rating')).toHaveLength(4);
+    await advance(500);
+    await advance(1000);
+    expect(server.of('rating')).toHaveLength(6);
+    await advance(3999);
+    expect(server.of('rating')).toHaveLength(6);
+
+    await advance(1);
+    await until(async () => expect(await storedRecords(idb.factory)).toEqual([]));
+    expect(server.of('rating')).toHaveLength(7);
+    expect(new Set(server.of('rating').map((arrival) => arrival.key))).toEqual(
+      new Set([record.id]),
+    );
+    expect(server.effects).toHaveLength(1);
+    expect(isPressed(likeOf(tab))).toBe(true);
+    expect(failedToasts()).toEqual([]);
+
+    await advance(10 * 60_000);
+    expect(server.of('rating')).toHaveLength(7);
+  });
+
+  it('is replayed no sooner than the Retry-After of the refusal that kept it', async () => {
+    const server = createArticleServer([ITEM]);
+    const { net, record } = await keptOnline(server);
+    server.fault(
+      {
+        when: 'before',
+        act: { status: 503, code: 'UNAVAILABLE', headers: { 'Retry-After': '120' } },
+      },
+      { kinds: ['rating'] },
+    );
+
+    net.restore();
+    await advance(0);
+    expect(server.of('rating')).toHaveLength(1);
+    await advance(119_999);
+    expect(server.of('rating')).toHaveLength(1);
+
+    await advance(1);
+    await until(async () => expect(await storedRecords(idb.factory)).toEqual([]));
+    expect(server.of('rating').map((arrival) => arrival.key)).toEqual([record.id, record.id]);
+  });
+
+  it('is replayed once an account check refused for now may be asked again', async () => {
+    const server = createArticleServer([ITEM]);
+    const { net, tab, record } = await keptOnline(server);
+    let refused = 0;
+    server.routes['GET /me'] = () => {
+      if (refused > 0) return json(200, server.fake.me);
+      refused += 1;
+      return failure(503, 'UNAVAILABLE', undefined, { 'Retry-After': '30' });
+    };
+    const checks = tab.calls('GET /me').length;
+
+    net.restore();
+    await advance(0);
+    expect(refused).toBe(1);
+    await advance(29_999);
+    expect(server.of('rating')).toHaveLength(0);
+    expect(tab.calls('GET /me')).toHaveLength(checks + 1);
+
+    await advance(1);
+    await until(async () => expect(await storedRecords(idb.factory)).toEqual([]));
+    expect(server.of('rating').map((arrival) => arrival.key)).toEqual([record.id]);
+  });
+
+  it('is not replayed while the browser is offline, and is sent when it is back online', async () => {
+    const server = createArticleServer([ITEM]);
+    const { net, tab, record } = await keptOnline(server);
+    server.fault({ when: 'before', act: 'network' }, { kinds: ['rating'], times: 3 });
+
+    net.restore();
+    await advance(0);
+    await advance(500);
+    await advance(1000);
+    expect(server.of('rating')).toHaveLength(3);
+    net.drop();
+    const checks = tab.calls('GET /me').length;
+    await advance(10 * 60_000);
+    expect(server.of('rating')).toHaveLength(3);
+    expect(tab.calls('GET /me')).toHaveLength(checks);
+
+    net.restore();
+    await advance(0);
+    await until(async () => expect(await storedRecords(idb.factory)).toEqual([]));
+    expect(server.of('rating').map((arrival) => arrival.key)).toEqual(
+      Array.from({ length: 4 }, () => record.id),
+    );
+  });
+
+  it('is not replayed by a page that signed out', async () => {
+    const server = createArticleServer([ITEM]);
+    const { net, tab } = await keptOnline(server);
+    server.fault({ when: 'before', act: 'network' }, { kinds: ['rating'], times: 3 });
+    server.routes['POST /auth/logout'] = () => noContent();
+
+    net.restore();
+    await advance(0);
+    await advance(500);
+    await advance(1000);
+    expect(server.of('rating')).toHaveLength(3);
+    await act(async () => {
+      await tab.session.logout();
+    });
+    await advance(10 * 60_000);
+
+    expect(server.of('rating')).toHaveLength(3);
   });
 });
 
@@ -947,7 +1083,6 @@ describe('13. undoing a change that was never sent', () => {
     await advance(0);
     await advance(500);
     await advance(1000);
-    await advance(5000);
     const [record] = await recordsReach(idb.factory, 1);
     expect(record).toMatchObject({ sent: true });
     expect(server.effects).toHaveLength(1);
