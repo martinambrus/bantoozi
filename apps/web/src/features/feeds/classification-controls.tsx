@@ -38,10 +38,11 @@ export function ClassificationControls({ subscription }: { subscription: Subscri
   const [changedTo, setChangedTo] = useState<Mode | null>(null);
   const [stale, setStale] = useState(false);
   // The list learns the outcome even when the answer comes after these controls are gone (their
-  // sheet was closed); only what they say about it needs them.
+  // sheet was closed); only what they say about it needs them. Only the classification is taken
+  // from the answer: a settings save made while it was on its way is newer than the rest of it.
   const change = useApiMutation(routes.subscriptionsSetInference, {
     onSuccess: ({ subscription: updated }) => {
-      cache.replace(updated);
+      cache.mergeInference(updated);
     },
     onError: (error) => {
       if (isStale(error)) void cache.refresh();

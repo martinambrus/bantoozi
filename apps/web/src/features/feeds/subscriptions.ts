@@ -33,6 +33,20 @@ export function useSubscriptionsCache() {
         queryClient.setQueryData<Subscription[]>(key, (list) =>
           list?.map((item) => (item.feed.id === subscription.feed.id ? subscription : item)),
         ),
+      /** Takes in only the classification fields of an answer: the rest can predate the list. */
+      mergeInference: (subscription: Subscription) =>
+        queryClient.setQueryData<Subscription[]>(key, (list) =>
+          list?.map((item) =>
+            item.feed.id === subscription.feed.id
+              ? {
+                  ...item,
+                  inferenceMode: subscription.inferenceMode,
+                  inferenceVersion: subscription.inferenceVersion,
+                  inferenceActivatedAt: subscription.inferenceActivatedAt,
+                }
+              : item,
+          ),
+        ),
       remove: (feedId: string) =>
         queryClient.setQueryData<Subscription[]>(key, (list) =>
           list?.filter((item) => item.feed.id !== feedId),

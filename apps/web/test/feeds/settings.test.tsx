@@ -13,6 +13,7 @@ import {
   SET_INFERENCE,
   UPDATE_FEED,
   feedsServer,
+  findRow,
   makeSubscription,
   rowOf,
   type SubscriptionOverrides,
@@ -660,6 +661,38 @@ describe('the feed settings', () => {
       expect(first).toMatch(UUID_V4);
       expect(second).toMatch(UUID_V4);
       expect(second).not.toBe(first);
+    });
+
+    it('keeps the settings saved while the change was on its way', async () => {
+      const { app, server, sheet } = await openSettings();
+      const answer = server.routes[SET_INFERENCE]!;
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      server.routes[SET_INFERENCE] = async (request, params) => {
+        // Built now, from the feed as it is: it does not have the title saved meanwhile.
+        const response = await answer(request, params);
+        await held;
+        return response;
+      };
+
+      await app.user.click(within(sheet).getByRole('button', { name: 'Switch to training' }));
+      await waitFor(() => expect(app.calls(SET_INFERENCE)).toHaveLength(1));
+      await app.user.type(within(sheet).getByLabelText('Title'), 'My Alpha');
+      await saveChange(app, sheet);
+      release();
+
+      await waitFor(() => expect(app.queryClient.isMutating()).toBe(0));
+      const cached = app.queryClient.getQueryData<Subscription[]>(subscriptionsKey(USER_A_ID));
+      expect(cached?.find((sub) => sub.feed.id === '5')).toMatchObject({
+        titleOverride: 'My Alpha',
+        inferenceMode: 'training',
+        inferenceVersion: '4',
+      });
+      expect(
+        await within(await findRow('My Alpha')).findByText('Training: selected articles'),
+      ).toBeVisible();
     });
 
     describe('when the sheet is closed before the answer', () => {
