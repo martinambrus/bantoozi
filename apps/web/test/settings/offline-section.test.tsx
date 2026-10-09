@@ -216,6 +216,35 @@ describe('the Offline reading section', () => {
       expect(isOfflineEnabled(A)).toBe(false);
       expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]);
     });
+
+    it('stays on and says it failed when what was stored cannot be removed, so it can be tried again', async () => {
+      await storedArticles();
+      const { user } = await openSettings();
+      await within(offline()).findByText('4 articles stored on this device');
+      const stuck = vi.spyOn(FakeIDBObjectStore.prototype, 'delete').mockImplementation(() => {
+        throw new DOMException('The disk is not available.', 'UnknownError');
+      });
+      onTestFinished(() => {
+        stuck.mockRestore();
+      });
+
+      await user.click(toggle());
+
+      expect(await within(offline()).findByRole('alert')).toHaveTextContent(
+        "Couldn't change offline reading. Try again.",
+      );
+      expect(toggle()).toHaveAttribute('aria-checked', 'true');
+      expect(isOfflineEnabled(A)).toBe(true);
+      expect(clearButton()).toBeEnabled();
+      expect(rowsOf(await dumpDatabase(idb.factory), A)).not.toEqual([]);
+
+      stuck.mockRestore();
+      await user.click(toggle());
+
+      await waitFor(() => expect(toggle()).toHaveAttribute('aria-checked', 'false'));
+      expect(isOfflineEnabled(A)).toBe(false);
+      expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]);
+    });
   });
 
   describe('after unsent changes were discarded', () => {

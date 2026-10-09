@@ -72,6 +72,7 @@ export function useOfflineReading() {
             return true;
           }
           await setOfflineEnabled(me.id, false);
+          setEnabled(isOfflineEnabled(me.id));
           return false;
         }
         // A store that cannot open is told by the status line, not as a failure.

@@ -170,8 +170,12 @@ export async function setOfflineEnabled(accountId: string, on: boolean): Promise
     const opened = await offlineDb();
     return opened.available && writeOfflineEnabled(accountId, true);
   }
+  // Off before the removal, so nothing new is stored while the rows go.
   const off = writeOfflineEnabled(accountId, false);
   const cleared = await clearAccount(accountId);
+  // Rows that stay keep the choice on: turning it off can be tried again, and turning it on later
+  // does not show rows the person was told were gone.
+  if (off && !cleared) writeOfflineEnabled(accountId, true);
   return off && cleared;
 }
 
