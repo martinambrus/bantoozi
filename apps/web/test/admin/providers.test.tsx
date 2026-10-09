@@ -436,6 +436,42 @@ describe('provider accounts (spec 09 §8)', () => {
     expect(panel().queryByRole('button', { name: 'Activate' })).toBeNull();
   });
 
+  it('stages a key only once no other change of the provider is on its way', async () => {
+    const server: Server = {
+      items: [jevCredential({ candidateStatus: 'valid', validatedAt: T1 }), ollamaCredential()],
+    };
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const app = await openProviders(server, {
+      'POST /admin/engine/credentials/:provider/activate': async () => {
+        await gate;
+        server.items = [
+          jevCredential({
+            revision: '6',
+            activeVersion: '4',
+            candidateVersion: null,
+            candidateStatus: null,
+          }),
+          ollamaCredential(),
+        ];
+        return json(200, { credential: server.items[0] });
+      },
+    });
+
+    await app.user.click(panel().getByRole('button', { name: 'Activate' }));
+    await app.user.type(panel().getByLabelText(KEY_LABEL), SECRET);
+
+    expect(panel().getByRole('button', { name: 'Stage key' })).toBeDisabled();
+    await app.user.type(panel().getByLabelText(KEY_LABEL), '{Enter}');
+    expect(app.calls('PUT /admin/engine/credentials/:provider')).toHaveLength(0);
+    release();
+    expect(await screen.findByText('Key activated. It is used from now on.')).toBeVisible();
+    expect(panel().getByRole('button', { name: 'Stage key' })).toBeEnabled();
+    expect(app.calls('PUT /admin/engine/credentials/:provider')).toHaveLength(0);
+  });
+
   it('refetches and explains a refused activation (the credential changed)', async () => {
     const server: Server = {
       items: [jevCredential({ candidateStatus: 'valid', validatedAt: T1 }), ollamaCredential()],

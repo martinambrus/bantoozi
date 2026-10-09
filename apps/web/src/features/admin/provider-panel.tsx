@@ -103,7 +103,8 @@ export function ProviderPanel({
   async function stage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const key = apiKey;
-    if (key === '' || staging) return;
+    // Every change of the provider is made against the revision shown, so they go one at a time.
+    if (key === '' || busy) return;
     setApiKey('');
     setStaging(true);
     setProblem(null);
@@ -252,7 +253,12 @@ export function ProviderPanel({
           maxLength={4096}
         />
         <div>
-          <Button type="submit" variant="secondary" loading={staging} disabled={apiKey === ''}>
+          <Button
+            type="submit"
+            variant="secondary"
+            loading={staging}
+            disabled={apiKey === '' || busy}
+          >
             {t('providers.stage')}
           </Button>
         </div>
