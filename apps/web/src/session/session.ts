@@ -72,8 +72,13 @@ export interface Session {
   logout: () => Promise<LogoutResult>;
   /** Drops everything private: the query cache, the registered stores, the other tabs' memory. */
   resetAccountState: () => Promise<void>;
-  /** Ends the session after a 401 that did not come through `api`, such as the streamed export. */
-  unauthorized: () => void;
+  /** Which sign-in a request sent now belongs to, for `unauthorized`. */
+  currentSignIn: () => number;
+  /**
+   * Ends the session after a 401 that did not come through `api`, such as the streamed export, if
+   * the request was sent in the sign-in that still lasts (`currentSignIn()` as it was sent).
+   */
+  unauthorized: (sentIn: number) => void;
   /** Calls `listener` when someone signs in or out; returns the function that stops it. */
   subscribe: (listener: () => void) => () => void;
   dispose: () => void;
@@ -108,9 +113,7 @@ export function createSession(options: SessionOptions): Session {
   const api = createApiClient({
     fetch: options.fetch,
     session: () => signIns,
-    onUnauthorized: (sentIn) => {
-      if (sentIn === signIns) handleUnauthorized();
-    },
+    onUnauthorized: unauthorizedIn,
   });
   const meQuery = meQueryOptions(api);
   const listeners = new Set<() => void>();
@@ -245,6 +248,11 @@ export function createSession(options: SessionOptions): Session {
     if (queryClient.getQueryData<Me | null>(meKey())) void reset('unauthorized');
   }
 
+  /** A 401 to a request sent in another sign-in than the current one is about an ended session. */
+  function unauthorizedIn(sentIn: unknown) {
+    if (sentIn === signIns) handleUnauthorized();
+  }
+
   async function endServerSession(): Promise<void> {
     try {
       await api.call(routes.authLogout);
@@ -362,7 +370,8 @@ export function createSession(options: SessionOptions): Session {
     verifyCode,
     logout,
     resetAccountState: () => reset('logout'),
-    unauthorized: handleUnauthorized,
+    currentSignIn: () => signIns,
+    unauthorized: unauthorizedIn,
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {

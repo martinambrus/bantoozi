@@ -373,6 +373,25 @@ describe('export (spec 09 §7)', () => {
       expect(saved).toHaveLength(0);
     });
 
+    it('ends only the sign-in it was asked in, not one that began while it was on its way', async () => {
+      let answer!: (response: Response) => void;
+      stubExportFetch(
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      const { user, session } = await open();
+      const signIn = vi.spyOn(session, 'currentSignIn').mockReturnValue(7);
+      const told = vi.spyOn(session, 'unauthorized');
+      await user.click(download());
+      signIn.mockReturnValue(8);
+
+      answer(new Response(JSON.stringify({ error: { code: 'UNAUTHORIZED' } }), { status: 401 }));
+
+      await waitFor(() => expect(told).toHaveBeenCalledWith(7));
+    });
+
     it('lets the person try again after an error, and the error goes away', async () => {
       let failing = true;
       stubExportFetch(() =>

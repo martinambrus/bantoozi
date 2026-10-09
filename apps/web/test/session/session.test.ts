@@ -513,6 +513,33 @@ describe('a 401', () => {
     expect(resets).toEqual([]);
     expect(queryClient.getQueryData(meKey())).toEqual(userA);
   });
+
+  describe('outside the API client, such as the streamed export', () => {
+    it('ends the session the request was sent in', async () => {
+      const { session, queryClient } = await startSignedIn(userA);
+      const resets = recordResets();
+
+      session.unauthorized(session.currentSignIn());
+
+      await vi.waitFor(() => expect(queryClient.getQueryData(meKey())).toBeNull());
+      expect(resets).toEqual(['unauthorized']);
+    });
+
+    it('leaves another account signed in since alone', async () => {
+      const { session, queryClient, server } = await startSignedIn(userA);
+      const sentIn = session.currentSignIn();
+      await session.logout();
+      server.verifiesAs = userB;
+      await session.verifyCode({ email: 'b@example.com', code: '123456' });
+      const resets = recordResets();
+
+      session.unauthorized(sentIn);
+      await settle();
+
+      expect(resets).toEqual([]);
+      expect(queryClient.getQueryData(meKey())).toEqual(userB);
+    });
+  });
 });
 
 describe('resetAccountState', () => {
