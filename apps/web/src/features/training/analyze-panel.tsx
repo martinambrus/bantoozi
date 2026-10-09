@@ -17,7 +17,7 @@ import { Button } from '../../components/button.js';
 import { errorMessage } from '../../components/error-message.js';
 import { IconButton } from '../../components/icon-button.js';
 import { CloseIcon } from '../../components/icons.js';
-import { useAccountId } from '../../session/context.js';
+import { useAccountId, useSession } from '../../session/context.js';
 import { articleKeys } from '../article/query-keys.js';
 import { InlineAlert } from '../feeds/inline-alert.js';
 import { useSubscriptionsCache } from '../feeds/subscriptions.js';
@@ -142,7 +142,8 @@ interface Refocus {
 /**
  * The selected articles of one feed, named in full, and the one button that sends them to be
  * analyzed (spec 09 §3.2). A feed that is off is switched to training by that same request.
- * Nothing here selects anything or sends anything but on that button.
+ * Nothing here selects anything or sends anything but on that button. An answer that comes after
+ * the sign-in that asked has ended changes nothing.
  */
 export function AnalyzePanel({
   subscription,
@@ -154,6 +155,7 @@ export function AnalyzePanel({
 }: AnalyzePanelProps) {
   const { t } = useTranslation('training');
   const queryClient = useQueryClient();
+  const session = useSession();
   const accountId = useAccountId();
   const subscriptions = useSubscriptionsCache();
   const analyze = useApiMutation(routes.subscriptionsAnalyze);
@@ -244,10 +246,12 @@ export function AnalyzePanel({
     }
   }
 
-  // The answer is acted on even when the panel is gone by then: the cache still has to know.
+  // The answer is acted on even when the panel is gone by then, since the cache still has to know,
+  // but not once the sign-in that sent it has ended.
   async function send() {
     if (empty || sending.current) return;
     sending.current = true;
+    const signIn = session.currentSignIn();
     const sent = items;
     let requests: AnalyzeResponse['requests'];
     try {
@@ -260,11 +264,13 @@ export function AnalyzePanel({
         },
       }));
     } catch (error) {
+      if (session.currentSignIn() !== signIn) return;
       refused(sent, error);
       return;
     } finally {
       sending.current = false;
     }
+    if (session.currentSignIn() !== signIn) return;
     accepted(sent, requests);
   }
 

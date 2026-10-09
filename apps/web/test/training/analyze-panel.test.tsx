@@ -17,6 +17,7 @@ import { UUID_V4, failure, json } from '../api/fake-fetch.js';
 import {
   deferred,
   makeDetail,
+  makeMe,
   renderReader,
   type ReaderHarnessOptions,
 } from '../article/harness.js';
@@ -976,4 +977,70 @@ describe('an answer that comes after the panel is gone', () => {
     expect(stale.articlesStale()).toBe(true);
     expect(stale.subscriptionsStale()).toBe(true);
   });
+});
+
+describe('an answer that comes after signing in again', () => {
+  const listed = [...articleKeys.all(USER_A_ID), 'list', 'for_you'];
+
+  async function sentBeforeSigningInAgain() {
+    const answer = deferred<Response>();
+    const view = renderPanel(
+      { items: picked.slice(0, 1) },
+      { routes: { [ROUTE]: () => answer.promise } },
+    );
+    await view.user.click(send());
+    await waitFor(() => expect(analyzed(view)).toHaveLength(1));
+    view.signInAgain(makeMe());
+    const stale = seed(view);
+    view.queryClient.setQueryData<ArticleListResponse>(listed, page(picked));
+    return { view, answer, stale };
+  }
+
+  async function afterwards(view: ReturnType<typeof renderPanel>, stale: ReturnType<typeof seed>) {
+    await waitFor(() => expect(view.queryClient.isMutating()).toBe(0));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    return {
+      statuses: view.queryClient
+        .getQueryData<ArticleListResponse>(listed)!
+        .items.map(({ analysis }) => analysis.status),
+      subscriptionsStale: stale.subscriptionsStale(),
+      articlesStale: stale.articlesStale(),
+      told: [view.onSubmitted.mock.calls.length, view.onDrop.mock.calls.length],
+    };
+  }
+
+  const AS_LOADED = {
+    statuses: ['not_requested', 'not_requested', 'not_requested'],
+    subscriptionsStale: false,
+    articlesStale: false,
+    told: [0, 0],
+  };
+
+  it('changes nothing the account shows when the requests were accepted', async () => {
+    const { view, answer, stale } = await sentBeforeSigningInAgain();
+
+    answer.resolve(
+      json(202, { requests: [{ id: requestId(1), articleId: '1', status: 'pending' }] }),
+    );
+
+    expect(await afterwards(view, stale)).toEqual(AS_LOADED);
+  });
+
+  it.each([
+    ['the article changed', () => failure(409, 'STALE_STATE', { articleIds: ['1'] })],
+    [
+      'the setting of the feed moved on',
+      () => failure(409, 'STALE_STATE', { currentVersion: '9' }),
+    ],
+    ['the article is gone', () => failure(404, 'NOT_FOUND')],
+  ])(
+    'changes nothing the account shows when the request was refused because %s',
+    async (_why, refuse) => {
+      const { view, answer, stale } = await sentBeforeSigningInAgain();
+
+      answer.resolve(refuse());
+
+      expect(await afterwards(view, stale)).toEqual(AS_LOADED);
+    },
+  );
 });
