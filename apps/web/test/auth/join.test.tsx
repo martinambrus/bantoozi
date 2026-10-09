@@ -2,7 +2,7 @@ import { screen, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { createI18n } from '../../src/i18n/index.js';
-import { failure } from '../api/fake-fetch.js';
+import { failure, json } from '../api/fake-fetch.js';
 import { makeMe } from '../session/fixtures.js';
 import { bodyOf } from '../support/app.js';
 import { CODE, EMAIL, createHarness, signInServer } from './harness.js';
@@ -87,6 +87,40 @@ describe('/join', () => {
 
     expect(screen.getByLabelText('Invite code')).toHaveValue('ABC123');
     expect(screen.getByLabelText('Email')).toHaveValue(EMAIL);
+    expect(app.calls(REQUEST_CODE).map((request) => bodyOf(request))).toEqual([
+      { email: EMAIL, inviteCode: 'ABC123', locale: 'en' },
+      { email: EMAIL, inviteCode: 'ABC123', locale: 'en' },
+    ]);
+  });
+
+  it('sends a new code with the invite code of the first request when the field changed meanwhile', async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let first = true;
+    const app = await open({
+      path: '/join?code=ABC123',
+      server: signInServer({
+        account: newcomer,
+        routes: {
+          [REQUEST_CODE]: async () => {
+            if (first) await held;
+            first = false;
+            return json(202, { next: 'check_email' });
+          },
+        },
+      }),
+    });
+    await app.user.type(screen.getByLabelText('Email'), EMAIL);
+    await app.user.click(screen.getByRole('button', { name: 'Send code' }));
+    await app.user.type(screen.getByLabelText('Invite code'), 'X');
+    release();
+    await screen.findByLabelText('Code');
+
+    await app.user.click(screen.getByRole('button', { name: 'Send a new code' }));
+
+    await screen.findByText(`If ${EMAIL} can use Bantoozi, we've emailed it a new code.`);
     expect(app.calls(REQUEST_CODE).map((request) => bodyOf(request))).toEqual([
       { email: EMAIL, inviteCode: 'ABC123', locale: 'en' },
       { email: EMAIL, inviteCode: 'ABC123', locale: 'en' },

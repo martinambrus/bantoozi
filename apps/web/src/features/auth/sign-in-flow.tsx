@@ -8,6 +8,7 @@ import { isApiError } from '../../api/errors.js';
 import { Button } from '../../components/button.js';
 import { TextField } from '../../components/text-field.js';
 import { useSession } from '../../session/context.js';
+import type { RequestCodeInput } from '../../session/session.js';
 import { authErrorMessage } from './auth-error.js';
 import { FormAlert } from './form-alert.js';
 import { safeRedirect } from './safe-redirect.js';
@@ -35,6 +36,9 @@ export function SignInFlow({ redirect, invite }: SignInFlowProps) {
   const codeInput = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<'email' | 'code'>('email');
   const [email, setEmail] = useState('');
+  // What the code was sent for: the code step names this address, signs it in and asks it for a new
+  // code, whatever the fields came to hold while the request was on its way.
+  const [sent, setSent] = useState<Omit<RequestCodeInput, 'locale'>>({ email: '' });
   const [inviteCode, setInviteCode] = useState(invite?.code ?? '');
   const [code, setCode] = useState('');
   const [malformed, setMalformed] = useState(false);
@@ -42,19 +46,16 @@ export function SignInFlow({ redirect, invite }: SignInFlowProps) {
   const [cameBack, setCameBack] = useState(false);
 
   const sendCode = useMutation({
-    mutationFn: (_input: { resend: boolean }) =>
-      session.requestCode({
-        email,
-        inviteCode: invite === undefined ? undefined : inviteCode.trim(),
-        locale: i18n.language,
-      }),
-    onSuccess: () => {
+    mutationFn: (request: { to: Omit<RequestCodeInput, 'locale'>; resend: boolean }) =>
+      session.requestCode({ ...request.to, locale: i18n.language }),
+    onSuccess: (_answer, request) => {
+      setSent(request.to);
       setStep('code');
       setCode('');
     },
   });
   const verify = useMutation({
-    mutationFn: () => session.verifyCode({ email, code: code.replace(/\s/g, '') }),
+    mutationFn: () => session.verifyCode({ email: sent.email, code: code.replace(/\s/g, '') }),
     onSuccess: () => navigate({ href: safeRedirect(redirect), replace: true }),
     onError: (error) => {
       if (isInvalidCode(error)) {
@@ -72,7 +73,11 @@ export function SignInFlow({ redirect, invite }: SignInFlowProps) {
 
   function submitEmail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!sending) sendCode.mutate({ resend: false });
+    if (sending) return;
+    sendCode.mutate({
+      to: { email, inviteCode: invite === undefined ? undefined : inviteCode.trim() },
+      resend: false,
+    });
   }
 
   function submitCode(event: FormEvent<HTMLFormElement>) {
@@ -93,7 +98,7 @@ export function SignInFlow({ redirect, invite }: SignInFlowProps) {
   function sendNewCode() {
     verify.reset();
     setMalformed(false);
-    sendCode.mutate({ resend: true }, { onSuccess: () => codeInput.current?.focus() });
+    sendCode.mutate({ to: sent, resend: true }, { onSuccess: () => codeInput.current?.focus() });
   }
 
   function changeEmail() {
@@ -146,7 +151,9 @@ export function SignInFlow({ redirect, invite }: SignInFlowProps) {
   return (
     <form key="code" onSubmit={submitCode} className="flex flex-col gap-4">
       <p role="status" className="text-slate-600 dark:text-slate-300">
-        {resent ? t('flow.newCodeSent', { email }) : t('flow.codeSent', { email })}
+        {resent
+          ? t('flow.newCodeSent', { email: sent.email })
+          : t('flow.codeSent', { email: sent.email })}
       </p>
       <TextField
         ref={codeInput}

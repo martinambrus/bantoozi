@@ -478,6 +478,72 @@ describe('/login', () => {
       await screen.findByLabelText('Code');
       expect(app.calls(REQUEST_CODE)).toHaveLength(1);
     });
+
+    it('signs in the address the code was sent to when the field changed meanwhile', async () => {
+      const sending = gate();
+      const app = await open({
+        path: '/login',
+        server: signInServer({
+          account: member,
+          routes: {
+            [REQUEST_CODE]: async () => {
+              await sending.opened;
+              return json(202, { next: 'check_email' });
+            },
+          },
+        }),
+      });
+      await app.user.type(screen.getByLabelText('Email'), EMAIL);
+      await app.user.click(screen.getByRole('button', { name: 'Send code' }));
+      await app.user.type(screen.getByLabelText('Email'), '.uk');
+      sending.release();
+
+      expect(
+        await screen.findByText(
+          `If ${EMAIL} can use Bantoozi, we've emailed it a code. Enter the code below to continue.`,
+        ),
+      ).toBeVisible();
+      await enterCode(app);
+
+      await waitFor(() => expect(pathname(app)).toBe('/read/for_you'));
+      expect(app.calls(REQUEST_CODE).map((request) => bodyOf(request))).toEqual([
+        { email: EMAIL, locale: 'en' },
+      ]);
+      expect(bodyOf(app.calls(VERIFY)[0]!)).toMatchObject({ email: EMAIL, code: CODE });
+    });
+
+    it('sends a new code to the address the first one was sent to', async () => {
+      const sending = gate();
+      let held = true;
+      const app = await open({
+        path: '/login',
+        server: signInServer({
+          account: member,
+          routes: {
+            [REQUEST_CODE]: async () => {
+              if (held) await sending.opened;
+              return json(202, { next: 'check_email' });
+            },
+          },
+        }),
+      });
+      await app.user.type(screen.getByLabelText('Email'), EMAIL);
+      await app.user.click(screen.getByRole('button', { name: 'Send code' }));
+      await app.user.type(screen.getByLabelText('Email'), '.uk');
+      sending.release();
+      await screen.findByLabelText('Code');
+      held = false;
+
+      await app.user.click(screen.getByRole('button', { name: 'Send a new code' }));
+
+      expect(
+        await screen.findByText(`If ${EMAIL} can use Bantoozi, we've emailed it a new code.`),
+      ).toBeVisible();
+      expect(app.calls(REQUEST_CODE).map((request) => bodyOf(request))).toEqual([
+        { email: EMAIL, locale: 'en' },
+        { email: EMAIL, locale: 'en' },
+      ]);
+    });
   });
 
   describe('on the code step', () => {
