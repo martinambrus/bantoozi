@@ -17,6 +17,31 @@ import type { TopicIndex } from '../interests/topics.js';
 /** Which list a chip belongs to: the topics to read, or the topics never to show. */
 export type ChipKind = 'like' | 'never';
 
+/**
+ * The library cards a chip is changing, each with the list of that chip. Every card has a chip in
+ * both lists, and while one of them changes the card the other cannot, so their requests never race.
+ */
+export function useChipChanges() {
+  const [changing, setChanging] = useState<ReadonlyMap<string, ChipKind>>(new Map());
+  const started = useRef(new Map<string, ChipKind>());
+  return {
+    changing,
+    /** Starts a change of the card from a chip of `kind`; false while one is on its way. */
+    start(cardId: string, kind: ChipKind): boolean {
+      if (started.current.has(cardId)) return false;
+      started.current.set(cardId, kind);
+      setChanging(new Map(started.current));
+      return true;
+    },
+    finish(cardId: string): void {
+      started.current.delete(cardId);
+      setChanging(new Map(started.current));
+    },
+  };
+}
+
+export type ChipChanges = ReturnType<typeof useChipChanges>;
+
 /** The card the person holds from this library card, if any. */
 function holding(cards: readonly CardDto[], card: LibraryCardDto): CardDto | undefined {
   return cards.find(
@@ -30,24 +55,24 @@ interface ChipProps {
   card: LibraryCardDto;
   held: CardDto | undefined;
   kind: ChipKind;
+  changes: ChipChanges;
   onFailure: (message: string | null) => void;
 }
 
-function Chip({ card, held, kind, onFailure }: ChipProps) {
+function Chip({ card, held, kind, changes, onFailure }: ChipProps) {
   const { t } = useTranslation('onboarding');
   const cache = useCardCache();
   const adopt = useApiMutation(routes.libraryAdopt);
   const remove = useApiMutation(routes.cardDelete);
-  const busy = useRef(false);
   const reasonId = useId();
 
   // A card held with the other strength belongs to the other list.
   const pressed = held !== undefined && (held.strength === 'never') === (kind === 'never');
   const blocked = held !== undefined && !pressed;
+  const changedByOther = (changes.changing.get(card.id) ?? kind) !== kind;
 
   async function toggle() {
-    if (busy.current) return;
-    busy.current = true;
+    if (!changes.start(card.id, kind)) return;
     onFailure(null);
     try {
       if (held === undefined) {
@@ -67,7 +92,7 @@ function Chip({ card, held, kind, onFailure }: ChipProps) {
         onFailure(errorMessage(t, error));
       }
     } finally {
-      busy.current = false;
+      changes.finish(card.id);
     }
   }
 
@@ -77,7 +102,7 @@ function Chip({ card, held, kind, onFailure }: ChipProps) {
         type="button"
         aria-pressed={pressed}
         aria-describedby={blocked ? reasonId : undefined}
-        disabled={blocked}
+        disabled={blocked || changedByOther}
         onClick={() => {
           void toggle();
         }}
@@ -152,6 +177,8 @@ function TopicGroup({ group, children }: { group: Group; children: ReactNode }) 
 
 export interface LibraryChipsProps {
   kind: ChipKind;
+  /** Shared by the two lists, whose chips change the same cards. */
+  changes: ChipChanges;
   cards: readonly CardDto[];
   library: readonly LibraryCardDto[];
   /** The topic names; null while they load. */
@@ -160,7 +187,14 @@ export interface LibraryChipsProps {
 }
 
 /** The library cards as chips under their topics: press one to hold it, press it again to drop it. */
-export function LibraryChips({ kind, cards, library, topics, topicsLoading }: LibraryChipsProps) {
+export function LibraryChips({
+  kind,
+  changes,
+  cards,
+  library,
+  topics,
+  topicsLoading,
+}: LibraryChipsProps) {
   const { t } = useTranslation('onboarding');
   const headingId = useId();
   const [failure, setFailure] = useState<string | null>(null);
@@ -183,6 +217,7 @@ export function LibraryChips({ kind, cards, library, topics, topicsLoading }: Li
                   card={card}
                   held={holding(cards, card)}
                   kind={kind}
+                  changes={changes}
                   onFailure={setFailure}
                 />
               ))}

@@ -11,7 +11,7 @@ import { InlineAlert } from '../feeds/inline-alert.js';
 import { useCards, useLibrary, type LibraryPage } from '../interests/queries.js';
 import { useTopicIndex } from '../interests/topics.js';
 import { DescribeForm } from './describe-form.js';
-import { LibraryChips, type ChipKind } from './library-chips.js';
+import { LibraryChips, useChipChanges, type ChipKind } from './library-chips.js';
 import { StepFooter } from './step-footer.js';
 import type { StepProps } from './steps.js';
 
@@ -24,12 +24,14 @@ function Choices({ cards }: { cards: readonly CardDto[] }) {
   const { t } = useTranslation('onboarding');
   const library = useLibrary({ topic: undefined, q: undefined });
   const { topics, index } = useTopicIndex();
+  const changes = useChipChanges();
   // The pages loaded so far. The library screen is out of reach until the wizard is done, so the
   // next page is loaded here when the person asks for it.
   const offered = (data: InfiniteData<LibraryPage>) => data.pages.flatMap((page) => page.items);
   const chips = (kind: ChipKind, items: LibraryCardDto[]) => (
     <LibraryChips
       kind={kind}
+      changes={changes}
       cards={cards}
       library={items}
       topics={index}

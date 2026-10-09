@@ -539,6 +539,36 @@ describe('interests (spec 09 §4 step 3)', () => {
     expect(within(likes).getByRole('button', { name: 'Space launches' })).toBeDisabled();
   });
 
+  it('keeps the other chip of a topic still while one of them is on its way', async () => {
+    const { app, server } = await openWizard('/onboarding?step=interests', options);
+    const likes = await screen.findByRole('region', { name: 'Pick topics you like' });
+    const never = screen.getByRole('region', { name: 'Never show me…' });
+    const answer = gate();
+    const adopt = server.routes['POST /library/:id/adopt']!;
+    server.routes['POST /library/:id/adopt'] = async (request, params) => {
+      await answer.opened;
+      return adopt(request, params);
+    };
+
+    await app.user.click(within(likes).getByRole('button', { name: 'Space launches' }));
+    await waitFor(() => expect(app.calls('POST /library/:id/adopt')).toHaveLength(1));
+
+    expect(within(never).getByRole('button', { name: 'Space launches' })).toBeDisabled();
+    await app.user.click(within(never).getByRole('button', { name: 'Space launches' }));
+    answer.release();
+
+    await waitFor(() =>
+      expect(within(likes).getByRole('button', { name: 'Space launches' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      ),
+    );
+    expect(app.calls('POST /library/:id/adopt').map((call) => bodyOf(call))).toStrictEqual([
+      { strength: 'like' },
+    ]);
+    expect(within(never).getByRole('button', { name: 'Space launches' })).toBeDisabled();
+  });
+
   it('creates a card from what the person describes, with the strength like', async () => {
     const { app, state } = await openWizard('/onboarding?step=interests', options);
     const field = await screen.findByLabelText('Describe something you want to read about');
