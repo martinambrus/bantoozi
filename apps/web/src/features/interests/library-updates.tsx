@@ -102,12 +102,18 @@ function OfferItem({ offer, card, list }: OfferItemProps) {
         >
           {t('updates.apply')}
         </Button>
-        <Button variant="secondary" onClick={() => kept.keep(offer)}>
+        <Button
+          variant="secondary"
+          // The answer to Apply switches the card, whatever was kept while it was on its way.
+          disabled={busy}
+          onClick={() => kept.keep(offer)}
+        >
           {t('updates.keep')}
         </Button>
         <Button
           variant="secondary"
-          disabled={card === undefined}
+          // The answer to Apply takes the offer away, and the editor with what was typed in it.
+          disabled={card === undefined || busy}
           onClick={() => setCustomizing(true)}
         >
           {t('updates.customize')}

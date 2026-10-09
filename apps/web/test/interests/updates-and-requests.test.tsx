@@ -9,6 +9,7 @@ import { USER_A_ID } from '../session/fixtures.js';
 import { bodyOf, type ApiRouteHandler } from '../support/app.js';
 import {
   cardResult,
+  gate,
   interestsServer,
   makeCard,
   makeOffer,
@@ -213,6 +214,68 @@ describe('library updates', () => {
         '151',
       ]);
       expect(app.queryClient.getQueryState(articles)?.isInvalidated).toBe(true);
+    });
+
+    it('opens no card editor while the update is being applied, which the answer would drop', async () => {
+      const answer = gate();
+      const updates: Offer[] = [makeOffer()];
+      const app = await openUpdates(
+        { updates },
+        {
+          'POST /library/:id/updates/:newId/apply': async () => {
+            await answer.opened;
+            updates.splice(0);
+            return json(200, cardResult(applied, { from: '101', to: '151' }));
+          },
+        },
+      );
+      const offer = await rowOf('Rust programming');
+      await app.user.click(within(offer).getByRole('button', { name: 'Apply this update' }));
+      await waitFor(() =>
+        expect(app.calls('POST /library/:id/updates/:newId/apply')).toHaveLength(1),
+      );
+
+      const customize = within(offer).getByRole('button', { name: 'Customize instead' });
+      expect(customize).toBeDisabled();
+      await app.user.click(customize);
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      answer.release();
+
+      expect(await screen.findByText('No library updates')).toBeVisible();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('keeps no current version while the update is being applied, which the answer replaces', async () => {
+      const answer = gate();
+      const updates: Offer[] = [makeOffer()];
+      const app = await openUpdates(
+        { updates },
+        {
+          'POST /library/:id/updates/:newId/apply': async () => {
+            await answer.opened;
+            updates.splice(0);
+            return json(200, cardResult(applied, { from: '101', to: '151' }));
+          },
+        },
+      );
+      const offer = await rowOf('Rust programming');
+      await app.user.click(within(offer).getByRole('button', { name: 'Apply this update' }));
+      await waitFor(() =>
+        expect(app.calls('POST /library/:id/updates/:newId/apply')).toHaveLength(1),
+      );
+
+      const keep = within(offer).getByRole('button', { name: 'Keep my current version' });
+      expect(keep).toBeDisabled();
+      await app.user.click(keep);
+      expect(keptKeys()).toEqual([]);
+      expect(screen.getByRole('listitem', { name: 'Rust programming' })).toBeVisible();
+      answer.release();
+
+      expect(await screen.findByText('No library updates')).toBeVisible();
+      expect(keptKeys()).toEqual([]);
+      expect(app.queryClient.getQueryData<CardDto[]>(CARDS_KEY)?.map((card) => card.id)).toEqual([
+        '151',
+      ]);
     });
 
     it.each([
