@@ -1,5 +1,6 @@
 import {
   ADMIN_PATCHABLE_SETTING_KEYS,
+  type AdminSettingKey,
   type AdminSettings,
   type AdminSettingsPatchResult,
 } from '@bantoozi/shared';
@@ -25,12 +26,22 @@ export function AdminSettingsPage() {
     queryFn: ({ signal }) => api.call(routes.adminSettingsGet, undefined, { signal }),
   });
 
-  function adopt(result: AdminSettingsPatchResult) {
+  /**
+   * Takes what one editor saved from the answer: the value of its key, when it was stored, and the
+   * ranker settings version once that is newer. Saves of two editors can answer in another order
+   * than they were made, each with all the settings as they stood then, so the rest of an answer
+   * can be older than the screen.
+   */
+  function adopt(key: AdminSettingKey, result: AdminSettingsPatchResult) {
     const { values, stored, rankerSettingsVersion } = result;
-    queryClient.setQueryData<AdminSettings>(adminKey('settings'), {
-      values,
-      stored,
-      rankerSettingsVersion,
+    queryClient.setQueryData<AdminSettings>(adminKey('settings'), (current) => {
+      if (current === undefined) return { values, stored, rankerSettingsVersion };
+      const saved = stored.filter((entry) => entry.key === key);
+      return {
+        values: { ...current.values, [key]: values[key] },
+        stored: [...current.stored.filter((entry) => entry.key !== key), ...saved],
+        rankerSettingsVersion: Math.max(current.rankerSettingsVersion, rankerSettingsVersion),
+      };
     });
   }
 
@@ -49,7 +60,7 @@ export function AdminSettingsPage() {
                   settingKey={key}
                   value={data.values[key]}
                   storedAt={data.stored.find((entry) => entry.key === key)?.updatedAt ?? null}
-                  onSaved={adopt}
+                  onSaved={(result) => adopt(key, result)}
                   onStale={() => void refresh('settings')}
                 />
               ))}

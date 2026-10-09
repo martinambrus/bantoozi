@@ -134,6 +134,35 @@ describe('admin settings editors (spec 09 §8)', () => {
     expect(save(LLM_CAP)).toBeEnabled();
   });
 
+  it('keeps a setting saved meanwhile when the answer of an earlier save arrives after it', async () => {
+    // The budget is saved first; its answer, all the settings as they stood then, arrives last.
+    const state = { values: { ...SETTINGS_VALUES } };
+    const apply = applyingPatch(state);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const app = await openSettings({
+      'PATCH /admin/settings': async (request, params) => {
+        const answer = apply(request, params);
+        if (BUDGET in (bodyOf(request) as object)) await held;
+        return answer;
+      },
+    });
+
+    await replaceText(app, BUDGET, '7.5');
+    await app.user.click(save(BUDGET));
+    await replaceText(app, LLM_CAP, '250');
+    await app.user.click(save(LLM_CAP));
+    expect(await screen.findByText(`Saved ${LLM_CAP}.`)).toBeVisible();
+    release();
+
+    expect(await screen.findByText(`Saved ${BUDGET}.`)).toBeVisible();
+    expect(editor(BUDGET)).toHaveValue('7.5');
+    expect(editor(LLM_CAP)).toHaveValue('250');
+    expect(save(LLM_CAP)).toBeDisabled();
+  });
+
   it('says when the saved value was already in effect', async () => {
     const state = { values: { ...SETTINGS_VALUES } };
     const app = await openSettings({ 'PATCH /admin/settings': applyingPatch(state) });
