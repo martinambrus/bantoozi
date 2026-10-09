@@ -1,5 +1,5 @@
 import type { Me, Subscription } from '@bantoozi/shared';
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
@@ -143,6 +143,22 @@ describe('the feed settings', () => {
       expect(new URL(request.url, 'http://x').pathname).toBe('/api/v1/subscriptions/5');
       expect(request.headers.get('Idempotency-Key')).toMatch(UUID_V4);
       expect(await screen.findByRole('heading', { level: 3, name: 'My Alpha' })).toBeVisible();
+    });
+
+    it('takes a change saved elsewhere into the fields not edited here, and sends only the edit', async () => {
+      const { app, sheet, state } = await openSettings();
+      await app.user.type(within(sheet).getByLabelText('Title'), 'My Alpha');
+
+      // Another tab moves the feed to News, and the list of this tab is loaded again meanwhile.
+      state.subscriptions.find((sub) => sub.feed.id === '5')!.folder = 'News';
+      await act(() => app.queryClient.refetchQueries());
+
+      await waitFor(() =>
+        expect(within(sheet).getByLabelText('Folder')).toHaveDisplayValue('News'),
+      );
+      expect(within(sheet).getByLabelText('Title')).toHaveValue('My Alpha');
+      await saveChange(app, sheet);
+      expect(patches(app)).toEqual([{ titleOverride: 'My Alpha' }]);
     });
 
     it('clears an override with null', async () => {

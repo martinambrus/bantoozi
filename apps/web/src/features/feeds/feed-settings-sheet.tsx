@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { useApiMutation } from '../../api/mutation.js';
 import { routes } from '../../api/routes.js';
 import { Button } from '../../components/button.js';
+import { useDraft } from '../../components/draft.js';
 import { errorMessage } from '../../components/error-message.js';
 import { SegmentedControl } from '../../components/segmented-control.js';
 import { Select } from '../../components/select.js';
@@ -100,7 +101,8 @@ export function FeedSettingsSheet({
   const me = useMe();
   const toast = useToast();
   const cache = useSubscriptionsCache();
-  const [draft, setDraft] = useState(() => draftOf(subscription));
+  // A subscription saved meanwhile (another tab) fills the fields the person has not changed.
+  const [draft, setDraft] = useDraft(subscription, draftOf);
   const [asking, setAsking] = useState(false);
   const save = useApiMutation(routes.subscriptionsUpdate);
 

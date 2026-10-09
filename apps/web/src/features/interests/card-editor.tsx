@@ -9,6 +9,7 @@ import { routes } from '../../api/routes.js';
 import { Badge } from '../../components/badge.js';
 import { Button } from '../../components/button.js';
 import { cx } from '../../components/cx.js';
+import { useDraft } from '../../components/draft.js';
 import type { ModalProps } from '../../components/modal.js';
 import { Sheet } from '../../components/sheet.js';
 import { TextArea } from '../../components/text-area.js';
@@ -128,7 +129,8 @@ export function CardEditor({ card, review, fromArticle, returnFocus, onClose }: 
   const createFromArticle = useApiMutation(routes.cardFromArticle);
   const update = useApiMutation(routes.cardUpdate);
   const source = card === undefined ? fromArticle : undefined;
-  const [values, setValues] = useState(() => valuesOf(card, source?.title));
+  // A card saved meanwhile (another tab) fills the fields the person has not changed.
+  const [values, setValues] = useDraft(card, (current) => valuesOf(current, source?.title));
   const [errors, setErrors] = useState<Errors>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [focusRequest, setFocusRequest] = useState<{ field: CardField } | null>(null);

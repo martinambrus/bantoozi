@@ -1,5 +1,5 @@
 import type { CreateInviteBody, InviteDto, Me, SessionDto } from '@bantoozi/shared';
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { meKey } from '../../src/api/query-keys.js';
@@ -219,6 +219,25 @@ describe('profile (spec 09 §7)', () => {
           preferences: { theme: 'light' },
         },
       ]);
+    });
+
+    it('takes what another tab saved into the fields not edited here, and sends only the edit', async () => {
+      const { user, calls, queryClient } = await openSettings({
+        me: makeMe({ email: EMAIL, displayName: 'Ada', timezone: 'Europe/Bratislava' }),
+      });
+      await user.clear(nameField());
+      await user.type(nameField(), 'Ada L');
+
+      // Another tab saved a new time zone, and the account of this tab is loaded again with it.
+      act(() => {
+        queryClient.setQueryData<Me>(meKey(), (me) => me && { ...me, timezone: 'Europe/Prague' });
+      });
+
+      await waitFor(() => expect(zone()).toHaveValue('Europe/Prague'));
+      expect(nameField()).toHaveValue('Ada L');
+      await user.click(save());
+      await waitFor(() => expect(calls('PATCH /me')).toHaveLength(1));
+      expect(bodiesOf(calls('PATCH /me'))).toEqual([{ displayName: 'Ada L' }]);
     });
 
     it('has nothing to save until something differs from the saved profile', async () => {

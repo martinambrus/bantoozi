@@ -325,6 +325,48 @@ describe('library updates', () => {
       expect(app.calls('POST /library/:id/updates/:newId/apply')).toHaveLength(0);
     });
 
+    it('takes a change saved elsewhere into the fields not edited here, and sends only the edit', async () => {
+      const app = await openUpdates(
+        { updates: [privateOffer] },
+        {
+          'PATCH /cards/:id': () =>
+            json(
+              200,
+              cardResult(
+                makeCard({
+                  ...heldRust,
+                  id: '201',
+                  interest: 'My own wording of Rust',
+                  strength: 'like',
+                }),
+                { from: '101', to: '201' },
+              ),
+            ),
+        },
+      );
+      await app.user.click(
+        within(await rowOf('Rust programming')).getByRole('button', { name: 'Customize instead' }),
+      );
+      const form = within(screen.getByRole('dialog', { name: 'Edit interest card' }));
+      await app.user.clear(form.getByLabelText('I want to read about…'));
+      await app.user.type(form.getByLabelText('I want to read about…'), 'My own wording of Rust');
+
+      // Another tab made the card a Like, and the cards of this tab are loaded again with it.
+      act(() => {
+        app.queryClient.setQueryData<CardDto[]>(CARDS_KEY, (cards) =>
+          cards?.map((card) => (card.id === '101' ? { ...card, strength: 'like' } : card)),
+        );
+      });
+
+      await waitFor(() => expect(form.getByRole('radio', { name: 'Like' })).toBeChecked());
+      expect(form.getByLabelText('I want to read about…')).toHaveValue('My own wording of Rust');
+      await app.user.click(form.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(app.calls('PATCH /cards/:id')).toHaveLength(1));
+      expect(app.calls('PATCH /cards/:id').map((request) => bodyOf(request))).toEqual([
+        { interest: 'My own wording of Rust' },
+      ]);
+    });
+
     it('refreshes the offers after the customized card is saved', async () => {
       const app = await openUpdates(
         { updates: [privateOffer] },

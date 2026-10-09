@@ -8,6 +8,7 @@ import { meKey } from '../../api/query-keys.js';
 import { routes } from '../../api/routes.js';
 import { Button } from '../../components/button.js';
 import { errorMessage } from '../../components/error-message.js';
+import { useDraft } from '../../components/draft.js';
 import { CheckIcon } from '../../components/icons.js';
 import { SegmentedControl } from '../../components/segmented-control.js';
 import { Select } from '../../components/select.js';
@@ -33,15 +34,6 @@ function draftOf(me: Me): Draft {
     timezone: me.timezone,
     theme: me.preferences.theme,
   };
-}
-
-function sameDraft(a: Draft, b: Draft): boolean {
-  return (
-    a.displayName === b.displayName &&
-    a.locale === b.locale &&
-    a.timezone === b.timezone &&
-    a.theme === b.theme
-  );
 }
 
 /** Only what differs from the saved profile; an empty name clears it. */
@@ -75,17 +67,11 @@ export function ProfileSection() {
   const me = useMe();
   const queryClient = useQueryClient();
   const update = useApiMutation(routes.meUpdate);
-  const [draft, setDraft] = useState(() => draftOf(me));
-  const [synced, setSynced] = useState(me);
+  // A newer account (another tab saved) fills the fields the person has not changed.
+  const [draft, setDraft, restart] = useDraft(me, draftOf);
   const [saved, setSaved] = useState(false);
   const [failure, setFailure] = useState<unknown>(null);
   const zones = useMemo(() => timeZones(me.timezone), [me.timezone]);
-
-  // A newer account (another tab saved) replaces the form, unless the person is in the middle of an edit.
-  if (me !== synced) {
-    setSynced(me);
-    if (sameDraft(draft, draftOf(synced))) setDraft(draftOf(me));
-  }
 
   const patch = patchOf(draft, me);
   const dirty = Object.keys(patch).length > 0;
@@ -109,8 +95,7 @@ export function ProfileSection() {
       return;
     }
     queryClient.setQueryData(meKey(), updated);
-    setSynced(updated);
-    setDraft(draftOf(updated));
+    restart(updated);
     setSaved(true);
   }
 
