@@ -801,7 +801,7 @@ describe('invites (spec 09 §8)', () => {
     expect(screen.getByLabelText('Note (optional)')).toHaveValue('');
   });
 
-  it('keeps the note and the days edited while the invites were on their way, and resets the fields that were sent', async () => {
+  it('keeps the form as it was left when the note and the days were edited while the invites were on their way', async () => {
     let release!: () => void;
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -829,7 +829,7 @@ describe('invites (spec 09 §8)', () => {
 
     await screen.findByRole('region', { name: 'New invites' });
     expect(screen.getByLabelText('Number of invites')).toHaveValue(1);
-    expect(screen.getByLabelText('Email (optional)')).toHaveValue('');
+    expect(screen.getByLabelText('Email (optional)')).toHaveValue('friend@example.com');
     expect(screen.getByLabelText('Note (optional)')).toHaveValue('Met at the conference and more');
     expect(screen.getByLabelText('Valid for (days, optional)')).toHaveValue(30);
     expect(bodyOf(app.calls('POST /admin/invites')[0]!)).toEqual({
@@ -840,7 +840,7 @@ describe('invites (spec 09 §8)', () => {
     });
   });
 
-  it('keeps the number and the address edited while the invites were on their way, and resets the fields that were sent', async () => {
+  it('keeps the form as it was left when the number and the address were edited while the invites were on their way', async () => {
     let release!: () => void;
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -870,8 +870,8 @@ describe('invites (spec 09 §8)', () => {
     await screen.findByRole('region', { name: 'New invites' });
     expect(screen.getByLabelText('Number of invites')).toHaveValue(2);
     expect(screen.getByLabelText('Email (optional)')).toHaveValue('other@example.com');
-    expect(screen.getByLabelText('Note (optional)')).toHaveValue('');
-    expect(screen.getByLabelText('Valid for (days, optional)')).toHaveValue(null);
+    expect(screen.getByLabelText('Note (optional)')).toHaveValue('Met at the conference');
+    expect(screen.getByLabelText('Valid for (days, optional)')).toHaveValue(14);
   });
 
   it('creates several invites at once and lists every code and link', async () => {

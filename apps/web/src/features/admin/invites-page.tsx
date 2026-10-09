@@ -8,7 +8,7 @@ import {
   type AdminInviteSchema,
 } from '@bantoozi/shared';
 import { getRouteApi } from '@tanstack/react-router';
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { z } from 'zod';
 
@@ -69,6 +69,14 @@ function CreateInvites({ onCreated }: { onCreated: (created: Created) => void })
   const [days, setDays] = useState('');
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
   const [failure, setFailure] = useState<unknown>(null);
+  // Counts the edits, so an answer can tell whether the form changed while it was on its way.
+  const edits = useRef(0);
+
+  /** The change handler of a field: it takes the value and counts the edit. */
+  const editing = (set: (value: string) => void) => (event: ChangeEvent<HTMLInputElement>) => {
+    set(event.target.value);
+    edits.current += 1;
+  };
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -101,15 +109,17 @@ function CreateInvites({ onCreated }: { onCreated: (created: Created) => void })
     setErrors(found);
     if (!parsed.success || Object.keys(found).length > 0) return;
 
-    const sent = { count, email, note, days };
+    const editsSent = edits.current;
     setFailure(null);
     try {
       const result = await create.mutateAsync({ body: parsed.data });
-      // A field edited while the invites were on their way keeps its text, for the next ones.
-      setCount((current) => (current === sent.count ? '1' : current));
-      setEmail((current) => (current === sent.email ? '' : current));
-      setNote((current) => (current === sent.note ? '' : current));
-      setDays((current) => (current === sent.days ? '' : current));
+      // A form edited while the invites were on their way is the next ones: it stays as it is.
+      if (edits.current === editsSent) {
+        setCount('1');
+        setEmail('');
+        setNote('');
+        setDays('');
+      }
       onCreated({ invites: result.items, emailSent: result.emailSent });
       void refresh('invites');
     } catch (error) {
@@ -131,21 +141,21 @@ function CreateInvites({ onCreated }: { onCreated: (created: Created) => void })
           inputMode="numeric"
           label={t('invites.form.count')}
           value={count}
-          onChange={(event) => setCount(event.target.value)}
+          onChange={editing(setCount)}
           error={errors.count}
         />
         <TextField
           type="email"
           label={t('invites.form.email')}
           value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          onChange={editing(setEmail)}
           error={errors.email}
           autoComplete="off"
         />
         <TextField
           label={t('invites.form.note')}
           value={note}
-          onChange={(event) => setNote(event.target.value)}
+          onChange={editing(setNote)}
           error={errors.note}
         />
         <TextField
@@ -153,7 +163,7 @@ function CreateInvites({ onCreated }: { onCreated: (created: Created) => void })
           inputMode="numeric"
           label={t('invites.form.days')}
           value={days}
-          onChange={(event) => setDays(event.target.value)}
+          onChange={editing(setDays)}
           error={errors.days}
         />
       </div>
