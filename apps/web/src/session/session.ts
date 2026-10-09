@@ -181,6 +181,8 @@ export function createSession(options: SessionOptions): Session {
   let disposed = false;
   // How many times the account state was dropped, so work begun before that can tell.
   let resets = 0;
+  // The session cookie the last 401 left: while it is still current, no tab has signed in since.
+  let cookieAfter401: number | undefined;
 
   function idInCache(): string | null | undefined {
     const me = queryClient.getQueryData<Me | null>(meKey());
@@ -342,7 +344,9 @@ export function createSession(options: SessionOptions): Session {
 
   // The answer 401 of the `/me` probe itself arrives while nobody is known yet: nothing to drop.
   function handleUnauthorized() {
-    if (queryClient.getQueryData<Me | null>(meKey())) void reset('unauthorized');
+    if (!queryClient.getQueryData<Me | null>(meKey())) return;
+    void reset('unauthorized');
+    cookieAfter401 = cookies;
   }
 
   /** A 401 to a request sent with another session cookie than the current one is no news. */
@@ -472,8 +476,9 @@ export function createSession(options: SessionOptions): Session {
   async function dropDeletedAccount(accountId: string, signIn: number): Promise<boolean> {
     if (knownAccountId !== accountId) return false;
     // A 401 since is the deletion too, which ended every session of the account: the tab is signed
-    // out, and what the 401 kept of the account goes now.
-    const endedBy401 = signIns === signIn + 1 && idInCache() === null;
+    // out, and what the 401 kept of the account goes now. Not once any tab has signed in since that
+    // 401: the account itself, signed in again, is restored.
+    const endedBy401 = signIns === signIn + 1 && idInCache() === null && cookies === cookieAfter401;
     if (signIns !== signIn && !endedBy401) return false;
     await reset('logout', accountId);
     return true;

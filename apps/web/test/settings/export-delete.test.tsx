@@ -13,6 +13,7 @@ import {
 } from 'vitest';
 
 import { meKey } from '../../src/api/query-keys.js';
+import { SESSION_CHANNEL } from '../../src/session/session.js';
 import {
   clearLastAccount,
   isOfflineEnabled,
@@ -785,6 +786,39 @@ describe('deleting the account (spec 09 §7)', () => {
         ),
       ).toBeVisible();
       await waitFor(() => expect(readLastAccount()).toBeNull());
+    });
+
+    it('leaves alone the account that another tab signed in again after that 401, which restores it', async () => {
+      const gate = deferred();
+      const { user, calls, session } = await openDialog({
+        routes: {
+          'DELETE /me': async () => {
+            await gate.promise;
+            return noContent();
+          },
+        },
+      });
+      await user.type(typed(), EMAIL);
+      await user.click(confirm());
+      await waitFor(() => expect(calls('DELETE /me')).toHaveLength(1));
+      act(() => {
+        session.unauthorized(session.currentCookie());
+      });
+      const other = new BroadcastChannel(SESSION_CHANNEL);
+      const heard: unknown[] = [];
+      other.onmessage = (event: MessageEvent<unknown>) => heard.push(event.data);
+      onTestFinished(() => other.close());
+
+      // Another tab signs in as the account again.
+      const cookie = session.currentCookie();
+      other.postMessage({ type: 'signed-in', me: makeMe() });
+      await waitFor(() => expect(session.currentCookie()).toBe(cookie + 1));
+      gate.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(heard).toEqual([]);
+      expect(readLastAccount()?.id).toBe(USER_A_ID);
+      expect(screen.queryByText(/Your account is deleted/)).toBeNull();
     });
   });
 
