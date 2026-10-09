@@ -6,9 +6,9 @@ import { describe, expect, it } from 'vitest';
 import { cardsKey } from '../../src/features/interests/queries.js';
 import { WhyThisSheet } from '../../src/features/why/why-this-sheet.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
-import { bodyOf, deferred, findToast, renderReader } from '../article/harness.js';
+import { bodyOf, deferred, findToast, makeMe, renderReader } from '../article/harness.js';
 import { cardResult, makeCard } from '../interests/support.js';
-import { USER_A_ID } from '../session/fixtures.js';
+import { USER_A_ID, USER_B_ID } from '../session/fixtures.js';
 import {
   HELD,
   ITEM,
@@ -155,6 +155,23 @@ describe('"Not really about this" and "Yes, exactly this"', () => {
     expect(row(app, 'Solar power').getByRole('button', { name: EXACTLY })).toBeEnabled();
     expect(app.calls('POST', '/cards/31/examples')).toHaveLength(1);
   });
+
+  it('confirms nothing when the answer comes once another account has signed in', async () => {
+    const answer = deferred<Response>();
+    const app = await renderDrawer({
+      routes: { 'POST /cards/:id/examples': () => answer.promise },
+    });
+    await app.user.click(row(app, EV).getByRole('button', { name: NOT_THIS }));
+    await waitFor(() => expect(app.calls('POST', '/cards/31/examples')).toHaveLength(1));
+
+    app.rerender(<WhyThisSheet item={app.item} open={false} onClose={app.onClose} />);
+    app.signInAgain(makeMe({ id: USER_B_ID }));
+    answer.resolve(forkOf31());
+    await waitFor(() => expect(app.queryClient.isMutating()).toBe(0));
+    await settled(app);
+
+    expect(screen.queryByText("Learned: this isn't EV battery tech")).toBeNull();
+  });
 });
 
 describe('when the answer is an error', () => {
@@ -216,6 +233,25 @@ describe('when the answer is an error', () => {
 
     expect(await findToast(message)).toHaveAttribute('data-tone', 'error');
     expect(row(app, EV).getByRole('button', { name: NOT_THIS })).toBeEnabled();
+  });
+
+  it('reports no failure that comes once another account has signed in', async () => {
+    const answer = deferred<Response>();
+    const app = await renderDrawer({
+      routes: { 'POST /cards/:id/examples': () => answer.promise },
+    });
+    await app.user.click(row(app, EV).getByRole('button', { name: EXACTLY }));
+    await waitFor(() => expect(app.calls('POST', '/cards/31/examples')).toHaveLength(1));
+
+    app.rerender(<WhyThisSheet item={app.item} open={false} onClose={app.onClose} />);
+    app.signInAgain(makeMe({ id: USER_B_ID }));
+    answer.resolve(failure(404, 'NOT_FOUND'));
+    await waitFor(() => expect(app.queryClient.isMutating()).toBe(0));
+    await settled(app);
+
+    expect(
+      screen.queryByText("This interest is gone, so it can't learn from this article."),
+    ).toBeNull();
   });
 
   it('sends the same answer again under the same key', async () => {

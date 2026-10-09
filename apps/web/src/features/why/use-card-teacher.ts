@@ -7,7 +7,7 @@ import { useApiMutation } from '../../api/mutation.js';
 import { routes } from '../../api/routes.js';
 import { errorMessage, quotaDetails } from '../../components/error-message.js';
 import { useToast, type ToastApi } from '../../components/toast/toast-provider.js';
-import { useAccountId } from '../../session/context.js';
+import { useAccountId, useSession } from '../../session/context.js';
 import { currentCardId } from '../interests/card-moves.js';
 import { useCardCache, type cardCache } from '../interests/queries.js';
 
@@ -53,20 +53,25 @@ export function announceTeachFailure(
 /**
  * "Not really about this" and "Yes, exactly this" (spec 09 §3.5). A card is immutable, so teaching
  * it moves the holding to a private copy with another id: the cards cache takes the new one, and
- * the drawer, which lists the ids the article was scored with, follows the move afterwards.
+ * the drawer, which lists the ids the article was scored with, follows the move afterwards. An
+ * answer that comes after the sign-in that asked has ended shows nothing.
  */
 export function useCardTeacher(articleId: string) {
   const { t } = useTranslation('why');
   const toast = useToast();
   const cache = useCardCache();
+  const session = useSession();
   const accountId = useAccountId();
 
   const teach = useApiMutation(routes.cardExampleAdd, {
-    onSuccess: ({ card, idChange }, variables) => {
+    onMutate: () => session.currentSignIn(),
+    onSuccess: ({ card, idChange }, variables, signIn) => {
+      if (session.currentSignIn() !== signIn) return;
       cache.apply({ card, idChange });
       announceTaught(toast, t, card, variables.body.side);
     },
-    onError: (error) => {
+    onError: (error, _variables, signIn) => {
+      if (session.currentSignIn() !== signIn) return;
       announceTeachFailure(toast, t, cache, error);
     },
   });

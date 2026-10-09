@@ -24,6 +24,7 @@ import {
   setVisibility,
 } from '../article/harness.js';
 import { acked } from '../reader/actions/fake-transport.js';
+import { USER_B_ID } from '../session/fixtures.js';
 import type { ApiRouteHandler } from '../support/app.js';
 import { checkUnhandled, track } from './support.js';
 
@@ -426,6 +427,26 @@ describe('"Ask less often"', () => {
     });
 
     expect(app.queryClient.getQueryData<Me>(meKey())?.preferences.feedbackPrompt).toBe('never');
+  });
+
+  it('says nothing when the setting cannot be saved once another account has signed in', async () => {
+    const answer = deferred<Response>();
+    const app = renderPrompt({
+      me: implicit({ feedbackPrompt: 'often' }),
+      routes: { 'PATCH /me': () => answer.promise },
+    });
+    const sheet = await ask(app, FIRST);
+    await app.user.click(within(sheet).getByRole('button', { name: 'Ask less often' }));
+    await waitFor(() => expect(app.calls('PATCH', '/me')).toHaveLength(1));
+
+    app.signInAgain(makeMe({ id: USER_B_ID, preferences: { implicitFeedback: true } }));
+    answer.resolve(failure(500, 'INTERNAL'));
+    await waitFor(() => expect(app.queryClient.isMutating()).toBe(0));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(screen.queryByText('Something went wrong on our side. Try again.')).toBeNull();
   });
 });
 

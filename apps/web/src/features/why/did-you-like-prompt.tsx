@@ -24,7 +24,8 @@ const LESS_OFTEN: Partial<Record<FeedbackPrompt, FeedbackPrompt>> = {
 
 /**
  * "Did you like it?" (spec 09 §3.6): after the reader came back from an original and the server
- * asked for a prompt, one question at a time.
+ * asked for a prompt, one question at a time. An answer that comes after the sign-in that asked has
+ * ended shows nothing.
  */
 export function DidYouLikePrompt() {
   const { t } = useTranslation('why');
@@ -36,7 +37,9 @@ export function DidYouLikePrompt() {
   const [asked, setAsked] = useState<ArticleListItem | null>(null);
 
   const setting = useApiMutation(routes.meUpdate, {
-    onError: (error) => {
+    onMutate: () => session.currentSignIn(),
+    onError: (error, _variables, signIn) => {
+      if (session.currentSignIn() !== signIn) return;
       toast.show({ message: errorMessage(t, error), tone: 'error' });
     },
   });
