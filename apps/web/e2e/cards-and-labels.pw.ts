@@ -421,9 +421,14 @@ test('cards and labels: publication needs the creator, updates need their holder
     await expect(
       adminPage.getByRole('status').filter({ hasText: 'Saved as a new version' }),
     ).toContainText('Saved as a new version (version 2).');
-    await expect(
-      libraryEntry(adminPage, revisedTitle).filter({ hasText: 'Version 2' }),
-    ).toBeVisible();
+    const versions = libraryEntry(adminPage, revisedTitle);
+    const newest = versions.filter({ has: adminPage.getByText('Version 2', { exact: true }) });
+    const older = versions.filter({ has: adminPage.getByText('Version 1', { exact: true }) });
+    await expect(newest).toBeVisible();
+    await expect(newest.getByRole('button', { name: `Edit ${revisedTitle}` })).toBeEnabled();
+    // The older version gave its slug to the newest one; the server names it superseded.
+    await expect(older).toContainText('Superseded by version 2');
+    await expect(older.getByRole('button', { name: `Edit ${revisedTitle}` })).toBeDisabled();
   });
 
   await test.step('nobody holds the new version until they apply it', async () => {
