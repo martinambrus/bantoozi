@@ -1,6 +1,6 @@
 import type { Me } from '@bantoozi/shared';
 import { QueryClient, onlineManager } from '@tanstack/react-query';
-import { afterEach } from 'vitest';
+import { afterEach, onTestFinished } from 'vitest';
 
 import { createQueryClient } from '../../src/api/query-client.js';
 import { createI18n } from '../../src/i18n/index.js';
@@ -94,3 +94,23 @@ export const requestsTo = (requests: RecordedRequest[], operation: string) =>
 /** The operations asked for, in order, e.g. `POST /auth/logout`. */
 export const operationsOf = (requests: RecordedRequest[]) =>
   requests.map((request) => `${request.method} ${request.pathname.replace('/api/v1', '')}`);
+
+/**
+ * Gives `navigator` the Web Locks of a browser, shared by the sessions of a test as by the tabs of a
+ * browser: one holder of a name at a time, and the others in the order they asked.
+ */
+export function fakeWebLocks(): void {
+  const turns = new Map<string, Promise<unknown>>();
+  const request = (name: string, work: () => Promise<unknown>) => {
+    const turn = (turns.get(name) ?? Promise.resolve()).then(() => work());
+    turns.set(
+      name,
+      turn.catch(() => undefined),
+    );
+    return turn;
+  };
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request } });
+  onTestFinished(() => {
+    Reflect.deleteProperty(navigator, 'locks');
+  });
+}

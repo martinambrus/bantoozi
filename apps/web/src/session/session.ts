@@ -31,6 +31,9 @@ import { runResetHooks, type ResetReason } from './reset.js';
 /** Tabs of one browser tell each other here that the account state was dropped. */
 export const SESSION_CHANNEL = 'bantoozi:session';
 
+/** The Web Lock a tab holds while it ends a pending sign-out or signs in. */
+const SIGN_IN_LOCK = 'bantoozi:sign-in';
+
 const ME_HASH = hashKey(meKey());
 
 export interface SessionOptions {
@@ -63,7 +66,10 @@ export interface Session {
    */
   loadMe: () => Promise<Me | null>;
   requestCode: (input: RequestCodeInput) => Promise<RequestCodeResponse>;
-  /** Signs in. An account other than the one this device knew drops the old one's state first. */
+  /**
+   * Signs in once no sign-out of any tab is on its way. An account other than the one this device
+   * knew drops the old one's state first.
+   */
   verifyCode: (input: { email: string; code: string }) => Promise<Me>;
   /**
    * Drops the state of the device at once and ends the server session. Until the server has ended
@@ -133,6 +139,8 @@ export function createSession(options: SessionOptions): Session {
   // The removal of the previous account's data after another account arrived.
   let switching: Promise<void> | null = null;
   let finishing: Promise<void> | null = null;
+  // Where the browser has no Web Locks, the work of this tab still takes turns.
+  let ownTurn: Promise<unknown> = Promise.resolve();
   let logoutRetry: ReturnType<typeof setTimeout> | undefined;
   let logoutFailures = 0;
   let disposed = false;
@@ -264,18 +272,32 @@ export function createSession(options: SessionOptions): Session {
     }
   }
 
-  /** Ends the server session of a sign-out that was made without a connection. */
+  /**
+   * Runs `work` while no other tab of the browser runs work under the sign-in lock. The answer to a
+   * sign-out clears the session cookie, so none may be on its way while a sign-in sets the next one.
+   */
+  async function exclusively<T>(work: () => Promise<T>): Promise<T> {
+    if ('locks' in navigator) return navigator.locks.request(SIGN_IN_LOCK, () => work());
+    const turn = ownTurn.then(work);
+    ownTurn = turn.catch(() => undefined);
+    return turn;
+  }
+
+  /** Ends the server session of a pending sign-out, unless another tab did while this one waited. */
+  async function endPendingLogout(): Promise<void> {
+    if (!isLogoutPending()) return;
+    await endServerSession();
+    clearTimeout(logoutRetry);
+    logoutFailures = 0;
+    clearLogoutPending();
+  }
+
+  /** Ends the server session of a pending sign-out; the tabs that see it take turns. */
   function finishPendingLogout(): Promise<void> {
     if (!isLogoutPending()) return Promise.resolve();
-    finishing ??= endServerSession()
-      .then(() => {
-        clearTimeout(logoutRetry);
-        logoutFailures = 0;
-        clearLogoutPending();
-      })
-      .finally(() => {
-        finishing = null;
-      });
+    finishing ??= exclusively(endPendingLogout).finally(() => {
+      finishing = null;
+    });
     return finishing;
   }
 
@@ -334,15 +356,17 @@ export function createSession(options: SessionOptions): Session {
   }
 
   async function verifyCode(input: { email: string; code: string }): Promise<Me> {
-    try {
-      await finishPendingLogout();
-    } catch (error) {
-      // A sign-out the server refuses for another reason than the connection is given up: sent
-      // after this sign-in, it would end the new session.
-      if (isRetryable(error)) throw error;
-      clearLogoutPending();
-    }
-    const { user } = await api.call(routes.authVerify, { body: input });
+    const { user } = await exclusively(async () => {
+      try {
+        await endPendingLogout();
+      } catch (error) {
+        // A sign-out the server refuses for another reason than the connection is given up: sent
+        // after this sign-in, it would end the new session.
+        if (isRetryable(error)) throw error;
+        clearLogoutPending();
+      }
+      return api.call(routes.authVerify, { body: input });
+    });
     if (knownAccountId !== undefined && knownAccountId !== user.id) {
       await reset('account_switch', knownAccountId);
     }

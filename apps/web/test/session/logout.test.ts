@@ -27,8 +27,8 @@ import {
   freshIndexedDb,
 } from '../offline/support.js';
 import type { ApiRouteHandler } from '../support/app.js';
-import { makeMe } from './fixtures.js';
-import { operationsOf, requestsTo, trackSessions, type Server } from './support.js';
+import { USER_B_ID, makeMe } from './fixtures.js';
+import { fakeWebLocks, operationsOf, requestsTo, trackSessions, type Server } from './support.js';
 
 const userA = makeMe({ displayName: 'Ada Lovelace', email: 'ada@example.com' });
 const NOTICE =
@@ -396,6 +396,66 @@ describe('a sign-out that has not reached the server', () => {
     online.mockRestore();
   });
 
+  describe('in several tabs', () => {
+    it('is sent by one tab only when they all see the connection come back', async () => {
+      signedOutOffline();
+      fakeWebLocks();
+      const server: Server = { me: userA, offline: true };
+      const tabs = [sessions.start(server), sessions.start(server)];
+      const sent = () =>
+        tabs.flatMap(({ requests }) => requestsTo(requests, 'POST /api/v1/auth/logout')).length;
+      await vi.waitFor(() => expect(sent()).toBe(2));
+      await settle();
+
+      server.offline = false;
+      window.dispatchEvent(new Event('online'));
+
+      await vi.waitFor(() => expect(isPending()).toBe(false));
+      await settle();
+      expect(sent()).toBe(3);
+      expect(server.me).toBeNull();
+    });
+
+    it('holds a sign-in in another tab until the sign-out on its way is answered', async () => {
+      fakeWebLocks();
+      const userB = makeMe({ id: USER_B_ID, email: 'b@example.com' });
+      let answer!: () => void;
+      const held = new Promise<void>((resolve) => {
+        answer = resolve;
+      });
+      let logouts = 0;
+      // The first sign-out is slow; one sent after it is answered at once.
+      const server: Server = {
+        me: userA,
+        verifiesAs: userB,
+        logout: async () => {
+          logouts += 1;
+          if (logouts === 1) await held;
+          server.me = null;
+          return noContent();
+        },
+      };
+      const signingOut = sessions.start(server);
+      const other = sessions.start(server);
+      await signingOut.session.loadMe();
+      await other.session.loadMe();
+
+      const signedOut = signingOut.session.logout();
+      await vi.waitFor(() =>
+        expect(requestsTo(signingOut.requests, 'POST /api/v1/auth/logout')).toHaveLength(1),
+      );
+      const signedIn = other.session.verifyCode({ email: 'b@example.com', code: '123456' });
+      await settle();
+
+      expect(requestsTo(other.requests, 'POST /api/v1/auth/verify')).toHaveLength(0);
+      answer();
+      await expect(signedIn).resolves.toEqual(userB);
+      await expect(signedOut).resolves.toEqual({ server: 'signed_out' });
+      expect(requestsTo(other.requests, 'POST /api/v1/auth/logout')).toHaveLength(0);
+      expect(server.me).toEqual(userB);
+    });
+  });
+
   describe('while the browser stays online', () => {
     // A server that answers again sends no `online` event: only the page can try again.
     function fakeTimers() {
@@ -442,7 +502,9 @@ describe('a sign-out that has not reached the server', () => {
       fakeTimers();
       const restarted = sessions.start({ me: userA, logout: () => answer() });
       const sent = () => requestsTo(restarted.requests, 'POST /api/v1/auth/logout').length;
-      await vi.waitFor(() => expect(sent()).toBe(1));
+      // The first one goes once it has its turn among the tabs. `vi.waitFor` moves a fake clock
+      // by its interval at each look, so it looks with the clock standing still.
+      await vi.waitFor(() => expect(sent()).toBe(1), { interval: 0 });
 
       await vi.advanceTimersByTimeAsync(1_999);
       expect(sent()).toBe(1);
