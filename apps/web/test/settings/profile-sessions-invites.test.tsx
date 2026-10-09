@@ -293,6 +293,39 @@ describe('profile (spec 09 §7)', () => {
       );
       expect(calls('PATCH /me')).toHaveLength(1);
     });
+
+    it('keeps a preference saved meanwhile when the answer of the profile arrives after it', async () => {
+      // The profile is saved first; its answer, the account as it stood then, arrives last.
+      const gate = deferred();
+      const { user, calls, queryClient } = await openSettings({
+        routes: (server) => ({
+          'PATCH /me': async (request, params) => {
+            const answer = await patchMe(server)(request, params);
+            if ((bodyOf(request) as Partial<Me>).displayName !== undefined) await gate.promise;
+            return answer;
+          },
+        }),
+      });
+      const simpleMode = () =>
+        within(section('Reading preferences')).getByRole('switch', { name: 'Simple mode' });
+      const shown = () => queryClient.getQueryData<Me>(meKey());
+
+      await user.type(nameField(), 'Ada');
+      await user.click(save());
+      await waitFor(() => expect(calls('PATCH /me')).toHaveLength(1));
+      await user.click(simpleMode());
+      await waitFor(() => expect(simpleMode()).toHaveAccessibleDescription(/Saved/));
+      gate.release();
+
+      await waitFor(() =>
+        expect(profile().getByRole('status')).toHaveTextContent('Profile saved.'),
+      );
+      expect(shown()?.displayName).toBe('Ada');
+      expect(shown()?.preferences.simpleMode).toBe(true);
+      expect(simpleMode()).toHaveAttribute('aria-checked', 'true');
+      expect(nameField()).toHaveValue('Ada');
+      expect(save()).toBeDisabled();
+    });
   });
 
   describe('when saving fails', () => {

@@ -1,16 +1,11 @@
-import {
-  mergeUserPreferences,
-  type Me,
-  type UserPreferences,
-  type UserPreferencesPatch,
-} from '@bantoozi/shared';
+import type { Me, UserPreferences, UserPreferencesPatch } from '@bantoozi/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { createContext, useContext, useRef, useState, type ReactNode } from 'react';
 
 import { useApiMutation } from '../../api/mutation.js';
-import { meKey } from '../../api/query-keys.js';
 import { routes } from '../../api/routes.js';
 import { useMe } from '../../session/context.js';
+import { storeSavedMe } from '../../session/me.js';
 
 type Nested<Group extends string, Leaves> = {
   [Leaf in keyof Leaves & string as `${Group}.${Leaf}`]: Leaves[Leaf];
@@ -107,21 +102,17 @@ export function PreferenceSaverProvider({ children }: { children: ReactNode }) {
   }
 
   async function save<Id extends SettingId>(id: Id, value: SettingValues[Id], change: number) {
+    const preferences = patchFor(id, value);
     let saved: Me;
     try {
-      saved = await update.mutateAsync({ body: { preferences: patchFor(id, value) } });
+      saved = await update.mutateAsync({ body: { preferences } });
     } catch (error) {
       if (issued.current.get(id) !== change) return;
       setPending((current) => withoutEntry(current, id));
       setFailures((current) => withEntry(current, id, { error }));
       return;
     }
-    const confirmed = patchFor(id, readSetting(saved.preferences, id));
-    queryClient.setQueryData<Me | null>(meKey(), (current) =>
-      current
-        ? { ...current, preferences: mergeUserPreferences(current.preferences, confirmed) }
-        : undefined,
-    );
+    storeSavedMe(queryClient, { preferences }, saved);
     if (issued.current.get(id) === change) {
       setPending((current) => withoutEntry(current, id));
       setSavedId(id);

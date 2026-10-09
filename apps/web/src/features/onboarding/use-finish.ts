@@ -7,6 +7,7 @@ import { useApi } from '../../api/context.js';
 import { useApiMutation } from '../../api/mutation.js';
 import { meKey } from '../../api/query-keys.js';
 import { routes } from '../../api/routes.js';
+import { storeSavedMe } from '../../session/me.js';
 import type { Lane } from '../reader/lanes.js';
 
 export type FinishButton = 'skip' | 'finish';
@@ -56,10 +57,8 @@ export function useFinish(): Finishing {
         if (saved?.onboardingCompletedAt === null) {
           // The same time on every attempt, so a repeated request is the same request.
           completedAt.current ??= new Date().toISOString();
-          const me = await mutateAsync({
-            body: { preferences: { onboardingCompletedAt: completedAt.current } },
-          });
-          queryClient.setQueryData<Me | null>(meKey(), me);
+          const patch = { preferences: { onboardingCompletedAt: completedAt.current } };
+          storeSavedMe(queryClient, patch, await mutateAsync({ body: patch }));
         }
         await navigate({ to: '/read/$lane', params: { lane: await firstLane() } });
         setState({ pressed: null, error: null });

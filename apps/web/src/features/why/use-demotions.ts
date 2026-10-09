@@ -1,13 +1,13 @@
-import type { Me } from '@bantoozi/shared';
+import type { Me, MePatch } from '@bantoozi/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
 import { useApiMutation } from '../../api/mutation.js';
-import { meKey } from '../../api/query-keys.js';
 import { routes } from '../../api/routes.js';
 import { errorMessage } from '../../components/error-message.js';
 import { useToast } from '../../components/toast/toast-provider.js';
 import { useAccountId, useMe } from '../../session/context.js';
+import { storeSavedMe } from '../../session/me.js';
 import { articleKeys } from '../article/query-keys.js';
 
 type Demote = Me['preferences']['demote'];
@@ -32,8 +32,7 @@ export function useDemotions() {
   const me = useMe();
 
   const update = useApiMutation(routes.meUpdate, {
-    onSuccess: (updated) => {
-      queryClient.setQueryData<Me | null>(meKey(), updated);
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: articleKeys.all(accountId) });
     },
     onError: (error) => {
@@ -44,9 +43,14 @@ export function useDemotions() {
   // The answer may come after the drawer has closed. `mutate` would drop its own callbacks then,
   // the promise still settles; a failure has been shown by `onError` already.
   const send = (flag: DemotionFlag, value: Setting, then: () => void) => {
-    update
-      .mutateAsync({ body: { preferences: { demote: { [flag]: value } } } })
-      .then(then, () => {});
+    const patch: MePatch = { preferences: { demote: { [flag]: value } } };
+    update.mutateAsync({ body: patch }).then(
+      (updated) => {
+        storeSavedMe(queryClient, patch, updated);
+        then();
+      },
+      () => {},
+    );
   };
 
   function reset(flag: DemotionFlag, then: () => void = () => {}) {

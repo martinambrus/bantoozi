@@ -3,12 +3,12 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { i18n as I18n } from 'i18next';
 
 import type { ApiClient } from '../../api/client.js';
-import { meKey } from '../../api/query-keys.js';
 import type { RouteOutput } from '../../api/route.js';
 import { routes } from '../../api/routes.js';
 import { errorMessage } from '../../components/error-message.js';
 import type { ToastApi } from '../../components/toast/toast-provider.js';
 import type { ToastAction } from '../../components/toast/toast-store.js';
+import { storeSavedMe } from '../../session/me.js';
 import { currentCardId } from '../interests/card-moves.js';
 import { cardCache, ensureCards } from '../interests/queries.js';
 import type { ExampleSuggestion } from '../reader/actions/types.js';
@@ -68,21 +68,16 @@ export function createExampleOffers({
 
   async function stopSuggesting(): Promise<void> {
     const { signal } = controller;
+    const patch = { preferences: { exampleSuggestions: false } };
     let updated: Me;
     try {
-      updated = await api.call(
-        routes.meUpdate,
-        { body: { preferences: { exampleSuggestions: false } } },
-        { signal },
-      );
+      updated = await api.call(routes.meUpdate, { body: patch }, { signal });
     } catch (error) {
       if (!signal.aborted) toast.show({ message: errorMessage(i18n.t, error), tone: 'error' });
       return;
     }
     if (signal.aborted) return;
-    if (queryClient.getQueryData<Me | null>(meKey())?.id === updated.id) {
-      queryClient.setQueryData<Me | null>(meKey(), updated);
-    }
+    storeSavedMe(queryClient, patch, updated);
     toast.show({ message: i18n.t('article:toast.suggestionsOff'), tone: 'success' });
   }
 

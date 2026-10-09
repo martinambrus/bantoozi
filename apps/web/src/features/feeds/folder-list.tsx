@@ -1,10 +1,9 @@
-import type { Me, Subscription } from '@bantoozi/shared';
+import type { Subscription } from '@bantoozi/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useId, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApiMutation } from '../../api/mutation.js';
-import { meKey } from '../../api/query-keys.js';
 import { routes } from '../../api/routes.js';
 import { Button } from '../../components/button.js';
 import { cx } from '../../components/cx.js';
@@ -12,6 +11,7 @@ import { errorMessage } from '../../components/error-message.js';
 import { IconButton } from '../../components/icon-button.js';
 import { ChevronDownIcon, ChevronUpIcon, DragIcon } from '../../components/icons.js';
 import { useMe } from '../../session/context.js';
+import { storeSavedMe } from '../../session/me.js';
 import { FeedRow } from './feed-row.js';
 import { FeedSettingsSheet } from './feed-settings-sheet.js';
 import { groupByFolder, moveFolderBy, moveFolderTo } from './folders.js';
@@ -240,11 +240,12 @@ export function FolderList({ subscriptions }: { subscriptions: readonly Subscrip
     if (saving) return;
     setAnnouncement('');
     setUnsavedOrder(order);
+    const patch = { preferences: { folderOrder: order } };
     update.mutate(
-      { body: { preferences: { folderOrder: order } } },
+      { body: patch },
       {
         onSuccess: (updated) => {
-          queryClient.setQueryData<Me | null>(meKey(), updated);
+          storeSavedMe(queryClient, patch, updated);
           setUnsavedOrder(null);
           setAnnouncement(
             t('folders.moved', {

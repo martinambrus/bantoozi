@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApiMutation } from '../../api/mutation.js';
-import { meKey } from '../../api/query-keys.js';
 import { routes } from '../../api/routes.js';
 import { Button } from '../../components/button.js';
 import { errorMessage } from '../../components/error-message.js';
@@ -12,6 +11,7 @@ import { ThumbsDownIcon, ThumbsUpIcon } from '../../components/icons.js';
 import { Sheet } from '../../components/sheet.js';
 import { useToast } from '../../components/toast/toast-provider.js';
 import { useMe } from '../../session/context.js';
+import { storeSavedMe } from '../../session/me.js';
 import { useReaderActions, useSettledActions } from '../reader/actions/provider.js';
 
 type FeedbackPrompt = Me['preferences']['feedbackPrompt'];
@@ -35,9 +35,6 @@ export function DidYouLikePrompt() {
   const [asked, setAsked] = useState<ArticleListItem | null>(null);
 
   const setting = useApiMutation(routes.meUpdate, {
-    onSuccess: (updated) => {
-      queryClient.setQueryData<Me | null>(meKey(), updated);
-    },
     onError: (error) => {
       toast.show({ message: errorMessage(t, error), tone: 'error' });
     },
@@ -64,9 +61,14 @@ export function DidYouLikePrompt() {
 
   function askLessOften() {
     setAsked(null);
-    if (lessOften !== undefined) {
-      setting.mutate({ body: { preferences: { feedbackPrompt: lessOften } } });
-    }
+    if (lessOften === undefined) return;
+    // The answer may come after the prompt has gone; the promise settles then too, unlike the
+    // callbacks of `mutate`. A failure has been shown by `onError` already.
+    const patch = { preferences: { feedbackPrompt: lessOften } };
+    setting.mutateAsync({ body: patch }).then(
+      (updated) => storeSavedMe(queryClient, patch, updated),
+      () => {},
+    );
   }
 
   return (

@@ -4,7 +4,6 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApiMutation } from '../../api/mutation.js';
-import { meKey } from '../../api/query-keys.js';
 import { routes } from '../../api/routes.js';
 import { Button } from '../../components/button.js';
 import { errorMessage } from '../../components/error-message.js';
@@ -14,6 +13,7 @@ import { SegmentedControl } from '../../components/segmented-control.js';
 import { Select } from '../../components/select.js';
 import { TextField } from '../../components/text-field.js';
 import { useMe } from '../../session/context.js';
+import { storeSavedMe } from '../../session/me.js';
 import { Alert, SettingsSection } from './section.js';
 
 type Theme = Me['preferences']['theme'];
@@ -94,8 +94,8 @@ export function ProfileSection() {
       setFailure(error);
       return;
     }
-    queryClient.setQueryData(meKey(), updated);
-    restart(updated);
+    // Only what this save sent: a preference saved meanwhile may be newer than the rest of `updated`.
+    restart(storeSavedMe(queryClient, patch, updated) ?? updated);
     setSaved(true);
   }
 

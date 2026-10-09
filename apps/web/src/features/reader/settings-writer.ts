@@ -70,8 +70,13 @@ export function createSettingsWriter({
         try {
           const updated = await api.call(routes.meUpdate, { body: { preferences: body } });
           confirmed = { ...without(confirmed, settled()), ...pick(updated.preferences, moved()) };
-          // A sign-out or another account in the meantime must not get this account back.
-          if (account()?.id === updated.id) show(updated, waiting);
+          // A sign-out or another account in the meantime must not get this account back. Only
+          // what this request sent is taken: what another save changed since may be newer than the
+          // rest of the answer.
+          const me = account();
+          if (me?.id === updated.id) {
+            show(me, { ...pick(updated.preferences, keysOf(body)), ...waiting });
+          }
           if ('defaultTier' in body) {
             void queryClient.invalidateQueries({ queryKey: subscriptionsKey(updated.id) });
           }
