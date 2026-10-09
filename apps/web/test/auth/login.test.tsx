@@ -567,6 +567,33 @@ describe('/login', () => {
       expect(pathname(app)).toBe('/login');
     });
 
+    it('keeps a code typed while the new one was on its way', async () => {
+      const sending = gate();
+      let requests = 0;
+      const app = await open({
+        path: '/login',
+        server: signInServer({
+          account: member,
+          routes: {
+            [REQUEST_CODE]: async () => {
+              if (++requests === 2) await sending.opened;
+              return json(202, { next: 'check_email' });
+            },
+          },
+        }),
+      });
+      await sendCode(app);
+      await app.user.type(screen.getByLabelText('Code'), '999');
+      await app.user.click(screen.getByRole('button', { name: 'Send a new code' }));
+      await app.user.clear(screen.getByLabelText('Code'));
+      await app.user.type(screen.getByLabelText('Code'), CODE);
+
+      sending.release();
+
+      await screen.findByText(`If ${EMAIL} can use Bantoozi, we've emailed it a new code.`);
+      expect(screen.getByLabelText('Code')).toHaveValue(CODE);
+    });
+
     it('drops the notice about the new code once the visitor tries a code', async () => {
       const app = await open({
         path: '/login',

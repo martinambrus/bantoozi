@@ -46,12 +46,18 @@ export function SignInFlow({ redirect, invite }: SignInFlowProps) {
   const [cameBack, setCameBack] = useState(false);
 
   const sendCode = useMutation({
-    mutationFn: (request: { to: Omit<RequestCodeInput, 'locale'>; resend: boolean }) =>
-      session.requestCode({ ...request.to, locale: i18n.language }),
+    mutationFn: (request: {
+      to: Omit<RequestCodeInput, 'locale'>;
+      resend: boolean;
+      /** The code field as the request went out. */
+      typed: string;
+    }) => session.requestCode({ ...request.to, locale: i18n.language }),
     onSuccess: (_answer, request) => {
       setSent(request.to);
       setStep('code');
-      setCode('');
+      // What was typed before the request is the old code. The answer comes once the email is
+      // sent, so what was typed since may be the new code, and stays.
+      setCode((current) => (current === request.typed ? '' : current));
     },
   });
   const verify = useMutation({
@@ -77,6 +83,7 @@ export function SignInFlow({ redirect, invite }: SignInFlowProps) {
     sendCode.mutate({
       to: { email, inviteCode: invite === undefined ? undefined : inviteCode.trim() },
       resend: false,
+      typed: code,
     });
   }
 
@@ -98,7 +105,10 @@ export function SignInFlow({ redirect, invite }: SignInFlowProps) {
   function sendNewCode() {
     verify.reset();
     setMalformed(false);
-    sendCode.mutate({ to: sent, resend: true }, { onSuccess: () => codeInput.current?.focus() });
+    sendCode.mutate(
+      { to: sent, resend: true, typed: code },
+      { onSuccess: () => codeInput.current?.focus() },
+    );
   }
 
   function changeEmail() {
