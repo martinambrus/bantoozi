@@ -9,7 +9,7 @@ import {
 } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
-import { writeQueryData } from '../../api/cache-writes.js';
+import { writeQueriesData, writeQueryData } from '../../api/cache-writes.js';
 import type { ApiClient } from '../../api/client.js';
 import { useApi } from '../../api/context.js';
 import { accountKey } from '../../api/query-keys.js';
@@ -224,9 +224,8 @@ export function cardCache(queryClient: QueryClient, accountId: string) {
     },
     /** The person now holds these library cards. */
     hold(ids: readonly string[]) {
-      queryClient.setQueriesData<InfiniteData<LibraryPage>>(
-        { queryKey: libraryKey(accountId) },
-        (data) => holdLibraryCard(data, ids),
+      writeQueriesData<InfiniteData<LibraryPage>>(queryClient, libraryKey(accountId), (data) =>
+        holdLibraryCard(data, ids),
       );
       writeQueryData<Suggestion[]>(queryClient, suggestionsKey(accountId), (list) =>
         list?.filter((suggestion) => !ids.includes(suggestion.card.id)),

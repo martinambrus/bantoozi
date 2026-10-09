@@ -1,4 +1,4 @@
-import { QueryClient } from '@tanstack/react-query';
+import { QueryClient, type InfiniteData } from '@tanstack/react-query';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -6,10 +6,15 @@ import {
   forgetCardMoves,
   recordCardMove,
 } from '../../src/features/interests/card-moves.js';
-import { cardCache, cardsKey } from '../../src/features/interests/queries.js';
+import {
+  cardCache,
+  cardsKey,
+  libraryKey,
+  type LibraryPage,
+} from '../../src/features/interests/queries.js';
 import { runResetHooks, type ResetReason } from '../../src/session/reset.js';
 import { USER_A_ID, USER_B_ID } from '../session/fixtures.js';
-import { cardResult, makeCard } from './support.js';
+import { cardResult, makeCard, makeLibraryCard } from './support.js';
 
 afterEach(() => {
   forgetCardMoves();
@@ -96,6 +101,33 @@ describe('the cards cache', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(queryClient.getQueryData(key)).toEqual([kept, added]);
+    expect(reads).toHaveLength(2);
+  });
+
+  it('asks again for the library pages when a `GET /library` that read them before an adoption is on its way', async () => {
+    const queryClient = new QueryClient();
+    const key = [...libraryKey(USER_A_ID), { topic: null, q: null }];
+    const page = (held: boolean): LibraryPage => ({
+      items: [makeLibraryCard({ id: '501', held })],
+      nextCursor: null,
+    });
+    queryClient.setQueryData<InfiniteData<LibraryPage>>(key, {
+      pages: [page(false)],
+      pageParams: [undefined],
+    });
+    const reads: Array<(page: LibraryPage) => void> = [];
+    void queryClient.fetchInfiniteQuery({
+      queryKey: key,
+      initialPageParam: undefined as string | undefined,
+      queryFn: () => new Promise<LibraryPage>((resolve) => reads.push(resolve)),
+      getNextPageParam: (last: LibraryPage) => last.nextCursor ?? undefined,
+    });
+
+    cardCache(queryClient, USER_A_ID).hold(['501']);
+    reads[0]!(page(false));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(queryClient.getQueryData<InfiniteData<LibraryPage>>(key)?.pages).toEqual([page(true)]);
     expect(reads).toHaveLength(2);
   });
 });

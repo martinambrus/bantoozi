@@ -19,3 +19,13 @@ export function writeQueryData<T>(
   readAgainIfFetching(queryClient, queryKey);
   return written;
 }
+
+/** `writeQueryData` for every query under `queryKey`, such as each filter's pages of a list. */
+export function writeQueriesData<T>(
+  queryClient: QueryClient,
+  queryKey: QueryKey,
+  updater: Updater<T | undefined, T | undefined>,
+): void {
+  queryClient.setQueriesData<T>({ queryKey }, updater);
+  void queryClient.refetchQueries({ queryKey, fetchStatus: 'fetching' });
+}
