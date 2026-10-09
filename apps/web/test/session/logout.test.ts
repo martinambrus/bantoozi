@@ -56,7 +56,7 @@ describe('signing out', () => {
     await session.loadMe();
     await seed(A);
 
-    await expect(session.logout()).resolves.toEqual({ serverSignedOut: true });
+    await expect(session.logout()).resolves.toEqual({ server: 'signed_out' });
 
     expect(requestsTo(requests, 'POST /api/v1/auth/logout')).toHaveLength(1);
     expect(server.me).toBeNull();
@@ -74,7 +74,7 @@ describe('signing out', () => {
     await session.loadMe();
     await seed(A);
 
-    await expect(session.logout()).resolves.toEqual({ serverSignedOut: true });
+    await expect(session.logout()).resolves.toEqual({ server: 'signed_out' });
 
     expect(isPending()).toBe(false);
     expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]);
@@ -91,7 +91,7 @@ describe('signing out', () => {
       stuck.mockRestore();
     });
 
-    await expect(session.logout()).resolves.toEqual({ serverSignedOut: true });
+    await expect(session.logout()).resolves.toEqual({ server: 'signed_out' });
 
     expect(rowsOf(await dumpDatabase(idb.factory), A)).not.toEqual([]);
     expect(await readView(A, 'view')).toBeNull();
@@ -172,7 +172,7 @@ describe('signing out', () => {
     await session.loadMe();
     await seed(A);
 
-    await expect(session.logout()).resolves.toEqual({ serverSignedOut: false });
+    await expect(session.logout()).resolves.toEqual({ server: 'pending' });
 
     expect(requestsTo(requests, 'POST /api/v1/auth/logout')).toHaveLength(1);
     expect(resets).toEqual(['logout']);
@@ -186,18 +186,52 @@ describe('signing out', () => {
   it.each([
     ['a 403', () => failure(403, 'FORBIDDEN')],
     ['a 400', () => failure(400, 'VALIDATION_FAILED')],
-  ])('keeps everything after %s, which is not about the connection', async (_name, logout) => {
-    const resets = sessions.recordResets();
-    const { session, queryClient } = sessions.start({ me: userA, logout });
+  ])(
+    'signs out on this device at once after %s as well, which is not about the connection',
+    async (_name, logout) => {
+      const resets = sessions.recordResets();
+      const { session, queryClient } = sessions.start({ me: userA, logout });
+      await session.loadMe();
+      await seed(A);
+
+      await expect(session.logout()).resolves.toEqual({ server: 'refused' });
+
+      expect(resets).toEqual(['logout']);
+      expect(queryClient.getQueryData(meKey())).toBeNull();
+      expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]);
+      expect(localKeysOf(A)).toEqual([]);
+      expect(isPending()).toBe(true);
+    },
+  );
+
+  it('wipes the device before the server answers, which may take long or never come', async () => {
+    let answer!: () => void;
+    const held = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    const { session, queryClient, requests } = sessions.start({
+      me: userA,
+      logout: async () => {
+        await held;
+        return noContent();
+      },
+    });
     await session.loadMe();
     await seed(A);
-    const before = rowsOf(await dumpDatabase(idb.factory), A);
 
-    await expect(session.logout()).rejects.toMatchObject({ status: expect.any(Number) });
+    const signingOut = session.logout();
 
-    expect(resets).toEqual([]);
-    expect(queryClient.getQueryData(meKey())).toEqual(userA);
-    expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual(before);
+    await vi.waitFor(async () => expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]));
+    expect(queryClient.getQueryData(meKey())).toBeNull();
+    expect(localKeysOf(A)).toEqual([]);
+    expect(localStorage.getItem(LAST_ACCOUNT_KEY)).toBeNull();
+    expect(requestsTo(requests, 'POST /api/v1/auth/logout')).toHaveLength(1);
+    // A page closed now ends the server session at its next start.
+    expect(isPending()).toBe(true);
+
+    answer();
+
+    await expect(signingOut).resolves.toEqual({ server: 'signed_out' });
     expect(isPending()).toBe(false);
   });
 });
@@ -322,6 +356,32 @@ describe('a sign-out that has not reached the server', () => {
     expect(restarted.queryClient.getQueryData(meKey())).toBeUndefined();
   });
 
+  it('is given up before a new sign-in when the server refuses it for another reason than the connection', async () => {
+    signedOutOffline();
+    const restarted = sessions.start({
+      me: userA,
+      verifiesAs: userA,
+      logout: () => failure(403, 'FORBIDDEN'),
+    });
+    await vi.waitFor(() =>
+      expect(requestsTo(restarted.requests, 'POST /api/v1/auth/logout')).toHaveLength(1),
+    );
+    await settle();
+    expect(isPending()).toBe(true);
+
+    await expect(
+      restarted.session.verifyCode({ email: 'ada@example.com', code: '123456' }),
+    ).resolves.toEqual(userA);
+
+    expect(operationsOf(restarted.requests)).toEqual([
+      'POST /auth/logout',
+      'POST /auth/logout',
+      'POST /auth/verify',
+    ]);
+    expect(isPending()).toBe(false);
+    expect(restarted.queryClient.getQueryData(meKey())).toEqual(userA);
+  });
+
   it('waits for the connection while the browser reports it is offline', async () => {
     signedOutOffline();
     const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
@@ -350,7 +410,7 @@ describe('a sign-out that has not reached the server', () => {
       const { session, requests } = sessions.start({ me: userA, logout: () => answer() });
       await session.loadMe();
       fakeTimers();
-      await expect(session.logout()).resolves.toEqual({ serverSignedOut: false });
+      await expect(session.logout()).resolves.toEqual({ server: 'pending' });
       answer = () => noContent();
 
       await vi.advanceTimersByTimeAsync(6_999);
@@ -368,7 +428,7 @@ describe('a sign-out that has not reached the server', () => {
       });
       await session.loadMe();
       fakeTimers();
-      await expect(session.logout()).resolves.toEqual({ serverSignedOut: false });
+      await expect(session.logout()).resolves.toEqual({ server: 'pending' });
 
       await vi.advanceTimersByTimeAsync(10 * 60_000);
 

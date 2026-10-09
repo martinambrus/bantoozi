@@ -1,5 +1,5 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { meKey } from '../../src/api/query-keys.js';
 import { createI18n } from '../../src/i18n/index.js';
@@ -12,6 +12,7 @@ import type { ApiRouteHandler } from '../support/app.js';
 const LOGOUT = 'POST /auth/logout';
 const NOT_SIGNED_OUT_ON_SERVER =
   'Signed out on this device. Bantoozi will finish signing you out when you are back online.';
+const REFUSED_BY_SERVER = 'Signed out on this device, but the server refused to end the session.';
 
 const ada = makeMe({ displayName: 'Ada Lovelace', email: 'ada@example.com' });
 const grace = makeMe({ id: USER_B_ID, displayName: 'Grace Hopper', email: 'grace@example.com' });
@@ -159,7 +160,7 @@ describe('the signed-in app shell', () => {
       },
     );
 
-    it('stays signed in and shows an error toast after a refusal that is not about the connection', async () => {
+    it('signs out on this device after a refusal that is not about the connection, and says the server refused', async () => {
       const app = await open({
         path: '/read/for_you',
         server: signedIn(ada, () => failure(403, 'FORBIDDEN')),
@@ -167,43 +168,32 @@ describe('the signed-in app shell', () => {
 
       await signOut(app);
 
-      expect(await screen.findByText("You don't have permission to do that.")).toBeVisible();
-      expect(pathname(app)).toBe('/read/for_you');
-      expect(screen.getByRole('button', { name: 'Account menu: Ada Lovelace' })).toBeVisible();
-      expect(app.queryClient.getQueryData(meKey())).toEqual(ada);
-      expect(screen.queryByText(NOT_SIGNED_OUT_ON_SERVER)).toBeNull();
-      expect(localStorage.getItem(PENDING_LOGOUT_KEY)).toBeNull();
-    });
-
-    it('signs out on a second try after such a refusal', async () => {
-      const answers: Array<() => Response> = [() => failure(403, 'FORBIDDEN'), () => noContent()];
-      const app = await open({
-        path: '/read/for_you',
-        server: signedIn(ada, () => answers.shift()!()),
-      });
-      await signOut(app);
-      await screen.findByText("You don't have permission to do that.");
-
-      await signOut(app);
-
       await waitFor(() => expect(pathname(app)).toBe('/login'));
-      expect(app.calls(LOGOUT)).toHaveLength(2);
+      expect(await screen.findByText(REFUSED_BY_SERVER)).toBeVisible();
       expect(screen.queryByText(NOT_SIGNED_OUT_ON_SERVER)).toBeNull();
+      expect(app.queryClient.getQueryData(meKey())).toBeNull();
+      expect(screen.queryByRole('navigation', { name: 'Main navigation' })).toBeNull();
+      expect(localStorage.getItem(PENDING_LOGOUT_KEY)).not.toBeNull();
     });
 
     it('takes the toasts of the account with it', async () => {
-      const answers: Array<() => Response> = [() => failure(403, 'FORBIDDEN'), () => noContent()];
-      const app = await open({
-        path: '/read/for_you',
-        server: signedIn(ada, () => answers.shift()!()),
+      const line = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+      onTestFinished(() => {
+        line.mockRestore();
       });
-      await signOut(app);
-      await screen.findByText("You don't have permission to do that.");
+      const app = await open({ path: '/read/for_you', server: signedIn() });
+      for (const online of [false, true]) {
+        line.mockReturnValue(online);
+        act(() => {
+          window.dispatchEvent(new Event(online ? 'online' : 'offline'));
+        });
+      }
+      expect(await screen.findByText("You're back online.")).toBeVisible();
 
       await signOut(app);
 
       await waitFor(() => expect(pathname(app)).toBe('/login'));
-      expect(screen.queryByText("You don't have permission to do that.")).toBeNull();
+      expect(screen.queryByText("You're back online.")).toBeNull();
     });
 
     it.each([

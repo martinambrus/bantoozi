@@ -18,5 +18,6 @@
     "offline": "Ste offline.",
     "online": "Ste znova online."
   },
-  "signedOutOffline": "Na tomto zariadení ste odhlásený. Bantoozi vás dokončí odhlásiť, keď budete znova online."
+  "signedOutOffline": "Na tomto zariadení ste odhlásený. Bantoozi vás dokončí odhlásiť, keď budete znova online.",
+  "signedOutRefused": "Na tomto zariadení ste odhlásený, ale server odmietol ukončiť reláciu."
 }

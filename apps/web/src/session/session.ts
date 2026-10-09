@@ -47,10 +47,11 @@ export interface RequestCodeInput {
 
 export interface LogoutResult {
   /**
-   * False when the server could not be reached: the device is signed out, the session of the
-   * server is ended as soon as the connection is back.
+   * What became of the server session; the device is signed out whatever it is. `pending`: the
+   * server could not be reached (network, 5xx, 429), and the sign-out is sent again as soon as it
+   * can be. `refused`: it refused for another reason, and is asked again at the next start.
    */
-  serverSignedOut: boolean;
+  server: 'signed_out' | 'pending' | 'refused';
 }
 
 export interface Session {
@@ -65,8 +66,9 @@ export interface Session {
   /** Signs in. An account other than the one this device knew drops the old one's state first. */
   verifyCode: (input: { email: string; code: string }) => Promise<Me>;
   /**
-   * Drops the state of the device and ends the server session. Without a connection (or after a
-   * 5xx or 429) the device is signed out at once and the server session is ended later.
+   * Drops the state of the device at once and ends the server session. Until the server has ended
+   * it, a marker keeps the device signed out and has the sign-out sent again: without a connection
+   * (or after a 5xx or 429) when the server can answer, else at the next start or sign-in.
    * Navigating away is up to the caller.
    */
   logout: () => Promise<LogoutResult>;
@@ -332,7 +334,14 @@ export function createSession(options: SessionOptions): Session {
   }
 
   async function verifyCode(input: { email: string; code: string }): Promise<Me> {
-    await finishPendingLogout();
+    try {
+      await finishPendingLogout();
+    } catch (error) {
+      // A sign-out the server refuses for another reason than the connection is given up: sent
+      // after this sign-in, it would end the new session.
+      if (isRetryable(error)) throw error;
+      clearLogoutPending();
+    }
     const { user } = await api.call(routes.authVerify, { body: input });
     if (knownAccountId !== undefined && knownAccountId !== user.id) {
       await reset('account_switch', knownAccountId);
@@ -343,21 +352,19 @@ export function createSession(options: SessionOptions): Session {
   }
 
   async function logout(): Promise<LogoutResult> {
-    const accountId = knownAccountId;
-    let refused: unknown = null;
-    try {
-      await api.call(routes.authLogout);
-    } catch (error) {
-      // Already signed out is the state we are after.
-      if (!isApiError(error) || error.status !== 401) {
-        if (!isRetryable(error)) throw error;
-        refused = error;
-      }
-    }
-    if (refused !== null) markLogoutPending();
-    await reset('logout', accountId);
-    if (refused !== null) retryLogoutLater(refused);
-    return { serverSignedOut: refused === null };
+    // The device is signed out before the server answers, which may take long or never come if the
+    // page closes first; the marker then ends the server session at the next start (spec 09 §1).
+    markLogoutPending();
+    const cleared = reset('logout', knownAccountId);
+    const ended = finishPendingLogout().then(
+      () => 'signed_out' as const,
+      (error: unknown) => {
+        retryLogoutLater(error);
+        return isRetryable(error) ? ('pending' as const) : ('refused' as const);
+      },
+    );
+    await cleared;
+    return { server: await ended };
   }
 
   return {

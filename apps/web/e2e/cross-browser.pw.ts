@@ -37,7 +37,8 @@ test('a person signs in with a code through the login page, reaches the reader a
   expect((await call(page.request, 'GET', '/api/v1/me')).status()).toBe(200);
 
   await signOut(page);
-  expect((await call(page.request, 'GET', '/api/v1/me')).status()).toBe(401);
+  // The device is signed out before the server answers; its session ends once the answer is in.
+  await expect.poll(async () => (await call(page.request, 'GET', '/api/v1/me')).status()).toBe(401);
 });
 
 test('a like made offline is sent once when the connection returns without a reload, and the row shows it liked', async ({

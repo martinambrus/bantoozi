@@ -391,10 +391,10 @@ describe('logout', () => {
     server.me = null;
     const resets = recordResets();
 
-    await expect(session.logout()).resolves.toEqual({ serverSignedOut: true });
+    await expect(session.logout()).resolves.toEqual({ server: 'signed_out' });
 
     expect(queryClient.getQueryData(meKey())).toBeNull();
-    expect(resets).toEqual(['unauthorized', 'logout']);
+    expect(resets).toEqual(['logout']);
   });
 
   it('signs out on this device when the server cannot be reached, and finishes it later', async () => {
@@ -410,7 +410,7 @@ describe('logout', () => {
     await session.loadMe();
     offline = true;
 
-    await expect(session.logout()).resolves.toEqual({ serverSignedOut: false });
+    await expect(session.logout()).resolves.toEqual({ server: 'pending' });
 
     expect(queryClient.getQueryData(meKey())).toBeNull();
     expect(resets).toEqual(['logout']);
