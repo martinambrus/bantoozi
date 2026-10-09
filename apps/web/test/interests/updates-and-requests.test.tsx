@@ -516,6 +516,22 @@ describe('library updates', () => {
       expect(screen.queryByRole('listitem', { name: 'Rust programming' })).not.toBeInTheDocument();
     });
 
+    it('hides the offer when another tab keeps it', async () => {
+      await openUpdates();
+      expect(await rowOf('Rust programming')).toBeVisible();
+      const key = `${USER_A_ID}:interests:keep:101:2`;
+
+      act(() => {
+        window.localStorage.setItem(key, '1');
+        window.dispatchEvent(
+          new StorageEvent('storage', { key, newValue: '1', storageArea: window.localStorage }),
+        );
+      });
+
+      expect(await screen.findByText('No library updates')).toBeVisible();
+      expect(screen.queryByRole('listitem', { name: 'Rust programming' })).not.toBeInTheDocument();
+    });
+
     it('offers the card again when the library publishes a newer version', async () => {
       const app = await openUpdates();
       await app.user.click(

@@ -49,13 +49,17 @@ onAccountKeysCleared((accountId) => {
   changed();
 });
 
+// Another tab keeping an offer changes the storage under this one; a cleared storage has no key.
+function storageChanged(event: StorageEvent) {
+  if (event.key === null || event.key.includes(MARKER)) changed();
+}
+
 function subscribe(listener: () => void) {
+  if (listeners.size === 0) window.addEventListener('storage', storageChanged);
   listeners.add(listener);
-  // Another tab keeping an offer changes the storage under this one.
-  window.addEventListener('storage', listener);
   return () => {
     listeners.delete(listener);
-    window.removeEventListener('storage', listener);
+    if (listeners.size === 0) window.removeEventListener('storage', storageChanged);
   };
 }
 
