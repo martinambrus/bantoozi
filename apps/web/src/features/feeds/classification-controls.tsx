@@ -15,6 +15,8 @@ import { useSubscriptionsCache } from './subscriptions.js';
 
 type Mode = Subscription['inferenceMode'];
 
+const isStale = (error: unknown) => isApiError(error) && error.code === 'STALE_STATE';
+
 /** What the reader can switch to from each mode, in the order the buttons are offered. */
 const CHOICES: Record<Mode, ReadonlyArray<{ mode: Mode; label: string }>> = {
   off: [{ mode: 'training', label: 'toTraining' }],
@@ -35,7 +37,16 @@ export function ClassificationControls({ subscription }: { subscription: Subscri
   const headingId = useId();
   const [changedTo, setChangedTo] = useState<Mode | null>(null);
   const [stale, setStale] = useState(false);
-  const change = useApiMutation(routes.subscriptionsSetInference);
+  // The list learns the outcome even when the answer comes after these controls are gone (their
+  // sheet was closed); only what they say about it needs them.
+  const change = useApiMutation(routes.subscriptionsSetInference, {
+    onSuccess: ({ subscription: updated }) => {
+      cache.replace(updated);
+    },
+    onError: (error) => {
+      if (isStale(error)) void cache.refresh();
+    },
+  });
 
   const { feed, inferenceMode: mode } = subscription;
 
@@ -49,16 +60,8 @@ export function ClassificationControls({ subscription }: { subscription: Subscri
         body: { mode: next, expectedVersion: subscription.inferenceVersion },
       },
       {
-        onSuccess: ({ subscription: updated }) => {
-          cache.replace(updated);
-          setChangedTo(updated.inferenceMode);
-        },
-        onError: (error) => {
-          if (isApiError(error) && error.code === 'STALE_STATE') {
-            setStale(true);
-            void cache.refresh();
-          }
-        },
+        onSuccess: ({ subscription: updated }) => setChangedTo(updated.inferenceMode),
+        onError: (error) => setStale(isStale(error)),
       },
     );
   }

@@ -633,6 +633,60 @@ describe('the feed settings', () => {
       expect(second).toMatch(UUID_V4);
       expect(second).not.toBe(first);
     });
+
+    describe('when the sheet is closed before the answer', () => {
+      /** Sends a switch to Training, closes the sheet while it is on its way, then lets it answer. */
+      async function switchAndClose(app: App, server: FakeServer, sheet: HTMLElement) {
+        const answer = server.routes[SET_INFERENCE]!;
+        let release: () => void = () => undefined;
+        const held = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        server.routes[SET_INFERENCE] = async (request, params) => {
+          await held;
+          return answer(request, params);
+        };
+        await app.user.click(within(sheet).getByRole('button', { name: 'Switch to training' }));
+        await waitFor(() => expect(app.calls(SET_INFERENCE)).toHaveLength(1));
+        await app.user.click(within(sheet).getByRole('button', { name: 'Close' }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        release();
+      }
+
+      it('still shows the new mode on the feed, and the next change sends its version', async () => {
+        const { app, server, sheet } = await openSettings();
+        const listBefore = app.calls(LIST).length;
+
+        await switchAndClose(app, server, sheet);
+
+        expect(
+          await within(rowOf('Alpha')).findByText('Training: selected articles'),
+        ).toBeVisible();
+        expect(app.calls(LIST)).toHaveLength(listBefore);
+        await app.user.click(screen.getByRole('button', { name: 'Settings for Alpha' }));
+        const again = await screen.findByRole('dialog', { name: 'Feed settings' });
+        await app.user.click(
+          within(again).getByRole('button', { name: 'Enable automatic classification' }),
+        );
+        await waitFor(() => expect(inferences(app)).toHaveLength(2));
+        expect(inferences(app)[1]).toEqual({ mode: 'active', expectedVersion: '4' });
+      });
+
+      it('still reloads the feeds when the change was stale', async () => {
+        const { app, server, state, sheet } = await openSettings();
+        const elsewhere = state.subscriptions[0]!;
+        elsewhere.inferenceMode = 'training';
+        elsewhere.inferenceVersion = '9';
+        const listBefore = app.calls(LIST).length;
+
+        await switchAndClose(app, server, sheet);
+
+        await waitFor(() => expect(app.calls(LIST).length).toBeGreaterThan(listBefore));
+        expect(
+          await within(rowOf('Alpha')).findByText('Training: selected articles'),
+        ).toBeVisible();
+      });
+    });
   });
 
   describe('unsubscribing', () => {
