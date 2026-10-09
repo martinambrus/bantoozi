@@ -568,63 +568,87 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
       });
     });
 
-    it('ignores the answer to an earlier change of a setting that was changed again', async () => {
+    it('sends a setting changed again only once the server has answered the change before, so the server keeps what the control shows', async () => {
       const gates = [deferred(), deferred()];
       let sent = 0;
-      const { user, queryClient, calls } = await openSettings({
+      const { user, queryClient, calls, server } = await openSettings({
         routes: (server) => ({
           'PATCH /me': async (request, params) => {
-            const answer = patchMe(server)(request, params);
+            // The server applies a change when it answers: a request that waits applies last.
             await gates[sent++]?.promise;
-            return answer;
+            return patchMe(server)(request, params);
           },
         }),
       });
 
       await user.click(toggle('Simple mode'));
       await user.click(toggle('Simple mode'));
-      await waitFor(() => expect(calls('PATCH /me')).toHaveLength(2));
-      expect(calls('PATCH /me').map((request) => bodyOf(request))).toEqual([
-        { preferences: { simpleMode: true } },
-        { preferences: { simpleMode: false } },
-      ]);
+      await waitFor(() => expect(calls('PATCH /me')).not.toHaveLength(0));
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
-      gates[1]?.release();
-      await waitFor(() => expect(toggle('Simple mode')).toHaveAccessibleDescription(saved));
-      gates[0]?.release();
-      await waitFor(() => expect(queryClient.isMutating()).toBe(0));
-
+      expect(bodiesOf(calls('PATCH /me'))).toEqual([{ preferences: { simpleMode: true } }]);
       expect(toggle('Simple mode')).toHaveAttribute('aria-checked', 'false');
+
+      gates[0]?.release();
+      await waitFor(() => expect(calls('PATCH /me')).toHaveLength(2));
+      expect(bodiesOf(calls('PATCH /me'))[1]).toEqual({ preferences: { simpleMode: false } });
+      expect(toggle('Simple mode')).toHaveAttribute('aria-checked', 'false');
+      gates[1]?.release();
+
+      await waitFor(() => expect(toggle('Simple mode')).toHaveAccessibleDescription(saved));
+      expect(toggle('Simple mode')).toHaveAttribute('aria-checked', 'false');
+      expect(server.me?.preferences.simpleMode).toBe(false);
       expect(queryClient.getQueryData<Me>(meKey())?.preferences.simpleMode).toBe(false);
     });
 
+    it('sends only the newest of the changes made while one was on its way', async () => {
+      const gate = deferred();
+      let sent = 0;
+      const { user, calls, server } = await openSettings({
+        routes: (server) => ({
+          'PATCH /me': async (request, params) => {
+            if (sent++ === 0) await gate.promise;
+            return patchMe(server)(request, params);
+          },
+        }),
+      });
+
+      await user.click(option('Minimum tier', '4'));
+      await user.click(option('Minimum tier', '2'));
+      await user.click(option('Minimum tier', '3'));
+      gate.release();
+
+      await waitFor(() => expect(choice('Minimum tier')).toHaveAccessibleDescription(saved));
+      expect(bodiesOf(calls('PATCH /me'))).toEqual([
+        { preferences: { defaultTier: 4 } },
+        { preferences: { defaultTier: 3 } },
+      ]);
+      expect(option('Minimum tier', '3')).toHaveAttribute('aria-checked', 'true');
+      expect(server.me?.preferences.defaultTier).toBe(3);
+    });
+
     it('keeps an earlier change that was saved when the next change of the setting fails', async () => {
-      const gates = [deferred(), deferred()];
+      const gate = deferred();
       let sent = 0;
       const { user, queryClient, calls } = await openSettings({
         routes: (server) => ({
           'PATCH /me': async (request, params) => {
-            const index = sent++;
-            const answer =
-              index === 0 ? patchMe(server)(request, params) : failure(500, 'INTERNAL');
-            await gates[index]?.promise;
-            return answer;
+            if (sent++ > 0) return failure(500, 'INTERNAL');
+            await gate.promise;
+            return patchMe(server)(request, params);
           },
         }),
       });
 
       await user.click(toggle('Simple mode'));
       await user.click(toggle('Simple mode'));
-      await waitFor(() => expect(calls('PATCH /me')).toHaveLength(2));
+      expect(toggle('Simple mode')).toHaveAttribute('aria-checked', 'false');
+      gate.release();
 
-      gates[1]?.release();
       await waitFor(() => expect(toggle('Simple mode')).toBeInvalid());
-      gates[0]?.release();
-
-      await waitFor(() =>
-        expect(queryClient.getQueryData<Me>(meKey())?.preferences.simpleMode).toBe(true),
-      );
+      expect(calls('PATCH /me')).toHaveLength(2);
       expect(toggle('Simple mode')).toHaveAttribute('aria-checked', 'true');
+      expect(queryClient.getQueryData<Me>(meKey())?.preferences.simpleMode).toBe(true);
     });
   });
 

@@ -84,8 +84,9 @@ export function usePreferenceSaver(): PreferenceSaver {
 
 /**
  * Saves each preference on its own the moment it changes. A change shows at once and is sent as a
- * patch of that one leaf, so settings changed in quick succession cannot overwrite each other, and
- * the answer to an earlier change of a setting never replaces a later one.
+ * patch of that one leaf, so settings changed in quick succession cannot overwrite each other. A
+ * setting has one request on its way at a time: two could reach the server in either order and
+ * leave it with the older value, so what is changed meanwhile waits, and only the newest is sent.
  */
 export function PreferenceSaverProvider({ children }: { children: ReactNode }) {
   const me = useMe();
@@ -98,7 +99,8 @@ export function PreferenceSaverProvider({ children }: { children: ReactNode }) {
   const [savedId, setSavedId] = useState<SettingId | null>(null);
   const count = useRef(0);
   const issued = useRef(new Map<SettingId, number>());
-  const applied = useRef(new Map<SettingId, number>());
+  const sending = useRef(new Set<SettingId>());
+  const waiting = useRef(new Map<SettingId, { value: SettingValues[SettingId]; change: number }>());
 
   function valueOf<Id extends SettingId>(id: Id): SettingValues[Id] {
     return (pending.get(id) ?? readSetting(me.preferences, id)) as SettingValues[Id];
@@ -114,18 +116,27 @@ export function PreferenceSaverProvider({ children }: { children: ReactNode }) {
       setFailures((current) => withEntry(current, id, { error }));
       return;
     }
-    if (change > (applied.current.get(id) ?? 0)) {
-      applied.current.set(id, change);
-      const confirmed = patchFor(id, readSetting(saved.preferences, id));
-      queryClient.setQueryData<Me | null>(meKey(), (current) =>
-        current
-          ? { ...current, preferences: mergeUserPreferences(current.preferences, confirmed) }
-          : undefined,
-      );
-    }
+    const confirmed = patchFor(id, readSetting(saved.preferences, id));
+    queryClient.setQueryData<Me | null>(meKey(), (current) =>
+      current
+        ? { ...current, preferences: mergeUserPreferences(current.preferences, confirmed) }
+        : undefined,
+    );
     if (issued.current.get(id) === change) {
       setPending((current) => withoutEntry(current, id));
       setSavedId(id);
+    }
+  }
+
+  async function send(id: SettingId, value: SettingValues[SettingId], change: number) {
+    sending.current.add(id);
+    try {
+      await save(id, value, change);
+    } finally {
+      sending.current.delete(id);
+      const next = waiting.current.get(id);
+      waiting.current.delete(id);
+      if (next !== undefined) void send(id, next.value, next.change);
     }
   }
 
@@ -136,7 +147,8 @@ export function PreferenceSaverProvider({ children }: { children: ReactNode }) {
     setPending((current) => withEntry(current, id, value));
     setFailures((current) => withoutEntry(current, id));
     setSavedId(null);
-    void save(id, value, count.current);
+    if (sending.current.has(id)) waiting.current.set(id, { value, change: count.current });
+    else void send(id, value, count.current);
   }
 
   return (
