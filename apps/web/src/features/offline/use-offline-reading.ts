@@ -95,7 +95,8 @@ export function useOfflineReading() {
         const done = await clearAccount(me.id);
         if (!done) return false;
         requestReplay();
-        await saveMe(me.id, me);
+        // The account stays: without it, an offline start could not open the app.
+        if (!(await saveMe(me.id, me))) return false;
         setCleared(true);
         return true;
       }),

@@ -167,6 +167,34 @@ describe('the Offline reading section', () => {
       expect(await listRecords(A)).toEqual([]);
       expect(toggle()).toHaveAttribute('aria-checked', 'true');
     });
+    it('says it failed when the account cannot be stored again after the articles went', async () => {
+      await storedArticles();
+      const { user } = await openSettings();
+      await within(offline()).findByText('4 articles stored on this device');
+      // The articles can be removed, but the account cannot be written back: the quota is used up.
+      const put = FakeIDBObjectStore.prototype.put;
+      function putUnlessFull(
+        this: InstanceType<typeof FakeIDBObjectStore>,
+        ...args: Parameters<typeof put>
+      ) {
+        if (this.name === 'meta') {
+          throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        }
+        return put.apply(this, args);
+      }
+      const full = vi.spyOn(FakeIDBObjectStore.prototype, 'put').mockImplementation(putUnlessFull);
+      onTestFinished(() => {
+        full.mockRestore();
+      });
+
+      await user.click(clearButton());
+
+      expect(await within(offline()).findByRole('alert')).toHaveTextContent(
+        "Couldn't change offline reading. Try again.",
+      );
+      expect(within(offline()).queryByText('Downloaded articles cleared.')).not.toBeInTheDocument();
+      expect(await readMe(A)).toBeNull();
+    });
   });
 
   describe('turning it off', () => {
