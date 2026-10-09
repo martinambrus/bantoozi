@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from './button.js';
 import { errorMessage } from './error-message.js';
 import { WarningIcon } from './icons.js';
-import { Modal } from './modal.js';
+import { Modal, type ModalProps } from './modal.js';
 
 export interface ConfirmDialogProps {
   open: boolean;
@@ -16,6 +16,8 @@ export interface ConfirmDialogProps {
   confirmLabel?: string | undefined;
   cancelLabel?: string | undefined;
   danger?: boolean | undefined;
+  /** Where the focus goes on closing when the control that asked is gone; see `ModalProps`. */
+  returnFocus?: ModalProps['returnFocus'];
 }
 
 export function ConfirmDialog({ open, ...props }: ConfirmDialogProps) {
@@ -31,6 +33,7 @@ function OpenConfirmDialog({
   confirmLabel,
   cancelLabel,
   danger = false,
+  returnFocus,
 }: Omit<ConfirmDialogProps, 'open'>) {
   const { t } = useTranslation('common');
   const [pending, setPending] = useState(false);
@@ -58,6 +61,7 @@ function OpenConfirmDialog({
       description={body}
       showCloseButton={false}
       dismissible={!pending}
+      returnFocus={returnFocus}
       surfaceClassName="m-auto w-full max-w-md rounded-xl"
     >
       {failure === null ? null : (

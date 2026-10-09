@@ -196,12 +196,12 @@ export function MenuItem({
         menu.close();
       }}
       className={cx(
-        'flex min-h-11 w-full cursor-pointer items-center rounded-md px-3 text-start text-sm font-medium hover:bg-slate-100 aria-disabled:cursor-not-allowed aria-disabled:opacity-60 aria-disabled:hover:bg-transparent dark:hover:bg-slate-800 dark:aria-disabled:hover:bg-transparent',
+        'group flex min-h-11 w-full cursor-pointer items-center rounded-md px-3 text-start text-sm font-medium hover:bg-slate-100 aria-disabled:cursor-not-allowed aria-disabled:hover:bg-transparent dark:hover:bg-slate-800 dark:aria-disabled:hover:bg-transparent',
         tone === 'danger' ? 'text-red-700 dark:text-red-300' : 'text-slate-900 dark:text-slate-100',
         FOCUS_RING,
       )}
     >
-      {children}
+      <span className="group-aria-disabled:opacity-60">{children}</span>
     </button>
   );
 }

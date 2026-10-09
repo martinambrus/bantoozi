@@ -57,6 +57,18 @@ describe('welcome (spec 09 §4 step 1)', () => {
     expect(screen.queryByRole('button', { name: 'Back' })).not.toBeInTheDocument();
   });
 
+  it('has a main landmark that can take the focus, for a modal that has nowhere else to hand it', async () => {
+    await openWizard('/onboarding');
+    await heading('Welcome to Bantoozi');
+
+    const main = screen.getByRole('main');
+    expect(main).toHaveAttribute('id', 'main');
+    expect(main).toHaveAttribute('tabindex', '-1');
+    expect(main).toHaveClass('outline-none');
+    main.focus();
+    expect(main).toHaveFocus();
+  });
+
   it('goes to the feeds step and focuses its heading', async () => {
     const { app } = await openWizard('/onboarding');
 

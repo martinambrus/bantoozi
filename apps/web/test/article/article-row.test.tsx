@@ -193,6 +193,16 @@ describe('ArticleRow content', () => {
     renderRow(makeItem(), { selection: { selected: true, onChange: vi.fn() } });
     expect(screen.getByRole('checkbox', { name: `Select ${TITLE}` })).toBeChecked();
   });
+
+  it('leaves the width of the selection checkbox to its label, which is the 44 px target', () => {
+    renderRow(makeItem(), { selection: { selected: false, onChange: vi.fn() } });
+
+    const label = screen.getByRole('checkbox', { name: `Select ${TITLE}` }).closest('label');
+    expect(label).toHaveClass('min-h-11', 'min-w-11');
+    const wrapper = label?.parentElement;
+    expect(wrapper).toHaveClass('shrink-0');
+    expect(wrapper).not.toHaveClass('w-11');
+  });
 });
 
 describe('ArticleRow images', () => {

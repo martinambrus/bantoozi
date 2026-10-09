@@ -142,7 +142,7 @@ describe('the focus after an interest card is edited or deleted', () => {
     ).toHaveFocus();
   });
 
-  it('goes to the main landmark when the card is deleted', async () => {
+  it('goes to the list when the card is deleted', async () => {
     const app = await openCards({ 'DELETE /cards/:id': () => noContent() });
     const row = await screen.findByRole('listitem', { name: 'Rust programming' });
     await app.user.click(within(row).getByRole('button', { name: 'Delete' }));
@@ -155,7 +155,7 @@ describe('the focus after an interest card is edited or deleted', () => {
     await closed();
 
     expect(screen.queryByRole('listitem', { name: 'Rust programming' })).not.toBeInTheDocument();
-    expect(screen.getByRole('main')).toHaveFocus();
+    expect(screen.getByRole('list', { name: 'Your interest cards' })).toHaveFocus();
     expect(document.body).not.toHaveFocus();
   });
 });

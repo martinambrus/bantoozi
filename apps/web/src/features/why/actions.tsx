@@ -1,6 +1,6 @@
 import type { ArticleListItem } from '@bantoozi/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApiMutation } from '../../api/mutation.js';
@@ -76,6 +76,7 @@ export function Actions({ item }: { item: ArticleListItem }) {
   const { t: tArticle } = useTranslation('article');
   const rules = useRuleActions(item);
   const [makingCard, setMakingCard] = useState(false);
+  const actionsRef = useRef<HTMLDivElement>(null);
   const words = titleWords(item.title);
   const sourceActions = [
     { label: tArticle('detail.boostFeed'), run: rules.boostFeed },
@@ -85,7 +86,7 @@ export function Actions({ item }: { item: ArticleListItem }) {
 
   return (
     <Section title={t('actions.heading')}>
-      <div className="flex flex-wrap gap-2">
+      <div ref={actionsRef} tabIndex={-1} className="flex flex-wrap gap-2 outline-none">
         <Button variant="secondary" onClick={() => setMakingCard(true)}>
           <PlusIcon className="size-4" />
           {t('actions.makeCard')}
@@ -100,6 +101,7 @@ export function Actions({ item }: { item: ArticleListItem }) {
       {makingCard ? (
         <CardEditor
           fromArticle={{ id: item.id, title: item.title }}
+          returnFocus={() => actionsRef.current}
           onClose={() => setMakingCard(false)}
         />
       ) : null}

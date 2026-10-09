@@ -402,7 +402,7 @@ export function LaneSwitcher({
       <LaneList
         counts={counts}
         foldable={false}
-        className="flex min-w-0 flex-1 gap-1 overflow-x-auto"
+        className="relative flex min-w-0 flex-1 gap-1 overflow-x-auto"
       />
     </nav>
   );

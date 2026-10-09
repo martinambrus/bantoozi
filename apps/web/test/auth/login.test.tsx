@@ -62,6 +62,17 @@ describe('/login', () => {
     expect(screen.getAllByRole('main')).toHaveLength(1);
   });
 
+  it('has a main landmark that can take the focus, for a modal that has nowhere else to hand it', async () => {
+    await open({ path: '/login', server: signInServer({ account: member }) });
+
+    const main = screen.getByRole('main');
+    expect(main).toHaveAttribute('id', 'main');
+    expect(main).toHaveAttribute('tabindex', '-1');
+    expect(main).toHaveClass('outline-none');
+    main.focus();
+    expect(main).toHaveFocus();
+  });
+
   it('requests a code for the email, without an Idempotency-Key, and asks for it', async () => {
     const app = await open({ path: '/login', server: signInServer({ account: member }) });
 

@@ -490,8 +490,94 @@ test('keyboard and screen-reader focus across row removal, reason bar, Why-this 
     neverOnBody(await takeFocusStops(page));
   });
 
-  // The focus after an Undo and after a click on a reason button falls to <body> today, and the
-  // restored row does not get it; the assertions for those come with the fix.
+  await test.step('an Undo in the Recent actions sheet keeps the focus in the sheet', async () => {
+    const more = page.getByRole('group', { name: 'New', exact: true }).getByRole('button', {
+      name: 'More',
+      exact: true,
+    });
+    const sheet = await openRecentActions(page, 'New');
+    const entries = sheet.getByRole('listitem');
+    const liked = recentEntry(sheet, 'Marked as liked', quantum);
+    const disliked = recentEntry(sheet, 'Marked as disliked', firmware);
+    const undoOf = (entry: ReturnType<typeof recentEntry>) =>
+      entry.getByRole('button', { name: 'Undo' });
+
+    await undoOf(liked).click();
+    await expect(liked).toHaveCount(0);
+    await expect(undoOf(entries.last())).toBeFocused();
+    await undoOf(disliked).click();
+    await expect(disliked).toHaveCount(0);
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.closest('dialog') !== null))
+      .toBe(true);
+    await expectState(user, id.quantum, { rating: null }, 'the like is taken back');
+    await expectState(user, id.firmware, { rating: null }, 'the dislike is taken back');
+
+    await page.keyboard.press('Escape');
+    await expect(sheet).toBeHidden();
+    await expect(more).toBeFocused();
+    await expect(rowOf(page, quantum)).toBeVisible();
+    await expect(rowOf(page, firmware)).toBeVisible();
+  });
+
+  await test.step('a reason chosen in the bar leaves the focus on the row that took the disliked row’s place', async () => {
+    await rowTitle(page, robotics).focus();
+    await page.keyboard.press('-');
+    await expect(reasonBar(page)).toBeVisible();
+    await expect(rowOf(page, robotics)).toHaveCount(0);
+    await expect(rowTitle(page, firmware)).toBeFocused();
+
+    await page
+      .getByRole('group', { name: 'New', exact: true })
+      .getByRole('button', { name: 'More', exact: true })
+      .focus();
+    await recordFocus(page);
+    await reasonBar(page).getByRole('button', { name: 'Clickbait' }).click();
+    await expect(reasonBar(page)).toBeHidden();
+    await expect(rowTitle(page, firmware)).toBeFocused();
+    await expectState(
+      user,
+      id.robotics,
+      { rating: -1, reason: 'clickbait' },
+      'the reason is saved',
+    );
+    neverOnBody(await takeFocusStops(page));
+  });
+
+  await test.step('an Undo in the toast of a rating focuses the title of the row that comes back', async () => {
+    const undoToast = () =>
+      toastWith(page, 'Marked as liked').getByRole('button', { name: 'Undo', exact: true });
+
+    await rowTitle(page, quantum).focus();
+    await page.keyboard.press('+');
+    await expect(rowOf(page, quantum)).toHaveCount(0);
+    await undoToast().click();
+    await expect(rowOf(page, quantum)).toBeVisible();
+    await expect(rowTitle(page, quantum)).toBeFocused();
+    await expectState(user, id.quantum, { rating: null }, 'the like is taken back by mouse');
+
+    await rowTitle(page, firmware).focus();
+    await page.keyboard.press('+');
+    await expect(rowOf(page, firmware)).toHaveCount(0);
+    await undoToast().focus();
+    await page.keyboard.press('Enter');
+    await expect(rowOf(page, firmware)).toBeVisible();
+    await expect(rowTitle(page, firmware)).toBeFocused();
+    await expectState(user, id.firmware, { rating: null }, 'the like is taken back by keyboard');
+  });
+
+  await test.step('Undo in the bar focuses the title of the row that comes back', async () => {
+    await rowTitle(page, quantum).focus();
+    await page.keyboard.press('-');
+    await expect(reasonBar(page)).toBeVisible();
+    await expect(rowOf(page, quantum)).toHaveCount(0);
+
+    await reasonBar(page).getByRole('button', { name: 'Undo' }).click();
+    await expect(reasonBar(page)).toBeHidden();
+    await expect(rowOf(page, quantum)).toBeVisible();
+    await expect(rowTitle(page, quantum)).toBeFocused();
+    await expectState(user, id.quantum, { rating: null }, 'the dislike is taken back');
+  });
 });
 
 test('reduced motion, browser zoom keys and input-method typing leave the reader working', async ({

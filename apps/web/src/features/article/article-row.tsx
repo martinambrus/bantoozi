@@ -83,7 +83,7 @@ export function ArticleRow({
     <SwipeRow item={shown} actions={actions} labelledBy={titleId}>
       {selection === undefined ? null : (
         <Checkbox
-          className="w-11 shrink-0"
+          className="shrink-0"
           label={<VisuallyHidden>{t('row.select', { title: shown.title })}</VisuallyHidden>}
           checked={selection.selected}
           onChange={(event) => selection.onChange(event.target.checked)}

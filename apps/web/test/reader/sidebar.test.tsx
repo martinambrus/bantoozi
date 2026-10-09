@@ -348,6 +348,20 @@ describe('the reader sidebar on a narrow screen', () => {
     await waitFor(() => expect(app.router.state.location.pathname).toBe('/read/feed/2'));
     expect(screen.queryByRole('dialog', { name: 'Feeds and labels' })).toBeNull();
   });
+
+  it('holds the words only a screen reader reads inside the scrolling list of lanes', async () => {
+    await open({ path: '/read/maybe', desktop: false });
+
+    const lanesBar = await screen.findByRole('navigation', { name: 'Lane switcher' });
+    const list = within(lanesBar).getByRole('list', { name: 'Lanes' });
+    const [unread] = await within(list).findAllByText('Unread:');
+
+    // Such a word is positioned absolutely, and out of a list that is not positioned it sticks
+    // into the page beyond the screen, which then scrolls sideways.
+    expect(unread).toHaveClass('sr-only');
+    expect(list).toHaveClass('overflow-x-auto');
+    expect(list).toHaveClass('relative');
+  });
 });
 
 describe('the unread numbers of the feeds', () => {

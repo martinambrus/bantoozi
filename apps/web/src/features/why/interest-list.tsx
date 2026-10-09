@@ -1,5 +1,5 @@
 import type { CardDto, Explain } from '@bantoozi/shared';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '../../components/button.js';
@@ -90,6 +90,7 @@ export function InterestList({ articleId, cards }: InterestListProps) {
   const held = useCards();
   const teacher = useCardTeacher(articleId);
   const [editing, setEditing] = useState<CardDto | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const ranked = [...cards].sort((a, b) => b.p - a.p);
 
   return (
@@ -97,7 +98,13 @@ export function InterestList({ articleId, cards }: InterestListProps) {
       {ranked.length === 0 ? (
         <p className="text-sm text-slate-600 dark:text-slate-300">{t('interests.none')}</p>
       ) : (
-        <ul role="list" aria-label={t('interests.heading')} className="flex flex-col gap-3">
+        <ul
+          ref={listRef}
+          role="list"
+          tabIndex={-1}
+          aria-label={t('interests.heading')}
+          className="flex flex-col gap-3 outline-none"
+        >
           {ranked.map((scored) => {
             const card = held.data?.find(
               (candidate) => candidate.id === teacher.currentId(scored.id),
@@ -115,7 +122,13 @@ export function InterestList({ articleId, cards }: InterestListProps) {
           })}
         </ul>
       )}
-      {editing === null ? null : <CardEditor card={editing} onClose={() => setEditing(null)} />}
+      {editing === null ? null : (
+        <CardEditor
+          card={editing}
+          returnFocus={() => listRef.current}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </Section>
   );
 }

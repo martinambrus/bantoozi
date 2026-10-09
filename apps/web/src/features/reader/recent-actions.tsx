@@ -1,5 +1,14 @@
 import type { ArticleListItem } from '@bantoozi/shared';
-import { useEffect, useId, useMemo, useReducer, useState, useSyncExternalStore } from 'react';
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '../../components/button.js';
@@ -39,9 +48,11 @@ interface EntryProps {
   /** The loaded article the entry is about, if the list still has it. */
   row: ArticleListItem | undefined;
   now: number;
+  /** Called once the Undo of the entry has been answered, whatever the answer was. */
+  onAnswered: () => void;
 }
 
-function Entry({ entry, row, now }: EntryProps) {
+function Entry({ entry, row, now, onAnswered }: EntryProps) {
   const { t, i18n } = useTranslation('reader');
   const undo = useUndoAction();
   const [undoing, setUndoing] = useState(false);
@@ -62,6 +73,7 @@ function Entry({ entry, row, now }: EntryProps) {
       await undo(entry.id);
     } finally {
       setUndoing(false);
+      onAnswered();
     }
   }
 
@@ -95,25 +107,47 @@ function RecentList({ items }: { items: readonly ArticleListItem[] }) {
   const { t } = useTranslation('reader');
   const { entries, now } = useEntries();
   const rows = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
+  const root = useRef<HTMLDivElement>(null);
+  const answered = useRef<number | null>(null);
+  const [answers, answer] = useReducer((count: number) => count + 1, 0);
 
-  if (entries.length === 0) {
-    return <EmptyState title={t('recent.emptyTitle')} body={t('recent.emptyBody')} />;
-  }
+  // The entry that was taken back took its Undo button, and the focus on it, out of the list: the
+  // focus goes to the Undo button that is now in its place, else to the sheet.
+  useLayoutEffect(() => {
+    const position = answered.current;
+    if (position === null) return;
+    answered.current = null;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    const buttons = Array.from(root.current?.querySelectorAll<HTMLElement>('li button') ?? []);
+    (buttons[Math.min(position, buttons.length - 1)] ?? root.current?.closest('dialog'))?.focus();
+  }, [answers]);
+
   return (
-    <ul
-      role="list"
-      aria-label={t('recent.list')}
-      className="divide-y divide-slate-200 dark:divide-slate-700"
-    >
-      {entries.map((entry) => (
-        <Entry
-          key={entry.id}
-          entry={entry}
-          row={entry.articleIds.length === 1 ? rows.get(entry.articleIds[0]!) : undefined}
-          now={now}
-        />
-      ))}
-    </ul>
+    <div ref={root}>
+      {entries.length === 0 ? (
+        <EmptyState title={t('recent.emptyTitle')} body={t('recent.emptyBody')} />
+      ) : (
+        <ul
+          role="list"
+          aria-label={t('recent.list')}
+          className="divide-y divide-slate-200 dark:divide-slate-700"
+        >
+          {entries.map((entry, position) => (
+            <Entry
+              key={entry.id}
+              entry={entry}
+              row={entry.articleIds.length === 1 ? rows.get(entry.articleIds[0]!) : undefined}
+              now={now}
+              onAnswered={() => {
+                answered.current = position;
+                answer();
+              }}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

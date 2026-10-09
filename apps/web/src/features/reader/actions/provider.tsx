@@ -59,6 +59,51 @@ const EXPIRED_TOAST_ID = 'offline-expired';
 /** The reader did not ask for these (spec 09 §3.6), so their failure is not shown to them. */
 const IMPLICIT_ACTIONS: ReadonlySet<ReaderAction['type']> = new Set(['open', 'dwell']);
 
+/** How long a row that is on its way back to the list is waited for. */
+const ROW_WAIT_MS = 3000;
+
+/** The row of an article in the list on the page. */
+export function rowOf(articleId: string): HTMLElement | null {
+  for (const row of document.querySelectorAll<HTMLElement>('li[data-article-id]')) {
+    if (row.dataset['articleId'] === articleId) return row;
+  }
+  return null;
+}
+
+/** The button of the title of that row, which is where the focus rests on it. */
+export function rowTitleOf(articleId: string): HTMLElement | null {
+  return rowOf(articleId)?.querySelector<HTMLElement>('h3 button') ?? null;
+}
+
+/**
+ * Spec 09 §1: an undo restores the focus. Puts it on the title of the row of `articleId` as soon
+ * as the list shows that row, unless the person has moved it since `from` had it (the control
+ * they pressed is gone by then, which leaves the focus on the page) or a modal is open, which
+ * keeps the focus and makes the page behind it inert.
+ */
+export function focusRestoredRow(articleId: string, from: Element | null): void {
+  const unmoved = () => {
+    const active = document.activeElement;
+    return active === null || active === document.body || active === from;
+  };
+  const attempt = (): boolean => {
+    if (!unmoved() || document.querySelector('dialog[open]') !== null) return true;
+    const title = rowTitleOf(articleId);
+    title?.focus();
+    return title !== null;
+  };
+  if (attempt()) return;
+  const observer = new MutationObserver(() => {
+    if (attempt()) stop();
+  });
+  const timer = setTimeout(stop, ROW_WAIT_MS);
+  function stop() {
+    observer.disconnect();
+    clearTimeout(timer);
+  }
+  observer.observe(document.body, { childList: true, subtree: true });
+}
+
 interface Environment {
   api: ApiClient;
   queryClient: QueryClient;
@@ -120,10 +165,11 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
   const offers = createExampleOffers({ api, queryClient, toast: tracked, i18n, accountId });
 
   async function undo(actionId: string): Promise<UndoResult> {
+    const from = document.activeElement;
+    const entry = store.recent().find((candidate) => candidate.id === actionId);
     // Mark all read covered more than the loaded rows, so the list is loaded again as well.
-    const filtered = store
-      .recent()
-      .some((entry) => entry.id === actionId && entry.kind === 'markReadFilter');
+    const filtered = entry?.kind === 'markReadFilter';
+    const single = !filtered && entry?.articleIds.length === 1 ? entry.articleIds[0] : undefined;
     const result = await store.undo(actionId);
     if (result.status === 'undone' || result.status === 'conflict') {
       void queryClient.invalidateQueries({
@@ -144,6 +190,8 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
         }
         break;
       case 'undone':
+        if (single !== undefined) focusRestoredRow(single, from);
+        break;
       case 'cancelled':
         break;
     }

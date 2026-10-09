@@ -1,5 +1,5 @@
 import type { CardDto } from '@bantoozi/shared';
-import { useId, useState } from 'react';
+import { useId, useRef, useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { isApiError } from '../../api/errors.js';
@@ -18,7 +18,14 @@ import { useKeptOffers } from './kept-updates.js';
 import { useCardCache, useCards, useUpdates, type UpdateOffer } from './queries.js';
 import { UpdateDiff } from './update-diff.js';
 
-function OfferItem({ offer, card }: { offer: UpdateOffer; card: CardDto | undefined }) {
+interface OfferItemProps {
+  offer: UpdateOffer;
+  card: CardDto | undefined;
+  /** The list this offer is in: where the focus goes when the offer leaves while it is edited. */
+  list: RefObject<HTMLElement | null>;
+}
+
+function OfferItem({ offer, card, list }: OfferItemProps) {
   const { t } = useTranslation('interests');
   const cache = useCardCache();
   const apply = useApiMutation(routes.libraryUpdateApply);
@@ -107,7 +114,12 @@ function OfferItem({ offer, card }: { offer: UpdateOffer; card: CardDto | undefi
         </Button>
       </div>
       {customizing && card !== undefined ? (
-        <CardEditor card={card} review={offer} onClose={() => setCustomizing(false)} />
+        <CardEditor
+          card={card}
+          review={offer}
+          returnFocus={() => list.current}
+          onClose={() => setCustomizing(false)}
+        />
       ) : null}
     </li>
   );
@@ -120,6 +132,7 @@ export function LibraryUpdates() {
   const cards = useCards();
   const kept = useKeptOffers();
   const headingId = useId();
+  const listRef = useRef<HTMLUListElement>(null);
   const keptCount = updates.data?.filter((offer) => kept.isKept(offer)).length ?? 0;
 
   return (
@@ -145,7 +158,12 @@ export function LibraryUpdates() {
           cards.isLoading ? (
             <LoadingState />
           ) : (
-            <ul aria-labelledby={headingId} className="flex flex-col gap-3">
+            <ul
+              ref={listRef}
+              tabIndex={-1}
+              aria-labelledby={headingId}
+              className="flex flex-col gap-3 outline-none"
+            >
               {list
                 .filter((offer) => !kept.isKept(offer))
                 .map((offer) => (
@@ -153,6 +171,7 @@ export function LibraryUpdates() {
                     key={`${offer.currentCardId}:${offer.toVersion}`}
                     offer={offer}
                     card={cards.data?.find((card) => card.id === offer.currentCardId)}
+                    list={listRef}
                   />
                 ))}
             </ul>

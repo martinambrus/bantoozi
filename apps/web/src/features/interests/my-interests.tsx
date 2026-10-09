@@ -196,6 +196,7 @@ export function MyInterests() {
           title={t('card.deleteTitle')}
           body={t('card.deleteBody', { title: deleting.title })}
           confirmLabel={t('common:actions.delete')}
+          returnFocus={() => listRef.current}
           onClose={() => setDeleting(null)}
           onConfirm={() => remove(deleting)}
         />

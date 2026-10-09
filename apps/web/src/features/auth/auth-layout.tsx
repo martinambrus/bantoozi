@@ -18,7 +18,11 @@ export interface AuthLayoutProps {
 export function AuthLayout({ title, lead, headingRef, footer, children }: AuthLayoutProps) {
   const { t } = useTranslation('common');
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center gap-6 px-4 py-10">
+    <main
+      id="main"
+      tabIndex={-1}
+      className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center gap-6 px-4 py-10 outline-none"
+    >
       <p className="text-lg font-bold">{t('appName')}</p>
       <div className="flex flex-col gap-2">
         <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-bold outline-none">

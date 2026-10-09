@@ -172,6 +172,18 @@ describe('Menu', () => {
     }
   });
 
+  it('fades only the label of a disabled item, so that its focus ring keeps its full strength', async () => {
+    const user = userEvent.setup();
+    renderMenu();
+    await user.click(trigger());
+    const archive = screen.getByRole('menuitem', { name: 'Archive' });
+
+    expect(archive.className).not.toMatch(/\bopacity-/);
+    expect(archive).toHaveClass('group');
+    expect(within(archive).getByText('Archive')).toHaveClass('group-aria-disabled:opacity-60');
+    expect(archive.className).toMatch(/focus-visible:outline/);
+  });
+
   it('reaches a disabled item with the arrow keys and does nothing when it is chosen', async () => {
     const user = userEvent.setup();
     const { onArchive, onRename, onDelete } = renderMenu();
