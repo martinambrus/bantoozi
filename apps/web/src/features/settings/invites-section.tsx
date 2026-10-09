@@ -86,12 +86,15 @@ function InviteForm({ left, onCreated }: { left: number; onCreated: (invite: New
         : { signature, key: crypto.randomUUID() };
     attempt.current = sending;
 
+    const sentEmail = email;
+    const sentNote = note;
     setFailure(null);
     try {
       const created = await create.mutateAsync({ body: parsed.data, idempotencyKey: sending.key });
       attempt.current = null;
-      setEmail('');
-      setNote('');
+      // A field edited while the invite was on its way keeps its text, for the next invite.
+      setEmail((current) => (current === sentEmail ? '' : current));
+      setNote((current) => (current === sentNote ? '' : current));
       onCreated({
         code: created.code,
         url: created.url,

@@ -1079,6 +1079,59 @@ describe('invites (spec 09 §7, spec 08 §2.2)', () => {
       await invites().findByRole('group', { name: 'New invite' });
       expect(calls('POST /invites')).toHaveLength(1);
     });
+
+    it('keeps a note edited while the invite was on its way, and clears the address that was sent', async () => {
+      const gate = deferred();
+      const api = invitesApi([], 3);
+      const original = api.routes['POST /invites'] as ApiRouteHandler;
+      api.routes['POST /invites'] = async (request, params) => {
+        await gate.promise;
+        return original(request, params);
+      };
+      const { user, calls } = await openSettings({ routes: api.routes });
+      await invites().findByText('Invites left: 3');
+      await user.type(emailField(), 'friend@example.com');
+      await user.type(noteField(), 'For Alice');
+      await user.click(create());
+      await waitFor(() => expect(calls('POST /invites')).toHaveLength(1));
+
+      await user.type(noteField(), ' and Bob');
+      gate.release();
+
+      expect(await invites().findByRole('group', { name: 'New invite' })).toBeVisible();
+      expect(emailField()).toHaveValue('');
+      expect(noteField()).toHaveValue('For Alice and Bob');
+      expect(bodiesOf(calls('POST /invites'))).toEqual([
+        { email: 'friend@example.com', note: 'For Alice' },
+      ]);
+    });
+
+    it('keeps an address edited while the invite was on its way, and clears the note that was sent', async () => {
+      const gate = deferred();
+      const api = invitesApi([], 3);
+      const original = api.routes['POST /invites'] as ApiRouteHandler;
+      api.routes['POST /invites'] = async (request, params) => {
+        await gate.promise;
+        return original(request, params);
+      };
+      const { user, calls } = await openSettings({ routes: api.routes });
+      await invites().findByText('Invites left: 3');
+      await user.type(emailField(), 'friend@example.com');
+      await user.type(noteField(), 'For Alice');
+      await user.click(create());
+      await waitFor(() => expect(calls('POST /invites')).toHaveLength(1));
+
+      await user.clear(emailField());
+      await user.type(emailField(), 'other@example.com');
+      gate.release();
+
+      expect(await invites().findByRole('group', { name: 'New invite' })).toBeVisible();
+      expect(emailField()).toHaveValue('other@example.com');
+      expect(noteField()).toHaveValue('');
+      expect(bodiesOf(calls('POST /invites'))).toEqual([
+        { email: 'friend@example.com', note: 'For Alice' },
+      ]);
+    });
   });
 
   describe('in Slovak', () => {
