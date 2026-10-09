@@ -26,6 +26,11 @@ export const SESSION_CHANNEL = 'bantoozi:session';
 
 const ME_HASH = hashKey(meKey());
 
+/** The first wait before a refused sign-out is sent again; it doubles after each failure. */
+const LOGOUT_RETRY_FIRST_MS = 2_000;
+/** The longest wait between two tries. */
+const LOGOUT_RETRY_MAX_MS = 5 * 60_000;
+
 export interface SessionOptions {
   queryClient: QueryClient;
   i18n: Pick<I18n, 'language' | 'changeLanguage'>;
@@ -99,6 +104,9 @@ export function createSession(options: SessionOptions): Session {
   // The removal of the previous account's data after another account arrived.
   let switching: Promise<void> | null = null;
   let finishing: Promise<void> | null = null;
+  let logoutRetry: ReturnType<typeof setTimeout> | undefined;
+  let logoutFailures = 0;
+  let disposed = false;
 
   function idInCache(): string | null | undefined {
     const me = queryClient.getQueryData<Me | null>(meKey());
@@ -190,15 +198,33 @@ export function createSession(options: SessionOptions): Session {
   function finishPendingLogout(): Promise<void> {
     if (!isLogoutPending()) return Promise.resolve();
     finishing ??= endServerSession()
-      .then(clearLogoutPending)
+      .then(() => {
+        clearTimeout(logoutRetry);
+        logoutFailures = 0;
+        clearLogoutPending();
+      })
       .finally(() => {
         finishing = null;
       });
     return finishing;
   }
 
+  /**
+   * Sends a sign-out the server refused for now (network, 5xx, 429) again while the browser reports
+   * a connection: a server that answers again sends no `online` event. The wait doubles up to five
+   * minutes and is never shorter than the server's Retry-After (spec 09 §1).
+   */
+  function retryLogoutLater(error: unknown) {
+    clearTimeout(logoutRetry);
+    if (disposed || !isRetryable(error) || navigator.onLine === false) return;
+    const backoff = Math.min(LOGOUT_RETRY_FIRST_MS * 2 ** logoutFailures, LOGOUT_RETRY_MAX_MS);
+    logoutFailures += 1;
+    const asked = isApiError(error) ? (error.retryAfterMs ?? 0) : 0;
+    logoutRetry = setTimeout(finishQuietly, Math.max(backoff, asked));
+  }
+
   function finishQuietly() {
-    finishPendingLogout().catch(() => undefined);
+    finishPendingLogout().catch(retryLogoutLater);
   }
 
   window.addEventListener('online', finishQuietly);
@@ -246,19 +272,20 @@ export function createSession(options: SessionOptions): Session {
 
   async function logout(): Promise<LogoutResult> {
     const accountId = knownAccountId;
-    let serverSignedOut = true;
+    let refused: unknown = null;
     try {
       await api.call(routes.authLogout);
     } catch (error) {
       // Already signed out is the state we are after.
       if (!isApiError(error) || error.status !== 401) {
         if (!isRetryable(error)) throw error;
-        serverSignedOut = false;
+        refused = error;
       }
     }
-    if (!serverSignedOut) markLogoutPending();
+    if (refused !== null) markLogoutPending();
     await reset('logout', accountId);
-    return { serverSignedOut };
+    if (refused !== null) retryLogoutLater(refused);
+    return { serverSignedOut: refused === null };
   }
 
   return {
@@ -279,7 +306,9 @@ export function createSession(options: SessionOptions): Session {
       };
     },
     dispose: () => {
+      disposed = true;
       stopWatchingCache();
+      clearTimeout(logoutRetry);
       window.removeEventListener('online', finishQuietly);
       channel?.close();
       listeners.clear();

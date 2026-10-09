@@ -247,6 +247,81 @@ describe('a sign-out that has not reached the server', () => {
     await vi.waitFor(() => expect(isPending()).toBe(false));
     online.mockRestore();
   });
+
+  describe('while the browser stays online', () => {
+    // A server that answers again sends no `online` event: only the page can try again.
+    function fakeTimers() {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      onTestFinished(() => {
+        vi.useRealTimers();
+      });
+    }
+
+    it('is sent again once the Retry-After of a refused sign-out has passed, and not sooner', async () => {
+      let answer = () => failure(503, 'UNAVAILABLE', undefined, { 'retry-after': '7' });
+      const { session, requests } = sessions.start({ me: userA, logout: () => answer() });
+      await session.loadMe();
+      fakeTimers();
+      await expect(session.logout()).resolves.toEqual({ serverSignedOut: false });
+      answer = () => noContent();
+
+      await vi.advanceTimersByTimeAsync(6_999);
+      expect(requestsTo(requests, 'POST /api/v1/auth/logout')).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(requestsTo(requests, 'POST /api/v1/auth/logout')).toHaveLength(2);
+      await vi.waitFor(() => expect(isPending()).toBe(false));
+    });
+
+    it('waits twice as long after each failure while the server keeps failing', async () => {
+      signedOutOffline();
+      let answer = () => failure(500, 'INTERNAL');
+      fakeTimers();
+      const restarted = sessions.start({ me: userA, logout: () => answer() });
+      const sent = () => requestsTo(restarted.requests, 'POST /api/v1/auth/logout').length;
+      await vi.waitFor(() => expect(sent()).toBe(1));
+
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(sent()).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(sent()).toBe(2);
+      answer = () => noContent();
+      await vi.advanceTimersByTimeAsync(3_999);
+      expect(sent()).toBe(2);
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(sent()).toBe(3);
+      await vi.waitFor(() => expect(isPending()).toBe(false));
+    });
+
+    it('is not sent again after a refusal that is not about the server being busy', async () => {
+      signedOutOffline();
+      fakeTimers();
+      const restarted = sessions.start({ me: userA, logout: () => failure(403, 'FORBIDDEN') });
+      await vi.waitFor(() =>
+        expect(requestsTo(restarted.requests, 'POST /api/v1/auth/logout')).toHaveLength(1),
+      );
+
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+      expect(requestsTo(restarted.requests, 'POST /api/v1/auth/logout')).toHaveLength(1);
+      expect(isPending()).toBe(true);
+    });
+
+    it('is not sent again by a page that was closed', async () => {
+      signedOutOffline();
+      fakeTimers();
+      const restarted = sessions.start({ me: userA, logout: () => failure(500, 'INTERNAL') });
+      await vi.waitFor(() =>
+        expect(requestsTo(restarted.requests, 'POST /api/v1/auth/logout')).toHaveLength(1),
+      );
+
+      restarted.session.dispose();
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+      expect(requestsTo(restarted.requests, 'POST /api/v1/auth/logout')).toHaveLength(1);
+    });
+  });
 });
 
 describe('the sign-out button', () => {
