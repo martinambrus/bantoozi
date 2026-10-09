@@ -122,6 +122,34 @@ describe('polling while the server works', () => {
     expect(rowTitles()).toEqual(['Article 1', 'Article 2', 'Article 3', 'Article 4']);
   });
 
+  it('asks again for every page loaded after Refresh started the list again', async () => {
+    const { app } = await openReader({
+      path: '/read/for_you',
+      list: (request) =>
+        request.query.get('cursor') === 'c1'
+          ? json(200, page([item(3), item(4)], { rankingPending: true }))
+          : json(200, page([item(1), item(2)], { nextCursor: 'c1', rankingPending: true })),
+    });
+    await app.user.click(await screen.findByRole('button', { name: 'Load more' }));
+    await screen.findByRole('article', { name: 'Article 4' });
+    await app.user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await vi.waitFor(() => expect(rowTitles()).toEqual(['Article 1', 'Article 2']));
+    await app.user.click(screen.getByRole('button', { name: 'Load more' }));
+    await screen.findByRole('article', { name: 'Article 4' });
+    const listed = lists(app);
+
+    await advance(5_500);
+
+    expect(lists(app)).toBe(listed + 2);
+    expect(
+      app
+        .calls('GET /articles')
+        .slice(-2)
+        .map((request) => request.query.get('cursor')),
+    ).toEqual([null, 'c1']);
+    expect(rowTitles()).toEqual(['Article 1', 'Article 2', 'Article 3', 'Article 4']);
+  });
+
   it('leaves the rows as they are when a page of the chain is refused', async () => {
     let refuse = false;
     const { app } = await openReader({

@@ -2,9 +2,9 @@ import { act, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { setOfflineEnabled } from '../../src/offline/cache.js';
-import { json } from '../api/fake-fetch.js';
+import { failure, json } from '../api/fake-fetch.js';
 import { makeDetail } from '../article/harness.js';
-import { item, page } from '../reader/support.js';
+import { item, page, rowTitles } from '../reader/support.js';
 import {
   FOR_YOU,
   connection,
@@ -82,6 +82,59 @@ describe('saving the list that was loaded', () => {
     await screen.findByRole('article', { name: 'Article 8' });
     await viewReaches(idb.factory, ['8', '9'], JSON.stringify(['new', null, null, null]));
     expect((await storedView(idb.factory, FOR_YOU))?.itemIds).toEqual(['1']);
+  });
+});
+
+describe('the rows that Refresh starts again', () => {
+  /** A list of two pages whose first page, once Refresh asks for it again, answers with `again`. */
+  async function openTwoPages(again: () => Response | Promise<Response>) {
+    await setOfflineEnabled(A, true);
+    let refreshed = false;
+    const { app } = await harness.open(connection(), {
+      path: '/read/for_you',
+      list: (request) => {
+        if (request.query.get('cursor') === 'c1') return json(200, page([item(3)]));
+        return refreshed ? again() : json(200, page([item(1), item(2)], { nextCursor: 'c1' }));
+      },
+    });
+    await app.user.click(await screen.findByRole('button', { name: 'Load more' }));
+    await viewReaches(idb.factory, ['1', '2', '3']);
+    refreshed = true;
+    return app;
+  }
+
+  it('stay on the screen and on the device until the first page is there again', async () => {
+    let answer: ((response: Response) => void) | undefined;
+    const app = await openTwoPages(
+      () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve;
+        }),
+    );
+
+    await app.user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await vi.waitFor(() => expect(answer).toBeDefined());
+
+    expect(rowTitles()).toEqual(['Article 1', 'Article 2', 'Article 3']);
+    expect((await storedView(idb.factory, FOR_YOU))?.itemIds).toEqual(['1', '2', '3']);
+
+    answer!(json(200, page([item(4), item(1)])));
+
+    await viewReaches(idb.factory, ['4', '1']);
+    expect(rowTitles()).toEqual(['Article 4', 'Article 1']);
+  });
+
+  it('all stay on the screen and on the device when the first page cannot be had', async () => {
+    const app = await openTwoPages(() => failure(503, 'UNAVAILABLE'));
+
+    await app.user.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    expect(await screen.findByRole('alert')).toBeVisible();
+    expect(rowTitles()).toEqual(['Article 1', 'Article 2', 'Article 3']);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect((await storedView(idb.factory, FOR_YOU))?.itemIds).toEqual(['1', '2', '3']);
   });
 });
 

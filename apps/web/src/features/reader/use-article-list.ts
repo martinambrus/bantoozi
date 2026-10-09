@@ -1,12 +1,8 @@
 import type { ArticleListItem, ArticleListResponse, UserPreferences } from '@bantoozi/shared';
-import {
-  keepPreviousData,
-  useInfiniteQuery,
-  useQueryClient,
-  type InfiniteData,
-} from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
 
+import type { ApiClient } from '../../api/client.js';
 import { useApi } from '../../api/context.js';
 import { isApiError } from '../../api/errors.js';
 import { routes } from '../../api/routes.js';
@@ -14,10 +10,8 @@ import { saveView } from '../../offline/cache.js';
 import { useAccountId } from '../../session/context.js';
 import { useSavedList } from '../offline/saved-copy.js';
 import { useLostConnection, useReconnect } from '../offline/use-connection.js';
-import { PAGE_SIZE, articleListKey, listFilter } from './queries.js';
+import { PAGE_SIZE, articleListKey, listFilter, type ListFilter } from './queries.js';
 import { viewKey, type ReaderView } from './view.js';
-
-type Pages = InfiniteData<ArticleListResponse, string | undefined>;
 
 /** A page after the first could not be asked for any more: the list has to start again. */
 class CursorRefused extends Error {}
@@ -29,6 +23,45 @@ export function isCursorRefused(error: unknown): boolean {
 // 409 STALE_CURSOR, or the 400 of a cursor that expired (spec 08 §5.1).
 function refusesCursor(error: unknown): boolean {
   return isApiError(error) && (error.code === 'STALE_CURSOR' || error.status === 400);
+}
+
+/** What the request for a page reads of the context the query passes it. */
+interface PageRequest {
+  pageParam: string | undefined;
+  signal: AbortSignal;
+}
+
+/** How the pages of a list are asked for, by the list and when it starts again. */
+function listPages(
+  api: ApiClient,
+  filter: ListFilter,
+  queryKey: ReturnType<typeof articleListKey>,
+) {
+  return {
+    queryKey,
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam, signal }: PageRequest) => {
+      try {
+        return await api.call(
+          routes.articleList,
+          {
+            query: {
+              ...filter,
+              limit: PAGE_SIZE,
+              ...(pageParam === undefined ? {} : { cursor: pageParam }),
+            },
+          },
+          { signal },
+        );
+      } catch (error) {
+        if (pageParam !== undefined && refusesCursor(error))
+          throw new CursorRefused('The list has to start again.', { cause: error });
+        throw error;
+      }
+    },
+    getNextPageParam: (last: ArticleListResponse) => last.nextCursor ?? undefined,
+    gcTime: 0,
+  };
 }
 
 /**
@@ -55,32 +88,10 @@ export function useArticleList(
   );
 
   const query = useInfiniteQuery({
-    queryKey,
-    initialPageParam: undefined as string | undefined,
-    queryFn: async ({ pageParam, signal }) => {
-      try {
-        return await api.call(
-          routes.articleList,
-          {
-            query: {
-              ...filter,
-              limit: PAGE_SIZE,
-              ...(pageParam === undefined ? {} : { cursor: pageParam }),
-            },
-          },
-          { signal },
-        );
-      } catch (error) {
-        if (pageParam !== undefined && refusesCursor(error))
-          throw new CursorRefused('The list has to start again.', { cause: error });
-        throw error;
-      }
-    },
-    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    ...listPages(api, filter, queryKey),
     // A tier or a sort that changes keeps the rows until the new ones are there. A new view starts
     // empty, because the page below is remounted for each view.
     placeholderData: keepPreviousData,
-    gcTime: 0,
     staleTime: Infinity,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -108,14 +119,15 @@ export function useArticleList(
     });
   }, [accountId, which, data, dataUpdatedAt, loaded, isPlaceholderData]);
 
+  // Page one alone, in place of every page loaded: those stay, on the screen and in the copy the
+  // device keeps, until it is there, and stay with the error when it cannot be had. A load on its
+  // way is cancelled first, or the new one would wait for it and take its pages instead.
   const reload = useCallback(async () => {
-    queryClient.setQueryData<Pages>(queryKey, (current) =>
-      current === undefined
-        ? undefined
-        : { pages: current.pages.slice(0, 1), pageParams: current.pageParams.slice(0, 1) },
-    );
-    await queryClient.refetchQueries({ queryKey, exact: true });
-  }, [queryClient, queryKey]);
+    await queryClient.cancelQueries({ queryKey, exact: true });
+    await queryClient
+      .infiniteQuery({ ...listPages(api, filter, queryKey), pages: 1, staleTime: 0 })
+      .catch(() => undefined);
+  }, [api, filter, queryClient, queryKey]);
 
   // Every page that is loaded, one after the other. If a cursor of the chain is refused the rows stay
   // as they are: only the reader's own request for more starts the list again.
