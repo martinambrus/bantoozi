@@ -5,7 +5,7 @@
  * - `unauthorized`: the session ended (401) and the same account may sign back in, so work queued
  *   offline is frozen rather than wiped (spec 09 §1);
  * - `remote`: another tab did one of the above and already dealt with persistent storage; only this
- *   tab's memory is left.
+ *   tab's memory is left, and what its own writes stored once that tab began a removal.
  */
 export type ResetReason = 'logout' | 'account_switch' | 'unauthorized' | 'remote';
 

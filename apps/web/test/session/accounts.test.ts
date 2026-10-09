@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { meKey } from '../../src/api/query-keys.js';
 import { routes } from '../../src/api/routes.js';
@@ -11,7 +11,7 @@ import {
   setOfflineEnabled,
 } from '../../src/offline/cache.js';
 import { isOfflineEnabled } from '../../src/offline/device.js';
-import { LAST_ACCOUNT_KEY } from '../../src/offline/names.js';
+import { LAST_ACCOUNT_KEY, OFFLINE_DB, STORES, accountRange } from '../../src/offline/names.js';
 import { listRecords, putRecord } from '../../src/offline/queue.js';
 import { SESSION_CHANNEL } from '../../src/session/session.js';
 import {
@@ -269,5 +269,117 @@ describe('when the session ends or another tab clears', () => {
 
     expect(await rowsOfAccount(A)).toEqual(before);
     expect(localKeysOf(A)).toHaveLength(2);
+  });
+});
+
+describe('when another tab removes the account while this one writes', () => {
+  /** Tabs whose channel messages arrive at once, so that a test can order them around writes. */
+  function instantChannels() {
+    const open = new Set<InstantChannel>();
+    class InstantChannel {
+      onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
+      constructor(readonly name: string) {
+        open.add(this);
+      }
+      postMessage(data: unknown) {
+        for (const other of [...open]) {
+          if (other !== this && other.name === this.name) {
+            other.onmessage?.(new MessageEvent('message', { data }));
+          }
+        }
+      }
+      close() {
+        open.delete(this);
+      }
+    }
+    vi.stubGlobal('BroadcastChannel', InstantChannel);
+  }
+
+  /** The other tab's own connection to the offline database, which shares nothing with this page. */
+  function otherTabDb(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
+      const request = idb.factory.open(OFFLINE_DB);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /** The other tab's sign-out: every row of the account goes, in one transaction begun now. */
+  function removeRows(db: IDBDatabase, accountId: string): Promise<void> {
+    const tx = db.transaction([...STORES], 'readwrite');
+    for (const store of STORES) tx.objectStore(store).delete(accountRange(accountId));
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  /** A row the other tab stores for the account, as a session that began after the sign-out. */
+  function putRow(db: IDBDatabase, store: (typeof STORES)[number], key: string, value: unknown) {
+    const tx = db.transaction(store, 'readwrite');
+    tx.objectStore(store).put(value, key);
+    return new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+  async function signedIn() {
+    instantChannels();
+    const { session } = sessions.start({ me: userA });
+    await session.loadMe();
+    await seed(A);
+    const db = await otherTabDb();
+    const channel = new BroadcastChannel(SESSION_CHANNEL);
+    onTestFinished(() => {
+      db.close();
+      channel.close();
+    });
+    return { db, channel };
+  }
+
+  it('drops a write of this tab that waited for the database when the other tab signed out', async () => {
+    const other = await signedIn();
+
+    const at = Date.now();
+    const removal = removeRows(other.db, A);
+    const writing = saveView(A, 'later', itemList(1), VIEW);
+    other.channel.postMessage({ type: 'reset', removed: A, at });
+
+    await removal;
+    expect(await writing).toBe(false);
+    await settle();
+    expect(await rowsOfAccount(A)).toEqual([]);
+  });
+
+  it('removes again what this tab stored after the other tab began to remove the account', async () => {
+    const other = await signedIn();
+
+    const at = Date.now();
+    const removal = removeRows(other.db, A);
+    expect(await saveView(A, 'later', itemList(1), VIEW)).toBe(true);
+    expect(await putRecord(makeRecord('m2', { accountId: A }))).toBe(true);
+    await removal;
+    expect(await rowsOfAccount(A)).not.toEqual([]);
+
+    other.channel.postMessage({ type: 'reset', removed: A, at });
+
+    await vi.waitFor(async () => expect(await rowsOfAccount(A)).toEqual([]));
+  });
+
+  it('keeps what it did not store since the other tab began, such as the rows of a newer session there', async () => {
+    const other = await signedIn();
+    await settle();
+    const at = Date.now();
+    await removeRows(other.db, A);
+    const newer = makeRecord('m3', { accountId: A });
+    await putRow(other.db, 'queue', `${A}:m3`, newer);
+
+    other.channel.postMessage({ type: 'reset', removed: A, at });
+    await settle();
+
+    expect(await rowsOfAccount(A)).toEqual([['queue', `${A}:m3`, newer]]);
   });
 });

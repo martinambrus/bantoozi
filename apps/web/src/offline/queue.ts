@@ -1,7 +1,7 @@
 import type { RecordPatch } from '../features/reader/actions/types.js';
 import { offlineDatabaseMightExist, offlineDb, type OfflineDb } from './db.js';
 import { isOfflineEnabled, isPurgePending } from './device.js';
-import { clearsOf } from './epoch.js';
+import { clearsOf, noteStore } from './epoch.js';
 import { accountRange, isAccountId, rowKey } from './names.js';
 import type { QueueRecord } from './types.js';
 
@@ -28,6 +28,7 @@ export async function putRecord(record: QueueRecord): Promise<boolean> {
   const opened = await offlineDb();
   if (!opened.available) return false;
   if (!isOfflineEnabled(accountId) || clearsOf(accountId) !== clears) return false;
+  noteStore(accountId);
   try {
     await opened.db.put('queue', record, rowKey(accountId, record.id));
     return true;

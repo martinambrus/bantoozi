@@ -6,7 +6,13 @@ import { createApiClient, type ApiClient } from '../api/client.js';
 import { isApiError, isRetryable } from '../api/errors.js';
 import { meKey } from '../api/query-keys.js';
 import { routes } from '../api/routes.js';
-import { clearAccount, finishPendingPurges, readMe, saveMe } from '../offline/cache.js';
+import {
+  clearAccount,
+  clearedElsewhere,
+  finishPendingPurges,
+  readMe,
+  saveMe,
+} from '../offline/cache.js';
 import {
   clearLastAccount,
   clearLogoutPending,
@@ -77,8 +83,21 @@ export interface Session {
   dispose: () => void;
 }
 
-function isResetMessage(data: unknown): boolean {
+interface ResetMessage {
+  type: 'reset';
+  /** The account whose rows the sending tab removes, from `at` on; absent when it keeps them. */
+  removed?: unknown;
+  at?: unknown;
+}
+
+function isResetMessage(data: unknown): data is ResetMessage {
   return typeof data === 'object' && data !== null && 'type' in data && data.type === 'reset';
+}
+
+/** What the other tabs are told of a reset. */
+function resetMessage(reason: ResetReason, accountId: string | undefined, at: number) {
+  const removes = accountId !== undefined && (reason === 'logout' || reason === 'account_switch');
+  return removes ? { type: 'reset', removed: accountId, at } : { type: 'reset' };
 }
 
 /**
@@ -163,7 +182,13 @@ export function createSession(options: SessionOptions): Session {
 
   if (channel !== null) {
     channel.onmessage = (event: MessageEvent<unknown>) => {
-      if (isResetMessage(event.data)) void reset('remote');
+      const message = event.data;
+      if (!isResetMessage(message)) return;
+      // A write of this tab must not bring back what the other tab removed.
+      if (typeof message.removed === 'string' && typeof message.at === 'number') {
+        void clearedElsewhere(message.removed, message.at);
+      }
+      void reset('remote');
     };
   }
 
@@ -180,12 +205,14 @@ export function createSession(options: SessionOptions): Session {
   }
 
   function reset(reason: ResetReason, accountId: string | undefined = knownAccountId) {
+    // Before the removal begins: the other tabs' writes from then on may land after it.
+    const at = Date.now();
     queryClient.clear();
     queryClient.setQueryData(meKey(), null);
     if (reason === 'logout' || reason === 'remote') knownAccountId = undefined;
     const hooksDone = runResetHooks(reason);
     const removed = removeFromDevice(reason, accountId);
-    if (reason !== 'remote') channel?.postMessage({ type: 'reset' });
+    if (reason !== 'remote') channel?.postMessage(resetMessage(reason, accountId, at));
     return Promise.all([hooksDone, removed]).then(() => undefined);
   }
 

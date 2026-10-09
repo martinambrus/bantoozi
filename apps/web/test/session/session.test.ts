@@ -292,7 +292,9 @@ describe('verifyCode', () => {
     expect(queryClient.getQueryData(accountKey(USER_A_ID, 'articles', 'list'))).toBeUndefined();
     expect(queryClient.getQueryData(meKey())).toEqual(userB);
     expect(keysOf(queryClient)).toEqual([meKey()]);
-    await vi.waitFor(() => expect(tab.heard).toEqual([{ type: 'reset' }]));
+    await vi.waitFor(() =>
+      expect(tab.heard).toEqual([{ type: 'reset', removed: USER_A_ID, at: expect.any(Number) }]),
+    );
   });
 
   it('drops the old account when a refetch of /me answers for another one', async () => {
@@ -306,7 +308,9 @@ describe('verifyCode', () => {
     await vi.waitFor(() => expect(resets).toEqual(['account_switch']));
     expect(queryClient.getQueryData(accountKey(USER_A_ID, 'articles', 'list'))).toBeUndefined();
     await vi.waitFor(() => expect(queryClient.getQueryData(meKey())).toEqual(userB));
-    await vi.waitFor(() => expect(tab.heard).toEqual([{ type: 'reset' }]));
+    await vi.waitFor(() =>
+      expect(tab.heard).toEqual([{ type: 'reset', removed: USER_A_ID, at: expect.any(Number) }]),
+    );
   });
 
   it('is not a switch when a refetch of /me answers for the same account', async () => {
@@ -377,7 +381,9 @@ describe('logout', () => {
     expect(resets).toEqual(['logout']);
     expect(queryClient.getQueryData(meKey())).toBeNull();
     expect(keysOf(queryClient)).toEqual([meKey()]);
-    await vi.waitFor(() => expect(tab.heard).toEqual([{ type: 'reset' }]));
+    await vi.waitFor(() =>
+      expect(tab.heard).toEqual([{ type: 'reset', removed: USER_A_ID, at: expect.any(Number) }]),
+    );
   });
 
   it('counts a 401 as signed out already', async () => {
@@ -464,7 +470,9 @@ describe('resetAccountState', () => {
     expect(keysOf(queryClient)).toEqual([meKey()]);
     expect(queryClient.getQueryData(meKey())).toBeNull();
     expect(resets).toEqual(['logout']);
-    await vi.waitFor(() => expect(tab.heard).toEqual([{ type: 'reset' }]));
+    await vi.waitFor(() =>
+      expect(tab.heard).toEqual([{ type: 'reset', removed: USER_A_ID, at: expect.any(Number) }]),
+    );
   });
 
   it('settles after the asynchronous hooks have', async () => {
@@ -576,7 +584,7 @@ describe('another tab', () => {
     await vi.waitFor(() => expect(second.queryClient.getQueryData(meKey())).toBeNull());
     await settle();
     expect(resets).toEqual(['logout', 'remote']);
-    expect(tab.heard).toEqual([{ type: 'reset' }]);
+    expect(tab.heard).toEqual([{ type: 'reset', removed: USER_A_ID, at: expect.any(Number) }]);
   });
 
   it('stops listening after dispose', async () => {

@@ -10,7 +10,7 @@ import {
   setPurgePending,
   writeOfflineEnabled,
 } from './device.js';
-import { clearsOf, noteClear } from './epoch.js';
+import { clearsOf, lastStoreOf, noteClear, noteStore } from './epoch.js';
 import { entryOf, isExpired, plan, splitEntry, usageOf, utf8Length } from './ledger.js';
 import { LIMITS, STORES, accountRange, isAccountId, rowKey } from './names.js';
 import {
@@ -108,6 +108,7 @@ async function write(
   if (!opened.available) return false;
   if (!isOfflineEnabled(accountId) || clearsOf(accountId) !== clears) return false;
 
+  noteStore(accountId);
   let stored = false;
   try {
     const now = Date.now();
@@ -374,6 +375,17 @@ export async function clearAccount(accountId: string): Promise<boolean> {
   const cleared = await removeRows(accountId);
   setPurgePending(accountId, !cleared);
   return cleared;
+}
+
+/**
+ * Another tab removed the account's rows (spec 09 §1), having begun at `since`. A write of this page
+ * that has not begun to store is dropped; one that began after `since` may have landed after that
+ * removal, so the rows go again.
+ */
+export async function clearedElsewhere(accountId: string, since: number): Promise<void> {
+  if (!isAccountId(accountId)) return;
+  noteClear(accountId);
+  if (lastStoreOf(accountId) >= since) await clearAccount(accountId);
 }
 
 /** Removes again the rows that could not be removed before (spec 09 §1), at start and sign-in. */
