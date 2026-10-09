@@ -294,6 +294,36 @@ describe('profile (spec 09 §7)', () => {
       expect(calls('PATCH /me')).toHaveLength(1);
     });
 
+    it('keeps the edits made while the save was on its way, still to be saved', async () => {
+      const gate = deferred();
+      const { user, calls } = await openSettings({
+        routes: (server) => ({
+          'PATCH /me': async (request, params) => {
+            await gate.promise;
+            return patchMe(server)(request, params);
+          },
+        }),
+      });
+      await user.type(nameField(), 'Ada');
+      await user.click(save());
+      await waitFor(() => expect(calls('PATCH /me')).toHaveLength(1));
+
+      await user.type(nameField(), 'x');
+      await user.click(theme('Dark'));
+      gate.release();
+
+      await waitFor(() => expect(save()).not.toHaveAttribute('aria-busy'));
+      expect(nameField()).toHaveValue('Adax');
+      expect(theme('Dark')).toBeChecked();
+      expect(profile().getByRole('status')).toBeEmptyDOMElement();
+      await user.click(save());
+      await waitFor(() => expect(calls('PATCH /me')).toHaveLength(2));
+      expect(bodiesOf(calls('PATCH /me'))).toEqual([
+        { displayName: 'Ada' },
+        { displayName: 'Adax', preferences: { theme: 'dark' } },
+      ]);
+    });
+
     it('keeps a preference saved meanwhile when the answer of the profile arrives after it', async () => {
       // The profile is saved first; its answer, the account as it stood then, arrives last.
       const gate = deferred();

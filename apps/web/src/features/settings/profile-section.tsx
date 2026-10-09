@@ -1,6 +1,6 @@
 import { LocaleSchema, MAX_DISPLAY_NAME_LENGTH, type Me, type MePatch } from '@bantoozi/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApiMutation } from '../../api/mutation.js';
@@ -71,12 +71,15 @@ export function ProfileSection() {
   const [draft, setDraft, restart] = useDraft(me, draftOf);
   const [saved, setSaved] = useState(false);
   const [failure, setFailure] = useState<unknown>(null);
+  // Counts the edits, so a save can tell whether the form changed while it was on its way.
+  const edits = useRef(0);
   const zones = useMemo(() => timeZones(me.timezone), [me.timezone]);
 
   const patch = patchOf(draft, me);
   const dirty = Object.keys(patch).length > 0;
 
   function edit(change: Partial<Draft>) {
+    edits.current += 1;
     setDraft((current) => ({ ...current, ...change }));
     setSaved(false);
     setFailure(null);
@@ -87,6 +90,8 @@ export function ProfileSection() {
     if (!dirty || update.isPending) return;
     setSaved(false);
     setFailure(null);
+    const sent = draft;
+    const editsSent = edits.current;
     let updated: Me;
     try {
       updated = await update.mutateAsync({ body: patch });
@@ -95,8 +100,9 @@ export function ProfileSection() {
       return;
     }
     // Only what this save sent: a preference saved meanwhile may be newer than the rest of `updated`.
-    restart(storeSavedMe(queryClient, patch, updated) ?? updated);
-    setSaved(true);
+    // What was edited while it was on its way stays in the form, still to be saved.
+    restart(storeSavedMe(queryClient, patch, updated) ?? updated, sent);
+    setSaved(edits.current === editsSent);
   }
 
   return (
