@@ -73,6 +73,15 @@ export function withSavedFields(current: Me, patch: MePatch, saved: Me): Me {
 }
 
 /**
+ * Asks for the account again if a `GET /me` is on its way once a save's answer is shown: it may have
+ * read the account before the save, and writing the cache leaves it running, so its answer would
+ * put the saved fields back as they were. The new request reads them as saved.
+ */
+export function readMeAfterSave(queryClient: QueryClient): void {
+  void queryClient.refetchQueries({ queryKey: meKey(), exact: true, fetchStatus: 'fetching' });
+}
+
+/**
  * Takes the answer of a `PATCH /me` into the account the app shows (`withSavedFields`), while that
  * account is still signed in. Returns the account as the cache holds it now, or null when nothing
  * was taken.
@@ -80,7 +89,8 @@ export function withSavedFields(current: Me, patch: MePatch, saved: Me): Me {
 export function storeSavedMe(queryClient: QueryClient, patch: MePatch, saved: Me): Me | null {
   const current = queryClient.getQueryData<Me | null>(meKey());
   if (!current || current.id !== saved.id) return null;
-  return (
-    queryClient.setQueryData<Me | null>(meKey(), withSavedFields(current, patch, saved)) ?? null
-  );
+  const stored =
+    queryClient.setQueryData<Me | null>(meKey(), withSavedFields(current, patch, saved)) ?? null;
+  readMeAfterSave(queryClient);
+  return stored;
 }

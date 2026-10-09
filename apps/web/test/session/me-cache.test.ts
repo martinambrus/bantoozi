@@ -80,6 +80,27 @@ describe('storeSavedMe', () => {
     expect(queryClient.getQueryData(meKey())).toBe(stored);
   });
 
+  it('asks for the account again when a `GET /me` that read it before the save is on its way', async () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData<Me | null>(meKey(), makeMe({ displayName: 'Old' }));
+    const reads: Array<(me: Me) => void> = [];
+    const reading = queryClient.fetchQuery({
+      queryKey: meKey(),
+      queryFn: () => new Promise<Me | null>((resolve) => reads.push(resolve)),
+    });
+
+    storeSavedMe(queryClient, { displayName: 'Ada' }, makeMe({ displayName: 'Ada' }));
+    reads[0]!(makeMe({ displayName: 'Old' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(queryClient.getQueryData<Me>(meKey())?.displayName).toBe('Ada');
+    expect(reads).toHaveLength(2);
+    const fresh = makeMe({ displayName: 'Ada', locale: 'sk' });
+    reads[1]!(fresh);
+    await expect(reading).resolves.toEqual(fresh);
+    expect(queryClient.getQueryData(meKey())).toEqual(fresh);
+  });
+
   it('takes nothing after a sign-out or for another account', () => {
     const queryClient = new QueryClient();
     const saved = makeMe({ displayName: 'Ada' });

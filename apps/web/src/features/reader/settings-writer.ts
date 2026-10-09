@@ -4,6 +4,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { ApiClient } from '../../api/client.js';
 import { meKey } from '../../api/query-keys.js';
 import { routes } from '../../api/routes.js';
+import { readMeAfterSave } from '../../session/me.js';
 import { subscriptionsKey } from '../feeds/subscriptions.js';
 
 /** The preferences the reader's header changes. */
@@ -99,6 +100,7 @@ export function createSettingsWriter({
           // Only what this request sent is taken: what another save changed since may be newer
           // than the rest of the answer.
           show(me, { ...pick(updated.preferences, keysOf(body)), ...waiting });
+          readMeAfterSave(queryClient);
           if ('defaultTier' in body) {
             void queryClient.invalidateQueries({ queryKey: subscriptionsKey(updated.id) });
           }

@@ -60,6 +60,28 @@ describe('the reader settings writer', () => {
     expect(now.preferences.demote.stale).toBe('on');
   });
 
+  it('asks for the account again when a `GET /me` that read it before the save is on its way', async () => {
+    const queryClient = new QueryClient();
+    const before = makeMe({ preferences: { sort: 'score' } });
+    queryClient.setQueryData<Me | null>(meKey(), before);
+    const reads: Array<(me: Me) => void> = [];
+    void queryClient.fetchQuery({
+      queryKey: meKey(),
+      queryFn: () => new Promise<Me | null>((resolve) => reads.push(resolve)),
+    });
+    const { api, answers } = heldApi();
+    const writer = createSettingsWriter({ api, queryClient, onRefused: () => {} });
+
+    writer.change({ sort: 'date' });
+    answers[0]!({ ...before, preferences: { ...before.preferences, sort: 'date' } });
+    await settle();
+    reads[0]!(before);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(queryClient.getQueryData<Me>(meKey())!.preferences.sort).toBe('date');
+    expect(reads).toHaveLength(2);
+  });
+
   describe('when the account signs out while a save is on its way', () => {
     const a = makeMe({ preferences: { sort: 'score', simpleMode: false } });
     const b = makeMe({
