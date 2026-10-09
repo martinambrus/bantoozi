@@ -1,9 +1,9 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { IDBObjectStore as FakeIDBObjectStore } from 'fake-indexeddb';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { readMe, saveDetail, saveView, setOfflineEnabled } from '../../src/offline/cache.js';
-import { resetOfflineDb } from '../../src/offline/db.js';
+import { offlineDb, resetOfflineDb } from '../../src/offline/db.js';
 import { isOfflineEnabled } from '../../src/offline/device.js';
 import { listRecords, putRecord } from '../../src/offline/queue.js';
 import { REPLAY_EVENT } from '../../src/offline/replay.js';
@@ -93,6 +93,19 @@ describe('the Offline reading section', () => {
     await vi.waitFor(async () => expect((await readMe(A))?.me.email).toBe(EMAIL));
   });
 
+  it('stores nothing of the account when it is signed out while turning on', async () => {
+    const { session } = await openSettings();
+
+    fireEvent.click(toggle());
+    // The sign-out removes the account from the device while the store opens.
+    void session.resetAccountState();
+
+    // The choice is on once the store is open, and goes back off when the account is not stored.
+    await offlineDb();
+    await vi.waitFor(() => expect(isOfflineEnabled(A)).toBe(false));
+    expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]);
+  });
+
   it('shows how much is stored and how many changes were not sent', async () => {
     await storedArticles(2);
 
@@ -131,6 +144,23 @@ describe('the Offline reading section', () => {
       expect(within(offline()).getByText('Downloaded articles cleared.')).toBeVisible();
       expect(toggle()).toHaveAttribute('aria-checked', 'true');
       expect(isOfflineEnabled(A)).toBe(true);
+    });
+
+    it('does not store the account again when it is signed out meanwhile', async () => {
+      await storedArticles();
+      const { session } = await openSettings();
+      await within(offline()).findByText('4 articles stored on this device');
+      const removed = new Promise((resolve) => {
+        window.addEventListener(REPLAY_EVENT, resolve, { once: true });
+      });
+
+      fireEvent.click(clearButton());
+      // The sign-out comes while the unsent changes are counted, before the articles go.
+      void session.resetAccountState();
+
+      // The page is asked to replay once the rows are gone, just before the account would be stored.
+      await removed;
+      expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]);
     });
 
     it('asks first when changes were not sent, and keeps everything on Cancel', async () => {
