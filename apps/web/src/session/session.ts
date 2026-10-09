@@ -369,6 +369,8 @@ export function createSession(options: SessionOptions): Session {
   /**
    * Runs `work` while no other tab of the browser runs work under the sign-in lock. The answer to a
    * sign-out clears the session cookie, so none may be on its way while a sign-in sets the next one.
+   * Every browser the build targets has Web Locks in a secure context, which production always is;
+   * without them, as in tests or over plain http, a tab only takes turns with itself.
    */
   async function exclusively<T>(work: () => Promise<T>): Promise<T> {
     if ('locks' in navigator) return navigator.locks.request(SIGN_IN_LOCK, () => work());
