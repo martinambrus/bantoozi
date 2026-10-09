@@ -2,7 +2,7 @@ import type { Me } from '@bantoozi/shared';
 import type { DBSchema } from 'idb';
 
 import type { Fence, ReaderAction, ReaderState } from '../features/reader/actions/types.js';
-import type { OfflineDetail, OfflineItem } from './projection.js';
+import type { OfflineDetail, OfflineItem, ViewProjection } from './projection.js';
 
 /** One reader action waiting to be sent (spec 09 §1), schema 1. */
 export interface QueueRecord {
@@ -55,6 +55,8 @@ export interface ItemRow {
 
 export interface ViewRow {
   itemIds: string[];
+  /** What each row shows in this view, in the order of `itemIds`; absent in rows saved before. */
+  projections?: ViewProjection[];
   asOf: string;
   datasetVersion: string;
   savedAt: number;

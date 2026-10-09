@@ -549,6 +549,64 @@ describe('rows that hold a newer state', () => {
   });
 });
 
+describe('an article that two views show', () => {
+  // The same article through two feeds: one blocks images and has not analysed it, one shows them.
+  const blocking = fullItem({
+    id: '1',
+    feed: { id: '7', title: 'Blocking Weekly', iconUrl: null },
+    firstSeenAt: '2026-05-31T08:05:00.000Z',
+    mediaPolicyFeedId: '7',
+    effectiveImagesAllowed: false,
+    analysis: { mode: 'off', status: 'not_requested', requestId: null },
+    stateVersion: '5',
+    rating: 1,
+  });
+  const allowing = fullItem({
+    id: '1',
+    feed: { id: '5', title: 'Pictures Daily', iconUrl: 'https://example.test/5.png' },
+    firstSeenAt: '2026-05-31T09:00:00.000Z',
+    mediaPolicyFeedId: '5',
+    effectiveImagesAllowed: true,
+    analysis: { mode: 'training', status: 'complete', requestId: null },
+    stateVersion: '4',
+    rating: null,
+  });
+  const shownBy = (item: ArticleListItem) => ({
+    feed: item.feed,
+    firstSeenAt: item.firstSeenAt,
+    mediaPolicyFeedId: item.mediaPolicyFeedId,
+    effectiveImagesAllowed: item.effectiveImagesAllowed,
+    analysis: item.analysis,
+  });
+  const first = async (view: string) => (await readView(A, view))?.items[0];
+
+  it('keeps what a view showed when another view saves the article later', async () => {
+    await setOfflineEnabled(A, true);
+    await saveView(A, 'feed:7', [{ ...blocking, stateVersion: '4', rating: null }], VIEW);
+    await saveView(A, 'feed:5', [allowing], VIEW);
+
+    expect(await first('feed:7')).toMatchObject(shownBy(blocking));
+    expect(await first('feed:5')).toMatchObject(shownBy(allowing));
+  });
+
+  it('is read back in each view as that view showed it, with the newest reader state', async () => {
+    await setOfflineEnabled(A, true);
+    await saveView(A, 'feed:7', [blocking], VIEW);
+    await saveView(A, 'feed:5', [allowing], VIEW);
+
+    expect(await first('feed:7')).toMatchObject({
+      ...shownBy(blocking),
+      stateVersion: '5',
+      rating: 1,
+    });
+    expect(await first('feed:5')).toMatchObject({
+      ...shownBy(allowing),
+      stateVersion: '5',
+      rating: 1,
+    });
+  });
+});
+
 describe('the saved copy of a bookmark', () => {
   const SNAPSHOT = fullDetail().bookmarkSnapshot;
   /** The article as a view other than Bookmarks reads it: bookmarked, without the saved copy. */

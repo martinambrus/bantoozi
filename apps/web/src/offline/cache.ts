@@ -13,7 +13,13 @@ import {
 import { clearsOf, noteClear } from './epoch.js';
 import { entryOf, isExpired, plan, splitEntry, usageOf, utf8Length } from './ledger.js';
 import { LIMITS, STORES, accountRange, isAccountId, rowKey } from './names.js';
-import { projectDetail, projectItem, type OfflineDetail, type OfflineItem } from './projection.js';
+import {
+  projectDetail,
+  projectItem,
+  projectView,
+  type OfflineDetail,
+  type OfflineItem,
+} from './projection.js';
 import { countRecords } from './queue.js';
 import type { DetailRow, ItemRow, Manifest, MeRow, OfflineSchema, ViewRow } from './types.js';
 
@@ -241,6 +247,7 @@ export function saveView(
       name: viewKey,
       value: {
         itemIds: kept.map((item) => item.id),
+        projections: kept.map(projectView),
         asOf: view.asOf,
         datasetVersion: view.datasetVersion,
         savedAt: now,
@@ -290,11 +297,12 @@ export async function readView(accountId: string, viewKey: string): Promise<Stor
     return null;
   }
   return {
-    items: items
-      .filter(
-        (entry): entry is ItemRow => entry !== undefined && !isExpired(entry.savedAt, loaded.now),
-      )
-      .map((entry) => entry.item),
+    // The article and the reader's state are shared; the view's own projection goes on top.
+    items: items.flatMap((entry, index) =>
+      entry === undefined || isExpired(entry.savedAt, loaded.now)
+        ? []
+        : [{ ...entry.item, ...row.projections?.[index] }],
+    ),
     asOf: row.asOf,
     datasetVersion: row.datasetVersion,
     savedAt: row.savedAt,
