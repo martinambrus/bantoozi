@@ -122,6 +122,8 @@ export function createSession(options: SessionOptions): Session {
   let logoutRetry: ReturnType<typeof setTimeout> | undefined;
   let logoutFailures = 0;
   let disposed = false;
+  // How many times the account state was dropped, so work begun before that can tell.
+  let resets = 0;
 
   function idInCache(): string | null | undefined {
     const me = queryClient.getQueryData<Me | null>(meKey());
@@ -135,11 +137,13 @@ export function createSession(options: SessionOptions): Session {
 
   /**
    * Keeps the account for an offline start. What a sign-out could not remove from the device goes
-   * first: until it is gone, nothing of that account can be stored or read.
+   * first: until it is gone, nothing of that account can be stored or read. A reset meanwhile (a
+   * sign-out, another account) drops the save, so it cannot bring back what the reset removed.
    */
   async function keepForOffline(me: Me) {
+    const before = resets;
     await finishPendingPurges();
-    await saveMe(me.id, me);
+    if (resets === before) await saveMe(me.id, me);
   }
 
   function meChanged(me: Me | null) {
@@ -201,6 +205,7 @@ export function createSession(options: SessionOptions): Session {
   }
 
   function reset(reason: ResetReason, accountId: string | undefined = knownAccountId) {
+    resets += 1;
     // Before the removal begins: the other tabs' writes from then on may land after it.
     const at = Date.now();
     queryClient.clear();
