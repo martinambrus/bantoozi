@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useApiMutation } from '../../api/mutation.js';
 import { routes } from '../../api/routes.js';
 import { quotaDetails, type QuotaDetails } from '../../components/error-message.js';
+import { useSession } from '../../session/context.js';
 import { displayTitle } from '../feeds/folders.js';
 import { useSubscriptionsCache } from '../feeds/subscriptions.js';
 
@@ -30,9 +31,11 @@ export interface BundleRun {
 /**
  * Adds the addresses of a bundle one after the other, each as its own subscription request with no
  * folder, and records the outcome per address. A plan limit ends the run; any other failure only
- * fails its own address. Every feed starts with classification Off.
+ * fails its own address. So does the end of the sign-in that started it: the requests after that
+ * would go out with the cookie of whoever signs in next. Every feed starts with classification Off.
  */
 export function useBundleImport() {
+  const session = useSession();
   const subscribe = useApiMutation(routes.subscriptionsCreate);
   const cache = useSubscriptionsCache();
   const [runs, setRuns] = useState<Readonly<Record<string, BundleRun>>>({});
@@ -45,6 +48,7 @@ export function useBundleImport() {
       if (busy.current) return;
       busy.current = true;
       setRunning(true);
+      const signIn = session.currentSignIn();
       const known = new Set(cache.known()?.map((subscription) => subscription.feed.id));
       const rows: ImportRow[] = urls.map((url) => ({ url, status: 'waiting' }));
       let quota: QuotaDetails | null = null;
@@ -58,7 +62,7 @@ export function useBundleImport() {
       publish(true);
       try {
         for (const row of rows) {
-          if (quota !== null) {
+          if (quota !== null || session.currentSignIn() !== signIn) {
             row.status = 'skipped';
             continue;
           }
@@ -88,7 +92,7 @@ export function useBundleImport() {
         void cache.refresh();
       }
     },
-    [cache, mutateAsync],
+    [cache, mutateAsync, session],
   );
 
   return { runs, running, add };

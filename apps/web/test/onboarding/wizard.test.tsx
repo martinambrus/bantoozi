@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
@@ -357,6 +357,37 @@ describe('starter bundles (spec 09 §4 step 2)', () => {
     expect(rows[0]).toHaveTextContent('Added');
     expect(rows[1]).toHaveTextContent("Couldn't add");
     for (const row of rows.slice(2)) expect(row).toHaveTextContent('Not tried');
+  });
+
+  it('sends nothing more of a bundle once the sign-in that asked for it has ended', async () => {
+    const answer = gate();
+    let sent = 0;
+    const { app } = await openWizard('/onboarding?step=feeds', {
+      routes: {
+        'POST /subscriptions': async (request) => {
+          const n = sent++;
+          if (n === 0) await answer.opened;
+          const { url } = bodyOf(request) as { url: string };
+          return json(201, {
+            subscription: feed(String(40 + n), 'Slovak feed', { feed: { url } }),
+          });
+        },
+      },
+    });
+    const slovak = bundle('slovak-news');
+
+    await app.user.click(
+      within(await bundleItem('Slovak news')).getByRole('button', {
+        name: `Add these ${slovak.urls.length} feeds: Slovak news`,
+      }),
+    );
+    await waitFor(() => expect(app.calls('POST /subscriptions')).toHaveLength(1));
+
+    await act(() => app.session.resetAccountState());
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(app.calls('POST /subscriptions')).toHaveLength(1);
   });
 });
 
