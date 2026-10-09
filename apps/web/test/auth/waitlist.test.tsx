@@ -172,6 +172,28 @@ describe('/waitlist', () => {
     expect(app.calls(WAITLIST)).toHaveLength(1);
   });
 
+  it('confirms the address that was sent when the field changed meanwhile', async () => {
+    let release: () => void = () => undefined;
+    const opened = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const app = await open({
+      path: '/waitlist',
+      server: waitlistServer(async () => {
+        await opened;
+        return json(202, { next: 'waitlisted' });
+      }),
+    });
+    await join(app);
+
+    await app.user.type(screen.getByLabelText('Email'), '.uk');
+    release();
+
+    await screen.findByRole('heading', { name: "You're on the waitlist" });
+    expect(screen.getByText(`We'll email ${EMAIL} when your invite is ready.`)).toBeVisible();
+    expect(bodyOf(app.calls(WAITLIST)[0]!)).toMatchObject({ email: EMAIL });
+  });
+
   it('is in Slovak for a Slovak browser', async () => {
     const en = createI18n('en');
     const sk = createI18n('sk');

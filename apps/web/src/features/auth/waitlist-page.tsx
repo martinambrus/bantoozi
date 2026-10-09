@@ -42,12 +42,13 @@ export function WaitlistPage() {
     </AuthFooterRow>
   );
 
-  // The answer is the same whether or not the address was already listed, and so is this text.
-  if (joined) {
+  // The answer is the same whether or not the address was already listed, and so is this text. It
+  // names the address that was sent, which the field may have changed from since.
+  if (join.isSuccess) {
     return (
       <AuthLayout
         title={t('waitlist.doneTitle')}
-        lead={t('waitlist.doneBody', { email })}
+        lead={t('waitlist.doneBody', { email: join.variables.body.email })}
         headingRef={confirmation}
         footer={footer}
       />
