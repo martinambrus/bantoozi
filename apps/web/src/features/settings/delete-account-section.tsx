@@ -43,6 +43,7 @@ function DeleteDialog({ onClose }: { onClose: () => void }) {
     event.preventDefault();
     if (!confirmed || busy) return;
     setFailure(null);
+    const signIn = session.currentSignIn();
     try {
       await remove.mutateAsync();
     } catch (error) {
@@ -52,7 +53,9 @@ function DeleteDialog({ onClose }: { onClose: () => void }) {
     setSigningOut(true);
     // Unlike a sign-out, a deletion also forgets that this device kept the account's articles.
     writeOfflineEnabled(me.id, false);
-    await session.resetAccountState();
+    // Another account, or this one again, may have signed in while the deletion was on its way: what
+    // the tab shows then is not the deleted account's to drop.
+    if (!(await session.dropDeletedAccount(me.id, signIn))) return;
     toast.show({
       id: 'account-deleted',
       message: t('delete.done'),

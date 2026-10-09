@@ -1,9 +1,24 @@
 import type { Me } from '@bantoozi/shared';
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  vi,
+} from 'vitest';
 
 import { meKey } from '../../src/api/query-keys.js';
-import { isOfflineEnabled, writeOfflineEnabled } from '../../src/offline/device.js';
+import {
+  clearLastAccount,
+  isOfflineEnabled,
+  readLastAccount,
+  writeOfflineEnabled,
+} from '../../src/offline/device.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
 import { USER_A_ID, USER_B_ID, makeMe } from '../session/fixtures.js';
 import { EMAIL, deferred, goOffline, openSettings, section } from './support.js';
@@ -638,6 +653,75 @@ describe('deleting the account (spec 09 §7)', () => {
 
       await screen.findByRole('heading', { level: 1, name: 'Sign in' });
       expect(calls('DELETE /me')).toHaveLength(1);
+    });
+
+    it('leaves alone another account that signed in while the deletion was on its way', async () => {
+      const gate = deferred();
+      const userB = makeMe({ id: USER_B_ID, email: 'b@example.com', displayName: 'Grace' });
+      const keptByB = `${USER_B_ID}:interests:keep:5:2`;
+      writeOfflineEnabled(USER_A_ID, true);
+      writeOfflineEnabled(USER_B_ID, true);
+      onTestFinished(() => {
+        clearLastAccount();
+        localStorage.removeItem(keptByB);
+      });
+      const { user, calls, queryClient } = await openDialog({
+        routes: {
+          'DELETE /me': async () => {
+            await gate.promise;
+            return noContent();
+          },
+        },
+      });
+      await user.type(typed(), EMAIL);
+      await user.click(confirm());
+      await waitFor(() => expect(calls('DELETE /me')).toHaveLength(1));
+
+      // Another tab signs in as B; this one takes it, A's state removed first.
+      act(() => {
+        queryClient.setQueryData(meKey(), userB);
+      });
+      await waitFor(() => expect(queryClient.getQueryData<Me>(meKey())?.id).toBe(USER_B_ID));
+      localStorage.setItem(keptByB, '1');
+      gate.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(queryClient.getQueryData<Me>(meKey())?.id).toBe(USER_B_ID);
+      expect(localStorage.getItem(keptByB)).toBe('1');
+      expect(readLastAccount()?.id).toBe(USER_B_ID);
+      expect(isOfflineEnabled(USER_B_ID)).toBe(true);
+      expect(isOfflineEnabled(USER_A_ID)).toBe(false);
+      expect(screen.queryByText(/Your account is deleted/)).toBeNull();
+    });
+
+    it('drops what a 401 left of the account when the deletion ended the session before it was answered', async () => {
+      const gate = deferred();
+      const { user, calls, session, queryClient } = await openDialog({
+        routes: {
+          'DELETE /me': async () => {
+            await gate.promise;
+            return noContent();
+          },
+        },
+      });
+      await user.type(typed(), EMAIL);
+      await user.click(confirm());
+      await waitFor(() => expect(calls('DELETE /me')).toHaveLength(1));
+
+      // The server ended every session of the account; another request of the page heard a 401.
+      act(() => {
+        session.unauthorized(session.currentCookie());
+      });
+      expect(queryClient.getQueryData(meKey())).toBeNull();
+      expect(readLastAccount()?.id).toBe(USER_A_ID);
+      gate.release();
+
+      expect(
+        await screen.findByText(
+          'Your account is deleted. Sign in again within 7 days to restore it.',
+        ),
+      ).toBeVisible();
+      await waitFor(() => expect(readLastAccount()).toBeNull());
     });
   });
 

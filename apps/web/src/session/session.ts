@@ -81,6 +81,13 @@ export interface Session {
   logout: () => Promise<LogoutResult>;
   /** Drops everything private: the query cache, the registered stores, the other tabs' memory. */
   resetAccountState: () => Promise<void>;
+  /**
+   * After the account was deleted, drops its state as `resetAccountState` does, if the sign-in
+   * `signIn` (`currentSignIn()` when the deletion was asked for) lasts, or a 401 ended it, which
+   * left the account's rows on the device. Another sign-in since, or a sign-out that removed the
+   * account already, is left as it is. Answers whether the account was dropped here.
+   */
+  dropDeletedAccount: (accountId: string, signIn: number) => Promise<boolean>;
   /** Which sign-in lasts now. It changes with who is signed in, so work begun earlier can tell. */
   currentSignIn: () => number;
   /**
@@ -424,6 +431,16 @@ export function createSession(options: SessionOptions): Session {
     return user;
   }
 
+  async function dropDeletedAccount(accountId: string, signIn: number): Promise<boolean> {
+    if (knownAccountId !== accountId) return false;
+    // A 401 since is the deletion too, which ended every session of the account: the tab is signed
+    // out, and what the 401 kept of the account goes now.
+    const endedBy401 = signIns === signIn + 1 && idInCache() === null;
+    if (signIns !== signIn && !endedBy401) return false;
+    await reset('logout', accountId);
+    return true;
+  }
+
   async function logout(): Promise<LogoutResult> {
     // The device is signed out before the server answers, which may take long or never come if the
     // page closes first; the marker then ends the server session at the next start (spec 09 §1).
@@ -450,6 +467,7 @@ export function createSession(options: SessionOptions): Session {
     verifyCode,
     logout,
     resetAccountState: () => reset('logout'),
+    dropDeletedAccount,
     currentSignIn: () => signIns,
     currentCookie: () => cookies,
     unauthorized: unauthorizedIn,
