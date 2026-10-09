@@ -78,11 +78,6 @@ export function readMeAfterSave(queryClient: QueryClient): void {
   readAgainIfFetching(queryClient, meKey());
 }
 
-/** Whether `accountId` is the account signed in now: work it began goes on only while it is. */
-export function isSignedIn(queryClient: QueryClient, accountId: string): boolean {
-  return queryClient.getQueryData<Me | null>(meKey())?.id === accountId;
-}
-
 /**
  * Takes the answer of a `PATCH /me` into the account the app shows (`withSavedFields`), while that
  * account is still signed in. Returns the account as the cache holds it now, or null when nothing

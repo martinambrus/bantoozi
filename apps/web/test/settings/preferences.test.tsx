@@ -648,6 +648,31 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
       expect(bodiesOf(calls('PATCH /me'))).toEqual([{ preferences: { defaultTier: 4 } }]);
     });
 
+    it('drops a change that waits when the account signs out and in again before it can go', async () => {
+      const gate = deferred();
+      let sent = 0;
+      const { user, calls, session, queryClient } = await openSettings({
+        routes: (server) => ({
+          'PATCH /me': async (request, params) => {
+            if (sent++ === 0) await gate.promise;
+            return patchMe(server)(request, params);
+          },
+        }),
+      });
+      await user.click(option('Minimum tier', '4'));
+      await user.click(option('Minimum tier', '2'));
+      const me = queryClient.getQueryData<Me>(meKey());
+
+      await act(() => session.resetAccountState());
+      act(() => {
+        queryClient.setQueryData(meKey(), me);
+      });
+      gate.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(bodiesOf(calls('PATCH /me'))).toEqual([{ preferences: { defaultTier: 4 } }]);
+    });
+
     it('keeps an earlier change that was saved when the next change of the setting fails', async () => {
       const gate = deferred();
       let sent = 0;

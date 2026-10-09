@@ -4,8 +4,8 @@ import { createContext, useContext, useRef, useState, type ReactNode } from 'rea
 
 import { useApiMutation } from '../../api/mutation.js';
 import { routes } from '../../api/routes.js';
-import { useMe } from '../../session/context.js';
-import { isSignedIn, storeSavedMe } from '../../session/me.js';
+import { useMe, useSession } from '../../session/context.js';
+import { storeSavedMe } from '../../session/me.js';
 
 type Nested<Group extends string, Leaves> = {
   [Leaf in keyof Leaves & string as `${Group}.${Leaf}`]: Leaves[Leaf];
@@ -85,6 +85,7 @@ export function usePreferenceSaver(): PreferenceSaver {
  */
 export function PreferenceSaverProvider({ children }: { children: ReactNode }) {
   const me = useMe();
+  const session = useSession();
   const queryClient = useQueryClient();
   const update = useApiMutation(routes.meUpdate);
   const [pending, setPending] = useState<ReadonlyMap<SettingId, SettingValues[SettingId]>>(
@@ -120,6 +121,7 @@ export function PreferenceSaverProvider({ children }: { children: ReactNode }) {
   }
 
   async function send(id: SettingId, value: SettingValues[SettingId], change: number) {
+    const signIn = session.currentSignIn();
     sending.current.add(id);
     try {
       await save(id, value, change);
@@ -127,9 +129,10 @@ export function PreferenceSaverProvider({ children }: { children: ReactNode }) {
       sending.current.delete(id);
       const next = waiting.current.get(id);
       waiting.current.delete(id);
-      // What waits is for the account that changed it, which may have signed out meanwhile: the
-      // request would then go out with no session or with another account's.
-      if (next !== undefined && isSignedIn(queryClient, me.id)) {
+      // What waits belongs to the sign-in it was changed in, which may have ended meanwhile. Sent
+      // then, it would go out with no session, with another account's, or in a later sign-in over
+      // what was changed there since.
+      if (next !== undefined && session.currentSignIn() === signIn) {
         void send(id, next.value, next.change);
       }
     }
