@@ -23,6 +23,8 @@ export interface Server {
   logout?: (request: RecordedRequest) => Response | Promise<Response>;
   /** Refuses every request as a browser without a connection does. */
   offline?: boolean;
+  /** Holds each answer to `GET /me`, as it stood when it was asked, until this settles. */
+  holdMe?: Promise<unknown>;
 }
 
 function handlerFor(server: Server): FakeHandler {
@@ -30,8 +32,10 @@ function handlerFor(server: Server): FakeHandler {
     if (server.offline === true) throw new TypeError('Failed to fetch');
     const operation = `${request.method} ${request.pathname.replace('/api/v1', '')}`;
     switch (operation) {
-      case 'GET /me':
-        return server.me === null ? failure(401, 'UNAUTHENTICATED') : json(200, server.me);
+      case 'GET /me': {
+        const answer = server.me === null ? failure(401, 'UNAUTHENTICATED') : json(200, server.me);
+        return server.holdMe === undefined ? answer : server.holdMe.then(() => answer);
+      }
       case 'POST /auth/verify':
         if (server.verifiesAs === undefined) return failure(400, 'INVALID_CODE');
         server.me = server.verifiesAs;

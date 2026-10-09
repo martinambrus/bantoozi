@@ -170,6 +170,9 @@ export function createSession(options: SessionOptions): Session {
   let restoring = false;
   // The removal of the previous account's data after another account arrived.
   let switching: Promise<void> | null = null;
+  // The account a switch shows once the previous one is removed, and whether it asks the server
+  // instead, because of what came meanwhile (`switchAccount`).
+  let arriving: { id: string; ask: boolean } | null = null;
   let finishing: Promise<void> | null = null;
   // Where the browser has no Web Locks, the work of this tab still takes turns.
   let ownTurn: Promise<unknown> = Promise.resolve();
@@ -212,10 +215,7 @@ export function createSession(options: SessionOptions): Session {
       // A `/me` answer for another account (a window that shares the cookie but not the channel
       // signed in): the old account's data goes before the new one is shown.
       if (previousAccountId !== undefined && previousAccountId !== me.id) {
-        const removal = Promise.resolve().then(async () => {
-          await reset('account_switch', previousAccountId);
-          queryClient.setQueryData(meKey(), me);
-        });
+        const removal = Promise.resolve().then(() => switchAccount(previousAccountId, me));
         switching = removal;
         void removal.finally(() => {
           if (switching === removal) switching = null;
@@ -244,7 +244,8 @@ export function createSession(options: SessionOptions): Session {
       if (isSignedInMessage(message)) {
         // Every request of this tab goes out as that account from now on. A tab that shows another
         // one takes it as a `/me` answer for it would, the earlier account removed first; a tab that
-        // shows nobody stays signed out.
+        // shows nobody stays signed out, unless it is removing an earlier account to show another,
+        // which asks who is signed in once that is done (`switchAccount`).
         cookies += 1;
         const shown = idInCache();
         if (typeof shown !== 'string') return;
@@ -275,6 +276,16 @@ export function createSession(options: SessionOptions): Session {
         void queryClient.refetchQueries({ queryKey: meKey(), exact: true });
         return;
       }
+      // A tab about to show another account once the earlier one is removed asks too, when that is
+      // done: the tab that signed in removes the earlier account as well.
+      if (
+        typeof message.account === 'string' &&
+        arriving !== null &&
+        arriving.id !== message.account
+      ) {
+        arriving.ask = true;
+        return;
+      }
       void reset('remote');
     };
   }
@@ -302,6 +313,31 @@ export function createSession(options: SessionOptions): Session {
     const removed = removeFromDevice(reason, accountId);
     if (reason !== 'remote') channel?.postMessage(resetMessage(reason, accountId, at));
     return Promise.all([hooksDone, removed]).then(() => undefined);
+  }
+
+  /**
+   * Removes the previous account and then shows `me`, unless something decided otherwise meanwhile:
+   * a sign-out or another reset leaves the tab signed out, and a sign-in in another tab, or a reset
+   * there of another account than `me`, leaves it to the server to say who is signed in.
+   */
+  async function switchAccount(previousAccountId: string, me: Me): Promise<void> {
+    const removed = reset('account_switch', previousAccountId);
+    const before = { resets, cookies };
+    const arrival = { id: me.id, ask: false };
+    arriving = arrival;
+    try {
+      await removed;
+    } finally {
+      if (arriving === arrival) arriving = null;
+    }
+    if (resets !== before.resets) return;
+    if (cookies === before.cookies && !arrival.ask) {
+      queryClient.setQueryData(meKey(), me);
+      return;
+    }
+    // Nobody is signed in while a sign-out is on its way to the server, whatever it still says.
+    if (isLogoutPending()) return;
+    await queryClient.fetchQuery({ ...meQuery, staleTime: 0 }).catch(() => undefined);
   }
 
   // The answer 401 of the `/me` probe itself arrives while nobody is known yet: nothing to drop.
@@ -423,11 +459,13 @@ export function createSession(options: SessionOptions): Session {
       channel?.postMessage({ type: 'signed-in', me: answer.user });
       return answer;
     });
-    if (knownAccountId !== undefined && knownAccountId !== user.id) {
-      await reset('account_switch', knownAccountId);
-    }
+    const previousAccountId = knownAccountId;
     knownAccountId = user.id;
-    queryClient.setQueryData(meKey(), user);
+    if (previousAccountId !== undefined && previousAccountId !== user.id) {
+      await switchAccount(previousAccountId, user);
+    } else {
+      queryClient.setQueryData(meKey(), user);
+    }
     return user;
   }
 

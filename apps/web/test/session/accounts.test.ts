@@ -47,6 +47,31 @@ async function seed(id: string) {
   localStorage.setItem(`${id}:feeds:dead-feed-dismissed:9:2026-10-01`, '1');
 }
 
+/** Tabs whose channel messages arrive at once, so that a test can order them around its steps. */
+function instantChannels() {
+  const open = new Set<InstantChannel>();
+  class InstantChannel {
+    onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
+    constructor(readonly name: string) {
+      open.add(this);
+    }
+    postMessage(data: unknown) {
+      for (const other of [...open]) {
+        if (other !== this && other.name === this.name) {
+          other.onmessage?.(new MessageEvent('message', { data }));
+        }
+      }
+    }
+    close() {
+      open.delete(this);
+    }
+  }
+  vi.stubGlobal('BroadcastChannel', InstantChannel);
+  onTestFinished(() => {
+    vi.unstubAllGlobals();
+  });
+}
+
 const rowsOfAccount = async (id: string) => rowsOf(await dumpDatabase(idb.factory), id);
 const verifyAsB = (session: { verifyCode: (input: { email: string; code: string }) => unknown }) =>
   session.verifyCode({ email: 'b@example.com', code: '123456' });
@@ -185,6 +210,37 @@ describe('when another account signs in', () => {
     expect(await listRecords(B)).toEqual([makeRecord('m1', { accountId: B })]);
   });
 
+  it('stays signed out when the account signs out in another tab before the previous one is removed', async () => {
+    instantChannels();
+    const { session, queryClient, server } = sessions.start({ me: userA, verifiesAs: userB });
+    await session.loadMe();
+    // A 401 ended the session of A; the tab still knows the account.
+    session.unauthorized(session.currentCookie());
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let removing = false;
+    sessions.onReset(async (reason) => {
+      if (reason !== 'account_switch') return;
+      removing = true;
+      await held;
+    });
+    const other = new BroadcastChannel(SESSION_CHANNEL);
+    onTestFinished(() => other.close());
+
+    const signedIn = verifyAsB(session);
+    await vi.waitFor(() => expect(removing).toBe(true));
+    server.me = null;
+    localStorage.removeItem(LAST_ACCOUNT_KEY);
+    other.postMessage({ type: 'reset', account: B, removed: B, at: Date.now() });
+    release();
+    await signedIn;
+
+    expect(queryClient.getQueryData(meKey())).toBeNull();
+    expect(localStorage.getItem(LAST_ACCOUNT_KEY)).toBeNull();
+  });
+
   it('keeps the choice to read offline of the old account, which is not its data', async () => {
     const { session, server } = sessions.start({ me: userA });
     await session.loadMe();
@@ -237,6 +293,103 @@ describe('when another tab signs in', () => {
     other.postMessage({ type: 'signed-in', me: { id: B } });
     await vi.waitFor(() => expect(queryClient.getQueryData(meKey())).toEqual(userB));
     other.close();
+  });
+
+  it('drops an answer of /me for the earlier account that was on its way', async () => {
+    const { session, queryClient, server, requests } = sessions.start({ me: userA });
+    await session.loadMe();
+    let answer!: () => void;
+    server.holdMe = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    // A window focus asks who is signed in; the answer, for A, is on its way.
+    const asked = queryClient.refetchQueries({ queryKey: meKey(), exact: true });
+    await vi.waitFor(() => expect(requestsTo(requests, 'GET /api/v1/me')).toHaveLength(2));
+    server.me = userB;
+    const other = new BroadcastChannel(SESSION_CHANNEL);
+    onTestFinished(() => other.close());
+
+    other.postMessage({ type: 'signed-in', me: userB });
+    await vi.waitFor(() => expect(queryClient.getQueryData(meKey())).toEqual(userB));
+    answer();
+    await asked;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(queryClient.getQueryData(meKey())).toEqual(userB);
+  });
+
+  describe('while the earlier account is still being removed', () => {
+    const userC = makeMe({ id: '0192f7a0-0000-7000-8000-00000000000c', email: 'c@example.com' });
+
+    /** This tab shows A when another tab signs in as B; the removal of A waits for `release`. */
+    async function switching() {
+      instantChannels();
+      const started = sessions.start({ me: userA });
+      await started.session.loadMe();
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let removing = false;
+      sessions.onReset(async (reason) => {
+        if (reason !== 'account_switch' || removing) return;
+        removing = true;
+        await held;
+      });
+      const other = new BroadcastChannel(SESSION_CHANNEL);
+      onTestFinished(() => other.close());
+      started.server.me = userB;
+      other.postMessage({ type: 'signed-in', me: userB });
+      await vi.waitFor(() => expect(removing).toBe(true));
+      return { ...started, other, release };
+    }
+
+    it('stays signed out when the account it switches to signs out in the other tab', async () => {
+      const { session, queryClient, server, other, release } = await switching();
+      // The other tab signs B out: the session ends and the device forgets the account.
+      server.me = null;
+      localStorage.removeItem(LAST_ACCOUNT_KEY);
+      other.postMessage({ type: 'reset', account: B, removed: B, at: Date.now() });
+
+      release();
+
+      expect(await session.loadMe()).toBeNull();
+      expect(queryClient.getQueryData(meKey())).toBeNull();
+      expect(localStorage.getItem(LAST_ACCOUNT_KEY)).toBeNull();
+    });
+
+    it('stays signed out when the person signs out in this tab', async () => {
+      const { session, queryClient, release } = await switching();
+
+      const signedOut = session.logout();
+      release();
+      await signedOut;
+
+      expect(await session.loadMe()).toBeNull();
+      expect(queryClient.getQueryData(meKey())).toBeNull();
+      expect(localStorage.getItem(LAST_ACCOUNT_KEY)).toBeNull();
+    });
+
+    it('asks who is signed in when another account signs in meanwhile', async () => {
+      const { queryClient, server, other, release } = await switching();
+      server.me = userC;
+      other.postMessage({ type: 'signed-in', me: userC });
+
+      release();
+
+      await vi.waitFor(() => expect(queryClient.getQueryData(meKey())).toEqual(userC));
+    });
+
+    it('still shows the account when the other tab removes the earlier account too', async () => {
+      const { session, queryClient, other, release } = await switching();
+      // What a tab that knew A sends after it signed in as B.
+      other.postMessage({ type: 'reset', account: A, removed: A, at: Date.now() });
+
+      release();
+
+      expect(await session.loadMe()).toEqual(userB);
+      expect(queryClient.getQueryData(meKey())).toEqual(userB);
+    });
   });
 });
 
@@ -331,28 +484,6 @@ describe('when the session ends or another tab clears', () => {
 });
 
 describe('when another tab removes the account while this one writes', () => {
-  /** Tabs whose channel messages arrive at once, so that a test can order them around writes. */
-  function instantChannels() {
-    const open = new Set<InstantChannel>();
-    class InstantChannel {
-      onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
-      constructor(readonly name: string) {
-        open.add(this);
-      }
-      postMessage(data: unknown) {
-        for (const other of [...open]) {
-          if (other !== this && other.name === this.name) {
-            other.onmessage?.(new MessageEvent('message', { data }));
-          }
-        }
-      }
-      close() {
-        open.delete(this);
-      }
-    }
-    vi.stubGlobal('BroadcastChannel', InstantChannel);
-  }
-
   /** The other tab's own connection to the offline database, which shares nothing with this page. */
   function otherTabDb(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
