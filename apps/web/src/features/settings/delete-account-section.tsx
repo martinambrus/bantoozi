@@ -10,6 +10,7 @@ import { Dialog } from '../../components/dialog.js';
 import { errorMessage } from '../../components/error-message.js';
 import { TextField } from '../../components/text-field.js';
 import { useToast } from '../../components/toast/toast-provider.js';
+import { writeOfflineEnabled } from '../../offline/device.js';
 import { countRecords } from '../../offline/queue.js';
 import { useMe, useSession } from '../../session/context.js';
 import { Alert, Hint, SettingsSection } from './section.js';
@@ -49,6 +50,8 @@ function DeleteDialog({ onClose }: { onClose: () => void }) {
       return;
     }
     setSigningOut(true);
+    // Unlike a sign-out, a deletion also forgets that this device kept the account's articles.
+    writeOfflineEnabled(me.id, false);
     await session.resetAccountState();
     toast.show({
       id: 'account-deleted',

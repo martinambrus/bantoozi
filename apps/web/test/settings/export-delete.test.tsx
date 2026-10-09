@@ -3,8 +3,9 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { meKey } from '../../src/api/query-keys.js';
+import { isOfflineEnabled, writeOfflineEnabled } from '../../src/offline/device.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
-import { USER_A_ID, makeMe } from '../session/fixtures.js';
+import { USER_A_ID, USER_B_ID, makeMe } from '../session/fixtures.js';
 import { EMAIL, deferred, goOffline, openSettings, section } from './support.js';
 
 afterEach(() => {
@@ -514,6 +515,24 @@ describe('deleting the account (spec 09 §7)', () => {
 
   describe('confirmed', () => {
     const routes = { 'DELETE /me': () => noContent() };
+
+    afterEach(() => {
+      writeOfflineEnabled(USER_A_ID, false);
+      writeOfflineEnabled(USER_B_ID, false);
+    });
+
+    it("forgets this device's choice to keep the account's articles, and keeps another account's", async () => {
+      writeOfflineEnabled(USER_A_ID, true);
+      writeOfflineEnabled(USER_B_ID, true);
+      const { user } = await openDialog({ routes });
+      await user.type(typed(), EMAIL);
+
+      await user.click(confirm());
+
+      expect(await screen.findByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
+      expect(isOfflineEnabled(USER_A_ID)).toBe(false);
+      expect(isOfflineEnabled(USER_B_ID)).toBe(true);
+    });
 
     it('deletes through the API, then drops every trace of the account and goes to the sign-in page', async () => {
       const { user, calls, router, queryClient } = await openDialog({ routes });
