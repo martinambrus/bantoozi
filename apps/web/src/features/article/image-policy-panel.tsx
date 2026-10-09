@@ -7,7 +7,7 @@ import { routes } from '../../api/routes.js';
 import { Button } from '../../components/button.js';
 import { errorMessage } from '../../components/error-message.js';
 import { useToast } from '../../components/toast/toast-provider.js';
-import { useAccountId } from '../../session/context.js';
+import { useAccountId, useSession } from '../../session/context.js';
 import { articleKeys } from './query-keys.js';
 
 const POLICIES = [
@@ -18,19 +18,24 @@ const POLICIES = [
 
 /**
  * Shown where remote images are not loaded: the reader can remember a setting for the feed
- * (spec 09 §1) instead of changing the global one.
+ * (spec 09 §1) instead of changing the global one. An answer that comes after the sign-in that asked
+ * has ended shows nothing.
  */
 export function ImagePolicyPanel({ feedId }: { feedId: string }) {
   const { t, i18n } = useTranslation('article');
   const accountId = useAccountId();
   const queryClient = useQueryClient();
   const toast = useToast();
+  const session = useSession();
   const save = useApiMutation(routes.feedPreferenceSet, {
-    onSuccess: () => {
+    onMutate: () => session.currentSignIn(),
+    onSuccess: (_answer, _variables, signIn) => {
+      if (session.currentSignIn() !== signIn) return;
       toast.show({ message: i18n.t('article:images.saved'), tone: 'success' });
       return queryClient.invalidateQueries({ queryKey: articleKeys.all(accountId) });
     },
-    onError: (error) => {
+    onError: (error, _variables, signIn) => {
+      if (session.currentSignIn() !== signIn) return;
       toast.show({ message: errorMessage(i18n.t, error), tone: 'error' });
     },
   });

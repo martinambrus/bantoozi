@@ -1134,6 +1134,48 @@ describe('ArticleDetail image setting', () => {
     expect(await findToast('Something went wrong on our side. Try again.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Always block' })).toBeEnabled();
   });
+
+  describe('answered once another account has signed in', () => {
+    const later = () => new Promise((resolve) => setTimeout(resolve, 50));
+
+    it('confirms nothing', async () => {
+      const answer = deferred<Response>();
+      const { user, calls, queryClient, signInAgain } = renderDetail(
+        BLOCKED,
+        {},
+        { routes: { 'PUT /feed-preferences/:feedId': () => answer.promise } },
+      );
+      await user.click(await screen.findByRole('button', { name: 'Always block' }));
+      await waitFor(() => expect(calls('PUT', '/feed-preferences/7')).toHaveLength(1));
+
+      signInAgain(makeMe({ id: USER_B_ID }));
+      answer.resolve(
+        json(200, { feedId: '7', imagePolicy: 'block', effectiveImagesAllowed: false }),
+      );
+      await waitFor(() => expect(queryClient.isMutating()).toBe(0));
+      await later();
+
+      expect(screen.queryByText('Image setting saved')).toBeNull();
+    });
+
+    it('reports no refusal', async () => {
+      const answer = deferred<Response>();
+      const { user, calls, queryClient, signInAgain } = renderDetail(
+        BLOCKED,
+        {},
+        { routes: { 'PUT /feed-preferences/:feedId': () => answer.promise } },
+      );
+      await user.click(await screen.findByRole('button', { name: 'Always block' }));
+      await waitFor(() => expect(calls('PUT', '/feed-preferences/7')).toHaveLength(1));
+
+      signInAgain(makeMe({ id: USER_B_ID }));
+      answer.resolve(failure(500, 'INTERNAL'));
+      await waitFor(() => expect(queryClient.isMutating()).toBe(0));
+      await later();
+
+      expect(screen.queryByText('Something went wrong on our side. Try again.')).toBeNull();
+    });
+  });
 });
 
 describe('ArticleDetail in Slovak', () => {
