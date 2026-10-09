@@ -1090,8 +1090,11 @@ export async function promotePublicationRequest(
 
 export interface AdminLibraryCardRow {
   cardId: string;
+  /** The slug alias: only the newest version of a slug holds it. */
   slug: string | null;
   version: number | null;
+  /** The newest version of the card's slug, null for a card that is no library version. */
+  latestVersion: number | null;
   title: string;
   interest: string;
   notFor: string | null;
@@ -1114,6 +1117,7 @@ type LibraryRow = {
   card_id: string;
   slug: string | null;
   version: number | null;
+  latest_version: number | null;
   title: string;
   body: unknown;
   topic_ids: string[];
@@ -1135,6 +1139,7 @@ function toLibraryCard(row: LibraryRow): AdminLibraryCardRow {
     cardId: row.card_id,
     slug: row.slug,
     version: row.version,
+    latestVersion: row.latest_version,
     title: row.title,
     interest: typeof body['interest'] === 'string' ? body['interest'] : '',
     notFor: typeof body['not_for'] === 'string' ? body['not_for'] : null,
@@ -1170,7 +1175,10 @@ const LIBRARY_SELECT = (where: SQL, tail: SQL) => sql`
     SELECT DISTINCT ON (r.card_id) r.card_id, r.id, r.authorization_kind, r.promoted_at
       FROM admin_list_card_publication_requests('promoted') r
      ORDER BY r.card_id, r.promoted_at DESC, r.id DESC)
-  SELECT c.id::text AS card_id, c.slug, v.version, c.title, c.body, c.topic_ids, c.i18n,
+  SELECT c.id::text AS card_id, c.slug, v.version,
+         (SELECT max(l.version) FROM library_card_versions l
+           WHERE l.library_slug = v.library_slug) AS latest_version,
+         c.title, c.body, c.topic_ids, c.i18n,
          h.holders, c.retired_at, c.created_at, p.id::text AS publication_request_id,
          p.authorization_kind AS publication_kind, p.promoted_at AS publication_promoted_at
     FROM cards c

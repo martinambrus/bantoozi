@@ -529,8 +529,11 @@ export type LibraryI18n = z.infer<typeof LibraryI18nSchema>;
 export const AdminLibraryCardSchema = z
   .object({
     cardId: IdSchema,
+    /** The slug alias, held by the newest version of a slug only. */
     slug: z.string().nullable(),
     version: z.number().int().min(1).nullable(),
+    /** The newest version of this card's slug, so an older version is known on any page. */
+    latestVersion: z.number().int().min(1).nullable(),
     title: z.string(),
     interest: z.string(),
     notFor: z.string().nullable(),

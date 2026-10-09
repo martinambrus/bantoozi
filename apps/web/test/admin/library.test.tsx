@@ -43,6 +43,14 @@ const birds = makeLibraryCard({
   interest: 'Feeding and identifying garden birds',
   publication: { requestId: '8', authorizationKind: 'creator_inactive_30d', promotedAt: T2 },
 });
+/** An older version of the solar card: its slug moved to the newest version, which the server names. */
+const solarBasics = makeLibraryCard({
+  cardId: '300',
+  slug: null,
+  version: 1,
+  latestVersion: 2,
+  title: 'Solar basics',
+});
 const chess = makeLibraryCard({
   cardId: '303',
   slug: 'chess',
@@ -193,18 +201,7 @@ describe('admin library (spec 09 §8)', () => {
     });
 
     it('marks an older version as superseded and does not offer to edit it', async () => {
-      await openLibrary({
-        cards: [
-          makeLibraryCard({
-            cardId: '300',
-            slug: 'solar-power',
-            version: 1,
-            title: 'Solar basics',
-          }),
-          solar,
-        ],
-        candidates: [],
-      });
+      await openLibrary({ cards: [solarBasics, solar], candidates: [] });
 
       expect(within(article('Solar basics')).getByText('Superseded by version 2')).toBeVisible();
       expect(
@@ -213,6 +210,26 @@ describe('admin library (spec 09 §8)', () => {
       expect(
         within(article('Solar power')).getByRole('button', { name: 'Edit Solar power' }),
       ).toBeEnabled();
+      expect(within(article('Solar power')).queryByText(/Superseded/)).toBeNull();
+    });
+
+    it('marks an older version by the newest version the server names, before that one is loaded', async () => {
+      await openLibrary(
+        { cards: [], candidates: [] },
+        {
+          'GET /admin/library': (request) =>
+            json(
+              200,
+              request.query.get('cursor') === 'next' ? page([solar]) : page([solarBasics], 'next'),
+            ),
+        },
+      );
+
+      expect(screen.queryByText('Solar power')).toBeNull();
+      expect(within(article('Solar basics')).getByText('Superseded by version 2')).toBeVisible();
+      expect(
+        within(article('Solar basics')).getByRole('button', { name: 'Edit Solar basics' }),
+      ).toBeDisabled();
     });
   });
 
@@ -673,7 +690,13 @@ describe('admin library (spec 09 §8)', () => {
         {
           'PATCH /admin/library/:id': () =>
             json(200, {
-              card: { ...solar, cardId: '320', version: 3, interest: 'Solar panels for homes' },
+              card: {
+                ...solar,
+                cardId: '320',
+                version: 3,
+                latestVersion: 3,
+                interest: 'Solar panels for homes',
+              },
               idChange: { from: '301', to: '320' },
             }),
         },

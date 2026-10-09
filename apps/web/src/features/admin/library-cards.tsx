@@ -1,6 +1,6 @@
 import type { AdminLibraryCard } from '@bantoozi/shared';
 import { getRouteApi } from '@tanstack/react-router';
-import { useId, useMemo, useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApi } from '../../api/context.js';
@@ -17,14 +17,12 @@ import { useAdminPages, useRefresh } from './use-admin.js';
 
 const route = getRouteApi('/_authed/_app/admin/library');
 
-/** The highest version of each slug among the cards loaded so far. */
-function newestVersions(cards: readonly AdminLibraryCard[]): Map<string, number> {
-  const newest = new Map<string, number>();
-  for (const card of cards) {
-    if (card.slug === null || card.version === null) continue;
-    newest.set(card.slug, Math.max(newest.get(card.slug) ?? 0, card.version));
-  }
-  return newest;
+/** The newer version that replaced this one, as the server names it: never from the pages loaded. */
+function supersedingVersion(card: AdminLibraryCard): number | null {
+  const { version, latestVersion } = card;
+  return version !== null && latestVersion !== null && latestVersion > version
+    ? latestVersion
+    : null;
 }
 
 function PublicationRecord({ card }: { card: AdminLibraryCard }) {
@@ -142,7 +140,6 @@ export function LibraryCards() {
   const cards = useAdminPages<AdminLibraryCard>(['library', 'cards', { q }], (cursor, signal) =>
     api.call(routes.adminLibraryList, { query: { cursor, q } }, { signal }),
   );
-  const newest = useMemo(() => newestVersions(cards.rows ?? []), [cards.rows]);
 
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-4">
@@ -167,22 +164,15 @@ export function LibraryCards() {
         {(rows) => (
           <>
             <ul className="flex flex-col gap-3">
-              {rows.map((card) => {
-                const latest = card.slug === null ? undefined : newest.get(card.slug);
-                const supersededBy =
-                  latest !== undefined && card.version !== null && latest > card.version
-                    ? latest
-                    : null;
-                return (
-                  <li key={card.cardId}>
-                    <CardEntry
-                      card={card}
-                      supersededBy={supersededBy}
-                      onEdit={() => setEditing(card)}
-                    />
-                  </li>
-                );
-              })}
+              {rows.map((card) => (
+                <li key={card.cardId}>
+                  <CardEntry
+                    card={card}
+                    supersededBy={supersedingVersion(card)}
+                    onEdit={() => setEditing(card)}
+                  />
+                </li>
+              ))}
             </ul>
             <LoadMore
               hasMore={cards.hasMore}

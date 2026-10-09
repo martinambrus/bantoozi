@@ -440,6 +440,46 @@ describe('library administration (spec 08 §9, spec 05 §8)', () => {
       rename.release();
     }
   });
+
+  it('names the newest version of the slug on every version, whichever page holds it', async () => {
+    const client = apiClient(h.server, admin);
+    const created = await client.post('/admin/library', {
+      slug: 'admin-test-paged-versions',
+      title: 'Paged versions',
+      interest: 'Library versions listed on separate pages',
+      topicIds: [],
+    });
+    expect(created.statusCode).toBe(201);
+    const first = created.json().card;
+    expect(first).toMatchObject({ version: 1, latestVersion: 1 });
+
+    const versioned = await client.patch(`/admin/library/${first.cardId}`, {
+      interest: 'Library versions listed on separate pages, oldest first',
+    });
+    expect(versioned.statusCode).toBe(200);
+    const second = versioned.json().card;
+    expect(second).toMatchObject({
+      slug: 'admin-test-paged-versions',
+      version: 2,
+      latestVersion: 2,
+    });
+
+    // The older version gave its slug to the newest one and comes first, on a page of its own.
+    const one = await client.get('/admin/library', { query: { q: 'Paged versions', limit: '1' } });
+    expect(one.statusCode).toBe(200);
+    expect(one.json().items).toEqual([
+      expect.objectContaining({ cardId: first.cardId, slug: null, version: 1, latestVersion: 2 }),
+    ]);
+    const two = await client.get('/admin/library', {
+      query: { q: 'Paged versions', limit: '1', cursor: one.json().nextCursor },
+    });
+    expect(two.json().items).toEqual([
+      expect.objectContaining({ cardId: second.cardId, version: 2, latestVersion: 2 }),
+    ]);
+
+    const renamed = await client.patch(`/admin/library/${first.cardId}`, { title: 'Paged v1' });
+    expect(renamed.json().card).toMatchObject({ version: 1, latestVersion: 2 });
+  });
 });
 
 describe('publication provenance on the library read (spec 09 §8)', () => {

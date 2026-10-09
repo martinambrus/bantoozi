@@ -72,6 +72,7 @@ function toLibraryCard(row: AdminLibraryCardRow): AdminLibraryCard {
     cardId: row.cardId,
     slug: row.slug,
     version: row.version,
+    latestVersion: row.latestVersion,
     title: row.title,
     interest: row.interest,
     notFor: row.notFor,

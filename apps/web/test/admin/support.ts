@@ -233,10 +233,12 @@ export function makeWaitlistEntry(over: Partial<AdminWaitlistEntry> = {}): Admin
 }
 
 export function makeLibraryCard(over: Partial<AdminLibraryCard> = {}): AdminLibraryCard {
+  const version = over.version === undefined ? 2 : over.version;
   return {
     cardId: '301',
     slug: 'solar-power',
-    version: 2,
+    version,
+    latestVersion: version,
     title: 'Solar power',
     interest: 'Rooftop solar panels and home batteries',
     notFor: 'Stock tips',

@@ -1431,3 +1431,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   follows. The queued case, switched off before the worker claims it, is covered by
   apps/worker/test/analysis.int.test.ts ("a request still queued when its feed is switched off is
   cancelled at claim, before any call"). Spec 09 §9 updated.
+- D-159: 2026-10-09 M6-T7 — spec 08 §9 returned each admin library card's `slug` and `version`, but
+  `admin_publish_library_card_version` moves the slug alias to the newest version, so an older
+  version has no slug, and the list pages in card-id order, so the newest version can sit on a page
+  not loaded yet. The admin page could therefore not tell that a card was superseded and offered to
+  edit it. Every admin library card now also carries `latestVersion`, the newest version of its
+  slug read from `library_card_versions` (`null` for a card that is no version), and the page marks
+  a card superseded when `latestVersion` is above its `version`. No migration. Spec 08 §9 updated.

@@ -21045,6 +21045,12 @@
                             "minimum": 1,
                             "maximum": 9007199254740991
                           },
+                          "latestVersion": {
+                            "nullable": true,
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
                           "title": {
                             "type": "string"
                           },
@@ -21139,6 +21145,7 @@
                           "cardId",
                           "slug",
                           "version",
+                          "latestVersion",
                           "title",
                           "interest",
                           "notFor",
@@ -21285,6 +21292,12 @@
                           "minimum": 1,
                           "maximum": 9007199254740991
                         },
+                        "latestVersion": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
                         "title": {
                           "type": "string"
                         },
@@ -21379,6 +21392,7 @@
                         "cardId",
                         "slug",
                         "version",
+                        "latestVersion",
                         "title",
                         "interest",
                         "notFor",
@@ -21543,6 +21557,12 @@
                           "minimum": 1,
                           "maximum": 9007199254740991
                         },
+                        "latestVersion": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
                         "title": {
                           "type": "string"
                         },
@@ -21637,6 +21657,7 @@
                         "cardId",
                         "slug",
                         "version",
+                        "latestVersion",
                         "title",
                         "interest",
                         "notFor",
