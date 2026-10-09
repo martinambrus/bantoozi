@@ -1,8 +1,8 @@
-import type { CardDto } from '@bantoozi/shared';
+import type { CardDto, Me } from '@bantoozi/shared';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { accountKey } from '../../src/api/query-keys.js';
+import { accountKey, meKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
 import { USER_A_ID } from '../session/fixtures.js';
@@ -406,6 +406,35 @@ describe('changing the strength', () => {
     await app.user.click(within(row).getByRole('radio', { name: 'Love' }));
 
     await act(() => app.session.resetAccountState());
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(app.calls('PATCH /cards/:id').map((request) => bodyOf(request))).toEqual([
+      { strength: 'must' },
+    ]);
+  });
+
+  it('drops a change that waits when the account signs out and in again before it can go', async () => {
+    const answer = gate();
+    let sent = 0;
+    const app = await openMine(
+      { cards: [rust] },
+      {
+        'PATCH /cards/:id': async (request) => {
+          if (sent++ === 0) await answer.opened;
+          return json(200, cardResult({ ...rust, ...(bodyOf(request) as Partial<CardDto>) }));
+        },
+      },
+    );
+    const row = await rowOf('Rust programming');
+    await app.user.click(within(row).getByRole('radio', { name: 'Must' }));
+    await app.user.click(within(row).getByRole('radio', { name: 'Love' }));
+    const me = app.queryClient.getQueryData<Me>(meKey());
+
+    await act(() => app.session.resetAccountState());
+    act(() => {
+      app.queryClient.setQueryData(meKey(), me);
+    });
     answer.release();
     await new Promise((resolve) => setTimeout(resolve, 100));
 
