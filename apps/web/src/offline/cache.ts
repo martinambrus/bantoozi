@@ -179,20 +179,26 @@ const sweep = (accountId: string) => write(accountId, () => []);
 
 /**
  * Turns offline reading on or off for the account on this device. Turning it off removes what was
- * stored. False when the device could not be put in the state asked for.
+ * stored. False when the device could not be put in the state asked for. While the store opens or
+ * the rows go, the change may stop counting (`lasts`, such as the sign-in it was asked in): the
+ * choice is then left as it is by then.
  */
-export async function setOfflineEnabled(accountId: string, on: boolean): Promise<boolean> {
+export async function setOfflineEnabled(
+  accountId: string,
+  on: boolean,
+  lasts: () => boolean = () => true,
+): Promise<boolean> {
   if (!isAccountId(accountId)) return false;
   if (on) {
     const opened = await offlineDb();
-    return opened.available && writeOfflineEnabled(accountId, true);
+    return opened.available && lasts() && writeOfflineEnabled(accountId, true);
   }
   // Off before the removal, so nothing new is stored while the rows go.
   const off = writeOfflineEnabled(accountId, false);
   const cleared = await clearAccount(accountId);
   // Rows that stay keep the choice on: turning it off can be tried again, and turning it on later
   // does not show rows the person was told were gone.
-  if (off && !cleared) writeOfflineEnabled(accountId, true);
+  if (off && !cleared && lasts()) writeOfflineEnabled(accountId, true);
   return off && cleared;
 }
 

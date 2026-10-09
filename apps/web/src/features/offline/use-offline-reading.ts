@@ -1,8 +1,5 @@
-import type { Me } from '@bantoozi/shared';
-import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
-import { meKey } from '../../api/query-keys.js';
 import {
   clearAccount,
   offlineUsage,
@@ -13,14 +10,14 @@ import {
 import { offlineDb } from '../../offline/db.js';
 import { isOfflineEnabled } from '../../offline/device.js';
 import { requestReplay } from '../../offline/replay.js';
-import { useMe } from '../../session/context.js';
+import { useMe, useSession } from '../../session/context.js';
 
 const NOTHING: OfflineUsage = { articles: 0, bytes: 0, unsent: 0 };
 
 /** The account's choice to read offline, what is stored for it, and the ways to change both. */
 export function useOfflineReading() {
   const me = useMe();
-  const queryClient = useQueryClient();
+  const session = useSession();
   const [supported, setSupported] = useState(() => typeof indexedDB !== 'undefined');
   const [enabled, setEnabled] = useState(() => isOfflineEnabled(me.id));
   const [usage, setUsage] = useState(NOTHING);
@@ -44,14 +41,15 @@ export function useOfflineReading() {
     };
   }, [me.id]);
 
-  /**
-   * Whether the account is still the one signed in. A sign-out or a switch of account removes it from
-   * the device, and a change begun before that must not store it again.
-   */
-  const signedIn = () => queryClient.getQueryData<Me | null>(meKey())?.id === me.id;
+  // The sign-in this screen shows. A sign-out removes the account from the device, and the next
+  // sign-in, of this account too, has its own state: a change asked for here stores nothing, and
+  // changes nothing on the device, once this sign-in has ended.
+  const signIn = session.currentSignIn();
+  const lasts = () => session.currentSignIn() === signIn;
 
   /** Runs a change; `work` answers false for a failure the person should be told about. */
   async function run(work: () => Promise<boolean>): Promise<void> {
+    if (!lasts()) return;
     setBusy(true);
     setFailed(false);
     setCleared(false);
@@ -75,13 +73,14 @@ export function useOfflineReading() {
     unsent: async () => (await offlineUsage(me.id)).unsent,
     turnOn: () =>
       run(async () => {
-        if (await setOfflineEnabled(me.id, true)) {
+        if (await setOfflineEnabled(me.id, true, lasts)) {
           // Without the account on the device, an offline start could not open what is kept.
-          if (signedIn() && (await saveMe(me.id, me))) {
+          if (lasts() && (await saveMe(me.id, me))) {
             setEnabled(true);
             return true;
           }
-          await setOfflineEnabled(me.id, false);
+          if (!lasts()) return false;
+          await setOfflineEnabled(me.id, false, lasts);
           setEnabled(isOfflineEnabled(me.id));
           return false;
         }
@@ -94,7 +93,7 @@ export function useOfflineReading() {
       }),
     turnOff: () =>
       run(async () => {
-        const done = await setOfflineEnabled(me.id, false);
+        const done = await setOfflineEnabled(me.id, false, lasts);
         setEnabled(isOfflineEnabled(me.id));
         if (done) requestReplay();
         return done;
@@ -106,7 +105,7 @@ export function useOfflineReading() {
         if (!done) return false;
         requestReplay();
         // The account stays: without it, an offline start could not open the app.
-        if (!signedIn() || !(await saveMe(me.id, me))) return false;
+        if (!lasts() || !(await saveMe(me.id, me))) return false;
         setCleared(true);
         return true;
       }),

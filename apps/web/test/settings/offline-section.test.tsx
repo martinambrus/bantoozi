@@ -1,7 +1,9 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import type { Me } from '@bantoozi/shared';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { IDBObjectStore as FakeIDBObjectStore } from 'fake-indexeddb';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { meKey } from '../../src/api/query-keys.js';
 import { readMe, saveDetail, saveView, setOfflineEnabled } from '../../src/offline/cache.js';
 import { offlineDb, resetOfflineDb } from '../../src/offline/db.js';
 import { isOfflineEnabled } from '../../src/offline/device.js';
@@ -47,6 +49,35 @@ async function storedArticles(records = 0) {
   await saveDetail(A, fullDetail({ id: '50' }));
   if (records > 0)
     await unsent(...Array.from({ length: records }, (_unused, index) => `m${index + 1}`));
+}
+
+/** The display names of the account as it is stored for an offline start, write by write. */
+function recordStoredAccount() {
+  const put = FakeIDBObjectStore.prototype.put;
+  const names: Array<string | null> = [];
+  const spy = vi.spyOn(FakeIDBObjectStore.prototype, 'put').mockImplementation(function record(
+    this: InstanceType<typeof FakeIDBObjectStore>,
+    ...args: Parameters<typeof put>
+  ) {
+    const [value, key] = args;
+    if (this.name === 'meta' && key === `${A}:me`) {
+      names.push((value as { me: Me }).me.displayName);
+    }
+    return put.apply(this, args);
+  });
+  onTestFinished(() => {
+    spy.mockRestore();
+  });
+  return names;
+}
+
+/** Signs the account out and straight back in, as the same account with another name. */
+function signOutAndInAgain(app: Awaited<ReturnType<typeof openSettings>>) {
+  const me = app.queryClient.getQueryData<Me>(meKey())!;
+  void app.session.resetAccountState();
+  act(() => {
+    app.queryClient.setQueryData(meKey(), { ...me, displayName: 'Again' });
+  });
 }
 
 const discardDialog = () => screen.findByRole('dialog', { name: 'Discard unsent changes?' });
@@ -106,6 +137,23 @@ describe('the Offline reading section', () => {
     expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]);
   });
 
+  it('leaves the next sign-in of the account as it is when turned off before a sign-out', async () => {
+    await storedArticles();
+    const app = await openSettings();
+    await within(offline()).findByText('4 articles stored on this device');
+
+    // Off is asked for: the unsent changes are counted first, and meanwhile the account signs out
+    // and in again.
+    fireEvent.click(toggle());
+    signOutAndInAgain(app);
+
+    // The choice stays on, so the next sign-in keeps the account for an offline start.
+    await vi.waitFor(async () => expect((await readMe(A))?.me.displayName).toBe('Again'));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(isOfflineEnabled(A)).toBe(true);
+    expect((await readMe(A))?.me.displayName).toBe('Again');
+  });
+
   it('shows how much is stored and how many changes were not sent', async () => {
     await storedArticles(2);
 
@@ -150,17 +198,33 @@ describe('the Offline reading section', () => {
       await storedArticles();
       const { session } = await openSettings();
       await within(offline()).findByText('4 articles stored on this device');
-      const removed = new Promise((resolve) => {
-        window.addEventListener(REPLAY_EVENT, resolve, { once: true });
-      });
+      const stored = recordStoredAccount();
 
       fireEvent.click(clearButton());
       // The sign-out comes while the unsent changes are counted, before the articles go.
       void session.resetAccountState();
 
-      // The page is asked to replay once the rows are gone, just before the account would be stored.
-      await removed;
+      // The sign-out removes the rows, and the clear asked for before it stores nothing after.
+      await vi.waitFor(async () => expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]));
+      await new Promise((resolve) => setTimeout(resolve, 100));
       expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]);
+      expect(stored).toEqual([]);
+    });
+
+    it('stores nothing of the earlier sign-in when the account signs out and in again meanwhile', async () => {
+      await storedArticles();
+      const app = await openSettings();
+      await within(offline()).findByText('4 articles stored on this device');
+      const stored = recordStoredAccount();
+
+      fireEvent.click(clearButton());
+      signOutAndInAgain(app);
+
+      // The next sign-in keeps the account as it is now, and nothing writes the earlier one over it.
+      await vi.waitFor(async () => expect((await readMe(A))?.me.displayName).toBe('Again'));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect((await readMe(A))?.me.displayName).toBe('Again');
+      expect(stored).toEqual(['Again']);
     });
 
     it('asks first when changes were not sent, and keeps everything on Cancel', async () => {
