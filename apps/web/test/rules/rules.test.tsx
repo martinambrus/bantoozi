@@ -769,6 +769,47 @@ describe('the rules page (spec 09 §6)', () => {
       });
     });
 
+    it.each([
+      [
+        'its type',
+        async (app: Awaited<ReturnType<typeof open>>) =>
+          app.user.selectOptions(form().getByLabelText('Rule type'), 'Block a domain'),
+        'Domain',
+      ],
+      [
+        'its expiry',
+        async (app: Awaited<ReturnType<typeof open>>) =>
+          app.user.selectOptions(form().getByLabelText('Expires'), 'After 7 days'),
+        'Keyword or phrase',
+      ],
+    ])(
+      'keeps the text for the next rule when %s was changed while the rule was on its way',
+      async (_name, change, field) => {
+        let release: () => void = () => undefined;
+        const held = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const app = await open([], {
+          routes: {
+            'POST /rules': async () => {
+              await held;
+              return json(201, { rule: rule({ id: '9' }) });
+            },
+          },
+        });
+        await screen.findByText('No rules yet');
+        await app.user.type(form().getByLabelText('Keyword or phrase'), 'example.com');
+        await app.user.click(form().getByRole('button', { name: 'Add rule' }));
+        await waitFor(() => expect(app.calls('POST /rules')).toHaveLength(1));
+
+        await change(app);
+        release();
+
+        expect(await form().findByText('Rule added.')).toBeVisible();
+        expect(form().getByLabelText(field)).toHaveValue('example.com');
+      },
+    );
+
     it('shows a rejected value as a general failure when it was edited while the rule was on its way', async () => {
       let release: () => void = () => undefined;
       const held = new Promise<void>((resolve) => {

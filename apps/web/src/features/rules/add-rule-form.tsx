@@ -86,7 +86,6 @@ export function AddRuleForm() {
       return;
     }
     const days = RULE_EXPIRY_DAYS.find((choice) => String(choice) === expiry);
-    const typed = value;
     const editsSent = edits.current;
     try {
       await create.mutateAsync({
@@ -100,8 +99,8 @@ export function AddRuleForm() {
       else setFailure(error);
       return;
     }
-    // Text typed while the rule was on its way stays, for the next rule.
-    setValue((current) => (current === typed ? '' : current));
+    // A form changed while the rule was on its way is the next rule, its text included.
+    if (edits.current === editsSent) setValue('');
     setAdded(true);
     refresh();
   }
