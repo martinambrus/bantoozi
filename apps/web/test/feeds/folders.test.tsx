@@ -344,6 +344,44 @@ describe('the move buttons', () => {
       'C',
     ]);
   });
+
+  it('keeps the order the next sign-in of the account saved when an answer from before comes late', async () => {
+    const { app, server } = await openFolders({
+      folderOrder: ['A', 'B', 'C'],
+      subscriptions: threeFolders,
+    });
+    const save = patchMeLikeTheApi(server);
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // The server takes the order at once; its answer arrives after a sign-out and a sign-in.
+    server.routes[UPDATE_ME] = async (request, params) => {
+      const answer = await save(request, params);
+      await held;
+      return answer;
+    };
+
+    await app.user.click(screen.getByRole('button', { name: 'Move B up' }));
+    await waitFor(() => expect(app.calls(UPDATE_ME)).toHaveLength(1));
+    const me = app.queryClient.getQueryData<Me>(meKey())!;
+    await act(() => app.session.resetAccountState());
+    // Signed in again, the account saved another order.
+    act(() => {
+      app.queryClient.setQueryData(meKey(), {
+        ...me,
+        preferences: { ...me.preferences, folderOrder: ['C', 'A', 'B'] },
+      });
+    });
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(app.queryClient.getQueryData<Me>(meKey())?.preferences.folderOrder).toEqual([
+      'C',
+      'A',
+      'B',
+    ]);
+  });
 });
 
 describe('renaming a folder', () => {

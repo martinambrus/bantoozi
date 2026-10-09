@@ -356,6 +356,34 @@ describe('profile (spec 09 §7)', () => {
       expect(nameField()).toHaveValue('Ada');
       expect(save()).toBeDisabled();
     });
+
+    it('keeps what the next sign-in of the account saved when an answer from before comes late', async () => {
+      // The server takes the profile at once; its answer arrives after a sign-out and a sign-in.
+      const gate = deferred();
+      const { user, calls, session, queryClient } = await openSettings({
+        routes: (server) => ({
+          'PATCH /me': async (request, params) => {
+            const answer = await patchMe(server)(request, params);
+            await gate.promise;
+            return answer;
+          },
+        }),
+      });
+      await user.type(nameField(), 'Ada');
+      await user.click(save());
+      await waitFor(() => expect(calls('PATCH /me')).toHaveLength(1));
+      const me = queryClient.getQueryData<Me>(meKey())!;
+
+      await act(() => session.resetAccountState());
+      // Signed in again, the account saved another name.
+      act(() => {
+        queryClient.setQueryData(meKey(), { ...me, displayName: 'Grace' });
+      });
+      gate.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(queryClient.getQueryData<Me>(meKey())?.displayName).toBe('Grace');
+    });
   });
 
   describe('when saving fails', () => {

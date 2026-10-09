@@ -673,6 +673,36 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
       expect(bodiesOf(calls('PATCH /me'))).toEqual([{ preferences: { defaultTier: 4 } }]);
     });
 
+    it('keeps what the next sign-in of the account saved when an answer from before comes late', async () => {
+      // The server takes the change at once; its answer arrives after a sign-out and a sign-in.
+      const gate = deferred();
+      const { user, calls, session, queryClient } = await openSettings({
+        routes: (server) => ({
+          'PATCH /me': async (request, params) => {
+            const answer = await patchMe(server)(request, params);
+            await gate.promise;
+            return answer;
+          },
+        }),
+      });
+      await user.click(option('Minimum tier', '4'));
+      await waitFor(() => expect(calls('PATCH /me')).toHaveLength(1));
+      const me = queryClient.getQueryData<Me>(meKey())!;
+
+      await act(() => session.resetAccountState());
+      // Signed in again, the account saved another value.
+      act(() => {
+        queryClient.setQueryData(meKey(), {
+          ...me,
+          preferences: { ...me.preferences, defaultTier: 2 },
+        });
+      });
+      gate.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(queryClient.getQueryData<Me>(meKey())?.preferences.defaultTier).toBe(2);
+    });
+
     it('keeps an earlier change that was saved when the next change of the setting fails', async () => {
       const gate = deferred();
       let sent = 0;

@@ -12,7 +12,7 @@ import { CheckIcon } from '../../components/icons.js';
 import { SegmentedControl } from '../../components/segmented-control.js';
 import { Select } from '../../components/select.js';
 import { TextField } from '../../components/text-field.js';
-import { useMe } from '../../session/context.js';
+import { useMe, useSession } from '../../session/context.js';
 import { storeSavedMe } from '../../session/me.js';
 import { Alert, SettingsSection } from './section.js';
 
@@ -65,6 +65,7 @@ function timeZones(current: string): string[] {
 export function ProfileSection() {
   const { t } = useTranslation('settings');
   const me = useMe();
+  const session = useSession();
   const queryClient = useQueryClient();
   const update = useApiMutation(routes.meUpdate);
   // A newer account (another tab saved) fills the fields the person has not changed.
@@ -92,6 +93,7 @@ export function ProfileSection() {
     setFailure(null);
     const sent = draft;
     const editsSent = edits.current;
+    const signIn = session.currentSignIn();
     let updated: Me;
     try {
       updated = await update.mutateAsync({ body: patch });
@@ -99,6 +101,7 @@ export function ProfileSection() {
       setFailure(error);
       return;
     }
+    if (session.currentSignIn() !== signIn) return;
     // Only what this save sent: a preference saved meanwhile may be newer than the rest of `updated`.
     // What was edited while it was on its way stays in the form, still to be saved.
     restart(storeSavedMe(queryClient, patch, updated) ?? updated, sent);

@@ -7,6 +7,7 @@ import { useApi } from '../../api/context.js';
 import { useApiMutation } from '../../api/mutation.js';
 import { meKey } from '../../api/query-keys.js';
 import { routes } from '../../api/routes.js';
+import { useSession } from '../../session/context.js';
 import { storeSavedMe } from '../../session/me.js';
 import type { Lane } from '../reader/lanes.js';
 
@@ -26,6 +27,7 @@ export interface Finishing {
  */
 export function useFinish(): Finishing {
   const api = useApi();
+  const session = useSession();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const save = useApiMutation(routes.meUpdate);
@@ -58,7 +60,9 @@ export function useFinish(): Finishing {
           // The same time on every attempt, so a repeated request is the same request.
           completedAt.current ??= new Date().toISOString();
           const patch = { preferences: { onboardingCompletedAt: completedAt.current } };
-          storeSavedMe(queryClient, patch, await mutateAsync({ body: patch }));
+          const signIn = session.currentSignIn();
+          const updated = await mutateAsync({ body: patch });
+          if (session.currentSignIn() === signIn) storeSavedMe(queryClient, patch, updated);
         }
         await navigate({ to: '/read/$lane', params: { lane: await firstLane() } });
         setState({ pressed: null, error: null });
@@ -68,7 +72,7 @@ export function useFinish(): Finishing {
         busy.current = false;
       }
     },
-    [firstLane, mutateAsync, navigate, queryClient],
+    [firstLane, mutateAsync, navigate, queryClient, session],
   );
 
   return { ...state, finish };

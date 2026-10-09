@@ -10,7 +10,7 @@ import { cx } from '../../components/cx.js';
 import { errorMessage } from '../../components/error-message.js';
 import { IconButton } from '../../components/icon-button.js';
 import { ChevronDownIcon, ChevronUpIcon, DragIcon } from '../../components/icons.js';
-import { useMe } from '../../session/context.js';
+import { useMe, useSession } from '../../session/context.js';
 import { storeSavedMe } from '../../session/me.js';
 import { FeedRow } from './feed-row.js';
 import { FeedSettingsSheet } from './feed-settings-sheet.js';
@@ -183,12 +183,17 @@ function LooseSection({
 export function FolderList({ subscriptions }: { subscriptions: readonly Subscription[] }) {
   const { t, i18n } = useTranslation('feeds');
   const me = useMe();
+  const session = useSession();
   const queryClient = useQueryClient();
   // The account learns the saved order even when the answer comes after the list is gone (the page
-  // was left); only the order shown and the announcement need the list.
+  // was left), in the sign-in it was saved in; only the order shown and the announcement need the
+  // list.
   const update = useApiMutation(routes.meUpdate, {
-    onSuccess: (updated, variables) => {
-      storeSavedMe(queryClient, variables?.body ?? {}, updated);
+    onMutate: () => session.currentSignIn(),
+    onSuccess: (updated, variables, signIn) => {
+      if (session.currentSignIn() === signIn) {
+        storeSavedMe(queryClient, variables?.body ?? {}, updated);
+      }
     },
   });
   const [unsavedOrder, setUnsavedOrder] = useState<string[] | null>(null);

@@ -10,7 +10,7 @@ import { errorMessage } from '../../components/error-message.js';
 import { ThumbsDownIcon, ThumbsUpIcon } from '../../components/icons.js';
 import { Sheet } from '../../components/sheet.js';
 import { useToast } from '../../components/toast/toast-provider.js';
-import { useMe } from '../../session/context.js';
+import { useMe, useSession } from '../../session/context.js';
 import { storeSavedMe } from '../../session/me.js';
 import { useReaderActions, useSettledActions } from '../reader/actions/provider.js';
 
@@ -29,6 +29,7 @@ const LESS_OFTEN: Partial<Record<FeedbackPrompt, FeedbackPrompt>> = {
 export function DidYouLikePrompt() {
   const { t } = useTranslation('why');
   const queryClient = useQueryClient();
+  const session = useSession();
   const toast = useToast();
   const me = useMe();
   const actions = useReaderActions();
@@ -65,8 +66,11 @@ export function DidYouLikePrompt() {
     // The answer may come after the prompt has gone; the promise settles then too, unlike the
     // callbacks of `mutate`. A failure has been shown by `onError` already.
     const patch = { preferences: { feedbackPrompt: lessOften } };
+    const signIn = session.currentSignIn();
     setting.mutateAsync({ body: patch }).then(
-      (updated) => storeSavedMe(queryClient, patch, updated),
+      (updated) => {
+        if (session.currentSignIn() === signIn) storeSavedMe(queryClient, patch, updated);
+      },
       () => {},
     );
   }

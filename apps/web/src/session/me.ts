@@ -81,7 +81,9 @@ export function readMeAfterSave(queryClient: QueryClient): void {
 /**
  * Takes the answer of a `PATCH /me` into the account the app shows (`withSavedFields`), while that
  * account is still signed in. Returns the account as the cache holds it now, or null when nothing
- * was taken.
+ * was taken. Only for an answer to a request of the sign-in that lasts (`Session.currentSignIn()`):
+ * after a sign-out and a sign-in, of the same account too, something newer may have been saved,
+ * which the older answer would put back.
  */
 export function storeSavedMe(queryClient: QueryClient, patch: MePatch, saved: Me): Me | null {
   const current = queryClient.getQueryData<Me | null>(meKey());

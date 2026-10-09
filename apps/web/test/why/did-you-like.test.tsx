@@ -401,6 +401,32 @@ describe('"Ask less often"', () => {
       'occasionally',
     );
   });
+
+  it('keeps what the next sign-in of the account saved when an answer from before comes late', async () => {
+    let answer: (response: Response) => void = () => {};
+    const app = renderPrompt({
+      me: implicit({ feedbackPrompt: 'often' }),
+      routes: {
+        'PATCH /me': () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      },
+    });
+    const sheet = await ask(app, FIRST);
+    await app.user.click(within(sheet).getByRole('button', { name: 'Ask less often' }));
+    await waitFor(() => expect(app.calls('PATCH', '/me')).toHaveLength(1));
+
+    // Signed in again, the account saved another value.
+    app.signInAgain(implicit({ feedbackPrompt: 'never' }));
+    answer(json(200, implicit({ feedbackPrompt: 'occasionally' })));
+    await waitFor(() => expect(app.queryClient.isMutating()).toBe(0));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(app.queryClient.getQueryData<Me>(meKey())?.preferences.feedbackPrompt).toBe('never');
+  });
 });
 
 describe('the controls', () => {

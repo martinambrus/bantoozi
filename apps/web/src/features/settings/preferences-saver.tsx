@@ -102,7 +102,12 @@ export function PreferenceSaverProvider({ children }: { children: ReactNode }) {
     return (pending.get(id) ?? readSetting(me.preferences, id)) as SettingValues[Id];
   }
 
-  async function save<Id extends SettingId>(id: Id, value: SettingValues[Id], change: number) {
+  async function save<Id extends SettingId>(
+    id: Id,
+    value: SettingValues[Id],
+    change: number,
+    signIn: number,
+  ) {
     const preferences = patchFor(id, value);
     let saved: Me;
     try {
@@ -113,6 +118,7 @@ export function PreferenceSaverProvider({ children }: { children: ReactNode }) {
       setFailures((current) => withEntry(current, id, { error }));
       return;
     }
+    if (session.currentSignIn() !== signIn) return;
     storeSavedMe(queryClient, { preferences }, saved);
     if (issued.current.get(id) === change) {
       setPending((current) => withoutEntry(current, id));
@@ -124,7 +130,7 @@ export function PreferenceSaverProvider({ children }: { children: ReactNode }) {
     const signIn = session.currentSignIn();
     sending.current.add(id);
     try {
-      await save(id, value, change);
+      await save(id, value, change, signIn);
     } finally {
       sending.current.delete(id);
       const next = waiting.current.get(id);
