@@ -76,7 +76,8 @@ function isCompleteJson(text: string): boolean {
 
 /**
  * Downloads `GET /me/export` the way the browser would, but through `fetch`, to show progress and to
- * be cancelled. Nothing is saved unless the whole document arrived and is complete JSON.
+ * be cancelled. Nothing is saved unless the whole document arrived and is complete JSON. An answer
+ * that comes after the sign-in that asked has ended saves nothing.
  */
 export function useDataExport() {
   const { timezone } = useMe();
@@ -92,6 +93,7 @@ export function useDataExport() {
     running.current = controller;
     setState({ phase: 'downloading', bytes: 0 });
     const sentWith = session.currentCookie();
+    const signIn = session.currentSignIn();
     try {
       const response = await fetch(EXPORT_URL, {
         credentials: 'same-origin',
@@ -104,7 +106,12 @@ export function useDataExport() {
         return;
       }
       const file = await readBody(response, (bytes) => setState({ phase: 'downloading', bytes }));
-      if (!isCompleteJson(await file.text())) {
+      const text = await file.text();
+      if (controller.signal.aborted || session.currentSignIn() !== signIn) {
+        setState({ phase: 'cancelled' });
+        return;
+      }
+      if (!isCompleteJson(text)) {
         setState({ phase: 'failed', problem: { kind: 'incomplete' } });
         return;
       }

@@ -124,6 +124,19 @@ describe('export (spec 09 §7)', () => {
     return openSettings({ routes: { 'GET /rules': () => json(200, []) } });
   }
 
+  /** Holds the reading of the received file back until `release`. */
+  function holdReading() {
+    const read = Blob.prototype.text;
+    const reading = deferred();
+    const held = vi.spyOn(Blob.prototype, 'text').mockImplementation(async function text(
+      this: Blob,
+    ) {
+      await reading.promise;
+      return read.call(this);
+    });
+    return { held, release: reading.release };
+  }
+
   it('explains what the file holds', async () => {
     await open();
 
@@ -216,6 +229,36 @@ describe('export (spec 09 §7)', () => {
       await waitFor(() => expect(saved).toHaveLength(2));
       expect(calls).toHaveLength(2);
     });
+
+    it('saves nothing when the file is read once the sign-in has ended', async () => {
+      stubExportFetch(() => new Response(DOCUMENT, { status: 200 }));
+      const reading = holdReading();
+      const { user, server, session } = await open();
+
+      await user.click(download());
+      await waitFor(() => expect(reading.held).toHaveBeenCalled());
+      server.me = null;
+      await act(() => session.resetAccountState());
+      reading.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(saved).toHaveLength(0);
+    });
+
+    it('saves nothing when another sign-in began while the file was read', async () => {
+      stubExportFetch(() => new Response(DOCUMENT, { status: 200 }));
+      const reading = holdReading();
+      const { user, session } = await open();
+      const signIn = vi.spyOn(session, 'currentSignIn').mockReturnValue(1);
+
+      await user.click(download());
+      await waitFor(() => expect(reading.held).toHaveBeenCalled());
+      signIn.mockReturnValue(2);
+      reading.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(saved).toHaveLength(0);
+    });
   });
 
   describe('cancelling', () => {
@@ -266,6 +309,26 @@ describe('export (spec 09 §7)', () => {
       await user.click(cancel());
 
       expect(calls[0]?.signal?.aborted).toBe(true);
+      await waitFor(() =>
+        expect(exporting().getByRole('status')).toHaveTextContent(
+          'Download cancelled. Nothing was saved.',
+        ),
+      );
+      expect(download()).toBeEnabled();
+    });
+
+    it('saves nothing and says so when it is cancelled while the file is read', async () => {
+      stubExportFetch(() => new Response(DOCUMENT, { status: 200 }));
+      const reading = holdReading();
+      const { user } = await open();
+      await user.click(download());
+      await waitFor(() => expect(reading.held).toHaveBeenCalled());
+
+      await user.click(cancel());
+      reading.release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(saved).toHaveLength(0);
       await waitFor(() =>
         expect(exporting().getByRole('status')).toHaveTextContent(
           'Download cancelled. Nothing was saved.',
