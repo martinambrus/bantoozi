@@ -5,7 +5,7 @@ import { createContext, useContext, useRef, useState, type ReactNode } from 'rea
 import { useApiMutation } from '../../api/mutation.js';
 import { routes } from '../../api/routes.js';
 import { useMe } from '../../session/context.js';
-import { storeSavedMe } from '../../session/me.js';
+import { isSignedIn, storeSavedMe } from '../../session/me.js';
 
 type Nested<Group extends string, Leaves> = {
   [Leaf in keyof Leaves & string as `${Group}.${Leaf}`]: Leaves[Leaf];
@@ -127,7 +127,11 @@ export function PreferenceSaverProvider({ children }: { children: ReactNode }) {
       sending.current.delete(id);
       const next = waiting.current.get(id);
       waiting.current.delete(id);
-      if (next !== undefined) void send(id, next.value, next.change);
+      // What waits is for the account that changed it, which may have signed out meanwhile: the
+      // request would then go out with no session or with another account's.
+      if (next !== undefined && isSignedIn(queryClient, me.id)) {
+        void send(id, next.value, next.change);
+      }
     }
   }
 
