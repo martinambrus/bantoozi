@@ -29,7 +29,7 @@ import {
   freshIndexedDb,
 } from '../offline/support.js';
 import { makeMe } from './fixtures.js';
-import { trackSessions } from './support.js';
+import { requestsTo, trackSessions } from './support.js';
 
 const userA = makeMe();
 const userB = makeMe({ id: B, email: 'b@example.com' });
@@ -237,6 +237,22 @@ describe('when another tab signs in', () => {
     other.postMessage({ type: 'signed-in', me: { id: B } });
     await vi.waitFor(() => expect(queryClient.getQueryData(meKey())).toEqual(userB));
     other.close();
+  });
+});
+
+describe('when another tab drops its account', () => {
+  it('a 401 there leaves a tab that shows another account by now, which asks who is signed in', async () => {
+    const shown = sessions.start({ me: userB });
+    await shown.session.loadMe();
+    // The other tab still shows A: it has not heard of the sign-in as B yet.
+    localStorage.removeItem(LAST_ACCOUNT_KEY);
+    const other = sessions.start({ me: userA });
+    await other.session.loadMe();
+
+    other.session.unauthorized(other.session.currentCookie());
+
+    await vi.waitFor(() => expect(requestsTo(shown.requests, 'GET /api/v1/me')).toHaveLength(2));
+    expect(shown.queryClient.getQueryData(meKey())).toEqual(userB);
   });
 });
 

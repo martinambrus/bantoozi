@@ -295,7 +295,7 @@ describe('verifyCode', () => {
     await vi.waitFor(() =>
       expect(tab.heard).toEqual([
         { type: 'signed-in', me: userB },
-        { type: 'reset', removed: USER_A_ID, at: expect.any(Number) },
+        { type: 'reset', account: USER_A_ID, removed: USER_A_ID, at: expect.any(Number) },
       ]),
     );
   });
@@ -312,7 +312,9 @@ describe('verifyCode', () => {
     expect(queryClient.getQueryData(accountKey(USER_A_ID, 'articles', 'list'))).toBeUndefined();
     await vi.waitFor(() => expect(queryClient.getQueryData(meKey())).toEqual(userB));
     await vi.waitFor(() =>
-      expect(tab.heard).toEqual([{ type: 'reset', removed: USER_A_ID, at: expect.any(Number) }]),
+      expect(tab.heard).toEqual([
+        { type: 'reset', account: USER_A_ID, removed: USER_A_ID, at: expect.any(Number) },
+      ]),
     );
   });
 
@@ -385,7 +387,9 @@ describe('logout', () => {
     expect(queryClient.getQueryData(meKey())).toBeNull();
     expect(keysOf(queryClient)).toEqual([meKey()]);
     await vi.waitFor(() =>
-      expect(tab.heard).toEqual([{ type: 'reset', removed: USER_A_ID, at: expect.any(Number) }]),
+      expect(tab.heard).toEqual([
+        { type: 'reset', account: USER_A_ID, removed: USER_A_ID, at: expect.any(Number) },
+      ]),
     );
   });
 
@@ -433,7 +437,7 @@ describe('a 401', () => {
     expect(resets).toEqual(['unauthorized']);
     expect(queryClient.getQueryData(meKey())).toBeNull();
     expect(keysOf(queryClient)).toEqual([meKey()]);
-    await vi.waitFor(() => expect(tab.heard).toEqual([{ type: 'reset' }]));
+    await vi.waitFor(() => expect(tab.heard).toEqual([{ type: 'reset', account: USER_A_ID }]));
   });
 
   describe('to a request sent before a sign-out', () => {
@@ -604,7 +608,9 @@ describe('resetAccountState', () => {
     expect(queryClient.getQueryData(meKey())).toBeNull();
     expect(resets).toEqual(['logout']);
     await vi.waitFor(() =>
-      expect(tab.heard).toEqual([{ type: 'reset', removed: USER_A_ID, at: expect.any(Number) }]),
+      expect(tab.heard).toEqual([
+        { type: 'reset', account: USER_A_ID, removed: USER_A_ID, at: expect.any(Number) },
+      ]),
     );
   });
 
@@ -717,7 +723,9 @@ describe('another tab', () => {
     await vi.waitFor(() => expect(second.queryClient.getQueryData(meKey())).toBeNull());
     await settle();
     expect(resets).toEqual(['logout', 'remote']);
-    expect(tab.heard).toEqual([{ type: 'reset', removed: USER_A_ID, at: expect.any(Number) }]);
+    expect(tab.heard).toEqual([
+      { type: 'reset', account: USER_A_ID, removed: USER_A_ID, at: expect.any(Number) },
+    ]);
   });
 
   it('asks who is signed in, and stays, when the reset removed an account it no longer shows', async () => {
@@ -725,7 +733,25 @@ describe('another tab', () => {
     const { queryClient, requests } = await startSignedIn(userB);
     const resets = recordResets();
 
-    tab.channel.postMessage({ type: 'reset', removed: USER_A_ID, at: Date.now() });
+    tab.channel.postMessage({
+      type: 'reset',
+      account: USER_A_ID,
+      removed: USER_A_ID,
+      at: Date.now(),
+    });
+
+    await vi.waitFor(() => expect(requestsTo(requests, 'GET /api/v1/me')).toHaveLength(2));
+    await settle();
+    expect(resets).toEqual([]);
+    expect(queryClient.getQueryData(meKey())).toEqual(userB);
+  });
+
+  it('asks who is signed in, and stays, when a 401 ended the other tab of an account it no longer shows', async () => {
+    const tab = otherTab();
+    const { queryClient, requests } = await startSignedIn(userB);
+    const resets = recordResets();
+
+    tab.channel.postMessage({ type: 'reset', account: USER_A_ID });
 
     await vi.waitFor(() => expect(requestsTo(requests, 'GET /api/v1/me')).toHaveLength(2));
     await settle();
@@ -739,7 +765,12 @@ describe('another tab', () => {
     const resets = recordResets();
     server.me = null;
 
-    tab.channel.postMessage({ type: 'reset', removed: USER_A_ID, at: Date.now() });
+    tab.channel.postMessage({
+      type: 'reset',
+      account: USER_A_ID,
+      removed: USER_A_ID,
+      at: Date.now(),
+    });
 
     await vi.waitFor(() => expect(queryClient.getQueryData(meKey())).toBeNull());
     expect(resets).toEqual(['unauthorized']);
