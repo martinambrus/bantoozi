@@ -66,9 +66,13 @@ export function useOfflineReading() {
     turnOn: () =>
       run(async () => {
         if (await setOfflineEnabled(me.id, true)) {
-          setEnabled(true);
-          await saveMe(me.id, me);
-          return true;
+          // Without the account on the device, an offline start could not open what is kept.
+          if (await saveMe(me.id, me)) {
+            setEnabled(true);
+            return true;
+          }
+          await setOfflineEnabled(me.id, false);
+          return false;
         }
         // A store that cannot open is told by the status line, not as a failure.
         if (!(await offlineDb()).available) {

@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from '@testing-library/react';
+import { IDBObjectStore as FakeIDBObjectStore } from 'fake-indexeddb';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { readMe, saveDetail, saveView, setOfflineEnabled } from '../../src/offline/cache.js';
@@ -308,6 +309,34 @@ describe('the Offline reading section', () => {
       expect(toggle()).toHaveAttribute('aria-checked', 'false');
       expect(isOfflineEnabled(A)).toBe(false);
       expect(within(offline()).queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('says it failed and stays off when the account cannot be stored', async () => {
+      // The store opens, but the account cannot be written to it: its quota is used up.
+      const put = FakeIDBObjectStore.prototype.put;
+      function putUnlessFull(
+        this: InstanceType<typeof FakeIDBObjectStore>,
+        ...args: Parameters<typeof put>
+      ) {
+        if (this.name === 'meta') {
+          throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        }
+        return put.apply(this, args);
+      }
+      const full = vi.spyOn(FakeIDBObjectStore.prototype, 'put').mockImplementation(putUnlessFull);
+      onTestFinished(() => {
+        full.mockRestore();
+      });
+      const { user } = await openSettings();
+
+      await user.click(toggle());
+
+      expect(await within(offline()).findByRole('alert')).toHaveTextContent(
+        "Couldn't change offline reading. Try again.",
+      );
+      expect(toggle()).toHaveAttribute('aria-checked', 'false');
+      expect(isOfflineEnabled(A)).toBe(false);
+      expect(await readMe(A)).toBeNull();
     });
 
     it('does not create the store for an account that has not turned it on', async () => {
