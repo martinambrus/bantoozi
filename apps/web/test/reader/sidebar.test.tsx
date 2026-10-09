@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { failure, json } from '../api/fake-fetch.js';
@@ -492,6 +492,32 @@ describe('the reader sidebar without a connection', () => {
 
     await app.user.click(within(sidebar()).getByRole('button', { name: 'Retry loading feeds' }));
     await app.user.click(within(sidebar()).getByRole('button', { name: 'Retry loading labels' }));
+
+    expect(await screen.findByRole('link', { name: 'Verge' })).toBeVisible();
+    expect(await screen.findByRole('link', { name: 'Climate' })).toBeVisible();
+  });
+
+  it('loads the feeds and the labels once the device is back online, without Retry', async () => {
+    const online = goOffline();
+    let reachable = false;
+    const answer = (body: unknown) => () => (reachable ? json(200, body) : unreachable());
+    await open({
+      path: '/read/for_you',
+      routes: {
+        'GET /subscriptions': answer([feed('2', 'Verge', null)]),
+        'GET /labels': answer([makeLabel('11', 'Climate')]),
+      },
+    });
+    await waitFor(() => {
+      expect(said()).toContain('The feeds load once the device is back online.');
+      expect(said()).toContain('The labels load once the device is back online.');
+    });
+
+    reachable = true;
+    online.mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
 
     expect(await screen.findByRole('link', { name: 'Verge' })).toBeVisible();
     expect(await screen.findByRole('link', { name: 'Climate' })).toBeVisible();

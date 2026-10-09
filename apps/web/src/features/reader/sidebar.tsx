@@ -1,6 +1,7 @@
 import { normalizeText, type ArticleCounts, type Subscription } from '@bantoozi/shared';
+import type { RefetchOptions } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { useId, useMemo, type ReactNode } from 'react';
+import { useCallback, useId, useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Badge } from '../../components/badge.js';
@@ -21,6 +22,7 @@ import { useLabels } from '../article/use-labels.js';
 import { ClassificationBadge } from '../feeds/feed-status.js';
 import { displayTitle, groupByFolder, type FolderGroup } from '../feeds/folders.js';
 import { useSubscriptions } from '../feeds/subscriptions.js';
+import { useReconnect } from '../offline/use-connection.js';
 import { FeedFilter } from './feed-filter.js';
 import type { Lane } from './lanes.js';
 import { useEverythingOpen, useFeedFilter } from './reader-state.js';
@@ -217,6 +219,18 @@ function FeedLink({
   );
 }
 
+type Refetch = (options: RefetchOptions) => unknown;
+
+/**
+ * Asks for a section's data again while it has none and the browser reports a connection, as its
+ * offline text promises. TanStack does that only for a page it saw go offline, not one that started
+ * offline.
+ */
+function useReloadOnReconnect({ data, refetch }: { data: unknown; refetch: Refetch }) {
+  const retry = useCallback(() => void refetch({ cancelRefetch: false }), [refetch]);
+  useReconnect(data === undefined, retry);
+}
+
 /** A folder, and those of its feeds whose titles match the filter. */
 interface Shown {
   group: FolderGroup;
@@ -228,6 +242,7 @@ function FeedsSection({ onNavigate }: { onNavigate?: (() => void) | undefined })
   const { folderOrder } = useMe().preferences;
   const subscriptions = useSubscriptions();
   const online = useOnline();
+  useReloadOnReconnect(subscriptions);
   const [filter] = useFeedFilter();
   const groups = useMemo(
     () =>
@@ -325,6 +340,7 @@ function LabelsSection({ onNavigate }: { onNavigate?: (() => void) | undefined }
   const { t } = useTranslation('reader');
   const labels = useLabels(true);
   const online = useOnline();
+  useReloadOnReconnect(labels);
 
   return (
     <Section title={t('sidebar.labels')}>
