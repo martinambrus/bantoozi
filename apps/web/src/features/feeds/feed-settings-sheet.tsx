@@ -104,7 +104,14 @@ export function FeedSettingsSheet({
   // A subscription saved meanwhile (another tab) fills the fields the person has not changed.
   const [draft, setDraft] = useDraft(subscription, draftOf);
   const [asking, setAsking] = useState(false);
-  const save = useApiMutation(routes.subscriptionsUpdate);
+  // The list learns the saved values even when the answer comes after the sheet is gone (the page
+  // was left); only the toast and the closing need the sheet.
+  const save = useApiMutation(routes.subscriptionsUpdate, {
+    onSuccess: ({ subscription: saved }) => {
+      cache.replace(saved);
+      void cache.refresh();
+    },
+  });
 
   const title = displayTitle(subscription);
   const changes = changesOf(subscription, draft);
@@ -117,8 +124,6 @@ export function FeedSettingsSheet({
       { params: { feedId: subscription.feed.id }, body: changes },
       {
         onSuccess: ({ subscription: saved }) => {
-          cache.replace(saved);
-          void cache.refresh();
           toast.show({
             message: t('settings.saved', { title: displayTitle(saved) }),
             tone: 'success',

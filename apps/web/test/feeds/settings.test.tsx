@@ -2,9 +2,10 @@ import type { Me, Subscription } from '@bantoozi/shared';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import { subscriptionsKey } from '../../src/features/feeds/subscriptions.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
-import { makeMe } from '../session/fixtures.js';
+import { USER_A_ID, makeMe } from '../session/fixtures.js';
 import { bodyOf, type FakeServer } from '../support/app.js';
 import {
   DELETE_FEED,
@@ -360,6 +361,33 @@ describe('the feed settings', () => {
       expect(app.calls(UPDATE_FEED)).toHaveLength(1);
       answer(json(200, { subscription: makeSubscription({ feed: { id: '5', title: 'Alpha' } }) }));
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    });
+
+    it('still puts the saved values in the list when the answer comes after the page was left', async () => {
+      const { app, server, sheet } = await openSettings();
+      const answer = server.routes[UPDATE_FEED]!;
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      server.routes[UPDATE_FEED] = async (request, params) => {
+        await held;
+        return answer(request, params);
+      };
+
+      await app.user.type(within(sheet).getByLabelText('Title'), 'My Alpha');
+      await app.user.click(save(sheet));
+      await waitFor(() => expect(app.calls(UPDATE_FEED)).toHaveLength(1));
+      server.routes['GET /labels'] = () => json(200, []);
+      await act(async () => {
+        await app.router.navigate({ to: '/labels' });
+      });
+      release();
+
+      await waitFor(() => expect(app.queryClient.isMutating()).toBe(0));
+      const cached = app.queryClient.getQueryData<Subscription[]>(subscriptionsKey(USER_A_ID));
+      expect(cached?.find((sub) => sub.feed.id === '5')?.titleOverride).toBe('My Alpha');
+      expect(app.queryClient.getQueryState(subscriptionsKey(USER_A_ID))?.isInvalidated).toBe(true);
     });
 
     it('takes no other change while the save is on its way, and takes them again after a failure', async () => {
