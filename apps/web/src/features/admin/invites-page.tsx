@@ -101,13 +101,15 @@ function CreateInvites({ onCreated }: { onCreated: (created: Created) => void })
     setErrors(found);
     if (!parsed.success || Object.keys(found).length > 0) return;
 
+    const sent = { count, email, note, days };
     setFailure(null);
     try {
       const result = await create.mutateAsync({ body: parsed.data });
-      setCount('1');
-      setEmail('');
-      setNote('');
-      setDays('');
+      // A field edited while the invites were on their way keeps its text, for the next ones.
+      setCount((current) => (current === sent.count ? '1' : current));
+      setEmail((current) => (current === sent.email ? '' : current));
+      setNote((current) => (current === sent.note ? '' : current));
+      setDays((current) => (current === sent.days ? '' : current));
       onCreated({ invites: result.items, emailSent: result.emailSent });
       void refresh('invites');
     } catch (error) {

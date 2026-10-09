@@ -762,6 +762,79 @@ describe('invites (spec 09 §8)', () => {
     expect(screen.getByLabelText('Note (optional)')).toHaveValue('');
   });
 
+  it('keeps the note and the days edited while the invites were on their way, and resets the fields that were sent', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const app = await open('/admin/invites', {
+      'POST /admin/invites': async () => {
+        await held;
+        return json(201, {
+          items: [makeInviteDto({ email: 'friend@example.com' })],
+          emailSent: true,
+        });
+      },
+    });
+    await screen.findByRole('table', { name: 'Invites' });
+    await app.user.type(screen.getByLabelText('Email (optional)'), 'friend@example.com');
+    await app.user.type(screen.getByLabelText('Note (optional)'), 'Met at the conference');
+    await app.user.type(screen.getByLabelText('Valid for (days, optional)'), '14');
+    await app.user.click(screen.getByRole('button', { name: 'Create invites' }));
+    await vi.waitFor(() => expect(app.calls('POST /admin/invites')).toHaveLength(1));
+
+    await app.user.type(screen.getByLabelText('Note (optional)'), ' and more');
+    await app.user.clear(screen.getByLabelText('Valid for (days, optional)'));
+    await app.user.type(screen.getByLabelText('Valid for (days, optional)'), '30');
+    release();
+
+    await screen.findByRole('region', { name: 'New invites' });
+    expect(screen.getByLabelText('Number of invites')).toHaveValue(1);
+    expect(screen.getByLabelText('Email (optional)')).toHaveValue('');
+    expect(screen.getByLabelText('Note (optional)')).toHaveValue('Met at the conference and more');
+    expect(screen.getByLabelText('Valid for (days, optional)')).toHaveValue(30);
+    expect(bodyOf(app.calls('POST /admin/invites')[0]!)).toEqual({
+      count: 1,
+      email: 'friend@example.com',
+      note: 'Met at the conference',
+      expiresDays: 14,
+    });
+  });
+
+  it('keeps the number and the address edited while the invites were on their way, and resets the fields that were sent', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const app = await open('/admin/invites', {
+      'POST /admin/invites': async () => {
+        await held;
+        return json(201, {
+          items: [makeInviteDto({ email: 'friend@example.com' })],
+          emailSent: true,
+        });
+      },
+    });
+    await screen.findByRole('table', { name: 'Invites' });
+    await app.user.type(screen.getByLabelText('Email (optional)'), 'friend@example.com');
+    await app.user.type(screen.getByLabelText('Note (optional)'), 'Met at the conference');
+    await app.user.type(screen.getByLabelText('Valid for (days, optional)'), '14');
+    await app.user.click(screen.getByRole('button', { name: 'Create invites' }));
+    await vi.waitFor(() => expect(app.calls('POST /admin/invites')).toHaveLength(1));
+
+    await app.user.clear(screen.getByLabelText('Number of invites'));
+    await app.user.type(screen.getByLabelText('Number of invites'), '2');
+    await app.user.clear(screen.getByLabelText('Email (optional)'));
+    await app.user.type(screen.getByLabelText('Email (optional)'), 'other@example.com');
+    release();
+
+    await screen.findByRole('region', { name: 'New invites' });
+    expect(screen.getByLabelText('Number of invites')).toHaveValue(2);
+    expect(screen.getByLabelText('Email (optional)')).toHaveValue('other@example.com');
+    expect(screen.getByLabelText('Note (optional)')).toHaveValue('');
+    expect(screen.getByLabelText('Valid for (days, optional)')).toHaveValue(null);
+  });
+
   it('creates several invites at once and lists every code and link', async () => {
     const codes = ['AAAAAAAA22', 'BBBBBBBB33', 'CCCCCCCC44'];
     const app = await open('/admin/invites', {
