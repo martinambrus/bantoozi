@@ -140,7 +140,7 @@ describe('feeds (spec 09 §4 step 2)', () => {
 
     expect(await screen.findByLabelText('OPML file')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Import' })).toBeVisible();
-    expect(screen.queryByRole('link', { name: 'Export OPML' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Export OPML' })).toBeNull();
   });
 
   it('needs a feed: Continue is disabled with its reason until one is added', async () => {

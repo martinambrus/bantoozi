@@ -1,8 +1,9 @@
 import { OPML_INVALID_REASONS } from '@bantoozi/shared';
 import { screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { UUID_V4, failure, json } from '../api/fake-fetch.js';
+import { meKey } from '../../src/api/query-keys.js';
+import { UUID_V4, failure, json, text } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
 import { IMPORT_OPML, LIST, feedsServer, makeSubscription } from './support.js';
 
@@ -267,12 +268,71 @@ describe('importing OPML', () => {
 });
 
 describe('exporting OPML', () => {
-  it('links to the download of the subscriptions', async () => {
-    await openFeeds();
+  const EXPORT_OPML = 'GET /subscriptions/export-opml';
+  const exportButton = () => screen.getByRole('button', { name: 'Export OPML' });
 
-    const link = screen.getByRole('link', { name: 'Export OPML' });
-    expect(link).toHaveAttribute('href', '/api/v1/subscriptions/export-opml');
-    expect(link).toHaveAttribute('download');
-    expect(link).not.toHaveAttribute('target');
+  const blobs: Blob[] = [];
+  const saved: { href: string; download: string }[] = [];
+  const realCreate = URL.createObjectURL;
+  const realRevoke = URL.revokeObjectURL;
+
+  beforeAll(() => {
+    URL.createObjectURL = vi.fn((blob: Blob | MediaSource) => {
+      blobs.push(blob as Blob);
+      return `blob:test-${blobs.length}`;
+    });
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  afterAll(() => {
+    URL.createObjectURL = realCreate;
+    URL.revokeObjectURL = realRevoke;
+  });
+
+  beforeEach(() => {
+    blobs.length = 0;
+    saved.length = 0;
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function click(
+      this: HTMLAnchorElement,
+    ) {
+      saved.push({ href: this.href, download: this.download });
+    });
+  });
+
+  it('downloads the subscriptions through the API and saves them as an OPML file', async () => {
+    const { app, server } = await openFeeds();
+    server.routes[EXPORT_OPML] = () => text(200, OPML, { 'content-type': 'text/x-opml' });
+
+    await app.user.click(exportButton());
+
+    await waitFor(() =>
+      expect(saved).toEqual([{ href: 'blob:test-1', download: 'bantoozi-subscriptions.opml' }]),
+    );
+    expect(app.calls(EXPORT_OPML)).toHaveLength(1);
+    expect(app.calls(EXPORT_OPML)[0]?.credentials).toBe('same-origin');
+    expect(blobs[0]?.type).toBe('text/x-opml');
+    expect(await blobs[0]?.text()).toBe(OPML);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('saves nothing and says why when the server cannot export', async () => {
+    const { app, server } = await openFeeds();
+    server.routes[EXPORT_OPML] = () => failure(503, 'UNAVAILABLE');
+
+    await app.user.click(exportButton());
+
+    expect(await screen.findByRole('alert')).toBeVisible();
+    expect(saved).toHaveLength(0);
+    expect(exportButton()).toBeEnabled();
+  });
+
+  it('ends the session when the server answers 401, as every other call does', async () => {
+    const { app, server } = await openFeeds();
+    server.routes[EXPORT_OPML] = () => failure(401, 'UNAUTHORIZED');
+
+    await app.user.click(exportButton());
+
+    await waitFor(() => expect(app.queryClient.getQueryData(meKey())).toBeNull());
+    expect(saved).toHaveLength(0);
   });
 });

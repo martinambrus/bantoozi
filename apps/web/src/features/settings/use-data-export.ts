@@ -2,11 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { parseRetryAfter } from '../../api/client.js';
 import { routes } from '../../api/routes.js';
+import { saveFile } from '../../components/save-file.js';
 import { useMe, useSession } from '../../session/context.js';
 
 const EXPORT_URL = `/api/v1${routes.meExport.path}`;
-/** The browser reads the object URL when the download starts; this is far longer than that takes. */
-const RELEASE_AFTER_MS = 40_000;
 
 export type ExportProblem =
   | { kind: 'http'; status: number }
@@ -73,18 +72,6 @@ function isCompleteJson(text: string): boolean {
   } catch {
     return false;
   }
-}
-
-function saveFile(file: Blob, filename: string) {
-  const url = URL.createObjectURL(file);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.hidden = true;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), RELEASE_AFTER_MS);
 }
 
 /**

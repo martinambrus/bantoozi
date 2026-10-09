@@ -5,14 +5,15 @@ import { useTranslation } from 'react-i18next';
 import { isApiError } from '../../api/errors.js';
 import { useApiMutation } from '../../api/mutation.js';
 import { routes } from '../../api/routes.js';
-import { BUTTON_BASE, BUTTON_VARIANTS, Button } from '../../components/button.js';
-import { cx } from '../../components/cx.js';
+import { Button } from '../../components/button.js';
 import { errorMessage, quotaDetails } from '../../components/error-message.js';
+import { saveFile } from '../../components/save-file.js';
 import { TextField } from '../../components/text-field.js';
 import { InlineAlert } from './inline-alert.js';
 import { useSubscriptionsCache } from './subscriptions.js';
 
-const EXPORT_HREF = `/api/v1${routes.subscriptionsExportOpml.path}`;
+/** The name the API gives the file (spec 08 §4). */
+const EXPORT_FILENAME = 'bantoozi-subscriptions.opml';
 
 /** The message key for the two reasons the API gives for a file it cannot import, else null. */
 function opmlProblemKey(code: unknown): string | null {
@@ -34,9 +35,22 @@ export function OpmlSection({ exportable = true }: OpmlSectionProps) {
   const [file, setFile] = useState<File | null>(null);
   const [report, setReport] = useState<OpmlImportReport | null>(null);
   const upload = useApiMutation(routes.subscriptionsImportOpml);
+  // Through the API client, not a link: an error is shown instead of saved as the file, and a 401
+  // ends the session as on every other call.
+  const download = useApiMutation(routes.subscriptionsExportOpml);
 
   function choose(event: ChangeEvent<HTMLInputElement>) {
     setFile(event.target.files?.[0] ?? null);
+  }
+
+  function exportOpml() {
+    if (download.isPending) return;
+    // Saved even when the page was left meanwhile, as a download the browser had begun would be;
+    // a failure shows below the button.
+    download.mutateAsync().then(
+      (opml) => saveFile(new Blob([opml], { type: 'text/x-opml' }), EXPORT_FILENAME),
+      () => {},
+    );
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -83,14 +97,13 @@ export function OpmlSection({ exportable = true }: OpmlSectionProps) {
       {upload.error === null ? null : <ImportFailure error={upload.error} />}
       {report === null ? null : <ImportReport report={report} />}
       {exportable ? (
-        <div>
-          <a
-            href={EXPORT_HREF}
-            download
-            className={cx(BUTTON_BASE, BUTTON_VARIANTS.secondary, 'px-4 text-sm')}
-          >
+        <div className="flex flex-col items-start gap-3">
+          <Button variant="secondary" loading={download.isPending} onClick={exportOpml}>
             {t('opml.export')}
-          </a>
+          </Button>
+          {download.error === null ? null : (
+            <InlineAlert>{errorMessage(t, download.error)}</InlineAlert>
+          )}
         </div>
       ) : null}
     </section>
