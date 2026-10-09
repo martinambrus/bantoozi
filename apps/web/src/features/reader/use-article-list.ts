@@ -36,7 +36,8 @@ function refusesCursor(error: unknown): boolean {
  * was refused, starts from page one, because a cursor belongs to the list it came from. Nothing
  * refetches it on focus, reconnect or mount: a list that moves while it is read is worse than one
  * that is a little old. Where there is no connection and the list was never loaded, the rows the
- * device kept stand in for it until the connection is back and the list is loaded.
+ * device kept stand in for it until the list is loaded, and the list is asked for again, saved rows
+ * or not, when the browser reports a connection.
  */
 export function useArticleList(
   view: ReaderView,
@@ -127,7 +128,7 @@ export function useArticleList(
   const kept = useSavedList(accountId, which, lost);
   const saved = lost && kept ? kept : null;
   const retry = useCallback(() => void poll(), [poll]);
-  useReconnect(saved !== null, retry);
+  useReconnect(lost, retry);
 
   const canLoadMore = hasNextPage && !isPlaceholderData;
   const loadMore = useCallback(async () => {

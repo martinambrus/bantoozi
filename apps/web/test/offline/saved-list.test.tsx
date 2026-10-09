@@ -294,6 +294,21 @@ describe('when the connection is back', () => {
     expect(screen.queryByText(LINE)).toBeNull();
   });
 
+  it('loads a list that the device has no copy of', async () => {
+    const net = connection();
+    net.lose();
+    const { app, state } = await harness.open(net, { path: '/read/for_you' });
+    expect(await screen.findByText("You're offline")).toBeVisible();
+    const before = listQueries(app).length;
+    state.items = [item(7)];
+
+    net.restore();
+
+    expect(await screen.findByRole('article', { name: 'Article 7' })).toBeVisible();
+    expect(screen.queryByText("You're offline")).toBeNull();
+    expect(listQueries(app)).toHaveLength(before + 1);
+  });
+
   it('keeps the saved rows when the server still cannot be reached', async () => {
     const net = connection();
     await keepView([1, 2]);
