@@ -15,3 +15,14 @@ export interface FeedbackEventRow {
 export function feedbackEventsOf(control: Control, email: string): Promise<FeedbackEventRow[]> {
   return control.sql<FeedbackEventRow[]>('feedbackEventFeatures', { email });
 }
+
+/** The rating events (`rate`) of one account for one article, oldest first. */
+export async function ratingEventsFor(
+  control: Control,
+  email: string,
+  articleId: string,
+): Promise<FeedbackEventRow[]> {
+  return (await feedbackEventsOf(control, email)).filter(
+    (event) => event.kind === 'rate' && event.articleId === articleId,
+  );
+}

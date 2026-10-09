@@ -40,10 +40,18 @@ export interface StartOptions {
 export async function startReader(
   { browse, control }: { browse: Browse; control: Control },
   label: string,
-  { feeds = ['tech'], path = '/read/new', preferences }: StartOptions = {},
+  options: StartOptions = {},
 ): Promise<Reader> {
   const email = newAccount(label);
   const page = await browse.as(email);
+  return openReader({ page, email, control }, options);
+}
+
+/** The same for a page that is already signed in as `email`. */
+export async function openReader(
+  { page, email, control }: { page: Page; email: string; control: Control },
+  { feeds = ['tech'], path = '/read/new', preferences }: StartOptions = {},
+): Promise<Reader> {
   const user = page.request;
   if (preferences !== undefined) {
     await callJson<unknown>(user, 'PATCH', '/api/v1/me', { data: { preferences } });

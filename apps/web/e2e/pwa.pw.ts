@@ -1,3 +1,4 @@
+import { accountFollowing, deleteAccountInSettings } from './pwa-support/accounts.js';
 import {
   articlesOf,
   cardsOf,
@@ -17,6 +18,7 @@ import {
   causesOf,
   expectOnlyItems,
   expectPressed,
+  openReader,
   openRecentActions,
   paneButton,
   reasonBar,
@@ -29,35 +31,60 @@ import {
   toastWith,
 } from './pwa-support/reader.js';
 import { recordFocus, takeFocusStops, type FocusStop } from './pwa-support/focus.js';
-import { feedbackEventsOf } from './pwa-support/hooks.js';
+import { feedbackEventsOf, ratingEventsFor } from './pwa-support/hooks.js';
 import {
   answerTo,
   readOriginal,
   setLearnFromReading,
   watchDwellRequests,
 } from './pwa-support/implicit.js';
+import {
+  installabilityErrorsOf,
+  startInstalledReader,
+  test as installedTest,
+} from './pwa-support/installed.js';
 import { recordKeys, takeKeys, typeWithInputMethod } from './pwa-support/keys.js';
+import { signInOnLoginPage, signOut } from './pwa-support/login.js';
+import { decodedIconSize, linkedManifest } from './pwa-support/manifest.js';
 import { rowWatch, watchRow, type RowWatch } from './pwa-support/motion.js';
+import {
+  backgroundSyncOf,
+  comeBackOnline,
+  goOffline,
+  keepArticlesOnThisDevice,
+  waitingToSync,
+  watchRatingRequests,
+  withoutBackgroundSync,
+  workerControls,
+  workerReady,
+} from './pwa-support/offline.js';
+import { endOtherSessions, otherSessionCount } from './pwa-support/sessions.js';
 import {
   canariesIn,
   dumpStorage,
+  offlineRows,
   plantInStorage,
   removePlanted,
+  rowsOfAccount,
+  savedOnDevice,
+  tracesOfAccount,
   type Canary,
 } from './pwa-support/storage.js';
 import { leaveAndComeBack } from './pwa-support/visibility.js';
-import { uniqueTag } from './reader-support/accounts.js';
+import { newAccount, uniqueTag } from './reader-support/accounts.js';
 import { waitForExtraction } from './reader-support/api.js';
 import { arrive } from './reader-support/hooks.js';
-import { openArticle, rowOf } from './reader-support/ui.js';
+import { articlePane, openArticle, rowOf } from './reader-support/ui.js';
 import { staysTrueFor } from './reader-support/wait.js';
-import { callJson } from './support/api.js';
+import { callJson, type MeResponse } from './support/api.js';
+import { URLS } from './support/env.js';
 import { expect, test } from './support/test.js';
 
 /**
- * Spec 09 §9, the PWA check: the bullets that need neither a service worker nor a connection that
- * goes away. One test per bullet; each drives the real reader and compares the screen with what
- * the HTTP API reports.
+ * Spec 09 §9, the PWA check. One test per bullet; each drives the real reader and compares the
+ * screen with what the HTTP API reports. The tests of the first part run in the default browser
+ * context; those on `installedTest` run in a persistent Chromium profile that keeps its service
+ * worker, and lose their connection where the bullet says so.
  */
 
 test('exact undo restores an earlier opposite rating, reason, read status and SHIFT-hide (UI and API agree)', async ({
@@ -916,3 +943,479 @@ test('implicit feedback off sends no /dwell and no behavioural features on open,
     expect(await eventsOf('dwell')).toHaveLength(1);
   });
 });
+
+installedTest(
+  'the app is installable: the service worker is ready, the manifest is valid with icons that load, and Chrome reports no installability error',
+  async ({ installed }) => {
+    const app = await installed.open(newAccount('pwa-installable'));
+    const { page } = app;
+    await page.goto('/read/new');
+    await expect(page.getByRole('heading', { level: 1, name: 'New' })).toBeVisible();
+
+    await test.step('navigator.serviceWorker.ready resolves with the worker of the app', async () => {
+      const worker = await page.evaluate(async () => {
+        const registration = await navigator.serviceWorker.ready;
+        return { scope: registration.scope, script: registration.active?.scriptURL ?? null };
+      });
+      expect(worker).toEqual({ scope: `${URLS.app}/`, script: `${URLS.app}/sw.js` });
+    });
+
+    await test.step('the manifest link leads to a manifest with its name, start address, display mode and icons', async () => {
+      const { url, contentType, manifest } = await linkedManifest(page);
+      expect(url).toBe(`${URLS.app}/manifest.webmanifest`);
+      expect(contentType).toMatch(/json/);
+      expect(manifest).toMatchObject({ name: 'Bantoozi', start_url: '/', display: 'standalone' });
+      expect(manifest.icons.map((icon) => icon.sizes)).toEqual(
+        expect.arrayContaining(['192x192', '512x512']),
+      );
+      for (const icon of manifest.icons) {
+        const [width = 0, height = 0] = icon.sizes.split('x').map(Number);
+        expect(icon.type).toBe('image/png');
+        expect(
+          await decodedIconSize(page, icon.src, url),
+          `the icon ${icon.src} loads at ${icon.sizes}`,
+        ).toEqual({ width, height });
+      }
+    });
+
+    await test.step('Chrome finds nothing in the way of installing the app', async () => {
+      expect(await installabilityErrorsOf(app)).toEqual([]);
+    });
+  },
+);
+
+installedTest(
+  'offline after opting in and one online visit, a reload shows the saved list and the opened article, and an unopened article says to connect',
+  async ({ installed, control }) => {
+    installedTest.setTimeout(150_000);
+    const reader = await startInstalledReader({ installed, control }, 'pwa-offline');
+    const { page, user } = reader;
+    const quantum = titleAbout(reader, 'quantum');
+    const robotics = titleAbout(reader, 'robotics');
+    const excerptOf = (title: string): string =>
+      reader.items.find((item) => item.title === title)?.excerpt ?? '';
+    const me = await callJson<MeResponse>(user, 'GET', '/api/v1/me');
+    const articleIds = [...(await everyArticle(user)).keys()].sort();
+    const quantumId = await idOf(user, quantum);
+
+    await test.step('one online visit with the choice made leaves the list and the opened article on the device', async () => {
+      await workerReady(page);
+      await keepArticlesOnThisDevice(page);
+      await page.goto('/read/new');
+      for (const item of reader.items) await expect(rowOf(page, item.title)).toBeVisible();
+      await openArticle(page, quantum);
+      await expect
+        .poll(() => savedOnDevice(page, me.id), {
+          message: 'the device keeps the list and the opened article',
+        })
+        .toEqual({ account: true, items: articleIds, views: 1, details: [quantumId], unsent: 0 });
+    });
+
+    await test.step('with the connection gone, the reload shows the saved list at once', async () => {
+      await goOffline(page);
+      await page.reload();
+      await expect(page.getByRole('heading', { level: 1, name: 'New' })).toBeVisible();
+      await expect(
+        page
+          .getByRole('status')
+          .filter({ hasText: 'Offline. Showing articles saved on this device at' }),
+      ).toBeVisible();
+      for (const item of reader.items) await expect(rowOf(page, item.title)).toBeVisible();
+    });
+
+    await test.step('the article opened before shows its text, an unopened one asks for a connection', async () => {
+      const opened = await openArticle(page, quantum);
+      await expect(opened).toContainText(excerptOf(quantum));
+      await expect(opened).not.toContainText('Connect to load this article');
+
+      const unopened = await openArticle(page, robotics);
+      await expect(
+        unopened.getByText('Connect to load this article', { exact: true }),
+      ).toBeVisible();
+      await expect(unopened).not.toContainText(excerptOf(robotics));
+    });
+
+    await test.step('no spinner stays on the page', async () => {
+      await staysTrueFor(1_500, async () => {
+        await expect(page.getByRole('status', { name: /^Loading/ })).toHaveCount(0);
+        await expect(page.getByText(/Loading/)).toHaveCount(0);
+      });
+    });
+  },
+);
+
+installedTest(
+  'replayed twice without Background Sync, a like made offline reaches the server once: one rating event, and the API shows it liked',
+  async ({ installed, control, api }) => {
+    installedTest.setTimeout(150_000);
+    const reader = await startInstalledReader({ installed, control }, 'pwa-replay');
+    const { page, user, email } = reader;
+    const robotics = titleAbout(reader, 'robotics');
+    const robotId = await idOf(user, robotics);
+    const me = await callJson<MeResponse>(user, 'GET', '/api/v1/me');
+    const articleIds = [...(await everyArticle(user)).keys()].sort();
+    const device = await api.login(email);
+    const sent = watchRatingRequests(page);
+
+    await test.step('without Background Sync, one online visit with the choice made leaves the list on the device', async () => {
+      await workerReady(page);
+      await withoutBackgroundSync(page);
+      await keepArticlesOnThisDevice(page);
+      await page.goto('/read/new');
+      for (const item of reader.items) await expect(rowOf(page, item.title)).toBeVisible();
+      expect(await backgroundSyncOf(page)).toEqual({ manager: false, registration: false });
+      expect(await workerControls(page)).toBe(true);
+      await expect
+        .poll(() => savedOnDevice(page, me.id), { message: 'the device keeps the list' })
+        .toMatchObject({ account: true, items: articleIds, views: 1 });
+    });
+
+    await test.step('offline, the like waits on the device, and a reload still shows it waiting to sync', async () => {
+      await goOffline(page);
+      await rowButton(page, robotics, 'Like').click();
+      await expect
+        .poll(async () => (await savedOnDevice(page, me.id)).unsent, {
+          message: 'the like is kept on the device',
+        })
+        .toBe(1);
+      await page.reload();
+      await expect(waitingToSync(page, robotics)).toBeVisible();
+      await expectPressed(rowButton(page, robotics, 'Like'), true);
+      await expectState(device, robotId, { rating: null }, 'the server has not heard of the like');
+      expect(sent).toEqual([]);
+    });
+
+    await test.step('back online, the like is sent once, whichever way the replay is started', async () => {
+      await comeBackOnline(page);
+      await leaveAndComeBack(page);
+      await expectState(device, robotId, { rating: 1 }, 'the like reaches the server');
+      await expect(waitingToSync(page, robotics)).toBeHidden();
+      await expectPressed(rowButton(page, robotics, 'Like'), true);
+      await expect
+        .poll(async () => (await savedOnDevice(page, me.id)).unsent, {
+          message: 'nothing is left to send',
+        })
+        .toBe(0);
+
+      await page.reload();
+      await expect(page.getByRole('heading', { level: 1, name: 'New' })).toBeVisible();
+      await staysTrueFor(1_500, async () => {
+        expect(await ratingEventsFor(control, email, robotId)).toHaveLength(1);
+        expect(sent).toEqual([robotId]);
+      });
+      await expectState(device, robotId, { rating: 1 }, 'the like is still the saved rating');
+    });
+  },
+);
+
+installedTest(
+  'a like made offline waits for sign-in when the session ended meanwhile, and signing in again as the same account sends it once',
+  async ({ installed, control, api }) => {
+    installedTest.setTimeout(170_000);
+    const reader = await startInstalledReader({ installed, control }, 'pwa-401');
+    const { page, user, email } = reader;
+    const robotics = titleAbout(reader, 'robotics');
+    const robotId = await idOf(user, robotics);
+    const me = await callJson<MeResponse>(user, 'GET', '/api/v1/me');
+    const articleIds = [...(await everyArticle(user)).keys()].sort();
+    const device = await api.login(email);
+    const sent = watchRatingRequests(page);
+
+    await test.step('the like is made offline and kept on the device', async () => {
+      await workerReady(page);
+      await keepArticlesOnThisDevice(page);
+      await page.goto('/read/new');
+      for (const item of reader.items) await expect(rowOf(page, item.title)).toBeVisible();
+      await expect
+        .poll(() => savedOnDevice(page, me.id), { message: 'the device keeps the list' })
+        .toMatchObject({ account: true, items: articleIds, views: 1 });
+      await goOffline(page);
+      await rowButton(page, robotics, 'Like').click();
+      await expect
+        .poll(async () => (await savedOnDevice(page, me.id)).unsent, {
+          message: 'the like is kept on the device',
+        })
+        .toBe(1);
+    });
+
+    await test.step('with the session ended on the server, the reconnect sends nothing and asks to sign in', async () => {
+      expect(await endOtherSessions(device), 'the one session of the page is ended').toBe(1);
+      await comeBackOnline(page);
+      await expect(page).toHaveURL(/\/login\?redirect=%2Fread%2Fnew$/);
+      await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
+      await staysTrueFor(1_500, async () => {
+        expect(sent).toEqual([]);
+        expect((await fieldsOf(device, robotId)).rating).toBeNull();
+      });
+      const kept = rowsOfAccount(await offlineRows(page), me.id, 'queue');
+      expect(kept.map((row) => (row.value as { state: string }).state)).toEqual(['frozen']);
+    });
+
+    await test.step('signing in again as the same account sends the like once', async () => {
+      await signInOnLoginPage(page, email);
+      await expect(page).toHaveURL(/\/read\/new$/);
+      await expectState(device, robotId, { rating: 1 }, 'the like reaches the server');
+      await expect
+        .poll(async () => (await savedOnDevice(page, me.id)).unsent, {
+          message: 'nothing is left to send',
+        })
+        .toBe(0);
+      await staysTrueFor(1_500, async () => {
+        expect(await ratingEventsFor(control, email, robotId)).toHaveLength(1);
+        expect(sent).toEqual([robotId]);
+      });
+    });
+  },
+);
+
+installedTest(
+  'a change made offline more than 24 hours ago is not sent on reconnect: the person is told, and the row shows its earlier state',
+  async ({ installed, control, api }) => {
+    installedTest.setTimeout(150_000);
+    const email = newAccount('pwa-expiry');
+    const { page } = await installed.open(email);
+    await page.clock.install();
+    const reader = await openReader({ page, email, control });
+    const robotics = titleAbout(reader, 'robotics');
+    const robotId = await idOf(reader.user, robotics);
+    const me = await callJson<MeResponse>(reader.user, 'GET', '/api/v1/me');
+    const articleIds = [...(await everyArticle(reader.user)).keys()].sort();
+    const device = await api.login(email);
+    const sent = watchRatingRequests(page);
+
+    await test.step('the like is made offline and kept on the device', async () => {
+      await workerReady(page);
+      await keepArticlesOnThisDevice(page);
+      await page.goto('/read/new');
+      for (const item of reader.items) await expect(rowOf(page, item.title)).toBeVisible();
+      await expect
+        .poll(() => savedOnDevice(page, me.id), { message: 'the device keeps the list' })
+        .toMatchObject({ account: true, items: articleIds, views: 1 });
+      await goOffline(page);
+      await rowButton(page, robotics, 'Like').click();
+      await expect
+        .poll(async () => (await savedOnDevice(page, me.id)).unsent, {
+          message: 'the like is kept on the device',
+        })
+        .toBe(1);
+    });
+
+    await test.step('a day and an hour later, the reconnect drops the like and says so', async () => {
+      await page.clock.fastForward('25:00:00');
+      await comeBackOnline(page);
+      await expect(toastWith(page, '1 offline change expired and was not sent')).toBeVisible();
+      await expect
+        .poll(async () => (await savedOnDevice(page, me.id)).unsent, {
+          message: 'the expired like is gone from the device',
+        })
+        .toBe(0);
+    });
+
+    await test.step('the row is back as it was, and the server never heard of the like', async () => {
+      const row = rowOf(page, robotics);
+      await expect(row).toBeVisible();
+      await expect(row).toContainText('Unread');
+      await expect(waitingToSync(page, robotics)).toBeHidden();
+      await expectPressed(rowButton(page, robotics, 'Like'), false);
+      await staysTrueFor(1_500, async () => {
+        expect(sent).toEqual([]);
+        expect(await ratingEventsFor(control, email, robotId)).toEqual([]);
+        expect((await fieldsOf(device, robotId)).rating).toBeNull();
+      });
+    });
+  },
+);
+
+installedTest(
+  'a like made offline is refused when another device rated the article meanwhile: the person is told, the dislike stays, and the next replay sends nothing',
+  async ({ installed, control, api }) => {
+    installedTest.setTimeout(150_000);
+    // With "mark read on rating" off, a rated article stays in the unread list, so the row can show
+    // what the server holds once the list is loaded again.
+    const reader = await startInstalledReader({ installed, control }, 'pwa-conflict', {
+      preferences: { markReadOnRate: false },
+    });
+    const { page, user, email } = reader;
+    const robotics = titleAbout(reader, 'robotics');
+    const robotId = await idOf(user, robotics);
+    const me = await callJson<MeResponse>(user, 'GET', '/api/v1/me');
+    const articleIds = [...(await everyArticle(user)).keys()].sort();
+    const device = await api.login(email);
+    const sent = watchRatingRequests(page);
+
+    await test.step('the like is made offline and kept on the device', async () => {
+      await workerReady(page);
+      await keepArticlesOnThisDevice(page);
+      await page.goto('/read/new');
+      for (const item of reader.items) await expect(rowOf(page, item.title)).toBeVisible();
+      await expect
+        .poll(() => savedOnDevice(page, me.id), { message: 'the device keeps the list' })
+        .toMatchObject({ account: true, items: articleIds, views: 1 });
+      await goOffline(page);
+      await rowButton(page, robotics, 'Like').click();
+      await expect
+        .poll(async () => (await savedOnDevice(page, me.id)).unsent, {
+          message: 'the like is kept on the device',
+        })
+        .toBe(1);
+    });
+
+    await test.step('another device dislikes the article, and the reconnect refuses the like in words', async () => {
+      await rateFromAnotherDevice(device, robotId, -1);
+      await comeBackOnline(page);
+      await expect(
+        toastWith(page, "This changed on another device, so your change wasn't applied."),
+      ).toBeVisible();
+      await expectState(device, robotId, { rating: -1 }, 'the dislike is the saved rating');
+      await expect
+        .poll(async () => (await savedOnDevice(page, me.id)).unsent, {
+          message: 'the refused like is gone from the device',
+        })
+        .toBe(0);
+    });
+
+    await test.step('the list shows the dislike, and no later replay sends anything', async () => {
+      await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+      await expect(rowOf(page, robotics)).toBeVisible();
+      await expectPressed(rowButton(page, robotics, 'Dislike'), true);
+      await expectPressed(rowButton(page, robotics, 'Like'), false);
+
+      await leaveAndComeBack(page);
+      await page.reload();
+      await expect(rowOf(page, robotics)).toBeVisible();
+      await expectPressed(rowButton(page, robotics, 'Dislike'), true);
+      await staysTrueFor(1_500, async () => {
+        expect(sent).toEqual([robotId]);
+        expect(await ratingEventsFor(control, email, robotId)).toHaveLength(1);
+      });
+      await expectState(device, robotId, { rating: -1 }, 'the dislike is still the saved rating');
+    });
+  },
+);
+
+installedTest(
+  'signing in as another account in the same browser shows nothing of the first, and deleting an account leaves no private store of it',
+  async ({ installed, control, api }) => {
+    installedTest.setTimeout(240_000);
+    const a = await startInstalledReader({ installed, control }, 'pwa-isolation-a');
+    const { page } = a;
+    const quantum = titleAbout(a, 'quantum');
+    const robotics = titleAbout(a, 'robotics');
+    const meA = await callJson<MeResponse>(a.user, 'GET', '/api/v1/me');
+    const idsOfA = [...(await everyArticle(a.user)).keys()].sort();
+    const quantumId = await idOf(a.user, quantum);
+    const roboticsId = await idOf(a.user, robotics);
+    const deviceA = await api.login(a.email);
+    const b = await accountFollowing({ api, control }, 'pwa-isolation-b', 'science');
+    const exoplanet = titleAbout(b, 'exoplanet');
+    const sent = watchRatingRequests(page);
+    const traceOfA = { id: meA.id, email: a.email, items: a.items };
+    const traceOfB = { id: b.id, email: b.email, items: b.items };
+
+    await test.step('A keeps a list, an opened article and a like on the device, and signs out offline', async () => {
+      await workerReady(page);
+      await keepArticlesOnThisDevice(page);
+      await page.goto('/read/new');
+      for (const item of a.items) await expect(rowOf(page, item.title)).toBeVisible();
+      await openArticle(page, quantum);
+      await paneButton(page, 'Why this?').click();
+      await expect(page.getByRole('dialog', { name: 'Why this?' })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      expect(await workerControls(page)).toBe(true);
+      await expect
+        .poll(() => savedOnDevice(page, meA.id), {
+          message: 'the device keeps the list and the opened article',
+        })
+        .toEqual({ account: true, items: idsOfA, views: 1, details: [quantumId], unsent: 0 });
+      expect(tracesOfAccount(await dumpStorage(page), traceOfA)).toEqual(
+        expect.arrayContaining([expect.stringMatching(/^indexedDB: /)]),
+      );
+
+      await goOffline(page);
+      await rowButton(page, robotics, 'Like').click();
+      await expect
+        .poll(async () => (await savedOnDevice(page, meA.id)).unsent, {
+          message: 'the like is kept on the device',
+        })
+        .toBe(1);
+      await signOut(page);
+      await expect(toastWith(page, 'Signed out on this device.')).toBeVisible();
+      await expect
+        .poll(() => offlineRows(page), { message: 'nothing of A stays in the offline database' })
+        .toEqual([]);
+    });
+
+    await test.step('back online, B signs in through the login page and nothing of A shows', async () => {
+      await comeBackOnline(page);
+      await expect(toastWith(page, 'Signed out on this device.')).toBeVisible();
+      await signInOnLoginPage(page, b.email);
+      await expect(page.getByRole('heading', { level: 1, name: 'For you' })).toBeVisible();
+      await expect(
+        page.locator('[data-toast-id]'),
+        'no toast of A survives the sign-in of B',
+      ).toHaveCount(0);
+
+      await page.getByRole('link', { name: /^New/ }).click();
+      for (const item of b.items) await expect(rowOf(page, item.title)).toBeVisible();
+      for (const item of a.items) await expect(page.getByText(item.title)).toHaveCount(0);
+      await expect(articlePane(page)).toContainText('Select an article to read it here.');
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await expect(page.getByText('Waiting to sync')).toHaveCount(0);
+
+      await expect
+        .poll(() => otherSessionCount(deviceA), { message: 'the sign-out of A reaches the server' })
+        .toBe(0);
+      await staysTrueFor(1_500, async () => {
+        expect(sent).toEqual([]);
+        expect((await fieldsOf(deviceA, roboticsId)).rating).toBeNull();
+        expect(await ratingEventsFor(control, a.email, roboticsId)).toEqual([]);
+        expect((await callJson<MeResponse>(page.request, 'GET', '/api/v1/me')).email).toBe(b.email);
+      });
+
+      const dump = await dumpStorage(page);
+      expect(tracesOfAccount(dump, traceOfA)).toEqual([]);
+      expect(dump.indexedDb).toEqual([]);
+    });
+
+    await test.step('B keeps a list and an opened article on the device, then deletes the account', async () => {
+      await keepArticlesOnThisDevice(page);
+      await page.goto('/read/new');
+      for (const item of b.items) await expect(rowOf(page, item.title)).toBeVisible();
+      await openArticle(page, exoplanet);
+      const exoplanetId = await idOf(page.request, exoplanet);
+      await expect
+        .poll(() => savedOnDevice(page, b.id), {
+          message: 'the device keeps the list and the opened article',
+        })
+        .toMatchObject({ account: true, views: 1, details: [exoplanetId], unsent: 0 });
+      expect(tracesOfAccount(await dumpStorage(page), traceOfB)).toEqual(
+        expect.arrayContaining([expect.stringMatching(/^indexedDB: /)]),
+      );
+
+      await deleteAccountInSettings(page, b.email);
+      await expect(toastWith(page, 'Your account is deleted.')).toBeVisible();
+      await expect
+        .poll(() => offlineRows(page), { message: 'nothing of B stays in the offline database' })
+        .toEqual([]);
+      const dump = await dumpStorage(page);
+      expect(tracesOfAccount(dump, traceOfB)).toEqual([]);
+      expect(tracesOfAccount(dump, traceOfA)).toEqual([]);
+      expect(dump.indexedDb).toEqual([]);
+      expect(dump.sessionStorage).toEqual([]);
+      expect(
+        dump.localStorage.filter(
+          (line) =>
+            line.startsWith('bantoozi:offline:') && !line.startsWith('bantoozi:offline:enabled:'),
+        ),
+      ).toEqual([]);
+      expect(dump.cacheNames.filter((name) => !name.startsWith('workbox-precache'))).toEqual([]);
+      const requested = dump.cacheStorage
+        .filter((line) => / GET http/.test(line))
+        .map((line) => new URL(line.slice(line.indexOf(' GET ') + 5)).pathname);
+      expect(requested.length).toBeGreaterThan(0);
+      expect(requested.filter((path) => path.startsWith('/api/'))).toEqual([]);
+      expect(sent).toEqual([]);
+    });
+  },
+);
