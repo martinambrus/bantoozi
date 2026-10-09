@@ -8,8 +8,8 @@ import { WhyThisSheet } from '../../src/features/why/why-this-sheet.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
 import { bodyOf, findToast, makeItem, makeMe, makeRule } from '../article/harness.js';
 import { cardResult, gate, makeCard } from '../interests/support.js';
-import { USER_A_ID } from '../session/fixtures.js';
-import { FACETS, checkUnhandled, makeExplain, renderDrawer } from './support.js';
+import { USER_A_ID, USER_B_ID } from '../session/fixtures.js';
+import { FACETS, checkUnhandled, makeExplain, renderDrawer, settled } from './support.js';
 
 checkUnhandled();
 
@@ -127,6 +127,29 @@ describe('"Never show me …"', () => {
 
     const toast = await findToast('Clickbait will be ranked lower from now on');
     expect(within(toast).getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+  });
+
+  it('confirms nothing when the answer comes once another account has signed in', async () => {
+    let answer: (response: Response) => void = () => {};
+    const app = await renderDrawer({
+      explain: WITH_FACETS,
+      routes: {
+        'PATCH /me': () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      },
+    });
+    await app.user.click(app.panel.getByRole('button', { name: 'Never show me clickbait' }));
+    await waitFor(() => expect(app.calls('PATCH', '/me')).toHaveLength(1));
+
+    app.rerender(<WhyThisSheet item={app.item} open={false} onClose={app.onClose} />);
+    app.signInAgain(makeMe({ id: USER_B_ID }));
+    answer(json(200, meWith({ clickbait: 'on' })));
+    await waitFor(() => expect(app.queryClient.isMutating()).toBe(0));
+    await settled(app);
+
+    expect(screen.queryByText('Clickbait will be ranked lower from now on')).toBeNull();
   });
 
   it('is not offered for a preference that is already on', async () => {
@@ -296,6 +319,40 @@ describe('the rules that were applied', () => {
       held.release();
       expect(await findToast("Clickbait won't be ranked lower any more")).toBeInTheDocument();
       expect(app.calls('PATCH', '/me')).toHaveLength(1);
+    });
+
+    it('an undo from a toast waits while a later change is on its way', async () => {
+      const held = gate();
+      let patches = 0;
+      const app = await renderDrawer({
+        explain: makeExplain({ facets: FACETS, rules: [{ code: 'demote:clickbait' }] }),
+        routes: {
+          'PATCH /me': async (request) => {
+            patches += 1;
+            if (patches === 2) await held.opened;
+            return savesDemotions(request);
+          },
+        },
+      });
+      await app.user.click(
+        ruleRow(app, 'Demoted: clickbait').getByRole('button', { name: 'Turn off' }),
+      );
+      const turnedOff = await findToast("Clickbait won't be ranked lower any more");
+      await app.user.click(app.panel.getByRole('button', { name: 'Never show me clickbait' }));
+      await waitFor(() => expect(app.calls('PATCH', '/me')).toHaveLength(2));
+
+      await app.user.click(within(turnedOff).getByRole('button', { name: 'Undo' }));
+      await settled(app);
+      expect(app.calls('PATCH', '/me')).toHaveLength(2);
+
+      held.release();
+      await waitFor(() => expect(app.calls('PATCH', '/me')).toHaveLength(3));
+      expect(app.calls('PATCH', '/me').map((request) => bodyOf(request))).toEqual([
+        { preferences: { demote: { clickbait: 'off' } } },
+        { preferences: { demote: { clickbait: 'on' } } },
+        { preferences: { demote: { clickbait: 'auto' } } },
+      ]);
+      expect(await findToast('Back to automatic')).toBeInTheDocument();
     });
   });
 

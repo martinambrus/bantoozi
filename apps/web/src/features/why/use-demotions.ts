@@ -1,12 +1,12 @@
 import type { Me, MePatch } from '@bantoozi/shared';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
 import { useApiMutation } from '../../api/mutation.js';
 import { routes } from '../../api/routes.js';
 import { errorMessage } from '../../components/error-message.js';
 import { useToast } from '../../components/toast/toast-provider.js';
-import { useAccountId, useMe } from '../../session/context.js';
+import { useAccountId, useMe, useSession } from '../../session/context.js';
 import { storeSavedMe } from '../../session/me.js';
 import { articleKeys } from '../article/query-keys.js';
 
@@ -19,6 +19,9 @@ type Setting = Demote[DemotionFlag];
 /** The demotions the drawer offers to switch on; depth has no meter of its own. */
 export type NeverShowFlag = Exclude<DemotionFlag, 'shallow'>;
 
+/** The demotion change last asked for in each app, which the next one waits for. */
+const queues = new WeakMap<QueryClient, Promise<void>>();
+
 /**
  * The quality demotions of the ranking (spec 06 §5): "on" always ranks that kind of article lower,
  * "off" never does, "auto" leaves it to the ranker. They change the ranking, so the articles are
@@ -29,6 +32,7 @@ export function useDemotions() {
   const { t } = useTranslation('why');
   const toast = useToast();
   const queryClient = useQueryClient();
+  const session = useSession();
   const accountId = useAccountId();
   const me = useMe();
 
@@ -36,21 +40,33 @@ export function useDemotions() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: articleKeys.all(accountId) });
     },
-    onError: (error) => {
-      toast.show({ message: errorMessage(t, error), tone: 'error' });
-    },
   });
 
-  // The answer may come after the drawer has closed. `mutate` would drop its own callbacks then,
-  // the promise still settles; a failure has been shown by `onError` already.
+  // One change at a time, in the order they were asked for, from every drawer and from the toasts
+  // they left behind: two on their way at once could be saved in either order. The answer may come
+  // after the drawer has closed; `mutate` would drop its own callbacks then, the promise still
+  // settles. A change asked for in a sign-in that has ended is not sent, and what is answered
+  // after it ended shows nothing: its toast's undo would change the account signed in now.
   const send = (flag: DemotionFlag, value: Setting, then: () => void) => {
+    const signIn = session.currentSignIn();
+    const signedIn = () => session.currentSignIn() === signIn;
     const patch: MePatch = { preferences: { demote: { [flag]: value } } };
-    update.mutateAsync({ body: patch }).then(
-      (updated) => {
-        storeSavedMe(queryClient, patch, updated);
-        then();
-      },
-      () => {},
+    const turn = (queues.get(queryClient) ?? Promise.resolve()).then(async () => {
+      if (!signedIn()) return;
+      let updated: Me;
+      try {
+        updated = await update.mutateAsync({ body: patch });
+      } catch (error) {
+        if (signedIn()) toast.show({ message: errorMessage(t, error), tone: 'error' });
+        return;
+      }
+      if (!signedIn()) return;
+      storeSavedMe(queryClient, patch, updated);
+      then();
+    });
+    queues.set(
+      queryClient,
+      turn.catch(() => undefined),
     );
   };
 
@@ -69,7 +85,7 @@ export function useDemotions() {
   }
 
   return {
-    /** A change is on its way; another would race it. */
+    /** A change is on its way. */
     pending: update.isPending,
     neverShow: (flag: NeverShowFlag) => {
       // The meters offer this while the setting is "auto" or "off"; the undo puts that back.

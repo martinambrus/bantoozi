@@ -15,6 +15,8 @@ import { ReasonBar } from '../../src/features/article/reason-bar.js';
 import { forgetCardMoves } from '../../src/features/interests/card-moves.js';
 import { ReaderActionsProvider } from '../../src/features/reader/actions/provider.js';
 import { createI18n, type Language } from '../../src/i18n/index.js';
+import { SessionProvider } from '../../src/session/context.js';
+import type { Session } from '../../src/session/session.js';
 import { fakeFetch, json, type RecordedRequest } from '../api/fake-fetch.js';
 import { makeItem } from '../reader/actions/fake-transport.js';
 import { makeMe } from '../session/fixtures.js';
@@ -48,18 +50,23 @@ export function renderReader(ui: ReactNode, options: ReaderHarnessOptions = {}) 
   const toasts = createToastStore();
   const i18n = createI18n(options.language ?? 'en');
   let accountId = me.id;
+  // The session as far as these screens use it: which sign-in lasts, a new one at each sign-in.
+  let signIns = 0;
+  const session = { currentSignIn: () => signIns } as Partial<Session> as Session;
   function Wrapper({ children }: { children: ReactNode }) {
     return (
       <I18nextProvider i18n={i18n}>
         <QueryClientProvider client={queryClient}>
           <ApiProvider client={api}>
-            <ToastProvider store={toasts}>
-              <ReaderActionsProvider accountId={accountId}>
-                {children}
-                <ReasonBar />
-              </ReaderActionsProvider>
-              <Toaster />
-            </ToastProvider>
+            <SessionProvider session={session}>
+              <ToastProvider store={toasts}>
+                <ReaderActionsProvider accountId={accountId}>
+                  {children}
+                  <ReasonBar />
+                </ReaderActionsProvider>
+                <Toaster />
+              </ToastProvider>
+            </SessionProvider>
           </ApiProvider>
         </QueryClientProvider>
       </I18nextProvider>
@@ -82,7 +89,15 @@ export function renderReader(ui: ReactNode, options: ReaderHarnessOptions = {}) 
     /** Mounts the reader provider again for another account, as signing in as someone else does. */
     switchAccount: (id: string) => {
       accountId = id;
+      signIns += 1;
       view.rerender(ui);
+    },
+    /** Signs out and in again as `next`, which may be the same account. */
+    signInAgain: (next: Me) => {
+      signIns += 1;
+      act(() => {
+        queryClient.setQueryData(meKey(), next);
+      });
     },
   };
 }
