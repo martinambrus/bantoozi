@@ -1,4 +1,5 @@
 import type { CardDto, Subscription } from '@bantoozi/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -12,6 +13,8 @@ import { EmptyState } from '../../components/states/empty-state.js';
 import { LoadingState } from '../../components/states/loading-state.js';
 import { QueryState } from '../../components/states/query-state.js';
 import { useToast } from '../../components/toast/toast-provider.js';
+import { useAccountId } from '../../session/context.js';
+import { isSignedIn } from '../../session/me.js';
 import { saveMessage } from './card-errors.js';
 import { CardEditor } from './card-editor.js';
 import { BrowseLibraryLink, ScopeSelect, StrengthControl } from './controls.js';
@@ -40,6 +43,8 @@ interface CardRowProps {
 function CardRow({ card, subscriptions, onEdit, onDelete }: CardRowProps) {
   const { t } = useTranslation('interests');
   const toast = useToast();
+  const queryClient = useQueryClient();
+  const accountId = useAccountId();
   const cache = useCardCache();
   const update = useApiMutation(routes.cardUpdate);
   const removeExample = useApiMutation(routes.cardExampleRemove);
@@ -72,7 +77,9 @@ function CardRow({ card, subscriptions, onEdit, onDelete }: CardRowProps) {
       sending.current = false;
       const next = waiting.current;
       waiting.current = null;
-      if (next !== null) void send(next.changes, next.before);
+      // What waits is for the account that changed the card, which may have signed out meanwhile:
+      // the request would then go out with no session or with another account's.
+      if (next !== null && isSignedIn(queryClient, accountId)) void send(next.changes, next.before);
     }
   }
 

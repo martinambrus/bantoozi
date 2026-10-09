@@ -1,5 +1,5 @@
 import type { CardDto } from '@bantoozi/shared';
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { accountKey } from '../../src/api/query-keys.js';
@@ -387,6 +387,31 @@ describe('changing the strength', () => {
         scopeFeedId: '11',
       }),
     );
+  });
+
+  it('drops a change that waits when the account signs out before it can go', async () => {
+    const answer = gate();
+    let sent = 0;
+    const app = await openMine(
+      { cards: [rust] },
+      {
+        'PATCH /cards/:id': async (request) => {
+          if (sent++ === 0) await answer.opened;
+          return json(200, cardResult({ ...rust, ...(bodyOf(request) as Partial<CardDto>) }));
+        },
+      },
+    );
+    const row = await rowOf('Rust programming');
+    await app.user.click(within(row).getByRole('radio', { name: 'Must' }));
+    await app.user.click(within(row).getByRole('radio', { name: 'Love' }));
+
+    await act(() => app.session.resetAccountState());
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(app.calls('PATCH /cards/:id').map((request) => bodyOf(request))).toEqual([
+      { strength: 'must' },
+    ]);
   });
 
   it('takes a waiting change back to what the server holds when it fails after the one before it', async () => {
