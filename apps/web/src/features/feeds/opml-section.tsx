@@ -34,7 +34,12 @@ export function OpmlSection({ exportable = true }: OpmlSectionProps) {
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [report, setReport] = useState<OpmlImportReport | null>(null);
-  const upload = useApiMutation(routes.subscriptionsImportOpml);
+  // The list learns of the imported feeds even when the answer comes after the page was left.
+  const upload = useApiMutation(routes.subscriptionsImportOpml, {
+    onSuccess: () => {
+      void cache.refresh();
+    },
+  });
   // Through the API client, not a link: an error is shown instead of saved as the file, and a 401
   // ends the session as on every other call.
   const download = useApiMutation(routes.subscriptionsExportOpml);
@@ -62,9 +67,11 @@ export function OpmlSection({ exportable = true }: OpmlSectionProps) {
       {
         onSuccess: (imported) => {
           setReport(imported);
-          setFile(null);
-          if (input.current !== null) input.current.value = '';
-          void cache.refresh();
+          // Only the file that was sent is done with; one chosen meanwhile stays for the next one.
+          if (input.current?.files?.[0] === file) {
+            setFile(null);
+            input.current.value = '';
+          }
         },
       },
     );

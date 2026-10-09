@@ -1,10 +1,12 @@
 import { OPML_INVALID_REASONS } from '@bantoozi/shared';
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { meKey } from '../../src/api/query-keys.js';
+import { subscriptionsKey } from '../../src/features/feeds/subscriptions.js';
 import { UUID_V4, failure, json, text } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
+import { USER_A_ID } from '../session/fixtures.js';
 import { IMPORT_OPML, LIST, feedsServer, makeSubscription } from './support.js';
 
 const { open } = createHarness();
@@ -177,6 +179,56 @@ describe('importing OPML', () => {
     expect(app.calls(IMPORT_OPML)).toHaveLength(1);
     answer(json(200, { added: 0, existing: 0, invalid: [] }));
     expect(await screen.findByRole('region', { name: 'Import finished' })).toBeVisible();
+  });
+
+  it('keeps a file chosen while the import was on its way for the next import', async () => {
+    const { app, server } = await openFeeds();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.routes[IMPORT_OPML] = async () => {
+      await held;
+      return json(200, { added: 1, existing: 0, invalid: [] });
+    };
+
+    await chooseFile(app, opmlFile('one.opml'));
+    await app.user.click(importButton());
+    await waitFor(() => expect(app.calls(IMPORT_OPML)).toHaveLength(1));
+    await chooseFile(app, opmlFile('two.opml'));
+    release();
+
+    expect(await screen.findByRole('region', { name: 'Import finished' })).toBeVisible();
+    expect(importButton()).toBeEnabled();
+    expect((fileField() as HTMLInputElement).files?.[0]?.name).toBe('two.opml');
+    await app.user.click(importButton());
+    await waitFor(() => expect(app.calls(IMPORT_OPML)).toHaveLength(2));
+    const next = (app.calls(IMPORT_OPML)[1]!.body as FormData).get('file');
+    expect((next as File).name).toBe('two.opml');
+  });
+
+  it('still refreshes the list when the answer comes after the page was left', async () => {
+    const { app, server } = await openFeeds();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.routes[IMPORT_OPML] = async () => {
+      await held;
+      return json(200, { added: 1, existing: 0, invalid: [] });
+    };
+
+    await chooseFile(app);
+    await app.user.click(importButton());
+    await waitFor(() => expect(app.calls(IMPORT_OPML)).toHaveLength(1));
+    server.routes['GET /labels'] = () => json(200, []);
+    await act(async () => {
+      await app.router.navigate({ to: '/labels' });
+    });
+    release();
+
+    await waitFor(() => expect(app.queryClient.isMutating()).toBe(0));
+    expect(app.queryClient.getQueryState(subscriptionsKey(USER_A_ID))?.isInvalidated).toBe(true);
   });
 
   describe('when it fails', () => {
