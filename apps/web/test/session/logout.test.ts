@@ -1,5 +1,5 @@
 import { screen, waitFor } from '@testing-library/react';
-import { IDBObjectStore as FakeIDBObjectStore } from 'fake-indexeddb';
+import { IDBObjectStore as FakeIDBObjectStore, IDBRequest as FakeIDBRequest } from 'fake-indexeddb';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { meKey } from '../../src/api/query-keys.js';
@@ -100,6 +100,29 @@ describe('signing out', () => {
     stuck.mockRestore();
     sessions.start({ me: null });
 
+    await vi.waitFor(async () => expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]));
+  });
+
+  it('removes at the next start what a page closed during the sign-out had begun to remove', async () => {
+    const { session } = sessions.start({ me: userA });
+    await session.loadMe();
+    await seed(A);
+    // The page closes while the rows are being removed: the removal it began never ends.
+    const closed = vi
+      .spyOn(FakeIDBObjectStore.prototype, 'delete')
+      .mockImplementation(() => new FakeIDBRequest());
+    onTestFinished(() => {
+      closed.mockRestore();
+    });
+    void session.logout();
+    await settle();
+    closed.mockRestore();
+    expect(rowsOf(await dumpDatabase(idb.factory), A)).not.toEqual([]);
+
+    sessions.start({ me: null });
+
+    expect(await readView(A, 'view')).toBeNull();
+    expect(await listRecords(A)).toEqual([]);
     await vi.waitFor(async () => expect(rowsOf(await dumpDatabase(idb.factory), A)).toEqual([]));
   });
 

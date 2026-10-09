@@ -120,8 +120,8 @@ function storedPurges(): string[] {
 const unnotedPurges = new Set<string>();
 
 /**
- * The accounts whose stored rows could not be removed: they count as gone until a start or a
- * sign-in removes them.
+ * The accounts whose stored rows are being removed or could not be: they count as gone until a
+ * start or a sign-in removes them.
  */
 export function pendingPurges(): string[] {
   return [...new Set([...storedPurges(), ...unnotedPurges])];
