@@ -492,6 +492,45 @@ describe('feeds (spec 09 §8)', () => {
     expect(inRow(/Broken Blog/).getByRole('button', { name: 'Reset Broken Blog' })).toBeDisabled();
   });
 
+  it('locks every Reset button while one feed is being reset', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const other = makeFeed({
+      id: '43',
+      url: 'https://other.example.com/feed.xml',
+      title: 'Other Feed',
+    });
+    const app = await open('/admin/feeds', {
+      'GET /admin/feeds': () => json(200, page([broken, other])),
+      'POST /admin/feeds/:id/reset': async () => {
+        await held;
+        return json(200, { feed: { ...broken, status: 'active' as const, consecutiveErrors: 0 } });
+      },
+    });
+    await screen.findByRole('table', { name: 'Feeds' });
+    const resetBroken = () =>
+      inRow(/Broken Blog/).getByRole('button', { name: 'Reset Broken Blog' });
+    const resetOther = () => inRow(/Other Feed/).getByRole('button', { name: 'Reset Other Feed' });
+
+    await app.user.click(resetBroken());
+    await vi.waitFor(() => expect(resetBroken()).toHaveAttribute('aria-busy', 'true'));
+
+    expect(resetOther()).toBeDisabled();
+    await app.user.click(resetOther());
+    release();
+
+    expect(await screen.findByText('Feed reset. It will be fetched again soon.')).toBeVisible();
+    expect(app.calls('POST /admin/feeds/:id/reset')).toHaveLength(1);
+    expect(app.calls('POST /admin/feeds/:id/reset')[0]!.pathname).toBe(
+      '/api/v1/admin/feeds/42/reset',
+    );
+    await vi.waitFor(() => expect(resetBroken()).toBeEnabled());
+    expect(resetBroken()).not.toHaveAttribute('aria-busy');
+    expect(resetOther()).toBeEnabled();
+  });
+
   it('edits the user-agent and the hard-feed flag, replacing the options as a whole', async () => {
     const saved = makeFeed({
       fetchOptions: { userAgent: 'BantooziBot/1.0', translateStrong: true },

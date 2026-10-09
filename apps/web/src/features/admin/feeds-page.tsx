@@ -41,11 +41,14 @@ const feedName = (feed: AdminFeed) => feed.title ?? feed.url;
 function FeedRow({
   feed,
   resetting,
+  resetLocked,
   onReset,
   onEdit,
 }: {
   feed: AdminFeed;
   resetting: boolean;
+  /** Some feed is being reset; one at a time, so its busy mark is never cleared by another reset. */
+  resetLocked: boolean;
   onReset: () => void;
   onEdit: () => void;
 }) {
@@ -91,7 +94,7 @@ function FeedRow({
             variant="secondary"
             aria-label={t('feeds.resetLabel', { name })}
             loading={resetting}
-            disabled={feed.mergedIntoId !== null}
+            disabled={feed.mergedIntoId !== null || resetLocked}
             onClick={onReset}
           >
             {t('feeds.reset')}
@@ -204,6 +207,7 @@ export function AdminFeedsPage() {
                   key={feed.id}
                   feed={feed}
                   resetting={resetting === feed.id}
+                  resetLocked={resetting !== null}
                   onReset={() => void resetFeed(feed)}
                   onEdit={() => setEditing(feed)}
                 />
