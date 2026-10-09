@@ -25,7 +25,3 @@ export const articleKeys = {
       scope.saved === true,
     ),
 };
-
-export const labelKeys = {
-  list: (accountId: string) => accountKey(accountId, 'labels', 'list'),
-};

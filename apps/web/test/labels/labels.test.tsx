@@ -1,10 +1,11 @@
 import { CARD_LIMITS, type LabelDto } from '@bantoozi/shared';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { accountKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
-import { createHarness } from '../auth/harness.js';
+import { READER_READS, createHarness } from '../auth/harness.js';
+import { setDesktop } from '../reader/support.js';
 import { USER_A_ID, makeMe } from '../session/fixtures.js';
 import { bodyOf, type ApiRouteHandler } from '../support/app.js';
 import { labelResult, labelsServer, makeLabel } from './support.js';
@@ -673,5 +674,50 @@ describe('deleting a label', () => {
       'Something went wrong on our side. Try again.',
     );
     expect(screen.getByRole('listitem', { name: 'Read later' })).toBeVisible();
+  });
+});
+
+describe('the reader after a change on this page', () => {
+  it('stops offering a label deleted here at once, without asking for the labels again', async () => {
+    let held = [readLater, recipes];
+    setDesktop(true);
+    const app = await open({
+      path: '/read/for_you',
+      server: {
+        me: makeMe(),
+        routes: {
+          ...READER_READS,
+          'GET /labels': () => json(200, held),
+          'DELETE /labels/:id': () => {
+            held = held.filter((label) => label.id !== readLater.id);
+            return noContent();
+          },
+        },
+      },
+    });
+    const readerLabels = () => within(screen.getByRole('list', { name: 'Labels' }));
+    expect(await screen.findByRole('link', { name: 'Read later' })).toBeVisible();
+
+    await act(async () => {
+      await app.router.navigate({ to: '/labels' });
+    });
+    await app.user.click(within(await rowOf('Read later')).getByRole('button', { name: 'Delete' }));
+    await app.user.click(
+      within(screen.getByRole('dialog', { name: 'Delete this label?' })).getByRole('button', {
+        name: 'Delete',
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('listitem', { name: 'Read later' })).not.toBeInTheDocument(),
+    );
+    const asked = app.calls('GET /labels').length;
+
+    await act(async () => {
+      await app.router.navigate({ to: '/read/$lane', params: { lane: 'for_you' } });
+    });
+
+    expect(await screen.findByRole('link', { name: 'Recipes' })).toBeVisible();
+    expect(readerLabels().queryByRole('link', { name: 'Read later' })).toBeNull();
+    expect(app.calls('GET /labels')).toHaveLength(asked);
   });
 });
