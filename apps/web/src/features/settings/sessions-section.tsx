@@ -1,6 +1,5 @@
 import type { SessionDto } from '@bantoozi/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -14,7 +13,8 @@ import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { FOCUS_RING, cx } from '../../components/cx.js';
 import { QueryState } from '../../components/states/query-state.js';
-import { useAccountId, useSession } from '../../session/context.js';
+import { useAccountId } from '../../session/context.js';
+import { useSignOut } from '../shell/use-sign-out.js';
 import { Time, useMoment } from './format.js';
 import { SettingsSection } from './section.js';
 
@@ -72,8 +72,7 @@ function SessionRow({
 function SessionList({ sessions }: { sessions: readonly SessionDto[] }) {
   const { t } = useTranslation('settings');
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const account = useSession();
+  const signOut = useSignOut();
   const key = useSessionsKey();
   const revoke = useApiMutation(routes.authSessionRevoke);
   const [pending, setPending] = useState<SessionDto | null>(null);
@@ -90,16 +89,17 @@ function SessionList({ sessions }: { sessions: readonly SessionDto[] }) {
 
   async function confirmRevoke() {
     if (pending === null) return;
+    // This device signs out, which ends its session on the server as revoking it would, in turn
+    // with the sign-ins of the other tabs.
+    if (pending.current) {
+      await signOut();
+      return;
+    }
     try {
       await revoke.mutateAsync({ params: { id: pending.id } });
     } catch (error) {
       // Already gone is what was asked for.
       if (!(isApiError(error) && error.status === 404)) throw error;
-    }
-    if (pending.current) {
-      await account.resetAccountState();
-      await navigate({ to: '/login', replace: true });
-      return;
     }
     revoked.current = true;
     queryClient.setQueryData<SessionDto[]>(key, (items) =>

@@ -1,10 +1,12 @@
 import type { CreateInviteBody, InviteDto, Me, SessionDto } from '@bantoozi/shared';
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { meKey } from '../../src/api/query-keys.js';
+import { clearLogoutPending } from '../../src/offline/device.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
 import { USER_A_ID, makeMe } from '../session/fixtures.js';
+import { fakeWebLocks } from '../session/support.js';
 import { bodyOf, type ApiRouteHandler } from '../support/app.js';
 import {
   EMAIL,
@@ -636,8 +638,15 @@ describe('sessions (spec 09 §7)', () => {
   });
 
   describe('revoking this device', () => {
+    // A sign-out the server has not answered yet is kept for the next start of the page.
+    afterEach(() => {
+      clearLogoutPending();
+    });
+
     it('warns that it signs out, then drops everything of the account and lands on the sign-in page', async () => {
-      const api = sessionsApi([CURRENT, PHONE_SESSION]);
+      const api = sessionsApi([CURRENT, PHONE_SESSION], {
+        'POST /auth/logout': () => noContent(),
+      });
       const { user, calls, router, queryClient } = await openSettings({ routes: api.routes });
       await sessions().findByText(PHONE);
 
@@ -648,9 +657,9 @@ describe('sessions (spec 09 §7)', () => {
 
       expect(await screen.findByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
       expect(router.state.location.pathname).toBe('/login');
-      expect(calls('DELETE /auth/sessions/:id').map((request) => request.pathname)).toEqual([
-        '/api/v1/auth/sessions/1',
-      ]);
+      // The sign-out ends the session of this device as the revocation of it would.
+      await waitFor(() => expect(calls('POST /auth/logout')).toHaveLength(1));
+      expect(calls('DELETE /auth/sessions/:id')).toEqual([]);
       expect(queryClient.getQueryData(meKey())).toBeNull();
       expect(
         queryClient
@@ -661,9 +670,9 @@ describe('sessions (spec 09 §7)', () => {
       expect(calls('GET /auth/sessions')).toHaveLength(1);
     });
 
-    it('stays signed in when the server cannot revoke it', async () => {
+    it('signs out at once when the server cannot end the session yet, and says so', async () => {
       const api = sessionsApi([CURRENT], {
-        'DELETE /auth/sessions/:id': () => failure(500, 'INTERNAL'),
+        'POST /auth/logout': () => failure(500, 'INTERNAL'),
       });
       const { user, router, queryClient } = await openSettings({ routes: api.routes });
       await sessions().findByText(FIREFOX);
@@ -672,9 +681,36 @@ describe('sessions (spec 09 §7)', () => {
 
       await user.click(within(dialog).getByRole('button', { name: 'Revoke and sign out' }));
 
-      expect(await within(dialog).findByRole('alert')).toBeVisible();
-      expect(router.state.location.pathname).toBe('/settings');
-      expect(queryClient.getQueryData<Me>(meKey())?.id).toBe(USER_A_ID);
+      expect(
+        await screen.findByText(
+          'Signed out on this device. Bantoozi will finish signing you out when you are back online.',
+        ),
+      ).toBeVisible();
+      expect(router.state.location.pathname).toBe('/login');
+      expect(queryClient.getQueryData(meKey())).toBeNull();
+    });
+
+    it('takes turns with a sign-in in another tab, so its answer cannot end the session that one begins', async () => {
+      fakeWebLocks();
+      const api = sessionsApi([CURRENT], { 'POST /auth/logout': () => noContent() });
+      const { user, calls, queryClient } = await openSettings({ routes: api.routes });
+      await sessions().findByText(FIREFOX);
+      // Another tab is signing in: it holds the sign-in lock until its code is answered.
+      const signingIn = deferred();
+      void navigator.locks.request('bantoozi:sign-in', () => signingIn.promise);
+      await user.click(rowOf(FIREFOX).getByRole('button', { name: /^Revoke session: / }));
+      const dialog = await screen.findByRole('dialog', { name: 'Sign out of this device?' });
+
+      await user.click(within(dialog).getByRole('button', { name: 'Revoke and sign out' }));
+
+      // The device is signed out at once; the server is asked once the other sign-in is done.
+      await waitFor(() => expect(queryClient.getQueryData(meKey())).toBeNull());
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(calls('POST /auth/logout')).toEqual([]);
+      expect(calls('DELETE /auth/sessions/:id')).toEqual([]);
+      signingIn.release();
+      await waitFor(() => expect(calls('POST /auth/logout')).toHaveLength(1));
+      expect(calls('DELETE /auth/sessions/:id')).toEqual([]);
     });
   });
 
