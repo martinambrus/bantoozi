@@ -132,6 +132,37 @@ describe('reader actions in the signed-in app', () => {
     expect(screen.queryByText("Couldn't save — retry")).toBeNull();
   });
 
+  it('rolls a rating back once the server has failed it three times (503), says so, and resends it from the toast', async () => {
+    const item = makeItem();
+    let attempts = 0;
+    const app = await openReader({
+      item,
+      routes: {
+        'POST /articles/:id/rating': () => {
+          attempts += 1;
+          return attempts <= 3
+            ? failure(503, 'ENGINE_UNAVAILABLE')
+            : ratingResponse(acked(item, { rating: 1, readAt: READ_AT }));
+        },
+      },
+    });
+
+    await app.user.click(like());
+    expect(pressed(like())).toBe(true);
+    const failed = await findToast("Couldn't save — retry");
+    expect(app.calls('POST /articles/:id/rating')).toHaveLength(3);
+    expect(pressed(like())).toBe(false);
+    expect(screen.getByText('Unread')).toBeInTheDocument();
+
+    await app.user.click(within(failed).getByRole('button', { name: 'Retry' }));
+    await findToast('Marked as liked');
+
+    const sent = app.calls('POST /articles/:id/rating');
+    expect(sent).toHaveLength(4);
+    expect(new Set(sent.map((call) => call.headers.get('Idempotency-Key'))).size).toBe(1);
+    expect(pressed(like())).toBe(true);
+  });
+
   it('adopts the server state and says so when the article changed on another device', async () => {
     const other = makeItem({ rating: -1, stateVersion: '7' });
     const app = await openReader({
