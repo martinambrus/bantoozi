@@ -7,16 +7,21 @@ import { InterestList } from './interest-list.js';
 import { PersonalModel } from './personal-model.js';
 import { RulesApplied } from './rules-applied.js';
 import { useArticleDetail } from './use-article-detail.js';
+import { useDemotions } from './use-demotions.js';
 import { NotAnalyzed, Verdict } from './verdict.js';
 
 function Findings({ articleId, explain }: { articleId: string; explain: Explain | null }) {
+  // The meters and the rules offer changes to the same demotions.
+  const demotions = useDemotions();
   if (explain === null) return <NotAnalyzed />;
   return (
     <>
       <Verdict explain={explain} />
       <InterestList articleId={articleId} cards={explain.cards} />
-      {explain.facets === undefined ? null : <AboutArticle facets={explain.facets} />}
-      {explain.rules.length === 0 ? null : <RulesApplied explain={explain} />}
+      {explain.facets === undefined ? null : (
+        <AboutArticle facets={explain.facets} demotions={demotions} />
+      )}
+      {explain.rules.length === 0 ? null : <RulesApplied explain={explain} demotions={demotions} />}
       {explain.model === undefined ? null : <PersonalModel model={explain.model} />}
     </>
   );

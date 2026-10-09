@@ -7,7 +7,7 @@ import { useMe } from '../../session/context.js';
 import { useTopicIndex } from '../interests/topics.js';
 import { Meter, percentOf } from './meter.js';
 import { Section } from './section.js';
-import { useDemotions, type NeverShowFlag } from './use-demotions.js';
+import type { Demotions, NeverShowFlag } from './use-demotions.js';
 
 type Facets = NonNullable<Explain['facets']>;
 
@@ -59,10 +59,9 @@ function Depth({ depth }: { depth: number }) {
 }
 
 /** What the analysis found out about the article itself, and what to do about unwanted kinds. */
-export function AboutArticle({ facets }: { facets: Facets }) {
+export function AboutArticle({ facets, demotions }: { facets: Facets; demotions: Demotions }) {
   const { t } = useTranslation('why');
   const me = useMe();
-  const demotions = useDemotions();
   const topic = useTopicPath(facets.topic);
   const type = t(`about.contentTypes.${facets.contentType.choice}`, {
     defaultValue: t('about.contentTypes.other'),

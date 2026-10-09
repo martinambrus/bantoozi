@@ -253,6 +253,52 @@ describe('the rules that were applied', () => {
     });
   });
 
+  describe('and "Never show me …" for the same demotion', () => {
+    function heldDrawer() {
+      const held = gate();
+      const app = renderDrawer({
+        explain: makeExplain({ facets: FACETS, rules: [{ code: 'demote:clickbait' }] }),
+        routes: {
+          'PATCH /me': async (request) => {
+            await held.opened;
+            return savesDemotions(request);
+          },
+        },
+      });
+      return { held, app };
+    }
+
+    it('"Turn off" waits while "Never show me" is on its way', async () => {
+      const { held, app: rendered } = heldDrawer();
+      const app = await rendered;
+
+      await app.user.click(app.panel.getByRole('button', { name: 'Never show me clickbait' }));
+      await waitFor(() => expect(app.calls('PATCH', '/me')).toHaveLength(1));
+
+      expect(
+        ruleRow(app, 'Demoted: clickbait').getByRole('button', { name: 'Turn off' }),
+      ).toBeDisabled();
+      held.release();
+      expect(await findToast('Clickbait will be ranked lower from now on')).toBeInTheDocument();
+      expect(app.calls('PATCH', '/me')).toHaveLength(1);
+    });
+
+    it('"Never show me" waits while "Turn off" is on its way', async () => {
+      const { held, app: rendered } = heldDrawer();
+      const app = await rendered;
+
+      await app.user.click(
+        ruleRow(app, 'Demoted: clickbait').getByRole('button', { name: 'Turn off' }),
+      );
+      await waitFor(() => expect(app.calls('PATCH', '/me')).toHaveLength(1));
+
+      expect(app.panel.getByRole('button', { name: 'Never show me clickbait' })).toBeDisabled();
+      held.release();
+      expect(await findToast("Clickbait won't be ranked lower any more")).toBeInTheDocument();
+      expect(app.calls('PATCH', '/me')).toHaveLength(1);
+    });
+  });
+
   it('offers nothing for a demotion that is already off', async () => {
     const app = await renderDrawer({
       me: meWith({ stale: 'off' }),

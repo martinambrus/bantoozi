@@ -7,7 +7,7 @@ import { useMe } from '../../session/context.js';
 import { topReasonText } from '../article/top-reason.js';
 import { useCards } from '../interests/queries.js';
 import { Section } from './section.js';
-import { useDemotions, type DemotionFlag } from './use-demotions.js';
+import type { DemotionFlag, Demotions } from './use-demotions.js';
 import { useRuleRemoval } from './use-rule-removal.js';
 
 const DEMOTION_FLAGS: readonly string[] = ['clickbait', 'promotional', 'shallow', 'stale'];
@@ -48,12 +48,11 @@ function RuleRow({ sentence, action }: RuleRowProps) {
 }
 
 /** What fired for this article, each rule in words with the way to take it back (spec 06 §3.2). */
-export function RulesApplied({ explain }: { explain: Explain }) {
+export function RulesApplied({ explain, demotions }: { explain: Explain; demotions: Demotions }) {
   const { t } = useTranslation('why');
   const { t: tArticle, i18n } = useTranslation('article');
   const me = useMe();
   const cards = useCards();
-  const demotions = useDemotions();
   const removal = useRuleRemoval();
   const [takenBack, setTakenBack] = useState<ReadonlySet<string>>(new Set());
 
