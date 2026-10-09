@@ -332,7 +332,9 @@ describe('exporting OPML', () => {
 
     await app.user.click(exportButton());
 
-    await waitFor(() => expect(app.queryClient.getQueryData(meKey())).toBeNull());
+    expect(await screen.findByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
+    expect(app.router.state.location.pathname).toBe('/login');
+    expect(app.queryClient.getQueryData(meKey())).toBeNull();
     expect(saved).toHaveLength(0);
   });
 });
