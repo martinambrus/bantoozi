@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { accountKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
 import { READER_READS, createHarness } from '../auth/harness.js';
+import { gate } from '../interests/support.js';
 import { setDesktop } from '../reader/support.js';
 import { USER_A_ID, makeMe } from '../session/fixtures.js';
 import { bodyOf, type ApiRouteHandler } from '../support/app.js';
@@ -679,6 +680,29 @@ describe('removing an example', () => {
 
     expect(await screen.findByText("We couldn't find that.")).toBeVisible();
     expect(within(row).getByText('Weather alert')).toBeVisible();
+  });
+
+  it('says nothing when removing an example fails once the sign-in has ended', async () => {
+    const answer = gate();
+    const server = labelsServer([readLater], {
+      'POST /labels/:id/examples/remove': async () => {
+        await answer.opened;
+        return failure(404, 'NOT_FOUND', { resource: 'example' });
+      },
+    });
+    const app = await open({ path: '/labels', server });
+    const row = await rowOf('Read later');
+    await app.user.click(
+      within(row).getByRole('button', { name: 'Remove example: Weather alert' }),
+    );
+    await waitFor(() => expect(app.calls('POST /labels/:id/examples/remove')).toHaveLength(1));
+
+    server.me = null;
+    await act(() => app.session.resetAccountState());
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(screen.queryByText("We couldn't find that.")).toBeNull();
   });
 });
 

@@ -38,6 +38,7 @@ interface CardRowProps {
   onDelete: (card: CardDto) => void;
 }
 
+/** An answer that comes after the sign-in that asked has ended shows nothing. */
 function CardRow({ card, subscriptions, onEdit, onDelete }: CardRowProps) {
   const { t } = useTranslation('interests');
   const toast = useToast();
@@ -70,7 +71,9 @@ function CardRow({ card, subscriptions, onEdit, onDelete }: CardRowProps) {
           next.before = { ...next.before, ...valuesOf(before, changes) };
         }
       }
-      toast.show({ message: saveMessage(t, error), tone: 'error' });
+      if (session.currentSignIn() === signIn) {
+        toast.show({ message: saveMessage(t, error), tone: 'error' });
+      }
     } finally {
       sending.current = false;
       const next = waiting.current;
@@ -101,13 +104,16 @@ function CardRow({ card, subscriptions, onEdit, onDelete }: CardRowProps) {
   const busy = removingExample || update.isPending;
 
   async function remove(side: ExampleSide, text: string) {
+    const signIn = session.currentSignIn();
     setRemoving(exampleKey(side, text));
     try {
       cache.apply(
         await removeExample.mutateAsync({ params: { id: card.id }, body: { side, text } }),
       );
     } catch (error) {
-      toast.show({ message: saveMessage(t, error), tone: 'error' });
+      if (session.currentSignIn() === signIn) {
+        toast.show({ message: saveMessage(t, error), tone: 'error' });
+      }
     } finally {
       setRemoving(null);
     }

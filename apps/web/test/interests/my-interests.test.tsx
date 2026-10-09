@@ -443,6 +443,30 @@ describe('changing the strength', () => {
     ]);
   });
 
+  it('says nothing when saving fails once the sign-in has ended', async () => {
+    const answer = gate();
+    const server = interestsServer(
+      { subscriptions: FEEDS, cards: [rust] },
+      {
+        'PATCH /cards/:id': async () => {
+          await answer.opened;
+          return failure(429, 'RATE_LIMITED');
+        },
+      },
+    );
+    const app = await open({ path: '/interests', server });
+    const row = await rowOf('Rust programming');
+    await app.user.click(within(row).getByRole('radio', { name: 'Never' }));
+    await waitFor(() => expect(app.calls('PATCH /cards/:id')).toHaveLength(1));
+
+    server.me = null;
+    await act(() => app.session.resetAccountState());
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(screen.queryByText('Too many requests. Wait a moment and try again.')).toBeNull();
+  });
+
   it('takes a waiting change back to what the server holds when it fails after the one before it', async () => {
     const answers = [gate(), gate()];
     let sent = 0;
@@ -787,6 +811,32 @@ describe('examples', () => {
     expect(
       within(row).getByRole('button', { name: 'Remove example: Lawn care schedule' }),
     ).toBeEnabled();
+  });
+
+  it('says nothing when removing an example fails once the sign-in has ended', async () => {
+    const answer = gate();
+    const server = interestsServer(
+      { subscriptions: FEEDS, cards: [garden] },
+      {
+        'POST /cards/:id/examples/remove': async () => {
+          await answer.opened;
+          return failure(404, 'NOT_FOUND', { resource: 'example' });
+        },
+      },
+    );
+    const app = await open({ path: '/interests', server });
+    const row = await rowOf('Gardening');
+    await app.user.click(
+      within(row).getByRole('button', { name: 'Remove example: Lawn care schedule' }),
+    );
+    await waitFor(() => expect(app.calls('POST /cards/:id/examples/remove')).toHaveLength(1));
+
+    server.me = null;
+    await act(() => app.session.resetAccountState());
+    answer.release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(screen.queryByText("We couldn't find that.")).toBeNull();
   });
 });
 

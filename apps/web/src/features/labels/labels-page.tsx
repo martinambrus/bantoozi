@@ -11,6 +11,7 @@ import { PlusIcon, TrashIcon } from '../../components/icons.js';
 import { EmptyState } from '../../components/states/empty-state.js';
 import { QueryState } from '../../components/states/query-state.js';
 import { useToast } from '../../components/toast/toast-provider.js';
+import { useSession } from '../../session/context.js';
 import { ExampleLists, exampleKey, type ExampleSide } from '../interests/examples.js';
 import { DEFAULT_COLOR, normalizeColor } from './colors.js';
 import { labelSaveMessage } from './label-errors.js';
@@ -23,9 +24,11 @@ interface LabelRowProps {
   onDelete: (label: LabelDto) => void;
 }
 
+/** An answer that comes after the sign-in that asked has ended shows nothing. */
 function LabelRow({ label, onEdit, onDelete }: LabelRowProps) {
   const { t } = useTranslation('labels');
   const toast = useToast();
+  const session = useSession();
   const cache = useLabelCache();
   const removeExample = useApiMutation(routes.labelExampleRemove);
   const [removing, setRemoving] = useState<string | null>(null);
@@ -34,13 +37,16 @@ function LabelRow({ label, onEdit, onDelete }: LabelRowProps) {
   const color = normalizeColor(label.color) ?? DEFAULT_COLOR;
 
   async function remove(side: ExampleSide, text: string) {
+    const signIn = session.currentSignIn();
     setRemoving(exampleKey(side, text));
     try {
       cache.apply(
         await removeExample.mutateAsync({ params: { id: label.id }, body: { side, text } }),
       );
     } catch (error) {
-      toast.show({ message: labelSaveMessage(t, error), tone: 'error' });
+      if (session.currentSignIn() === signIn) {
+        toast.show({ message: labelSaveMessage(t, error), tone: 'error' });
+      }
     } finally {
       setRemoving(null);
     }
