@@ -21,6 +21,7 @@ import { routes } from '../../../api/routes.js';
 import { errorMessage } from '../../../components/error-message.js';
 import { useToast, type ToastApi } from '../../../components/toast/toast-provider.js';
 import type { ToastAction, ToastInput } from '../../../components/toast/toast-store.js';
+import { isHandedBack } from '../../../components/toast/toaster.js';
 import { setRecordsState } from '../../../offline/queue.js';
 import {
   REPLAY_EVENT,
@@ -78,13 +79,13 @@ export function rowTitleOf(articleId: string): HTMLElement | null {
 /**
  * Spec 09 §1: an undo restores the focus. Puts it on the title of the row of `articleId` as soon
  * as the list shows that row, unless the person has moved it since `from` had it (the control
- * they pressed is gone by then, which leaves the focus on the page) or a modal is open, which
- * keeps the focus and makes the page behind it inert.
+ * they pressed is gone by then, which leaves the focus on the page, or where its toast put it
+ * back) or a modal is open, which keeps the focus and makes the page behind it inert.
  */
 export function focusRestoredRow(articleId: string, from: Element | null): void {
   const unmoved = () => {
     const active = document.activeElement;
-    return active === null || active === document.body || active === from;
+    return active === null || active === document.body || active === from || isHandedBack(active);
   };
   const attempt = (): boolean => {
     if (!unmoved() || document.querySelector('dialog[open]') !== null) return true;

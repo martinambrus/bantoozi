@@ -62,12 +62,13 @@ describe('the focus after the Undo of the toast of a rating', () => {
     const { app, toast } = await rated({ [UNDO]: () => answer.promise });
     await app.user.click(within(toast).getByRole('button', { name: 'Undo' }));
     await waitFor(() => expect(app.calls(UNDO)).toHaveLength(1));
-    act(() => titleOf('Article 3').focus());
+    // Not article 3, where the toast gave the focus back: the reader goes to another row.
+    act(() => titleOf('Article 1').focus());
 
     answer.resolve(json(200, { count: 1, mutationId: receipt(900), items: [restored(2)] }));
 
     await waitFor(() => expect(rowTitles()).toEqual(['Article 1', 'Article 2', 'Article 3']));
-    expect(titleOf('Article 3')).toHaveFocus();
+    expect(titleOf('Article 1')).toHaveFocus();
   });
 });
 

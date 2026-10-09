@@ -13,6 +13,7 @@ import { Button } from '../button.js';
 import { cx } from '../cx.js';
 import { IconButton } from '../icon-button.js';
 import { CheckIcon, CloseIcon, InfoIcon, WarningIcon } from '../icons.js';
+import { focusFallback } from '../modal.js';
 import { toastControls } from './toast-outlets.js';
 import { useToastOutlets, useToastStore } from './toast-provider.js';
 import type { Toast, ToastTone } from './toast-store.js';
@@ -56,7 +57,39 @@ function useAutoDismiss(toast: Toast, paused: boolean, dismiss: () => void) {
   }, [store, id, toast, paused, dismiss]);
 }
 
-function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string) => void }) {
+// The element a dismissed toast gave the focus back to, for as long as the focus stays on it.
+let handedBack: Element | null = null;
+
+/** Whether the focus is where a dismissed toast put it back, not where the person moved it. */
+export function isHandedBack(element: Element | null): boolean {
+  return element !== null && element === handedBack;
+}
+
+// The toast that held the focus is gone: back to what had it, else to the dialog or the page.
+function handBack(origin: HTMLElement | null) {
+  const before = document.activeElement;
+  if (before !== null && before !== document.body) return;
+  focusFallback(() => origin);
+  const to = document.activeElement;
+  if (to === null || to === document.body) return;
+  handedBack = to;
+  to.addEventListener(
+    'focusout',
+    () => {
+      if (handedBack === to) handedBack = null;
+    },
+    { once: true },
+  );
+}
+
+interface ToastItemProps {
+  toast: Toast;
+  onDismiss: (id: string) => void;
+  /** The person took away a toast while one of its controls had the focus. */
+  onLeave: () => void;
+}
+
+function ToastItem({ toast, onDismiss, onLeave }: ToastItemProps) {
   const { t } = useTranslation('common');
   const outlets = useToastOutlets();
   const root = useRef<HTMLDivElement>(null);
@@ -65,6 +98,13 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
   const { id, actions } = toast;
   const dismiss = useCallback(() => onDismiss(id), [onDismiss, id]);
   useAutoDismiss(toast, hovered || focused, dismiss);
+
+  function close(run?: () => void) {
+    const held = root.current?.contains(document.activeElement) === true;
+    run?.();
+    if (held) onLeave();
+    dismiss();
+  }
 
   // This item took the place of one in the other outlet that had the focus, and the focus goes on.
   useLayoutEffect(() => {
@@ -102,17 +142,14 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
               key={index}
               size="sm"
               variant="secondary"
-              onClick={() => {
-                action.onAction();
-                dismiss();
-              }}
+              onClick={() => close(() => action.onAction())}
             >
               {action.label}
             </Button>
           ))}
         </div>
       )}
-      <IconButton label={t('actions.dismiss')} onClick={dismiss}>
+      <IconButton label={t('actions.dismiss')} onClick={() => close()}>
         <CloseIcon />
       </IconButton>
     </div>
@@ -129,21 +166,44 @@ export function Toaster() {
   const outlets = useToastOutlets();
   const toasts = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const outlet = useSyncExternalStore(outlets.subscribe, outlets.getSnapshot, outlets.getSnapshot);
+  // Where the focus was before the toasts, and whether a toast that held it was just closed.
+  const memory = useRef<{ origin: HTMLElement | null; leaving: boolean }>({
+    origin: null,
+    leaving: false,
+  });
 
   // The items in a new outlet have had their turn to take a focus that was passed on; no other will.
   useLayoutEffect(() => {
     outlets.dropFocus();
   }, [outlets, outlet]);
 
+  useLayoutEffect(() => {
+    if (!memory.current.leaving) return;
+    memory.current.leaving = false;
+    handBack(memory.current.origin);
+  }, [toasts]);
+
   const region = (
     <div
       role="status"
       aria-live="polite"
       aria-atomic="false"
+      onFocus={(event) => {
+        const from = event.relatedTarget;
+        if (from instanceof Node && event.currentTarget.contains(from)) return;
+        memory.current.origin = from instanceof HTMLElement ? from : null;
+      }}
       className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-2 px-4 pt-4 pb-[calc(max(1rem,env(safe-area-inset-bottom))+var(--reason-bar-height,0px))]"
     >
       {toasts.map((toast) => (
-        <ToastItem key={toast.id} toast={toast} onDismiss={store.dismiss} />
+        <ToastItem
+          key={toast.id}
+          toast={toast}
+          onDismiss={store.dismiss}
+          onLeave={() => {
+            memory.current.leaving = true;
+          }}
+        />
       ))}
     </div>
   );

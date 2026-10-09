@@ -45,7 +45,7 @@ type ReturnFocus = (() => HTMLElement | null) | undefined;
 // still open (the page behind it is inert), else its main landmark. It is never left on the body,
 // which a keyboard or a screen reader cannot read from. A focus that the page or the person has
 // already put somewhere stays there.
-function focusFallback(returnFocus: ReturnFocus) {
+export function focusFallback(returnFocus: ReturnFocus) {
   const active = document.activeElement;
   if (active !== null && active !== document.body) return;
   if (focusIfPossible(returnFocus?.(), STAY)) return;

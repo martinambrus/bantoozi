@@ -155,6 +155,7 @@ export function LabelsPage() {
           title={t('deleteTitle')}
           body={t('deleteBody', { name: deleting.name, count: deleting.count })}
           confirmLabel={t('common:actions.delete')}
+          returnFocus={() => listRef.current}
           onClose={() => setDeleting(null)}
           onConfirm={() => remove(deleting)}
         />

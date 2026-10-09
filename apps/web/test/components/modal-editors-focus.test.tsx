@@ -79,7 +79,7 @@ describe('the focus after a label is edited or deleted', () => {
     ).toHaveFocus();
   });
 
-  it('goes to the main landmark when the label is deleted', async () => {
+  it('goes to the list when the label is deleted', async () => {
     const app = await openLabels({ 'DELETE /labels/:id': () => noContent() });
     const row = await screen.findByRole('listitem', { name: 'Read later' });
     await app.user.click(within(row).getByRole('button', { name: 'Delete' }));
@@ -92,6 +92,26 @@ describe('the focus after a label is edited or deleted', () => {
     await closed();
 
     expect(screen.queryByRole('listitem', { name: 'Read later' })).not.toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Your labels' })).toHaveFocus();
+    expect(document.body).not.toHaveFocus();
+  });
+
+  it('goes to the main landmark when the last label is deleted and no list is left', async () => {
+    const app = await open({
+      path: '/labels',
+      server: labelsServer([readLater], { 'DELETE /labels/:id': () => noContent() }),
+    });
+    const row = await screen.findByRole('listitem', { name: 'Read later' });
+    await app.user.click(within(row).getByRole('button', { name: 'Delete' }));
+
+    await app.user.click(
+      within(screen.getByRole('dialog', { name: 'Delete this label?' })).getByRole('button', {
+        name: 'Delete',
+      }),
+    );
+    await closed();
+
+    expect(screen.queryByRole('list', { name: 'Your labels' })).not.toBeInTheDocument();
     expect(screen.getByRole('main')).toHaveFocus();
     expect(document.body).not.toHaveFocus();
   });

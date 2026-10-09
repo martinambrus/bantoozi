@@ -68,10 +68,13 @@ function useExitingRows(
             const row = Array.from(listRef.current?.children ?? []).find(
               (child) => child instanceof HTMLElement && child.dataset['articleId'] === item.id,
             );
-            // The focus would fall to the page when its row goes: it goes to the next one instead.
+            // The focus would fall to the page with its row: it goes to the next row, else to main.
             if (row?.contains(document.activeElement)) {
               const next = row.nextElementSibling ?? row.previousElementSibling;
               refocus.current = next instanceof HTMLElement ? next : null;
+              if (refocus.current === null) {
+                document.querySelector<HTMLElement>('main')?.focus({ preventScroll: true });
+              }
             }
             setLeft((current) => ({
               page: firstPage,
@@ -84,6 +87,13 @@ function useExitingRows(
         clearTimeout(timer);
         timers.current.delete(item.id);
         setLeaving((current) => without(current, item.id));
+      } else if (!now && before === true) {
+        // It left and is back (Undo): forgotten as gone, so the next rating makes it leave again.
+        setLeft((current) =>
+          current.ids.has(item.id)
+            ? { page: current.page, ids: without(current.ids, item.id) }
+            : current,
+        );
       }
     }
   }, [enabled, items, store, listRef, firstPage, version]);
