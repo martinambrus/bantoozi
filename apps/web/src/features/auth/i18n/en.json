@@ -1,0 +1,42 @@
+{
+  "title": "Sign in",
+  "flow": {
+    "email": "Email",
+    "inviteCode": "Invite code",
+    "sendCode": "Send code",
+    "code": "Code",
+    "signIn": "Sign in",
+    "sendNewCode": "Send a new code",
+    "differentEmail": "Use a different email",
+    "codeSent": "If {{email}} can use Bantoozi, we've emailed it a code. Enter the code below to continue.",
+    "newCodeSent": "If {{email}} can use Bantoozi, we've emailed it a new code.",
+    "invalidCode": "That code didn't work. Check the latest email we sent you, or send a new code.",
+    "codeFormat": "Enter the 6-digit code from the email.",
+    "rateLimited_one": "Too many attempts. Try again in {{count}} minute.",
+    "rateLimited_other": "Too many attempts. Try again in {{count}} minutes."
+  },
+  "login": {
+    "lead": "Enter your email and we'll send you a code to sign in.",
+    "noAccount": "Don't have an account?",
+    "waitlist": "Join the waitlist"
+  },
+  "join": {
+    "title": "Join Bantoozi",
+    "lead": "Bantoozi is invite-only for now. Enter your invite code and your email, and we'll send you a code to finish signing up.",
+    "haveAccount": "Already have an account?",
+    "signIn": "Sign in",
+    "noInvite": "No invite code?",
+    "waitlist": "Join the waitlist"
+  },
+  "waitlist": {
+    "title": "Request an invite",
+    "lead": "Bantoozi is invite-only for now. Leave your email and we'll send you an invite when there's room.",
+    "note": "Note (optional)",
+    "noteHint": "Up to {{max}} characters.",
+    "submit": "Join the waitlist",
+    "doneTitle": "You're on the waitlist",
+    "doneBody": "We'll email {{email}} when your invite is ready.",
+    "haveAccount": "Already have an account?",
+    "signIn": "Sign in"
+  }
+}

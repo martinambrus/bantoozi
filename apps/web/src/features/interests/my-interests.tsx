@@ -1,0 +1,279 @@
+import type { CardDto, Subscription } from '@bantoozi/shared';
+import { useId, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { useApiMutation } from '../../api/mutation.js';
+import { routes } from '../../api/routes.js';
+import { Badge } from '../../components/badge.js';
+import { Button } from '../../components/button.js';
+import { ConfirmDialog } from '../../components/confirm-dialog.js';
+import { PlusIcon, TrashIcon } from '../../components/icons.js';
+import { EmptyState } from '../../components/states/empty-state.js';
+import { LoadingState } from '../../components/states/loading-state.js';
+import { QueryState } from '../../components/states/query-state.js';
+import { useToast } from '../../components/toast/toast-provider.js';
+import { useSession } from '../../session/context.js';
+import { saveMessage } from './card-errors.js';
+import { CardEditor } from './card-editor.js';
+import { BrowseLibraryLink, ScopeSelect, StrengthControl } from './controls.js';
+import { ExampleLists, exampleKey, type ExampleSide } from './examples.js';
+import { useCardCache, useCards, useSubscriptions } from './queries.js';
+import type { Strength } from './strengths.js';
+
+type Change = { strength: Strength } | { scopeFeedId: string | null };
+type Fields = Partial<Pick<CardDto, 'strength' | 'scopeFeedId'>>;
+
+/** The values of the fields `changes` names, as `card` holds them. */
+function valuesOf(card: CardDto, changes: Fields): Fields {
+  const values: Fields = {};
+  if ('strength' in changes) values.strength = card.strength;
+  if ('scopeFeedId' in changes) values.scopeFeedId = card.scopeFeedId;
+  return values;
+}
+
+interface CardRowProps {
+  card: CardDto;
+  subscriptions: readonly Subscription[];
+  onEdit: (card: CardDto) => void;
+  onDelete: (card: CardDto) => void;
+}
+
+/** An answer that comes after the sign-in that asked has ended shows nothing. */
+function CardRow({ card, subscriptions, onEdit, onDelete }: CardRowProps) {
+  const { t } = useTranslation('interests');
+  const toast = useToast();
+  const session = useSession();
+  const cache = useCardCache();
+  const update = useApiMutation(routes.cardUpdate);
+  const removeExample = useApiMutation(routes.cardExampleRemove);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const titleId = useId();
+  // One request for the card at a time: two could reach the server in either order, and the answer
+  // to the older one would put back what the newer one changed. What is changed meanwhile waits,
+  // and goes in one request once the earlier one is answered.
+  const sending = useRef(false);
+  const waiting = useRef<{ changes: Fields; before: CardDto | undefined } | null>(null);
+
+  // A change shows at once; a failure takes back only that change, and says why.
+  async function send(changes: Fields, before: CardDto | undefined) {
+    const signIn = session.currentSignIn();
+    sending.current = true;
+    try {
+      cache.apply(await update.mutateAsync({ params: { id: card.id }, body: changes }));
+      // The answer does not hold what waits, which stays on show.
+      if (waiting.current !== null) cache.patch(card.id, waiting.current.changes);
+    } catch (error) {
+      if (before !== undefined) {
+        cache.undo(card.id, before, changes);
+        // What waits would go back to this change, which the server does not hold.
+        const next = waiting.current;
+        if (next?.before !== undefined) {
+          next.before = { ...next.before, ...valuesOf(before, changes) };
+        }
+      }
+      if (session.currentSignIn() === signIn) {
+        toast.show({ message: saveMessage(t, error), tone: 'error' });
+      }
+    } finally {
+      sending.current = false;
+      const next = waiting.current;
+      waiting.current = null;
+      // What waits belongs to the sign-in the card was changed in, which may have ended meanwhile.
+      // Sent then, it would go out with no session, with another account's, or in a later sign-in
+      // over what was changed there since.
+      if (next !== null && session.currentSignIn() === signIn) void send(next.changes, next.before);
+    }
+  }
+
+  function change(changes: Change) {
+    const before = cache.patch(card.id, changes);
+    const earlier = waiting.current;
+    if (earlier !== null) {
+      waiting.current = { changes: { ...earlier.changes, ...changes }, before: earlier.before };
+    } else if (sending.current) {
+      waiting.current = { changes, before };
+    } else {
+      void send(changes, before);
+    }
+  }
+
+  // A removal gives the card a new id, so a request for the old one would fail, or its answer would
+  // bring the old card back beside the new one: nothing else is sent for the card while a removal
+  // is on its way, and no removal, edit or deletion starts while a change is.
+  const removingExample = removing !== null;
+  const busy = removingExample || update.isPending;
+
+  async function remove(side: ExampleSide, text: string) {
+    const signIn = session.currentSignIn();
+    setRemoving(exampleKey(side, text));
+    try {
+      cache.apply(
+        await removeExample.mutateAsync({ params: { id: card.id }, body: { side, text } }),
+      );
+    } catch (error) {
+      if (session.currentSignIn() === signIn) {
+        toast.show({ message: saveMessage(t, error), tone: 'error' });
+      }
+    } finally {
+      setRemoving(null);
+    }
+  }
+
+  return (
+    <li
+      aria-labelledby={titleId}
+      className="flex flex-col gap-3 rounded-xl border border-slate-300 p-4 dark:border-slate-600"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <h3 id={titleId} className="min-w-0 break-words text-base font-semibold">
+          {card.title}
+        </h3>
+        {card.origin === 'user' ? null : (
+          <Badge tone="info">
+            {card.origin === 'library' ? t('card.origin.library') : t('card.origin.fork')}
+          </Badge>
+        )}
+      </div>
+      <p className="break-words text-sm">{card.interest}</p>
+      {card.notFor === null ? null : (
+        <p className="break-words text-sm text-slate-600 dark:text-slate-300">
+          {t('card.notFor', { text: card.notFor })}
+        </p>
+      )}
+      <ExampleLists
+        yes={card.examplesYes}
+        no={card.examplesNo}
+        moreLabel={t('card.examplesMore')}
+        lessLabel={t('card.examplesLess')}
+        removal={{
+          label: (text) => t('card.removeExample', { text }),
+          onRemove: (side, text) => void remove(side, text),
+          removing,
+          held: update.isPending,
+        }}
+      />
+      <fieldset
+        disabled={removingExample}
+        role="none"
+        className="flex min-w-0 flex-wrap items-end gap-4"
+      >
+        <StrengthControl
+          value={card.strength}
+          onChange={(strength) => {
+            if (strength !== card.strength) void change({ strength });
+          }}
+        />
+        <ScopeSelect
+          value={card.scopeFeedId}
+          subscriptions={subscriptions}
+          onChange={(scopeFeedId) => void change({ scopeFeedId })}
+        />
+      </fieldset>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="secondary"
+          aria-describedby={titleId}
+          disabled={busy}
+          onClick={() => onEdit(card)}
+        >
+          {t('common:actions.edit')}
+        </Button>
+        <Button
+          variant="ghost"
+          aria-describedby={titleId}
+          disabled={busy}
+          onClick={() => onDelete(card)}
+        >
+          <TrashIcon className="size-4" />
+          {t('common:actions.delete')}
+        </Button>
+      </div>
+    </li>
+  );
+}
+
+/** The person's own interest cards. */
+export function MyInterests() {
+  const { t } = useTranslation('interests');
+  const cache = useCardCache();
+  const cards = useCards();
+  const subscriptions = useSubscriptions();
+  const deleteCard = useApiMutation(routes.cardDelete);
+  const [editing, setEditing] = useState<CardDto | 'new' | null>(null);
+  const [deleting, setDeleting] = useState<CardDto | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const headingId = useId();
+
+  async function remove(card: CardDto) {
+    await deleteCard.mutateAsync({ params: { id: card.id } });
+    cache.remove(card.id);
+  }
+
+  return (
+    <section aria-labelledby={headingId} className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id={headingId} className="text-xl font-semibold">
+          {t('mine.heading')}
+        </h2>
+        <Button onClick={() => setEditing('new')}>
+          <PlusIcon className="size-4" />
+          {t('mine.new')}
+        </Button>
+      </div>
+      <QueryState
+        query={cards}
+        isEmpty={(list) => list.length === 0}
+        empty={
+          <EmptyState
+            title={t('mine.emptyTitle')}
+            body={t('mine.emptyBody')}
+            action={<BrowseLibraryLink />}
+          />
+        }
+      >
+        {(list) =>
+          // The feed names come with the cards, so a card is never first shown with "Another feed".
+          subscriptions.isLoading ? (
+            <LoadingState />
+          ) : (
+            <ul
+              ref={listRef}
+              tabIndex={-1}
+              aria-label={t('mine.listLabel')}
+              className="flex flex-col gap-3 outline-none"
+            >
+              {list.map((card) => (
+                <CardRow
+                  key={card.id}
+                  card={card}
+                  subscriptions={subscriptions.data ?? []}
+                  onEdit={setEditing}
+                  onDelete={setDeleting}
+                />
+              ))}
+            </ul>
+          )
+        }
+      </QueryState>
+      {editing === null ? null : (
+        <CardEditor
+          card={editing === 'new' ? undefined : editing}
+          returnFocus={() => listRef.current}
+          onClose={() => setEditing(null)}
+        />
+      )}
+      {deleting === null ? null : (
+        <ConfirmDialog
+          open
+          danger
+          title={t('card.deleteTitle')}
+          body={t('card.deleteBody', { title: deleting.title })}
+          confirmLabel={t('common:actions.delete')}
+          returnFocus={() => listRef.current}
+          onClose={() => setDeleting(null)}
+          onConfirm={() => remove(deleting)}
+        />
+      )}
+    </section>
+  );
+}

@@ -1,0 +1,217 @@
+{
+  "lanes": {
+    "for_you": "Pre vás",
+    "maybe": "Možno",
+    "everything": "Všetko ostatné",
+    "new": "Nové",
+    "bookmarks": "Záložky",
+    "hidden": "Skryté",
+    "all": "Všetky",
+    "helpMeLearn": "pomôžte mi učiť sa"
+  },
+  "sidebar": {
+    "label": "Navigácia čítačky",
+    "lanes": "Zoznamy",
+    "feeds": "Zdroje",
+    "labels": "Štítky",
+    "noFeeds": "Zatiaľ žiadne zdroje.",
+    "filter": "Filtrovať zdroje",
+    "noMatch": "Filtru nezodpovedá žiadny zdroj.",
+    "noLabels": "Zatiaľ žiadne štítky.",
+    "feedsFailed": "Zdroje sa nepodarilo načítať.",
+    "labelsFailed": "Štítky sa nepodarilo načítať.",
+    "feedsOffline": "Zdroje sa načítajú, keď bude zariadenie znova online.",
+    "labelsOffline": "Štítky sa načítajú, keď bude zariadenie znova online.",
+    "retryFeeds": "Znova načítať zdroje",
+    "retryLabels": "Znova načítať štítky",
+    "unread": "Neprečítané:",
+    "saved": "Uložené:",
+    "everythingToggle": "Zoznam Všetko ostatné"
+  },
+  "topBar": {
+    "label": "Prepínač zoznamov",
+    "browse": "Prehľadávať zdroje a štítky",
+    "browseTitle": "Zdroje a štítky"
+  },
+  "header": {
+    "unread": "Neprečítané: {{value}}",
+    "saved": "Uložené: {{value}}",
+    "hidden": "Skryté: {{value}}",
+    "feed": "Zdroj",
+    "label": "Štítok",
+    "show": "Zobraziť",
+    "showHidden": "Zobraziť skryté",
+    "refresh": "Obnoviť",
+    "markAll": "Označiť všetko ako prečítané",
+    "tier": "Minimálna úroveň",
+    "tierValue": "Úroveň {{tier}} a vyššie",
+    "tierShort": "{{tier}}+",
+    "sort": "Zoradiť podľa",
+    "sortScore": "Skóre",
+    "sortDate": "Dátum",
+    "simple": "Jednoduchý režim",
+    "recentActions": "Nedávne akcie",
+    "rateVisible_one": "Ohodnotiť tento viditeľný článok",
+    "rateVisible_few": "Ohodnotiť tieto {{count}} viditeľné články",
+    "rateVisible_many": "Ohodnotiť týchto {{count}} viditeľného článku",
+    "rateVisible_other": "Ohodnotiť týchto {{count}} viditeľných článkov",
+    "rateVisibleNone": "Ohodnotiť viditeľné články",
+    "rateVisibleNoneWhy": "V tomto zozname nie sú načítané žiadne neprečítané články."
+  },
+  "markAll": {
+    "title": "Označiť všetko ako prečítané?",
+    "confirm": "Označiť ako prečítané",
+    "body_one": "{{count}} neprečítaný článok v zozname „{{view}}“ sa označí ako prečítaný.",
+    "body_few": "{{count}} neprečítané články v zozname „{{view}}“ sa označia ako prečítané.",
+    "body_many": "{{count}} neprečítaného článku v zozname „{{view}}“ sa označí ako prečítané.",
+    "body_other": "{{count}} neprečítaných článkov v zozname „{{view}}“ sa označí ako prečítané.",
+    "changed": "Zoznam sa medzitým zmenil, takže číslo je teraz aktuálne.",
+    "done_one": "Označené ako prečítané: {{count}}",
+    "done_few": "Označené ako prečítané: {{count}}",
+    "done_many": "Označené ako prečítané: {{count}}",
+    "done_other": "Označené ako prečítané: {{count}}",
+    "tooMany": "Naraz sa dá označiť najviac {{max}} článkov. Zvýšte minimálnu úroveň alebo vyberte menší zoznam a skúste to znova.",
+    "view": "{{name}} · {{lane}}"
+  },
+  "rateVisible": {
+    "title_one": "Ohodnotiť tento viditeľný článok?",
+    "title_few": "Ohodnotiť tieto {{count}} viditeľné články?",
+    "title_many": "Ohodnotiť týchto {{count}} viditeľného článku?",
+    "title_other": "Ohodnotiť týchto {{count}} viditeľných článkov?",
+    "body_one": "Vaše hodnotenie sa uloží pre {{count}} neprečítaný článok, ktorý je teraz v zozname „{{view}}“.",
+    "body_few": "Vaše hodnotenie sa uloží pre {{count}} neprečítané články, ktoré sú teraz v zozname „{{view}}“.",
+    "body_many": "Vaše hodnotenie sa uloží pre {{count}} neprečítaného článku, ktorý je teraz v zozname „{{view}}“.",
+    "body_other": "Vaše hodnotenie sa uloží pre {{count}} neprečítaných článkov, ktoré sú teraz v zozname „{{view}}“.",
+    "bodyFirst": "Vaše hodnotenie sa uloží pre prvých {{max}} neprečítaných článkov, ktoré sú teraz v zozname „{{view}}“.",
+    "capped": "Zoznam zobrazuje {{shown}} neprečítaných článkov. Ohodnotených bude len prvých {{max}}.",
+    "notLoaded": "Články, ktoré sa ešte nenačítali, sa nezahrnú.",
+    "likeAll": "Označiť všetky ako „páči sa mi“",
+    "dislikeAll": "Označiť všetky ako „nepáči sa mi“",
+    "done_one": "Ohodnotené: {{count}}",
+    "done_few": "Ohodnotené: {{count}}",
+    "done_many": "Ohodnotené: {{count}}",
+    "done_other": "Ohodnotené: {{count}}"
+  },
+  "recent": {
+    "title": "Nedávne akcie",
+    "description": "Každú akciu môžete vrátiť späť do 10 minút.",
+    "list": "Akcie, ktoré môžete vrátiť späť",
+    "emptyTitle": "Nie je čo vrátiť späť",
+    "emptyBody": "To, čo v čítačke urobíte, sa tu zobrazí na 10 minút.",
+    "articles_one": "{{count}} článok",
+    "articles_few": "{{count}} články",
+    "articles_many": "{{count}} článku",
+    "articles_other": "{{count}} článkov",
+    "kind": {
+      "read": "Označené ako prečítané",
+      "unread": "Označené ako neprečítané",
+      "unhide": "Skrytie zrušené",
+      "rate": "Hodnotenie zmenené",
+      "promptAnswer": "Odpoveď na otázku",
+      "bookmark": "Pridané do záložiek",
+      "unbookmark": "Záložka odstránená",
+      "addLabel": "Štítok pridaný",
+      "removeLabel": "Štítok odobratý",
+      "markRead": "Označené ako prečítané",
+      "markReadFilter": "Všetko v zozname označené ako prečítané",
+      "rateBulk": "Ohodnotené",
+      "other": "Zmena článku"
+    },
+    "rating": {
+      "like": "Označené ako „páči sa mi“",
+      "dislike": "Označené ako „nepáči sa mi“",
+      "none": "Hodnotenie odstránené"
+    }
+  },
+  "hidden": {
+    "causes": "Prečo je článok „{{title}}“ skrytý",
+    "byYou": "Skryté vami",
+    "unhide": "Zrušiť skrytie",
+    "byRule": "Skryté pravidlom: {{reason}}",
+    "byRuleBare": "Skryté pravidlom",
+    "toRules": "Prejsť na Pravidlá",
+    "toInterests": "Prejsť na Záujmy",
+    "none": "Skrytie bolo zrušené. Zo zoznamu zmizne, keď sa zoznam načíta znova."
+  },
+  "list": {
+    "loadMore": "Načítať viac"
+  },
+  "pane": {
+    "label": "Článok",
+    "empty": "Vyberte článok a prečítajte si ho tu."
+  },
+  "empty": {
+    "forYou": {
+      "title": "Všetko ste si prečítali",
+      "body": "Nové články zodpovedajúce vašim záujmom sa zobrazia tu."
+    },
+    "maybe": {
+      "title": "Nie je o čom rozhodovať",
+      "body": "Články, v ktorých si Bantoozi nie je istý, sa zobrazia tu. Ohodnoťte ich a pomôžete mu učiť sa."
+    },
+    "everything": {
+      "title": "Nič ďalšie na čítanie",
+      "body": "Články, ktoré nezodpovedajú vašim záujmom, sa zobrazia tu."
+    },
+    "new": {
+      "title": "Žiadne nové články",
+      "body": "Články, ktoré ešte neboli ohodnotené, sa zobrazia tu."
+    },
+    "bookmarks": {
+      "title": "Zatiaľ žiadne záložky",
+      "body": "Pridajte článok medzi záložky a jeho kópia sa uchová tu."
+    },
+    "hidden": {
+      "title": "Nič nie je skryté",
+      "body": "Články, ktoré skryjete, sa zobrazia tu, aby ste ich mohli vrátiť."
+    },
+    "scoped": {
+      "title": "Žiadne neprečítané články",
+      "body": "Všetko v tomto zozname je prečítané. Vyberte iný zoznam a uvidíte viac."
+    }
+  },
+  "shortcuts": {
+    "title": "Klávesové skratky",
+    "groups": {
+      "moving": "Pohyb",
+      "lanes": "Prejsť na zoznam",
+      "article": "Aktuálny článok",
+      "reader": "Čítačka"
+    },
+    "rows": {
+      "next": "Nasledujúci článok",
+      "previous": "Predchádzajúci článok",
+      "filter": "Filtrovať zdroje",
+      "open": "Otvoriť originál na novej karte",
+      "like": "Páči sa mi",
+      "dislike": "Nepáči sa mi, potom vybrať dôvod",
+      "hide": "Ohodnotiť a skryť",
+      "bookmark": "Pridať záložku alebo ju odstrániť",
+      "labels": "Vybrať štítky",
+      "why": "Prečo toto?",
+      "mute": "Stlmiť príbeh: 1, 3 alebo 7 dní, alebo 0 pre 30 dní",
+      "read": "Označiť ako prečítané alebo neprečítané",
+      "markAll": "Označiť všetko ako prečítané",
+      "simple": "Zapnúť alebo vypnúť jednoduchý režim",
+      "help": "Zobraziť tento zoznam"
+    },
+    "words": {
+      "then": "potom",
+      "or": "alebo",
+      "plus": "+",
+      "to": "až",
+      "withRating": "s klávesom hodnotenia"
+    },
+    "note": "Klávesy fungujú na širokej obrazovke, keď sa nič nepíše. Shift s klávesom hodnotenia článok aj skryje; ak + vyžaduje Shift, stlačte = a článok sa neskryje.",
+    "pending": {
+      "g": "Stlačené {{pressed}}. Ďalej: {{options}}.",
+      "gLead": "Prejsť na",
+      "m": "Stlačené {{pressed}}. Stlmiť príbeh na: {{options}}.",
+      "mLead": "Stlmiť príbeh na",
+      "days_one": "{{count}} deň",
+      "days_few": "{{count}} dni",
+      "days_many": "{{count}} dňa",
+      "days_other": "{{count}} dní"
+    }
+  }
+}

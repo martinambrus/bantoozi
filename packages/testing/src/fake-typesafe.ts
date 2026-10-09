@@ -21,7 +21,7 @@ import {
  * Deterministic fake TypeSafe server (spec 04 §10): `POST /v1/systemone` with the documented
  * response shape, so any question set gets a plausible, repeatable answer. Engine unit tests, the
  * classification/breaker integration tests, E2E (through `TYPESAFE_BASE_URL`) and the load test use
- * it. It listens on 127.0.0.1 on a random port (node:http only).
+ * it. It listens on 127.0.0.1 on a random port, or on the `port` option (node:http only).
  *
  * Answer rules (spec 04 §10):
  * - **noul about a card or label** (object instructions with an `interest` string, or a
@@ -64,6 +64,11 @@ export interface FakeTypeSafeOptions {
   recordRequests?: boolean | undefined;
   /** When set, a request without `Authorization: Bearer <apiKey>` gets 401. */
   apiKey?: string | undefined;
+}
+
+export interface FakeTypeSafeStartOptions extends FakeTypeSafeOptions {
+  /** Listening port on 127.0.0.1. Default 0: a random free port. */
+  port?: number | undefined;
 }
 
 export interface FakeTypeSafeServer {
@@ -337,12 +342,13 @@ function checkOptions(options: FakeTypeSafeOptions): void {
   checkLatency(options.latencyMs, 'fake TypeSafe');
 }
 
-/** Starts the fake on 127.0.0.1 with a random port. */
+/** Starts the fake on 127.0.0.1, on a random port unless `port` is given. */
 export async function startFakeTypeSafe(
-  options: FakeTypeSafeOptions = {},
+  options: FakeTypeSafeStartOptions = {},
 ): Promise<FakeTypeSafeServer> {
-  checkOptions(options);
-  let current: FakeTypeSafeOptions = { ...options };
+  const { port, ...initial } = options;
+  checkOptions(initial);
+  let current: FakeTypeSafeOptions = { ...initial };
   const requests: FakeTypeSafeRequest[] = [];
   let count = 0;
 
@@ -400,7 +406,7 @@ export async function startFakeTypeSafe(
     }),
   );
 
-  const url = await listenLoopback(server);
+  const url = await listenLoopback(server, port);
   return {
     url,
     requests,

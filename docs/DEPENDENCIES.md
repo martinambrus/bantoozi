@@ -65,6 +65,15 @@ pin exact versions (`save-exact`). Update this file in the same commit as any ve
 | @use-gesture/react | 10.3.1 |
 | @vitejs/plugin-react | 6.1.1 |
 | @playwright/test | 1.56.1 — matches the Chromium build 1194 preinstalled in the development container (M6) |
+| zod | 4.6.5 — a direct dependency so `src/zod-jitless.ts` can switch off zod's `new Function` probe, which the production CSP reports (spec 11 §7) |
+| dompurify | 3.4.16 — re-sanitizes server-sanitized feed HTML before the one HTML sink (spec 09 §1, spec 11 §7); ships its own types |
+| idb | 8.0.3 — the account-scoped offline store (spec 09 §1) |
+| workbox-window / workbox-precaching / workbox-routing | 7.4.1 — `virtual:pwa-register/react` needs workbox-window; the `injectManifest` worker (`src/sw/sw.ts`) bundles the other two |
+| @testing-library/react / dom / user-event / jest-dom | 16.3.3 / 10.4.2 / 14.6.7 / 7.0.1 (dev) |
+| jsdom | 30.1.2 (root dev) — the Vitest environment of `apps/web`; Vitest imports it from its own location |
+| fake-indexeddb | 6.2.5 (dev) — IndexedDB for jsdom tests |
+| @axe-core/playwright / playwright-core | 4.13.0 / 1.56.1 (dev) — accessibility checks in the E2E suite; playwright-core is pinned so its `Page` type equals `@playwright/test`'s |
+| eslint-plugin-react-hooks | 7.1.1 (root dev) — only `rules-of-hooks` and `exhaustive-deps` are enabled |
 
 ## Container images (pinned by multi-arch index digest)
 

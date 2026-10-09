@@ -1,9 +1,22 @@
-import { Outlet, createRootRoute } from '@tanstack/react-router';
+import { Outlet, createRootRouteWithContext } from '@tanstack/react-router';
 
-export const Route = createRootRoute({
+import { ToastProvider } from '../components/toast/toast-provider.js';
+import { Toaster } from '../components/toast/toaster.js';
+import { PwaUpdatePrompt } from '../features/pwa/pwa-update-prompt.js';
+import { AccountToasts } from '../features/shell/account-toasts.js';
+import type { RouterContext } from '../router-context.js';
+import { ThemeSync } from '../theme/theme-sync.js';
+
+export const Route = createRootRouteWithContext<RouterContext>()({
   component: () => (
-    <div className="min-h-screen bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      <Outlet />
-    </div>
+    <ToastProvider>
+      <ThemeSync />
+      <AccountToasts />
+      <PwaUpdatePrompt />
+      <div className="min-h-screen bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+        <Outlet />
+      </div>
+      <Toaster />
+    </ToastProvider>
   ),
 });

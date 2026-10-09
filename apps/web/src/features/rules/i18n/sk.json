@@ -1,0 +1,86 @@
+{
+  "title": "Pravidlá",
+  "intro": "Pravidlá skrývajú alebo uprednostňujú články vo všetkých zoznamoch. Platia okamžite.",
+  "groups": {
+    "mute_keyword": "Stlmené kľúčové slová",
+    "mute_story": "Stlmené príbehy",
+    "block_feed": "Blokované zdroje",
+    "block_domain": "Blokované domény",
+    "block_author": "Blokovaní autori",
+    "boost_feed": "Uprednostnené zdroje",
+    "boost_domain": "Uprednostnené domény"
+  },
+  "empty": {
+    "title": "Zatiaľ žiadne pravidlá",
+    "body": "Stlmte, zablokujte alebo uprednostnite z ponuky článku, alebo nižšie pridajte pravidlo."
+  },
+  "list": {
+    "added": "Pridané",
+    "delete": "Odstrániť pravidlo: {{value}}"
+  },
+  "expires": {
+    "expired": "Vypršalo",
+    "soon": "Vyprší za menej ako minútu",
+    "minutes_one": "Vyprší za {{count}} minútu",
+    "minutes_few": "Vyprší za {{count}} minúty",
+    "minutes_many": "Vyprší za {{count}} minúty",
+    "minutes_other": "Vyprší za {{count}} minút",
+    "hours_one": "Vyprší za {{count}} hodinu",
+    "hours_few": "Vyprší za {{count}} hodiny",
+    "hours_many": "Vyprší za {{count}} hodiny",
+    "hours_other": "Vyprší za {{count}} hodín",
+    "days_one": "Vyprší za {{count}} deň",
+    "days_few": "Vyprší za {{count}} dni",
+    "days_many": "Vyprší za {{count}} dňa",
+    "days_other": "Vyprší za {{count}} dní"
+  },
+  "delete": {
+    "title": "Odstrániť toto pravidlo?",
+    "body": "{{kind}}: {{value}}. Bantoozi ho prestane uplatňovať a vaše články zoradí znova.",
+    "confirm": "Odstrániť pravidlo"
+  },
+  "add": {
+    "title": "Pridať pravidlo",
+    "kind": "Typ pravidla",
+    "kinds": {
+      "mute_keyword": "Stlmiť kľúčové slovo",
+      "block_domain": "Blokovať doménu",
+      "boost_domain": "Uprednostniť doménu",
+      "block_author": "Blokovať autora"
+    },
+    "values": {
+      "mute_keyword": {
+        "label": "Kľúčové slovo alebo fráza",
+        "hint": "Skryje články, ktorých nadpis alebo zhrnutie ju obsahuje. Použite {{min}} až {{max}} znakov."
+      },
+      "block_domain": {
+        "label": "Doména",
+        "hint": "Skryje všetky články z tohto webu, napríklad example.com."
+      },
+      "boost_domain": {
+        "label": "Doména",
+        "hint": "Vždy zobrazí články z tohto webu v zozname Pre vás, napríklad example.com."
+      },
+      "block_author": {
+        "label": "Meno autora",
+        "hint": "Skryje články, ktoré napísal tento autor."
+      }
+    },
+    "expires": "Platnosť",
+    "never": "Bez obmedzenia",
+    "after_one": "Po {{count}} dni",
+    "after_few": "Po {{count}} dňoch",
+    "after_many": "Po {{count}} dňa",
+    "after_other": "Po {{count}} dňoch",
+    "submit": "Pridať pravidlo",
+    "added": "Pravidlo bolo pridané.",
+    "errors": {
+      "empty": "Zadajte hodnotu.",
+      "keyword": "Použite {{min}} až {{max}} znakov.",
+      "domain": "Zadajte názov webu, napríklad example.com, bez http:// a bez cesty.",
+      "author": "Použite najviac {{max}} znakov.",
+      "invalid": "Táto hodnota nie je platná.",
+      "expiry": "Toto trvanie nie je platné."
+    }
+  }
+}

@@ -1,0 +1,201 @@
+{
+  "lanes": {
+    "for_you": "For you",
+    "maybe": "Maybe",
+    "everything": "Everything else",
+    "new": "New",
+    "bookmarks": "Bookmarks",
+    "hidden": "Hidden",
+    "all": "All",
+    "helpMeLearn": "help me learn"
+  },
+  "sidebar": {
+    "label": "Reader navigation",
+    "lanes": "Lanes",
+    "feeds": "Feeds",
+    "labels": "Labels",
+    "noFeeds": "No feeds yet.",
+    "filter": "Filter feeds",
+    "noMatch": "No feeds match your filter.",
+    "noLabels": "No labels yet.",
+    "feedsFailed": "The feeds couldn't be loaded.",
+    "labelsFailed": "The labels couldn't be loaded.",
+    "feedsOffline": "The feeds load once the device is back online.",
+    "labelsOffline": "The labels load once the device is back online.",
+    "retryFeeds": "Retry loading feeds",
+    "retryLabels": "Retry loading labels",
+    "unread": "Unread:",
+    "saved": "Saved:",
+    "everythingToggle": "Everything else lane"
+  },
+  "topBar": {
+    "label": "Lane switcher",
+    "browse": "Browse feeds and labels",
+    "browseTitle": "Feeds and labels"
+  },
+  "header": {
+    "unread": "Unread: {{value}}",
+    "saved": "Saved: {{value}}",
+    "hidden": "Hidden: {{value}}",
+    "feed": "Feed",
+    "label": "Label",
+    "show": "Show",
+    "showHidden": "Show hidden",
+    "refresh": "Refresh",
+    "markAll": "Mark all read",
+    "tier": "Minimum tier",
+    "tierValue": "Tier {{tier}} and above",
+    "tierShort": "{{tier}}+",
+    "sort": "Sort by",
+    "sortScore": "Score",
+    "sortDate": "Date",
+    "simple": "Simple mode",
+    "recentActions": "Recent actions",
+    "rateVisible_one": "Rate this visible article",
+    "rateVisible_other": "Rate these {{count}} visible articles",
+    "rateVisibleNone": "Rate these visible articles",
+    "rateVisibleNoneWhy": "No unread articles are loaded in this view."
+  },
+  "markAll": {
+    "title": "Mark all as read?",
+    "confirm": "Mark as read",
+    "body_one": "{{count}} unread article in “{{view}}” will be marked as read.",
+    "body_other": "{{count}} unread articles in “{{view}}” will be marked as read.",
+    "changed": "The list changed while you were deciding, so the number is up to date now.",
+    "done_one": "Marked {{count}} as read",
+    "done_other": "Marked {{count}} as read",
+    "tooMany": "That's more than {{max}} articles at once. Raise the minimum tier or pick a smaller view, then try again.",
+    "view": "{{name}} · {{lane}}"
+  },
+  "rateVisible": {
+    "title_one": "Rate this visible article?",
+    "title_other": "Rate these {{count}} visible articles?",
+    "body_one": "Your rating will be saved for the {{count}} unread article that is listed in “{{view}}” right now.",
+    "body_other": "Your rating will be saved for the {{count}} unread articles that are listed in “{{view}}” right now.",
+    "bodyFirst": "Your rating will be saved for the first {{max}} unread articles that are listed in “{{view}}” right now.",
+    "capped": "The list shows {{shown}} unread articles. Only the first {{max}} are rated.",
+    "notLoaded": "Articles that haven't been loaded are not included.",
+    "likeAll": "Like all",
+    "dislikeAll": "Dislike all",
+    "done_one": "Rated {{count}} article",
+    "done_other": "Rated {{count}} articles"
+  },
+  "recent": {
+    "title": "Recent actions",
+    "description": "Each action can be undone for 10 minutes.",
+    "list": "Actions you can undo",
+    "emptyTitle": "Nothing to undo",
+    "emptyBody": "What you do in the reader shows up here for 10 minutes.",
+    "articles_one": "{{count}} article",
+    "articles_other": "{{count}} articles",
+    "kind": {
+      "read": "Marked as read",
+      "unread": "Marked as unread",
+      "unhide": "Unhidden",
+      "rate": "Rating changed",
+      "promptAnswer": "Answered a question",
+      "bookmark": "Bookmarked",
+      "unbookmark": "Bookmark removed",
+      "addLabel": "Label added",
+      "removeLabel": "Label removed",
+      "markRead": "Marked as read",
+      "markReadFilter": "Marked everything in a view as read",
+      "rateBulk": "Rated",
+      "other": "Changed an article"
+    },
+    "rating": {
+      "like": "Marked as liked",
+      "dislike": "Marked as disliked",
+      "none": "Rating removed"
+    }
+  },
+  "hidden": {
+    "causes": "Why “{{title}}” is hidden",
+    "byYou": "Hidden by you",
+    "unhide": "Unhide",
+    "byRule": "Hidden by a rule: {{reason}}",
+    "byRuleBare": "Hidden by a rule",
+    "toRules": "Go to Rules",
+    "toInterests": "Go to Interests",
+    "none": "Not hidden any more. It leaves this list when the list is loaded again."
+  },
+  "list": {
+    "loadMore": "Load more"
+  },
+  "pane": {
+    "label": "Article",
+    "empty": "Select an article to read it here."
+  },
+  "empty": {
+    "forYou": {
+      "title": "You're all caught up",
+      "body": "New articles that match your interests will show up here."
+    },
+    "maybe": {
+      "title": "Nothing to decide",
+      "body": "Articles Bantoozi is unsure about will show up here. Rate them to help it learn."
+    },
+    "everything": {
+      "title": "Nothing else to read",
+      "body": "Articles that don't match your interests will show up here."
+    },
+    "new": {
+      "title": "No new articles",
+      "body": "Articles that haven't been scored yet will show up here."
+    },
+    "bookmarks": {
+      "title": "No bookmarks yet",
+      "body": "Bookmark an article to keep a copy of it here."
+    },
+    "hidden": {
+      "title": "Nothing is hidden",
+      "body": "Articles you hide will show up here, so you can bring them back."
+    },
+    "scoped": {
+      "title": "No unread articles",
+      "body": "Everything in this view has been read. Pick another lane to see more."
+    }
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "groups": {
+      "moving": "Moving around",
+      "lanes": "Go to a lane",
+      "article": "The current article",
+      "reader": "The reader"
+    },
+    "rows": {
+      "next": "Next article",
+      "previous": "Previous article",
+      "filter": "Filter the feeds",
+      "open": "Open the original in a new tab",
+      "like": "Like",
+      "dislike": "Dislike, then pick a reason",
+      "hide": "Rate and hide",
+      "bookmark": "Bookmark or remove the bookmark",
+      "labels": "Choose labels",
+      "why": "Why this?",
+      "mute": "Mute the story: 1, 3 or 7 days, or 0 for 30 days",
+      "read": "Mark as read or unread",
+      "markAll": "Mark all as read",
+      "simple": "Switch Simple mode on or off",
+      "help": "Show this list"
+    },
+    "words": {
+      "then": "then",
+      "or": "or",
+      "plus": "+",
+      "to": "to",
+      "withRating": "with a rating key"
+    },
+    "note": "The keys work on a wide screen when nothing is being typed. Shift with a rating key also hides the article; where + needs Shift, press = to like without hiding.",
+    "pending": {
+      "g": "{{pressed}} pressed. Next: {{options}}.",
+      "gLead": "Go to",
+      "m": "{{pressed}} pressed. Mute the story for: {{options}}.",
+      "mLead": "Mute the story for",
+      "days_one": "{{count}} day",
+      "days_other": "{{count}} days"
+    }
+  }
+}

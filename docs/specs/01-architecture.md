@@ -198,7 +198,7 @@ identify secret variable names/paths, never their supplied contents or a seriali
 | `SIGNUP_MODE` | `invite` | api | `invite` / `open` / `closed`; `settings['signup_mode']` overrides it |
 | `RATE_LIMITS_ENABLED` | `true` | api | `false` only for E2E/load tests with `NODE_ENV=test`; refused in production |
 | `TYPESAFE_API_KEY` | — | worker, eval | optional bootstrap Jev key, used only if no DB credential row exists; DB configuration/revocation takes precedence (spec 04 §1.2). Workers report only its presence in `worker.heartbeat`, so the admin status can show `source: 'env'` |
-| `TYPESAFE_MODEL` | `jev-1.13.0` | worker, eval | always a pinned version in production |
+| `TYPESAFE_MODEL` | `jev-1.13.0` | api, worker, eval | always a pinned version in production; the API freezes it into explicit analysis requests until a worker has recorded `settings['engine.model_pin']` (D-150) |
 | `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` | worker, eval | |
 | `TYPESAFE_PRICE_PER_MTOK_USD` | `0.042` | worker, eval | cost accounting (without it, eval's `--max-usd` could never trigger) |
 | `ENGINE_CONCURRENCY` | `8` | worker, eval | max in-flight Jev calls per process |

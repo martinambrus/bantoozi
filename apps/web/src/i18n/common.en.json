@@ -1,4 +1,77 @@
 {
   "appName": "Bantoozi",
-  "language": "Language"
+  "language": "Language",
+  "skipToContent": "Skip to content",
+  "actions": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "retry": "Retry",
+    "undo": "Undo",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "dismiss": "Dismiss",
+    "back": "Back",
+    "next": "Next",
+    "edit": "Edit",
+    "add": "Add",
+    "remove": "Remove",
+    "signOut": "Sign out",
+    "menu": "Menu",
+    "more": "More"
+  },
+  "states": {
+    "loading": "Loading…",
+    "emptyTitle": "Nothing here yet",
+    "offlineTitle": "You're offline",
+    "offlineBody": "Check your connection, then try again.",
+    "errorTitle": "Something went wrong",
+    "quotaTitle": "Plan limit reached"
+  },
+  "toast": {
+    "saveFailed": "Couldn't save — retry"
+  },
+  "errors": {
+    "VALIDATION_FAILED": "Some of the information isn't valid. Check it and try again.",
+    "INVALID_CODE": "That code isn't valid or has expired.",
+    "UNAUTHENTICATED": "Sign in to continue.",
+    "FORBIDDEN": "You don't have permission to do that.",
+    "NOT_FOUND": "We couldn't find that.",
+    "CONFLICT": "That conflicts with a more recent change. Refresh and try again.",
+    "STALE_CURSOR": "The list changed while you were reading it. Refresh to continue.",
+    "STALE_STATE": "This changed on another device. Refresh to see the latest.",
+    "IDEMPOTENCY_CONFLICT": "That request was already used for a different action. Try again.",
+    "QUOTA_EXCEEDED": "You've reached your plan's limit for {{limit}}: {{used}} of {{max}}.",
+    "QUOTA_EXCEEDED_GENERIC": "You've reached a limit of your plan.",
+    "INVITE_REQUIRED": "Bantoozi is invite-only for now. You need an invite code to sign up.",
+    "RATE_LIMITED": "Too many requests. Wait a moment and try again.",
+    "ENGINE_UNAVAILABLE": "The analysis service isn't available right now. Try again later.",
+    "STAGE_UNAVAILABLE": "This part of Bantoozi isn't available yet.",
+    "INTERNAL": "Something went wrong on our side. Try again.",
+    "FEED_BLOCKED_ADDRESS": "That address can't be used for a feed.",
+    "FEED_DNS_ERROR": "We couldn't find that website.",
+    "FEED_TIMEOUT": "The website took too long to answer.",
+    "FEED_TLS_ERROR": "We couldn't open a secure connection to that website.",
+    "FEED_CONNECTION_ERROR": "We couldn't connect to that website.",
+    "FEED_TOO_LARGE": "That feed is too large.",
+    "FEED_TOO_MANY_REDIRECTS": "That address redirects too many times.",
+    "FEED_INVALID_URL": "That isn't a valid feed address.",
+    "FEED_DECODE_ERROR": "We couldn't read the text encoding of that feed.",
+    "FEED_NOT_A_FEED": "That address isn't a feed.",
+    "FEED_PARSE_ERROR": "We couldn't read that feed.",
+    "FEED_ORIGIN_COOLDOWN": "That website asked us to slow down. Try again later.",
+    "FEED_HTTP": "The website answered with an error ({{status}}).",
+    "NETWORK": "You seem to be offline, or the server can't be reached.",
+    "INVALID_RESPONSE": "The server sent an answer we couldn't understand. Try again.",
+    "ABORTED": "The request was cancelled.",
+    "UNKNOWN": "Something went wrong. Try again."
+  },
+  "quota": {
+    "maxFeeds": "feeds",
+    "maxCards": "interest cards",
+    "maxLabels": "labels",
+    "maxForks": "private cards",
+    "maxRules": "rules",
+    "opmlMaxFeeds": "feeds per OPML import"
+  }
 }

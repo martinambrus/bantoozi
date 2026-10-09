@@ -257,6 +257,8 @@ describe('normalizeItem (spec 03 §6)', () => {
       );
     });
 
+    // The three tests that sanitize megabytes of content took up to 33 s on a CI runner under
+    // coverage, beside the other packages' suites.
     it('bounds the source HTML before sanitizing and marks the body truncated', () => {
       const html = `<p><img src="/before.jpg">${'a'.repeat(PARSE_LIMITS.contentInputChars)}</p><p><img src="/after.jpg">tail</p><video></video>`;
       const item = normalized({ content: { html, base: BASE } });
@@ -265,7 +267,7 @@ describe('normalizeItem (spec 03 §6)', () => {
       // Media signals read the same bounded input the body is built from.
       expect(item.feedBodyImageCount).toBe(1);
       expect(item.videoEvidence).toBe(false);
-    }, 30_000);
+    }, 120_000);
 
     it('keeps text + HTML within the 10 MiB body limit', () => {
       // Escaping multiplies "&" by five in the HTML: about 10.8 MiB of text + HTML.
@@ -276,7 +278,7 @@ describe('normalizeItem (spec 03 §6)', () => {
       expect(bytes).toBeLessThanOrEqual(PARSE_LIMITS.bodyBytes);
       expect(item.feedBodyTruncated).toBe(true);
       expect(item.feedBodyHtml?.endsWith('</p>')).toBe(true);
-    }, 30_000);
+    }, 120_000);
 
     it('counts only the images of the stored text when the limit cuts the body', () => {
       // Each paragraph escapes to 2 MiB of HTML: the body keeps the first two and part of the third.
@@ -290,7 +292,7 @@ describe('normalizeItem (spec 03 §6)', () => {
       expect(paragraphs[2]!.length).toBeLessThan(0.4 * 1024 * 1024);
       // The photos of the fourth and fifth paragraphs lie after the cut.
       expect(item.feedBodyImageCount).toBe(3);
-    }, 30_000);
+    }, 120_000);
 
     it('has no body or excerpt when the content has no text', () => {
       const item = normalized({ content: { html: '<p><img src="/only.jpg"></p>', base: BASE } });

@@ -1,0 +1,228 @@
+{
+  "title": "Nastavenia",
+  "profile": {
+    "title": "Profil",
+    "signedIn": "Prihlásený ako {{email}}",
+    "displayName": "Zobrazované meno",
+    "displayNameHint": "Zobrazuje sa v ponuke namiesto vašej e-mailovej adresy. Ak ho necháte prázdne, použije sa adresa.",
+    "language": "Jazyk",
+    "timezone": "Časové pásmo",
+    "timezoneHint": "Dátumy a časy v Bantoozi sa zobrazujú v tomto časovom pásme.",
+    "theme": "Vzhľad",
+    "themes": {
+      "system": "Podľa zariadenia",
+      "light": "Svetlý",
+      "dark": "Tmavý"
+    },
+    "save": "Uložiť profil",
+    "saved": "Profil bol uložený.",
+    "saveFailed": "Váš profil sa neuložil. {{reason}}"
+  },
+  "preferences": {
+    "title": "Predvoľby čítania",
+    "intro": "Každá zmena sa uloží hneď, ako ju urobíte.",
+    "saved": "Uložené",
+    "notSaved": "Neuložené",
+    "saveFailed": "Toto nastavenie sa nepodarilo uložiť. {{reason}}",
+    "groups": {
+      "lists": "Zoznamy",
+      "reading": "Označovanie ako prečítané",
+      "learning": "Spätná väzba a učenie",
+      "quality": "Filtre kvality",
+      "swipe": "Gestá potiahnutia",
+      "images": "Obrázky"
+    },
+    "defaultTier": {
+      "label": "Minimálna úroveň",
+      "hint": "Skryje články pod touto úrovňou v zoznamoch Pre vás a Možno. Úroveň 1 zobrazí všetko, úroveň 5 len najsilnejšie zhody."
+    },
+    "sort": {
+      "label": "Zoradenie zoznamu Pre vás",
+      "hint": "Najlepšia zhoda zobrazí ako prvé články, ktoré vás pravdepodobne zaujmú. Najnovšie zoradí články podľa dátumu publikovania.",
+      "score": "Najlepšia zhoda",
+      "date": "Najnovšie"
+    },
+    "hideEverything": {
+      "label": "Skryť zoznam Všetko ostatné",
+      "hint": "Odstráni z bočného panela zoznam článkov, ktoré nezodpovedajú žiadnemu z vašich záujmov. Nič sa nemaže."
+    },
+    "simpleMode": {
+      "label": "Jednoduchý režim",
+      "hint": "Zoznamy zobrazujú len nadpisy, bez úryvkov a miniatúr."
+    },
+    "markReadOnExpand": {
+      "label": "Označiť ako prečítané pri otvorení článku",
+      "hint": "Článok, ktorý v zozname rozbalíte, sa považuje za prečítaný."
+    },
+    "markReadOnRate": {
+      "label": "Označiť ako prečítané pri hodnotení článku",
+      "hint": "Ak článok ohodnotíte palcom hore alebo dole, označí sa aj ako prečítaný."
+    },
+    "implicitFeedback": {
+      "label": "Učiť sa z toho, ako čítam",
+      "hint": "Predvolene vypnuté. Po zapnutí Bantoozi meria, ako dlho ste preč po otvorení pôvodnej stránky článku, a učí sa z toho. Palec hore, palec dole a záložky učia Bantoozi aj bez toho."
+    },
+    "implicitNegative": {
+      "label": "Považovať označenie ako prečítané bez otvorenia za nezáujem",
+      "hint": "Počíta sa len pri zapnutom nastavení Učiť sa z toho, ako čítam, a len keď článok sami označíte ako prečítaný bez jeho otvorenia."
+    },
+    "feedbackPrompt": {
+      "label": "Otázky na spätnú väzbu",
+      "hint": "Ako často sa Bantoozi opýta „Páčilo sa vám to?“, keď sa vrátite z čítania článku inde. Pýta sa len pri zapnutom nastavení Učiť sa z toho, ako čítam.",
+      "often": "Často",
+      "occasionally": "Občas",
+      "never": "Nikdy"
+    },
+    "exampleSuggestions": {
+      "label": "Navrhnúť naučenie záujmu po hodnotení",
+      "hint": "Po ohodnotení článku ponúkne jeho pridanie ako príkladu k záujmu, ktorému zodpovedal. Nič sa nezmení, kým to neprijmete."
+    },
+    "quality": {
+      "intro": "Auto zapne filter po tom, čo v priebehu 90 dní trikrát označíte články z rovnakého dôvodu ako nechcené. Zapnuté ho uplatňuje vždy. Vypnuté ho neuplatňuje nikdy.",
+      "auto": "Auto",
+      "on": "Zapnuté",
+      "off": "Vypnuté",
+      "clickbait": {
+        "label": "Clickbait",
+        "hint": "Články s titulkami, ktoré sľubujú viac, než článok ponúka, zaradí nižšie."
+      },
+      "promotional": {
+        "label": "Reklamné články",
+        "hint": "Reklamy a predajné texty zaradí nižšie."
+      },
+      "shallow": {
+        "label": "Plytké články",
+        "hint": "Tenké články bez hĺbky zaradí nižšie."
+      },
+      "stale": {
+        "label": "Zastarané správy",
+        "hint": "Aktuálne správy staršie ako tri dni zaradí nižšie."
+      }
+    },
+    "swipe": {
+      "left": {
+        "label": "Potiahnutie doľava",
+        "hint": "Čo sa stane, keď na dotykovej obrazovke potiahnete článok doľava.",
+        "dislike": "Nepáči sa",
+        "read": "Označiť ako prečítané",
+        "none": "Nič"
+      },
+      "right": {
+        "label": "Potiahnutie doprava",
+        "hint": "Čo sa stane, keď na dotykovej obrazovke potiahnete článok doprava.",
+        "like": "Páči sa",
+        "bookmark": "Pridať do záložiek",
+        "none": "Nič"
+      }
+    },
+    "images": {
+      "label": "Načítavať obrázky z webov vydavateľov",
+      "hint": "Predvolene vypnuté. Načítanie obrázka dá tomuto webu vedieť, že čítate jeho článok. Zdroj môže mať vlastné nastavenie, uvedené nižšie.",
+      "exceptions": "Zdroje s vlastným nastavením obrázkov",
+      "none": "Žiadny zdroj nemá vlastné nastavenie obrázkov.",
+      "unknownFeed": "Zdroj, ktorý už nesledujete",
+      "allow": "Obrázky vždy zobrazovať",
+      "block": "Obrázky vždy blokovať"
+    }
+  },
+  "sessions": {
+    "title": "Relácie",
+    "description": "Zariadenia, na ktorých ste prihlásený. Odhláste tie, ktoré nepoznáte.",
+    "listLabel": "Vaše relácie",
+    "thisDevice": "Toto zariadenie",
+    "unknownDevice": "Neznáme zariadenie",
+    "unknownAddress": "Neznáma adresa",
+    "signedIn": "Prihlásenie",
+    "lastActive": "Posledná aktivita",
+    "revoke": "Odhlásiť",
+    "revokeLabel": "Odhlásiť zariadenie: {{device}}, prihlásenie {{when}}",
+    "other": {
+      "title": "Odhlásiť toto zariadenie?",
+      "body": "Zariadenie bude odhlásené a bude sa musieť prihlásiť znova.",
+      "confirm": "Odhlásiť zariadenie"
+    },
+    "current": {
+      "title": "Odhlásiť sa z tohto zariadenia?",
+      "body": "Budete tu odhlásený a presmerovaný na prihlasovaciu stránku.",
+      "confirm": "Odhlásiť sa"
+    }
+  },
+  "invites": {
+    "title": "Pozvánky",
+    "description": "Pozvite ľudí do Bantoozi. Každú pozvánku možno použiť raz a platí 30 dní.",
+    "left": "Zostávajúce pozvánky: {{left}}",
+    "none": "Nemáte žiadne pozvánky.",
+    "listTitle": "Vaše pozvánky",
+    "empty": "Zatiaľ ste nevytvorili žiadnu pozvánku.",
+    "status": {
+      "active": "Aktívna",
+      "used": "Použitá",
+      "expired": "Vypršala"
+    },
+    "row": {
+      "created": "Vytvorená",
+      "expires": "Vyprší",
+      "usedOn": "Použitá",
+      "expiredOn": "Vypršala",
+      "notUsed": "Zatiaľ nepoužitá",
+      "sentTo": "Odoslaná na {{email}}",
+      "anyone": "Ktokoľvek s odkazom"
+    },
+    "copyLink": "Kopírovať odkaz",
+    "copyLinkFor": "Kopírovať odkaz pozvánky {{code}}",
+    "copied": "Odkaz bol skopírovaný.",
+    "copyFailed": "Odkaz sa nepodarilo skopírovať automaticky. Označte ho tu a skopírujte: {{url}}",
+    "form": {
+      "title": "Nová pozvánka",
+      "email": "E-mailová adresa (nepovinná)",
+      "emailHint": "Pozvánku pošleme na túto adresu a použiť ju môže len táto adresa.",
+      "emailInvalid": "Zadajte platnú e-mailovú adresu.",
+      "note": "Poznámka (nepovinná)",
+      "noteHint": "Uloží sa spolu s pozvánkou. V e-maile sa neuvádza.",
+      "submit": "Vytvoriť pozvánku"
+    },
+    "result": {
+      "title": "Vytvorená pozvánka",
+      "created": "Pozvánka bola vytvorená.",
+      "code": "Kód",
+      "link": "Odkaz na pozvánku",
+      "emailed": "Pozvánka bola odoslaná na {{email}}.",
+      "emailFailed": "E-mail sa nepodarilo odoslať. Odkaz zdieľajte sami."
+    }
+  },
+  "export": {
+    "title": "Export údajov",
+    "description": "Stiahnite si všetko, čo Bantoozi o vás uchováva, ako jeden súbor JSON: profil, sledované zdroje, záujmy, štítky, pravidlá, hodnotenia a uložené články.",
+    "download": "Stiahnuť moje údaje",
+    "cancel": "Zrušiť sťahovanie",
+    "downloading": "Sťahujú sa vaše údaje…",
+    "progress": "Sťahovanie… prijatých {{size}}",
+    "done": "Uložené ako {{filename}} ({{size}}).",
+    "cancelled": "Sťahovanie bolo zrušené. Nič sa neuložilo.",
+    "http": "Server nedokázal pripraviť export (chyba {{status}}). Skúste to znova.",
+    "network": "Sťahovanie sa prerušilo. Skontrolujte pripojenie a skúste to znova.",
+    "incomplete": "Súbor dorazil neúplný, preto sa nič neuložilo. Skúste to znova.",
+    "rateLimited_one": "O svoje údaje ste požiadali príliš často. Skúste to znova o {{count}} minútu.",
+    "rateLimited_few": "O svoje údaje ste požiadali príliš často. Skúste to znova o {{count}} minúty.",
+    "rateLimited_many": "O svoje údaje ste požiadali príliš často. Skúste to znova o {{count}} minúty.",
+    "rateLimited_other": "O svoje údaje ste požiadali príliš často. Skúste to znova o {{count}} minút.",
+    "rateLimitedLater": "O svoje údaje ste požiadali príliš často. Skúste to znova neskôr."
+  },
+  "delete": {
+    "title": "Odstránenie účtu",
+    "explain": "Odstránením účtu vás odhlásime na všetkých zariadeniach a účet sa uzavrie. Na rozmyslenie máte 7 dní: ak sa do 7 dní prihlásite znova, všetko sa obnoví. Potom sa vaše údaje natrvalo odstránia.",
+    "open": "Odstrániť môj účet…",
+    "dialog": {
+      "title": "Odstrániť váš účet?",
+      "body": "Odhlásime vás všade. Ak sa do 7 dní prihlásite znova, účet sa obnoví. Potom sa natrvalo odstráni.",
+      "confirmLabel": "Na potvrdenie napíšte {{email}}",
+      "confirm": "Odstrániť účet",
+      "failed": "Váš účet sa neodstránil. {{reason}}",
+      "unsent_one": "{{count}} zmena ešte nebola odoslaná a bude stratená.",
+      "unsent_few": "{{count}} zmeny ešte neboli odoslané a budú stratené.",
+      "unsent_many": "{{count}} zmien ešte nebolo odoslaných a bude stratených.",
+      "unsent_other": "{{count}} zmien ešte nebolo odoslaných a bude stratených."
+    },
+    "done": "Váš účet je odstránený. Ak sa do 7 dní prihlásite znova, obnoví sa."
+  }
+}

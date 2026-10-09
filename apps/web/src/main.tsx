@@ -1,26 +1,6 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { RouterProvider } from '@tanstack/react-router';
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-import { I18nextProvider } from 'react-i18next';
+// zod is configured before any schema exists (src/zod-jitless.ts). Importing the app statically
+// would not keep that order in the build: the schemas sit in a chunk that this module imports, and
+// an imported chunk runs before the module's own code. The app is therefore loaded afterwards.
+import './zod-jitless.js';
 
-import { createI18n, detectLanguage } from './i18n/index.js';
-import { createAppRouter } from './router.js';
-import './styles.css';
-
-const i18n = createI18n(detectLanguage(navigator.languages));
-document.documentElement.lang = i18n.language;
-const router = createAppRouter();
-const queryClient = new QueryClient();
-
-const root = document.getElementById('root');
-if (root === null) throw new Error('missing #root element');
-createRoot(root).render(
-  <StrictMode>
-    <I18nextProvider i18n={i18n}>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
-    </I18nextProvider>
-  </StrictMode>,
-);
+await import('./start.js');

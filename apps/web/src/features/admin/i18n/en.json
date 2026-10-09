@@ -1,0 +1,499 @@
+{
+  "title": "Administration",
+  "nav": {
+    "label": "Administration sections",
+    "overview": "Overview",
+    "usage": "Usage",
+    "settings": "Settings",
+    "providers": "Provider accounts",
+    "feeds": "Feeds",
+    "library": "Library",
+    "users": "Users",
+    "invites": "Invites",
+    "waitlist": "Waitlist"
+  },
+  "common": {
+    "loadMore": "Load more",
+    "search": "Search"
+  },
+  "overview": {
+    "tiles": {
+      "users": "Users",
+      "active7d": "Active in the last 7 days: {{value}}",
+      "feeds": "Feeds",
+      "feedStatus": {
+        "active": "Active: {{value}}",
+        "quarantined": "Quarantined: {{value}}",
+        "dead": "Dead: {{value}}",
+        "paused": "Paused: {{value}}"
+      },
+      "articles": "Articles today",
+      "spend": "Spend today",
+      "llm": "LLM calls today",
+      "tier2": "Tier-2 translations today",
+      "ofCap": "{{used}} of {{cap}}"
+    },
+    "engines": {
+      "title": "Engines",
+      "typesafe": "Jev (typesafe)",
+      "llm": "LLM fallback"
+    },
+    "breaker": {
+      "closed": "Closed",
+      "open": "Open",
+      "half_open": "Half open",
+      "auth": "Authentication error",
+      "explain": {
+        "closed": "Calls to the provider are going through.",
+        "open": "Calls are paused because the provider keeps failing.",
+        "half_open": "One test call is allowed to see whether the provider recovered.",
+        "auth": "The provider rejected the key. Calls stay paused until the breaker is reset."
+      },
+      "pausedUntil": "Paused until:",
+      "lastReset": "Last reset requested:",
+      "waiting": "Waiting for the worker to apply the reset…",
+      "stalled": "The worker has not applied the reset yet. Check that a worker is running.",
+      "reset": "Reset breaker",
+      "resetTitle": "Reset the breaker for {{engine}}?",
+      "resetBody": "Calls to the provider resume once the worker applies the reset. The worker applies the reset within about 10 seconds. If the provider is still failing, the breaker opens again.",
+      "circuitInvalid": "The stored breaker state is invalid, so it cannot be reset from here."
+    },
+    "queues": {
+      "title": "Job queues",
+      "queue": "Queue",
+      "waiting": "Waiting",
+      "retrying": "Retrying",
+      "running": "Running",
+      "failed": "Failed",
+      "empty": "No queues report any jobs."
+    },
+    "translations": {
+      "title": "Translations",
+      "caption": "Translations in the last 24 hours",
+      "engine": "Engine",
+      "quality": "Quality",
+      "stored": "Stored",
+      "engines": {
+        "libretranslate": "LibreTranslate",
+        "ollama": "Ollama"
+      },
+      "qualities": {
+        "ok": "OK",
+        "weak": "Weak",
+        "fail": "Failed"
+      },
+      "empty": "No translations were stored in the last 24 hours.",
+      "reprocess": "Reprocess translations",
+      "reprocessHint": "Translates again the articles whose translation was skipped, for example while the translation service was unavailable.",
+      "queued": "Reprocessing of the skipped translations is queued."
+    }
+  },
+  "usage": {
+    "period": "Period",
+    "last_one": "Last {{count}} day",
+    "last_other": "Last {{count}} days",
+    "spend": "Spend",
+    "noSpend": "No spend was recorded in this period.",
+    "chart": {
+      "title_one": "Daily cost, last day",
+      "title_other": "Daily cost, last {{count}} days",
+      "summary": "Spend from {{from}} to {{to}}: {{total}} in total, highest on {{day}} at {{max}}.",
+      "summaryOneDay": "Spend on {{day}}: {{total}}."
+    },
+    "topUsers": {
+      "title": "Top users",
+      "caption": "Top users by estimated cost",
+      "user": "User",
+      "direct": "Direct",
+      "shared": "Shared",
+      "total": "Total",
+      "noEmail": "No email on record",
+      "empty": "No usage is attributed to users in this period.",
+      "estimate": "Costs shared between users are split by use, so these figures are estimates."
+    }
+  },
+  "settings": {
+    "intro": "Each setting is a JSON value. Edit one, check it, then save that setting on its own; the other editors are not affected.",
+    "rankerVersion": "Ranker settings version: {{value}}",
+    "default": "Default (not stored)",
+    "stored": "Stored, last changed",
+    "save": "Save {{key}}",
+    "revert": "Revert {{key}}",
+    "saved": "Saved {{key}}.",
+    "unchanged": "{{key}} already had this value.",
+    "notJson": "This is not valid JSON.",
+    "notAccepted": "Not accepted: {{reason}}",
+    "rankerInvalid": "The merged ranker configuration is invalid: {{reason}}",
+    "errors": {
+      "libreNotConfigured": "LibreTranslate is not configured, so language changes cannot be saved.",
+      "libreMissing": "LibreTranslate does not list these language pairs: {{pairs}}.",
+      "libreUnavailable": "LibreTranslate could not confirm the languages ({{reason}}), so language changes cannot be saved.",
+      "rankerRejected": "The server rejected the merged ranker configuration.",
+      "unknownQuestionSet": "Unknown question set for “{{kind}}”.",
+      "settingsChanged": "Settings changed while saving. The latest values were loaded; review your edit and save again.",
+      "layaWorkerMissing": "No running worker consumes the Laya queues, so engine.laya cannot be set."
+    }
+  },
+  "providers": {
+    "intro": "Keys are stored encrypted and are never shown again after you submit them. Stage a new key, validate it with a small test call, then activate it. The active key keeps working until the new one is activated.",
+    "names": {
+      "typesafe": "Jev (typesafe)",
+      "ollama": "Ollama"
+    },
+    "source": {
+      "label": "Configured source",
+      "none": "Not configured",
+      "env": "Environment key on the worker",
+      "db": "Stored encrypted in the database"
+    },
+    "state": "State",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "activeKey": "Active key",
+    "candidateKey": "Staged key",
+    "none": "None",
+    "version": "Version {{version}}",
+    "candidateStatus": {
+      "pending": "Pending",
+      "validating": "Validating…",
+      "valid": "Valid",
+      "invalid": "Invalid",
+      "expired": "Expired"
+    },
+    "validatedAt": "Last validated",
+    "capabilities": {
+      "label": "Capabilities",
+      "model": "Model: {{value}}",
+      "concurrency": "Concurrency limit: {{value}}",
+      "flag": "{{name}}: {{value}}"
+    },
+    "yes": "yes",
+    "no": "no",
+    "lastError": {
+      "invalid_response": "The provider answered, but not in the expected format. Check that the endpoint and model are right.",
+      "rate_limited": "The provider is rate limiting requests. Validate again in a few minutes.",
+      "timeout": "The provider did not answer in time. Validate again.",
+      "provider_unavailable": "The provider is unavailable right now. Validate again later.",
+      "not_configured": "The worker has no endpoint or model configured for this provider.",
+      "probe_budget_exceeded": "The validation reached its spending limit before it finished. Validate again.",
+      "decrypt_failed": "The worker could not decrypt the staged key. Stage the key again.",
+      "budget_unavailable": "The daily budget is spent, so no test call was made. Validate again once budget is available.",
+      "auth_rejected": "The provider rejected the key. Check that it is correct and still active, then stage it again.",
+      "request_rejected": "The provider rejected the test request, for example because the model is not available to this key.",
+      "provider_error": "The provider returned an error during validation.",
+      "cost_overrun": "The test call cost more than expected and was stopped. Validate again.",
+      "credential_unavailable": "The worker could not load the staged key. Validate again, or stage the key again.",
+      "unknown": "Validation stopped with the code {{code}}."
+    },
+    "keyLabel": "New API key for {{provider}}",
+    "stage": "Stage key",
+    "staged": "Key staged. Validate it next.",
+    "validate": "Validate",
+    "validateHint": "Validation makes a small test call to the provider, within the daily budget. It can take a few seconds.",
+    "activate": "Activate",
+    "activateHint": "A validation is good for 24 hours. Activating replaces the active key; until then the active key keeps working.",
+    "activated": "Key activated. It is used from now on.",
+    "disable": "Disable",
+    "disableTitle": "Disable {{provider}}?",
+    "disableBody": "Disabling stops Bantoozi from using this provider. It does not revoke the key at the provider: also revoke the key in your account with the provider.",
+    "disableConfirm": "Disable provider",
+    "disabledToast": "Provider disabled.",
+    "problems": {
+      "changed": "This credential changed in the meantime. The latest state is shown; check it and try again.",
+      "keyring": "Key storage is not set up on the server (no master key), so keys cannot be saved.",
+      "keyRejected": "The server did not accept this key. Check that you pasted the whole key without spaces.",
+      "noCandidate": "There is no staged key any more. The latest state is shown.",
+      "expired": "This validation is older than 24 hours, so the key cannot be activated. Validate it again first."
+    }
+  },
+  "feeds": {
+    "statusFilter": "Status",
+    "allStatuses": "All statuses",
+    "status": {
+      "active": "Active",
+      "quarantined": "Quarantined",
+      "dead": "Dead",
+      "paused": "Paused"
+    },
+    "search": "Search feeds",
+    "resetHint": "Reset clears the error streak of a quarantined or dead feed and fetches it again soon. A feed that was merged into another one cannot be reset.",
+    "columns": {
+      "feed": "Feed",
+      "status": "Status",
+      "subscribers": "Subscribers",
+      "errors": "Errors",
+      "lastSuccess": "Last success",
+      "nextFetch": "Next fetch",
+      "actions": "Actions"
+    },
+    "until": "Until",
+    "mergedInto": "Merged into feed {{id}}",
+    "noErrors": "None",
+    "errors": "{{code}}, {{streak}} in a row",
+    "unknownError": "Unknown error",
+    "reset": "Reset",
+    "resetLabel": "Reset {{name}}",
+    "resetDone": "Feed reset. It will be fetched again soon.",
+    "resetMerged": "This feed was merged into another feed and cannot be reset. The list was refreshed.",
+    "optionsButton": "Options",
+    "optionsLabel": "Edit options of {{name}}",
+    "empty": "No feeds match these filters.",
+    "options": {
+      "title": "Fetch options for {{name}}",
+      "agent": "User-Agent override",
+      "agentHint": "Sent instead of the standard User-Agent when this feed is fetched. Leave empty to use the standard one.",
+      "agentAscii": "Use printable ASCII characters only.",
+      "agentTooLong": "Use at most 200 characters.",
+      "strong": "Hard feed: translate with the stronger model",
+      "strongHint": "Translates this feed with the larger Ollama model, which is slower and costs more compute.",
+      "save": "Save options",
+      "saved": "Fetch options saved."
+    }
+  },
+  "users": {
+    "search": "Search users",
+    "columns": {
+      "user": "User",
+      "role": "Role",
+      "plan": "Plan",
+      "invites": "Invites left",
+      "lastActive": "Last active",
+      "joined": "Joined",
+      "actions": "Actions"
+    },
+    "roles": {
+      "user": "User",
+      "admin": "Admin"
+    },
+    "deleted": "Deleted",
+    "editLabel": "Edit {{email}}",
+    "edit": {
+      "title": "Edit {{email}}",
+      "role": "Role",
+      "plan": "Plan",
+      "invites": "Invites left",
+      "bootstrap": "Listed in ADMIN_EMAILS: a demotion lasts only until their next login.",
+      "invitesInvalid": "Enter a whole number from 0 to {{max}}.",
+      "lastAdmin": "This is the only active administrator, so the role cannot be removed. Make another account an administrator first.",
+      "save": "Save user"
+    },
+    "saved": "User saved.",
+    "savedSessions_one": "User saved. {{count}} session was signed out.",
+    "savedSessions_other": "User saved. {{count}} sessions were signed out.",
+    "empty": "No users match."
+  },
+  "invites": {
+    "statusFilter": "Status",
+    "allStatuses": "All statuses",
+    "status": {
+      "unused": "Unused",
+      "used": "Used",
+      "expired": "Expired"
+    },
+    "columns": {
+      "code": "Code",
+      "email": "Email",
+      "note": "Note",
+      "status": "Status",
+      "created": "Created",
+      "expires": "Expires"
+    },
+    "empty": "No invites match.",
+    "form": {
+      "title": "Create invites",
+      "count": "Number of invites",
+      "email": "Email (optional)",
+      "note": "Note (optional)",
+      "days": "Valid for (days, optional)",
+      "submit": "Create invites",
+      "countInvalid": "Enter a whole number from 1 to {{max}}.",
+      "countWithEmail": "An invite for one email address is created one at a time.",
+      "daysInvalid": "Enter a whole number from 1 to {{max}}.",
+      "emailInvalid": "Enter a valid email address.",
+      "noteTooLong": "Use at most {{max}} characters."
+    },
+    "result": {
+      "title": "New invites",
+      "created_one": "{{count}} invite created.",
+      "created_other": "{{count}} invites created.",
+      "emailed": "The invite was also emailed to {{email}}.",
+      "emailFailed": "The email could not be sent. Share the link yourself."
+    }
+  },
+  "waitlist": {
+    "columns": {
+      "email": "Email",
+      "language": "Language",
+      "note": "Note",
+      "joined": "Joined",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "locales": {
+      "en": "English",
+      "sk": "Slovak"
+    },
+    "waiting": "Waiting",
+    "invited": "Invited",
+    "invite": "Invite",
+    "inviteLabel": "Invite {{email}}",
+    "result": {
+      "title": "Invite created",
+      "for": "Invite for {{email}}"
+    },
+    "accountExists": "This address already has an account, so it cannot be invited.",
+    "empty": "Nobody is on the waitlist."
+  },
+  "library": {
+    "search": "Search library cards",
+    "create": "Create library card",
+    "created": "Library card created.",
+    "saved": "Library card saved.",
+    "savedVersion": "Saved as a new version (version {{version}}). Readers who have the previous version keep it until they choose to update.",
+    "version": "Version {{version}}",
+    "holders_one": "{{count}} holder",
+    "holders_other": "{{count}} holders",
+    "retired": "Retired",
+    "superseded": "Superseded by version {{version}}",
+    "editLabel": "Edit {{title}}",
+    "cards": {
+      "title": "Library cards",
+      "empty": "No library cards match."
+    },
+    "fields": {
+      "interest": "Interest",
+      "notFor": "Not for",
+      "examplesYes": "Examples to show",
+      "examplesNo": "Examples to avoid",
+      "topics": "Topics",
+      "skTitle": "Slovak title",
+      "skInterest": "Slovak interest"
+    },
+    "publication": {
+      "label": "Publication",
+      "original": "Created in the library",
+      "on": "Published on"
+    },
+    "basis": {
+      "creator_approval": "Approved by creator",
+      "creator_inactive_30d": "Published after 30 days of creator inactivity"
+    },
+    "edit": {
+      "title": "Edit {{title}} (version {{version}})",
+      "titleUnversioned": "Edit {{title}}",
+      "versionHint": "Changing the interest, the “but not” text or the examples creates a new version of this card. Readers who already have the current version keep it until they choose to update. The title, topics, Slovak texts and retiring change the card in place."
+    },
+    "form": {
+      "slug": "Slug",
+      "slugHint": "Lowercase letters, digits and hyphens. The slug names the card in the library and cannot be changed later.",
+      "title": "Title",
+      "interest": "Interest",
+      "notFor": "But not (optional)",
+      "examplesYes": "Examples of what to show (one per line)",
+      "examplesNo": "Examples of what to avoid (one per line)",
+      "skTitle": "Slovak title (optional)",
+      "skInterest": "Slovak interest (optional)",
+      "topics": "Topic ids (comma separated)",
+      "topicsHint": "Ids from the topic taxonomy, such as science.space. Up to 10.",
+      "retired": "Retired",
+      "retiredHint": "A retired card is no longer offered in the library.",
+      "create": "Create card",
+      "save": "Save changes"
+    },
+    "fieldErrors": {
+      "slug": "Use lowercase letters, digits and hyphens, starting with a letter or digit (up to 100 characters).",
+      "title": "Enter a title of 1 to 60 characters.",
+      "interest": "Enter 3 to 300 characters.",
+      "notFor": "Enter up to 300 characters.",
+      "examplesYes": "Enter up to 5 examples of up to 200 characters, one per line.",
+      "examplesNo": "Enter up to 5 examples of up to 200 characters, one per line.",
+      "topicIds": "Enter up to 10 topic ids such as science.space, separated by commas."
+    },
+    "problems": {
+      "slugTaken": "This slug is already used by another library card.",
+      "textExists": "A card with this exact text already exists (a library card, a version or a shared card).",
+      "notLatest": "A newer version of this card exists. The list was refreshed; edit the newest version.",
+      "notShared": "This card is not shared any more, so it cannot be proposed.",
+      "insufficientHolders_one": "Only {{count}} reader holds this card; at least {{min}} are needed.",
+      "insufficientHolders_other": "Only {{count}} readers hold this card; at least {{min}} are needed.",
+      "unknownTopics": "Unknown topics: {{topics}}."
+    },
+    "candidates": {
+      "title": "Promotion candidates",
+      "intro": "Shared cards that at least three readers hold. Promoting a card publishes it in the public library; it never happens by itself.",
+      "empty": "No shared cards have enough holders yet.",
+      "listing": "Proposed listing",
+      "slug": "Slug",
+      "publicTitle": "Public title",
+      "skTitle": "Slovak title",
+      "requested": "Requested",
+      "answered": "Creator answered",
+      "expires": "Expires",
+      "publishedOn": "Published on"
+    },
+    "eligibility": {
+      "approved": {
+        "label": "Approved by creator",
+        "explain": "The original creator approved this exact listing."
+      },
+      "inactive": {
+        "label": "Eligible after 30 days inactive",
+        "explain": "The creator has not answered this request and has been inactive for at least 30 days. Promoting on this basis is your own decision; it is not recorded as the creator’s approval."
+      },
+      "awaiting_approval": {
+        "label": "Awaiting approval",
+        "explain": "The creator was active in the last 30 days, so they must approve this exact listing first. Until they do, the card stays shared."
+      },
+      "declined": {
+        "label": "Declined",
+        "explain": "The creator declined. A decline stays a veto until the creator approves later; a new request cannot override it."
+      },
+      "unknown_creator": {
+        "label": "Unknown creator",
+        "explain": "The original creator is unknown or deleted, so the card stays on hold."
+      },
+      "no_request": {
+        "label": "No request yet",
+        "explain": "No promotion request exists for this card yet. Create one to ask the original creator."
+      },
+      "insufficient_holders": {
+        "label": "Not enough holders",
+        "explain": "Too few readers hold this card now, so it cannot be promoted."
+      },
+      "expired": {
+        "label": "Request expired",
+        "explain": "The request has expired. Create a new request to ask the creator again."
+      },
+      "stale_payload": {
+        "label": "Card text changed",
+        "explain": "The card text or the listing changed after the request was made, so the earlier answer no longer counts. Create a new request."
+      },
+      "promoted": {
+        "label": "Promoted",
+        "explain": "This card is already in the public library."
+      }
+    },
+    "promote": {
+      "button": "Promote",
+      "label": "Promote {{title}}",
+      "title": "Promote “{{title}}” to the public library?",
+      "bodyApproved": "The original creator approved this exact listing. The listing and the creator’s activity are rechecked when you confirm.",
+      "bodyInactive": "The creator has not answered this request and has been inactive for at least 30 days. You are publishing on that basis alone. Activity is rechecked when you confirm: if the creator has been active again, the promotion is refused.",
+      "confirmApproved": "Promote with creator approval",
+      "confirmInactive": "Promote after 30 days of inactivity",
+      "done": "Promoted “{{title}}”. {{basis}}.",
+      "conflict": "The eligibility of this card changed, for example because the creator came back or declined. The list was refreshed; check the new state."
+    },
+    "requests": {
+      "button": "Create promotion request",
+      "label": "Create promotion request for {{title}}",
+      "title": "Create promotion request",
+      "intro": "Proposes this exact public listing for the card. The original creator is asked to approve it. If they have been inactive for 30 days you can promote without an answer, and a decline stays a veto.",
+      "publicTitle": "Public title",
+      "slug": "Slug (optional)",
+      "slugHint": "Leave empty to use a generated slug.",
+      "submit": "Create request",
+      "created": "Request created. The original creator can now answer it."
+    }
+  }
+}

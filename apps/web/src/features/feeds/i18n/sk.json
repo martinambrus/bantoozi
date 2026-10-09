@@ -1,0 +1,158 @@
+{
+  "title": "Zdroje",
+  "empty": {
+    "title": "Pridajte svoj prvý zdroj",
+    "body": "Vložte vyššie adresu webovej stránky alebo zdroja, prípadne nižšie importujte súbor OPML."
+  },
+  "add": {
+    "title": "Pridať zdroj",
+    "label": "Adresa webovej stránky alebo zdroja",
+    "hint": "Vložte odkaz na webovú stránku alebo zdroj. Ak stránka ponúka viac zdrojov, môžete si jeden vybrať.",
+    "submit": "Pridať zdroj",
+    "added": "Pridali sme zdroj „{{title}}“.",
+    "existing": "Zdroj „{{title}}“ už odoberáte.",
+    "chooser": {
+      "title": "Vyberte zdroj",
+      "lead": "Táto stránka ponúka viac zdrojov. Ktorý chcete pridať?",
+      "add": "Pridať {{title}}"
+    }
+  },
+  "folders": {
+    "list": "Priečinky",
+    "none": "Bez priečinka",
+    "all": "Všetky zdroje",
+    "feedCount_one": "{{count}} zdroj",
+    "feedCount_few": "{{count}} zdroje",
+    "feedCount_many": "{{count}} zdroja",
+    "feedCount_other": "{{count}} zdrojov",
+    "moveUp": "Posunúť priečinok {{folder}} vyššie",
+    "moveDown": "Posunúť priečinok {{folder}} nižšie",
+    "moved": "Priečinok {{folder}} je na pozícii {{position}} z {{total}}.",
+    "rename": "Premenovať",
+    "renameFolder": "Premenovať priečinok {{folder}}"
+  },
+  "rename": {
+    "title": "Premenovať priečinok",
+    "label": "Názov priečinka",
+    "merge": "Priečinok s týmto názvom už existuje. Jeho zdroje sa zlúčia s týmto priečinkom.",
+    "submit": "Premenovať"
+  },
+  "row": {
+    "statusLabel": "Stav zdroja:",
+    "classificationLabel": "Klasifikácia:",
+    "neverUpdated": "Zatiaľ neaktualizovaný",
+    "updated": "Aktualizované {{when}}",
+    "lastError": "Posledná chyba: {{reason}}",
+    "unreadLabel": "Neprečítané články",
+    "noUnread": "Žiadne neprečítané články",
+    "unread": {
+      "forYou": "Pre vás",
+      "maybe": "Možno",
+      "everything": "Všetko ostatné",
+      "new": "Nové"
+    },
+    "settingsFor": "Nastavenia zdroja {{title}}",
+    "settings": "Nastavenia"
+  },
+  "status": {
+    "active": "Funguje",
+    "quarantined": "Má problémy",
+    "dead": "Zastavený",
+    "paused": "Pozastavený"
+  },
+  "mode": {
+    "off": "Vypnutá",
+    "training": "Tréning: vybrané články",
+    "active": "Aktívna: nové články"
+  },
+  "errors": {
+    "unknown": "Nepodarilo sa ho načítať."
+  },
+  "settings": {
+    "title": "Nastavenia zdroja",
+    "titleLabel": "Názov",
+    "titleHint": "Nechajte prázdne, ak chcete použiť pôvodný názov zdroja „{{title}}“.",
+    "folder": "Priečinok",
+    "noFolder": "Bez priečinka",
+    "newFolderOption": "Nový priečinok…",
+    "newFolder": "Názov nového priečinka",
+    "allowDuplicates": "Povoliť duplikáty",
+    "allowDuplicatesHint": "Vypnuté: príbeh, ktorý prináša viac vašich zdrojov, sa zobrazí iba raz.",
+    "hidden": "Skryť v bočnom paneli",
+    "hiddenHint": "Zdroj sa nezobrazí v bočnom paneli ani v spoločných zoznamoch, napríklad Pre vás. Naďalej sa aktualizuje.",
+    "images": "Obrázky z tohto zdroja",
+    "imagesInherit": "Použiť moje globálne nastavenie",
+    "imagesAllow": "Vždy povoliť",
+    "imagesBlock": "Vždy blokovať",
+    "imagesHintOn": "Vaše globálne nastavenie načítava obrázky zo všetkých zdrojov. Voľba „Vždy blokovať“ ho pre tento zdroj prepíše.",
+    "imagesHintOff": "Vaše globálne nastavenie blokuje obrázky zo všetkých zdrojov. Voľba „Vždy povoliť“ však pre tento zdroj funguje.",
+    "saved": "Nastavenia zdroja „{{title}}“ sú uložené."
+  },
+  "classification": {
+    "title": "Klasifikácia",
+    "help": {
+      "off": "Vypnutá klasifikácia aj tréning fungujú iba na výber: nič sa neanalyzuje, kým to sami nevyberiete. Prepnite na tréning a vyberte články na analýzu.",
+      "training": "Tréning funguje iba na výber: nič sa neanalyzuje, kým to sami nevyberiete. Vyberte články z tohto zdroja a naučte Bantoozi, čo sa vám páči.",
+      "active": "Nové články z tohto zdroja sa klasifikujú automaticky. Staršie články zostanú, aké sú, kým ich sami nevyberiete."
+    },
+    "since": "Automatická klasifikácia je zapnutá od {{date}}.",
+    "switchBack": "Prepnutím späť alebo vypnutím klasifikácie sa zastaví nová analýza tohto zdroja. Práca, ktorá už beží, sa môže dokončiť, pretože ju môžu zdieľať aj ďalší odberatelia tohto zdroja.",
+    "toTraining": "Prepnúť na tréning",
+    "enable": "Zapnúť automatickú klasifikáciu",
+    "backToTraining": "Späť na tréning",
+    "turnOff": "Vypnúť klasifikáciu",
+    "changed": "Klasifikácia je teraz: {{mode}}.",
+    "stale": "Toto nastavenie sa zmenilo na inom zariadení. Načítali sme ho znova. Skontrolujte aktuálne nastavenie a skúste to znova."
+  },
+  "unsubscribe": {
+    "action": "Prestať odoberať",
+    "title": "Prestať odoberať „{{title}}“?",
+    "body": "Prestanete dostávať jeho články. Záložky, ktoré ste z neho uložili, aj vaše nastavenie obrázkov pre tento zdroj zostanú zachované.",
+    "confirm": "Prestať odoberať",
+    "done": "Zdroj „{{title}}“ už neodoberáte."
+  },
+  "deadFeed": {
+    "message": "Tento zdroj prestal fungovať dňa {{date}}: {{reason}}",
+    "messageUndated": "Tento zdroj prestal fungovať: {{reason}}"
+  },
+  "opml": {
+    "title": "Import a export",
+    "file": "Súbor OPML",
+    "fileHint": "Súbor .opml alebo .xml exportovaný z inej čítačky zdrojov.",
+    "import": "Importovať",
+    "export": "Exportovať OPML",
+    "report": {
+      "title": "Import je hotový",
+      "added_one": "Pridali sme {{count}} zdroj.",
+      "added_few": "Pridali sme {{count}} zdroje.",
+      "added_many": "Pridali sme {{count}} zdroja.",
+      "added_other": "Pridali sme {{count}} zdrojov.",
+      "noneAdded": "Nepridali sme žiadny zdroj.",
+      "existing_one": "{{count}} zdroj ste už mali v zozname.",
+      "existing_few": "{{count}} zdroje ste už mali v zozname.",
+      "existing_many": "{{count}} zdroja ste už mali v zozname.",
+      "existing_other": "{{count}} zdrojov ste už mali v zozname.",
+      "invalid_one": "{{count}} položku sa nepodarilo importovať",
+      "invalid_few": "{{count}} položky sa nepodarilo importovať",
+      "invalid_many": "{{count}} položky sa nepodarilo importovať",
+      "invalid_other": "{{count}} položiek sa nepodarilo importovať",
+      "entry": "Položka {{number}}",
+      "noAddress": "bez adresy"
+    },
+    "reasons": {
+      "invalid_url": "Toto nie je platná webová adresa.",
+      "unsupported_scheme": "Podporované sú iba adresy http a https.",
+      "credentials": "Adresa obsahuje meno alebo heslo, čo nie je povolené.",
+      "credential_param": "Adresa obsahuje tajný kľúč alebo token, čo nie je povolené.",
+      "blocked_address": "Adresa smeruje do siete, ktorú nie je možné použiť pre zdroje.",
+      "too_long": "Adresa je príliš dlhá.",
+      "missing_url": "Položka nemá adresu zdroja.",
+      "quota_exceeded": "Limit zdrojov vášho plánu bol dosiahnutý pred touto položkou."
+    },
+    "errors": {
+      "invalid": "Tento súbor nie je platný súbor OPML. Exportujte ho znova zo svojej druhej čítačky a skúste to ešte raz.",
+      "tooLarge": "Tento súbor OPML je príliš veľký. Rozdeľte ho na menšie súbory a importujte ich postupne.",
+      "tooManyFeeds": "Počet zdrojov v súbore ({{used}}) presahuje limit vášho plánu pre jeden import ({{max}}). Rozdeľte súbor a importujte ho po častiach."
+    }
+  }
+}

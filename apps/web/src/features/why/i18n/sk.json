@@ -1,0 +1,108 @@
+{
+  "title": "Prečo toto?",
+  "percent": "{{percent}} %",
+  "verdict": {
+    "lane": {
+      "for_you": "Pre vás",
+      "maybe": "Možno",
+      "everything": "Všetko ostatné",
+      "new": "Nové",
+      "hidden": "Skryté"
+    },
+    "tier": "úroveň {{tier}}",
+    "notAnalyzed": "Zatiaľ neanalyzované",
+    "notAnalyzedHint": "Bantoozi tento článok zatiaľ nevyhodnotil, takže nie je čo vysvetľovať."
+  },
+  "source": {
+    "cards": "Vyhodnotené podľa vašich kariet záujmov.",
+    "model": "Vyhodnotené vaším osobným modelom, ktorý sa učí z toho, čo čítate a hodnotíte.",
+    "degraded": "Vyhodnotené podľa kľúčových slov, pretože služba analýzy nebola dostupná.",
+    "none": "Tento článok nevyhodnotila žiadna karta záujmu ani model.",
+    "notRequested": "Klasifikácia sa pre tento článok nevyžiadala, preto nemá skóre."
+  },
+  "translation": {
+    "ok": "Vyhodnotené podľa strojového prekladu článku.",
+    "weak": "Vyhodnotené podľa strojového prekladu, ktorý nemusí byť presný."
+  },
+  "cluster_one": "O tejto udalosti informuje {{count}} článok.",
+  "cluster_few": "O tejto udalosti informujú {{count}} články.",
+  "cluster_many": "O tejto udalosti informuje {{count}} článku.",
+  "cluster_other": "O tejto udalosti informuje {{count}} článkov.",
+  "interests": {
+    "heading": "Vaše záujmy",
+    "none": "Zatiaľ tento článok neposúdila žiadna karta záujmu.",
+    "strength": "Sila: {{strength}}",
+    "match": "Zhoda s kartou {{title}}",
+    "matchValue": "zhoda {{percent}} %",
+    "notThis": "Nie je to celkom o tomto",
+    "exactly": "Áno, presne toto",
+    "edit": "Upraviť kartu",
+    "learnedNot": "Zapamätané: toto nie je „{{title}}“",
+    "learnedYes": "Zapamätané: toto je „{{title}}“",
+    "gone": "Tento záujem už neexistuje, preto sa z tohto článku nemôže učiť.",
+    "forkLimit": "Naučiť záujem vyžaduje jeho súkromnú kópiu a dosiahli ste limit súkromných kariet vášho plánu: {{used}} z {{max}}."
+  },
+  "about": {
+    "heading": "O článku",
+    "type": "Typ: {{type}}",
+    "topic": "Téma: {{topic}}",
+    "depth": "Hĺbka",
+    "depthLevel": "Hĺbka {{level}} z 5",
+    "clickbait": "Klikbajt",
+    "promotional": "Reklamný obsah",
+    "timeSensitive": "Časovo citlivé",
+    "never": {
+      "clickbait": "Nikdy mi neukazovať klikbajt",
+      "promotional": "Nikdy mi neukazovať reklamný obsah",
+      "stale": "Nikdy mi neukazovať zastarané správy"
+    },
+    "contentTypes": {
+      "news_report": "Spravodajský článok",
+      "analysis": "Analýza",
+      "opinion": "Komentár",
+      "tutorial": "Návod",
+      "review": "Recenzia",
+      "listicle": "Článok vo forme zoznamu",
+      "press_release": "Tlačová správa",
+      "deal_or_ad": "Ponuka alebo reklama",
+      "job_or_event": "Pracovná ponuka alebo udalosť",
+      "media": "Podcast, video alebo galéria",
+      "interview": "Rozhovor",
+      "other": "Iné"
+    }
+  },
+  "demote": {
+    "on": {
+      "clickbait": "Klikbajt sa odteraz zaradí nižšie",
+      "promotional": "Reklamný obsah sa odteraz zaradí nižšie",
+      "stale": "Zastarané správy sa odteraz zaradia nižšie"
+    },
+    "off": {
+      "clickbait": "Klikbajt sa už nebude zaraďovať nižšie",
+      "promotional": "Reklamný obsah sa už nebude zaraďovať nižšie",
+      "shallow": "Povrchné články sa už nebudú zaraďovať nižšie",
+      "stale": "Zastarané správy sa už nebudú zaraďovať nižšie"
+    },
+    "reset": "Späť na automatické nastavenie"
+  },
+  "rules": {
+    "heading": "Použité pravidlá",
+    "forCard": "{{rule}}: {{card}}",
+    "reset": "Obnoviť",
+    "turnOff": "Vypnúť"
+  },
+  "model": {
+    "heading": "Váš osobný model"
+  },
+  "actions": {
+    "heading": "Čo môžete urobiť",
+    "makeCard": "Vytvoriť kartu z tohto",
+    "muteKeyword": "Stlmiť kľúčové slovo"
+  },
+  "prompt": {
+    "title": "Páčil sa vám článok „{{title}}“?",
+    "yes": "Áno",
+    "no": "Nie",
+    "askLessOften": "Pýtať sa menej často"
+  }
+}

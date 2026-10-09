@@ -1,0 +1,49 @@
+{
+  "title": "Štítky",
+  "lead": "Štítky slúžia na usporiadanie článkov. Nikdy neznamenajú „páči sa mi“ ani „nepáči sa mi“: pridanie štítku nezapne klasifikáciu ani Bantoozi nenaučí, čo preferujete.",
+  "leadExamples": "Príklady na štítku učia len to, čo štítok znamená, a len pri článkoch, ktoré ste už sami vybrali na analýzu.",
+  "new": "Nový štítok",
+  "listLabel": "Vaše štítky",
+  "emptyTitle": "Zatiaľ nemáte žiadne štítky",
+  "emptyBody": "Vytvorte štítok a roztrieďte články do vlastných skupín.",
+  "count_one": "{{count}} článok",
+  "count_few": "{{count}} články",
+  "count_many": "{{count}} článku",
+  "count_other": "{{count}} článkov",
+  "notFor": "Ale nie: {{text}}",
+  "colorSwatch": "Farba {{color}}",
+  "examplesMore": "Viac takých",
+  "examplesLess": "Nie takéto",
+  "removeExample": "Odobrať príklad: {{text}}",
+  "deleteTitle": "Zmazať tento štítok?",
+  "deleteBody_one": "Štítok „{{name}}“ sa odstráni z {{count}} článku. Článok zostane vo vašej čítačke.",
+  "deleteBody_few": "Štítok „{{name}}“ sa odstráni z {{count}} článkov. Články zostanú vo vašej čítačke.",
+  "deleteBody_many": "Štítok „{{name}}“ sa odstráni z {{count}} článku. Články zostanú vo vašej čítačke.",
+  "deleteBody_other": "Štítok „{{name}}“ sa odstráni z {{count}} článkov. Články zostanú vo vašej čítačke.",
+  "editor": {
+    "createTitle": "Nový štítok",
+    "editTitle": "Upraviť štítok",
+    "name": "Názov",
+    "definition": "Definícia",
+    "notFor": "Ale nie (nepovinné)",
+    "color": "Farba",
+    "colorHint": "Šesťmiestna hexadecimálna farba, napríklad #64748b.",
+    "counter": "{{used}} / {{max}}",
+    "examples": "Príklady",
+    "examplesHint": "Príklady ukazujú, čo štítok znamená a čo nie. Môžete ich odobrať zo štítku v zozname.",
+    "errors": {
+      "nameRequired": "Zadajte názov štítku.",
+      "definitionRequired": "Popíšte, čo patrí pod tento štítok.",
+      "definitionTooShort": "Popíšte to aspoň {{min}} znakmi.",
+      "tooLong": "Použite najviac {{max}} znakov.",
+      "characters": "Tento text obsahuje znaky, ktoré sa nedajú použiť.",
+      "colorInvalid": "Použite farbu v tvare #64748b: znak # a šesť hexadecimálnych číslic.",
+      "invalid": "Táto hodnota nie je platná."
+    },
+    "conflicts": {
+      "alreadyHeld": "Štítok s týmto názvom a definíciou už máte. Nájdete ho v zozname a môžete ho zmeniť.",
+      "contention": "Tento štítok sa zmenil počas ukladania. Skúste ho uložiť znova.",
+      "targetHeld": "Štítok s týmto názvom a definíciou už máte. Upravte radšej ten štítok."
+    }
+  }
+}

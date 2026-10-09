@@ -440,4 +440,220 @@ describe('library administration (spec 08 §9, spec 05 §8)', () => {
       rename.release();
     }
   });
+
+  it('names the newest version of the slug on every version, whichever page holds it', async () => {
+    const client = apiClient(h.server, admin);
+    const created = await client.post('/admin/library', {
+      slug: 'admin-test-paged-versions',
+      title: 'Paged versions',
+      interest: 'Library versions listed on separate pages',
+      topicIds: [],
+    });
+    expect(created.statusCode).toBe(201);
+    const first = created.json().card;
+    expect(first).toMatchObject({ version: 1, latestVersion: 1 });
+
+    const versioned = await client.patch(`/admin/library/${first.cardId}`, {
+      interest: 'Library versions listed on separate pages, oldest first',
+    });
+    expect(versioned.statusCode).toBe(200);
+    const second = versioned.json().card;
+    expect(second).toMatchObject({
+      slug: 'admin-test-paged-versions',
+      version: 2,
+      latestVersion: 2,
+    });
+
+    // The older version gave its slug to the newest one and comes first, on a page of its own.
+    const one = await client.get('/admin/library', { query: { q: 'Paged versions', limit: '1' } });
+    expect(one.statusCode).toBe(200);
+    expect(one.json().items).toEqual([
+      expect.objectContaining({ cardId: first.cardId, slug: null, version: 1, latestVersion: 2 }),
+    ]);
+    const two = await client.get('/admin/library', {
+      query: { q: 'Paged versions', limit: '1', cursor: one.json().nextCursor },
+    });
+    expect(two.json().items).toEqual([
+      expect.objectContaining({ cardId: second.cardId, version: 2, latestVersion: 2 }),
+    ]);
+
+    const renamed = await client.patch(`/admin/library/${first.cardId}`, { title: 'Paged v1' });
+    expect(renamed.json().card).toMatchObject({ version: 1, latestVersion: 2 });
+  });
+});
+
+describe('publication provenance on the library read (spec 09 §8)', () => {
+  type Basis = 'creator_approval' | 'creator_inactive_30d';
+  interface Publication {
+    requestId: string;
+    authorizationKind: Basis;
+    promotedAt: string;
+  }
+  interface ListedCard {
+    cardId: string;
+    publication: Publication | null;
+  }
+
+  async function listedCard(q: string, cardId: string): Promise<ListedCard> {
+    const res = await apiClient(h.server, admin).get('/admin/library', { query: { q } });
+    expect(res.statusCode, res.body).toBe(200);
+    const rows = (res.json().items as ListedCard[]).filter((card) => card.cardId === cardId);
+    expect(rows, `library rows of card ${cardId}`).toHaveLength(1);
+    return rows[0]!;
+  }
+
+  async function storedPromotedAt(requestId: string): Promise<string | undefined> {
+    const stored = await h.owner.query<{ promoted_at: Date }>(
+      'SELECT promoted_at FROM card_publication_requests WHERE id = $1',
+      [requestId],
+    );
+    return stored.rows[0]?.promoted_at.toISOString();
+  }
+
+  async function promoteCard(
+    title: string,
+    basis: Basis,
+  ): Promise<{ cardId: string; publication: Publication }> {
+    const approval = basis === 'creator_approval';
+    const creator = await createUser(h.owner, {
+      lastActiveAt: approval ? new Date() : new Date(Date.now() - 721 * HOUR),
+    });
+    const cardId = await sharedCard(creator.id, 2);
+    const request = (await requestPromotion(cardId, title)).json().request;
+    if (approval) await respondAsCreator(creator.id, request.id, request.version, true);
+    const promoted = await apiClient(h.server, admin).post('/admin/library/promote', {
+      requestId: request.id,
+      expectedVersion: approval ? '2' : request.version,
+    });
+    expect(promoted.statusCode, promoted.body).toBe(200);
+    expect(promoted.json().authorizationKind).toBe(basis);
+    return {
+      cardId,
+      publication: {
+        requestId: request.id,
+        authorizationKind: basis,
+        promotedAt: promoted.json().request.promotedAt,
+      },
+    };
+  }
+
+  /** Promotion is final, so no API flow gives a card a second promoted request. */
+  async function addPromotedRequest(
+    requestId: string,
+    cardId: string,
+    promotedAt: Date,
+  ): Promise<string> {
+    const client = await h.owner.connect();
+    try {
+      await client.query('BEGIN');
+      const copy = await client.query<{ id: string }>(
+        `INSERT INTO card_publication_requests (user_id, card_id, requested_by, card_text_hash,
+                                                publication_payload, publication_sha)
+         SELECT user_id, card_id, requested_by, card_text_hash, publication_payload, publication_sha
+           FROM card_publication_requests WHERE id = $1
+         RETURNING id::text AS id`,
+        [requestId],
+      );
+      const id = copy.rows[0]!.id;
+      await client.query(`SELECT set_config('bantoozi.card_promotion', $1, true)`, [cardId]);
+      await client.query(
+        `UPDATE card_publication_requests
+            SET status = 'promoted', promoted_at = $2, authorization_kind = 'creator_inactive_30d',
+                authorization_evidence = '{"policyVersion": 1}'::jsonb
+          WHERE id = $1`,
+        [id, promotedAt],
+      );
+      await client.query('COMMIT');
+      return id;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  it('shows each promoted card the basis, request id and audit time of its own promotion', async () => {
+    const approved = await promoteCard('Provenance approved', 'creator_approval');
+    const inactive = await promoteCard('Provenance inactive', 'creator_inactive_30d');
+
+    const approvedCard = await listedCard('Provenance', approved.cardId);
+    expect(approvedCard.publication).toEqual(approved.publication);
+    const inactiveCard = await listedCard('Provenance', inactive.cardId);
+    expect(inactiveCard.publication).toEqual(inactive.publication);
+    expect(await storedPromotedAt(approved.publication.requestId)).toBe(
+      approvedCard.publication?.promotedAt,
+    );
+    expect(await storedPromotedAt(inactive.publication.requestId)).toBe(
+      inactiveCard.publication?.promotedAt,
+    );
+  });
+
+  it('is null for a card created in the library, on every route that returns it', async () => {
+    const client = apiClient(h.server, admin);
+    const created = await client.post('/admin/library', {
+      slug: 'provenance-library-card',
+      title: 'Provenance library card',
+      interest: 'A card written by an administrator',
+      topicIds: [TOPIC],
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const { cardId } = created.json().card;
+    expect(created.json().card.publication).toBeNull();
+
+    const renamed = await client.patch(`/admin/library/${cardId}`, { title: 'Provenance renamed' });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+    expect(renamed.json().card.publication).toBeNull();
+
+    expect((await listedCard('Provenance renamed', cardId)).publication).toBeNull();
+  });
+
+  it('keeps the basis through an in-place edit and gives a new semantic version none', async () => {
+    const client = apiClient(h.server, admin);
+    const promoted = await promoteCard('Provenance edit', 'creator_approval');
+
+    const renamed = await client.patch(`/admin/library/${promoted.cardId}`, {
+      title: 'Provenance edited',
+    });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+    expect(renamed.json().idChange).toBeNull();
+    expect(renamed.json().card.publication).toEqual(promoted.publication);
+
+    const versioned = await client.patch(`/admin/library/${promoted.cardId}`, {
+      interest: 'A rewritten interest for the next version',
+    });
+    expect(versioned.statusCode, versioned.body).toBe(200);
+    const next = versioned.json();
+    expect(next.idChange).toEqual({ from: promoted.cardId, to: next.card.cardId });
+    expect(next.card.version).toBe(2);
+    expect(next.card.publication).toBeNull();
+
+    const previous = await listedCard('Provenance edited', promoted.cardId);
+    expect(previous.publication).toEqual(promoted.publication);
+    expect((await listedCard('Provenance edited', next.card.cardId)).publication).toBeNull();
+  });
+
+  it('lists a card once, with its latest promotion', async () => {
+    const promoted = await promoteCard('Provenance twice', 'creator_approval');
+    const later = new Date(Date.now() + 24 * HOUR);
+    const laterRequestId = await addPromotedRequest(
+      promoted.publication.requestId,
+      promoted.cardId,
+      later,
+    );
+
+    const card = await listedCard('Provenance twice', promoted.cardId);
+    expect(card.publication).toEqual({
+      requestId: laterRequestId,
+      authorizationKind: 'creator_inactive_30d',
+      promotedAt: later.toISOString(),
+    });
+  });
+
+  it('stays administrator-only', async () => {
+    const reader = await createTestUser(h);
+    const res = await apiClient(h.server, reader).get('/admin/library');
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.code).toBe('FORBIDDEN');
+  });
 });

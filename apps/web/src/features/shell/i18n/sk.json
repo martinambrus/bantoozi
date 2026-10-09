@@ -1,0 +1,23 @@
+{
+  "title": "Bantoozi",
+  "nav": {
+    "label": "Hlavná navigácia",
+    "reader": "Čítačka",
+    "interests": "Záujmy",
+    "labels": "Štítky",
+    "feeds": "Zdroje",
+    "rules": "Pravidlá",
+    "settings": "Nastavenia",
+    "admin": "Správa"
+  },
+  "userMenu": {
+    "label": "Ponuka účtu: {{name}}"
+  },
+  "offlineBanner": "Ste offline. Niektoré funkcie vyžadujú pripojenie.",
+  "connectivity": {
+    "offline": "Ste offline.",
+    "online": "Ste znova online."
+  },
+  "signedOutOffline": "Na tomto zariadení ste odhlásený. Bantoozi vás dokončí odhlásiť, keď budete znova online.",
+  "signedOutRefused": "Na tomto zariadení ste odhlásený, ale server odmietol ukončiť reláciu."
+}

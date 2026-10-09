@@ -1,0 +1,224 @@
+{
+  "title": "Settings",
+  "profile": {
+    "title": "Profile",
+    "signedIn": "Signed in as {{email}}",
+    "displayName": "Display name",
+    "displayNameHint": "Shown in the menu instead of your email address. Leave it empty to use the address.",
+    "language": "Language",
+    "timezone": "Time zone",
+    "timezoneHint": "Dates and times in Bantoozi are shown in this time zone.",
+    "theme": "Theme",
+    "themes": {
+      "system": "Match my device",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "save": "Save profile",
+    "saved": "Profile saved.",
+    "saveFailed": "Your profile was not saved. {{reason}}"
+  },
+  "preferences": {
+    "title": "Reading preferences",
+    "intro": "Each change is saved as soon as you make it.",
+    "saved": "Saved",
+    "notSaved": "Not saved",
+    "saveFailed": "Couldn't save this setting. {{reason}}",
+    "groups": {
+      "lists": "Lists",
+      "reading": "Marking as read",
+      "learning": "Feedback and learning",
+      "quality": "Quality filters",
+      "swipe": "Swipe gestures",
+      "images": "Images"
+    },
+    "defaultTier": {
+      "label": "Minimum tier",
+      "hint": "Hides articles below this tier in For you and Maybe. Tier 1 shows everything, tier 5 only the strongest matches."
+    },
+    "sort": {
+      "label": "Order of For you",
+      "hint": "Best match lists the articles most likely to interest you first. Newest first goes by publication date.",
+      "score": "Best match",
+      "date": "Newest first"
+    },
+    "hideEverything": {
+      "label": "Hide the Everything else lane",
+      "hint": "Removes the lane of articles that match none of your interests from the sidebar. Nothing is deleted."
+    },
+    "simpleMode": {
+      "label": "Simple mode",
+      "hint": "Lists show titles only, with no excerpts and no thumbnails."
+    },
+    "markReadOnExpand": {
+      "label": "Mark as read when I open an article",
+      "hint": "An article you expand in a list counts as read."
+    },
+    "markReadOnRate": {
+      "label": "Mark as read when I rate an article",
+      "hint": "Giving an article a thumbs up or down also marks it as read."
+    },
+    "implicitFeedback": {
+      "label": "Learn from how I read",
+      "hint": "Off by default. When on, Bantoozi times how long you stay away after opening an article's original page and learns from it. Thumbs up, thumbs down and bookmarks teach Bantoozi without it."
+    },
+    "implicitNegative": {
+      "label": "Count marking as read without opening as not interested",
+      "hint": "Counts only while Learn from how I read is on, and only when you mark an article as read yourself without opening it."
+    },
+    "feedbackPrompt": {
+      "label": "Feedback prompts",
+      "hint": "How often Bantoozi asks “Did you like it?” when you come back from reading an article elsewhere. It asks only while Learn from how I read is on.",
+      "often": "Often",
+      "occasionally": "Occasionally",
+      "never": "Never"
+    },
+    "exampleSuggestions": {
+      "label": "Suggest teaching an interest after a rating",
+      "hint": "After you rate an article, offer to add it as an example to the interest that matched it. Nothing changes unless you accept."
+    },
+    "quality": {
+      "intro": "Auto turns a filter on after you dislike three articles for that reason within 90 days. On always applies it. Off never does.",
+      "auto": "Auto",
+      "on": "On",
+      "off": "Off",
+      "clickbait": {
+        "label": "Clickbait",
+        "hint": "Ranks articles with headlines that promise more than the article delivers lower."
+      },
+      "promotional": {
+        "label": "Promotional articles",
+        "hint": "Ranks adverts and sales pitches lower."
+      },
+      "shallow": {
+        "label": "Shallow articles",
+        "hint": "Ranks thin articles with little depth lower."
+      },
+      "stale": {
+        "label": "Stale news",
+        "hint": "Ranks time-sensitive stories older than three days lower."
+      }
+    },
+    "swipe": {
+      "left": {
+        "label": "Swipe left",
+        "hint": "What happens when you swipe an article to the left on a touch screen.",
+        "dislike": "Dislike",
+        "read": "Mark as read",
+        "none": "Nothing"
+      },
+      "right": {
+        "label": "Swipe right",
+        "hint": "What happens when you swipe an article to the right on a touch screen.",
+        "like": "Like",
+        "bookmark": "Bookmark",
+        "none": "Nothing"
+      }
+    },
+    "images": {
+      "label": "Load images from publishers' websites",
+      "hint": "Off by default. Loading an image tells that website you are reading its article. A feed can have its own setting, listed below.",
+      "exceptions": "Feeds with their own image setting",
+      "none": "No feed has its own image setting.",
+      "unknownFeed": "A feed you no longer follow",
+      "allow": "Always show images",
+      "block": "Always block images"
+    }
+  },
+  "sessions": {
+    "title": "Sessions",
+    "description": "The devices where you are signed in. Revoke any you don't recognise.",
+    "listLabel": "Your sessions",
+    "thisDevice": "This device",
+    "unknownDevice": "Unknown device",
+    "unknownAddress": "Unknown address",
+    "signedIn": "Signed in",
+    "lastActive": "Last active",
+    "revoke": "Revoke",
+    "revokeLabel": "Revoke session: {{device}}, signed in {{when}}",
+    "other": {
+      "title": "Revoke this session?",
+      "body": "That device will be signed out and has to sign in again.",
+      "confirm": "Revoke session"
+    },
+    "current": {
+      "title": "Sign out of this device?",
+      "body": "You will be signed out here and taken to the sign-in page.",
+      "confirm": "Revoke and sign out"
+    }
+  },
+  "invites": {
+    "title": "Invites",
+    "description": "Invite people to Bantoozi. Each invite can be used once and is valid for 30 days.",
+    "left": "Invites left: {{left}}",
+    "none": "You have no invites left.",
+    "listTitle": "Your invites",
+    "empty": "You have not created an invite yet.",
+    "status": {
+      "active": "Active",
+      "used": "Used",
+      "expired": "Expired"
+    },
+    "row": {
+      "created": "Created",
+      "expires": "Expires",
+      "usedOn": "Used on",
+      "expiredOn": "Expired on",
+      "notUsed": "Not used yet",
+      "sentTo": "Sent to {{email}}",
+      "anyone": "Anyone with the link"
+    },
+    "copyLink": "Copy link",
+    "copyLinkFor": "Copy link for invite {{code}}",
+    "copied": "Link copied.",
+    "copyFailed": "Couldn't copy the link automatically. Select it here and copy it: {{url}}",
+    "form": {
+      "title": "Create an invite",
+      "email": "Email address (optional)",
+      "emailHint": "We email the invite to this address, and only this address can use it.",
+      "emailInvalid": "Enter a valid email address.",
+      "note": "Note (optional)",
+      "noteHint": "Stored with the invite. It isn't included in the email.",
+      "submit": "Create invite"
+    },
+    "result": {
+      "title": "New invite",
+      "created": "Invite created.",
+      "code": "Code",
+      "link": "Invite link",
+      "emailed": "Invite emailed to {{email}}.",
+      "emailFailed": "The email could not be sent. Share the link yourself."
+    }
+  },
+  "export": {
+    "title": "Export your data",
+    "description": "Download everything Bantoozi holds about you as one JSON file: your profile, subscriptions, interests, labels, rules, ratings and saved articles.",
+    "download": "Download my data",
+    "cancel": "Cancel download",
+    "downloading": "Downloading your data…",
+    "progress": "Downloading… {{size}} received",
+    "done": "Saved {{filename}} ({{size}}).",
+    "cancelled": "Download cancelled. Nothing was saved.",
+    "http": "The server could not prepare your export (error {{status}}). Try again.",
+    "network": "The download was interrupted. Check your connection and try again.",
+    "incomplete": "The file arrived incomplete, so nothing was saved. Try again.",
+    "rateLimited_one": "You've asked for your data too often. Try again in {{count}} minute.",
+    "rateLimited_other": "You've asked for your data too often. Try again in {{count}} minutes.",
+    "rateLimitedLater": "You've asked for your data too often. Try again later."
+  },
+  "delete": {
+    "title": "Delete account",
+    "explain": "Deleting your account signs you out on every device and closes it. You have 7 days to change your mind: sign in again within 7 days to restore everything. After that your data is deleted for good.",
+    "open": "Delete my account…",
+    "dialog": {
+      "title": "Delete your account?",
+      "body": "This signs you out everywhere. Sign in again within 7 days to restore your account. After that it is deleted for good.",
+      "confirmLabel": "Type {{email}} to confirm",
+      "confirm": "Delete account",
+      "failed": "Your account was not deleted. {{reason}}",
+      "unsent_one": "{{count}} change has not been sent yet and will be lost.",
+      "unsent_other": "{{count}} changes have not been sent yet and will be lost."
+    },
+    "done": "Your account is deleted. Sign in again within 7 days to restore it."
+  }
+}

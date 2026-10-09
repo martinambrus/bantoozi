@@ -1,0 +1,22 @@
+{
+  "panel": {
+    "title": "Articles to analyze",
+    "selected": "Selected articles",
+    "remove": "Remove {{title}}",
+    "count": "{{selected}} of {{max}} selected",
+    "hint": "Select up to {{max}} articles. Nothing is analyzed until you press the button.",
+    "offNote": "This switches the feed to Training: only the articles you select are analyzed.",
+    "none": "Select articles to analyze",
+    "start_one": "Start training and analyze this article",
+    "start_other": "Start training and analyze these {{count}}",
+    "analyze_one": "Analyze selected {{count}} article",
+    "analyze_other": "Analyze selected {{count}} articles"
+  },
+  "limit": "You can select at most {{max}} articles at a time.",
+  "errors": {
+    "changed_one": "{{count}} selected article changed and was removed from your selection. Check the list, then analyze again.",
+    "changed_other": "{{count}} selected articles changed and were removed from your selection. Check the list, then analyze again.",
+    "version": "The classification setting of this feed changed. Check it, then analyze again.",
+    "gone": "The selected articles are no longer available from this feed. Reload the list and choose again."
+  }
+}

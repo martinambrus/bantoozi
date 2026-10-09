@@ -84,7 +84,7 @@ export const ENV_VARS: readonly EnvVarSpec[] = [
   { name: 'SIGNUP_MODE', usedBy: ['api'], defaultValue: 'invite' },
   { name: 'RATE_LIMITS_ENABLED', usedBy: ['api'], defaultValue: 'true' },
   { name: 'TYPESAFE_API_KEY', usedBy: ['worker', 'eval'], secret: true },
-  { name: 'TYPESAFE_MODEL', usedBy: ['worker', 'eval'], defaultValue: 'jev-1.13.0' },
+  { name: 'TYPESAFE_MODEL', usedBy: ['api', 'worker', 'eval'], defaultValue: 'jev-1.13.0' },
   {
     name: 'TYPESAFE_BASE_URL',
     usedBy: ['worker', 'eval'],

@@ -1,0 +1,146 @@
+{
+  "row": {
+    "unread": "Neprečítané",
+    "read": "Prečítané",
+    "translated": "Preložené",
+    "notAnalyzed": "Neanalyzované",
+    "analysis": {
+      "pending": "Čaká na analýzu",
+      "running": "Analyzuje sa",
+      "failed": "Analýza zlyhala",
+      "cancelled": "Analýza bola zrušená"
+    },
+    "select": "Vybrať {{title}}",
+    "labels": "Štítky",
+    "addLabel": "Pridať štítok {{name}}",
+    "cluster_one": "+{{count}} zdroj",
+    "cluster_few": "+{{count}} zdroje",
+    "cluster_many": "+{{count}} zdroja",
+    "cluster_other": "+{{count}} zdrojov",
+    "clusterFeeds": "Informujú o tom aj",
+    "reasonChip": "{{reason}}, {{action}}"
+  },
+  "actions": {
+    "like": "Páči sa mi",
+    "dislike": "Nepáči sa mi",
+    "bookmark": "Záložka"
+  },
+  "reason": {
+    "card": "{{title}} · {{p}}",
+    "model": "Model: {{label}}",
+    "keyword": "Zhoda s kľúčovými slovami (model nie je dostupný)",
+    "rule": {
+      "must": "Zhoduje sa so záujmom „musím vidieť“",
+      "never": "Skryté záujmom „nikdy nezobrazovať“",
+      "never_soft": "Potlačené záujmom „nikdy nezobrazovať“",
+      "mute_keyword": "Stlmené kľúčové slovo: „{{keyword}}“",
+      "mute_story": "Stlmený príbeh",
+      "block_feed": "Blokovaný zdroj",
+      "block_domain": "Blokovaný web",
+      "block_author": "Blokovaný autor",
+      "boost_feed": "Uprednostnený zdroj",
+      "boost_domain": "Uprednostnený web",
+      "demote_clickbait": "Znížená priorita: klikbajt",
+      "demote_promotional": "Znížená priorita: reklama",
+      "demote_shallow": "Znížená priorita: povrchné",
+      "demote_stale": "Znížená priorita: zastarané",
+      "degraded": "Zhoda s kľúčovými slovami (model nie je dostupný)",
+      "llm_answer": "Posúdené umelou inteligenciou",
+      "seen_story": "Príbeh ste už videli",
+      "pending_cards": "Záujmy sa ešte vyhodnocujú",
+      "inference_not_requested": "Neanalyzované",
+      "unknown": "Pravidlo zoradenia"
+    }
+  },
+  "detail": {
+    "actions": "Akcie článku",
+    "noPreview": "Pre tento článok nie je k dispozícii náhľad.",
+    "by": "Autor: {{author}}",
+    "readOriginal": "Čítať originál",
+    "showTranslation": "Zobraziť anglický preklad",
+    "showOriginal": "Zobraziť originál",
+    "labels": "Štítky",
+    "noLabels": "Zatiaľ nemáte žiadne štítky",
+    "labelAdd": "Pridať štítok {{name}}",
+    "labelRemove": "Odobrať štítok {{name}}",
+    "whyThis": "Prečo toto?",
+    "muteStory": "Stlmiť príbeh",
+    "muteFor_one": "Stlmiť na {{count}} deň",
+    "muteFor_few": "Stlmiť na {{count}} dni",
+    "muteFor_many": "Stlmiť na {{count}} dňa",
+    "muteFor_other": "Stlmiť na {{count}} dní",
+    "blockFeed": "Blokovať tento zdroj",
+    "blockDomain": "Blokovať tento web",
+    "blockAuthor": "Blokovať tohto autora",
+    "boostFeed": "Uprednostniť tento zdroj"
+  },
+  "rules": {
+    "mutedStory_one": "Príbeh je stlmený na {{count}} deň",
+    "mutedStory_few": "Príbeh je stlmený na {{count}} dni",
+    "mutedStory_many": "Príbeh je stlmený na {{count}} dňa",
+    "mutedStory_other": "Príbeh je stlmený na {{count}} dní",
+    "blockedFeed": "Zdroj je blokovaný: {{target}}",
+    "blockedDomain": "Web je blokovaný: {{target}}",
+    "blockedAuthor": "Autor je blokovaný: {{target}}",
+    "boostedFeed": "Zdroj je uprednostnený: {{target}}",
+    "removed": "Pravidlo bolo odstránené"
+  },
+  "capture": {
+    "pending": "Článok sa ukladá",
+    "saved": "Celý text je uložený",
+    "partial": "Uložený je len čiastočný text",
+    "failed": "Článok sa nepodarilo uložiť",
+    "retry": "Skúsiť uložiť znova",
+    "limits": "Stránka mohla zobraziť len ukážku, vyžadovať predplatné alebo byť nedostupná.",
+    "media": "Uložený je text a formátovanie; obrázky a iné médiá sa nearchivujú"
+  },
+  "saved": {
+    "heading": "Uložená kópia",
+    "capturedOn": "Uložené {{date}}",
+    "source": "Pôvodný zdroj"
+  },
+  "images": {
+    "blocked": "Obrázky z tohto zdroja sa nenačítavajú.",
+    "allow": "Vždy zobrazovať obrázky z tohto zdroja",
+    "block": "Vždy blokovať",
+    "inherit": "Použiť globálne nastavenie",
+    "saved": "Nastavenie obrázkov je uložené"
+  },
+  "reasonBar": {
+    "label": "Dôvod nepáčenia",
+    "disliked": "Nepáči sa vám: {{title}}",
+    "announce": "Nepáči sa vám: {{title}}. Vyberte dôvod klávesmi 1 až 6 alebo vráťte späť.",
+    "reasons": {
+      "off_topic": "Mimo témy",
+      "clickbait": "Klikbajt",
+      "seen": "Už videné",
+      "shallow": "Príliš plytké",
+      "promo": "Reklama",
+      "other": "Iné"
+    }
+  },
+  "swipe": {
+    "like": "Páči sa mi",
+    "removeLike": "Zrušiť „páči sa mi“",
+    "dislike": "Nepáči sa mi",
+    "removeDislike": "Zrušiť „nepáči sa mi“",
+    "bookmark": "Záložka",
+    "removeBookmark": "Odstrániť záložku",
+    "markRead": "Označiť ako prečítané",
+    "markUnread": "Označiť ako neprečítané"
+  },
+  "toast": {
+    "ratedUp": "Označené ako „páči sa mi“",
+    "ratedDown": "Označené ako „nepáči sa mi“",
+    "ratingRemoved": "Hodnotenie bolo odstránené",
+    "stale": "Tento článok sa zmenil na inom zariadení, preto sa vaša zmena nepoužila.",
+    "undoConflict": "Novšie zmeny sa zachovali.",
+    "undoRefused": "Toto sa už nedá vrátiť späť.",
+    "teachYes": "Naučiť „{{title}}“: presne toto",
+    "teachNo": "Naučiť „{{title}}“: nie toto",
+    "stopSuggesting": "Prestať navrhovať",
+    "suggestionsOff": "Navrhovanie učenia je vypnuté. Znova ho zapnete v Nastaveniach.",
+    "offlineOptIn": "Táto zmena vyžaduje pripojenie. Čítanie offline si môžete zapnúť v Nastaveniach.",
+    "offlineNeedsConnection": "Táto zmena vyžaduje pripojenie."
+  }
+}

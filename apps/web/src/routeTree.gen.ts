@@ -10,33 +10,352 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthedRouteRouteImport } from './routes/_authed/route'
+import { Route as JoinRouteImport } from './routes/join'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as WaitlistRouteImport } from './routes/waitlist'
+import { Route as AuthedAppRouteRouteImport } from './routes/_authed/_app/route'
+import { Route as AuthedOnboardingRouteImport } from './routes/_authed/onboarding'
+import { Route as AuthedAppAdminRouteRouteImport } from './routes/_authed/_app/admin/route'
+import { Route as AuthedAppFeedsRouteImport } from './routes/_authed/_app/feeds'
+import { Route as AuthedAppInterestsRouteImport } from './routes/_authed/_app/interests'
+import { Route as AuthedAppLabelsRouteImport } from './routes/_authed/_app/labels'
+import { Route as AuthedAppReadRouteRouteImport } from './routes/_authed/_app/read/route'
+import { Route as AuthedAppRulesRouteImport } from './routes/_authed/_app/rules'
+import { Route as AuthedAppSettingsRouteImport } from './routes/_authed/_app/settings'
+import { Route as AuthedAppAdminIndexRouteImport } from './routes/_authed/_app/admin/index'
+import { Route as AuthedAppAdminFeedsRouteImport } from './routes/_authed/_app/admin/feeds'
+import { Route as AuthedAppAdminInvitesRouteImport } from './routes/_authed/_app/admin/invites'
+import { Route as AuthedAppAdminLibraryRouteImport } from './routes/_authed/_app/admin/library'
+import { Route as AuthedAppAdminProvidersRouteImport } from './routes/_authed/_app/admin/providers'
+import { Route as AuthedAppAdminSettingsRouteImport } from './routes/_authed/_app/admin/settings'
+import { Route as AuthedAppAdminUsageRouteImport } from './routes/_authed/_app/admin/usage'
+import { Route as AuthedAppAdminUsersRouteImport } from './routes/_authed/_app/admin/users'
+import { Route as AuthedAppAdminWaitlistRouteImport } from './routes/_authed/_app/admin/waitlist'
+import { Route as AuthedAppReadIndexRouteImport } from './routes/_authed/_app/read/index'
+import { Route as AuthedAppReadLaneRouteImport } from './routes/_authed/_app/read/$lane'
+import { Route as AuthedAppReadFeedFeedIdRouteImport } from './routes/_authed/_app/read/feed/$feedId'
+import { Route as AuthedAppReadFolderNameRouteImport } from './routes/_authed/_app/read/folder/$name'
+import { Route as AuthedAppReadLabelLabelIdRouteImport } from './routes/_authed/_app/read/label/$labelId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthedRouteRoute = AuthedRouteRouteImport.update({
+  id: '/_authed',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JoinRoute = JoinRouteImport.update({
+  id: '/join',
+  path: '/join',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WaitlistRoute = WaitlistRouteImport.update({
+  id: '/waitlist',
+  path: '/waitlist',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthedAppRouteRoute = AuthedAppRouteRouteImport.update({
+  id: '/_app',
+  getParentRoute: () => AuthedRouteRoute,
+} as any)
+const AuthedOnboardingRoute = AuthedOnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => AuthedRouteRoute,
+} as any)
+const AuthedAppAdminRouteRoute = AuthedAppAdminRouteRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AuthedAppRouteRoute,
+} as any)
+const AuthedAppFeedsRoute = AuthedAppFeedsRouteImport.update({
+  id: '/feeds',
+  path: '/feeds',
+  getParentRoute: () => AuthedAppRouteRoute,
+} as any)
+const AuthedAppInterestsRoute = AuthedAppInterestsRouteImport.update({
+  id: '/interests',
+  path: '/interests',
+  getParentRoute: () => AuthedAppRouteRoute,
+} as any)
+const AuthedAppLabelsRoute = AuthedAppLabelsRouteImport.update({
+  id: '/labels',
+  path: '/labels',
+  getParentRoute: () => AuthedAppRouteRoute,
+} as any)
+const AuthedAppReadRouteRoute = AuthedAppReadRouteRouteImport.update({
+  id: '/read',
+  path: '/read',
+  getParentRoute: () => AuthedAppRouteRoute,
+} as any)
+const AuthedAppRulesRoute = AuthedAppRulesRouteImport.update({
+  id: '/rules',
+  path: '/rules',
+  getParentRoute: () => AuthedAppRouteRoute,
+} as any)
+const AuthedAppSettingsRoute = AuthedAppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthedAppRouteRoute,
+} as any)
+const AuthedAppAdminIndexRoute = AuthedAppAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthedAppAdminRouteRoute,
+} as any)
+const AuthedAppAdminFeedsRoute = AuthedAppAdminFeedsRouteImport.update({
+  id: '/feeds',
+  path: '/feeds',
+  getParentRoute: () => AuthedAppAdminRouteRoute,
+} as any)
+const AuthedAppAdminInvitesRoute = AuthedAppAdminInvitesRouteImport.update({
+  id: '/invites',
+  path: '/invites',
+  getParentRoute: () => AuthedAppAdminRouteRoute,
+} as any)
+const AuthedAppAdminLibraryRoute = AuthedAppAdminLibraryRouteImport.update({
+  id: '/library',
+  path: '/library',
+  getParentRoute: () => AuthedAppAdminRouteRoute,
+} as any)
+const AuthedAppAdminProvidersRoute = AuthedAppAdminProvidersRouteImport.update({
+  id: '/providers',
+  path: '/providers',
+  getParentRoute: () => AuthedAppAdminRouteRoute,
+} as any)
+const AuthedAppAdminSettingsRoute = AuthedAppAdminSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthedAppAdminRouteRoute,
+} as any)
+const AuthedAppAdminUsageRoute = AuthedAppAdminUsageRouteImport.update({
+  id: '/usage',
+  path: '/usage',
+  getParentRoute: () => AuthedAppAdminRouteRoute,
+} as any)
+const AuthedAppAdminUsersRoute = AuthedAppAdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AuthedAppAdminRouteRoute,
+} as any)
+const AuthedAppAdminWaitlistRoute = AuthedAppAdminWaitlistRouteImport.update({
+  id: '/waitlist',
+  path: '/waitlist',
+  getParentRoute: () => AuthedAppAdminRouteRoute,
+} as any)
+const AuthedAppReadIndexRoute = AuthedAppReadIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthedAppReadRouteRoute,
+} as any)
+const AuthedAppReadLaneRoute = AuthedAppReadLaneRouteImport.update({
+  id: '/$lane',
+  path: '/$lane',
+  getParentRoute: () => AuthedAppReadRouteRoute,
+} as any)
+const AuthedAppReadFeedFeedIdRoute = AuthedAppReadFeedFeedIdRouteImport.update({
+  id: '/feed/$feedId',
+  path: '/feed/$feedId',
+  getParentRoute: () => AuthedAppReadRouteRoute,
+} as any)
+const AuthedAppReadFolderNameRoute = AuthedAppReadFolderNameRouteImport.update({
+  id: '/folder/$name',
+  path: '/folder/$name',
+  getParentRoute: () => AuthedAppReadRouteRoute,
+} as any)
+const AuthedAppReadLabelLabelIdRoute =
+  AuthedAppReadLabelLabelIdRouteImport.update({
+    id: '/label/$labelId',
+    path: '/label/$labelId',
+    getParentRoute: () => AuthedAppReadRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/join': typeof JoinRoute
+  '/login': typeof LoginRoute
+  '/waitlist': typeof WaitlistRoute
+  '/onboarding': typeof AuthedOnboardingRoute
+  '/admin': typeof AuthedAppAdminRouteRouteWithChildren
+  '/read': typeof AuthedAppReadRouteRouteWithChildren
+  '/feeds': typeof AuthedAppFeedsRoute
+  '/interests': typeof AuthedAppInterestsRoute
+  '/labels': typeof AuthedAppLabelsRoute
+  '/rules': typeof AuthedAppRulesRoute
+  '/settings': typeof AuthedAppSettingsRoute
+  '/admin/feeds': typeof AuthedAppAdminFeedsRoute
+  '/admin/invites': typeof AuthedAppAdminInvitesRoute
+  '/admin/library': typeof AuthedAppAdminLibraryRoute
+  '/admin/providers': typeof AuthedAppAdminProvidersRoute
+  '/admin/settings': typeof AuthedAppAdminSettingsRoute
+  '/admin/usage': typeof AuthedAppAdminUsageRoute
+  '/admin/users': typeof AuthedAppAdminUsersRoute
+  '/admin/waitlist': typeof AuthedAppAdminWaitlistRoute
+  '/read/$lane': typeof AuthedAppReadLaneRoute
+  '/admin/': typeof AuthedAppAdminIndexRoute
+  '/read/': typeof AuthedAppReadIndexRoute
+  '/read/feed/$feedId': typeof AuthedAppReadFeedFeedIdRoute
+  '/read/folder/$name': typeof AuthedAppReadFolderNameRoute
+  '/read/label/$labelId': typeof AuthedAppReadLabelLabelIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/join': typeof JoinRoute
+  '/login': typeof LoginRoute
+  '/waitlist': typeof WaitlistRoute
+  '/onboarding': typeof AuthedOnboardingRoute
+  '/feeds': typeof AuthedAppFeedsRoute
+  '/interests': typeof AuthedAppInterestsRoute
+  '/labels': typeof AuthedAppLabelsRoute
+  '/rules': typeof AuthedAppRulesRoute
+  '/settings': typeof AuthedAppSettingsRoute
+  '/admin/feeds': typeof AuthedAppAdminFeedsRoute
+  '/admin/invites': typeof AuthedAppAdminInvitesRoute
+  '/admin/library': typeof AuthedAppAdminLibraryRoute
+  '/admin/providers': typeof AuthedAppAdminProvidersRoute
+  '/admin/settings': typeof AuthedAppAdminSettingsRoute
+  '/admin/usage': typeof AuthedAppAdminUsageRoute
+  '/admin/users': typeof AuthedAppAdminUsersRoute
+  '/admin/waitlist': typeof AuthedAppAdminWaitlistRoute
+  '/read/$lane': typeof AuthedAppReadLaneRoute
+  '/admin': typeof AuthedAppAdminIndexRoute
+  '/read': typeof AuthedAppReadIndexRoute
+  '/read/feed/$feedId': typeof AuthedAppReadFeedFeedIdRoute
+  '/read/folder/$name': typeof AuthedAppReadFolderNameRoute
+  '/read/label/$labelId': typeof AuthedAppReadLabelLabelIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authed': typeof AuthedRouteRouteWithChildren
+  '/join': typeof JoinRoute
+  '/login': typeof LoginRoute
+  '/waitlist': typeof WaitlistRoute
+  '/_authed/_app': typeof AuthedAppRouteRouteWithChildren
+  '/_authed/onboarding': typeof AuthedOnboardingRoute
+  '/_authed/_app/admin': typeof AuthedAppAdminRouteRouteWithChildren
+  '/_authed/_app/read': typeof AuthedAppReadRouteRouteWithChildren
+  '/_authed/_app/feeds': typeof AuthedAppFeedsRoute
+  '/_authed/_app/interests': typeof AuthedAppInterestsRoute
+  '/_authed/_app/labels': typeof AuthedAppLabelsRoute
+  '/_authed/_app/rules': typeof AuthedAppRulesRoute
+  '/_authed/_app/settings': typeof AuthedAppSettingsRoute
+  '/_authed/_app/admin/feeds': typeof AuthedAppAdminFeedsRoute
+  '/_authed/_app/admin/invites': typeof AuthedAppAdminInvitesRoute
+  '/_authed/_app/admin/library': typeof AuthedAppAdminLibraryRoute
+  '/_authed/_app/admin/providers': typeof AuthedAppAdminProvidersRoute
+  '/_authed/_app/admin/settings': typeof AuthedAppAdminSettingsRoute
+  '/_authed/_app/admin/usage': typeof AuthedAppAdminUsageRoute
+  '/_authed/_app/admin/users': typeof AuthedAppAdminUsersRoute
+  '/_authed/_app/admin/waitlist': typeof AuthedAppAdminWaitlistRoute
+  '/_authed/_app/read/$lane': typeof AuthedAppReadLaneRoute
+  '/_authed/_app/admin/': typeof AuthedAppAdminIndexRoute
+  '/_authed/_app/read/': typeof AuthedAppReadIndexRoute
+  '/_authed/_app/read/feed/$feedId': typeof AuthedAppReadFeedFeedIdRoute
+  '/_authed/_app/read/folder/$name': typeof AuthedAppReadFolderNameRoute
+  '/_authed/_app/read/label/$labelId': typeof AuthedAppReadLabelLabelIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/join'
+    | '/login'
+    | '/waitlist'
+    | '/onboarding'
+    | '/admin'
+    | '/read'
+    | '/feeds'
+    | '/interests'
+    | '/labels'
+    | '/rules'
+    | '/settings'
+    | '/admin/feeds'
+    | '/admin/invites'
+    | '/admin/library'
+    | '/admin/providers'
+    | '/admin/settings'
+    | '/admin/usage'
+    | '/admin/users'
+    | '/admin/waitlist'
+    | '/read/$lane'
+    | '/admin/'
+    | '/read/'
+    | '/read/feed/$feedId'
+    | '/read/folder/$name'
+    | '/read/label/$labelId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/join'
+    | '/login'
+    | '/waitlist'
+    | '/onboarding'
+    | '/feeds'
+    | '/interests'
+    | '/labels'
+    | '/rules'
+    | '/settings'
+    | '/admin/feeds'
+    | '/admin/invites'
+    | '/admin/library'
+    | '/admin/providers'
+    | '/admin/settings'
+    | '/admin/usage'
+    | '/admin/users'
+    | '/admin/waitlist'
+    | '/read/$lane'
+    | '/admin'
+    | '/read'
+    | '/read/feed/$feedId'
+    | '/read/folder/$name'
+    | '/read/label/$labelId'
+  id:
+    | '__root__'
+    | '/'
+    | '/_authed'
+    | '/join'
+    | '/login'
+    | '/waitlist'
+    | '/_authed/_app'
+    | '/_authed/onboarding'
+    | '/_authed/_app/admin'
+    | '/_authed/_app/read'
+    | '/_authed/_app/feeds'
+    | '/_authed/_app/interests'
+    | '/_authed/_app/labels'
+    | '/_authed/_app/rules'
+    | '/_authed/_app/settings'
+    | '/_authed/_app/admin/feeds'
+    | '/_authed/_app/admin/invites'
+    | '/_authed/_app/admin/library'
+    | '/_authed/_app/admin/providers'
+    | '/_authed/_app/admin/settings'
+    | '/_authed/_app/admin/usage'
+    | '/_authed/_app/admin/users'
+    | '/_authed/_app/admin/waitlist'
+    | '/_authed/_app/read/$lane'
+    | '/_authed/_app/admin/'
+    | '/_authed/_app/read/'
+    | '/_authed/_app/read/feed/$feedId'
+    | '/_authed/_app/read/folder/$name'
+    | '/_authed/_app/read/label/$labelId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthedRouteRoute: typeof AuthedRouteRouteWithChildren
+  JoinRoute: typeof JoinRoute
+  LoginRoute: typeof LoginRoute
+  WaitlistRoute: typeof WaitlistRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +367,288 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authed': {
+      id: '/_authed'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/join': {
+      id: '/join'
+      path: '/join'
+      fullPath: '/join'
+      preLoaderRoute: typeof JoinRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/waitlist': {
+      id: '/waitlist'
+      path: '/waitlist'
+      fullPath: '/waitlist'
+      preLoaderRoute: typeof WaitlistRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authed/_app': {
+      id: '/_authed/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthedAppRouteRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
+    '/_authed/onboarding': {
+      id: '/_authed/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof AuthedOnboardingRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
+    '/_authed/_app/admin': {
+      id: '/_authed/_app/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AuthedAppAdminRouteRouteImport
+      parentRoute: typeof AuthedAppRouteRoute
+    }
+    '/_authed/_app/feeds': {
+      id: '/_authed/_app/feeds'
+      path: '/feeds'
+      fullPath: '/feeds'
+      preLoaderRoute: typeof AuthedAppFeedsRouteImport
+      parentRoute: typeof AuthedAppRouteRoute
+    }
+    '/_authed/_app/interests': {
+      id: '/_authed/_app/interests'
+      path: '/interests'
+      fullPath: '/interests'
+      preLoaderRoute: typeof AuthedAppInterestsRouteImport
+      parentRoute: typeof AuthedAppRouteRoute
+    }
+    '/_authed/_app/labels': {
+      id: '/_authed/_app/labels'
+      path: '/labels'
+      fullPath: '/labels'
+      preLoaderRoute: typeof AuthedAppLabelsRouteImport
+      parentRoute: typeof AuthedAppRouteRoute
+    }
+    '/_authed/_app/read': {
+      id: '/_authed/_app/read'
+      path: '/read'
+      fullPath: '/read'
+      preLoaderRoute: typeof AuthedAppReadRouteRouteImport
+      parentRoute: typeof AuthedAppRouteRoute
+    }
+    '/_authed/_app/rules': {
+      id: '/_authed/_app/rules'
+      path: '/rules'
+      fullPath: '/rules'
+      preLoaderRoute: typeof AuthedAppRulesRouteImport
+      parentRoute: typeof AuthedAppRouteRoute
+    }
+    '/_authed/_app/settings': {
+      id: '/_authed/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthedAppSettingsRouteImport
+      parentRoute: typeof AuthedAppRouteRoute
+    }
+    '/_authed/_app/admin/': {
+      id: '/_authed/_app/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AuthedAppAdminIndexRouteImport
+      parentRoute: typeof AuthedAppAdminRouteRoute
+    }
+    '/_authed/_app/admin/feeds': {
+      id: '/_authed/_app/admin/feeds'
+      path: '/feeds'
+      fullPath: '/admin/feeds'
+      preLoaderRoute: typeof AuthedAppAdminFeedsRouteImport
+      parentRoute: typeof AuthedAppAdminRouteRoute
+    }
+    '/_authed/_app/admin/invites': {
+      id: '/_authed/_app/admin/invites'
+      path: '/invites'
+      fullPath: '/admin/invites'
+      preLoaderRoute: typeof AuthedAppAdminInvitesRouteImport
+      parentRoute: typeof AuthedAppAdminRouteRoute
+    }
+    '/_authed/_app/admin/library': {
+      id: '/_authed/_app/admin/library'
+      path: '/library'
+      fullPath: '/admin/library'
+      preLoaderRoute: typeof AuthedAppAdminLibraryRouteImport
+      parentRoute: typeof AuthedAppAdminRouteRoute
+    }
+    '/_authed/_app/admin/providers': {
+      id: '/_authed/_app/admin/providers'
+      path: '/providers'
+      fullPath: '/admin/providers'
+      preLoaderRoute: typeof AuthedAppAdminProvidersRouteImport
+      parentRoute: typeof AuthedAppAdminRouteRoute
+    }
+    '/_authed/_app/admin/settings': {
+      id: '/_authed/_app/admin/settings'
+      path: '/settings'
+      fullPath: '/admin/settings'
+      preLoaderRoute: typeof AuthedAppAdminSettingsRouteImport
+      parentRoute: typeof AuthedAppAdminRouteRoute
+    }
+    '/_authed/_app/admin/usage': {
+      id: '/_authed/_app/admin/usage'
+      path: '/usage'
+      fullPath: '/admin/usage'
+      preLoaderRoute: typeof AuthedAppAdminUsageRouteImport
+      parentRoute: typeof AuthedAppAdminRouteRoute
+    }
+    '/_authed/_app/admin/users': {
+      id: '/_authed/_app/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AuthedAppAdminUsersRouteImport
+      parentRoute: typeof AuthedAppAdminRouteRoute
+    }
+    '/_authed/_app/admin/waitlist': {
+      id: '/_authed/_app/admin/waitlist'
+      path: '/waitlist'
+      fullPath: '/admin/waitlist'
+      preLoaderRoute: typeof AuthedAppAdminWaitlistRouteImport
+      parentRoute: typeof AuthedAppAdminRouteRoute
+    }
+    '/_authed/_app/read/': {
+      id: '/_authed/_app/read/'
+      path: '/'
+      fullPath: '/read/'
+      preLoaderRoute: typeof AuthedAppReadIndexRouteImport
+      parentRoute: typeof AuthedAppReadRouteRoute
+    }
+    '/_authed/_app/read/$lane': {
+      id: '/_authed/_app/read/$lane'
+      path: '/$lane'
+      fullPath: '/read/$lane'
+      preLoaderRoute: typeof AuthedAppReadLaneRouteImport
+      parentRoute: typeof AuthedAppReadRouteRoute
+    }
+    '/_authed/_app/read/feed/$feedId': {
+      id: '/_authed/_app/read/feed/$feedId'
+      path: '/feed/$feedId'
+      fullPath: '/read/feed/$feedId'
+      preLoaderRoute: typeof AuthedAppReadFeedFeedIdRouteImport
+      parentRoute: typeof AuthedAppReadRouteRoute
+    }
+    '/_authed/_app/read/folder/$name': {
+      id: '/_authed/_app/read/folder/$name'
+      path: '/folder/$name'
+      fullPath: '/read/folder/$name'
+      preLoaderRoute: typeof AuthedAppReadFolderNameRouteImport
+      parentRoute: typeof AuthedAppReadRouteRoute
+    }
+    '/_authed/_app/read/label/$labelId': {
+      id: '/_authed/_app/read/label/$labelId'
+      path: '/label/$labelId'
+      fullPath: '/read/label/$labelId'
+      preLoaderRoute: typeof AuthedAppReadLabelLabelIdRouteImport
+      parentRoute: typeof AuthedAppReadRouteRoute
+    }
   }
 }
 
+interface AuthedAppAdminRouteRouteChildren {
+  AuthedAppAdminFeedsRoute: typeof AuthedAppAdminFeedsRoute
+  AuthedAppAdminInvitesRoute: typeof AuthedAppAdminInvitesRoute
+  AuthedAppAdminLibraryRoute: typeof AuthedAppAdminLibraryRoute
+  AuthedAppAdminProvidersRoute: typeof AuthedAppAdminProvidersRoute
+  AuthedAppAdminSettingsRoute: typeof AuthedAppAdminSettingsRoute
+  AuthedAppAdminUsageRoute: typeof AuthedAppAdminUsageRoute
+  AuthedAppAdminUsersRoute: typeof AuthedAppAdminUsersRoute
+  AuthedAppAdminWaitlistRoute: typeof AuthedAppAdminWaitlistRoute
+  AuthedAppAdminIndexRoute: typeof AuthedAppAdminIndexRoute
+}
+
+const AuthedAppAdminRouteRouteChildren: AuthedAppAdminRouteRouteChildren = {
+  AuthedAppAdminFeedsRoute: AuthedAppAdminFeedsRoute,
+  AuthedAppAdminInvitesRoute: AuthedAppAdminInvitesRoute,
+  AuthedAppAdminLibraryRoute: AuthedAppAdminLibraryRoute,
+  AuthedAppAdminProvidersRoute: AuthedAppAdminProvidersRoute,
+  AuthedAppAdminSettingsRoute: AuthedAppAdminSettingsRoute,
+  AuthedAppAdminUsageRoute: AuthedAppAdminUsageRoute,
+  AuthedAppAdminUsersRoute: AuthedAppAdminUsersRoute,
+  AuthedAppAdminWaitlistRoute: AuthedAppAdminWaitlistRoute,
+  AuthedAppAdminIndexRoute: AuthedAppAdminIndexRoute,
+}
+
+const AuthedAppAdminRouteRouteWithChildren =
+  AuthedAppAdminRouteRoute._addFileChildren(AuthedAppAdminRouteRouteChildren)
+
+interface AuthedAppReadRouteRouteChildren {
+  AuthedAppReadLaneRoute: typeof AuthedAppReadLaneRoute
+  AuthedAppReadIndexRoute: typeof AuthedAppReadIndexRoute
+  AuthedAppReadFeedFeedIdRoute: typeof AuthedAppReadFeedFeedIdRoute
+  AuthedAppReadFolderNameRoute: typeof AuthedAppReadFolderNameRoute
+  AuthedAppReadLabelLabelIdRoute: typeof AuthedAppReadLabelLabelIdRoute
+}
+
+const AuthedAppReadRouteRouteChildren: AuthedAppReadRouteRouteChildren = {
+  AuthedAppReadLaneRoute: AuthedAppReadLaneRoute,
+  AuthedAppReadIndexRoute: AuthedAppReadIndexRoute,
+  AuthedAppReadFeedFeedIdRoute: AuthedAppReadFeedFeedIdRoute,
+  AuthedAppReadFolderNameRoute: AuthedAppReadFolderNameRoute,
+  AuthedAppReadLabelLabelIdRoute: AuthedAppReadLabelLabelIdRoute,
+}
+
+const AuthedAppReadRouteRouteWithChildren =
+  AuthedAppReadRouteRoute._addFileChildren(AuthedAppReadRouteRouteChildren)
+
+interface AuthedAppRouteRouteChildren {
+  AuthedAppAdminRouteRoute: typeof AuthedAppAdminRouteRouteWithChildren
+  AuthedAppReadRouteRoute: typeof AuthedAppReadRouteRouteWithChildren
+  AuthedAppFeedsRoute: typeof AuthedAppFeedsRoute
+  AuthedAppInterestsRoute: typeof AuthedAppInterestsRoute
+  AuthedAppLabelsRoute: typeof AuthedAppLabelsRoute
+  AuthedAppRulesRoute: typeof AuthedAppRulesRoute
+  AuthedAppSettingsRoute: typeof AuthedAppSettingsRoute
+}
+
+const AuthedAppRouteRouteChildren: AuthedAppRouteRouteChildren = {
+  AuthedAppAdminRouteRoute: AuthedAppAdminRouteRouteWithChildren,
+  AuthedAppReadRouteRoute: AuthedAppReadRouteRouteWithChildren,
+  AuthedAppFeedsRoute: AuthedAppFeedsRoute,
+  AuthedAppInterestsRoute: AuthedAppInterestsRoute,
+  AuthedAppLabelsRoute: AuthedAppLabelsRoute,
+  AuthedAppRulesRoute: AuthedAppRulesRoute,
+  AuthedAppSettingsRoute: AuthedAppSettingsRoute,
+}
+
+const AuthedAppRouteRouteWithChildren = AuthedAppRouteRoute._addFileChildren(
+  AuthedAppRouteRouteChildren,
+)
+
+interface AuthedRouteRouteChildren {
+  AuthedAppRouteRoute: typeof AuthedAppRouteRouteWithChildren
+  AuthedOnboardingRoute: typeof AuthedOnboardingRoute
+}
+
+const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
+  AuthedAppRouteRoute: AuthedAppRouteRouteWithChildren,
+  AuthedOnboardingRoute: AuthedOnboardingRoute,
+}
+
+const AuthedRouteRouteWithChildren = AuthedRouteRoute._addFileChildren(
+  AuthedRouteRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthedRouteRoute: AuthedRouteRouteWithChildren,
+  JoinRoute: JoinRoute,
+  LoginRoute: LoginRoute,
+  WaitlistRoute: WaitlistRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

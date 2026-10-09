@@ -72,6 +72,7 @@ function toLibraryCard(row: AdminLibraryCardRow): AdminLibraryCard {
     cardId: row.cardId,
     slug: row.slug,
     version: row.version,
+    latestVersion: row.latestVersion,
     title: row.title,
     interest: row.interest,
     notFor: row.notFor,
@@ -82,6 +83,14 @@ function toLibraryCard(row: AdminLibraryCardRow): AdminLibraryCard {
     holders: row.holders,
     retiredAt: isoOrNull(row.retiredAt),
     createdAt: iso(row.createdAt),
+    publication:
+      row.publication === null
+        ? null
+        : {
+            requestId: row.publication.requestId,
+            authorizationKind: row.publication.authorizationKind,
+            promotedAt: iso(row.publication.promotedAt),
+          },
   };
 }
 

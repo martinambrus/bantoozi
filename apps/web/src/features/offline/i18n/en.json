@@ -1,0 +1,50 @@
+{
+  "start": {
+    "title": "You're offline",
+    "body": "Bantoozi can't reach the server, and this device has no saved copy of your account. Connect to the internet and try again.",
+    "hint": "To open Bantoozi without a connection next time, turn on Offline reading in Settings while you are online.",
+    "retry": "Try again"
+  },
+  "section": {
+    "title": "Offline reading",
+    "description": "Keep what you read on this device so you can open it again without a connection."
+  },
+  "switch": {
+    "label": "Keep articles on this device",
+    "hint": "Articles you list or open are stored on this device for 24 hours. Anyone who uses this browser can read them. Offline reading works only for the last account that signed in here. Articles you bookmarked on the server are separate and stay there."
+  },
+  "status": {
+    "off": "Offline reading is off. Nothing is stored on this device.",
+    "unavailable": "Not available in this browser",
+    "articles_one": "{{count}} article stored on this device",
+    "articles_other": "{{count}} articles stored on this device",
+    "unsent_one": "{{count}} change has not been sent yet",
+    "unsent_other": "{{count}} changes have not been sent yet",
+    "usage": "{{used}} of {{limit}} used"
+  },
+  "clear": {
+    "button": "Clear downloaded articles",
+    "done": "Downloaded articles cleared."
+  },
+  "failed": "Couldn't change offline reading. Try again.",
+  "discard": {
+    "title": "Discard unsent changes?",
+    "body_one": "{{count}} change has not been sent yet and will be discarded.",
+    "body_other": "{{count}} changes have not been sent yet and will be discarded.",
+    "clear": "Clear and discard",
+    "off": "Turn off and discard"
+  },
+  "replay": {
+    "expired_one": "{{count}} offline change expired and was not sent",
+    "expired_other": "{{count}} offline changes expired and were not sent"
+  },
+  "saved": {
+    "line": "Offline. Showing articles saved on this device at {{time}}."
+  },
+  "article": {
+    "connect": "Connect to load this article"
+  },
+  "waiting": {
+    "badge": "Waiting to sync"
+  }
+}

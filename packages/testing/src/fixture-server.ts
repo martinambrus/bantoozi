@@ -6,7 +6,8 @@ import path from 'node:path';
 /**
  * Local fixture HTTP server for feed/page tests (spec 01 §6: no internet in tests). It serves files
  * from a root directory and scripted responses (statuses, redirects, headers, delays) on a random
- * loopback port, and records every request. Safe-fetch tests reach it with FETCH_ALLOW_PRIVATE.
+ * loopback port (or the `port` option), and records every request. Safe-fetch tests reach it with
+ * FETCH_ALLOW_PRIVATE.
  */
 export interface ScriptedResponse {
   status?: number;
@@ -43,6 +44,8 @@ export interface FixtureServerOptions {
   /** Directory served for unscripted paths. */
   root?: string;
   host?: string;
+  /** Listening port. Default 0: a random free port. */
+  port?: number;
 }
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -136,7 +139,7 @@ export async function startFixtureServer(
   const host = options.host ?? '127.0.0.1';
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, host, () => resolve());
+    server.listen(options.port ?? 0, host, () => resolve());
   });
   const { port } = server.address() as AddressInfo;
   const origin = `http://${host}:${port}`;

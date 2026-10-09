@@ -25,7 +25,8 @@ mobile-first, installable, works in English and Slovak, and never makes the read
   - private offline storage requires an explicit device-local choice (default disabled on a new
     browser), explaining shared-device access and the 24-hour limit. With it disabled the shell
     works offline, but private article storage and durable offline actions are unavailable; show
-    that state rather than silently writing private IndexedDB records
+    that state rather than silently writing private IndexedDB records. The device remembers the
+    choice per account: logout and account switch keep it, account deletion removes it (D-157)
   - explicitly persist an allowlisted projection of the last 200 list items and already opened
     sanitized detail texts in IndexedDB, keyed by account id, with 24-hour expiry and a 10 MiB cap;
     list summaries alone cannot provide full offline reading. An uncached detail says "Connect to
@@ -34,12 +35,18 @@ mobile-first, installable, works in English and Slovak, and never makes the read
   - reader mutations made offline are queued in the same account-scoped store with original
     mutation id, expected state version, creation time and optimistic before-state. Only read/unread,
     rating, bookmark and existing-label actions can queue offline; bulk operations, edits to
-    interests/feeds/settings, login and account deletion require a connection
-  - replay runs on startup, `online` and foreground return; Background Sync is optional acceleration,
-    not a dependency. Replay at most 24 hours after creation, in order per article, with one elected
-    tab/service-worker dispatcher. Serialize dependent versions after acknowledged local actions;
-    stop on a cross-device stale version and offer refresh/review. Retry network/5xx/429 with bounded
-    backoff and Retry-After, never blindly retry 400/403/404/409. Freeze on 401 pending reauthentication
+    interests/feeds/settings, login and account deletion require a connection, and a bulk action is
+    also refused while an article it covers has a change waiting on the device (D-156). Undo of a
+    queued change whose request never left cancels it on the device; once its request may have left
+    (the record is marked before it is sent), Undo waits for the replay and uses the receipt
+  - replay runs on startup, `online` and foreground return, and again by itself while kept changes
+    wait and the browser reports a connection: 2 s after the replay or send that left them waiting,
+    doubling up to 5 minutes, never sooner than the Retry-After of the refusal (D-160). Background
+    Sync is optional acceleration, not a dependency. Replay at most 24 hours after creation, in
+    order per article, with one elected tab/service-worker dispatcher. Serialize dependent versions
+    after acknowledged local actions; stop on a cross-device stale version and offer refresh/review.
+    Retry network/5xx/429 with bounded backoff and Retry-After, never blindly retry
+    400/403/404/409. Freeze on 401 pending reauthentication
   - reconnect verifies `/me` before replay; work queued for A is never submitted under B. Logout,
     account deletion or account switch immediately clears in-memory queries, private IndexedDB,
     pending mutations and any legacy private caches and broadcasts the reset to all tabs. Explicit
@@ -85,7 +92,9 @@ policy. The normal global/per-feed image preference remains unchanged.
 
 **Refresh and errors:** poll list/counts every 5 seconds only while a visible page has
 `rankingPending`/explicit pending analysis requests, back off to 30 seconds when idle, and pause
-offline/background polling. New items in off/unselected training feeds are not unfinished jobs and
+offline/background polling. The idle 30-second poll refreshes the counts only; the visible list is
+reloaded by the 5-second busy poll, the Refresh control and navigation, so rows do not move or
+vanish under the reader (D-152). New items in off/unselected training feeds are not unfinished jobs and
 must not cause endless polling or "AI is working" messages.
 Cancel obsolete queries on route changes. No SSE infrastructure is required for the first version.
 Refresh from page one on `STALE_CURSOR`; de-duplicate ids and preserve selection/scroll by id.
@@ -230,6 +239,12 @@ login without leaking the previous account's UI. Slow classification leaves arti
 Disable reader shortcuts inside inputs, textareas, contenteditable regions, open modal controls and
 during IME composition. Never intercept browser zoom (`Ctrl/Cmd` + `+`/`-`), navigation or assistive
 technology shortcuts. Shortcut sequences expire after one second and announce pending mode.
+`j`/`k` move the focus to the item's title button. `Enter` opens the original only while the focus is
+not on a control; on a focused button or link it keeps its own meaning, so on the title it opens or
+closes the item; `o` always opens the original (D-154). On keyboard layouts where Shift changes the
+like key (Slovak, Czech), Shift + like cannot be typed; rate and hide with Shift-click or a long press
+on Like there. Where `+` itself needs Shift (US English), typing `+` likes and hides, and `=` likes
+(D-155).
 
 ### 3.5 "Why this?" drawer (successor of FeedIt's detailed-training modal)
 
@@ -412,13 +427,19 @@ Plain tables and forms, no polish needed:
    **fake TypeSafe server** (spec 04 §10, `latencyMs: 50`) on fixed test ports.
 2. `apps/api` and 3. `apps/worker`, each with:
    - `NODE_ENV=test`, `SIGNUP_MODE=open`, `RATE_LIMITS_ENABLED=false`, `FETCH_ALLOW_PRIVATE=true`
-   - `MAIL_TRANSPORT=log`, `SESSION_PEPPER=test`
-   - `TYPESAFE_API_KEY=test`, `TYPESAFE_BASE_URL=<fake server URL>`
+   - `MAIL_TRANSPORT=log`, `SESSION_PEPPER=test`, `LOG_LEVEL=warn`
+   - `TYPESAFE_API_KEY=test`, `TYPESAFE_BASE_URL=<fake server URL>`, `TYPESAFE_MODEL=jev-fake`
+   - `OLLAMA_BASE_URL` and `LIBRETRANSLATE_URL` pointing at a closed loopback port, and an empty
+     `OLLAMA_API_KEY`, so no variable can reach a live host
    - `PUBLIC_BASE_URL=http://localhost:<preview port>`, so the browser's `Origin` passes the CSRF check
      (spec 08 §1)
-   - `DATABASE_URL*` for `bantoozi_e2e_<runId>`
+   - `API_PORT`, `ADMIN_EMAILS=<the E2E admin address>`, and `PROVIDER_MASTER_KEY_ID` /
+     `PROVIDER_MASTER_KEYS` with a random key per run
+   - `DATABASE_URL` and `DATABASE_URL_WORKER` for `bantoozi_e2e_<runId>`
 4. `pnpm --filter @bantoozi/web exec vite build && pnpm --filter @bantoozi/web exec vite preview --port <preview port>`,
-   with the preview server proxying `/api` to the API.
+   with `NODE_ENV=production`, `BANTOOZI_API_PROXY=<API URL>` (the preview server proxies `/api` to
+   the API) and `BANTOOZI_PREVIEW_IMG_SRC=<fixture feed origins>` (added to the preview CSP's
+   `img-src`, because the fixtures serve images from loopback http ports).
 
 Test files are named `*.pw.ts` so Vitest never picks them up (spec 01 §6).
 
@@ -435,14 +456,18 @@ Test files are named `*.pw.ts` so Vitest never picks them up (spec 01 §6).
 5. **Keyboard:** `j`, `k`, `+`, `-`, `b` work on the list.
 6. **Mobile viewport:** a swipe right likes the item.
 7. **Automatic mode:** explicit enable applies to new arrivals only. Old backlog stays unselected;
-   switch Off while a request is queued and verify stale work cannot restart inference for that user.
+   switch Off while a request is outstanding and verify stale work cannot restart inference for that
+   user. The E2E holds the request's model call in flight; a request still queued is the worker
+   integration test's case (D-158).
 8. **Bookmark mirror:** capture a fixture's full body, unsubscribe, make its original URL fail and
    simulate snapshot compression after 30 days. Saved view and export retain the same text/HTML;
    no archived image/media/attachment binary or embedded image data is included, even when that
    feed allows normal remote images. Partial/failed capture remains visibly distinct, and another
    account cannot read the snapshot.
-9. **Remembered images:** global images off, per-feed Always allow → images load in list/detail;
-   reload/login on another context and unsubscribe → bookmarked saved view keeps that source choice.
+9. **Remembered images:** global images off, per-feed Always allow → the list's thumbnails load and
+   the detail no longer says that this feed's images are blocked (stored article HTML holds no images
+   in the beta, spec 03 §6.3; D-153); reload/login on another context and unsubscribe → bookmarked
+   saved view keeps that source choice.
    Always block overrides global on. Inherit resets to the global value; no blocked placeholder
    secretly triggers a network request.
 10. **Credentials:** admin stages a fixture key, validation fails and the old key remains active;

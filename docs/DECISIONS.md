@@ -1368,3 +1368,81 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   cap the spend guard defers further calls to the next day (spec 04), so the cap bounds spend
   rather than promising same-day coverage of every one-off request. The ×5 sensitivity is $3.50/day. M8 replaces this with a
   forecast from real usage before any cap increase (Q1).
+- D-150: 2026-10-08 M6-T9 — `TYPESAFE_MODEL` is registered for the API as well (spec 01 §3 said
+  worker and eval). The API freezes `settings['engine.model_pin'].model` into each explicit analysis
+  request and, until a worker has recorded the pin (M8, spec 05 §2), falls back to
+  `TYPESAFE_MODEL`. The registry gave the API no such variable, so it always froze the default
+  `jev-1.13.0`, and the worker refused every request (`context_unavailable`) as soon as it ran any
+  other model: the fake TypeSafe server's `jev-fake` in the E2E suite, or a newer pinned Jev version
+  in production. The API now reads the same variable as the worker; the production pinning rule
+  applies to it too. Spec 01 §3 and `.env.example` updated.
+- D-151: 2026-10-08 M6-T7 — spec 09 §8 asks the admin library to show a published record's actual
+  authorization basis and audit time, but `GET /admin/library` (spec 08 §9) returned no provenance;
+  only the promote response named the basis. Every admin library card now carries
+  `publication: {requestId, authorizationKind, promotedAt} | null` from its latest promoted
+  publication request, read once per query through the existing `admin_list_card_publication_requests`
+  definer function (the requests table has tenant RLS), so no migration is needed. Cards created in
+  the library, and new semantic versions, have `null`. Spec 08 §9 updated.
+- D-152: 2026-10-08 M6-T2 — spec 09 §1 polled the list and the counts every 5 s while a visible
+  page has `rankingPending` or pending selected analysis requests, else every 30 s. Refetching an
+  idle list every 30 s re-sorts it and drops rows under the reader (an item read or rated on another
+  device, a newly scored arrival), so the idle poll refreshes the counts only. The list is reloaded
+  by the 5-second busy poll, the Refresh control in the header and navigation. Spec 09 §1 updated.
+- D-153: 2026-10-08 M6-T9 — spec 09 §9 scenario 9 expected remembered images to load "in
+  list/detail", but spec 03 §6.3 removes embedded images from the stored display HTML for the beta
+  and spec 09 §3.2 gives the detail no image of its own, so the only article image is the list
+  thumbnail (`image_url`). The scenario checks the thumbnails in the list and, in the detail and the
+  saved view, the image note and `effectiveImagesAllowed`, and that a blocked image is never
+  requested. Spec 09 §9 updated.
+- D-154: 2026-10-08 M6-T3 — spec 09 §3.4 maps both `o` and `Enter` to "open the original". The
+  reader's `j`/`k` move the focus to the item's title button, so that a screen reader announces the
+  item and the focus stays visible; taking `Enter` from a focused button or link would break the
+  keyboard contract of those controls (spec 09 §1 accessibility, WCAG 2.1.1). `Enter` therefore opens
+  the original only while the focus is not on a control; on the title button it opens or closes the
+  item as the button does, and `o` always opens the original. Spec 09 §3.4 updated.
+- D-155: 2026-10-08 M6-T3 — spec 09 §3.4 lists "Shift + like/dislike: rate and hide". On the Slovak
+  and Czech layouts the `+` and `=` keys are unshifted and Shift turns them into `1` and `%`, so Shift
+  + like cannot be typed there (Shift + `-` gives `_`, which the reader takes as dislike and hide).
+  The keys are not remapped, because `1`-`6` pick the reason of a dislike; like and hide stays
+  available as Shift-click or a long press on Like. Spec 09 §3.4 updated. Addendum (M6-T9): on the US
+  layout `+` is Shift + `=`, so typing `+` likes and hides, and `=` likes; the keyboard smoke scenario
+  presses both.
+- D-156: 2026-10-08 M6-T8 — spec 09 §1 lets read/unread, rating, bookmark and existing-label actions
+  queue offline and leaves bulk operations to a connection, but says nothing about a bulk action
+  that covers an article whose change still waits on the device, or about Undo of a queued change.
+  A bulk action is refused while an article it covers has a waiting change, online too (the reader
+  says the change needs a connection), because it would act on a state the server has not seen; it
+  is never queued. Undo of a waiting change whose request never left cancels it on the device with no
+  request (the changes of the same article behind it take over its expected version), as spec 09
+  §3.3 does for a dislike held for its reason. The record is marked before its request leaves, so
+  after a reload Undo of a change the server may have waits for the replay and uses the receipt.
+  Spec 09 §1 updated.
+- D-157: 2026-10-09 M6-T8 — spec 09 §1 asks for an explicit device-local choice before any private
+  offline storage and clears that storage on logout, account switch and account deletion, but does
+  not say whether the choice itself outlives a sign-out. The device remembers it per account in
+  localStorage (`bantoozi:offline:enabled:<account id>`; no content and no token): logout and an
+  account switch keep it, so the same account signing in again on this device finds offline reading
+  as it left it, while any other account starts with it off; account deletion removes it with the
+  account's stores (spec 09 §9: deletion clears every local private store). Spec 09 §1 updated.
+- D-158: 2026-10-09 M6-T9 — spec 09 §9 scenario 7 switches Off "while a request is queued". The
+  worker claims a queued `analysis.process` job within moments, so an E2E run cannot hold a request
+  in the queue without stopping the worker. The scenario instead slows the fake model and switches
+  Off while the request's call is in flight: the request ends `cancelled`/`revoked` and no model call
+  follows. The queued case, switched off before the worker claims it, is covered by
+  apps/worker/test/analysis.int.test.ts ("a request still queued when its feed is switched off is
+  cancelled at claim, before any call"). Spec 09 §9 updated.
+- D-159: 2026-10-09 M6-T7 — spec 08 §9 returned each admin library card's `slug` and `version`, but
+  `admin_publish_library_card_version` moves the slug alias to the newest version, so an older
+  version has no slug, and the list pages in card-id order, so the newest version can sit on a page
+  not loaded yet. The admin page could therefore not tell that a card was superseded and offered to
+  edit it. Every admin library card now also carries `latestVersion`, the newest version of its
+  slug read from `library_card_versions` (`null` for a card that is no version), and the page marks
+  a card superseded when `latestVersion` is above its `version`. No migration. Spec 08 §9 updated.
+- D-160: 2026-10-09 M6-T8 — spec 09 §1 ran the replay on startup, `online` and foreground return
+  and asked for bounded backoff with Retry-After, but a server that answers again after an outage
+  sends no `online` event: a kept change whose tries failed, or whose `/me` check failed, while the
+  browser stayed online waited until a reload, a return to the page or another trigger. While kept
+  changes wait and the browser reports a connection, the page now replays again by itself: 2 s
+  after the replay or send that left them waiting, twice as long after each retry up to five
+  minutes, never sooner than the Retry-After of the refusal (of a change or of the `/me` check),
+  and never while offline or after the page let go of the account. Spec 09 §1 updated.

@@ -17,7 +17,9 @@
     "typecheck": "tsc -b && tsc -p tsconfig.test.json",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
-    "test:int": "vitest run --config vitest.int.config.ts --passWithNoTests"
+    "test:int": "vitest run --config vitest.int.config.ts --passWithNoTests",
+    "e2e:prepare": "tsx --conditions=bantoozi-source src/e2e/prepare.ts",
+    "fixtures:serve": "tsx --conditions=bantoozi-source src/e2e/serve.ts"
   },
   "dependencies": {
     "@bantoozi/shared": "workspace:*",
@@ -25,6 +27,7 @@
   },
   "devDependencies": {
     "@types/pg": "8.23.1",
-    "eslint": "10.11.0"
+    "eslint": "10.11.0",
+    "tsx": "4.23.15"
   }
 }
