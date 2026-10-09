@@ -81,11 +81,12 @@ export async function arrive(
           (state) => state.title === appended.title,
         );
         articleId = found?.id ?? '';
-        return found?.pipelineState;
+        return found?.pipelineState ?? 'not ingested';
       },
       { message: `"${appended.title}" is extracted`, timeout: 45_000, intervals: [500, 1_000] },
     )
-    .toBe('extracted');
+    // A feed in automatic mode can take the article past `extracted` between two polls.
+    .toMatch(/^(extracted|translated|enriched|matched|degraded)$/);
   if (pageStatus !== undefined) {
     expect(
       (await requestsFor(control, key, pagePath)).length,
