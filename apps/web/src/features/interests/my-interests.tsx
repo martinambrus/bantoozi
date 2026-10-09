@@ -20,6 +20,15 @@ import { useCardCache, useCards, useSubscriptions } from './queries.js';
 import type { Strength } from './strengths.js';
 
 type Change = { strength: Strength } | { scopeFeedId: string | null };
+type Fields = Partial<Pick<CardDto, 'strength' | 'scopeFeedId'>>;
+
+/** The values of the fields `changes` names, as `card` holds them. */
+function valuesOf(card: CardDto, changes: Fields): Fields {
+  const values: Fields = {};
+  if ('strength' in changes) values.strength = card.strength;
+  if ('scopeFeedId' in changes) values.scopeFeedId = card.scopeFeedId;
+  return values;
+}
 
 interface CardRowProps {
   card: CardDto;
@@ -36,15 +45,46 @@ function CardRow({ card, subscriptions, onEdit, onDelete }: CardRowProps) {
   const removeExample = useApiMutation(routes.cardExampleRemove);
   const [removing, setRemoving] = useState<string | null>(null);
   const titleId = useId();
+  // One request for the card at a time: two could reach the server in either order, and the answer
+  // to the older one would put back what the newer one changed. What is changed meanwhile waits,
+  // and goes in one request once the earlier one is answered.
+  const sending = useRef(false);
+  const waiting = useRef<{ changes: Fields; before: CardDto | undefined } | null>(null);
 
-  // The change shows at once; a failure takes back only that change, and says why.
-  async function change(changes: Change) {
-    const before = cache.patch(card.id, changes);
+  // A change shows at once; a failure takes back only that change, and says why.
+  async function send(changes: Fields, before: CardDto | undefined) {
+    sending.current = true;
     try {
       cache.apply(await update.mutateAsync({ params: { id: card.id }, body: changes }));
+      // The answer does not hold what waits, which stays on show.
+      if (waiting.current !== null) cache.patch(card.id, waiting.current.changes);
     } catch (error) {
-      if (before !== undefined) cache.undo(card.id, before, changes);
+      if (before !== undefined) {
+        cache.undo(card.id, before, changes);
+        // What waits would go back to this change, which the server does not hold.
+        const next = waiting.current;
+        if (next?.before !== undefined) {
+          next.before = { ...next.before, ...valuesOf(before, changes) };
+        }
+      }
       toast.show({ message: saveMessage(t, error), tone: 'error' });
+    } finally {
+      sending.current = false;
+      const next = waiting.current;
+      waiting.current = null;
+      if (next !== null) void send(next.changes, next.before);
+    }
+  }
+
+  function change(changes: Change) {
+    const before = cache.patch(card.id, changes);
+    const earlier = waiting.current;
+    if (earlier !== null) {
+      waiting.current = { changes: { ...earlier.changes, ...changes }, before: earlier.before };
+    } else if (sending.current) {
+      waiting.current = { changes, before };
+    } else {
+      void send(changes, before);
     }
   }
 

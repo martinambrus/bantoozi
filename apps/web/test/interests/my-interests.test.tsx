@@ -297,7 +297,6 @@ describe('changing the strength', () => {
     const row = await rowOf('Rust programming');
     await app.user.click(within(row).getByRole('radio', { name: 'Never' }));
     await app.user.selectOptions(within(row).getByLabelText('Applies to'), 'Hacker News');
-    await waitFor(() => expect(app.calls('PATCH /cards/:id')).toHaveLength(2));
     await waitFor(() => expect(within(row).getByRole('radio', { name: 'Never' })).toBeChecked());
     await waitFor(() => expect(within(row).getByLabelText('Applies to')).toHaveValue('11'));
 
@@ -310,6 +309,108 @@ describe('changing the strength', () => {
       expect(app.queryClient.getQueryData<CardDto[]>(CARDS_KEY)?.[0]?.scopeFeedId).toBe('11'),
     );
     expect(within(row).getByRole('radio', { name: 'Like' })).toBeChecked();
+  });
+
+  it('sends a change made while another change of the card is on its way once that one is answered', async () => {
+    const answers = [gate(), gate()];
+    let held = rust;
+    let sent = 0;
+    const app = await openMine(
+      { cards: [rust] },
+      {
+        'PATCH /cards/:id': async (request) => {
+          // The server applies each change as it arrives and answers with the card it then holds.
+          held = { ...held, ...(bodyOf(request) as Partial<CardDto>) };
+          const answer = json(200, cardResult(held));
+          await answers[sent++]?.opened;
+          return answer;
+        },
+      },
+    );
+    const row = await rowOf('Rust programming');
+
+    await app.user.click(within(row).getByRole('radio', { name: 'Must' }));
+    await app.user.selectOptions(within(row).getByLabelText('Applies to'), 'Hacker News');
+    await waitFor(() => expect(app.calls('PATCH /cards/:id')).not.toHaveLength(0));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(app.calls('PATCH /cards/:id').map((request) => bodyOf(request))).toEqual([
+      { strength: 'must' },
+    ]);
+    expect(within(row).getByLabelText('Applies to')).toHaveValue('11');
+
+    answers[0]?.release();
+    await waitFor(() => expect(app.calls('PATCH /cards/:id')).toHaveLength(2));
+    expect(bodyOf(app.calls('PATCH /cards/:id')[1]!)).toEqual({ scopeFeedId: '11' });
+    expect(within(row).getByLabelText('Applies to')).toHaveValue('11');
+    expect(within(row).getByRole('radio', { name: 'Must' })).toBeChecked();
+    answers[1]?.release();
+
+    await waitFor(() =>
+      expect(app.queryClient.getQueryData<CardDto[]>(CARDS_KEY)?.[0]).toMatchObject({
+        strength: 'must',
+        scopeFeedId: '11',
+      }),
+    );
+    expect(within(row).getByRole('radio', { name: 'Must' })).toBeChecked();
+    expect(within(row).getByLabelText('Applies to')).toHaveValue('11');
+  });
+
+  it('sends only the newest of the changes that waited, together', async () => {
+    const answer = gate();
+    let sent = 0;
+    const app = await openMine(
+      { cards: [rust] },
+      {
+        'PATCH /cards/:id': async (request) => {
+          if (sent++ === 0) await answer.opened;
+          return json(200, cardResult({ ...rust, ...(bodyOf(request) as Partial<CardDto>) }));
+        },
+      },
+    );
+    const row = await rowOf('Rust programming');
+
+    await app.user.click(within(row).getByRole('radio', { name: 'Must' }));
+    await app.user.click(within(row).getByRole('radio', { name: 'Love' }));
+    await app.user.selectOptions(within(row).getByLabelText('Applies to'), 'Hacker News');
+    await app.user.click(within(row).getByRole('radio', { name: 'Never' }));
+    answer.release();
+
+    await waitFor(() => expect(app.calls('PATCH /cards/:id')).toHaveLength(2));
+    expect(app.calls('PATCH /cards/:id').map((request) => bodyOf(request))).toEqual([
+      { strength: 'must' },
+      { strength: 'never', scopeFeedId: '11' },
+    ]);
+    await waitFor(() =>
+      expect(app.queryClient.getQueryData<CardDto[]>(CARDS_KEY)?.[0]).toMatchObject({
+        strength: 'never',
+        scopeFeedId: '11',
+      }),
+    );
+  });
+
+  it('takes a waiting change back to what the server holds when it fails after the one before it', async () => {
+    const answers = [gate(), gate()];
+    let sent = 0;
+    const app = await openMine(
+      { cards: [rust] },
+      {
+        'PATCH /cards/:id': async () => {
+          await answers[sent++]?.opened;
+          return failure(500, 'INTERNAL');
+        },
+      },
+    );
+    const row = await rowOf('Rust programming');
+    await app.user.click(within(row).getByRole('radio', { name: 'Never' }));
+    await app.user.click(within(row).getByRole('radio', { name: 'Love' }));
+
+    answers[0]?.release();
+    await waitFor(() => expect(app.calls('PATCH /cards/:id')).toHaveLength(2));
+    expect(within(row).getByRole('radio', { name: 'Love' })).toBeChecked();
+    answers[1]?.release();
+
+    await waitFor(() => expect(within(row).getByRole('radio', { name: 'Like' })).toBeChecked());
   });
 });
 
