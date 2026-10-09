@@ -25,7 +25,8 @@ mobile-first, installable, works in English and Slovak, and never makes the read
   - private offline storage requires an explicit device-local choice (default disabled on a new
     browser), explaining shared-device access and the 24-hour limit. With it disabled the shell
     works offline, but private article storage and durable offline actions are unavailable; show
-    that state rather than silently writing private IndexedDB records
+    that state rather than silently writing private IndexedDB records. The device remembers the
+    choice per account: logout and account switch keep it, account deletion removes it (D-157)
   - explicitly persist an allowlisted projection of the last 200 list items and already opened
     sanitized detail texts in IndexedDB, keyed by account id, with 24-hour expiry and a 10 MiB cap;
     list summaries alone cannot provide full offline reading. An uncached detail says "Connect to

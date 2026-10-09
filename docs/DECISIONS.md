@@ -1417,3 +1417,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   §3.3 does for a dislike held for its reason. The record is marked before its request leaves, so
   after a reload Undo of a change the server may have waits for the replay and uses the receipt.
   Spec 09 §1 updated.
+- D-157: 2026-10-09 M6-T8 — spec 09 §1 asks for an explicit device-local choice before any private
+  offline storage and clears that storage on logout, account switch and account deletion, but does
+  not say whether the choice itself outlives a sign-out. The device remembers it per account in
+  localStorage (`bantoozi:offline:enabled:<account id>`; no content and no token): logout and an
+  account switch keep it, so the same account signing in again on this device finds offline reading
+  as it left it, while any other account starts with it off; account deletion removes it with the
+  account's stores (spec 09 §9: deletion clears every local private store). Spec 09 §1 updated.
