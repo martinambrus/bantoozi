@@ -367,7 +367,7 @@ export async function readMe(accountId: string): Promise<{ me: Me; savedAt: numb
  * Removes every row of the account from every store, in one transaction over its key range. The
  * account's choice to read offline is not data and stays. True when nothing of it is left; rows
  * that could not be removed count as gone from then on and are removed again at the next start or
- * sign-in.
+ * sign-in (only at a sign-in on this page when the browser will not note them, `setPurgePending`).
  */
 export async function clearAccount(accountId: string): Promise<boolean> {
   if (!isAccountId(accountId)) return true;

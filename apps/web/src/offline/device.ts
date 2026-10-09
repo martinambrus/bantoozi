@@ -101,11 +101,7 @@ export function writeOfflineEnabled(accountId: string, on: boolean): boolean {
   return !isOfflineEnabled(accountId);
 }
 
-/**
- * The accounts whose stored rows could not be removed: they count as gone until a start or a
- * sign-in removes them.
- */
-export function pendingPurges(): string[] {
+function storedPurges(): string[] {
   const raw = read(PENDING_PURGE_KEY);
   if (raw === null) return [];
   try {
@@ -119,14 +115,35 @@ export function pendingPurges(): string[] {
   return [];
 }
 
+// The accounts the browser refused to note: their rows still count as gone, and are removed again,
+// during this page load. The next change of the list tries to store them with it.
+const unnotedPurges = new Set<string>();
+
+/**
+ * The accounts whose stored rows could not be removed: they count as gone until a start or a
+ * sign-in removes them.
+ */
+export function pendingPurges(): string[] {
+  return [...new Set([...storedPurges(), ...unnotedPurges])];
+}
+
 export function isPurgePending(accountId: string): boolean {
   return pendingPurges().includes(accountId);
 }
 
 export function setPurgePending(accountId: string, pending: boolean): void {
-  if (!isAccountId(accountId) || isPurgePending(accountId) === pending) return;
+  if (!isAccountId(accountId)) return;
+  if (storedPurges().includes(accountId) === pending && unnotedPurges.size === 0) return;
   const others = pendingPurges().filter((id) => id !== accountId);
   const next = pending ? [...others, accountId] : others;
-  if (next.length === 0) remove(PENDING_PURGE_KEY);
-  else write(PENDING_PURGE_KEY, JSON.stringify(next));
+  let noted: boolean;
+  if (next.length === 0) {
+    remove(PENDING_PURGE_KEY);
+    noted = read(PENDING_PURGE_KEY) === null;
+  } else {
+    noted = write(PENDING_PURGE_KEY, JSON.stringify(next));
+  }
+  if (noted) unnotedPurges.clear();
+  else if (pending) unnotedPurges.add(accountId);
+  else unnotedPurges.delete(accountId);
 }

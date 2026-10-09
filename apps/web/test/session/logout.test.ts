@@ -128,6 +128,39 @@ describe('signing out', () => {
     expect(await readView(A, 'view')).not.toBeNull();
   });
 
+  it('uses none of what could not be removed at sign-out when the browser will not note it either, and removes it at the next sign-in on the page', async () => {
+    const { session } = sessions.start({ me: userA, verifiesAs: userA });
+    await session.loadMe();
+    await seed(A);
+    const stuck = vi.spyOn(FakeIDBObjectStore.prototype, 'delete').mockImplementation(() => {
+      throw new DOMException('The disk is not available.', 'UnknownError');
+    });
+    const full = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+    });
+    onTestFinished(() => {
+      stuck.mockRestore();
+      full.mockRestore();
+    });
+
+    await session.logout();
+
+    expect(rowsOf(await dumpDatabase(idb.factory), A)).not.toEqual([]);
+    expect(await readView(A, 'view')).toBeNull();
+    expect(await listRecords(A)).toEqual([]);
+    expect(await saveView(A, 'view', itemList(1), VIEW)).toBe(false);
+
+    stuck.mockRestore();
+    full.mockRestore();
+    await session.verifyCode({ email: 'ada@example.com', code: '123456' });
+
+    await vi.waitFor(async () => expect(await readMe(A)).toMatchObject({ me: userA }));
+    const kept = rowsOf(await dumpDatabase(idb.factory), A).map(
+      ([store, key]) => `${store} ${key}`,
+    );
+    expect(kept).toEqual([`meta ${A}:manifest`, `meta ${A}:me`]);
+  });
+
   it.each([
     ['a network failure', () => Promise.reject(new TypeError('Failed to fetch'))],
     ['a server error', () => failure(500, 'INTERNAL')],
