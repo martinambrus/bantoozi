@@ -157,9 +157,10 @@ describe('the Why-this drawer renders every Explain variant', () => {
       ## Your interests
       No interest card has judged this article yet.
       ## Your personal model
-      - You often dislike articles like this
-      - Your card EV battery tech
-      - Matches for your Love interests
+      - You often dislike articles like this: lowered the score
+      - Your card EV battery tech: raised the score
+      - Matches for your Love interests: raised the score
+      These are associations the model has learned, not reasons.
       ## What you can do
       [Make a card from this] [Boost this feed] [Block this feed] [Block this author]
       [Mute a keyword]

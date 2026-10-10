@@ -787,7 +787,8 @@ releases the lease without consuming the opportunity. Expired leases recover aft
 throttling alone does not replace this durable claim.
 
 1. Recheck that the user has active inference or explicitly selected training demand. An off-only
-   user receives no suggestion call. Candidate source articles must be currently authorized for that
+   user receives no suggestion call, and the run deletes the user's undismissed suggestions like an
+   expired-evidence run (D-164). Candidate source articles must be currently authorized for that
    user under §1.1; a historical rating alone is not inference permission.
    **Unexplained likes:** articles the user rated +1 (or bookmarked) in the last 30 days where the max
    `p` over the user's applicable positive cards is <0.3, using complete current primary-engine

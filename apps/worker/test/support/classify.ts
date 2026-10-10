@@ -15,6 +15,8 @@ import {
   writeL2Answers,
   type Database,
   type InferenceWitness,
+  type MatchFingerprint,
+  type TenantTx,
 } from '@bantoozi/db';
 import type {
   EngineOutcome,
@@ -475,6 +477,32 @@ export class ClassifyHarness {
       },
     });
     this.handlers = createHandlers(this.deps);
+    this.matchFingerprint = Object.assign(
+      async (
+        _tx: TenantTx,
+        { articleId, cardIds }: { articleId: string; cardIds: readonly string[] },
+      ) => {
+        const { config, input } = await this.inputs(articleId);
+        const cards = await loadCardInputs(this.db, cardIds);
+        return {
+          stateSha256: buildState(input, 'match').sha256,
+          enrichStateSha256: buildState(input, 'enrich').sha256,
+          cardInputSha256: new Map(
+            [...cards].map(([id, card]) => [
+              id,
+              builtCardQuestion(card, config.cardTextMode).sha256,
+            ]),
+          ),
+        };
+      },
+      {
+        defaults: {
+          model: PRIMARY_MODEL,
+          languageModes: this.settingsEnv.languageModes,
+          cardTextMode: 'as_written' as const,
+        },
+      },
+    );
   }
 
   /** A migrated test database seeded with the taxonomy and the activated question sets. */
@@ -733,6 +761,9 @@ export class ClassifyHarness {
   }
 
   // ── Classification state shortcuts (the fingerprints the handlers compute) ────────────────────
+
+  /** The match fingerprint the API computes for a feature snapshot, built the worker's way. */
+  readonly matchFingerprint: MatchFingerprint;
 
   private async inputs(articleId: string) {
     const config = await loadClassificationConfig(this.db, this.settingsEnv);

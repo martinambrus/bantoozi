@@ -13,8 +13,11 @@ import { createFeedFetchHandler } from './feed-fetch.js';
 import { createFeedScheduleHandler } from './feed-schedule.js';
 import { createProviderValidateHandler } from './provider-validate.js';
 import { createExpireRulesHandler } from './house-expire-rules.js';
+import { createNightlyLearnHandler } from './house-nightly-learn.js';
 import { createRescoreDegradedHandler } from './house-rescore-degraded.js';
+import { createUserLearnHandler } from './user-learn.js';
 import { createUserRankHandler } from './user-rank.js';
+import { createUserSuggestHandler } from './user-suggest.js';
 
 /**
  * The handler map (spec 03 §2): one entry for every queue of `packages/shared` jobs.ts. A stage that
@@ -83,6 +86,9 @@ export const CLASSIFICATION_QUEUES = [
   'house.rescore-degraded',
 ] as const satisfies readonly QueueName[];
 
+/** M7 learning stages that call the decision engine (spec 05 §7): implemented with classification dependencies. */
+export const SUGGEST_QUEUES = ['user.suggest'] as const satisfies readonly QueueName[];
+
 /** M2 provider key validation (spec 04 §1.2): implemented when the worker has the probe dependencies. */
 export const PROVIDER_QUEUES = ['provider.validate'] as const satisfies readonly QueueName[];
 
@@ -95,12 +101,20 @@ export const RANKING_QUEUES = [
   'house.expire-rules',
 ] as const satisfies readonly QueueName[];
 
-/** Queues with real handlers so far (M1 ingestion, M2 classification and key validation, M5 ranking). */
+/** M7 personal-model training (spec 06 §8.4) and its nightly trigger (spec 11 §6): stored data only. */
+export const LEARNING_QUEUES = [
+  'user.learn',
+  'house.nightly-learn',
+] as const satisfies readonly QueueName[];
+
+/** Queues with real handlers so far (M1 ingestion, M2 classification and key validation, M5 ranking, M7 learning). */
 export const IMPLEMENTED_QUEUES = [
   ...INGESTION_QUEUES,
   ...CLASSIFICATION_QUEUES,
+  ...SUGGEST_QUEUES,
   ...PROVIDER_QUEUES,
   ...RANKING_QUEUES,
+  ...LEARNING_QUEUES,
 ] as const satisfies readonly QueueName[];
 
 const implemented = <Q extends QueueName>(handle: QueueHandler<Q>): HandlerEntry<Q> => ({
@@ -121,6 +135,8 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
     'article.capture-bookmark': implemented(createCaptureBookmarkHandler(deps)),
     'user.rank': implemented(createUserRankHandler(deps)),
     'house.expire-rules': implemented(createExpireRulesHandler(deps)),
+    'user.learn': implemented(createUserLearnHandler(deps)),
+    'house.nightly-learn': implemented(createNightlyLearnHandler(deps)),
     ...(classification === undefined
       ? {}
       : {
@@ -139,6 +155,7 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
             createAnalysisProcessHandler(deps, classification, translation),
           ),
           'house.rescore-degraded': implemented(createRescoreDegradedHandler(deps, classification)),
+          'user.suggest': implemented(createUserSuggestHandler(deps)),
         }),
     ...(providerValidation === undefined
       ? {}

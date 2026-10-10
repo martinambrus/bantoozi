@@ -408,7 +408,7 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
 | Freshness | one-hot `age.lt6h/lt24h/lt72h/older`: disjoint [0,6h), [6h,24h), [24h,72h), [72h,∞), using age at snapshot for training and now for scoring (§5) |
 | Language | one-hot `lang.en/sk/cs/other` |
 | Media | `has_video` with a `known.has_video` mask (null is unknown). One-hot `img.none/light/moderate/heavy/unknown` from the in-body image density d = `bodyImageCount` × 500 / max(`wordCount`, 500): `unknown` when either value is null, otherwise `none` when the count is 0, `light` for d < 1, `moderate` for 1 ≤ d < 3 and `heavy` for d ≥ 3 |
-| Other | `has_image`, `cluster_log = ln(1 + clusterSize)` |
+| Other | `has_image`, `cluster_log = ln(1 + max(1, clusterSize))` (an unclustered article is a story of one, D-165) |
 | Source | `feed.h<k>`, one-hot with k = murmur3(feedId) mod 32, using the lowest numeric id in `item.inferenceFeedIds`. `author.h<k>`, one-hot with k = murmur3(`normalizeText(author)`) mod 16 (none if there is no author). murmur3 = **MurmurHash3 x86 32-bit, seed 0, over the UTF-8 bytes** of the decimal id string or the normalized author |
 
 The media inputs capture two reading preferences the facets miss. `ct.media` covers pieces that are
@@ -463,7 +463,8 @@ manifest** are used. `prefilter` is unknown, not a probability. `FEATURE_SPEC_V1
 `laya`), the item is left out of training and scoring and follows the cards path until compatible
 answers exist. In M9 this covers a Laya-enriched article, whose facets come from Laya while its card
 answers come from Jev. Label-card engines do not affect interest-model eligibility. Laya/Jev feature
-families must not be mixed without a new evaluated feature spec. Facet unknowns need masks just like
+families must not be mixed without a new evaluated feature spec. Facets are all or nothing in V1 (D-165): a facet map missing any of the 44 keys or holding a value
+outside [0, 1] makes the sample or item ineligible instead of masking single facets. Facet unknowns need masks just like
 cards.
 Raw article/card text is not duplicated into feedback-event feature snapshots; selected analysis
 requests keep the bounded private frozen input required for reproducibility under the same RLS.
@@ -524,7 +525,9 @@ that action, plus `staleAtFeedback` (boolean or null). Learning-relevant actions
 it before applying the action, under the same content revision as the displayed score. `cards` lists
 every interest card (positive or never) the user held that applied to the item as
 `{id, strength, p, engine}`, with the strength at that moment and `p = null` (and `engine = null`)
-when the card had no usable non-prefilter answer at the displayed revision; the card inputs and the
+when the card had no usable non-prefilter answer of the active match set, in the variant of the
+article language's current mode, at the displayed revision (facets likewise come from the active
+enrich set only, D-166); the card inputs and the
 cards-only baseline are derived from it at training time (§8.1), and `engine` lets the model keep
 only answers of its feature spec's engine family. `values` holds the other inputs as raw observed
 values (`facets`, `facetsEngine`, `wordCount`, `ageHours`, `lang`, `hasImage`, `hasVideo`,
@@ -536,7 +539,12 @@ named inputs and masks at training time; `ratingSha` is
 `question_sets.active`, `language_modes` and `card_text_mode` settings; `sourceManifest` is
 `{contentRevision, mediaRevision, inferenceFeedIds}` (the authorizing carriers); `snapshotAt` is
 the action time. Events without behavioral consent, expand/bulk reads and label events carry no
-`features`.
+`features`. Training reduces each article to its effective current signal anchored on the
+`user_article` row (an undo event does not name what it restored): the rating event whose
+`created_at` equals `rated_at`, else the bookmark, else consented implicit evidence after the last
+`unrate`. A dwell or bounce sample uses the snapshot of its session's `open` event when it has one;
+a rating whose own event carries no snapshot uses the latest earlier rating snapshot of the same
+content revision (D-166).
 For selected slow training, capture or reference `analysisRequestId`, immutable `input_sha` and the
 pre-feedback input snapshot before committing the first rating (spec 05 §1.1). `features` may be null
 while analysis is pending; once complete, a separate immutable derived feature snapshot may be
@@ -580,7 +588,8 @@ ranking until enough compatible feedback exists.
 
 ### 8.3 Training (`trainUserModel(samples, now)`, pure)
 
-- **Reproducibility:** stable sample order and seed derived from user id + context sha + effective
+- **Reproducibility:** stable sample order and seed derived from user id + rating fingerprint, feature
+  spec, config and consent (the context sha itself depends on the chosen own inputs, D-167) + effective
   feedback cutoff; include data/manifest hashes in model metrics. Repeated events are deduplicated.
 - **Leak-free validation:** group samples by story cluster (unclustered = article id); keep all
   versions/members of a group in one fold. Choose deterministic group-stratified k-fold with
@@ -606,7 +615,7 @@ ranking until enough compatible feedback exists.
   report grouped bootstrap confidence intervals, class counts and skipped-sample reasons. Single-
   class AUC is null, never 0.5 or zero.
 - **Calibration (Platt):** fit `P = sigmoid(a*z+b)` on out-of-fold explicit logits with a weak prior
-  (strength 0.01) toward a=1,b=0 and constrain a>0. Calibration reporting uses nested folds: each
+  (strength 0.01, i.e. `0.01/2·((a−1)² + b²)` added to the summed loss, D-167) toward a=1,b=0 and constrain a>0. Calibration reporting uses nested folds: each
   outer validation fold uses a calibrator fitted only on inner out-of-fold predictions of its training
   partition, at that partition's λ. If inner data lacks both classes, use identity calibration for
   that fold. Fit the final calibrator on all out-of-fold logits at the final λ, and the final
@@ -619,7 +628,9 @@ ranking until enough compatible feedback exists.
   transaction under a user lock; the unique-active index must never transiently conflict.
 - **Contributions:** explain `a*w_i*x_scaled_i`, top 3 by absolute value (stable feature-name tie
   break). Label a group input by its strength ("your Love interests") and an own card input by the
-  card's current display title. Explain these as associations in this model, not causal reasons.
+  card's current display title: `Explain.model.top[].feature` carries the stable feature key, which
+  the web turns into English or Slovak text, and `label` carries the card title for an own card input
+  (otherwise the key) (D-170). Explain these as associations in this model, not causal reasons.
   Hash collisions make `feed.h*` mean "source group", not uniquely "this source". Include the
   calibrated intercept separately if needed; top three need not sum to the full score.
 - **Retention:** keep the active version plus the 3 newest other versions. Store attempt cutoff and
@@ -635,7 +646,9 @@ ranking until enough compatible feedback exists.
   of them when no model stored one). Label events never count. Do not use `n % 10 == 0`; it
   misses batches and concurrent updates. Count event ids with
   deterministic effective-state reduction, not only current non-null `rated_at` rows.
-- Undo/unrate/deletion invalidates affected models immediately and enqueues learn even below ten.
+- Undo/unrate/deletion invalidates affected models and enqueues learn even below ten; the API cannot
+  write `user_models`, so `user.learn` deactivates a model whose evidence was revoked on its next
+  (debounced) run, and the rank handler never scores an incompatible model (D-168).
   So does a model-context mismatch (§8.1). Every interest-card change, every behavioral-consent change
   and, for users with an active model, a `ranker.thresholds` change to `strengthWeights` or `model`
   records a debounced `user.learn` in the same outbox transaction. The handler trains only when the

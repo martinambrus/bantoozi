@@ -1,7 +1,16 @@
 import { randomUUID } from 'node:crypto';
 
+import { createDatabase, readRatingFingerprint } from '@bantoozi/db';
+import { registrableDomain } from '@bantoozi/feeds';
+import {
+  builtCardQuestion,
+  enrichStateSha256,
+  matchStateSha256,
+  type CardBody,
+} from '@bantoozi/questions';
+import { readSetting } from '@bantoozi/shared';
 import { createCard } from '@bantoozi/testing';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 
 import {
   DAY,
@@ -112,17 +121,127 @@ async function holdCard(userId: string, strength: string, title = 'EV batteries'
 
 const QUESTION_SET_SHA = 'f'.repeat(64);
 
+/** The model the snapshot attributes answers to: the stored pin, else the API's `TYPESAFE_MODEL`. */
+async function currentModel(): Promise<string> {
+  const pin = (
+    await h.owner.query<{ value: { model?: string } }>(
+      `SELECT value FROM settings WHERE key = 'engine.model_pin'`,
+    )
+  ).rows[0]?.value;
+  return pin?.model ?? h.config.typesafeModel;
+}
+
+/** The match and enrich `state_sha256` the article has now (no translation exists in these tests). */
+async function currentStates(articleId: string): Promise<{ state: string; enrich: string }> {
+  const env = {
+    dailyBudgetUsd: h.config.dailyBudgetUsd,
+    languageModes: h.config.languageModes,
+    signupMode: h.config.signupMode,
+  };
+  const setting = async (key: string): Promise<unknown> =>
+    (await h.owner.query<{ value: unknown }>(`SELECT value FROM settings WHERE key = $1`, [key]))
+      .rows[0]?.value;
+  const article = (
+    await h.owner.query<{
+      title: string;
+      author: string | null;
+      categories: string[];
+      excerpt: string | null;
+      lang: string | null;
+      word_count: number | null;
+      body_lead: string | null;
+      feed_title: string | null;
+      feed_site_url: string | null;
+      feed_url: string | null;
+    }>(
+      `SELECT a.title, a.author, a.categories, a.excerpt, a.lang, a.word_count, b.body_lead,
+              f.title AS feed_title, f.site_url AS feed_site_url, f.url AS feed_url
+         FROM articles a
+         LEFT JOIN article_bodies b ON b.article_id = a.id AND b.article_revision = a.content_revision
+         LEFT JOIN LATERAL (SELECT fi.feed_id FROM feed_items fi WHERE fi.article_id = a.id
+                             ORDER BY fi.first_seen_at, fi.feed_id LIMIT 1) cf ON true
+         LEFT JOIN feeds f ON f.id = cf.feed_id
+        WHERE a.id = $1`,
+      [articleId],
+    )
+  ).rows[0]!;
+  const languageModes = readSetting('language_modes', await setting('language_modes'), env) ?? {};
+  const base = {
+    title: article.title,
+    author: article.author,
+    categories: article.categories,
+    excerpt: article.excerpt,
+    bodyLead: article.body_lead,
+    wordCount: article.word_count,
+    lang: article.lang,
+    feed: {
+      title: article.feed_title,
+      site:
+        article.feed_url === null && article.feed_site_url === null
+          ? null
+          : (registrableDomain(article.feed_site_url) ?? registrableDomain(article.feed_url)),
+    },
+  };
+  return {
+    state: matchStateSha256(base, languageModes, null),
+    enrich: enrichStateSha256(base, languageModes, null),
+  };
+}
+
+/** The `state_sha256` and `card_input_sha256` a current answer of the article to the card carries. */
+async function currentHashes(
+  articleId: string,
+  cardId: string,
+): Promise<{ state: string; card: string }> {
+  const env = {
+    dailyBudgetUsd: h.config.dailyBudgetUsd,
+    languageModes: h.config.languageModes,
+    signupMode: h.config.signupMode,
+  };
+  const setting = async (key: string): Promise<unknown> =>
+    (await h.owner.query<{ value: unknown }>(`SELECT value FROM settings WHERE key = $1`, [key]))
+      .rows[0]?.value;
+  const card = (
+    await h.owner.query<{ kind: 'interest' | 'label'; title: string; body: CardBody }>(
+      `SELECT kind, title, body FROM interest_cards WHERE id = $1`,
+      [cardId],
+    )
+  ).rows[0]!;
+  const mode = readSetting('card_text_mode', await setting('card_text_mode'), env) ?? 'as_written';
+  return {
+    state: (await currentStates(articleId)).state,
+    card: builtCardQuestion(card, mode).sha256,
+  };
+}
+
 async function answer(articleId: string, cardId: string, p: number, revision = 1): Promise<void> {
   await h.owner.query(
     `INSERT INTO question_sets (kind, version, sha256, definition)
      VALUES ('match', 'articles-test', $1, '{}') ON CONFLICT DO NOTHING`,
     [QUESTION_SET_SHA],
   );
+  // The snapshot reads answers of the active match set only.
+  await h.owner.query(
+    `INSERT INTO settings (key, value)
+     SELECT 'question_sets.active', jsonb_build_object('match', id::text) FROM question_sets WHERE sha256 = $1
+     ON CONFLICT (key) DO UPDATE SET value = settings.value || EXCLUDED.value`,
+    [QUESTION_SET_SHA],
+  );
+  const hashes = await currentHashes(articleId, cardId);
   await h.owner.query(
     `INSERT INTO card_answers (article_id, card_id, p, engine, question_set_sha, article_revision,
-                               state_sha256, card_input_sha256, state_variant)
-     VALUES ($1, $2, $3, 'typesafe', $5, $4, 's', 'c', 'native')`,
-    [articleId, cardId, p, revision, QUESTION_SET_SHA],
+                               state_sha256, card_input_sha256, state_variant, model)
+     VALUES ($1, $2, $3, 'typesafe', $5, $4, $6, $7, 'native', $8)`,
+    [
+      articleId,
+      cardId,
+      p,
+      revision,
+      QUESTION_SET_SHA,
+      hashes.state,
+      hashes.card,
+      await currentModel(),
+    ],
   );
 }
 
@@ -1037,5 +1156,566 @@ describe('selected training requests', () => {
     );
     expect(obsolete).toMatchObject({ code: 'CONFLICT', details: { reason: 'obsolete_request' } });
     await restamp(h, r.user.id);
+  });
+
+  it('a rating of an older saved revision with a request stores the rating fingerprint and no features', async () => {
+    const { r, feed, article } = await setup({}, 'training');
+    const requestId = await selectArticle(r.user.id, feed, article);
+    const saved = await ok(r.api.post(`/articles/${article}/bookmark`, freshFence));
+    const snapshotId = saved.item.bookmarkCapture!.snapshotId!;
+    await h.owner.query(`UPDATE articles SET content_revision = 2 WHERE id = $1`, [article]);
+    await ok(
+      r.api.post(`/articles/${article}/rating`, {
+        stateVersion: saved.item.stateVersion,
+        contentRevision: '1',
+        snapshotId,
+        rating: 1,
+        analysisRequestId: requestId,
+      }),
+    );
+    const rate = (await events(h, r.user.id, article)).find((e) => e.kind === 'rate')!;
+    expect(rate.value).toMatchObject({
+      analysisRequestId: requestId,
+      features: null,
+      ratingSha: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
+  });
+});
+
+describe('feature snapshot reads the current sets (spec 06 §8.2)', () => {
+  async function setSetting(key: string, value: unknown) {
+    await h.owner.query(
+      `INSERT INTO settings (key, value) VALUES ($1, $2::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [key, JSON.stringify(value)],
+    );
+  }
+
+  async function questionSet(kind: 'enrich' | 'match', sha: string): Promise<string> {
+    const res = await h.owner.query<{ id: string }>(
+      `INSERT INTO question_sets (kind, version, sha256, definition)
+       VALUES ($1, $2, $3, '{}') RETURNING id::text AS id`,
+      [kind, `snapshot-${sha.slice(0, 12)}`, sha],
+    );
+    return res.rows[0]!.id;
+  }
+
+  async function facets(articleId: string, setId: string, features: Record<string, number>) {
+    await h.owner.query(
+      `INSERT INTO article_facets (article_id, question_set_id, article_revision, state_sha256,
+                                   engine, model, state_variant, answers, features)
+       VALUES ($1, $2, 1, $4, 'typesafe', $5, 'native', '{}', $3::jsonb)`,
+      [
+        articleId,
+        setId,
+        JSON.stringify(features),
+        (await currentStates(articleId)).enrich,
+        await currentModel(),
+      ],
+    );
+  }
+
+  async function answerWith(
+    articleId: string,
+    cardId: string,
+    p: number,
+    sha: string,
+    variant: 'native' | 'translated',
+  ) {
+    const hashes = await currentHashes(articleId, cardId);
+    await h.owner.query(
+      `INSERT INTO card_answers (article_id, card_id, p, engine, question_set_sha, article_revision,
+                                 state_sha256, card_input_sha256, state_variant, model)
+       VALUES ($1, $2, $3, 'typesafe', $4, 1, $6, $7, $5, $8)`,
+      [articleId, cardId, p, sha, variant, hashes.state, hashes.card, await currentModel()],
+    );
+  }
+
+  async function frozen(r: Reader, article: string) {
+    await ok(r.api.post(`/articles/${article}/rating`, { ...freshFence, rating: 1 }));
+    const [event] = await events(h, r.user.id, article);
+    return event!.value['features'] as {
+      cards: { id: string; p: number | null }[];
+      values: { facets: Record<string, number> | null };
+    };
+  }
+
+  let previous: { active: unknown; modes: unknown };
+
+  beforeAll(async () => {
+    const rows = await h.owner.query<{ key: string; value: unknown }>(
+      `SELECT key, value FROM settings WHERE key IN ('question_sets.active', 'language_modes')`,
+    );
+    const byKey = new Map(rows.rows.map((row) => [row.key, row.value]));
+    previous = { active: byKey.get('question_sets.active'), modes: byKey.get('language_modes') };
+  });
+
+  afterAll(async () => {
+    for (const [key, value] of [
+      ['question_sets.active', previous.active],
+      ['language_modes', previous.modes],
+    ] as const) {
+      if (value === undefined) await h.owner.query(`DELETE FROM settings WHERE key = $1`, [key]);
+      else await setSetting(key, value);
+    }
+  });
+
+  it('captures the active enrich set facets only', async () => {
+    const enrichActive = await questionSet('enrich', 'a1'.repeat(32));
+    const enrichOld = await questionSet('enrich', 'a2'.repeat(32));
+    await setSetting('question_sets.active', { enrich: enrichActive });
+    const { r, article } = await setup();
+    await facets(article, enrichOld, { time_sensitive: 0.1 });
+    expect((await frozen(r, article)).values.facets).toBeNull();
+
+    const second = await setup();
+    await facets(second.article, enrichOld, { time_sensitive: 0.1 });
+    await facets(second.article, enrichActive, { time_sensitive: 0.9 });
+    expect((await frozen(second.r, second.article)).values.facets).toEqual({ time_sensitive: 0.9 });
+  });
+
+  it('lists a card answer of a non-active match set with p null', async () => {
+    const activeSha = 'b1'.repeat(32);
+    const oldSha = 'b2'.repeat(32);
+    const active = await questionSet('match', activeSha);
+    await questionSet('match', oldSha);
+    await setSetting('question_sets.active', { match: active });
+    await setSetting('language_modes', { de: 'native' });
+    const { r, article } = await setup();
+    await h.owner.query(`UPDATE articles SET lang = 'de' WHERE id = $1`, [article]);
+    const current = await holdCard(r.user.id, 'love', 'Current set');
+    const stale = await holdCard(r.user.id, 'love', 'Old set');
+    await answerWith(article, current, 0.7, activeSha, 'native');
+    await answerWith(article, stale, 0.6, oldSha, 'native');
+    const cards = new Map((await frozen(r, article)).cards.map((c) => [c.id, c.p]));
+    expect(cards.get(stale)).toBeNull();
+    expect(cards.get(current)).toBeCloseTo(0.7, 5);
+  });
+
+  it('decides currency by the state hash, not the variant label of the language mode', async () => {
+    const sha = 'c1'.repeat(32);
+    const match = await questionSet('match', sha);
+    await setSetting('question_sets.active', { match });
+    await setSetting('language_modes', { de: 'translate' });
+    const { r, article } = await setup();
+    await h.owner.query(`UPDATE articles SET lang = 'de' WHERE id = $1`, [article]);
+    const native = await holdCard(r.user.id, 'love', 'Native answer');
+    const translated = await holdCard(r.user.id, 'love', 'Translated answer');
+    await answerWith(article, native, 0.7, sha, 'native');
+    await answerWith(article, translated, 0.6, sha, 'translated');
+    const cards = new Map((await frozen(r, article)).cards.map((c) => [c.id, c.p]));
+    // No translation exists, so the current match state is the native one and both rows carry it.
+    expect(cards.get(native)).toBeCloseTo(0.7, 5);
+    expect(cards.get(translated)).toBeCloseTo(0.6, 5);
+  });
+  it('stamps the rating fingerprint from the settings its selection used', async () => {
+    const shaOld = 'd1'.repeat(32);
+    const shaNew = 'd2'.repeat(32);
+    const matchOld = await questionSet('match', shaOld);
+    const matchNew = await questionSet('match', shaNew);
+    await setSetting('question_sets.active', { match: matchOld });
+    await setSetting('language_modes', { de: 'native' });
+    const reader = await newReader(h);
+    const feed = await subscribedFeed(h, reader.user.id, { mode: 'active' });
+    const card = await holdCard(reader.user.id, 'love', 'Switching set');
+    const other = await holdCard(reader.user.id, 'love', 'Other set');
+    const rated = async (article: string) => {
+      await h.owner.query(`UPDATE articles SET lang = 'de' WHERE id = $1`, [article]);
+      await answerWith(article, card, 0.7, shaOld, 'native');
+      await answerWith(article, other, 0.2, shaNew, 'native');
+    };
+    const first = await carriedArticle(h, [feed]);
+    await rated(first);
+    await ok(reader.api.post(`/articles/${first}/rating`, { ...freshFence, rating: 1 }));
+    const baseline = (await events(h, reader.user.id, first))[0]!.value['features'] as {
+      ratingSha: string;
+    };
+
+    const second = await carriedArticle(h, [feed]);
+    await rated(second);
+    const blocker = await h.owner.connect();
+    let writer: Promise<unknown> | undefined;
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('LOCK TABLE card_answers IN ACCESS EXCLUSIVE MODE');
+      const request = reader.api.post(`/articles/${second}/rating`, { ...freshFence, rating: 1 });
+      for (let i = 0; i < 200; i += 1) {
+        const waiting = await h.owner.query(
+          `SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE '%card_answers%'
+              AND pid <> pg_backend_pid() AND pid <> $1`,
+          [(await blocker.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]!.pid],
+        );
+        if (waiting.rowCount) break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      writer = setSetting('question_sets.active', { match: matchNew });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await blocker.query('COMMIT');
+      await ok(request);
+    } finally {
+      blocker.release();
+    }
+    await writer;
+    const features = (await events(h, reader.user.id, second))[0]!.value['features'] as {
+      ratingSha: string;
+      cards: { id: string; p: number | null }[];
+    };
+    expect(features.ratingSha).toBe(baseline.ratingSha);
+    expect(features.cards.find((c) => c.id === card)?.p).toBeCloseTo(0.7, 5);
+  });
+});
+
+describe('revoking an explicit implicit-negative read', () => {
+  const consents = { implicitFeedback: true, implicitNegative: true };
+
+  it('unread of an explicit consented read records user.learn', async () => {
+    const { r, article } = await setup(consents);
+    const read = await ok(r.api.post(`/articles/${article}/read`, freshFence));
+    expect(await queues(r.user.id)).not.toContain('user.learn');
+    await ok(r.api.post(`/articles/${article}/unread`, fence(read.item)));
+    expect(await queues(r.user.id)).toContain('user.learn');
+  });
+
+  it('undoing an explicit consented read records user.learn', async () => {
+    const { r, article } = await setup(consents);
+    const read = await ok(r.api.post(`/articles/${article}/read`, freshFence));
+    expect(await queues(r.user.id)).not.toContain('user.learn');
+    const undo = await r.api.post('/articles/undo', { mutationId: read.mutationId });
+    expect(undo.statusCode, undo.body).toBe(200);
+    expect(await queues(r.user.id)).toContain('user.learn');
+  });
+});
+
+describe('card answers in the feature snapshot must match the current hashes', () => {
+  async function insertAnswer(
+    article: string,
+    card: string,
+    override: { state?: string; card?: string; model?: string },
+  ) {
+    await h.owner.query(
+      `INSERT INTO question_sets (kind, version, sha256, definition)
+       VALUES ('match', 'articles-test', $1, '{}') ON CONFLICT DO NOTHING`,
+      [QUESTION_SET_SHA],
+    );
+    await h.owner.query(
+      `INSERT INTO settings (key, value)
+       SELECT 'question_sets.active', jsonb_build_object('match', id::text) FROM question_sets WHERE sha256 = $1
+       ON CONFLICT (key) DO UPDATE SET value = settings.value || EXCLUDED.value`,
+      [QUESTION_SET_SHA],
+    );
+    const hashes = await currentHashes(article, card);
+    await h.owner.query(
+      `INSERT INTO card_answers (article_id, card_id, p, engine, question_set_sha, article_revision,
+                                 state_sha256, card_input_sha256, state_variant, model)
+       VALUES ($1, $2, 0.7, 'typesafe', $3, 1, $4, $5, 'native', $6)`,
+      [
+        article,
+        card,
+        QUESTION_SET_SHA,
+        override.state ?? hashes.state,
+        override.card ?? hashes.card,
+        override.model ?? (await currentModel()),
+      ],
+    );
+  }
+
+  async function captured(override: { state?: string; card?: string; model?: string }) {
+    const { r, article } = await setup();
+    const card = await holdCard(r.user.id, 'love', 'Hash check');
+    await insertAnswer(article, card, override);
+    await ok(r.api.post(`/articles/${article}/rating`, { ...freshFence, rating: 1 }));
+    const [event] = await events(h, r.user.id, article);
+    const features = event!.value['features'] as {
+      cards: { id: string; p: number | null; engine: string | null }[];
+    };
+    return features.cards.find((c) => c.id === card)!;
+  }
+
+  it('drops an answer whose state hash is obsolete', async () => {
+    expect(await captured({ state: 'obsolete-state' })).toMatchObject({ p: null, engine: null });
+  });
+
+  it('drops an answer whose card input hash is obsolete', async () => {
+    expect(await captured({ card: 'obsolete-card' })).toMatchObject({ p: null, engine: null });
+  });
+
+  it('keeps an answer whose hashes are current', async () => {
+    const card = await captured({});
+    expect(card.p).toBeCloseTo(0.7, 5);
+    expect(card.engine).toBe('typesafe');
+  });
+});
+
+describe('snapshot capture after a translation fallback and frozen request provenance', () => {
+  async function setSetting(key: string, value: unknown) {
+    await h.owner.query(
+      `INSERT INTO settings (key, value) VALUES ($1, $2::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [key, JSON.stringify(value)],
+    );
+  }
+
+  async function matchSet(sha: string): Promise<string> {
+    const res = await h.owner.query<{ id: string }>(
+      `INSERT INTO question_sets (kind, version, sha256, definition)
+       VALUES ('match', $1, $2, '{}') RETURNING id::text AS id`,
+      [`fallback-${sha.slice(0, 12)}`, sha],
+    );
+    return res.rows[0]!.id;
+  }
+
+  let previous: { active: unknown; modes: unknown };
+
+  beforeAll(async () => {
+    const rows = await h.owner.query<{ key: string; value: unknown }>(
+      `SELECT key, value FROM settings WHERE key IN ('question_sets.active', 'language_modes')`,
+    );
+    const byKey = new Map(rows.rows.map((row) => [row.key, row.value]));
+    previous = { active: byKey.get('question_sets.active'), modes: byKey.get('language_modes') };
+  });
+
+  afterAll(async () => {
+    for (const [key, value] of [
+      ['question_sets.active', previous.active],
+      ['language_modes', previous.modes],
+    ] as const) {
+      if (value === undefined) await h.owner.query(`DELETE FROM settings WHERE key = $1`, [key]);
+      else await setSetting(key, value);
+    }
+  });
+
+  it('keeps a current native answer in a translate-mode language with no usable translation', async () => {
+    const sha = 'e1'.repeat(32);
+    const match = await matchSet(sha);
+    await setSetting('question_sets.active', { match });
+    await setSetting('language_modes', { de: 'translate' });
+    const { r, article } = await setup();
+    await h.owner.query(`UPDATE articles SET lang = 'de' WHERE id = $1`, [article]);
+    const card = await holdCard(r.user.id, 'love', 'Fallback native');
+    const hashes = await currentHashes(article, card);
+    await h.owner.query(
+      `INSERT INTO card_answers (article_id, card_id, p, engine, question_set_sha, article_revision,
+                                 state_sha256, card_input_sha256, state_variant, model)
+       VALUES ($1, $2, 0.7, 'typesafe', $3, 1, $4, $5, 'native', $6)`,
+      [article, card, sha, hashes.state, hashes.card, await currentModel()],
+    );
+    await ok(r.api.post(`/articles/${article}/rating`, { ...freshFence, rating: 1 }));
+    const [event] = await events(h, r.user.id, article);
+    const features = event!.value['features'] as { cards: { id: string; p: number | null }[] };
+    expect(features.cards.find((c) => c.id === card)?.p).toBeCloseTo(0.7, 5);
+  });
+
+  it('records no ratingSha for a request frozen under another match set', async () => {
+    const matchA = await matchSet('e2'.repeat(32));
+    const matchB = await matchSet('e3'.repeat(32));
+    await setSetting('question_sets.active', { match: matchA });
+    const manifest = (match: string) =>
+      JSON.stringify({
+        questionSets: { enrich: { id: matchA }, match: { id: match } },
+        languageMode: 'native',
+        cardTextMode: 'as_written',
+      });
+    const rateOlder = async (frozenMatch: string) => {
+      const { r, feed, article } = await setup({}, 'training');
+      const requestId = randomUUID();
+      const client = await h.owner.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query("SELECT set_config('app.user_id', $1, true)", [r.user.id]);
+        await client.query(
+          `INSERT INTO analysis_requests (id, user_id, feed_id, article_id, article_revision,
+                                          inference_version, input_snapshot, input_sha)
+           SELECT $1, $2, $3, a.id, a.content_revision, s.inference_version, $5::jsonb,
+                  encode(sha256(convert_to($5::jsonb::text, 'UTF8')), 'hex')
+             FROM articles a JOIN subscriptions s ON s.user_id = $2 AND s.feed_id = $3
+            WHERE a.id = $4`,
+          [requestId, r.user.id, feed, article, manifest(frozenMatch)],
+        );
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+      const saved = await ok(r.api.post(`/articles/${article}/bookmark`, freshFence));
+      const snapshotId = saved.item.bookmarkCapture!.snapshotId!;
+      await h.owner.query(`UPDATE articles SET content_revision = 2 WHERE id = $1`, [article]);
+      await ok(
+        r.api.post(`/articles/${article}/rating`, {
+          stateVersion: saved.item.stateVersion,
+          contentRevision: '1',
+          snapshotId,
+          rating: 1,
+          analysisRequestId: requestId,
+        }),
+      );
+      return (await events(h, r.user.id, article)).find((e) => e.kind === 'rate')!;
+    };
+    expect((await rateOlder(matchA)).value['ratingSha']).toMatch(/^[0-9a-f]{64}$/);
+    const switched = await rateOlder(matchB);
+    expect(switched.value['ratingSha']).toBeUndefined();
+    expect(switched.value['features']).toBeNull();
+  });
+
+  it('records no ratingSha for a request frozen under a model other than the effective one', async () => {
+    const matchA = await matchSet('e4'.repeat(32));
+    await setSetting('question_sets.active', { match: matchA });
+    const pinRow = (
+      await h.owner.query<{ value: unknown }>(
+        `SELECT value FROM settings WHERE key = 'engine.model_pin'`,
+      )
+    ).rows[0];
+    await h.owner.query(`DELETE FROM settings WHERE key = 'engine.model_pin'`);
+    onTestFinished(async () => {
+      if (pinRow !== undefined) await setSetting('engine.model_pin', pinRow.value);
+    });
+    const { r, feed, article } = await setup({}, 'training');
+    const manifest = JSON.stringify({
+      questionSets: { enrich: { id: matchA }, match: { id: matchA } },
+      model: { model: 'jev-frozen-other' },
+    });
+    const requestId = randomUUID();
+    const client = await h.owner.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SELECT set_config('app.user_id', $1, true)", [r.user.id]);
+      await client.query(
+        `INSERT INTO analysis_requests (id, user_id, feed_id, article_id, article_revision,
+                                        inference_version, input_snapshot, input_sha)
+         SELECT $1, $2, $3, a.id, a.content_revision, s.inference_version, $5::jsonb,
+                encode(sha256(convert_to($5::jsonb::text, 'UTF8')), 'hex')
+           FROM articles a JOIN subscriptions s ON s.user_id = $2 AND s.feed_id = $3
+          WHERE a.id = $4`,
+        [requestId, r.user.id, feed, article, manifest],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    const saved = await ok(r.api.post(`/articles/${article}/bookmark`, freshFence));
+    const snapshotId = saved.item.bookmarkCapture!.snapshotId!;
+    await h.owner.query(`UPDATE articles SET content_revision = 2 WHERE id = $1`, [article]);
+    await ok(
+      r.api.post(`/articles/${article}/rating`, {
+        stateVersion: saved.item.stateVersion,
+        contentRevision: '1',
+        snapshotId,
+        rating: 1,
+        analysisRequestId: requestId,
+      }),
+    );
+    const event = (await events(h, r.user.id, article)).find((e) => e.kind === 'rate')!;
+    expect(event.value['ratingSha']).toBeUndefined();
+    expect(event.value['features']).toBeNull();
+  });
+});
+
+describe('snapshot provenance: facets, answer model and the effective fingerprint', () => {
+  async function setSetting(key: string, value: unknown) {
+    await h.owner.query(
+      `INSERT INTO settings (key, value) VALUES ($1, $2::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [key, JSON.stringify(value)],
+    );
+  }
+
+  let previous: unknown;
+
+  beforeAll(async () => {
+    previous = (
+      await h.owner.query<{ value: unknown }>(
+        `SELECT value FROM settings WHERE key = 'question_sets.active'`,
+      )
+    ).rows[0]?.value;
+  });
+
+  afterAll(async () => {
+    if (previous === undefined)
+      await h.owner.query(`DELETE FROM settings WHERE key = 'question_sets.active'`);
+    else await setSetting('question_sets.active', previous);
+  });
+
+  async function enrichFacets(override: { state?: string; model?: string | null }) {
+    const sha = 'f1'.repeat(32);
+    const set = (
+      await h.owner.query<{ id: string }>(
+        `INSERT INTO question_sets (kind, version, sha256, definition)
+         VALUES ('enrich', 'provenance', $1, '{}')
+         ON CONFLICT (sha256) DO UPDATE SET version = EXCLUDED.version RETURNING id::text AS id`,
+        [sha],
+      )
+    ).rows[0]!.id;
+    await setSetting('question_sets.active', { enrich: set });
+    const { r, article } = await setup();
+    await h.owner.query(
+      `INSERT INTO article_facets (article_id, question_set_id, article_revision, state_sha256,
+                                   engine, model, state_variant, answers, features)
+       VALUES ($1, $2, 1, $3, 'typesafe', $4, 'native', '{}', '{"time_sensitive": 0.9}')`,
+      [
+        article,
+        set,
+        override.state ?? (await currentStates(article)).enrich,
+        override.model === undefined ? await currentModel() : override.model,
+      ],
+    );
+    // A card with a current answer, so the fingerprint is consulted for the facets only by design.
+    const card = await holdCard(r.user.id, 'love', 'Provenance');
+    await answer(article, card, 0.7);
+    await ok(r.api.post(`/articles/${article}/rating`, { ...freshFence, rating: 1 }));
+    const [event] = await events(h, r.user.id, article);
+    return event!.value['features'] as {
+      ratingSha: string;
+      cards: { id: string; p: number | null }[];
+      values: { facets: Record<string, number> | null };
+    };
+  }
+
+  it('drops facets whose enrich state hash is obsolete', async () => {
+    expect((await enrichFacets({ state: 'obsolete-enrich' })).values.facets).toBeNull();
+  });
+
+  it('drops facets written by another model', async () => {
+    expect((await enrichFacets({ model: 'jev-other' })).values.facets).toBeNull();
+    expect((await enrichFacets({ model: null })).values.facets).toBeNull();
+  });
+
+  it('keeps facets of the current enrich state and model', async () => {
+    expect((await enrichFacets({})).values.facets).toEqual({ time_sensitive: 0.9 });
+  });
+
+  it('drops an answer written by another model and keeps the current one', async () => {
+    const { r, article } = await setup();
+    const own = await holdCard(r.user.id, 'love', 'Own model');
+    const other = await holdCard(r.user.id, 'love', 'Other model');
+    await answer(article, own, 0.7);
+    await answer(article, other, 0.6);
+    await h.owner.query(`UPDATE card_answers SET model = 'jev-other' WHERE card_id = $1`, [other]);
+    await ok(r.api.post(`/articles/${article}/rating`, { ...freshFence, rating: 1 }));
+    const [event] = await events(h, r.user.id, article);
+    const cards = new Map(
+      (event!.value['features'] as { cards: { id: string; p: number | null }[] }).cards.map((c) => [
+        c.id,
+        c.p,
+      ]),
+    );
+    expect(cards.get(other)).toBeNull();
+    expect(cards.get(own)).toBeCloseTo(0.7, 5);
+  });
+
+  it('stamps the fingerprint the worker computes for the same settings and environment', async () => {
+    const features = await enrichFacets({});
+    const defaults = {
+      model: h.config.typesafeModel,
+      languageModes: h.config.languageModes,
+      cardTextMode: 'as_written' as const,
+    };
+    expect(features.ratingSha).toBe(await readRatingFingerprint(createDatabase(h.owner), defaults));
+    expect(features.ratingSha).not.toBe(
+      await readRatingFingerprint(createDatabase(h.owner), { ...defaults, model: 'jev-other' }),
+    );
   });
 });

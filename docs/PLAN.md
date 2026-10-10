@@ -266,7 +266,7 @@ flowchart TD
 | **M4** HTTP API | M1, M2 | M3a, M5 | yes | L | ✓ done 2026-10-01 (§10) |
 | **M5** Ranking & lanes | M1, M2 | M3a, M4 | yes | M | ✓ done 2026-10-01 (§11) |
 | **M6** Web app (PWA) | M4, M5 | M3b | yes | L | ✓ done 2026-10-09 (§12) |
-| **M7** Personal learning & suggestions | M4, M5, M6 (its goal runs E2E), and **M3b for T7** (run T7 last, after M3b is merged) | M8 | yes | M | not started |
+| **M7** Personal learning & suggestions | M4, M5, M6 (its goal runs E2E), and **M3b for T7** (run T7 last, after M3b is merged) | M8 | yes | M | ✓ done 2026-10-10 on branch `claude/m7-learning` (§13), not merged yet |
 | **M8** Operations & launch readiness | M4, M5, M6, and M3b applied; final launch gate also requires all M7 | M7 implementation only | mostly (one-time host setup is manual) | M | not started |
 | **M9** Optional extensions | launch | — | per item | — | not started |
 
@@ -1198,6 +1198,18 @@ Complete milestone M6 "Web app" exactly as specified in docs/PLAN.md §12 and do
 
 ## 13. M7: Personal learning and suggestions
 
+**Status: done 2026-10-10** on branch `claude/m7-learning` (from `2bf424f`; commits in the task table
+below), not merged or pushed yet. Built with Opus analysts and Sonnet builders, each task test-first
+against a separate harness with a negative control. The learning curve on `golden-v3` (rater 3, one
+participant) is in `apps/eval/reports/LEARNING-CURVE-golden-v3-2026-10-10-decision.md`: cards-only
+test AUC 0.709; the model 0.654, 0.651, 0.682, 0.717 and 0.720 at n = 10, 20, 30, 50 and 100, so the
+n = 50 rule does not fire. At n = 50 and 100 the production activation rule still rejects the model on
+its cross-validated AUC, so a model of this one participant would not have activated yet.
+Deviations: D-164…D-170 in `docs/DECISIONS.md`. No migrations. Open: the first write of
+`engine.model_pin` is not fenced against a suggestion run in flight (D-164; M8-T2 seeds the row and
+fences pin writes). PR #25 Codex review fixes are listed in its description. Handoffs: M8-T2 needs no learn job of its own (`house.nightly-learn` is scheduled at
+01:00); M8 records `engine.model_pin`.
+
 **Outcome:** per-user logistic models are trained on Jev features and feedback, calibrated, and
 auto-activated when they beat the card baseline, with explained contributions. Card suggestions come
 from unexplained likes. Learning curves are verified on the golden set.
@@ -1218,15 +1230,15 @@ Complete milestone M7 "Personal learning and suggestions" exactly as specified i
 
 **Tasks**
 
-| ID | Task | Needs | Lane | Specs |
-|---|---|---|---|---|
-| M7-T1 | `FEATURE_SPEC_V1` feature builder (card groups, own card inputs) and sha (MurmurHash3 x86-32, seed 0) | — | A | 06 §8.1 |
-| M7-T2 | Label extraction from `user_article` and `feedback_events` | — | B | 06 §8.2 |
-| M7-T3 | `trainUserModel`: IRLS, L2 on the summed loss with λ chosen from `model.lambdaGrid`, own-card-input rule, CV, Platt, activation, contributions | T1 | A | 06 §8.1, §8.3 |
-| M7-T4 | `user.learn` handler, version retention (active + 3 newest), **`house.nightly-learn`** (learn and suggest enqueues) | T2, T3 | C | 06 §8.4; 11 §6 |
-| M7-T5 | Model scoring in `rankArticle` and `Explain.model`; the model-context check; the LLM-answer exclusion rule | T3 | A | 06 §2, §8.1 |
-| M7-T6 | `user.suggest` handler only (it is scheduled by T4) | — | B | 05 §7 |
-| M7-T7 | Learning-curve check on the G1 dataset (`g1.json` `dataset.version`, `golden-v3`; stored answers of the g1 `runs`) | T3, M3b | D | 06 §8.3; 10 §1, §3 |
+| ID | Task | Needs | Lane | Specs | Status |
+|---|---|---|---|---|---|
+| M7-T1 | `FEATURE_SPEC_V1` feature builder (card groups, own card inputs) and sha (MurmurHash3 x86-32, seed 0) | — | A | 06 §8.1 | ✓ `cc45184` |
+| M7-T2 | Label extraction from `user_article` and `feedback_events` | — | B | 06 §8.2 | ✓ `8d9d317`; snapshot fix M7-F1 `4c8e197` |
+| M7-T3 | `trainUserModel`: IRLS, L2 on the summed loss with λ chosen from `model.lambdaGrid`, own-card-input rule, CV, Platt, activation, contributions | T1 | A | 06 §8.1, §8.3 | ✓ `8f927bf`, `6563cd5`, `ec248f8`, `a8f99fd` |
+| M7-T4 | `user.learn` handler, version retention (active + 3 newest), **`house.nightly-learn`** (learn and suggest enqueues) | T2, T3 | C | 06 §8.4; 11 §6 | ✓ `eb14308` |
+| M7-T5 | Model scoring in `rankArticle` and `Explain.model`; the model-context check; the LLM-answer exclusion rule | T3 | A | 06 §2, §8.1 | ✓ `961db08`, web labels `264f4e8` |
+| M7-T6 | `user.suggest` handler only (it is scheduled by T4) | — | B | 05 §7 | ✓ `c091b71` |
+| M7-T7 | Learning-curve check on the G1 dataset (`g1.json` `dataset.version`, `golden-v3`; stored answers of the g1 `runs`) | T3, M3b | D | 06 §8.3; 10 §1, §3 | ✓ `c262ec0`, report `d595ae5` |
 
 **Done when:**
 
@@ -1339,6 +1351,10 @@ Complete milestone M8 "Operations and launch readiness" exactly as specified in 
   runs card-scoped after a library topic correction; a worker starting with a new `TYPESAFE_MODEL`
   records `engine.model_pin` and enqueues the rebuild once, and so does one starting with new Ollama
   fallback models while `LLM_FALLBACK_ENABLED`, or with the fallback switched on or off (tested).
+  `pnpm db:seed` creates the `engine.model_pin` row, so it exists before any `user.suggest` run, and
+  every pin write takes that row's lock; a suggestion finishing transaction in flight (which
+  share-locks the row) is then fenced against a pin change, and its answer from the old model is
+  discarded (D-164) (tested).
   An idle `origin_fetch_state` row is purged only after its cooldown and leases have passed, and a
   cluster whose last member was purged is deleted once no `mute_story` rule names it (tested). A
   pending analysis request older than 180 days is cancelled as `retention_expired` and never resumed

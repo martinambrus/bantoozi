@@ -16,15 +16,17 @@ import { currentTier2Row, selectBestTranslation } from '@bantoozi/translate';
 import {
   canonicalJson,
   compareBigIntStrings,
+  enqueueLearn,
   enqueueRank,
   enqueueTranslate,
   RANK_WINDOW_DAYS,
   type JobPayload,
 } from '@bantoozi/shared';
 
-import { loadClassificationConfig } from '../classify/config.js';
+import { loadClassificationConfig, ratingDefaults } from '../classify/config.js';
 import { loadRankContext } from '../rank/context.js';
 import { cardInputHashes, loadRankItems, type RankItemsRun } from '../rank/items.js';
+import { buildActiveModel, loadRankModelState } from '../rank/model.js';
 import { loadRankerSettings } from '../rank/settings.js';
 import { nowOf, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
@@ -113,7 +115,18 @@ export function createUserRankHandler(
     const config = await loadClassificationConfig(deps.db, deps.settingsEnv);
     const cardInputs = await loadCardInputs(deps.db, await loadHeldCardIds(deps.db, user.userId));
     const hashes = cardInputHashes(cardInputs, config);
-    const ctx = await loadRankContext(deps.db, {
+    const modelState = await loadRankModelState(deps.db, {
+      userId: user.userId,
+      config: settings.config,
+      hashes,
+      ratingDefaults: ratingDefaults(config, deps.classification?.primaryModel ?? ''),
+    });
+    if (modelState.status === 'stale') {
+      await retryTransaction(deps.db, async (tx) => {
+        await enqueueLearn(workerOutbox(tx), { userId: user.userId });
+      });
+    }
+    const loaded = await loadRankContext(deps.db, {
       user,
       settings,
       now,
@@ -124,7 +137,15 @@ export function createUserRankHandler(
         languageModes: config.languageModes,
         cards: [...hashes].sort(([a], [b]) => compareBigIntStrings(a, b)),
       },
+      model:
+        modelState.status === 'current'
+          ? { version: modelState.row.version, contextSha: modelState.contextSha }
+          : null,
     });
+    const ctx =
+      modelState.status === 'current'
+        ? { ...loaded, model: buildActiveModel(modelState, loaded) }
+        : loaded;
     const run: RankItemsRun = { userId: user.userId, now, ctx, config, cardInputs };
     const forceBefore =
       payload.full === true

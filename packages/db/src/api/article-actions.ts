@@ -10,8 +10,10 @@ import {
   planLimits,
   readUserPreferences,
   type ArticleListItem,
+  type CardTextMode,
   type Explain,
   type JobSender,
+  type LanguageModes,
   type RankerConfig,
   type RatingReason,
   type Strength,
@@ -23,7 +25,8 @@ import { parseCardBody } from '../cards/body.js';
 import { exampleFromArticleTitle } from '../cards/validation.js';
 import { SELECTION_WINDOW_DAYS } from '../ingest/demand.js';
 import { recordRankIntents } from '../ingest/rank-intents.js';
-import { readStoredSetting } from '../settings.js';
+import { readStoredSetting, readStoredSettings } from '../settings.js';
+import type { Executor } from '../client.js';
 import { tenantUserId, type TenantTx } from '../tenant.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
 import { articleContexts, loadArticleItems } from './articles.js';
@@ -70,6 +73,91 @@ const RATING_FINGERPRINT_SETTINGS = [
   'card_text_mode',
 ] as const;
 
+/**
+ * The current rating fingerprint (spec 06 §8.1): the raw snapshot spec sha with the settings that
+ * change the meaning of an answer. The API records it in each snapshot; learning compares against it.
+ */
+export async function readRatingFingerprint(
+  executor: Executor,
+  defaults: RatingDefaults,
+): Promise<string> {
+  return ratingShaOf(await readStoredSettings(executor, RATING_FINGERPRINT_SETTINGS), defaults);
+}
+
+/** What the fingerprint settings read as when nothing is stored: the process's environment. */
+export interface RatingDefaults {
+  /** The model a worker answers with while `engine.model_pin` is unset (`TYPESAFE_MODEL`). */
+  model: string;
+  languageModes: LanguageModes;
+  cardTextMode: CardTextMode;
+}
+
+const objectOf = (value: unknown): Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+
+/** The model answers are attributed to: the stored pin, else the environment's model. */
+export function effectiveModel(
+  stored: ReadonlyMap<string, unknown>,
+  defaults: RatingDefaults,
+): string {
+  return textOrNull(objectOf(stored.get('engine.model_pin'))['model']) ?? defaults.model;
+}
+
+/**
+ * The fingerprint settings with the values they take effect as: a missing model pin, language mode
+ * map or card text mode stands for its environment default, so changing only a default changes the
+ * fingerprint.
+ */
+export function effectiveRatingSettings(
+  stored: ReadonlyMap<string, unknown>,
+  defaults: RatingDefaults,
+): Record<string, unknown> {
+  return {
+    'engine.model_pin': {
+      ...objectOf(stored.get('engine.model_pin')),
+      model: effectiveModel(stored, defaults),
+    },
+    'question_sets.active': stored.get('question_sets.active') ?? null,
+    language_modes: stored.get('language_modes') ?? defaults.languageModes,
+    card_text_mode: stored.get('card_text_mode') ?? defaults.cardTextMode,
+  };
+}
+
+/** The rating fingerprint of already-read stored settings. */
+function ratingShaOf(stored: ReadonlyMap<string, unknown>, defaults: RatingDefaults): string {
+  return createHash('sha256')
+    .update(
+      canonicalJson({
+        specSha: FEATURE_SNAPSHOT_SPEC_SHA,
+        settings: effectiveRatingSettings(stored, defaults),
+      }),
+    )
+    .digest('hex');
+}
+
+/**
+ * The fingerprint settings in one share-locked statement, in key order: a writer of any of them
+ * waits for this transaction, so the filters and the stamp of a snapshot come from one state.
+ */
+async function readRatingSettingsLocked(tx: Executor): Promise<Map<string, unknown>> {
+  const result = await tx.execute<{ key: string; value: unknown }>(
+    sql`SELECT key, value FROM settings
+         WHERE key = ANY(${sql.param([...RATING_FINGERPRINT_SETTINGS])}::text[])
+         ORDER BY key FOR SHARE`,
+  );
+  return new Map(result.rows.map((row) => [row.key, row.value]));
+}
+
+const objectField = (value: unknown, field: string): unknown =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)[field]
+    : undefined;
+
+const textOrNull = (value: unknown): string | null =>
+  typeof value === 'string' ? value : typeof value === 'number' ? String(value) : null;
+
 /** The displayed item's fence (spec 08 §5.3). */
 export interface ReaderFence {
   stateVersion: string;
@@ -77,11 +165,37 @@ export interface ReaderFence {
   snapshotId?: string | undefined;
 }
 
+/**
+ * What the current match input of an article is (the `state_sha256` of its state and the
+ * `card_input_sha256` of each card's question), computed by the API from the one locked settings
+ * read; null when it cannot be computed.
+ */
+export interface MatchFingerprint {
+  (
+    tx: TenantTx,
+    input: {
+      articleId: string;
+      cardIds: readonly string[];
+      settings: ReadonlyMap<string, unknown>;
+    },
+  ): Promise<{
+    stateSha256: string;
+    enrichStateSha256: string;
+    cardInputSha256: ReadonlyMap<string, string>;
+  } | null>;
+  /** The environment defaults of the fingerprint settings the injecting process runs with. */
+  defaults: RatingDefaults;
+}
+
+/** Defaults of a caller that injects no fingerprint: its snapshots keep no answer or facet anyway. */
+const NO_DEFAULTS: RatingDefaults = { model: '', languageModes: {}, cardTextMode: 'as_written' };
+
 export interface ActionInput {
   articleId: string;
   fence: ReaderFence;
   now: Date;
   outbox: JobSender;
+  matchFingerprint?: MatchFingerprint | undefined;
 }
 
 type ReaderField =
@@ -595,10 +709,14 @@ async function captureFeatures(
   article: LockedArticle,
   config: RankerConfig,
   now: Date,
-  options: { live: boolean },
+  options: { live: boolean; matchFingerprint?: MatchFingerprint | undefined },
 ): Promise<FeatureCapture> {
   if (!options.live) return { features: null, staleAtFeedback: null };
   const id = article.articleId;
+  const stored = await readRatingSettingsLocked(tx);
+  const sets = stored.get('question_sets.active');
+  const enrichSet = textOrNull(objectField(sets, 'enrich'));
+  const matchSet = textOrNull(objectField(sets, 'match'));
   const result = await tx.execute<{
     inference_feed_ids: string[];
     word_count: number | null;
@@ -614,7 +732,8 @@ async function captureFeatures(
     story_cluster_id: string | null;
     cluster_size: number | null;
     facets: Record<string, unknown> | null;
-    settings: Record<string, unknown> | null;
+    facets_state_sha256: string | null;
+    facets_model: string | null;
   }>(sql`
     WITH inf AS (
       SELECT s.feed_id FROM subscriptions s
@@ -636,12 +755,13 @@ async function captureFeatures(
            a.lang, a.author, a.published_at, a.first_seen_at, a.enrich_engine,
            a.media_revision::text AS media_revision, a.story_cluster_id::text AS story_cluster_id,
            sc.size AS cluster_size,
-           (SELECT f.features FROM article_facets f
-             WHERE f.article_id = a.id AND f.article_revision = a.content_revision
-             ORDER BY f.updated_at DESC LIMIT 1) AS facets,
-           (SELECT jsonb_object_agg(st.key, st.value) FROM settings st
-             WHERE st.key = ANY(${sql.param([...RATING_FINGERPRINT_SETTINGS])}::text[])) AS settings
+           fa.features AS facets, fa.state_sha256 AS facets_state_sha256, fa.model AS facets_model
       FROM articles a LEFT JOIN story_clusters sc ON sc.id = a.story_cluster_id
+      LEFT JOIN LATERAL (
+        SELECT f.features, f.state_sha256, f.model FROM article_facets f
+         WHERE f.article_id = a.id AND f.article_revision = a.content_revision
+           AND f.question_set_id::text = ${enrichSet}::text
+         ORDER BY f.updated_at DESC LIMIT 1) fa ON true
      WHERE a.id = ${id}::bigint`);
   const row = result.rows[0];
   if (row === undefined) return { features: null, staleAtFeedback: null };
@@ -663,20 +783,46 @@ async function captureFeatures(
     strength: Strength;
     p: number | null;
     engine: string | null;
+    model: string | null;
+    state_sha256: string | null;
+    card_input_sha256: string | null;
   }>(sql`
-    SELECT uc.card_id::text AS id, uc.strength, ca.p, ca.engine
+    SELECT uc.card_id::text AS id, uc.strength, ca.p, ca.engine, ca.model, ca.state_sha256,
+           ca.card_input_sha256
       FROM user_cards uc
       JOIN interest_cards c ON c.id = uc.card_id AND c.kind = 'interest'
       LEFT JOIN card_answers ca ON ca.article_id = ${id}::bigint AND ca.card_id = uc.card_id
                                AND ca.article_revision = ${article.contentRevision}::bigint
                                AND ca.engine <> 'prefilter'
+                               AND ca.question_set_sha = (
+                                 SELECT qs.sha256 FROM question_sets qs
+                                  WHERE qs.id::text = ${matchSet}::text)
      WHERE uc.user_id = ${user}::uuid
        AND (uc.scope_feed_id IS NULL
             OR uc.scope_feed_id::text = ANY(${sql.param(row.inference_feed_ids)}::text[]))
      ORDER BY uc.card_id`);
-  const ratingSha = createHash('sha256')
-    .update(canonicalJson({ specSha: FEATURE_SNAPSHOT_SPEC_SHA, settings: row.settings ?? {} }))
-    .digest('hex');
+  const defaults = options.matchFingerprint?.defaults ?? NO_DEFAULTS;
+  const ratingSha = ratingShaOf(stored, defaults);
+  const model = effectiveModel(stored, defaults);
+  const current =
+    options.matchFingerprint === undefined ||
+    !(row.facets !== null || cards.rows.some((card) => card.p !== null))
+      ? null
+      : await options.matchFingerprint(tx, {
+          articleId: id,
+          cardIds: cards.rows.map((card) => card.id),
+          settings: stored,
+        });
+  const facetsCurrent =
+    current !== null &&
+    row.facets_state_sha256 === current.enrichStateSha256 &&
+    row.facets_model === model;
+  const usable = (card: (typeof cards.rows)[number]): boolean =>
+    card.p !== null &&
+    current !== null &&
+    card.model === model &&
+    card.state_sha256 === current.stateSha256 &&
+    card.card_input_sha256 === current.cardInputSha256.get(card.id);
   return {
     staleAtFeedback,
     features: {
@@ -685,12 +831,12 @@ async function captureFeatures(
       cards: cards.rows.map((card) => ({
         id: card.id,
         strength: card.strength,
-        p: card.p,
-        engine: card.engine,
+        p: usable(card) ? card.p : null,
+        engine: usable(card) ? card.engine : null,
       })),
       values: {
-        facets: row.facets,
-        facetsEngine: row.enrich_engine,
+        facets: facetsCurrent ? row.facets : null,
+        facetsEngine: facetsCurrent ? row.enrich_engine : null,
         wordCount: row.word_count,
         ageHours,
         lang: row.lang,
@@ -747,9 +893,13 @@ async function requireAnalysisRequest(
   articleId: string,
   revision: string,
   requestId: string,
-): Promise<{ id: string; inputSha: string }> {
-  const result = await tx.execute<{ input_sha: string; current: boolean }>(sql`
-    SELECT r.input_sha,
+): Promise<{ id: string; inputSha: string; snapshot: unknown }> {
+  const result = await tx.execute<{
+    input_sha: string;
+    input_snapshot: unknown;
+    current: boolean;
+  }>(sql`
+    SELECT r.input_sha, r.input_snapshot,
            (r.status IN ('pending', 'running', 'complete')
             AND r.created_at > now() - make_interval(days => ${SELECTION_WINDOW_DAYS})
             AND EXISTS (SELECT 1 FROM subscriptions s
@@ -766,7 +916,7 @@ async function requireAnalysisRequest(
       details: { reason: 'obsolete_request' },
     });
   }
-  return { id: requestId, inputSha: row.input_sha };
+  return { id: requestId, inputSha: row.input_sha, snapshot: row.input_snapshot };
 }
 
 async function rankFull(tx: TenantTx, user: string, outbox: JobSender, reason: string) {
@@ -794,6 +944,7 @@ export async function markArticleRead(
   const capture = behavioral
     ? await captureFeatures(tx, lock.user, article, config, input.now, {
         live: input.fence.snapshotId === undefined,
+        matchFingerprint: input.matchFingerprint,
       })
     : { features: null, staleAtFeedback: null };
   const patch: ReaderPatch = { readAt: input.now };
@@ -824,7 +975,8 @@ export async function markArticleRead(
       [{ articleId: input.articleId, resultVersion: version, before }],
       {
         rankFull: rank,
-        learn: false,
+        // An explicit consented read is an implicit-negative sample; undoing it revokes evidence.
+        learn: behavioral,
       },
     ),
   };
@@ -848,6 +1000,21 @@ export async function markArticleUnread(tx: TenantTx, input: ActionInput): Promi
   if (article.row?.archivedAt != null) patch.archivedAt = null;
   if (Object.keys(patch).length === 0) return { articleIds: [input.articleId], changed: false };
   const before = beforeOf(article.row, patch);
+  // Clearing `read_at` removes an explicit consented read sample (spec 06 §8.4): force learning.
+  const revokesRead =
+    patch.readAt === null &&
+    (
+      await tx.execute<{ revoked: boolean }>(sql`
+      SELECT coalesce(
+               e.value ->> 'signalOrigin' = 'explicit'
+               AND (e.value -> 'learningConsent' ->> 'implicitFeedback') = 'true'
+               AND (e.value -> 'learningConsent' ->> 'implicitNegative') = 'true',
+               false) AS revoked
+        FROM feedback_events e
+       WHERE e.user_id = ${lock.user}::uuid AND e.article_id = ${input.articleId}::bigint
+         AND e.kind = 'read'
+       ORDER BY e.id DESC LIMIT 1`)
+    ).rows[0]?.revoked === true;
   const version = await writeReader(tx, lock.user, input.articleId, patch);
   await appendEvent(
     tx,
@@ -859,6 +1026,9 @@ export async function markArticleUnread(tx: TenantTx, input: ActionInput): Promi
   );
   const rank = article.storyClusterId !== null || patch.archivedAt !== undefined;
   if (rank) await rankFull(tx, lock.user, input.outbox, 'feedback:unread');
+  if (revokesRead) {
+    await recordLearnIntent(tx, lock.user, input.outbox, await readRankerConfig(tx), true);
+  }
   return {
     articleIds: [input.articleId],
     changed: true,
@@ -868,7 +1038,7 @@ export async function markArticleUnread(tx: TenantTx, input: ActionInput): Promi
       [{ articleId: input.articleId, resultVersion: version, before }],
       {
         rankFull: rank,
-        learn: false,
+        learn: revokesRead,
       },
     ),
   };
@@ -938,6 +1108,7 @@ export async function openArticle(tx: TenantTx, input: ActionInput): Promise<Act
   const capture = behavioral
     ? await captureFeatures(tx, lock.user, article, config, input.now, {
         live: input.fence.snapshotId === undefined,
+        matchFingerprint: input.matchFingerprint,
       })
     : { features: null, staleAtFeedback: null };
   const wasRead = article.row?.readAt != null;
@@ -1019,6 +1190,7 @@ export async function recordDwell(
   const config = await readRankerConfig(tx);
   const capture = await captureFeatures(tx, lock.user, article, config, input.now, {
     live: input.fence.snapshotId === undefined,
+    matchFingerprint: input.matchFingerprint,
   });
   await writeReader(tx, lock.user, input.articleId, {
     dwellMs,
@@ -1141,6 +1313,46 @@ interface RatingTarget {
   selection?: 'calibration' | undefined;
 }
 
+/**
+ * The rating fingerprint to record for a rating that carries a selected-analysis request but no
+ * live features, or null when the request was frozen under another manifest than the locked
+ * settings now stamping it (active enrich/match sets, pinned model, the article language's mode,
+ * card text mode): its result must not stand in for the rater's snapshot. Settings without a stored
+ * value (model pin, language mode) keep their environment default, which the fingerprint cannot
+ * have changed; a manifest field the snapshot lacks is not a disagreement.
+ */
+async function requestRatingSha(
+  tx: Executor,
+  snapshot: unknown,
+  defaults: RatingDefaults,
+): Promise<string | null> {
+  const stored = await readRatingSettingsLocked(tx);
+  const sets = stored.get('question_sets.active');
+  const frozenSets = objectField(snapshot, 'questionSets');
+  const lang = textOrNull(objectField(objectField(snapshot, 'article'), 'lang'));
+  const mode =
+    lang === null
+      ? null
+      : (textOrNull(
+          objectField(effectiveRatingSettings(stored, defaults)['language_modes'], lang),
+        ) ?? 'native');
+  const model = effectiveModel(stored, defaults) || null;
+  const checks: [unknown, string | null][] = [
+    [objectField(objectField(frozenSets, 'enrich'), 'id'), textOrNull(objectField(sets, 'enrich'))],
+    [objectField(objectField(frozenSets, 'match'), 'id'), textOrNull(objectField(sets, 'match'))],
+    [objectField(snapshot, 'languageMode'), mode],
+    [objectField(objectField(snapshot, 'model'), 'model'), model],
+    [
+      objectField(snapshot, 'cardTextMode'),
+      textOrNull(effectiveRatingSettings(stored, defaults)['card_text_mode']) ?? 'as_written',
+    ],
+  ];
+  for (const [frozen, current] of checks) {
+    if (frozen !== undefined && current !== null && textOrNull(frozen) !== current) return null;
+  }
+  return ratingShaOf(stored, defaults);
+}
+
 /** Apply one rating under an existing lock; returns its undo target. */
 async function applyRating(
   tx: TenantTx,
@@ -1151,6 +1363,7 @@ async function applyRating(
     now: Date;
     config: RankerConfig;
     suggestion?: ExampleSuggestionValue | null;
+    matchFingerprint?: MatchFingerprint | undefined;
   },
 ): Promise<UndoTarget> {
   const article = locked(lock, target.articleId);
@@ -1168,7 +1381,16 @@ async function applyRating(
   // Event-time context first: the snapshot describes what the reader rated, before the change.
   const capture = await captureFeatures(tx, lock.user, article, options.config, options.now, {
     live: revision === article.contentRevision,
+    matchFingerprint: options.matchFingerprint,
   });
+  const ratingSha =
+    request !== null && capture.features === null
+      ? await requestRatingSha(
+          tx,
+          request.snapshot,
+          options.matchFingerprint?.defaults ?? NO_DEFAULTS,
+        )
+      : null;
   const row = article.row;
   const patch: ReaderPatch =
     target.rating === null
@@ -1195,6 +1417,7 @@ async function applyRating(
       contentRevision: revision,
       ...(target.fence.snapshotId === undefined ? {} : { snapshotId: target.fence.snapshotId }),
       ...(request === null ? {} : { analysisRequestId: request.id, inputSha: request.inputSha }),
+      ...(ratingSha === null ? {} : { ratingSha }),
       signalOrigin: 'explicit',
       learningConsent: learningConsent(lock.prefs),
       before: rankBefore(row),
@@ -1249,7 +1472,13 @@ export async function rateArticle(
     tx,
     lock,
     { ...input, reason },
-    { kind: 'rate', now: input.now, config, suggestion },
+    {
+      kind: 'rate',
+      now: input.now,
+      config,
+      suggestion,
+      matchFingerprint: input.matchFingerprint,
+    },
   );
   await rankFull(tx, lock.user, input.outbox, 'feedback:rating');
   await recordLearnIntent(tx, lock.user, input.outbox, config, input.rating === null);
@@ -1279,7 +1508,7 @@ export async function answerPrompt(
       hide: false,
       analysisRequestId: input.analysisRequestId,
     },
-    { kind: 'prompt_answer', now: input.now, config },
+    { kind: 'prompt_answer', now: input.now, config, matchFingerprint: input.matchFingerprint },
   );
   await rankFull(tx, lock.user, input.outbox, 'feedback:prompt');
   await recordLearnIntent(tx, lock.user, input.outbox, config, false);
@@ -1301,6 +1530,7 @@ export async function rateArticlesBulk(
     rating: 1 | -1 | null;
     now: Date;
     outbox: JobSender;
+    matchFingerprint?: MatchFingerprint | undefined;
   },
 ): Promise<ActionResult> {
   const lock = await lockFenced(tx, input.targets, false);
@@ -1313,7 +1543,7 @@ export async function rateArticlesBulk(
         tx,
         lock,
         { ...target, rating: input.rating, reason: null, hide: false },
-        { kind: 'rate', now: input.now, config },
+        { kind: 'rate', now: input.now, config, matchFingerprint: input.matchFingerprint },
       ),
     );
   }
@@ -1409,6 +1639,7 @@ export async function bookmarkArticle(
   const config = await readRankerConfig(tx);
   const capture = await captureFeatures(tx, lock.user, article, config, input.now, {
     live: input.fence.snapshotId === undefined,
+    matchFingerprint: input.matchFingerprint,
   });
   const bound = await tx.execute<{ snapshot_id: string | null; capture_status: string }>(sql`
     SELECT snapshot_id::text AS snapshot_id, capture_status

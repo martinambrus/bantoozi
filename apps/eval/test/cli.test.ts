@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { EVAL_COMMANDS, NotImplementedError, buildCli } from '../src/cli.js';
+import { EVAL_COMMANDS, buildCli } from '../src/cli.js';
 
 function run(args: string[]) {
   const out: string[] = [];
@@ -27,9 +27,10 @@ describe('eval CLI (commander)', () => {
     for (const [name] of EVAL_COMMANDS) expect(help).toContain(name);
   });
 
-  it('refuses commands of later milestones without doing anything', async () => {
-    const cli = run(['learning-curve']);
-    await expect(cli.parse()).rejects.toBeInstanceOf(NotImplementedError);
+  it('implements learning-curve with its options', () => {
+    const command = run([]).program.commands.find((c) => c.name() === 'learning-curve');
+    expect(command).toBeDefined();
+    expect(command?.options.map((o) => o.long)).toEqual(['--g1', '--out', '--sizes']);
   });
 
   it('rejects unknown commands', async () => {

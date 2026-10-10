@@ -4,6 +4,7 @@ import {
   shareLockSettings,
   type Executor,
   type QuestionSetKind,
+  type RatingDefaults,
 } from '@bantoozi/db';
 import { languageModeFor, questionSetByVersion, type Question } from '@bantoozi/questions';
 import {
@@ -76,6 +77,11 @@ export function verifiedSet(
   return { id: row.id, version: row.version, sha256: row.sha256 };
 }
 
+/** The verified active `suggest` set (spec 05 §7), or null when none is active. */
+export async function loadSuggestSet(db: Executor): Promise<ActiveQuestionSet | null> {
+  return verifiedSet('suggest', (await loadActiveQuestionSets(db)).suggest);
+}
+
 /** No active set of a kind the stage needs: the seed has not run (the startup check reports it). */
 export class QuestionSetInactiveError extends Error {
   constructor(readonly kind: QuestionSetKind) {
@@ -138,6 +144,18 @@ export async function loadClassificationConfig(
     cardTextMode,
     languageModes,
     prefilterEnabled,
+  };
+}
+
+/**
+ * The fingerprint defaults of the worker (spec 06 §8.1): the same values the API derives from its
+ * environment, here taken from the settings as they read now and the process's model.
+ */
+export function ratingDefaults(config: ClassificationConfig, primaryModel: string): RatingDefaults {
+  return {
+    model: primaryModel,
+    languageModes: config.languageModes,
+    cardTextMode: config.cardTextMode,
   };
 }
 
