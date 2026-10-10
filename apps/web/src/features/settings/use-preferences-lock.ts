@@ -109,14 +109,25 @@ export function usePreferencesLock(options: PreferencesLockOptions = {}): Prefer
 
     async function settle(mode: Mode) {
       const stillHolding = () => mounted && holding && signInLasts();
+      // A save still on its way, of the tab that held the lock, can change what /me says: whoever
+      // waits for it reads the account again, also on a first grant.
+      let waited = false;
       try {
         // Exclusive: granted once every save of any tab, held shared, is over.
-        await locks!.request(savingName, { mode: 'exclusive' }, () => undefined);
+        const free = await locks!.request(
+          savingName,
+          { mode: 'exclusive', ifAvailable: true },
+          (lock) => lock !== null,
+        );
+        if (!free) {
+          waited = true;
+          await locks!.request(savingName, { mode: 'exclusive' }, () => undefined);
+        }
       } catch {
         // Nothing aborts this request; if it fails anyway, the lock itself is what counts.
       }
       if (!stillHolding()) return;
-      if (mode !== 'try') {
+      if (mode !== 'try' || waited) {
         await queryClient.invalidateQueries({ queryKey: meKey() });
         if (!stillHolding()) return;
       }

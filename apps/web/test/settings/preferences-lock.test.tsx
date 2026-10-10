@@ -208,6 +208,24 @@ describe('the preferences lock across tabs', () => {
     expect(second.calls('GET /me').length).toBeGreaterThan(before);
   });
 
+  it('reads the account again on a first grant that waited for a save of a tab that left', async () => {
+    // A tab that left the screen with its request on the way: the save lock is still held.
+    const release = holdElsewhere(SAVE_LOCK);
+    const tab = await openSettings();
+    await waitFor(() => expect(grantedPreferences()).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(switchOf(tab).closest('[inert]')).not.toBeNull();
+    expect(overlayOf(tab)).toBeNull();
+    const before = tab.calls('GET /me').length;
+
+    await act(async () => {
+      release();
+    });
+
+    await waitFor(() => expect(switchOf(tab).closest('[inert]')).toBeNull());
+    expect(tab.calls('GET /me').length).toBeGreaterThan(before);
+  });
+
   it('does not send a save that starts after the lock was lost', async () => {
     const first = await openSettings();
     await waitFor(() => expect(grantedPreferences()).toHaveLength(1));
