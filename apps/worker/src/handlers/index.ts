@@ -15,7 +15,9 @@ import { createProviderValidateHandler } from './provider-validate.js';
 import { createArchiveHandler } from './house-archive.js';
 import { createExpireRulesHandler } from './house-expire-rules.js';
 import { createNightlyLearnHandler } from './house-nightly-learn.js';
+import { createPurgeArticlesHandler } from './house-purge-articles.js';
 import { createPurgeAuthHandler } from './house-purge-auth.js';
+import { createPurgeBodiesHandler } from './house-purge-bodies.js';
 import { createReconcileHandler } from './house-reconcile.js';
 import { createRescoreDegradedHandler } from './house-rescore-degraded.js';
 import { createUserLearnHandler } from './user-learn.js';
@@ -115,6 +117,8 @@ export const RETENTION_QUEUES = [
   'house.purge-auth',
   'house.reconcile',
   'house.archive',
+  'house.purge-articles',
+  'house.purge-bodies',
 ] as const satisfies readonly QueueName[];
 
 /** Queues with real handlers so far (M1 ingestion, M2 classification and key validation, M5 ranking, M7 learning). */
@@ -151,6 +155,8 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
     'house.purge-auth': implemented(createPurgeAuthHandler(deps)),
     'house.reconcile': implemented(createReconcileHandler(deps)),
     'house.archive': implemented(createArchiveHandler(deps)),
+    'house.purge-articles': implemented(createPurgeArticlesHandler(deps)),
+    'house.purge-bodies': implemented(createPurgeBodiesHandler(deps)),
     ...(classification === undefined
       ? {}
       : {
