@@ -184,7 +184,7 @@ export interface ThresholdRule {
   raters: number;
   notBeating: number;
   proposalNeeded: boolean;
-  /** False when no rater has a result at `n`: the rule cannot say anything. */
+  /** False when no rater has a usable result with full support at `n`: the rule cannot say anything. */
   evaluable: boolean;
 }
 
@@ -194,9 +194,15 @@ export interface ThresholdRule {
  */
 export function thresholdRule(curve: LearningCurve, n = 50): ThresholdRule | null {
   if (!curve.sizes.includes(n)) return null;
-  const rows = curve.raters.map((rater) => rater.rows.find((row) => row.n === n));
-  const notBeating = rows.filter((row) => row?.deltaAuc == null || row.deltaAuc <= 0).length;
-  const evaluable = rows.some((row) => row !== undefined);
+  // Only raters with full support at `n` and a usable AUC difference vote.
+  const rows = curve.raters
+    .map((rater) => rater.rows.find((row) => row.n === n))
+    .filter(
+      (row): row is NonNullable<typeof row> =>
+        row !== undefined && row.trainN === n && row.deltaAuc !== null,
+    );
+  const notBeating = rows.filter((row) => (row.deltaAuc ?? 0) <= 0).length;
+  const evaluable = rows.length > 0;
   return {
     n,
     raters: rows.length,

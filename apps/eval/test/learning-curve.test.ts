@@ -135,4 +135,19 @@ describe('learning curve', () => {
     expect(renderRuleLine(rule)).toContain('no raters with usable ratings');
     expect(thresholdRule(winning.curve, 50)).toMatchObject({ evaluable: true });
   });
+
+  it('rows without full n support or a usable AUC difference do not vote (M7-T7)', () => {
+    const rater = winning.curve.raters[0]!;
+    const unusable = (row: (typeof rater.rows)[number]) =>
+      row.n === 50 ? { ...row, trainN: 30, deltaAuc: null } : row;
+    const curve = {
+      sizes: winning.curve.sizes,
+      raters: [{ ...rater, rows: rater.rows.map(unusable) }],
+    };
+    expect(thresholdRule(curve, 50)).toMatchObject({
+      raters: 0,
+      proposalNeeded: false,
+      evaluable: false,
+    });
+  });
 });
