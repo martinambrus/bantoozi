@@ -1,5 +1,8 @@
 import * as ranker from '../../../src/index.js';
-import type { RawFeatureSnapshot, ReadonlyRankerConfig as RankerConfig } from '../../../src/index.js';
+import type {
+  RawFeatureSnapshot,
+  ReadonlyRankerConfig as RankerConfig,
+} from '../../../src/index.js';
 
 /**
  * The M7-T3b contract, declared test-locally so this file typechecks and lints before the
@@ -53,7 +56,12 @@ export interface ContextInput {
   strengthWeights: RankerConfig['strengthWeights'];
   modelConfig: RankerConfig['model'];
   consent: Consent;
-  ownInputs: { cardId: string; strength: string; scopeFeedId: string | null; cardInputSha256: string }[];
+  ownInputs: {
+    cardId: string;
+    strength: string;
+    scopeFeedId: string | null;
+    cardInputSha256: string;
+  }[];
 }
 
 /**

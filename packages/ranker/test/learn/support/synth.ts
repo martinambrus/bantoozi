@@ -1,4 +1,9 @@
-import { DEFAULT_RANKER_CONFIG, FEATURE_SPEC_V1_FACET_NAMES, RAW_SNAPSHOT_SPEC_SHA, seededRandom } from '../../../src/index.js';
+import {
+  DEFAULT_RANKER_CONFIG,
+  FEATURE_SPEC_V1_FACET_NAMES,
+  RAW_SNAPSHOT_SPEC_SHA,
+  seededRandom,
+} from '../../../src/index.js';
 import type { RawFeatureSnapshot } from '../../../src/index.js';
 import type { HeldCard, TrainArgs, TrainingSample } from './api.js';
 
@@ -42,7 +47,12 @@ export function snapshot(feedbackAt: Date, o: SnapOpts = {}): RawFeatureSnapshot
     ratingSha: RATING_SHA,
     snapshotAt: new Date(feedbackAt.getTime() - 60_000).toISOString(),
     cards: [
-      { id: CARD_A, strength: 'love', p: p(o.pA, 0.3), engine: o.pA === null ? 'prefilter' : 'typesafe' },
+      {
+        id: CARD_A,
+        strength: 'love',
+        p: p(o.pA, 0.3),
+        engine: o.pA === null ? 'prefilter' : 'typesafe',
+      },
       { id: CARD_B, strength: 'like', p: p(o.pB, 0.3), engine: 'typesafe' },
       { id: CARD_C, strength: 'love', p: p(o.pC, 0.3), engine: 'typesafe' },
       { id: CARD_N, strength: 'never', p: p(o.pN, 0.1), engine: 'typesafe' },
@@ -125,7 +135,13 @@ export function drivenSamples(n: number, seed: string, noise = 0.5): TrainingSam
 export function noiseSamples(n: number, seed: string): TrainingSample[] {
   const r = seededRandom(seed);
   return Array.from({ length: n }, (_, i) =>
-    sample(i, r() < 0.5 ? 0 : 1, { pA: r(), pB: r(), pC: r(), pN: r() * 0.4, facets: { clickbait: r() } }),
+    sample(i, r() < 0.5 ? 0 : 1, {
+      pA: r(),
+      pB: r(),
+      pC: r(),
+      pN: r() * 0.4,
+      facets: { clickbait: r() },
+    }),
   );
 }
 

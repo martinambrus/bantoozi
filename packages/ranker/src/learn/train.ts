@@ -8,7 +8,12 @@ import { auc, groupedBootstrapCi, logLoss } from './metrics.js';
 import { modelContextSha, type Consent, type HeldCard, type StoredModel } from './model.js';
 import { ownInputs } from './own-inputs.js';
 import { applyPlatt, fitPlatt, type PlattParams } from './platt.js';
-import { compareSamples, eligibleSetSha, sampleEligibility, type TrainingSample } from './samples.js';
+import {
+  compareSamples,
+  eligibleSetSha,
+  sampleEligibility,
+  type TrainingSample,
+} from './samples.js';
 
 export interface TrainArgs {
   samples: TrainingSample[];
@@ -90,7 +95,11 @@ interface Ctx {
   grid: readonly number[];
 }
 
-function vectorOf(row: Row, own: readonly string[], cfg: ReadonlyRankerConfig): Record<string, number> {
+function vectorOf(
+  row: Row,
+  own: readonly string[],
+  cfg: ReadonlyRankerConfig,
+): Record<string, number> {
   const key = own.join(',');
   let v = row.vecs.get(key);
   if (v === undefined) {
@@ -162,7 +171,10 @@ function fitGrid(d: Design, grid: readonly number[]): LogisticFit[] {
   });
 }
 
-function logitsOf(fit: Extract<LogisticFit, { ok: true }>, X: readonly (readonly number[])[]): number[] {
+function logitsOf(
+  fit: Extract<LogisticFit, { ok: true }>,
+  X: readonly (readonly number[])[],
+): number[] {
   return X.map((row) => {
     let z = fit.intercept;
     for (let j = 0; j < fit.weights.length; j += 1) z += (fit.weights[j] ?? 0) * (row[j] ?? 0);
@@ -214,12 +226,22 @@ function lambdaLosses(folds: readonly FoldFit[], ctx: Ctx): { lambda: number; lo
     const o = oof(folds, li);
     if (o === null) return { lambda, loss: Number.POSITIVE_INFINITY };
     const platt = fitPlatt(o.z, o.y);
-    return { lambda, loss: logLoss(o.z.map((z) => applyPlatt(platt, z)), o.y) };
+    return {
+      lambda,
+      loss: logLoss(
+        o.z.map((z) => applyPlatt(platt, z)),
+        o.y,
+      ),
+    };
   });
 }
 
 /** λ and Platt chosen on a partition's own inner folds; the largest λ and identity when none can be formed. */
-function innerSelect(rows: readonly Row[], seed: string, ctx: Ctx): { lambda: number; platt: PlattParams } {
+function innerSelect(
+  rows: readonly Row[],
+  seed: string,
+  ctx: Ctx,
+): { lambda: number; platt: PlattParams } {
   const largest = Math.max(...ctx.grid);
   const plan = planFolds(
     rows.map((r) => r.s),
@@ -255,7 +277,10 @@ function baselineOf(
  * own inputs and scaling, λ and Platt by nested folds, the cards-only baseline and the activation
  * reasons. `research` mode skips the minimums, flags the metrics and is never eligible.
  */
-export function trainUserModel(args: TrainArgs, opts: { mode: 'production' | 'research' }): TrainResult {
+export function trainUserModel(
+  args: TrainArgs,
+  opts: { mode: 'production' | 'research' },
+): TrainResult {
   const cfg = args.config;
   const mc = cfg.model;
   const research = opts.mode === 'research';
@@ -351,7 +376,8 @@ export function trainUserModel(args: TrainArgs, opts: { mode: 'production' | 're
     for (const [f, fold] of folds.entries()) {
       const chosen = innerSelect(fold.trainRows, `${seed}|inner|${f}`, ctx);
       const fit = fold.fits[ctx.grid.indexOf(chosen.lambda)];
-      if (fit === undefined || !fit.ok) return reject([fit?.ok === false ? fit.reason : 'nonconverged']);
+      if (fit === undefined || !fit.ok)
+        return reject([fit?.ok === false ? fit.reason : 'nonconverged']);
       for (const z of logitsOf(fit, fold.valX)) probs.push(applyPlatt(chosen.platt, z));
       ys.push(...fold.valY);
       for (const row of fold.valRows) {
@@ -410,4 +436,3 @@ export function trainUserModel(args: TrainArgs, opts: { mode: 'production' | 're
   const reasons = qualityReasons(metrics, mc);
   return { model, metrics, activation: { eligible: reasons.length === 0, reasons } };
 }
-

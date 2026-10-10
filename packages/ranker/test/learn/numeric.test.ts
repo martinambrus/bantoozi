@@ -88,7 +88,12 @@ describe('numeric core (spec 06 §8.3)', () => {
 
   it('3. integer sample weights act as row replication', () => {
     const { X, y } = dataset(80, 44);
-    const weighted = okFit(X, y, ones(80).map((v) => v * 2), 0.5);
+    const weighted = okFit(
+      X,
+      y,
+      ones(80).map((v) => v * 2),
+      0.5,
+    );
     const dup = okFit([...X, ...X], [...y, ...y], ones(160), 0.5);
     expect(weighted.intercept).toBeCloseTo(dup.intercept, 6);
     weighted.weights.forEach((v, j) => {
@@ -136,7 +141,12 @@ describe('numeric core (spec 06 §8.3)', () => {
   });
 
   it('8. a single class with lambda > 0 fits with the intercept on the class side', () => {
-    const X = [[0.5, -1], [1, 0.2], [-0.3, 0.8], [0.1, 0.1]];
+    const X = [
+      [0.5, -1],
+      [1, 0.2],
+      [-0.3, 0.8],
+      [0.1, 0.1],
+    ];
     const pos = okFit(X, [1, 1, 1, 1], ones(4), 1);
     expect(pos.intercept).toBeGreaterThan(0);
     const neg = okFit(X, [0, 0, 0, 0], ones(4), 1);
@@ -169,9 +179,15 @@ describe('numeric core (spec 06 §8.3)', () => {
     const z = Array.from({ length: n }, () => 6 * r() - 3);
     const y: (0 | 1)[] = z.map((v) => (r() < 1 / (1 + Math.exp(-v)) ? 1 : 0));
     const logits = z.map((v) => 3 * v);
-    const before = ece(logits.map((v) => sigmoid(v)), y);
+    const before = ece(
+      logits.map((v) => sigmoid(v)),
+      y,
+    );
     const cal = fitPlatt(logits, y);
-    const after = ece(logits.map((v) => applyPlatt(cal, v)), y);
+    const after = ece(
+      logits.map((v) => applyPlatt(cal, v)),
+      y,
+    );
     expect(after).toBeLessThan(before);
     expect(cal.a).toBeGreaterThan(0.2);
     expect(cal.a).toBeLessThan(0.5);

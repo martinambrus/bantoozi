@@ -200,10 +200,10 @@ async function reader(options: { likes?: number; likedAgo?: number } = {}): Prom
     mode: 'active',
     activatedAt: new Date(Date.now() - 10 * DAY),
   });
-  await owner.query(
-    `INSERT INTO user_cards (user_id, card_id, strength) VALUES ($1, $2, 'like')`,
-    [user.id, heldCardId],
-  );
+  await owner.query(`INSERT INTO user_cards (user_id, card_id, strength) VALUES ($1, $2, 'like')`, [
+    user.id,
+    heldCardId,
+  ]);
   await like(user.id, options.likes ?? 4, options.likedAgo ?? 1 * DAY);
   return user.id;
 }
@@ -293,16 +293,14 @@ async function seedSuggestion(
 
 /** Question keys of the fake TypeSafe requests from `from` on. */
 function askedKeys(from: number): string[][] {
-  return fake.requests
-    .slice(from)
-    .map((request) =>
-      Object.values(
-        (request.body as { questions: Record<string, { criteria?: Record<string, unknown> }> })
-          .questions,
-      )
-        .flatMap((question) => Object.keys(question.criteria ?? {}))
-        .sort(),
-    );
+  return fake.requests.slice(from).map((request) =>
+    Object.values(
+      (request.body as { questions: Record<string, { criteria?: Record<string, unknown> }> })
+        .questions,
+    )
+      .flatMap((question) => Object.keys(question.criteria ?? {}))
+      .sort(),
+  );
 }
 
 const publicCard = (interest: string, topicIds: string[]) =>
@@ -373,10 +371,10 @@ beforeAll(async () => {
     mode: 'active',
     activatedAt: new Date(Date.now() - 10 * DAY),
   });
-  await owner.query(
-    `INSERT INTO user_cards (user_id, card_id, strength) VALUES ($1, $2, 'like')`,
-    [seedReader.id, heldCardId],
-  );
+  await owner.query(`INSERT INTO user_cards (user_id, card_id, strength) VALUES ($1, $2, 'like')`, [
+    seedReader.id,
+    heldCardId,
+  ]);
   for (let i = 1; i <= 5; i += 1) {
     const article = await createArticle(owner, {
       feedIds: [feedId],
@@ -450,7 +448,8 @@ describe('user.suggest (M7-T6, spec 05 §7)', () => {
     try {
       for (const variant of ['same', 'set', 'pin'] as const) {
         const userId = await reader({ likes: 4 });
-        const oldSet = variant === 'set' ? await questionSet(`suggest-old-${randomUUID()}`) : activeSet;
+        const oldSet =
+          variant === 'set' ? await questionSet(`suggest-old-${randomUUID()}`) : activeSet;
         const oldPin = variant === 'pin' ? 'jev-old' : FAKE_TYPESAFE_MODEL;
         await seedSuggestion(userId, libraryCardId, {
           dismissedAgo: 20 * DAY,
@@ -708,7 +707,9 @@ describe('user.suggest (M7-T6, spec 05 §7)', () => {
         WHERE id = $1`,
       [card.id, 'Zorblax electric trams'],
     );
-    await owner.query(`UPDATE interest_cards SET retired_at = now() WHERE id = $1`, [libraryCardId]);
+    await owner.query(`UPDATE interest_cards SET retired_at = now() WHERE id = $1`, [
+      libraryCardId,
+    ]);
     await setSetting('card_text_mode', 'english');
     try {
       const userId = await reader({ likes: 4 });
@@ -724,7 +725,9 @@ describe('user.suggest (M7-T6, spec 05 §7)', () => {
     } finally {
       await setSetting('card_text_mode', 'as_written');
       await owner.query(`UPDATE interest_cards SET retired_at = now() WHERE id = $1`, [card.id]);
-      await owner.query(`UPDATE interest_cards SET retired_at = NULL WHERE id = $1`, [libraryCardId]);
+      await owner.query(`UPDATE interest_cards SET retired_at = NULL WHERE id = $1`, [
+        libraryCardId,
+      ]);
     }
   });
 
@@ -754,7 +757,9 @@ describe('user.suggest (M7-T6, spec 05 §7)', () => {
     } finally {
       client.release();
     }
-    await owner.query(`UPDATE interest_cards SET retired_at = now() WHERE id = $1`, [libraryCardId]);
+    await owner.query(`UPDATE interest_cards SET retired_at = now() WHERE id = $1`, [
+      libraryCardId,
+    ]);
     await setSetting('card_text_mode', 'english');
     try {
       const userId = await reader({ likes: 4 });
@@ -768,7 +773,9 @@ describe('user.suggest (M7-T6, spec 05 §7)', () => {
     } finally {
       await setSetting('card_text_mode', 'as_written');
       await owner.query(`UPDATE interest_cards SET retired_at = now() WHERE id = $1`, [card.id]);
-      await owner.query(`UPDATE interest_cards SET retired_at = NULL WHERE id = $1`, [libraryCardId]);
+      await owner.query(`UPDATE interest_cards SET retired_at = NULL WHERE id = $1`, [
+        libraryCardId,
+      ]);
     }
   });
 });

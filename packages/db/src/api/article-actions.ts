@@ -700,7 +700,8 @@ async function captureFeatures(
   if (row.inference_feed_ids.length === 0) return { features: null, staleAtFeedback };
 
   const translated =
-    row.lang !== null && textOrNull(objectField(stored.get('language_modes'), row.lang)) === 'translate';
+    row.lang !== null &&
+    textOrNull(objectField(stored.get('language_modes'), row.lang)) === 'translate';
   const cards = await tx.execute<{
     id: string;
     strength: Strength;

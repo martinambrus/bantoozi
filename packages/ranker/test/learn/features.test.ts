@@ -835,7 +835,9 @@ describe('FEATURE_SPEC_V1 sha', () => {
   });
 
   it('is pinned', () => {
-    expect(FEATURE_SPEC_V1_SHA).toBe('e60f151f433ce82bb85bd811df56a4588f6a2e7eefba6dd103a54e376638816c');
+    expect(FEATURE_SPEC_V1_SHA).toBe(
+      'e60f151f433ce82bb85bd811df56a4588f6a2e7eefba6dd103a54e376638816c',
+    );
   });
 
   it('does not depend on object key order', () => {

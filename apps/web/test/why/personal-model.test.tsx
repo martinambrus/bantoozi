@@ -11,7 +11,13 @@ type Top = NonNullable<Explain['model']>['top'];
 async function modelLines(top: Top, language: Language) {
   const { dialog } = await renderDrawer({
     language,
-    explain: makeExplain({ source: 'model', p: 0.7, tier: 4, cards: [], model: { version: 2, top } }),
+    explain: makeExplain({
+      source: 'model',
+      p: 0.7,
+      tier: 4,
+      cards: [],
+      model: { version: 2, top },
+    }),
   });
   const lines = describeDrawer(dialog).split('\n');
   const start = lines.findIndex((line) => /^## (Your personal model|Váš osobný model)$/.test(line));

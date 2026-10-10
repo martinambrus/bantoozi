@@ -30,7 +30,9 @@ export function groupFolds(samples: readonly TrainingSample[], k: number, seed: 
   const foldOf = new Map<string, number>();
   let counter = 0;
   for (const stratum of STRATA) {
-    const list = (byStratum.get(stratum) ?? []).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    const list = (byStratum.get(stratum) ?? []).sort((a, b) =>
+      a.key < b.key ? -1 : a.key > b.key ? 1 : 0,
+    );
     for (const g of list) {
       foldOf.set(g.id, k > 0 ? counter % k : 0);
       counter += 1;
@@ -44,7 +46,12 @@ export interface FoldPlan {
   folds: number[];
 }
 
-function bothClasses(samples: readonly TrainingSample[], folds: readonly number[], f: number, inside: boolean) {
+function bothClasses(
+  samples: readonly TrainingSample[],
+  folds: readonly number[],
+  f: number,
+  inside: boolean,
+) {
   let pos = false;
   let neg = false;
   samples.forEach((s, i) => {
