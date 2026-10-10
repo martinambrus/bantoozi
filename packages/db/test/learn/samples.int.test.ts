@@ -1,7 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { setupDbTest, type DbTestContext } from '../support/test-db.js';
-import { Scenario, analysisRequest, snapshot, type LearnSample } from './fixtures.js';
+import {
+  FEATURE_SPEC_SHA,
+  Scenario,
+  analysisRequest,
+  snapshot,
+  type LearnSample,
+} from './fixtures.js';
+import { frozenRequest } from './frozen.js';
 
 /**
  * M7-T2 (spec 06 §8.2, PLAN §13): `loadLearnSamples` turns `user_article` + `feedback_events` into
@@ -904,5 +911,92 @@ describe('cutoff and isolation', () => {
     expect(sample).toMatchObject({ y: 0, eventId: await mine.eventId(shared, 'rate') });
     const theirSample = only(await theirs.samples());
     expect(theirSample).toMatchObject({ y: 1, eventId: await theirs.eventId(shared, 'rate') });
+  });
+});
+
+describe('derived snapshots from a frozen request (spec 06 §8.2)', () => {
+  const RATING_SHA = 'e'.repeat(64);
+
+  async function setup() {
+    const s = await Scenario.create(ctx);
+    const a = await s.article();
+    const at = s.tick();
+    const request = await frozenRequest(s, a, {
+      publishedAt: new Date(at.getTime() - 5 * 3_600_000),
+      firstSeenAt: new Date(at.getTime() - 3 * 3_600_000),
+      cards: [
+        { cardId: '501', kind: 'interest', strength: 'love', p: 0.8 },
+        { cardId: '502', kind: 'interest', strength: 'never' },
+        { cardId: '503', kind: 'label', strength: null, p: 0.4 },
+      ],
+      facets: { 'topic.a': 0.25 },
+    });
+    return { s, a, at, request };
+  }
+
+  it('a rating without features derives its snapshot from the matching frozen request', async () => {
+    const { s, a, at, request } = await setup();
+    await s.insertRating(
+      a,
+      {
+        analysisRequestId: request.requestId,
+        inputSha: request.inputSha,
+        ratingSha: RATING_SHA,
+        features: null,
+      },
+      { at },
+    );
+    const sample = only(await s.samples());
+    expect(sample).toMatchObject({ articleId: a, signal: 'rating', y: 1, groupId: '77' });
+    expect(sample.features).toEqual({
+      specSha: FEATURE_SPEC_SHA,
+      ratingSha: RATING_SHA,
+      snapshotAt: at.toISOString(),
+      cards: [
+        { id: '501', strength: 'love', p: 0.8, engine: 'typesafe' },
+        { id: '502', strength: 'never', p: null, engine: null },
+      ],
+      values: {
+        facets: { 'topic.a': 0.25 },
+        facetsEngine: 'typesafe',
+        wordCount: 321,
+        ageHours: 5,
+        lang: 'cs',
+        hasImage: true,
+        hasVideo: false,
+        bodyImageCount: 2,
+        clusterId: '77',
+        clusterSize: 4,
+        sourceFeedId: s.feedId,
+        author: 'Frozen Author',
+      },
+    });
+  });
+
+  it('a mismatching input sha, or a missing rating sha, leaves the features null', async () => {
+    const { s, a, at, request } = await setup();
+    await s.insertRating(
+      a,
+      {
+        analysisRequestId: request.requestId,
+        inputSha: '0'.repeat(64),
+        ratingSha: RATING_SHA,
+        features: null,
+      },
+      { at },
+    );
+    expect(only(await s.samples()).features).toBeNull();
+
+    const other = await setup();
+    await other.s.insertRating(
+      other.a,
+      {
+        analysisRequestId: other.request.requestId,
+        inputSha: other.request.inputSha,
+        features: null,
+      },
+      { at: other.at },
+    );
+    expect(only(await other.s.samples()).features).toBeNull();
   });
 });

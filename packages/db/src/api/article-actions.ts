@@ -1214,6 +1214,10 @@ async function applyRating(
   const capture = await captureFeatures(tx, lock.user, article, options.config, options.now, {
     live: revision === article.contentRevision,
   });
+  const ratingSha =
+    request !== null && capture.features === null
+      ? ratingShaOf(await readRatingSettingsLocked(tx))
+      : null;
   const row = article.row;
   const patch: ReaderPatch =
     target.rating === null
@@ -1240,6 +1244,7 @@ async function applyRating(
       contentRevision: revision,
       ...(target.fence.snapshotId === undefined ? {} : { snapshotId: target.fence.snapshotId }),
       ...(request === null ? {} : { analysisRequestId: request.id, inputSha: request.inputSha }),
+      ...(ratingSha === null ? {} : { ratingSha }),
       signalOrigin: 'explicit',
       learningConsent: learningConsent(lock.prefs),
       before: rankBefore(row),

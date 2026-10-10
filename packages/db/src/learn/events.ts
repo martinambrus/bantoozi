@@ -1,3 +1,4 @@
+import { AnalysisInputSnapshotSchema } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Executor } from '../client.js';
@@ -121,8 +122,14 @@ async function loadAnalysis(
 ): Promise<Map<string, LearnAnalysisResult>> {
   const out = new Map<string, LearnAnalysisResult>();
   if (ids.length === 0) return out;
-  const rows = await db.execute<{ id: string; input_sha: string; result_snapshot: unknown }>(sql`
-    SELECT id::text AS id, input_sha, result_snapshot
+  const rows = await db.execute<{
+    id: string;
+    input_sha: string;
+    result_snapshot: unknown;
+    input_snapshot: unknown;
+    feed_id: string;
+  }>(sql`
+    SELECT id::text AS id, input_sha, result_snapshot, input_snapshot, feed_id::text AS feed_id
       FROM analysis_requests
      WHERE user_id = ${userId}::uuid AND status = 'complete' AND result_snapshot IS NOT NULL
        AND id = ANY(${sql.param(ids)}::uuid[])`);
@@ -142,10 +149,37 @@ async function loadAnalysis(
         }
       }
     }
+    const input = AnalysisInputSnapshotSchema.safeParse(row.input_snapshot);
+    const frozen = input.success
+      ? {
+          feedId: row.feed_id,
+          cards: input.data.cards.flatMap((c) =>
+            c.kind === 'interest' && c.strength !== null
+              ? [{ id: c.cardId, strength: c.strength }]
+              : [],
+          ),
+          article: {
+            wordCount: input.data.article.wordCount,
+            lang: input.data.article.lang,
+            author: input.data.article.author,
+            firstSeenAt: new Date(input.data.article.firstSeenAt),
+            publishedAt:
+              input.data.article.publishedAt === null
+                ? null
+                : new Date(input.data.article.publishedAt),
+            hasImage: input.data.article.hasImage,
+            hasVideo: input.data.article.hasVideo,
+            bodyImageCount: input.data.article.bodyImageCount,
+            storyClusterId: input.data.article.storyClusterId,
+            clusterSize: input.data.article.clusterSize,
+          },
+        }
+      : undefined;
     out.set(row.id, {
       inputSha: row.input_sha,
       facets: features as Record<string, number> | null,
       cardP,
+      ...(frozen === undefined ? {} : { frozen }),
     });
   }
   return out;

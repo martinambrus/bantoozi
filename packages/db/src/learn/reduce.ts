@@ -1,3 +1,5 @@
+import { FEATURE_SNAPSHOT_SPEC_SHA } from '../api/article-actions.js';
+
 import type {
   FeatureSnapshotV1,
   LearnAnalysisResult,
@@ -48,6 +50,46 @@ function complete(
     copy.values.facetsEngine = 'typesafe';
   }
   return copy;
+}
+
+/** The raw-v1 snapshot a rating without one derives from its frozen request (spec 06 §8.2). */
+function derive(
+  result: LearnAnalysisResult,
+  ratingSha: string,
+  ratedAt: Date,
+): FeatureSnapshotV1 | null {
+  const frozen = result.frozen;
+  if (frozen === undefined) return null;
+  const a = frozen.article;
+  const origin = Math.min((a.publishedAt ?? a.firstSeenAt).getTime(), a.firstSeenAt.getTime());
+  return {
+    specSha: FEATURE_SNAPSHOT_SPEC_SHA,
+    ratingSha,
+    snapshotAt: ratedAt.toISOString(),
+    cards: frozen.cards.map((card) => {
+      const p = result.cardP.get(card.id);
+      return {
+        id: card.id,
+        strength: card.strength,
+        p: p ?? null,
+        engine: p === undefined ? null : 'typesafe',
+      };
+    }),
+    values: {
+      facets: result.facets,
+      facetsEngine: result.facets === null ? null : 'typesafe',
+      wordCount: a.wordCount,
+      ageHours: Math.max(0, (ratedAt.getTime() - origin) / 3_600_000),
+      lang: a.lang,
+      hasImage: a.hasImage,
+      hasVideo: a.hasVideo,
+      bodyImageCount: a.bodyImageCount,
+      clusterId: a.storyClusterId,
+      clusterSize: a.clusterSize,
+      sourceFeedId: frozen.feedId,
+      author: a.author,
+    },
+  };
 }
 
 export interface ReduceInput {
@@ -112,6 +154,18 @@ export function reduceArticle(input: ReduceInput): LearnSample | null {
         const result = typeof requestId === 'string' ? input.analysis.get(requestId) : undefined;
         if (result !== undefined && result.inputSha === source.value.inputSha) {
           features = complete(features, result);
+        }
+      }
+      if (features === null) {
+        const requestId = effective.value.analysisRequestId;
+        const result = typeof requestId === 'string' ? input.analysis.get(requestId) : undefined;
+        const ratingSha = effective.value.ratingSha;
+        if (
+          result !== undefined &&
+          result.inputSha === effective.value.inputSha &&
+          typeof ratingSha === 'string'
+        ) {
+          features = derive(result, ratingSha, effective.createdAt);
         }
       }
       return make(effective, 'rating', state.rating === 1 ? 1 : 0, 1, true, features);

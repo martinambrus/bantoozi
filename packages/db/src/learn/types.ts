@@ -58,4 +58,24 @@ export interface LearnAnalysisResult {
   inputSha: string;
   facets: Record<string, number> | null;
   cardP: Map<string, number>;
+  /** The request's valid frozen input, when it could be read. */
+  frozen?: LearnFrozenInput;
+}
+
+/** The frozen input of a completed request, as far as a derived raw snapshot needs it. */
+export interface LearnFrozenInput {
+  feedId: string;
+  cards: { id: string; strength: string }[];
+  article: {
+    wordCount: number | null;
+    lang: string | null;
+    author: string | null;
+    firstSeenAt: Date;
+    publishedAt: Date | null;
+    hasImage: boolean;
+    hasVideo: boolean | null;
+    bodyImageCount: number | null;
+    storyClusterId: string | null;
+    clusterSize: number;
+  };
 }

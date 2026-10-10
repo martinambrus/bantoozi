@@ -1045,6 +1045,29 @@ describe('selected training requests', () => {
     expect(obsolete).toMatchObject({ code: 'CONFLICT', details: { reason: 'obsolete_request' } });
     await restamp(h, r.user.id);
   });
+
+  it('a rating of an older saved revision with a request stores the rating fingerprint and no features', async () => {
+    const { r, feed, article } = await setup({}, 'training');
+    const requestId = await selectArticle(r.user.id, feed, article);
+    const saved = await ok(r.api.post(`/articles/${article}/bookmark`, freshFence));
+    const snapshotId = saved.item.bookmarkCapture!.snapshotId!;
+    await h.owner.query(`UPDATE articles SET content_revision = 2 WHERE id = $1`, [article]);
+    await ok(
+      r.api.post(`/articles/${article}/rating`, {
+        stateVersion: saved.item.stateVersion,
+        contentRevision: '1',
+        snapshotId,
+        rating: 1,
+        analysisRequestId: requestId,
+      }),
+    );
+    const rate = (await events(h, r.user.id, article)).find((e) => e.kind === 'rate')!;
+    expect(rate.value).toMatchObject({
+      analysisRequestId: requestId,
+      features: null,
+      ratingSha: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
+  });
 });
 
 describe('feature snapshot reads the current sets (spec 06 §8.2)', () => {
