@@ -655,7 +655,9 @@ ranking until enough compatible feedback exists.
   model context or the eligible samples differ from the last attempt, and it reuses the stored
   ratings, so a card edit never waits for new feedback. Changes to implicit evidence, preferences and
   180-day retention also participate in the nightly trigger. No revoked evidence may remain silently
-  active in a stored model.
+  active in a stored model. Reversing a training label or changing its signal weight revokes the
+  old evidence even if a replacement candidate fails activation; a re-rating with the same label
+  and weight keeps it.
 - A selected analysis request completing valid features for already-recorded feedback also enqueues
   learning; the earlier pending rating must not be stranded below a stale training watermark.
 - `house.nightly-learn` enqueues users whose effective input manifest differs from the last attempt,

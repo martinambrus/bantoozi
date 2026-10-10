@@ -1513,7 +1513,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   "undo/unrate/deletion invalidates affected models immediately" happens in `user.learn` on its next
   debounced run (the API already records the intent), and the rank handler never scores a model whose
   context no longer matches. Evidence counts as revoked when an article in the model's samples no
-  longer has a sample; a changed rating keeps it. (2) A run trains only when its input hash changed:
+  longer has an eligible sample, or its label or signal weight changed; a re-rating with the same
+  label and weight keeps it (PR #25 review). (2) A run trains only when its input hash changed:
   the eligible samples (membership, label, weight and snapshot content, not their timestamps, so
   only expiry changes the set over time), the rating fingerprint, the feature spec, the held cards
   that appear in eligible snapshots, config and consent. (3) `user_models.metrics` holds the trainer

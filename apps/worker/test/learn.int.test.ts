@@ -1,10 +1,10 @@
-import { loadLearnSamples } from '@bantoozi/db';
+import { loadLearnSamples, rateArticle } from '@bantoozi/db';
 import { DEFAULT_RANKER_CONFIG, FEATURE_SPEC_V1_SHA, modelContextSha } from '@bantoozi/ranker';
 import { HOUSE_CRON_SCHEDULES } from '@bantoozi/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ClassifyHarness, DAY } from './support/classify.js';
-import { LearnWorld, RATED, type ModelRow } from './support/learn-world.js';
+import { LearnWorld, RATED, answerOf, likeOf, type ModelRow } from './support/learn-world.js';
 
 /**
  * M7-T4 (PLAN §13, spec 06 §8.1, §8.3, §8.4, spec 11 §6): the `user.learn` handler, version
@@ -45,12 +45,6 @@ async function decorrelate(userId: string): Promise<void> {
     if (i % 4 === 0) await w.rate(userId, i, -1); // answer 0.9 group: half of 24 flip to dislike
     if (i % 8 === 1 || i % 8 === 3) await w.rate(userId, i, 1); // 0.1 and 0.6 groups: half flip
   }
-}
-
-/** A noise-preserving input change: swap the classes of two articles inside the 0.9 group. */
-async function swap(userId: string, k: number): Promise<void> {
-  await w.rate(userId, 2 + 4 * k, -1);
-  await w.rate(userId, 4 * k, 1);
 }
 
 /** The model context the current state implies, for the own card inputs `ownIds` (spec 06 §8.1). */
@@ -157,7 +151,7 @@ describe('user.learn and house.nightly-learn (M7-T4)', () => {
     expect(await w.userIntents('user.suggest', userId, mark)).toHaveLength(1);
   });
 
-  it('a failed candidate (too few ratings) is stored inactive with its rejection reason and cutoff, records no rank or suggest intent, and leaves a previous active model active', async () => {
+  it('a failed candidate is stored inactive with its rejection reason and cutoff, and flipped training labels deactivate the previous model', async () => {
     // Too few ratings: the attempt is stored, nothing is activated.
     const few = await w.user();
     await w.rateRange(few, 0, 6);
@@ -181,7 +175,6 @@ describe('user.learn and house.nightly-learn (M7-T4)', () => {
     expect(await w.userIntents('user.rank', few, fewMark)).toHaveLength(0);
     expect(await w.userIntents('user.suggest', few, fewMark)).toHaveLength(0);
 
-    // A candidate that fails validation leaves the compatible active model in place.
     const userId = await trained();
     expect((await w.active(userId)).map((m) => m.version)).toEqual([1]);
     await decorrelate(userId);
@@ -193,9 +186,11 @@ describe('user.learn and house.nightly-learn (M7-T4)', () => {
     expect(rows[1]!.active).toBe(false);
     expect(rows[1]!.metrics['feedbackCutoffEventId']).toBe(await w.newestEvent(userId));
     expect(Object.keys(rows[1]!.metrics).some((k) => /reason/i.test(k))).toBe(true);
-    expect(rows[0]!.active).toBe(true);
-    expect(await w.rankRevision(userId)).toBe(before);
-    expect(await w.userIntents('user.rank', userId, mark)).toHaveLength(0);
+    expect(rows[0]!.active).toBe(false);
+    expect(await w.rankRevision(userId)).toBeGreaterThan(before);
+    expect(
+      (await w.userIntents('user.rank', userId, mark)).some((payload) => payload['full']),
+    ).toBe(true);
     expect(await w.userIntents('user.suggest', userId, mark)).toHaveLength(0);
   });
 
@@ -220,9 +215,26 @@ describe('user.learn and house.nightly-learn (M7-T4)', () => {
   it('retention: after 6 attempts the active row plus the 3 newest inactive rows remain; the active row is kept even when it is the oldest', async () => {
     const userId = await trained();
     let newest = (await w.models(userId)).at(-1)!.version;
-    await decorrelate(userId);
+    for (let index = 0; index < RATED; index += 1) {
+      const articleId = await h.article({
+        feedIds: [w.feedId],
+        title: `Contradictory example ${index}`,
+      });
+      await h.enrichDirect(articleId);
+      await h.answerCard(articleId, w.cardM, { engine: 'typesafe', p: answerOf(index) });
+      await w.run(userId, articleId, (tx, base) =>
+        rateArticle(tx, {
+          ...base,
+          rating: likeOf(index) === 1 ? -1 : 1,
+          reason: null,
+          hide: false,
+        }),
+      );
+    }
     for (let attempt = 2; attempt <= 6; attempt += 1) {
-      if (attempt > 2) await swap(userId, attempt - 3);
+      if (attempt > 2) {
+        await w.rate(userId, attempt - 3);
+      }
       await learn(userId);
       const rows = await w.models(userId);
       const latest = rows.reduce((max, m) => Math.max(max, m.version), 0);
