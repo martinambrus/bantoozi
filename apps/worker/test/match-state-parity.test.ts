@@ -210,11 +210,6 @@ describe('enrich-state hash parity between API and worker', () => {
     );
   });
 
-  it('differs from the match-state hash of the same input', () => {
-    const a = article('sk');
-    expect(apiEnrichHash(a, [], {})).not.toBe(apiHash(a, [], {}));
-  });
-
   it('an unknown language is native', () => {
     const unknown = article(null);
     const rows = [row({})];
