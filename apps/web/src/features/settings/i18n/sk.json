@@ -24,6 +24,11 @@
     "saved": "Uložené",
     "notSaved": "Neuložené",
     "saveFailed": "Toto nastavenie sa nepodarilo uložiť. {{reason}}",
+    "lock": {
+      "title": "Predvoľby sa upravujú v inej karte alebo okne",
+      "body": "Zmeny sú tu pozastavené, aby sa dve okná navzájom neprepisovali. Ak chcete pokračovať v tomto okne, vyberte Upraviť tu.",
+      "takeOver": "Upraviť tu"
+    },
     "groups": {
       "lists": "Zoznamy",
       "reading": "Označovanie ako prečítané",

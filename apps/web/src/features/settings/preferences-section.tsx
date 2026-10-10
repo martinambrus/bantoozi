@@ -1,6 +1,7 @@
-import { useId, type ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Button } from '../../components/button.js';
 import { errorMessage } from '../../components/error-message.js';
 import { CheckIcon } from '../../components/icons.js';
 import { SegmentedControl } from '../../components/segmented-control.js';
@@ -16,6 +17,7 @@ import {
   type ToggleId,
 } from './preferences-saver.js';
 import { SettingsSection } from './section.js';
+import { usePreferencesLock } from './use-preferences-lock.js';
 
 const TIERS = [1, 2, 3, 4, 5] as const;
 
@@ -158,60 +160,88 @@ const SWIPE_RIGHT = ['like', 'bookmark', 'none'] as const;
 
 export function PreferencesSection() {
   const { t } = useTranslation('settings');
+  const { state, takeOver } = usePreferencesLock();
+  const locked = state === 'elsewhere';
+  const controls = useRef<HTMLDivElement>(null);
+  const takeOverButton = useRef<HTMLButtonElement>(null);
+  // An inert subtree drops the focus; the person was in the controls, so the button is next.
+  useLayoutEffect(() => {
+    if (locked && controls.current?.contains(document.activeElement) === true) {
+      takeOverButton.current?.focus();
+    }
+  }, [locked]);
   return (
     <SettingsSection title={t('preferences.title')} description={t('preferences.intro')}>
-      <PreferenceSaverProvider>
-        <div className="flex flex-col gap-8">
-          <Group title={t('preferences.groups.lists')}>
-            <TierSetting />
-            <ChoiceSetting id="sort" text="sort" options={SORTS} />
-            <ToggleSetting id="hideEverything" text="hideEverything" />
-            <ToggleSetting id="simpleMode" text="simpleMode" />
-          </Group>
-          <Group title={t('preferences.groups.reading')}>
-            <ToggleSetting id="markReadOnExpand" text="markReadOnExpand" />
-            <ToggleSetting id="markReadOnRate" text="markReadOnRate" />
-          </Group>
-          <Group title={t('preferences.groups.learning')}>
-            <ToggleSetting id="implicitFeedback" text="implicitFeedback" />
-            <ToggleSetting id="implicitNegative" text="implicitNegative" />
-            <ChoiceSetting id="feedbackPrompt" text="feedbackPrompt" options={FEEDBACK_PROMPTS} />
-            <ToggleSetting id="exampleSuggestions" text="exampleSuggestions" />
-          </Group>
-          <Group title={t('preferences.groups.quality')} intro={t('preferences.quality.intro')}>
-            <ChoiceSetting
-              id="demote.clickbait"
-              text="quality.clickbait"
-              optionsText="quality"
-              options={TRI}
-            />
-            <ChoiceSetting
-              id="demote.promotional"
-              text="quality.promotional"
-              optionsText="quality"
-              options={TRI}
-            />
-            <ChoiceSetting
-              id="demote.shallow"
-              text="quality.shallow"
-              optionsText="quality"
-              options={TRI}
-            />
-            <ChoiceSetting
-              id="demote.stale"
-              text="quality.stale"
-              optionsText="quality"
-              options={TRI}
-            />
-          </Group>
-          <Group title={t('preferences.groups.swipe')}>
-            <ChoiceSetting id="swipe.left" text="swipe.left" options={SWIPE_LEFT} />
-            <ChoiceSetting id="swipe.right" text="swipe.right" options={SWIPE_RIGHT} />
-          </Group>
-          <Group title={t('preferences.groups.images')}>
-            <ToggleSetting id="loadRemoteImages" text="images" />
-            <ImageExceptions />
-          </Group>
+      <PreferenceSaverProvider lock={state}>
+        <div className="relative">
+          <div ref={controls} inert={locked} className="flex flex-col gap-8">
+            <Group title={t('preferences.groups.lists')}>
+              <TierSetting />
+              <ChoiceSetting id="sort" text="sort" options={SORTS} />
+              <ToggleSetting id="hideEverything" text="hideEverything" />
+              <ToggleSetting id="simpleMode" text="simpleMode" />
+            </Group>
+            <Group title={t('preferences.groups.reading')}>
+              <ToggleSetting id="markReadOnExpand" text="markReadOnExpand" />
+              <ToggleSetting id="markReadOnRate" text="markReadOnRate" />
+            </Group>
+            <Group title={t('preferences.groups.learning')}>
+              <ToggleSetting id="implicitFeedback" text="implicitFeedback" />
+              <ToggleSetting id="implicitNegative" text="implicitNegative" />
+              <ChoiceSetting id="feedbackPrompt" text="feedbackPrompt" options={FEEDBACK_PROMPTS} />
+              <ToggleSetting id="exampleSuggestions" text="exampleSuggestions" />
+            </Group>
+            <Group title={t('preferences.groups.quality')} intro={t('preferences.quality.intro')}>
+              <ChoiceSetting
+                id="demote.clickbait"
+                text="quality.clickbait"
+                optionsText="quality"
+                options={TRI}
+              />
+              <ChoiceSetting
+                id="demote.promotional"
+                text="quality.promotional"
+                optionsText="quality"
+                options={TRI}
+              />
+              <ChoiceSetting
+                id="demote.shallow"
+                text="quality.shallow"
+                optionsText="quality"
+                options={TRI}
+              />
+              <ChoiceSetting
+                id="demote.stale"
+                text="quality.stale"
+                optionsText="quality"
+                options={TRI}
+              />
+            </Group>
+            <Group title={t('preferences.groups.swipe')}>
+              <ChoiceSetting id="swipe.left" text="swipe.left" options={SWIPE_LEFT} />
+              <ChoiceSetting id="swipe.right" text="swipe.right" options={SWIPE_RIGHT} />
+            </Group>
+            <Group title={t('preferences.groups.images')}>
+              <ToggleSetting id="loadRemoteImages" text="images" />
+              <ImageExceptions />
+            </Group>
+          </div>
+          {locked ? (
+            <div className="absolute inset-0 z-10 flex items-start justify-center bg-white/80 p-4 dark:bg-slate-950/80">
+              <div
+                role="status"
+                className="sticky top-4 flex max-w-md flex-col items-start gap-3 rounded-lg border border-slate-300 bg-white p-4 shadow-lg dark:border-slate-600 dark:bg-slate-900"
+              >
+                <p className="text-base font-semibold">{t('preferences.lock.title')}</p>
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  {t('preferences.lock.body')}
+                </p>
+                <Button ref={takeOverButton} variant="secondary" onClick={takeOver}>
+                  {t('preferences.lock.takeOver')}
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </PreferenceSaverProvider>
     </SettingsSection>

@@ -1,11 +1,12 @@
 import type { Me, UserPreferences, UserPreferencesPatch } from '@bantoozi/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { createContext, useContext, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { useApiMutation } from '../../api/mutation.js';
 import { routes } from '../../api/routes.js';
 import { useMe, useSession } from '../../session/context.js';
 import { storeSavedMe } from '../../session/me.js';
+import type { PreferencesLockState } from './use-preferences-lock.js';
 
 type Nested<Group extends string, Leaves> = {
   [Leaf in keyof Leaves & string as `${Group}.${Leaf}`]: Leaves[Leaf];
@@ -82,8 +83,16 @@ export function usePreferenceSaver(): PreferenceSaver {
  * patch of that one leaf, so settings changed in quick succession cannot overwrite each other. A
  * setting has one request on its way at a time: two could reach the server in either order and
  * leave it with the older value, so what is changed meanwhile waits, and only the newest is sent.
+ * While another tab edits the preferences (`lock`), nothing is changed here: what waited is dropped,
+ * and a request already on its way is left to finish.
  */
-export function PreferenceSaverProvider({ children }: { children: ReactNode }) {
+export function PreferenceSaverProvider({
+  lock = 'held',
+  children,
+}: {
+  lock?: PreferencesLockState;
+  children: ReactNode;
+}) {
   const me = useMe();
   const session = useSession();
   const queryClient = useQueryClient();
@@ -144,8 +153,20 @@ export function PreferenceSaverProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  useEffect(() => {
+    if (lock !== 'elsewhere') return;
+    const dropped = [...waiting.current.keys()];
+    waiting.current.clear();
+    if (dropped.length === 0) return;
+    setPending((current) => {
+      const next = new Map(current);
+      for (const id of dropped) next.delete(id);
+      return next;
+    });
+  }, [lock]);
+
   function change<Id extends SettingId>(id: Id, value: SettingValues[Id]) {
-    if (valueOf(id) === value) return;
+    if (lock === 'elsewhere' || valueOf(id) === value) return;
     count.current += 1;
     issued.current.set(id, count.current);
     setPending((current) => withEntry(current, id, value));
