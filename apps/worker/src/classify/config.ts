@@ -76,6 +76,11 @@ export function verifiedSet(
   return { id: row.id, version: row.version, sha256: row.sha256 };
 }
 
+/** The verified active `suggest` set (spec 05 §7), or null when none is active. */
+export async function loadSuggestSet(db: Executor): Promise<ActiveQuestionSet | null> {
+  return verifiedSet('suggest', (await loadActiveQuestionSets(db)).suggest);
+}
+
 /** No active set of a kind the stage needs: the seed has not run (the startup check reports it). */
 export class QuestionSetInactiveError extends Error {
   constructor(readonly kind: QuestionSetKind) {

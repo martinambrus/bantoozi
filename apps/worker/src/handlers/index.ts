@@ -15,6 +15,7 @@ import { createProviderValidateHandler } from './provider-validate.js';
 import { createExpireRulesHandler } from './house-expire-rules.js';
 import { createRescoreDegradedHandler } from './house-rescore-degraded.js';
 import { createUserRankHandler } from './user-rank.js';
+import { createUserSuggestHandler } from './user-suggest.js';
 
 /**
  * The handler map (spec 03 §2): one entry for every queue of `packages/shared` jobs.ts. A stage that
@@ -83,6 +84,9 @@ export const CLASSIFICATION_QUEUES = [
   'house.rescore-degraded',
 ] as const satisfies readonly QueueName[];
 
+/** M7 learning stages that call the decision engine (spec 05 §7): implemented with classification dependencies. */
+export const SUGGEST_QUEUES = ['user.suggest'] as const satisfies readonly QueueName[];
+
 /** M2 provider key validation (spec 04 §1.2): implemented when the worker has the probe dependencies. */
 export const PROVIDER_QUEUES = ['provider.validate'] as const satisfies readonly QueueName[];
 
@@ -99,6 +103,7 @@ export const RANKING_QUEUES = [
 export const IMPLEMENTED_QUEUES = [
   ...INGESTION_QUEUES,
   ...CLASSIFICATION_QUEUES,
+  ...SUGGEST_QUEUES,
   ...PROVIDER_QUEUES,
   ...RANKING_QUEUES,
 ] as const satisfies readonly QueueName[];
@@ -139,6 +144,7 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
             createAnalysisProcessHandler(deps, classification, translation),
           ),
           'house.rescore-degraded': implemented(createRescoreDegradedHandler(deps, classification)),
+          'user.suggest': implemented(createUserSuggestHandler(deps)),
         }),
     ...(providerValidation === undefined
       ? {}

@@ -18,6 +18,7 @@ import {
   INGESTION_QUEUES,
   PROVIDER_QUEUES,
   RANKING_QUEUES,
+  SUGGEST_QUEUES,
   StageUnavailableError,
   createHandlers,
   dispatch,
@@ -82,7 +83,7 @@ describe('handler map', () => {
       }),
     );
     expect(available(handlers)).toEqual(
-      [...INGESTION_QUEUES, ...CLASSIFICATION_QUEUES, ...RANKING_QUEUES].sort(),
+      [...INGESTION_QUEUES, ...CLASSIFICATION_QUEUES, ...SUGGEST_QUEUES, ...RANKING_QUEUES].sort(),
     );
     expect(CLASSIFICATION_QUEUES).toEqual([
       'article.translate',

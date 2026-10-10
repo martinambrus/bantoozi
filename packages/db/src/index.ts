@@ -20,4 +20,5 @@ export * from './rank/index.js';
 export * from './readiness.js';
 export * from './schema/index.js';
 export * from './settings.js';
+export * from './suggest/index.js';
 export * from './tenant.js';
