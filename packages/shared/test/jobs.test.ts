@@ -109,13 +109,24 @@ describe('jobs registry (spec 03 §2)', () => {
     expect(QUEUES['house.retranslate-skipped'].options.policy).toBe('singleton');
   });
 
-  it('schedules feed.schedule each minute and the implemented house jobs per spec 11 §6', () => {
+  it('schedules feed.schedule each minute and every house job per spec 11 §6', () => {
     expect(FEED_SCHEDULE_CRON).toBe('* * * * *');
     expect(HOUSE_CRON_SCHEDULES).toEqual({
       'house.rescore-degraded': { cron: '*/10 * * * *', everyMs: 600_000 },
       'house.expire-rules': { cron: '5 * * * *', everyMs: 3_600_000 },
+      'house.purge-auth': { cron: '20 * * * *', everyMs: 3_600_000 },
+      'house.reconcile': { cron: '*/10 * * * *', everyMs: 600_000 },
+      'house.archive': { cron: '15 3 * * *', everyMs: 86_400_000 },
+      'house.purge-articles': { cron: '30 3 * * *', everyMs: 86_400_000 },
+      'house.purge-bodies': { cron: '45 3 * * *', everyMs: 86_400_000 },
+      'house.purge-engine-calls': { cron: '0 4 * * *', everyMs: 86_400_000 },
+      'house.retire-cards': { cron: '30 4 * * *', everyMs: 86_400_000 },
+      'house.purge-users': { cron: '0 5 * * *', everyMs: 86_400_000 },
       'house.nightly-learn': { cron: '0 1 * * *', everyMs: 86_400_000 },
+      'house.metrics': { cron: '10 0 * * *', everyMs: 86_400_000 },
+      'house.alerts': { cron: '*/5 * * * *', everyMs: 300_000 },
     });
+    expect(Object.keys(HOUSE_CRON_SCHEDULES).sort()).toEqual([...HOUSE_CRON_QUEUES].sort());
     for (const queue of Object.keys(HOUSE_CRON_SCHEDULES)) {
       expect(HOUSE_CRON_QUEUES).toContain(queue);
     }

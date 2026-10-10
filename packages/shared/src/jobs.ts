@@ -486,8 +486,10 @@ export interface HouseCronSchedule {
   everyMs: number;
 }
 
+const DAY_MS = 24 * 60 * 60_000;
+
 /**
- * Cron schedules (spec 11 §6) of the housekeeping jobs implemented so far; M8 adds the rest. A
+ * Cron schedules (spec 11 §6) of every housekeeping job. A
  * worker registers the schedule of each such queue it consumes, and enqueues an overdue one once
  * at startup.
  */
@@ -495,7 +497,17 @@ export const HOUSE_CRON_SCHEDULES: Readonly<Partial<Record<HouseCronQueue, House
   Object.freeze({
     'house.rescore-degraded': { cron: '*/10 * * * *', everyMs: 10 * 60_000 },
     'house.expire-rules': { cron: '5 * * * *', everyMs: 60 * 60_000 },
-    'house.nightly-learn': { cron: '0 1 * * *', everyMs: 24 * 60 * 60_000 },
+    'house.purge-auth': { cron: '20 * * * *', everyMs: 60 * 60_000 },
+    'house.reconcile': { cron: '*/10 * * * *', everyMs: 10 * 60_000 },
+    'house.archive': { cron: '15 3 * * *', everyMs: DAY_MS },
+    'house.purge-articles': { cron: '30 3 * * *', everyMs: DAY_MS },
+    'house.purge-bodies': { cron: '45 3 * * *', everyMs: DAY_MS },
+    'house.purge-engine-calls': { cron: '0 4 * * *', everyMs: DAY_MS },
+    'house.retire-cards': { cron: '30 4 * * *', everyMs: DAY_MS },
+    'house.purge-users': { cron: '0 5 * * *', everyMs: DAY_MS },
+    'house.nightly-learn': { cron: '0 1 * * *', everyMs: DAY_MS },
+    'house.metrics': { cron: '10 0 * * *', everyMs: DAY_MS },
+    'house.alerts': { cron: '*/5 * * * *', everyMs: 5 * 60_000 },
   });
 
 /** Jobs that persist progress in `settings['house.progress']` (spec 02 §2, spec 11 §6). */
