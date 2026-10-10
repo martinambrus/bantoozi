@@ -246,26 +246,35 @@ class AnalysisRun {
         intentAt: new Date(now + AWAITING_EXTRACTION_RECHECK_MS),
       });
     }
-    const context = await loadAnalysisCaptureContext(deps.db, {
-      userId: request.userId,
-      feedId: request.feedId,
-      articleId: request.articleId,
-    });
-    if (context === null) return;
     const config = await loadClassificationConfig(deps.db, deps.settingsEnv);
-    const recaptured = recaptureAwaitingSnapshot({
-      frozen: this.snapshot,
-      article,
-      translations: await listTranslations(deps.db, article.id, article.revision),
-      context,
-      languageModes: config.languageModes,
-    });
     await this.renewLease();
-    const inputSha = await recaptureAnalysisInput(deps.db, request.id, this.leaseToken, recaptured);
-    if (inputSha === null) throw new RunEnded();
-    request.inputSnapshot = recaptured;
-    request.inputSha = inputSha;
-    this.snapshot = recaptured;
+    // One transaction under the article's share lock: an extraction, merge or reset cannot commit
+    // between the reads, so the snapshot describes one state of the request's revision.
+    const recapture = await retryTransaction(deps.db, async (tx) => {
+      const live = await lockArticleRevision(tx, request.articleId, 'share');
+      if (live === null || live.revision !== request.articleRevision) return null;
+      const current = await loadClassificationArticle(tx, request.articleId);
+      const context = await loadAnalysisCaptureContext(tx, {
+        userId: request.userId,
+        feedId: request.feedId,
+        articleId: request.articleId,
+      });
+      if (current === null || context === null) return null;
+      const snapshot = recaptureAwaitingSnapshot({
+        frozen: this.snapshot,
+        article: current,
+        translations: await listTranslations(tx, current.id, current.revision),
+        context,
+        languageModes: config.languageModes,
+      });
+      const inputSha = await recaptureAnalysisInput(tx, request.id, this.leaseToken, snapshot);
+      return inputSha === null ? 'lost' : { snapshot, inputSha };
+    });
+    if (recapture === null) return;
+    if (recapture === 'lost') throw new RunEnded();
+    request.inputSnapshot = recapture.snapshot;
+    request.inputSha = recapture.inputSha;
+    this.snapshot = recapture.snapshot;
   }
 
   /** The frozen sets and model must be exactly what this worker's code asks (spec 05 §2). */
