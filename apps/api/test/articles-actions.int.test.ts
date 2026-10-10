@@ -1248,7 +1248,7 @@ describe('feature snapshot reads the current sets (spec 06 §8.2)', () => {
     expect(cards.get(current)).toBeCloseTo(0.7, 5);
   });
 
-  it('keeps only answers on the state variant of the language mode', async () => {
+  it('decides currency by the state hash, not the variant label of the language mode', async () => {
     const sha = 'c1'.repeat(32);
     const match = await questionSet('match', sha);
     await setSetting('question_sets.active', { match });
@@ -1260,7 +1260,8 @@ describe('feature snapshot reads the current sets (spec 06 §8.2)', () => {
     await answerWith(article, native, 0.7, sha, 'native');
     await answerWith(article, translated, 0.6, sha, 'translated');
     const cards = new Map((await frozen(r, article)).cards.map((c) => [c.id, c.p]));
-    expect(cards.get(native)).toBeNull();
+    // No translation exists, so the current match state is the native one and both rows carry it.
+    expect(cards.get(native)).toBeCloseTo(0.7, 5);
     expect(cards.get(translated)).toBeCloseTo(0.6, 5);
   });
   it('stamps the rating fingerprint from the settings its selection used', async () => {
@@ -1397,5 +1398,118 @@ describe('card answers in the feature snapshot must match the current hashes', (
     const card = await captured({});
     expect(card.p).toBeCloseTo(0.7, 5);
     expect(card.engine).toBe('typesafe');
+  });
+});
+
+describe('snapshot capture after a translation fallback and frozen request provenance', () => {
+  async function setSetting(key: string, value: unknown) {
+    await h.owner.query(
+      `INSERT INTO settings (key, value) VALUES ($1, $2::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [key, JSON.stringify(value)],
+    );
+  }
+
+  async function matchSet(sha: string): Promise<string> {
+    const res = await h.owner.query<{ id: string }>(
+      `INSERT INTO question_sets (kind, version, sha256, definition)
+       VALUES ('match', $1, $2, '{}') RETURNING id::text AS id`,
+      [`fallback-${sha.slice(0, 12)}`, sha],
+    );
+    return res.rows[0]!.id;
+  }
+
+  let previous: { active: unknown; modes: unknown };
+
+  beforeAll(async () => {
+    const rows = await h.owner.query<{ key: string; value: unknown }>(
+      `SELECT key, value FROM settings WHERE key IN ('question_sets.active', 'language_modes')`,
+    );
+    const byKey = new Map(rows.rows.map((row) => [row.key, row.value]));
+    previous = { active: byKey.get('question_sets.active'), modes: byKey.get('language_modes') };
+  });
+
+  afterAll(async () => {
+    for (const [key, value] of [
+      ['question_sets.active', previous.active],
+      ['language_modes', previous.modes],
+    ] as const) {
+      if (value === undefined) await h.owner.query(`DELETE FROM settings WHERE key = $1`, [key]);
+      else await setSetting(key, value);
+    }
+  });
+
+  it('keeps a current native answer in a translate-mode language with no usable translation', async () => {
+    const sha = 'e1'.repeat(32);
+    const match = await matchSet(sha);
+    await setSetting('question_sets.active', { match });
+    await setSetting('language_modes', { de: 'translate' });
+    const { r, article } = await setup();
+    await h.owner.query(`UPDATE articles SET lang = 'de' WHERE id = $1`, [article]);
+    const card = await holdCard(r.user.id, 'love', 'Fallback native');
+    const hashes = await currentHashes(article, card);
+    await h.owner.query(
+      `INSERT INTO card_answers (article_id, card_id, p, engine, question_set_sha, article_revision,
+                                 state_sha256, card_input_sha256, state_variant)
+       VALUES ($1, $2, 0.7, 'typesafe', $3, 1, $4, $5, 'native')`,
+      [article, card, sha, hashes.state, hashes.card],
+    );
+    await ok(r.api.post(`/articles/${article}/rating`, { ...freshFence, rating: 1 }));
+    const [event] = await events(h, r.user.id, article);
+    const features = event!.value['features'] as { cards: { id: string; p: number | null }[] };
+    expect(features.cards.find((c) => c.id === card)?.p).toBeCloseTo(0.7, 5);
+  });
+
+  it('records no ratingSha for a request frozen under another match set', async () => {
+    const matchA = await matchSet('e2'.repeat(32));
+    const matchB = await matchSet('e3'.repeat(32));
+    await setSetting('question_sets.active', { match: matchA });
+    const manifest = (match: string) =>
+      JSON.stringify({
+        questionSets: { enrich: { id: matchA }, match: { id: match } },
+        languageMode: 'native',
+        cardTextMode: 'as_written',
+      });
+    const rateOlder = async (frozenMatch: string) => {
+      const { r, feed, article } = await setup({}, 'training');
+      const requestId = randomUUID();
+      const client = await h.owner.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query("SELECT set_config('app.user_id', $1, true)", [r.user.id]);
+        await client.query(
+          `INSERT INTO analysis_requests (id, user_id, feed_id, article_id, article_revision,
+                                          inference_version, input_snapshot, input_sha)
+           SELECT $1, $2, $3, a.id, a.content_revision, s.inference_version, $5::jsonb,
+                  encode(sha256(convert_to($5::jsonb::text, 'UTF8')), 'hex')
+             FROM articles a JOIN subscriptions s ON s.user_id = $2 AND s.feed_id = $3
+            WHERE a.id = $4`,
+          [requestId, r.user.id, feed, article, manifest(frozenMatch)],
+        );
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+      const saved = await ok(r.api.post(`/articles/${article}/bookmark`, freshFence));
+      const snapshotId = saved.item.bookmarkCapture!.snapshotId!;
+      await h.owner.query(`UPDATE articles SET content_revision = 2 WHERE id = $1`, [article]);
+      await ok(
+        r.api.post(`/articles/${article}/rating`, {
+          stateVersion: saved.item.stateVersion,
+          contentRevision: '1',
+          snapshotId,
+          rating: 1,
+          analysisRequestId: requestId,
+        }),
+      );
+      return (await events(h, r.user.id, article)).find((e) => e.kind === 'rate')!;
+    };
+    expect((await rateOlder(matchA)).value['ratingSha']).toMatch(/^[0-9a-f]{64}$/);
+    const switched = await rateOlder(matchB);
+    expect(switched.value['ratingSha']).toBeUndefined();
+    expect(switched.value['features']).toBeNull();
   });
 });

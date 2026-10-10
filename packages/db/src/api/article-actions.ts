@@ -710,9 +710,6 @@ async function captureFeatures(
       : null;
   if (row.inference_feed_ids.length === 0) return { features: null, staleAtFeedback };
 
-  const translated =
-    row.lang !== null &&
-    textOrNull(objectField(stored.get('language_modes'), row.lang)) === 'translate';
   const cards = await tx.execute<{
     id: string;
     strength: Strength;
@@ -731,7 +728,6 @@ async function captureFeatures(
                                AND ca.question_set_sha = (
                                  SELECT qs.sha256 FROM question_sets qs
                                   WHERE qs.id::text = ${matchSet}::text)
-                               AND ca.state_variant = ${translated ? 'translated' : 'native'}
      WHERE uc.user_id = ${user}::uuid
        AND (uc.scope_feed_id IS NULL
             OR uc.scope_feed_id::text = ANY(${sql.param(row.inference_feed_ids)}::text[]))
@@ -820,9 +816,13 @@ async function requireAnalysisRequest(
   articleId: string,
   revision: string,
   requestId: string,
-): Promise<{ id: string; inputSha: string }> {
-  const result = await tx.execute<{ input_sha: string; current: boolean }>(sql`
-    SELECT r.input_sha,
+): Promise<{ id: string; inputSha: string; snapshot: unknown }> {
+  const result = await tx.execute<{
+    input_sha: string;
+    input_snapshot: unknown;
+    current: boolean;
+  }>(sql`
+    SELECT r.input_sha, r.input_snapshot,
            (r.status IN ('pending', 'running', 'complete')
             AND r.created_at > now() - make_interval(days => ${SELECTION_WINDOW_DAYS})
             AND EXISTS (SELECT 1 FROM subscriptions s
@@ -839,7 +839,7 @@ async function requireAnalysisRequest(
       details: { reason: 'obsolete_request' },
     });
   }
-  return { id: requestId, inputSha: row.input_sha };
+  return { id: requestId, inputSha: row.input_sha, snapshot: row.input_snapshot };
 }
 
 async function rankFull(tx: TenantTx, user: string, outbox: JobSender, reason: string) {
@@ -1236,6 +1236,37 @@ interface RatingTarget {
   selection?: 'calibration' | undefined;
 }
 
+/**
+ * The rating fingerprint to record for a rating that carries a selected-analysis request but no
+ * live features, or null when the request was frozen under another manifest than the locked
+ * settings now stamping it (active enrich/match sets, pinned model, the article language's mode,
+ * card text mode): its result must not stand in for the rater's snapshot. Settings without a stored
+ * value (model pin, language mode) keep their environment default, which the fingerprint cannot
+ * have changed; a manifest field the snapshot lacks is not a disagreement.
+ */
+async function requestRatingSha(tx: Executor, snapshot: unknown): Promise<string | null> {
+  const stored = await readRatingSettingsLocked(tx);
+  const sets = stored.get('question_sets.active');
+  const frozenSets = objectField(snapshot, 'questionSets');
+  const lang = textOrNull(objectField(objectField(snapshot, 'article'), 'lang'));
+  const mode = lang === null ? null : textOrNull(objectField(stored.get('language_modes'), lang));
+  const model = textOrNull(objectField(stored.get('engine.model_pin'), 'model'));
+  const checks: [unknown, string | null][] = [
+    [objectField(objectField(frozenSets, 'enrich'), 'id'), textOrNull(objectField(sets, 'enrich'))],
+    [objectField(objectField(frozenSets, 'match'), 'id'), textOrNull(objectField(sets, 'match'))],
+    [objectField(snapshot, 'languageMode'), mode],
+    [objectField(objectField(snapshot, 'model'), 'model'), model],
+    [
+      objectField(snapshot, 'cardTextMode'),
+      textOrNull(stored.get('card_text_mode')) ?? 'as_written',
+    ],
+  ];
+  for (const [frozen, current] of checks) {
+    if (frozen !== undefined && current !== null && textOrNull(frozen) !== current) return null;
+  }
+  return ratingShaOf(stored);
+}
+
 /** Apply one rating under an existing lock; returns its undo target. */
 async function applyRating(
   tx: TenantTx,
@@ -1268,7 +1299,7 @@ async function applyRating(
   });
   const ratingSha =
     request !== null && capture.features === null
-      ? ratingShaOf(await readRatingSettingsLocked(tx))
+      ? await requestRatingSha(tx, request.snapshot)
       : null;
   const row = article.row;
   const patch: ReaderPatch =
