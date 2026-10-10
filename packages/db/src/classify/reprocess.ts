@@ -30,7 +30,8 @@ export interface ReprocessArticle {
  * whose latest eligible carrier arrival (active subscription, at/after activation, non-stale
  * article) is at/after `since`, plus articles with a current completed selected request whatever
  * their arrival, in `states`, newest first strictly below `cursor`. `lang` and `cardId` (articles
- * with a stored answer of that card) narrow the page; `enrichSetId` selects the facets returned.
+ * with a stored answer of that card) and `skippedReasons` (a current tier-2 row skipped for one of
+ * them, spec 07 §3) narrow the page; `enrichSetId` selects the facets returned.
  */
 export async function reprocessWindowPage(
   db: Executor,
@@ -42,6 +43,7 @@ export async function reprocessWindowPage(
     enrichSetId: string | null;
     lang?: string;
     cardId?: string;
+    skippedReasons?: readonly string[];
   },
 ): Promise<ReprocessArticle[]> {
   const below =
@@ -54,6 +56,13 @@ export async function reprocessWindowPage(
       ? sql``
       : sql`AND EXISTS (SELECT 1 FROM card_answers ca
                          WHERE ca.article_id = a.id AND ca.card_id = ${input.cardId}::bigint)`;
+  const skipped =
+    input.skippedReasons === undefined
+      ? sql``
+      : sql`AND EXISTS (SELECT 1 FROM article_translations t
+                         WHERE t.article_id = a.id AND t.article_revision = a.content_revision
+                           AND t.engine = 'ollama'
+                           AND t.quality_detail->>'skipped' = ANY(${sql.param([...input.skippedReasons])}::text[]))`;
   const result = await db.execute<{
     article_id: string;
     revision: string;
@@ -98,7 +107,7 @@ export async function reprocessWindowPage(
       LEFT JOIN article_facets f ON f.article_id = a.id
                                 AND f.question_set_id = ${input.enrichSetId}::bigint
      WHERE a.pipeline_state = ANY(${sql.param([...input.states])}::text[])
-       ${lang} ${card} ${below}
+       ${lang} ${card} ${skipped} ${below}
      ORDER BY e.key DESC, e.article_id DESC
      LIMIT ${input.limit}`);
   return result.rows.map((row) => ({
@@ -141,4 +150,16 @@ export async function reviveInvalidMatchRows(
        AND coalesce(last_error, '') LIKE 'invalid_request%'
        AND (lease_until IS NULL OR lease_until < now())`);
   return result.rowCount ?? 0;
+}
+
+/**
+ * Tier-2 translation calls reserved or made today (UTC): the count the daily cap
+ * `translate.tier2_daily_cap` is checked against (spec 07 §3, spec 04 §6).
+ */
+export async function tier2CallsToday(db: Executor): Promise<number> {
+  const result = await db.execute<{ calls: number }>(sql`
+    SELECT coalesce(sum(reserved_calls), 0)::int AS calls
+      FROM engine_reservations
+     WHERE day = (now() AT TIME ZONE 'UTC')::date AND engine = 'llm' AND kind = 'translate'`);
+  return result.rows[0]?.calls ?? 0;
 }

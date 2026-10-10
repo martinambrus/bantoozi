@@ -44,6 +44,11 @@ export {
   type CardTranslationFill,
   type CardTranslationFillInput,
 } from './translations.js';
+export {
+  cardsAwaitingTranslation,
+  recordCardTranslationDemand,
+  type CardAwaitingTranslation,
+} from './translation-demand.js';
 export type * from './types.js';
 export {
   CARD_LANG_PATTERN,

@@ -13,6 +13,7 @@ import {
   lockFeeds,
   lockSubscription,
   readOwnUser,
+  recordCardTranslationDemand,
   recordRankIntents,
   refreshFeedMaterializations,
   renameSubscriptionFolder,
@@ -275,6 +276,9 @@ export const subscriptionRoutes: FastifyPluginAsyncZod = async (app) => {
           await setInferenceMode(tx, feedId, plan.state);
           await refreshFeedMaterializations(tx, [feedId]);
           await recordRankIntents(tx, outbox, [user.id], { reason: 'inference_mode', full: true });
+          if (request.body.mode === 'active') {
+            await recordCardTranslationDemand(tx, outbox, user.id);
+          }
         }
         return {
           status: 200,
@@ -369,6 +373,7 @@ export const subscriptionRoutes: FastifyPluginAsyncZod = async (app) => {
         }
         if (created > 0 || transition.enterTraining) {
           await recordRankIntents(tx, outbox, [user.id], { reason: 'selection', full: true });
+          await recordCardTranslationDemand(tx, outbox, user.id);
         }
         return { status: 202, body: { requests } };
       });

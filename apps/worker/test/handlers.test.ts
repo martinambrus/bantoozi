@@ -107,13 +107,15 @@ describe('handler map', () => {
       'house.rescore-degraded',
       'house.reenrich',
       'house.rematch',
+      'house.retranslate-skipped',
+      'house.translate-cards',
     ]);
     expect(
       unavailableQueues(handlers, ['article.enrich', 'house.reenrich', 'house.rematch']),
     ).toEqual([]);
-    expect(unavailableQueues(handlers, ['house.translate-cards'])).toEqual([
-      'house.translate-cards',
-    ]);
+    expect(
+      unavailableQueues(handlers, ['house.retranslate-skipped', 'house.translate-cards']),
+    ).toEqual([]);
   });
 
   it('implements provider.validate with the provider probe dependencies', () => {

@@ -549,6 +549,8 @@ export const HOUSE_PROGRESS_JOBS = [
   ...HOUSE_CRON_QUEUES,
   'house.reenrich',
   'house.rematch',
+  'house.translate-cards',
+  'house.retranslate-skipped',
 ] as const;
 export type HouseProgressJob = (typeof HOUSE_PROGRESS_JOBS)[number];
 
