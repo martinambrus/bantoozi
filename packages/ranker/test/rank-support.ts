@@ -1,5 +1,9 @@
 import type { RankItem, RankRule, UserRankContext } from '../src/index.js';
-import { buildBm25Corpus, DEFAULT_RANKER_CONFIG } from '../src/index.js';
+import {
+  buildBm25Corpus,
+  DEFAULT_RANKER_CONFIG,
+  FEATURE_SPEC_V1_FACET_NAMES,
+} from '../src/index.js';
 
 export const NOW = new Date('2026-10-01T12:00:00.000Z');
 export const HOUR = 3_600_000;
@@ -8,6 +12,7 @@ export const DEGRADED_SHA = 'd'.repeat(64);
 
 /** Facets of an ordinary, unremarkable article (no quality flag triggers). */
 export const PLAIN_FACETS: Readonly<Record<string, number>> = Object.freeze({
+  ...Object.fromEntries(FEATURE_SPEC_V1_FACET_NAMES.map((name) => [name, 0])),
   'ct.news': 0.7,
   'ct.analysis': 0.2,
   't1.science': 0.6,

@@ -21,6 +21,7 @@ import {
   staleAgeReachedAt,
 } from './demotions.js';
 import { tierFromP } from './lanes.js';
+import { isValidFeatureFacets } from './learn/samples.js';
 import { applyLanePolicy, type FiredRule, type FloorTrigger } from './policy.js';
 import { RULE_CODES } from './rule-codes.js';
 import { matchBoostRules, matchHideRule, type RankRule, type RuleMatch } from './rules.js';
@@ -248,7 +249,7 @@ function baseProbability(ctx: UserRankContext, item: RankItem, now: Date): BaseP
  * facets and every applicable interest answer; a `prefilter` marker is an unknown, not an engine.
  */
 function isModelEligible(cards: readonly RankCard[], item: RankItem): boolean {
-  if (item.matchCoverage !== 'complete' || item.facets === undefined) return false;
+  if (item.matchCoverage !== 'complete' || !isValidFeatureFacets(item.facets)) return false;
   if (item.pipelineState === 'degraded' || item.pipelineState === 'failed') return false;
   if (item.facetsEngine !== 'typesafe') return false;
   return cards

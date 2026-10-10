@@ -46,6 +46,32 @@ async function modelReader() {
 const learnIntents = (since: string) => h.payloads('user.learn', since);
 
 describe('model scoring in user.rank (spec 06 §2 step 4a, §6.2, §8.1)', () => {
+  it.each(['missing', 'negative', 'above-one', 'non-numeric'])(
+    'falls back to cards for %s facets despite current provenance',
+    async (malformation) => {
+      const { userId, feedId, cardId } = await modelReader();
+      const malformed = await matched(h, feedId, cardId, 0.9);
+      const control = await matched(h, feedId, cardId, 0.9);
+      const facet = 'clickbait';
+      if (malformation === 'missing') {
+        await h.owner.query(
+          `UPDATE article_facets SET features = features - $2 WHERE article_id = $1`,
+          [malformed, facet],
+        );
+      } else {
+        const value =
+          malformation === 'negative' ? -0.1 : malformation === 'above-one' ? 1.1 : 'bad';
+        await h.owner.query(
+          `UPDATE article_facets SET features = features || $2::jsonb WHERE article_id = $1`,
+          [malformed, JSON.stringify({ [facet]: value })],
+        );
+      }
+      await rank(h, userId);
+      expect(await rankRow(h, userId, malformed)).toMatchObject({ source: 'cards', p: 0.72 });
+      expect(await rankRow(h, userId, control)).toMatchObject({ source: 'model' });
+    },
+  );
+
   it('scores an eligible item with the compatible active model and explains it (scoreSource model, Explain.model)', async () => {
     const r = await reader(h);
     const model = await installModel(h, r.userId, {

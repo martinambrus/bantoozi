@@ -38,6 +38,13 @@ export interface EligibilityOpts {
   ratingSha: string | null;
 }
 
+export function isValidFeatureFacets(facets: unknown): facets is Record<string, number> {
+  if (typeof facets !== 'object' || facets === null || Array.isArray(facets)) return false;
+  return FEATURE_SPEC_V1_FACET_NAMES.every(
+    (name) => Object.hasOwn(facets, name) && isProbability(Reflect.get(facets, name)),
+  );
+}
+
 /**
  * Whether a sample may be trained on (spec 06 §8.1-8.2): a stored event-time snapshot of the current
  * raw snapshot spec and rating fingerprint (both checks are skipped for a null `ratingSha`), within the
@@ -60,10 +67,7 @@ export function sampleEligibility(
   }
   const { facets, facetsEngine } = f.values;
   if (facets === null || facets === undefined) return { ok: false, reason: 'no_facets' };
-  for (const name of FEATURE_SPEC_V1_FACET_NAMES) {
-    const value: unknown = Object.hasOwn(facets, name) ? facets[name] : undefined;
-    if (!isProbability(value)) return { ok: false, reason: 'invalid_facets' };
-  }
+  if (!isValidFeatureFacets(facets)) return { ok: false, reason: 'invalid_facets' };
   if (
     facetsEngine !== FEATURE_ENGINE ||
     f.cards.some((c) =>
