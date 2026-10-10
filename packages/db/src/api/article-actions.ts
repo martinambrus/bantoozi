@@ -23,7 +23,8 @@ import { parseCardBody } from '../cards/body.js';
 import { exampleFromArticleTitle } from '../cards/validation.js';
 import { SELECTION_WINDOW_DAYS } from '../ingest/demand.js';
 import { recordRankIntents } from '../ingest/rank-intents.js';
-import { readStoredSetting } from '../settings.js';
+import { readStoredSetting, readStoredSettings } from '../settings.js';
+import type { Executor } from '../client.js';
 import { tenantUserId, type TenantTx } from '../tenant.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
 import { articleContexts, loadArticleItems } from './articles.js';
@@ -69,6 +70,19 @@ const RATING_FINGERPRINT_SETTINGS = [
   'language_modes',
   'card_text_mode',
 ] as const;
+
+/**
+ * The current rating fingerprint (spec 06 §8.1): the raw snapshot spec sha with the settings that
+ * change the meaning of an answer. The API records it in each snapshot; learning compares against it.
+ */
+export async function readRatingFingerprint(executor: Executor): Promise<string> {
+  const stored = await readStoredSettings(executor, RATING_FINGERPRINT_SETTINGS);
+  return createHash('sha256')
+    .update(
+      canonicalJson({ specSha: FEATURE_SNAPSHOT_SPEC_SHA, settings: Object.fromEntries(stored) }),
+    )
+    .digest('hex');
+}
 
 /** The displayed item's fence (spec 08 §5.3). */
 export interface ReaderFence {
@@ -614,7 +628,6 @@ async function captureFeatures(
     story_cluster_id: string | null;
     cluster_size: number | null;
     facets: Record<string, unknown> | null;
-    settings: Record<string, unknown> | null;
   }>(sql`
     WITH inf AS (
       SELECT s.feed_id FROM subscriptions s
@@ -640,9 +653,7 @@ async function captureFeatures(
              WHERE f.article_id = a.id AND f.article_revision = a.content_revision
                AND f.question_set_id::text = (SELECT st.value ->> 'enrich' FROM settings st
                                                WHERE st.key = 'question_sets.active')
-             ORDER BY f.updated_at DESC LIMIT 1) AS facets,
-           (SELECT jsonb_object_agg(st.key, st.value) FROM settings st
-             WHERE st.key = ANY(${sql.param([...RATING_FINGERPRINT_SETTINGS])}::text[])) AS settings
+             ORDER BY f.updated_at DESC LIMIT 1) AS facets
       FROM articles a LEFT JOIN story_clusters sc ON sc.id = a.story_cluster_id
      WHERE a.id = ${id}::bigint`);
   const row = result.rows[0];
@@ -684,9 +695,7 @@ async function captureFeatures(
        AND (uc.scope_feed_id IS NULL
             OR uc.scope_feed_id::text = ANY(${sql.param(row.inference_feed_ids)}::text[]))
      ORDER BY uc.card_id`);
-  const ratingSha = createHash('sha256')
-    .update(canonicalJson({ specSha: FEATURE_SNAPSHOT_SPEC_SHA, settings: row.settings ?? {} }))
-    .digest('hex');
+  const ratingSha = await readRatingFingerprint(tx);
   return {
     staleAtFeedback,
     features: {

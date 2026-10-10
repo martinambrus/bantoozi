@@ -17,6 +17,7 @@ import {
   IMPLEMENTED_QUEUES,
   INGESTION_QUEUES,
   PROVIDER_QUEUES,
+  LEARNING_QUEUES,
   RANKING_QUEUES,
   SUGGEST_QUEUES,
   StageUnavailableError,
@@ -62,7 +63,10 @@ describe('handler map', () => {
   it('implements only the M1 ingestion and M5 ranking stages without classification dependencies', () => {
     const handlers = createHandlers(createWorkerDeps(baseDeps));
     expect(Object.keys(handlers).sort()).toEqual([...QUEUE_NAMES].sort());
-    expect(available(handlers)).toEqual([...INGESTION_QUEUES, ...RANKING_QUEUES].sort());
+    expect(available(handlers)).toEqual(
+      [...INGESTION_QUEUES, ...RANKING_QUEUES, ...LEARNING_QUEUES].sort(),
+    );
+    expect(LEARNING_QUEUES).toEqual(['user.learn', 'house.nightly-learn']);
     expect(RANKING_QUEUES).toEqual(['user.rank', 'house.expire-rules']);
     expect(INGESTION_QUEUES).toEqual([
       'feed.schedule',
@@ -83,7 +87,13 @@ describe('handler map', () => {
       }),
     );
     expect(available(handlers)).toEqual(
-      [...INGESTION_QUEUES, ...CLASSIFICATION_QUEUES, ...SUGGEST_QUEUES, ...RANKING_QUEUES].sort(),
+      [
+        ...INGESTION_QUEUES,
+        ...CLASSIFICATION_QUEUES,
+        ...SUGGEST_QUEUES,
+        ...RANKING_QUEUES,
+        ...LEARNING_QUEUES,
+      ].sort(),
     );
     expect(CLASSIFICATION_QUEUES).toEqual([
       'article.translate',
@@ -94,8 +104,8 @@ describe('handler map', () => {
       'analysis.process',
       'house.rescore-degraded',
     ]);
-    expect(unavailableQueues(handlers, ['article.enrich', 'user.rank', 'user.learn'])).toEqual([
-      'user.learn',
+    expect(unavailableQueues(handlers, ['article.enrich', 'user.rank', 'house.reenrich'])).toEqual([
+      'house.reenrich',
     ]);
   });
 

@@ -13,7 +13,9 @@ import { createFeedFetchHandler } from './feed-fetch.js';
 import { createFeedScheduleHandler } from './feed-schedule.js';
 import { createProviderValidateHandler } from './provider-validate.js';
 import { createExpireRulesHandler } from './house-expire-rules.js';
+import { createNightlyLearnHandler } from './house-nightly-learn.js';
 import { createRescoreDegradedHandler } from './house-rescore-degraded.js';
+import { createUserLearnHandler } from './user-learn.js';
 import { createUserRankHandler } from './user-rank.js';
 import { createUserSuggestHandler } from './user-suggest.js';
 
@@ -99,13 +101,20 @@ export const RANKING_QUEUES = [
   'house.expire-rules',
 ] as const satisfies readonly QueueName[];
 
-/** Queues with real handlers so far (M1 ingestion, M2 classification and key validation, M5 ranking). */
+/** M7 personal-model training (spec 06 §8.4) and its nightly trigger (spec 11 §6): stored data only. */
+export const LEARNING_QUEUES = [
+  'user.learn',
+  'house.nightly-learn',
+] as const satisfies readonly QueueName[];
+
+/** Queues with real handlers so far (M1 ingestion, M2 classification and key validation, M5 ranking, M7 learning). */
 export const IMPLEMENTED_QUEUES = [
   ...INGESTION_QUEUES,
   ...CLASSIFICATION_QUEUES,
   ...SUGGEST_QUEUES,
   ...PROVIDER_QUEUES,
   ...RANKING_QUEUES,
+  ...LEARNING_QUEUES,
 ] as const satisfies readonly QueueName[];
 
 const implemented = <Q extends QueueName>(handle: QueueHandler<Q>): HandlerEntry<Q> => ({
@@ -126,6 +135,8 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
     'article.capture-bookmark': implemented(createCaptureBookmarkHandler(deps)),
     'user.rank': implemented(createUserRankHandler(deps)),
     'house.expire-rules': implemented(createExpireRulesHandler(deps)),
+    'user.learn': implemented(createUserLearnHandler(deps)),
+    'house.nightly-learn': implemented(createNightlyLearnHandler(deps)),
     ...(classification === undefined
       ? {}
       : {
