@@ -183,7 +183,7 @@ export const SETTINGS = {
   'engine.model_pin': def({
     schema: EngineModelPinSchema,
     defaultValue: () => undefined,
-    writers: ['worker'],
+    writers: ['seed', 'worker'],
   }),
   language_modes: def({
     schema: LanguageModesSchema,

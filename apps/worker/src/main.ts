@@ -23,6 +23,7 @@ import { createHandlers } from './handlers/index.js';
 import { enqueueOverdueHousekeeping } from './housekeeping.js';
 import { startOutboxRelay } from './outbox-relay.js';
 import { assertProductionReady } from './readiness.js';
+import { recordModelPin } from './model-pin.js';
 import { verifyQuestionSets } from './seed.js';
 
 /**
@@ -93,6 +94,21 @@ await verifyQuestionSets(db).catch((error: unknown) => {
   logger.error({ err: error }, 'stored question sets do not match this worker (run pnpm db:seed)');
   throw error;
 });
+
+// Record the engine model pin under its row lock; a changed pin enqueues the model rebuild once.
+if (!config.evalIngestOnly) {
+  const pin = await recordModelPin(
+    db,
+    {
+      model: config.typesafeModel,
+      ...(config.llmFallbackEnabled
+        ? { llm: { fast: config.ollamaModelFast, strong: config.ollamaModelStrong } }
+        : {}),
+    },
+    new Date(),
+  );
+  if (pin.changed) logger.info('engine model pin changed: re-enrichment and re-matching enqueued');
+}
 
 // The heartbeat starts before any consumer: it is written first and the golden-database check
 // follows it, while `eval ingest-sample` creates the evaluation user first and checks heartbeats

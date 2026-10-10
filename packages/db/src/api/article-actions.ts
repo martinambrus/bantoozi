@@ -108,7 +108,8 @@ export function effectiveModel(
 /**
  * The fingerprint settings with the values they take effect as: a missing model pin, language mode
  * map or card text mode stands for its environment default, so changing only a default changes the
- * fingerprint.
+ * fingerprint. The pin contributes only its meaning-bearing fields (`model`, `laya`), not `since`
+ * or `llm`.
  */
 export function effectiveRatingSettings(
   stored: ReadonlyMap<string, unknown>,
@@ -116,8 +117,10 @@ export function effectiveRatingSettings(
 ): Record<string, unknown> {
   return {
     'engine.model_pin': {
-      ...objectOf(stored.get('engine.model_pin')),
       model: effectiveModel(stored, defaults),
+      ...(objectOf(stored.get('engine.model_pin'))['laya'] === undefined
+        ? {}
+        : { laya: objectOf(stored.get('engine.model_pin'))['laya'] }),
     },
     'question_sets.active': stored.get('question_sets.active') ?? null,
     language_modes: stored.get('language_modes') ?? defaults.languageModes,
