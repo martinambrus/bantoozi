@@ -231,7 +231,7 @@ export function PreferencesSection() {
             <div className="absolute inset-0 z-10 flex items-start justify-center bg-white/80 p-4 dark:bg-slate-950/80">
               <div
                 role="status"
-                className="sticky top-4 flex max-w-md flex-col items-start gap-3 rounded-lg border border-slate-300 bg-white p-4 shadow-lg dark:border-slate-600 dark:bg-slate-900"
+                className="sticky top-[calc(5rem+var(--update-bar-height,0px))] flex max-w-md flex-col items-start gap-3 rounded-lg border border-slate-300 bg-white p-4 shadow-lg dark:border-slate-600 dark:bg-slate-900"
               >
                 <p className="text-base font-semibold">{t('preferences.lock.title')}</p>
                 <p className="text-sm text-slate-600 dark:text-slate-300">
