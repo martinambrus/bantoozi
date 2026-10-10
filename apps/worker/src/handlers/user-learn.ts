@@ -95,7 +95,7 @@ function attemptMetrics(
 /**
  * `user.learn {userId}` (spec 06 §8.4, PLAN M7-T4). Captures the user's samples, rating fingerprint,
  * held cards, config and consent under a share lock; trains only when their `inputSha` differs from
- * the latest stored attempt's. A second transaction under the per-user learn lock re-reads the
+ * the latest terminal (not superseded) attempt's. A second transaction under the per-user learn lock re-reads the
  * inputs: changed inputs store the attempt as `superseded` and enqueue another run, otherwise the
  * attempt is stored and, when eligible and still compatible, replaces the active model. An active
  * model whose context no longer matches or whose training evidence is gone is deactivated.
@@ -111,7 +111,7 @@ export function createUserLearnHandler(deps: WorkerDeps): QueueHandler<'user.lea
     });
     if (prepared === null) return;
     const { inputs, state } = prepared;
-    const unchanged = state.latest?.metrics['inputSha'] === inputs.inputSha;
+    const unchanged = state.latestTerminal?.metrics['inputSha'] === inputs.inputSha;
     if (unchanged && (state.active === null || modelStaleness(inputs, state.active) === null)) {
       return;
     }
@@ -127,7 +127,7 @@ export function createUserLearnHandler(deps: WorkerDeps): QueueHandler<'user.lea
       let deactivated = false;
       let version = current.latest?.version ?? 0;
 
-      const duplicate = current.latest?.metrics['inputSha'] === inputs.inputSha;
+      const duplicate = current.latestTerminal?.metrics['inputSha'] === inputs.inputSha;
       if (result !== null && !duplicate) {
         const model = result.model;
         const base = {

@@ -47,7 +47,7 @@ export function createNightlyLearnHandler(deps: WorkerDeps): QueueHandler<'house
       for (const user of page) {
         const inputs = await loadLearnInputs(deps.db, deps, user.userId, now);
         const state = await loadModelState(deps.db, user.userId);
-        if (state.latest?.metrics['inputSha'] !== inputs.inputSha)
+        if (state.latestTerminal?.metrics['inputSha'] !== inputs.inputSha)
           changed.set(user.userId, inputs.inputSha);
       }
       await retryTransaction(deps.db, async (tx) => {

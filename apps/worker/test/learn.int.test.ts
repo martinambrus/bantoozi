@@ -442,4 +442,27 @@ describe('user.learn and house.nightly-learn (M7-T4)', () => {
       true,
     );
   });
+
+  it('a superseded latest attempt with the current inputSha does not count as unchanged: user.learn trains a new terminal attempt and house.nightly-learn records a user.learn intent', async () => {
+    const userId = await trained();
+    expect((await w.active(userId)).map((m) => m.version)).toEqual([1]);
+    // The only stored attempt becomes a superseded one for the very inputs that are current now.
+    await h.owner.query(
+      `UPDATE user_models SET active = false,
+              metrics = metrics || '{"status":"superseded","reason":"inputs_changed"}'::jsonb
+        WHERE user_id = $1`,
+      [userId],
+    );
+    expect(await w.active(userId)).toHaveLength(0);
+
+    const mark = await h.mark();
+    await h.dispatch('house.nightly-learn', {});
+    expect(await w.userIntents('user.learn', userId, mark)).not.toHaveLength(0);
+
+    await learn(userId);
+    const rows = await w.models(userId);
+    expect(rows).toHaveLength(2);
+    expect(rows[1]!.metrics['status']).toBe('activated');
+    expect(rows[1]!.active).toBe(true);
+  });
 });

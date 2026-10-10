@@ -74,11 +74,18 @@ export async function loadActiveUserModel(
   };
 }
 
-/** The user's newest stored attempt and the active model (spec 06 §8.3-8.4). */
+/**
+ * The user's newest stored attempt, the newest terminal attempt (status `activated` or `rejected`;
+ * a `superseded` attempt never counts) and the active model (spec 06 §8.3-8.4).
+ */
 export async function loadModelState(
   db: Executor,
   userId: string,
-): Promise<{ latest: StoredModelRow | null; active: StoredModelRow | null }> {
+): Promise<{
+  latest: StoredModelRow | null;
+  latestTerminal: StoredModelRow | null;
+  active: StoredModelRow | null;
+}> {
   const result = await db.execute<{
     version: number;
     active: boolean;
@@ -87,7 +94,9 @@ export async function loadModelState(
   }>(sql`
     SELECT version, active, feature_spec_sha, metrics FROM user_models
      WHERE user_id = ${userId}::uuid AND (active OR version = (
-       SELECT max(version) FROM user_models WHERE user_id = ${userId}::uuid))
+       SELECT max(version) FROM user_models WHERE user_id = ${userId}::uuid) OR version = (
+       SELECT max(version) FROM user_models WHERE user_id = ${userId}::uuid
+          AND coalesce(metrics->>'status', '') <> 'superseded'))
      ORDER BY version DESC`);
   const rows: StoredModelRow[] = result.rows.map((row) => ({
     version: row.version,
@@ -95,7 +104,11 @@ export async function loadModelState(
     featureSpecSha: row.feature_spec_sha,
     metrics: isRecord(row.metrics) ? row.metrics : {},
   }));
-  return { latest: rows[0] ?? null, active: rows.find((row) => row.active) ?? null };
+  return {
+    latest: rows[0] ?? null,
+    latestTerminal: rows.find((row) => row.metrics['status'] !== 'superseded') ?? null,
+    active: rows.find((row) => row.active) ?? null,
+  };
 }
 
 export interface NewUserModel {
