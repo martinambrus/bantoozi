@@ -917,7 +917,7 @@ export class ClassifyHarness {
     const article = await loadClassificationArticle(this.db, articleId);
     const context = await loadAnalysisCaptureContext(this.db, { userId, feedId, articleId });
     if (article === null || context === null) throw new Error('nothing to select');
-    const snapshot = captureAnalysisSnapshot({
+    const captured = captureAnalysisSnapshot({
       article,
       translations: await listTranslations(this.db, articleId, article.revision),
       context,
@@ -929,6 +929,9 @@ export class ClassifyHarness {
       primaryModel: PRIMARY_MODEL,
       capturedAt: new Date(),
     });
+    // As the API's capture marks a selection made before the article's extraction.
+    const snapshot: AnalysisInputSnapshot =
+      article.pipelineState === 'ingested' ? { ...captured, awaitingExtraction: true } : captured;
     const version = await this.owner.query<{ v: string }>(
       `SELECT inference_version::text AS v FROM subscriptions WHERE user_id = $1 AND feed_id = $2`,
       [userId, feedId],

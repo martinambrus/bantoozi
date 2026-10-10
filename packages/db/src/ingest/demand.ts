@@ -37,7 +37,9 @@ export const SELECTION_WINDOW_DAYS = 180;
 export async function eligibleInferenceDemand(
   db: Executor,
   articleId: string,
+  options: { settledSelectionsOnly?: boolean } = {},
 ): Promise<InferenceWitness[]> {
+  const settledOnly = options.settledSelectionsOnly === true;
   const result = await db.execute<{
     kind: 'automatic' | 'manual';
     user_id: string;
@@ -64,6 +66,7 @@ export async function eligibleInferenceDemand(
      WHERE r.article_id = ${articleId}::bigint
        AND r.status IN ('pending', 'running', 'complete')
        AND r.created_at > now() - make_interval(days => ${SELECTION_WINDOW_DAYS})
+       AND (NOT ${settledOnly}::boolean OR NOT jsonb_exists(r.input_snapshot, 'awaitingExtraction'))
      ORDER BY 1, 2, 3, 5`);
   return result.rows.map((row) =>
     row.kind === 'automatic'
@@ -78,8 +81,41 @@ export async function eligibleInferenceDemand(
 }
 
 /** Whether any live authorization exists (the demand gate after extraction, spec 03 §1). */
-export async function hasInferenceDemand(db: Executor, articleId: string): Promise<boolean> {
-  return (await eligibleInferenceDemand(db, articleId)).length > 0;
+export async function hasInferenceDemand(
+  db: Executor,
+  articleId: string,
+  options: { settledSelectionsOnly?: boolean } = {},
+): Promise<boolean> {
+  return (await eligibleInferenceDemand(db, articleId, options)).length > 0;
+}
+
+/**
+ * Wake the selected requests that wait for this article's extraction (`awaitingExtraction`, pending
+ * or running, at its current revision, still authorized by a live subscription): their delayed
+ * safety-net intents become due now. Returns their ids; the caller enqueues `analysis.process` for
+ * each, which creates an intent where none is pending.
+ */
+export async function wakeAwaitingSelections(db: Executor, articleId: string): Promise<string[]> {
+  const result = await db.execute<{ id: string }>(sql`
+    SELECT r.id::text AS id
+      FROM analysis_requests r
+      JOIN articles a ON a.id = r.article_id AND a.content_revision = r.article_revision
+      JOIN subscriptions s ON s.user_id = r.user_id AND s.feed_id = r.feed_id
+                          AND s.inference_mode IN ('training', 'active')
+                          AND s.inference_version = r.inference_version
+      JOIN users u ON u.id = r.user_id AND u.deleted_at IS NULL
+     WHERE r.article_id = ${articleId}::bigint
+       AND r.status IN ('pending', 'running')
+       AND jsonb_exists(r.input_snapshot, 'awaitingExtraction')
+       AND r.created_at > now() - make_interval(days => ${SELECTION_WINDOW_DAYS})
+     ORDER BY r.created_at, r.id`);
+  const ids = result.rows.map((row) => row.id);
+  if (ids.length === 0) return ids;
+  await db.execute(sql`
+    UPDATE job_outbox SET available_at = now()
+     WHERE queue = 'analysis.process' AND delivered_at IS NULL AND available_at > now()
+       AND payload ->> 'analysisRequestId' = ANY(${sql.param(ids)}::text[])`);
+  return ids;
 }
 
 /**

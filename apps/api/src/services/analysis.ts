@@ -102,7 +102,7 @@ export async function captureSelectionSnapshot(
   );
   const translations = await listTranslations(tx, article.id, article.revision);
   const feed = article.feed;
-  return buildAnalysisInputSnapshot({
+  const snapshot = buildAnalysisInputSnapshot({
     article,
     feed: {
       title: feed?.title ?? null,
@@ -117,4 +117,8 @@ export async function captureSelectionSnapshot(
     primaryModel: input.config.primaryModel,
     capturedAt: input.capturedAt,
   });
+  // An article not yet extracted is analysed on its extracted text: the worker waits for it.
+  return article.pipelineState === 'ingested'
+    ? { ...snapshot, awaitingExtraction: true }
+    : snapshot;
 }

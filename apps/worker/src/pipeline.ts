@@ -1,6 +1,7 @@
 import {
   enqueueCluster,
   enqueueEnrich,
+  enqueueAnalysis,
   enqueueExtract,
   enqueueMatch,
   enqueueRank,
@@ -57,6 +58,17 @@ export interface NewCarrierDemand {
 export interface PipelineGate {
   /** `eligibleInferenceDemand(articleId, tx)` (spec 03 §1.1): no demand stops at the local stage. */
   hasInferenceDemand(articleId: string): Promise<boolean>;
+  /**
+   * The demand after an extraction: as {@link hasInferenceDemand}, except that a selected request
+   * still waiting for this extraction is no demand for an automatic chain (it analyses the
+   * extracted text itself).
+   */
+  hasExtractionDemand(articleId: string): Promise<boolean>;
+  /**
+   * The selected requests waiting for the article's extraction (`awaitingExtraction`), made due
+   * now: ids of the `analysis.process` jobs to enqueue.
+   */
+  pendingSelections(articleId: string): Promise<readonly string[]>;
   /** Whether the article's language mode requires translation before enrichment (spec 07 §1). */
   needsTranslation(articleId: string): Promise<boolean>;
   /**
@@ -108,8 +120,12 @@ export async function after(
       await enqueueExtract(sender, { articleId }, revision);
       return;
     case 'extract':
+      // Selected requests that waited for the extraction run now, on the extracted text.
+      for (const analysisRequestId of await gate.pendingSelections(articleId)) {
+        await enqueueAnalysis(sender, { analysisRequestId });
+      }
       // A failed extraction continues without a body; without inference demand the article stops.
-      if (!(await gate.hasInferenceDemand(articleId))) return;
+      if (!(await gate.hasExtractionDemand(articleId))) return;
       if (await gate.needsTranslation(articleId)) {
         await enqueueTranslate(sender, { articleId }, revision);
       } else {

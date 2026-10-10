@@ -105,6 +105,12 @@ export const AnalysisInputSnapshotSchema = z
     /** The engine policy the answers must come from: the pinned Jev model at capture. */
     model: z.object({ engine: z.literal('typesafe'), model: text(200).min(1) }).strict(),
     cards: z.array(AnalysisCardSchema).max(ANALYSIS_MAX_CARDS),
+    /**
+     * Set when the article was still `ingested` at the selection: `analysis.process` waits for its
+     * extraction, then recaptures the article, translation and media context at the same revision
+     * (keeping the cards, sets, model and card text mode) and clears the flag.
+     */
+    awaitingExtraction: z.literal(true).optional(),
   })
   .strict()
   .superRefine((snapshot, ctx) => {
