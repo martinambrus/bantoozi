@@ -1244,3 +1244,24 @@ describe('feature snapshot reads the current sets (spec 06 §8.2)', () => {
     expect(features.cards.find((c) => c.id === card)?.p).toBeCloseTo(0.7, 5);
   });
 });
+
+describe('revoking an explicit implicit-negative read', () => {
+  const consents = { implicitFeedback: true, implicitNegative: true };
+
+  it('unread of an explicit consented read records user.learn', async () => {
+    const { r, article } = await setup(consents);
+    const read = await ok(r.api.post(`/articles/${article}/read`, freshFence));
+    expect(await queues(r.user.id)).not.toContain('user.learn');
+    await ok(r.api.post(`/articles/${article}/unread`, fence(read.item)));
+    expect(await queues(r.user.id)).toContain('user.learn');
+  });
+
+  it('undoing an explicit consented read records user.learn', async () => {
+    const { r, article } = await setup(consents);
+    const read = await ok(r.api.post(`/articles/${article}/read`, freshFence));
+    expect(await queues(r.user.id)).not.toContain('user.learn');
+    const undo = await r.api.post('/articles/undo', { mutationId: read.mutationId });
+    expect(undo.statusCode, undo.body).toBe(200);
+    expect(await queues(r.user.id)).toContain('user.learn');
+  });
+});

@@ -870,7 +870,8 @@ export async function markArticleRead(
       [{ articleId: input.articleId, resultVersion: version, before }],
       {
         rankFull: rank,
-        learn: false,
+        // An explicit consented read is an implicit-negative sample; undoing it revokes evidence.
+        learn: behavioral,
       },
     ),
   };
@@ -894,6 +895,21 @@ export async function markArticleUnread(tx: TenantTx, input: ActionInput): Promi
   if (article.row?.archivedAt != null) patch.archivedAt = null;
   if (Object.keys(patch).length === 0) return { articleIds: [input.articleId], changed: false };
   const before = beforeOf(article.row, patch);
+  // Clearing `read_at` removes an explicit consented read sample (spec 06 §8.4): force learning.
+  const revokesRead =
+    patch.readAt === null &&
+    (
+      await tx.execute<{ revoked: boolean }>(sql`
+      SELECT coalesce(
+               e.value ->> 'signalOrigin' = 'explicit'
+               AND (e.value -> 'learningConsent' ->> 'implicitFeedback') = 'true'
+               AND (e.value -> 'learningConsent' ->> 'implicitNegative') = 'true',
+               false) AS revoked
+        FROM feedback_events e
+       WHERE e.user_id = ${lock.user}::uuid AND e.article_id = ${input.articleId}::bigint
+         AND e.kind = 'read'
+       ORDER BY e.id DESC LIMIT 1`)
+    ).rows[0]?.revoked === true;
   const version = await writeReader(tx, lock.user, input.articleId, patch);
   await appendEvent(
     tx,
@@ -905,6 +921,9 @@ export async function markArticleUnread(tx: TenantTx, input: ActionInput): Promi
   );
   const rank = article.storyClusterId !== null || patch.archivedAt !== undefined;
   if (rank) await rankFull(tx, lock.user, input.outbox, 'feedback:unread');
+  if (revokesRead) {
+    await recordLearnIntent(tx, lock.user, input.outbox, await readRankerConfig(tx), true);
+  }
   return {
     articleIds: [input.articleId],
     changed: true,
@@ -914,7 +933,7 @@ export async function markArticleUnread(tx: TenantTx, input: ActionInput): Promi
       [{ articleId: input.articleId, resultVersion: version, before }],
       {
         rankFull: rank,
-        learn: false,
+        learn: revokesRead,
       },
     ),
   };
