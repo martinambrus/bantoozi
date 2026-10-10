@@ -232,8 +232,10 @@ export function reduceArticle(input: ReduceInput): LearnSample | null {
 
   if (prefs.implicitNegative && state.readAt !== null) {
     const read = latest(events.filter((e) => e.kind === 'read' && big(e.id) > floor));
+    const unread = latest(events.filter((e) => e.kind === 'unread'));
     if (
       read !== undefined &&
+      (unread === undefined || big(unread.id) < big(read.id)) &&
       read.value.signalOrigin === 'explicit' &&
       consent(read, 'implicitFeedback') &&
       consent(read, 'implicitNegative') &&

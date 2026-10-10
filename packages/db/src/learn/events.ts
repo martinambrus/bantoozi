@@ -48,7 +48,7 @@ export async function loadLearnSamples(
     SELECT id::text AS id, article_id::text AS article_id, kind, value, created_at
       FROM feedback_events
      WHERE user_id = ${user}::uuid AND id <= ${cutoffEventId}::bigint
-       AND kind IN ('rate', 'unrate', 'prompt_answer', 'bookmark', 'open', 'dwell', 'read')
+       AND kind IN ('rate', 'unrate', 'prompt_answer', 'bookmark', 'open', 'dwell', 'read', 'unread')
      ORDER BY id`);
   const byArticle = new Map<string, LearnEvent[]>();
   for (const row of eventRows.rows) {

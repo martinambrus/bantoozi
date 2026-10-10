@@ -343,6 +343,15 @@ describe('housekeeping and neutral events never train', () => {
     });
   });
 
+  it('a bulk mark-read after an unread does not revive an earlier explicit read', async () => {
+    const s = await Scenario.create(ctx, BOTH);
+    const a = await s.article();
+    await s.read(a);
+    await s.unread(a);
+    await s.bulkRead(a);
+    expect(await s.samples()).toEqual([]);
+  });
+
   it('an open before the last unrate does not suppress a later explicit read', async () => {
     const s = await Scenario.create(ctx, BOTH);
     const a = await s.article();
