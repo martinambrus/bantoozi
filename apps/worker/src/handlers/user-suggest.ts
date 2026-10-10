@@ -75,12 +75,12 @@ export function createUserSuggestHandler(deps: WorkerDeps): QueueHandler<'user.s
       await releaseSuggestLease(deps.db, userId, leaseToken);
       return;
     }
-    const finish = (results: { cardId: string; score: number }[] | null, asked = false) =>
+    const finish = (results: { cardId: string; score: number }[] | null) =>
       finishSuggestRun(deps.db, {
         userId,
         leaseToken,
         results,
-        ...(asked ? { asked: { questionSetId: suggestSet.id, pin } } : {}),
+        asked: { questionSetId: suggestSet.id, pin },
         fallbackModel: classification.primaryModel,
       });
     try {
@@ -124,7 +124,6 @@ export function createUserSuggestHandler(deps: WorkerDeps): QueueHandler<'user.s
       const offered = new Set(plan.cardIds);
       await finish(
         suggestResults(answer as ChoiceAnswer).filter((result) => offered.has(result.cardId)),
-        true,
       );
     } catch (error) {
       await releaseSuggestLease(deps.db, userId, leaseToken).catch(() => undefined);

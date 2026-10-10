@@ -818,7 +818,9 @@ throttling alone does not replace this durable claim.
    undismissed suggestions, so they always reflect the latest evidence: when its Choice completes
    (a `none` win included), the commit deletes the undismissed rows it did not insert, and a run
    that stops at step 1 or finds no candidate deletes them all, because their 30-day evidence is
-   gone. A budget deferral or failed call leaves them in place. New rows record the active set and
+   gone. Recheck the planning-time suggest set and model pin under the settings lock for every
+   outcome, including no-call cleanup; discard a stale outcome without replacing suggestions valid
+   under the newly active manifest. A budget deferral or failed call leaves them in place. New rows record the active set and
    the Jev model `engine.model_pin.model`.
 7. Engine `kind: 'suggest'`, `priority: 'bulk'`, `userId` set. Bulk calls never use the LLM fallback
    (spec 04 §5), so suggestions come from Jev only. When Jev is unavailable the router makes no wire

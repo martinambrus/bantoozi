@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import * as suggestDb from '@bantoozi/db';
 import {
   MIGRATIONS_FOLDER,
   PG_BOSS_VERSION,
@@ -30,7 +31,7 @@ import {
   type TestDatabase,
 } from '@bantoozi/testing';
 import pg from 'pg';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createWorkerCredentialResolver } from '../src/credentials/index.js';
 import { createWorkerEngineRouter, type WorkerEngineConfig } from '../src/engine-router.js';
@@ -781,6 +782,54 @@ describe('user.suggest (M7-T6, spec 05 §7)', () => {
 });
 
 describe('user.suggest during a rolling deployment and with stale facets (PR #25 round 8)', () => {
+  it.each(['set', 'pin'])(
+    'preserves newly current suggestions when the %s changes before no-ask cleanup',
+    async (change) => {
+      const userId = await reader({ likes: 2 });
+      const nextSet =
+        change === 'set' ? await questionSet(`suggest-next-${randomUUID()}`) : activeSet;
+      const nextPin = change === 'pin' ? 'jev-next' : FAKE_TYPESAFE_MODEL;
+      await seedSuggestion(userId, otherCardId, { set: nextSet, pin: nextPin, score: 0.4 });
+      const before = await suggestions(userId);
+      const original = suggestDb.finishSuggestRun;
+      const finish = vi
+        .spyOn(suggestDb, 'finishSuggestRun')
+        .mockImplementationOnce(async (database, input) => {
+          if (change === 'set') {
+            await owner.query(
+              `UPDATE settings SET value = jsonb_set(value, '{suggest}', to_jsonb($1::text))
+              WHERE key = 'question_sets.active'`,
+              [nextSet],
+            );
+          } else {
+            await setSetting('engine.model_pin', { model: nextPin });
+          }
+          return original(database, input);
+        });
+      const from = fake.requestCount();
+      try {
+        await runSuggest(userId);
+        expect(finish).toHaveBeenCalledOnce();
+        expect(fake.requestCount()).toBe(from);
+        expect(await reservations(userId)).toBe(0);
+        expect(await suggestions(userId)).toEqual(before);
+        expect(await userState(userId)).toMatchObject({
+          last_suggested_at: null,
+          suggest_lease_token: null,
+          suggest_lease_until: null,
+        });
+      } finally {
+        finish.mockRestore();
+        await owner.query(
+          `UPDATE settings SET value = jsonb_set(value, '{suggest}', to_jsonb($1::text))
+            WHERE key = 'question_sets.active'`,
+          [activeSet],
+        );
+        await setSetting('engine.model_pin', PIN);
+      }
+    },
+  );
+
   it('a worker whose model differs from the stored pin sends nothing and keeps the suggestions', async () => {
     const userId = await reader({ likes: 4 });
     await seedSuggestion(userId, otherCardId, { score: 0.4 });
