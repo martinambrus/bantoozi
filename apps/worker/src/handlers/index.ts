@@ -12,8 +12,11 @@ import type { WorkerDeps } from './deps.js';
 import { createFeedFetchHandler } from './feed-fetch.js';
 import { createFeedScheduleHandler } from './feed-schedule.js';
 import { createProviderValidateHandler } from './provider-validate.js';
+import { createArchiveHandler } from './house-archive.js';
 import { createExpireRulesHandler } from './house-expire-rules.js';
 import { createNightlyLearnHandler } from './house-nightly-learn.js';
+import { createPurgeAuthHandler } from './house-purge-auth.js';
+import { createReconcileHandler } from './house-reconcile.js';
 import { createRescoreDegradedHandler } from './house-rescore-degraded.js';
 import { createUserLearnHandler } from './user-learn.js';
 import { createUserRankHandler } from './user-rank.js';
@@ -107,6 +110,13 @@ export const LEARNING_QUEUES = [
   'house.nightly-learn',
 ] as const satisfies readonly QueueName[];
 
+/** M8 retention housekeeping (spec 11 §5, §6): stored data only, no model dependencies. */
+export const RETENTION_QUEUES = [
+  'house.purge-auth',
+  'house.reconcile',
+  'house.archive',
+] as const satisfies readonly QueueName[];
+
 /** Queues with real handlers so far (M1 ingestion, M2 classification and key validation, M5 ranking, M7 learning). */
 export const IMPLEMENTED_QUEUES = [
   ...INGESTION_QUEUES,
@@ -115,6 +125,7 @@ export const IMPLEMENTED_QUEUES = [
   ...PROVIDER_QUEUES,
   ...RANKING_QUEUES,
   ...LEARNING_QUEUES,
+  ...RETENTION_QUEUES,
 ] as const satisfies readonly QueueName[];
 
 const implemented = <Q extends QueueName>(handle: QueueHandler<Q>): HandlerEntry<Q> => ({
@@ -137,6 +148,9 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
     'house.expire-rules': implemented(createExpireRulesHandler(deps)),
     'user.learn': implemented(createUserLearnHandler(deps)),
     'house.nightly-learn': implemented(createNightlyLearnHandler(deps)),
+    'house.purge-auth': implemented(createPurgeAuthHandler(deps)),
+    'house.reconcile': implemented(createReconcileHandler(deps)),
+    'house.archive': implemented(createArchiveHandler(deps)),
     ...(classification === undefined
       ? {}
       : {

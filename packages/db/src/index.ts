@@ -12,6 +12,7 @@ export * from './engine/index.js';
 export * from './errors.js';
 export * from './eval/index.js';
 export * from './heartbeat.js';
+export * from './house/index.js';
 export * from './ingest/index.js';
 export * from './learn/index.js';
 export * from './library/index.js';

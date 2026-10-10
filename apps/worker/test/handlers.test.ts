@@ -15,6 +15,7 @@ import {
   CLASSIFICATION_QUEUES,
   HANDLERS,
   IMPLEMENTED_QUEUES,
+  RETENTION_QUEUES,
   INGESTION_QUEUES,
   PROVIDER_QUEUES,
   LEARNING_QUEUES,
@@ -64,7 +65,7 @@ describe('handler map', () => {
     const handlers = createHandlers(createWorkerDeps(baseDeps));
     expect(Object.keys(handlers).sort()).toEqual([...QUEUE_NAMES].sort());
     expect(available(handlers)).toEqual(
-      [...INGESTION_QUEUES, ...RANKING_QUEUES, ...LEARNING_QUEUES].sort(),
+      [...INGESTION_QUEUES, ...RANKING_QUEUES, ...LEARNING_QUEUES, ...RETENTION_QUEUES].sort(),
     );
     expect(LEARNING_QUEUES).toEqual(['user.learn', 'house.nightly-learn']);
     expect(RANKING_QUEUES).toEqual(['user.rank', 'house.expire-rules']);
@@ -93,6 +94,7 @@ describe('handler map', () => {
         ...SUGGEST_QUEUES,
         ...RANKING_QUEUES,
         ...LEARNING_QUEUES,
+        ...RETENTION_QUEUES,
       ].sort(),
     );
     expect(CLASSIFICATION_QUEUES).toEqual([
