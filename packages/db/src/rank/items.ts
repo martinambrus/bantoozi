@@ -117,6 +117,33 @@ export async function loadRankFacets(
   return new Map(result.rows.map((row) => [row.article_id, row.features]));
 }
 
+/** The fingerprint of a current facet row, for the model path only (train/serve skew, spec 06 §8.1). */
+export interface RankFacetState {
+  stateSha256: string;
+  model: string | null;
+}
+
+/** State hash and model of the facet rows `loadRankFacets` returns, by article. */
+export async function loadRankFacetStates(
+  db: Executor,
+  input: { articleIds: readonly string[]; enrichSetId: string | null },
+): Promise<Map<string, RankFacetState>> {
+  if (input.articleIds.length === 0 || input.enrichSetId === null) return new Map();
+  const result = await db.execute<{
+    article_id: string;
+    state_sha256: string;
+    model: string | null;
+  }>(sql`
+    SELECT f.article_id::text AS article_id, f.state_sha256, f.model
+      FROM article_facets f
+      JOIN articles a ON a.id = f.article_id AND a.content_revision = f.article_revision
+     WHERE f.article_id = ANY(${sql.param([...input.articleIds])}::bigint[])
+       AND f.question_set_id = ${input.enrichSetId}::bigint`);
+  return new Map(
+    result.rows.map((row) => [row.article_id, { stateSha256: row.state_sha256, model: row.model }]),
+  );
+}
+
 /** A stored card answer with the fingerprint the handler checks (spec 06 §2). */
 export interface RankAnswerRow {
   articleId: string;
@@ -127,6 +154,8 @@ export interface RankAnswerRow {
   articleRevision: string;
   stateSha256: string;
   cardInputSha256: string;
+  /** Read by the model path only. */
+  model: string | null;
 }
 
 /** The stored answers of `cardIds` (the user's cards and labels) for the articles. */
@@ -144,9 +173,10 @@ export async function loadRankAnswers(
     article_revision: string;
     state_sha256: string;
     card_input_sha256: string;
+    model: string | null;
   }>(sql`
     SELECT article_id::text AS article_id, card_id::text AS card_id, p, engine, question_set_sha,
-           article_revision::text AS article_revision, state_sha256, card_input_sha256
+           article_revision::text AS article_revision, state_sha256, card_input_sha256, model
       FROM card_answers
      WHERE article_id = ANY(${sql.param([...input.articleIds])}::bigint[])
        AND card_id = ANY(${sql.param([...input.cardIds])}::bigint[])`);
@@ -159,6 +189,7 @@ export async function loadRankAnswers(
     articleRevision: row.article_revision,
     stateSha256: row.state_sha256,
     cardInputSha256: row.card_input_sha256,
+    model: row.model,
   }));
 }
 

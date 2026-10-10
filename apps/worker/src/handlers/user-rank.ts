@@ -3,6 +3,7 @@ import {
   loadHeldCardIds,
   loadRankUser,
   rankWindowPage,
+  readSuggestPin,
   retryTransaction,
   workerOutbox,
   writeRankBatch,
@@ -142,11 +143,20 @@ export function createUserRankHandler(
           ? { version: modelState.row.version, contextSha: modelState.contextSha }
           : null,
     });
+    const modelEligible = new Set<string>();
     const ctx =
       modelState.status === 'current'
-        ? { ...loaded, model: buildActiveModel(modelState, loaded) }
+        ? { ...loaded, model: buildActiveModel(modelState, loaded, modelEligible) }
         : loaded;
-    const run: RankItemsRun = { userId: user.userId, now, ctx, config, cardInputs };
+    const run: RankItemsRun = {
+      userId: user.userId,
+      now,
+      ctx,
+      config,
+      cardInputs,
+      modelPin: await readSuggestPin(deps.db, deps.classification?.primaryModel ?? ''),
+      modelEligible,
+    };
     const forceBefore =
       payload.full === true
         ? payload.snapshotAt === undefined

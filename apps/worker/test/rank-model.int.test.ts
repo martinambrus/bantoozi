@@ -342,4 +342,34 @@ describe('model scoring in user.rank (spec 06 §2 step 4a, §6.2, §8.1)', () =>
     expect((await rankRow(h, bare.userId, b)).source).toBe('cards');
     expect(await learnIntents(sinceBare)).toEqual([]);
   });
+
+  it('the model scores only items whose facets and answers are current under the pin (no train/serve skew)', async () => {
+    const { userId, feedId, cardId } = await modelReader();
+    const current = await matched(h, feedId, cardId, 0.9);
+    const obsoleteState = await matched(h, feedId, cardId, 0.9);
+    await h.owner.query(`UPDATE article_facets SET state_sha256 = $2 WHERE article_id = $1`, [
+      obsoleteState,
+      '0'.repeat(64),
+    ]);
+    const otherFacetModel = await h.article({ feedIds: [feedId] });
+    await h.enrichDirect(otherFacetModel, { state: 'matched', model: 'older-model' });
+    await h.answerCard(otherFacetModel, cardId, { engine: 'typesafe', p: 0.9 });
+    const otherAnswerModel = await h.article({ feedIds: [feedId] });
+    await h.enrichDirect(otherAnswerModel, { state: 'matched' });
+    await h.answerCard(otherAnswerModel, cardId, {
+      engine: 'typesafe',
+      model: 'older-model',
+      p: 0.9,
+    });
+
+    await rank(h, userId);
+    const ok = await rankRow(h, userId, current);
+    expect(ok.source).toBe('model');
+    expect(ok.p).toBeCloseTo(simpleP(0.9), 4);
+    for (const id of [obsoleteState, otherFacetModel, otherAnswerModel]) {
+      const row = await rankRow(h, userId, id);
+      expect(row.source).toBe('cards');
+      expect(row.p).toBeCloseTo(0.72, 4);
+    }
+  });
 });

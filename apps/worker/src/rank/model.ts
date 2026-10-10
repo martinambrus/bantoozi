@@ -131,6 +131,7 @@ export async function loadRankModelState(
 export function buildActiveModel(
   state: Extract<RankModelState, { status: 'current' }>,
   ctx: Pick<UserRankContext, 'cards' | 'config'>,
+  eligible: ReadonlySet<string>,
 ): ActiveModel {
   const titles = new Map(ctx.cards.map((card) => [card.cardId, card.title]));
   const labelOf = (feature: string): string => {
@@ -140,6 +141,8 @@ export function buildActiveModel(
   return {
     version: state.row.version,
     score(item, now) {
+      // Facets or answers of another state or model than the pin's: the cards path scores it.
+      if (!eligible.has(item.articleId)) return null;
       const x = itemFeatures(ctx.cards, item, now, ctx.config, state.stored.ownInputs);
       const scored = scoreModel(state.stored, x);
       if (scored === null) return null;
