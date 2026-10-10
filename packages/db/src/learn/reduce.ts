@@ -152,7 +152,13 @@ export function reduceArticle(input: ReduceInput): LearnSample | null {
       if (source !== undefined && features !== null) {
         const requestId = source.value.analysisRequestId;
         const result = typeof requestId === 'string' ? input.analysis.get(requestId) : undefined;
-        if (result !== undefined && result.inputSha === source.value.inputSha) {
+        const analysisSha = source.value.analysisRatingSha;
+        if (
+          result !== undefined &&
+          result.inputSha === source.value.inputSha &&
+          typeof analysisSha === 'string' &&
+          analysisSha === features.ratingSha
+        ) {
           features = complete(features, result);
         }
       }
@@ -232,10 +238,11 @@ export function reduceArticle(input: ReduceInput): LearnSample | null {
 
   if (prefs.implicitNegative && state.readAt !== null) {
     const read = latest(events.filter((e) => e.kind === 'read' && big(e.id) > floor));
-    const unread = latest(events.filter((e) => e.kind === 'unread'));
+    // Anchored like the rating: markArticleRead writes read_at = the event time, so a bulk
+    // mark-read after an unread (another read_at) does not revive it, while undoing the unread does.
     if (
       read !== undefined &&
-      (unread === undefined || big(unread.id) < big(read.id)) &&
+      read.createdAt.getTime() === state.readAt.getTime() &&
       read.value.signalOrigin === 'explicit' &&
       consent(read, 'implicitFeedback') &&
       consent(read, 'implicitNegative') &&

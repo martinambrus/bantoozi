@@ -1612,6 +1612,75 @@ describe('snapshot capture after a translation fallback and frozen request prove
     expect(event.value['ratingSha']).toBeUndefined();
     expect(event.value['features']).toBeNull();
   });
+
+  it('records a matching analysisRatingSha for a partial live snapshot only when the frozen manifest is current', async () => {
+    const matchA = await matchSet('e5'.repeat(32));
+    const matchB = await matchSet('e6'.repeat(32));
+    await setSetting('question_sets.active', { enrich: matchA, match: matchA });
+    await setSetting('language_modes', { en: 'native' });
+    const model = await currentModel();
+    const rateLive = async (manifestPatch: Record<string, unknown> = {}) => {
+      const { r, feed, article } = await setup({}, 'training');
+      await h.owner.query(`UPDATE articles SET lang = 'en' WHERE id = $1`, [article]);
+      const card = await holdCard(r.user.id, 'love', 'Partial snapshot');
+      const requestId = randomUUID();
+      const manifest = JSON.stringify({
+        questionSets: { enrich: { id: matchA }, match: { id: matchA } },
+        article: { lang: 'en' },
+        model: { model },
+        languageMode: 'native',
+        cardTextMode: 'as_written',
+        ...manifestPatch,
+      });
+      const client = await h.owner.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query("SELECT set_config('app.user_id', $1, true)", [r.user.id]);
+        await client.query(
+          `INSERT INTO analysis_requests (id, user_id, feed_id, article_id, article_revision,
+                                          inference_version, input_snapshot, input_sha)
+           SELECT $1, $2, $3, a.id, a.content_revision, s.inference_version, $5::jsonb,
+                  encode(sha256(convert_to($5::jsonb::text, 'UTF8')), 'hex')
+             FROM articles a JOIN subscriptions s ON s.user_id = $2 AND s.feed_id = $3
+            WHERE a.id = $4`,
+          [requestId, r.user.id, feed, article, manifest],
+        );
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+      await ok(
+        r.api.post(`/articles/${article}/rating`, {
+          ...freshFence,
+          rating: 1,
+          analysisRequestId: requestId,
+        }),
+      );
+      const event = (await events(h, r.user.id, article)).find((e) => e.kind === 'rate')!;
+      expect(event.value['features']).toMatchObject({
+        cards: [{ id: card, p: null, engine: null }],
+        values: { facets: null },
+      });
+      return event;
+    };
+    const current = await rateLive();
+    const features = current.value['features'] as { ratingSha: string };
+    expect(current.value['analysisRatingSha']).toBe(features.ratingSha);
+    expect(features.ratingSha).toMatch(/^[0-9a-f]{64}$/);
+    for (const manifestPatch of [
+      { questionSets: { enrich: { id: matchB }, match: { id: matchA } } },
+      { questionSets: { enrich: { id: matchA }, match: { id: matchB } } },
+      { model: { model: 'jev-frozen-other' } },
+      { languageMode: 'translate' },
+      { cardTextMode: 'english' },
+    ]) {
+      const switched = await rateLive(manifestPatch);
+      expect(switched.value['analysisRatingSha']).toBeNull();
+    }
+  });
 });
 
 describe('snapshot provenance: facets, answer model and the effective fingerprint', () => {

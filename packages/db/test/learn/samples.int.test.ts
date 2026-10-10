@@ -704,6 +704,7 @@ describe('selected analysis requests (spec 06 §8.2, spec 05 §1.1)', () => {
     });
     await s.insertRating(a, {
       analysisRequestId: request.requestId,
+      analysisRatingSha: 'a'.repeat(64),
       inputSha: request.inputSha,
       features: snapshot({ cards: [{ id: CARD, strength: 'love', p: null, engine: null }] }),
     });
@@ -747,6 +748,7 @@ describe('selected analysis requests (spec 06 §8.2, spec 05 §1.1)', () => {
     });
     await s.insertRating(a, {
       analysisRequestId: request.requestId,
+      analysisRatingSha: 'a'.repeat(64),
       inputSha: request.inputSha,
       features: snapshot({
         cards: [
@@ -776,6 +778,7 @@ describe('selected analysis requests (spec 06 §8.2, spec 05 §1.1)', () => {
     });
     await s.insertRating(a, {
       analysisRequestId: request.requestId,
+      analysisRatingSha: 'a'.repeat(64),
       inputSha: request.inputSha,
       features: snapshot({ cards: [{ id: CARD, strength: 'love', p: null, engine: null }] }),
     });
@@ -1007,5 +1010,80 @@ describe('derived snapshots from a frozen request (spec 06 §8.2)', () => {
       { at: other.at },
     );
     expect(only(await other.s.samples()).features).toBeNull();
+  });
+});
+
+describe('analysis completion is bound to the rating fingerprint (PR #25 round 12)', () => {
+  const CARD = '501';
+
+  async function partial(analysisRatingSha: unknown, matchingInput = true) {
+    const s = await Scenario.create(ctx);
+    const a = await s.article();
+    const request = await analysisRequest(s, a, {
+      status: 'complete',
+      cards: [{ cardId: CARD, p: 0.8 }],
+      features: { 'topic.a': 0.25 },
+    });
+    await s.insertRating(a, {
+      analysisRequestId: request.requestId,
+      inputSha: matchingInput ? request.inputSha : 'b'.repeat(64),
+      ...(analysisRatingSha === undefined ? {} : { analysisRatingSha }),
+      features: snapshot({ cards: [{ id: CARD, strength: 'love', p: null, engine: null }] }),
+    });
+    return only(await s.samples()).features;
+  }
+
+  it('a partial snapshot stays unfilled when analysisRatingSha is absent, null or differs', async () => {
+    for (const sha of [undefined, null, 'b'.repeat(64)]) {
+      const features = await partial(sha);
+      expect(features?.cards[0]?.p).toBeNull();
+      expect(features?.values.facets).toBeNull();
+    }
+  });
+
+  it('a partial snapshot is filled when analysisRatingSha equals its rating sha', async () => {
+    const features = await partial('a'.repeat(64));
+    expect(features?.cards[0]).toMatchObject({ id: CARD, p: 0.8 });
+    expect(features?.values.facets).toEqual({ 'topic.a': 0.25 });
+  });
+
+  it('a matching rating fingerprint does not complete a snapshot from a different input', async () => {
+    const features = await partial('a'.repeat(64), false);
+    expect(features?.cards[0]?.p).toBeNull();
+    expect(features?.values.facets).toBeNull();
+  });
+});
+
+describe('the explicit-read anchor (PR #25 round 12)', () => {
+  it('an undone unread brings the explicit-read sample back', async () => {
+    const s = await Scenario.create(ctx, BOTH);
+    const a = await s.article();
+    const read = await s.read(a);
+    const unread = await s.unread(a);
+    expect(await s.samples()).toEqual([]);
+    await s.undo(unread.key!);
+    expect(only(await s.samples())).toMatchObject({
+      signal: 'read',
+      eventId: await s.eventId(a, 'read', 0),
+      feedbackAt: read.now,
+    });
+  });
+
+  it('undoing the explicit read removes its sample', async () => {
+    const scenario = await Scenario.create(ctx, BOTH);
+    const article = await scenario.article();
+    const read = await scenario.read(article);
+    expect(only(await scenario.samples()).signal).toBe('read');
+    await scenario.undo(read.key!);
+    expect(await scenario.samples()).toEqual([]);
+  });
+
+  it('an expand read after an unread does not revive an earlier explicit read', async () => {
+    const scenario = await Scenario.create(ctx, BOTH);
+    const article = await scenario.article();
+    await scenario.read(article);
+    await scenario.unread(article);
+    await scenario.read(article, 'expand');
+    expect(await scenario.samples()).toEqual([]);
   });
 });

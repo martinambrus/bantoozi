@@ -1398,10 +1398,13 @@ async function applyRating(
     live: revision === article.contentRevision,
     matchFingerprint: options.matchFingerprint,
   });
-  const ratingSha =
-    request !== null && capture.features === null
-      ? await requestRatingSha(tx, request.snapshot, options.matchFingerprint?.defaults)
-      : null;
+  // The request's own fingerprint, null when it was frozen under another manifest: the reducer
+  // completes or derives from the request only when this equals the snapshot's rating sha.
+  const analysisRatingSha =
+    request === null
+      ? null
+      : await requestRatingSha(tx, request.snapshot, options.matchFingerprint?.defaults);
+  const ratingSha = capture.features === null ? analysisRatingSha : null;
   const row = article.row;
   const patch: ReaderPatch =
     target.rating === null
@@ -1427,7 +1430,9 @@ async function applyRating(
       hide: target.hide,
       contentRevision: revision,
       ...(target.fence.snapshotId === undefined ? {} : { snapshotId: target.fence.snapshotId }),
-      ...(request === null ? {} : { analysisRequestId: request.id, inputSha: request.inputSha }),
+      ...(request === null
+        ? {}
+        : { analysisRequestId: request.id, inputSha: request.inputSha, analysisRatingSha }),
       ...(ratingSha === null ? {} : { ratingSha }),
       signalOrigin: 'explicit',
       learningConsent: learningConsent(lock.prefs),
