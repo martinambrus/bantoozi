@@ -4,7 +4,7 @@ import { FEATURE_SPEC_V1_SHA } from './feature-spec.js';
 import { type RawFeatureSnapshot, snapshotCardScore, snapshotFeatures } from './features.js';
 import { planFolds, type FoldPlan } from './folds.js';
 import { fitLogistic, type LogisticFit } from './logistic.js';
-import { auc, logLoss } from './metrics.js';
+import { auc, groupedBootstrapCi, logLoss } from './metrics.js';
 import { modelContextSha, type Consent, type HeldCard, type StoredModel } from './model.js';
 import { ownInputs } from './own-inputs.js';
 import { applyPlatt, fitPlatt, type PlattParams } from './platt.js';
@@ -21,6 +21,8 @@ export interface TrainArgs {
   feedbackCutoffEventId: string | null;
 }
 
+export type ConfidenceInterval = [number, number] | null;
+
 export interface TrainMetrics {
   skipped: Record<string, number>;
   nExplicit: number;
@@ -33,6 +35,7 @@ export interface TrainMetrics {
   cvLogloss: number | null;
   baselineAuc: number | null;
   baselineLogloss: number | null;
+  ci: { cvAuc: ConfidenceInterval; baselineAuc: ConfidenceInterval; deltaAuc: ConfidenceInterval };
   research: boolean;
   contextSha: string | null;
   ratingSha: string | null;
@@ -231,12 +234,18 @@ function innerSelect(rows: readonly Row[], seed: string, ctx: Ctx): { lambda: nu
   return { lambda, platt: o === null ? IDENTITY : fitPlatt(o.z, o.y) };
 }
 
-function baselineOf(rows: readonly Row[], cfg: ReadonlyRankerConfig): { scores: number[]; y: number[] } {
+function baselineScore(row: Row, cfg: ReadonlyRankerConfig): number {
+  return Math.min(Math.max(snapshotCardScore(row.f, cfg.strengthWeights) ?? 0, CLIP), 1 - CLIP);
+}
+
+function baselineOf(
+  rows: readonly Row[],
+  cfg: ReadonlyRankerConfig,
+): { scores: number[]; y: number[]; groups: string[] } {
   const explicit = rows.filter((r) => r.s.explicit);
   return {
-    scores: explicit.map((r) =>
-      Math.min(Math.max(snapshotCardScore(r.f, cfg.strengthWeights) ?? 0, CLIP), 1 - CLIP),
-    ),
+    groups: explicit.map((r) => r.s.groupId),
+    scores: explicit.map((r) => baselineScore(r, cfg)),
     y: explicit.map((r) => r.s.y),
   };
 }
@@ -286,6 +295,7 @@ export function trainUserModel(args: TrainArgs, opts: { mode: 'production' | 're
     cvLogloss: null,
     baselineAuc: null,
     baselineLogloss: null,
+    ci: { cvAuc: null, baselineAuc: null, deltaAuc: null },
     research,
     contextSha: null,
     ratingSha: args.ratingSha,
@@ -316,6 +326,11 @@ export function trainUserModel(args: TrainArgs, opts: { mode: 'production' | 're
   const base = baselineOf(rows, cfg);
   metrics.baselineAuc = auc(base.scores, base.y);
   metrics.baselineLogloss = base.y.length > 0 ? logLoss(base.scores, base.y) : null;
+  metrics.ci.baselineAuc = groupedBootstrapCi(
+    base.groups,
+    (m) => auc(base.scores, base.y, m),
+    `${seed}|baseline`,
+  );
 
   let lambda = largest;
   let platt = IDENTITY;
@@ -331,13 +346,29 @@ export function trainUserModel(args: TrainArgs, opts: { mode: 'production' | 're
 
     const probs: number[] = [];
     const ys: number[] = [];
+    const groups: string[] = [];
+    const baseScores: number[] = [];
     for (const [f, fold] of folds.entries()) {
       const chosen = innerSelect(fold.trainRows, `${seed}|inner|${f}`, ctx);
       const fit = fold.fits[ctx.grid.indexOf(chosen.lambda)];
       if (fit === undefined || !fit.ok) return reject([fit?.ok === false ? fit.reason : 'nonconverged']);
       for (const z of logitsOf(fit, fold.valX)) probs.push(applyPlatt(chosen.platt, z));
       ys.push(...fold.valY);
+      for (const row of fold.valRows) {
+        groups.push(row.s.groupId);
+        baseScores.push(baselineScore(row, cfg));
+      }
     }
+    metrics.ci.cvAuc = groupedBootstrapCi(groups, (m) => auc(probs, ys, m), `${seed}|cv`);
+    metrics.ci.deltaAuc = groupedBootstrapCi(
+      groups,
+      (m) => {
+        const model = auc(probs, ys, m);
+        const baseline = auc(baseScores, ys, m);
+        return model === null || baseline === null ? null : model - baseline;
+      },
+      `${seed}|delta`,
+    );
     metrics.cvAuc = auc(probs, ys);
     metrics.cvLogloss = ys.length > 0 ? logLoss(probs, ys) : null;
   }

@@ -1,3 +1,5 @@
+import { seededRandom } from './random.js';
+
 const LOG_CLIP = 1e-6;
 
 /** Logistic function, stable for large |z|. */
@@ -75,4 +77,43 @@ export function ece(p: readonly number[], y: readonly number[], bins = 10): numb
     if (n > 0) total += (n / p.length) * Math.abs((sumP[b] ?? 0) / n - (sumY[b] ?? 0) / n);
   }
   return total;
+}
+
+function quantile(sorted: readonly number[], q: number): number {
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos);
+  const a = sorted[lo] ?? 0;
+  const b = sorted[Math.ceil(pos)] ?? a;
+  return a + (b - a) * (pos - lo);
+}
+
+/**
+ * 95 % percentile interval from story-group bootstrap resamples (spec 06 §8.3). `statistic`
+ * receives, per sample, the multiplicity of its group in the resample; resamples where it returns
+ * `null` are skipped. `null` when the point estimate is undefined or fewer than 100 resamples count.
+ */
+export function groupedBootstrapCi(
+  groupIds: readonly string[],
+  statistic: (multiplicity: readonly number[]) => number | null,
+  seed: string,
+  resamples = 1000,
+): [number, number] | null {
+  if (statistic(groupIds.map(() => 1)) === null) return null;
+  const groups = [...new Set(groupIds)].sort();
+  const index = new Map(groups.map((g, i) => [g, i]));
+  const slot = groupIds.map((g) => index.get(g) ?? 0);
+  const rand = seededRandom(`${seed}|bootstrap`);
+  const values: number[] = [];
+  for (let r = 0; r < resamples; r += 1) {
+    const counts = new Array<number>(groups.length).fill(0);
+    for (let i = 0; i < groups.length; i += 1) {
+      const g = Math.min(Math.floor(rand() * groups.length), groups.length - 1);
+      counts[g] = (counts[g] ?? 0) + 1;
+    }
+    const value = statistic(slot.map((g) => counts[g] ?? 0));
+    if (value !== null && Number.isFinite(value)) values.push(value);
+  }
+  if (values.length < 100) return null;
+  values.sort((a, b) => a - b);
+  return [quantile(values, 0.025), quantile(values, 0.975)];
 }
