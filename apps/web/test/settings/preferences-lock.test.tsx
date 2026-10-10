@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { json } from '../api/fake-fetch.js';
 import { FakeLocks, installLocks, removeLocks } from '../offline/fake-locks.js';
 import { USER_A_ID } from '../session/fixtures.js';
 import type { FakeServer } from '../support/app.js';
@@ -224,6 +225,23 @@ describe('the preferences lock across tabs', () => {
 
     await waitFor(() => expect(switchOf(tab).closest('[inert]')).toBeNull());
     expect(tab.calls('GET /me').length).toBeGreaterThan(before);
+  });
+
+  it('keeps the controls inert until the account is read again after a failed read', async () => {
+    let reads = 0;
+    const tab = await openSettings({
+      routes: (server) => ({
+        'GET /me': () => {
+          reads += 1;
+          return reads === 2 ? json(500, { error: { code: 'INTERNAL' } }) : json(200, server.me);
+        },
+      }),
+    });
+    await waitFor(() => expect(reads).toBeGreaterThanOrEqual(2));
+    expect(switchOf(tab).closest('[inert]')).not.toBeNull();
+
+    await waitFor(() => expect(switchOf(tab).closest('[inert]')).toBeNull(), { timeout: 3_000 });
+    expect(reads).toBeGreaterThanOrEqual(3);
   });
 
   it('does not send a save that starts after the lock was lost', async () => {

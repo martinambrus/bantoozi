@@ -29,6 +29,10 @@ export interface PreferencesLockOptions {
 
 type Mode = 'try' | 'wait' | 'steal';
 
+/** The first wait before the account is read again after a failed read; it doubles up to the max. */
+const REFRESH_RETRY_MS = 1_000;
+const REFRESH_RETRY_MAX_MS = 30_000;
+
 /**
  * Lets one tab or window of an account edit the preferences at a time. The first one to open them
  * holds a Web Lock for as long as it stays on the screen; the others wait for it, and one of them
@@ -117,7 +121,21 @@ export function usePreferencesLock(options: PreferencesLockOptions = {}): Prefer
       }
       if (!stillHolding()) return;
       // Another tab may have saved since this one read the account, also before a first grant.
-      await queryClient.invalidateQueries({ queryKey: meKey() });
+      // Until the account is read again the controls stay inert: stale values could overwrite
+      // that save. A failed read is tried again, a little later each time.
+      for (
+        let delayMs = REFRESH_RETRY_MS;
+        ;
+        delayMs = Math.min(delayMs * 2, REFRESH_RETRY_MAX_MS)
+      ) {
+        try {
+          await queryClient.invalidateQueries({ queryKey: meKey() }, { throwOnError: true });
+          break;
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          if (!stillHolding()) return;
+        }
+      }
       if (!stillHolding()) return;
       setState('held');
     }
