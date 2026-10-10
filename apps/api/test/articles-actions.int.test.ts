@@ -118,6 +118,13 @@ async function answer(articleId: string, cardId: string, p: number, revision = 1
      VALUES ('match', 'articles-test', $1, '{}') ON CONFLICT DO NOTHING`,
     [QUESTION_SET_SHA],
   );
+  // The snapshot reads answers of the active match set only.
+  await h.owner.query(
+    `INSERT INTO settings (key, value)
+     SELECT 'question_sets.active', jsonb_build_object('match', id::text) FROM question_sets WHERE sha256 = $1
+     ON CONFLICT (key) DO UPDATE SET value = settings.value || EXCLUDED.value`,
+    [QUESTION_SET_SHA],
+  );
   await h.owner.query(
     `INSERT INTO card_answers (article_id, card_id, p, engine, question_set_sha, article_revision,
                                state_sha256, card_input_sha256, state_variant)
@@ -1037,5 +1044,125 @@ describe('selected training requests', () => {
     );
     expect(obsolete).toMatchObject({ code: 'CONFLICT', details: { reason: 'obsolete_request' } });
     await restamp(h, r.user.id);
+  });
+});
+
+describe('feature snapshot reads the current sets (spec 06 §8.2)', () => {
+  async function setSetting(key: string, value: unknown) {
+    await h.owner.query(
+      `INSERT INTO settings (key, value) VALUES ($1, $2::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [key, JSON.stringify(value)],
+    );
+  }
+
+  async function questionSet(kind: 'enrich' | 'match', sha: string): Promise<string> {
+    const res = await h.owner.query<{ id: string }>(
+      `INSERT INTO question_sets (kind, version, sha256, definition)
+       VALUES ($1, $2, $3, '{}') RETURNING id::text AS id`,
+      [kind, `snapshot-${sha.slice(0, 12)}`, sha],
+    );
+    return res.rows[0]!.id;
+  }
+
+  async function facets(articleId: string, setId: string, features: Record<string, number>) {
+    await h.owner.query(
+      `INSERT INTO article_facets (article_id, question_set_id, article_revision, state_sha256,
+                                   engine, state_variant, answers, features)
+       VALUES ($1, $2, 1, 's', 'typesafe', 'native', '{}', $3::jsonb)`,
+      [articleId, setId, JSON.stringify(features)],
+    );
+  }
+
+  async function answerWith(
+    articleId: string,
+    cardId: string,
+    p: number,
+    sha: string,
+    variant: 'native' | 'translated',
+  ) {
+    await h.owner.query(
+      `INSERT INTO card_answers (article_id, card_id, p, engine, question_set_sha, article_revision,
+                                 state_sha256, card_input_sha256, state_variant)
+       VALUES ($1, $2, $3, 'typesafe', $4, 1, 's', 'c', $5)`,
+      [articleId, cardId, p, sha, variant],
+    );
+  }
+
+  async function frozen(r: Reader, article: string) {
+    await ok(r.api.post(`/articles/${article}/rating`, { ...freshFence, rating: 1 }));
+    const [event] = await events(h, r.user.id, article);
+    return event!.value['features'] as {
+      cards: { id: string; p: number | null }[];
+      values: { facets: Record<string, number> | null };
+    };
+  }
+
+  let previous: { active: unknown; modes: unknown };
+
+  beforeAll(async () => {
+    const rows = await h.owner.query<{ key: string; value: unknown }>(
+      `SELECT key, value FROM settings WHERE key IN ('question_sets.active', 'language_modes')`,
+    );
+    const byKey = new Map(rows.rows.map((row) => [row.key, row.value]));
+    previous = { active: byKey.get('question_sets.active'), modes: byKey.get('language_modes') };
+  });
+
+  afterAll(async () => {
+    for (const [key, value] of [
+      ['question_sets.active', previous.active],
+      ['language_modes', previous.modes],
+    ] as const) {
+      if (value === undefined) await h.owner.query(`DELETE FROM settings WHERE key = $1`, [key]);
+      else await setSetting(key, value);
+    }
+  });
+
+  it('captures the active enrich set facets only', async () => {
+    const enrichActive = await questionSet('enrich', 'a1'.repeat(32));
+    const enrichOld = await questionSet('enrich', 'a2'.repeat(32));
+    await setSetting('question_sets.active', { enrich: enrichActive });
+    const { r, article } = await setup();
+    await facets(article, enrichOld, { time_sensitive: 0.1 });
+    expect((await frozen(r, article)).values.facets).toBeNull();
+
+    const second = await setup();
+    await facets(second.article, enrichOld, { time_sensitive: 0.1 });
+    await facets(second.article, enrichActive, { time_sensitive: 0.9 });
+    expect((await frozen(second.r, second.article)).values.facets).toEqual({ time_sensitive: 0.9 });
+  });
+
+  it('lists a card answer of a non-active match set with p null', async () => {
+    const activeSha = 'b1'.repeat(32);
+    const oldSha = 'b2'.repeat(32);
+    const active = await questionSet('match', activeSha);
+    await questionSet('match', oldSha);
+    await setSetting('question_sets.active', { match: active });
+    await setSetting('language_modes', { de: 'native' });
+    const { r, article } = await setup();
+    await h.owner.query(`UPDATE articles SET lang = 'de' WHERE id = $1`, [article]);
+    const current = await holdCard(r.user.id, 'love', 'Current set');
+    const stale = await holdCard(r.user.id, 'love', 'Old set');
+    await answerWith(article, current, 0.7, activeSha, 'native');
+    await answerWith(article, stale, 0.6, oldSha, 'native');
+    const cards = new Map((await frozen(r, article)).cards.map((c) => [c.id, c.p]));
+    expect(cards.get(stale)).toBeNull();
+    expect(cards.get(current)).toBeCloseTo(0.7, 5);
+  });
+
+  it('keeps only answers on the state variant of the language mode', async () => {
+    const sha = 'c1'.repeat(32);
+    const match = await questionSet('match', sha);
+    await setSetting('question_sets.active', { match });
+    await setSetting('language_modes', { de: 'translate' });
+    const { r, article } = await setup();
+    await h.owner.query(`UPDATE articles SET lang = 'de' WHERE id = $1`, [article]);
+    const native = await holdCard(r.user.id, 'love', 'Native answer');
+    const translated = await holdCard(r.user.id, 'love', 'Translated answer');
+    await answerWith(article, native, 0.7, sha, 'native');
+    await answerWith(article, translated, 0.6, sha, 'translated');
+    const cards = new Map((await frozen(r, article)).cards.map((c) => [c.id, c.p]));
+    expect(cards.get(native)).toBeNull();
+    expect(cards.get(translated)).toBeCloseTo(0.6, 5);
   });
 });

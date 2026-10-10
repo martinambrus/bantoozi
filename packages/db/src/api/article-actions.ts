@@ -638,6 +638,8 @@ async function captureFeatures(
            sc.size AS cluster_size,
            (SELECT f.features FROM article_facets f
              WHERE f.article_id = a.id AND f.article_revision = a.content_revision
+               AND f.question_set_id::text = (SELECT st.value ->> 'enrich' FROM settings st
+                                               WHERE st.key = 'question_sets.active')
              ORDER BY f.updated_at DESC LIMIT 1) AS facets,
            (SELECT jsonb_object_agg(st.key, st.value) FROM settings st
              WHERE st.key = ANY(${sql.param([...RATING_FINGERPRINT_SETTINGS])}::text[])) AS settings
@@ -670,6 +672,14 @@ async function captureFeatures(
       LEFT JOIN card_answers ca ON ca.article_id = ${id}::bigint AND ca.card_id = uc.card_id
                                AND ca.article_revision = ${article.contentRevision}::bigint
                                AND ca.engine <> 'prefilter'
+                               AND ca.question_set_sha = (
+                                 SELECT qs.sha256 FROM question_sets qs
+                                   JOIN settings st ON st.key = 'question_sets.active'
+                                                   AND qs.id::text = st.value ->> 'match')
+                               AND ca.state_variant = CASE
+                                 WHEN (SELECT st.value ->> ${row.lang}::text FROM settings st
+                                        WHERE st.key = 'language_modes') = 'translate'
+                                 THEN 'translated' ELSE 'native' END
      WHERE uc.user_id = ${user}::uuid
        AND (uc.scope_feed_id IS NULL
             OR uc.scope_feed_id::text = ANY(${sql.param(row.inference_feed_ids)}::text[]))
