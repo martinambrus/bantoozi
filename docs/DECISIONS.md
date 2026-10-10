@@ -1446,3 +1446,28 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   after the replay or send that left them waiting, twice as long after each retry up to five
   minutes, never sooner than the Retry-After of the refusal (of a change or of the `/me` check),
   and never while offline or after the page let go of the account. Spec 09 §1 updated.
+- D-161: 2026-10-10 M6 follow-up — a selected-article request created before the article was
+  extracted froze the feed excerpt, ran on it, and the extraction then started a second, automatic
+  translate/enrich/cluster/match chain under the request's manual witness; the request's card
+  answers no longer matched the live state, so the article never reached For you. Spec 02 §4 and
+  05 §1.1 freeze the input at selection and say nothing about this case. The API now marks such a
+  snapshot `awaitingExtraction`; `analysis.process` defers it without an attempt while the article
+  is `ingested` (a delayed intent every 5 minutes as a safety net, at most 30 minutes, then it runs on
+  what is there), `after('extract')` wakes the waiting requests instead of counting them as demand
+  for the automatic chain, and the lease holder recaptures the article, translation, language mode
+  and media context of the same revision once, keeping the frozen cards, question sets, model and
+  card text mode. Migration 0018 lets `analysis_requests_update_check` allow exactly that rewrite
+  (running, flag in the old snapshot and not in the new, hash of the new snapshot). Spec 02 §4
+  updated.
+- D-162: 2026-10-10 M6 follow-up (owner decision on the open "one preferences writer per account"
+  item) — saves of one preference from two tabs could reach the server in either order. The
+  Preferences section of `/settings` now holds the Web Lock `bantoozi:preferences:<account id>`
+  while it is on screen; another tab or window of the account shows an overlay ("being adjusted
+  elsewhere", "Edit here instead", which steals the lock) over inert controls, and the tab that gets
+  the lock reads `/me` again. A tab that loses the lock drops its changes not yet sent. The reader
+  header, folder order, Did you like it? and the other one-tap writers are not locked. Without Web
+  Locks nothing changes. Spec 09 §7 updated.
+- D-163: 2026-10-10 M6 follow-up (owner decision on round 43) — the new-version notice was a
+  persistent toast. It is now a bar fixed at the top of every screen (it pushes the sticky header
+  and reader panes down through `--update-bar-height`) with Reload and Dismiss; each tab still keeps
+  its version until the person reloads it, and only the tab that asked reloads. Spec 09 §1 updated.

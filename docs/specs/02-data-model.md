@@ -858,7 +858,11 @@ locks/reads the exact source and input manifest, stores the pre-feedback snapsho
 an `analysis.process {analysisRequestId}` outbox intent in the same transaction. The worker
 claims pending or expired-running requests in a short transaction, records a fresh lease token/expiry,
 and completes/renews/retries/cancels only with that token. Clear the lease when leaving `running`.
-Crash recovery reuses the immutable input and never silently creates a fresh grant. Store bounded
+Crash recovery reuses the immutable input and never silently creates a fresh grant. A selection made
+while the article is still `ingested` freezes the snapshot with `awaitingExtraction`; the request waits
+for the extraction (at most 30 minutes) and its lease holder then replaces the article, translation and
+media context of the same revision once, clearing the flag, while the cards, sets and model stay as
+selected (D-161, migration 0018). Store bounded
 sanitized `last_error_code`, retry due time and attempt accounting; no DB transaction spans inference. A request contains no provider secret. Its
 snapshot freezes article/card/question/model context independently of later feedback; version 1 of
 both snapshots is `AnalysisInputSnapshotSchema`/`AnalysisResultSnapshotSchema` in `packages/shared`
