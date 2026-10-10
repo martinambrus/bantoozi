@@ -474,6 +474,47 @@ describe('card suggestions', () => {
   });
 });
 
+describe('card suggestions without an engine.model_pin row', () => {
+  it('lists a suggestion stored with the configured fallback model', async () => {
+    const { rows } = await h.owner.query<{ id: string }>(
+      `INSERT INTO question_sets (kind, version, sha256, definition)
+       VALUES ('suggest', $1, encode(sha256(convert_to($1, 'UTF8')), 'hex'), '{}'::jsonb)
+       RETURNING id::text AS id`,
+      [`suggest-nopin-${randomUUID()}`],
+    );
+    const setId = rows[0]!.id;
+    const previous = await h.owner.query<{ key: string; value: unknown }>(
+      `SELECT key, value FROM settings WHERE key IN ('question_sets.active', 'engine.model_pin')`,
+    );
+    await h.owner.query(
+      `INSERT INTO settings (key, value) VALUES ('question_sets.active', $1::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [JSON.stringify({ suggest: setId })],
+    );
+    await h.owner.query(`DELETE FROM settings WHERE key = 'engine.model_pin'`);
+    try {
+      const entry = await libraryEntry({ title: 'No pin', interest: unique('No pin') });
+      const { user, api } = await reader();
+      await h.owner.query(
+        `INSERT INTO card_suggestions (user_id, card_id, question_set_id, model_pin, score)
+         VALUES ($1, $2, $3, $4, 0.8)`,
+        [user.id, entry.ids[0]!, setId, h.config.typesafeModel],
+      );
+      const list = (await api.get('/cards/suggestions')).json();
+      expect(list.map((s: { card: { id: string } }) => s.card.id)).toEqual([entry.ids[0]]);
+    } finally {
+      await h.owner.query(
+        `DELETE FROM settings WHERE key IN ('question_sets.active', 'engine.model_pin')`,
+      );
+      for (const row of previous.rows)
+        await h.owner.query(`INSERT INTO settings (key, value) VALUES ($1, $2::jsonb)`, [
+          row.key,
+          JSON.stringify(row.value),
+        ]);
+    }
+  });
+});
+
 describe('publication requests', () => {
   it('lists a request for its creator only and accepts the creator’s CAS response', async () => {
     const admin = await createUser(h.owner, { role: 'admin' });
