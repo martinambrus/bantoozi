@@ -266,7 +266,7 @@ flowchart TD
 | **M4** HTTP API | M1, M2 | M3a, M5 | yes | L | ✓ done 2026-10-01 (§10) |
 | **M5** Ranking & lanes | M1, M2 | M3a, M4 | yes | M | ✓ done 2026-10-01 (§11) |
 | **M6** Web app (PWA) | M4, M5 | M3b | yes | L | ✓ done 2026-10-09 (§12) |
-| **M7** Personal learning & suggestions | M4, M5, M6 (its goal runs E2E), and **M3b for T7** (run T7 last, after M3b is merged) | M8 | yes | M | ✓ done 2026-10-10 on branch `claude/m7-learning` (§13), not merged yet |
+| **M7** Personal learning & suggestions | M4, M5, M6 (its goal runs E2E), and **M3b for T7** (run T7 last, after M3b is merged) | M8 | yes | M | ✓ done 2026-10-10 (§13), merged via PR #25 |
 | **M8** Operations & launch readiness | M4, M5, M6, and M3b applied; final launch gate also requires all M7 | M7 implementation only | mostly (one-time host setup is manual) | M | not started |
 | **M9** Optional extensions | launch | — | per item | — | not started |
 
@@ -1199,7 +1199,8 @@ Complete milestone M6 "Web app" exactly as specified in docs/PLAN.md §12 and do
 ## 13. M7: Personal learning and suggestions
 
 **Status: done 2026-10-10** on branch `claude/m7-learning` (from `2bf424f`; commits in the task table
-below), not merged or pushed yet. Built with Opus analysts and Sonnet builders, each task test-first
+below; PR #25 Codex review fixes `888411e`…`3daee45`, 38 commits, finished by a Codex session). Merged
+to `main` on 2026-10-10 through PR #25 (merge commit `183c4e2`). Built with Opus analysts and Sonnet builders, each task test-first
 against a separate harness with a negative control. The learning curve on `golden-v3` (rater 3, one
 participant) is in `apps/eval/reports/LEARNING-CURVE-golden-v3-2026-10-10-decision.md`: cards-only
 test AUC 0.709; the model 0.654, 0.659, 0.687, 0.742 and 0.720 at n = 10, 20, 30, 50 and 100, so the
@@ -1207,7 +1208,7 @@ n = 50 rule does not fire. At n = 30, 50 and 100 the production activation rule 
 its cross-validated AUC, so a model of this one participant would not have activated yet.
 Deviations: D-164…D-170 in `docs/DECISIONS.md`. No migrations. Open: the first write of
 `engine.model_pin` is not fenced against a suggestion run in flight (D-164; M8-T2 seeds the row and
-fences pin writes). PR #25 Codex review fixes are listed in its description. Handoffs: M8-T2 needs no learn job of its own (`house.nightly-learn` is scheduled at
+fences pin writes). Handoffs: M8-T2 needs no learn job of its own (`house.nightly-learn` is scheduled at
 01:00); M8 records `engine.model_pin`.
 
 **Outcome:** per-user logistic models are trained on Jev features and feedback, calibrated, and
