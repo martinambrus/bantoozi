@@ -27,7 +27,8 @@ const JOB = 'user.learn' as const;
 /**
  * Why a stored active model may no longer score (spec 06 §8.1, §8.4): its context differs from the
  * one the current state implies for its own inputs, or an article it trained on has lost its sample
- * (undo, un-rate, deletion). A re-rate keeps the article's sample and so does not count.
+ * (undo, un-rate, deletion) or its eligible sample (aged past the history window). A re-rate keeps the
+ * article's sample and so does not count.
  */
 export function modelStaleness(
   inputs: LearnInputs,
@@ -39,7 +40,7 @@ export function modelStaleness(
     return 'incompatible';
   }
   const keys = Array.isArray(active.metrics['sampleKeys']) ? active.metrics['sampleKeys'] : [];
-  const present = new Set(inputs.samples.map((s) => s.articleId));
+  const present = new Set(inputs.eligible.map((s) => s.articleId));
   return keys.some((key) => !present.has(String(Array.isArray(key) ? key[0] : key)))
     ? 'lost_evidence'
     : null;

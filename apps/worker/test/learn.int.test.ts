@@ -404,6 +404,20 @@ describe('user.learn and house.nightly-learn (M7-T4)', () => {
     expect(await w.userIntents('user.suggest', idle, mark)).toHaveLength(0);
   });
 
+  it('an active model whose training samples aged past 180 days is deactivated with a full rank intent even when the retrained candidate is rejected', async () => {
+    const userId = await trained();
+    expect((await w.active(userId)).map((m) => m.version)).toEqual([1]);
+
+    for (let i = 0; i < 30; i += 1) await w.ageRating(userId, i, 200);
+    const mark = await h.mark();
+    await learn(userId);
+
+    expect(await w.active(userId)).toHaveLength(0);
+    expect((await w.userIntents('user.rank', userId, mark)).some((p) => p['full'] === true)).toBe(
+      true,
+    );
+  });
+
   it('house.nightly-learn has a cron schedule in HOUSE_CRON_SCHEDULES', () => {
     const schedule = HOUSE_CRON_SCHEDULES['house.nightly-learn'];
     expect(schedule).toBeDefined();
