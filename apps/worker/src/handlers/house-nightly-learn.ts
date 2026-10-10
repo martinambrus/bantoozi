@@ -18,6 +18,8 @@ const DAY_MS = 86_400_000;
 export const NIGHTLY_LEARN_PAGE = 200;
 /** Users active this recently get a `user.suggest` (spec 11 §6). */
 export const SUGGEST_ACTIVE_DAYS = 7;
+/** The suggestion like window (spec 05 §7: likes of the last 30 days). */
+const SUGGEST_LIKE_WINDOW_DAYS = 30;
 
 /**
  * `house.nightly-learn` (daily at 01:00 UTC, spec 11 §6, spec 06 §8.4): for every user with feedback
@@ -31,7 +33,11 @@ export function createNightlyLearnHandler(deps: WorkerDeps): QueueHandler<'house
     const now = nowOf(deps);
     const day = now.toISOString().slice(0, 10);
     const { config } = await loadRankerSettings(deps.db);
-    const feedbackSince = new Date(now.getTime() - config.model.historyDays * DAY_MS);
+    // Paged by the wider of the learn history and the suggestion like window, so an active user with
+    // no model still reaches `user.suggest`; learn change detection is unaffected (it uses eligibility).
+    const feedbackSince = new Date(
+      now.getTime() - Math.max(config.model.historyDays, SUGGEST_LIKE_WINDOW_DAYS) * DAY_MS,
+    );
     const activeSince = new Date(now.getTime() - SUGGEST_ACTIVE_DAYS * DAY_MS);
     let after: string | null = null;
     let examined = 0;

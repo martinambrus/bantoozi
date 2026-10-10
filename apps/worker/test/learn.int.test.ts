@@ -465,4 +465,18 @@ describe('user.learn and house.nightly-learn (M7-T4)', () => {
     expect(rows[1]!.metrics['status']).toBe('activated');
     expect(rows[1]!.active).toBe(true);
   });
+
+  it('house.nightly-learn pages an active user with no model whose likes are older than model.historyDays but inside the 30-day suggestion window, so user.suggest is recorded', async () => {
+    const userId = await w.user({ lastActiveDaysAgo: 0 });
+    await w.rate(userId, 0, 1);
+    await w.ageRating(userId, 0, 2);
+    await h.setSetting('ranker.thresholds', { model: { historyDays: 1 } });
+    try {
+      const mark = await h.mark();
+      await h.dispatch('house.nightly-learn', {});
+      expect(await w.userIntents('user.suggest', userId, mark)).not.toHaveLength(0);
+    } finally {
+      await h.deleteSetting('ranker.thresholds');
+    }
+  });
 });

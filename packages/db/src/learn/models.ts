@@ -163,7 +163,7 @@ export async function pruneUserModels(
 
 /**
  * A page of the nightly learn candidates (spec 11 §6): live users with feedback since `feedbackSince`
- * or any stored model, in id order after `after`, each flagged active since `activeSince`.
+ * (callers pass the older of the learn history and the 30-day suggestion like window) or any stored model, in id order after `after`, each flagged active since `activeSince`.
  */
 export async function listNightlyLearnUsers(
   db: Executor,
