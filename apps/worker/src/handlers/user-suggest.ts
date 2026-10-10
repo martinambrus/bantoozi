@@ -8,8 +8,8 @@ import {
   loadClassificationArticles,
   loadRankArticleFacts,
   loadRankCards,
-  loadRankFacets,
   loadSuggestAnswers,
+  loadSuggestFacets,
   loadSuggestLibrary,
   loadSuggestLikes,
   readSuggestPin,
@@ -69,6 +69,12 @@ export function createUserSuggestHandler(deps: WorkerDeps): QueueHandler<'user.s
     const claim = await claimSuggestLease(deps.db, userId, { leaseMs: classification.leaseMs });
     if (claim.status !== 'claimed') return;
     const { leaseToken } = claim;
+    // A rolling deployment: another model is pinned than this worker answers with, so its answers
+    // cannot be checked and the pin's suggestions must stay as they are.
+    if (pin !== classification.primaryModel) {
+      await releaseSuggestLease(deps.db, userId, leaseToken);
+      return;
+    }
     const finish = (results: { cardId: string; score: number }[] | null, asked = false) =>
       finishSuggestRun(deps.db, {
         userId,
@@ -149,7 +155,7 @@ async function planFor(
   );
   const ids = liked.map((row) => row.articleId);
   const articles = await loadClassificationArticles(deps.db, ids);
-  const facets = await loadRankFacets(deps.db, {
+  const facets = await loadSuggestFacets(deps.db, {
     articleIds: ids,
     enrichSetId: config.enrich?.id ?? null,
   });
@@ -195,12 +201,23 @@ async function planFor(
       );
       cardP.push(current && isPrimaryAnswer(answer, primaryModel) ? answer.p : null);
     }
+    const facetRow = facets.get(row.articleId);
+    let t1: Record<string, number> | null = null;
+    if (facetRow !== undefined && config.enrich !== null) {
+      const enrichSha = buildState(
+        modelInput(article, await listTranslations(deps.db, article.id, article.revision), config),
+        'enrich',
+      ).sha256;
+      if (facetRow.stateSha256 === enrichSha && facetRow.model === primaryModel) {
+        t1 = t1Of(facetRow.features);
+      }
+    }
     likes.push({
       articleId: row.articleId,
       likedAt: row.likedAt,
       title: article.title,
       excerpt: article.excerpt,
-      t1: t1Of(facets.get(row.articleId)),
+      t1,
       cardP,
     });
   }

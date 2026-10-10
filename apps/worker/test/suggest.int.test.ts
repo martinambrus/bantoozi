@@ -779,3 +779,61 @@ describe('user.suggest (M7-T6, spec 05 §7)', () => {
     }
   });
 });
+
+describe('user.suggest during a rolling deployment and with stale facets (PR #25 round 8)', () => {
+  it('a worker whose model differs from the stored pin sends nothing and keeps the suggestions', async () => {
+    const userId = await reader({ likes: 4 });
+    await seedSuggestion(userId, otherCardId, { score: 0.4 });
+    const before = await suggestions(userId);
+    await setSetting('engine.model_pin', { model: 'jev-next' });
+    const from = fake.requestCount();
+    await runSuggest(userId);
+
+    expect(fake.requestCount()).toBe(from);
+    expect(await reservations(userId)).toBe(0);
+    expect(await suggestions(userId)).toEqual(before);
+    const state = await userState(userId);
+    expect(state.suggest_lease_token).toBeNull();
+    expect(state.suggest_lease_until).toBeNull();
+    expect(state.last_suggested_at).toBeNull();
+  });
+
+  it('a like whose facets carry an obsolete state hash or another model does not count toward the branch', async () => {
+    const userId = await reader({ likes: 3 });
+    const target = articleIds[0]!;
+    const original = (
+      await owner.query<{ state_sha256: string; model: string | null }>(
+        `SELECT state_sha256, model FROM article_facets WHERE article_id = $1`,
+        [target],
+      )
+    ).rows;
+    expect(original.length).toBeGreaterThan(0);
+    try {
+      for (const [column, value] of [
+        ['state_sha256', 'obsolete-enrich'],
+        ['model', 'jev-other'],
+      ] as const) {
+        await owner.query(`UPDATE article_facets SET ${column} = $2 WHERE article_id = $1`, [
+          target,
+          value,
+        ]);
+        const from = fake.requestCount();
+        await runSuggest(userId);
+        expect(fake.requestCount()).toBe(from);
+        expect((await userState(userId)).last_suggested_at).toBeNull();
+        await owner.query(
+          `UPDATE article_facets SET state_sha256 = $2, model = $3 WHERE article_id = $1`,
+          [target, original[0]!.state_sha256, original[0]!.model],
+        );
+      }
+      const from = fake.requestCount();
+      await runSuggest(userId);
+      expect(fake.requestCount()).toBe(from + 1);
+    } finally {
+      await owner.query(
+        `UPDATE article_facets SET state_sha256 = $2, model = $3 WHERE article_id = $1`,
+        [target, original[0]!.state_sha256, original[0]!.model],
+      );
+    }
+  });
+});

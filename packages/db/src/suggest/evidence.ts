@@ -180,3 +180,35 @@ export async function loadSuggestLibrary(
     excludedCardIds: excluded.rows.map((row) => row.card_id),
   };
 }
+
+/** A current-revision enrich facet row with the fingerprint the suggest run checks. */
+export interface SuggestFacetRow {
+  features: Record<string, number>;
+  stateSha256: string;
+  model: string | null;
+}
+
+/** The facets of the active enrich set at each article's current revision, with state hash and model. */
+export async function loadSuggestFacets(
+  db: Executor,
+  input: { articleIds: readonly string[]; enrichSetId: string | null },
+): Promise<Map<string, SuggestFacetRow>> {
+  if (input.articleIds.length === 0 || input.enrichSetId === null) return new Map();
+  const result = await db.execute<{
+    article_id: string;
+    features: Record<string, number>;
+    state_sha256: string;
+    model: string | null;
+  }>(sql`
+    SELECT f.article_id::text AS article_id, f.features, f.state_sha256, f.model
+      FROM article_facets f
+      JOIN articles a ON a.id = f.article_id AND a.content_revision = f.article_revision
+     WHERE f.article_id = ANY(${sql.param([...input.articleIds])}::bigint[])
+       AND f.question_set_id = ${input.enrichSetId}::bigint`);
+  return new Map(
+    result.rows.map((row) => [
+      row.article_id,
+      { features: row.features, stateSha256: row.state_sha256, model: row.model },
+    ]),
+  );
+}
