@@ -419,4 +419,24 @@ describe('model scoring in user.rank (spec 06 §2 step 4a, §6.2, §8.1)', () =>
       expect(row.p).toBeCloseTo(facetEngine === 'typesafe' ? simpleP(0.9) : 0.72, 4);
     },
   );
+
+  it.each(['never', 'like'] as const)(
+    'a prefilter marker for an applicable %s card is unknown evidence',
+    async (strength) => {
+      const { userId, feedId, cardId } = await modelReader();
+      const filteredCardId = await h.card({ interest: `Prefiltered ${strength} interest` });
+      await h.hold(userId, filteredCardId, { strength });
+      const articleId = await matched(h, feedId, cardId, 0.9);
+      await h.answerCard(articleId, filteredCardId, { engine: 'prefilter', p: 0 });
+
+      await rank(h, userId);
+      const row = await rankRow(h, userId, articleId);
+      if (strength === 'never') {
+        expect(row.source).toBe('model');
+        expect(row.p).toBeCloseTo(simpleP(0.9), 4);
+      } else {
+        expect(row.source).not.toBe('model');
+      }
+    },
+  );
 });

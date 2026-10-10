@@ -160,6 +160,7 @@ export async function loadRankItems(
           if (
             card !== undefined &&
             isCardApplicable(card, fact.inferenceFeedIds) &&
+            answer.engine !== 'prefilter' &&
             answer.model !== run.modelPin
           ) {
             modelCurrent = false;
