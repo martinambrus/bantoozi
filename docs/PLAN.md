@@ -1207,8 +1207,7 @@ n = 50 rule does not fire. At n = 50 and 100 the production activation rule stil
 its cross-validated AUC, so a model of this one participant would not have activated yet.
 Deviations: D-164…D-170 in `docs/DECISIONS.md`. No migrations. Open: the first write of
 `engine.model_pin` is not fenced against a suggestion run in flight (D-164; M8-T2 seeds the row and fences pin writes);
-suggestion options use the card's original text even when `card_text_mode` is `english` (no effect
-under the G1 setting `as_written`); the API snapshot cannot check the question-state and card-input
+the API snapshot cannot check the question-state and card-input
 hashes (D-166). Handoffs: M8-T2 needs no learn job of its own (`house.nightly-learn` is scheduled at
 01:00); M8 records `engine.model_pin`.
 
