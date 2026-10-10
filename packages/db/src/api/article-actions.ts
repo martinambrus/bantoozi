@@ -25,7 +25,7 @@ import { parseCardBody } from '../cards/body.js';
 import { exampleFromArticleTitle } from '../cards/validation.js';
 import { SELECTION_WINDOW_DAYS } from '../ingest/demand.js';
 import { recordRankIntents } from '../ingest/rank-intents.js';
-import { readStoredSetting, readStoredSettings } from '../settings.js';
+import { readStoredSetting, readStoredSettings, shareLockSettings } from '../settings.js';
 import type { Executor } from '../client.js';
 import { tenantUserId, type TenantTx } from '../tenant.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
@@ -139,9 +139,23 @@ function ratingShaOf(stored: ReadonlyMap<string, unknown>, defaults: RatingDefau
 
 /**
  * The fingerprint settings in one share-locked statement, in key order: a writer of any of them
- * waits for this transaction, so the filters and the stamp of a snapshot come from one state.
+ * waits for this transaction, so the filters and the stamp of a snapshot come from one state. With
+ * the environment defaults known, an absent card text mode, language mode map or active question
+ * sets is first stored with the default its readers fall back to (it cannot be locked otherwise,
+ * and its first insert would slip past the lock), which leaves the effective value unchanged. The
+ * model pin is not materialized: its only writer is the worker.
  */
-async function readRatingSettingsLocked(tx: Executor): Promise<Map<string, unknown>> {
+async function readRatingSettingsLocked(
+  tx: Executor,
+  defaults?: RatingDefaults,
+): Promise<Map<string, unknown>> {
+  if (defaults !== undefined) {
+    await shareLockSettings(tx, [
+      { key: 'card_text_mode', initial: defaults.cardTextMode },
+      { key: 'language_modes', initial: defaults.languageModes },
+      { key: 'question_sets.active', initial: {} },
+    ]);
+  }
   const result = await tx.execute<{ key: string; value: unknown }>(
     sql`SELECT key, value FROM settings
          WHERE key = ANY(${sql.param([...RATING_FINGERPRINT_SETTINGS])}::text[])
@@ -713,7 +727,7 @@ async function captureFeatures(
 ): Promise<FeatureCapture> {
   if (!options.live) return { features: null, staleAtFeedback: null };
   const id = article.articleId;
-  const stored = await readRatingSettingsLocked(tx);
+  const stored = await readRatingSettingsLocked(tx, options.matchFingerprint?.defaults);
   const sets = stored.get('question_sets.active');
   const enrichSet = textOrNull(objectField(sets, 'enrich'));
   const matchSet = textOrNull(objectField(sets, 'match'));
@@ -1324,9 +1338,10 @@ interface RatingTarget {
 async function requestRatingSha(
   tx: Executor,
   snapshot: unknown,
-  defaults: RatingDefaults,
+  injected: RatingDefaults | undefined,
 ): Promise<string | null> {
-  const stored = await readRatingSettingsLocked(tx);
+  const defaults = injected ?? NO_DEFAULTS;
+  const stored = await readRatingSettingsLocked(tx, injected);
   const sets = stored.get('question_sets.active');
   const frozenSets = objectField(snapshot, 'questionSets');
   const lang = textOrNull(objectField(objectField(snapshot, 'article'), 'lang'));
@@ -1385,11 +1400,7 @@ async function applyRating(
   });
   const ratingSha =
     request !== null && capture.features === null
-      ? await requestRatingSha(
-          tx,
-          request.snapshot,
-          options.matchFingerprint?.defaults ?? NO_DEFAULTS,
-        )
+      ? await requestRatingSha(tx, request.snapshot, options.matchFingerprint?.defaults)
       : null;
   const row = article.row;
   const patch: ReaderPatch =

@@ -1719,3 +1719,55 @@ describe('snapshot provenance: facets, answer model and the effective fingerprin
     );
   });
 });
+
+describe('absent fingerprint settings are materialized before the share lock', () => {
+  const keys = ['card_text_mode', 'language_modes'];
+
+  it('stores the API defaults and records the same ratingSha as with the rows present', async () => {
+    const saved = (
+      await h.owner.query<{ key: string; value: unknown }>(
+        `SELECT key, value FROM settings WHERE key = ANY($1::text[])`,
+        [keys],
+      )
+    ).rows;
+    const put = (key: string, value: unknown) =>
+      h.owner.query(
+        `INSERT INTO settings (key, value) VALUES ($1, $2::jsonb)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [key, JSON.stringify(value)],
+      );
+    const shaOf = async (userId: string, article: string) => {
+      const [event] = await events(h, userId, article);
+      return (event!.value['features'] as { ratingSha: string }).ratingSha;
+    };
+    try {
+      await put('card_text_mode', 'as_written');
+      await put('language_modes', h.config.languageModes);
+      const present = await setup();
+      await ok(
+        present.r.api.post(`/articles/${present.article}/rating`, { ...freshFence, rating: 1 }),
+      );
+      const withRows = await shaOf(present.r.user.id, present.article);
+
+      await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [keys]);
+      const absent = await setup();
+      await ok(
+        absent.r.api.post(`/articles/${absent.article}/rating`, { ...freshFence, rating: 1 }),
+      );
+      const stored = new Map(
+        (
+          await h.owner.query<{ key: string; value: unknown }>(
+            `SELECT key, value FROM settings WHERE key = ANY($1::text[])`,
+            [keys],
+          )
+        ).rows.map((row) => [row.key, row.value]),
+      );
+      expect(stored.get('card_text_mode')).toBe('as_written');
+      expect(stored.get('language_modes')).toEqual(h.config.languageModes);
+      expect(await shaOf(absent.r.user.id, absent.article)).toBe(withRows);
+    } finally {
+      await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [keys]);
+      for (const row of saved) await put(row.key, row.value);
+    }
+  });
+});
