@@ -34,6 +34,46 @@ export async function lockLearnUser(
   return result.rows.length > 0;
 }
 
+/** The active `user_models` row with everything scoring needs (spec 06 §8.3). */
+export interface ActiveModelRow {
+  version: number;
+  featureSpecSha: string;
+  weights: unknown;
+  intercept: number;
+  scaler: unknown;
+  calibration: unknown;
+  metrics: Record<string, unknown>;
+}
+
+/** The user's active model row, or null (spec 06 §7 step 1, §8.1). */
+export async function loadActiveUserModel(
+  db: Executor,
+  userId: string,
+): Promise<ActiveModelRow | null> {
+  const result = await db.execute<{
+    version: number;
+    feature_spec_sha: string;
+    weights: unknown;
+    intercept: number;
+    scaler: unknown;
+    calibration: unknown;
+    metrics: unknown;
+  }>(sql`
+    SELECT version, feature_spec_sha, weights, intercept, scaler, calibration, metrics
+      FROM user_models WHERE user_id = ${userId}::uuid AND active`);
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  return {
+    version: row.version,
+    featureSpecSha: row.feature_spec_sha,
+    weights: row.weights,
+    intercept: Number(row.intercept),
+    scaler: row.scaler,
+    calibration: row.calibration,
+    metrics: isRecord(row.metrics) ? row.metrics : {},
+  };
+}
+
 /** The user's newest stored attempt and the active model (spec 06 §8.3-8.4). */
 export async function loadModelState(
   db: Executor,

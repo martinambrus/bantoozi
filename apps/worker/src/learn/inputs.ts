@@ -121,7 +121,7 @@ export async function loadLearnInputs(
 
 /** The model context (spec 06 §8.1) the current state implies for the own inputs `ownIds`. */
 export function currentContextSha(
-  inputs: LearnInputs,
+  inputs: Pick<LearnInputs, 'ratingSha' | 'config' | 'consent' | 'held'>,
   featureSpecSha: string,
   ownIds: readonly string[],
 ): string {
