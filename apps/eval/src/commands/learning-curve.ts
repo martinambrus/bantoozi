@@ -112,6 +112,11 @@ export function registerLearningCurve(program: Command, ctx: CliContext): void {
         await mkdir(path.dirname(file), { recursive: true });
         await writeFile(file, report);
         rt.out(`${renderCurveTable(curve)}\n${renderRuleLine(rule)}\nreport: ${file}\n`);
+        if (rule !== null && !rule.evaluable) {
+          throw new EvalCommandError(
+            'the threshold rule could not be evaluated: no raters with usable ratings',
+          );
+        }
       });
     });
 }

@@ -2,7 +2,11 @@ import { mergeRankerConfig } from '@bantoozi/ranker';
 import { describe, expect, it } from 'vitest';
 
 import { computeLearningCurve, thresholdRule } from '../src/learning-curve/curve.js';
-import { renderCurveReport, renderCurveTable } from '../src/learning-curve/render.js';
+import {
+  renderCurveReport,
+  renderCurveTable,
+  renderRuleLine,
+} from '../src/learning-curve/render.js';
 import { learningArticle, type LearningArticle } from '../src/learning-curve/samples.js';
 import { parseRunData } from '../src/report/run-data.js';
 import { buildCurveFixture, type CurveFixtureOptions } from './learning-curve-fixtures.js';
@@ -112,5 +116,23 @@ describe('learning curve', () => {
     });
     expect(bad).toContain('THRESHOLD CHANGE PROPOSAL NEEDED');
     expect(bad).toContain('golden-v3');
+  });
+
+  it('an empty rater cohort is not evaluable: no "no change needed" claim (M7-T7)', () => {
+    const empty = { sizes: [50], raters: [] };
+    const rule = thresholdRule(empty, 50);
+    expect(rule).toMatchObject({ n: 50, raters: 0, proposalNeeded: false, evaluable: false });
+    const report = renderCurveReport({
+      datasetVersion: 'golden-v3',
+      runId: '34',
+      experiment: 'E1',
+      date: '2026-10-10',
+      curve: empty,
+      rule,
+    });
+    expect(report).not.toContain('No threshold change needed');
+    expect(report).toContain('could not be evaluated');
+    expect(renderRuleLine(rule)).toContain('no raters with usable ratings');
+    expect(thresholdRule(winning.curve, 50)).toMatchObject({ evaluable: true });
   });
 });

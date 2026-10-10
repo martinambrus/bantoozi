@@ -72,6 +72,9 @@ export function renderCurveTable(curve: LearningCurve): string {
 /** The proposal line of the PLAN rule, or the reason it was not evaluated. */
 export function renderRuleLine(rule: ThresholdRule | null): string {
   if (rule === null) return 'Threshold rule not evaluated: n = 50 is not among the sizes.';
+  if (!rule.evaluable) {
+    return `Threshold rule could not be evaluated: no raters with usable ratings at n = ${rule.n}.`;
+  }
   const summary = `At n = ${rule.n} the model did not beat cards-only for ${rule.notBeating} of ${rule.raters} raters.`;
   return rule.proposalNeeded
     ? `THRESHOLD CHANGE PROPOSAL NEEDED\n${summary}`
