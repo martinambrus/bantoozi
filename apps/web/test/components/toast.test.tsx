@@ -142,23 +142,16 @@ describe('createToastStore', () => {
     expect(durations).toEqual({ default: 5000, sticky: null, short: 800 });
   });
 
-  it("drops the account's toasts and keeps the device's", () => {
+  it("drops the account's toasts", () => {
     const store = createToastStore();
     store.show({ id: 'undo', message: 'Marked as read', tone: 'success' });
-    store.show({
-      id: 'update',
-      message: 'New version',
-      tone: 'info',
-      durationMs: null,
-      device: true,
-    });
     store.show({ id: 'error', message: 'Not saved', tone: 'error', durationMs: null });
     const listener = vi.fn();
     store.subscribe(listener);
 
     store.clearAccount();
 
-    expect(store.getSnapshot().map((toast) => toast.id)).toEqual(['update']);
+    expect(store.getSnapshot()).toEqual([]);
     expect(listener).toHaveBeenCalledTimes(1);
     store.clearAccount();
     expect(listener).toHaveBeenCalledTimes(1);

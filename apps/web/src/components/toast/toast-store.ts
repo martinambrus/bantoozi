@@ -15,11 +15,6 @@ export interface ToastInput {
   actions?: readonly ToastAction[] | undefined;
   /** Milliseconds on screen (default 5000); null keeps it until dismissed. */
   durationMs?: number | null | undefined;
-  /**
-   * About the device rather than an account (a new version to reload for): it stays when someone
-   * signs in or out, while every other toast goes with the account it was shown to.
-   */
-  device?: boolean | undefined;
 }
 
 export interface Toast {
@@ -31,13 +26,12 @@ export interface Toast {
   /** `action` first, then `actions`. */
   actions: readonly ToastAction[];
   durationMs: number | null;
-  device: boolean;
 }
 
 export interface ToastStore {
   show: (toast: ToastInput) => string;
   dismiss: (id: string) => void;
-  /** Dismisses every toast but the device's, when the account they were shown to is gone. */
+  /** Dismisses every toast, when the account they were shown to is gone. */
   clearAccount: () => void;
   subscribe: (listener: () => void) => () => void;
   getSnapshot: () => readonly Toast[];
@@ -105,7 +99,6 @@ export function createToastStore(): ToastStore {
         action: actions[0],
         actions,
         durationMs: input.durationMs === undefined ? DEFAULT_TOAST_DURATION_MS : input.durationMs,
-        device: input.device === true,
       };
       countdowns.set(toast.id, { left: toast.durationMs, since: null });
       set(
@@ -119,7 +112,7 @@ export function createToastStore(): ToastStore {
       if (toasts.some((toast) => toast.id === id)) set(toasts.filter((toast) => toast.id !== id));
     },
     clearAccount() {
-      if (toasts.some((toast) => !toast.device)) set(toasts.filter((toast) => toast.device));
+      if (toasts.length > 0) set([]);
     },
     subscribe(listener) {
       listeners.add(listener);

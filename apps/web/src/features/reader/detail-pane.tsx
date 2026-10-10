@@ -49,7 +49,7 @@ export function DetailPane({ view, item, desktop, onClose, onWhyThis }: DetailPa
   return (
     <aside
       aria-label={t('pane.label')}
-      className="sticky top-16 flex max-h-[calc(100dvh-5rem)] flex-col gap-4 self-start overflow-y-auto rounded-xl border border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"
+      className="sticky top-[calc(4rem+var(--update-bar-height,0px))] flex max-h-[calc(100dvh-5rem-var(--update-bar-height,0px))] flex-col gap-4 self-start overflow-y-auto rounded-xl border border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"
     >
       {item === null ? (
         <p className="text-sm text-slate-600 dark:text-slate-300">{t('pane.empty')}</p>
