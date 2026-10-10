@@ -1130,11 +1130,13 @@ through Playwright `webServer`, and `E2E_PORT_BASE` moves every port so worktree
 side; M7-T7 needs the golden database on the owner's machine. M8: `e2e/env.pw.ts` checks the
 production CSP of spec 11; `bookmark-mirror.pw.ts` simulates the 30-day compression of a bookmark
 copy with SQL until `house.purge-bodies` (M8-T2); M8-T7 checks the starter bundle URLs, which were
-written without a live check. Open: one preferences writer per account, so saves of a preference
-from two screens go out in order (an owner decision); selecting an article before extraction also
-starts the automatic chain in the worker (a design item); low: a saved offline list row can show an
-older title under a newer content revision until the next list load; five small focus and form items
-listed in the M6 report.
+written without a live check. Follow-ups merged on 2026-10-10 through PR #24 (merge commit
+`7db1303`, `bad4b69`…`9aef109`): one preferences writer per account through a Web Lock (M6-F1,
+D-162), a selection made before extraction waits for it and runs once on the extracted text instead
+of also starting the automatic chain (M6-F2, D-161, migration 0018), and a fixed top bar with Reload
+for a new version (D-163). Still open, low: a saved offline list row can show an older title under a
+newer content revision until the next list load; five small focus and form items listed in the M6
+report (PR #22).
 
 **Outcome:** the full reader experience of spec 09: login, join and onboarding; lanes with swipe and
 keyboard training; "Why this?"; the feeds, interests, labels, rules and settings screens; admin; PWA
