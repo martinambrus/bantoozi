@@ -23,6 +23,7 @@
     "@bantoozi/ranker": "workspace:*",
     "@bantoozi/shared": "workspace:*",
     "@bantoozi/translate": "workspace:*",
+    "age-encryption": "0.3.1",
     "commander": "15.0.0",
     "pg": "8.23.0",
     "pg-boss": "10.4.2",

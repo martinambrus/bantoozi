@@ -51,6 +51,7 @@ pin exact versions (`save-exact`). Update this file in the same commit as any ve
 | robots.txt | robots-parser | 3.0.1 | feeds (robots.txt checks, spec 03 §8.1) |
 | Public suffix list | tldts | 7.4.15 | feeds (registrable domains, spec 03 §8.1) |
 | CLI | commander | 15.0.0 | worker, eval |
+| age encryption | age-encryption (typage) | 0.3.1 | worker (encrypt-only deletion ledger entries, spec 11 §5.1; the `age` CLI decrypts them offline) |
 
 ## Web client (spec 01 §1, spec 09)
 
