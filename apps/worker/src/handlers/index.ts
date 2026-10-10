@@ -19,6 +19,8 @@ import { createPurgeArticlesHandler } from './house-purge-articles.js';
 import { createPurgeAuthHandler } from './house-purge-auth.js';
 import { createPurgeBodiesHandler } from './house-purge-bodies.js';
 import { createReconcileHandler } from './house-reconcile.js';
+import { createReenrichHandler } from './house-reenrich.js';
+import { createRematchHandler } from './house-rematch.js';
 import { createRescoreDegradedHandler } from './house-rescore-degraded.js';
 import { createUserLearnHandler } from './user-learn.js';
 import { createUserRankHandler } from './user-rank.js';
@@ -89,6 +91,8 @@ export const CLASSIFICATION_QUEUES = [
   'card.backfill',
   'analysis.process',
   'house.rescore-degraded',
+  'house.reenrich',
+  'house.rematch',
 ] as const satisfies readonly QueueName[];
 
 /** M7 learning stages that call the decision engine (spec 05 §7): implemented with classification dependencies. */
@@ -175,6 +179,8 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
             createAnalysisProcessHandler(deps, classification, translation),
           ),
           'house.rescore-degraded': implemented(createRescoreDegradedHandler(deps, classification)),
+          'house.reenrich': implemented(createReenrichHandler(deps, classification)),
+          'house.rematch': implemented(createRematchHandler(deps, classification)),
           'user.suggest': implemented(createUserSuggestHandler(deps)),
         }),
     ...(providerValidation === undefined

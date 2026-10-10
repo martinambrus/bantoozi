@@ -105,9 +105,14 @@ describe('handler map', () => {
       'card.backfill',
       'analysis.process',
       'house.rescore-degraded',
-    ]);
-    expect(unavailableQueues(handlers, ['article.enrich', 'user.rank', 'house.reenrich'])).toEqual([
       'house.reenrich',
+      'house.rematch',
+    ]);
+    expect(
+      unavailableQueues(handlers, ['article.enrich', 'house.reenrich', 'house.rematch']),
+    ).toEqual([]);
+    expect(unavailableQueues(handlers, ['house.translate-cards'])).toEqual([
+      'house.translate-cards',
     ]);
   });
 

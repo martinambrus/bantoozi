@@ -28,6 +28,8 @@ const iso = z.iso.datetime({ offset: true });
 const reasonSchema = z.string().regex(/^[a-z][a-z0-9_.:-]{0,63}$/, 'invalid reason');
 
 const empty = z.object({}).strict();
+/** A keyset position `(latest eligible arrival, article id)` of a reprocessing continuation. */
+const reprocessCursor = z.object({ key: iso, articleId: IdSchema }).strict();
 const articleOnly = z.object({ articleId: IdSchema }).strict();
 const userOnly = z.object({ userId: UuidSchema }).strict();
 const analysisPayload = z.object({ analysisRequestId: UuidSchema }).strict();
@@ -218,6 +220,9 @@ export const QUEUES = {
           .string()
           .regex(/^[a-z]{2}$/)
           .optional(),
+        // Set only on a continuation (spec 11 §6): the pass resumes strictly below this position,
+        // with `since` frozen at the first run.
+        cursor: reprocessCursor.optional(),
       })
       .strict(),
     concurrency: 1,
@@ -236,7 +241,14 @@ export const QUEUES = {
     options: { policy: 'singleton', retryLimit: 1 },
   }),
   'house.rematch': spec({
-    payload: z.object({ since: iso.optional(), cardId: IdSchema.optional() }).strict(),
+    payload: z
+      .object({
+        since: iso.optional(),
+        cardId: IdSchema.optional(),
+        // Set only on a continuation (spec 11 §6), as for `house.reenrich`.
+        cursor: reprocessCursor.optional(),
+      })
+      .strict(),
     concurrency: 1,
     options: { policy: 'stately', retryLimit: 1 },
   }),
@@ -382,7 +394,24 @@ export function sendSpecFor<Q extends QueueName>(queue: Q, payload: JobPayload<Q
         singletonKey:
           p['userId'] === undefined ? 'translate-cards:all' : `translate-cards:${id('userId')}`,
       };
+    case 'house.reenrich':
+      if (p['cursor'] !== undefined) {
+        // A continuation has a key of its own per position, so a fresh trigger is never absorbed.
+        const cursor = p['cursor'] as { key: string; articleId: string };
+        return {
+          kind: 'send',
+          singletonKey: `reenrich-cont:${String(p['lang'] ?? 'all')}:${cursor.key}:${cursor.articleId}`,
+        };
+      }
+      return { kind: 'send' };
     case 'house.rematch':
+      if (p['cursor'] !== undefined) {
+        const cursor = p['cursor'] as { key: string; articleId: string };
+        return {
+          kind: 'send',
+          singletonKey: `rematch-cont:${String(p['cardId'] ?? 'all')}:${cursor.key}:${cursor.articleId}`,
+        };
+      }
       return {
         kind: 'send',
         singletonKey: p['cardId'] === undefined ? 'rematch:all' : `rematch:${id('cardId')}`,

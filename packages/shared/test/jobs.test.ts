@@ -229,6 +229,21 @@ describe('jobs registry (spec 03 §2)', () => {
       kind: 'send',
       singletonKey: 'rematch:9',
     });
+    const cursor = { key: '2026-10-01T00:00:00.000000Z', articleId: '7' };
+    const since = '2026-09-27T00:00:00.000Z';
+    expect(buildJobIntent('house.reenrich', {}).send).toEqual({ kind: 'send' });
+    expect(buildJobIntent('house.reenrich', { since, cursor, lang: 'sk' }).send).toEqual({
+      kind: 'send',
+      singletonKey: 'reenrich-cont:sk:2026-10-01T00:00:00.000000Z:7',
+    });
+    expect(buildJobIntent('house.rematch', { since, cursor }).send).toEqual({
+      kind: 'send',
+      singletonKey: 'rematch-cont:all:2026-10-01T00:00:00.000000Z:7',
+    });
+    expect(buildJobIntent('house.rematch', { since, cursor, cardId: '9' }).send).toEqual({
+      kind: 'send',
+      singletonKey: 'rematch-cont:9:2026-10-01T00:00:00.000000Z:7',
+    });
     expect(buildJobIntent('card.backfill', { userId: USER, cardIds: ['1'] }).send).toEqual({
       kind: 'send',
     });

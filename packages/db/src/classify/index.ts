@@ -17,4 +17,5 @@ export * from './match-claims.js';
 export * from './pair-demand.js';
 export * from './pipeline-state.js';
 export * from './question-sets.js';
+export * from './reprocess.js';
 export * from './translations.js';
