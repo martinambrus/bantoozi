@@ -787,7 +787,8 @@ releases the lease without consuming the opportunity. Expired leases recover aft
 throttling alone does not replace this durable claim.
 
 1. Recheck that the user has active inference or explicitly selected training demand. An off-only
-   user receives no suggestion call. Candidate source articles must be currently authorized for that
+   user receives no suggestion call, and the run deletes the user's undismissed suggestions like an
+   expired-evidence run (D-164). Candidate source articles must be currently authorized for that
    user under §1.1; a historical rating alone is not inference permission.
    **Unexplained likes:** articles the user rated +1 (or bookmarked) in the last 30 days where the max
    `p` over the user's applicable positive cards is <0.3, using complete current primary-engine
@@ -817,7 +818,9 @@ throttling alone does not replace this durable claim.
    undismissed suggestions, so they always reflect the latest evidence: when its Choice completes
    (a `none` win included), the commit deletes the undismissed rows it did not insert, and a run
    that stops at step 1 or finds no candidate deletes them all, because their 30-day evidence is
-   gone. A budget deferral or failed call leaves them in place. New rows record the active set and
+   gone. Recheck the planning-time suggest set and model pin under the settings lock for every
+   outcome, including no-call cleanup; discard a stale outcome without replacing suggestions valid
+   under the newly active manifest. A budget deferral or failed call leaves them in place. New rows record the active set and
    the Jev model `engine.model_pin.model`.
 7. Engine `kind: 'suggest'`, `priority: 'bulk'`, `userId` set. Bulk calls never use the LLM fallback
    (spec 04 §5), so suggestions come from Jev only. When Jev is unavailable the router makes no wire

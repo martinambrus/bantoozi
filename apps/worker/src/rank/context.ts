@@ -160,8 +160,8 @@ export async function loadRankCorpus(
 
 /**
  * Loads `UserRankContext` (spec 06 §7 step 1) at the run's single `now`. `contextSha` hashes the
- * score version, the rank revision, the classification context and the model context; M7 adds the
- * active model, until then none is compatible and the hash records `null`. `degradedContextSha`
+ * score version, the rank revision, the classification context and the compatible active model
+ * (`{version, contextSha}`, or `null`). `degradedContextSha`
  * adds the BM25 corpus fingerprint.
  */
 export async function loadRankContext(
@@ -176,6 +176,8 @@ export async function loadRankContext(
      * so a change, such as a card's newly translated text, makes every row dirty (D-141).
      */
     classification: Record<string, unknown>;
+    /** The compatible active model (spec 06 §8.1), or null. */
+    model?: { version: number; contextSha: string } | null;
   },
 ): Promise<UserRankContext> {
   const { user, settings, now } = input;
@@ -196,7 +198,7 @@ export async function loadRankContext(
     scoreVersion: settings.scoreVersion,
     rankRevision: user.rankRevision,
     classification: input.classification,
-    model: null,
+    model: input.model ?? null,
   };
   return {
     userId: user.userId,

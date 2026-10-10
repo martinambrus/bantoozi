@@ -227,6 +227,9 @@ describe('rankArticle step 4: the base probability', () => {
   it.each<[string, Partial<RankItem>]>([
     ['incomplete coverage', { matchCoverage: 'pending' }],
     ['missing facets', { facets: undefined }],
+    ['incomplete facets', { facets: { clickbait: 0.1 } }],
+    ['out-of-range facets', { facets: { ...item().facets, clickbait: 1.1 } }],
+    ['non-finite facets', { facets: { ...item().facets, clickbait: Number.NaN } }],
     ['a degraded article', { pipelineState: 'degraded' }],
     ['a failed article', { pipelineState: 'failed' }],
     ['LLM facets', { facetsEngine: 'llm' }],

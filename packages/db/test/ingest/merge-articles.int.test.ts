@@ -650,6 +650,12 @@ describe('mergeArticles (spec 03 §8.4)', () => {
     expect(intents.filter((i) => i.queue === 'article.capture-bookmark')).toEqual([
       { queue: 'article.capture-bookmark', payload: { articleId: target.id } },
     ]);
+    expect(
+      intents
+        .filter((intent) => intent.queue === 'user.learn')
+        .map((intent) => intent.payload['userId'])
+        .sort(),
+    ).toEqual([a.id, b.id, c.id, d.id, f.id].sort());
   });
 
   it('advances the survivor row past both inputs, so offline actions get STALE_STATE', async () => {

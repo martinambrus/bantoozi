@@ -361,7 +361,9 @@ invocation budget, retain completed answers, and resume explicitly; partial runs
   with story groups disjoint from evaluation; evaluate every n against the same untouched test set.
   Frozen eval answers may construct synthetic event-time features for this offline simulation; mark
   them as eval data, never inject them into production feedback snapshots. Hold feature/card
-  definitions fixed before the simulated feedback stream.
+  definitions fixed before the simulated feedback stream. The simulation passes the rater's last
+  rating time as `now` and no rating fingerprint; age is rating time minus first publication, media
+  inputs are unknown and a story's size is its number of sampled articles (D-169).
   Report eligible sample counts, activation/insufficient-data state, cards baseline, model AUC and
   logloss, and the number of own card inputs in each model (spec 06 §8.1). Under activation
   minimums report cards-only plus an optional clearly marked research fit; do not pretend a

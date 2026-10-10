@@ -3,6 +3,7 @@ import {
   loadRankAnswers,
   loadRankArticleFacts,
   loadRankFacets,
+  loadRankFacetStates,
   loadRankQueueRows,
   loadRankTranslations,
   loadStoredRanks,
@@ -16,6 +17,7 @@ import {
 } from '@bantoozi/db';
 import { registrableDomain } from '@bantoozi/feeds';
 import {
+  isCardApplicable,
   matchCoverage,
   type CardAnswers,
   type CardWorkState,
@@ -37,6 +39,13 @@ export interface RankItemsRun {
   config: ClassificationConfig;
   /** The user's interest and label cards (their question inputs), by id. */
   cardInputs: ReadonlyMap<string, CardInput>;
+  /** The current model pin (setting `engine.model_pin.model`, else the primary model). */
+  modelPin: string;
+  /**
+   * Articles of the loaded pages whose facets and card answers come from the current state and the
+   * pin: the only ones the personal model may score (spec 06 §8.1). Filled by `loadRankItems`.
+   */
+  modelEligible: Set<string>;
 }
 
 /** One article ready for `rankArticle`, with what the write and the comparison need. */
@@ -116,11 +125,16 @@ export async function loadRankItems(
     articleIds: ids,
     enrichSetId: config.enrich?.id ?? null,
   });
+  const facetStates = await loadRankFacetStates(db, {
+    articleIds: ids,
+    enrichSetId: config.enrich?.id ?? null,
+  });
   const answers = group(await loadRankAnswers(db, { articleIds: ids, cardIds }));
   const queue = group(await loadRankQueueRows(db, { articleIds: ids, cardIds }));
   const stored = await loadStoredRanks(db, { userId, articleIds: ids });
   const translations = group(await loadRankTranslations(db, ids));
 
+  const interestCards = new Map(ctx.cards.map((card) => [card.cardId, card]));
   const loaded: LoadedRankItem[] = [];
   for (const id of ids) {
     const article = articles.get(id);
@@ -130,6 +144,7 @@ export async function loadRankItems(
     const cardAnswers: Record<string, { p: number; engine: RankAnswerEngine }> = {};
     const match = config.match;
     const articleAnswers = answers.get(id) ?? [];
+    let modelCurrent = true;
     if (match !== null && articleAnswers.length > 0) {
       const fingerprint = {
         articleRevision: article.revision,
@@ -140,9 +155,29 @@ export async function loadRankItems(
         const sha = hashes.get(answer.cardId);
         if (sha !== undefined && isCurrentCardAnswer(answer, fingerprint, sha)) {
           cardAnswers[answer.cardId] = { p: answer.p, engine: answer.engine };
+          // Interest-card answers feed the model's features; label answers do not.
+          const card = interestCards.get(answer.cardId);
+          if (
+            card !== undefined &&
+            isCardApplicable(card, fact.inferenceFeedIds) &&
+            answer.engine !== 'prefilter' &&
+            answer.model !== run.modelPin
+          ) {
+            modelCurrent = false;
+          }
         }
       }
     }
+    const facetState = facetStates.get(id);
+    if (
+      facetState !== undefined &&
+      (facetState.model !== run.modelPin ||
+        facetState.stateSha256 !== buildState(modelInput(article, rows, config), 'enrich').sha256)
+    ) {
+      modelCurrent = false;
+    }
+    if (modelCurrent) run.modelEligible.add(id);
+    else run.modelEligible.delete(id);
     const work: Record<string, CardWorkState> = {};
     const queueRows = new Map((queue.get(id) ?? []).map((row) => [row.cardId, row]));
     for (const card of ctx.cards) {
@@ -182,8 +217,8 @@ export async function loadRankItems(
       pipelineState: article.pipelineState,
       matchCoverage: matchCoverage(ctx.cards, evidence, work).coverage,
       ...(featureSet === undefined ? {} : { facets: featureSet }),
-      ...(article.enrichEngine !== null && MODEL_ENGINES.has(article.enrichEngine)
-        ? { facetsEngine: article.enrichEngine as ModelEngine }
+      ...(facetState !== undefined && MODEL_ENGINES.has(facetState.engine)
+        ? { facetsEngine: facetState.engine as ModelEngine }
         : {}),
       cardAnswers,
       labelIds: storedRow?.labelIds ?? [],

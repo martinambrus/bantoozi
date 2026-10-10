@@ -502,7 +502,9 @@ export const cardRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (request) => {
       const { locale } = requireAuth(request);
-      const rows = await request.withTx((tx) => listCardSuggestions(tx));
+      const rows = await request.withTx((tx) =>
+        listCardSuggestions(tx, { fallbackModel: app.services.config.typesafeModel }),
+      );
       return rows.map((row) => ({ card: libraryCardDto(row.card, locale), score: row.score }));
     },
   );

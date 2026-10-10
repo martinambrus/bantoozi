@@ -76,6 +76,7 @@ import {
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 
 import { queryHash } from '../services/cursor.js';
+import { matchFingerprintFor } from '../services/analysis.js';
 import { currentScoreVersion } from '../services/score-version.js';
 import type { MutationContext, MutationOutcome } from '../types.js';
 import { ruleDto } from './rules.js';
@@ -250,6 +251,7 @@ export async function markReadByFilter(
 }
 
 export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
+  const matchFingerprint = () => matchFingerprintFor(app.services.config);
   const { cursors, clock } = app.services;
 
   // ── Views (T6) ──────────────────────────────────────────────────────────────────────────────
@@ -442,6 +444,7 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
       const body = request.body;
       const outcome = await request.mutate(async (tx, ctx) => {
         const result = await markArticleRead(tx, {
+          matchFingerprint: matchFingerprint(),
           articleId: id,
           fence: fenceOf(body),
           now: ctx.now,
@@ -527,6 +530,7 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
       const body = request.body;
       const outcome = await request.mutate(async (tx, ctx) => {
         const result = await openArticle(tx, {
+          matchFingerprint: matchFingerprint(),
           articleId: id,
           fence: fenceOf(body),
           now: ctx.now,
@@ -555,6 +559,7 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
       const body = request.body;
       const outcome = await request.mutate(async (tx, ctx) => {
         const result = await recordDwell(tx, {
+          matchFingerprint: matchFingerprint(),
           articleId: id,
           fence: fenceOf(body),
           ms: body.ms,
@@ -584,6 +589,7 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
       const body = request.body;
       const outcome = await request.mutate(async (tx, ctx) => {
         const result = await rateArticle(tx, {
+          matchFingerprint: matchFingerprint(),
           articleId: id,
           fence: fenceOf(body),
           rating: body.rating,
@@ -618,6 +624,7 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
       const body = request.body;
       const outcome = await request.mutate(async (tx, ctx) => {
         const result = await answerPrompt(tx, {
+          matchFingerprint: matchFingerprint(),
           articleId: id,
           fence: fenceOf(body),
           liked: body.liked,
@@ -648,6 +655,7 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
       const body = request.body;
       const outcome = await request.mutate(async (tx, ctx) => {
         const result = await bookmarkArticle(tx, {
+          matchFingerprint: matchFingerprint(),
           articleId: id,
           fence: fenceOf(body),
           mediaPolicyFeedId: body.mediaPolicyFeedId,
@@ -868,6 +876,7 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
       const body = request.body;
       const outcome = await request.mutate(async (tx, ctx) => {
         const result = await rateArticlesBulk(tx, {
+          matchFingerprint: matchFingerprint(),
           targets: body.targets.map((target) => ({
             articleId: target.id,
             fence: { stateVersion: target.stateVersion, contentRevision: target.contentRevision },

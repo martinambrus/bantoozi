@@ -769,7 +769,7 @@ and keep both identities; golden labels must not be silently rewritten.
   of both input versions (an absent row counts as 0), also when a source-only row is moved, so an
   offline action prepared against either pre-merge version gets `STALE_STATE` (spec 08 §1.1)
   instead of overwriting the merged state. Clear cached ranking/explanation and enqueue a full
-  rank for affected active users. These rules preserve current positive state; feedback history is
+  rank and `user.learn` for affected active users. These rules preserve current positive state; feedback history is
   also retained.
 - Repoint **all** `feedback_events` to the survivor without dropping events. Learning collapses
   explicit labels by current article identity and latest event; a merged story must not become two

@@ -15,6 +15,7 @@ export * from './config.js';
 export * from './coverage.js';
 export * from './demotions.js';
 export * from './lanes.js';
+export * from './learn/index.js';
 export * from './policy.js';
 export * from './projection.js';
 export * from './rank.js';

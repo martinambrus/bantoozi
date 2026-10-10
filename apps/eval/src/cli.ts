@@ -6,6 +6,7 @@ import { registerApplyG1 } from './commands/apply-g1.js';
 import { registerDryRun } from './commands/dry-run.js';
 import { registerGate } from './commands/gate.js';
 import { registerIngestSample } from './commands/ingest-sample.js';
+import { registerLearningCurve } from './commands/learning-curve.js';
 import { registerRater } from './commands/rater.js';
 import { registerReplay } from './commands/replay.js';
 import { registerReport } from './commands/report.js';
@@ -23,8 +24,8 @@ import {
 
 /**
  * `pnpm evaluate <command>` (spec 10): the evaluation CLI. Each command lives in
- * `commands/<name>.ts` and registers itself on the program; `learning-curve` belongs to M7 and
- * exits with status 2 without touching any database or provider.
+ * `commands/<name>.ts` and registers itself on the program; `learning-curve` (M7) reads stored
+ * ratings and run answers only.
  */
 export const EVAL_COMMANDS = [
   ['ingest-sample', 'Subscribe the golden feeds and collect candidate articles (spec 10 §2.1)'],
@@ -90,16 +91,7 @@ const REGISTRATIONS: readonly RegisterCommand[] = [
   registerGate,
   registerApplyG1,
   registerDryRun,
-  (program) => {
-    program
-      .command('learning-curve')
-      .description(describeCommand('learning-curve'))
-      .allowUnknownOption()
-      .allowExcessArguments()
-      .action(() => {
-        throw new NotImplementedError('learning-curve');
-      });
-  },
+  registerLearningCurve,
 ];
 
 export interface BuildCliOptions {
