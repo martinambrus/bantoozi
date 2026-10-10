@@ -424,4 +424,22 @@ describe('user.learn and house.nightly-learn (M7-T4)', () => {
     expect(schedule?.cron).toBe('0 1 * * *');
     expect(schedule?.everyMs).toBe(24 * 60 * 60_000);
   });
+  it('an unrated article whose effective sample falls back from the rating to a bookmark no longer counts as evidence: the model is deactivated with a full rank intent when the retrain is rejected', async () => {
+    const userId = await w.user();
+    for (let i = 0; i < RATED; i += 1) await w.bookmark(userId, i); // bookmarked before rated
+    await w.rateRange(userId, 0, RATED);
+    await learn(userId);
+    expect((await w.active(userId)).map((m) => m.version)).toEqual([1]);
+
+    // Un-rate 30 articles: each keeps its article id as a (weaker) bookmark sample, but the
+    // explicit ratings the model trained on are gone and the retrain is rejected.
+    for (let i = 0; i < 30; i += 1) await w.rate(userId, i, null);
+    const mark = await h.mark();
+    await learn(userId);
+
+    expect(await w.active(userId)).toHaveLength(0);
+    expect((await w.userIntents('user.rank', userId, mark)).some((p) => p['full'] === true)).toBe(
+      true,
+    );
+  });
 });
