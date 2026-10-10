@@ -740,7 +740,7 @@ Complete milestone M3a "Evaluation tooling and golden-set collection" exactly as
 | M3a-T6 | Experiment runner (eval router with `budgetOverrideUsd`, `ignoreDailyCaps`, `kind:'eval'`, `EVAL_CACHE_DIR` cache, estimate, `--yes`/`--max-usd`); experiments B0, B1, B1-T, E1, E2, E3, E3b, E4, E6, E7 (E5 stub); `eval replay` | T1, T2 | D | 10 §3, §6 | ✓ `221aa2a`, `7af5c20` |
 | M3a-T7 | Report generator, decision rules, `apps/eval/config/g1.json` schema, `apply-g1` with the field → settings mapping | T2, T5, T6 | C | 10 §1, §5 | ✓ `c4db504`, `193b5e3` |
 | M3a-T8 | `eval dry-run` in the separate `bantoozi_eval_dryrun` database: simulated raters and the fake engine → full report | T3–T7 | D | 10 all | ✓ `d5ba3fa` |
-| M3a-T9 | Real sample ingested and the rater onboarding kit | T2, T3 | A | 10 §2 | ✓ `7d2479e`, `5fd1188`; human rating step pending (§8.1) |
+| M3a-T9 | Real sample ingested and the rater onboarding kit | T2, T3 | A | 10 §2 | ✓ `7d2479e`, `5fd1188`; human rating step done 2026-10-08 (§8.1) |
 
 **Done when:**
 
