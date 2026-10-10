@@ -163,7 +163,7 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
     'user.learn': implemented(createUserLearnHandler(deps)),
     'house.nightly-learn': implemented(createNightlyLearnHandler(deps)),
     'house.purge-auth': implemented(createPurgeAuthHandler(deps)),
-    'house.reconcile': implemented(createReconcileHandler(deps)),
+    'house.reconcile': implemented(createReconcileHandler(deps, classification)),
     'house.archive': implemented(createArchiveHandler(deps)),
     'house.purge-articles': implemented(createPurgeArticlesHandler(deps)),
     'house.purge-bodies': implemented(createPurgeBodiesHandler(deps)),

@@ -19,6 +19,7 @@ import {
 import { primaryAvailability } from '../classify/availability.js';
 import { languageModeOf, loadClassificationConfig } from '../classify/config.js';
 import { nowOf, type ClassificationDeps, type WorkerDeps } from './deps.js';
+import { recordRebuildProgress } from './house-purge-auth.js';
 import type { QueueHandler } from './index.js';
 
 const JOB = 'house.reenrich' as const;
@@ -49,6 +50,9 @@ export function createReenrichHandler(
 ): QueueHandler<'house.reenrich'> {
   return async (payload) => {
     const started = nowOf(deps);
+    const since =
+      payload.since ??
+      new Date(started.getTime() - RANK_WINDOW_DAYS * 24 * 60 * 60_000).toISOString();
     const availability = await primaryAvailability(
       deps.db,
       classification.router,
@@ -56,6 +60,11 @@ export function createReenrichHandler(
       started,
     );
     if (!availability.available) {
+      // The trigger is kept, with its frozen `since` and position, for `house.reconcile`.
+      await recordRebuildProgress(deps, JOB, started, {
+        complete: false,
+        pending: { ...payload, since },
+      });
       deps.logger.info({ job: JOB, skipped: availability.reason }, 'reenrich skipped');
       return;
     }
@@ -64,9 +73,6 @@ export function createReenrichHandler(
       deps.logger.info({ job: JOB, skipped: 'no_enrich_set' }, 'reenrich skipped');
       return;
     }
-    const since =
-      payload.since ??
-      new Date(started.getTime() - RANK_WINDOW_DAYS * 24 * 60 * 60_000).toISOString();
     const page = await reprocessWindowPage(deps.db, {
       since,
       ...(payload.cursor === undefined ? {} : { cursor: payload.cursor }),
@@ -85,7 +91,7 @@ export function createReenrichHandler(
         if (action === 'translate') {
           await enqueueTranslate(
             sender,
-            { articleId: article.articleId, modeChange: true },
+            { articleId: article.articleId, modeChange: true, priority: 'bulk' },
             { revision: article.revision },
           );
           counts.translate += 1;
@@ -138,6 +144,7 @@ export function createReenrichHandler(
         );
       });
     }
+    await recordRebuildProgress(deps, JOB, started, { complete: !remaining });
     deps.logger.info(
       {
         job: JOB,

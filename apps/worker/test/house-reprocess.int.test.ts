@@ -777,3 +777,103 @@ describe('house.rematch (spec 05 §2, spec 11 §6)', () => {
     expect((await storedAnswers(h, x)).some((a) => a.model === LLM_MODEL)).toBe(false);
   });
 });
+
+// ── FNF[m8-reprocess]: outage survival, bulk mode-change chain, progress ────────────────────────
+
+const progressOf = async (job: string) => {
+  const result = await h.owner.query<{ value: Record<string, Record<string, unknown>> }>(
+    `SELECT value FROM settings WHERE key = 'house.progress'`,
+  );
+  return result.rows[0]?.value[job];
+};
+
+describe('house.reenrich and house.rematch survive an outage, stay bulk, record progress', () => {
+  it('a run during an outage is recorded as pending and house.reconcile re-enqueues it once Jev is back', async () => {
+    const r = await reader(h);
+    const stale = await oldEnriched(r.feedId, DAY, 'Waiting out the outage');
+    const open = {
+      state: 'open',
+      openedAt: ago(MINUTE).toISOString(),
+      openUntil: new Date(Date.now() + 10 * MINUTE).toISOString(),
+      reopenCount: 1,
+    } as const;
+    const closed = { state: 'closed', reopenCount: 0 } as const;
+    const setBreaker = (typesafe: Record<string, unknown>) =>
+      h.setSetting('engine.circuit', { typesafe, llm: closed, resetRequested: {} });
+
+    await setBreaker(open);
+    await h.dispatch('house.reenrich', {});
+    await drainRebuild(h);
+    // Nothing queued and no self-requeue loop, but the trigger is on record.
+    expect(
+      await pendingWork(h, ['article.enrich', 'article.match', 'article.translate'], [stale]),
+    ).toEqual([]);
+    expect(await pendingWork(h, ['house.reenrich', 'house.rematch'], [])).toEqual([]);
+    const pending = (await progressOf('house.reenrich'))?.['cursor'] as
+      { pending?: Array<{ since?: string }> } | undefined;
+    expect(pending?.pending).toHaveLength(1);
+    const frozen = pending?.pending?.[0]?.since;
+    expect(frozen).toEqual(expect.any(String));
+    // Still unavailable: reconcile leaves the pending run alone.
+    await h.dispatch('house.reconcile', {});
+    expect(await pendingWork(h, ['house.reenrich'], [])).toEqual([]);
+
+    await setBreaker(closed);
+    await h.dispatch('house.reconcile', {});
+    const requeued = await pendingWork(h, ['house.reenrich'], []);
+    expect(requeued).toHaveLength(1);
+    expect(requeued[0]).toContain(frozen ?? 'missing');
+    await drainRebuild(h);
+    expect(await facetModel(stale)).toBe(PRIMARY_MODEL);
+    const done = await progressOf('house.reenrich');
+    expect(done?.['completedAt']).toEqual(expect.any(String));
+    expect((done?.['cursor'] as { pending?: unknown } | undefined)?.pending).toBeUndefined();
+    // Cleared: another reconcile adds nothing.
+    await h.dispatch('house.reconcile', {});
+    expect(await pendingWork(h, ['house.reenrich'], [])).toEqual([]);
+  });
+
+  it('the enrich that follows a mode-change translation is bulk and never answered by the LLM fallback', async () => {
+    const r = await reader(h);
+    const sk = await h.article({
+      feedIds: [r.feedId],
+      lang: 'sk',
+      ...SLOVAK,
+      firstSeenAt: ago(DAY),
+    });
+    await h.enrichDirect(sk, { state: 'enriched' });
+    await h.setSetting('language_modes', MODES_SK_TRANSLATE);
+    // The fallback is willing to serve anything that is not bulk.
+    h.router.respond = (ask) =>
+      ask.priority === 'bulk'
+        ? undefined
+        : { ...h.router.okOutcome(ask), engine: 'llm', model: LLM_MODEL };
+
+    await h.dispatch('house.reenrich', { lang: 'sk' });
+    await drainRebuild(h);
+
+    const asks = h.router.asksFor(sk, 'enrich');
+    expect(asks.length).toBeGreaterThan(0);
+    expect(asks.every((ask) => ask.priority === 'bulk')).toBe(true);
+    expect(await h.facetRow(sk)).toMatchObject({ variant: 'translated', engine: 'typesafe' });
+    expect(await h.owner.query("SELECT 1 FROM article_facets WHERE engine = 'llm'")).toMatchObject({
+      rowCount: 0,
+    });
+  });
+
+  it('both jobs record completedAt in house.progress after a finished pass', async () => {
+    const r = await reader(h);
+    const card = await h.heldCard(r.userId);
+    await oldEnriched(r.feedId, DAY, 'Progress');
+    const matched = await currentArticle(r.feedId, HOUR, 'Progress too');
+    await h.answerCard(matched, card, { engine: 'typesafe', model: OLD_MODEL });
+    await h.dispatch('house.reenrich', {});
+    await h.dispatch('house.rematch', {});
+    await drainRebuild(h);
+    for (const job of ['house.reenrich', 'house.rematch']) {
+      const entry = await progressOf(job);
+      expect(entry?.['updatedAt'], job).toEqual(expect.any(String));
+      expect(entry?.['completedAt'], job).toEqual(expect.any(String));
+    }
+  });
+});

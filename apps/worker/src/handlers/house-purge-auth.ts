@@ -4,8 +4,14 @@ import {
   retryTransaction,
   updateSettingLocked,
   type PurgeAuthRule,
+  type Transaction,
 } from '@bantoozi/db';
-import { parseSetting, type HouseProgressJob } from '@bantoozi/shared';
+import {
+  HOUSE_PROGRESS_CURSORS,
+  parseSetting,
+  type HouseProgressCursor,
+  type HouseProgressJob,
+} from '@bantoozi/shared';
 
 import { nowOf, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
@@ -37,6 +43,80 @@ export async function recordHouseProgress(
       });
     }),
   );
+}
+
+/** The rebuild jobs whose unavailable-engine runs wait in `settings['house.progress']`. */
+export type RebuildJob = 'house.reenrich' | 'house.rematch';
+export type RebuildRun = HouseProgressCursor<RebuildJob>['pending'][number];
+
+/** At most this many pending runs per job are kept (HOUSE_PROGRESS_CURSORS caps the list). */
+const MAX_PENDING_RUNS = 20;
+
+/** The runs of `job` recorded as pending; a malformed cursor holds none. */
+function pendingOf(job: RebuildJob, cursor: unknown): RebuildRun[] {
+  const parsed = HOUSE_PROGRESS_CURSORS[job].safeParse(cursor);
+  return parsed.success ? parsed.data.pending : [];
+}
+
+/**
+ * Records a pass of a rebuild job (`house.reenrich`, `house.rematch`) in `house.progress`:
+ * `updatedAt` always, `completedAt` when the pass finished, and, when the primary engine was
+ * unavailable, the run itself (its payload with the frozen `since` and cursor) as pending, for
+ * `house.reconcile` to enqueue again (spec 11 §6). Other pending runs are kept.
+ */
+export async function recordRebuildProgress(
+  deps: WorkerDeps,
+  job: RebuildJob,
+  now: Date,
+  outcome: { complete: boolean; pending?: RebuildRun },
+): Promise<void> {
+  await retryTransaction(deps.db, (tx) =>
+    updateSettingLocked(tx, 'house.progress', {}, (current) => {
+      const progress = parseSetting('house.progress', current ?? {});
+      const previous = progress[job];
+      const pending = pendingOf(job, previous?.cursor);
+      if (outcome.pending !== undefined) {
+        const key = JSON.stringify(outcome.pending);
+        if (!pending.some((run) => JSON.stringify(run) === key)) pending.push(outcome.pending);
+        // The stored list is bounded; the newest runs win.
+        pending.splice(0, Math.max(0, pending.length - MAX_PENDING_RUNS));
+      }
+      const completedAt = outcome.complete ? now.toISOString() : previous?.completedAt;
+      return parseSetting('house.progress', {
+        ...progress,
+        [job]: {
+          ...(pending.length === 0 ? {} : { cursor: { pending } }),
+          updatedAt: now.toISOString(),
+          ...(completedAt === undefined ? {} : { completedAt }),
+          version: 1,
+        },
+      });
+    }),
+  );
+}
+
+/** Removes and returns the pending runs of `job`, in the caller's transaction. */
+export async function takePendingRuns(
+  tx: Transaction,
+  job: RebuildJob,
+  now: Date,
+): Promise<RebuildRun[]> {
+  let taken: RebuildRun[] = [];
+  await updateSettingLocked(tx, 'house.progress', {}, (current) => {
+    const progress = parseSetting('house.progress', current ?? {});
+    const previous = progress[job];
+    taken = pendingOf(job, previous?.cursor);
+    if (previous === undefined || taken.length === 0) return progress;
+    return parseSetting('house.progress', {
+      ...progress,
+      [job]: {
+        updatedAt: now.toISOString(),
+        ...(previous.completedAt === undefined ? {} : { completedAt: previous.completedAt }),
+        version: 1,
+      },
+    });
+  });
+  return taken;
 }
 
 /**

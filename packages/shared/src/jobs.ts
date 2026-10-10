@@ -37,6 +37,27 @@ const enrichPayload = z
   .object({ articleId: IdSchema, priority: z.enum(['interactive', 'bulk']).optional() })
   .strict();
 
+const reenrichPayload = z
+  .object({
+    since: iso.optional(),
+    lang: z
+      .string()
+      .regex(/^[a-z]{2}$/)
+      .optional(),
+    // Set only on a continuation (spec 11 §6): the pass resumes strictly below this position,
+    // with `since` frozen at the first run.
+    cursor: reprocessCursor.optional(),
+  })
+  .strict();
+const rematchPayload = z
+  .object({
+    since: iso.optional(),
+    cardId: IdSchema.optional(),
+    // Set only on a continuation (spec 11 §6), as for `house.reenrich`.
+    cursor: reprocessCursor.optional(),
+  })
+  .strict();
+
 export const TRANSLATE_SKIP_REASONS = ['no_key', 'cap', 'budget'] as const;
 
 /** Housekeeping cron queues (spec 11 §6): empty payload, `singleton` policy. */
@@ -127,6 +148,8 @@ export const QUEUES = {
         forceTier2: z.boolean().optional(),
         replaceSkipped: z.boolean().optional(),
         modeChange: z.boolean().optional(),
+        // Set by a rebuild (`house.reenrich`): the enrichment that follows runs in bulk priority.
+        priority: z.enum(['interactive', 'bulk']).optional(),
         // Set only on the delayed retry of a transient failure at the provider's retry time
         // (spec 07 §3): that job is the last attempt.
         retried: z.boolean().optional(),
@@ -213,18 +236,7 @@ export const QUEUES = {
     options: { policy: 'stately', retryLimit: 0 },
   }),
   'house.reenrich': spec({
-    payload: z
-      .object({
-        since: iso.optional(),
-        lang: z
-          .string()
-          .regex(/^[a-z]{2}$/)
-          .optional(),
-        // Set only on a continuation (spec 11 §6): the pass resumes strictly below this position,
-        // with `since` frozen at the first run.
-        cursor: reprocessCursor.optional(),
-      })
-      .strict(),
+    payload: reenrichPayload,
     concurrency: 1,
     options: { policy: 'singleton', retryLimit: 1 },
   }),
@@ -241,14 +253,7 @@ export const QUEUES = {
     options: { policy: 'singleton', retryLimit: 1 },
   }),
   'house.rematch': spec({
-    payload: z
-      .object({
-        since: iso.optional(),
-        cardId: IdSchema.optional(),
-        // Set only on a continuation (spec 11 §6), as for `house.reenrich`.
-        cursor: reprocessCursor.optional(),
-      })
-      .strict(),
+    payload: rematchPayload,
     concurrency: 1,
     options: { policy: 'stately', retryLimit: 1 },
   }),
@@ -550,6 +555,10 @@ export type HouseProgressJob = (typeof HOUSE_PROGRESS_JOBS)[number];
 /** A keyset position `(latest eligible arrival, article id)`, descending. */
 const recoveryCursor = z.object({ key: iso, articleId: IdSchema }).strict();
 
+/** The cursor of a rebuild job: its runs waiting for the primary engine (at most 20). */
+const pendingRuns = <S extends z.ZodType>(run: S) =>
+  z.object({ pending: z.array(run).max(20) }).strict();
+
 /**
  * Per-job cursor schemas of `settings['house.progress'][job].cursor` (spec 02 §2) for the jobs
  * implemented so far; M8 registers the rest. A stored cursor that does not parse restarts that
@@ -560,6 +569,12 @@ export const HOUSE_PROGRESS_CURSORS = {
   'house.rescore-degraded': z
     .object({ enrich: recoveryCursor.optional(), answers: recoveryCursor.optional() })
     .strict(),
+  /**
+   * Runs that found Jev unavailable and wait for `house.reconcile` to enqueue them again, with
+   * their frozen `since` and cursor (spec 11 §6).
+   */
+  'house.reenrich': pendingRuns(reenrichPayload),
+  'house.rematch': pendingRuns(rematchPayload),
 } as const satisfies Partial<Record<HouseProgressJob, z.ZodType>>;
 export type HouseProgressCursor<J extends keyof typeof HOUSE_PROGRESS_CURSORS> = z.output<
   (typeof HOUSE_PROGRESS_CURSORS)[J]

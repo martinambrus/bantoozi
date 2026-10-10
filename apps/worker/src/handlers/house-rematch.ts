@@ -26,6 +26,7 @@ import { loadClassificationConfig } from '../classify/config.js';
 import { buildState, modelInput } from '../classify/model-input.js';
 import { nowOf, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import { REPROCESS_BATCH, REPROCESS_CONTINUATION_DELAY_MS } from './house-reenrich.js';
+import { recordRebuildProgress } from './house-purge-auth.js';
 import type { QueueHandler } from './index.js';
 
 const JOB = 'house.rematch' as const;
@@ -50,6 +51,9 @@ export function createRematchHandler(
 ): QueueHandler<'house.rematch'> {
   return async (payload) => {
     const started = nowOf(deps);
+    const since =
+      payload.since ??
+      new Date(started.getTime() - RANK_WINDOW_DAYS * 24 * 60 * 60_000).toISOString();
     const availability = await primaryAvailability(
       deps.db,
       classification.router,
@@ -57,6 +61,11 @@ export function createRematchHandler(
       started,
     );
     if (!availability.available) {
+      // The trigger is kept, with its frozen `since` and position, for `house.reconcile`.
+      await recordRebuildProgress(deps, JOB, started, {
+        complete: false,
+        pending: { ...payload, since },
+      });
       deps.logger.info({ job: JOB, skipped: availability.reason }, 'rematch skipped');
       return;
     }
@@ -66,9 +75,6 @@ export function createRematchHandler(
       return;
     }
     const matchSetSha = config.match.sha256;
-    const since =
-      payload.since ??
-      new Date(started.getTime() - RANK_WINDOW_DAYS * 24 * 60 * 60_000).toISOString();
     const page = await reprocessWindowPage(deps.db, {
       since,
       ...(payload.cursor === undefined ? {} : { cursor: payload.cursor }),
@@ -196,6 +202,7 @@ export function createRematchHandler(
         );
       });
     }
+    await recordRebuildProgress(deps, JOB, started, { complete: !remaining });
     deps.logger.info(
       {
         job: JOB,

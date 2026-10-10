@@ -5,9 +5,11 @@ import {
   usersDueForRank,
   workerOutbox,
 } from '@bantoozi/db';
+import { enqueueReenrich, enqueueRematch } from '@bantoozi/shared';
 
-import { nowOf, type WorkerDeps } from './deps.js';
-import { HOUSE_RUN_BUDGET_MS, recordHouseProgress } from './house-purge-auth.js';
+import { primaryAvailability } from '../classify/availability.js';
+import { nowOf, type ClassificationDeps, type WorkerDeps } from './deps.js';
+import { HOUSE_RUN_BUDGET_MS, recordHouseProgress, takePendingRuns } from './house-purge-auth.js';
 import type { QueueHandler } from './index.js';
 
 const JOB = 'house.reconcile' as const;
@@ -18,9 +20,14 @@ const RANK_REASON = 'next_rank_at_due';
 /**
  * `house.reconcile` (every 10 minutes, spec 11 §6): turns expired `reserved` engine reservations
  * into `uncertain` (settlement is a later job) and records one deduplicated `user.rank` intent for
- * every user with an article whose `next_rank_at` is due at the run's `now`.
+ * every user with an article whose `next_rank_at` is due at the run's `now`. Once the primary
+ * engine is available again it enqueues the `house.reenrich` / `house.rematch` runs that found it
+ * unavailable and are recorded as pending in `house.progress` (spec 11 §6).
  */
-export function createReconcileHandler(deps: WorkerDeps): QueueHandler<'house.reconcile'> {
+export function createReconcileHandler(
+  deps: WorkerDeps,
+  classification?: ClassificationDeps,
+): QueueHandler<'house.reconcile'> {
   return async () => {
     const now = nowOf(deps);
     const started = Date.now();
@@ -54,6 +61,8 @@ export function createReconcileHandler(deps: WorkerDeps): QueueHandler<'house.re
       if (users.length < RECONCILE_BATCH) break;
       after = users.at(-1) ?? null;
     }
+    const resumed =
+      classification === undefined ? 0 : await resumePendingRebuilds(deps, classification, now);
     await recordHouseProgress(deps, JOB, now, complete);
     deps.logger.info(
       {
@@ -62,9 +71,33 @@ export function createReconcileHandler(deps: WorkerDeps): QueueHandler<'house.re
         affected: reservations + ranked,
         reservations,
         rankIntents: ranked,
+        resumedRebuilds: resumed,
         remaining: complete ? 0 : null,
       },
       'reconciled',
     );
   };
+}
+
+/** Re-enqueues each pending rebuild run once, and only while the primary engine is available. */
+async function resumePendingRebuilds(
+  deps: WorkerDeps,
+  classification: ClassificationDeps,
+  now: Date,
+): Promise<number> {
+  const availability = await primaryAvailability(
+    deps.db,
+    classification.router,
+    deps.settingsEnv,
+    now,
+  );
+  if (!availability.available) return 0;
+  return retryTransaction(deps.db, async (tx) => {
+    const sender = workerOutbox(tx);
+    const reenrich = await takePendingRuns(tx, 'house.reenrich', now);
+    for (const run of reenrich) await enqueueReenrich(sender, run);
+    const rematch = await takePendingRuns(tx, 'house.rematch', now);
+    for (const run of rematch) await enqueueRematch(sender, run);
+    return reenrich.length + rematch.length;
+  });
 }
