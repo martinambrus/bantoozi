@@ -1202,8 +1202,8 @@ Complete milestone M6 "Web app" exactly as specified in docs/PLAN.md §12 and do
 below), not merged or pushed yet. Built with Opus analysts and Sonnet builders, each task test-first
 against a separate harness with a negative control. The learning curve on `golden-v3` (rater 3, one
 participant) is in `apps/eval/reports/LEARNING-CURVE-golden-v3-2026-10-10-decision.md`: cards-only
-test AUC 0.709; the model 0.654, 0.651, 0.682, 0.717 and 0.720 at n = 10, 20, 30, 50 and 100, so the
-n = 50 rule does not fire. At n = 50 and 100 the production activation rule still rejects the model on
+test AUC 0.709; the model 0.654, 0.659, 0.687, 0.742 and 0.720 at n = 10, 20, 30, 50 and 100, so the
+n = 50 rule does not fire. At n = 30, 50 and 100 the production activation rule still rejects the model on
 its cross-validated AUC, so a model of this one participant would not have activated yet.
 Deviations: D-164…D-170 in `docs/DECISIONS.md`. No migrations. Open: the first write of
 `engine.model_pin` is not fenced against a suggestion run in flight (D-164; M8-T2 seeds the row and
