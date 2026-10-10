@@ -76,13 +76,38 @@ const RATING_FINGERPRINT_SETTINGS = [
  * change the meaning of an answer. The API records it in each snapshot; learning compares against it.
  */
 export async function readRatingFingerprint(executor: Executor): Promise<string> {
-  const stored = await readStoredSettings(executor, RATING_FINGERPRINT_SETTINGS);
+  return ratingShaOf(await readStoredSettings(executor, RATING_FINGERPRINT_SETTINGS));
+}
+
+/** The rating fingerprint of already-read stored settings (missing keys absent). */
+function ratingShaOf(stored: ReadonlyMap<string, unknown>): string {
   return createHash('sha256')
     .update(
       canonicalJson({ specSha: FEATURE_SNAPSHOT_SPEC_SHA, settings: Object.fromEntries(stored) }),
     )
     .digest('hex');
 }
+
+/**
+ * The fingerprint settings in one share-locked statement, in key order: a writer of any of them
+ * waits for this transaction, so the filters and the stamp of a snapshot come from one state.
+ */
+async function readRatingSettingsLocked(tx: Executor): Promise<Map<string, unknown>> {
+  const result = await tx.execute<{ key: string; value: unknown }>(
+    sql`SELECT key, value FROM settings
+         WHERE key = ANY(${sql.param([...RATING_FINGERPRINT_SETTINGS])}::text[])
+         ORDER BY key FOR SHARE`,
+  );
+  return new Map(result.rows.map((row) => [row.key, row.value]));
+}
+
+const objectField = (value: unknown, field: string): unknown =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)[field]
+    : undefined;
+
+const textOrNull = (value: unknown): string | null =>
+  typeof value === 'string' ? value : typeof value === 'number' ? String(value) : null;
 
 /** The displayed item's fence (spec 08 §5.3). */
 export interface ReaderFence {
@@ -613,6 +638,10 @@ async function captureFeatures(
 ): Promise<FeatureCapture> {
   if (!options.live) return { features: null, staleAtFeedback: null };
   const id = article.articleId;
+  const stored = await readRatingSettingsLocked(tx);
+  const sets = stored.get('question_sets.active');
+  const enrichSet = textOrNull(objectField(sets, 'enrich'));
+  const matchSet = textOrNull(objectField(sets, 'match'));
   const result = await tx.execute<{
     inference_feed_ids: string[];
     word_count: number | null;
@@ -651,8 +680,7 @@ async function captureFeatures(
            sc.size AS cluster_size,
            (SELECT f.features FROM article_facets f
              WHERE f.article_id = a.id AND f.article_revision = a.content_revision
-               AND f.question_set_id::text = (SELECT st.value ->> 'enrich' FROM settings st
-                                               WHERE st.key = 'question_sets.active')
+               AND f.question_set_id::text = ${enrichSet}::text
              ORDER BY f.updated_at DESC LIMIT 1) AS facets
       FROM articles a LEFT JOIN story_clusters sc ON sc.id = a.story_cluster_id
      WHERE a.id = ${id}::bigint`);
@@ -671,6 +699,8 @@ async function captureFeatures(
       : null;
   if (row.inference_feed_ids.length === 0) return { features: null, staleAtFeedback };
 
+  const translated =
+    row.lang !== null && textOrNull(objectField(stored.get('language_modes'), row.lang)) === 'translate';
   const cards = await tx.execute<{
     id: string;
     strength: Strength;
@@ -685,17 +715,13 @@ async function captureFeatures(
                                AND ca.engine <> 'prefilter'
                                AND ca.question_set_sha = (
                                  SELECT qs.sha256 FROM question_sets qs
-                                   JOIN settings st ON st.key = 'question_sets.active'
-                                                   AND qs.id::text = st.value ->> 'match')
-                               AND ca.state_variant = CASE
-                                 WHEN (SELECT st.value ->> ${row.lang}::text FROM settings st
-                                        WHERE st.key = 'language_modes') = 'translate'
-                                 THEN 'translated' ELSE 'native' END
+                                  WHERE qs.id::text = ${matchSet}::text)
+                               AND ca.state_variant = ${translated ? 'translated' : 'native'}
      WHERE uc.user_id = ${user}::uuid
        AND (uc.scope_feed_id IS NULL
             OR uc.scope_feed_id::text = ANY(${sql.param(row.inference_feed_ids)}::text[]))
      ORDER BY uc.card_id`);
-  const ratingSha = await readRatingFingerprint(tx);
+  const ratingSha = ratingShaOf(stored);
   return {
     staleAtFeedback,
     features: {

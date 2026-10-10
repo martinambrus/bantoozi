@@ -1165,4 +1165,59 @@ describe('feature snapshot reads the current sets (spec 06 §8.2)', () => {
     expect(cards.get(native)).toBeNull();
     expect(cards.get(translated)).toBeCloseTo(0.6, 5);
   });
+  it('stamps the rating fingerprint from the settings its selection used', async () => {
+    const shaOld = 'd1'.repeat(32);
+    const shaNew = 'd2'.repeat(32);
+    const matchOld = await questionSet('match', shaOld);
+    const matchNew = await questionSet('match', shaNew);
+    await setSetting('question_sets.active', { match: matchOld });
+    await setSetting('language_modes', { de: 'native' });
+    const reader = await newReader(h);
+    const feed = await subscribedFeed(h, reader.user.id, { mode: 'active' });
+    const card = await holdCard(reader.user.id, 'love', 'Switching set');
+    const other = await holdCard(reader.user.id, 'love', 'Other set');
+    const rated = async (article: string) => {
+      await h.owner.query(`UPDATE articles SET lang = 'de' WHERE id = $1`, [article]);
+      await answerWith(article, card, 0.7, shaOld, 'native');
+      await answerWith(article, other, 0.2, shaNew, 'native');
+    };
+    const first = await carriedArticle(h, [feed]);
+    await rated(first);
+    await ok(reader.api.post(`/articles/${first}/rating`, { ...freshFence, rating: 1 }));
+    const baseline = (await events(h, reader.user.id, first))[0]!.value['features'] as {
+      ratingSha: string;
+    };
+
+    const second = await carriedArticle(h, [feed]);
+    await rated(second);
+    const blocker = await h.owner.connect();
+    let writer: Promise<unknown> | undefined;
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('LOCK TABLE card_answers IN ACCESS EXCLUSIVE MODE');
+      const request = reader.api.post(`/articles/${second}/rating`, { ...freshFence, rating: 1 });
+      for (let i = 0; i < 200; i += 1) {
+        const waiting = await h.owner.query(
+          `SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE '%card_answers%'
+              AND pid <> pg_backend_pid() AND pid <> $1`,
+          [(await blocker.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]!.pid],
+        );
+        if (waiting.rowCount) break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      writer = setSetting('question_sets.active', { match: matchNew });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await blocker.query('COMMIT');
+      await ok(request);
+    } finally {
+      blocker.release();
+    }
+    await writer;
+    const features = (await events(h, reader.user.id, second))[0]!.value['features'] as {
+      ratingSha: string;
+      cards: { id: string; p: number | null }[];
+    };
+    expect(features.ratingSha).toBe(baseline.ratingSha);
+    expect(features.cards.find((c) => c.id === card)?.p).toBeCloseTo(0.7, 5);
+  });
 });
