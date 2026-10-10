@@ -17,6 +17,7 @@ import {
 } from '@bantoozi/db';
 import { registrableDomain } from '@bantoozi/feeds';
 import {
+  isCardApplicable,
   matchCoverage,
   type CardAnswers,
   type CardWorkState,
@@ -133,7 +134,7 @@ export async function loadRankItems(
   const stored = await loadStoredRanks(db, { userId, articleIds: ids });
   const translations = group(await loadRankTranslations(db, ids));
 
-  const interestCards = new Set(ctx.cards.map((card) => card.cardId));
+  const interestCards = new Map(ctx.cards.map((card) => [card.cardId, card]));
   const loaded: LoadedRankItem[] = [];
   for (const id of ids) {
     const article = articles.get(id);
@@ -155,7 +156,12 @@ export async function loadRankItems(
         if (sha !== undefined && isCurrentCardAnswer(answer, fingerprint, sha)) {
           cardAnswers[answer.cardId] = { p: answer.p, engine: answer.engine };
           // Interest-card answers feed the model's features; label answers do not.
-          if (interestCards.has(answer.cardId) && answer.model !== run.modelPin) {
+          const card = interestCards.get(answer.cardId);
+          if (
+            card !== undefined &&
+            isCardApplicable(card, fact.inferenceFeedIds) &&
+            answer.model !== run.modelPin
+          ) {
             modelCurrent = false;
           }
         }

@@ -372,4 +372,30 @@ describe('model scoring in user.rank (spec 06 §2 step 4a, §6.2, §8.1)', () =>
       expect(row.p).toBeCloseTo(0.72, 4);
     }
   });
+
+  it.each(['like', 'never'] as const)(
+    'an old-model answer for an out-of-scope %s card does not block model scoring',
+    async (strength) => {
+      const { userId, feedId, cardId } = await modelReader();
+      const scopedFeedId = await h.feed('Off carrier');
+      await h.subscribe(userId, scopedFeedId, 'off');
+      const scopedCardId = await h.card({ interest: `Inland transport ${strength}` });
+      await h.hold(userId, scopedCardId, { strength, scopeFeedId: scopedFeedId });
+      const articleId = await matched(h, feedId, cardId, 0.9);
+      await h.owner.query(`INSERT INTO feed_items (feed_id, article_id) VALUES ($1, $2)`, [
+        scopedFeedId,
+        articleId,
+      ]);
+      await h.answerCard(articleId, scopedCardId, {
+        engine: 'typesafe',
+        model: 'older-model',
+        p: 0.1,
+      });
+
+      await rank(h, userId);
+      const row = await rankRow(h, userId, articleId);
+      expect(row.source).toBe('model');
+      expect(row.p).toBeCloseTo(simpleP(0.9), 4);
+    },
+  );
 });
