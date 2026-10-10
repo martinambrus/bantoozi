@@ -1330,8 +1330,13 @@ async function requestRatingSha(
   const sets = stored.get('question_sets.active');
   const frozenSets = objectField(snapshot, 'questionSets');
   const lang = textOrNull(objectField(objectField(snapshot, 'article'), 'lang'));
-  const mode = lang === null ? null : textOrNull(objectField(stored.get('language_modes'), lang));
-  const model = textOrNull(objectField(stored.get('engine.model_pin'), 'model'));
+  const mode =
+    lang === null
+      ? null
+      : (textOrNull(
+          objectField(effectiveRatingSettings(stored, defaults)['language_modes'], lang),
+        ) ?? 'native');
+  const model = effectiveModel(stored, defaults) || null;
   const checks: [unknown, string | null][] = [
     [objectField(objectField(frozenSets, 'enrich'), 'id'), textOrNull(objectField(sets, 'enrich'))],
     [objectField(objectField(frozenSets, 'match'), 'id'), textOrNull(objectField(sets, 'match'))],
@@ -1339,7 +1344,7 @@ async function requestRatingSha(
     [objectField(objectField(snapshot, 'model'), 'model'), model],
     [
       objectField(snapshot, 'cardTextMode'),
-      textOrNull(stored.get('card_text_mode')) ?? 'as_written',
+      textOrNull(effectiveRatingSettings(stored, defaults)['card_text_mode']) ?? 'as_written',
     ],
   ];
   for (const [frozen, current] of checks) {

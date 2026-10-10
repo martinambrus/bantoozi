@@ -10,7 +10,7 @@ import {
 } from '@bantoozi/questions';
 import { readSetting } from '@bantoozi/shared';
 import { createCard } from '@bantoozi/testing';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 
 import {
   DAY,
@@ -1556,6 +1556,61 @@ describe('snapshot capture after a translation fallback and frozen request prove
     const switched = await rateOlder(matchB);
     expect(switched.value['ratingSha']).toBeUndefined();
     expect(switched.value['features']).toBeNull();
+  });
+
+  it('records no ratingSha for a request frozen under a model other than the effective one', async () => {
+    const matchA = await matchSet('e4'.repeat(32));
+    await setSetting('question_sets.active', { match: matchA });
+    const pinRow = (
+      await h.owner.query<{ value: unknown }>(
+        `SELECT value FROM settings WHERE key = 'engine.model_pin'`,
+      )
+    ).rows[0];
+    await h.owner.query(`DELETE FROM settings WHERE key = 'engine.model_pin'`);
+    onTestFinished(async () => {
+      if (pinRow !== undefined) await setSetting('engine.model_pin', pinRow.value);
+    });
+    const { r, feed, article } = await setup({}, 'training');
+    const manifest = JSON.stringify({
+      questionSets: { enrich: { id: matchA }, match: { id: matchA } },
+      model: { model: 'jev-frozen-other' },
+    });
+    const requestId = randomUUID();
+    const client = await h.owner.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SELECT set_config('app.user_id', $1, true)", [r.user.id]);
+      await client.query(
+        `INSERT INTO analysis_requests (id, user_id, feed_id, article_id, article_revision,
+                                        inference_version, input_snapshot, input_sha)
+         SELECT $1, $2, $3, a.id, a.content_revision, s.inference_version, $5::jsonb,
+                encode(sha256(convert_to($5::jsonb::text, 'UTF8')), 'hex')
+           FROM articles a JOIN subscriptions s ON s.user_id = $2 AND s.feed_id = $3
+          WHERE a.id = $4`,
+        [requestId, r.user.id, feed, article, manifest],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    const saved = await ok(r.api.post(`/articles/${article}/bookmark`, freshFence));
+    const snapshotId = saved.item.bookmarkCapture!.snapshotId!;
+    await h.owner.query(`UPDATE articles SET content_revision = 2 WHERE id = $1`, [article]);
+    await ok(
+      r.api.post(`/articles/${article}/rating`, {
+        stateVersion: saved.item.stateVersion,
+        contentRevision: '1',
+        snapshotId,
+        rating: 1,
+        analysisRequestId: requestId,
+      }),
+    );
+    const event = (await events(h, r.user.id, article)).find((e) => e.kind === 'rate')!;
+    expect(event.value['ratingSha']).toBeUndefined();
+    expect(event.value['features']).toBeNull();
   });
 });
 
