@@ -195,7 +195,7 @@ async function committedProductionUsd(db: Executor, day: string): Promise<number
  * of a later day is never replaced by a late settlement of an earlier one. No email is sent here:
  * `house.alerts` alone notifies (spec 11 §6).
  */
-async function markBudgetCrossings(tx: Transaction, day: string, fallbackUsd: number) {
+export async function markBudgetCrossings(tx: Transaction, day: string, fallbackUsd: number) {
   const budget = await dailyBudgetUsd(tx, fallbackUsd);
   if (!(budget > 0)) return;
   const committed = await committedProductionUsd(tx, day);
@@ -230,7 +230,8 @@ async function markBudgetCrossings(tx: Transaction, day: string, fallbackUsd: nu
      WHERE key = 'engine.budget_alerts'`);
 }
 
-async function upsertUsageRow(db: Executor, row: UsageRow): Promise<void> {
+/** Adds a usage row to its `usage_daily` bucket (spec 02 §3.3, spec 04 §6). */
+export async function upsertUsageRow(db: Executor, row: UsageRow): Promise<void> {
   await db.execute(sql`
     INSERT INTO usage_daily AS u (day, user_id, engine, kind, calls, input_tokens, output_tokens, cost_usd)
     VALUES (${row.day}::date, ${row.userId}::uuid, ${row.engine}, ${row.kind}, ${row.calls},

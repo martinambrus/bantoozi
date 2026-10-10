@@ -130,6 +130,9 @@ export const ENV_VARS: readonly EnvVarSpec[] = [
   { name: 'WORKER_METRICS_PORT', usedBy: ['worker'], defaultValue: '9101' },
   { name: 'OTEL_EXPORTER_OTLP_ENDPOINT', usedBy: ['all'] },
   { name: 'ADMIN_EMAILS', usedBy: ['api', 'worker'] },
+  { name: 'DELETION_LEDGER_PATH', usedBy: ['worker'] },
+  { name: 'DELETION_LEDGER_RECIPIENT', usedBy: ['worker'] },
+  { name: 'DELETION_HMAC_KEY', usedBy: ['worker'], secret: true },
 ];
 
 export type NodeEnv = 'development' | 'test' | 'production';
@@ -188,6 +191,9 @@ export interface Config {
   readonly workerMetricsPort: number;
   readonly otelExporterOtlpEndpoint: string | undefined;
   readonly adminEmails: readonly string[];
+  readonly deletionLedgerPath: string | undefined;
+  readonly deletionLedgerRecipient: string | undefined;
+  readonly deletionHmacKey: string | undefined;
 }
 
 /** Fields that are required (non-undefined) for each process. */
@@ -222,6 +228,7 @@ const SECRET_FIELDS = new Set<keyof Config>([
   'ollamaApiKey',
   'providerMasterKeys',
   'metricsToken',
+  'deletionHmacKey',
 ]);
 
 /** A readable configuration error that never contains supplied values. */
@@ -349,6 +356,13 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
     workerMetricsPort: read('WORKER_METRICS_PORT', portSchema, '9101') ?? 9101,
     otelExporterOtlpEndpoint: read('OTEL_EXPORTER_OTLP_ENDPOINT', httpUrl, undefined),
     adminEmails: read('ADMIN_EMAILS', emailListSchema, undefined) ?? [],
+    deletionLedgerPath: read('DELETION_LEDGER_PATH', z.string().min(1), undefined),
+    deletionLedgerRecipient: read(
+      'DELETION_LEDGER_RECIPIENT',
+      z.string().regex(/^age1[a-z0-9]+$/),
+      undefined,
+    ),
+    deletionHmacKey: read('DELETION_HMAC_KEY', z.string().min(32), undefined),
   };
 
   for (const name of REQUIRED_VARS[kind]) {

@@ -64,6 +64,9 @@ const SPEC_01_VARIABLES = [
   'WORKER_METRICS_PORT',
   'OTEL_EXPORTER_OTLP_ENDPOINT',
   'ADMIN_EMAILS',
+  'DELETION_LEDGER_PATH',
+  'DELETION_LEDGER_RECIPIENT',
+  'DELETION_HMAC_KEY',
 ];
 
 const APP_URL = 'postgres://bantoozi_app:app-secret@localhost:5433/bantoozi';

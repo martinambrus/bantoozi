@@ -138,11 +138,28 @@ export function outboxRetryDelaySeconds(attempts: number): number {
   return Math.min(900, 2 ** Math.max(0, Math.min(attempts, 10)));
 }
 
-/** Purge delivered intents after the retention window; undelivered work is never purged for age. */
-export async function purgeDeliveredOutbox(db: Executor, olderThanDays = 7): Promise<number> {
-  const result = await db.execute(sql`
-    DELETE FROM job_outbox
-     WHERE delivered_at IS NOT NULL AND delivered_at < now() - make_interval(days => ${olderThanDays})`);
+/**
+ * Purge delivered intents after the retention window; undelivered work is never purged for age.
+ * With `limit` at most that many rows go (oldest first); `now` replaces the database clock.
+ */
+export async function purgeDeliveredOutbox(
+  db: Executor,
+  olderThanDays = 7,
+  options: { now?: Date; limit?: number } = {},
+): Promise<number> {
+  const cutoff =
+    options.now === undefined
+      ? sql`now() - make_interval(days => ${olderThanDays})`
+      : sql`${new Date(options.now.getTime() - olderThanDays * 86_400_000).toISOString()}::timestamptz`;
+  const result =
+    options.limit === undefined
+      ? await db.execute(sql`
+          DELETE FROM job_outbox WHERE delivered_at IS NOT NULL AND delivered_at < ${cutoff}`)
+      : await db.execute(sql`
+          DELETE FROM job_outbox
+           WHERE id IN (SELECT id FROM job_outbox
+                         WHERE delivered_at IS NOT NULL AND delivered_at < ${cutoff}
+                         ORDER BY id LIMIT ${options.limit})`);
   return result.rowCount ?? 0;
 }
 

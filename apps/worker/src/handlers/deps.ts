@@ -1,4 +1,4 @@
-import type { Database, Transaction } from '@bantoozi/db';
+import type { Database, DeletionLedgerEntry, Transaction } from '@bantoozi/db';
 import type { EngineRouter } from '@bantoozi/engine';
 import {
   createRobotsChecker,
@@ -94,6 +94,12 @@ export interface WorkerDeps {
    * EVAL_INGEST_ONLY (spec 10 §2.1): stop the pipeline after extraction (golden collection).
    */
   evalIngestOnly?: boolean;
+  /**
+   * The deletion ledger and its HMAC key (spec 11 §5.1). `house.purge-users` hard-deletes nobody
+   * while either is absent.
+   */
+  deletionLedger?: { append(entry: DeletionLedgerEntry): Promise<void> };
+  deletionHmacKey?: string;
   /** Test seams: DNS and the clock. */
   resolver?: Resolver;
   now?: () => Date;

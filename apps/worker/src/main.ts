@@ -12,6 +12,7 @@ import { createLogger, loadConfig } from '@bantoozi/shared/server';
 
 import { createBoss, pgBossBroker, registerHandlers } from './boss.js';
 import { createWorkerModels } from './classification-deps.js';
+import { createFileDeletionLedger } from './deletion-ledger.js';
 import { createWorkerDeps } from './handlers/deps.js';
 import {
   assertWorkerMode,
@@ -77,6 +78,15 @@ const handlers = createHandlers(
     classification: models.classification,
     providerValidation: models.providerValidation,
     ...(config.evalIngestOnly ? { evalIngestOnly: true } : {}),
+    ...(config.deletionLedgerPath !== undefined && config.deletionLedgerRecipient !== undefined
+      ? {
+          deletionLedger: createFileDeletionLedger({
+            path: config.deletionLedgerPath,
+            recipient: config.deletionLedgerRecipient,
+          }),
+        }
+      : {}),
+    ...(config.deletionHmacKey === undefined ? {} : { deletionHmacKey: config.deletionHmacKey }),
   }),
 );
 // EVAL_INGEST_ONLY (spec 10 §2.1): only fetching and extraction; a golden database refuses
