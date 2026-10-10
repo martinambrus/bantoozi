@@ -216,8 +216,8 @@ export async function loadRankItems(
       pipelineState: article.pipelineState,
       matchCoverage: matchCoverage(ctx.cards, evidence, work).coverage,
       ...(featureSet === undefined ? {} : { facets: featureSet }),
-      ...(article.enrichEngine !== null && MODEL_ENGINES.has(article.enrichEngine)
-        ? { facetsEngine: article.enrichEngine as ModelEngine }
+      ...(facetState !== undefined && MODEL_ENGINES.has(facetState.engine)
+        ? { facetsEngine: facetState.engine as ModelEngine }
         : {}),
       cardAnswers,
       labelIds: storedRow?.labelIds ?? [],

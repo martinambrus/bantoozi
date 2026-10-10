@@ -1708,7 +1708,12 @@ describe('snapshot provenance: facets, answer model and the effective fingerprin
     else await setSetting('question_sets.active', previous);
   });
 
-  async function enrichFacets(override: { state?: string; model?: string | null }) {
+  async function enrichFacets(override: {
+    state?: string;
+    model?: string | null;
+    articleEngine?: 'typesafe' | 'llm';
+    facetEngine?: 'typesafe' | 'llm';
+  }) {
     const sha = 'f1'.repeat(32);
     const set = (
       await h.owner.query<{ id: string }>(
@@ -1720,15 +1725,22 @@ describe('snapshot provenance: facets, answer model and the effective fingerprin
     ).rows[0]!.id;
     await setSetting('question_sets.active', { enrich: set });
     const { r, article } = await setup();
+    if (override.articleEngine !== undefined) {
+      await h.owner.query(`UPDATE articles SET enrich_engine = $2 WHERE id = $1`, [
+        article,
+        override.articleEngine,
+      ]);
+    }
     await h.owner.query(
       `INSERT INTO article_facets (article_id, question_set_id, article_revision, state_sha256,
                                    engine, model, state_variant, answers, features)
-       VALUES ($1, $2, 1, $3, 'typesafe', $4, 'native', '{}', '{"time_sensitive": 0.9}')`,
+       VALUES ($1, $2, 1, $3, $5, $4, 'native', '{}', '{"time_sensitive": 0.9}')`,
       [
         article,
         set,
         override.state ?? (await currentStates(article)).enrich,
         override.model === undefined ? await currentModel() : override.model,
+        override.facetEngine ?? 'typesafe',
       ],
     );
     // A card with a current answer, so the fingerprint is consulted for the facets only by design.
@@ -1739,7 +1751,7 @@ describe('snapshot provenance: facets, answer model and the effective fingerprin
     return event!.value['features'] as {
       ratingSha: string;
       cards: { id: string; p: number | null }[];
-      values: { facets: Record<string, number> | null };
+      values: { facets: Record<string, number> | null; facetsEngine: string | null };
     };
   }
 
@@ -1755,6 +1767,18 @@ describe('snapshot provenance: facets, answer model and the effective fingerprin
   it('keeps facets of the current enrich state and model', async () => {
     expect((await enrichFacets({})).values.facets).toEqual({ time_sensitive: 0.9 });
   });
+
+  it.each(['typesafe', 'llm'] as const)(
+    'records the %s facet row engine even when the article engine differs',
+    async (facetEngine) => {
+      const features = await enrichFacets({
+        facetEngine,
+        articleEngine: facetEngine === 'typesafe' ? 'llm' : 'typesafe',
+      });
+      expect(features.values.facets).toEqual({ time_sensitive: 0.9 });
+      expect(features.values.facetsEngine).toBe(facetEngine);
+    },
+  );
 
   it('drops an answer written by another model and keeps the current one', async () => {
     const { r, article } = await setup();

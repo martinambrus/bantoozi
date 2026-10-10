@@ -121,9 +121,10 @@ export async function loadRankFacets(
 export interface RankFacetState {
   stateSha256: string;
   model: string | null;
+  engine: string;
 }
 
-/** State hash and model of the facet rows `loadRankFacets` returns, by article. */
+/** State hash, model and engine of the facet rows `loadRankFacets` returns, by article. */
 export async function loadRankFacetStates(
   db: Executor,
   input: { articleIds: readonly string[]; enrichSetId: string | null },
@@ -133,14 +134,18 @@ export async function loadRankFacetStates(
     article_id: string;
     state_sha256: string;
     model: string | null;
+    engine: string;
   }>(sql`
-    SELECT f.article_id::text AS article_id, f.state_sha256, f.model
+    SELECT f.article_id::text AS article_id, f.state_sha256, f.model, f.engine
       FROM article_facets f
       JOIN articles a ON a.id = f.article_id AND a.content_revision = f.article_revision
      WHERE f.article_id = ANY(${sql.param([...input.articleIds])}::bigint[])
        AND f.question_set_id = ${input.enrichSetId}::bigint`);
   return new Map(
-    result.rows.map((row) => [row.article_id, { stateSha256: row.state_sha256, model: row.model }]),
+    result.rows.map((row) => [
+      row.article_id,
+      { stateSha256: row.state_sha256, model: row.model, engine: row.engine },
+    ]),
   );
 }
 

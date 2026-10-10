@@ -741,7 +741,7 @@ async function captureFeatures(
     author: string | null;
     published_at: RawTimestamp | null;
     first_seen_at: RawTimestamp;
-    enrich_engine: string | null;
+    facets_engine: string | null;
     media_revision: string;
     story_cluster_id: string | null;
     cluster_size: number | null;
@@ -766,13 +766,14 @@ async function captureFeatures(
          AND r.created_at > now() - make_interval(days => ${SELECTION_WINDOW_DAYS}))
     SELECT coalesce((SELECT array_agg(feed_id::text ORDER BY feed_id) FROM inf), '{}') AS inference_feed_ids,
            a.word_count, a.image_url IS NOT NULL AS has_image, a.has_video, a.body_image_count,
-           a.lang, a.author, a.published_at, a.first_seen_at, a.enrich_engine,
+           a.lang, a.author, a.published_at, a.first_seen_at,
            a.media_revision::text AS media_revision, a.story_cluster_id::text AS story_cluster_id,
            sc.size AS cluster_size,
-           fa.features AS facets, fa.state_sha256 AS facets_state_sha256, fa.model AS facets_model
+           fa.features AS facets, fa.state_sha256 AS facets_state_sha256, fa.model AS facets_model,
+           fa.engine AS facets_engine
       FROM articles a LEFT JOIN story_clusters sc ON sc.id = a.story_cluster_id
       LEFT JOIN LATERAL (
-        SELECT f.features, f.state_sha256, f.model FROM article_facets f
+        SELECT f.features, f.state_sha256, f.model, f.engine FROM article_facets f
          WHERE f.article_id = a.id AND f.article_revision = a.content_revision
            AND f.question_set_id::text = ${enrichSet}::text
          ORDER BY f.updated_at DESC LIMIT 1) fa ON true
@@ -850,7 +851,7 @@ async function captureFeatures(
       })),
       values: {
         facets: facetsCurrent ? row.facets : null,
-        facetsEngine: facetsCurrent ? row.enrich_engine : null,
+        facetsEngine: facetsCurrent ? row.facets_engine : null,
         wordCount: row.word_count,
         ageHours,
         lang: row.lang,

@@ -398,4 +398,25 @@ describe('model scoring in user.rank (spec 06 §2 step 4a, §6.2, §8.1)', () =>
       expect(row.p).toBeCloseTo(simpleP(0.9), 4);
     },
   );
+
+  it.each(['typesafe', 'llm'] as const)(
+    'model eligibility uses the %s facet row engine even when the article engine differs',
+    async (facetEngine) => {
+      const { userId, feedId, cardId } = await modelReader();
+      const articleId = await matched(h, feedId, cardId, 0.9);
+      await h.owner.query(`UPDATE articles SET enrich_engine = $2 WHERE id = $1`, [
+        articleId,
+        facetEngine === 'typesafe' ? 'llm' : 'typesafe',
+      ]);
+      await h.owner.query(`UPDATE article_facets SET engine = $2 WHERE article_id = $1`, [
+        articleId,
+        facetEngine,
+      ]);
+
+      await rank(h, userId);
+      const row = await rankRow(h, userId, articleId);
+      expect(row.source).toBe(facetEngine === 'typesafe' ? 'model' : 'cards');
+      expect(row.p).toBeCloseTo(facetEngine === 'typesafe' ? simpleP(0.9) : 0.72, 4);
+    },
+  );
 });
