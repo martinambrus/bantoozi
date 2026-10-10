@@ -7,12 +7,14 @@ import {
   readStoredSetting,
   tenantUserId,
   type MatchFingerprint,
+  type RatingDefaults,
   type TenantTx,
 } from '@bantoozi/db';
 import { registrableDomain } from '@bantoozi/feeds';
 import {
   buildAnalysisInputSnapshot,
   builtCardQuestion,
+  enrichStateSha256,
   isCodeQuestionSet,
   matchStateSha256,
 } from '@bantoozi/questions';
@@ -130,13 +132,26 @@ export async function captureSelectionSnapshot(
 }
 
 /**
+ * The environment defaults of the fingerprint settings (spec 06 §8.1): the model an unset pin
+ * stands for and the language and card text modes of a missing setting.
+ */
+export function ratingDefaultsFor(config: ApiConfig): RatingDefaults {
+  return {
+    model: config.typesafeModel,
+    languageModes: config.languageModes,
+    cardTextMode: 'as_written',
+  };
+}
+
+/**
  * The current match input of an article for a feature snapshot (spec 06 §8.2): the `state_sha256`
- * and per-card `card_input_sha256` the ranker compares stored answers with, built under the language
- * modes and card text mode of the snapshot's one locked settings read. Null when the article is gone.
+ * of its match and enrich states and the per-card `card_input_sha256` the ranker compares stored
+ * answers and facets with, built under the language modes and card text mode of the snapshot's one
+ * locked settings read. Null when the article is gone.
  */
 export function matchFingerprintFor(config: ApiConfig): MatchFingerprint {
   const env = settingEnv(config);
-  return async (tx, input) => {
+  const current = async (tx: TenantTx, input: Parameters<MatchFingerprint>[1]) => {
     const article = await loadClassificationArticle(tx, input.articleId);
     if (article === null) return null;
     const languageModes =
@@ -145,28 +160,30 @@ export function matchFingerprintFor(config: ApiConfig): MatchFingerprint {
       readSetting('card_text_mode', input.settings.get('card_text_mode'), env) ?? 'as_written';
     const translations = await listTranslations(tx, article.id, article.revision);
     const feed = article.feed;
-    const stateSha256 = matchStateSha256(
-      {
-        title: article.title,
-        author: article.author,
-        categories: article.categories,
-        excerpt: article.excerpt,
-        bodyLead: article.bodyLead,
-        wordCount: article.wordCount,
-        lang: article.lang,
-        feed: {
-          title: feed?.title ?? null,
-          site:
-            feed === null ? null : (registrableDomain(feed.siteUrl) ?? registrableDomain(feed.url)),
-        },
+    const base = {
+      title: article.title,
+      author: article.author,
+      categories: article.categories,
+      excerpt: article.excerpt,
+      bodyLead: article.bodyLead,
+      wordCount: article.wordCount,
+      lang: article.lang,
+      feed: {
+        title: feed?.title ?? null,
+        site:
+          feed === null ? null : (registrableDomain(feed.siteUrl) ?? registrableDomain(feed.url)),
       },
-      languageModes,
-      selectBestTranslation(translations, article.revision),
-    );
+    };
+    const best = selectBestTranslation(translations, article.revision);
     const cards = await loadCardInputs(tx, input.cardIds);
     const cardInputSha256 = new Map<string, string>();
     for (const [id, card] of cards)
       cardInputSha256.set(id, builtCardQuestion(card, cardTextMode).sha256);
-    return { stateSha256, cardInputSha256 };
+    return {
+      stateSha256: matchStateSha256(base, languageModes, best),
+      enrichStateSha256: enrichStateSha256(base, languageModes, best),
+      cardInputSha256,
+    };
   };
+  return Object.assign(current, { defaults: ratingDefaultsFor(config) });
 }

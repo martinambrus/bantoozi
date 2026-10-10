@@ -20,7 +20,7 @@ import {
 import type { RankerConfig } from '@bantoozi/shared';
 import { canonicalSha256 } from '@bantoozi/shared/server';
 
-import { loadClassificationConfig } from '../classify/config.js';
+import { loadClassificationConfig, ratingDefaults } from '../classify/config.js';
 import type { WorkerDeps } from '../handlers/deps.js';
 import { cardInputHashes } from '../rank/items.js';
 import { loadRankerSettings } from '../rank/settings.js';
@@ -47,16 +47,19 @@ export interface LearnInputs {
  */
 export async function loadLearnInputs(
   db: Executor,
-  deps: Pick<WorkerDeps, 'settingsEnv'>,
+  deps: Pick<WorkerDeps, 'settingsEnv' | 'classification'>,
   userId: string,
   now: Date,
 ): Promise<LearnInputs> {
   const config = (await loadRankerSettings(db)).config;
-  const ratingSha = await readRatingFingerprint(db);
   const { samples, cutoffEventId } = await loadLearnSamples(db, { userId, now });
   const consent: Consent = await loadLearnConsent(db, userId);
 
   const classification = await loadClassificationConfig(db, deps.settingsEnv);
+  const ratingSha = await readRatingFingerprint(
+    db,
+    ratingDefaults(classification, deps.classification?.primaryModel ?? ''),
+  );
   const cards = await loadRankCards(db, userId);
   const cardInputs = await loadCardInputs(
     db,

@@ -4,6 +4,7 @@ import {
   shareLockSettings,
   type Executor,
   type QuestionSetKind,
+  type RatingDefaults,
 } from '@bantoozi/db';
 import { languageModeFor, questionSetByVersion, type Question } from '@bantoozi/questions';
 import {
@@ -143,6 +144,18 @@ export async function loadClassificationConfig(
     cardTextMode,
     languageModes,
     prefilterEnabled,
+  };
+}
+
+/**
+ * The fingerprint defaults of the worker (spec 06 §8.1): the same values the API derives from its
+ * environment, here taken from the settings as they read now and the process's model.
+ */
+export function ratingDefaults(config: ClassificationConfig, primaryModel: string): RatingDefaults {
+  return {
+    model: primaryModel,
+    languageModes: config.languageModes,
+    cardTextMode: config.cardTextMode,
   };
 }
 

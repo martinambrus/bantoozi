@@ -23,7 +23,7 @@ import {
   type JobPayload,
 } from '@bantoozi/shared';
 
-import { loadClassificationConfig } from '../classify/config.js';
+import { loadClassificationConfig, ratingDefaults } from '../classify/config.js';
 import { loadRankContext } from '../rank/context.js';
 import { cardInputHashes, loadRankItems, type RankItemsRun } from '../rank/items.js';
 import { buildActiveModel, loadRankModelState } from '../rank/model.js';
@@ -119,6 +119,7 @@ export function createUserRankHandler(
       userId: user.userId,
       config: settings.config,
       hashes,
+      ratingDefaults: ratingDefaults(config, deps.classification?.primaryModel ?? ''),
     });
     if (modelState.status === 'stale') {
       await retryTransaction(deps.db, async (tx) => {

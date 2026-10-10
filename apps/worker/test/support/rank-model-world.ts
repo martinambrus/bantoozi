@@ -7,7 +7,7 @@ import {
 import { FEATURE_SPEC_V1_SHA, modelContextSha } from '@bantoozi/ranker';
 import { parseJobPayload, type Explain } from '@bantoozi/shared';
 
-import { loadClassificationConfig } from '../../src/classify/config.js';
+import { loadClassificationConfig, ratingDefaults } from '../../src/classify/config.js';
 import { createUserRankHandler } from '../../src/handlers/user-rank.js';
 import { cardInputHashes } from '../../src/rank/items.js';
 import { loadRankerSettings } from '../../src/rank/settings.js';
@@ -111,10 +111,13 @@ export async function currentModelContext(
   ownCards: readonly string[],
 ): Promise<{ contextSha: string; ratingSha: string; ownInputs: Record<string, unknown>[] }> {
   const db: Database = h.db;
-  const ratingSha = await readRatingFingerprint(db);
   const config = (await loadRankerSettings(db)).config;
   const consent = await loadLearnConsent(db, userId);
   const classification = await loadClassificationConfig(db, h.deps.settingsEnv);
+  const ratingSha = await readRatingFingerprint(
+    db,
+    ratingDefaults(classification, h.deps.classification?.primaryModel ?? ''),
+  );
   const hashes = cardInputHashes(await loadCardInputs(db, [...ownCards]), classification);
   const held = await h.owner.query<{ card_id: string; strength: string; scope: string | null }>(
     `SELECT card_id::text AS card_id, strength, scope_feed_id::text AS scope

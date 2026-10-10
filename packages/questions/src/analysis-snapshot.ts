@@ -229,6 +229,24 @@ export function matchStateSha256(
   languageModes: Readonly<LanguageModes>,
   bestTranslation: SnapshotTranslationRow | null,
 ): string {
+  return callStateSha256('match', base, languageModes, bestTranslation);
+}
+
+/** The `state_sha256` of an article's Call A (enrich) state: `matchStateSha256` for the other call. */
+export function enrichStateSha256(
+  base: Omit<ArticleStateInput, 'translation'>,
+  languageModes: Readonly<LanguageModes>,
+  bestTranslation: SnapshotTranslationRow | null,
+): string {
+  return callStateSha256('enrich', base, languageModes, bestTranslation);
+}
+
+function callStateSha256(
+  call: 'enrich' | 'match',
+  base: Omit<ArticleStateInput, 'translation'>,
+  languageModes: Readonly<LanguageModes>,
+  bestTranslation: SnapshotTranslationRow | null,
+): string {
   const best =
     languageModeFor(languageModes, base.lang) === 'translate'
       ? usableTranslationRow(bestTranslation)
@@ -240,7 +258,5 @@ export function matchStateSha256(
           ...base,
           translation: { title: best.title, excerpt: best.excerpt, bodyLead: best.bodyLead },
         };
-  return stateSha256(
-    buildArticleState(input, best === null ? 'native' : 'translated', { call: 'match' }),
-  );
+  return stateSha256(buildArticleState(input, best === null ? 'native' : 'translated', { call }));
 }

@@ -1,6 +1,6 @@
 import type { ClassificationArticle, TranslationRow } from '@bantoozi/db';
 import { registrableDomain } from '@bantoozi/feeds';
-import { matchStateSha256 } from '@bantoozi/questions';
+import { enrichStateSha256, matchStateSha256 } from '@bantoozi/questions';
 import { selectBestTranslation } from '@bantoozi/translate';
 import { describe, expect, it } from 'vitest';
 
@@ -153,6 +153,73 @@ describe('match-state hash parity between API and worker', () => {
     const unknown = article(null);
     expect(apiHash(unknown, rows, { sk: 'translate' })).toBe(
       workerHash(unknown, rows, { sk: 'translate' }),
+    );
+  });
+});
+
+/** The API's enrich-state hash (`matchFingerprintFor`) against the enrich handler's `buildState`. */
+function apiEnrichHash(
+  a: ClassificationArticle,
+  rows: readonly TranslationRow[],
+  languageModes: LanguageModes,
+): string {
+  const feed = a.feed;
+  return enrichStateSha256(
+    {
+      title: a.title,
+      author: a.author,
+      categories: a.categories,
+      excerpt: a.excerpt,
+      bodyLead: a.bodyLead,
+      wordCount: a.wordCount,
+      lang: a.lang,
+      feed: {
+        title: feed?.title ?? null,
+        site:
+          feed === null ? null : (registrableDomain(feed.siteUrl) ?? registrableDomain(feed.url)),
+      },
+    },
+    languageModes,
+    selectBestTranslation(rows, a.revision),
+  );
+}
+
+const workerEnrichHash = (
+  a: ClassificationArticle,
+  rows: readonly TranslationRow[],
+  languageModes: LanguageModes,
+): string => buildState(modelInput(a, rows, config(languageModes)), 'enrich').sha256;
+
+describe('enrich-state hash parity between API and worker', () => {
+  it('native mode, translate mode and unusable translations', () => {
+    const a = article('sk');
+    const usable = [row({ engine: 'ollama', quality: 'ok', title: 'Best headline' })];
+    const cases: [readonly TranslationRow[], LanguageModes][] = [
+      [[], { sk: 'native' }],
+      [usable, { sk: 'native' }],
+      [usable, { sk: 'translate' }],
+      [[], { sk: 'translate' }],
+      [[row({ quality: 'fail' })], { sk: 'translate' }],
+      [[row({ articleRevision: '6' })], { sk: 'translate' }],
+    ];
+    for (const [rows, modes] of cases) {
+      expect(apiEnrichHash(a, rows, modes)).toBe(workerEnrichHash(a, rows, modes));
+    }
+    expect(workerEnrichHash(a, usable, { sk: 'translate' })).not.toBe(
+      workerEnrichHash(a, [], { sk: 'native' }),
+    );
+  });
+
+  it('differs from the match-state hash of the same input', () => {
+    const a = article('sk');
+    expect(apiEnrichHash(a, [], {})).not.toBe(apiHash(a, [], {}));
+  });
+
+  it('an unknown language is native', () => {
+    const unknown = article(null);
+    const rows = [row({})];
+    expect(apiEnrichHash(unknown, rows, { sk: 'translate' })).toBe(
+      workerEnrichHash(unknown, rows, { sk: 'translate' }),
     );
   });
 });

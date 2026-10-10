@@ -3,6 +3,7 @@ import {
   loadLearnConsent,
   loadRankCards,
   readRatingFingerprint,
+  type RatingDefaults,
   type ActiveModelRow,
   type Executor,
 } from '@bantoozi/db';
@@ -76,7 +77,12 @@ function parseScoringModel(row: ActiveModelRow): ScoringModel | null {
  */
 export async function loadRankModelState(
   db: Executor,
-  input: { userId: string; config: RankerConfig; hashes: ReadonlyMap<string, string> },
+  input: {
+    userId: string;
+    config: RankerConfig;
+    hashes: ReadonlyMap<string, string>;
+    ratingDefaults: RatingDefaults;
+  },
 ): Promise<RankModelState> {
   const row = await loadActiveUserModel(db, input.userId);
   if (row === null) return { status: 'none' };
@@ -105,7 +111,7 @@ export async function loadRankModelState(
   });
   const contextSha = currentContextSha(
     {
-      ratingSha: await readRatingFingerprint(db),
+      ratingSha: await readRatingFingerprint(db, input.ratingDefaults),
       config: input.config,
       consent: await loadLearnConsent(db, input.userId),
       held,

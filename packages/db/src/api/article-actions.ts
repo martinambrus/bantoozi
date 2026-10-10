@@ -10,8 +10,10 @@ import {
   planLimits,
   readUserPreferences,
   type ArticleListItem,
+  type CardTextMode,
   type Explain,
   type JobSender,
+  type LanguageModes,
   type RankerConfig,
   type RatingReason,
   type Strength,
@@ -75,15 +77,62 @@ const RATING_FINGERPRINT_SETTINGS = [
  * The current rating fingerprint (spec 06 §8.1): the raw snapshot spec sha with the settings that
  * change the meaning of an answer. The API records it in each snapshot; learning compares against it.
  */
-export async function readRatingFingerprint(executor: Executor): Promise<string> {
-  return ratingShaOf(await readStoredSettings(executor, RATING_FINGERPRINT_SETTINGS));
+export async function readRatingFingerprint(
+  executor: Executor,
+  defaults: RatingDefaults,
+): Promise<string> {
+  return ratingShaOf(await readStoredSettings(executor, RATING_FINGERPRINT_SETTINGS), defaults);
 }
 
-/** The rating fingerprint of already-read stored settings (missing keys absent). */
-function ratingShaOf(stored: ReadonlyMap<string, unknown>): string {
+/** What the fingerprint settings read as when nothing is stored: the process's environment. */
+export interface RatingDefaults {
+  /** The model a worker answers with while `engine.model_pin` is unset (`TYPESAFE_MODEL`). */
+  model: string;
+  languageModes: LanguageModes;
+  cardTextMode: CardTextMode;
+}
+
+const objectOf = (value: unknown): Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+
+/** The model answers are attributed to: the stored pin, else the environment's model. */
+export function effectiveModel(
+  stored: ReadonlyMap<string, unknown>,
+  defaults: RatingDefaults,
+): string {
+  return textOrNull(objectOf(stored.get('engine.model_pin'))['model']) ?? defaults.model;
+}
+
+/**
+ * The fingerprint settings with the values they take effect as: a missing model pin, language mode
+ * map or card text mode stands for its environment default, so changing only a default changes the
+ * fingerprint.
+ */
+export function effectiveRatingSettings(
+  stored: ReadonlyMap<string, unknown>,
+  defaults: RatingDefaults,
+): Record<string, unknown> {
+  return {
+    'engine.model_pin': {
+      ...objectOf(stored.get('engine.model_pin')),
+      model: effectiveModel(stored, defaults),
+    },
+    'question_sets.active': stored.get('question_sets.active') ?? null,
+    language_modes: stored.get('language_modes') ?? defaults.languageModes,
+    card_text_mode: stored.get('card_text_mode') ?? defaults.cardTextMode,
+  };
+}
+
+/** The rating fingerprint of already-read stored settings. */
+function ratingShaOf(stored: ReadonlyMap<string, unknown>, defaults: RatingDefaults): string {
   return createHash('sha256')
     .update(
-      canonicalJson({ specSha: FEATURE_SNAPSHOT_SPEC_SHA, settings: Object.fromEntries(stored) }),
+      canonicalJson({
+        specSha: FEATURE_SNAPSHOT_SPEC_SHA,
+        settings: effectiveRatingSettings(stored, defaults),
+      }),
     )
     .digest('hex');
 }
@@ -121,10 +170,25 @@ export interface ReaderFence {
  * `card_input_sha256` of each card's question), computed by the API from the one locked settings
  * read; null when it cannot be computed.
  */
-export type MatchFingerprint = (
-  tx: TenantTx,
-  input: { articleId: string; cardIds: readonly string[]; settings: ReadonlyMap<string, unknown> },
-) => Promise<{ stateSha256: string; cardInputSha256: ReadonlyMap<string, string> } | null>;
+export interface MatchFingerprint {
+  (
+    tx: TenantTx,
+    input: {
+      articleId: string;
+      cardIds: readonly string[];
+      settings: ReadonlyMap<string, unknown>;
+    },
+  ): Promise<{
+    stateSha256: string;
+    enrichStateSha256: string;
+    cardInputSha256: ReadonlyMap<string, string>;
+  } | null>;
+  /** The environment defaults of the fingerprint settings the injecting process runs with. */
+  defaults: RatingDefaults;
+}
+
+/** Defaults of a caller that injects no fingerprint: its snapshots keep no answer or facet anyway. */
+const NO_DEFAULTS: RatingDefaults = { model: '', languageModes: {}, cardTextMode: 'as_written' };
 
 export interface ActionInput {
   articleId: string;
@@ -668,6 +732,8 @@ async function captureFeatures(
     story_cluster_id: string | null;
     cluster_size: number | null;
     facets: Record<string, unknown> | null;
+    facets_state_sha256: string | null;
+    facets_model: string | null;
   }>(sql`
     WITH inf AS (
       SELECT s.feed_id FROM subscriptions s
@@ -689,11 +755,13 @@ async function captureFeatures(
            a.lang, a.author, a.published_at, a.first_seen_at, a.enrich_engine,
            a.media_revision::text AS media_revision, a.story_cluster_id::text AS story_cluster_id,
            sc.size AS cluster_size,
-           (SELECT f.features FROM article_facets f
-             WHERE f.article_id = a.id AND f.article_revision = a.content_revision
-               AND f.question_set_id::text = ${enrichSet}::text
-             ORDER BY f.updated_at DESC LIMIT 1) AS facets
+           fa.features AS facets, fa.state_sha256 AS facets_state_sha256, fa.model AS facets_model
       FROM articles a LEFT JOIN story_clusters sc ON sc.id = a.story_cluster_id
+      LEFT JOIN LATERAL (
+        SELECT f.features, f.state_sha256, f.model FROM article_facets f
+         WHERE f.article_id = a.id AND f.article_revision = a.content_revision
+           AND f.question_set_id::text = ${enrichSet}::text
+         ORDER BY f.updated_at DESC LIMIT 1) fa ON true
      WHERE a.id = ${id}::bigint`);
   const row = result.rows[0];
   if (row === undefined) return { features: null, staleAtFeedback: null };
@@ -715,10 +783,11 @@ async function captureFeatures(
     strength: Strength;
     p: number | null;
     engine: string | null;
+    model: string | null;
     state_sha256: string | null;
     card_input_sha256: string | null;
   }>(sql`
-    SELECT uc.card_id::text AS id, uc.strength, ca.p, ca.engine, ca.state_sha256,
+    SELECT uc.card_id::text AS id, uc.strength, ca.p, ca.engine, ca.model, ca.state_sha256,
            ca.card_input_sha256
       FROM user_cards uc
       JOIN interest_cards c ON c.id = uc.card_id AND c.kind = 'interest'
@@ -732,18 +801,26 @@ async function captureFeatures(
        AND (uc.scope_feed_id IS NULL
             OR uc.scope_feed_id::text = ANY(${sql.param(row.inference_feed_ids)}::text[]))
      ORDER BY uc.card_id`);
-  const ratingSha = ratingShaOf(stored);
+  const defaults = options.matchFingerprint?.defaults ?? NO_DEFAULTS;
+  const ratingSha = ratingShaOf(stored, defaults);
+  const model = effectiveModel(stored, defaults);
   const current =
-    options.matchFingerprint === undefined || !cards.rows.some((card) => card.p !== null)
+    options.matchFingerprint === undefined ||
+    !(row.facets !== null || cards.rows.some((card) => card.p !== null))
       ? null
       : await options.matchFingerprint(tx, {
           articleId: id,
           cardIds: cards.rows.map((card) => card.id),
           settings: stored,
         });
+  const facetsCurrent =
+    current !== null &&
+    row.facets_state_sha256 === current.enrichStateSha256 &&
+    row.facets_model === model;
   const usable = (card: (typeof cards.rows)[number]): boolean =>
     card.p !== null &&
     current !== null &&
+    card.model === model &&
     card.state_sha256 === current.stateSha256 &&
     card.card_input_sha256 === current.cardInputSha256.get(card.id);
   return {
@@ -758,8 +835,8 @@ async function captureFeatures(
         engine: usable(card) ? card.engine : null,
       })),
       values: {
-        facets: row.facets,
-        facetsEngine: row.enrich_engine,
+        facets: facetsCurrent ? row.facets : null,
+        facetsEngine: facetsCurrent ? row.enrich_engine : null,
         wordCount: row.word_count,
         ageHours,
         lang: row.lang,
@@ -1244,7 +1321,11 @@ interface RatingTarget {
  * value (model pin, language mode) keep their environment default, which the fingerprint cannot
  * have changed; a manifest field the snapshot lacks is not a disagreement.
  */
-async function requestRatingSha(tx: Executor, snapshot: unknown): Promise<string | null> {
+async function requestRatingSha(
+  tx: Executor,
+  snapshot: unknown,
+  defaults: RatingDefaults,
+): Promise<string | null> {
   const stored = await readRatingSettingsLocked(tx);
   const sets = stored.get('question_sets.active');
   const frozenSets = objectField(snapshot, 'questionSets');
@@ -1264,7 +1345,7 @@ async function requestRatingSha(tx: Executor, snapshot: unknown): Promise<string
   for (const [frozen, current] of checks) {
     if (frozen !== undefined && current !== null && textOrNull(frozen) !== current) return null;
   }
-  return ratingShaOf(stored);
+  return ratingShaOf(stored, defaults);
 }
 
 /** Apply one rating under an existing lock; returns its undo target. */
@@ -1299,7 +1380,11 @@ async function applyRating(
   });
   const ratingSha =
     request !== null && capture.features === null
-      ? await requestRatingSha(tx, request.snapshot)
+      ? await requestRatingSha(
+          tx,
+          request.snapshot,
+          options.matchFingerprint?.defaults ?? NO_DEFAULTS,
+        )
       : null;
   const row = article.row;
   const patch: ReaderPatch =
