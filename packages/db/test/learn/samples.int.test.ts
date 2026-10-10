@@ -336,6 +336,17 @@ describe('housekeeping and neutral events never train', () => {
     });
   });
 
+  it('an open before the last unrate does not suppress a later explicit read', async () => {
+    const s = await Scenario.create(ctx, BOTH);
+    const a = await s.article();
+    await s.open(a);
+    await s.rate(a, 1);
+    await s.rate(a, null);
+    await s.unread(a);
+    await s.read(a);
+    expect(only(await s.samples())).toMatchObject({ signal: 'read', y: 0, weight: 0.1 });
+  });
+
   it('an unbookmark removes the bookmark sample, and a new bookmark makes a fresh one', async () => {
     const s = await Scenario.create(ctx);
     const a = await s.article();

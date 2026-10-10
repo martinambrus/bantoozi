@@ -183,7 +183,7 @@ export function reduceArticle(input: ReduceInput): LearnSample | null {
       read.value.signalOrigin === 'explicit' &&
       consent(read, 'implicitFeedback') &&
       consent(read, 'implicitNegative') &&
-      !opens.some((o) => big(o.id) < big(read.id))
+      !opens.some((o) => big(o.id) > floor && big(o.id) < big(read.id))
     ) {
       return make(read, 'read', 0, 0.1, false, featuresOf(read));
     }
