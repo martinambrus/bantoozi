@@ -570,6 +570,51 @@ describe('/rating and /prompt-answer', () => {
       { userId: r.user.id },
     ]);
   });
+
+  it.each([
+    ['rating', 1],
+    ['rating', -1],
+    ['prompt', 1],
+    ['prompt', -1],
+    ['bulk', 1],
+    ['bulk', -1],
+  ] as const)(
+    'forces learning below the threshold for a %s flip from %s, but not a same-label rerating',
+    async (path, previous) => {
+      const { r, article } = await setup();
+      const initial = await ok(
+        r.api.post(`/articles/${article}/rating`, { ...freshFence, rating: previous }),
+      );
+      expect(await queues(r.user.id)).not.toContain('user.learn');
+      const mutate = (rating: 1 | -1, item: Item) => {
+        if (path === 'bulk') {
+          return r.api.post('/articles/rate-bulk', {
+            targets: [{ id: article, ...fence(item) }],
+            rating,
+          });
+        }
+        return r.api.post(
+          `/articles/${article}/${path === 'prompt' ? 'prompt-answer' : 'rating'}`,
+          {
+            ...fence(item),
+            ...(path === 'prompt' ? { liked: rating === 1 } : { rating }),
+          },
+        );
+      };
+      const unchanged = await mutate(previous, initial.item);
+      expect(unchanged.statusCode, unchanged.body).toBe(200);
+      expect(await queues(r.user.id)).not.toContain('user.learn');
+      const current = await readerState(h, r.user.id, article);
+      const changed = await mutate(previous === 1 ? -1 : 1, {
+        ...initial.item,
+        stateVersion: current!.state_version,
+      });
+      expect(changed.statusCode, changed.body).toBe(200);
+      expect((await outbox(h, r.user.id, 'user.learn')).map((job) => job.payload)).toEqual([
+        { userId: r.user.id },
+      ]);
+    },
+  );
 });
 
 describe('example suggestions (spec 06 §10)', () => {

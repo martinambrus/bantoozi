@@ -650,7 +650,8 @@ ranking until enough compatible feedback exists.
   of them when no model stored one). Label events never count. Do not use `n % 10 == 0`; it
   misses batches and concurrent updates. Count event ids with
   deterministic effective-state reduction, not only current non-null `rated_at` rows.
-- Undo/unrate/deletion invalidates affected models and enqueues learn even below ten; the API cannot
+- Undo/unrate/deletion and explicit rating label flips (single, prompt or bulk) invalidate affected
+  models and enqueue learn even below ten; same-label reratings still use the normal threshold. The API cannot
   write `user_models`, so `user.learn` deactivates a model whose evidence was revoked on its next
   (debounced) run, and the rank handler never scores an incompatible model (D-168).
   So does a model-context mismatch (§8.1). Every interest-card change, every behavioral-consent change

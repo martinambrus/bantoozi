@@ -1450,6 +1450,11 @@ async function applyRating(
   return { articleId: target.articleId, resultVersion: version, before };
 }
 
+function ratingRevokesEvidence(target: UndoTarget, rating: 1 | -1 | null): boolean {
+  const previous = target.before.rating;
+  return rating === null || ((previous === 1 || previous === -1) && previous !== rating);
+}
+
 /**
  * `/rating` (spec 08 §5.3): set the explicit rating (`null` clears rating, reason and `rated_at`
  * and leaves read/archive alone); a non-null rating marks read under `markReadOnRate`; `hide:true`
@@ -1498,7 +1503,13 @@ export async function rateArticle(
     },
   );
   await rankFull(tx, lock.user, input.outbox, 'feedback:rating');
-  await recordLearnIntent(tx, lock.user, input.outbox, config, input.rating === null);
+  await recordLearnIntent(
+    tx,
+    lock.user,
+    input.outbox,
+    config,
+    ratingRevokesEvidence(target, input.rating),
+  );
   return {
     articleIds: [input.articleId],
     changed: true,
@@ -1528,7 +1539,13 @@ export async function answerPrompt(
     { kind: 'prompt_answer', now: input.now, config, matchFingerprint: input.matchFingerprint },
   );
   await rankFull(tx, lock.user, input.outbox, 'feedback:prompt');
-  await recordLearnIntent(tx, lock.user, input.outbox, config, false);
+  await recordLearnIntent(
+    tx,
+    lock.user,
+    input.outbox,
+    config,
+    ratingRevokesEvidence(target, input.liked ? 1 : -1),
+  );
   return {
     articleIds: [input.articleId],
     changed: true,
@@ -1565,7 +1582,13 @@ export async function rateArticlesBulk(
     );
   }
   await rankFull(tx, lock.user, input.outbox, 'feedback:rating');
-  await recordLearnIntent(tx, lock.user, input.outbox, config, input.rating === null);
+  await recordLearnIntent(
+    tx,
+    lock.user,
+    input.outbox,
+    config,
+    targets.some((target) => ratingRevokesEvidence(target, input.rating)),
+  );
   return {
     articleIds: input.targets.map((t) => t.articleId),
     changed: true,
