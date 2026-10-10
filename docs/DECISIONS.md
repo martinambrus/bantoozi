@@ -1471,3 +1471,65 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   persistent toast. It is now a bar fixed at the top of every screen (it pushes the sticky header
   and reader panes down through `--update-bar-height`) with Reload and Dismiss; each tab still keeps
   its version until the person reloads it, and only the tab that asked reloads. Spec 09 §1 updated.
+- D-164: 2026-10-10 M7-T6 — `user.suggest` details spec 05 §7 left open. (1) An off-only user (no
+  active subscription and no live selected request) is a step-1 stop that also deletes the user's
+  undismissed suggestions, like a run whose evidence expired (owner decision). (2) Until M8 records
+  `settings['engine.model_pin']` (D-150), the current pin is that setting's `model` when present,
+  else the worker's primary TypeSafe model; an answer from another model is discarded. The finishing
+  transaction share-locks `question_sets.active` and, when it exists, the pin row; the first write of
+  a missing pin row is therefore not fenced against a run in flight (open item for M8, which seeds
+  the row). Spec 05 §7 updated.
+- D-165: 2026-10-10 M7-T1 — `FEATURE_SPEC_V1` readings. (1) `cluster_log = ln(1 + max(1,
+  clusterSize))`: the API snapshot stores 0 for an unclustered article while live ranking uses 1, so
+  both builders treat an unclustered article as a story of one (no train/serve skew). (2) Facets are
+  all or nothing: `flattenFacets` already fails on a missing answer, so instead of one mask per facet a
+  map missing any of the 44 keys or holding a value outside [0, 1] makes the sample ineligible
+  (`invalid_facets`) and the item model-ineligible; the builder copies each valid key. (3) Snapshots
+  are checked against the raw snapshot spec sha the API stamps (`RAW_SNAPSHOT_SPEC_SHA`), not
+  `FEATURE_SPEC_V1_SHA`, which enters the model context instead. Spec 06 §8.1 updated.
+- D-166: 2026-10-10 M7-T2, M7-F1 — training labels and event-time snapshots. (1) An undo event does
+  not name what it restored, so the reduction anchors on the current `user_article` row: the rating
+  event whose `created_at` equals `rated_at`, else the latest bookmark, else consented implicit
+  evidence after the last `unrate` (dwell when a session has a report ≥ 30 s, else bounce, else an
+  explicit read without an open). (2) A dwell or bounce sample uses its session's `open` snapshot; a
+  rating without its own snapshot uses the latest earlier rating snapshot of the same content
+  revision. (3) The API snapshot now reads facets of the active enrich set only and card answers of
+  the active match set in the variant of the article language's mode (`state_variant`), as the
+  ranker does; packages/db cannot recompute the question-state or card-input hashes, so an answer left
+  stale by a card-text-mode change until its rematch can still be captured (its ratingSha then
+  differs only if the setting changed before the capture), and a missing `language_modes` row counts
+  as native there while the worker falls back to its environment default. Spec 06 §8.2 updated.
+- D-167: 2026-10-10 M7-T3 — training readings. (1) The Platt prior "strength 0.01" is
+  `0.01/2·((a−1)² + b²)` added to the summed loss. (2) λ ties are |Δloss| ≤ 1e-12·max(1, |loss|).
+  (3) The seed cannot include the model context sha, which depends on the own inputs that training
+  chooses; it is derived from the user id, rating fingerprint, feature spec, config, consent and the
+  feedback cutoff. (4) Duplicate samples of one article keep the latest; a production run below the
+  minimums stores the attempt with its reason and no model. (5) Metrics carry 95 % grouped
+  bootstrap intervals (1,000 resamples of story groups) for the out-of-fold AUC, the cards-only
+  baseline and their difference. Spec 06 §8.3 updated.
+- D-168: 2026-10-10 M7-T4 — `user.learn`. (1) The API has no write grant on `user_models`, so
+  "undo/unrate/deletion invalidates affected models immediately" happens in `user.learn` on its next
+  debounced run (the API already records the intent), and the rank handler never scores a model whose
+  context no longer matches. Evidence counts as revoked when an article in the model's samples no
+  longer has a sample; a changed rating keeps it. (2) A run trains only when its input hash changed:
+  the eligible samples (membership, label, weight and snapshot content, not their timestamps, so
+  only expiry changes the set over time), the rating fingerprint, the feature spec, the held cards
+  that appear in eligible snapshots, config and consent. (3) `user_models.metrics` holds the trainer
+  metrics plus `status` (`activated`/`rejected`/`superseded`), `reason`, `feedbackCutoffEventId`,
+  `inputSha`, `contextSha`, `ratingSha`, `ownInputs` with their strength, scope and input hash, and
+  the sample keys. Spec 06 §8.4 updated.
+- D-169: 2026-10-10 M7-T7 — `eval learning-curve` builds each rated item as an API raw snapshot from
+  the frozen run: `now` is the rater's last rating time and no rating fingerprint is checked; age is
+  rating time minus first publication; media inputs are unknown (`hasImage` false); a story's size is
+  its number of sampled articles; a repeated rating keeps the latest; "beats cards-only" means a
+  strictly higher test AUC. The report is committed as
+  `apps/eval/reports/LEARNING-CURVE-<dataset>-<date>-decision.md` (owner decision). Spec 10 §3
+  updated.
+- D-170: 2026-10-10 M7-T5 — model scoring and its explanation. (1) Owner decision: the ranker sends
+  stable feature keys and the web localizes them in English and Slovak ("your Love interests",
+  "Type: Opinion", "articles from this source group"); an own card input keeps the card's current
+  title from the worker, and the drawer adds whether each factor raised or lowered the score and a
+  note that these are learned associations, not reasons. (2) The rank handler treats a stored model
+  whose feature spec differs from `FEATURE_SPEC_V1` or whose layout cannot be read as incompatible,
+  like a context mismatch: it scores without it and records one debounced `user.learn`, which then
+  deactivates it. Spec 06 §8.3 updated.
