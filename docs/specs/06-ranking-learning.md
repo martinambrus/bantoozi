@@ -660,6 +660,8 @@ ranking until enough compatible feedback exists.
   and weight keeps it.
 - A selected analysis request completing valid features for already-recorded feedback also enqueues
   learning; the earlier pending rating must not be stranded below a stale training watermark.
+- An article identity merge also enqueues learning for affected users in the merge transaction:
+  collapsing two samples into one revokes the model's evidence for the retired identity.
 - `house.nightly-learn` enqueues users whose effective input manifest differs from the last attempt,
   including implicit-only changes and expiry; users with no changed inputs do not retrain.
 - Handler: under per-user serialization capture a committed feedback cutoff, rating fingerprint and

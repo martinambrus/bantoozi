@@ -1,4 +1,4 @@
-import { loadLearnSamples, rateArticle } from '@bantoozi/db';
+import { loadLearnSamples, mergeArticles, rateArticle, workerOutbox } from '@bantoozi/db';
 import { DEFAULT_RANKER_CONFIG, FEATURE_SPEC_V1_SHA, modelContextSha } from '@bantoozi/ranker';
 import { HOUSE_CRON_SCHEDULES } from '@bantoozi/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -428,6 +428,41 @@ describe('user.learn and house.nightly-learn (M7-T4)', () => {
     expect((await w.userIntents('user.rank', userId, mark)).some((p) => p['full'] === true)).toBe(
       true,
     );
+  });
+
+  it('an article merge records learning so a model trained on both identities is replaced or deactivated', async () => {
+    const userId = await w.user();
+    await w.rateRange(userId, 0, RATED);
+    const articles: string[] = [];
+    for (const rating of [1, -1] as const) {
+      const articleId = await h.article({ feedIds: [w.feedId], title: `Merge sample ${rating}` });
+      await h.enrichDirect(articleId);
+      await h.answerCard(articleId, w.cardM, {
+        engine: 'typesafe',
+        p: rating === 1 ? 0.9 : 0.1,
+      });
+      await w.run(userId, articleId, (tx, base) =>
+        rateArticle(tx, { ...base, rating, reason: null, hide: false }),
+      );
+      articles.push(articleId);
+    }
+    await learn(userId);
+    expect((await w.active(userId)).map((model) => model.version)).toEqual([1]);
+    await h.clearOutbox();
+    const mark = await h.mark();
+    const merged = await h.db.transaction((tx) =>
+      mergeArticles(tx, workerOutbox(tx), articles[0]!, articles[1]!, {
+        reason: 'rel_canonical',
+      }),
+    );
+    expect(merged.status).toBe('merged');
+    const { samples } = await loadLearnSamples(h.db, { userId, now: new Date() });
+    expect(samples).toHaveLength(RATED + 1);
+    expect(await w.userIntents('user.learn', userId, mark)).toHaveLength(1);
+
+    await learn(userId);
+    expect((await w.models(userId)).find((model) => model.version === 1)?.active).toBe(false);
+    expect((await w.active(userId)).every((model) => model.version > 1)).toBe(true);
   });
 
   it('house.nightly-learn has a cron schedule in HOUSE_CRON_SCHEDULES', () => {

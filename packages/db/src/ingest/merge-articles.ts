@@ -1,4 +1,4 @@
-import { enqueueCaptureBookmark, type JobSender } from '@bantoozi/shared';
+import { enqueueCaptureBookmark, enqueueLearn, type JobSender } from '@bantoozi/shared';
 import { sql, type SQL } from 'drizzle-orm';
 
 import type { Transaction } from '../client.js';
@@ -153,7 +153,7 @@ type EvalArticleTable = (typeof EVAL_ARTICLE_TABLES)[number];
  * - `story_clusters`: both articles' clusters are reconciled after the source is deleted.
  * - `engine_calls` (SET NULL): audit rows stay audit rows; like any purged article's, they detach
  *   from the retired identity (their revision numbers belong to it).
- * - A full rank is recorded for every active affected user (reader-row owners and carriers'
+ * - A full rank and learning job are recorded for every active affected user (reader-row owners and carriers'
  *   subscribers of both articles), and a local bookmark capture when a surviving bookmark is
  *   still `pending`.
  * The source's queued jobs become no-ops (a missing article is done). The next pipeline stage is
@@ -227,6 +227,9 @@ export async function mergeArticles(
 
   const affectedUserIds = await activeAffectedUserIds(tx, targetId);
   await recordRankIntents(tx, sender, affectedUserIds, { reason: MERGE_RANK_REASON, full: true });
+  for (const userId of affectedUserIds) {
+    await enqueueLearn(sender, { userId });
+  }
   if (await hasPendingCapture(tx, targetId)) {
     await enqueueCaptureBookmark(sender, { articleId: targetId }, { revision: reset.revision });
   }
