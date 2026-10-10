@@ -479,4 +479,40 @@ describe('user.learn and house.nightly-learn (M7-T4)', () => {
       await h.deleteSetting('ranker.thresholds');
     }
   });
+
+  it.each([1, 180])(
+    'house.nightly-learn clears suggestions for an active user whose likes expired beyond a %i-day model history',
+    async (historyDays) => {
+      const userId = await w.user({ lastActiveDaysAgo: 0 });
+      await w.rate(userId, 0, 1);
+      await w.ageRating(userId, 0, Math.max(historyDays, 30) + 1);
+      expect(await w.models(userId)).toEqual([]);
+      const cardId = await h.card({
+        interest: `Expired suggestion ${historyDays}`,
+        visibility: 'public',
+      });
+      await h.owner.query(
+        `INSERT INTO card_suggestions (user_id, card_id, question_set_id, model_pin, score)
+         SELECT $1, $2, (value->>'suggest')::bigint, $3, 0.5
+           FROM settings WHERE key = 'question_sets.active'`,
+        [userId, cardId, h.router.primaryModel],
+      );
+      await h.setSetting('ranker.thresholds', { model: { historyDays } });
+      try {
+        const mark = await h.mark();
+        await h.dispatch('house.nightly-learn', {});
+        expect(await w.userIntents('user.suggest', userId, mark)).not.toHaveLength(0);
+        const callsBefore = h.router.asks.length;
+        await h.dispatch('user.suggest', { userId });
+        expect(h.router.asks).toHaveLength(callsBefore);
+        const remaining = await h.owner.query(
+          `SELECT card_id FROM card_suggestions WHERE user_id = $1 AND dismissed_at IS NULL`,
+          [userId],
+        );
+        expect(remaining.rows).toEqual([]);
+      } finally {
+        await h.deleteSetting('ranker.thresholds');
+      }
+    },
+  );
 });

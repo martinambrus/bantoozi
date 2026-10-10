@@ -22,8 +22,8 @@ export const SUGGEST_ACTIVE_DAYS = 7;
 const SUGGEST_LIKE_WINDOW_DAYS = 30;
 
 /**
- * `house.nightly-learn` (daily at 01:00 UTC, spec 11 §6, spec 06 §8.4): for every user with feedback
- * in the last `model.historyDays` or any stored model, recomputes the effective input manifest
+ * `house.nightly-learn` (daily at 01:00 UTC, spec 11 §6, spec 06 §8.4): for every recently active user,
+ * user with feedback in the history window, or user with any stored model, recomputes the input manifest
  * (implicit evidence, preferences, 180-day expiry included) and enqueues `user.learn` only when it
  * differs from the latest attempt's; users active in the last 7 days also get `user.suggest`, once
  * per day. Records the run in `settings['house.progress']`.

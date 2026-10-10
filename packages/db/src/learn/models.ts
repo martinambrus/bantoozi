@@ -162,8 +162,9 @@ export async function pruneUserModels(
 }
 
 /**
- * A page of the nightly learn candidates (spec 11 §6): live users with feedback since `feedbackSince`
- * (callers pass the older of the learn history and the 30-day suggestion like window) or any stored model, in id order after `after`, each flagged active since `activeSince`.
+ * A page of the nightly learn candidates (spec 11 §6): live users active since `activeSince`, with
+ * feedback since `feedbackSince` (the older of the learn history and the 30-day suggestion like
+ * window), or with any stored model, in id order after `after`, each flagged recently active.
  */
 export async function listNightlyLearnUsers(
   db: Executor,
@@ -177,6 +178,7 @@ export async function listNightlyLearnUsers(
      WHERE u.deleted_at IS NULL
        AND (${input.after}::uuid IS NULL OR u.id > ${input.after}::uuid)
        AND (EXISTS (SELECT 1 FROM user_models m WHERE m.user_id = u.id)
+         OR u.last_active_at >= ${input.activeSince.toISOString()}::timestamptz
          OR EXISTS (SELECT 1 FROM feedback_events f
                      WHERE f.user_id = u.id
                        AND f.created_at >= ${input.feedbackSince.toISOString()}::timestamptz))
