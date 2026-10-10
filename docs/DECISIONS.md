@@ -1495,10 +1495,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   rating without its own snapshot uses the latest earlier rating snapshot of the same content
   revision. (3) The API snapshot now reads facets of the active enrich set only and card answers of
   the active match set in the variant of the article language's mode (`state_variant`), as the
-  ranker does; packages/db cannot recompute the question-state or card-input hashes, so an answer left
-  stale by a card-text-mode change until its rematch can still be captured (its ratingSha then
-  differs only if the setting changed before the capture), and a missing `language_modes` row counts
-  as native there while the worker falls back to its environment default. Spec 06 §8.2 updated.
+  ranker does. The API also computes the current match-state and card-input hashes with the worker's
+  builders (`matchStateSha256`, `builtCardQuestion`) and passes them in, so an answer is kept only
+  when both hashes are current; the settings that select the sets, the mode and the stamped ratingSha
+  come from one share-locked read. A missing `language_modes` row counts as native in the variant
+  filter while the hashes use the environment default, which can only drop answers, never keep a
+  stale one. Spec 06 §8.2 updated.
 - D-167: 2026-10-10 M7-T3 — training readings. (1) The Platt prior "strength 0.01" is
   `0.01/2·((a−1)² + b²)` added to the summed loss. (2) λ ties are |Δloss| ≤ 1e-12·max(1, |loss|).
   (3) The seed cannot include the model context sha, which depends on the own inputs that training

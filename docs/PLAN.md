@@ -1206,9 +1206,8 @@ test AUC 0.709; the model 0.654, 0.651, 0.682, 0.717 and 0.720 at n = 10, 20, 30
 n = 50 rule does not fire. At n = 50 and 100 the production activation rule still rejects the model on
 its cross-validated AUC, so a model of this one participant would not have activated yet.
 Deviations: D-164…D-170 in `docs/DECISIONS.md`. No migrations. Open: the first write of
-`engine.model_pin` is not fenced against a suggestion run in flight (D-164; M8-T2 seeds the row and fences pin writes);
-the API snapshot cannot check the question-state and card-input
-hashes (D-166). Handoffs: M8-T2 needs no learn job of its own (`house.nightly-learn` is scheduled at
+`engine.model_pin` is not fenced against a suggestion run in flight (D-164; M8-T2 seeds the row and
+fences pin writes). PR #25 Codex review fixes are listed in its description. Handoffs: M8-T2 needs no learn job of its own (`house.nightly-learn` is scheduled at
 01:00); M8 records `engine.model_pin`.
 
 **Outcome:** per-user logistic models are trained on Jev features and feedback, calibrated, and
