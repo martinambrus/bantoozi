@@ -118,6 +118,8 @@ export interface SuggestLibraryRow {
   id: string;
   interest: string;
   notFor: string | null;
+  interestEn: string | null;
+  notForEn: string | null;
   topicIds: string[];
 }
 
@@ -136,10 +138,12 @@ export async function loadSuggestLibrary(
     id: string;
     interest: string | null;
     not_for: string | null;
+    interest_en: string | null;
+    not_for_en: string | null;
     topic_ids: string[];
   }>(sql`
     SELECT c.id::text AS id, c.body->>'interest' AS interest, c.body->>'not_for' AS not_for,
-           c.topic_ids
+           c.body->>'interest_en' AS interest_en, c.body->>'not_for_en' AS not_for_en, c.topic_ids
       FROM interest_cards c
      WHERE c.kind = 'interest' AND c.visibility = 'public' AND c.retired_at IS NULL
        AND NOT EXISTS (SELECT 1 FROM library_card_versions o
@@ -162,7 +166,16 @@ export async function loadSuggestLibrary(
     cards: cards.rows.flatMap((row) =>
       row.interest === null
         ? []
-        : [{ id: row.id, interest: row.interest, notFor: row.not_for, topicIds: row.topic_ids }],
+        : [
+            {
+              id: row.id,
+              interest: row.interest,
+              notFor: row.not_for,
+              interestEn: row.interest_en,
+              notForEn: row.not_for_en,
+              topicIds: row.topic_ids,
+            },
+          ],
     ),
     excludedCardIds: excluded.rows.map((row) => row.card_id),
   };

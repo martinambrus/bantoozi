@@ -700,4 +700,75 @@ describe('user.suggest (M7-T6, spec 05 §7)', () => {
       });
     }
   });
+
+  it('with card_text_mode english, a library card is offered with its English text and suggested on it', async () => {
+    const card = await publicCard('Keramika a hrnčiarstvo', ['transport']);
+    await owner.query(
+      `UPDATE interest_cards SET body = body || jsonb_build_object('interest_en', $2::text)
+        WHERE id = $1`,
+      [card.id, 'Zorblax electric trams'],
+    );
+    await owner.query(`UPDATE interest_cards SET retired_at = now() WHERE id = $1`, [libraryCardId]);
+    await setSetting('card_text_mode', 'english');
+    try {
+      const userId = await reader({ likes: 4 });
+      const from = fake.requestCount();
+      await runSuggest(userId);
+
+      const sent = JSON.stringify(fake.requests.slice(from).map((request) => request.body));
+      expect(sent).toContain('Zorblax electric trams');
+      expect(sent).not.toContain('Keramika a hrnčiarstvo');
+      const rows = await suggestions(userId);
+      expect(rows.map((r) => r.card_id)).toEqual([card.id]);
+      expect(rows[0]!.score).toBeCloseTo(0.7, 5);
+    } finally {
+      await setSetting('card_text_mode', 'as_written');
+      await owner.query(`UPDATE interest_cards SET retired_at = now() WHERE id = $1`, [card.id]);
+      await owner.query(`UPDATE interest_cards SET retired_at = NULL WHERE id = $1`, [libraryCardId]);
+    }
+  });
+
+  it('with card_text_mode english, a card with interest_en but a not_for lacking not_for_en is offered with the original pair, never mixed', async () => {
+    const card = await createCard(owner, {
+      visibility: 'public',
+      origin: 'library',
+      title: 'Tkanie a výšivky',
+      interest: 'Tkanie a výšivky',
+      notFor: 'Lacný nábytok',
+      topicIds: ['transport'],
+      slug: `suggest-${randomUUID()}`,
+    });
+    // The triggers reject an incomplete pair, so the row is written with them disabled.
+    const client = await owner.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`ALTER TABLE interest_cards DISABLE TRIGGER USER`);
+      await client.query(
+        `UPDATE interest_cards
+            SET body = body || jsonb_build_object('interest_en', $2::text)
+          WHERE id = $1`,
+        [card.id, 'Zorblax electric trams'],
+      );
+      await client.query(`ALTER TABLE interest_cards ENABLE TRIGGER USER`);
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+    await owner.query(`UPDATE interest_cards SET retired_at = now() WHERE id = $1`, [libraryCardId]);
+    await setSetting('card_text_mode', 'english');
+    try {
+      const userId = await reader({ likes: 4 });
+      const from = fake.requestCount();
+      await runSuggest(userId);
+
+      const sent = JSON.stringify(fake.requests.slice(from).map((request) => request.body));
+      expect(sent).toContain('Tkanie a výšivky');
+      expect(sent).toContain('Lacný nábytok');
+      expect(sent).not.toContain('Zorblax electric trams');
+    } finally {
+      await setSetting('card_text_mode', 'as_written');
+      await owner.query(`UPDATE interest_cards SET retired_at = now() WHERE id = $1`, [card.id]);
+      await owner.query(`UPDATE interest_cards SET retired_at = NULL WHERE id = $1`, [libraryCardId]);
+    }
+  });
 });

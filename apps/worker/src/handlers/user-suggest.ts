@@ -19,6 +19,7 @@ import {
 } from '@bantoozi/db';
 import {
   SUGGEST_QUESTION_KEY,
+  effectiveCardText,
   planSuggestion,
   stateSha256,
   suggestResults,
@@ -208,7 +209,18 @@ async function planFor(
   return planSuggestion({
     positiveCardCount: positive.length,
     likes,
-    libraryCards: library.cards,
+    libraryCards: library.cards.map((card) => {
+      const text = effectiveCardText(
+        {
+          interest: card.interest,
+          not_for: card.notFor,
+          interest_en: card.interestEn,
+          not_for_en: card.notForEn,
+        },
+        config.cardTextMode,
+      );
+      return { id: card.id, interest: text.interest, notFor: text.notFor, topicIds: card.topicIds };
+    }),
     excludedCardIds: new Set(library.excludedCardIds),
   });
 }
