@@ -15,6 +15,7 @@ import {
   writeL2Answers,
   type Database,
   type InferenceWitness,
+  type MatchFingerprint,
 } from '@bantoozi/db';
 import type {
   EngineOutcome,
@@ -733,6 +734,18 @@ export class ClassifyHarness {
   }
 
   // ── Classification state shortcuts (the fingerprints the handlers compute) ────────────────────
+
+  /** The match fingerprint the API computes for a feature snapshot, built the worker's way. */
+  readonly matchFingerprint: MatchFingerprint = async (_tx, { articleId, cardIds }) => {
+    const { config, input } = await this.inputs(articleId);
+    const cards = await loadCardInputs(this.db, cardIds);
+    return {
+      stateSha256: buildState(input, 'match').sha256,
+      cardInputSha256: new Map(
+        [...cards].map(([id, card]) => [id, builtCardQuestion(card, config.cardTextMode).sha256]),
+      ),
+    };
+  };
 
   private async inputs(articleId: string) {
     const config = await loadClassificationConfig(this.db, this.settingsEnv);

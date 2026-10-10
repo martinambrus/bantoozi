@@ -116,11 +116,22 @@ export interface ReaderFence {
   snapshotId?: string | undefined;
 }
 
+/**
+ * What the current match input of an article is (the `state_sha256` of its state and the
+ * `card_input_sha256` of each card's question), computed by the API from the one locked settings
+ * read; null when it cannot be computed.
+ */
+export type MatchFingerprint = (
+  tx: TenantTx,
+  input: { articleId: string; cardIds: readonly string[]; settings: ReadonlyMap<string, unknown> },
+) => Promise<{ stateSha256: string; cardInputSha256: ReadonlyMap<string, string> } | null>;
+
 export interface ActionInput {
   articleId: string;
   fence: ReaderFence;
   now: Date;
   outbox: JobSender;
+  matchFingerprint?: MatchFingerprint | undefined;
 }
 
 type ReaderField =
@@ -634,7 +645,7 @@ async function captureFeatures(
   article: LockedArticle,
   config: RankerConfig,
   now: Date,
-  options: { live: boolean },
+  options: { live: boolean; matchFingerprint?: MatchFingerprint | undefined },
 ): Promise<FeatureCapture> {
   if (!options.live) return { features: null, staleAtFeedback: null };
   const id = article.articleId;
@@ -707,8 +718,11 @@ async function captureFeatures(
     strength: Strength;
     p: number | null;
     engine: string | null;
+    state_sha256: string | null;
+    card_input_sha256: string | null;
   }>(sql`
-    SELECT uc.card_id::text AS id, uc.strength, ca.p, ca.engine
+    SELECT uc.card_id::text AS id, uc.strength, ca.p, ca.engine, ca.state_sha256,
+           ca.card_input_sha256
       FROM user_cards uc
       JOIN interest_cards c ON c.id = uc.card_id AND c.kind = 'interest'
       LEFT JOIN card_answers ca ON ca.article_id = ${id}::bigint AND ca.card_id = uc.card_id
@@ -723,6 +737,19 @@ async function captureFeatures(
             OR uc.scope_feed_id::text = ANY(${sql.param(row.inference_feed_ids)}::text[]))
      ORDER BY uc.card_id`);
   const ratingSha = ratingShaOf(stored);
+  const current =
+    options.matchFingerprint === undefined || !cards.rows.some((card) => card.p !== null)
+      ? null
+      : await options.matchFingerprint(tx, {
+          articleId: id,
+          cardIds: cards.rows.map((card) => card.id),
+          settings: stored,
+        });
+  const usable = (card: (typeof cards.rows)[number]): boolean =>
+    card.p !== null &&
+    current !== null &&
+    card.state_sha256 === current.stateSha256 &&
+    card.card_input_sha256 === current.cardInputSha256.get(card.id);
   return {
     staleAtFeedback,
     features: {
@@ -731,8 +758,8 @@ async function captureFeatures(
       cards: cards.rows.map((card) => ({
         id: card.id,
         strength: card.strength,
-        p: card.p,
-        engine: card.engine,
+        p: usable(card) ? card.p : null,
+        engine: usable(card) ? card.engine : null,
       })),
       values: {
         facets: row.facets,
@@ -840,6 +867,7 @@ export async function markArticleRead(
   const capture = behavioral
     ? await captureFeatures(tx, lock.user, article, config, input.now, {
         live: input.fence.snapshotId === undefined,
+        matchFingerprint: input.matchFingerprint,
       })
     : { features: null, staleAtFeedback: null };
   const patch: ReaderPatch = { readAt: input.now };
@@ -1003,6 +1031,7 @@ export async function openArticle(tx: TenantTx, input: ActionInput): Promise<Act
   const capture = behavioral
     ? await captureFeatures(tx, lock.user, article, config, input.now, {
         live: input.fence.snapshotId === undefined,
+        matchFingerprint: input.matchFingerprint,
       })
     : { features: null, staleAtFeedback: null };
   const wasRead = article.row?.readAt != null;
@@ -1084,6 +1113,7 @@ export async function recordDwell(
   const config = await readRankerConfig(tx);
   const capture = await captureFeatures(tx, lock.user, article, config, input.now, {
     live: input.fence.snapshotId === undefined,
+    matchFingerprint: input.matchFingerprint,
   });
   await writeReader(tx, lock.user, input.articleId, {
     dwellMs,
@@ -1216,6 +1246,7 @@ async function applyRating(
     now: Date;
     config: RankerConfig;
     suggestion?: ExampleSuggestionValue | null;
+    matchFingerprint?: MatchFingerprint | undefined;
   },
 ): Promise<UndoTarget> {
   const article = locked(lock, target.articleId);
@@ -1233,6 +1264,7 @@ async function applyRating(
   // Event-time context first: the snapshot describes what the reader rated, before the change.
   const capture = await captureFeatures(tx, lock.user, article, options.config, options.now, {
     live: revision === article.contentRevision,
+    matchFingerprint: options.matchFingerprint,
   });
   const ratingSha =
     request !== null && capture.features === null
@@ -1319,7 +1351,13 @@ export async function rateArticle(
     tx,
     lock,
     { ...input, reason },
-    { kind: 'rate', now: input.now, config, suggestion },
+    {
+      kind: 'rate',
+      now: input.now,
+      config,
+      suggestion,
+      matchFingerprint: input.matchFingerprint,
+    },
   );
   await rankFull(tx, lock.user, input.outbox, 'feedback:rating');
   await recordLearnIntent(tx, lock.user, input.outbox, config, input.rating === null);
@@ -1349,7 +1387,7 @@ export async function answerPrompt(
       hide: false,
       analysisRequestId: input.analysisRequestId,
     },
-    { kind: 'prompt_answer', now: input.now, config },
+    { kind: 'prompt_answer', now: input.now, config, matchFingerprint: input.matchFingerprint },
   );
   await rankFull(tx, lock.user, input.outbox, 'feedback:prompt');
   await recordLearnIntent(tx, lock.user, input.outbox, config, false);
@@ -1371,6 +1409,7 @@ export async function rateArticlesBulk(
     rating: 1 | -1 | null;
     now: Date;
     outbox: JobSender;
+    matchFingerprint?: MatchFingerprint | undefined;
   },
 ): Promise<ActionResult> {
   const lock = await lockFenced(tx, input.targets, false);
@@ -1383,7 +1422,7 @@ export async function rateArticlesBulk(
         tx,
         lock,
         { ...target, rating: input.rating, reason: null, hide: false },
-        { kind: 'rate', now: input.now, config },
+        { kind: 'rate', now: input.now, config, matchFingerprint: input.matchFingerprint },
       ),
     );
   }
@@ -1479,6 +1518,7 @@ export async function bookmarkArticle(
   const config = await readRankerConfig(tx);
   const capture = await captureFeatures(tx, lock.user, article, config, input.now, {
     live: input.fence.snapshotId === undefined,
+    matchFingerprint: input.matchFingerprint,
   });
   const bound = await tx.execute<{ snapshot_id: string | null; capture_status: string }>(sql`
     SELECT snapshot_id::text AS snapshot_id, capture_status

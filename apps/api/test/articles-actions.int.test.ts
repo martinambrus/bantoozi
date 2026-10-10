@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
+import { registrableDomain } from '@bantoozi/feeds';
+import { builtCardQuestion, matchStateSha256, type CardBody } from '@bantoozi/questions';
+import { readSetting } from '@bantoozi/shared';
 import { createCard } from '@bantoozi/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -112,6 +115,76 @@ async function holdCard(userId: string, strength: string, title = 'EV batteries'
 
 const QUESTION_SET_SHA = 'f'.repeat(64);
 
+/** The `state_sha256` and `card_input_sha256` a current answer of the article to the card carries. */
+async function currentHashes(
+  articleId: string,
+  cardId: string,
+): Promise<{ state: string; card: string }> {
+  const env = {
+    dailyBudgetUsd: h.config.dailyBudgetUsd,
+    languageModes: h.config.languageModes,
+    signupMode: h.config.signupMode,
+  };
+  const setting = async (key: string): Promise<unknown> =>
+    (await h.owner.query<{ value: unknown }>(`SELECT value FROM settings WHERE key = $1`, [key]))
+      .rows[0]?.value;
+  const article = (
+    await h.owner.query<{
+      title: string;
+      author: string | null;
+      categories: string[];
+      excerpt: string | null;
+      lang: string | null;
+      word_count: number | null;
+      body_lead: string | null;
+      feed_title: string | null;
+      feed_site_url: string | null;
+      feed_url: string | null;
+    }>(
+      `SELECT a.title, a.author, a.categories, a.excerpt, a.lang, a.word_count, b.body_lead,
+              f.title AS feed_title, f.site_url AS feed_site_url, f.url AS feed_url
+         FROM articles a
+         LEFT JOIN article_bodies b ON b.article_id = a.id AND b.article_revision = a.content_revision
+         LEFT JOIN LATERAL (SELECT fi.feed_id FROM feed_items fi WHERE fi.article_id = a.id
+                             ORDER BY fi.first_seen_at, fi.feed_id LIMIT 1) cf ON true
+         LEFT JOIN feeds f ON f.id = cf.feed_id
+        WHERE a.id = $1`,
+      [articleId],
+    )
+  ).rows[0]!;
+  const card = (
+    await h.owner.query<{ kind: 'interest' | 'label'; title: string; body: CardBody }>(
+      `SELECT kind, title, body FROM interest_cards WHERE id = $1`,
+      [cardId],
+    )
+  ).rows[0]!;
+  const languageModes = readSetting('language_modes', await setting('language_modes'), env) ?? {};
+  const mode = readSetting('card_text_mode', await setting('card_text_mode'), env) ?? 'as_written';
+  return {
+    state: matchStateSha256(
+      {
+        title: article.title,
+        author: article.author,
+        categories: article.categories,
+        excerpt: article.excerpt,
+        bodyLead: article.body_lead,
+        wordCount: article.word_count,
+        lang: article.lang,
+        feed: {
+          title: article.feed_title,
+          site:
+            article.feed_url === null && article.feed_site_url === null
+              ? null
+              : (registrableDomain(article.feed_site_url) ?? registrableDomain(article.feed_url)),
+        },
+      },
+      languageModes,
+      null,
+    ),
+    card: builtCardQuestion(card, mode).sha256,
+  };
+}
+
 async function answer(articleId: string, cardId: string, p: number, revision = 1): Promise<void> {
   await h.owner.query(
     `INSERT INTO question_sets (kind, version, sha256, definition)
@@ -125,11 +198,12 @@ async function answer(articleId: string, cardId: string, p: number, revision = 1
      ON CONFLICT (key) DO UPDATE SET value = settings.value || EXCLUDED.value`,
     [QUESTION_SET_SHA],
   );
+  const hashes = await currentHashes(articleId, cardId);
   await h.owner.query(
     `INSERT INTO card_answers (article_id, card_id, p, engine, question_set_sha, article_revision,
                                state_sha256, card_input_sha256, state_variant)
-     VALUES ($1, $2, $3, 'typesafe', $5, $4, 's', 'c', 'native')`,
-    [articleId, cardId, p, revision, QUESTION_SET_SHA],
+     VALUES ($1, $2, $3, 'typesafe', $5, $4, $6, $7, 'native')`,
+    [articleId, cardId, p, revision, QUESTION_SET_SHA, hashes.state, hashes.card],
   );
 }
 
@@ -1104,11 +1178,12 @@ describe('feature snapshot reads the current sets (spec 06 §8.2)', () => {
     sha: string,
     variant: 'native' | 'translated',
   ) {
+    const hashes = await currentHashes(articleId, cardId);
     await h.owner.query(
       `INSERT INTO card_answers (article_id, card_id, p, engine, question_set_sha, article_revision,
                                  state_sha256, card_input_sha256, state_variant)
-       VALUES ($1, $2, $3, 'typesafe', $4, 1, 's', 'c', $5)`,
-      [articleId, cardId, p, sha, variant],
+       VALUES ($1, $2, $3, 'typesafe', $4, 1, $6, $7, $5)`,
+      [articleId, cardId, p, sha, variant, hashes.state, hashes.card],
     );
   }
 
@@ -1263,5 +1338,64 @@ describe('revoking an explicit implicit-negative read', () => {
     const undo = await r.api.post('/articles/undo', { mutationId: read.mutationId });
     expect(undo.statusCode, undo.body).toBe(200);
     expect(await queues(r.user.id)).toContain('user.learn');
+  });
+});
+
+describe('card answers in the feature snapshot must match the current hashes', () => {
+  async function insertAnswer(
+    article: string,
+    card: string,
+    override: { state?: string; card?: string },
+  ) {
+    await h.owner.query(
+      `INSERT INTO question_sets (kind, version, sha256, definition)
+       VALUES ('match', 'articles-test', $1, '{}') ON CONFLICT DO NOTHING`,
+      [QUESTION_SET_SHA],
+    );
+    await h.owner.query(
+      `INSERT INTO settings (key, value)
+       SELECT 'question_sets.active', jsonb_build_object('match', id::text) FROM question_sets WHERE sha256 = $1
+       ON CONFLICT (key) DO UPDATE SET value = settings.value || EXCLUDED.value`,
+      [QUESTION_SET_SHA],
+    );
+    const hashes = await currentHashes(article, card);
+    await h.owner.query(
+      `INSERT INTO card_answers (article_id, card_id, p, engine, question_set_sha, article_revision,
+                                 state_sha256, card_input_sha256, state_variant)
+       VALUES ($1, $2, 0.7, 'typesafe', $3, 1, $4, $5, 'native')`,
+      [
+        article,
+        card,
+        QUESTION_SET_SHA,
+        override.state ?? hashes.state,
+        override.card ?? hashes.card,
+      ],
+    );
+  }
+
+  async function captured(override: { state?: string; card?: string }) {
+    const { r, article } = await setup();
+    const card = await holdCard(r.user.id, 'love', 'Hash check');
+    await insertAnswer(article, card, override);
+    await ok(r.api.post(`/articles/${article}/rating`, { ...freshFence, rating: 1 }));
+    const [event] = await events(h, r.user.id, article);
+    const features = event!.value['features'] as {
+      cards: { id: string; p: number | null; engine: string | null }[];
+    };
+    return features.cards.find((c) => c.id === card)!;
+  }
+
+  it('drops an answer whose state hash is obsolete', async () => {
+    expect(await captured({ state: 'obsolete-state' })).toMatchObject({ p: null, engine: null });
+  });
+
+  it('drops an answer whose card input hash is obsolete', async () => {
+    expect(await captured({ card: 'obsolete-card' })).toMatchObject({ p: null, engine: null });
+  });
+
+  it('keeps an answer whose hashes are current', async () => {
+    const card = await captured({});
+    expect(card.p).toBeCloseTo(0.7, 5);
+    expect(card.engine).toBe('typesafe');
   });
 });

@@ -10,7 +10,12 @@ import {
 
 import { cardInputSha256, cardQuestion, labelQuestion, type CardBody } from './cards.js';
 import { questionSetByVersion } from './sets/index.js';
-import { effectiveStateVariant } from './state.js';
+import {
+  buildArticleState,
+  effectiveStateVariant,
+  stateSha256,
+  type ArticleStateInput,
+} from './state.js';
 import type { NoulQuestion } from './types.js';
 
 /**
@@ -212,4 +217,30 @@ export function buildAnalysisInputSnapshot(input: AnalysisSnapshotInput): Analys
     model: { engine: 'typesafe', model: input.primaryModel },
     cards,
   });
+}
+
+/**
+ * The `state_sha256` of an article's Call B (match) state at its current revision: native text, or
+ * the usable best translation when the language is in `translate` mode (spec 05 §3.1). `base` is
+ * the native state input; `bestTranslation` is `selectBestTranslation`'s choice.
+ */
+export function matchStateSha256(
+  base: Omit<ArticleStateInput, 'translation'>,
+  languageModes: Readonly<LanguageModes>,
+  bestTranslation: SnapshotTranslationRow | null,
+): string {
+  const best =
+    languageModeFor(languageModes, base.lang) === 'translate'
+      ? usableTranslationRow(bestTranslation)
+      : null;
+  const input: ArticleStateInput =
+    best === null
+      ? base
+      : {
+          ...base,
+          translation: { title: best.title, excerpt: best.excerpt, bodyLead: best.bodyLead },
+        };
+  return stateSha256(
+    buildArticleState(input, best === null ? 'native' : 'translated', { call: 'match' }),
+  );
 }

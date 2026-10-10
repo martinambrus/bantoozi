@@ -146,7 +146,13 @@ export class LearnWorld {
     const fence = await this.fence(userId, articleId);
     const now = this.tick();
     return withTenant(this.appDb, userId, async (tx) => {
-      const result = await fn(tx, { articleId, fence, now, outbox: tenantOutbox(tx) });
+      const result = await fn(tx, {
+        articleId,
+        fence,
+        now,
+        outbox: tenantOutbox(tx),
+        matchFingerprint: this.h.matchFingerprint,
+      });
       let key: string | null = null;
       if (result.undo !== undefined) {
         key = randomUUID();
