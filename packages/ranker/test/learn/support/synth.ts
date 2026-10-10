@@ -1,4 +1,4 @@
-import { DEFAULT_RANKER_CONFIG, FEATURE_SPEC_V1_FACET_NAMES, FEATURE_SPEC_V1_SHA, seededRandom } from '../../../src/index.js';
+import { DEFAULT_RANKER_CONFIG, FEATURE_SPEC_V1_FACET_NAMES, RAW_SNAPSHOT_SPEC_SHA, seededRandom } from '../../../src/index.js';
 import type { RawFeatureSnapshot } from '../../../src/index.js';
 import type { HeldCard, TrainArgs, TrainingSample } from './api.js';
 
@@ -38,7 +38,7 @@ export function snapshot(feedbackAt: Date, o: SnapOpts = {}): RawFeatureSnapshot
   Object.assign(facets, o.facets ?? {});
   const p = (v: number | null | undefined, d: number): number | null => (v === undefined ? d : v);
   return {
-    specSha: FEATURE_SPEC_V1_SHA,
+    specSha: RAW_SNAPSHOT_SPEC_SHA,
     ratingSha: RATING_SHA,
     snapshotAt: new Date(feedbackAt.getTime() - 60_000).toISOString(),
     cards: [

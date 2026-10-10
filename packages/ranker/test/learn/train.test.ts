@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
+
+import * as ranker from '../../src/index.js';
 
 import {
   applyPlatt,
@@ -61,6 +64,13 @@ describe('sampleEligibility', () => {
   it('spec_sha_mismatch', () => {
     const s = withFeatures(base, (f) => ({ ...f, specSha: 'b'.repeat(64) }));
     expect(api.sampleEligibility(s, ELIG)).toEqual({ ok: false, reason: 'spec_sha_mismatch' });
+  });
+
+  it('accepts the raw snapshot spec sha the API stamps on every snapshot', () => {
+    const raw = createHash('sha256').update('bantoozi:feature-snapshot:raw-v1').digest('hex');
+    expect((ranker as Record<string, unknown>)['RAW_SNAPSHOT_SPEC_SHA']).toBe(raw);
+    const s = withFeatures(base, (f) => ({ ...f, specSha: raw }));
+    expect(api.sampleEligibility(s, ELIG)).toEqual({ ok: true });
   });
 
   it('rating_sha_mismatch', () => {

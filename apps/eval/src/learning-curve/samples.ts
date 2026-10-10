@@ -1,6 +1,6 @@
 import { flattenFacets, type Answer } from '@bantoozi/questions';
 import {
-  FEATURE_SPEC_V1_SHA,
+  RAW_SNAPSHOT_SPEC_SHA,
   type HeldCard,
   type RawFeatureSnapshot,
   type TrainingSample,
@@ -141,7 +141,7 @@ export function buildRaterSamples(input: {
     const { facets, engine } = facetsOf(run, articleId);
     const seen = Math.min(article.publishedAt ?? article.firstSeenAt, article.firstSeenAt);
     const features: RawFeatureSnapshot = {
-      specSha: FEATURE_SPEC_V1_SHA,
+      specSha: RAW_SNAPSHOT_SPEC_SHA,
       ratingSha: 'learning-curve',
       snapshotAt: new Date(at).toISOString(),
       cards: cards.map((card) => {

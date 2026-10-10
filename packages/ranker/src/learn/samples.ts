@@ -1,7 +1,7 @@
 import { canonicalSha256 } from '@bantoozi/shared/server';
 
 import { isProbability } from '../lanes.js';
-import { FEATURE_SPEC_V1_FACET_NAMES, FEATURE_SPEC_V1_SHA } from './feature-spec.js';
+import { FEATURE_SPEC_V1_FACET_NAMES, RAW_SNAPSHOT_SPEC_SHA } from './feature-spec.js';
 import type { RawFeatureSnapshot } from './features.js';
 
 const DAY_MS = 86_400_000;
@@ -39,7 +39,7 @@ export interface EligibilityOpts {
 
 /**
  * Whether a sample may be trained on (spec 06 §8.1-8.2): a stored event-time snapshot of the current
- * feature spec and rating fingerprint (both checks are skipped for a null `ratingSha`), within the
+ * raw snapshot spec and rating fingerprint (both checks are skipped for a null `ratingSha`), within the
  * history window, with valid typesafe facets and complete positive-card coverage. Never reconstructs.
  */
 export function sampleEligibility(
@@ -49,7 +49,7 @@ export function sampleEligibility(
   const f = s.features;
   if (f === null) return { ok: false, reason: 'missing_snapshot' };
   if (opts.ratingSha !== null) {
-    if (f.specSha !== FEATURE_SPEC_V1_SHA) return { ok: false, reason: 'spec_sha_mismatch' };
+    if (f.specSha !== RAW_SNAPSHOT_SPEC_SHA) return { ok: false, reason: 'spec_sha_mismatch' };
     if (f.ratingSha !== opts.ratingSha) return { ok: false, reason: 'rating_sha_mismatch' };
   }
   const cutoff = opts.now.getTime() - opts.historyDays * DAY_MS;

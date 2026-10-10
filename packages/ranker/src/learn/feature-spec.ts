@@ -1,4 +1,4 @@
-import { canonicalSha256 } from '@bantoozi/shared/server';
+import { canonicalSha256, sha256Hex } from '@bantoozi/shared/server';
 
 const CONTENT_TYPES = [
   'news_report',
@@ -141,3 +141,9 @@ export function featureSpecSha(descriptor: typeof FEATURE_SPEC_V1_DESCRIPTOR): s
 
 /** The sha stored with every model and snapshot that uses `FEATURE_SPEC_V1`. */
 export const FEATURE_SPEC_V1_SHA: string = featureSpecSha(FEATURE_SPEC_V1_DESCRIPTOR);
+
+/**
+ * Identity of the raw event-time snapshot the API stamps as `features.specSha` (spec 06 §8.2, D-128);
+ * FEATURE_SPEC_V1 derives its inputs from that snapshot at training time.
+ */
+export const RAW_SNAPSHOT_SPEC_SHA: string = sha256Hex('bantoozi:feature-snapshot:raw-v1');
