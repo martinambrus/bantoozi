@@ -12,6 +12,7 @@ import type { WorkerDeps } from './deps.js';
 import { createFeedFetchHandler } from './feed-fetch.js';
 import { createFeedScheduleHandler } from './feed-schedule.js';
 import { createProviderValidateHandler } from './provider-validate.js';
+import { createAlertsHandler } from './house-alerts.js';
 import { createArchiveHandler } from './house-archive.js';
 import { createExpireRulesHandler } from './house-expire-rules.js';
 import { createNightlyLearnHandler } from './house-nightly-learn.js';
@@ -135,6 +136,9 @@ export const RETENTION_QUEUES = [
   'house.purge-users',
 ] as const satisfies readonly QueueName[];
 
+/** M8 operational alerts (spec 11 §6.1): implemented when the worker has a mailer. */
+export const ALERT_QUEUES = ['house.alerts'] as const satisfies readonly QueueName[];
+
 /** Queues with real handlers so far (M1 ingestion, M2 classification and key validation, M5 ranking, M7 learning). */
 export const IMPLEMENTED_QUEUES = [
   ...INGESTION_QUEUES,
@@ -144,6 +148,7 @@ export const IMPLEMENTED_QUEUES = [
   ...RANKING_QUEUES,
   ...LEARNING_QUEUES,
   ...RETENTION_QUEUES,
+  ...ALERT_QUEUES,
 ] as const satisfies readonly QueueName[];
 
 const implemented = <Q extends QueueName>(handle: QueueHandler<Q>): HandlerEntry<Q> => ({
@@ -206,6 +211,9 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
               }),
           'user.suggest': implemented(createUserSuggestHandler(deps)),
         }),
+    ...(deps.mailer === undefined
+      ? {}
+      : { 'house.alerts': implemented(createAlertsHandler(deps)) }),
     ...(providerValidation === undefined
       ? {}
       : {

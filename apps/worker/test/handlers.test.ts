@@ -2,7 +2,7 @@ import { QUEUE_NAMES, isAppError } from '@bantoozi/shared';
 import { describe, expect, it } from 'vitest';
 
 import type { Database } from '@bantoozi/db';
-import type { CredentialResolver } from '@bantoozi/shared/server';
+import type { CredentialResolver, Mailer } from '@bantoozi/shared/server';
 import type pg from 'pg';
 
 import type { TranslationDeps } from '../src/classify/translation.js';
@@ -12,6 +12,7 @@ import {
   type WorkerDepsInput,
 } from '../src/handlers/deps.js';
 import {
+  ALERT_QUEUES,
   CLASSIFICATION_QUEUES,
   HANDLERS,
   IMPLEMENTED_QUEUES,
@@ -123,6 +124,7 @@ describe('handler map', () => {
       createWorkerDeps({
         ...baseDeps,
         classification: classification({} as TranslationDeps),
+        mailer: {} as Mailer,
         providerValidation: {
           router: {} as ClassificationDeps['router'],
           credentials: {} as CredentialResolver,
@@ -141,6 +143,15 @@ describe('handler map', () => {
     expect(PROVIDER_QUEUES).toEqual(['provider.validate']);
     expect(available(handlers)).toEqual([...IMPLEMENTED_QUEUES].sort());
     expect(unavailableQueues(handlers, QUEUE_NAMES)).not.toContain('provider.validate');
+  });
+
+  it('implements house.alerts only with a mailer', () => {
+    expect(ALERT_QUEUES).toEqual(['house.alerts']);
+    expect(isStageAvailable(createHandlers(createWorkerDeps(baseDeps)), 'house.alerts')).toBe(
+      false,
+    );
+    const withMailer = createHandlers(createWorkerDeps({ ...baseDeps, mailer: {} as Mailer }));
+    expect(isStageAvailable(withMailer, 'house.alerts')).toBe(true);
   });
 
   it('keeps article.translate a stub without the translators', () => {

@@ -8,8 +8,9 @@ import {
   type HouseCronQueue,
   type HouseCronSchedule,
 } from '@bantoozi/shared';
-import { createLogger, loadConfig } from '@bantoozi/shared/server';
+import { createLogger, createMailer, loadConfig } from '@bantoozi/shared/server';
 
+import { createLibreTranslateProbe } from './alerts/probe.js';
 import { createBoss, pgBossBroker, registerHandlers } from './boss.js';
 import { createWorkerModels } from './classification-deps.js';
 import { createFileDeletionLedger } from './deletion-ledger.js';
@@ -61,6 +62,12 @@ const settingsEnv = {
   languageModes: config.languageModes,
   signupMode: config.signupMode,
 };
+const mailer = createMailer({
+  transport: config.mailTransport,
+  from: config.mailFrom,
+  smtpUrl: config.smtpUrl,
+  logger,
+});
 const handlers = createHandlers(
   createWorkerDeps({
     db,
@@ -76,6 +83,9 @@ const handlers = createHandlers(
     limiter: createPgOriginLimiter(db),
     logger,
     classification: models.classification,
+    mailer,
+    adminEmails: config.adminEmails,
+    libreTranslateProbe: createLibreTranslateProbe(config.libretranslateUrl),
     providerValidation: models.providerValidation,
     ...(config.evalIngestOnly ? { evalIngestOnly: true } : {}),
     ...(config.deletionLedgerPath !== undefined && config.deletionLedgerRecipient !== undefined
@@ -138,6 +148,7 @@ async function shutdown(signal: string): Promise<void> {
     await boss?.stop({ graceful: true, timeout: 20_000, wait: true });
     await heartbeat?.stop();
     await models.close();
+    mailer.close();
     await Promise.all([pool.end(), lockPool.end()]);
   } catch (error) {
     logger.error({ err: error }, 'worker shutdown failed');

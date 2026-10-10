@@ -1,5 +1,5 @@
 import { QUEUES, safeParseJobPayload, type QueueName } from '@bantoozi/shared';
-import PgBoss from 'pg-boss';
+import PgBoss, { type ConstructorOptions } from 'pg-boss';
 
 import { dispatch, isStageAvailable, type HandlerMap } from './handlers/index.js';
 import type { JobBroker, RelayLogger } from './outbox-relay.js';
@@ -8,14 +8,21 @@ import type { JobBroker, RelayLogger } from './outbox-relay.js';
  * pg-boss in the worker (spec 02 §1.2): started with `migrate: false` on the worker role; the migrate
  * job owns the schema and the queues. The API never has a pg-boss client.
  */
-export function createBoss(connectionString: string): PgBoss {
-  return new PgBoss({
+export function createBossOptions(connectionString: string): ConstructorOptions {
+  return {
     connectionString,
     schema: 'pgboss',
     migrate: false,
     application_name: 'bantoozi-worker',
     max: 4,
-  });
+    // Failed jobs stay 30 days in total (spec 11 §5): archived after 23 days, deleted 7 days later.
+    archiveFailedAfterSeconds: 23 * 24 * 60 * 60,
+    deleteAfterDays: 7,
+  };
+}
+
+export function createBoss(connectionString: string): PgBoss {
+  return new PgBoss(createBossOptions(connectionString));
 }
 
 /** The relay's broker: sends with the jobs.ts semantics (singleton keys, debounce). */

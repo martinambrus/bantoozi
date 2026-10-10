@@ -189,11 +189,15 @@ export async function hasPendingEquivalentJob(
  * from its creation, also during its backoff: the backoff moves `available_at`, and a send that
  * keeps failing is exactly the backlog this reports.
  */
-export async function oldestPendingOutboxAgeSeconds(db: Executor): Promise<number | null> {
+export async function oldestPendingOutboxAgeSeconds(
+  db: Executor,
+  now?: Date,
+): Promise<number | null> {
+  const at = now === undefined ? sql`now()` : sql`${now.toISOString()}::timestamptz`;
   const result = await db.execute<{ age: number | null }>(sql`
-    SELECT extract(epoch FROM now() - min(CASE WHEN last_error IS NULL THEN available_at
+    SELECT extract(epoch FROM ${at} - min(CASE WHEN last_error IS NULL THEN available_at
                                                ELSE created_at END))::float8 AS age
       FROM job_outbox
-     WHERE delivered_at IS NULL AND (last_error IS NOT NULL OR available_at <= now())`);
+     WHERE delivered_at IS NULL AND (last_error IS NOT NULL OR available_at <= ${at})`);
   return result.rows[0]?.age ?? null;
 }

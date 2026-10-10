@@ -243,7 +243,14 @@ export const SETTINGS = {
   'alerts.state': def({
     schema: z.record(
       z.string().min(1).max(200),
-      z.object({ firstAt: iso, lastSentAt: iso.nullable(), active: z.boolean() }).strict(),
+      z
+        .object({
+          firstAt: iso,
+          lastSentAt: iso.nullable(),
+          active: z.boolean(),
+          failures: z.number().int().min(0).max(1_000_000).optional(),
+        })
+        .strict(),
     ),
     defaultValue: () => ({}),
     writers: ['house'],
