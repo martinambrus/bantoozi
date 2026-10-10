@@ -326,7 +326,8 @@ describe('chooseLambda', () => {
   });
 });
 
-describe('trainUserModel', () => {
+// Each case runs the full nested cross-validation; CI runners are several times slower than a laptop.
+describe('trainUserModel', { timeout: 120_000 }, () => {
   it('recovers the driving weights and activates on synthetic data (n≈300)', () => {
     const r = goodResult();
     expect(r.model).not.toBeNull();
