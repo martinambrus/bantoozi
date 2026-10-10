@@ -79,7 +79,11 @@ describe('sampleEligibility', () => {
   });
 
   it('a null ratingSha skips both sha checks', () => {
-    const s = withFeatures(base, (f) => ({ ...f, specSha: 'b'.repeat(64), ratingSha: 'c'.repeat(64) }));
+    const s = withFeatures(base, (f) => ({
+      ...f,
+      specSha: 'b'.repeat(64),
+      ratingSha: 'c'.repeat(64),
+    }));
     expect(api.sampleEligibility(s, { ...ELIG, ratingSha: null })).toEqual({ ok: true });
   });
 
@@ -96,9 +100,9 @@ describe('sampleEligibility', () => {
       snapshotAt: undefined as unknown as string,
     }));
     expect(api.sampleEligibility(noSnapshotAt, ELIG)).toEqual({ ok: false, reason: 'too_old' });
-    expect(api.sampleEligibility({ ...base, feedbackAt: new Date(NOW.getTime() - 170 * DAY) }, ELIG).ok).toBe(
-      true,
-    );
+    expect(
+      api.sampleEligibility({ ...base, feedbackAt: new Date(NOW.getTime() - 170 * DAY) }, ELIG).ok,
+    ).toBe(true);
   });
 
   it('no_facets: null facets', () => {
@@ -123,7 +127,10 @@ describe('sampleEligibility', () => {
   });
 
   it('foreign_engine: facets or a card answer from llm/laya', () => {
-    const facets = withFeatures(base, (f) => ({ ...f, values: { ...f.values, facetsEngine: 'laya' } }));
+    const facets = withFeatures(base, (f) => ({
+      ...f,
+      values: { ...f.values, facetsEngine: 'laya' },
+    }));
     expect(api.sampleEligibility(facets, ELIG)).toEqual({ ok: false, reason: 'foreign_engine' });
     for (const engine of ['llm', 'laya']) {
       const s = withFeatures(base, (f) => ({
@@ -134,12 +141,29 @@ describe('sampleEligibility', () => {
     }
   });
 
+  it('foreign_engine: facets or a card answer without TypeSafe provenance', () => {
+    for (const facetsEngine of [null, 'other']) {
+      const s = withFeatures(base, (f) => ({ ...f, values: { ...f.values, facetsEngine } }));
+      expect(api.sampleEligibility(s, ELIG)).toEqual({ ok: false, reason: 'foreign_engine' });
+    }
+    for (const engine of [null, 'other']) {
+      const s = withFeatures(base, (f) => ({
+        ...f,
+        cards: f.cards.map((c) => (c.id === CARD_B ? { ...c, p: 0.7, engine } : c)),
+      }));
+      expect(api.sampleEligibility(s, ELIG)).toEqual({ ok: false, reason: 'foreign_engine' });
+    }
+  });
+
   it('incomplete_coverage: a positive card without a usable p, prefilter included; never cards do not count', () => {
     const nullP = withFeatures(base, (f) => ({
       ...f,
       cards: f.cards.map((c) => (c.id === CARD_B ? { ...c, p: null, engine: null } : c)),
     }));
-    expect(api.sampleEligibility(nullP, ELIG)).toEqual({ ok: false, reason: 'incomplete_coverage' });
+    expect(api.sampleEligibility(nullP, ELIG)).toEqual({
+      ok: false,
+      reason: 'incomplete_coverage',
+    });
     expect(api.sampleEligibility(sample(2, 1, { pA: null }), ELIG)).toEqual({
       ok: false,
       reason: 'incomplete_coverage',
@@ -159,12 +183,16 @@ describe('sampleEligibility', () => {
 });
 
 describe('eligibleSetSha', () => {
-  const set = Array.from({ length: 12 }, (_, i) => sample(i, i % 2 === 0 ? 1 : 0, { ageDays: 5 + i }));
+  const set = Array.from({ length: 12 }, (_, i) =>
+    sample(i, i % 2 === 0 ? 1 : 0, { ageDays: 5 + i }),
+  );
 
   it('changes when one sample flips y, and not with the input order', () => {
     const sha = api.eligibleSetSha(set, ELIG);
     expect(sha).toMatch(/^[0-9a-f]{64}$/);
-    const flipped = set.map((s, i) => (i === 4 ? { ...s, y: s.y === 1 ? (0 as const) : (1 as const) } : s));
+    const flipped = set.map((s, i) =>
+      i === 4 ? { ...s, y: s.y === 1 ? (0 as const) : (1 as const) } : s,
+    );
     expect(api.eligibleSetSha(flipped, ELIG)).not.toBe(sha);
     expect(api.eligibleSetSha([...set].reverse(), ELIG)).toBe(sha);
     const reweighted = set.map((s, i) => (i === 4 ? { ...s, weight: s.weight / 2 } : s));
@@ -196,7 +224,10 @@ describe('ownInputs', () => {
   });
 
   it('does not count implicit samples toward the 8', () => {
-    const s = [...matching([1, 0, 1, 0, 1, 0, 1]), ...[1, 0, 1].map((y, i) => sample(200 + i, y as 0 | 1, { pA: 0.8, explicit: false }))];
+    const s = [
+      ...matching([1, 0, 1, 0, 1, 0, 1]),
+      ...[1, 0, 1].map((y, i) => sample(200 + i, y as 0 | 1, { pA: 0.8, explicit: false })),
+    ];
     expect(api.ownInputs(s, HELD, CFG)).toEqual([]);
   });
 
@@ -207,7 +238,13 @@ describe('ownInputs', () => {
 
   it('needs the card to be held now', () => {
     const eight = matching([1, 0, 1, 0, 1, 0, 1, 0]);
-    expect(api.ownInputs(eight, HELD.filter((h) => h.cardId !== CARD_A), CFG)).toEqual([]);
+    expect(
+      api.ownInputs(
+        eight,
+        HELD.filter((h) => h.cardId !== CARD_A),
+        CFG,
+      ),
+    ).toEqual([]);
   });
 
   it('applies to a held never card too', () => {
@@ -314,7 +351,9 @@ describe('trainUserModel', () => {
     const base = noiseSamples(120, 'noise');
     const withC = base.map((s, i) => {
       const matchIdx = [0, 1, 2, 3, 4, 5, 6, 7].indexOf(i);
-      return matchIdx < 0 ? { ...s, features: snapshot(s.feedbackAt, { pC: 0.1, pA: 0.3, pB: 0.3, pN: 0.1 }) } : sample(i, matchIdx % 2 === 0 ? 1 : 0, { pC: 0.9, pA: 0.3, pB: 0.3, pN: 0.1 });
+      return matchIdx < 0
+        ? { ...s, features: snapshot(s.feedbackAt, { pC: 0.1, pA: 0.3, pB: 0.3, pN: 0.1 }) }
+        : sample(i, matchIdx % 2 === 0 ? 1 : 0, { pC: 0.9, pA: 0.3, pB: 0.3, pN: 0.1 });
     });
     expect(api.ownInputs(withC, HELD, CFG)).toEqual([CARD_C]);
     const r = api.trainUserModel(trainArgs(withC), { mode: 'production' });
@@ -337,7 +376,11 @@ describe('trainUserModel', () => {
     expect(rSmall.activation.eligible).toBe(false);
     expect(rSmall.activation.reasons).toContain('insufficient_explicit');
 
-    const twoGroups = drivenSamples(80, 'two').map((s, i) => ({ ...s, explicit: true, groupId: `g-${i % 2}` }));
+    const twoGroups = drivenSamples(80, 'two').map((s, i) => ({
+      ...s,
+      explicit: true,
+      groupId: `g-${i % 2}`,
+    }));
     const rGroups = api.trainUserModel(trainArgs(twoGroups), { mode: 'production' });
     expect(rGroups.activation.eligible).toBe(false);
     expect(rGroups.activation.reasons).toContain('insufficient_validation');
@@ -349,7 +392,9 @@ describe('trainUserModel', () => {
 
   it('excludes missing event-time snapshots and counts them, never reconstructing them', () => {
     const good = drivenSamples(60, 'miss').map((s) => ({ ...s, explicit: true }));
-    const missing = Array.from({ length: 5 }, (_, i) => sample(500 + i, 1, { withSnapshot: false }));
+    const missing = Array.from({ length: 5 }, (_, i) =>
+      sample(500 + i, 1, { withSnapshot: false }),
+    );
     const r = api.trainUserModel(trainArgs([...good, ...missing]), { mode: 'production' });
     expect(r.metrics.skipped['missing_snapshot']).toBe(5);
     expect(r.metrics.nExplicit).toBe(60);
@@ -386,7 +431,9 @@ describe('trainUserModel', () => {
     const changedOther = api.trainUserModel(
       trainArgs(s, {
         heldCards: HELD.map((h) =>
-          h.cardId === otherCard?.cardId ? { ...h, strength: 'like', cardInputSha256: 'changed' } : h,
+          h.cardId === otherCard?.cardId
+            ? { ...h, strength: 'like', cardInputSha256: 'changed' }
+            : h,
         ),
       }),
       { mode: 'production' },
@@ -461,7 +508,10 @@ describe('decideActivation', () => {
     'below_baseline_auc',
     'worse_logloss',
   ])('candidate reason %s blocks activation and is passed through', (reason) => {
-    const bad: TrainResult = { ...goodResult(), activation: { eligible: false, reasons: [reason] } };
+    const bad: TrainResult = {
+      ...goodResult(),
+      activation: { eligible: false, reasons: [reason] },
+    };
     const d = api.decideActivation(bad, ctx());
     expect(d.activate).toBe(false);
     expect(d.reasons).toContain(reason);
@@ -487,7 +537,10 @@ describe('modelContextSha', () => {
     const b = sha(base);
     expect(b).toMatch(/^[0-9a-f]{64}$/);
     const variants: ContextInput[] = [
-      { ...base, strengthWeights: { ...CFG.strengthWeights, love: CFG.strengthWeights.love - 0.01 } },
+      {
+        ...base,
+        strengthWeights: { ...CFG.strengthWeights, love: CFG.strengthWeights.love - 0.01 },
+      },
       { ...base, consent: { ...CONSENT, implicitFeedback: true } },
       { ...base, consent: { ...CONSENT, implicitNegative: true } },
       { ...base, modelConfig: { ...CFG.model, minCvAuc: 0.65 } },

@@ -5,7 +5,8 @@ import { FEATURE_SPEC_V1_FACET_NAMES, RAW_SNAPSHOT_SPEC_SHA } from './feature-sp
 import type { RawFeatureSnapshot } from './features.js';
 
 const DAY_MS = 86_400_000;
-const FOREIGN_ENGINES: ReadonlySet<string> = new Set(['llm', 'laya']);
+/** FEATURE_SPEC_V1's engine family: facets and card answers must come from TypeSafe (spec 06 §8.1). */
+const FEATURE_ENGINE = 'typesafe';
 
 /** One current sample per user/article (spec 06 §8.2); `features` is the stored event-time snapshot. */
 export interface TrainingSample {
@@ -64,8 +65,10 @@ export function sampleEligibility(
     if (!isProbability(value)) return { ok: false, reason: 'invalid_facets' };
   }
   if (
-    (facetsEngine !== null && FOREIGN_ENGINES.has(facetsEngine)) ||
-    f.cards.some((c) => c.engine !== null && FOREIGN_ENGINES.has(c.engine))
+    facetsEngine !== FEATURE_ENGINE ||
+    f.cards.some((c) =>
+      c.engine === null ? c.p !== null : c.engine !== FEATURE_ENGINE && c.engine !== 'prefilter',
+    )
   ) {
     return { ok: false, reason: 'foreign_engine' };
   }
