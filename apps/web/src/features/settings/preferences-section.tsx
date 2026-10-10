@@ -160,8 +160,9 @@ const SWIPE_RIGHT = ['like', 'bookmark', 'none'] as const;
 
 export function PreferencesSection() {
   const { t } = useTranslation('settings');
-  const { state, takeOver } = usePreferencesLock();
+  const { state, takeOver, whileSaving } = usePreferencesLock();
   const locked = state === 'elsewhere';
+  const inert = state !== 'held';
   const controls = useRef<HTMLDivElement>(null);
   const takeOverButton = useRef<HTMLButtonElement>(null);
   // An inert subtree drops the focus; the person was in the controls, so the button is next.
@@ -172,9 +173,9 @@ export function PreferencesSection() {
   }, [locked]);
   return (
     <SettingsSection title={t('preferences.title')} description={t('preferences.intro')}>
-      <PreferenceSaverProvider lock={state}>
+      <PreferenceSaverProvider lock={state} whileSaving={whileSaving}>
         <div className="relative">
-          <div ref={controls} inert={locked} className="flex flex-col gap-8">
+          <div ref={controls} inert={inert} className="flex flex-col gap-8">
             <Group title={t('preferences.groups.lists')}>
               <TierSetting />
               <ChoiceSetting id="sort" text="sort" options={SORTS} />

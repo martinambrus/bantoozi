@@ -16,6 +16,7 @@ import {
 } from './support.js';
 
 const LOCK = `bantoozi:preferences:${USER_A_ID}`;
+const SAVE_LOCK = `bantoozi:preferences-save:${USER_A_ID}`;
 const TITLE = 'Preferences are being adjusted in another tab or window';
 const TAKE_OVER = 'Edit here instead';
 const SWITCH = 'Simple mode';
@@ -120,11 +121,12 @@ describe('the preferences lock across tabs', () => {
 
     await waitFor(() => expect(overlayOf(second)).toBeNull());
     await waitFor(() => expect(overlayOf(first)).not.toBeNull());
-    expect(switchOf(second).closest('[inert]')).toBeNull();
+    expect(switchOf(second).closest('[inert]')).not.toBeNull();
 
     await act(async () => {
       sending.release();
     });
+    await waitFor(() => expect(switchOf(second).closest('[inert]')).toBeNull());
     await first.user.click(prefsOf(first).getByRole('radio', { name: 'Newest first' }));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
@@ -159,6 +161,71 @@ describe('the preferences lock across tabs', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(first.calls('PATCH /me')).toHaveLength(1);
+  });
+
+  it('keeps the controls inert and sends nothing while the first grant is pending', async () => {
+    installLocks({ request: () => new Promise(() => undefined) } as unknown as FakeLocks);
+    const tab = await openSettings();
+
+    expect(switchOf(tab).closest('[inert]')).not.toBeNull();
+    expect(overlayOf(tab)).toBeNull();
+    await tab.user.click(switchOf(tab));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(tab.calls('PATCH /me')).toHaveLength(0);
+  });
+
+  it('waits for a request of the old holder to settle before it takes over', async () => {
+    const sending = deferred();
+    const first = await openSettings({
+      routes: (server) => ({
+        'PATCH /me': async (request, params) => {
+          await sending.promise;
+          return patchMe(server)(request, params);
+        },
+      }),
+    });
+    await waitFor(() => expect(grantedPreferences()).toHaveLength(1));
+    await first.user.click(switchOf(first));
+    await waitFor(() => expect(first.calls('PATCH /me')).toHaveLength(1));
+
+    const second = await openAnotherWindow();
+    await second.user.click(
+      await within(second.container).findByRole('button', { name: TAKE_OVER }),
+    );
+    await waitFor(() => expect(overlayOf(first)).not.toBeNull());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(switchOf(second).closest('[inert]')).not.toBeNull();
+    expect(overlayOf(second)).toBeNull();
+    const before = second.calls('GET /me').length;
+
+    await act(async () => {
+      sending.release();
+    });
+
+    await waitFor(() => expect(switchOf(second).closest('[inert]')).toBeNull());
+    expect(second.calls('GET /me').length).toBeGreaterThan(before);
+  });
+
+  it('does not send a save that starts after the lock was lost', async () => {
+    const first = await openSettings();
+    await waitFor(() => expect(grantedPreferences()).toHaveLength(1));
+    const release = holdElsewhere(SAVE_LOCK);
+    await first.user.click(switchOf(first));
+
+    const second = await openAnotherWindow();
+    await second.user.click(
+      await within(second.container).findByRole('button', { name: TAKE_OVER }),
+    );
+    await waitFor(() => expect(overlayOf(first)).not.toBeNull());
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => expect(switchOf(second).closest('[inert]')).toBeNull());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(first.calls('PATCH /me')).toHaveLength(0);
   });
 
   it('moves the focus to the button when the controls are locked under it', async () => {
