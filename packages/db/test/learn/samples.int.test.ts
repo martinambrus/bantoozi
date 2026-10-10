@@ -691,16 +691,17 @@ describe('selected analysis requests (spec 06 §8.2, spec 05 §1.1)', () => {
   const CARD = '501';
   const OTHER_CARD = '502';
 
-  it('a completed request fills the missing p of the listed cards and the facets, keeping the event-time strength', async () => {
+  it('a completed request derives a partial snapshot wholly from its frozen input', async () => {
     const s = await Scenario.create(ctx);
     const a = await s.article();
-    const request = await analysisRequest(s, a, {
-      status: 'complete',
+    const request = await frozenRequest(s, a, {
+      publishedAt: null,
+      firstSeenAt: s.tick(),
       cards: [
-        { cardId: CARD, p: 0.8 },
-        { cardId: OTHER_CARD, p: 0.9 },
+        { cardId: CARD, kind: 'interest', strength: 'love', p: 0.8 },
+        { cardId: OTHER_CARD, kind: 'label', strength: null, p: 0.9 },
       ],
-      features: { 'topic.a': 0.25, 'topic.b': 0.75 },
+      facets: { 'topic.a': 0.25, 'topic.b': 0.75 },
     });
     await s.insertRating(a, {
       analysisRequestId: request.requestId,
@@ -735,7 +736,7 @@ describe('selected analysis requests (spec 06 §8.2, spec 05 §1.1)', () => {
     expect(only(await s.samples()).features?.cards.map((c) => c.id)).toEqual([CARD]);
   });
 
-  it('a card that already has p, and facets that are already set, keep their event-time values', async () => {
+  it('a complete snapshot keeps its event-time values instead of using the request', async () => {
     const s = await Scenario.create(ctx);
     const a = await s.article();
     const request = await analysisRequest(s, a, {
@@ -753,7 +754,7 @@ describe('selected analysis requests (spec 06 §8.2, spec 05 §1.1)', () => {
       features: snapshot({
         cards: [
           { id: CARD, strength: 'must', p: 0.55, engine: 'typesafe' },
-          { id: OTHER_CARD, strength: 'like', p: null, engine: null },
+          { id: OTHER_CARD, strength: 'like', p: 0.65, engine: 'typesafe' },
         ],
         values: {
           facets: { 'topic.a': 0.3 },
@@ -764,17 +765,84 @@ describe('selected analysis requests (spec 06 §8.2, spec 05 §1.1)', () => {
     });
     const features = only(await s.samples()).features!;
     expect(features.cards.find((c) => c.id === CARD)).toMatchObject({ strength: 'must', p: 0.55 });
-    expect(features.cards.find((c) => c.id === OTHER_CARD)).toMatchObject({ p: 0.2 });
+    expect(features.cards.find((c) => c.id === OTHER_CARD)).toMatchObject({ p: 0.65 });
     expect(features.values.facets).toEqual({ 'topic.a': 0.3 });
+  });
+
+  it('never combines newer answers, facets or metadata with an older frozen request', async () => {
+    const scenario = await Scenario.create(ctx);
+    const article = await scenario.article();
+    const request = await frozenRequest(scenario, article, {
+      publishedAt: null,
+      firstSeenAt: scenario.tick(),
+      cards: [
+        { cardId: CARD, kind: 'interest', strength: 'must', p: 0.1 },
+        { cardId: OTHER_CARD, kind: 'interest', strength: 'like', p: 0.2 },
+      ],
+      facets: { 'topic.a': 0.99 },
+    });
+    const at = scenario.tick();
+    await scenario.insertRating(
+      article,
+      {
+        analysisRequestId: request.requestId,
+        analysisRatingSha: 'a'.repeat(64),
+        inputSha: request.inputSha,
+        features: snapshot({
+          cards: [
+            { id: CARD, strength: 'must', p: 0.55, engine: 'typesafe' },
+            { id: OTHER_CARD, strength: 'like', p: null, engine: null },
+          ],
+          values: {
+            facets: { 'topic.a': 0.3 },
+            facetsEngine: 'typesafe',
+            wordCount: 999,
+            lang: 'de',
+            clusterId: null,
+          },
+        }),
+      },
+      { at },
+    );
+    const sample = only(await scenario.samples());
+    expect(sample.features?.cards.map((card) => card.p)).toEqual([0.1, 0.2]);
+    expect(sample.features?.snapshotAt).toBe(at.toISOString());
+    expect(sample.features?.values).toMatchObject({
+      facets: { 'topic.a': 0.99 },
+      wordCount: 321,
+      lang: 'cs',
+      clusterId: '77',
+      author: 'Frozen Author',
+    });
+    expect(sample.groupId).toBe('77');
+  });
+
+  it('an incomplete legacy request manifest leaves a partial snapshot untouched', async () => {
+    const scenario = await Scenario.create(ctx);
+    const article = await scenario.article();
+    const request = await analysisRequest(scenario, article, {
+      status: 'complete',
+      cards: [{ cardId: CARD, p: 0.8 }],
+      features: { 'topic.a': 0.25 },
+    });
+    const features = snapshot({ cards: [{ id: CARD, strength: 'love', p: null, engine: null }] });
+    await scenario.insertRating(article, {
+      analysisRequestId: request.requestId,
+      analysisRatingSha: 'a'.repeat(64),
+      inputSha: request.inputSha,
+      features,
+    });
+    expect(only(await scenario.samples()).features).toEqual(features);
   });
 
   it('the filled card carries the typesafe engine of the result (inferred: a p needs its engine family)', async () => {
     const s = await Scenario.create(ctx);
     const a = await s.article();
-    const request = await analysisRequest(s, a, {
-      status: 'complete',
-      cards: [{ cardId: CARD, p: 0.8 }],
-      features: {},
+    const request = await frozenRequest(s, a, {
+      publishedAt: null,
+      firstSeenAt: s.tick(),
+      cards: [{ cardId: CARD, kind: 'interest', strength: 'love', p: 0.8 }],
+      facets: {},
     });
     await s.insertRating(a, {
       analysisRequestId: request.requestId,
@@ -1019,10 +1087,11 @@ describe('analysis completion is bound to the rating fingerprint (PR #25 round 1
   async function partial(analysisRatingSha: unknown, matchingInput = true) {
     const s = await Scenario.create(ctx);
     const a = await s.article();
-    const request = await analysisRequest(s, a, {
-      status: 'complete',
-      cards: [{ cardId: CARD, p: 0.8 }],
-      features: { 'topic.a': 0.25 },
+    const request = await frozenRequest(s, a, {
+      publishedAt: null,
+      firstSeenAt: s.tick(),
+      cards: [{ cardId: CARD, kind: 'interest', strength: 'love', p: 0.8 }],
+      facets: { 'topic.a': 0.25 },
     });
     await s.insertRating(a, {
       analysisRequestId: request.requestId,

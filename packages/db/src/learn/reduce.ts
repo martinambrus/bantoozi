@@ -32,26 +32,6 @@ function latest(events: LearnEvent[]): LearnEvent | undefined {
   return best;
 }
 
-function complete(
-  features: FeatureSnapshotV1,
-  result: LearnAnalysisResult | undefined,
-): FeatureSnapshotV1 {
-  if (result === undefined) return features;
-  const copy = structuredClone(features);
-  for (const card of copy.cards) {
-    const p = result.cardP.get(String(card.id));
-    if (card.p === null && p !== undefined) {
-      card.p = p;
-      card.engine = 'typesafe';
-    }
-  }
-  if (copy.values.facets === null && result.facets !== null) {
-    copy.values.facets = result.facets;
-    copy.values.facetsEngine = 'typesafe';
-  }
-  return copy;
-}
-
 /** The raw-v1 snapshot a rating without one derives from its frozen request (spec 06 §8.2). */
 function derive(
   result: LearnAnalysisResult,
@@ -157,9 +137,10 @@ export function reduceArticle(input: ReduceInput): LearnSample | null {
           result !== undefined &&
           result.inputSha === source.value.inputSha &&
           typeof analysisSha === 'string' &&
-          analysisSha === features.ratingSha
+          analysisSha === features.ratingSha &&
+          (features.values.facets === null || features.cards.some((card) => card.p === null))
         ) {
-          features = complete(features, result);
+          features = derive(result, analysisSha, source.createdAt) ?? features;
         }
       }
       if (features === null) {

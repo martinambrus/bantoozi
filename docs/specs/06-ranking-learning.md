@@ -48,7 +48,7 @@ interface RankItem {
   pipelineState: string;
   matchCoverage: 'complete'|'pending'|'unavailable'; // this user's applicable positives (§2)
   facets?: Record<string, number>;                 // article_facets.features (spec 05 §3.4)
-  facetsEngine?: 'typesafe' | 'llm' | 'laya';      // articles.enrich_engine
+  facetsEngine?: 'typesafe' | 'llm' | 'laya';      // article_facets.engine
   cardAnswers: Record<string, { p: number; engine: 'typesafe'|'llm'|'laya'|'prefilter' }>;  // the user's interest AND label cards
   labelIds: string[];                              // labels already assigned (user_article.label_ids)
   translation?: { engine: string; quality: string };
@@ -97,7 +97,7 @@ rankArticle(ctx, item, now):
                                                         selection still ranks from its answers)
   3. if a never-card has p ≥ never.hide (§4.2)       → RETURN 'hidden' (fire never:<id>)
   4. base probability P:
-       a. compatible active model (§8.1), complete matchCoverage AND item.facets present AND pipelineState ∉ {'degraded','failed'}
+       a. compatible active model (§8.1), complete matchCoverage AND all 44 item.facets inputs valid (§8.1) AND pipelineState ∉ {'degraded','failed'}
           AND item.facetsEngine and every applicable interest answer come from the model's engine
           family (§8.1: 'typesafe' under FEATURE_SPEC_V1, so never 'llm' or 'laya'; a 'prefilter'
           answer is an unknown, not another engine)
@@ -545,6 +545,10 @@ the action time. Events without behavioral consent, expand/bulk reads and label 
 `unrate`. A dwell or bounce sample uses the snapshot of its session's `open` event when it has one;
 a rating whose own event carries no snapshot uses the latest earlier rating snapshot of the same
 content revision (D-166).
+If a partial snapshot is completed from a selected request, derive the entire snapshot from that
+request's schema-valid frozen input and result, after checking its input hash and rating fingerprint.
+Never fill individual gaps using frozen answers alongside live answers or metadata from another
+article state; a request lacking a valid frozen input leaves the partial snapshot unchanged.
 For selected slow training, capture or reference `analysisRequestId`, immutable `input_sha` and the
 pre-feedback input snapshot before committing the first rating (spec 05 §1.1). `features` may be null
 while analysis is pending; once complete, a separate immutable derived feature snapshot may be
