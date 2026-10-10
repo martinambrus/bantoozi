@@ -134,6 +134,13 @@
       "when": 1791618000000,
       "tag": "0018_analysis_awaiting_extraction",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791704400000,
+      "tag": "0019_purge_indexes",
+      "breakpoints": true
     }
   ]
 }

@@ -88,6 +88,7 @@ export const evalRaterCards = evalSchema.table(
   (t) => [
     primaryKey({ columns: [t.raterId, t.cardId] }),
     check('rater_cards_strength_check', sql`strength IN ('must','love','like','never')`),
+    index('rater_cards_card_id_idx').on(t.cardId),
   ],
 );
 
@@ -97,7 +98,10 @@ export const evalRaterFeeds = evalSchema.table(
     raterId: int8('rater_id').references(() => evalRaters.id, { onDelete: 'cascade' }),
     feedId: int8('feed_id').references(() => feeds.id, { onDelete: 'restrict' }),
   },
-  (t) => [primaryKey({ columns: [t.raterId, t.feedId] })],
+  (t) => [
+    primaryKey({ columns: [t.raterId, t.feedId] }),
+    index('rater_feeds_feed_id_idx').on(t.feedId),
+  ],
 );
 
 export const evalAssignments = evalSchema.table(
@@ -113,6 +117,7 @@ export const evalAssignments = evalSchema.table(
     primaryKey({ columns: [t.raterId, t.articleId] }),
     unique('assignments_rater_id_position_key').on(t.raterId, t.position),
     check('assignments_position_check', sql`position >= 0`),
+    index('assignments_article_id_idx').on(t.articleId),
     check('assignments_status_check', sql`status IN ('pending','rated','skipped')`),
     check(
       'assignments_skip_reason_check',
@@ -133,6 +138,7 @@ export const evalRatings = evalSchema.table(
   (t) => [
     primaryKey({ columns: [t.raterId, t.articleId] }),
     check('ratings_rating_check', sql`rating IN (-1, 1)`),
+    index('ratings_article_id_idx').on(t.articleId),
   ],
 );
 
@@ -166,6 +172,7 @@ export const evalSample = evalSchema.table(
   (t) => [
     primaryKey({ columns: [t.datasetVersion, t.articleId] }),
     check('sample_split_check', sql`split IN ('dev','test')`),
+    index('sample_article_id_idx').on(t.articleId),
   ],
 );
 
@@ -220,5 +227,7 @@ export const evalRunAnswers = evalSchema.table(
       .on(t.runId, t.articleId, t.cardId, t.questionKey)
       .nullsNotDistinct(),
     index('run_answers_run_idx').on(t.runId, t.articleId),
+    index('run_answers_article_id_idx').on(t.articleId),
+    index('run_answers_card_id_idx').on(t.cardId),
   ],
 );

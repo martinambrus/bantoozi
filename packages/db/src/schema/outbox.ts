@@ -40,5 +40,8 @@ export const jobOutbox = pgTable(
     uniqueIndex('job_outbox_dedupe_idx')
       .on(t.queue, t.dedupeKey)
       .where(sql`delivered_at IS NULL AND dedupe_key IS NOT NULL`),
+    index('job_outbox_delivered_at_idx')
+      .on(t.deliveredAt)
+      .where(sql`delivered_at IS NOT NULL`),
   ],
 );

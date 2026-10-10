@@ -61,6 +61,9 @@ export const engineReservations = pgTable(
       sql`(status = 'settled') = (settled_at IS NOT NULL)`,
     ),
     index('engine_reservations_day_idx').on(t.day, t.status),
+    index('engine_reservations_expires_at_idx')
+      .on(t.expiresAt)
+      .where(sql`status = 'reserved'`),
   ],
 );
 
@@ -119,6 +122,7 @@ export const engineCalls = pgTable(
     index('engine_calls_created_idx').on(t.createdAt),
     index('engine_calls_article_idx').on(t.articleId),
     uniqueIndex('engine_calls_attempt_idx').on(t.logicalRequestId, t.engine, t.attempts),
+    index('engine_calls_user_id_idx').on(t.userId),
   ],
 );
 
@@ -206,6 +210,9 @@ export const interestCards = pgTable(
       sql`(visibility = 'private') = (owner_user_id IS NOT NULL)`,
     ),
     index('interest_cards_topics_idx').using('gin', t.topicIds),
+    index('interest_cards_parent_card_id_idx')
+      .on(t.parentCardId)
+      .where(sql`parent_card_id IS NOT NULL`),
   ],
 );
 
@@ -317,6 +324,7 @@ export const matchQueue = pgTable(
     check('match_queue_attempts_check', sql`attempts >= 0`),
     check('match_queue_lease_check', sql`(lease_token IS NULL) = (lease_until IS NULL)`),
     index('match_queue_order_idx').on(t.priority, t.enqueuedAt),
+    index('match_queue_card_id_idx').on(t.cardId),
   ],
 );
 
@@ -334,6 +342,7 @@ export const feedCards = pgTable(
   (t) => [
     primaryKey({ name: 'feed_cards_pkey', columns: [t.feedId, t.cardId] }),
     check('feed_cards_holders_check', sql`holders > 0`),
+    index('feed_cards_card_id_idx').on(t.cardId),
   ],
 );
 
