@@ -787,4 +787,61 @@ describe('house.purge-users', () => {
     expect(await c.subscriberCount(feed)).toBe(subscribers);
     expect(new Set(ledger.entries.map((entry) => entry.id)).size).toBe(ledger.entries.length);
   });
+
+  it('nulls creatorUserId in the publication evidence and nothing else, once', async () => {
+    const creator = await c.deletedUser(before(10 * DAY));
+    const card = await c.sharedCard(creator.id);
+    await c.publicationRequest(card);
+    const evidence = {
+      policyVersion: 1,
+      creatorUserId: creator.id,
+      cardTextHash: 'hash-x',
+      publicationSha: 'sha-x',
+      requestVersion: '1',
+      respondedAt: before(20 * DAY).toISOString(),
+      approvedVersion: '1',
+    };
+    const client = await h.owner.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SELECT set_config('bantoozi.card_promotion', $1, true)`, [card]);
+      await client.query(`SELECT set_config('bantoozi.card_publication_response', $1, true)`, [
+        card,
+      ]);
+      await client.query(
+        `UPDATE card_publication_requests
+            SET status = 'promoted', responded_at = $2, authorization_kind = 'creator_approval',
+                authorization_evidence = $3::jsonb, promoted_at = $2
+          WHERE card_id = $1`,
+        [card, before(20 * DAY), JSON.stringify(evidence)],
+      );
+      await client.query(`UPDATE interest_cards SET visibility = 'public' WHERE id = $1`, [card]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    const read = () =>
+      b.rows<{ user_id: string | null; status: string; evidence: Record<string, unknown> }>(
+        `SELECT user_id::text, status, authorization_evidence AS evidence
+           FROM card_publication_requests WHERE card_id = $1`,
+        [card],
+      );
+    expect((await read())[0]!.evidence['creatorUserId']).toBe(creator.id);
+    const ledger = new FakeLedger(h.owner);
+
+    await c.run(PURGE_USERS, NOW, c.ledgerDeps(ledger));
+
+    expect(await c.userExists(creator.id)).toBe(false);
+    const after = await read();
+    expect(after).toHaveLength(1);
+    expect(after[0]!.user_id).toBeNull();
+    expect(after[0]!.status).toBe('promoted');
+    expect(after[0]!.evidence).toEqual({ ...evidence, creatorUserId: null });
+
+    await c.run(PURGE_USERS, NOW, c.ledgerDeps(ledger));
+    expect(await read()).toEqual(after);
+  });
 });

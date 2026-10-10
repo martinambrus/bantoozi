@@ -142,7 +142,19 @@ export async function purgeUser(
       UPDATE invites SET email = NULL, note = NULL WHERE used_by = ${user.id}::uuid`);
     await tx.execute(sql`DELETE FROM invites WHERE email = ${prepared.email} AND used_at IS NULL`);
     await tx.execute(sql`DELETE FROM waitlist WHERE email = ${prepared.email}`);
+    // The evidence guard allows the creator clear only once `user_id` is NULL (spec 02 §3.6), so
+    // the requests are found first, and cleared after the delete's FK has nulled their `user_id`.
+    const evidenced = await tx.execute<{ id: string }>(sql`
+      SELECT id::text AS id FROM card_publication_requests
+       WHERE authorization_evidence->>'creatorUserId' = ${user.id}`);
     await tx.execute(sql`DELETE FROM users WHERE id = ${user.id}::uuid`);
+    if (evidenced.rows.length > 0) {
+      await tx.execute(sql`
+        UPDATE card_publication_requests
+           SET authorization_evidence = jsonb_set(authorization_evidence, '{creatorUserId}', 'null'::jsonb)
+         WHERE id = ANY(${sql.param(evidenced.rows.map((r) => r.id))}::bigint[])
+           AND user_id IS NULL`);
+    }
     const feedIds = feeds.rows.map((row) => row.feed_id);
     if (feedIds.length > 0) {
       await tx.execute(sql`
