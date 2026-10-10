@@ -1206,7 +1206,7 @@ test AUC 0.709; the model 0.654, 0.651, 0.682, 0.717 and 0.720 at n = 10, 20, 30
 n = 50 rule does not fire. At n = 50 and 100 the production activation rule still rejects the model on
 its cross-validated AUC, so a model of this one participant would not have activated yet.
 Deviations: D-164…D-170 in `docs/DECISIONS.md`. No migrations. Open: the first write of
-`engine.model_pin` is not fenced against a suggestion run in flight (D-164, M8 seeds the row);
+`engine.model_pin` is not fenced against a suggestion run in flight (D-164; M8-T2 seeds the row and fences pin writes);
 suggestion options use the card's original text even when `card_text_mode` is `english` (no effect
 under the G1 setting `as_written`); the API snapshot cannot check the question-state and card-input
 hashes (D-166). Handoffs: M8-T2 needs no learn job of its own (`house.nightly-learn` is scheduled at
@@ -1353,6 +1353,10 @@ Complete milestone M8 "Operations and launch readiness" exactly as specified in 
   runs card-scoped after a library topic correction; a worker starting with a new `TYPESAFE_MODEL`
   records `engine.model_pin` and enqueues the rebuild once, and so does one starting with new Ollama
   fallback models while `LLM_FALLBACK_ENABLED`, or with the fallback switched on or off (tested).
+  `pnpm db:seed` creates the `engine.model_pin` row, so it exists before any `user.suggest` run, and
+  every pin write takes that row's lock; a suggestion finishing transaction in flight (which
+  share-locks the row) is then fenced against a pin change, and its answer from the old model is
+  discarded (D-164) (tested).
   An idle `origin_fetch_state` row is purged only after its cooldown and leases have passed, and a
   cluster whose last member was purged is deleted once no `mute_story` rule names it (tested). A
   pending analysis request older than 180 days is cancelled as `retention_expired` and never resumed
