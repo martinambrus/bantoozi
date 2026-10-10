@@ -46,7 +46,7 @@ export async function claimSuggestLease(
   });
 }
 
-/** Extend the lease; false when it was lost (reclaimed by another worker or released). */
+/** Extend the lease; false when it was lost (reclaimed, released or already expired). */
 export async function renewSuggestLease(
   db: Executor,
   userId: string,
@@ -56,7 +56,8 @@ export async function renewSuggestLease(
   const result = await db.execute(sql`
     UPDATE users
        SET suggest_lease_until = now() + make_interval(secs => ${leaseMs / 1000}::double precision)
-     WHERE id = ${userId}::uuid AND suggest_lease_token = ${leaseToken}::uuid`);
+     WHERE id = ${userId}::uuid AND suggest_lease_token = ${leaseToken}::uuid
+       AND suggest_lease_until > now()`);
   return (result.rowCount ?? 0) > 0;
 }
 

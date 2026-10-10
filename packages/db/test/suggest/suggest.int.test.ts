@@ -87,6 +87,24 @@ describe('suggest lease', () => {
     );
   });
 
+  it('does not renew a lease that has already expired', async () => {
+    const user = await createUser(ctx.owner);
+    const claim = await claimSuggestLease(ctx.worker, user.id, { leaseMs: 60_000 });
+    if (claim.status !== 'claimed') throw new Error('fixture: not claimed');
+    await ctx.owner.query(
+      `UPDATE users SET suggest_lease_until = now() - interval '1 minute' WHERE id = $1`,
+      [user.id],
+    );
+    const before = (
+      await ctx.owner.query(`SELECT suggest_lease_until FROM users WHERE id = $1`, [user.id])
+    ).rows[0];
+    expect(await renewSuggestLease(ctx.worker, user.id, claim.leaseToken, 60_000)).toBe(false);
+    expect(
+      (await ctx.owner.query(`SELECT suggest_lease_until FROM users WHERE id = $1`, [user.id]))
+        .rows[0],
+    ).toEqual(before);
+  });
+
   it('reclaims an expired lease', async () => {
     const user = await createUser(ctx.owner);
     await claimSuggestLease(ctx.worker, user.id, { leaseMs: 60_000 });
