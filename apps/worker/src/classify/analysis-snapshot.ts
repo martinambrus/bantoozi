@@ -5,7 +5,7 @@ import type {
   TranslationRow,
 } from '@bantoozi/db';
 import { buildAnalysisInputSnapshot } from '@bantoozi/questions';
-import type { AnalysisInputSnapshot } from '@bantoozi/shared';
+import type { AnalysisInputSnapshot, LanguageModes } from '@bantoozi/shared';
 import { selectBestTranslation } from '@bantoozi/translate';
 
 import { requireSet, type ClassificationConfig } from './config.js';
@@ -50,4 +50,34 @@ export function captureAnalysisSnapshot(input: {
     primaryModel: input.primaryModel,
     capturedAt: input.capturedAt,
   });
+}
+
+/**
+ * Recapture the live inputs of a request that waited for its article's extraction (spec 05 §1.1):
+ * the article, translation, language mode and media context at the frozen revision, under the live
+ * language modes. The frozen cards, question sets, card text mode and model are kept, the capture
+ * time too, and `awaitingExtraction` is cleared. The same builder as {@link captureAnalysisSnapshot}.
+ */
+export function recaptureAwaitingSnapshot(input: {
+  frozen: AnalysisInputSnapshot;
+  article: ClassificationArticle;
+  /** `article_translations` rows of the article's current revision. */
+  translations: readonly TranslationRow[];
+  context: AnalysisCaptureContext;
+  languageModes: LanguageModes;
+}): AnalysisInputSnapshot {
+  const { frozen, article } = input;
+  const live = buildAnalysisInputSnapshot({
+    article,
+    feed: { title: article.feed?.title ?? null, site: feedSite(article.feed) },
+    context: { ...input.context, cards: [] },
+    bestTranslation: selectBestTranslation(input.translations, article.revision),
+    cards: new Map(),
+    questionSets: frozen.questionSets,
+    languageModes: input.languageModes,
+    cardTextMode: frozen.cardTextMode,
+    primaryModel: frozen.model.model,
+    capturedAt: new Date(frozen.capturedAt),
+  });
+  return { ...live, cards: frozen.cards };
 }

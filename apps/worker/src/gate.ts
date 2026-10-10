@@ -6,6 +6,7 @@ import {
   readStoredSetting,
   storySubscriberIds,
   upsertMatchQueue,
+  wakeAwaitingSelections,
   type Transaction,
 } from '@bantoozi/db';
 import { readSetting, type SettingEnvDefaults } from '@bantoozi/shared';
@@ -19,6 +20,9 @@ import type { PipelineGate } from './pipeline.js';
 export function createPipelineGate(tx: Transaction, env: SettingEnvDefaults): PipelineGate {
   return {
     hasInferenceDemand: (articleId) => hasInferenceDemand(tx, articleId),
+    hasExtractionDemand: (articleId) =>
+      hasInferenceDemand(tx, articleId, { settledSelectionsOnly: true }),
+    pendingSelections: (articleId) => wakeAwaitingSelections(tx, articleId),
     async needsTranslation(articleId) {
       // Translation needs `modes[article.lang] === 'translate'` (spec 07 §1); demand is the gate's
       // separate check. An unknown language is never translated as if it were English.

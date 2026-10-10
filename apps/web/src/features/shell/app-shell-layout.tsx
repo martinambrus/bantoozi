@@ -134,7 +134,7 @@ export function AppShellLayout({ user, onLogout, offline, children }: AppShellLa
       >
         {t('common:skipToContent')}
       </a>
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+      <header className="sticky top-[var(--update-bar-height,0px)] z-30 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
         <div className="mx-auto flex max-w-6xl items-center gap-2 px-4 py-1">
           <IconButton
             label={t('common:actions.menu')}

@@ -42,7 +42,7 @@ function ReaderFrame({ counts, children }: ReaderFrameProps) {
   if (desktop) {
     return (
       <div className="mx-auto flex w-full max-w-[96rem] items-start gap-6 px-4 py-4">
-        <div className="sticky top-16 max-h-[calc(100dvh-5rem)] w-64 shrink-0 overflow-y-auto">
+        <div className="sticky top-[calc(4rem+var(--update-bar-height,0px))] max-h-[calc(100dvh-5rem-var(--update-bar-height,0px))] w-64 shrink-0 overflow-y-auto">
           <ReaderSidebar counts={counts} />
         </div>
         <div className="min-w-0 flex-1">{children}</div>

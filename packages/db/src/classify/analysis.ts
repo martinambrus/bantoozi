@@ -161,6 +161,29 @@ export async function saveAnalysisStages(
 }
 
 /**
+ * Replace the frozen input of a request that waited for its article's extraction (migration 0018):
+ * the recaptured snapshot (without `awaitingExtraction`) and its `input_sha`, the hex SHA-256 of the
+ * stored jsonb text (D-4). Only the lease holder may do it, only while the stored snapshot still
+ * carries the flag; returns the new hash, or null when the lease was lost or the flag is gone.
+ */
+export async function recaptureAnalysisInput(
+  db: Executor,
+  id: string,
+  leaseToken: string,
+  inputSnapshot: unknown,
+): Promise<string | null> {
+  const json = JSON.stringify(inputSnapshot);
+  const result = await db.execute<{ input_sha: string }>(sql`
+    UPDATE analysis_requests
+       SET input_snapshot = ${json}::jsonb,
+           input_sha = encode(sha256(convert_to((${json}::jsonb)::text, 'UTF8')), 'hex')
+     WHERE id = ${id}::uuid AND status = 'running' AND lease_token = ${leaseToken}::uuid
+       AND jsonb_exists(input_snapshot, 'awaitingExtraction')
+    RETURNING input_sha`);
+  return result.rows[0]?.input_sha ?? null;
+}
+
+/**
  * Whether the request still authorizes inference for its user (spec 05 §1.1, spec 04 §1.1): the
  * user is active, the subscription to its feed is still training/active at the request's inference
  * version, and the request is inside its retention window. The live article revision is NOT

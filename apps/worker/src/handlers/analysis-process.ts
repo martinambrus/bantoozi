@@ -8,10 +8,12 @@ import {
   loadCardInputs,
   loadClassificationArticle,
   lockAnalysisRequest,
+  loadAnalysisCaptureContext,
   lockArticleRevision,
   readCardAnswers,
   readFacets,
   readL2Answers,
+  recaptureAnalysisInput,
   releaseAnalysisRequest,
   renewAnalysisLease,
   retryTransaction,
@@ -66,7 +68,7 @@ import {
 } from '@bantoozi/translate';
 
 import { builtCardQuestion } from '../classify/card-questions.js';
-import { frozenTranslation } from '../classify/analysis-snapshot.js';
+import { frozenTranslation, recaptureAwaitingSnapshot } from '../classify/analysis-snapshot.js';
 import {
   enrichQuestions,
   languageModeOf,
@@ -102,6 +104,11 @@ interface StageResults {
   >;
   l2?: Record<string, { stateSha256: string; answer: JsonObject }>;
 }
+
+/** How long a selection made before its article's extraction waits for it. */
+const AWAITING_EXTRACTION_CEILING_MS = 30 * 60_000;
+/** The safety-net delay of the intent a waiting request leaves; the extraction wakes it sooner. */
+const AWAITING_EXTRACTION_RECHECK_MS = 5 * 60_000;
 
 /** Why a request cannot run under its frozen context (terminal). */
 type FrozenContextProblem = 'invalid_snapshot' | 'context_unavailable';
@@ -210,11 +217,64 @@ class AnalysisRun {
       return this.terminal('cancel', 'revoked');
     }
 
+    if (this.snapshot.awaitingExtraction === true) await this.awaitExtraction();
+
     const translation = await this.translationStage();
     const states = frozenStates(this.snapshot, translation);
     const enrichAnswers = await this.enrichStage(states);
     const { cards, l2 } = await this.matchStage(states, enrichAnswers);
     await this.complete(states, enrichAnswers, cards, l2);
+  }
+
+  /**
+   * A request frozen before its article's extraction: while the article at the request's revision is
+   * still `ingested` and the request is young, wait without counting an attempt (the extraction
+   * wakes it; the delayed intent is the safety net). Otherwise recapture the article, translation,
+   * language mode and media context at the same revision, keeping the frozen cards, sets, model and
+   * card text mode, and continue on that input. A moved revision keeps the frozen snapshot.
+   */
+  private async awaitExtraction(): Promise<void> {
+    const { request, deps } = this;
+    const article = await loadClassificationArticle(deps.db, request.articleId);
+    if (article === null || article.revision !== request.articleRevision) return;
+    const now = nowOf(deps).getTime();
+    if (
+      article.pipelineState === 'ingested' &&
+      now - request.createdAt.getTime() < AWAITING_EXTRACTION_CEILING_MS
+    ) {
+      return this.defer(new Date(now), 'awaiting_extraction', {
+        intentAt: new Date(now + AWAITING_EXTRACTION_RECHECK_MS),
+      });
+    }
+    const config = await loadClassificationConfig(deps.db, deps.settingsEnv);
+    await this.renewLease();
+    // One transaction under the article's share lock: an extraction, merge or reset cannot commit
+    // between the reads, so the snapshot describes one state of the request's revision.
+    const recapture = await retryTransaction(deps.db, async (tx) => {
+      const live = await lockArticleRevision(tx, request.articleId, 'share');
+      if (live === null || live.revision !== request.articleRevision) return null;
+      const current = await loadClassificationArticle(tx, request.articleId);
+      const context = await loadAnalysisCaptureContext(tx, {
+        userId: request.userId,
+        feedId: request.feedId,
+        articleId: request.articleId,
+      });
+      if (current === null || context === null) return null;
+      const snapshot = recaptureAwaitingSnapshot({
+        frozen: this.snapshot,
+        article: current,
+        translations: await listTranslations(tx, current.id, current.revision),
+        context,
+        languageModes: config.languageModes,
+      });
+      const inputSha = await recaptureAnalysisInput(tx, request.id, this.leaseToken, snapshot);
+      return inputSha === null ? 'lost' : { snapshot, inputSha };
+    });
+    if (recapture === null) return;
+    if (recapture === 'lost') throw new RunEnded();
+    request.inputSnapshot = recapture.snapshot;
+    request.inputSha = recapture.inputSha;
+    this.snapshot = recapture.snapshot;
   }
 
   /** The frozen sets and model must be exactly what this worker's code asks (spec 05 §2). */
@@ -808,8 +868,12 @@ class AnalysisRun {
   }
 
   /** Back to pending at `at` without a failure attempt, with the delayed intent that resumes it. */
-  private async defer(at: Date, errorCode: string): Promise<never> {
-    await this.release({ kind: 'defer', nextAttemptAt: at, errorCode });
+  private async defer(
+    at: Date,
+    errorCode: string,
+    options: { intentAt?: Date } = {},
+  ): Promise<never> {
+    await this.release({ kind: 'defer', nextAttemptAt: at, errorCode }, options.intentAt);
     throw new RunEnded();
   }
 
@@ -825,13 +889,17 @@ class AnalysisRun {
     throw new RunEnded();
   }
 
-  private async release(release: Parameters<typeof releaseAnalysisRequest>[3]): Promise<void> {
+  private async release(
+    release: Parameters<typeof releaseAnalysisRequest>[3],
+    intentAt?: Date,
+  ): Promise<void> {
     await retryTransaction(this.deps.db, async (tx) => {
       const released = await releaseAnalysisRequest(tx, this.request.id, this.leaseToken, release);
       if (released?.status === 'pending') {
-        await enqueueAnalysis(workerOutbox(tx, { availableAt: released.nextAttemptAt }), {
-          analysisRequestId: this.request.id,
-        });
+        await enqueueAnalysis(
+          workerOutbox(tx, { availableAt: intentAt ?? released.nextAttemptAt }),
+          { analysisRequestId: this.request.id },
+        );
       }
     });
     if (release.kind !== 'defer') {

@@ -2,6 +2,7 @@
   "update": {
     "ready": "Je pripravená nová verzia Bantoozi.",
     "otherTab": "Bantoozi bol aktualizovaný v inej karte. Načítajte ho znova, aby ste ho mohli ďalej používať offline.",
-    "reload": "Znova načítať"
+    "reload": "Znova načítať",
+    "dismiss": "Zavrieť"
   }
 }

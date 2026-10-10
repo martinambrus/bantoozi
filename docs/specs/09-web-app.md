@@ -59,7 +59,9 @@ mobile-first, installable, works in English and Slovak, and never makes the read
     retained indefinitely independently of this small, expiring local cache; an offline queued
     bookmark is "Waiting to sync", never falsely "Article saved in full" before capture succeeds.
     Session tokens never enter IndexedDB/localStorage. A service-worker update preserves queued
-    records via versioned migrations; prompt before reloading an actively used reader
+    records via versioned migrations; prompt before reloading an actively used reader: a newer
+    version shows a bar fixed at the top of every screen with Reload; each tab keeps its version
+    until the person reloads it (D-163)
 - **Accessibility:**
   - every swipe action also has a button
   - keyboard navigation throughout
@@ -374,6 +376,11 @@ When the page becomes visible again after `/open`:
 Profile (name, language, timezone, theme → `preferences.theme`) · Reading preferences (all fields of spec 08 §3.1 with
 explanations) · Sessions (devices, revoke) · Invites (left, create, list, copy link) · Export data ·
 Delete account (typed confirmation).
+Only one tab or window of an account edits the reading preferences at a time (a per-account Web
+Lock held while the section is on screen): another one shows that they are being adjusted
+elsewhere, with "Edit here instead", until the first leaves the screen, closes or is taken over,
+and then reads the account again. Without Web Locks every tab edits, each saving in its own order
+(D-162).
 Explain the 7-day restore window before deletion, show queued-unsynced action count, and require an
 online successful response before saying deletion completed. Export has a progress/cancel/error
 state. Offline storage has a "Clear downloaded articles" control and displays its 24-hour limit;

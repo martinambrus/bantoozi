@@ -71,13 +71,11 @@ function stubReload() {
   return reload;
 }
 
-function updateToast(): HTMLElement {
-  const toast = document.querySelector<HTMLElement>('[data-toast-id="pwa-update"]');
-  if (toast === null) throw new Error('there is no update toast');
-  return toast;
+function updateBar(): HTMLElement {
+  return screen.getByTestId('update-bar');
 }
 
-const toastCount = () => document.querySelectorAll('[data-toast-id]').length;
+const barCount = () => screen.queryAllByTestId('update-bar').length;
 
 function setVisibility(state: DocumentVisibilityState) {
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
@@ -151,21 +149,20 @@ describe('a new version of the app', () => {
       const copy = COPY[language];
       const reload = stubReload();
       const { app, library } = await boot({ language });
-      expect(toastCount()).toBe(0);
+      expect(barCount()).toBe(0);
 
       act(() => library.waiting());
 
-      const toast = updateToast();
-      expect(toast).toHaveTextContent(copy.ready);
-      expect(toast).not.toHaveTextContent(copy.otherTab);
+      const bar = updateBar();
+      expect(bar).toHaveTextContent(copy.ready);
+      expect(bar).not.toHaveTextContent(copy.otherTab);
       expect(library.updateServiceWorker).not.toHaveBeenCalled();
       expect(reload).not.toHaveBeenCalled();
 
-      await app.user.click(within(toast).getByRole('button', { name: copy.reload }));
+      await app.user.click(within(bar).getByRole('button', { name: copy.reload }));
 
       expect(library.updateServiceWorker).toHaveBeenCalledExactlyOnceWith(true);
       expect(reload).toHaveBeenCalledTimes(1);
-      expect(toastCount()).toBe(0);
     },
   );
 
@@ -178,7 +175,7 @@ describe('a new version of the app', () => {
       vi.advanceTimersByTime(10 * 60_000);
     });
 
-    expect(updateToast()).toHaveTextContent(COPY.en.ready);
+    expect(updateBar()).toHaveTextContent(COPY.en.ready);
   });
 
   it('keeps the running version when it is dismissed', async () => {
@@ -186,9 +183,9 @@ describe('a new version of the app', () => {
     const { app, library } = await boot();
     act(() => library.waiting());
 
-    await app.user.click(within(updateToast()).getByRole('button', { name: 'Dismiss' }));
+    await app.user.click(within(updateBar()).getByRole('button', { name: 'Dismiss' }));
 
-    expect(toastCount()).toBe(0);
+    expect(barCount()).toBe(0);
     expect(library.updateServiceWorker).not.toHaveBeenCalled();
     expect(reload).not.toHaveBeenCalled();
   });
@@ -196,13 +193,36 @@ describe('a new version of the app', () => {
   it('stays dismissed when the language changes', async () => {
     const { app, library } = await boot();
     act(() => library.waiting());
-    await app.user.click(within(updateToast()).getByRole('button', { name: 'Dismiss' }));
+    await app.user.click(within(updateBar()).getByRole('button', { name: 'Dismiss' }));
 
     await act(async () => {
       await app.i18n.changeLanguage('sk');
     });
 
-    expect(toastCount()).toBe(0);
+    expect(barCount()).toBe(0);
+  });
+
+  it('shows again when another tab then takes over', async () => {
+    const { app, library } = await boot();
+    act(() => library.waiting());
+    await app.user.click(within(updateBar()).getByRole('button', { name: 'Dismiss' }));
+    expect(barCount()).toBe(0);
+
+    act(() => library.tookControl());
+
+    expect(updateBar()).toHaveTextContent(COPY.en.otherTab);
+  });
+
+  it('keeps the height of the bar in a variable for the sticky parts below it', async () => {
+    const { app, library } = await boot();
+    const height = () => document.documentElement.style.getPropertyValue('--update-bar-height');
+    expect(height()).toBe('');
+
+    act(() => library.waiting());
+    expect(height()).toBe('0px');
+
+    await app.user.click(within(updateBar()).getByRole('button', { name: 'Dismiss' }));
+    expect(height()).toBe('');
   });
 
   it('stays when the account signs out', async () => {
@@ -217,16 +237,16 @@ describe('a new version of the app', () => {
     await app.user.click(screen.getByRole('menuitem', { name: 'Sign out' }));
 
     await waitFor(() => expect(app.router.state.location.pathname).toBe('/login'));
-    expect(updateToast()).toHaveTextContent(COPY.en.ready);
+    expect(updateBar()).toHaveTextContent(COPY.en.ready);
   });
 
-  it('is one toast however often a worker waits', async () => {
+  it('is one bar however often a worker waits', async () => {
     const { library } = await boot();
 
     act(() => library.waiting());
     act(() => library.waiting());
 
-    expect(document.querySelectorAll('[data-toast-id="pwa-update"]')).toHaveLength(1);
+    expect(screen.queryAllByTestId('update-bar')).toHaveLength(1);
   });
 
   it('does not reload a tab that another tab updated until it is asked to', async () => {
@@ -237,12 +257,12 @@ describe('a new version of the app', () => {
     act(() => library.tookControl());
 
     expect(reload).not.toHaveBeenCalled();
-    expect(toastCount()).toBe(1);
-    const toast = updateToast();
-    expect(toast).toHaveTextContent(COPY.en.otherTab);
-    expect(toast).not.toHaveTextContent(COPY.en.ready);
+    expect(barCount()).toBe(1);
+    const bar = updateBar();
+    expect(bar).toHaveTextContent(COPY.en.otherTab);
+    expect(bar).not.toHaveTextContent(COPY.en.ready);
 
-    await app.user.click(within(toast).getByRole('button', { name: COPY.en.reload }));
+    await app.user.click(within(bar).getByRole('button', { name: COPY.en.reload }));
 
     expect(reload).toHaveBeenCalledTimes(1);
     expect(library.updateServiceWorker).not.toHaveBeenCalled();
@@ -256,30 +276,30 @@ describe('another tab moved the offline database to a newer version', () => {
       const copy = COPY[language];
       const reload = stubReload();
       const { app, library } = await boot({ language });
-      expect(toastCount()).toBe(0);
+      expect(barCount()).toBe(0);
 
       await anotherTabOpensTheOfflineDatabaseAt(2);
 
-      const toast = updateToast();
-      expect(toast).toHaveTextContent(copy.otherTab);
+      const bar = updateBar();
+      expect(bar).toHaveTextContent(copy.otherTab);
       expect(reload).not.toHaveBeenCalled();
 
-      await app.user.click(within(toast).getByRole('button', { name: copy.reload }));
+      await app.user.click(within(bar).getByRole('button', { name: copy.reload }));
 
       expect(reload).toHaveBeenCalledTimes(1);
       expect(library.updateServiceWorker).not.toHaveBeenCalled();
     },
   );
 
-  it('takes the place of the update toast', async () => {
+  it('takes the place of the update bar', async () => {
     const { library } = await boot();
     act(() => library.waiting());
 
     await anotherTabOpensTheOfflineDatabaseAt(2);
 
-    expect(document.querySelectorAll('[data-toast-id="pwa-update"]')).toHaveLength(1);
-    expect(updateToast()).toHaveTextContent(COPY.en.otherTab);
-    expect(updateToast()).not.toHaveTextContent(COPY.en.ready);
+    expect(screen.queryAllByTestId('update-bar')).toHaveLength(1);
+    expect(updateBar()).toHaveTextContent(COPY.en.otherTab);
+    expect(updateBar()).not.toHaveTextContent(COPY.en.ready);
   });
 
   it('is not shown for a database that was deleted', async () => {
@@ -287,7 +307,7 @@ describe('another tab moved the offline database to a newer version', () => {
 
     await anotherTabDeletesTheOfflineDatabase();
 
-    expect(toastCount()).toBe(0);
+    expect(barCount()).toBe(0);
   });
 });
 
@@ -300,7 +320,7 @@ describe('a registration that does not work', () => {
       library.failed(new TypeError("Failed to execute 'register' on 'ServiceWorkerContainer'")),
     );
 
-    expect(toastCount()).toBe(0);
+    expect(barCount()).toBe(0);
     expect(error).not.toHaveBeenCalled();
   });
 
@@ -312,7 +332,7 @@ describe('a registration that does not work', () => {
     act(() => library.registered(undefined));
     returnAfter(2 * HOUR);
 
-    expect(toastCount()).toBe(0);
+    expect(barCount()).toBe(0);
     expect(error).not.toHaveBeenCalled();
   });
 });
@@ -391,7 +411,7 @@ describe('a tab left open', () => {
     });
 
     expect(asked).toBe(1);
-    expect(toastCount()).toBe(0);
+    expect(barCount()).toBe(0);
     expect(error).not.toHaveBeenCalled();
   });
 });

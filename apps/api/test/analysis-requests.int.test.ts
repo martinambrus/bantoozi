@@ -179,6 +179,32 @@ describe('POST /subscriptions/:feedId/analyze', () => {
     expect(await requestRows(alice.id)).toHaveLength(2);
   });
 
+  it('marks only the selections of articles not yet extracted as awaiting their extraction', async () => {
+    const { alice, feed, articles } = await setup();
+    await h.owner.query(`UPDATE articles SET pipeline_state = 'ingested' WHERE id = $1`, [
+      articles[0]?.id,
+    ]);
+    await h.owner.query(`UPDATE articles SET pipeline_state = 'extracted' WHERE id = $1`, [
+      articles[1]?.id,
+    ]);
+    const res = await apiClient(h.server, alice).post(`/subscriptions/${feed.id}/analyze`, {
+      articles: selection(articles),
+      expectedInferenceVersion: '0',
+      startTraining: true,
+    });
+    expect(res.statusCode, res.body).toBe(202);
+    const flags = new Map(
+      (await requestRows(alice.id)).map((row) => [
+        row.article_id,
+        AnalysisInputSnapshotSchema.parse(row.input_snapshot).awaitingExtraction,
+      ]),
+    );
+    expect(flags.get(articles[0]?.id ?? '')).toBe(true);
+    expect(flags.get(articles[1]?.id ?? '')).toBeUndefined();
+    // The flag stays out of the public request view.
+    expect(JSON.stringify(res.json())).not.toContain('awaitingExtraction');
+  });
+
   it('rejects stale versions and revisions, foreign articles and feeds, and bad bodies', async () => {
     const { alice, feed, articles } = await setup();
     const bob = await createTestUser(h);

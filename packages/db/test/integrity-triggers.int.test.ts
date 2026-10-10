@@ -1791,6 +1791,76 @@ describe('analysis_requests_update_check (bantoozi_worker)', () => {
     }
   });
 
+  describe('a snapshot awaiting its extraction', () => {
+    const snapshotOf = (m: ManualFixture, extra: Record<string, unknown> = {}) =>
+      JSON.stringify({ article: { id: m.article, title: 'Frozen' }, cards: [], ...extra });
+    const sha = (snapshot: string) =>
+      `encode(sha256(convert_to('${snapshot}'::jsonb::text, 'UTF8')), 'hex')`;
+
+    async function awaiting(): Promise<{ id: string; lease: string; recaptured: string }> {
+      const m = await manualFixture();
+      const frozen = snapshotOf(m, { awaitingExtraction: true });
+      const params = await requestParams({ ...m, snapshot: frozen });
+      await expectOneRow(asApp(m.user, INSERT_REQUEST, params));
+      const id = String(params[0]);
+      return { id, lease: await run(id), recaptured: snapshotOf(m, { lang: 'en' }) };
+    }
+
+    it('lets the lease holder replace the snapshot and its hash once, clearing the flag', async () => {
+      const { id, recaptured } = await awaiting();
+      await expectOneRow(
+        ctx.workerPool.query(
+          update(`input_snapshot = '${recaptured}'::jsonb, input_sha = ${sha(recaptured)}`),
+          [id],
+        ),
+      );
+      const stored = await ownerRow<{ snapshot: Record<string, unknown> }>(
+        'SELECT input_snapshot AS snapshot FROM analysis_requests WHERE id = $1',
+        [id],
+      );
+      expect(stored.snapshot).toHaveProperty('lang', 'en');
+      expect(stored.snapshot).not.toHaveProperty('awaitingExtraction');
+      // The flag is gone: the input is frozen again.
+      const edit = `input_snapshot = '{"edited": true}'::jsonb`;
+      await expectViolation(ctx.workerPool.query(update(edit), [id]), TRIGGER, edit);
+    });
+
+    it('rejects every other change of the frozen input', async () => {
+      const { id, recaptured } = await awaiting();
+      const flagged = snapshotOf(
+        { article: '1', user: '', feed: '' },
+        { awaitingExtraction: true },
+      );
+      const edits = [
+        // The flag stays: still the frozen snapshot.
+        `input_snapshot = '${flagged}'::jsonb, input_sha = ${sha(flagged)}`,
+        // A hash alone.
+        `input_sha = repeat('0', 64)`,
+        // The flag cleared, under a hash that is not the new snapshot's.
+        `input_snapshot = '${recaptured}'::jsonb, input_sha = repeat('0', 64)`,
+      ];
+      for (const edit of edits) {
+        await expectViolation(ctx.workerPool.query(update(edit), [id]), TRIGGER, edit);
+      }
+      // Not while pending: only a running request may recapture.
+      await expectOneRow(
+        ctx.workerPool.query(update(`status = 'pending', lease_token = NULL, lease_until = NULL`), [
+          id,
+        ]),
+      );
+      const edit = `input_snapshot = '${recaptured}'::jsonb, input_sha = ${sha(recaptured)}`;
+      await expectViolation(ctx.workerPool.query(update(edit), [id]), TRIGGER, 'pending');
+    });
+
+    it('never lets a request without the flag change its snapshot, running or not', async () => {
+      const id = await createRequest(await manualFixture());
+      await run(id);
+      const other = `{"article": {"id": "1"}, "cards": [], "awaitingExtraction": true}`;
+      const edit = `input_snapshot = '${other}'::jsonb, input_sha = ${sha(other)}`;
+      await expectViolation(ctx.workerPool.query(update(edit), [id]), TRIGGER, edit);
+    });
+  });
+
   it('runs a request to completion with its result', async () => {
     const id = await completedRequest();
     expect(

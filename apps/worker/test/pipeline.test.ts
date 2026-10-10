@@ -23,6 +23,7 @@ function recorder(): JobSender & { intents: JobIntent[] } {
 function gate(
   overrides: Partial<{
     demand: boolean;
+    selections: string[];
     translate: boolean;
     users: string[];
     carrier: NewCarrierDemand | null;
@@ -31,6 +32,8 @@ function gate(
 ): PipelineGate {
   return {
     hasInferenceDemand: async () => overrides.demand ?? true,
+    hasExtractionDemand: async () => overrides.demand ?? true,
+    pendingSelections: async () => overrides.selections ?? [],
     needsTranslation: async () => overrides.translate ?? false,
     usersToRank: async () => overrides.users ?? [],
     newCarrierDemand: async () => overrides.carrier ?? null,
@@ -42,6 +45,8 @@ function gate(
 
 const U1 = '0190a8e6-7d5b-7c2e-9f3a-1b2c3d4e5f61';
 const U2 = '0190a8e6-7d5b-7c2e-9f3a-1b2c3d4e5f62';
+const R1 = '0190a8e6-7d5b-7c2e-9f3a-1b2c3d4e5f71';
+const R2 = '0190a8e6-7d5b-7c2e-9f3a-1b2c3d4e5f72';
 
 const queues = (sender: { intents: JobIntent[] }) => sender.intents.map((i) => i.queue);
 
@@ -87,6 +92,28 @@ describe('pipeline.after (spec 03 §1 stage order)', () => {
       );
       expect(queues(off)).toEqual([]);
     }
+  });
+
+  it('extract → wakes the selected requests that waited for it, besides the automatic chain', async () => {
+    const waiting = recorder();
+    await after(
+      'extract',
+      '1',
+      { status: 'ok', revision: '1' },
+      { sender: waiting, gate: gate({ selections: [R1, R2], demand: false }) },
+    );
+    expect(waiting.intents.map((i) => [i.queue, i.payload])).toEqual([
+      ['analysis.process', { analysisRequestId: R1 }],
+      ['analysis.process', { analysisRequestId: R2 }],
+    ]);
+    const both = recorder();
+    await after(
+      'extract',
+      '1',
+      { status: 'failed', revision: '1' },
+      { sender: both, gate: gate({ selections: [R1] }) },
+    );
+    expect(queues(both)).toEqual(['analysis.process', 'article.enrich']);
   });
 
   it('translate → enrich even when both tiers failed (native text)', async () => {

@@ -967,7 +967,7 @@ installedTest(
         })
         .toBe(true);
       await staysTrueFor(1_500, async () => {
-        await expect(page.locator('[data-toast-id="pwa-update"]')).toHaveCount(0);
+        await expect(page.getByTestId('update-bar')).toHaveCount(0);
       });
     });
 

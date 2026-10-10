@@ -24,6 +24,11 @@
     "saved": "Saved",
     "notSaved": "Not saved",
     "saveFailed": "Couldn't save this setting. {{reason}}",
+    "lock": {
+      "title": "Preferences are being adjusted in another tab or window",
+      "body": "Changes are paused here so that two windows do not overwrite each other. Choose Edit here instead to continue in this window.",
+      "takeOver": "Edit here instead"
+    },
     "groups": {
       "lists": "Lists",
       "reading": "Marking as read",
