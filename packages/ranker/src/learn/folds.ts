@@ -3,12 +3,11 @@ import { sha256Hex } from '@bantoozi/shared/server';
 import type { TrainingSample } from './samples.js';
 
 type Stratum = 'pos' | 'neg' | 'mixed' | 'none';
-const STRATA: readonly Stratum[] = ['pos', 'neg', 'mixed', 'none'];
 
 /**
  * Deterministic group-stratified fold assignment (spec 06 §8.3): groups are stratified by their
- * explicit class, ordered by sha256(seed‖groupId) and dealt round-robin per stratum; implicit
- * samples follow their group. Returns one fold index per sample.
+ * explicit class, ordered by sha256(seed‖groupId) and dealt round-robin per stratum (mixed groups
+ * first, then each single-class stratum from the fold after them); implicit samples follow their group. Returns one fold index per sample.
  */
 export function groupFolds(samples: readonly TrainingSample[], k: number, seed: string): number[] {
   const groups = new Map<string, { pos: boolean; neg: boolean }>();
@@ -28,16 +27,19 @@ export function groupFolds(samples: readonly TrainingSample[], k: number, seed: 
     byStratum.set(stratum, list);
   }
   const foldOf = new Map<string, number>();
-  let counter = 0;
-  for (const stratum of STRATA) {
-    const list = (byStratum.get(stratum) ?? []).sort((a, b) =>
-      a.key < b.key ? -1 : a.key > b.key ? 1 : 0,
+  const deal = (stratum: Stratum, start: number): number => {
+    const list = (byStratum.get(stratum) ?? []).sort((x, y) =>
+      x.key < y.key ? -1 : x.key > y.key ? 1 : 0,
     );
-    for (const g of list) {
-      foldOf.set(g.id, k > 0 ? counter % k : 0);
-      counter += 1;
-    }
-  }
+    list.forEach((g, i) => foldOf.set(g.id, k > 0 ? (start + i) % k : 0));
+    return start + list.length;
+  };
+  // A mixed group covers both classes, so deal those first and start the single-class strata at
+  // the fold after the last one: folds without a mixed group get one of each class first.
+  const next = deal('mixed', 0);
+  deal('pos', next);
+  deal('neg', next);
+  deal('none', next);
   return samples.map((s) => foldOf.get(s.groupId) ?? 0);
 }
 

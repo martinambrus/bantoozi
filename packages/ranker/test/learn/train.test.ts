@@ -603,3 +603,31 @@ describe('scoreModel', () => {
     expect([...mags].sort((p, q) => q - p)).toEqual(mags);
   });
 });
+
+it('plans k = 3 when a mixed story group sits beside single-class groups', () => {
+  const samples: TrainingSample[] = [
+    sample(0, 1, { groupId: 'p1' }),
+    sample(1, 1, { groupId: 'p2' }),
+    sample(2, 0, { groupId: 'n1' }),
+    sample(3, 0, { groupId: 'n2' }),
+    sample(4, 1, { groupId: 'm' }),
+    sample(5, 0, { groupId: 'm' }),
+  ];
+  const plan = ranker.planFolds(samples, 'seed');
+  expect(plan?.k).toBe(3);
+  const folds = plan?.folds ?? [];
+  expect(folds).toHaveLength(samples.length);
+  const byGroup = new Map<string, number>();
+  samples.forEach((s, i) => {
+    const f = folds[i] ?? -1;
+    expect(byGroup.get(s.groupId) ?? f).toBe(f);
+    byGroup.set(s.groupId, f);
+  });
+  for (let f = 0; f < 3; f += 1) {
+    for (const inside of [true, false]) {
+      const ys = new Set(samples.filter((_, i) => (folds[i] === f) === inside).map((s) => s.y));
+      expect(ys).toEqual(new Set([0, 1]));
+    }
+  }
+  expect(ranker.planFolds(samples, 'seed')).toEqual(plan);
+});
