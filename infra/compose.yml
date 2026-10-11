@@ -1,0 +1,300 @@
+# Production stack (spec 11 §2, §3): `docker compose -f infra/compose.yml --env-file <env> ...`.
+# Deploy with infra/scripts/deploy.sh, which builds the images, runs the migration and seed jobs and
+# only then replaces the application containers. The env file holds the host secrets (mode 600);
+# infra/env/prod.example.env lists every variable. Never print the rendered config: it contains the
+# interpolated secrets.
+#
+# Each service receives only its declared variables. The API gets the bantoozi_app connection and
+# none of the owner, worker or backup credentials.
+#
+# The project name comes from the top-level `name:`. Rehearsals override it through
+# COMPOSE_PROJECT_NAME (infra/env/local-rehearsal.env.example) so they never touch this project.
+name: bantoozi-prod
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 20m
+    max-file: '5'
+
+# Build targets of infra/docker/Dockerfile (context: the repository root).
+x-build-migrate: &build-migrate
+  context: ..
+  dockerfile: infra/docker/Dockerfile
+  target: migrate
+x-build-worker: &build-worker
+  context: ..
+  dockerfile: infra/docker/Dockerfile
+  target: worker
+
+# Hardening shared by the application containers: non-root, read-only root filesystem, a private
+# tmpfs for /tmp, no extra privileges. There is no Docker socket anywhere.
+x-app-hardening: &app-hardening
+  user: '1000:1000'
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+# Settings shared by the worker, the seed and worker-laya (spec 01 §3 "worker").
+x-worker-env: &worker-env
+  NODE_ENV: production
+  DATABASE_URL_WORKER: postgres://bantoozi_worker:${BANTOOZI_WORKER_PASSWORD:?}@postgres:5432/bantoozi
+  PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?}
+  ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+  MAIL_TRANSPORT: ${MAIL_TRANSPORT:-smtp}
+  SMTP_URL: ${SMTP_URL:-}
+  MAIL_FROM: ${MAIL_FROM:-Bantoozi <no-reply@localhost>}
+  TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+  TYPESAFE_MODEL: ${TYPESAFE_MODEL:?}
+  TYPESAFE_BASE_URL: ${TYPESAFE_BASE_URL:-https://api.typesafe.ai}
+  TYPESAFE_PRICE_PER_MTOK_USD: ${TYPESAFE_PRICE_PER_MTOK_USD:-0.042}
+  ENGINE_CONCURRENCY: ${ENGINE_CONCURRENCY:-8}
+  DAILY_BUDGET_USD: ${DAILY_BUDGET_USD:-2.00}
+  OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-https://ollama.com}
+  OLLAMA_MODEL_FAST: ${OLLAMA_MODEL_FAST:-glm-5.3-flash}
+  OLLAMA_MODEL_STRONG: ${OLLAMA_MODEL_STRONG:-glm-5.3}
+  OLLAMA_MAX_CONCURRENCY: ${OLLAMA_MAX_CONCURRENCY:-1}
+  LLM_FALLBACK_ENABLED: ${LLM_FALLBACK_ENABLED:-false}
+  PROVIDER_MASTER_KEY_ID: ${PROVIDER_MASTER_KEY_ID:-}
+  PROVIDER_MASTER_KEYS: ${PROVIDER_MASTER_KEYS:-}
+  LIBRETRANSLATE_URL: ${LIBRETRANSLATE_URL:-http://libretranslate:5000}
+  LANGUAGE_MODES: ${LANGUAGE_MODES:-}
+  FETCH_USER_AGENT: ${FETCH_USER_AGENT:-}
+  FETCH_MAX_BYTES: ${FETCH_MAX_BYTES:-5242880}
+  FETCH_TIMEOUT_MS: ${FETCH_TIMEOUT_MS:-20000}
+  FETCH_ALLOW_PRIVATE: ${FETCH_ALLOW_PRIVATE:-false}
+  INGEST_MAX_AGE_DAYS: ${INGEST_MAX_AGE_DAYS:-14}
+  PREFILTER_MIN_CARDS: ${PREFILTER_MIN_CARDS:-60}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  METRICS_TOKEN: ${METRICS_TOKEN:?}
+  WORKER_METRICS_PORT: ${WORKER_METRICS_PORT:-9101}
+  WORKER_METRICS_HOST: 0.0.0.0
+  DELETION_LEDGER_PATH: ${DELETION_LEDGER_PATH:-}
+  DELETION_LEDGER_RECIPIENT: ${DELETION_LEDGER_RECIPIENT:-}
+  DELETION_HMAC_KEY: ${DELETION_HMAC_KEY:-}
+
+x-worker-health: &worker-health
+  test:
+    - CMD
+    - node
+    - -e
+    - "fetch('http://127.0.0.1:' + process.env.WORKER_METRICS_PORT + '/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+  interval: 10s
+  timeout: 5s
+  retries: 6
+  start_period: 30s
+
+services:
+  postgres:
+    image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+    restart: unless-stopped
+    mem_limit: 6g
+    # Spec 11 §2 configuration. Not published to the host network.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=1536MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - max_connections=100
+      - -c
+      - wal_compression=on
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      BANTOOZI_OWNER_PASSWORD: ${BANTOOZI_OWNER_PASSWORD:?}
+      BANTOOZI_APP_PASSWORD: ${BANTOOZI_APP_PASSWORD:?}
+      BANTOOZI_WORKER_PASSWORD: ${BANTOOZI_WORKER_PASSWORD:?}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Runs only when the pgdata volume is empty (first start).
+      - ./postgres/init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+    healthcheck:
+      # Over TCP on purpose: while init.sh runs, the entrypoint's temporary server listens only on
+      # the unix socket, so this passes only once init.sh has created the database.
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, postgres, -d, bantoozi]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    stop_grace_period: 60s
+    logging: *logging
+
+  # One-off per deploy (restart "no"): the owner connection runs the SQL migrations.
+  migrate:
+    build: *build-migrate
+    <<: *app-hardening
+    restart: 'no'
+    mem_limit: 512m
+    command: [pnpm, db:migrate]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL_MIGRATE: postgres://bantoozi_owner:${BANTOOZI_OWNER_PASSWORD:?}@postgres:5432/bantoozi
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *logging
+
+  # One-off per deploy (restart "no"): idempotent seed with the worker role and the worker settings.
+  seed:
+    build: *build-migrate
+    <<: *app-hardening
+    restart: 'no'
+    mem_limit: 512m
+    command: [pnpm, db:seed]
+    environment:
+      <<: *worker-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    logging: *logging
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile
+      target: api
+    <<: *app-hardening
+    restart: unless-stopped
+    mem_limit: 768m
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://bantoozi_app:${BANTOOZI_APP_PASSWORD:?}@postgres:5432/bantoozi
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?}
+      API_PORT: '3000'
+      API_HOST: 0.0.0.0
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-bantoozi_sid}
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-60}
+      SESSION_PEPPER: ${SESSION_PEPPER:?}
+      SIGNUP_MODE: ${SIGNUP_MODE:-invite}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      MAIL_TRANSPORT: ${MAIL_TRANSPORT:-smtp}
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-Bantoozi <no-reply@localhost>}
+      TYPESAFE_MODEL: ${TYPESAFE_MODEL:?}
+      PROVIDER_MASTER_KEY_ID: ${PROVIDER_MASTER_KEY_ID:-}
+      PROVIDER_MASTER_KEYS: ${PROVIDER_MASTER_KEYS:-}
+      LIBRETRANSLATE_URL: ${LIBRETRANSLATE_URL:-http://libretranslate:5000}
+      FETCH_USER_AGENT: ${FETCH_USER_AGENT:-}
+      FETCH_MAX_BYTES: ${FETCH_MAX_BYTES:-5242880}
+      FETCH_TIMEOUT_MS: ${FETCH_TIMEOUT_MS:-20000}
+      FETCH_ALLOW_PRIVATE: ${FETCH_ALLOW_PRIVATE:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      METRICS_TOKEN: ${METRICS_TOKEN:?}
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/v1/readyz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    # Longer than the API's drain deadline (spec 11 §3 step 4).
+    stop_grace_period: 30s
+    logging: *logging
+
+  worker:
+    build: *build-worker
+    <<: *app-hardening
+    restart: unless-stopped
+    mem_limit: 1536m
+    environment:
+      <<: *worker-env
+      WORKER_QUEUES: ${WORKER_QUEUES:-*}
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    healthcheck: *worker-health
+    stop_grace_period: 120s
+    logging: *logging
+
+  # Compose profile `laya` (M9): the only process that loads the Laya checkpoint, from read-only,
+  # pinned model files.
+  worker-laya:
+    build: *build-worker
+    <<: *app-hardening
+    profiles: [laya]
+    restart: unless-stopped
+    mem_limit: 3584m
+    environment:
+      <<: *worker-env
+      WORKER_QUEUES: article.enrich.laya,analysis.process.laya
+    volumes:
+      - laya-model:/models:ro
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    healthcheck: *worker-health
+    stop_grace_period: 120s
+    logging: *logging
+
+  # Compose profile `translate`: tier-1 machine translation (spec 07).
+  libretranslate:
+    image: libretranslate/libretranslate:latest@sha256:7e7b72b0983c9d5f1e041ddac962ebfc1c20595e04366689cadff72069040027
+    profiles: [translate]
+    restart: unless-stopped
+    mem_limit: 3g
+    environment:
+      LT_LOAD_ONLY: en,sk,cs
+      LT_DISABLE_WEB_UI: 'true'
+    volumes:
+      - lt-models:/home/libretranslate/.local
+    logging: *logging
+
+  # TLS, the static web app, /api/* → api:3000 and the security headers.
+  caddy:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile
+      target: caddy
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:-localhost}
+      ACME_EMAIL: ${ACME_EMAIL:?}
+    ports:
+      - '${HTTP_PORT:-80}:80'
+      - '${HTTPS_PORT:-443}:443'
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      # Caddy's admin endpoint answers once the configuration is loaded.
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:2019/config/']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    stop_grace_period: 30s
+    logging: *logging
+
+  # Local rehearsal only (deploy.sh --local-rehearsal): a mail catcher for the SMTP that
+  # NODE_ENV=production requires. No ports are published.
+  mailpit:
+    image: axllent/mailpit:latest@sha256:030f06031ce5c60913ac9363da1ab0d4be6fd2a78147dd0e1ca0fcac665d6b34
+    profiles: [rehearsal]
+    restart: unless-stopped
+    mem_limit: 128m
+    logging: *logging
+
+volumes:
+  pgdata:
+  caddy-data:
+  caddy-config:
+  lt-models:
+  laya-model:

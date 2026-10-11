@@ -84,6 +84,8 @@ pin exact versions (`save-exact`). Update this file in the same commit as any ve
 | `postgres:16` (16.15) | `sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54` | `infra/compose.dev.yml`, `infra/compose.test.yml`; production compose (M8) |
 | `libretranslate/libretranslate:latest` (pushed 2026-09-03) | `sha256:7e7b72b0983c9d5f1e041ddac962ebfc1c20595e04366689cadff72069040027` | `infra/compose.dev.yml` (`translate` profile) |
 | `caddy:2` (v2.11.4) | `sha256:0c994536bddb66445885237f1a5dcc1916bccea922661c76b4e9fc24061f9b52` | production compose (M8); `infra/caddy/Caddyfile` validated with it |
+| `node:22.22-slim` (Node 22.22.3) | `sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752` | `infra/docker/Dockerfile` (base of the migrate, api and worker images) |
+| `axllent/mailpit:latest` | `sha256:030f06031ce5c60913ac9363da1ab0d4be6fd2a78147dd0e1ca0fcac665d6b34` | `infra/compose.yml`, `rehearsal` profile only (local mail catcher) |
 
 ## Security overrides (`pnpm.overrides` in the root `package.json`)
 
