@@ -4,10 +4,11 @@ import pg from 'pg';
 import { readIdentities } from './age-stream.js';
 import { parseManifest } from './backup-commands.js';
 import { decryptLedgerLines, formatReplay, replayLedger } from './ledger-replay.js';
+import { formatRecovery, prepareRecovery } from './recovery-prepare.js';
 import { verifyRestore } from './restore-verify.js';
 
 /**
- * `restore:verify` and `ledger:replay`: run by `infra/scripts/restore-test.sh` in a container that
+ * `restore:verify`, `ledger:replay` and `recovery:prepare`: run by `infra/scripts/restore-test.sh` in a container that
  * shares the network namespace of the throwaway Postgres (which has no other network). The database
  * is reached over loopback as the superuser of that throwaway instance only.
  */
@@ -70,6 +71,17 @@ export function registerRestoreCommands(program: Command): void {
           throw new Error('DELETION_HMAC_KEY (the recovered key) is required to replay the ledger');
         }
         console.log(formatReplay(await replayLedger(pool, entries, key ?? '')));
+      }),
+    );
+
+  program
+    .command('recovery:prepare')
+    .description(
+      'After a restore: cancel stale active pg-boss jobs, reset outbox and origin leases (spec 11 §4.1 step 4)',
+    )
+    .action(() =>
+      withPool(async (pool) => {
+        console.log(formatRecovery(await prepareRecovery(pool)));
       }),
     );
 }

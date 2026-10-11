@@ -6,6 +6,11 @@ import { describe, expect, it } from 'vitest';
 const root = fileURLToPath(new URL('../../..', import.meta.url));
 const read = (path: string): string => readFileSync(`${root}${path}`, 'utf8');
 const scripts = ['infra/scripts/backup.sh', 'infra/scripts/restore-test.sh'] as const;
+const hostScripts = [
+  'infra/scripts/deploy.sh',
+  'infra/scripts/maintenance.sh',
+  'infra/scripts/host-health.sh',
+] as const;
 const compose = read('infra/compose.yml');
 
 describe('backup and restore scripts (static checks)', () => {
@@ -73,6 +78,65 @@ describe('backup and restore scripts (static checks)', () => {
     expect(lib).toContain('dc exec -T api node -e');
     expect(lib).toContain('process.env.METRICS_TOKEN');
     expect(lib).not.toMatch(/METRICS_TOKEN="?\$/u);
+  });
+});
+
+describe('deploy, maintenance and host-health scripts (static checks)', () => {
+  it.each(hostScripts)('%s is strict', (path) => {
+    expect(read(path)).toContain('set -euo pipefail');
+  });
+
+  it('documents the host-health cron line and keeps the token out of arguments and output', () => {
+    const text = read('infra/scripts/host-health.sh');
+    expect(text).toMatch(/^# {3}\*\/15 \* \* \* \* \S*host-health\.sh --env-file /mu);
+    expect(text).toContain('process.env.METRICS_TOKEN');
+    expect(text).not.toMatch(/METRICS_TOKEN="?\$|envfile_get METRICS_TOKEN/u);
+    expect(text).toContain('kind: "host_health"');
+  });
+
+  it('serves a 503 page with Retry-After from a flag file in the caddy data volume', () => {
+    const caddyfile = read('infra/caddy/Caddyfile');
+    expect(caddyfile).toContain('root /data/maintenance');
+    expect(caddyfile).toMatch(/not path \/api\/v1\/readyz/u);
+    expect(caddyfile).toMatch(/header Retry-After "\d+"/u);
+    expect(caddyfile).toMatch(/^\s*HTML 503$/mu);
+    expect(compose).toContain('- caddy-data:/data');
+    expect(read('infra/scripts/maintenance.sh')).toContain('FLAG_DIR=/data/maintenance');
+  });
+
+  it('gates the deploy on stored settings and turns maintenance on when compatibility is not shown', () => {
+    const deploy = read('infra/scripts/deploy.sh');
+    for (const check of [
+      'language_modes',
+      'card_text_mode',
+      'engine.laya',
+      'Laya work is outstanding',
+    ]) {
+      expect(deploy).toContain(check);
+    }
+    expect(deploy.indexOf('Laya work is outstanding')).toBeLessThan(deploy.indexOf('step "build'));
+    expect(deploy).toContain('smoke: outbox dispatch ok');
+    expect(deploy).toContain('smoke: queue traversal ok');
+    expect(deploy).toMatch(/pre-deploy backup skipped: fresh instance/u);
+    expect(deploy).toMatch(/"\$MAINTENANCE" --env-file "\$ENV_FILE" on/u);
+  });
+
+  it('starts the saved release without any network and reports the four smoke results', () => {
+    const restore = read('infra/scripts/restore-test.sh');
+    expect(restore).toContain(
+      'RELEASE_SMOKE login=$SMOKE_LOGIN read=$SMOKE_READ rank=$SMOKE_RANK outbox=$SMOKE_OUTBOX',
+    );
+    expect(restore).toContain('recovery:prepare');
+    const start = restore.slice(
+      restore.indexOf('release_start()'),
+      restore.indexOf('API_NAME="$(uniq_name'),
+    );
+    expect(start).toContain('--network none');
+    expect(start).toContain('--read-only');
+    expect(start).toContain('--cap-drop ALL');
+    expect(start).not.toMatch(/ -p [0-9]|--publish|--privileged/u);
+    expect(start).not.toMatch(/ -e [A-Z0-9_]+=/u);
+    expect(restore).toMatch(/docker rm -f -v "\$WORKER_NAME" "\$API_NAME"/u);
   });
 });
 

@@ -13,10 +13,16 @@
 # count, foreign keys, sequences, active seeds, manifest bounds, role separation, row-level
 # security with two fixture tenants, the cold bookmarked snapshots (checksum, no refetch) and the
 # provider credentials (decrypted with the recovered keys, accepted by an in-process fake
-# provider); replay the deletion ledger and revoke restored sessions and login codes. On success it
-# marks the backup restore-tested in the bucket, prints the report and posts `restore_ok`; on any
-# failure it prints nothing as verified, exits non-zero and posts `restore_failed`. The throwaway
-# container and its volume are removed on every exit.
+# provider); replay the deletion ledger and revoke restored sessions and login codes; run
+# `recovery:prepare` (spec 11 §4.1 step 4); then start the SAVED RELEASE (the api and worker image
+# ids recorded in the manifest) against the restore and run the login/read/rank/outbox smoke
+# (spec 11 §4), printing `RELEASE_SMOKE login=ok read=ok rank=ok outbox=ok`. The release containers
+# have no network at all (`--network none`): they reach the throwaway Postgres through its unix
+# socket directory, mail goes to a sink inside the api container, and no provider key is set. On
+# success it marks the backup restore-tested in the bucket, prints the report and posts
+# `restore_ok`; on any failure (a smoke step that is not ok included) it prints nothing as verified,
+# exits non-zero and posts `restore_failed`. The throwaway containers and their volumes are removed
+# on every exit.
 set -euo pipefail
 
 # shellcheck source=infra/scripts/ops-lib.sh
@@ -48,6 +54,8 @@ ops_workdir
 START_EPOCH="$(date -u +%s)"
 STAGE=init
 PG_NAME=""
+API_NAME=""
+WORKER_NAME=""
 ID="${BACKUP_ID_ARG}"
 
 STATE_DIR="${BACKUP_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/bantoozi/backup}"
@@ -58,7 +66,14 @@ if ! flock -n 9; then echo "restore-test: another restore test of $PROJECT is ru
 on_exit() {
   local rc=$?
   trap - EXIT
-  if [ -n "$PG_NAME" ]; then docker rm -f -v "$PG_NAME" >/dev/null 2>&1 || true; fi
+  for name in "$WORKER_NAME" "$API_NAME"; do
+    if [ -n "$name" ]; then docker rm -f -v "$name" >/dev/null 2>&1 || true; fi
+  done
+  if [ -n "$PG_NAME" ]; then
+    # The postgres entrypoint hands the shared socket directory to its own user: the socket files go first.
+    docker exec "$PG_NAME" sh -c 'rm -f /var/run/postgresql/.s.PGSQL.5432 /var/run/postgresql/.s.PGSQL.5432.lock' >/dev/null 2>&1 || true
+    docker rm -f -v "$PG_NAME" >/dev/null 2>&1 || true
+  fi
   if [ "$rc" -ne 0 ]; then
     local tail_text
     tail_text="$(err_tail)"
@@ -111,8 +126,12 @@ done <<<"$INFO"
 STAGE=throwaway
 PG_NAME="$(uniq_name restore-pg)"
 # No network at all: nothing can leave the container and nothing is published. The data volume is
-# anonymous and removed with the container (`docker rm -v`).
+# anonymous and removed with the container (`docker rm -v`). The unix socket directory is shared
+# with the release containers of the smoke stage (they have no network either).
+SOCK_DIR="$WORK/pgsock"
+mkdir "$SOCK_DIR"; chmod 777 "$SOCK_DIR"
 docker run -d --name "$PG_NAME" --network none -e POSTGRES_HOST_AUTH_METHOD=trust \
+  -v "$SOCK_DIR:/var/run/postgresql" \
   --label bantoozi.restore-test=1 "$POSTGRES_IMAGE" postgres -c fsync=off -c full_page_writes=off \
   -c synchronous_commit=off >/dev/null 2>>"$ERRLOG"
 ready=0
@@ -139,6 +158,194 @@ STAGE=ledger
 LEDGER="$(reader tools_run ledger:fetch)"
 REPLAY_OUT="$(printf '%s\n' "$LEDGER" | tools_netns ledger:replay)"
 
+STAGE=recovery-prepare
+# Spec 11 §4.1 step 4: the new workers must not resume a restored job lease or relay lease.
+RECOVERY_OUT="$(tools_netns recovery:prepare </dev/null)"
+
+STAGE=release-smoke
+# The saved release: the api and worker image ids the manifest recorded; the current compose images
+# when this host no longer has them (said in the output).
+RELEASE_SOURCE=manifest
+release_image() { # release_image <service> <variable> : sets the variable to the image to run
+  local id
+  id="$(printf '%s' "$MANIFEST" | sed -nE "s/.*\"$1\":\"(sha256:[0-9a-f]{64})\".*/\\1/p")"
+  if [ -n "$id" ] && docker image inspect "$id" >/dev/null 2>&1; then printf -v "$2" '%s' "$id"; return 0; fi
+  RELEASE_SOURCE=current
+  id="$(dc config --images 2>/dev/null | grep -E -- "-$1(:|$)" | head -n 1)"
+  if [ -n "$id" ] && docker image inspect "$id" >/dev/null 2>&1; then printf -v "$2" '%s' "$id"; return 0; fi
+  echo "no $1 image of the saved release is available" >>"$ERRLOG"
+  return 1
+}
+API_IMAGE=""; WORKER_IMAGE=""
+release_image api API_IMAGE
+release_image worker WORKER_IMAGE
+[ -n "$API_IMAGE" ] && [ -n "$WORKER_IMAGE" ]
+
+SMOKE_EMAIL="release-smoke@restore-smoke.invalid"
+# Throwaway values for this run only; the real tokens, peppers and keys never reach the release.
+SMOKE_TOKEN="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+SMOKE_PEPPER="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+TYPESAFE_MODEL_V="$(envfile_get TYPESAFE_MODEL)"; TYPESAFE_MODEL_V="${TYPESAFE_MODEL_V:-jev-1.13.0}"
+
+# release_start <name> <image> <smtp url> : an isolated release container. No network, read-only
+# root, no capabilities. Values are handed over by name from this subshell's environment; the
+# throwaway database trusts every connection on its socket.
+release_start() {
+  (
+    export NODE_ENV=production PUBLIC_BASE_URL=https://restore-smoke.invalid MAIL_TRANSPORT=smtp
+    export MAIL_FROM='Bantoozi <no-reply@restore-smoke.invalid>' TYPESAFE_MODEL="$TYPESAFE_MODEL_V"
+    export METRICS_TOKEN="$SMOKE_TOKEN" LOG_LEVEL=warn ADMIN_EMAILS="$SMOKE_EMAIL" SESSION_PEPPER="$SMOKE_PEPPER"
+    export SIGNUP_MODE=invite API_PORT=3000 API_HOST=127.0.0.1 WORKER_METRICS_PORT=9101
+    export WORKER_METRICS_HOST=127.0.0.1 WORKER_QUEUES='*' LLM_FALLBACK_ENABLED=false DAILY_BUDGET_USD=0
+    export SMTP_URL="$3"
+    export DATABASE_URL="postgres://bantoozi_app:release-smoke@localhost/bantoozi?host=%2Fpgsock"
+    export DATABASE_URL_WORKER="postgres://bantoozi_worker:release-smoke@localhost/bantoozi?host=%2Fpgsock"
+    docker run -d --name "$1" --network none --read-only --tmpfs /tmp --cap-drop ALL \
+      --security-opt no-new-privileges:true --label bantoozi.restore-test=1 \
+      -v "$SOCK_DIR:/pgsock:ro" \
+      -e NODE_ENV -e PUBLIC_BASE_URL -e MAIL_TRANSPORT -e SMTP_URL -e MAIL_FROM -e TYPESAFE_MODEL -e METRICS_TOKEN \
+      -e LOG_LEVEL -e ADMIN_EMAILS -e DATABASE_URL -e DATABASE_URL_WORKER -e SESSION_PEPPER -e SIGNUP_MODE \
+      -e API_PORT -e API_HOST -e WORKER_METRICS_PORT -e WORKER_METRICS_HOST -e WORKER_QUEUES \
+      -e LLM_FALLBACK_ENABLED -e DAILY_BUDGET_USD "$2" >/dev/null 2>>"$ERRLOG"
+  )
+}
+API_NAME="$(uniq_name restore-api)"
+WORKER_NAME="$(uniq_name restore-worker)"
+# Fake mail: the api sends to a sink the smoke starts inside the api container; the worker's SMTP
+# address answers nothing. No provider key is set, so no inference call can be made.
+release_start "$API_NAME" "$API_IMAGE" smtp://127.0.0.1:1025
+release_start "$WORKER_NAME" "$WORKER_IMAGE" smtp://127.0.0.1:1
+
+# in_release <container> <node script> [env names…] : runs a script inside a release container.
+node_probe() { docker exec "$1" node -e "$2" >/dev/null 2>&1; }
+API_READY_JS="fetch('http://127.0.0.1:3000/api/v1/readyz').then((r)=>process.exit(r.ok?0:1),()=>process.exit(1))"
+WORKER_READY_JS="fetch('http://127.0.0.1:'+process.env.WORKER_METRICS_PORT+'/healthz').then((r)=>process.exit(r.ok?0:1),()=>process.exit(1))"
+ready=0
+for _ in $(seq 1 60); do
+  if node_probe "$API_NAME" "$API_READY_JS" && node_probe "$WORKER_NAME" "$WORKER_READY_JS"; then ready=1; break; fi
+  sleep 2
+done
+if [ "$ready" != 1 ]; then
+  { echo "the saved release did not become ready against the restore"
+    docker logs --tail 5 "$API_NAME" 2>&1 | tail -n 5
+    docker logs --tail 5 "$WORKER_NAME" 2>&1 | tail -n 5; } >>"$ERRLOG"
+  false
+fi
+
+SMOKE_LOGIN=fail; SMOKE_READ=fail; SMOKE_RANK=fail; SMOKE_OUTBOX=fail
+
+# login: the real sign-in flow; the code mail goes to a sink inside the container.
+read -r -d '' LOGIN_JS <<'JS' || true
+const net = require('node:net');
+const base = 'http://127.0.0.1:3000/api/v1';
+const email = process.env.SMOKE_EMAIL;
+let mail = '';
+const sink = net.createServer((socket) => {
+  let buf = '';
+  let inData = false;
+  socket.write('220 sink ESMTP\r\n');
+  socket.on('data', (chunk) => {
+    buf += chunk.toString('latin1');
+    for (;;) {
+      if (inData) {
+        const end = buf.indexOf('\r\n.\r\n');
+        if (end < 0) return;
+        mail += buf.slice(0, end);
+        buf = buf.slice(end + 5);
+        inData = false;
+        socket.write('250 queued\r\n');
+        continue;
+      }
+      const eol = buf.indexOf('\r\n');
+      if (eol < 0) return;
+      const line = buf.slice(0, eol).toUpperCase();
+      buf = buf.slice(eol + 2);
+      if (line.startsWith('DATA')) { inData = true; socket.write('354 go\r\n'); }
+      else if (line.startsWith('QUIT')) { socket.write('221 bye\r\n'); socket.end(); return; }
+      else socket.write('250 ok\r\n');
+    }
+  });
+  socket.on('error', () => {});
+});
+const call = async (method, path, body, cookie) => {
+  const headers = { 'x-bantoozi-client': 'web' };
+  if (method !== 'GET') headers['idempotency-key'] = crypto.randomUUID();
+  if (body) headers['content-type'] = 'application/json';
+  if (cookie) headers.cookie = cookie;
+  const res = await fetch(base + path, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(20000) });
+  return { res, json: await res.json().catch(() => null) };
+};
+sink.listen(1025, '127.0.0.1', async () => {
+  try {
+    const requested = await call('POST', '/auth/request-code', { email });
+    if (requested.res.status !== 202) throw new Error('request-code ' + requested.res.status);
+    let code = null;
+    for (let i = 0; i < 40 && code === null; i += 1) {
+      const body = mail.split('\r\n\r\n').slice(1).join('\r\n\r\n');
+      code = /\b(\d{6})\b/.exec(body)?.[1] ?? null;
+      if (code === null) await new Promise((r) => setTimeout(r, 500));
+    }
+    if (code === null) throw new Error('no code mail');
+    const verified = await call('POST', '/auth/verify', { email, code });
+    if (verified.res.status !== 200) throw new Error('verify ' + verified.res.status);
+    const cookies = verified.res.headers.getSetCookie().map((c) => c.split(';')[0]);
+    if (cookies.length === 0) throw new Error('no session cookie');
+    console.log('USER=' + verified.json.user.id);
+    console.log('COOKIE=' + cookies.join('; '));
+    process.exit(0);
+  } catch (error) {
+    console.error(String(error && error.message));
+    process.exit(1);
+  }
+});
+JS
+LOGIN_OUT="$(SMOKE_EMAIL="$SMOKE_EMAIL" docker exec -e SMOKE_EMAIL "$API_NAME" node -e "$LOGIN_JS" 2>>"$ERRLOG")" && {
+  SMOKE_USER="$(printf '%s\n' "$LOGIN_OUT" | sed -n 's/^USER=//p' | head -n 1)"
+  SMOKE_COOKIE="$(printf '%s\n' "$LOGIN_OUT" | sed -n 's/^COOKIE=//p' | head -n 1)"
+  if [[ "$SMOKE_USER" =~ ^[0-9a-f-]{36}$ ]] && [ -n "$SMOKE_COOKIE" ]; then SMOKE_LOGIN=ok; fi
+}
+
+# outbox and rank: an intent for the smoke user's ranking is written into the restored outbox; the
+# release worker's relay must deliver it (outbox) and its queue must run the handler (rank).
+psql_throwaway() { docker exec -i "$PG_NAME" psql -U postgres -d bantoozi -X -tAq -v ON_ERROR_STOP=1 "$@" 2>>"$ERRLOG"; }
+if [ "$SMOKE_LOGIN" = ok ]; then
+  INTENT="$(psql_throwaway -c "insert into job_outbox (queue, payload, dedupe_key) values ('user.rank', jsonb_build_object('userId', '$SMOKE_USER', 'reason', 'release_smoke', 'full', true), 'release-smoke') returning id" | head -n 1)"
+  if [[ "$INTENT" =~ ^[0-9]+$ ]]; then
+    for _ in $(seq 1 45); do
+      [ "$(psql_throwaway -c "select delivered_at is not null from job_outbox where id = $INTENT")" = t ] && { SMOKE_OUTBOX=ok; break; }
+      sleep 2
+    done
+    for _ in $(seq 1 45); do
+      [ "$(psql_throwaway -c "select count(*) from pgboss.job where name = 'user.rank' and data ->> 'userId' = '$SMOKE_USER' and data ->> 'reason' = 'release_smoke' and state = 'completed'")" = 1 ] && { SMOKE_RANK=ok; break; }
+      sleep 2
+    done
+  fi
+fi
+
+# read: the reader surface answers for the signed-in user after the ranking pass.
+read -r -d '' READ_JS <<'JS' || true
+const base = 'http://127.0.0.1:3000/api/v1';
+const get = async (path) => {
+  const res = await fetch(base + path, { headers: { 'x-bantoozi-client': 'web', cookie: process.env.SMOKE_COOKIE }, signal: AbortSignal.timeout(20000) });
+  return { status: res.status, json: await res.json().catch(() => null) };
+};
+const [me, list, counts] = await Promise.all([get('/me'), get('/articles?lane=for_you&limit=5'), get('/articles/counts')]);
+const ok = me.status === 200 && list.status === 200 && Array.isArray(list.json?.items) && counts.status === 200;
+if (!ok) console.error('me ' + me.status + ' list ' + list.status + ' counts ' + counts.status);
+process.exit(ok ? 0 : 1);
+JS
+if [ "$SMOKE_LOGIN" = ok ]; then
+  if SMOKE_COOKIE="$SMOKE_COOKIE" docker exec -e SMOKE_COOKIE "$API_NAME" node --input-type=module -e "$READ_JS" >/dev/null 2>>"$ERRLOG"; then SMOKE_READ=ok; fi
+fi
+
+RELEASE_LINE="RELEASE_SMOKE login=$SMOKE_LOGIN read=$SMOKE_READ rank=$SMOKE_RANK outbox=$SMOKE_OUTBOX"
+if [ "$RELEASE_LINE" != "RELEASE_SMOKE login=ok read=ok rank=ok outbox=ok" ]; then
+  echo "$RELEASE_LINE" >>"$ERRLOG"
+  false
+fi
+docker rm -f -v "$WORKER_NAME" "$API_NAME" >/dev/null 2>&1 || true
+WORKER_NAME=""; API_NAME=""
+
 STAGE=mark
 DURATION=$(( $(date -u +%s) - START_EPOCH ))
 printf '{"ok":true,"restoredAt":"%s","durationS":%s,"backupAgeS":%s}' \
@@ -148,6 +355,9 @@ printf '{"ok":true,"restoredAt":"%s","durationS":%s,"backupAgeS":%s}' \
 STAGE=event
 printf '%s\n' "$VERIFY_OUT"
 printf '%s\n' "$REPLAY_OUT"
+printf '%s\n' "$RECOVERY_OUT"
+echo "RELEASE_IMAGES source=$RELEASE_SOURCE"
+echo "$RELEASE_LINE"
 echo "BACKUP_ID=$ID"
 echo "RESTORE_DURATION_S=$DURATION"
 echo "BACKUP_AGE_S=$BACKUP_AGE_S"
