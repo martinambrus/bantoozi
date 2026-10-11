@@ -17,6 +17,7 @@
     "@bantoozi/feeds": "workspace:*",
     "@bantoozi/shared": "workspace:*",
     "@bantoozi/testing": "workspace:*",
+    "age-encryption": "0.3.1",
     "autocannon": "8.0.0",
     "commander": "15.0.0",
     "pg": "8.23.0"
