@@ -19,6 +19,7 @@ export * from './fake-ollama.js';
 export * from './fake-typesafe.js';
 export * from './fixture-server.js';
 export * from './fixtures.js';
+export * from './load-feeds.js';
 export * from './test-db/template-hash.js';
 export * from './test-db/test-db.js';
 

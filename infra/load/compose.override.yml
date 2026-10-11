@@ -1,0 +1,100 @@
+# Load sanity stack (spec 11 §9, M8-T8): `pnpm --filter @bantoozi/ops cli load:run` starts the
+# production compose file with this override as the project `bantoozi-load`:
+#
+#   docker compose -p bantoozi-load -f infra/compose.yml -f infra/load/compose.override.yml \
+#     --env-file <generated throwaway env file> up ...
+#
+# infra/compose.yml and infra/env/prod.example.env are not touched: the relaxations below exist only
+# in this override, which is never part of a deployment. Images, memory limits, database settings and
+# the application hardening of the production file apply unchanged, so the API and worker run with
+# their real pools and memory budgets. The project has its own volumes (named after the project) and
+# its own network; nothing is shared with bantoozi-prod*.
+#
+# Added here: NODE_ENV=test (mail log endpoint, plain-http cookies), RATE_LIMITS_ENABLED=false,
+# FETCH_ALLOW_PRIVATE=true (the generated feeds live on a private address), open signup, a large
+# daily budget (the fake provider costs nothing), the fake TypeSafe server at a 300 ms latency and
+# the generated feed server (`load-sim`). Caddy is not started: the API is published on loopback.
+x-sim-hardening: &sim-hardening
+  user: '1000:1000'
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  # Generated feeds (1,000, 5 new items per hour each) on 50 ports, the fake TypeSafe server and the
+  # control API of the load runner, from packages/testing through tsx (the backup-tools image).
+  load-sim:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile
+      target: backup-tools
+    image: bantoozi-load-sim:local
+    <<: *sim-hardening
+    restart: 'no'
+    mem_limit: 512m
+    entrypoint:
+      - node_modules/.bin/tsx
+      - --conditions=bantoozi-source
+      - src/load/sim-main.ts
+    environment:
+      HOME: /tmp
+      NODE_ENV: test
+      SIM_HOST: 0.0.0.0
+      SIM_PUBLIC_HOST: load-sim
+      SIM_FEED_COUNT: '1000'
+      SIM_ITEMS_PER_FEED_PER_HOUR: '5'
+      # Items a feed lists: the first fetch of 620 subscribed feeds extracts about 1,900 pages.
+      SIM_FEED_WINDOW: '3'
+      SIM_FEED_PORT_BASE: '8100'
+      SIM_FEED_PORT_COUNT: '50'
+      SIM_PROVIDER_PORT: '8082'
+      SIM_PROVIDER_LATENCY_MS: '300'
+      SIM_CONTROL_PORT: '8083'
+    ports:
+      - '127.0.0.1:18644:8083'
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8083/state').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+
+  seed:
+    environment:
+      NODE_ENV: test
+      FETCH_ALLOW_PRIVATE: 'true'
+      TYPESAFE_BASE_URL: http://load-sim:8082
+      TYPESAFE_API_KEY: load-test-key
+      DAILY_BUDGET_USD: '1000'
+
+  api:
+    environment:
+      NODE_ENV: test
+      RATE_LIMITS_ENABLED: 'false'
+      FETCH_ALLOW_PRIVATE: 'true'
+      SIGNUP_MODE: open
+      MAIL_TRANSPORT: log
+    ports:
+      - '127.0.0.1:18281:3000'
+    depends_on:
+      load-sim:
+        condition: service_healthy
+
+  worker:
+    environment:
+      NODE_ENV: test
+      FETCH_ALLOW_PRIVATE: 'true'
+      MAIL_TRANSPORT: log
+      TYPESAFE_BASE_URL: http://load-sim:8082
+      TYPESAFE_API_KEY: load-test-key
+      DAILY_BUDGET_USD: '1000'
+    depends_on:
+      load-sim:
+        condition: service_healthy

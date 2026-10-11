@@ -10,6 +10,7 @@ import {
   renderMarkdown,
   validateBundles,
 } from './bundles-check.js';
+import { registerLoadCommands } from './load/commands.js';
 import { registerRestoreCommands } from './restore-commands.js';
 
 /** `pnpm --filter @bantoozi/ops cli <command>`: operations tools of spec 11 (M8). */
@@ -47,6 +48,7 @@ program
 
 registerBackupCommands(program);
 registerRestoreCommands(program);
+registerLoadCommands(program);
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   await program.parseAsync(process.argv);

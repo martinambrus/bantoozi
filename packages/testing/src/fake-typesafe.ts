@@ -67,8 +67,10 @@ export interface FakeTypeSafeOptions {
 }
 
 export interface FakeTypeSafeStartOptions extends FakeTypeSafeOptions {
-  /** Listening port on 127.0.0.1. Default 0: a random free port. */
+  /** Listening port on `host`. Default 0: a random free port. */
   port?: number | undefined;
+  /** Listening address. Default 127.0.0.1; the load stack binds 0.0.0.0 inside its own network. */
+  host?: string | undefined;
 }
 
 export interface FakeTypeSafeServer {
@@ -346,7 +348,7 @@ function checkOptions(options: FakeTypeSafeOptions): void {
 export async function startFakeTypeSafe(
   options: FakeTypeSafeStartOptions = {},
 ): Promise<FakeTypeSafeServer> {
-  const { port, ...initial } = options;
+  const { port, host, ...initial } = options;
   checkOptions(initial);
   let current: FakeTypeSafeOptions = { ...initial };
   const requests: FakeTypeSafeRequest[] = [];
@@ -406,7 +408,7 @@ export async function startFakeTypeSafe(
     }),
   );
 
-  const url = await listenLoopback(server, port);
+  const url = await listenLoopback(server, port, host);
   return {
     url,
     requests,
