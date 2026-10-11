@@ -53,6 +53,7 @@ pin exact versions (`save-exact`). Update this file in the same commit as any ve
 | CLI | commander | 15.0.0 | worker, eval |
 | age encryption | age-encryption (typage) | 0.3.1 | worker (encrypt-only deletion ledger entries, spec 11 §5.1; the `age` CLI decrypts them offline), ops (streaming backup encryption/decryption and ledger decryption, spec 11 §4) |
 | HTTP load generator | autocannon (+ @types/autocannon 7.12.7, dev) | 8.0.0 | ops (M8-T8 load sanity test, spec 11 §9) |
+| YAML parser | yaml (dev) | 2.9.1 | ops (static compose credential test, spec 11 §9 launch item 12) |
 
 ## Web client (spec 01 §1, spec 09)
 
