@@ -1,6 +1,7 @@
 import autocannon from 'autocannon';
 
 import { ACTION_RATE_PER_USER, LIST_PAGE_LIMIT, LIST_RATE_PER_USER } from './config.js';
+import { runUserTraffic, type LoadProfile } from './profile.js';
 import type { SeededUser } from './seed.js';
 
 /**
@@ -183,6 +184,136 @@ export async function runActionTraffic(
       if (statusCode >= 500) result.errors5xx += 1;
       if (statusCode < 200 || statusCode >= 300) result.non2xx += 1;
     },
+  );
+  return result;
+}
+
+export interface UserTrafficResult {
+  /** GET /api/v1/articles round-trip times only; counts requests never enter this sample. */
+  latenciesMs: number[];
+  countsRequests: number;
+  actionRequests: number;
+  errors5xx: number;
+  non2xx: number;
+}
+
+const REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Per-user schedulers issuing real HTTP requests on the plan of profile.ts (`load:run` uses this for
+ * the realistic profile and autocannon for stress). Each user keeps
+ * its own session cookie; the list cycles through the four lanes, actions alternate open and rating
+ * on the user's articles in turn, carrying the fence of the previous answer.
+ */
+export async function runUserSchedulers(
+  base: string,
+  users: readonly SeededUser[],
+  refs: ReadonlyMap<string, ArticleRef[]>,
+  durationSec: number,
+  profile: LoadProfile,
+  seed: number,
+): Promise<UserTrafficResult> {
+  const result: UserTrafficResult = {
+    latenciesMs: [],
+    countsRequests: 0,
+    actionRequests: 0,
+    errors5xx: 0,
+    non2xx: 0,
+  };
+  const tally = (status: number): void => {
+    if (status >= 500) result.errors5xx += 1;
+    if (status < 200 || status >= 300) result.non2xx += 1;
+  };
+
+  /** One timed request; a transport failure counts as a 5xx and yields no body. */
+  const request = async (
+    user: SeededUser,
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+  ): Promise<{ status: number; ms: number; json: unknown }> => {
+    const headers: Record<string, string> = baseHeaders(user, base);
+    if (method === 'POST') {
+      headers['content-type'] = 'application/json';
+      headers['idempotency-key'] = crypto.randomUUID();
+    }
+    const began = performance.now();
+    try {
+      const response = await fetch(`${base}${path}`, {
+        method,
+        headers,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      const text = await response.text();
+      const ms = performance.now() - began;
+      let json: unknown = null;
+      try {
+        json = text === '' ? null : JSON.parse(text);
+      } catch {
+        json = null;
+      }
+      return { status: response.status, ms, json };
+    } catch {
+      return { status: 599, ms: performance.now() - began, json: null };
+    }
+  };
+  const pendingOf = (json: unknown): boolean =>
+    typeof json === 'object' &&
+    json !== null &&
+    (json as { rankingPending?: unknown }).rankingPending === true;
+
+  await Promise.all(
+    users.map((user, userIndex) => {
+      const mine = (refs.get(user.email) ?? []).map((ref) => ({ ...ref }));
+      if (mine.length === 0) throw new Error(`user ${user.email} has no articles to act on`);
+      let lane = 0;
+      let position = 0;
+      let step: 'open' | 'rate' = 'open';
+      let liked = false;
+      return runUserTraffic({
+        profile,
+        seed,
+        userIndex,
+        durationMs: durationSec * 1000,
+        list: async () => {
+          const path = `/api/v1/articles?lane=${LANES[lane++ % LANES.length]}&limit=${LIST_PAGE_LIMIT}`;
+          const response = await request(user, 'GET', path);
+          result.latenciesMs.push(response.ms);
+          tally(response.status);
+          return { rankingPending: pendingOf(response.json) };
+        },
+        counts: async () => {
+          const response = await request(user, 'GET', '/api/v1/articles/counts');
+          result.countsRequests += 1;
+          tally(response.status);
+          return { rankingPending: pendingOf(response.json) };
+        },
+        act: async () => {
+          const ref = mine[position % mine.length] as ArticleRef;
+          const fence = { stateVersion: ref.stateVersion, contentRevision: ref.contentRevision };
+          const response = await request(
+            user,
+            'POST',
+            `/api/v1/articles/${ref.id}/${step === 'open' ? 'open' : 'rating'}`,
+            step === 'open' ? fence : { ...fence, rating: liked ? 1 : -1 },
+          );
+          result.actionRequests += 1;
+          tally(response.status);
+          const item = (response.json as { item?: ArticleRef } | null)?.item;
+          if (response.status === 200 && item !== undefined) {
+            ref.stateVersion = item.stateVersion;
+            ref.contentRevision = item.contentRevision;
+          }
+          if (step === 'open') step = 'rate';
+          else {
+            step = 'open';
+            position += 1;
+            liked = !liked;
+          }
+        },
+      });
+    }),
   );
   return result;
 }

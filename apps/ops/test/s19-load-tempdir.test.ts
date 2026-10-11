@@ -137,6 +137,7 @@ describe('the load stack env directory', () => {
 describe('runLoad teardown (the stack never reaches its containers: fake docker lists none)', () => {
   const run = (keep: boolean, messages: string[]) =>
     runLoad({
+      profile: 'realistic',
       durationMin: 2,
       outDir: path.join(scratch, 'out'),
       keep,

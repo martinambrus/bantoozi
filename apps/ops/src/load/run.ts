@@ -20,11 +20,19 @@ import {
   type PhaseName,
 } from './plan.js';
 import { mapLimit, seedUsers, type SeededUser } from './seed.js';
-import { fetchArticleRefs, runActionTraffic, runListTraffic, type ArticleRef } from './traffic.js';
+import type { LoadProfile } from './profile.js';
+import {
+  fetchArticleRefs,
+  runActionTraffic,
+  runListTraffic,
+  runUserSchedulers,
+  type ArticleRef,
+} from './traffic.js';
 
 /** `load:run`: the whole load sanity test (spec 11 §9, M8-T8). */
 
 export interface LoadRunOptions {
+  profile: LoadProfile;
   durationMin: number;
   outDir: string;
   keep: boolean;
@@ -34,6 +42,8 @@ export interface LoadRunOptions {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Seed of the realistic per-user action gaps: every run repeats the same schedule. */
+const LOAD_TRAFFIC_SEED = 20261011;
 const SAMPLE_PAUSE_MS = 4_000;
 const TRAINING_SELECTIONS_PER_FEED = 3;
 
@@ -380,10 +390,26 @@ export async function runLoad(options: LoadRunOptions): Promise<LoadReport> {
           (phase.durationSec * 1000) / 2,
         );
       }
-      const [list, actions] = await Promise.all([
-        runListTraffic(base, users, phase.durationSec),
-        runActionTraffic(base, users, refs, phase.durationSec),
-      ]);
+      const traffic =
+        options.profile === 'realistic'
+          ? await runUserSchedulers(
+              base,
+              users,
+              refs,
+              phase.durationSec,
+              'realistic',
+              LOAD_TRAFFIC_SEED,
+            )
+          : await Promise.all([
+              runListTraffic(base, users, phase.durationSec),
+              runActionTraffic(base, users, refs, phase.durationSec),
+            ]).then(([listed, acted]) => ({
+              latenciesMs: listed.latenciesMs,
+              countsRequests: 0,
+              actionRequests: acted.requests,
+              errors5xx: listed.errors5xx + acted.errors5xx,
+              non2xx: listed.non2xx + acted.non2xx,
+            }));
       if (flipTimer !== undefined) clearTimeout(flipTimer);
       await sampler.stop();
       const endedAt = new Date();
@@ -394,10 +420,11 @@ export async function runLoad(options: LoadRunOptions): Promise<LoadReport> {
         startedAt: startedAt.toISOString(),
         endedAt: endedAt.toISOString(),
         durationSec: phase.durationSec,
-        articleLatenciesMs: list.latenciesMs,
-        actionRequests: actions.requests,
-        errors5xx: list.errors5xx + actions.errors5xx,
-        non2xx: list.non2xx + actions.non2xx,
+        articleLatenciesMs: traffic.latenciesMs,
+        actionRequests: traffic.actionRequests,
+        countsRequests: traffic.countsRequests,
+        errors5xx: traffic.errors5xx,
+        non2xx: traffic.non2xx,
         cpuSamples: sampler.cpuSamples,
         memMaxBytes: sampler.memMaxBytes,
         queueDepthMax: sampler.queueDepthMax,
@@ -410,12 +437,13 @@ export async function runLoad(options: LoadRunOptions): Promise<LoadReport> {
         newArticles: after.articles - before.articles,
       });
       log(
-        `phase ${phase.name} done: ${list.latenciesMs.length} list requests, 5xx ${list.errors5xx + actions.errors5xx}, inference calls ${after.engineCalls - before.engineCalls}`,
+        `phase ${phase.name} done: ${traffic.latenciesMs.length} list, ${traffic.countsRequests} counts and ${traffic.actionRequests} action requests, 5xx ${traffic.errors5xx}, inference calls ${after.engineCalls - before.engineCalls}`,
       );
     }
     await sim.setProvider('normal').catch(() => undefined);
 
     const report = buildReport({
+      profile: options.profile,
       host: { cpus: os.cpus().length, memTotal: os.totalmem() },
       durationMin: options.durationMin,
       articles: await db.articleCount(),

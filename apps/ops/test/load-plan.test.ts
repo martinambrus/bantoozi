@@ -63,6 +63,7 @@ function measure(name: PhaseMeasure['name'], overrides: Partial<PhaseMeasure> = 
     durationSec: 60,
     articleLatenciesMs: Array.from({ length: 100 }, (_, i) => i + 1),
     actionRequests: 500,
+    countsRequests: 0,
     errors5xx: 0,
     non2xx: 3,
     cpuSamples: { api: [100, 200], worker: [50, 150] },
@@ -107,6 +108,7 @@ describe('report builder', () => {
       host: { cpus: 8, memTotal: 16e9 },
       durationMin: 6,
       articles: 4000,
+      profile: 'realistic',
       traffic: { listRatePerUser: 3, actionRatePerUser: 2, listPageLimit: 30 },
       measures: allMeasures(),
       generatedAt: '2026-10-11T10:05:00.000Z',
@@ -140,11 +142,13 @@ describe('report builder', () => {
       host: { cpus: 8, memTotal: 16e9 },
       durationMin: 6,
       articles: 10,
+      profile: 'realistic',
       traffic: { listRatePerUser: 3, actionRatePerUser: 2, listPageLimit: 30 },
       measures: [chatty, slow, alert, broken],
       generatedAt: 'x',
     });
     expect(report.criteria).toEqual({
+      gated: true,
       p95Ok: false,
       backlogOk: false,
       allOffZeroInference: false,
@@ -158,6 +162,7 @@ describe('report builder', () => {
       host: { cpus: 2, memTotal: 1 },
       durationMin: 2,
       articles: 0,
+      profile: 'realistic',
       traffic: { listRatePerUser: 1, actionRatePerUser: 1, listPageLimit: 1 },
       measures: [measure('all-off')],
       generatedAt: 'x',
@@ -170,13 +175,14 @@ describe('report builder', () => {
       host: { cpus: 8, memTotal: 16e9 },
       durationMin: 6,
       articles: 4000,
+      profile: 'realistic',
       traffic: { listRatePerUser: 3, actionRatePerUser: 2, listPageLimit: 30 },
       measures: allMeasures(),
       generatedAt: 'x',
     });
     const markdown = renderMarkdown(report);
     expect(markdown).toContain('LOCAL');
-    expect(markdown).toContain('reported, not gated');
+    expect(markdown).toContain('only reported');
     for (const name of PHASE_NAMES) expect(markdown).toContain(`| ${name} |`);
     expect(markdown).toContain('p95 ms');
   });

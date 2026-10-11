@@ -7,6 +7,7 @@ import {
   LOAD_PROVIDER_LATENCY_MS,
   LOAD_USERS,
 } from './config.js';
+import type { LoadProfile } from './profile.js';
 
 /** Phase plan, percentiles and the report of the load sanity test (spec 11 §9, M8-T8). */
 
@@ -77,6 +78,8 @@ export interface PhaseMeasure {
   articleLatenciesMs: number[];
   /** Responses of the open/rate instance (any status). */
   actionRequests: number;
+  /** GET /api/v1/articles/counts requests made (never part of the article latency sample). */
+  countsRequests: number;
   errors5xx: number;
   non2xx: number;
   /** Docker CPU% samples per service; each sample list is aligned in time. */
@@ -105,6 +108,7 @@ export interface PhaseReport {
   durationSec: number;
   requests: number;
   actionRequests: number;
+  countsRequests: number;
   p50ArticlesMs: number;
   p95ArticlesMs: number;
   maxArticlesMs: number;
@@ -158,6 +162,7 @@ export function buildPhaseReport(measure: PhaseMeasure, cpus: number): PhaseRepo
     durationSec: measure.durationSec,
     requests: latencies.length,
     actionRequests: measure.actionRequests,
+    countsRequests: measure.countsRequests,
     p50ArticlesMs: round1(percentile(latencies, 50)),
     p95ArticlesMs: round1(percentile(latencies, 95)),
     maxArticlesMs: round1(latencies.length === 0 ? Number.NaN : Math.max(...latencies)),
@@ -187,6 +192,7 @@ export function buildPhaseReport(measure: PhaseMeasure, cpus: number): PhaseRepo
 export const P95_LIMIT_MS = 300;
 
 export interface LoadReport {
+  profile: LoadProfile;
   host: { cpus: number; memTotal: number };
   durationMin: number;
   users: number;
@@ -196,10 +202,15 @@ export interface LoadReport {
   articles: number;
   /** Cards each user holds: the most questions one article can raise per user. */
   questionsPerArticle: number;
+  /** Measured per user and second over all phases: requests / phase seconds / users. */
+  listRatePerUser: number;
+  countsRatePerUser: number;
+  actionRatePerUser: number;
   config: {
     feedCount: number;
     itemsPerFeedPerHour: number;
     providerLatencyMs: number;
+    /** Nominal stress rates; the measured rates are at the top level. */
     listRatePerUser: number;
     actionRatePerUser: number;
     listPageLimit: number;
@@ -207,6 +218,8 @@ export interface LoadReport {
   pool: { workerQuery: number; workerFeedLocks: number; apiMax: number };
   phases: PhaseReport[];
   criteria: {
+    /** realistic: the criteria decide the exit code; stress: reported only. */
+    gated: boolean;
     p95Ok: boolean;
     backlogOk: boolean;
     allOffZeroInference: boolean;
@@ -217,6 +230,7 @@ export interface LoadReport {
 }
 
 export interface ReportInput {
+  profile: LoadProfile;
   host: { cpus: number; memTotal: number };
   durationMin: number;
   articles: number;
@@ -229,13 +243,22 @@ export function buildReport(input: ReportInput): LoadReport {
   const phases = input.measures.map((measure) => buildPhaseReport(measure, input.host.cpus));
   const allOff = phases.find((phase) => phase.name === 'all-off');
   const failing = phases.find((phase) => phase.name === 'provider-failing');
+  const totalSec = phases.reduce((sum, phase) => sum + phase.durationSec, 0);
+  const perUserSec = (count: number): number =>
+    totalSec === 0 ? 0 : Math.round((count / totalSec / LOAD_USERS) * 100_000) / 100_000;
+  const sum = (pick: (phase: PhaseReport) => number): number =>
+    phases.reduce((total, phase) => total + pick(phase), 0);
   return {
+    profile: input.profile,
     host: input.host,
     durationMin: input.durationMin,
     users: LOAD_USERS,
     feedsPerUser: LOAD_FEEDS_PER_USER,
     cardsPerUser: LOAD_CARDS_PER_USER,
     articles: input.articles,
+    listRatePerUser: perUserSec(sum((phase) => phase.requests)),
+    countsRatePerUser: perUserSec(sum((phase) => phase.countsRequests)),
+    actionRatePerUser: perUserSec(sum((phase) => phase.actionRequests)),
     questionsPerArticle: LOAD_CARDS_PER_USER,
     config: {
       feedCount: LOAD_FEED_COUNT,
@@ -246,6 +269,7 @@ export function buildReport(input: ReportInput): LoadReport {
     pool: { ...LOAD_POOL },
     phases,
     criteria: {
+      gated: input.profile === 'realistic',
       p95Ok:
         phases.length === PHASE_NAMES.length &&
         phases.every((phase) => phase.p95ArticlesMs < P95_LIMIT_MS),
@@ -266,8 +290,15 @@ export function renderMarkdown(report: LoadReport): string {
   const lines: string[] = [];
   lines.push('# Load sanity report (spec 11 §9, M8-T8)', '');
   lines.push(
+    `Profile: ${report.profile}` +
+      (report.criteria.gated
+        ? ' (gated: a failed criterion fails the command).'
+        : ' (synthetic stress, 1 list/s and 1 open or rate/s per user; criteria are reported, not gated).'),
+    '',
+  );
+  lines.push(
     '> **LOCAL run on a production-like Compose stack (project `bantoozi-load`), not the target box.** ' +
-      'CPU and memory are reported, not gated (spec 11 §9: CPU < 70 % applies on the target box). ' +
+      'CPU and memory are only reported (spec 11 §9: CPU < 70 % applies on the target box). ' +
       'The gated criteria are p95 `GET /api/v1/articles` < 300 ms and no queue-backlog alert.',
     '',
   );
@@ -278,7 +309,7 @@ export function renderMarkdown(report: LoadReport): string {
       `feeds at ${report.config.itemsPerFeedPerHour} items per hour; fake provider ` +
       `${report.config.providerLatencyMs} ms. Pools: worker query ${report.pool.workerQuery}, feed ` +
       `locks ${report.pool.workerFeedLocks}, API ${report.pool.apiMax}. ` +
-      `Traffic per user: ${report.config.listRatePerUser} list/s and ${report.config.actionRatePerUser} open or rate/s.`,
+      `Measured traffic per user: ${report.listRatePerUser} list/s, ${report.countsRatePerUser} counts/s and ${report.actionRatePerUser} open or rate/s.`,
     '',
   );
   lines.push(
