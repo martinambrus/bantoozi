@@ -21,6 +21,7 @@ import {
   readOwnUser,
   recordDwell,
   retryBookmarkCapture,
+  fullRankCovered,
   tenantOutbox,
   unbookmarkArticle,
   undoArticleMutation,
@@ -107,6 +108,8 @@ async function readPrefs(tx: TenantTx): Promise<UserPreferences> {
  * and a bump would make every later read outdated again.
  */
 async function requestCatchUp(tx: TenantTx, userId: string): Promise<void> {
+  // A pending full rank (intent or queued job) already covers it: another intent is outbox churn.
+  if (await fullRankCovered(tx)) return;
   await enqueueRank(tenantOutbox(tx), { userId, reason: CATCH_UP_REASON, full: true });
 }
 

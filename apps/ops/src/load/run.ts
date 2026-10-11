@@ -443,7 +443,7 @@ export async function runLoad(options: LoadRunOptions): Promise<LoadReport> {
     process.removeListener('SIGTERM', onSignal);
     if (options.keep) {
       log(
-        `--keep: the ${failed ? 'failed ' : ''}stack bantoozi-load stays up; remove it with docker compose -p bantoozi-load down --volumes`,
+        `--keep: the ${failed ? 'failed ' : ''}stack bantoozi-load stays up; remove it with: ${stack.teardownCommand()}`,
       );
     } else {
       log('tearing down bantoozi-load');

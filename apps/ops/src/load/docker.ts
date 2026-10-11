@@ -92,6 +92,16 @@ export class LoadStack {
     ];
   }
 
+  /**
+   * The command that tears a kept stack down. The compose files require variables only the env
+   * file supplies, so the command names it; remove its directory afterwards (it holds the secrets).
+   */
+  teardownCommand(): string {
+    const args = [...this.composeArgs(), 'down', '--volumes', '--remove-orphans'];
+    const dir = this.envDir === undefined ? '' : `; rm -rf ${this.envDir}`;
+    return `docker ${args.join(' ')}${dir}`;
+  }
+
   compose(args: readonly string[], options: RunOptions = {}): Promise<string> {
     return run('docker', [...this.composeArgs(), ...args], { cwd: this.repoRoot, ...options });
   }

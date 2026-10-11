@@ -4213,6 +4213,15 @@
       "config": ["search_path=pg_catalog, public, pg_temp"],
       "execute": ["bantoozi_app"]
     },
+    "full_rank_covered": {
+      "args": "",
+      "result": "boolean",
+      "language": "plpgsql",
+      "volatility": "s",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
     "interest_cards_content_check": {
       "args": "",
       "result": "trigger",

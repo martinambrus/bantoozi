@@ -57,6 +57,8 @@ const CONFLICT_RETRY_SECONDS = 5;
 
 type Outcome = 'delivered' | 'retained' | 'failed' | 'lost';
 
+const FULL_RANK_KEY_PREFIX = 'rank-full:';
+
 export async function relayOnce(
   db: Database,
   broker: JobBroker,
@@ -122,7 +124,9 @@ async function relayIntent(
           queue,
           singletonKey,
           payload,
-          anyPayload: spec.kind === 'debounced',
+          // A pending full rank re-reads durable state: it covers a full-rank intent whatever its
+          // reason (S19). Continuations and incremental ranks have keys of their own.
+          anyPayload: spec.kind === 'debounced' || singletonKey.startsWith(FULL_RANK_KEY_PREFIX),
         }));
       if (!equivalent) return await keep('retained', 'singleton_conflict', CONFLICT_RETRY_SECONDS);
     }

@@ -23,6 +23,16 @@ async function insertIntent(tx: Executor, intent: JobIntent, requester: string |
     ON CONFLICT DO NOTHING`);
 }
 
+/**
+ * Whether a full rank of the caller is already on its way: an undelivered full-rank intent without
+ * a cursor, or a created/retry `rank-full:<user>` job (migration 0020; the API role can read
+ * neither table). A read-side catch-up request is then redundant.
+ */
+export async function fullRankCovered(tx: TenantTx): Promise<boolean> {
+  const result = await tx.execute<{ covered: boolean }>(sql`SELECT full_rank_covered() AS covered`);
+  return result.rows[0]?.covered === true;
+}
+
 /** A worker intent that becomes due only at `availableAt` (the relay skips it until then). */
 async function insertDelayedIntent(tx: Executor, intent: JobIntent, availableAt: Date) {
   await tx.execute(sql`
