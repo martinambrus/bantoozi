@@ -12,10 +12,11 @@ import {
   type FeedOverview,
 } from '@bantoozi/db';
 import { decodeBody, discoverFeed, parseFeed } from '@bantoozi/feeds';
-import { createLogger, loadConfig, type ProcessConfig } from '@bantoozi/shared/server';
+import { loadConfig, type ProcessConfig } from '@bantoozi/shared/server';
 import { Command } from 'commander';
 import type pg from 'pg';
 
+import { createCliLogger } from './cli-logger.js';
 import { openCredentialSession, registerCredentialCommands } from './credentials/index.js';
 import { createWorkerDeps, fetchWith, type WorkerDeps } from './handlers/deps.js';
 import { createHandlers } from './handlers/index.js';
@@ -45,7 +46,7 @@ function runtime(): Runtime {
   const pool = createPool({ connectionString: config.databaseUrlWorker, max: 4 });
   const lockPool = createPool({ connectionString: config.databaseUrlWorker, max: 2 });
   const db = createDatabase(pool);
-  const logger = createLogger({ name: 'worker-cli', level: 'warn', pretty: true });
+  const logger = createCliLogger();
   const deps = createWorkerDeps({
     db,
     lockPool,
@@ -193,11 +194,7 @@ program
 
 registerCredentialCommands(program, {
   io: { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr },
-  open: async () =>
-    openCredentialSession(
-      loadConfig({ process: 'worker' }),
-      createLogger({ name: 'worker-cli', level: 'warn', pretty: true }),
-    ),
+  open: async () => openCredentialSession(loadConfig({ process: 'worker' }), createCliLogger()),
 });
 
 await program.parseAsync(process.argv);

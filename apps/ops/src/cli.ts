@@ -3,12 +3,14 @@ import { writeFile } from 'node:fs/promises';
 import { STARTER_BUNDLES } from '@bantoozi/shared';
 import { Command } from 'commander';
 
+import { registerBackupCommands } from './backup-commands.js';
 import {
   checkBundlesLive,
   flattenBundles,
   renderMarkdown,
   validateBundles,
 } from './bundles-check.js';
+import { registerRestoreCommands } from './restore-commands.js';
 
 /** `pnpm --filter @bantoozi/ops cli <command>`: operations tools of spec 11 (M8). */
 export const program = new Command('bantoozi-ops').description('Bantoozi operations tools');
@@ -42,6 +44,9 @@ program
       process.exitCode = 1;
     }
   });
+
+registerBackupCommands(program);
+registerRestoreCommands(program);
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   await program.parseAsync(process.argv);

@@ -4,6 +4,7 @@
 #   api      production dependencies + built apps/api (no source, no dev dependencies)
 #   worker   production dependencies + built apps/worker + packages/questions/library/*.json
 #   caddy    pinned Caddy + the built web app at /srv/web + the Caddyfile
+#   backup-tools  the apps/ops commands behind infra/scripts/backup.sh and restore-test.sh
 # Every dependency install uses the frozen lockfile. `pnpm deploy` is not used: it packs files by the
 # publish rules and drops the gitignored dist/ folders, so the built output is copied explicitly.
 
@@ -95,9 +96,25 @@ COPY --from=build /app/packages/questions/library packages/questions/library
 COPY --from=build /app/packages/ranker/dist packages/ranker/dist
 COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/packages/translate/dist packages/translate/dist
+# The deletion ledger volume (spec 11 §5.1): a new named volume takes this directory's owner.
+RUN mkdir -p /var/lib/bantoozi/ledger && chown -R 1000:1000 /var/lib/bantoozi
 WORKDIR /app/apps/worker
 USER 1000:1000
 CMD ["node", "dist/main.js"]
+
+# Backup and restore tools (spec 11 §4): the apps/ops commands (age streaming, S3, restore
+# verification, ledger replay) run from source through tsx, so nothing here is built. The PostgreSQL
+# 16 client tools are not part of this image: pg_dump runs in the live postgres container and
+# pg_restore in the throwaway one, both from the postgres image pinned in compose.yml.
+FROM dev-deps AS backup-tools
+ENV NODE_ENV=production \
+    HOME=/tmp
+COPY tsconfig.base.json ./
+COPY packages packages
+COPY apps/ops apps/ops
+WORKDIR /app/apps/ops
+USER 1000:1000
+ENTRYPOINT ["node_modules/.bin/tsx", "--conditions=bantoozi-source", "src/cli.ts"]
 
 FROM ${CADDY_IMAGE} AS caddy
 COPY --from=build /app/apps/web/dist /srv/web

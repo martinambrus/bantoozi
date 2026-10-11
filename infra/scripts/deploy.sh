@@ -160,7 +160,7 @@ else
   BACKUP="$ROOT/infra/scripts/backup.sh"
   [ -x "$BACKUP" ] || die "the pre-deploy backup is required (spec 11 §3 step 2) but $BACKUP does not exist yet"
   step "pre-deploy backup"
-  "$BACKUP" --pre-deploy || die "the pre-deploy backup failed"
+  "$BACKUP" --pre-deploy --env-file "$ENV_FILE" || die "the pre-deploy backup failed"
 fi
 
 # ── 1 (cont.). Build immutable images ────────────────────────────────────────────────────────
@@ -208,6 +208,8 @@ has_profile laya && { dc stop worker-laya >/dev/null 2>&1 || true; }
 dc stop api >/dev/null 2>&1 || true
 has_profile translate && { dc up -d --no-deps --no-build libretranslate >/dev/null || die "libretranslate did not start"; }
 [ "$REHEARSAL" = 1 ] && { dc up -d --no-deps --no-build mailpit >/dev/null || die "the mail catcher did not start"; }
+# The S3-compatible stand-in for the off-site bucket (backup.sh / restore-test.sh rehearsal).
+[ "$REHEARSAL" = 1 ] && { dc up -d --no-deps --no-build minio >/dev/null || die "the S3 stand-in (minio) did not start"; }
 START=(api worker)
 has_profile laya && START+=(worker-laya)
 START_OK=1

@@ -213,6 +213,10 @@ services:
     environment:
       <<: *worker-env
       WORKER_QUEUES: ${WORKER_QUEUES:-*}
+    volumes:
+      # The encrypted deletion ledger (spec 11 §5.1, DELETION_LEDGER_PATH) survives restarts and
+      # image replacement; backup.sh ships it off-site with every backup.
+      - ledger:/var/lib/bantoozi/ledger
     depends_on:
       seed:
         condition: service_completed_successfully
@@ -292,8 +296,38 @@ services:
     mem_limit: 128m
     logging: *logging
 
+  # Compose profile `tools`: built (never started) by backup.sh and restore-test.sh, which run it with
+  # `docker run` so each invocation gets only the credentials it needs (spec 11 §4). It holds the
+  # age streaming, S3 and restore-verification commands of apps/ops; the PostgreSQL 16 client tools
+  # come from the pinned postgres image, not from this image.
+  backup-tools:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile
+      target: backup-tools
+    image: bantoozi-backup-tools:local
+    profiles: [tools]
+    restart: 'no'
+
+  # Local rehearsal only (deploy.sh --local-rehearsal): an S3-compatible bucket standing in for the
+  # off-site one when rehearsing backup.sh and restore-test.sh. No ports are published.
+  minio:
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    profiles: [rehearsal]
+    restart: unless-stopped
+    mem_limit: 512m
+    command: [server, /data]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
+    volumes:
+      - minio-data:/data
+    logging: *logging
+
 volumes:
   pgdata:
+  ledger:
+  minio-data:
   caddy-data:
   caddy-config:
   lt-models:
