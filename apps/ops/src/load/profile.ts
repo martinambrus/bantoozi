@@ -5,6 +5,8 @@
  *   at once; after a list or counts response with `rankingPending` the next poll is a list 5 s later,
  *   otherwise a counts poll (GET /api/v1/articles/counts) 30 s later. Independently the user opens or
  *   rates one article every 10-20 s (uniform, seeded). The p95 and backlog criteria are gated.
+ * - realistic also opens navigation lists (S24): one every 30-60 s (seeded, own RNG), extra to the poll
+ *   chain, which only follows the responses of its own requests.
  * - stress: today's synthetic load, 1 list/s and 1 open-or-rate/s per user. Reported, never gated.
  */
 
@@ -22,11 +24,16 @@ export const IDLE_POLL_MS = 30_000;
 export const ACTION_GAP_MIN_MS = 10_000;
 export const ACTION_GAP_MAX_MS = 20_000;
 export const STRESS_TICK_MS = 1_000;
+/** Realistic navigation lists (page open, lane switch, back from an article): one every 30-60 s. */
+export const NAV_GAP_MIN_MS = 30_000;
+export const NAV_GAP_MAX_MS = 60_000;
 
 export type TrafficKind = 'list' | 'counts' | 'action';
 export interface TrafficEvent {
   atMs: number;
   kind: TrafficKind;
+  /** Set on navigation lists (t > 0); absent on poll lists, counts and actions. */
+  nav?: true;
 }
 
 /** mulberry32 over a seed mixed with the user index. */
@@ -57,6 +64,27 @@ export function actionTimes(
   let at = 0;
   for (;;) {
     at += Math.round(ACTION_GAP_MIN_MS + random() * (ACTION_GAP_MAX_MS - ACTION_GAP_MIN_MS));
+    if (at >= durationMs) return out;
+    out.push(at);
+  }
+}
+
+/**
+ * Offsets (ms) of one user's navigation lists after the t=0 page-load list (which is shared with the
+ * poll chain): one every 30-60 s from an RNG independent of the action stream. Realistic only.
+ */
+export function navigationTimes(
+  profile: LoadProfile,
+  seed: number,
+  userIndex: number,
+  durationMs: number,
+): number[] {
+  const out: number[] = [];
+  if (profile === 'stress') return out;
+  const random = userRandom((seed ^ 0x6e617600) | 0, userIndex);
+  let at = 0;
+  for (;;) {
+    at += Math.round(NAV_GAP_MIN_MS + random() * (NAV_GAP_MAX_MS - NAV_GAP_MIN_MS));
     if (at >= durationMs) return out;
     out.push(at);
   }
@@ -102,6 +130,9 @@ export function planUserTraffic(options: PlanOptions): TrafficEvent[] {
     events.push({ atMs, kind: 'action' });
   }
   // stable sort: at equal times the poll (pushed first) stays ahead of the action
+  for (const atMs of navigationTimes(profile, seed, userIndex, durationMs)) {
+    events.push({ atMs, kind: 'list', nav: true });
+  }
   return events.sort((a, b) => a.atMs - b.atMs);
 }
 
@@ -125,8 +156,8 @@ const sleepUntil = (deadline: number): Promise<void> => {
 };
 
 /**
- * Runs one user's traffic for `durationMs` on setTimeout / Date.now. The poll loop and the action
- * loop are independent and sequential within themselves (a slow response delays the next request of
+ * Runs one user's traffic for `durationMs` on setTimeout / Date.now. The poll loop, the action
+ * loop and the navigation loop are independent and sequential within themselves (a slow response delays the next request of
  * that loop only). Resolves when the full duration has elapsed and both loops are done.
  */
 export async function runUserTraffic(options: RunTrafficOptions): Promise<void> {
@@ -157,6 +188,14 @@ export async function runUserTraffic(options: RunTrafficOptions): Promise<void> 
     }
   };
 
-  await Promise.all([pollLoop(), actionLoop()]);
+  // Navigation lists are extra requests: their answers never drive the poll chain.
+  const navLoop = async (): Promise<void> => {
+    for (const at of navigationTimes(profile, seed, userIndex, durationMs)) {
+      await sleepUntil(start + at);
+      await options.list();
+    }
+  };
+
+  await Promise.all([pollLoop(), actionLoop(), navLoop()]);
   await sleepUntil(end);
 }

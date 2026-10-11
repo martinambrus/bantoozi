@@ -79,7 +79,10 @@ describe('realistic polling (spec 09: list every 5 s while rankingPending, count
   });
   it('lists every 5 s while every response is pending, and never polls counts', () => {
     const events = plan('realistic', { pendingAt: PENDING });
-    const lists = times(events, 'list');
+    const lists = times(
+      events.filter((e) => !e.nav),
+      'list',
+    );
     expect(lists[0]).toBe(0);
     expect(gaps(lists).every((g) => g === 5000)).toBe(true);
     expect(lists).toHaveLength(12);
@@ -87,10 +90,20 @@ describe('realistic polling (spec 09: list every 5 s while rankingPending, count
   });
   it('polls counts (not the list) every 30 s while idle', () => {
     const events = plan('realistic', { pendingAt: IDLE });
-    expect(times(events, 'list')).toEqual([0]);
+    expect(
+      times(
+        events.filter((e) => !e.nav),
+        'list',
+      ),
+    ).toEqual([0]);
     expect(times(events, 'counts')).toEqual([30_000]);
     const long = plan('realistic', { durationMs: 300_000 });
-    expect(times(long, 'list')).toEqual([0]);
+    expect(
+      times(
+        long.filter((e) => !e.nav),
+        'list',
+      ),
+    ).toEqual([0]);
     const c = times(long, 'counts');
     expect(c[0]).toBe(30_000);
     expect(gaps(c).every((g) => g === 30_000)).toBe(true);
@@ -98,13 +111,23 @@ describe('realistic polling (spec 09: list every 5 s while rankingPending, count
   });
   it('the last response decides the next interval (pending then idle)', () => {
     const events = plan('realistic', { pendingAt: (t) => t < 20_000 });
-    expect(times(events, 'list')).toEqual([0, 5000, 10_000, 15_000, 20_000]);
+    expect(
+      times(
+        events.filter((e) => !e.nav),
+        'list',
+      ),
+    ).toEqual([0, 5000, 10_000, 15_000, 20_000]);
     expect(times(events, 'counts')).toEqual([50_000]);
   });
   it('a counts response with rankingPending switches back to 5 s lists (idle then pending)', () => {
     const events = plan('realistic', { pendingAt: (t) => t >= 30_000 && t < 45_000 });
     expect(times(events, 'counts')).toEqual([30_000]);
-    expect(times(events, 'list')).toEqual([0, 35_000, 40_000, 45_000]);
+    expect(
+      times(
+        events.filter((e) => !e.nav),
+        'list',
+      ),
+    ).toEqual([0, 35_000, 40_000, 45_000]);
     // the list at 45 s was idle, so the next poll is counts 30 s later (outside the 60 s run)
   });
   it('never schedules at or after the end of the run', () => {
@@ -204,7 +227,18 @@ describe('runUserTraffic on a fake clock', () => {
     });
     await vi.advanceTimersByTimeAsync(100_000);
     await done;
-    expect(listAt).toEqual([0, 5000, 10_000, 15_000]);
+    const nav = new Set(
+      planUserTraffic({
+        profile: 'realistic',
+        seed: 3,
+        userIndex: 2,
+        durationMs: 100_000,
+        pendingAt: () => false,
+      })
+        .filter((e) => e.nav)
+        .map((e) => e.atMs),
+    );
+    expect(listAt.filter((t) => !nav.has(t))).toEqual([0, 5000, 10_000, 15_000]);
     expect(countsAt).toEqual([45_000, 75_000]);
     expect(actionAt.length).toBeGreaterThanOrEqual(5);
     expect(actionAt.length).toBeLessThanOrEqual(10);

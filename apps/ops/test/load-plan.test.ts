@@ -110,7 +110,15 @@ describe('report builder', () => {
       articles: 4000,
       profile: 'realistic',
       traffic: { listRatePerUser: 3, actionRatePerUser: 2, listPageLimit: 30 },
-      measures: allMeasures(),
+      measures: allMeasures().map((m) => ({
+        ...m,
+        // The realistic gate needs at least 300 GET /articles samples per phase (S24).
+        articleLatenciesMs: [
+          ...m.articleLatenciesMs,
+          ...m.articleLatenciesMs,
+          ...m.articleLatenciesMs,
+        ],
+      })),
       generatedAt: '2026-10-11T10:05:00.000Z',
     });
     expect(report).toMatchObject({
@@ -154,6 +162,7 @@ describe('report builder', () => {
       allOffZeroInference: false,
       degradedReadingOk: false,
       cpuGated: false,
+      insufficientSamples: [...PHASE_NAMES],
     });
   });
 

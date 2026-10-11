@@ -190,6 +190,8 @@ export function buildPhaseReport(measure: PhaseMeasure, cpus: number): PhaseRepo
 }
 
 export const P95_LIMIT_MS = 300;
+/** Realistic: fewest GET /articles samples a phase needs for its p95 to count (S24). */
+export const MIN_ARTICLE_SAMPLES = 300;
 
 export interface LoadReport {
   profile: LoadProfile;
@@ -221,6 +223,8 @@ export interface LoadReport {
     /** realistic: the criteria decide the exit code; stress: reported only. */
     gated: boolean;
     p95Ok: boolean;
+    /** realistic phases with fewer than MIN_ARTICLE_SAMPLES GET /articles samples (p95Ok is then false). */
+    insufficientSamples: PhaseName[];
     backlogOk: boolean;
     allOffZeroInference: boolean;
     degradedReadingOk: boolean;
@@ -244,6 +248,10 @@ export function buildReport(input: ReportInput): LoadReport {
   const allOff = phases.find((phase) => phase.name === 'all-off');
   const failing = phases.find((phase) => phase.name === 'provider-failing');
   const totalSec = phases.reduce((sum, phase) => sum + phase.durationSec, 0);
+  const insufficientSamples: PhaseName[] =
+    input.profile === 'realistic'
+      ? phases.filter((phase) => phase.requests < MIN_ARTICLE_SAMPLES).map((phase) => phase.name)
+      : [];
   const perUserSec = (count: number): number =>
     totalSec === 0 ? 0 : Math.round((count / totalSec / LOAD_USERS) * 100_000) / 100_000;
   const sum = (pick: (phase: PhaseReport) => number): number =>
@@ -272,7 +280,9 @@ export function buildReport(input: ReportInput): LoadReport {
       gated: input.profile === 'realistic',
       p95Ok:
         phases.length === PHASE_NAMES.length &&
-        phases.every((phase) => phase.p95ArticlesMs < P95_LIMIT_MS),
+        phases.every((phase) => phase.p95ArticlesMs < P95_LIMIT_MS) &&
+        insufficientSamples.length === 0,
+      insufficientSamples,
       backlogOk: phases.every((phase) => !phase.backlogAlert),
       allOffZeroInference:
         allOff !== undefined && allOff.inferenceCalls === 0 && allOff.providerRequests === 0,
@@ -342,6 +352,11 @@ export function renderMarkdown(report: LoadReport): string {
     `- no queue-backlog alert (real rule from apps/worker/src/alerts): ${report.criteria.backlogOk ? 'PASS' : 'FAIL'}`,
     `- all-off makes zero inference calls: ${report.criteria.allOffZeroInference ? 'PASS' : 'FAIL'}`,
     `- reading stays available (no 5xx, p95 under limit) while the provider fails: ${report.criteria.degradedReadingOk ? 'PASS' : 'FAIL'}`,
+    ...(report.criteria.insufficientSamples.length > 0
+      ? [
+          `- insufficient samples (fewer than ${MIN_ARTICLE_SAMPLES} GET /articles per phase, p95 not trusted): ${report.criteria.insufficientSamples.join(', ')}`,
+        ]
+      : []),
     '- CPU: reported only (LOCAL run)',
     '',
     `Articles in the database at the end: ${report.articles}. Distinct questions are article/card pairs ` +
