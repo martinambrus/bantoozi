@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@bantoozi/db": "workspace:*",
+    "@bantoozi/feeds": "workspace:*",
     "@bantoozi/shared": "workspace:*",
     "@bantoozi/testing": "workspace:*",
     "autocannon": "8.0.0",

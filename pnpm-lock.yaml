@@ -176,6 +176,9 @@ importers:
       '@bantoozi/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@bantoozi/feeds':
+        specifier: workspace:*
+        version: link:../../packages/feeds
       '@bantoozi/shared':
         specifier: workspace:*
         version: link:../../packages/shared
