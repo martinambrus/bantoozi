@@ -13,6 +13,7 @@ import { createFeedFetchHandler } from './feed-fetch.js';
 import { createFeedScheduleHandler } from './feed-schedule.js';
 import { createProviderValidateHandler } from './provider-validate.js';
 import { createAlertsHandler } from './house-alerts.js';
+import { createMetricsHandler } from './house-metrics.js';
 import { createArchiveHandler } from './house-archive.js';
 import { createExpireRulesHandler } from './house-expire-rules.js';
 import { createNightlyLearnHandler } from './house-nightly-learn.js';
@@ -134,6 +135,7 @@ export const RETENTION_QUEUES = [
   'house.purge-engine-calls',
   'house.retire-cards',
   'house.purge-users',
+  'house.metrics',
 ] as const satisfies readonly QueueName[];
 
 /** M8 operational alerts (spec 11 §6.1): implemented when the worker has a mailer. */
@@ -179,6 +181,7 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
     'house.purge-engine-calls': implemented(createPurgeEngineCallsHandler(deps)),
     'house.retire-cards': implemented(createRetireCardsHandler(deps)),
     'house.purge-users': implemented(createPurgeUsersHandler(deps)),
+    'house.metrics': implemented(createMetricsHandler(deps)),
     ...(classification === undefined
       ? {}
       : {

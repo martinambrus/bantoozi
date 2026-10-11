@@ -86,6 +86,24 @@
       "reprocess": "Reprocess translations",
       "reprocessHint": "Translates again the articles whose translation was skipped, for example while the translation service was unavailable.",
       "queued": "Reprocessing of the skipped translations is queued."
+    },
+    "metrics": {
+      "title": "Recommendation quality",
+      "empty": "No data yet. The first daily figures appear after the nightly metrics run.",
+      "day": "Figures for {{day}}",
+      "likeRate": "Like rate",
+      "rated": "{{value}} rated",
+      "percent": "{{value}} %",
+      "none": "–",
+      "lanes": {
+        "for_you": "For You",
+        "maybe": "Maybe",
+        "everything": "Everything",
+        "hidden": "Hidden"
+      },
+      "regret": "Regret rate",
+      "regretDetail": "{{numerator}} of {{denominator}} articles that were shown low or hidden were later opened, liked or bookmarked.",
+      "regretNone": "No articles were eligible."
     }
   },
   "usage": {

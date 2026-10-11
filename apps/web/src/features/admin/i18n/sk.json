@@ -86,6 +86,24 @@
       "reprocess": "Spracovať preklady znova",
       "reprocessHint": "Znova preloží články, ktorých preklad sa preskočil, napríklad keď bola prekladová služba nedostupná.",
       "queued": "Opätovné spracovanie preskočených prekladov je zaradené do fronty."
+    },
+    "metrics": {
+      "title": "Kvalita odporúčaní",
+      "empty": "Zatiaľ nie sú k dispozícii žiadne údaje. Prvé denné hodnoty sa objavia po nočnom výpočte metrík.",
+      "day": "Hodnoty za {{day}}",
+      "likeRate": "Miera páčenia",
+      "rated": "Ohodnotené: {{value}}",
+      "percent": "{{value}} %",
+      "none": "–",
+      "lanes": {
+        "for_you": "Pre vás",
+        "maybe": "Možno",
+        "everything": "Všetko",
+        "hidden": "Skryté"
+      },
+      "regret": "Miera zmeškaných článkov",
+      "regretDetail": "{{numerator}} z {{denominator}} článkov zobrazených nízko alebo skrytých sa neskôr otvorilo, ohodnotilo kladne alebo uložilo do záložiek.",
+      "regretNone": "Nebol vhodný žiadny článok."
     }
   },
   "usage": {

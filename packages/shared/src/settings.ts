@@ -273,6 +273,22 @@ export const MetricsDailySchema = JsonObjectSchema.refine(
   'metrics snapshot too large',
 );
 
+const MetricsLaneSchema = z
+  .object({ likeRate: z.number().min(0).max(1).nullable(), rated: z.number().int().min(0) })
+  .strict();
+const MetricsRegretSchema = z
+  .object({ numerator: z.number().int().min(0), denominator: z.number().int().min(0) })
+  .strict();
+const MetricsWindowSchema = z
+  .object({ lanes: z.record(z.string(), MetricsLaneSchema), regret: MetricsRegretSchema })
+  .strict();
+
+/** The shape `house.metrics` writes to `metrics.daily.<date>`: per-lane like-rate and regret, for the day and 7/30 days. */
+export const MetricsSnapshotSchema = MetricsWindowSchema.extend({
+  windows: z.object({ d7: MetricsWindowSchema, d30: MetricsWindowSchema }).strict(),
+}).strict();
+export type MetricsSnapshot = z.infer<typeof MetricsSnapshotSchema>;
+
 export function metricsDailyKey(day: string): string {
   const key = `${METRICS_DAILY_PREFIX}${day}`;
   if (!METRICS_DAILY_KEY.test(key)) throw new RangeError('day must be YYYY-MM-DD');

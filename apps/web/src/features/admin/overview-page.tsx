@@ -1,4 +1,4 @@
-import type { AdminOverview } from '@bantoozi/shared';
+import type { AdminMetrics, AdminOverview } from '@bantoozi/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useId, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -21,6 +21,7 @@ import { useAdminKey } from './use-admin.js';
 type Breaker = AdminOverview['engine']['breakers']['typesafe'];
 type BreakerEngine = keyof AdminOverview['engine']['breakers'];
 
+const LANES = ['for_you', 'maybe', 'everything', 'hidden'] as const;
 const ENGINES = ['typesafe', 'llm'] as const satisfies readonly BreakerEngine[];
 const BREAKER_TONES: Record<Breaker['state'], BadgeTone> = {
   closed: 'success',
@@ -200,6 +201,55 @@ function EngineCard({
   );
 }
 
+/** The like-rate per lane and the regret rate of the latest daily snapshot (spec 10 §7). */
+function Metrics({ metrics }: { metrics: AdminMetrics | null | undefined }) {
+  const { t } = useTranslation('admin');
+  const format = useFormat();
+  const percent = (rate: number | null): string =>
+    rate === null
+      ? t('overview.metrics.none')
+      : t('overview.metrics.percent', { value: format.number(Math.round(rate * 100)) });
+  return (
+    <section className="flex flex-col gap-3">
+      <SectionTitle>{t('overview.metrics.title')}</SectionTitle>
+      {metrics === null || metrics === undefined ? (
+        <Hint>{t('overview.metrics.empty')}</Hint>
+      ) : (
+        <>
+          <Hint>{t('overview.metrics.day', { day: metrics.day })}</Hint>
+          <h4 className="font-semibold">{t('overview.metrics.likeRate')}</h4>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {LANES.map((lane) => {
+              const stats = metrics.lanes[lane];
+              return (
+                <Tile key={lane} label={t(`overview.metrics.lanes.${lane}`)}>
+                  <Value>{percent(stats?.likeRate ?? null)}</Value>
+                  <Hint>
+                    {t('overview.metrics.rated', { value: format.number(stats?.rated ?? 0) })}
+                  </Hint>
+                </Tile>
+              );
+            })}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Tile label={t('overview.metrics.regret')}>
+              <Value>{percent(metrics.regret.rate)}</Value>
+              <Hint>
+                {metrics.regret.denominator === 0
+                  ? t('overview.metrics.regretNone')
+                  : t('overview.metrics.regretDetail', {
+                      numerator: format.number(metrics.regret.numerator),
+                      denominator: format.number(metrics.regret.denominator),
+                    })}
+              </Hint>
+            </Tile>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 /** An answer that comes after the sign-in that asked has ended shows nothing. */
 function Translations({ overview }: { overview: AdminOverview }) {
   const { t } = useTranslation('admin');
@@ -323,6 +373,7 @@ export function AdminOverviewPage() {
               <SectionTitle>{t('overview.queues.title')}</SectionTitle>
               <Queues queues={data.queues} />
             </section>
+            <Metrics metrics={data.metrics} />
             <Translations overview={data} />
           </>
         )}

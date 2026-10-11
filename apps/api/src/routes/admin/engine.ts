@@ -2,6 +2,7 @@ import {
   adminActivateCredential,
   adminCredentialMetadata,
   adminOverviewCounts,
+  latestMetricsSnapshots,
   adminRevokeCredential,
   adminStageCredential,
   adminValidateCredential,
@@ -13,6 +14,7 @@ import {
 } from '@bantoozi/db';
 import {
   AdminOverviewSchema,
+  MetricsSnapshotSchema,
   AdminUsageQuerySchema,
   AdminUsageSchema,
   AppError,
@@ -32,6 +34,7 @@ import {
   enqueueRetranslateSkipped,
   readSetting,
   settingDefault,
+  type AdminMetrics,
   type AdminOverview,
   type BreakerState,
   type CredentialStatus,
@@ -87,6 +90,24 @@ async function loadCredential(tx: TenantTx, provider: Provider, now: Date) {
   return all.find((status) => status.provider === provider)!;
 }
 
+/** The newest stored `metrics.daily` snapshot that parses, with the regret rate; `null` when none does. */
+async function latestMetrics(tx: TenantTx): Promise<AdminMetrics | null> {
+  for (const [day, value] of await latestMetricsSnapshots(tx, 10)) {
+    const parsed = MetricsSnapshotSchema.safeParse(value);
+    if (!parsed.success) continue;
+    const { lanes, regret } = parsed.data;
+    return {
+      day,
+      lanes,
+      regret: {
+        ...regret,
+        rate: regret.denominator === 0 ? null : regret.numerator / regret.denominator,
+      },
+    };
+  }
+  return null;
+}
+
 export const engineRoutes: FastifyPluginAsyncZod = async (app) => {
   const env = settingEnvDefaults(app.services.config);
   const circuitDefault = settingDefault('engine.circuit', env)!;
@@ -111,6 +132,7 @@ export const engineRoutes: FastifyPluginAsyncZod = async (app) => {
           'translate.tier2_daily_cap',
         ]);
         const stored = new Map(rows.map((row) => [row.key, row.value]));
+        const metrics = await latestMetrics(tx);
         const circuitParsed = EngineCircuitSchema.safeParse(stored.get('engine.circuit'));
         const circuit: EngineCircuit = circuitParsed.success ? circuitParsed.data : circuitDefault;
         return {
@@ -131,6 +153,7 @@ export const engineRoutes: FastifyPluginAsyncZod = async (app) => {
             llmDailyCap:
               readSetting('engine.llm_daily_cap', stored.get('engine.llm_daily_cap'), env) ?? 0,
           },
+          metrics,
           translations: {
             last24h: counts.translations24h,
             tier2CallsToday: counts.tier2CallsToday,

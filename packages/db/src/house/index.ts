@@ -8,3 +8,4 @@ export * from './purge-engine-calls.js';
 export * from './retire-cards.js';
 export * from './purge-users.js';
 export * from './alerts.js';
+export * from './metrics.js';

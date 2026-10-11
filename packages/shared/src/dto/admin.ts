@@ -39,6 +39,22 @@ export const AdminBreakerSchema = z
   })
   .strict();
 
+/** The latest `metrics.daily` snapshot: like-rate per lane and the regret rate (spec 10 §7, M8-T4). */
+export const AdminMetricsSchema = z
+  .object({
+    day: z.string(),
+    lanes: z.record(
+      z.string(),
+      z.object({ likeRate: z.number().nullable(), rated: Count }).strict(),
+    ),
+    /** Observed recovery from Everything/Hidden: `rate` is `null` when no article was eligible. */
+    regret: z
+      .object({ numerator: Count, denominator: Count, rate: z.number().nullable() })
+      .strict(),
+  })
+  .strict();
+export type AdminMetrics = z.infer<typeof AdminMetricsSchema>;
+
 export const AdminOverviewSchema = z
   .object({
     users: z.object({ total: Count, active7d: Count }).strict(),
@@ -76,6 +92,8 @@ export const AdminOverviewSchema = z
         tier2DailyCap: Count,
       })
       .strict(),
+    /** `null` until `house.metrics` has stored a snapshot. */
+    metrics: AdminMetricsSchema.nullable().optional(),
   })
   .strict();
 export type AdminOverview = z.infer<typeof AdminOverviewSchema>;

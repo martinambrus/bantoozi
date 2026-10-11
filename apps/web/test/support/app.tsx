@@ -75,7 +75,12 @@ export async function renderApp(options: {
   language?: Language;
 }) {
   forgetCardMoves();
-  const fake = createFakeServer(options.server);
+  const { me } = options.server;
+  const fake = createFakeServer(
+    options.language !== undefined && me != null
+      ? { ...options.server, me: { ...me, locale: options.language } }
+      : options.server,
+  );
   const fetched = fakeFetch(fake.handler);
   const queryClient = new QueryClient({
     defaultOptions: {

@@ -145,6 +145,13 @@ describe('handler map', () => {
     expect(unavailableQueues(handlers, QUEUE_NAMES)).not.toContain('provider.validate');
   });
 
+  it('implements house.metrics without extra dependencies', () => {
+    expect(RETENTION_QUEUES).toContain('house.metrics');
+    expect(isStageAvailable(createHandlers(createWorkerDeps(baseDeps)), 'house.metrics')).toBe(
+      true,
+    );
+  });
+
   it('implements house.alerts only with a mailer', () => {
     expect(ALERT_QUEUES).toEqual(['house.alerts']);
     expect(isStageAvailable(createHandlers(createWorkerDeps(baseDeps)), 'house.alerts')).toBe(
