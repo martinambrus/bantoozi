@@ -1,0 +1,28 @@
+{
+  "name": "@bantoozi/ops",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Operations tools: restore verification, starter-bundle check, load test (spec 11)",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b && tsc -p tsconfig.test.json",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run --passWithNoTests",
+    "test:int": "vitest run --config vitest.int.config.ts --passWithNoTests",
+    "cli": "tsx --conditions=bantoozi-source --env-file-if-exists=../../.env src/cli.ts"
+  },
+  "dependencies": {
+    "@bantoozi/db": "workspace:*",
+    "@bantoozi/shared": "workspace:*",
+    "@bantoozi/testing": "workspace:*",
+    "autocannon": "8.0.0",
+    "commander": "15.0.0",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/autocannon": "7.12.7",
+    "@types/pg": "8.23.1",
+    "tsx": "4.23.15"
+  }
+}

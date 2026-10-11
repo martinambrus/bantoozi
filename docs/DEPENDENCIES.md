@@ -52,6 +52,7 @@ pin exact versions (`save-exact`). Update this file in the same commit as any ve
 | Public suffix list | tldts | 7.4.15 | feeds (registrable domains, spec 03 §8.1) |
 | CLI | commander | 15.0.0 | worker, eval |
 | age encryption | age-encryption (typage) | 0.3.1 | worker (encrypt-only deletion ledger entries, spec 11 §5.1; the `age` CLI decrypts them offline) |
+| HTTP load generator | autocannon (+ @types/autocannon 7.12.7, dev) | 8.0.0 | ops (M8-T8 load sanity test, spec 11 §9) |
 
 ## Web client (spec 01 §1, spec 09)
 

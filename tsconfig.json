@@ -11,6 +11,7 @@
     { "path": "packages/testing" },
     { "path": "apps/api" },
     { "path": "apps/worker" },
-    { "path": "apps/eval" }
+    { "path": "apps/eval" },
+    { "path": "apps/ops" }
   ]
 }
