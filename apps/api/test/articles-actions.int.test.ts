@@ -274,7 +274,7 @@ async function selectArticle(userId: string, feedId: string, articleId: string):
 const queues = async (userId: string) => (await outbox(h, userId)).map((job) => job.queue);
 
 describe('single-article state actions', () => {
-  it('read and unread record events; a clustered story requests a full rank', async () => {
+  it('read and unread record events; a clustered story requests an incremental rank, never a bump', async () => {
     const { r, feed, article } = await setup();
     const loose = await carriedArticle(h, [feed]);
     const before = await rankRevision(h, r.user.id);
@@ -286,8 +286,12 @@ describe('single-article state actions', () => {
     const read = await ok(r.api.post(`/articles/${article}/read`, freshFence));
     expect(read.item).toMatchObject({ stateVersion: '1', readAt: expect.any(String) });
     expect(read.mutationId).toEqual(expect.any(String));
-    expect(BigInt(await rankRevision(h, r.user.id))).toBe(BigInt(before) + 1n);
+    // S22: the action marks the story's rows due; no revision bump and no full intent.
+    expect(await rankRevision(h, r.user.id)).toBe(before);
     expect(await queues(r.user.id)).toContain('user.rank');
+    expect(
+      (await outbox(h, r.user.id, 'user.rank')).some((job) => job.payload['full'] === true),
+    ).toBe(false);
 
     const unread = await ok(r.api.post(`/articles/${article}/unread`, fence(read.item)));
     expect(unread.item).toMatchObject({ stateVersion: '2', readAt: null });
@@ -727,7 +731,9 @@ describe('labels', () => {
       [r.user.id, [card, label]],
     );
     expect(cardsAfter.rows).toEqual(cardsBefore.rows);
-    expect(await queues(r.user.id)).toEqual([]);
+    // S22: removing the label may bring its suggestion back, so the article's row is ranked again
+    // (an incremental rank); no card or learning work.
+    expect(await queues(r.user.id)).toEqual(['user.rank']);
 
     const foreign = await createLabel((await newReader(h)).user.id, 'Not mine');
     await errorOf(

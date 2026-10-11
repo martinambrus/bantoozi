@@ -278,7 +278,11 @@ describe('user.learn and house.nightly-learn (M7-T4)', () => {
 
     expect(await w.models(userId)).toEqual(rows);
     expect((await w.active(userId)).map((m) => m.version)).toEqual([1]);
-    expect(await w.userIntents('user.rank', userId, mark)).toHaveLength(0);
+    // S22: an unlabel makes the article's row due (its suggestion may return): one incremental
+    // rank, never a full one and never a learn or model change.
+    const ranks = await w.userIntents('user.rank', userId, mark);
+    expect(ranks.length).toBeLessThanOrEqual(1);
+    expect(ranks.some((p) => p['full'] === true)).toBe(false);
     const { samples } = await loadLearnSamples(h.db, { userId, now: new Date() });
     expect(samples.some((s) => s.articleId === w.articles[50])).toBe(false);
     expect(samples).toHaveLength(RATED);

@@ -1,22 +1,18 @@
-import type { Tri } from '@bantoozi/shared';
+import {
+  autoFlagCounts,
+  DEMOTION_FLAGS,
+  type DemotionFlag,
+  type DislikeReason,
+  type Tri,
+} from '@bantoozi/shared';
 
 import type { ReadonlyRankerConfig } from './config.js';
 import { RULE_CODES } from './rule-codes.js';
 import type { RankItem } from './types.js';
 
-/** Quality flags (spec 06 §5). */
-export const DEMOTION_FLAGS = ['clickbait', 'promotional', 'shallow', 'stale'] as const;
-export type DemotionFlag = (typeof DEMOTION_FLAGS)[number];
-
-/** Dislike reasons (`user_article.reason`, spec 06 §1). */
-export type DislikeReason = 'clickbait' | 'promo' | 'shallow' | 'seen' | 'off_topic' | 'other';
-
-/** The dislike reason that drives a flag's `auto` activation; `stale` uses `staleDislikes90d`. */
-const FLAG_REASON: Readonly<Record<Exclude<DemotionFlag, 'stale'>, DislikeReason>> = {
-  clickbait: 'clickbait',
-  promotional: 'promo',
-  shallow: 'shallow',
-};
+// The flag and reason vocabulary lives in `@bantoozi/shared` (the reader actions share it).
+export { DEMOTION_FLAGS };
+export type { DemotionFlag, DislikeReason };
 
 const FLAG_CODE: Readonly<Record<DemotionFlag, string>> = {
   clickbait: RULE_CODES.demoteClickbait,
@@ -48,9 +44,7 @@ export function isDemotionActive(
   const setting = user.demote[flag];
   if (setting === 'on') return true;
   if (setting === 'off') return false;
-  const count =
-    flag === 'stale' ? user.staleDislikes90d : (user.reasonCounts90d[FLAG_REASON[flag]] ?? 0);
-  return count >= config.demotion.autoMinDislikes;
+  return autoFlagCounts(flag, user, config.demotion.autoMinDislikes);
 }
 
 /** Article age in hours (§5): `now − min(publishedAt ?? firstSeenAt, firstSeenAt)`, floored at 0. */

@@ -58,12 +58,16 @@ async function outboxCount(userId: string): Promise<number> {
   return result.rows[0]!.n;
 }
 
+/**
+ * S22 (owner decision 2026-10-11): the catch-up is an INCREMENTAL `user.rank {reason: 'list'}`
+ * intent (no `full`), so the helper selects those.
+ */
 async function fullRankIntents(userId: string): Promise<{ reason: string; delivered: boolean }[]> {
   const result = await h.owner.query<{ reason: string; delivered: boolean }>(
     `SELECT payload->>'reason' AS reason, delivered_at IS NOT NULL AS delivered
        FROM job_outbox
-      WHERE user_id = $1 AND queue = 'user.rank' AND payload->>'full' = 'true'
-        AND payload->'cursor' IS NULL
+      WHERE user_id = $1 AND queue = 'user.rank' AND payload->>'reason' = 'list'
+        AND payload->'full' IS NULL AND payload->'cursor' IS NULL
       ORDER BY id`,
     [userId],
   );
@@ -101,7 +105,7 @@ async function seedJob(
 }
 
 describe('the list catch-up intent', () => {
-  it('writes one full-rank intent when nothing covers it, not one per call', async () => {
+  it('writes one incremental intent when nothing covers it, not one per call', async () => {
     const r = await pendingReader();
     await listTwice(r);
     expect(await fullRankIntents(r.user.id)).toEqual([{ reason: 'list', delivered: false }]);
@@ -178,16 +182,15 @@ describe('the list catch-up intent', () => {
       ]);
     });
 
-    it('a pending incremental rank intent does not cover a full rank', async () => {
+    it('a pending incremental rank intent covers the incremental catch-up (S22)', async () => {
       const r = await pendingReader();
       await seedIntent(r.user.id, { userId: r.user.id, reason: 'match' });
+      const before = await outboxCount(r.user.id);
       await listTwice(r);
-      expect((await fullRankIntents(r.user.id)).filter((i) => !i.delivered)).toEqual([
-        { reason: 'list', delivered: false },
-      ]);
+      expect(await outboxCount(r.user.id)).toBe(before);
     });
 
-    it('a pending continuation does not cover a full rank', async () => {
+    it('a pending continuation does not cover it', async () => {
       const r = await pendingReader();
       await seedIntent(r.user.id, {
         userId: r.user.id,

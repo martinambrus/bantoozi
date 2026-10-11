@@ -75,7 +75,7 @@ export function context(overrides: Partial<UserRankContext> = {}): UserRankConte
     demote: { clickbait: 'auto', promotional: 'auto', shallow: 'auto', stale: 'auto' },
     reasonCounts90d: {},
     staleDislikes90d: 0,
-    readClusterIds: new Set(),
+    readClusterIds: new Map(),
     bm25: buildBm25Corpus([]),
     ...overrides,
   };

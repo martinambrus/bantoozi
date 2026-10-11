@@ -148,6 +148,13 @@
       "when": 1791790800000,
       "tag": "0020_full_rank_covered",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791877200000,
+      "tag": "0021_rank_covered",
+      "breakpoints": true
     }
   ]
 }

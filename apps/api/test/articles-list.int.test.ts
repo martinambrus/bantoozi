@@ -470,7 +470,7 @@ describe('GET /articles/counts', () => {
     expect(folder.total).toBe((await list(r, { lane: 'all', folder: 'News' })).items.length);
   });
 
-  it('an outdated score_version enqueues a full rank without a revision bump', async () => {
+  it('an outdated score_version enqueues an incremental rank without a revision bump', async () => {
     const r = await newReader(h);
     const feed = await subscribedFeed(h, r.user.id);
     const article = await carriedArticle(h, [feed]);
@@ -484,7 +484,7 @@ describe('GET /articles/counts', () => {
     expect(page.rankingPending).toBe(true);
     expect(ids(page)).toEqual([article]);
     expect((await outbox(h, r.user.id, 'user.rank')).map((j) => j.payload)).toEqual([
-      { userId: r.user.id, reason: 'list', full: true },
+      { userId: r.user.id, reason: 'list' },
     ]);
     expect(await rankRevision(h, r.user.id)).toBe(before);
     expect((await r.api.get('/articles/counts')).json().rankingPending).toBe(true);

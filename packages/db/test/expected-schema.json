@@ -3960,7 +3960,8 @@
             "archived_at",
             "label_ids",
             "feedback_prompted_at",
-            "state_version"
+            "state_version",
+            "next_rank_at"
           ],
           "UPDATE": [
             "opened_at",
@@ -3974,7 +3975,8 @@
             "label_ids",
             "feedback_prompted_at",
             "state_version",
-            "label_suggestions"
+            "label_suggestions",
+            "next_rank_at"
           ]
         }
       },
@@ -4213,7 +4215,7 @@
       "config": ["search_path=pg_catalog, public, pg_temp"],
       "execute": ["bantoozi_app"]
     },
-    "full_rank_covered": {
+    "rank_covered": {
       "args": "",
       "result": "boolean",
       "language": "plpgsql",

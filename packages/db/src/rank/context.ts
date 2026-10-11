@@ -14,17 +14,39 @@ export interface RankUser {
   /** `users.rank_revision` as a decimal string. */
   rankRevision: string;
   preferences: unknown;
+  /**
+   * The database clock (ISO, microseconds) read while holding the user row's share lock, i.e. after
+   * every reader action that locked the user before the run has committed and before any that
+   * locks it later. A reader action marks the rows it makes due with its own `clock_timestamp()`,
+   * so a mark newer than `ctxAt` was written by an action the run's context may not include and the
+   * run's write must not erase it (S22, `writeRankBatch`).
+   */
+  ctxAt: string;
 }
 
 /** The active (non-deleted) user, or null when the account is gone or being deleted. */
 export async function loadRankUser(db: Executor, userId: string): Promise<RankUser | null> {
-  const result = await db.execute<{ id: string; rank_revision: string; preferences: unknown }>(sql`
-    SELECT id::text AS id, rank_revision::text AS rank_revision, preferences
-      FROM users WHERE id = ${userId}::uuid AND deleted_at IS NULL`);
+  // The clock is read in the outer query, over the locked subquery row: the subquery is not pulled
+  // up (it has a row mark), so `clock_timestamp()` runs after the share lock was acquired.
+  const result = await db.execute<{
+    id: string;
+    rank_revision: string;
+    preferences: unknown;
+    ctx_at: string;
+  }>(sql`
+    SELECT u.id::text AS id, u.rank_revision::text AS rank_revision, u.preferences,
+           to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS ctx_at
+      FROM (SELECT id, rank_revision, preferences FROM users
+             WHERE id = ${userId}::uuid AND deleted_at IS NULL FOR SHARE) u`);
   const row = result.rows[0];
   return row === undefined
     ? null
-    : { userId: row.id, rankRevision: row.rank_revision, preferences: row.preferences };
+    : {
+        userId: row.id,
+        rankRevision: row.rank_revision,
+        preferences: row.preferences,
+        ctxAt: row.ctx_at,
+      };
 }
 
 /** One held interest card as the ranker reads it (spec 06 §1 `cards`). */
@@ -170,21 +192,23 @@ export async function loadRecentDislikes(
 }
 
 /**
- * Clusters with a member the user read in the window (spec 06 §7 step 1, §2 step 6i): the reader
- * state, so an unread or undo removes the evidence again.
+ * Clusters with a member the user read in the window (spec 06 §7 step 1, §2 step 6i), each with the
+ * time of its latest such read: the reader state, so an unread or undo removes the evidence again,
+ * and the seen state can end at `latest read + window` (S22).
  */
 export async function loadReadClusterIds(
   db: Executor,
   userId: string,
   since: Date,
-): Promise<Set<string>> {
-  const result = await db.execute<{ cluster_id: string }>(sql`
-    SELECT DISTINCT a.story_cluster_id::text AS cluster_id
+): Promise<Map<string, Date>> {
+  const result = await db.execute<{ cluster_id: string; read_at: RawTimestamp }>(sql`
+    SELECT a.story_cluster_id::text AS cluster_id, max(ua.read_at) AS read_at
       FROM user_article ua
       JOIN articles a ON a.id = ua.article_id AND a.story_cluster_id IS NOT NULL
      WHERE ua.user_id = ${userId}::uuid AND ua.read_at IS NOT NULL
-       AND ua.read_at >= ${since.toISOString()}::timestamptz`);
-  return new Set(result.rows.map((row) => row.cluster_id));
+       AND ua.read_at >= ${since.toISOString()}::timestamptz
+     GROUP BY a.story_cluster_id`);
+  return new Map(result.rows.map((row) => [row.cluster_id, toDate(row.read_at)]));
 }
 
 /** The ids of the user's held interest cards and labels, as `loadRankCards`/`loadRankLabels` hold them. */

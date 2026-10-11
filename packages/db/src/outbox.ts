@@ -24,12 +24,14 @@ async function insertIntent(tx: Executor, intent: JobIntent, requester: string |
 }
 
 /**
- * Whether a full rank of the caller is already on its way: an undelivered full-rank intent without
- * a cursor, or a created/retry `rank-full:<user>` job (migration 0020; the API role can read
- * neither table). A read-side catch-up request is then redundant.
+ * Whether a rank of the caller is already on its way: an undelivered `user.rank` intent without a
+ * cursor (full or not), or a created/retry `rank:<user>` or `rank-full:<user>` job (migration 0021;
+ * the API role can read neither table). A read-side catch-up request is then redundant: the run
+ * reads the database state when it starts, so a rank that has not started yet covers it. An active
+ * job may already have read the state and does not.
  */
-export async function fullRankCovered(tx: TenantTx): Promise<boolean> {
-  const result = await tx.execute<{ covered: boolean }>(sql`SELECT full_rank_covered() AS covered`);
+export async function rankCovered(tx: TenantTx): Promise<boolean> {
+  const result = await tx.execute<{ covered: boolean }>(sql`SELECT rank_covered() AS covered`);
   return result.rows[0]?.covered === true;
 }
 

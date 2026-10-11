@@ -24,13 +24,19 @@ import { sql, type SQL } from 'drizzle-orm';
 import { parseCardBody } from '../cards/body.js';
 import { exampleFromArticleTitle } from '../cards/validation.js';
 import { SELECTION_WINDOW_DAYS } from '../ingest/demand.js';
-import { recordRankIntents } from '../ingest/rank-intents.js';
 import { readStoredSetting, readStoredSettings, shareLockSettings } from '../settings.js';
 import type { Executor } from '../client.js';
 import { tenantUserId, type TenantTx } from '../tenant.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
 import { articleContexts, loadArticleItems } from './articles.js';
 import { lockMutationForUndo, updateMutationUndo } from './mutations.js';
+import {
+  probeDemotion,
+  rankChangeOf,
+  recordReaderRankEffects,
+  type DemotionProbe,
+  type ReaderRankChange,
+} from './rank-effects.js';
 import { createUserRule, type UserRule } from './rules.js';
 
 /**
@@ -942,8 +948,40 @@ async function requireAnalysisRequest(
   return { id: requestId, inputSha: row.input_sha, snapshot: row.input_snapshot };
 }
 
-async function rankFull(tx: TenantTx, user: string, outbox: JobSender, reason: string) {
-  await recordRankIntents(tx, outbox, [user], { reason, full: true });
+/**
+ * The rank effects of one article target's patch (S22): see `recordReaderRankEffects`. A receipt's
+ * `effects.rankFull` is kept parseable but no longer read: an undo recomputes its own effects.
+ */
+function changeOf(article: LockedArticle, patch: ReaderPatch): ReaderRankChange {
+  return rankChangeOf(article, article.row, patch);
+}
+
+async function recordEffects(
+  tx: TenantTx,
+  lock: ReaderLock,
+  input: { outbox: JobSender; now: Date },
+  action: string,
+  changes: readonly ReaderRankChange[],
+  demotion?: { before: DemotionProbe; after: DemotionProbe },
+): Promise<void> {
+  await recordReaderRankEffects(tx, {
+    user: lock.user,
+    outbox: input.outbox,
+    action,
+    now: input.now,
+    changes,
+    demotion,
+  });
+}
+
+/** The auto-demotion state now (rating actions take it before and after their change). */
+async function demotionProbe(
+  tx: TenantTx,
+  lock: ReaderLock,
+  config: RankerConfig,
+  now: Date,
+): Promise<DemotionProbe> {
+  return probeDemotion(tx, { user: lock.user, now, config, prefs: lock.prefs });
 }
 
 // ── Single-article state actions ───────────────────────────────────────────────────────────────
@@ -987,8 +1025,7 @@ export async function markArticleRead(
     },
     input.now,
   );
-  const rank = article.storyClusterId !== null;
-  if (rank) await rankFull(tx, lock.user, input.outbox, 'feedback:read');
+  await recordEffects(tx, lock, input, 'read', [changeOf(article, patch)]);
   return {
     articleIds: [input.articleId],
     changed: true,
@@ -997,7 +1034,7 @@ export async function markArticleRead(
       'read',
       [{ articleId: input.articleId, resultVersion: version, before }],
       {
-        rankFull: rank,
+        rankFull: false,
         // An explicit consented read is an implicit-negative sample; undoing it revokes evidence.
         learn: behavioral,
       },
@@ -1047,8 +1084,7 @@ export async function markArticleUnread(tx: TenantTx, input: ActionInput): Promi
     { v: 1, signalOrigin: 'explicit', learningConsent: learningConsent(lock.prefs) },
     input.now,
   );
-  const rank = article.storyClusterId !== null || patch.archivedAt !== undefined;
-  if (rank) await rankFull(tx, lock.user, input.outbox, 'feedback:unread');
+  await recordEffects(tx, lock, input, 'unread', [changeOf(article, patch)]);
   if (revokesRead) {
     await recordLearnIntent(tx, lock.user, input.outbox, await readRankerConfig(tx), true);
   }
@@ -1060,7 +1096,7 @@ export async function markArticleUnread(tx: TenantTx, input: ActionInput): Promi
       'unread',
       [{ articleId: input.articleId, resultVersion: version, before }],
       {
-        rankFull: rank,
+        rankFull: false,
         learn: revokesRead,
       },
     ),
@@ -1086,7 +1122,7 @@ export async function unhideArticle(tx: TenantTx, input: ActionInput): Promise<A
     { v: 1, signalOrigin: 'explicit', learningConsent: learningConsent(lock.prefs) },
     input.now,
   );
-  await rankFull(tx, lock.user, input.outbox, 'feedback:unhide');
+  await recordEffects(tx, lock, input, 'unhide', [changeOf(article, patch)]);
   return {
     articleIds: [input.articleId],
     changed: true,
@@ -1095,7 +1131,7 @@ export async function unhideArticle(tx: TenantTx, input: ActionInput): Promise<A
       'unhide',
       [{ articleId: input.articleId, resultVersion: version, before }],
       {
-        rankFull: true,
+        rankFull: false,
         learn: false,
       },
     ),
@@ -1135,10 +1171,8 @@ export async function openArticle(tx: TenantTx, input: ActionInput): Promise<Act
       })
     : { features: null, staleAtFeedback: null };
   const wasRead = article.row?.readAt != null;
-  await writeReader(tx, lock.user, input.articleId, {
-    openedAt: input.now,
-    ...(wasRead ? {} : { readAt: input.now }),
-  });
+  const patch: ReaderPatch = { openedAt: input.now, ...(wasRead ? {} : { readAt: input.now }) };
+  await writeReader(tx, lock.user, input.articleId, patch);
   await appendEvent(
     tx,
     lock.user,
@@ -1153,9 +1187,7 @@ export async function openArticle(tx: TenantTx, input: ActionInput): Promise<Act
     },
     input.now,
   );
-  if (!wasRead && article.storyClusterId !== null) {
-    await rankFull(tx, lock.user, input.outbox, 'feedback:open');
-  }
+  await recordEffects(tx, lock, input, 'open', [changeOf(article, patch)]);
   return { articleIds: [input.articleId], changed: true };
 }
 
@@ -1388,6 +1420,8 @@ async function applyRating(
     config: RankerConfig;
     suggestion?: ExampleSuggestionValue | null;
     matchFingerprint?: MatchFingerprint | undefined;
+    /** Receives the target's rank-relevant change (S22). */
+    changes: ReaderRankChange[];
   },
 ): Promise<UndoTarget> {
   const article = locked(lock, target.articleId);
@@ -1424,6 +1458,7 @@ async function applyRating(
   }
   if (target.hide && row?.archivedAt == null) patch.archivedAt = options.now;
   const before = beforeOf(row, patch);
+  options.changes.push(changeOf(article, patch));
   const version = await writeReader(tx, lock.user, target.articleId, patch);
   const kind =
     options.kind === 'prompt_answer' ? 'prompt_answer' : target.rating === null ? 'unrate' : 'rate';
@@ -1498,6 +1533,8 @@ export async function rateArticle(
             config,
           ),
         );
+  const changes: ReaderRankChange[] = [];
+  const demotionBefore = await demotionProbe(tx, lock, config, input.now);
   const target = await applyRating(
     tx,
     lock,
@@ -1508,9 +1545,13 @@ export async function rateArticle(
       config,
       suggestion,
       matchFingerprint: input.matchFingerprint,
+      changes,
     },
   );
-  await rankFull(tx, lock.user, input.outbox, 'feedback:rating');
+  await recordEffects(tx, lock, input, 'rating', changes, {
+    before: demotionBefore,
+    after: await demotionProbe(tx, lock, config, input.now),
+  });
   await recordLearnIntent(
     tx,
     lock.user,
@@ -1522,7 +1563,7 @@ export async function rateArticle(
     articleIds: [input.articleId],
     changed: true,
     exampleSuggestion: suggestion,
-    undo: undoReceipt('reader', 'rating', [target], { rankFull: true, learn: true }),
+    undo: undoReceipt('reader', 'rating', [target], { rankFull: false, learn: true }),
   };
 }
 
@@ -1533,6 +1574,8 @@ export async function answerPrompt(
 ): Promise<ActionResult> {
   const lock = await lockFenced(tx, [input], true);
   const config = await readRankerConfig(tx);
+  const changes: ReaderRankChange[] = [];
+  const demotionBefore = await demotionProbe(tx, lock, config, input.now);
   const target = await applyRating(
     tx,
     lock,
@@ -1544,9 +1587,18 @@ export async function answerPrompt(
       hide: false,
       analysisRequestId: input.analysisRequestId,
     },
-    { kind: 'prompt_answer', now: input.now, config, matchFingerprint: input.matchFingerprint },
+    {
+      kind: 'prompt_answer',
+      now: input.now,
+      config,
+      matchFingerprint: input.matchFingerprint,
+      changes,
+    },
   );
-  await rankFull(tx, lock.user, input.outbox, 'feedback:prompt');
+  await recordEffects(tx, lock, input, 'prompt', changes, {
+    before: demotionBefore,
+    after: await demotionProbe(tx, lock, config, input.now),
+  });
   await recordLearnIntent(
     tx,
     lock.user,
@@ -1557,7 +1609,7 @@ export async function answerPrompt(
   return {
     articleIds: [input.articleId],
     changed: true,
-    undo: undoReceipt('reader', 'prompt_answer', [target], { rankFull: true, learn: true }),
+    undo: undoReceipt('reader', 'prompt_answer', [target], { rankFull: false, learn: true }),
   };
 }
 
@@ -1579,17 +1631,22 @@ export async function rateArticlesBulk(
   const config = await readRankerConfig(tx);
   const sorted = [...input.targets].sort((a, b) => compareIds(a.articleId, b.articleId));
   const targets: UndoTarget[] = [];
+  const changes: ReaderRankChange[] = [];
+  const demotionBefore = await demotionProbe(tx, lock, config, input.now);
   for (const target of sorted) {
     targets.push(
       await applyRating(
         tx,
         lock,
         { ...target, rating: input.rating, reason: null, hide: false },
-        { kind: 'rate', now: input.now, config, matchFingerprint: input.matchFingerprint },
+        { kind: 'rate', now: input.now, config, matchFingerprint: input.matchFingerprint, changes },
       ),
     );
   }
-  await rankFull(tx, lock.user, input.outbox, 'feedback:rating');
+  await recordEffects(tx, lock, input, 'rating', changes, {
+    before: demotionBefore,
+    after: await demotionProbe(tx, lock, config, input.now),
+  });
   await recordLearnIntent(
     tx,
     lock.user,
@@ -1600,7 +1657,7 @@ export async function rateArticlesBulk(
   return {
     articleIds: input.targets.map((t) => t.articleId),
     changed: true,
-    undo: undoReceipt('reader', 'rate_bulk', targets, { rankFull: true, learn: true }),
+    undo: undoReceipt('reader', 'rate_bulk', targets, { rankFull: false, learn: true }),
   };
 }
 
@@ -1639,7 +1696,7 @@ export async function markArticlesRead(
         );
   const ids = [...new Set(input.targets.map((t) => t.articleId))].sort(compareIds);
   const targets: UndoTarget[] = [];
-  let rank = false;
+  const changes: ReaderRankChange[] = [];
   for (const id of ids) {
     const article = locked(lock, id);
     if (article.row?.readAt != null) continue;
@@ -1655,16 +1712,16 @@ export async function markArticlesRead(
       input.now,
     );
     targets.push({ articleId: id, resultVersion: version, before });
-    rank ||= article.storyClusterId !== null;
+    changes.push(changeOf(article, patch));
   }
-  if (rank) await rankFull(tx, lock.user, input.outbox, 'feedback:mark-read');
+  await recordEffects(tx, lock, input, 'mark-read', changes);
   return {
     articleIds: ids,
     changed: targets.length > 0,
     count: targets.length,
     ...(targets.length === 0
       ? {}
-      : { undo: undoReceipt('reader', 'mark_read', targets, { rankFull: rank, learn: false }) }),
+      : { undo: undoReceipt('reader', 'mark_read', targets, { rankFull: false, learn: false }) }),
   };
 }
 
@@ -1895,6 +1952,8 @@ export async function unlabelArticle(
     { v: 1, labelId: input.labelId, signalOrigin: 'explicit' },
     input.now,
   );
+  // The label's suggestion may return for this article: its own row is ranked again.
+  await recordEffects(tx, lock, input, 'unlabel', [changeOf(locked(lock, input.articleId), patch)]);
   return {
     articleIds: [input.articleId],
     changed: true,
@@ -2021,6 +2080,15 @@ export async function undoArticleMutation(
     );
   }
   const sorted = [...undo.targets].sort((a, b) => compareIds(a.articleId, b.articleId));
+  // The stored `effects.rankFull` is ignored: the effects are recomputed from what is restored.
+  const changes: ReaderRankChange[] = [];
+  const ratingsTouched = sorted.some(
+    (t) => 'rating' in t.before || 'reason' in t.before || 'ratedAt' in t.before,
+  );
+  const config = await readRankerConfig(tx);
+  const demotionBefore = ratingsTouched
+    ? await demotionProbe(tx, lock, config, input.now)
+    : undefined;
   for (const target of sorted) {
     if (undo.kind === 'bookmark') {
       await tx.execute(sql`SELECT 1 FROM clear_bookmark_snapshot(${target.articleId}::bigint)`);
@@ -2029,7 +2097,9 @@ export async function undoArticleMutation(
         SELECT 1 FROM restore_bookmark_snapshot(${target.articleId}::bigint,
                                                 ${input.mutationId}::uuid)`);
     }
-    await writeReader(tx, lock.user, target.articleId, restorePatch(target.before));
+    const restore = restorePatch(target.before);
+    changes.push(changeOf(locked(lock, target.articleId), restore));
+    await writeReader(tx, lock.user, target.articleId, restore);
     await appendEvent(
       tx,
       lock.user,
@@ -2046,9 +2116,18 @@ export async function undoArticleMutation(
       input.now,
     );
   }
-  if (undo.effects.rankFull) await rankFull(tx, lock.user, input.outbox, 'feedback:undo');
+  await recordEffects(
+    tx,
+    lock,
+    input,
+    'undo',
+    changes,
+    demotionBefore === undefined
+      ? undefined
+      : { before: demotionBefore, after: await demotionProbe(tx, lock, config, input.now) },
+  );
   if (undo.effects.learn) {
-    await recordLearnIntent(tx, lock.user, input.outbox, await readRankerConfig(tx), true);
+    await recordLearnIntent(tx, lock.user, input.outbox, config, true);
   }
   await updateMutationUndo(tx, input.mutationId, { ...undo, undoneAt: input.now.toISOString() });
   return { articleIds: ids, changed: true, count: ids.length };

@@ -394,7 +394,10 @@ describe('rankArticle step 4b: quality demotions (spec 06 §5)', () => {
 
 describe('rankArticle steps 5–7: lane modifiers', () => {
   it('seen_story caps a read story at Everything without rewriting P', () => {
-    const ctx = context({ cards: [love], readClusterIds: new Set(['44']) });
+    const ctx = context({
+      cards: [love],
+      readClusterIds: new Map([['44', new Date('2026-01-01T00:00:00Z')]]),
+    });
     const result = rank(
       ctx,
       item({ clusterId: '44', clusterSize: 3, cardAnswers: answers({ 10: 0.9 }) }),
@@ -407,11 +410,30 @@ describe('rankArticle steps 5–7: lane modifiers', () => {
     });
   });
 
+  it('seen_story is due 14 days after the latest read of the story (S22)', () => {
+    const read = new Date(NOW.getTime() - 24 * HOUR);
+    const ctx = context({ cards: [love], readClusterIds: new Map([['44', read]]) });
+    const result = rank(
+      ctx,
+      item({ clusterId: '44', clusterSize: 3, cardAnswers: answers({ 10: 0.9 }) }),
+    );
+    expect(result.rulesFired).toEqual(['seen_story']);
+    expect(result.nextRankAt).toEqual(new Date(read.getTime() + 14 * 24 * HOUR));
+  });
+
+  it('a read story that changes nothing sets no deadline', () => {
+    const read = new Date(NOW.getTime() - 24 * HOUR);
+    const ctx = context({ cards: [love], readClusterIds: new Map([['44', read]]) });
+    const result = rank(ctx, item({ clusterId: '44', cardAnswers: answers({ 10: 0.2 }) }));
+    expect(result.rulesFired).not.toContain('seen_story');
+    expect(result.nextRankAt).toBeNull();
+  });
+
   it('seen_story beats a floor', () => {
     const ctx = context({
       cards: [must],
       rules: [rule('boost_domain', 'example.com')],
-      readClusterIds: new Set(['44']),
+      readClusterIds: new Map([['44', new Date('2026-01-01T00:00:00Z')]]),
     });
     const result = rank(ctx, item({ clusterId: '44', cardAnswers: answers({ 12: 0.6 }) }));
     expect(result).toMatchObject({ lane: 'everything', pLike: 0.6, rulesFired: ['seen_story'] });
@@ -420,7 +442,7 @@ describe('rankArticle steps 5–7: lane modifiers', () => {
   it('seen_story keeps a degraded item in Everything (the degraded Maybe lane does not override it)', () => {
     const ctx = context({
       cards: [card('10', 'love', { interest: 'battery' })],
-      readClusterIds: new Set(['44']),
+      readClusterIds: new Map([['44', new Date('2026-01-01T00:00:00Z')]]),
       bm25: buildBm25Corpus([item(), { titleNorm: 'other news', excerptNorm: 'nothing' }]),
     });
     const result = rank(ctx, item({ clusterId: '44', matchCoverage: 'unavailable' }));
