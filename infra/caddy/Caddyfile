@@ -2,6 +2,13 @@
 # infra/docker/Dockerfile (target `caddy`) on the pinned caddy:2 index digest, with the web build
 # (apps/web/dist) baked in at /srv/web (spec 11 §3).
 #
+# Maintenance mode (spec 11 §3 step 6, §4.1 step 1): while the flag file /data/maintenance/on exists
+# in the caddy-data volume (infra/scripts/maintenance.sh on|off|status; deploy.sh sets it when a
+# failed smoke leaves compatibility undemonstrated), every public route answers 503 with a static
+# page and Retry-After. The flag is checked per request and lives in a named volume, so it survives
+# a restart or recreate of this container. /api/v1/readyz stays proxied, so health checks and the
+# deploy smoke can still see the API; the rest of the API is internal to the compose network.
+#
 # Environment: PUBLIC_HOST is the site address (a domain name gets Let's Encrypt certificates; the
 # default localhost uses Caddy's internal CA); ACME_EMAIL is the ACME account contact.
 {
@@ -39,6 +46,41 @@
 				resp_headers>Set-Cookie delete
 			}
 		}
+	}
+
+	@maintenance {
+		file {
+			root /data/maintenance
+			try_files on
+		}
+		not path /api/v1/readyz
+	}
+	handle @maintenance {
+		header Retry-After "300"
+		header Cache-Control "no-store"
+		header Content-Type "text/html; charset=utf-8"
+		respond <<HTML
+			<!doctype html>
+			<html lang="en">
+			<head>
+			<meta charset="utf-8">
+			<meta name="viewport" content="width=device-width, initial-scale=1">
+			<meta name="robots" content="noindex">
+			<title>Bantoozi is in maintenance</title>
+			<style>
+			body { font-family: system-ui, sans-serif; margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f6f6f4; color: #1d1d1b; }
+			main { max-width: 32rem; padding: 1.5rem; }
+			@media (prefers-color-scheme: dark) { body { background: #181817; color: #ecece8; } }
+			</style>
+			</head>
+			<body>
+			<main>
+			<h1>Bantoozi is in maintenance</h1>
+			<p>We are working on the service and it will be back shortly. Your reading state is safe. Please try again in a few minutes.</p>
+			</main>
+			</body>
+			</html>
+			HTML 503
 	}
 
 	# Metrics are internal (spec 11 §3): scraped inside the compose network, never from outside.
