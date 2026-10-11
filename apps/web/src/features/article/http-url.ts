@@ -8,3 +8,9 @@ export function httpUrl(value: string | null | undefined): URL | null {
     return null;
   }
 }
+
+/** The address as a URL when it is an absolute https address; the only form an image may load from. */
+export function httpsUrl(value: string | null | undefined): URL | null {
+  const url = httpUrl(value);
+  return url !== null && url.protocol === 'https:' ? url : null;
+}
