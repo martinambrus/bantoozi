@@ -169,6 +169,11 @@ try {
       ...(config.ollamaApiKey ? (['ollama'] as const) : []),
     ],
     logger,
+    poolStats: () => ({
+      total: pool.totalCount,
+      idle: pool.idleCount,
+      waiting: pool.waitingCount,
+    }),
     onGoldenDatabase: (error) => {
       logger.error({ err: error }, 'stopping: the database became a golden evaluation database');
       process.exitCode = 1;

@@ -6,6 +6,8 @@ import { safeText, type Condition } from './types.js';
 export const ALERT_RESEND_MS = 6 * 60 * 60_000;
 /** The `alerts.state` entry that remembers the latest `backup_ok`: its `firstAt` is that time, it is never active. */
 export const BACKUP_MEMO_KEY = 'memo.backup_ok';
+/** The `alerts.state` entry of the pool streak: `firstAt` is the last counted run, `streak` the run count; never active. */
+export const POOL_MEMO_KEY = 'memo.pool_waiting';
 /** The emails one run sends are bounded: a digest lists at most this many conditions. */
 const DIGEST_MAX = 20;
 
@@ -41,7 +43,8 @@ export function planNotifications(
   const recoveries: string[] = [];
   const silent: string[] = [];
   for (const [key, entry] of Object.entries(state)) {
-    if (key === BACKUP_MEMO_KEY || !entry.active || firing.has(key)) continue;
+    if (key === BACKUP_MEMO_KEY || key === POOL_MEMO_KEY || !entry.active || firing.has(key))
+      continue;
     if (skipped.some((id) => key === id || key.startsWith(`${id}.`) || key.startsWith(`${id}:`)))
       continue;
     (entry.lastSentAt === null ? silent : recoveries).push(key);
@@ -91,6 +94,7 @@ export function applyRun(
   outcome: MailOutcome,
   memoBackupOkAt: Date | undefined,
   now: Date,
+  memoPool?: { at: Date; count: number },
 ): AlertState {
   const next: AlertState = { ...current };
   const at = now.toISOString();
@@ -122,6 +126,14 @@ export function applyRun(
       firstAt: memoBackupOkAt.toISOString(),
       lastSentAt: null,
       active: false,
+    };
+  }
+  if (memoPool !== undefined) {
+    next[POOL_MEMO_KEY] = {
+      firstAt: memoPool.at.toISOString(),
+      lastSentAt: null,
+      active: false,
+      streak: memoPool.count,
     };
   }
   return next;

@@ -651,6 +651,16 @@ export const HostHealthDetailSchema = z
       .record(z.string().regex(/^[a-z][a-z0-9_.-]{0,40}$/), IsoTimestampSchema)
       .refine((h) => Object.keys(h).length <= 16, 'too many heartbeats')
       .optional(),
+    /** Per compose service: restarts so far and whether the container was OOM-killed (S17). */
+    containers: z
+      .record(
+        z.string().regex(/^[a-z][a-z0-9_.-]{0,40}$/),
+        z
+          .object({ restarts: z.number().int().min(0).max(1_000_000_000), oomKilled: z.boolean() })
+          .strict(),
+      )
+      .refine((c) => Object.keys(c).length <= 16, 'too many containers')
+      .optional(),
   })
   .strict();
 

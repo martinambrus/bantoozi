@@ -179,8 +179,10 @@ export function createUserLearnHandler(deps: WorkerDeps): QueueHandler<'user.lea
           ),
         });
       }
-      if (!activated && current.active !== null && modelStaleness(fresh, current.active) !== null) {
-        deactivated = await deactivateUserModels(tx, userId);
+      const stale =
+        activated || current.active === null ? null : modelStaleness(fresh, current.active);
+      if (stale !== null) {
+        deactivated = await deactivateUserModels(tx, userId, { at: nowOf(deps), reason: stale });
       }
       await pruneUserModels(tx, userId, keep);
       if (activated || deactivated) {

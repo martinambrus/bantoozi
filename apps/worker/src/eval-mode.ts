@@ -72,6 +72,8 @@ export interface HeartbeatOptions {
   onGoldenDatabase: (error: GoldenDatabaseError) => void;
   intervalMs?: number;
   now?: () => Date;
+  /** The database pool's counters at each beat (`house.alerts` reads `waiting`, spec 11 §6.1). */
+  poolStats?: () => { total: number; idle: number; waiting: number };
 }
 
 export interface Heartbeat {
@@ -99,12 +101,14 @@ export async function startHeartbeat(options: HeartbeatOptions): Promise<Heartbe
   }
   async function write(): Promise<void> {
     const at = now();
+    const pool = options.poolStats?.();
     const entry = parseSetting('worker.heartbeat', {
       [options.processId]: {
         at: at.toISOString(),
         queues: [...options.queues],
         evalIngestOnly: options.evalIngestOnly,
         envCredentials: [...options.envCredentials],
+        ...(pool === undefined ? {} : { pool }),
       },
     })[options.processId];
     if (entry === undefined) throw new Error('heartbeat entry missing after validation');

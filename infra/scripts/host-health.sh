@@ -72,8 +72,27 @@ if [ "${#entries[@]}" -eq 0 ]; then
   exit 1
 fi
 
+# Restart count and OOM state of every compose container (spec 11 §6.1 "repeated OOM/restarts"). The
+# disks are the report's purpose: a failing inspect only leaves the "containers" field out.
+containers_json() {
+  local ids rows
+  ids="$(dc ps -a -q 2>/dev/null)" || return 1
+  [ -n "$ids" ] || return 1
+  # shellcheck disable=SC2086 -- container ids never contain whitespace
+  rows="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}} {{.RestartCount}} {{.State.OOMKilled}}' $ids 2>/dev/null)" || return 1
+  awk '
+    $1 ~ /^[a-z][a-z0-9_.-]{0,40}$/ && $2 ~ /^[0-9]+$/ && ($3 == "true" || $3 == "false") && !($1 in seen) && n < 16 {
+      seen[$1] = 1; n++
+      out = out (out == "" ? "" : ",") sprintf("\"%s\":{\"restarts\":%d,\"oomKilled\":%s}", $1, $2, $3)
+    }
+    END { if (n > 0) printf "{%s}", out }' <<<"$rows"
+}
+CONTAINERS="$(containers_json || true)"
+CONTAINERS_FIELD=""
+[ -z "$CONTAINERS" ] || CONTAINERS_FIELD=",\"containers\":$CONTAINERS"
+
 HOST="$(hostname 2>/dev/null | tr -c 'A-Za-z0-9._-' '-' | cut -c1-64)"
-DETAIL="{\"host\":\"${HOST:-host}\",\"checkedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\",\"filesystems\":[$(IFS=,; echo "${entries[*]}")]}"
+DETAIL="{\"host\":\"${HOST:-host}\",\"checkedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\",\"filesystems\":[$(IFS=,; echo "${entries[*]}")]${CONTAINERS_FIELD}}"
 
 # The event body goes in on stdin; the bearer token is read inside the container.
 printf '%s' "$DETAIL" | dc exec -T api node -e '

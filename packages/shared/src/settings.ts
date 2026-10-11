@@ -101,6 +101,15 @@ export const WorkerHeartbeatSchema = z.record(
         .refine((qs) => qs.every(isQueueName), 'unknown queue'),
       evalIngestOnly: z.boolean(),
       envCredentials: z.array(z.enum(['typesafe', 'ollama'])).max(2),
+      /** The worker's database pool at the beat: clients in total, idle and waiting for a connection (S17). */
+      pool: z
+        .object({
+          total: z.number().int().min(0).max(100_000),
+          idle: z.number().int().min(0).max(100_000),
+          waiting: z.number().int().min(0).max(1_000_000),
+        })
+        .strict()
+        .optional(),
     })
     .strict(),
 );
@@ -249,6 +258,8 @@ export const SETTINGS = {
           lastSentAt: iso.nullable(),
           active: z.boolean(),
           failures: z.number().int().min(0).max(1_000_000).optional(),
+          /** Consecutive samples a streak rule has counted (a `memo.*` entry, never an incident). */
+          streak: z.number().int().min(0).max(1_000_000).optional(),
         })
         .strict(),
     ),
@@ -279,13 +290,75 @@ const MetricsLaneSchema = z
 const MetricsRegretSchema = z
   .object({ numerator: z.number().int().min(0), denominator: z.number().int().min(0) })
   .strict();
+const MetricsLanesSchema = z.record(z.string(), MetricsLaneSchema);
+/** `{<bucket>: {<lane>: {likeRate, rated}}}`: a like-rate split (source, language, origin). */
+const MetricsSplitSchema = z.record(z.string(), MetricsLanesSchema);
+const Count = z.number().int().min(0);
+const Rate = z.number().min(0).max(1).nullable();
+const MetricsModelsSchema = z
+  .object({
+    activation: z.object({ attempts: Count, activated: Count, rate: Rate }).strict(),
+    samples: z.object({ explicit: Count }).strict(),
+    skipped: z.record(z.string(), Count),
+    paired: Count,
+    pairedLogloss: Count,
+    medianDeltaAuc: z.number().nullable(),
+    medianDeltaLogloss: z.number().nullable(),
+    invalidation: z.object({ invalidated: Count, rate: Rate }).strict(),
+    cardsOnly: z.object({ hours: z.number().min(0), users: Count }).strict(),
+  })
+  .strict();
+const MetricsEngineSchema = z
+  .object({
+    calls: Count,
+    errors: Count,
+    coverage: Rate,
+    latencyMs: z
+      .object({ p50: z.number().min(0).nullable(), p95: z.number().min(0).nullable() })
+      .strict(),
+    articles: z.object({ firstSeen: Count, degraded: Count }).strict(),
+    degradedShare: Rate,
+    billedUsdPerDay: z.number().min(0),
+    usd: z
+      .object({ active: z.number().min(0), training: z.number().min(0), other: z.number().min(0) })
+      .strict(),
+    offFeedCalls: Count,
+    cache: z.object({ requests: Count, hits: Count, savedUsd: z.number().min(0) }).strict(),
+  })
+  .strict();
 const MetricsWindowSchema = z
-  .object({ lanes: z.record(z.string(), MetricsLaneSchema), regret: MetricsRegretSchema })
+  .object({
+    lanes: MetricsLanesSchema,
+    regret: MetricsRegretSchema,
+    bySource: MetricsSplitSchema.optional(),
+    byLanguage: MetricsSplitSchema.optional(),
+    byOrigin: MetricsSplitSchema.optional(),
+    hides: z
+      .object({ byReason: z.record(z.string(), Count), unhides: Count })
+      .strict()
+      .optional(),
+    models: MetricsModelsSchema.optional(),
+    engine: MetricsEngineSchema.optional(),
+  })
+  .strict();
+/** State as of the run (not a window): reader-policy Maybe share, source mix and the queues. */
+const MetricsCurrentSchema = z
+  .object({
+    maybeShare: z.object({ maybe: Count, scored: Count, share: Rate }).strict(),
+    sourceMix: z.object({ cards: Count, model: Count, degraded: Count }).strict(),
+    classifyingBacklog: Count,
+    trainingQueue: z.object({ pending: Count, oldestAgeSeconds: Count.nullable() }).strict(),
+  })
   .strict();
 
-/** The shape `house.metrics` writes to `metrics.daily.<date>`: per-lane like-rate and regret, for the day and 7/30 days. */
+/**
+ * The shape `house.metrics` writes to `metrics.daily.<date>`: per-lane like-rate and regret for the
+ * day; for the trailing 7 and 30 days also the source/language/origin splits, hide reasons, personal
+ * model, engine aggregates; and the state `current` as of the run (spec 10 §7).
+ */
 export const MetricsSnapshotSchema = MetricsWindowSchema.extend({
   windows: z.object({ d7: MetricsWindowSchema, d30: MetricsWindowSchema }).strict(),
+  current: MetricsCurrentSchema.optional(),
 }).strict();
 export type MetricsSnapshot = z.infer<typeof MetricsSnapshotSchema>;
 

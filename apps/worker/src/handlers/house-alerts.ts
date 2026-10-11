@@ -4,6 +4,7 @@ import type { EmailMessage, Mailer } from '@bantoozi/shared/server';
 
 import {
   BACKUP_MEMO_KEY,
+  POOL_MEMO_KEY,
   alertEmail,
   applyRun,
   planNotifications,
@@ -57,9 +58,15 @@ export function createAlertsHandler(deps: WorkerDeps): QueueHandler<'house.alert
       (await readStoredSetting(deps.db, 'alerts.state')) ?? {},
     );
     const memoEntry = state[BACKUP_MEMO_KEY];
-    const memo: AlertMemo =
-      memoEntry === undefined ? {} : { backupOkAt: new Date(memoEntry.firstAt) };
+    const poolEntry = state[POOL_MEMO_KEY];
+    const memo: AlertMemo = {
+      ...(memoEntry === undefined ? {} : { backupOkAt: new Date(memoEntry.firstAt) }),
+      ...(poolEntry === undefined
+        ? {}
+        : { poolStreak: { at: new Date(poolEntry.firstAt), count: poolEntry.streak ?? 0 } }),
+    };
     const remembered = memo.backupOkAt?.getTime();
+    const rememberedPool = memo.poolStreak;
 
     const conditions: Condition[] = [];
     const skipped: string[] = [];
@@ -102,6 +109,11 @@ export function createAlertsHandler(deps: WorkerDeps): QueueHandler<'house.alert
     }
 
     const memoChanged = memo.backupOkAt !== undefined && memo.backupOkAt.getTime() !== remembered;
+    const poolChanged =
+      memo.poolStreak !== undefined &&
+      (rememberedPool === undefined ||
+        memo.poolStreak.at.getTime() !== rememberedPool.at.getTime() ||
+        memo.poolStreak.count !== rememberedPool.count);
     await retryTransaction(deps.db, (tx) =>
       updateSettingLocked(tx, 'alerts.state', {}, (current) =>
         parseSetting(
@@ -113,6 +125,7 @@ export function createAlertsHandler(deps: WorkerDeps): QueueHandler<'house.alert
             outcome,
             memoChanged ? memo.backupOkAt : undefined,
             now,
+            poolChanged ? memo.poolStreak : undefined,
           ),
         ),
       ),

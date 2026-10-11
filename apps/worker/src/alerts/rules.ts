@@ -5,6 +5,7 @@ import {
   latestMetricsSnapshots,
   oldestPendingOutboxAgeSeconds,
   readStoredSetting,
+  terminalFailureCounts,
 } from '@bantoozi/db';
 import {
   HOUSE_CRON_SCHEDULES,
@@ -34,6 +35,14 @@ export const ALERT_THRESHOLDS = {
   backupMissingMs: 26 * HOUR,
   metricsMinRated: 30,
   metricsDays: 3,
+  /** Rising terminal failures: at least this many in the last hour, and this many times the hourly mean of the 24 h before. */
+  failuresMin: 20,
+  failuresFactor: 3,
+  /** Consecutive `house.alerts` samples with waiting pool clients. */
+  poolStreak: 3,
+  /** Restarts of one container within the hour that raise the alert. */
+  restartsMin: 3,
+  restartsWindowMs: HOUR,
 } as const;
 
 const read = async <K extends SettingKey>(context: RuleContext, key: K) =>
@@ -319,9 +328,8 @@ interface Lane {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-/** The `for_you` and `maybe` lanes of a daily snapshot, or `undefined` when the shape differs. */
-function lanesOf(snapshot: unknown): { forYou: Lane; maybe: Lane } | undefined {
-  const lanes = isRecord(snapshot) ? snapshot['lanes'] : undefined;
+/** The `for_you` and `maybe` lanes of one lanes object, or `undefined` when the shape differs. */
+function lanePair(lanes: unknown): { forYou: Lane; maybe: Lane } | undefined {
   if (!isRecord(lanes)) return undefined;
   const lane = (value: unknown): Lane | undefined => {
     if (!isRecord(value)) return undefined;
@@ -335,7 +343,46 @@ function lanesOf(snapshot: unknown): { forYou: Lane; maybe: Lane } | undefined {
   return forYou === undefined || maybe === undefined ? undefined : { forYou, maybe };
 }
 
-/** For You like-rate below Maybe for 3 consecutive daily snapshots, 30+ rated per lane (spec 10 §7). */
+/**
+ * The lanes a daily snapshot is judged on: the trailing 7-day window when the snapshot has one (a
+ * day alone rarely holds 30 ratings per lane), else the day's own `lanes`.
+ */
+function lanesOf(snapshot: unknown): { forYou: Lane; maybe: Lane } | undefined {
+  if (!isRecord(snapshot)) return undefined;
+  const windows = snapshot['windows'];
+  const d7 = isRecord(windows) && isRecord(windows['d7']) ? windows['d7'] : undefined;
+  return lanePair(d7?.['lanes']) ?? lanePair(snapshot['lanes']);
+}
+
+const Z95 = 1.959964;
+
+/** The Wilson score interval of a proportion `p` out of `n`. */
+function wilson(p: number, n: number): [number, number] {
+  const z2 = Z95 * Z95;
+  const denominator = 1 + z2 / n;
+  const centre = (p + z2 / (2 * n)) / denominator;
+  const half = (Z95 * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n))) / denominator;
+  return [Math.max(0, centre - half), Math.min(1, centre + half)];
+}
+
+/**
+ * Upper bound of the 95 % Newcombe-Wilson interval of `forYou - maybe` (hybrid score interval of a
+ * difference of two proportions). Below 0 means For You is below Maybe beyond sampling noise.
+ */
+export function forYouMinusMaybeUpper(forYou: Lane, maybe: Lane): number {
+  const [, u1] = wilson(forYou.likeRate, forYou.rated);
+  const [l2] = wilson(maybe.likeRate, maybe.rated);
+  return (
+    forYou.likeRate -
+    maybe.likeRate +
+    Math.sqrt((u1 - forYou.likeRate) ** 2 + (maybe.likeRate - l2) ** 2)
+  );
+}
+
+/**
+ * For You like-rate below Maybe on 3 consecutive daily snapshots, each with 30+ rated per lane and
+ * a 95 % Newcombe-Wilson interval of the difference entirely below 0 (spec 10 §7).
+ */
 const metricsRule: AlertRule = {
   id: 'metrics',
   async evaluate({ deps, now }) {
@@ -356,15 +403,128 @@ const metricsRule: AlertRule = {
         maybe.rated < ALERT_THRESHOLDS.metricsMinRated
       )
         return [];
-      if (!(forYou.likeRate < maybe.likeRate)) return [];
+      if (!(forYouMinusMaybeUpper(forYou, maybe) < 0)) return [];
     }
     return [
       {
         key: 'metrics.lanes',
         title: 'For You is not beating Maybe',
-        detail: `The For You like-rate was below Maybe's on each of the last ${ALERT_THRESHOLDS.metricsDays} days (${snapshots.map(([day]) => day).join(', ')}).`,
+        detail: `The For You like-rate was below Maybe's, with a 95 % interval excluding 0, on each of the last ${ALERT_THRESHOLDS.metricsDays} days (${snapshots.map(([day]) => day).join(', ')}).`,
       },
     ];
+  },
+};
+
+/** Terminal pg-boss failures in the last hour clearly above the trailing 24 h mean (spec 11 §6.1). */
+const failuresRule: AlertRule = {
+  id: 'failures',
+  async evaluate({ deps, now }) {
+    const { lastHour, previous24h } = await terminalFailureCounts(deps.db, now);
+    // lastHour >= factor * (previous24h / 24), in integers.
+    if (
+      lastHour < ALERT_THRESHOLDS.failuresMin ||
+      lastHour * 24 < ALERT_THRESHOLDS.failuresFactor * previous24h
+    )
+      return [];
+    return [
+      {
+        key: 'failures.rising',
+        title: 'Rising terminal job failures',
+        detail: `${lastHour} jobs failed for good in the last hour; the previous 24 hours averaged ${(previous24h / 24).toFixed(1)} per hour.`,
+      },
+    ];
+  },
+};
+
+/**
+ * Clients waiting for a worker database connection on 3 consecutive runs (spec 11 §6.1 "exhausted
+ * DB pool"). The streak lives in the `alerts.state` memo; a run at the same time counts once and a
+ * run without waiting clients resets it. Without any fresh pool statistics nothing changes.
+ */
+const poolRule: AlertRule = {
+  id: 'pool',
+  async evaluate(context) {
+    const { now, memo } = context;
+    const heartbeats = (await read(context, 'worker.heartbeat')) ?? {};
+    const stats = Object.values(heartbeats).filter(
+      (entry) =>
+        entry.pool !== undefined &&
+        now.getTime() - Date.parse(entry.at) < ALERT_THRESHOLDS.heartbeatStaleMs,
+    );
+    if (stats.length === 0) return [];
+    const waiting = stats.some((entry) => (entry.pool?.waiting ?? 0) > 0);
+    const previous = memo.poolStreak;
+    if (previous === undefined || previous.at.getTime() !== now.getTime()) {
+      memo.poolStreak = { at: now, count: waiting ? (previous?.count ?? 0) + 1 : 0 };
+    }
+    const count = memo.poolStreak?.count ?? 0;
+    if (count < ALERT_THRESHOLDS.poolStreak) return [];
+    const waitingNow = Math.max(0, ...stats.map((entry) => entry.pool?.waiting ?? 0));
+    return [
+      {
+        key: 'pool.waiting',
+        title: 'Database pool exhausted',
+        detail: `Clients have waited for a worker database connection on ${count} consecutive checks (${waitingNow} waiting now).`,
+      },
+    ];
+  },
+};
+
+/** Repeated restarts or an OOM kill of a compose container, from the `host_health` reports (spec 11 §6.1). */
+const containersRule: AlertRule = {
+  id: 'containers',
+  async evaluate(context) {
+    const { now } = context;
+    type Containers = NonNullable<ReturnType<typeof HostHealthDetailSchema.parse>['containers']>;
+    const reports: Array<{ at: number; containers: Containers }> = [];
+    for (const event of await readOpsEvents(context)) {
+      if (event.kind !== 'host_health') continue;
+      const at = Date.parse(event.at);
+      try {
+        const detail = HostHealthDetailSchema.parse(JSON.parse(event.detail));
+        if (detail.containers !== undefined) reports.push({ at, containers: detail.containers });
+      } catch {
+        // A malformed report is the disk rule's concern.
+      }
+    }
+    const newest = reports.reduce<(typeof reports)[number] | undefined>(
+      (best, report) => (best === undefined || report.at > best.at ? report : best),
+      undefined,
+    );
+    if (newest === undefined || now.getTime() - newest.at > ALERT_THRESHOLDS.hostHealthStaleMs) {
+      return [];
+    }
+    const recent = reports.filter(
+      (report) =>
+        report.at <= now.getTime() &&
+        now.getTime() - report.at <= ALERT_THRESHOLDS.restartsWindowMs,
+    );
+    const out: Condition[] = [];
+    for (const [service, state] of Object.entries(newest.containers)) {
+      const name = safeText(service, 64);
+      const earlier = Math.min(
+        state.restarts,
+        ...recent.flatMap((report) => {
+          const entry = report.containers[service];
+          return entry === undefined ? [] : [entry.restarts];
+        }),
+      );
+      if (state.restarts - earlier >= ALERT_THRESHOLDS.restartsMin) {
+        out.push({
+          key: `containers.restarts:${name}`,
+          title: `Container ${name} keeps restarting`,
+          detail: `${name} restarted ${state.restarts - earlier} times within the last hour (${state.restarts} in total).`,
+        });
+      }
+      if (state.oomKilled) {
+        out.push({
+          key: `containers.oom:${name}`,
+          title: `Container ${name} was OOM-killed`,
+          detail: `The last host report shows ${name} killed for running out of memory.`,
+        });
+      }
+    }
+    return out;
   },
 };
 
@@ -379,4 +539,7 @@ export const ALERT_RULES: readonly AlertRule[] = [
   diskRule,
   backupsRule,
   metricsRule,
+  failuresRule,
+  poolRule,
+  containersRule,
 ];

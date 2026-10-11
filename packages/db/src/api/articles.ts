@@ -187,7 +187,7 @@ function projectionCtes(input: ProjectionInput): SQL {
                WHERE e.view_key = c.view_key AND e.listable AND ef.article_id = c.article_id)
                AS display_feed_id,
              el.eligible, a.published_at, a.story_cluster_id,
-             ua.read_at, ua.archived_at, ua.label_ids, ua.rating,
+             ua.read_at, ua.archived_at, ua.label_ids, ua.rating, ua.score_source,
              CASE WHEN el.eligible THEN coalesce(ua.lane, 'new')
                   WHEN ua.lane = 'hidden' AND ua.rules_fired[1] ~ ${HIDE_RULE_PATTERN} THEN 'hidden'
                   ELSE 'new' END AS lane,
@@ -536,6 +536,55 @@ export async function countArticles(
     total: forYou + maybe + everything + fresh,
     datasetVersion: lane?.dataset_version ?? empty,
     rankingPending: pending,
+  };
+}
+
+export interface ReaderLaneMix {
+  /** Visible unread Maybe rows. */
+  maybe: number;
+  /** Visible unread rows in For You, Maybe or Everything. */
+  scored: number;
+  /** The scored rows by the ranking path that produced their P. */
+  bySource: { cards: number; model: number; degraded: number };
+}
+
+/**
+ * The Maybe share inputs of `house.metrics` (spec 10 §7): the rows of the global unread view that
+ * `GET /articles/counts?status=unread` counts as For You, Maybe or Everything for this reader, from
+ * the same projection, folding, status and tier policy, split by `score_source`.
+ */
+export async function readerLaneMix(
+  tx: TenantTx,
+  input: { asOf: Date; minTier: number },
+): Promise<ReaderLaneMix> {
+  const result = await tx.execute<{
+    maybe: number;
+    scored: number;
+    cards: number;
+    model: number;
+    degraded: number;
+  }>(sql`
+    ${projectionCtes({
+      user: tenantUserId(tx),
+      mode: singleMode({}, 'all'),
+      asOf: input.asOf,
+      // Only the `outdated` flag reads it; the counts below do not.
+      scoreVersion: '',
+      bookmarks: false,
+      labelId: undefined,
+    })}
+    ${laneRowsCtes('all', 'unread', input.minTier)}
+    SELECT count(*) FILTER (WHERE lane = 'maybe')::int AS maybe,
+           count(*) FILTER (WHERE lane IN ('for_you', 'maybe', 'everything'))::int AS scored,
+           count(*) FILTER (WHERE lane IN ('for_you', 'maybe', 'everything') AND score_source = 'cards')::int AS cards,
+           count(*) FILTER (WHERE lane IN ('for_you', 'maybe', 'everything') AND score_source = 'model')::int AS model,
+           count(*) FILTER (WHERE lane IN ('for_you', 'maybe', 'everything') AND score_source = 'degraded')::int AS degraded
+      FROM rows`);
+  const row = result.rows[0];
+  return {
+    maybe: row?.maybe ?? 0,
+    scored: row?.scored ?? 0,
+    bySource: { cards: row?.cards ?? 0, model: row?.model ?? 0, degraded: row?.degraded ?? 0 },
   };
 }
 

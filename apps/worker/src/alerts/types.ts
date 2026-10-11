@@ -11,6 +11,8 @@ export interface Condition {
 export interface AlertMemo {
   /** The latest `backup_ok` ever seen: `ops.events` keeps only 50 events. */
   backupOkAt?: Date;
+  /** Consecutive `house.alerts` samples whose worker pool had waiting clients, and the last sample's time. */
+  poolStreak?: { at: Date; count: number };
 }
 
 /** The inputs of a rule evaluation: the worker dependencies, the run's clock and the mutable memo. */

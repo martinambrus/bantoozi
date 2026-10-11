@@ -15,6 +15,8 @@ export interface HeartbeatEntry {
   queues: string[];
   evalIngestOnly: boolean;
   envCredentials: ('typesafe' | 'ollama')[];
+  /** Database pool counters at the beat (S17); absent from older workers. */
+  pool?: { total: number; idle: number; waiting: number } | undefined;
 }
 
 /**

@@ -285,6 +285,7 @@ interface ReaderRow {
   scoreVersion: string;
   rankRevision: string;
   scoredAt: Date | null;
+  scoreSource: string;
   explain: unknown;
 }
 
@@ -341,6 +342,7 @@ type ReaderSqlRow = {
   score_version: string;
   rank_revision: string;
   scored_at: RawTimestamp | null;
+  score_source: string;
   explain: unknown;
 };
 
@@ -372,7 +374,7 @@ async function lockReaders(tx: TenantTx, ids: readonly string[]): Promise<Reader
            ua.bookmark_capture_generation::text AS capture_generation, ua.archived_at,
            ua.label_ids::text[] AS label_ids, ua.label_suggestions::text[] AS label_suggestions,
            ua.feedback_prompted_at, ua.lane, ua.p_like, ua.tier, ua.score_version,
-           ua.rank_revision::text AS rank_revision, ua.scored_at, ua.explain
+           ua.rank_revision::text AS rank_revision, ua.scored_at, ua.score_source, ua.explain
       FROM user_article ua
       LEFT JOIN article_snapshots s ON s.id = ua.bookmark_snapshot_id
      WHERE ua.user_id = ${user}::uuid AND ua.article_id = ANY(${sql.param(unique)}::bigint[])
@@ -434,6 +436,7 @@ function readerRow(r: ReaderSqlRow): ReaderRow {
     scoreVersion: r.score_version,
     rankRevision: r.rank_revision,
     scoredAt: toDateOrNull(r.scored_at),
+    scoreSource: r.score_source,
     explain: r.explain,
   };
 }
@@ -704,6 +707,8 @@ function rankBefore(row: ReaderRow | null): Record<string, unknown> {
     scoreVersion: row?.scoreVersion ?? null,
     rankRevision: row?.rankRevision ?? null,
     scoredAt: isoOrNull(row?.scoredAt),
+    // Which ranking path produced P (spec 06 §8.2, S17): `cards`, `model`, `degraded` or `none`.
+    scoreSource: row?.scoreSource ?? 'none',
   };
 }
 

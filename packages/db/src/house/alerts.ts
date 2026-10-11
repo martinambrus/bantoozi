@@ -31,6 +31,26 @@ export async function dueJobBacklog(db: Executor, now: Date): Promise<QueueBackl
   }));
 }
 
+/**
+ * pg-boss jobs that failed terminally (`state = 'failed'`, by `completed_on`) in the hour before `now`
+ * and in the 24 hours before that hour (spec 11 §6.1 "rising terminal failures").
+ */
+export async function terminalFailureCounts(
+  db: Executor,
+  now: Date,
+): Promise<{ lastHour: number; previous24h: number }> {
+  const result = await db.execute<{ last_hour: number; previous: number }>(sql`
+    SELECT (count(*) FILTER (WHERE completed_on > ${new Date(now.getTime() - HOUR_MS).toISOString()}::timestamptz))::int
+             AS last_hour,
+           (count(*) FILTER (WHERE completed_on <= ${new Date(now.getTime() - HOUR_MS).toISOString()}::timestamptz))::int
+             AS previous
+      FROM pgboss.job
+     WHERE state = 'failed'
+       AND completed_on > ${new Date(now.getTime() - 25 * HOUR_MS).toISOString()}::timestamptz
+       AND completed_on <= ${now.toISOString()}::timestamptz`);
+  return { lastHour: result.rows[0]?.last_hour ?? 0, previous24h: result.rows[0]?.previous ?? 0 };
+}
+
 /** New articles of the hour before `now` and how many of them are `degraded` (spec 11 §6.1). */
 export async function degradedShareLastHour(
   db: Executor,
