@@ -58,7 +58,7 @@ domain, DNS or Let's Encrypt issuance.
     `index.html` loads `/theme.js`, `/src/main.tsx` and local icons only.
 - HTTPS only (fixed): `safe-html.tsx` (`isHttpsUrl`) and `http-url.ts` (`httpsUrl`, used by
   `article-row.tsx` for the thumbnail and feed icon) accept `https:` only for images; links keep
-  `httpUrl`. Tests: `test/article/safe-html.test.tsx:227` (http: image becomes a placeholder, http link
+  `httpUrl`. The only exception is an `http:` image whose host is loopback (`localhost`, `127.0.0.1`, `[::1]`) on a page that itself runs on a loopback origin (the E2E fixture server; production is never loopback and CSP `img-src 'self' https:` also enforces https); tests: the loopback cases in `safe-html.test.tsx` and `article-row.test.tsx`. Tests: `test/article/safe-html.test.tsx:227` (http: image becomes a placeholder, http link
   kept), `:211` (https image kept, http one dropped), `test/article/article-row.test.tsx:243`.
 - Result: PASS.
 

@@ -251,6 +251,28 @@ describe('ArticleRow images', () => {
     expect(document.querySelector('img')).toBeNull();
   });
 
+  it('loads an http://localhost thumbnail on a loopback page but not an http://example.com one', () => {
+    renderRow(
+      makeItem({
+        ...allowed,
+        imageUrl: 'http://localhost:4010/thumb.jpg',
+        feed: { id: '7', title: 'Example Weekly', iconUrl: 'http://example.com/icon.png' },
+      }),
+    );
+    expect(document.querySelector('img[src="http://localhost:4010/thumb.jpg"]')).not.toBeNull();
+    expect(document.querySelector('img[src="http://example.com/icon.png"]')).toBeNull();
+  });
+
+  it('does not load an http://localhost thumbnail when the page is a non-loopback https origin', () => {
+    vi.stubGlobal('location', new URL('https://bantoozi.example/'));
+    try {
+      renderRow(makeItem({ ...allowed, imageUrl: 'http://localhost:4010/thumb.jpg', feed: null }));
+      expect(document.querySelector('img')).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each(['data:image/png;base64,AAAA', 'javascript:alert(1)', '/thumb.jpg', '//cdn.test/t.jpg'])(
     'does not load the image address %s',
     (imageUrl) => {

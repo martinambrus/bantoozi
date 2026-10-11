@@ -1,5 +1,5 @@
 import { render } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { SafeHtml } from '../../src/components/safe-html.js';
 
@@ -287,5 +287,28 @@ describe('the HTML sink', () => {
       )
       .map(([path]) => path);
     expect(users).toEqual(['../../src/components/safe-html.tsx']);
+  });
+});
+
+describe('SafeHtml images from a loopback address', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps an http://localhost image on a loopback page and still drops other http hosts', () => {
+    const { container } = renderHtml(
+      '<img src="http://localhost:4010/a.png" alt="Local"><img src="http://example.com/b.png" alt="Remote">',
+      true,
+    );
+    const images = [...container.querySelectorAll('img')];
+    expect(images).toHaveLength(1);
+    expect(images[0]).toHaveAttribute('src', 'http://localhost:4010/a.png');
+  });
+
+  it('drops an http://localhost image when the page is a non-loopback https origin', () => {
+    vi.stubGlobal('location', new URL('https://bantoozi.example/'));
+    const { container } = renderHtml('<img src="http://localhost:4010/a.png" alt="Local">', true);
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('[data-blocked-image]')).toHaveTextContent('Local');
   });
 });
