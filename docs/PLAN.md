@@ -1410,6 +1410,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | **Opted-in anonymized feedback** to grow the golden set | after launch, with a privacy-policy update | spec 10 §8 |
 | **Search over my archive** (Postgres FTS; later hybrid search as in DreamCatcher) | user demand | background §2.2 |
 | **Open signup and plans** | when costs and moderation are understood | spec 08 §2, §6 |
+| **UUIDv7 time-range partitioning with tablespaces on other drives** | list p95 or vacuum/retention can't keep up after the S19 query/relay fixes (D-185) | owner idea 2026-10-11 (single host, Postgres 16; no multi-host); not yet specified |
 
 ---
 

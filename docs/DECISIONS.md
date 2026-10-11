@@ -1536,3 +1536,214 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   whose feature spec differs from `FEATURE_SPEC_V1` or whose layout cannot be read as incompatible,
   like a context mismatch: it scores without it and records one debounced `user.learn`, which then
   deactivates it. Spec 06 §8.3 updated.
+- D-171: 2026-10-11 M8-T2 — the engine model pin. (1) `pnpm db:seed` inserts `engine.model_pin`
+  (`{model, llm?, since}`) when the row is missing, so a first worker start finds it and enqueues
+  nothing; a changed row is written only by the worker, under the row lock. (2) The rating
+  fingerprint (spec 06 §8.1) hashes only the pin's meaning-bearing fields: `model` and `laya`. `since`
+  and `llm` are left out, so switching the LLM fallback on or off, or changing its Ollama models, does
+  not make stored ratings look stale; a missing row stands for the `TYPESAFE_MODEL` default. (3) The
+  rebuild a pin change enqueues (`house.reenrich`, `house.rematch`) always runs in bulk priority and
+  never through the LLM fallback, even while the fallback is on and Jev is unavailable (owner
+  decision 2026-10-10); spec 11 §8 had said it ran "through the fallback when it is on". Spec 02 §2,
+  spec 06 §8.1 and spec 11 §8 updated.
+- D-172: 2026-10-11 M8-T2 — the deletion ledger (spec 11 §5.1 left its storage open; owner decision).
+  It is an append-only local file, `DELETION_LEDGER_PATH` on the persistent worker volume
+  `/var/lib/bantoozi/ledger`: each entry `{userId, deletedAt, emailHmac}` is JSON encrypted to the age
+  recipient `DELETION_LEDGER_RECIPIENT` (only the public key is on the host), written as one base64
+  line and fsynced, so a repeated append after a retry is harmless. `emailHmac` is
+  `HMAC-SHA256(DELETION_HMAC_KEY, normalizeEmail(email))` in hex. `house.purge-users` writes the entry
+  first and keeps the user for the next run when the ledger or key is not configured or the append
+  fails. Every backup ships the whole file as `ledger/deletion-ledger-<backup id>.age` beside the
+  backup prefix; a restore replays the union of all copies, deduplicated by entry id; a copy is pruned
+  193 days after its backup id (6 × 31 days plus 7). Erasure also sets `creatorUserId` to null in
+  `card_publication_requests.authorization_evidence`, after the delete's foreign key has nulled the
+  request's `user_id` (spec 02 §3.6 lets the evidence be cleared only then). Spec 11 §5.1 updated.
+- D-173: 2026-10-11 M8-T2 — rebuild jobs that wait for the engine and bulk translation. (1) A
+  `house.reenrich` or `house.rematch` run that finds the primary engine unavailable records itself as
+  a pending run (its payload with a frozen `since`) in `settings['house.progress'][job].cursor`
+  (`{pending: [...]}`, at most 20, newest kept); `house.reconcile` takes them back under the settings
+  lock and enqueues each once, only while the primary engine is available. (2) `house.rematch`
+  revives an exhausted `invalid_request` match row only when its stored answer is incompatible with
+  the current model, card text or match set, because that is the blocker that changed (owner
+  decision; D-80 left invalid requests exhausted until an admin fixed the question set, which still
+  holds for `house.rescore-degraded`); other exhausted rows stay. (3) `house.translate-cards` and
+  `house.retranslate-skipped` send their work in bulk priority and, like the other on-demand jobs,
+  record progress in `house.progress` (`HOUSE_PROGRESS_JOBS`). Spec 02 §2, spec 05 §2 and spec 11 §6
+  updated.
+- D-174: 2026-10-11 M8-T2 — retention details of `house.purge-auth`, `house.reconcile` and
+  `house.archive`. (1) `rate_limit_buckets` are deleted 8 days after `window_start`, a fixed bound
+  above the longest limiter window (one day) plus the one-day grace, because the table stores no
+  window length. (2) The archive clock of a read item is the latest `feed_items.first_seen_at`
+  through the user's own subscriptions, else the article's `first_seen_at`. (3) Protection is the
+  current state: a cleared rating is not protection, so an unrated item is archivable; a bookmark,
+  a rating or a label is. (4) The unread cap counts and ranks only unprotected unread items, newest
+  carrier first, and archives an item only when it lies beyond 1,000 in every subscribed feed that
+  carries it. `house.reconcile` marks expired `reserved` reservations `uncertain` and enqueues
+  `user.rank` for users with a due `next_rank_at`, skipping deleted accounts. Spec 11 §5 and §6
+  updated.
+- D-175: 2026-10-11 M8-T2 — `house.purge-bodies` details. (1) A hot body (`body_text`, `body_html`;
+  `body_lead` stays) is cleared only when both clocks have passed 30 days: `extracted_at`, and the
+  latest arrival through any carrier (`max(feed_items.first_seen_at)`, else the article's
+  `first_seen_at`), under the article row lock (spec 11 §5 named only the extraction age). (2) A
+  bookmark whose capture is `pending` or `failed` keeps the article's hot body. (3) The job also
+  repairs snapshots that lost their last reference without an `unreferenced_at` mark (an expired Undo
+  pin, a purged receipt) by marking them through `mark_snapshot_if_unreferenced`; the grace is
+  `SNAPSHOT_GRACE_DAYS = 7` on the database clock, and collection is skipped while a capture of the
+  article is `pending`. Spec 11 §5 and §5.2 updated.
+- D-176: 2026-10-11 M8-T2 — `house.purge-engine-calls` and `house.retire-cards` details. (1) An
+  `analysis_requests` row cancelled for `retention_expired` is stamped `completed_at = now`, and a
+  terminal request is deleted 180 days after `coalesce(completed_at, created_at)`, so a cancelled
+  request is not deleted in the same run that cancelled it. (2) An `uncertain` reservation settles at
+  `reserved_usd` once the UTC date of the run is at least seven days after the reservation's budget
+  day (`UNCERTAIN_SETTLE_DAYS`). (3) `house.retire-cards` also clears `retired_at` on a retired card
+  that has a holder again, under the card lock, so reuse during the 30-day grace keeps the card
+  (spec 05 §5.1). Spec 11 §6 updated.
+- D-177: 2026-10-11 M8-T3 — the alert rules of `house.alerts` (spec 11 §6.1), stated as the code
+  evaluates them. Heartbeat: the newest `worker.heartbeat` entry is 30 minutes old or more.
+  Housekeeping: a job whose `house.progress.updatedAt` is older than two of its cron periods. Degraded
+  share: at least 20 articles first seen in the last hour and more than 20 % of them degraded. Feed
+  failures: at least 5 subscribed `active` or `quarantined` feeds and more than 10 % with a
+  `last_error_at` in the last 24 hours. Rising failures (`failures.rising`): at least 20 pg-boss jobs
+  failed for good in the last hour and at least 3 times the hourly mean of the 24 hours before that
+  hour. Pool (`pool.waiting`): the worker heartbeat now carries `pool {total, idle, waiting}`; the
+  alert fires after 3 consecutive `house.alerts` runs in which a fresh heartbeat shows `waiting > 0`.
+  The streak is kept in `alerts.state` under the reserved key `memo.pool_waiting`; a run without
+  waiting clients resets it, a run without any fresh pool statistics leaves it unchanged. Containers:
+  `host-health.sh` adds `containers {<service>: {restarts, oomKilled}}` (at most 16) to the
+  `host_health` event; `containers.restarts:<service>` fires at 3 or more restarts within 60 minutes
+  (the newest count minus the smallest count seen in reports of that hour) and
+  `containers.oom:<service>` while the newest report shows `oomKilled`. Host health: no `host_health`
+  event, or the newest older than 1 hour, is itself an alert (`disk.stale`); filesystems alert above
+  80 % used, below 10 GB free or with no inodes. Backups: `backup_failed` newer than the last
+  `backup_ok`, `restore_failed` newer than `restore_ok`, or no `backup_ok` for 26 hours. Metrics
+  (`metrics.lanes`): the 95 % Newcombe-Wilson interval of For You minus Maybe like-rate lies entirely
+  below 0 on 3 consecutive daily snapshots, each judged on its `windows.d7.lanes` (the day's own
+  `lanes` when a snapshot has no d7 window) with at least 30 rated items in each lane (spec 10 §7).
+  External readiness and full-host failure stay with the owner's external monitor; a stopped
+  `worker-laya` arrives with M9. Incidents live in `settings['alerts.state']`, whose reserved keys
+  `memo.backup_ok` (`firstAt` = the latest `backup_ok`, never active) and `memo.pool_waiting` (the
+  streak) are not incidents; an undelivered mail counts `failures` on the entry and is retried, and
+  an open incident is mailed again after 6 hours. Spec 02 §2, spec 10 §7 and spec 11 §6.1 updated.
+- D-178: 2026-10-11 M8-T4 — `house.metrics` and the snapshot it stores (spec 10 §7). The job writes
+  `metrics.daily.<day>` for the previous UTC day from feedback-time `before` snapshots, and deletes
+  snapshots older than 90 days. A snapshot has the day's `lanes.<lane>.{likeRate, rated}` for
+  `for_you`, `maybe`, `everything` and `hidden` (`likeRate` null with no rating) and `regret`
+  `{numerator, denominator}`, plus `windows.d7` and `windows.d30`, each with `lanes`, `regret`,
+  `bySource`, `byLanguage` and `byOrigin` (lane like-rates split by ranking source, article language
+  and prompt vs voluntary; empty lanes left out), `hides` (`byReason`, `unhides`), `models`
+  (activation, explicit samples, skipped reasons, paired AUC and logloss medians against the cards
+  baseline, invalidation rate, hours and users back on cards only) and `engine` (calls, errors,
+  coverage, p50/p95 latency, articles first seen and degraded share, billed USD per day split
+  active/training/other, off-feed calls, shared-cache requests, hits and saved USD). `current` holds
+  state at the run: `maybeShare` and `sourceMix` computed per reader with the reader's own counting
+  policy (same folding, status and default tier), `classifyingBacklog` and `trainingQueue`.
+  Readings. (1) `regret` is the observed recovery from Everything/Hidden (owner decision; opened,
+  bookmarked or liked after a downranked pre-action lane, against pairs with feedback from a
+  downranked lane in the window or downranked now; a lower-bound diagnostic). (2) An effective rating
+  is replayed from `rate`, `prompt_answer` and `unrate` events; the undo of a rating or of a
+  `prompt_answer` restores the state before it, and a `prompt_answer` counts as a prompted rating.
+  (3) `before` snapshots now carry `scoreSource` (`cards`, `model`, `degraded` or `none`); a legacy
+  snapshot falls in no `bySource` bucket. (4) Article language is read from `articles.lang` now (the
+  top 20 languages by ratings, the rest as `other`, a missing one as `unknown`). (5) A model
+  invalidation, and only that (not a replacement), stamps `deactivatedAt` and `deactivatedReason` in
+  `user_models.metrics`; the invalidation rate and the cards-only time derive from them. (6) A call
+  is *active* when an active subscription's arrival at or after its activation carries the article,
+  *training* when only a pending, running or complete selected request covers it, else *other*; a
+  live call counted in other is an off-feed call. A shared-cache hit is a selected request whose
+  article already had a paid live call at or before the request. Spec 02 §2, spec 06 §8.2 and spec 10
+  §7 updated.
+- D-179: 2026-10-11 M8-T1 — worker listener and connection budget. The worker serves `GET /healthz`
+  (200 while its latest heartbeat write is at most two minutes old, else 503) and `GET /metrics`
+  (plain text, `METRICS_TOKEN` bearer, 401 without it) on `WORKER_METRICS_HOST`:`WORKER_METRICS_PORT`;
+  the host defaults to `0.0.0.0` in production and `127.0.0.1` elsewhere, as does the new `API_HOST`
+  for the API (`API_PORT` unchanged), and the compose file sets both for containers. The worker's
+  Postgres connections are `WORKER_POOL_LIMITS = {query: 10, feedLocks: 14}`, 24 in total as spec 11
+  §2 caps them. The 16 `feed.fetch` consumers share the 14 lock connections (spec 03 §3), so a
+  consumer without one waits on the lock pool and never takes a query connection; pg-boss keeps its
+  own pool of 4, counted separately. Spec 01 §3 and spec 11 §2 updated.
+- D-180: 2026-10-11 M8-T1 — deploy gates, queue smoke and maintenance mode (spec 11 §3). (1) Before
+  anything is replaced, `deploy.sh` reads the stored `language_modes`, `card_text_mode` and
+  `engine.laya` through the Postgres container (starting it when needed) and refuses a `translate`
+  or `english` setting without the `translate` profile and a listed Laya language without the `laya`
+  profile. A fresh instance (no volume or database yet) skips the pre-deploy backup and a
+  `--local-rehearsal` without `BACKUP_S3_*` and `BACKUP_AGE_RECIPIENT` skips it, each saying why in the
+  deploy log. (2) The smoke's queue traversal writes a `house.purge-auth` intent into `job_outbox`
+  as the database superuser and waits up to 60 s for its delivery and for a completed pg-boss job;
+  only a rehearsal also plants an expired `rate_limit_buckets` row that the handler must delete. A
+  feed fixture would need `FETCH_ALLOW_PRIVATE`, which production refuses (spec 01 §3).
+  (3) Maintenance mode is the flag file `/data/maintenance/on` in the `caddy-data` volume
+  (`infra/scripts/maintenance.sh on|off|status`): Caddy answers every public route with a static 503
+  page and `Retry-After: 300` while it exists, except `/api/v1/readyz`. `deploy.sh` turns it on when
+  the restored previous images are not healthy after a failed smoke; the operator turns it off, and
+  while it is on the smoke skips the login-page and asset checks. (4) `infra/scripts/host-health.sh`
+  runs from cron every 15 minutes. Spec 11 §3 updated.
+- D-181: 2026-10-11 M8-T5 — backup tooling and layout (spec 11 §4). (1) `pg_dump`, `pg_dumpall` and
+  `pg_restore` run inside the pinned `postgres` image (the live container for the dump, a throwaway
+  one for the restore); the `backup-tools` image is `apps/ops` run through `tsx`, with the
+  `age-encryption` package and a SigV4 client of its own (`apps/ops/src/s3.ts`), so no `rclone`, `mc`
+  or `age` image or package is installed. (2) Objects are
+  `<prefix><id>/{dump,globals,manifest}.age`, `<id>` being the UTC time `YYYYMMDDTHHMMSSZ`; the
+  manifest is uploaded last and is the commit point, so a backup without one is never offered to a
+  restore. A failed run leaves a `backup-failed` marker and its parts are pruned after two days.
+  (3) The daily bucket keeps every backup of the seven newest UTC dates that have one (a pre-deploy
+  and a cron backup of one day both stay); weekly keeps the newest backup of each of the four newest
+  Sundays and monthly of the six newest 1st-of-month dates that have one; the newest
+  restore-tested backup stays whatever its age; an id later than the clock is never pruned. (4) The
+  manifest records table row counts; the restore checks each within `max(5, 10 %)` of the recorded
+  count, because rows change while a dump runs. Spec 11 §4 updated.
+- D-182: 2026-10-11 M8-T5 — the restore drill and recovery preparation (spec 11 §4, §4.1).
+  (1) Row-level security is checked as `bantoozi_app` after `SET LOCAL ROLE` with two fixture
+  tenants, each seeing only its own rows and none without `app.user_id`; the throwaway database
+  trusts local socket connections because `pg_dumpall --no-role-passwords` restores no role
+  passwords. (2) The release smoke starts the api and worker image ids recorded in the manifest
+  against the restore with `--network none`, reaching Postgres over its unix socket, with an SMTP
+  sink inside the api container and no provider key, and prints
+  `RELEASE_SMOKE login=ok read=ok rank=ok outbox=ok`. (3) `recovery:prepare` is plain SQL on the
+  restored database in one transaction: `pgboss.job` rows in `active` become `cancelled` (created and
+  retry jobs stay), `job_outbox` leases and `origin_fetch_state` leases are cleared, and `running`
+  `analysis_requests` return to `pending` with `last_error_code = 'recovery_restore'`. Spend
+  reservations are left for the operator (§4.1 step 5), and `house.reconcile` rebuilds eligible work
+  afterwards. Spec 11 §4 and §4.1 updated.
+- D-183: 2026-10-11 M8-T8 — the load sanity test (spec 11 §9). `pnpm --filter @bantoozi/ops cli
+  load:run` starts the production compose file with `infra/load/compose.override.yml` as project
+  `bantoozi-load` (open signup, rate limits off, `FETCH_ALLOW_PRIVATE`, `NODE_ENV=test`,
+  `TYPESAFE_MODEL=jev-fake`, a 300 ms fake provider, Caddy not started). The generated feed server
+  serves 1,000 feeds on 50 ports, each listing the newest 3 items (`SIM_FEED_WINDOW`) and publishing
+  5 per hour. User `n` subscribes to 50 consecutive feeds from `30n` and adopts 10 consecutive
+  library cards from `4n`, so neighbours share 20 feeds and 6 cards and the shared cache has reuse to
+  show. The run has four phases at 20/30/30/20 % of the duration: all off, training with selected
+  articles (`user.learn` queued through `job_outbox`), automatic inference on a few feeds per user,
+  and a failing provider. `autocannon` drives list and action traffic. The per-phase report gives
+  p50/p95 `GET /articles`, 5xx count, CPU (reported, not gated, as spec 11 §9 allows off the target
+  box), inference calls and cache reuse; `backlogAlert` is true when the real `backlog` alert rule
+  fires during a phase. The tool's rates, 1 list and 1 open-or-rate per second per user, are 5 times
+  the spec 09 §3 polling and a deliberate stress margin. The 60-minute run of 2026-10-11 passed with
+  p95 `GET /articles` of 82, 136, 191 and 212 ms per phase and no backlog alert
+  (`docs/launch/load-60min-2026-10-11.md`); the first run failed (147, 211, 411 and 503 ms) and led
+  to D-185. Spec 11 §9 updated.
+- D-184: 2026-10-11 M8-T7 — launch content. (1) `STARTER_BUNDLES` moved from
+  `apps/web/src/features/onboarding/bundles.ts` to `packages/shared/src/starter-bundles.ts` and each
+  feed carries the language we declare for it, so `pnpm --filter @bantoozi/ops cli bundles:check
+  [--live]` can validate the list and fetch every feed through the SSRF-safe client, comparing the
+  detected language (56 of 56 fetched, report in `docs/launch/`). The Postoj feed is
+  `https://www.postoj.sk/rss`. (2) `/privacy` and `/bot` are static HTML pages in `apps/web/public`
+  (English, with a `/sk/` copy of each), served by Caddy beside the app, not React routes; the login
+  page links to the privacy page. Spec 09 §4 and spec 11 §3 updated.
+- D-185: 2026-10-11 M8-T8 — what the first load run (D-183) changed. (1) The reader list and counts
+  projection (spec 08 §5.1) computes, once per (view, article), the display feed (the smallest
+  listable in-scope carrier, else the smallest in-scope one) and whether an active subscription
+  carried the article at or after its activation, in a `carrier` CTE, and decides a row's eligibility
+  once, instead of in correlated subqueries the planner inlined into every use. The output is
+  byte-identical to the previous queries (a golden fixture test), and no index was added. (2) The
+  outbox relay (spec 02 §3.2, spec 03 §2.1) treats a `rank-full:<user>` job in `created`
+  or `retry` as covering any full-rank `user.rank` intent whatever its `reason`, because a pending
+  full rank re-reads durable state; continuations and incremental ranks keep keys of their own and
+  are not covered. (3) A list or counts call that finds ranking pending requests no catch-up intent
+  when a full rank is already on its way. The API role reads neither `job_outbox` nor `pgboss`, so
+  migration 0020 adds `full_rank_covered()`, SECURITY DEFINER, scoped to the caller's own
+  `active_tenant()`, with EXECUTE for `bantoozi_app` only; it is true for an undelivered full-rank
+  `user.rank` intent without a cursor or a `created`/`retry` `rank-full:<user>` job. (4)
+  `load:run --keep` leaves the stack up and prints a teardown command that works. Open owner
+  question, no change made: spec 06 §7 reranks fully after every rating, so under sustained rating
+  a user's ranking stays pending; whether rating should rank incrementally is the owner's call.
+  Spec 08 §5.1, spec 02 §3.2 and §6 and spec 03 §2.1 updated.

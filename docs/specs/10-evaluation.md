@@ -607,6 +607,13 @@ source (`cards/model/degraded`), language, and prompt/calibration vs voluntary f
   by selected training vs active arrivals; off feeds must contribute zero authorized provider calls.
   Report shared cache savings and training queue age separately from all fetched article volume.
 
+`house.metrics` stores one snapshot per UTC day: the day's lane like-rates and the recovery
+numerator/denominator, and `windows.d7`/`windows.d30` with `lanes`, `regret`, `bySource`
+(`cards/model/degraded`), `byLanguage` (top 20 plus `other`), `byOrigin` (`prompt`/`voluntary`),
+`hides`, `models` and `engine`, plus `current` (`maybeShare`, `sourceMix`, `classifyingBacklog`,
+`trainingQueue`). The Maybe share is counted per reader with the reader's own folding and tier policy
+(D-178).
+
 Store bounded aggregates in `settings['metrics.daily.<date>']`; retain 90 daily snapshots and no
 article/card text or per-user traces in this shared settings object. Restrict it to admin responses.
 

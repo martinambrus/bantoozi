@@ -519,7 +519,7 @@ keep its weak weight and show this limitation in the privacy/learning explanatio
 archive operations are housekeeping, never stand-alone dislike evidence.
 
 **`feedback_events.value` v1:** every feedback mutation stores the signal payload and an immutable
-`before` snapshot `{lane,pLike,tier,scoreVersion,rankRevision,scoredAt}` from the ranking seen before
+`before` snapshot `{lane,pLike,tier,scoreVersion,rankRevision,scoredAt,scoreSource}` (`scoreSource`: `cards`, `model`, `degraded` or `none`, the ranking path that produced `pLike`) from the ranking seen before
 that action, plus `staleAtFeedback` (boolean or null). Learning-relevant actions additionally record
 `features: {specSha,ratingSha,cards,values,sourceManifest,snapshotAt}` when valid inputs exist. Build
 it before applying the action, under the same content revision as the displayed score. `cards` lists
@@ -535,7 +535,8 @@ values (`facets`, `facetsEngine`, `wordCount`, `ageHours`, `lang`, `hasImage`, `
 time (`clusterId`, `clusterSize`). The API records this raw snapshot under
 `specSha = sha256('bantoozi:feature-snapshot:raw-v1')`, from which `FEATURE_SPEC_V1` derives its
 named inputs and masks at training time; `ratingSha` is
-`sha256(canonicalJson({specSha, settings}))` over the stored `engine.model_pin`,
+`sha256(canonicalJson({specSha, settings}))` over the stored `engine.model_pin` (only its `model` and
+`laya`, never `since` or `llm`, so toggling the fallback keeps ratings current; D-171),
 `question_sets.active`, `language_modes` and `card_text_mode` settings; `sourceManifest` is
 `{contentRevision, mediaRevision, inferenceFeedIds}` (the authorizing carriers); `snapshotAt` is
 the action time. Events without behavioral consent, expand/bulk reads and label events carry no

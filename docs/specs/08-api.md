@@ -350,7 +350,10 @@ does not cause the bookmark capture/export path to download or archive them.
    view may use an eligible carrier; direct off-feed A stays neutral even if the user also has active
    feed B carrying the same article. A feed/folder view that keeps at least one eligible carrier
    shows the cached global score (spec 06 §6.4). A different user's authorization never qualifies. Counts,
-   filtering and detail apply this same pure projection without starting model work (spec 06).
+   filtering and detail apply this same pure projection without starting model work (spec 06). The
+   implementation evaluates it once per (view, article) in a `carrier` CTE (display feed, smallest
+   in-scope carrier, and whether an active subscription carried the article at/after its activation)
+   and decides each row's eligibility once; results are identical to a per-use evaluation (D-185).
 2. **Cluster folding**, applied to the scoped candidate set before the lane filter:
    - An article is foldable if **any** subscription carrying it has `allow_duplicates = false`.
    - Foldable articles sharing a `story_cluster_id` collapse into one row: the member with the highest
@@ -383,7 +386,9 @@ Folder/feed counts are scoped counts, not sums of globally folded lane counts.
 (spec 06 §7), request a debounced full rank via the outbox (`user.rank {full:true, reason:'list'}`,
 deduplicated per user, without advancing `users.rank_revision`: the rows are already outdated, and a
 bump from a read would make every later read outdated again). Taking only the newest version would
-miss partially updated batches. Serve existing scores immediately and return `rankingPending`.
+miss partially updated batches. No intent is written when a full rank of the caller is already on its
+way (an undelivered full-rank intent or a queued `rank-full:<user>` job, `full_rank_covered()`, D-185).
+Serve existing scores immediately and return `rankingPending`.
 Eligibility includes the user's inference-demand policy (§4.1). Plain untrained articles may remain
 in New indefinitely with `rankingPending:false`; neither reading nor polling authorizes a model
 call. Expose `analysis` below so the UI distinguishes deliberately untrained from queued processing.
@@ -701,7 +706,7 @@ nor grants permission to analyze other articles.
 | `GET /admin/users?q=` / `PATCH /admin/users/:id` | Role, plan, `invites_left` → `200 {user, sessionsRevoked}`. A plan change recomputes feed intervals with `refresh_feed_subscribers` over every feed with subscribers (a superset: the API cannot read the target user's subscriptions under RLS) |
 | `GET /admin/invites?status=unused\|used\|expired` / `POST /admin/invites` | List all invites; create `{count ≤ 50, email?, note?, expiresDays ≤ 90}` → `201 {items: Invite[], emailSent?}`. An `email` binds the invite, requires `count` 1 and sends the §2.2 invite email |
 | `GET /admin/waitlist` / `POST /admin/waitlist/:id/invite` | Create an invite bound to that email, set the row's `invited_at` and `invite_code`, and email it in the entry's locale (§2.2 invite email) → `200 {entry, invite, emailSent?}`. `emailSent` reports this request's delivery; a replayed receipt omits it and never re-sends |
-| `POST /admin/ops-event` | `{kind: 'backup_ok' \| 'backup_failed' \| 'restore_ok' \| 'restore_failed' \| 'host_health', detail?}`. `host_health` uses spec 11's bounded structured disk/inode/heartbeat payload. Authenticated with the `METRICS_TOKEN` bearer and exempt from the CSRF header (§1); used by the host scripts in spec 11 §4. It appends to `settings['ops.events']` (the last 50 kept), which `house.alerts` reads → `201 {kind, at, stored}`; `host_health` detail is stored as canonical JSON text (≤2000 characters) |
+| `POST /admin/ops-event` | `{kind: 'backup_ok' \| 'backup_failed' \| 'restore_ok' \| 'restore_failed' \| 'host_health', detail?}`. `host_health` uses spec 11's bounded structured disk/inode/heartbeat payload, plus `containers: {<compose service>: {restarts, oomKilled}}` (at most 16 services). Authenticated with the `METRICS_TOKEN` bearer and exempt from the CSRF header (§1); used by the host scripts in spec 11 §4. It appends to `settings['ops.events']` (the last 50 kept), which `house.alerts` reads → `201 {kind, at, stored}`; `host_health` detail is stored as canonical JSON text (≤2000 characters) |
 
 **Admin write constraints:** validate every field with the shared schemas; no arbitrary JSON-to-SQL
 updates. Feed fetch options use spec 03's allowlist and may not disable SSRF checks or smuggle auth

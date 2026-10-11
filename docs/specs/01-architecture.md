@@ -189,6 +189,7 @@ identify secret variable names/paths, never their supplied contents or a seriali
 | `POSTGRES_PASSWORD`, `BANTOOZI_OWNER_PASSWORD`, `BANTOOZI_APP_PASSWORD`, `BANTOOZI_WORKER_PASSWORD` | — | compose / `init.sh` | database bootstrap only; never read by the apps |
 | `PUBLIC_BASE_URL` | `http://localhost:5173` | api, worker, eval | used in links, the CSRF `Origin` check (spec 08 §1) and the fetcher User-Agent |
 | `API_PORT` | `3000` | api | |
+| `API_HOST` | `0.0.0.0` in production, else `127.0.0.1` | api | listen address |
 | `SESSION_COOKIE_NAME` | `bantoozi_sid` | api | |
 | `SESSION_TTL_DAYS` | `60` | api | sliding expiry |
 | `SESSION_PEPPER` | — (required) | api | secret mixed into login-code hashes |
@@ -225,7 +226,11 @@ identify secret variable names/paths, never their supplied contents or a seriali
 | `WORKER_QUEUES` | `*` | worker | comma list of queue names this process consumes; `*` means every queue except the dedicated Laya queues `article.enrich.laya` and `analysis.process.laya` (spec 03 §2) |
 | `LOG_LEVEL` | `info` | all | |
 | `METRICS_TOKEN` | — | api, worker, scripts | bearer token for `/metrics` and `POST /admin/ops-event` |
-| `WORKER_METRICS_PORT` | `9101` | worker | |
+| `WORKER_METRICS_PORT` | `9101` | worker | `GET /healthz` (503 when the heartbeat is older than 2 min) and `GET /metrics` (bearer `METRICS_TOKEN`) |
+| `WORKER_METRICS_HOST` | `0.0.0.0` in production, else `127.0.0.1` | worker | listen address of that port |
+| `DELETION_LEDGER_PATH` | — | worker | the append-only age-encrypted deletion ledger file (spec 11 §5.1); without it `house.purge-users` deletes nobody |
+| `DELETION_LEDGER_RECIPIENT` | — | worker | the age public key (`age1…`) entries are encrypted to; the identity is never on the host |
+| `DELETION_HMAC_KEY` | — | worker | ≥ 32 characters, secret; keys the `emailHmac` of ledger entries |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | all | tracing is enabled only when set |
 | `ADMIN_EMAILS` | — | api, worker | comma list: these users may sign up without an invite and get `role=admin` on every login (spec 08 §2.1); alert recipients |
 
