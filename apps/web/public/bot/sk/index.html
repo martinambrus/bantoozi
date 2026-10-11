@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="sk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>BantooziBot - Bantoozi</title>
+    <link rel="stylesheet" href="/static-pages.css" />
+  </head>
+  <body>
+    <main>
+      <nav aria-label="Jazyk">
+        <a href="/login">Bantoozi</a>
+        <a href="/bot/" hreflang="en" lang="en">English</a>
+        <a href="/privacy/sk/">Ochrana súkromia</a>
+      </nav>
+      <h1>BantooziBot</h1>
+      <p class="lead">
+        BantooziBot je sťahovač webu čítačky Bantoozi, ktorá funguje len na pozvánky. Ak ste ho
+        našli vo svojich logoch servera, táto stránka vysvetľuje, čo robí.
+      </p>
+
+      <h2>Čo sťahuje</h2>
+      <p>
+        Verejné kanály RSS, Atom a JSON a verejné články, na ktoré odkazujú, a to len preto, že
+        čitateľ odoberá daný kanál alebo si uložil daný článok. Neprehľadáva weby, neodosiela
+        formuláre a nikde sa neprihlasuje.
+      </p>
+
+      <h2>Ako sa správa</h2>
+      <ul>
+        <li>Dodržiava <code>robots.txt</code> pre produktový token <code>BantooziBot</code>.</li>
+        <li>Robí najviac 2 súbežné požiadavky na web a najviac jednu za sekundu.</li>
+        <li>Pri odpovedi 429 alebo 503 ustúpi a rešpektuje <code>Retry-After</code>.</li>
+        <li>Kanály sťahuje podľa adaptívneho plánu, menej často, ak sa kanál mení zriedka.</li>
+      </ul>
+
+      <h2>User agent</h2>
+      <p><code>BantooziBot/1.0 (+https://your-domain.example/bot)</code></p>
+
+      <h2>Kontakt</h2>
+      <p>
+        Bota zablokujete pravidlom <code>BantooziBot</code> vo svojom <code>robots.txt</code> alebo
+        nám napíšte:
+        <span id="support-contact" class="placeholder">support@your-domain.example</span>
+        <!-- OWNER: replace the text of #support-contact with the real support address at deploy. -->
+      </p>
+    </main>
+  </body>
+</html>

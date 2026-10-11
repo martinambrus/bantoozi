@@ -6,7 +6,7 @@ import { createHarness } from '../auth/harness.js';
 import { gate } from '../interests/support.js';
 import { makeMe } from '../session/fixtures.js';
 import { bodyOf } from '../support/app.js';
-import { BUNDLES, type StarterBundle } from '../../src/features/onboarding/bundles.js';
+import { STARTER_BUNDLES as BUNDLES, type StarterBundle } from '@bantoozi/shared';
 import {
   battery,
   counts,

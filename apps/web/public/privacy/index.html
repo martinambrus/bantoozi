@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Privacy - Bantoozi</title>
+    <link rel="stylesheet" href="/static-pages.css" />
+  </head>
+  <body>
+    <main>
+      <nav aria-label="Language">
+        <a href="/login">Bantoozi</a>
+        <a href="/privacy/sk/" hreflang="sk" lang="sk">Slovensky</a>
+        <a href="/bot">BantooziBot</a>
+      </nav>
+      <h1>Privacy</h1>
+      <p class="lead">
+        Bantoozi is an invite-only feed reader. This page says what we keep, who processes it and
+        for how long. It is a static page: it runs no scripts and loads nothing from third parties.
+      </p>
+
+      <h2>What we keep</h2>
+      <p>
+        Your email address, the feeds you subscribe to, your interest cards, labels and rules, and
+        what you do in the reader (read, rate, bookmark, hide). That is the personal data the
+        service works with.
+      </p>
+
+      <h2>Who processes your data</h2>
+      <ul>
+        <li>
+          <strong>TypeSafe Jev</strong> (hosted inference) receives article text for classification.
+          Article text is public content published by the feed owners. Your card texts and the
+          example titles you give are personal; they are not sent to a model provider except as
+          described in the next point.
+        </li>
+        <li>
+          <strong>Ollama Cloud</strong> is a fallback provider and is off by default. If the
+          operator turns it on, it receives the same kind of requests as Jev.
+        </li>
+        <li>
+          <strong>LibreTranslate</strong> runs on our own server and translates article text there.
+          Nothing is sent to an outside translation service.
+        </li>
+      </ul>
+
+      <h2>Remote images</h2>
+      <p>
+        Images from publishers are blocked by default. If you allow them for a feed, your browser
+        loads them directly from the publisher, which discloses your IP address and request metadata
+        to that publisher. We keep your per-feed choice and use no-referrer and lazy loading for
+        those images. This page and the sign-in page load no third-party media.
+      </p>
+
+      <h2>Cookies</h2>
+      <p>
+        Only one: the session cookie that keeps you signed in. We use no analytics or advertising
+        cookies.
+      </p>
+
+      <h2>How long we keep things</h2>
+      <table>
+        <tbody>
+          <tr>
+            <th scope="row">Bookmarked article snapshots</th>
+            <td>While the article is bookmarked.</td>
+          </tr>
+          <tr>
+            <th scope="row">Feedback events (ratings, reads)</th>
+            <td>Up to 365 days.</td>
+          </tr>
+          <tr>
+            <th scope="row">Model call audit</th>
+            <td>180 days.</td>
+          </tr>
+          <tr>
+            <th scope="row">Analysis requests</th>
+            <td>180 days.</td>
+          </tr>
+          <tr>
+            <th scope="row">Unused invites</th>
+            <td>
+              30 days after they expire. Used invites are kept for invite accounting while either
+              account exists.
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">Waitlist entries</th>
+            <td>Deleted when you sign up; otherwise 365 days after you joined.</td>
+          </tr>
+          <tr>
+            <th scope="row">Sign-in codes</th>
+            <td>1 day after they expire.</td>
+          </tr>
+          <tr>
+            <th scope="row">Sessions</th>
+            <td>30 days after they expire or are revoked.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Deleting your account</h2>
+      <p>
+        When you delete your account, you are signed out everywhere at once and your data stops
+        being used. There is a 7-day grace period: sign in again within 7 days and confirm to undo
+        the deletion. After that your personal data is hard-deleted.
+      </p>
+
+      <h2>Backups</h2>
+      <p>
+        We keep encrypted daily, weekly and monthly backups. Deleted accounts age out of historic
+        backups within 6 months, and backups are never served directly. If a backup is ever
+        restored, deletions are replayed before anyone can sign in.
+      </p>
+
+      <h2>Export</h2>
+      <p>
+        You can download your data at any time from settings (JSON, including your subscriptions,
+        cards, labels, rules, ratings and bookmarks).
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions or erasure requests:
+        <span id="support-contact" class="placeholder">support@your-domain.example</span>
+        <!-- OWNER: replace the text of #support-contact with the real support address at deploy. -->
+      </p>
+      <p class="meta">See also <a href="/bot">BantooziBot</a>, our feed fetcher.</p>
+    </main>
+  </body>
+</html>

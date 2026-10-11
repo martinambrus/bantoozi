@@ -6,7 +6,7 @@ import { errorMessage, quotaDetails, quotaMessage } from '../../components/error
 import { CheckIcon, WarningIcon } from '../../components/icons.js';
 import { InlineAlert } from '../feeds/inline-alert.js';
 import { NEEDS_CHOICE, useBundleImport, type BundleRun, type ImportRow } from './bundle-import.js';
-import { BUNDLES, type StarterBundle } from './bundles.js';
+import { STARTER_BUNDLES as BUNDLES, type StarterBundle } from '@bantoozi/shared';
 
 function Row({ row }: { row: ImportRow }) {
   const { t } = useTranslation('onboarding');
