@@ -4,7 +4,6 @@ import { createDatabase, createPgOriginLimiter, createPool } from '@bantoozi/db'
 import {
   FEED_SCHEDULE_CRON,
   HOUSE_CRON_SCHEDULES,
-  QUEUES,
   type HouseCronQueue,
   type HouseCronSchedule,
 } from '@bantoozi/shared';
@@ -14,6 +13,7 @@ import { createLibreTranslateProbe } from './alerts/probe.js';
 import { createBoss, pgBossBroker, registerHandlers } from './boss.js';
 import { createWorkerModels } from './classification-deps.js';
 import { createFileDeletionLedger } from './deletion-ledger.js';
+import { WORKER_POOL_LIMITS, startHealthServer, type HealthServer } from './health-server.js';
 import { createWorkerDeps } from './handlers/deps.js';
 import {
   assertWorkerMode,
@@ -42,14 +42,14 @@ const logger = createLogger({
 
 const pool = createPool({
   connectionString: config.databaseUrlWorker,
-  max: 10,
+  max: WORKER_POOL_LIMITS.query,
   applicationName: 'bantoozi-worker',
 });
 const db = createDatabase(pool);
 // Feed fetch locks pin one connection each for a whole fetch (spec 03 §3): a pool of their own.
 const lockPool = createPool({
   connectionString: config.databaseUrlWorker,
-  max: QUEUES['feed.fetch'].concurrency,
+  max: WORKER_POOL_LIMITS.feedLocks,
   applicationName: 'bantoozi-worker-locks',
 });
 // An idle connection dropped by the server must not crash the process (pg emits 'error').
@@ -137,6 +137,8 @@ let stopping = false;
 let heartbeat: Heartbeat | undefined;
 let boss: ReturnType<typeof createBoss> | undefined;
 let relay: ReturnType<typeof startOutboxRelay> | undefined;
+let health: HealthServer | undefined;
+const processId = `${hostname()}:${process.pid}`;
 async function shutdown(signal: string): Promise<void> {
   if (stopping) return;
   stopping = true;
@@ -144,6 +146,7 @@ async function shutdown(signal: string): Promise<void> {
   try {
     // The heartbeat advertises these consumers (an ingest-only collection checks it), so it is
     // removed only after the relay and the queue consumers have stopped.
+    await health?.close();
     await relay?.stop();
     await boss?.stop({ graceful: true, timeout: 20_000, wait: true });
     await heartbeat?.stop();
@@ -158,7 +161,7 @@ async function shutdown(signal: string): Promise<void> {
 try {
   heartbeat = await startHeartbeat({
     db,
-    processId: `${hostname()}:${process.pid}`,
+    processId,
     queues: workerQueues,
     evalIngestOnly: config.evalIngestOnly,
     envCredentials: [
@@ -181,6 +184,20 @@ try {
 }
 
 if (!stopping) {
+  health = await startHealthServer({
+    host: config.workerMetricsHost,
+    port: config.workerMetricsPort,
+    token: config.metricsToken,
+    queues: workerQueues,
+    readHeartbeatAt: async () => {
+      const result = await pool.query<{ at: string | null }>(
+        `SELECT value -> $1 ->> 'at' AS at FROM settings WHERE key = 'worker.heartbeat'`,
+        [processId],
+      );
+      const at = result.rows[0]?.at;
+      return at === null || at === undefined ? undefined : new Date(at);
+    },
+  });
   boss = createBoss(config.databaseUrlWorker);
   boss.on('error', (err) => logger.error({ err }, 'pg-boss error'));
   await boss.start();

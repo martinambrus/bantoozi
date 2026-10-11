@@ -25,6 +25,7 @@ const SPEC_01_VARIABLES = [
   'BANTOOZI_WORKER_PASSWORD',
   'PUBLIC_BASE_URL',
   'API_PORT',
+  'API_HOST',
   'SESSION_COOKIE_NAME',
   'SESSION_TTL_DAYS',
   'SESSION_PEPPER',
@@ -62,6 +63,7 @@ const SPEC_01_VARIABLES = [
   'LOG_LEVEL',
   'METRICS_TOKEN',
   'WORKER_METRICS_PORT',
+  'WORKER_METRICS_HOST',
   'OTEL_EXPORTER_OTLP_ENDPOINT',
   'ADMIN_EMAILS',
   'DELETION_LEDGER_PATH',
@@ -215,10 +217,12 @@ describe('loadConfig (spec 01 §3)', () => {
     expect(c.workerQueues).toContain('feed.fetch');
     expect(c.logLevel).toBe('info');
     expect(c.workerMetricsPort).toBe(9101);
+    expect(c.workerMetricsHost).toBe('127.0.0.1');
     expect(c.adminEmails).toEqual([]);
 
     const a = loadConfig({ process: 'api', env: api });
     expect(a.apiPort).toBe(3000);
+    expect(a.apiHost).toBe('127.0.0.1');
     expect(a.sessionCookieName).toBe('bantoozi_sid');
     expect(a.sessionTtlDays).toBe(60);
     expect(a.signupMode).toBe('invite');
@@ -307,6 +311,11 @@ describe('loadConfig (spec 01 §3)', () => {
       PUBLIC_BASE_URL: 'https://bantoozi.example',
     };
     expect(problemsOf(() => loadConfig({ process: 'worker', env: prodWorker }))).toEqual([]);
+    expect(loadConfig({ process: 'worker', env: prodWorker }).workerMetricsHost).toBe('0.0.0.0');
+    expect(
+      loadConfig({ process: 'worker', env: { ...prodWorker, WORKER_METRICS_HOST: '10.0.0.5' } })
+        .workerMetricsHost,
+    ).toBe('10.0.0.5');
     expect(loadConfig({ process: 'worker', env: prodWorker }).mailTransport).toBe('smtp');
     expect(
       problemsOf(() => loadConfig({ process: 'worker', env: { ...prodWorker, SMTP_URL: '' } })),

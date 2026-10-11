@@ -71,6 +71,7 @@ export const ENV_VARS: readonly EnvVarSpec[] = [
     defaultValue: 'http://localhost:5173',
   },
   { name: 'API_PORT', usedBy: ['api'], defaultValue: '3000' },
+  { name: 'API_HOST', usedBy: ['api'] },
   { name: 'SESSION_COOKIE_NAME', usedBy: ['api'], defaultValue: 'bantoozi_sid' },
   { name: 'SESSION_TTL_DAYS', usedBy: ['api'], defaultValue: '60' },
   { name: 'SESSION_PEPPER', usedBy: ['api'], secret: true },
@@ -128,6 +129,7 @@ export const ENV_VARS: readonly EnvVarSpec[] = [
   { name: 'LOG_LEVEL', usedBy: ['all'], defaultValue: 'info' },
   { name: 'METRICS_TOKEN', usedBy: ['api', 'worker', 'scripts'], secret: true },
   { name: 'WORKER_METRICS_PORT', usedBy: ['worker'], defaultValue: '9101' },
+  { name: 'WORKER_METRICS_HOST', usedBy: ['worker'] },
   { name: 'OTEL_EXPORTER_OTLP_ENDPOINT', usedBy: ['all'] },
   { name: 'ADMIN_EMAILS', usedBy: ['api', 'worker'] },
   { name: 'DELETION_LEDGER_PATH', usedBy: ['worker'] },
@@ -150,6 +152,7 @@ export interface Config {
   readonly pgDevPort: number;
   readonly publicBaseUrl: string;
   readonly apiPort: number;
+  readonly apiHost: string;
   readonly sessionCookieName: string;
   readonly sessionTtlDays: number;
   readonly sessionPepper: string | undefined;
@@ -189,6 +192,7 @@ export interface Config {
   readonly logLevel: LogLevel;
   readonly metricsToken: string | undefined;
   readonly workerMetricsPort: number;
+  readonly workerMetricsHost: string;
   readonly otelExporterOtlpEndpoint: string | undefined;
   readonly adminEmails: readonly string[];
   readonly deletionLedgerPath: string | undefined;
@@ -304,6 +308,8 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
     pgDevPort: read('PG_DEV_PORT', portSchema, '5432') ?? 5432,
     publicBaseUrl: publicBaseUrl.replace(/\/+$/, ''),
     apiPort: read('API_PORT', portSchema, '3000') ?? 3000,
+    apiHost:
+      read('API_HOST', z.string().min(1), production ? '0.0.0.0' : '127.0.0.1') ?? '127.0.0.1',
     sessionCookieName:
       read('SESSION_COOKIE_NAME', z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), 'bantoozi_sid') ??
       'bantoozi_sid',
@@ -354,6 +360,9 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
       ) ?? 'info',
     metricsToken: read('METRICS_TOKEN', z.string().min(production ? 32 : 1), undefined),
     workerMetricsPort: read('WORKER_METRICS_PORT', portSchema, '9101') ?? 9101,
+    workerMetricsHost:
+      read('WORKER_METRICS_HOST', z.string().min(1), production ? '0.0.0.0' : '127.0.0.1') ??
+      '127.0.0.1',
     otelExporterOtlpEndpoint: read('OTEL_EXPORTER_OTLP_ENDPOINT', httpUrl, undefined),
     adminEmails: read('ADMIN_EMAILS', emailListSchema, undefined) ?? [],
     deletionLedgerPath: read('DELETION_LEDGER_PATH', z.string().min(1), undefined),

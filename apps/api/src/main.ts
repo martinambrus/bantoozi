@@ -19,7 +19,7 @@ const app = await buildServer({ db: createDatabase(pool), config, logger });
 
 await app.listen({
   port: config.apiPort,
-  host: config.nodeEnv === 'production' ? '0.0.0.0' : '127.0.0.1',
+  host: config.apiHost,
 });
 
 let stopping = false;
