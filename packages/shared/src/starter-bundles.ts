@@ -26,7 +26,7 @@ const DEFINITIONS: readonly BundleDefinition[] = [
       { url: 'https://www.sme.sk/rss-title', lang: 'sk' },
       { url: 'https://spravy.pravda.sk/rss/xml/', lang: 'sk' },
       { url: 'https://www.aktuality.sk/rss/', lang: 'sk' },
-      { url: 'https://www.postoj.sk/feed', lang: 'sk' },
+      { url: 'https://www.postoj.sk/rss', lang: 'sk' },
     ],
   },
   {
