@@ -383,11 +383,12 @@ for the same dataset version. `bookmarks` is computed separately using bookmark-
 Folder/feed counts are scoped counts, not sums of globally folded lane counts.
 
 **Outdated scores:** if any eligible row has a missing/stale `score_version` or `rank_revision`
-(spec 06 §7), request a debounced full rank via the outbox (`user.rank {full:true, reason:'list'}`,
-deduplicated per user, without advancing `users.rank_revision`: the rows are already outdated, and a
-bump from a read would make every later read outdated again). Taking only the newest version would
-miss partially updated batches. No intent is written when a full rank of the caller is already on its
-way (an undelivered full-rank intent or a queued `rank-full:<user>` job, `full_rank_covered()`, D-185).
+(spec 06 §7), request a debounced incremental rank via the outbox (`user.rank {reason:'list'}`, deduplicated per
+user, without advancing `users.rank_revision`: the rows are already outdated, and a bump from a read
+would make every later read outdated again; the dirty set is exactly those rows). Taking only the
+newest version would miss partially updated batches. No intent is written when a rank of the caller is
+already on its way (`rank_covered()`: an undelivered `user.rank` intent without a cursor, or a
+created/retry `rank:<user>` or `rank-full:<user>` job; D-186).
 Serve existing scores immediately and return `rankingPending`.
 Eligibility includes the user's inference-demand policy (§4.1). Plain untrained articles may remain
 in New indefinitely with `rankingPending:false`; neither reading nor polling authorizes a model
@@ -528,7 +529,7 @@ but cannot itself cause inference.
 | Endpoint | Body | Effect |
 |---|---|---|
 | `/articles/:id/read` | `{trigger?: 'expand'}` | Set `read_at` (expand in the list, when `markReadOnExpand`). The list's expand side effect sends `trigger:'expand'` and is recorded with `signalOrigin:'expand'` (spec 06 §8.2), never as an individual explicit read; the client can only weaken the recorded origin this way, never claim consent |
-| `/articles/:id/unread` | `{}` | Clear `read_at` and `archived_at`, record `unread`; invalidate cluster seen-story ranking where needed |
+| `/articles/:id/unread` | `{}` | Clear `read_at` and `archived_at`, record `unread`; the cluster's members and the article's own row are made due (D-186) |
 | `/articles/:id/unhide` | `{}` | Clear only `archived_at`, record `unhide`, preserve read/rating state and rerank. A Never card or block/mute rule may still hide it; expose that explanation rather than silently deleting the user's rule |
 | `/articles/:id/open` | `{}` | Require a non-null safe original URL; otherwise `400 VALIDATION_FAILED`. Set `opened_at` and `read_at`, and record a `feedback_events` `open` (the user opened the original URL) |
 | `/articles/:id/dwell` | `{ms}` | Integer 0..1,800,000; require a prior open (`409 CONFLICT`, `details.reason: 'not_opened'`), clamp to elapsed time since it. Set `dwell_ms = max(existing, ms)` and record `dwell`. Includes `prompt: boolean` from spec 06 §10; atomically set `feedback_prompted_at` when true so two tabs cannot prompt twice. Dwell is only a weak signal, never proof of reading |
@@ -537,7 +538,7 @@ but cannot itself cause inference.
 | `/articles/:id/bookmark` / `DELETE` of the same path | `{mediaPolicyFeedId?}` on POST; no body on DELETE | Set/clear bookmark and record the event. POST validates the chosen owned display feed, captures existing full trusted body transactionally or records pending status and a local capture intent. Return capture status immediately. Capture generation fences late completions after unbookmark/rebookmark; no inference demand is created |
 | `/articles/:id/bookmark/retry-capture` | `{captureGeneration}` | Explicit local fetch/extraction retry for an owned partial/failed bookmark; keep the existing snapshot readable until a replacement is safely captured, then bind atomically. No paid classification/translation call → `202 {item, mutationId}` |
 | `/articles/:id/labels` | `{labelId}` | Add to `label_ids`, remove from `label_suggestions`, record neutral organization only; no positive/negative preference-learning signal. **Cards are not changed** (spec 05 §5.1). Label examples are explicit (§7) |
-| `DELETE /articles/:id/labels/:labelId` | — | Remove it, record `unlabel` |
+| `DELETE /articles/:id/labels/:labelId` | — | Remove it, record `unlabel`, and make the article's own row due so its label suggestions can return (D-186) |
 | `/articles/:id/mute-story` | `{days: 1\|3\|7\|30}` | Create a cluster for the article if it has none, create a `mute_story` rule with `expires_at` through the `POST /rules` path (§8: live-rule quota, an existing live mute of the story is returned with the later of both expiries), enqueue `user.rank {full}` → `201 {rule}` in the §8 rule shape. No reader fence: it changes no reader state |
 | `/articles/mark-read` | `{targets: [{id, stateVersion, contentRevision}]}` **or** `{filter: {lane, feedId?, folder?, labelId?, minTier?, olderThan}, datasetVersion}` | Explicit targets ≤500; filter uses §5.1 query semantics with `status=unread` and an inclusive arrival cutoff (§5.1) captured when confirming. Materialize/lock the displayed representatives once; no later arrivals. Maximum 5,000 targets; reject an oversized set rather than silently truncate. A changed dataset returns `STALE_STATE`. → `200 {count, mutationId}` |
 | `/articles/rate-bulk` | `{targets: [{id, stateVersion, contentRevision, analysisRequestId?}][1..200], rating: 1 \| -1 \| null}` | One transaction using single-rating semantics, per-item feedback snapshots and one coalesced learn/rank intent → `200 {count, mutationId, items}`. Explicit un-rate is supported; exact undo uses the endpoint below |
@@ -550,8 +551,12 @@ features only for eligible signals under that section's consent rules. Persist s
 retry replays append nothing. Do not let API upserts replace worker-owned ranking columns. Lock
 ownership and expected-version checks in the same transaction. Label assignment/removal requires a
 label held by the user; deleted/repointed labels must never be resurrected by an offline replay.
-Rank-relevant mutations advance the user's `rank_revision` and enqueue appropriate rank/learn
-effects per spec 06. Cluster actions never mark every sibling read implicitly; the seen-story rule
+Reader actions (read, open, unread, mark-read, rate, prompt answer, bulk rate, unhide, unlabel,
+undo) do not advance `rank_revision` or record a full rank: they mark only the rows whose ranking
+can differ (`user_article.next_rank_at`, the one ranking column the API role may write) and enqueue
+one incremental, debounced rank (a full rank only for an automatic demotion flag flip or a
+mark-read of more than 2,000 targets; D-186). Other rank-relevant mutations (cards, rules,
+preferences, subscriptions) advance the user's `rank_revision` and enqueue rank/learn effects per spec 06. Cluster actions never mark every sibling read implicitly; the seen-story rule
 and folding provide deduplication.
 These effects must obey §4.1: a thumbs-up, label, bookmark, open or dwell never implicitly enables
 subscription inference. Neutral labels do not trigger positive personal-model training. With
@@ -571,7 +576,7 @@ still has the receipt's resulting state version. A receipt without undo data (op
 a no-op) is `409 CONFLICT` with `details.reason: 'not_undoable'`; another user's or an unknown
 receipt is `404`. It restores only fields changed by that action,
 increments state versions, records an `undo` event referencing the original mutation and requests
-the same rank/learn invalidation. It never writes old ranking-cache fields or fabricates a rating.
+the same rank/learn invalidation, recomputed from the restored state (a stored `rankFull` is ignored). It never writes old ranking-cache fields or fabricates a rating.
 An intervening device action/deleted label/inaccessible article returns `409 STALE_STATE` atomically;
 the client refreshes and explains that newer changes were kept. This restores pre-existing ratings,
 reasons, read state and SHIFT-hide correctly. Undo of a bulk mutation is one atomic operation, not

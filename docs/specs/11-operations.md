@@ -484,9 +484,14 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
         server with `latencyMs: 300` (`TYPESAFE_MODEL=jev-fake`). User `n` subscribes to 50 feeds
         from `30n` and adopts 10 library cards from `4n`, so neighbours share 20 feeds and 6 cards.
         `load:run` runs four phases (20/30/30/20 % of the time): all off, selected-article training,
-        automatic inference on a few feeds, and a failing provider (D-183). The API runs with
+        automatic inference on a few feeds, and a failing provider (D-183). The **gate is the
+        `realistic` profile** (default): each user lists at page load, then polls the list every 5 s
+        while `rankingPending` and the counts every 30 s when idle (spec 09 §3), opens or rates
+        one article every 10–20 s and makes a navigation list every 30–60 s; p95 needs at least 300
+        list samples per phase. The `stress` profile (1 list/s and 1 open-or-rate/s per user) is
+        reported, not gated (D-187). The API runs with
         `NODE_ENV=test`, `RATE_LIMITS_ENABLED=false` and `FETCH_ALLOW_PRIVATE=true` in a separate test
-      Compose project/DB; never relax production config. `autocannon` simulates list/open/rate traffic.
+      Compose project/DB; never relax production config. Per-user schedulers (realistic) or `autocannon` (stress) simulate list/counts/open/rate traffic.
       - **On the target box:** CPU < 70 %, p95 `GET /articles` < 300 ms, no queue-backlog alert.
       - **On a local production-like stack** (when there is no host access): the same p95 and backlog
         criteria. CPU is reported but not gated.

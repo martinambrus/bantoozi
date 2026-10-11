@@ -1,0 +1,280 @@
+{
+  "profile": "stress",
+  "host": {
+    "cpus": 8,
+    "memTotal": 16538484736
+  },
+  "durationMin": 60,
+  "users": 20,
+  "feedsPerUser": 50,
+  "cardsPerUser": 10,
+  "articles": 5119,
+  "listRatePerUser": 1,
+  "countsRatePerUser": 0,
+  "actionRatePerUser": 1,
+  "questionsPerArticle": 10,
+  "config": {
+    "feedCount": 1000,
+    "itemsPerFeedPerHour": 5,
+    "providerLatencyMs": 300,
+    "listRatePerUser": 1,
+    "actionRatePerUser": 1,
+    "listPageLimit": 30
+  },
+  "pool": {
+    "workerQuery": 10,
+    "workerFeedLocks": 14,
+    "apiMax": 10
+  },
+  "phases": [
+    {
+      "name": "all-off",
+      "startedAt": "2026-10-11T16:45:00.380Z",
+      "endedAt": "2026-10-11T16:57:04.426Z",
+      "durationSec": 720,
+      "requests": 14400,
+      "actionRequests": 14400,
+      "countsRequests": 0,
+      "p50ArticlesMs": 35.2,
+      "p95ArticlesMs": 81.4,
+      "maxArticlesMs": 214.2,
+      "errors5xx": 0,
+      "non2xx": 0,
+      "cpuPctAvg": 11.2,
+      "cpuPctMax": 35.3,
+      "cpuPctByService": {
+        "worker": {
+          "avg": 16.2,
+          "max": 182.2
+        },
+        "api": {
+          "avg": 12.2,
+          "max": 29.6
+        },
+        "load-sim": {
+          "avg": 2,
+          "max": 12.3
+        },
+        "postgres": {
+          "avg": 59.4,
+          "max": 133.8
+        }
+      },
+      "memMaxBytes": {
+        "worker": 274831769.6,
+        "api": 183710515.2,
+        "load-sim": 96322191.36,
+        "postgres": 361758720
+      },
+      "queueDepthMax": {
+        "user.learn": 20,
+        "feed.schedule": 1,
+        "article.extract": 259,
+        "feed.fetch": 265,
+        "user.rank": 18,
+        "__pgboss__send-it": 1
+      },
+      "backlogAlert": false,
+      "backlogConditions": [],
+      "inferenceCalls": 0,
+      "providerRequests": 0,
+      "distinctQuestionsAdmitted": 0,
+      "servedCombinations": 0,
+      "newArticles": 829,
+      "arrivalsPerHour": 4145,
+      "cacheHits": 0,
+      "cacheReuseRatio": 0
+    },
+    {
+      "name": "selected-training-slow",
+      "startedAt": "2026-10-11T16:57:06.843Z",
+      "endedAt": "2026-10-11T17:15:13.852Z",
+      "durationSec": 1080,
+      "requests": 21600,
+      "actionRequests": 21600,
+      "countsRequests": 0,
+      "p50ArticlesMs": 46.4,
+      "p95ArticlesMs": 126.8,
+      "maxArticlesMs": 551.9,
+      "errors5xx": 0,
+      "non2xx": 0,
+      "cpuPctAvg": 13.7,
+      "cpuPctMax": 46.8,
+      "cpuPctByService": {
+        "worker": {
+          "avg": 16.3,
+          "max": 217.2
+        },
+        "api": {
+          "avg": 13.6,
+          "max": 28.1
+        },
+        "load-sim": {
+          "avg": 1.7,
+          "max": 12.5
+        },
+        "postgres": {
+          "avg": 77.6,
+          "max": 149.2
+        }
+      },
+      "memMaxBytes": {
+        "worker": 296432435.2,
+        "api": 190001971.2,
+        "load-sim": 96909393.92,
+        "postgres": 447637094.4
+      },
+      "queueDepthMax": {
+        "analysis.process": 427,
+        "user.learn": 20,
+        "user.rank": 19,
+        "feed.schedule": 1,
+        "house.alerts": 1,
+        "house.reconcile": 1,
+        "house.rescore-degraded": 1,
+        "feed.fetch": 268,
+        "article.extract": 213
+      },
+      "backlogAlert": false,
+      "backlogConditions": [],
+      "inferenceCalls": 665,
+      "providerRequests": 659,
+      "distinctQuestionsAdmitted": 3120,
+      "servedCombinations": 4362,
+      "newArticles": 823,
+      "arrivalsPerHour": 2743,
+      "cacheHits": 1242,
+      "cacheReuseRatio": 0.285
+    },
+    {
+      "name": "active-feeds",
+      "startedAt": "2026-10-11T17:15:15.739Z",
+      "endedAt": "2026-10-11T17:33:22.583Z",
+      "durationSec": 1080,
+      "requests": 21600,
+      "actionRequests": 21600,
+      "countsRequests": 0,
+      "p50ArticlesMs": 105,
+      "p95ArticlesMs": 184.2,
+      "maxArticlesMs": 336.4,
+      "errors5xx": 0,
+      "non2xx": 0,
+      "cpuPctAvg": 21.3,
+      "cpuPctMax": 50.7,
+      "cpuPctByService": {
+        "worker": {
+          "avg": 14.9,
+          "max": 212.3
+        },
+        "api": {
+          "avg": 14.4,
+          "max": 28.2
+        },
+        "load-sim": {
+          "avg": 2,
+          "max": 13.4
+        },
+        "postgres": {
+          "avg": 139.4,
+          "max": 196.5
+        }
+      },
+      "memMaxBytes": {
+        "worker": 274412339.2,
+        "api": 180459929.6,
+        "load-sim": 97538539.52,
+        "postgres": 512019660.8
+      },
+      "queueDepthMax": {
+        "user.learn": 20,
+        "user.rank": 17,
+        "__pgboss__send-it": 1,
+        "house.alerts": 1,
+        "house.purge-auth": 1,
+        "article.extract": 342,
+        "feed.fetch": 254,
+        "article.cluster": 6,
+        "feed.schedule": 1,
+        "article.match": 6,
+        "article.enrich": 3
+      },
+      "backlogAlert": false,
+      "backlogConditions": [],
+      "inferenceCalls": 528,
+      "providerRequests": 528,
+      "distinctQuestionsAdmitted": 2416,
+      "servedCombinations": 3400,
+      "newArticles": 876,
+      "arrivalsPerHour": 2920,
+      "cacheHits": 984,
+      "cacheReuseRatio": 0.289
+    },
+    {
+      "name": "provider-failing",
+      "startedAt": "2026-10-11T17:33:23.373Z",
+      "endedAt": "2026-10-11T17:45:27.382Z",
+      "durationSec": 720,
+      "requests": 14400,
+      "actionRequests": 14400,
+      "countsRequests": 0,
+      "p50ArticlesMs": 123.2,
+      "p95ArticlesMs": 212.2,
+      "maxArticlesMs": 460.1,
+      "errors5xx": 0,
+      "non2xx": 0,
+      "cpuPctAvg": 24.7,
+      "cpuPctMax": 54.6,
+      "cpuPctByService": {
+        "worker": {
+          "avg": 23.9,
+          "max": 226.4
+        },
+        "api": {
+          "avg": 14.3,
+          "max": 31.8
+        },
+        "load-sim": {
+          "avg": 1.8,
+          "max": 12.4
+        },
+        "postgres": {
+          "avg": 157.6,
+          "max": 276.5
+        }
+      },
+      "memMaxBytes": {
+        "worker": 292028416,
+        "api": 191155404.8,
+        "load-sim": 89328189.44,
+        "postgres": 562875596.8
+      },
+      "queueDepthMax": {
+        "user.learn": 20,
+        "feed.schedule": 1,
+        "article.enrich": 134,
+        "feed.fetch": 204,
+        "article.extract": 153,
+        "user.rank": 19
+      },
+      "backlogAlert": false,
+      "backlogConditions": [],
+      "inferenceCalls": 88,
+      "providerRequests": 96,
+      "distinctQuestionsAdmitted": 0,
+      "servedCombinations": 0,
+      "newArticles": 731,
+      "arrivalsPerHour": 3655,
+      "cacheHits": 0,
+      "cacheReuseRatio": 0
+    }
+  ],
+  "criteria": {
+    "gated": false,
+    "p95Ok": true,
+    "backlogOk": true,
+    "allOffZeroInference": true,
+    "degradedReadingOk": true,
+    "cpuGated": false
+  },
+  "generatedAt": "2026-10-11T17:45:27.748Z"
+}

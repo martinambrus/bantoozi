@@ -764,7 +764,8 @@ CREATE UNIQUE INDEX job_outbox_dedupe_idx ON job_outbox (queue, dedupe_key)
   and use revision/fencing checks (§3.3). A broker singleton conflict counts as delivery only when the
   broker contract proves equivalent work is pending; otherwise retain and retry the intent. A
   `created`/`retry` `rank-full:<user>` job is equivalent to any full-rank `user.rank` intent of that
-  user whatever its `reason`, since a full rank re-reads durable state (D-185).
+  user whatever its `reason`, since a full rank re-reads durable state (D-185); an incremental rank intent is
+  covered by a queued `rank:<user>` or `rank-full:<user>` job only for the catch-up check (`rank_covered()`, D-186).
 - Relay interval ≤ 1 second while work exists. Purge delivered intents after 7 days; never purge
   undelivered work merely because it is old. Redact/purge user identifiers in job payloads on account
   erasure; consumed stale jobs must check that their target user/article still exists and is active.
@@ -1438,11 +1439,14 @@ GRANT EXECUTE ON FUNCTION refresh_feed_cards(bigint[]), refresh_feed_subscribers
   admin_card_holders(bigint[]), admin_usage_attribution(int) TO bantoozi_app, bantoozi_worker;
 ```
 
-**Full rank pending.** Migration 0020 adds `full_rank_covered() RETURNS boolean`, SECURITY DEFINER
-with a fixed search path, STABLE, scoped to `active_tenant()`: true when the caller has an undelivered
-full-rank `user.rank` intent in `job_outbox` without a cursor, or a `created`/`retry` `rank-full:<user>`
-job in `pgboss.job`. EXECUTE is revoked from PUBLIC and granted to `bantoozi_app` only; the API cannot
-read either table itself (D-185).
+**Rank pending.** Migration 0021 replaces migration 0020's `full_rank_covered()` with
+`rank_covered() RETURNS boolean`, SECURITY DEFINER with a fixed search path, STABLE, scoped to
+`active_tenant()`: true when the caller has an undelivered `user.rank` intent in `job_outbox` without a
+cursor (full or not), or a `created`/`retry` `rank:<user>` or `rank-full:<user>` job in `pgboss.job`.
+EXECUTE is revoked from PUBLIC and granted to `bantoozi_app` only; the API cannot read either table
+itself (D-185, D-186). The same migration grants `bantoozi_app` column-level `INSERT` and `UPDATE` on
+`user_article.next_rank_at` (RLS limits it to the caller's rows) so a reader action can make rows due and
+create a placeholder row for a cluster member that has none.
 
 **Shared rate limiter.** The M0 migration also supplies `rate_limit_hit(p_key text, p_window_s int,
 p_max int)` as SECURITY DEFINER with a fixed trusted search path, explicit revoke from PUBLIC and

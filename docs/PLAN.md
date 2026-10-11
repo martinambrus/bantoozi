@@ -1306,11 +1306,14 @@ against a local production-like Compose rehearsal; no host access was available.
 load run failed (p95 147/211/411/503 ms, outbox backlog 5–7 min); profiling found the list projection
 recomputing eligibility and the display feed per row and the relay starving full-rank intents, fixed in
 `e5f5ca2` (D-185, migration 0020); the rerun passed at p95 82/136/191/212 ms with no backlog alert
-(`docs/launch/load-60min-2026-10-11.md`). Deviations: D-171…D-185 in `docs/DECISIONS.md`. Migrations
-0019 and 0020; the next migration is 0021. Launch items needing the owner or the real host are marked
+(`docs/launch/load-60min-2026-10-11.md`). Owner decisions after that: reader actions re-rank only the
+rows they change (D-186, `fcf2b65`, migration 0021), and the load test gates a `realistic` profile
+(spec 09 polling plus navigation lists, at least 300 list samples per phase) and reports a `stress`
+profile (D-187, `b8cad30`, `3b773e9`): realistic p95 32/34/45/74 ms, stress p95 81/127/184/212 ms,
+no backlog alert in either (`docs/launch/load-60min-{realistic,stress}-2026-10-11.md`). Deviations:
+D-171…D-187 in `docs/DECISIONS.md`. Migrations 0019, 0020 and 0021; the next migration is 0022. Launch items needing the owner or the real host are marked
 **owner** in `docs/RUNBOOK.md` (launch checklist). **Launch ready** additionally needs those owner items
-and the G1 values applied in production. Open owner question (D-185): spec 06 §7 reranks fully after
-every rating, so sustained rating keeps ranking pending.
+and the G1 values applied in production. The D-185 owner question (full re-rank after every rating) is resolved by D-186.
 
 **Outcome:** the production stack runs on the target box (or a production-like local stack) with all
 housekeeping jobs, backups with a tested restore, alerts, and the security and launch checklists
@@ -1333,9 +1336,9 @@ Complete milestone M8 "Operations and launch readiness" exactly as specified in 
 | M8-T3 | `house.alerts` (all emails, de-duplication in `alerts.state`, `ops.events` reading) | T2 | B | 11 §6.1 | ✓ `5e059f1`, `f0a24d1` |
 | M8-T4 | `house.metrics` and the admin display | T2 | C | 10 §7 | ✓ `be2f7b8`, `f0a24d1` |
 | M8-T5 | `backup.sh` and `restore-test.sh` (superuser `pg_dump`), plus a documented host cron | T1 | A | 11 §4 | ✓ `5a86198`, `3f0858b` |
-| M8-T6 | Security checklist verification | T1 | C | 11 §7 | ✓ `d1f8815` |
+| M8-T6 | Security checklist verification | T1 | C | 11 §7 | ✓ `d1f8815`, `c6b94e8` |
 | M8-T7 | Privacy page (en/sk), starter bundles verified live, SMTP deliverability notes | — | D | 09 §4; 11 §9 | ✓ `a22feab`, `c48a5e4` |
-| M8-T8 | Load sanity test: generated feed server, fake TypeSafe server at 300 ms, autocannon readers | T1–T4 | D | 11 §9 | ✓ `6bca05b`, `e5f5ca2`, `8a434b0` |
+| M8-T8 | Load sanity test: generated feed server, fake TypeSafe server at 300 ms, autocannon readers | T1–T4 | D | 11 §9 | ✓ `6bca05b`, `e5f5ca2`, `8a434b0`, `fcf2b65`, `b8cad30`, `3b773e9` |
 | M8-T9 | Launch checklist run and `docs/RUNBOOK.md` (deploy, rollback, restore, breaker reset, budget raise, invite batch, model upgrade, applying the G1 settings) | T1–T8; all M7 merged for launch | A | 11 §3, §8–9 | ✓ `9d916de`, `docs/RUNBOOK.md` (this commit) |
 
 **Done when:**

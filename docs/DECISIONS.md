@@ -1720,7 +1720,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   the spec 09 §3 polling and a deliberate stress margin. The 60-minute run of 2026-10-11 passed with
   p95 `GET /articles` of 82, 136, 191 and 212 ms per phase and no backlog alert
   (`docs/launch/load-60min-2026-10-11.md`); the first run failed (147, 211, 411 and 503 ms) and led
-  to D-185. Spec 11 §9 updated.
+  to D-185. D-187 later made the realistic profile the gate and kept these rates as the stress
+  profile. Spec 11 §9 updated.
 - D-184: 2026-10-11 M8-T7 — launch content. (1) `STARTER_BUNDLES` moved from
   `apps/web/src/features/onboarding/bundles.ts` to `packages/shared/src/starter-bundles.ts` and each
   feed carries the language we declare for it, so `pnpm --filter @bantoozi/ops cli bundles:check
@@ -1747,3 +1748,50 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   question, no change made: spec 06 §7 reranks fully after every rating, so under sustained rating
   a user's ranking stays pending; whether rating should rank incrementally is the owner's call.
   Spec 08 §5.1, spec 02 §3.2 and §6 and spec 03 §2.1 updated.
+  Superseded in part by D-186: `full_rank_covered()` was replaced by `rank_covered()` (migration
+  0021), the catch-up became incremental, and the open owner question is resolved there.
+- D-186: 2026-10-11 M8-T8 (S22, owner decision) — a reader action ranks only the rows it changes
+  (spec 06 §7, spec 08 §5.1, §5.3). Read, open, unread, mark-read, rate, prompt answer, bulk rate,
+  unhide, unlabel and undo no longer advance `users.rank_revision` or record `user.rank {full}`; the
+  list and counts no longer stay pending for the whole window after every rating (the open question
+  of D-185). (1) `recordReaderRankEffects` (`packages/db/src/api/rank-effects.ts`) runs in the
+  action's transaction under the user row lock and sets `next_rank_at = clock_timestamp()` on the
+  non-archived window rows whose inputs changed: every member of a cluster whose read evidence
+  changed, with a placeholder `user_article` row (`next_rank_at` only) for each member a subscription
+  carries in the window that has no row yet; the row itself on un-archive or when a label is removed;
+  and the rows whose `rules_fired` has `demote:<flag>` when that flag stays active but its deadline
+  moved earlier. It then records the debounced incremental `user.rank` (`rank:<user>`, 3 s, reason
+  `feedback:<action>`). (2) Two cases still record a full rank with a revision bump: an automatic
+  demotion flag crossing `autoMinDislikes` either way, and a mark-read that changes more than 2,000
+  targets. Archive changes reach degraded rows through the BM25 corpus fingerprint, not a mark.
+  (3) A rank write keeps a `next_rank_at` newer than the run's context time `ctxAt`, captured under
+  `FOR SHARE` of the user row (`least` of the two), so a mark made while a run is computing is not
+  lost. (4) The list/counts catch-up is incremental. Migration 0021 replaces `full_rank_covered()`
+  with `rank_covered()` (same tenant-scoped SECURITY DEFINER pattern, EXECUTE for `bantoozi_app`
+  only): true for an undelivered `user.rank` intent without a cursor, full or not, or a created/retry
+  `rank:<user>` or `rank-full:<user>` job. The API role gets column-level INSERT and UPDATE on
+  `user_article.next_rank_at`, limited to the caller's rows by RLS. (5) `seen_story` now returns the
+  end of its read evidence, the cluster's latest read plus `RANK_WINDOW_DAYS` (14 days), as the row's
+  `next_rank_at`, and `RANKER_VERSION` is `'2'`, so each user gets one full re-rank after the deploy
+  through the score version. (6) The demotion state code moved to `@bantoozi/shared`, because
+  `@bantoozi/db` cannot depend on the ranker. (7) Undo recomputes its effects; a stored
+  `effects.rankFull` in an old receipt is ignored. (8) Unlabel now re-ranks its own row, which fixes
+  a gap: label suggestions did not come back after removing a label. Global changes (rules, cards,
+  preferences, subscriptions, settings, merges, new models) keep the full rank. Spec 02 §2, §3.2 and
+  §6, spec 03 §2.1, spec 06 §7 and spec 08 §5.1 and §5.3 updated.
+- D-187: 2026-10-11 M8-T8 (S23, owner decision) — load profiles. `load:run --profile` takes
+  `realistic` (default) or `stress`. Realistic follows spec 09 §3 "Refresh and errors": a user lists
+  at page load; after a list or counts answer with `rankingPending` the next poll is a list 5 seconds
+  later, otherwise a counts poll (`GET /api/v1/articles/counts`) 30 seconds later; independently the
+  user opens or rates one article every 10 to 20 seconds (uniform, seeded), and makes a navigation
+  list (page open, lane switch, back from an article) every 30 to 60 seconds on its own seeded
+  stream that never drives the poll chain (S24, owner decision: after the targeted re-rank of D-186
+  ranking was rarely pending, so a first realistic run had only 20 to 57 list samples per phase).
+  Its criteria are gated: p95 `GET /articles` under 300 ms with at least 300 list samples per phase
+  (`criteria.insufficientSamples`), and no backlog alert; a failed criterion fails the command.
+  Stress is the earlier synthetic load of D-183, 1 list and 1 open-or-rate per second per user; it is
+  reported and `criteria.gated` is false. Results on 2026-10-11 (local, CPU not gated): realistic
+  p95 32/34/45/74 ms over 330/520/553/347 list samples (all-off, selected training, active feeds,
+  failing provider), no backlog alert, 0 5xx; stress p95 81/127/184/212 ms, no backlog alert, 0 5xx
+  (`docs/launch/load-60min-realistic-2026-10-11.md`, `docs/launch/load-60min-stress-2026-10-11.md`).
+  Spec 11 §9 updated.

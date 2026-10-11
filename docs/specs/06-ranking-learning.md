@@ -288,7 +288,7 @@ row's cached `explain.inputs` (null when the row has no stored explanation) (D-2
 **Versioning:** `score_version = "<RANKER_VERSION>:<ranker.settings_version>"` (text equality,
 never lexicographic or numeric ordering). This avoids collisions after 10,000 settings changes.
 `users.rank_revision` is a monotonically increasing bigint changed in the same transaction as any
-user-specific rank invalidation; `user_article.rank_revision` records the revision used. Queue
+user-specific rank invalidation (a reader action on one article is not one: it makes the affected rows due instead, D-186); `user_article.rank_revision` records the revision used. Queue
 insertion goes through the transactional outbox (spec 03). Version numbers are serialized as strings.
 - `RANKER_VERSION` and `scoreVersion(settingsVersion)` are exported by `packages/ranker`. They are
   created in the ranker bootstrap (M2-T10), so both the API (M4) and the rank handler (M5) can use
@@ -301,7 +301,8 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
   ranking-relevant key), and then enqueues `user.rank {full: true}` for users active in the last 7 days.
   A change to `strengthWeights` or `model` also records `user.learn` for users with an active model
   (§8.4).
-- Inactive users catch up on their next visit: `GET /articles` enqueues a full rank if **any** eligible
+- Inactive users catch up on their next visit: `GET /articles` and the counts enqueue an incremental
+  rank (not a full one, and none while `rank_covered()` shows one already on its way, D-186) if **any** eligible
   row is missing/outdated, has an old rank revision, or has `next_rank_at ≤ now`. A MAX/newest-version
   check is insufficient after partial runs.
 
@@ -325,9 +326,18 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
      longer matches `explain.inputs`
    - `ua.scored_at` is older than the newest of `article_facets.updated_at`,
      `card_answers.answered_at` (for the user's cards and labels) and `article_translations.created_at`
-   - changes to cluster membership, read/unread/undo state, matching coverage, translations, or
-     applicable feed membership since the previous input snapshot; these enqueue a full rank and
-     increment `rank_revision`, so deleting evidence is detected too
+   - changes to cluster membership, matching coverage, translations, or applicable feed membership
+     since the previous input snapshot; these enqueue a full rank and increment `rank_revision`, so
+     deleting evidence is detected too. A **reader action** (read, open, unread, mark-read, rate,
+     prompt answer, bulk rate, unhide, unlabel, undo) does neither: in its transaction it sets
+     `next_rank_at = clock_timestamp()` on the non-archived window rows whose inputs changed (every
+     member of a cluster whose read evidence changed, with a placeholder `user_article` row for each
+     member the user's subscriptions carry in the window that has none; the row itself on un-archive
+     or when a label is removed; rows whose `rules_fired` has `demote:<flag>` when that active flag's
+     deadline moved earlier) and records one debounced incremental rank. Archive changes reach
+     degraded rows through the BM25 corpus fingerprint. Only an automatic demotion flag crossing
+     `autoMinDislikes`, or a mark-read changing more than 2,000 targets, records a full rank with a
+     revision bump (D-186)
    - BM25 corpus membership changed: rerank all degraded items, not just the newly arrived article
    - the payload says `full: true`, which re-ranks the whole window
 
@@ -348,6 +358,10 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
    stale-quality, active-rule expiry or 90-day reason-count expiry that can change this result; null
    means there is no known clock deadline. A scheduled reconciliation picks due rows at least hourly,
    including active users who never reload the list.
+   `seen_story` makes the row due when the cluster's latest read leaves the window (that read plus
+   `RANK_WINDOW_DAYS`). A write keeps a `next_rank_at` newer than the run's `ctxAt`, the time its
+   context was loaded under `FOR SHARE` of the user row (the earlier of the two), so a reader action
+   committed during a run is not lost.
    Serialize rank runs per user and compare captured `users.rank_revision` and article
    `content_revision` immediately before writes. If either changed, discard those results and enqueue
    a replacement; a slower old run cannot overwrite newer settings/content. Reader-state columns are
@@ -384,7 +398,8 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
 | Event | `full`? |
 |---|---|
 | match finished; enrich degraded; an article's media signals changed (spec 03 §6.4, subscribers of its carriers) | no |
-| a read, mark-read, open, unread or undo affecting a cluster | yes (invalidate both addition and removal of seen evidence) |
+| a read, mark-read, open, unread, rating, prompt answer, unhide, unlabel or undo (D-186) | no (rows made due: the cluster's members, the row itself, rows that fired `demote:<flag>`), except an auto-demotion flag flip or a mark-read of > 2,000 targets: yes |
+| list/counts catch-up (outdated or due rows) | no |
 | card or label added/removed/strength/scope changed | yes |
 | rule created/deleted, or expired (hourly `house.expire-rules`) | yes |
 | preferences changed (`demote`, `implicitFeedback`, `implicitNegative`), feedback reason/count changed or aged out | yes |
@@ -833,7 +848,7 @@ The implementation derives all examples/tables above from these defaults, not du
 **Integration:**
 - `user.rank` on a seeded DB writes the expected lanes
 - idempotency: a second run with nothing dirty writes nothing
-- `full` re-rank after card strength/scope, unread/undo, reason change, rule expiry and model invalidation
+- `full` re-rank after card strength/scope, rule expiry, model invalidation and an auto-demotion flag flip; a reader action ranks only its rows and matches a full rank without the bump (property test, D-186)
 - >5,000 eligible items all finish; crash/continuation and simultaneous old/new ranking runs cannot
   lose work or overwrite new input; old/new score versions mixed in one window trigger catch-up
 - clock-only freshness and 90-day auto-demotion changes become visible without new articles
