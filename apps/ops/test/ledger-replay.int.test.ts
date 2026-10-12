@@ -107,7 +107,7 @@ describe('deletion-ledger replay', () => {
     expect(entries).toHaveLength(2);
     const result = await replayLedger(pool, entries, HMAC_KEY);
     expect(formatReplay(result)).toMatch(
-      /^REPLAY entries=2 users=1 waitlist=2 invites=2 sessions_revoked=1 login_codes_deleted=1$/u,
+      /^REPLAY entries=2 users=1 waitlist=2 invites=2 sessions_revoked=1 login_codes_deleted=1 mismatched=0$/u,
     );
     expect(
       (await pool.query("SELECT email::text FROM users WHERE email = 'erased@example.test'"))
@@ -140,6 +140,33 @@ describe('deletion-ledger replay', () => {
     );
     const result = await replayLedger(pool, entries, HMAC_KEY);
     expect(result).toMatchObject({ entries: 1, users: 0, waitlist: 0, invites: 0 });
+  });
+
+  it('skips and counts an entry whose e-mail hash or id does not match the restored user (R2)', async () => {
+    const victim = await createUser(pool, { email: 'victim@example.test' });
+    const wrongHmac = entryFor(victim.id, 'someone-else@example.test');
+    const wrongId: LedgerEntry = {
+      ...entryFor(victim.id, 'victim@example.test'),
+      id: 'f'.repeat(64),
+    };
+    const entries = await decryptLedgerLines(
+      [identity],
+      [await ledgerLine(wrongHmac), await ledgerLine(wrongId)],
+    );
+    const result = await replayLedger(pool, entries, HMAC_KEY);
+    expect(result).toMatchObject({ entries: 2, users: 0, mismatched: 2 });
+    expect(formatReplay(result)).toMatch(
+      /^REPLAY entries=2 users=0 waitlist=0 invites=0 sessions_revoked=\d+ login_codes_deleted=\d+ mismatched=2$/u,
+    );
+    expect((await pool.query('SELECT 1 FROM users WHERE id = $1', [victim.id])).rowCount).toBe(1);
+
+    // The matching entry still erases the same user.
+    const good = await decryptLedgerLines(
+      [identity],
+      [await ledgerLine(entryFor(victim.id, 'victim@example.test'))],
+    );
+    expect(await replayLedger(pool, good, HMAC_KEY)).toMatchObject({ users: 1, mismatched: 0 });
+    expect((await pool.query('SELECT 1 FROM users WHERE id = $1', [victim.id])).rowCount).toBe(0);
   });
 
   it('refuses a ledger it cannot decrypt', async () => {

@@ -392,6 +392,18 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
       problems.push('SMTP_URL: required in production');
     }
   }
+  if (production && kind === 'worker') {
+    // Without these `house.purge-users` would skip every erasure (spec 11 §5.1).
+    for (const [name, value] of [
+      ['DELETION_LEDGER_PATH', config.deletionLedgerPath],
+      ['DELETION_LEDGER_RECIPIENT', config.deletionLedgerRecipient],
+      ['DELETION_HMAC_KEY', config.deletionHmacKey],
+    ] as const) {
+      if (value === undefined && raw(name) === undefined) {
+        problems.push(`${name}: required in production (erasure would be skipped without it)`);
+      }
+    }
+  }
   if (production && relevant('TYPESAFE_MODEL') && !PINNED_MODEL.test(config.typesafeModel)) {
     problems.push('TYPESAFE_MODEL: must be a pinned version (e.g. jev-1.13.0) in production');
   }

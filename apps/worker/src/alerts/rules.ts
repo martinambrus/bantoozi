@@ -9,6 +9,7 @@ import {
 } from '@bantoozi/db';
 import {
   HOUSE_CRON_SCHEDULES,
+  HOUSE_PROGRESS_CURSORS,
   HostHealthDetailSchema,
   readSetting,
   utcDay,
@@ -184,6 +185,30 @@ const serviceRule: AlertRule = {
       }
     }
     return out;
+  },
+};
+
+/**
+ * `house.purge-users` last ran with users erased 7 days ago waiting and no deletion ledger or HMAC
+ * key configured (its `disabled` cursor, spec 11 §5.1): erasure is not happening. Production
+ * refuses to start without the ledger, so this guards every other environment.
+ */
+const erasureRule: AlertRule = {
+  id: 'erasure',
+  async evaluate(context) {
+    const progress = (await read(context, 'house.progress')) ?? {};
+    const cursor = HOUSE_PROGRESS_CURSORS['house.purge-users'].safeParse(
+      progress['house.purge-users']?.cursor,
+    );
+    if (!cursor.success) return [];
+    return [
+      {
+        key: 'erasure.disabled',
+        title: 'Account erasure is disabled',
+        detail:
+          'Accounts erased more than 7 days ago are not being deleted: the deletion ledger or its HMAC key is not configured.',
+      },
+    ];
   },
 };
 
@@ -534,6 +559,7 @@ export const ALERT_RULES: readonly AlertRule[] = [
   budgetRule,
   backlogRule,
   serviceRule,
+  erasureRule,
   degradedRule,
   feedsRule,
   diskRule,

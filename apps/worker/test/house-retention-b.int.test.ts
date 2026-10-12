@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { cutBudgetAfterPages } from './support/budget.js';
 import { ClassifyHarness } from './support/classify.js';
 import { RetentionWorld } from './support/retention-world.js';
 import { DAY, MINUTE, RetentionBWorld } from './support/retention-b-world.js';
@@ -361,6 +362,113 @@ describe('house.purge-articles', () => {
     expect(await remaining()).toBe(0);
     await b.run(PURGE_ARTICLES, NOW);
     expect(await remaining()).toBe(0);
+  }, 180_000);
+});
+
+describe('house.purge-bodies resumes a budget-cut sweep from its saved cursor (R2)', () => {
+  it('continues after the saved position instead of re-examining the bodies it keeps', async () => {
+    const feed = await b.feed();
+    const kept = await w.bulkUnread([], feed, 450, before(5 * DAY));
+    const doomed = await w.bulkUnread([], feed, 10, before(100 * DAY));
+    // Hot bodies extracted 40 days ago: all are examined, only the ones of old articles cleared.
+    await b.rows(
+      `INSERT INTO article_bodies (article_id, article_revision, status, body_text, body_html,
+                                   body_lead, completeness, extractor_version, extracted_at)
+       SELECT unnest($1::bigint[]), 1, 'ok', 'text', '<p>text</p>', 'lead', 'complete', 'test', $2`,
+      [[...kept, ...doomed], before(40 * DAY)],
+    );
+    const hot = async (): Promise<number> =>
+      (
+        await b.rows<{ n: number }>(
+          `SELECT count(*)::int AS n FROM article_bodies WHERE article_id = ANY($1::bigint[])
+              AND body_text IS NOT NULL`,
+          [doomed],
+        )
+      )[0]!.n;
+    const position = async (): Promise<bigint | undefined> => {
+      const row = (
+        await b.rows<{ value: Record<string, { cursor?: { sweeps?: { bodies?: string } } }> }>(
+          "SELECT value FROM settings WHERE key = 'house.progress'",
+        )
+      )[0];
+      const id = row?.value[PURGE_BODIES]?.cursor?.sweeps?.bodies;
+      return id === undefined ? undefined : BigInt(id);
+    };
+    // The run reads the clock for its start, twice in the pin step, once per quiet sweep and then once per page.
+    const cut = async (): Promise<void> => {
+      const restore = cutBudgetAfterPages('house-purge-bodies', 5);
+      try {
+        await b.run(PURGE_BODIES, NOW);
+      } finally {
+        restore();
+      }
+    };
+    await cut();
+    const first = await position();
+    expect(first, 'a cut run saves where it stopped').toBeDefined();
+    expect(await hot()).toBe(10);
+    await cut();
+    expect((await position())! > first!, 'the next run continues after it').toBe(true);
+    await cut();
+    expect(await hot(), 'a later run reaches the old articles').toBe(0);
+    await b.run(PURGE_BODIES, NOW);
+    expect(await position(), 'a finished pass clears the position').toBeUndefined();
+  }, 180_000);
+});
+
+describe('house.purge-articles resumes a budget-cut sweep from its saved cursor (R2)', () => {
+  const progress = async (): Promise<Record<string, unknown> | undefined> =>
+    (
+      await b.rows<{ value: Record<string, Record<string, unknown>> }>(
+        "SELECT value FROM settings WHERE key = 'house.progress'",
+      )
+    )[0]?.value[PURGE_ARTICLES];
+  const sweepAt = async (): Promise<bigint | undefined> => {
+    const cursor = (await progress())?.['cursor'] as { sweeps?: { articles?: string } } | undefined;
+    const id = cursor?.sweeps?.articles;
+    return id === undefined ? undefined : BigInt(id);
+  };
+
+  it('does not start over at the first page after every cut run', async () => {
+    await b.run(PURGE_ARTICLES, NOW); // clear what earlier tests left that is deletable
+    const feed = await b.feed();
+    const user = await b.user();
+    const ids = await w.bulkUnread([user], feed, 1_100, before(100 * DAY));
+    // The first 1,000 are expired but protected by a rating: every run examines them again.
+    await b.rows(
+      `UPDATE user_article SET rating = 1, rated_at = now() WHERE user_id = $1 AND article_id = ANY($2::bigint[])`,
+      [user, ids.slice(0, 1_000)],
+    );
+    const doomed = ids.slice(1_000);
+    const left = async (): Promise<number> =>
+      (
+        await b.rows<{ n: number }>(
+          `SELECT count(*)::int AS n FROM articles WHERE id = ANY($1::bigint[])`,
+          [doomed],
+        )
+      )[0]!.n;
+
+    const cut = async (): Promise<void> => {
+      const restore = cutBudgetAfterPages('house-purge-articles', 1);
+      try {
+        await b.run(PURGE_ARTICLES, NOW);
+      } finally {
+        restore();
+      }
+    };
+    await cut();
+    const first = await sweepAt();
+    expect(first, 'a cut run saves where it stopped').toBeDefined();
+    expect(await left()).toBe(100);
+    await cut();
+    const second = await sweepAt();
+    expect(second! > first!, 'the next run continues after the saved position').toBe(true);
+    await cut();
+    expect(await left(), 'the third page reaches the later eligible articles').toBe(0);
+
+    await b.run(PURGE_ARTICLES, NOW);
+    expect((await progress())?.['cursor'], 'a finished pass clears the cursor').toBeUndefined();
+    expect((await progress())?.['completedAt']).toBeDefined();
   }, 180_000);
 });
 

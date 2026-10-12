@@ -273,9 +273,12 @@ Before erasing the account, write an encrypted deletion ledger entry
 normalized email under `DELETION_HMAC_KEY`, kept with the ledger, outside the database, so a replay can find
 pre-account rows in a backup taken before signup; do not store the email itself or content in the ledger. Use an idempotent entry
 key and retain each shipped copy 193 days (the longest backup lifetime plus 7 days). Failure, or no configured ledger, defers hard deletion and
-alerts the operator; a committed user purge must never lack its recovery tombstone. Account restore
+alerts the operator (`erasure.disabled` while users past grace wait); a production worker refuses to start without
+`DELETION_LEDGER_PATH`, `DELETION_LEDGER_RECIPIENT` and `DELETION_HMAC_KEY` (D-188). A committed user purge must never lack its recovery tombstone. Account restore
 and ledger creation are serialized by the same per-user lock. Recovery replays the union of all shipped copies, deduplicated by entry id, before
-public access, deletes personal rows again (including the waitlist rows and email-bound invites
+public access; an entry acts on a restored user only when its id is that user's entry id and its `emailHmac` matches the
+restored email under `DELETION_HMAC_KEY` (the recipient is a public key, so a ledger entry alone is not trusted), and the
+replay reports skipped entries as `mismatched` (D-188). It deletes personal rows again (including the waitlist rows and email-bound invites
 matching `emailHmac`, handled as above) and clears restored queued work. Ledger storage access is
 operator-only and is included in the restore drill.
 

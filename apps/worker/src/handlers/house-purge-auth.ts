@@ -1,6 +1,7 @@
 import {
   PURGE_AUTH_RULES,
   purgeAuthBatch,
+  readStoredSetting,
   retryTransaction,
   updateSettingLocked,
   type PurgeAuthRule,
@@ -9,6 +10,7 @@ import {
 import {
   HOUSE_PROGRESS_CURSORS,
   parseSetting,
+  readSetting,
   type HouseProgressCursor,
   type HouseProgressJob,
 } from '@bantoozi/shared';
@@ -22,12 +24,16 @@ export const PURGE_AUTH_BATCH = 1_000;
 /** Wall time after which a housekeeping run stops starting batches and leaves the rest to its next run. */
 export const HOUSE_RUN_BUDGET_MS = 5 * 60_000;
 
-/** Records a housekeeping run in `settings['house.progress']` (spec 02 §2, spec 11 §6). */
+/**
+ * Records a housekeeping run in `settings['house.progress']` (spec 02 §2, spec 11 §6). The job's
+ * cursor is replaced by `cursor`, or dropped when none is given.
+ */
 export async function recordHouseProgress(
   deps: WorkerDeps,
   job: HouseProgressJob,
   now: Date,
   complete: boolean,
+  cursor?: HouseProgressCursor<SweepJob | 'house.purge-users'>,
 ): Promise<void> {
   await retryTransaction(deps.db, (tx) =>
     updateSettingLocked(tx, 'house.progress', {}, (current) => {
@@ -36,6 +42,7 @@ export async function recordHouseProgress(
       return parseSetting('house.progress', {
         ...progress,
         [job]: {
+          ...(cursor === undefined ? {} : { cursor }),
           updatedAt: now.toISOString(),
           ...(completedAt === undefined ? {} : { completedAt }),
           version: 1,
@@ -44,6 +51,32 @@ export async function recordHouseProgress(
     }),
   );
 }
+
+/** The housekeeping jobs that resume their keyset sweeps from `house.progress` after a budget cut. */
+export type SweepJob = 'house.purge-articles' | 'house.purge-bodies' | 'house.retire-cards';
+
+/**
+ * The saved keyset positions of `job`'s unfinished sweeps, by sweep name; a missing or malformed
+ * cursor holds none, so every sweep starts from the beginning.
+ */
+export async function readSweepCursors(
+  deps: WorkerDeps,
+  job: SweepJob,
+): Promise<Record<string, string>> {
+  const progress = readSetting(
+    'house.progress',
+    await readStoredSetting(deps.db, 'house.progress'),
+    deps.settingsEnv,
+  );
+  const parsed = HOUSE_PROGRESS_CURSORS[job].safeParse(progress?.[job]?.cursor);
+  return parsed.success ? { ...parsed.data.sweeps } : {};
+}
+
+/** The `cursor` to record for the sweep positions left, or none when every sweep finished. */
+export const sweepCursorOf = (
+  sweeps: Record<string, string>,
+): { sweeps: Record<string, string> } | undefined =>
+  Object.keys(sweeps).length === 0 ? undefined : { sweeps };
 
 /** The rebuild jobs whose unavailable-engine runs wait in `settings['house.progress']`. */
 export type RebuildJob = 'house.reenrich' | 'house.rematch';

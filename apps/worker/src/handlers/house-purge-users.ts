@@ -12,7 +12,8 @@ export const PURGE_USERS_PAGE = 50;
 /**
  * `house.purge-users` (daily at 05:00, spec 11 §5.1, §6): hard-deletes accounts erased 7 days
  * ago. Each user's encrypted deletion ledger entry is appended first; without a configured
- * ledger and HMAC key, or when the append fails, the user is kept for the next run. A user whose
+ * ledger and HMAC key, or when the append fails, the user is kept for the next run (with no
+ * ledger the run records `disabled: ledger_unconfigured` in `house.progress` when users are due). A user whose
  * private card an eval or library row still references is skipped and logged.
  */
 export function createPurgeUsersHandler(deps: WorkerDeps): QueueHandler<'house.purge-users'> {
@@ -22,7 +23,17 @@ export function createPurgeUsersHandler(deps: WorkerDeps): QueueHandler<'house.p
     const ledger = deps.deletionLedger;
     const key = deps.deletionHmacKey;
     if (ledger === undefined || key === undefined) {
-      deps.logger.warn({ job: JOB }, 'deletion_ledger_unconfigured');
+      // Production refuses to start without them (loadConfig); elsewhere erasure waits, and
+      // `house.alerts` raises `erasure.disabled` while a user is past the grace period.
+      const due = await listUsersDueForPurge(deps.db, { now, after: null, limit: 1 });
+      deps.logger.warn({ job: JOB, due: due.length > 0 }, 'deletion_ledger_unconfigured');
+      await recordHouseProgress(
+        deps,
+        JOB,
+        now,
+        due.length === 0,
+        due.length > 0 ? { disabled: 'ledger_unconfigured' } : undefined,
+      );
       return;
     }
     const counts = { deleted: 0, skipped: 0, blocked: 0, ledgerFailed: 0, failed: 0 };

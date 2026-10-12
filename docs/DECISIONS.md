@@ -1795,3 +1795,18 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   failing provider), no backlog alert, 0 5xx; stress p95 81/127/184/212 ms, no backlog alert, 0 5xx
   (`docs/launch/load-60min-realistic-2026-10-11.md`, `docs/launch/load-60min-stress-2026-10-11.md`).
   Spec 11 §9 updated.
+- D-188: 2026-10-12 M8-T2, M8-T4, M8-T5 (PR #26 Codex review) — (1) The deletion-ledger replay acts on a
+  restored user only when the entry id is that user's `deletionLedgerEntryId` and its `emailHmac` equals the
+  restored email's HMAC; the age recipient is a public key, so anyone able to write a ledger copy could
+  otherwise purge an unrelated account. Skipped entries are counted (`REPLAY … mismatched=N`). (2) A
+  production worker refuses to start without `DELETION_LEDGER_PATH`, `DELETION_LEDGER_RECIPIENT` and
+  `DELETION_HMAC_KEY` (the D-2 pattern); elsewhere `house.purge-users` records
+  `cursor: {disabled: 'ledger_unconfigured'}` and `house.alerts` raises `erasure.disabled` while users past
+  grace wait. The isolated restore release smoke passes throwaway values (a random HMAC key). (3) The
+  model invalidation rate is over the activated models in service during the window, never above 1, so
+  the snapshot schema no longer rejects a window with old models invalidated. (4) Budget-cut sweeps of
+  `house.purge-articles`, `house.purge-bodies` and `house.retire-cards` save their keyset cursor in
+  `house.progress` and resume after it, so protected early rows cannot starve later ones. Also from the
+  first review round: `worker-laya` adds 10 connections (pool 6 plus its pg-boss pool 4) to the deploy
+  budget, a backup without its manifest never takes a retention slot, and the ledger copy is shipped
+  and verified before the manifest. Spec 02 §2, spec 10 §7 and spec 11 §5.1 updated.

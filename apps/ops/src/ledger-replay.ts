@@ -1,4 +1,4 @@
-import { createDatabase, purgeUser } from '@bantoozi/db';
+import { createDatabase, deletionLedgerEntryId, purgeUser } from '@bantoozi/db';
 import { deletionEmailHmac } from '@bantoozi/shared/server';
 import type pg from 'pg';
 
@@ -13,7 +13,9 @@ import { decryptBytes } from './age-stream.js';
  * Pre-account rows have no user key, so they are found by `emailHmac`: every `waitlist` row and
  * every unused, email-bound invite whose normalized e-mail hashes to an entry is deleted (this
  * reaches a person who signed up after the backup). A user that still exists is hard-deleted by
- * the same code path as `house.purge-users`. Restored sessions and login codes are revoked so an
+ * the same code path as `house.purge-users`, but only when the entry is the one `house.purge-users`
+ * wrote for that user: its id must be the stable id of `userId` and its `emailHmac` must match the
+ * restored user's e-mail; any other entry is skipped and counted as mismatched. Restored sessions and login codes are revoked so an
  * old revocation cannot be undone by the restore.
  */
 
@@ -31,6 +33,8 @@ export interface ReplayResult {
   invites: number;
   sessionsRevoked: number;
   loginCodesDeleted: number;
+  /** Entries skipped because their id or e-mail hash does not belong to the restored user. */
+  mismatched: number;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
@@ -91,6 +95,7 @@ export async function replayLedger(
     invites: 0,
     sessionsRevoked: 0,
     loginCodesDeleted: 0,
+    mismatched: 0,
   };
   const hashes = new Set(entries.map((entry) => entry.emailHmac));
 
@@ -112,6 +117,10 @@ export async function replayLedger(
 
   const db = createDatabase(pool);
   for (const entry of entries) {
+    if (entry.id !== deletionLedgerEntryId(entry.userId)) {
+      result.mismatched += 1;
+      continue;
+    }
     await pool.query('UPDATE invites SET email = NULL, note = NULL WHERE used_by = $1', [
       entry.userId,
     ]);
@@ -121,6 +130,10 @@ export async function replayLedger(
     );
     const email = found.rows[0]?.email;
     if (email === undefined) continue;
+    if (deletionEmailHmac(email, hmacKey) !== entry.emailHmac) {
+      result.mismatched += 1;
+      continue;
+    }
     const deletedAt = new Date(entry.deletedAt);
     await pool.query(
       'UPDATE users SET deleted_at = LEAST(coalesce(deleted_at, $2::timestamptz), $2::timestamptz) WHERE id = $1',
@@ -151,6 +164,6 @@ export function formatReplay(result: ReplayResult): string {
   return (
     `REPLAY entries=${result.entries} users=${result.users} waitlist=${result.waitlist} ` +
     `invites=${result.invites} sessions_revoked=${result.sessionsRevoked} ` +
-    `login_codes_deleted=${result.loginCodesDeleted}`
+    `login_codes_deleted=${result.loginCodesDeleted} mismatched=${result.mismatched}`
   );
 }

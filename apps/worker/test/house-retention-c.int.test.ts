@@ -554,6 +554,36 @@ describe('house.purge-users', () => {
     expect(ledger.of(user.id)).toHaveLength(1);
   });
 
+  it('records a disabled reason while users past grace wait for an unconfigured ledger (R2)', async () => {
+    const progressOf = async (): Promise<Record<string, unknown> | undefined> => {
+      const row = (
+        await h.owner.query<{ value: Record<string, Record<string, unknown>> }>(
+          "SELECT value FROM settings WHERE key = 'house.progress'",
+        )
+      ).rows[0];
+      return row?.value[PURGE_USERS];
+    };
+    await h.owner.query(
+      `UPDATE users SET deleted_at = NULL WHERE deleted_at IS NOT NULL AND deleted_at < $1`,
+      [before(7 * DAY)],
+    );
+    await c.run(PURGE_USERS, NOW, c.ledgerDeps(undefined));
+    expect((await progressOf())?.['cursor'], 'nobody is due').toBeUndefined();
+
+    const user = await c.deletedUser(before(8 * DAY));
+    await c.run(PURGE_USERS, NOW, c.ledgerDeps(undefined));
+    expect((await progressOf())?.['cursor']).toEqual({ disabled: 'ledger_unconfigured' });
+    await c.run(PURGE_USERS, NOW, { deletionLedger: new FakeLedger(h.owner) });
+    expect((await progressOf())?.['cursor'], 'no HMAC key').toEqual({
+      disabled: 'ledger_unconfigured',
+    });
+    expect(await c.userExists(user.id)).toBe(true);
+
+    await c.run(PURGE_USERS, NOW, c.ledgerDeps(new FakeLedger(h.owner)));
+    expect(await c.userExists(user.id)).toBe(false);
+    expect((await progressOf())?.['cursor'], 'configured again').toBeUndefined();
+  });
+
   it('defers the hard delete when the ledger append fails, retrying with the same entry key', async () => {
     const user = await c.deletedUser(before(8 * DAY));
     const failing = new FakeLedger(h.owner, (entry) => entry.userId === user.id);

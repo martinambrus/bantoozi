@@ -612,7 +612,9 @@ numerator/denominator, and `windows.d7`/`windows.d30` with `lanes`, `regret`, `b
 (`cards/model/degraded`), `byLanguage` (top 20 plus `other`), `byOrigin` (`prompt`/`voluntary`),
 `hides`, `models` and `engine`, plus `current` (`maybeShare`, `sourceMix`, `classifyingBacklog`,
 `trainingQueue`). The Maybe share is counted per reader with the reader's own folding and tier policy
-(D-178).
+(D-178). The model invalidation rate divides the window's invalidations by the activated models in
+service at any point in the window (trained before its end, not deactivated or replaced before its
+start), so it never exceeds 1 (D-188).
 
 Store bounded aggregates in `settings['metrics.daily.<date>']`; retain 90 daily snapshots and no
 article/card text or per-user traces in this shared settings object. Restrict it to admin responses.

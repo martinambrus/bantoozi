@@ -220,6 +220,27 @@ describe('house.alerts rules (spec 11 §6.1)', () => {
     );
   });
 
+  it('erasure disabled: a purge-users run that found due users and no ledger fires, a clean one does not (R2)', async () => {
+    const purgeUsers = (cursor: unknown) => async () => {
+      const current = (
+        await h.owner.query<{ value: Record<string, unknown> }>(
+          "SELECT value FROM settings WHERE key = 'house.progress'",
+        )
+      ).rows[0]!.value;
+      const at = iso(before(MINUTE));
+      await w.setting('house.progress', {
+        ...current,
+        'house.purge-users': {
+          updatedAt: at,
+          version: 1,
+          ...(cursor === undefined ? { completedAt: at } : { cursor }),
+        },
+      });
+    };
+    expect(await emails(purgeUsers({ disabled: 'ledger_unconfigured' })), 'disabled').toBe(1);
+    expect(await emails(purgeUsers(undefined)), 'completed').toBe(0);
+  });
+
   it('service health: LibreTranslate unreachable fires only while a language is translated or card text is english', async () => {
     const down = (): Promise<boolean> => Promise.resolve(false);
     const up = (): Promise<boolean> => Promise.resolve(true);

@@ -11,7 +11,12 @@ import {
 } from '@bantoozi/db';
 
 import { nowOf, type WorkerDeps } from './deps.js';
-import { HOUSE_RUN_BUDGET_MS, recordHouseProgress } from './house-purge-auth.js';
+import {
+  HOUSE_RUN_BUDGET_MS,
+  readSweepCursors,
+  recordHouseProgress,
+  sweepCursorOf,
+} from './house-purge-auth.js';
 import type { QueueHandler } from './index.js';
 
 const JOB = 'house.purge-bodies' as const;
@@ -48,15 +53,20 @@ export function createPurgeBodiesHandler(deps: WorkerDeps): QueueHandler<'house.
     }
     if (expired()) complete = false;
 
+    // A sweep cut by the budget resumes after its saved position (the rows it keeps would
+    // otherwise be examined first again every run).
+    const sweeps = await readSweepCursors(deps, JOB);
     const sweep = async <P extends BodiesPage>(
+      name: string,
       page: PageFn<P>,
       each: (result: P) => void,
     ): Promise<void> => {
       if (!complete) return;
-      let after: string | null = null;
+      let after: string | null = sweeps[name] ?? null;
       for (;;) {
         if (expired()) {
           complete = false;
+          if (after !== null) sweeps[name] = after;
           return;
         }
         const cursor: string | null = after;
@@ -64,28 +74,31 @@ export function createPurgeBodiesHandler(deps: WorkerDeps): QueueHandler<'house.
           page(tx, { now, after: cursor, limit: PURGE_BODIES_BATCH }),
         );
         each(result);
-        if (result.examined < PURGE_BODIES_BATCH || result.lastId === null) return;
+        if (result.examined < PURGE_BODIES_BATCH || result.lastId === null) {
+          delete sweeps[name];
+          return;
+        }
         after = result.lastId;
       }
     };
-    await sweep(markUnreferencedSnapshotsPage, (r) => {
+    await sweep('marked', markUnreferencedSnapshotsPage, (r) => {
       counts.marked += r.changed;
     });
-    await sweep<ColdPage>(markSnapshotsColdPage, (r) => {
+    await sweep<ColdPage>('cold', markSnapshotsColdPage, (r) => {
       counts.cold += r.changed;
       counts.coldMismatched += r.mismatched;
       for (const [method, n] of Object.entries(r.compression)) {
         compression[method] = (compression[method] ?? 0) + n;
       }
     });
-    await sweep(clearHotBodiesPage, (r) => {
+    await sweep('bodies', clearHotBodiesPage, (r) => {
       counts.bodies += r.changed;
     });
-    await sweep(collectSnapshotsPage, (r) => {
+    await sweep('snapshots', collectSnapshotsPage, (r) => {
       counts.snapshots += r.changed;
     });
 
-    await recordHouseProgress(deps, JOB, now, complete);
+    await recordHouseProgress(deps, JOB, now, complete, sweepCursorOf(sweeps));
     const log = {
       job: JOB,
       durationMs: Date.now() - started,

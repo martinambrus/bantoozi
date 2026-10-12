@@ -562,6 +562,16 @@ const pendingRuns = <S extends z.ZodType>(run: S) =>
   z.object({ pending: z.array(run).max(20) }).strict();
 
 /**
+ * The cursor of a housekeeping job that sweeps in keyset pages under a time budget: the position
+ * (last examined id) of the one sweep a run left unfinished, by sweep name. A run that reaches
+ * the end of a sweep removes its entry; the next run resumes after the saved id.
+ */
+const sweepCursor = z
+  .object({ sweeps: z.record(z.string().min(1).max(40), z.string().min(1).max(40)) })
+  .strict();
+export type SweepCursor = z.output<typeof sweepCursor>;
+
+/**
  * Per-job cursor schemas of `settings['house.progress'][job].cursor` (spec 02 §2) for the jobs
  * implemented so far; M8 registers the rest. A stored cursor that does not parse restarts that
  * job's pass instead of failing it.
@@ -577,6 +587,15 @@ export const HOUSE_PROGRESS_CURSORS = {
    */
   'house.reenrich': pendingRuns(reenrichPayload),
   'house.rematch': pendingRuns(rematchPayload),
+  /** Keyset positions of the sweeps a budget cut short (spec 11 §6). */
+  'house.purge-articles': sweepCursor,
+  'house.purge-bodies': sweepCursor,
+  'house.retire-cards': sweepCursor,
+  /**
+   * Set while users erased 7 days ago wait because the deletion ledger or its HMAC key is not
+   * configured (outside production): `house.alerts` raises `erasure.disabled` from it (spec 11 §5.1).
+   */
+  'house.purge-users': z.object({ disabled: z.literal('ledger_unconfigured') }).strict(),
 } as const satisfies Partial<Record<HouseProgressJob, z.ZodType>>;
 export type HouseProgressCursor<J extends keyof typeof HOUSE_PROGRESS_CURSORS> = z.output<
   (typeof HOUSE_PROGRESS_CURSORS)[J]

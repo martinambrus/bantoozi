@@ -198,6 +198,10 @@ release_start() {
     export SIGNUP_MODE=invite API_PORT=3000 API_HOST=127.0.0.1 WORKER_METRICS_PORT=9101
     export WORKER_METRICS_HOST=127.0.0.1 WORKER_QUEUES='*' LLM_FALLBACK_ENABLED=false DAILY_BUDGET_USD=0
     export SMTP_URL="$3"
+    # A production worker refuses to start without the deletion ledger settings; these are throwaway
+    # values for the isolated smoke (no network, nothing is purged here).
+    export DELETION_LEDGER_PATH=/tmp/deletion-ledger.age DELETION_HMAC_KEY="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    export DELETION_LEDGER_RECIPIENT=age1releasesmokethrowawayrecipientplaceholder0000000000000000000000
     export DATABASE_URL="postgres://bantoozi_app:release-smoke@localhost/bantoozi?host=%2Fpgsock"
     export DATABASE_URL_WORKER="postgres://bantoozi_worker:release-smoke@localhost/bantoozi?host=%2Fpgsock"
     docker run -d --name "$1" --network none --read-only --tmpfs /tmp --cap-drop ALL \
@@ -206,7 +210,8 @@ release_start() {
       -e NODE_ENV -e PUBLIC_BASE_URL -e MAIL_TRANSPORT -e SMTP_URL -e MAIL_FROM -e TYPESAFE_MODEL -e METRICS_TOKEN \
       -e LOG_LEVEL -e ADMIN_EMAILS -e DATABASE_URL -e DATABASE_URL_WORKER -e SESSION_PEPPER -e SIGNUP_MODE \
       -e API_PORT -e API_HOST -e WORKER_METRICS_PORT -e WORKER_METRICS_HOST -e WORKER_QUEUES \
-      -e LLM_FALLBACK_ENABLED -e DAILY_BUDGET_USD "$2" >/dev/null 2>>"$ERRLOG"
+      -e LLM_FALLBACK_ENABLED -e DAILY_BUDGET_USD \
+      -e DELETION_LEDGER_PATH -e DELETION_HMAC_KEY -e DELETION_LEDGER_RECIPIENT "$2" >/dev/null 2>>"$ERRLOG"
   )
 }
 API_NAME="$(uniq_name restore-api)"

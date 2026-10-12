@@ -532,6 +532,37 @@ describe('S17 A4: personal models', () => {
   });
 });
 
+describe('S17 A4b: invalidation rate denominator (R2)', () => {
+  it('divides by the models active at any point in the window, so the rate never exceeds 1', async () => {
+    const [u1, u2, u3, u4, u5] = [
+      await w.user(),
+      await w.user(),
+      await w.user(),
+      await w.user(),
+      await w.user(),
+    ];
+    const attempt = { version: 1, status: 'activated' as const, nExplicit: 40 };
+    // u1, u2: activated before the 7-day window and invalidated inside it.
+    await w.model(u1, { ...attempt, trainedAt: ago(20 * DAY), deactivatedAt: ago(10 * HOUR) });
+    await w.model(u2, { ...attempt, trainedAt: ago(25 * DAY), deactivatedAt: ago(30 * HOUR) });
+    // u3: activated inside the window and still active.
+    await w.model(u3, { ...attempt, trainedAt: ago(5 * HOUR), active: true });
+    // u4: invalidated before the window (not active in it); u5: replaced before it by a newer model.
+    await w.model(u4, { ...attempt, trainedAt: ago(30 * DAY), deactivatedAt: ago(15 * DAY) });
+    await w.model(u5, { ...attempt, trainedAt: ago(40 * DAY) });
+    await w.model(u5, { ...attempt, version: 2, trainedAt: ago(20 * DAY), active: true });
+
+    await w.run(NOW);
+
+    const s = await w.snapshot(YESTERDAY);
+    expect(pick(s, 'windows.d7.models.activation.activated')).toBe(1);
+    expect(pick(s, 'windows.d7.models.invalidation.invalidated')).toBe(2);
+    // u1, u2 and u3 were active in the window; u5's version 2 (activated before it) is a fourth.
+    expect(pick(s, 'windows.d7.models.invalidation.rate') as number).toBeCloseTo(2 / 4, 6);
+    expect(pick(s, 'windows.d7.models.invalidation.rate') as number).toBeLessThanOrEqual(1);
+  });
+});
+
 describe('S17 A5: engine latency, errors, coverage and billed cost', () => {
   it('reports p50/p95 live latency, errors and output coverage over live calls only', async () => {
     const u = await w.user();

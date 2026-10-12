@@ -303,12 +303,40 @@ describe('loadConfig (spec 01 §3)', () => {
     expect(config.sessionPepper).toBe('pepper-value-xyz');
   });
 
+  it('refuses a production worker without the deletion ledger path, recipient or HMAC key (R2)', () => {
+    const prodWorker = {
+      NODE_ENV: 'production',
+      DATABASE_URL_WORKER: WORKER_URL,
+      SMTP_URL: 'smtp://mail.example.com:587',
+      PUBLIC_BASE_URL: 'https://bantoozi.example',
+      DELETION_LEDGER_PATH: '/var/lib/bantoozi/ledger/deletion-ledger.age',
+      DELETION_LEDGER_RECIPIENT: 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
+      DELETION_HMAC_KEY: 'k'.repeat(32),
+    };
+    expect(problemsOf(() => loadConfig({ process: 'worker', env: prodWorker }))).toEqual([]);
+    for (const name of [
+      'DELETION_LEDGER_PATH',
+      'DELETION_LEDGER_RECIPIENT',
+      'DELETION_HMAC_KEY',
+    ] as const) {
+      const { [name]: _omitted, ...rest } = prodWorker;
+      expect(problemsOf(() => loadConfig({ process: 'worker', env: rest }))).toEqual([
+        `${name}: required in production (erasure would be skipped without it)`,
+      ]);
+    }
+    const { DELETION_HMAC_KEY: _key, ...development } = { ...prodWorker, NODE_ENV: 'development' };
+    expect(problemsOf(() => loadConfig({ process: 'worker', env: development }))).toEqual([]);
+  });
+
   it('applies production safety rules', () => {
     const prodWorker = {
       NODE_ENV: 'production',
       DATABASE_URL_WORKER: WORKER_URL,
       SMTP_URL: 'smtp://mail.example.com:587',
       PUBLIC_BASE_URL: 'https://bantoozi.example',
+      DELETION_LEDGER_PATH: '/var/lib/bantoozi/ledger/deletion-ledger.age',
+      DELETION_LEDGER_RECIPIENT: 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
+      DELETION_HMAC_KEY: 'k'.repeat(32),
     };
     expect(problemsOf(() => loadConfig({ process: 'worker', env: prodWorker }))).toEqual([]);
     expect(loadConfig({ process: 'worker', env: prodWorker }).workerMetricsHost).toBe('0.0.0.0');

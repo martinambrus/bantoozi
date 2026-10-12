@@ -153,7 +153,8 @@ export interface MetricsModels {
 
 /**
  * Terminal training attempts (`activated` or `rejected`, by `trained_at`) of the window, the models
- * invalidated in it (`metrics.deactivatedAt`, never a replacement) and the time those users spent on
+ * invalidated in it (`metrics.deactivatedAt`, never a replacement; their rate is over the models in
+ * service at any point of the window, not only those activated in it) and the time those users spent on
  * cards-only ranking until their next activated model, or `now`.
  */
 export async function metricsModels(
@@ -216,10 +217,24 @@ export async function metricsModels(
         SELECT min(n.trained_at) AS at FROM user_models n
          WHERE n.user_id = inv.user_id AND n.metrics->>'status' = 'activated'
            AND n.trained_at >= inv.off_at) back ON true`);
+  // Models in service at any point of the window: activated before its end and neither
+  // invalidated nor replaced by a newer activated model before its start.
+  const inService = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n
+      FROM user_models m
+     WHERE m.metrics->>'status' = 'activated' AND m.trained_at < ${end}::timestamptz
+       AND coalesce(
+             least(
+               (m.metrics->>'deactivatedAt')::timestamptz,
+               (SELECT min(n.trained_at) FROM user_models n
+                 WHERE n.user_id = m.user_id AND n.metrics->>'status' = 'activated'
+                   AND n.trained_at > m.trained_at)),
+             'infinity'::timestamptz) >= ${start}::timestamptz`);
   const row = totals.rows[0];
   const attempts = row?.attempts ?? 0;
   const activated = row?.activated ?? 0;
   const inv = invalidated.rows[0];
+  const active = inService.rows[0]?.n ?? 0;
   return {
     activation: { attempts, activated, rate: attempts === 0 ? null : activated / attempts },
     samples: { explicit: row?.explicit ?? 0 },
@@ -230,7 +245,7 @@ export async function metricsModels(
     medianDeltaLogloss: row?.d_logloss ?? null,
     invalidation: {
       invalidated: inv?.invalidated ?? 0,
-      rate: activated === 0 ? null : (inv?.invalidated ?? 0) / activated,
+      rate: active === 0 ? null : Math.min(1, (inv?.invalidated ?? 0) / active),
     },
     cardsOnly: { hours: inv?.hours ?? 0, users: inv?.users ?? 0 },
   };
