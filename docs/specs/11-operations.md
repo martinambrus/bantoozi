@@ -188,9 +188,11 @@ backup immediately increases exposure and must alert rather than being reported 
    Revoke restored sessions/login codes so old revocations cannot be undone by restoring a snapshot.
 4. Do not immediately resume restored `pgboss` jobs: cancel/expire stale active leases through the
    pinned queue API, reset outbox/origin leases, and run reconciliation against current domain rows.
-   `recovery:prepare` does this in SQL: `active` `pgboss.job` rows become `cancelled` (created and
-   retry jobs stay), outbox and origin leases are cleared and `running` `analysis_requests` return
-   to `pending`.
+   `recovery:prepare` does this in SQL: an `active` `pgboss.job` row, whose outbox intent was already
+   delivered and is therefore the only copy of its work, becomes runnable again (`retry` with
+   `start_after = now()`) or `failed` when its retries are exhausted, as pg-boss itself would fail it;
+   handlers tolerate the repeated run (created and retry jobs stay). Outbox and origin leases are
+   cleared and `running` `analysis_requests` return to `pending` (D-192).
    Rebuild eligible work, skipping deleted users, superseded revisions and no-longer-authorized
    subscription inference generations; rebuild pending local bookmark captures separately. Disable delivery of old
    authentication/operational emails; re-enable only newly generated messages after recovery.

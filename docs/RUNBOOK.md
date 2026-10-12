@@ -288,10 +288,11 @@ application error. **Preconditions:** the offline keys of 4.3, a host or fresh v
    `bantoozi-backup-tools:local` image, as `restore-test.sh` runs them (it prints `REPLAY entries=... users=...
    waitlist=... invites=...`). Revoke all restored sessions and login codes (the replay does).
 4. Queue recovery: do not resume restored `pgboss` jobs. Run `recovery:prepare` on the restored database
-   **before any worker starts**: it cancels every pg-boss job still `active` (their workers are gone), resets
+   **before any worker starts**: it puts every pg-boss job still `active` (their workers are gone) back to
+   `retry` so it runs again at once, or marks it `failed` when its retries are used up, resets
    outbox relay leases and origin fetch leases, returns `running` analysis requests to `pending` with the lease
    cleared, keeps queued jobs and undelivered outbox intents, and prints
-   `RECOVERY_PREPARE active_jobs_cancelled=N outbox_leases_cleared=N origin_leases_cleared=N analysis_leases_reset=N outbox_pending=N`.
+   `RECOVERY_PREPARE active_jobs_requeued=N active_jobs_failed=N outbox_leases_cleared=N origin_leases_cleared=N analysis_leases_reset=N outbox_pending=N`.
    It does not touch spend reservations: keep paid inference paused until the day's totals are reconciled
    (step 5). Idempotent. With the restored database in a postgres container, as `restore-test.sh` does:
 

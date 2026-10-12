@@ -2,8 +2,10 @@ import type pg from 'pg';
 
 /** What `recovery:prepare` changed in a restored database (spec 11 §4.1 step 4). */
 export interface RecoveryPrepareReport {
-  /** `pgboss.job` rows that were `active` in the backup: their workers no longer exist. */
-  activeJobsCancelled: number;
+  /** `active` jobs from the backup with retries left: made runnable again (`retry`, start now). */
+  activeJobsRequeued: number;
+  /** `active` jobs from the backup whose retries are exhausted: failed the way pg-boss would. */
+  activeJobsFailed: number;
   /** `job_outbox` rows whose relay lease was cleared (they stay pending and are relayed again). */
   outboxLeasesCleared: number;
   /** `origin_fetch_state` rows whose fetch leases were dropped. */
@@ -16,8 +18,11 @@ export interface RecoveryPrepareReport {
 
 /**
  * Makes a restored database safe to hand to new workers (spec 11 §4.1 step 4): no pg-boss job is
- * left `active` (a restored lease belongs to a worker that no longer exists, so each such job is
- * cancelled through the documented `pgboss.job` table, which also frees its singleton slot),
+ * left `active` (a restored lease belongs to a worker that no longer exists, and the outbox intent
+ * behind the job is usually already delivered, so the job is the only copy of the work: it is
+ * requeued as pg-boss would after a failed attempt, state `retry` and start now with its data and
+ * singleton keys kept, or failed when `retry_count` has reached `retry_limit`; handlers tolerate
+ * the duplicate run),
  * outbox relay leases are reset, origin fetch leases are dropped, and `running` analysis requests go
  * back to `pending`. Queued (`created`/`retry`)
  * jobs and undelivered outbox intents are kept: `house.reconcile` rebuilds eligible work from the
@@ -33,14 +38,24 @@ export async function prepareRecovery(pool: pg.Pool): Promise<RecoveryPrepareRep
           "SELECT to_regclass('pgboss.job') IS NOT NULL AS present",
         )
       ).rows[0]?.present === true;
-    const cancelled = hasBoss
+    // Mirrors pg-boss 10.4.2 failJobs: retry while retry_count < retry_limit (the next fetch bumps
+    // retry_count), otherwise failed with completed_on set. started_on is kept as pg-boss keeps it.
+    const requeued = hasBoss
       ? await client.query(
-          `UPDATE pgboss.job
-              SET state = 'cancelled', completed_on = now(),
-                  output = jsonb_build_object('message', 'cancelled by recovery:prepare')
-            WHERE state = 'active'`,
+          `WITH moved AS (
+             UPDATE pgboss.job
+                SET state = CASE WHEN retry_count < retry_limit THEN 'retry'::pgboss.job_state
+                                 ELSE 'failed'::pgboss.job_state END,
+                    start_after = CASE WHEN retry_count < retry_limit THEN now() ELSE start_after END,
+                    completed_on = CASE WHEN retry_count < retry_limit THEN NULL ELSE now() END,
+                    output = jsonb_build_object('message', 'active job restored by recovery:prepare')
+              WHERE state = 'active'
+              RETURNING state)
+           SELECT count(*) FILTER (WHERE state = 'retry')::int AS requeued,
+                  count(*) FILTER (WHERE state = 'failed')::int AS failed
+             FROM moved`,
         )
-      : { rowCount: 0 };
+      : { rows: [{ requeued: 0, failed: 0 }] };
     const leases = await client.query(
       'UPDATE job_outbox SET lease_token = NULL, lease_until = NULL WHERE lease_token IS NOT NULL',
     );
@@ -61,7 +76,8 @@ export async function prepareRecovery(pool: pg.Pool): Promise<RecoveryPrepareRep
     );
     await client.query('COMMIT');
     return {
-      activeJobsCancelled: cancelled.rowCount ?? 0,
+      activeJobsRequeued: Number(requeued.rows[0]?.requeued ?? 0),
+      activeJobsFailed: Number(requeued.rows[0]?.failed ?? 0),
       outboxLeasesCleared: leases.rowCount ?? 0,
       originLeasesCleared: origins.rowCount ?? 0,
       analysisLeasesReset: analysis.rowCount ?? 0,
@@ -77,7 +93,8 @@ export async function prepareRecovery(pool: pg.Pool): Promise<RecoveryPrepareRep
 
 export function formatRecovery(report: RecoveryPrepareReport): string {
   return (
-    `RECOVERY_PREPARE active_jobs_cancelled=${report.activeJobsCancelled} ` +
+    `RECOVERY_PREPARE active_jobs_requeued=${report.activeJobsRequeued} ` +
+    `active_jobs_failed=${report.activeJobsFailed} ` +
     `outbox_leases_cleared=${report.outboxLeasesCleared} ` +
     `origin_leases_cleared=${report.originLeasesCleared} ` +
     `analysis_leases_reset=${report.analysisLeasesReset} outbox_pending=${report.outboxPending}`

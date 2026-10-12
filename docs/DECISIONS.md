@@ -1845,3 +1845,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   heartbeat entries carry an optional `startedAt` for this. Without a known start time the rule stays
   quiet and the missing-heartbeat alert covers it. Engine cost attribution at call time (Codex comment
   4248814596) needs a schema change and is follow-up M8-F19. Spec 02 §2 and spec 11 §6.1 updated.
+- D-192: 2026-10-12 M8-T5 (PR #26 Codex review round 6) — `recovery:prepare` no longer cancels the
+  `active` pg-boss jobs of a restored database. Their outbox intents were already delivered, so the
+  restored job is the only copy of its work (an `analysis.process` request reset to `pending`, an
+  article mid-pipeline), and cancelling it left that work stuck. Such a job becomes `retry` with
+  `start_after = now()`, or `failed` when `retry_count` has reached `retry_limit`, mirroring pg-boss
+  10.4.2's own failure path (dead-letter routing is not reproduced); its data and singleton key stay.
+  Handlers are duplicate-tolerant by design. The output line reports `active_jobs_requeued` and
+  `active_jobs_failed` instead of `active_jobs_cancelled`. Spec 11 §4.1 says "cancel/expire stale
+  active leases"; it is updated to this behaviour.

@@ -14,7 +14,7 @@ import { formatRecovery, prepareRecovery } from '../src/recovery-prepare.js';
 
 /**
  * `recovery:prepare` (spec 11 §4.1 step 4) against a migrated database standing in for a restored
- * copy: stale `active` pg-boss jobs are cancelled, outbox and origin leases are reset, and queued
+ * copy: stale `active` pg-boss jobs are requeued (or failed when out of retries), outbox and origin leases are reset, and queued
  * jobs and undelivered intents are kept.
  */
 
@@ -46,6 +46,11 @@ beforeAll(async () => {
             ('recovery.test', '{"n":2}', 'active', now() - interval '2 hours'),
             ('recovery.test', '{"n":3}', 'created', NULL),
             ('recovery.test', '{"n":4}', 'completed', now() - interval '1 hour')`,
+  );
+  // Job 1 has retries left; job 2 has exhausted them (retry_count = retry_limit).
+  await pool.query(
+    `UPDATE pgboss.job SET retry_limit = 2, retry_count = CASE WHEN data = '{}'::jsonb THEN 1 ELSE 2 END
+      WHERE name = 'recovery.test' AND state = 'active'`,
   );
   await pool.query(
     `INSERT INTO job_outbox (queue, payload, dedupe_key, lease_token, lease_until)
@@ -86,24 +91,37 @@ afterAll(async () => {
 });
 
 describe('recovery:prepare', () => {
-  it('cancels active jobs, resets leases, keeps queued work, and is idempotent', async () => {
+  it('requeues active jobs, resets leases, keeps queued work, and is idempotent', async () => {
     const report = await prepareRecovery(pool);
     expect(report).toEqual({
-      activeJobsCancelled: 2,
+      activeJobsRequeued: 1,
+      activeJobsFailed: 1,
       outboxLeasesCleared: 2,
       originLeasesCleared: 1,
       analysisLeasesReset: 2,
       outboxPending: 3,
     });
     expect(formatRecovery(report)).toBe(
-      'RECOVERY_PREPARE active_jobs_cancelled=2 outbox_leases_cleared=2 origin_leases_cleared=1 analysis_leases_reset=2 outbox_pending=3',
+      'RECOVERY_PREPARE active_jobs_requeued=1 active_jobs_failed=1 outbox_leases_cleared=2 origin_leases_cleared=1 analysis_leases_reset=2 outbox_pending=3',
     );
-    expect(await stateOf('recovery.test')).toEqual([
-      'cancelled',
-      'cancelled',
-      'completed',
-      'created',
-    ]);
+    expect(await stateOf('recovery.test')).toEqual(['completed', 'created', 'failed', 'retry']);
+    // The requeued job is runnable now and keeps its data; the exhausted one is finished, not active.
+    const runnable = await pool.query(
+      "SELECT data, retry_count FROM pgboss.job WHERE name = 'recovery.test' AND state = 'retry' AND start_after <= now()",
+    );
+    expect(runnable.rows).toEqual([{ data: {}, retry_count: 1 }]);
+    const failed = await pool.query(
+      "SELECT output FROM pgboss.job WHERE name = 'recovery.test' AND state = 'failed' AND completed_on IS NOT NULL",
+    );
+    expect(failed.rows).toHaveLength(1);
+    // pg-boss 10.4.2 fetch (plans.fetchNextJob): the requeued job is the next eligible one.
+    const fetched = await pool.query(
+      `SELECT id, data FROM pgboss.job
+        WHERE name = 'recovery.test' AND state < 'active' AND start_after < now()
+        ORDER BY priority DESC, created_on, id FOR UPDATE SKIP LOCKED`,
+    );
+    expect(fetched.rows.map((row: { data: unknown }) => row.data)).toContainEqual({});
+    expect(fetched.rows).toHaveLength(2);
     const leased = await pool.query(
       'SELECT count(*)::int AS n FROM job_outbox WHERE lease_token IS NOT NULL OR lease_until IS NOT NULL',
     );
@@ -114,7 +132,8 @@ describe('recovery:prepare', () => {
     expect(origins.rows[0]).toEqual({ n: 0 });
     const again = await prepareRecovery(pool);
     expect(again).toEqual({
-      activeJobsCancelled: 0,
+      activeJobsRequeued: 0,
+      activeJobsFailed: 0,
       outboxLeasesCleared: 0,
       originLeasesCleared: 0,
       analysisLeasesReset: 0,
