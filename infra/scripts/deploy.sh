@@ -169,10 +169,9 @@ if [ "$FRESH" = 0 ] && [ "$(dbq "select to_regclass('public.settings') is not nu
   echo "deploy: stored settings and queue work agree with the enabled profiles"
 fi
 
-# Static connection budget (spec 11 §2): API 10 + worker 24 (+ worker-laya 6), pg-boss, migration and
-# backup connections reserved at 20; the combined maximum stays below 80.
-BUDGET=$((10 + 24 + 20))
-if has_profile laya; then BUDGET=$((BUDGET + 6 + 24)); fi
+# Static connection budget (spec 11 §2; ops-lib.sh connection_budget): 54, or 64 with the laya profile.
+# Sourced in a subshell: ops-lib.sh redefines dc() and others that this script needs unchanged.
+BUDGET="$(. "$ROOT/infra/scripts/ops-lib.sh"; connection_budget)"
 [ "$BUDGET" -lt 80 ] || die "connection budget $BUDGET exceeds the 80 allowed; lower the pools first"
 MIN_FREE="${DEPLOY_MIN_FREE_GB:-$([ "$REHEARSAL" = 1 ] && echo 5 || echo 10)}"
 DOCKER_ROOT="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || echo /)"

@@ -106,6 +106,29 @@ describe('backup store', () => {
   });
 });
 
+describe('incomplete leftovers', () => {
+  it('never displace a valid daily and are pruned after the grace', async () => {
+    const valid = [
+      '20261005T023000Z',
+      '20261006T023000Z',
+      '20261007T023000Z',
+      '20261008T023000Z',
+      '20261009T023000Z',
+      '20261010T023000Z',
+      '20261011T023000Z',
+    ];
+    for (const id of valid) backup(id);
+    backup('20261011T130000Z', 'dump.age', 'globals.age'); // newer, no manifest, no marker
+    backup('20260901T023000Z', 'dump.age'); // old incomplete leftover
+    const result = await store.prune(new Date('2026-10-11T14:00:00Z'));
+    expect(ids()).toContain('20261005T023000Z');
+    expect(ids()).toContain('20261011T130000Z'); // younger than the grace
+    expect(ids()).not.toContain('20260901T023000Z');
+    expect(result.keptIds).not.toContain('20261011T130000Z');
+    expect(await store.latestValid()).toBe('20261011T023000Z');
+  });
+});
+
 describe('manifest', () => {
   const valid = {
     version: 1,

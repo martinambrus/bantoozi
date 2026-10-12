@@ -122,11 +122,8 @@ STAGE=globals
 GLOBALS_JSON="$(dc exec -T postgres pg_dumpall -U postgres --globals-only --no-role-passwords 2>>"$ERRLOG" |
   writer tools_run backup:put "${P}globals.age")"
 
-STAGE=manifest
-FINISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-MANIFEST="{\"version\":1,\"backupId\":\"$ID\",\"startedAt\":\"$STARTED_AT\",\"finishedAt\":\"$FINISHED_AT\",\"commit\":\"$COMMIT\",\"preDeploy\":$([ "$PRE_DEPLOY" = 1 ] && echo true || echo false),\"schemaVersion\":$SCHEMA_VERSION,\"images\":{$IMAGES},\"bounds\":$BOUNDS,\"objects\":[$DUMP_JSON,$GLOBALS_JSON]}"
-printf '%s' "$MANIFEST" | writer tools_run backup:put "${P}manifest.age" >/dev/null
-
+# The ledger copy is shipped and verified (put-raw checks size and checksum) before the manifest, which
+# stays the final commit point; a ledger failure fails the backup.
 STAGE=ledger
 LEDGER_NOTE="ledger=not-configured"
 if [ -n "$LEDGER_PATH" ]; then
@@ -145,6 +142,11 @@ if [ -n "$LEDGER_PATH" ]; then
     LEDGER_NOTE="ledger=none-yet"
   fi
 fi
+
+STAGE=manifest
+FINISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+MANIFEST="{\"version\":1,\"backupId\":\"$ID\",\"startedAt\":\"$STARTED_AT\",\"finishedAt\":\"$FINISHED_AT\",\"commit\":\"$COMMIT\",\"preDeploy\":$([ "$PRE_DEPLOY" = 1 ] && echo true || echo false),\"schemaVersion\":$SCHEMA_VERSION,\"images\":{$IMAGES},\"bounds\":$BOUNDS,\"objects\":[$DUMP_JSON,$GLOBALS_JSON]}"
+printf '%s' "$MANIFEST" | writer tools_run backup:put "${P}manifest.age" >/dev/null
 
 STAGE=prune
 PRUNE_NOTE="prune=skipped"

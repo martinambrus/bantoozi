@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -64,6 +65,14 @@ describe('backup and restore scripts (static checks)', () => {
       backup.lastIndexOf('backup:prune'),
     );
     expect(backup).toContain('flock -n 9');
+  });
+
+  it('ships and verifies the deletion ledger before the manifest, the final commit point', () => {
+    const backup = read('infra/scripts/backup.sh');
+    const ledger = backup.indexOf('backup:put-raw "${BACKUP_S3_LEDGER_PREFIX}');
+    expect(ledger).toBeGreaterThan(-1);
+    expect(ledger).toBeLessThan(backup.indexOf('backup:put "${P}manifest.age"'));
+    expect(backup.indexOf('STAGE=ledger')).toBeLessThan(backup.indexOf('STAGE=manifest'));
   });
 
   it('keeps the writer and the retention credentials apart', () => {
@@ -177,5 +186,29 @@ describe('compose stack for the backup tooling', () => {
     for (const file of ['infra/env/prod.example.env', 'infra/env/local-rehearsal.env.example']) {
       expect(read(file)).toMatch(/^BACKUP_S3_SECRET_KEY=$/mu);
     }
+  });
+});
+
+describe('deploy connection budget', () => {
+  const budget = (profiles: string): number =>
+    Number(
+      execFileSync(
+        'bash',
+        [
+          '-c',
+          `source "${root}infra/scripts/ops-lib.sh"; PROFILES=(${profiles}); has_profile() { local p; for p in "\${PROFILES[@]}"; do [ "$p" = "$1" ] && return 0; done; return 1; }; connection_budget`,
+        ],
+        { encoding: 'utf8' },
+      ).trim(),
+    );
+
+  it.each([
+    ['', 54],
+    ['laya', 64],
+    ['translate laya', 64],
+  ])('profiles [%s] need %i connections, below the 80 allowed', (profiles, expected) => {
+    const value = budget(profiles);
+    expect(value).toBe(expected);
+    expect(value).toBeLessThan(80);
   });
 });

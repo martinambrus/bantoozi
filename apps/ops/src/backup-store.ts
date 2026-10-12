@@ -107,8 +107,10 @@ export class BackupStore {
     dryRun = false,
   ): Promise<{ prunedIds: string[]; keptIds: string[]; deleted: number }> {
     const listing = await this.listBackups();
-    const failed = listing.filter((b) => b.names.has(FAILED_NAME));
-    const valid = listing.filter((b) => !b.names.has(FAILED_NAME));
+    // Only a backup with its manifest and no failure marker is a candidate for the retention slots;
+    // failed ones and incomplete leftovers (a crash before the marker) go after the same grace.
+    const valid = listing.filter((b) => b.names.has(MANIFEST_NAME) && !b.names.has(FAILED_NAME));
+    const failed = listing.filter((b) => !b.names.has(MANIFEST_NAME) || b.names.has(FAILED_NAME));
     const plan = planRetention({
       ids: valid.map((b) => b.id),
       restoreTested: valid.filter((b) => b.names.has(TESTED_NAME)).map((b) => b.id),

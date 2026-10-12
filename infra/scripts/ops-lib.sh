@@ -119,3 +119,13 @@ process.stdin.on("data", (c) => { detail += c; }).on("end", async () => {
 
 # json_field <json-line> <name> : a number or plain string field of the one-line JSON the tools print.
 json_field() { printf '%s' "$1" | sed -nE "s/.*\"$2\":(\"([^\"]*)\"|([0-9]+)).*/\\2\\3/p"; }
+
+# Static connection budget (spec 11 §2), for deploy.sh and its test. Needs has_profile. API pool 10 +
+# worker pool 24 + 20 reserved for pg-boss, migration and backup connections = 54; the laya profile
+# adds the worker-laya pool (max 6) and its own pg-boss pool (4), counted separately = 64. The
+# combined maximum must stay below 80.
+connection_budget() {
+  local budget=$((10 + 24 + 20))
+  if has_profile laya; then budget=$((budget + 6 + 4)); fi
+  echo "$budget"
+}
