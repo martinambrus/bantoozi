@@ -214,6 +214,13 @@ release_start() {
       -e DELETION_LEDGER_PATH -e DELETION_HMAC_KEY -e DELETION_LEDGER_RECIPIENT "$2" >/dev/null 2>>"$ERRLOG"
   )
 }
+# The restored settings may close signup ('settings.signup_mode' beats the SIGNUP_MODE of the smoke
+# environment), and a closed signup sends no code to an unknown address. So the smoke account is
+# created in the throwaway database first: an existing user always gets a login code. The
+# production database and the restored settings are left as they are.
+docker exec -i "$PG_NAME" psql -U postgres -d bantoozi -X -q -v ON_ERROR_STOP=1 -v email="$SMOKE_EMAIL" >/dev/null 2>>"$ERRLOG" <<'SQL'
+insert into users (id, email, role) values (gen_random_uuid(), :'email', 'admin') on conflict (email) do nothing;
+SQL
 API_NAME="$(uniq_name restore-api)"
 WORKER_NAME="$(uniq_name restore-worker)"
 # Fake mail: the api sends to a sink the smoke starts inside the api container; the worker's SMTP

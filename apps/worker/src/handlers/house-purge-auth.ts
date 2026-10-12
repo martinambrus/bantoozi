@@ -95,7 +95,7 @@ function pendingOf(job: RebuildJob, cursor: unknown): RebuildRun[] {
  * Records a pass of a rebuild job (`house.reenrich`, `house.rematch`) in `house.progress`:
  * `updatedAt` always, `completedAt` when the pass finished, and, when the primary engine was
  * unavailable, the run itself (its payload with the frozen `since` and cursor) as pending, for
- * `house.reconcile` to enqueue again (spec 11 §6). Other pending runs are kept.
+ * `house.reconcile` to enqueue again (spec 11 §6). Other pending runs are kept; when they would exceed the cap they collapse into one unscoped run.
  */
 export async function recordRebuildProgress(
   deps: WorkerDeps,
@@ -111,8 +111,9 @@ export async function recordRebuildProgress(
       if (outcome.pending !== undefined) {
         const key = JSON.stringify(outcome.pending);
         if (!pending.some((run) => JSON.stringify(run) === key)) pending.push(outcome.pending);
-        // The stored list is bounded; the newest runs win.
-        pending.splice(0, Math.max(0, pending.length - MAX_PENDING_RUNS));
+        // The stored list is bounded. Past the cap the runs are coalesced into one unscoped run
+        // (`{}`), which covers every scoped run; none is dropped.
+        if (pending.length > MAX_PENDING_RUNS) pending.splice(0, pending.length, {});
       }
       const completedAt = outcome.complete ? now.toISOString() : previous?.completedAt;
       return parseSetting('house.progress', {

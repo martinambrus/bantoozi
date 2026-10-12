@@ -171,7 +171,9 @@ backup immediately increases exposure and must alert rather than being reported 
   dump runs).
   A legitimately empty or quiet installation passes; “latest article < 24 h old” is not a backup
   integrity condition. Start the saved release against the restore with fake mail/providers and run
-  login/read/rank/outbox smoke tests. Include a cold bookmarked snapshot whose publisher fixture
+  login/read/rank/outbox smoke tests. The smoke account is created in the throwaway database first, because a
+  restored `settings.signup_mode` (for example `closed`) overrides the smoke environment and only an
+  existing account always receives a login code (D-195). Include a cold bookmarked snapshot whose publisher fixture
   returns 404: authorized full-text/HTML reads and exports must match the pre-backup checksum, with
   no refetch. Verify encrypted provider credentials against a fake provider using the separately
   restored key material, never production inference. Record restore duration and backup age.

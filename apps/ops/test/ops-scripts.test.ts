@@ -160,6 +160,20 @@ describe('deploy, maintenance and host-health scripts (static checks)', () => {
     expect(deploy).toMatch(/"\$MAINTENANCE" --env-file "\$ENV_FILE" on/u);
   });
 
+  it('pre-creates the smoke account in the throwaway database before the release starts', () => {
+    const restore = read('infra/scripts/restore-test.sh');
+    // A restored settings.signup_mode = 'closed' beats the SIGNUP_MODE of the smoke environment, so
+    // the smoke address must already exist: an existing user always gets a login code.
+    const insert = restore.indexOf('insert into users');
+    expect(insert).toBeGreaterThan(-1);
+    const step = restore.slice(insert - 400, insert + 400);
+    expect(step).toContain('"$PG_NAME"');
+    expect(step).toContain('$SMOKE_EMAIL');
+    expect(step).toContain('on conflict (email) do nothing');
+    expect(insert).toBeLessThan(restore.indexOf('release_start "$API_NAME"'));
+    expect(restore).not.toMatch(/update settings|insert into settings/iu);
+  });
+
   it('starts the saved release without any network and reports the four smoke results', () => {
     const restore = read('infra/scripts/restore-test.sh');
     expect(restore).toContain(

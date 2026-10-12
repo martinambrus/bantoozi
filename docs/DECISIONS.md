@@ -1874,3 +1874,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   and falls back to the current subscriptions and requests only for NULL rows with an article. A past
   day's cost split therefore no longer changes after an unsubscribe or a later request. Spec 02 §3.1
   and spec 10 §7 updated.
+- D-195: 2026-10-12 M8-T2, M8-T5 (PR #26 Codex review round 8) — (1) The restore test's release smoke
+  creates its admin account in the throwaway database before starting the release: a restored
+  `settings.signup_mode = 'closed'` overrides the smoke environment's `SIGNUP_MODE`, and in closed mode
+  only an existing account receives a login code, so every restore test of a closed-signup deployment
+  failed. Proven on a closed-signup backup (before: `release-smoke` failed; after:
+  `RELEASE_SMOKE login=ok read=ok rank=ok outbox=ok`). (2) A pending rebuild run that would take a job's
+  pending list past 20 collapses the list into one unscoped `{}` run instead of dropping the oldest, so an
+  outage that queues many scoped `house.rematch {cardId}` runs can no longer leave cards with stale
+  answers; an unscoped run is never discarded. Spec 02 §2 and spec 11 §4 updated.

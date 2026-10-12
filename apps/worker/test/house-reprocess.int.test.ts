@@ -833,6 +833,38 @@ describe('house.reenrich and house.rematch survive an outage, stay bulk, record 
     expect(await pendingWork(h, ['house.reenrich'], [])).toEqual([]);
   });
 
+  it('more scoped runs than the pending cap collapse into one unscoped run that covers every card', async () => {
+    const open = {
+      state: 'open',
+      openedAt: ago(MINUTE).toISOString(),
+      openUntil: new Date(Date.now() + 10 * MINUTE).toISOString(),
+      reopenCount: 1,
+    } as const;
+    const closed = { state: 'closed', reopenCount: 0 } as const;
+    const setBreaker = (typesafe: Record<string, unknown>) =>
+      h.setSetting('engine.circuit', { typesafe, llm: closed, resetRequested: {} });
+    const cardIds = Array.from({ length: 25 }, (_, i) => String(9000 + i));
+    await setBreaker(open);
+    for (const cardId of cardIds) await h.dispatch('house.rematch', { cardId });
+    const pending = (
+      (await progressOf('house.rematch'))?.['cursor'] as
+        { pending?: Array<{ cardId?: string }> } | undefined
+    )?.pending;
+    // Nothing is dropped: either the unscoped run stands for them all, or every card is listed.
+    expect(pending?.some((run) => run.cardId === undefined)).toBe(true);
+    expect(pending?.length).toBeLessThanOrEqual(20);
+
+    await setBreaker(closed);
+    await h.dispatch('house.reconcile', {});
+    const queued = (await pendingWork(h, ['house.rematch'], [])).map(
+      (row) => JSON.parse(row.slice('house.rematch '.length)) as { cardId?: string },
+    );
+    const covered = (cardId: string) =>
+      queued.some((run) => run.cardId === undefined || run.cardId === cardId);
+    expect(cardIds.every(covered)).toBe(true);
+    expect((await progressOf('house.rematch'))?.['cursor']).toBeUndefined();
+  });
+
   it('the enrich that follows a mode-change translation is bulk and never answered by the LLM fallback', async () => {
     const r = await reader(h);
     const sk = await h.article({
