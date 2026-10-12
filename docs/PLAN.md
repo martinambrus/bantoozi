@@ -1441,6 +1441,7 @@ one follow-up branch, test-first, committed as `M8-F<n>: <summary>`. Mark each โ
 | M8-F16 | Cleanups: `UndoReceipt.effects.rankFull` is dead data (drop it from new receipts), and the `s19-list-catchup` test header still describes the old full catch-up | `packages/db/src/api/article-actions.ts`, `apps/api/test` | |
 | M8-F17 | Load-test realism: the generated feed lists 3 items, so a feed polled less often than every ~36 min can miss items; one unexplained API restart was seen during heavy seeding | `packages/testing/src/load-feeds.ts`, `apps/ops/src/load` | |
 | M8-F18 | Rollback was rehearsed only by redeploying the same commit; rehearse `deploy.sh <previous tag>` across two real releases once a second release exists | `infra/scripts/deploy.sh`, RUNBOOK ยง3 | |
+| M8-F19 | Engine cost attribution (active / training / off-feed) is computed from the current subscriptions and analysis requests, so a past day's numbers change after an unsubscribe or a later request; record the authorization basis on each `engine_calls` row when the call is made (migration 0022) and attribute from it (PR #26 Codex comment 4248814596) | `packages/engine`, `packages/db/src/house/metrics.ts` | |
 
 ---
 
