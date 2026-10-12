@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 
-import type { Transaction } from '../client.js';
+import type { Executor, Transaction } from '../client.js';
 import { parseCardBody } from './body.js';
 import { CARD_TEXT_LIMITS, codePointLength } from './validation.js';
 
@@ -69,7 +69,19 @@ export async function fillCardTranslation(
   await tx.execute(sql`
     UPDATE interest_cards
        SET body = body || jsonb_build_object('interest_en', ${interestEn}::text,
-                                            'not_for_en', ${notForEn}::text)
+                                            'not_for_en', ${notForEn}::text),
+           translation_attempted_at = NULL
      WHERE id = ${input.cardId}::bigint`);
   return 'filled';
+}
+
+/** Stamps `cardId` with the time of a weak or failed translation attempt (M8-F3 backoff). */
+export async function markCardTranslationAttempt(
+  db: Executor,
+  cardId: string,
+  at: Date,
+): Promise<void> {
+  await db.execute(sql`
+    UPDATE interest_cards SET translation_attempted_at = ${at.toISOString()}::timestamptz
+     WHERE id = ${cardId}::bigint`);
 }

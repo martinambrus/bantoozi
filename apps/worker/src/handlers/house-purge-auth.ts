@@ -33,7 +33,7 @@ export async function recordHouseProgress(
   job: HouseProgressJob,
   now: Date,
   complete: boolean,
-  cursor?: HouseProgressCursor<SweepJob | 'house.purge-users'>,
+  cursor?: HouseProgressCursor<SweepJob | 'house.purge-users' | 'house.translate-cards'>,
 ): Promise<void> {
   await retryTransaction(deps.db, (tx) =>
     updateSettingLocked(tx, 'house.progress', {}, (current) => {

@@ -169,6 +169,13 @@
       "when": 1792050000000,
       "tag": "0023_user_article_unread_cap",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792136400000,
+      "tag": "0024_card_translation_attempted_at",
+      "breakpoints": true
     }
   ]
 }

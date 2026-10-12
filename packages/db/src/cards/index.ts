@@ -41,6 +41,7 @@ export {
 } from './library-updates.js';
 export {
   fillCardTranslation,
+  markCardTranslationAttempt,
   type CardTranslationFill,
   type CardTranslationFillInput,
 } from './translations.js';

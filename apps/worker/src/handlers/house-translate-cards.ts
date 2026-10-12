@@ -4,12 +4,14 @@ import {
   activeUserIds,
   cardsAwaitingTranslation,
   fillCardTranslation,
+  readStoredSetting,
+  markCardTranslationAttempt,
   recordRankIntents,
   retryTransaction,
   workerOutbox,
   type CardAwaitingTranslation,
 } from '@bantoozi/db';
-import { enqueueRematch } from '@bantoozi/shared';
+import { enqueueRematch, HOUSE_PROGRESS_CURSORS } from '@bantoozi/shared';
 import {
   assessTranslation,
   isBlankText,
@@ -21,7 +23,7 @@ import {
 import type { TranslationDeps } from '../classify/translation.js';
 import { loadClassificationConfig } from '../classify/config.js';
 import { nowOf, type ClassificationDeps, type WorkerDeps } from './deps.js';
-import { recordHouseProgress } from './house-purge-auth.js';
+import { HOUSE_RUN_BUDGET_MS, recordHouseProgress } from './house-purge-auth.js';
 import type { QueueHandler } from './index.js';
 
 const JOB = 'house.translate-cards' as const;
@@ -29,6 +31,8 @@ const JOB = 'house.translate-cards' as const;
 export const TRANSLATE_CARDS_PAGE = 100;
 /** Users active in the app within this many days get a full rerank (spec 06 §7). */
 const ACTIVE_USER_DAYS = 7;
+/** An unrestricted run does not send a card again within this long of its last (weak or failed) attempt. */
+export const TRANSLATE_RETRY_BACKOFF_MS = 6 * 60 * 60_000;
 
 /**
  * `house.translate-cards {userId?}` (spec 07 §5, spec 11 §6): while `card_text_mode = 'english'`,
@@ -38,6 +42,11 @@ const ACTIVE_USER_DAYS = 7;
  * stored, so a weak or failed translation keeps the original until the next user event. Storing
  * the pair records `house.rematch {cardId}` and a full rerank of the holders active in the last 7
  * days in the same transaction. Every attempt is accounted through the router.
+ *
+ * Run budget: like the other housekeeping sweeps the run stops starting pages after
+ * `HOUSE_RUN_BUDGET_MS`, saves the last card id in `house.progress` and the next unrestricted run
+ * resumes after it. Backoff: an unrestricted run skips a card attempted within
+ * `TRANSLATE_RETRY_BACKOFF_MS` (`interest_cards.translation_attempted_at`); a `{userId}` run always retries.
  */
 export function createTranslateCardsHandler(
   deps: WorkerDeps,
@@ -46,6 +55,7 @@ export function createTranslateCardsHandler(
 ): QueueHandler<'house.translate-cards'> {
   return async (payload) => {
     const started = nowOf(deps);
+    const startedMs = Date.now();
     const config = await loadClassificationConfig(deps.db, deps.settingsEnv);
     if (config.cardTextMode !== 'english') {
       deps.logger.info({ job: JOB, skipped: 'as_written' }, 'translate-cards skipped');
@@ -58,10 +68,24 @@ export function createTranslateCardsHandler(
     }
     const langs = [...supported].filter((lang) => lang !== 'en' && lang !== 'und');
     const counts = { examined: 0, translated: 0, kept: 0 };
-    let after: string | undefined;
+    const unrestricted = payload.userId === undefined;
+    const saved = HOUSE_PROGRESS_CURSORS[JOB].safeParse(
+      (
+        (await readStoredSetting(deps.db, 'house.progress')) as
+          Record<string, { cursor?: unknown } | undefined> | undefined
+      )?.[JOB]?.cursor,
+    );
+    let after: string | undefined = unrestricted && saved.success ? saved.data.after : undefined;
+    let complete = true;
+    const retryAfter = new Date(started.getTime() - TRANSLATE_RETRY_BACKOFF_MS);
     for (;;) {
+      if (Date.now() - startedMs > HOUSE_RUN_BUDGET_MS) {
+        complete = false;
+        break;
+      }
       const page = await cardsAwaitingTranslation(deps.db, {
         langs,
+        ...(unrestricted ? { notAttemptedSince: retryAfter } : {}),
         ...(payload.userId === undefined ? {} : { userId: payload.userId }),
         ...(after === undefined ? {} : { after }),
         limit: TRANSLATE_CARDS_PAGE,
@@ -72,6 +96,7 @@ export function createTranslateCardsHandler(
           counts.translated += 1;
         } else {
           counts.kept += 1;
+          await markCardTranslationAttempt(deps.db, card.cardId, nowOf(deps));
         }
       }
       const last = page.at(-1);
@@ -79,10 +104,23 @@ export function createTranslateCardsHandler(
       after = last.cardId;
     }
     deps.logger.info(
-      { job: JOB, durationMs: nowOf(deps).getTime() - started.getTime(), affected: counts },
+      {
+        job: JOB,
+        durationMs: nowOf(deps).getTime() - started.getTime(),
+        affected: counts,
+        remaining: complete ? 0 : null,
+      },
       'translate-cards pass',
     );
-    await recordHouseProgress(deps, JOB, nowOf(deps), true);
+    if (unrestricted || saved.success === false) {
+      await recordHouseProgress(
+        deps,
+        JOB,
+        nowOf(deps),
+        complete,
+        complete || after === undefined ? undefined : { after },
+      );
+    }
   };
 }
 

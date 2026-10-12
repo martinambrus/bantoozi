@@ -25,7 +25,8 @@ export interface CardAwaitingTranslation {
  * non-deleted and either has an `active` subscription within the holding's scope or a live
  * selected request at the subscription's inference version (spec 07 §5, the demand rule of
  * `cardPairDemand` without an article). `userId` restricts to that user's held cards, `cardId` to
- * one card; `after` pages by card id ascending.
+ * one card; `after` pages by card id ascending; `notAttemptedSince` skips cards stamped by
+ * `markCardTranslationAttempt` after that time (the weak or failed backoff).
  */
 export async function cardsAwaitingTranslation(
   db: Executor,
@@ -35,12 +36,19 @@ export async function cardsAwaitingTranslation(
     cardId?: string;
     after?: string;
     limit?: number;
+    /** Leave out cards whose translation was attempted (weak or failed) after this time. */
+    notAttemptedSince?: Date;
   },
 ): Promise<CardAwaitingTranslation[]> {
   if (input.langs.length === 0) return [];
   const user = input.userId === undefined ? sql`` : sql`AND x.user_id = ${input.userId}::uuid`;
   const card = input.cardId === undefined ? sql`` : sql`AND c.id = ${input.cardId}::bigint`;
   const after = input.after === undefined ? sql`` : sql`AND c.id > ${input.after}::bigint`;
+  const backoff =
+    input.notAttemptedSince === undefined
+      ? sql``
+      : sql`AND (c.translation_attempted_at IS NULL
+                 OR c.translation_attempted_at <= ${input.notAttemptedSince.toISOString()}::timestamptz)`;
   const limit = input.limit === undefined ? sql`` : sql`LIMIT ${input.limit}`;
   const result = await db.execute<{
     card_id: string;
@@ -83,7 +91,7 @@ export async function cardsAwaitingTranslation(
        AND c.lang = ANY(${sql.param([...input.langs])}::text[])
        AND c.body->>'interest_en' IS NULL AND c.body->>'not_for_en' IS NULL
        AND c.body->>'interest' IS NOT NULL
-       ${user} ${card} ${after}
+       ${user} ${card} ${after} ${backoff}
      GROUP BY c.id
      ORDER BY c.id
      ${limit}`);
