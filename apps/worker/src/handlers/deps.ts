@@ -1,4 +1,4 @@
-import type { Database, Transaction } from '@bantoozi/db';
+import type { Database, DeletionLedgerEntry, Transaction } from '@bantoozi/db';
 import type { EngineRouter } from '@bantoozi/engine';
 import {
   createRobotsChecker,
@@ -10,6 +10,7 @@ import {
   type SafeFetchResult,
 } from '@bantoozi/feeds';
 import type { JobSender, OriginLimiter, SettingEnvDefaults } from '@bantoozi/shared';
+import type { Mailer } from '@bantoozi/shared/server';
 import type pg from 'pg';
 
 import type { TranslationDeps } from '../classify/translation.js';
@@ -94,6 +95,19 @@ export interface WorkerDeps {
    * EVAL_INGEST_ONLY (spec 10 §2.1): stop the pipeline after extraction (golden collection).
    */
   evalIngestOnly?: boolean;
+  /**
+   * The deletion ledger and its HMAC key (spec 11 §5.1). `house.purge-users` hard-deletes nobody
+   * while either is absent.
+   */
+  deletionLedger?: { append(entry: DeletionLedgerEntry): Promise<void> };
+  deletionHmacKey?: string;
+  /**
+   * `house.alerts` (spec 11 §6.1): the shared mailer, the ADMIN_EMAILS recipients and, when
+   * LibreTranslate is configured, a short-timeout health probe. Without a mailer the queue stays a stub.
+   */
+  mailer?: Mailer;
+  adminEmails?: readonly string[];
+  libreTranslateProbe?: () => Promise<boolean>;
   /** Test seams: DNS and the clock. */
   resolver?: Resolver;
   now?: () => Date;

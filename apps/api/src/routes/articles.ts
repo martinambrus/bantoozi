@@ -21,6 +21,7 @@ import {
   readOwnUser,
   recordDwell,
   retryBookmarkCapture,
+  rankCovered,
   tenantOutbox,
   unbookmarkArticle,
   undoArticleMutation,
@@ -102,12 +103,16 @@ async function readPrefs(tx: TenantTx): Promise<UserPreferences> {
 }
 
 /**
- * Request a catch-up full rank when a view has outdated eligible scores (spec 08 §5.1). The intent
- * goes through the outbox without advancing `users.rank_revision`: the rows are already outdated,
- * and a bump would make every later read outdated again.
+ * Request a catch-up rank when a view has outdated eligible scores (spec 08 §5.1). The intent is
+ * incremental (S22): the outdated rows are exactly the dirty set (a missing or outdated stamp, or a
+ * due `next_rank_at`), which a reader action or an elapsed deadline marks, so ranking everything
+ * would only repeat work. It goes through the outbox without advancing `users.rank_revision`.
  */
 async function requestCatchUp(tx: TenantTx, userId: string): Promise<void> {
-  await enqueueRank(tenantOutbox(tx), { userId, reason: CATCH_UP_REASON, full: true });
+  // A rank that has not started yet (intent or queued job) already covers it: another intent is
+  // outbox churn.
+  if (await rankCovered(tx)) return;
+  await enqueueRank(tenantOutbox(tx), { userId, reason: CATCH_UP_REASON });
 }
 
 /** The status, tier and sort a view uses when the query leaves them out (spec 08 §5.1). */

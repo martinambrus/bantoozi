@@ -62,6 +62,33 @@ afterEach(() => {
 });
 
 describe('EngineRouter.ask: a successful logical request', () => {
+  it('records the authorization basis on the call row: automatic witnesses active, manual only training (M8-F19)', async () => {
+    const { router, store } = setup();
+    const article = { type: 'article' as const, articleId: '11', articleRevision: '3' };
+    await router.ask(
+      request({
+        authorization: {
+          ...article,
+          witnesses: [
+            { kind: 'manual', analysisRequestId: '0199a000-0000-7000-8000-00000000ab01' },
+          ],
+        },
+      }),
+    );
+    await router.ask(
+      request({
+        authorization: {
+          ...article,
+          witnesses: [
+            { kind: 'manual', analysisRequestId: '0199a000-0000-7000-8000-00000000ab01' },
+            { kind: 'automatic', userId: USER_ID, feedId: '5', inferenceVersion: '1' },
+          ],
+        },
+      }),
+    );
+    expect(store.calls.map((c) => c.demandBasis)).toEqual(['training', 'active']);
+  });
+
   it('reserves, sends with the active credential and settles one attempt row', async () => {
     const { router, store, typesafe } = setup();
     const outcome = await router.ask(request({ userId: USER_ID }));
@@ -96,6 +123,7 @@ describe('EngineRouter.ask: a successful logical request', () => {
       userId: USER_ID,
       reservationId: store.reservations[0]!.id,
       stateSha256: 'b'.repeat(64),
+      demandBasis: 'active',
     });
     expect(isUuid(row.logicalRequestId)).toBe(true);
     expect(row.createdAt.toISOString()).toBe(NOW.toISOString());
@@ -1217,6 +1245,7 @@ describe('EngineRouter: external calls (spec 07 §2)', () => {
     expect(store.calls[0]).toMatchObject({
       engine: 'llm',
       kind: 'translate',
+      demandBasis: 'active',
       userId: USER_ID,
       attempts: 1,
       nQuestions: 0,

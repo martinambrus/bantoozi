@@ -330,7 +330,7 @@ through `PATCH /admin/settings`.
 | `engine.circuit` | `{typesafe: Breaker, llm: Breaker, resetRequested: {typesafe?: iso, llm?: iso}}` with `Breaker = {state: 'closed'\|'open'\|'half_open'\|'auth', openedAt?, openUntil?, reopenCount, probeToken?: uuid, probeUntil?: iso}` | all closed | worker routers (state); admin (reset request only) |
 | `engine.budget_alerts` | `{day: 'YYYY-MM-DD', p80At?: iso, p100At?: iso}` | — | worker router (records crossings only; spec 04 §6) |
 | `engine.laya` | `{enrich?: string[]}` (language codes) | `{}` | admin (M9) |
-| `engine.model_pin` | `{model: string, llm?: {fast: string, strong: string}, laya?: {checkpointSha: string, calibrationVersion: string}, since: iso}` (`llm` only while `LLM_FALLBACK_ENABLED`; `laya` only in M9) | — | the first worker that starts with a different `TYPESAFE_MODEL` or LLM fallback state (`LLM_FALLBACK_ENABLED` switched either way, or a different `OLLAMA_MODEL_FAST`/`OLLAMA_MODEL_STRONG` while it is on), which also enqueues the rebuild; for `laya`, the Laya worker when its checkpoint or calibration differs (spec 11 §8) |
+| `engine.model_pin` | `{model: string, llm?: {fast: string, strong: string}, laya?: {checkpointSha: string, calibrationVersion: string}, since: iso}` (`llm` only while `LLM_FALLBACK_ENABLED`; `laya` only in M9) | — (the seed inserts it when missing, without a rebuild) | the first worker that starts with a different `TYPESAFE_MODEL` or LLM fallback state (`LLM_FALLBACK_ENABLED` switched either way, or a different `OLLAMA_MODEL_FAST`/`OLLAMA_MODEL_STRONG` while it is on), which also enqueues the rebuild; for `laya`, the Laya worker when its checkpoint or calibration differs (spec 11 §8) |
 | `language_modes` | `{[lang]: 'native'\|'translate'}` | env `LANGUAGE_MODES` (only before the seed stores it) | seed (only when missing), admin, `apply-g1` |
 | `card_text_mode` | `'as_written'\|'english'` | `'as_written'` | admin, `apply-g1` |
 | `translate.tier2_daily_cap` | int | 300 | admin, `apply-g1` |
@@ -339,10 +339,10 @@ through `PATCH /admin/settings`.
 | `question_sets.active` | `{enrich?: stringId, match?: stringId, cluster?: stringId, suggest?: stringId}` | `{}` | seed (only when a kind is absent), admin |
 | `signup_mode` | `'invite'\|'open'\|'closed'` | env `SIGNUP_MODE` | admin |
 | `ops.events` | `[{kind, detail, at}]`, the last 50 | `[]` | `POST /admin/ops-event` |
-| `house.progress` | `{[job]: {cursor?: JsonValue, updatedAt: iso, version: int, completedAt?: iso}}`; per-job cursor schema registered in shared jobs; `completedAt` advances only after a full successful pass | `{}` | housekeeping jobs; startup catch-up (spec 11 §6) |
-| `alerts.state` | `{[alertKey]: {firstAt, lastSentAt, active}}` | `{}` | `house.alerts` |
+| `house.progress` | `{[job]: {cursor?: JsonValue, updatedAt: iso, version: int, completedAt?: iso}}`; per-job cursor schema registered in shared jobs; `completedAt` advances only after a full successful pass. A `house.reenrich`/`house.rematch` run that finds the primary engine unavailable stores itself as `cursor: {pending: [payload, …]}` (at most 20; adding one past the cap collapses the list into a single unscoped `{}` run, which covers every scoped one, D-195) for `house.reconcile` to enqueue again (spec 11 §6). A budget-cut sweep of `house.purge-articles`, `house.purge-bodies`, `house.retire-cards` or `house.reconcile` (its due-user rank sweep, `sweeps.rank`) stores `cursor: {sweeps: {<sweep>: <last id>}}` and resumes after it, and a finished sweep clears it (D-188, D-199); `house.purge-users` stores `cursor: {disabled: 'ledger_unconfigured'}` while erasure waits for the ledger (D-188) or `cursor: {failed: {ledger, db, blocked}, at}` after an incomplete run (D-193) | `{}` | housekeeping jobs; startup catch-up (spec 11 §6) |
+| `alerts.state` | `{[alertKey]: {firstAt, lastSentAt, active, failures?}}`; the reserved keys `memo.backup_ok`, `memo.seen.backup_failed`, `memo.seen.restore_ok`, `memo.seen.restore_failed` (D-191) (`firstAt` = the latest `backup_ok`, never active; survives the 50-event limit of `ops.events`) and `memo.pool_waiting` (the streak of `house.alerts` runs that saw waiting pool clients) are not incidents (spec 11 §6.1, D-177) | `{}` | `house.alerts` |
 | `metrics.daily.<YYYY-MM-DD>` | metrics JSON (spec 10 §7) | — | `house.metrics` |
-| `worker.heartbeat` | `{[processId]: {at: iso, queues: string[], evalIngestOnly: boolean, envCredentials: ('typesafe'\|'ollama')[]}}` | `{}` | every worker process, every 30 s (entries older than 1 h are pruned). `envCredentials` lists the providers with a non-empty bootstrap env key, presence only, never key material or length (spec 08 §9.1). `eval ingest-sample` needs an entry younger than 90 s with `evalIngestOnly = true` (spec 10 §2.1) |
+| `worker.heartbeat` | `{[processId]: {at: iso, startedAt?: iso (D-191), queues: string[], evalIngestOnly: boolean, envCredentials: ('typesafe'\|'ollama')[]}}` | `{}` | every worker process, every 30 s (entries older than 1 h are pruned). An entry also carries `pool: {total, idle, waiting}` of the worker's query pool (absent from older workers), which the pool alert reads. `envCredentials` lists the providers with a non-empty bootstrap env key, presence only, never key material or length (spec 08 §9.1). `eval ingest-sample` needs an entry younger than 90 s with `evalIngestOnly = true` (spec 10 §2.1) |
 
 `pnpm db:seed` inserts **only** `card_text_mode`, `question_sets.active = {}` and `language_modes`
 (from `LANGUAGE_MODES`) when they are missing. Deploys run the seed before starting the services, so
@@ -590,7 +590,10 @@ CREATE TABLE engine_calls (
   status          text NOT NULL CHECK (status IN ('ok','error','timeout','rate_limited','invalid_request',
                                                   'invalid_response','auth_error')),
   error           text NULL,
-  created_at      timestamptz NOT NULL DEFAULT now()
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  -- migration 0022 (D-194): why the call was authorized, recorded at call time and never recomputed;
+  -- NULL for calls without article demand (suggest, probes, eval) and for rows from before 0022
+  demand_basis    text NULL CHECK (demand_basis IN ('active','training','other'))
 );
 CREATE INDEX engine_calls_created_idx ON engine_calls (created_at);
 CREATE INDEX engine_calls_article_idx ON engine_calls (article_id);
@@ -762,7 +765,10 @@ CREATE UNIQUE INDEX job_outbox_dedupe_idx ON job_outbox (queue, dedupe_key)
   their intent with bounded exponential backoff and an operational alert, never silent deletion.
 - Crash after send and before marking delivered means duplicate delivery: consumers are idempotent
   and use revision/fencing checks (§3.3). A broker singleton conflict counts as delivery only when the
-  broker contract proves equivalent work is pending; otherwise retain and retry the intent.
+  broker contract proves equivalent work is pending; otherwise retain and retry the intent. A
+  `created`/`retry` `rank-full:<user>` job is equivalent to any full-rank `user.rank` intent of that
+  user whatever its `reason`, since a full rank re-reads durable state (D-185); an incremental rank intent is
+  covered by a queued `rank:<user>` or `rank-full:<user>` job only for the catch-up check (`rank_covered()`, D-186).
 - Relay interval ≤ 1 second while work exists. Purge delivered intents after 7 days; never purge
   undelivered work merely because it is old. Redact/purge user identifiers in job payloads on account
   erasure; consumed stale jobs must check that their target user/article still exists and is active.
@@ -1435,6 +1441,15 @@ REVOKE EXECUTE ON FUNCTION refresh_feed_cards(bigint[]), refresh_feed_subscriber
 GRANT EXECUTE ON FUNCTION refresh_feed_cards(bigint[]), refresh_feed_subscribers(bigint[], jsonb),
   admin_card_holders(bigint[]), admin_usage_attribution(int) TO bantoozi_app, bantoozi_worker;
 ```
+
+**Rank pending.** Migration 0021 replaces migration 0020's `full_rank_covered()` with
+`rank_covered() RETURNS boolean`, SECURITY DEFINER with a fixed search path, STABLE, scoped to
+`active_tenant()`: true when the caller has an undelivered `user.rank` intent in `job_outbox` without a
+cursor (full or not), or a `created`/`retry` `rank:<user>` or `rank-full:<user>` job in `pgboss.job`.
+EXECUTE is revoked from PUBLIC and granted to `bantoozi_app` only; the API cannot read either table
+itself (D-185, D-186). The same migration grants `bantoozi_app` column-level `INSERT` and `UPDATE` on
+`user_article.next_rank_at` (RLS limits it to the caller's rows) so a reader action can make rows due and
+create a placeholder row for a cluster member that has none.
 
 **Shared rate limiter.** The M0 migration also supplies `rate_limit_hit(p_key text, p_window_s int,
 p_max int)` as SECURITY DEFINER with a fixed trusted search path, explicit revoke from PUBLIC and

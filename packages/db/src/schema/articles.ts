@@ -96,6 +96,9 @@ export const feeds = pgTable(
     index('feeds_due_idx')
       .on(t.nextFetchAt)
       .where(sql`subscriber_count > 0 AND status IN ('active','quarantined')`),
+    index('feeds_merged_into_id_idx')
+      .on(t.mergedIntoId)
+      .where(sql`merged_into_id IS NOT NULL`),
   ],
 );
 
@@ -115,6 +118,10 @@ export const storyClusters = pgTable(
       columns: [t.representativeArticleId],
       foreignColumns: [articles.id],
     }).onDelete('set null'),
+    index('story_clusters_representative_article_id_idx').on(t.representativeArticleId),
+    index('story_clusters_empty_idx')
+      .on(t.id)
+      .where(sql`size = 0`),
   ],
 );
 
@@ -217,11 +224,12 @@ export const articleAliases = pgTable(
       .references(() => articles.id, { onDelete: 'cascade' }),
     source: text('source').notNull(),
   },
-  () => [
+  (t) => [
     check(
       'article_aliases_source_check',
       sql`source IN ('feed_link','redirect','rel_canonical','near_duplicate')`,
     ),
+    index('article_aliases_article_id_idx').on(t.articleId),
   ],
 );
 
@@ -244,7 +252,7 @@ export const articleBodies = pgTable(
     error: text('error'),
     extractedAt: tstz('extracted_at').notNull().defaultNow(),
   },
-  () => [
+  (t) => [
     check('article_bodies_article_revision_check', sql`article_revision > 0`),
     check(
       'article_bodies_status_check',
@@ -255,6 +263,9 @@ export const articleBodies = pgTable(
       'article_bodies_size_check',
       sql`coalesce(octet_length(body_text), 0) + coalesce(octet_length(body_html), 0) <= 10485760`,
     ),
+    index('article_bodies_extracted_idx')
+      .on(t.extractedAt)
+      .where(sql`body_text IS NOT NULL OR body_html IS NOT NULL`),
   ],
 );
 

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="sk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Ochrana súkromia - Bantoozi</title>
+    <link rel="stylesheet" href="/static-pages.css" />
+  </head>
+  <body>
+    <main>
+      <nav aria-label="Jazyk">
+        <a href="/login">Bantoozi</a>
+        <a href="/privacy/" hreflang="en" lang="en">English</a>
+        <a href="/bot/sk/">BantooziBot</a>
+      </nav>
+      <h1>Ochrana súkromia</h1>
+      <p class="lead">
+        Bantoozi je čítačka kanálov len na pozvánky. Táto stránka vysvetľuje, čo uchovávame, kto to
+        spracúva a ako dlho. Je statická: nespúšťa skripty a nič nenačítava od tretích strán.
+      </p>
+
+      <h2>Čo uchovávame</h2>
+      <p>
+        Vašu e-mailovú adresu, kanály, ktoré odoberáte, vaše karty záujmov, štítky a pravidlá a to,
+        čo robíte v čítačke (prečítanie, hodnotenie, záložky, skrytie). To sú osobné údaje, s
+        ktorými služba pracuje.
+      </p>
+
+      <h2>Kto spracúva vaše údaje</h2>
+      <ul>
+        <li>
+          <strong>TypeSafe Jev</strong> (hostovaná inferencia) dostáva text článkov na klasifikáciu.
+          Text článkov je verejný obsah zverejnený vydavateľmi. Texty vašich kariet a ukážkové
+          názvy, ktoré zadáte, sú osobné údaje; poskytovateľovi modelu sa neposielajú inak, než je
+          uvedené v nasledujúcom bode.
+        </li>
+        <li>
+          <strong>Ollama Cloud</strong> je záložný poskytovateľ a je predvolene vypnutý. Ak ho
+          prevádzkovateľ zapne, dostáva rovnaký druh požiadaviek ako Jev.
+        </li>
+        <li>
+          <strong>LibreTranslate</strong> beží na našom vlastnom serveri a text článkov prekladá
+          tam. Nič sa neposiela externej prekladateľskej službe.
+        </li>
+      </ul>
+
+      <h2>Vzdialené obrázky</h2>
+      <p>
+        Obrázky od vydavateľov sú predvolene blokované. Ak ich pre kanál povolíte, váš prehliadač
+        ich načíta priamo od vydavateľa, čím mu prezradí vašu IP adresu a metadáta požiadavky.
+        Uchovávame vašu voľbu pre každý kanál a pre tieto obrázky používame no-referrer a lenivé
+        načítanie. Táto stránka ani prihlasovacia stránka nenačítavajú médiá tretích strán.
+      </p>
+
+      <h2>Súbory cookie</h2>
+      <p>
+        Iba jeden: cookie relácie, ktorá vás udržiava prihlásených. Nepoužívame analytické ani
+        reklamné cookie.
+      </p>
+
+      <h2>Ako dlho údaje uchovávame</h2>
+      <table>
+        <tbody>
+          <tr>
+            <th scope="row">Snímky článkov v záložkách</th>
+            <td>Kým je článok v záložkách.</td>
+          </tr>
+          <tr>
+            <th scope="row">Udalosti spätnej väzby (hodnotenia, čítanie)</th>
+            <td>Najviac 365 dní.</td>
+          </tr>
+          <tr>
+            <th scope="row">Audit volaní modelov</th>
+            <td>180 dní.</td>
+          </tr>
+          <tr>
+            <th scope="row">Žiadosti o analýzu</th>
+            <td>180 dní.</td>
+          </tr>
+          <tr>
+            <th scope="row">Nepoužité pozvánky</th>
+            <td>
+              30 dní po vypršaní. Použité pozvánky sa uchovávajú na evidenciu pozvánok, kým existuje
+              niektorý z účtov.
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">Záznamy v poradovníku</th>
+            <td>Zmazané pri registrácii; inak 365 dní od zápisu.</td>
+          </tr>
+          <tr>
+            <th scope="row">Prihlasovacie kódy</th>
+            <td>1 deň po vypršaní.</td>
+          </tr>
+          <tr>
+            <th scope="row">Relácie</th>
+            <td>30 dní po vypršaní alebo zrušení.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Zrušenie účtu</h2>
+      <p>
+        Keď účet zrušíte, hneď sa odhlásite na všetkých zariadeniach a vaše údaje sa prestanú
+        používať. Platí 7 dní odkladu: ak sa do 7 dní znova prihlásite a potvrdíte to, zrušenie sa
+        vráti. Potom sa vaše osobné údaje natrvalo vymažú.
+      </p>
+
+      <h2>Zálohy</h2>
+      <p>
+        Uchovávame šifrované denné, týždenné a mesačné zálohy. Zrušené účty zo starých záloh
+        zvyčajne zmiznú do 6 mesiacov. Jedinou výnimkou je najnovšia záloha, ktorú sme overili
+        skúšobnou obnovou: uchovávame ju, kým skúškou neprejde novšia záloha, takže ak by sa zálohy
+        alebo skúšobné obnovy niekedy zastavili, táto jedna záloha môže byť staršia ako 6 mesiacov.
+        Zálohy sa nikdy nesprístupňujú priamo a ak by sa záloha niekedy obnovila, každé zrušenie
+        vykonané od jej vytvorenia sa znova uplatní ešte predtým, než sa niekto môže prihlásiť.
+      </p>
+
+      <h2>Export</h2>
+      <p>
+        Svoje údaje si môžete kedykoľvek stiahnuť v nastaveniach (JSON vrátane odberov, kariet,
+        štítkov, pravidiel, hodnotení a záložiek).
+      </p>
+
+      <h2>Kontakt</h2>
+      <p>
+        Otázky alebo žiadosti o vymazanie:
+        <span id="support-contact" class="placeholder">support@your-domain.example</span>
+        <!-- OWNER: replace the text of #support-contact with the real support address at deploy. -->
+      </p>
+      <p class="meta">Pozrite aj <a href="/bot/sk/">BantooziBot</a>, náš sťahovač kanálov.</p>
+    </main>
+  </body>
+</html>

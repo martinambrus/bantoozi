@@ -13,15 +13,13 @@ import {
 } from '@bantoozi/db';
 import {
   buildBm25Corpus,
-  DEMOTION_FLAGS,
   type Bm25Text,
-  type DemotionFlag,
-  type DislikeReason,
   type RankerSettings,
   type UserRankContext,
 } from '@bantoozi/ranker';
 import {
   canonicalJson,
+  demotionStateOf,
   normalizeText,
   RANK_WINDOW_DAYS,
   readUserPreferences,
@@ -70,33 +68,7 @@ export function demotionState(
   dislikes: readonly RankDislike[],
   settings: RankerSettings,
 ): Pick<UserRankContext, 'reasonCounts90d' | 'staleDislikes90d' | 'demotionDeadlines'> {
-  const { autoMinDislikes, autoWindowDays } = settings.config.demotion;
-  const windowMs = autoWindowDays * DAY_MS;
-  const reasonCounts: Partial<Record<DislikeReason, number>> = {};
-  for (const dislike of dislikes) {
-    if (dislike.reason === null) continue;
-    const reason = dislike.reason as DislikeReason;
-    reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1;
-  }
-  const qualifying: Record<DemotionFlag, RankDislike[]> = {
-    clickbait: dislikes.filter((d) => d.reason === 'clickbait'),
-    promotional: dislikes.filter((d) => d.reason === 'promo'),
-    shallow: dislikes.filter((d) => d.reason === 'shallow'),
-    stale: dislikes.filter((d) => d.staleAtFeedback === true),
-  };
-  const deadlines: Partial<Record<DemotionFlag, Date>> = {};
-  for (const flag of DEMOTION_FLAGS) {
-    const rows = [...qualifying[flag]].sort((a, b) => a.ratedAt.getTime() - b.ratedAt.getTime());
-    if (rows.length < autoMinDislikes) continue;
-    // Below the minimum once all but `autoMinDislikes − 1` of them have aged out.
-    const pivot = rows[rows.length - autoMinDislikes];
-    if (pivot !== undefined) deadlines[flag] = new Date(pivot.ratedAt.getTime() + windowMs);
-  }
-  return {
-    reasonCounts90d: reasonCounts,
-    staleDislikes90d: qualifying.stale.length,
-    demotionDeadlines: deadlines,
-  };
+  return demotionStateOf(dislikes, settings.config.demotion);
 }
 
 /** A sha256 over the canonical JSON of the ranking context (D-141). */

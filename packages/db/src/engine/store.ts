@@ -195,7 +195,7 @@ async function committedProductionUsd(db: Executor, day: string): Promise<number
  * of a later day is never replaced by a late settlement of an earlier one. No email is sent here:
  * `house.alerts` alone notifies (spec 11 §6).
  */
-async function markBudgetCrossings(tx: Transaction, day: string, fallbackUsd: number) {
+export async function markBudgetCrossings(tx: Transaction, day: string, fallbackUsd: number) {
   const budget = await dailyBudgetUsd(tx, fallbackUsd);
   if (!(budget > 0)) return;
   const committed = await committedProductionUsd(tx, day);
@@ -230,7 +230,8 @@ async function markBudgetCrossings(tx: Transaction, day: string, fallbackUsd: nu
      WHERE key = 'engine.budget_alerts'`);
 }
 
-async function upsertUsageRow(db: Executor, row: UsageRow): Promise<void> {
+/** Adds a usage row to its `usage_daily` bucket (spec 02 §3.3, spec 04 §6). */
+export async function upsertUsageRow(db: Executor, row: UsageRow): Promise<void> {
   await db.execute(sql`
     INSERT INTO usage_daily AS u (day, user_id, engine, kind, calls, input_tokens, output_tokens, cost_usd)
     VALUES (${row.day}::date, ${row.userId}::uuid, ${row.engine}, ${row.kind}, ${row.calls},
@@ -263,7 +264,7 @@ function insertCallSql(row: EngineCallRow, reservationId: string | null, cost: s
     INSERT INTO engine_calls (engine, kind, model, article_id, question_set_id, reservation_id,
                               logical_request_id, credential_version, article_revision, state_sha256,
                               card_ids, user_id, n_questions, input_tokens, output_tokens, cost_usd,
-                              billing, latency_ms, attempts, status, error, created_at)
+                              billing, latency_ms, attempts, status, error, created_at, demand_basis)
     VALUES (${row.engine}, ${row.kind}, ${row.model ?? null},
             (SELECT a.id FROM articles a WHERE a.id = ${row.articleId ?? null}::bigint),
             (SELECT q.id FROM question_sets q WHERE q.id = ${row.questionSetId ?? null}::bigint),
@@ -276,7 +277,7 @@ function insertCallSql(row: EngineCallRow, reservationId: string | null, cost: s
             ${row.billing}, ${row.latencyMs === undefined ? null : Math.round(row.latencyMs)},
             ${row.attempts}, ${row.status},
             ${row.error === undefined ? null : row.error.slice(0, MAX_ERROR_LENGTH)},
-            ${row.createdAt.toISOString()}::timestamptz)
+            ${row.createdAt.toISOString()}::timestamptz, ${row.demandBasis ?? null})
     ON CONFLICT DO NOTHING
     RETURNING id::text AS id`;
 }

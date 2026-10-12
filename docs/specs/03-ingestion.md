@@ -156,7 +156,11 @@ Use the distinct-article eligibility/order from spec 05; never restart from page
 are covered by normal ingestion or a later backfill. Every continuation rechecks current card scope,
 subscription generation and authorized demand; an off/training subscription is not a bulk-work grant. A pg-boss `null` send result is not proof that a
 required stronger payload was queued: retain the outbox intent until an equivalent job has been
-accepted or a handler has observed that revision. Bound attempts do not discard such intent.
+accepted or a handler has observed that revision. Bound attempts do not discard such intent. A
+`created`/`retry` `rank-full:<user>` job counts as equivalent for a full-rank `user.rank` intent whatever
+its `reason` (a full rank re-reads durable state); continuation and incremental keys are not covered
+(D-185). The API's list/counts catch-up asks `rank_covered()` instead (any undelivered cursorless
+`user.rank` intent, or a `created`/`retry` `rank:<user>` or `rank-full:<user>` job; D-186).
 
 Article handlers snapshot `articles.content_revision` and the selected question-set/model identity
 before external work, then lock/recheck the article before publishing results. A revision or active

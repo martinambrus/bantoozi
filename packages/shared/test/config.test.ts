@@ -25,6 +25,7 @@ const SPEC_01_VARIABLES = [
   'BANTOOZI_WORKER_PASSWORD',
   'PUBLIC_BASE_URL',
   'API_PORT',
+  'API_HOST',
   'SESSION_COOKIE_NAME',
   'SESSION_TTL_DAYS',
   'SESSION_PEPPER',
@@ -62,8 +63,12 @@ const SPEC_01_VARIABLES = [
   'LOG_LEVEL',
   'METRICS_TOKEN',
   'WORKER_METRICS_PORT',
+  'WORKER_METRICS_HOST',
   'OTEL_EXPORTER_OTLP_ENDPOINT',
   'ADMIN_EMAILS',
+  'DELETION_LEDGER_PATH',
+  'DELETION_LEDGER_RECIPIENT',
+  'DELETION_HMAC_KEY',
 ];
 
 const APP_URL = 'postgres://bantoozi_app:app-secret@localhost:5433/bantoozi';
@@ -212,10 +217,12 @@ describe('loadConfig (spec 01 §3)', () => {
     expect(c.workerQueues).toContain('feed.fetch');
     expect(c.logLevel).toBe('info');
     expect(c.workerMetricsPort).toBe(9101);
+    expect(c.workerMetricsHost).toBe('127.0.0.1');
     expect(c.adminEmails).toEqual([]);
 
     const a = loadConfig({ process: 'api', env: api });
     expect(a.apiPort).toBe(3000);
+    expect(a.apiHost).toBe('127.0.0.1');
     expect(a.sessionCookieName).toBe('bantoozi_sid');
     expect(a.sessionTtlDays).toBe(60);
     expect(a.signupMode).toBe('invite');
@@ -296,14 +303,92 @@ describe('loadConfig (spec 01 §3)', () => {
     expect(config.sessionPepper).toBe('pepper-value-xyz');
   });
 
+  it('refuses a production worker without the deletion ledger path, recipient or HMAC key (R2)', () => {
+    const prodWorker = {
+      NODE_ENV: 'production',
+      DATABASE_URL_WORKER: WORKER_URL,
+      SMTP_URL: 'smtp://mail.example.com:587',
+      PUBLIC_BASE_URL: 'https://bantoozi.example',
+      DELETION_LEDGER_PATH: '/var/lib/bantoozi/ledger/deletion-ledger.age',
+      ADMIN_EMAILS: 'admin@bantoozi.example',
+      DELETION_LEDGER_RECIPIENT: 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
+      DELETION_HMAC_KEY: 'k'.repeat(32),
+    };
+    expect(problemsOf(() => loadConfig({ process: 'worker', env: prodWorker }))).toEqual([]);
+    for (const name of [
+      'DELETION_LEDGER_PATH',
+      'DELETION_LEDGER_RECIPIENT',
+      'DELETION_HMAC_KEY',
+    ] as const) {
+      const { [name]: _omitted, ...rest } = prodWorker;
+      expect(problemsOf(() => loadConfig({ process: 'worker', env: rest }))).toEqual([
+        `${name}: required in production (erasure would be skipped without it)`,
+      ]);
+    }
+    const { DELETION_HMAC_KEY: _key, ...development } = { ...prodWorker, NODE_ENV: 'development' };
+    expect(problemsOf(() => loadConfig({ process: 'worker', env: development }))).toEqual([]);
+  });
+
+  it('refuses a production worker whose ledger path is off the persistent volume or whose admin list is empty (R15)', () => {
+    const prodWorker = {
+      NODE_ENV: 'production',
+      DATABASE_URL_WORKER: WORKER_URL,
+      SMTP_URL: 'smtp://mail.example.com:587',
+      PUBLIC_BASE_URL: 'https://bantoozi.example',
+      DELETION_LEDGER_PATH: '/var/lib/bantoozi/ledger/deletion-ledger.age',
+      DELETION_LEDGER_RECIPIENT: 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
+      DELETION_HMAC_KEY: 'k'.repeat(32),
+      ADMIN_EMAILS: 'admin@bantoozi.example',
+    };
+    const problems = (extra: Record<string, string>) =>
+      problemsOf(() => loadConfig({ process: 'worker', env: { ...prodWorker, ...extra } }));
+    expect(problems({})).toEqual([]);
+    expect(problems({ DELETION_LEDGER_PATH: '/var/lib/bantoozi/ledger/sub/l.age' })).toEqual([]);
+    const offVolume =
+      'DELETION_LEDGER_PATH: must be inside /var/lib/bantoozi/ledger/ (the persistent ledger volume) in production';
+    expect(problems({ DELETION_LEDGER_PATH: '/tmp/deletion-ledger.age' })).toEqual([offVolume]);
+    expect(
+      problems({ DELETION_LEDGER_PATH: '/var/lib/bantoozi/ledger/../../../tmp/l.age' }),
+    ).toEqual([offVolume]);
+    expect(problems({ DELETION_LEDGER_PATH: 'ledger/deletion-ledger.age' })).toEqual([offVolume]);
+    expect(problems({ DELETION_LEDGER_PATH: '/var/lib/bantoozi/ledger' })).toEqual([offVolume]);
+    expect(problems({ DELETION_LEDGER_PATH: '/var/lib/bantoozi/ledger-other/l.age' })).toEqual([
+      offVolume,
+    ]);
+    const noAdmins =
+      'ADMIN_EMAILS: at least one address is required in production (the worker sends every alert to it)';
+    expect(problems({ ADMIN_EMAILS: '' })).toEqual([noAdmins]);
+    expect(problems({ ADMIN_EMAILS: ' , ' })).toEqual([noAdmins]);
+    const { ADMIN_EMAILS: _a, ...noVar } = prodWorker;
+    expect(problemsOf(() => loadConfig({ process: 'worker', env: noVar }))).toEqual([noAdmins]);
+    // Development keeps both optional; the API does not need the list.
+    expect(
+      problemsOf(() =>
+        loadConfig({
+          process: 'worker',
+          env: { ...noVar, NODE_ENV: 'development', DELETION_LEDGER_PATH: '/tmp/x.age' },
+        }),
+      ),
+    ).toEqual([]);
+  });
+
   it('applies production safety rules', () => {
     const prodWorker = {
       NODE_ENV: 'production',
       DATABASE_URL_WORKER: WORKER_URL,
       SMTP_URL: 'smtp://mail.example.com:587',
       PUBLIC_BASE_URL: 'https://bantoozi.example',
+      DELETION_LEDGER_PATH: '/var/lib/bantoozi/ledger/deletion-ledger.age',
+      ADMIN_EMAILS: 'admin@bantoozi.example',
+      DELETION_LEDGER_RECIPIENT: 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
+      DELETION_HMAC_KEY: 'k'.repeat(32),
     };
     expect(problemsOf(() => loadConfig({ process: 'worker', env: prodWorker }))).toEqual([]);
+    expect(loadConfig({ process: 'worker', env: prodWorker }).workerMetricsHost).toBe('0.0.0.0');
+    expect(
+      loadConfig({ process: 'worker', env: { ...prodWorker, WORKER_METRICS_HOST: '10.0.0.5' } })
+        .workerMetricsHost,
+    ).toBe('10.0.0.5');
     expect(loadConfig({ process: 'worker', env: prodWorker }).mailTransport).toBe('smtp');
     expect(
       problemsOf(() => loadConfig({ process: 'worker', env: { ...prodWorker, SMTP_URL: '' } })),

@@ -65,9 +65,16 @@ export interface SeedResult {
   library?: LibrarySeedOutcome[];
 }
 
+/** The pin this deployment's worker config implies; `llm` exists only while the fallback is on. */
+export interface SeedModelPin {
+  model: string;
+  llm?: { fast: string; strong: string } | undefined;
+}
+
+/** Seeds the `engine.model_pin` row when `modelPin` is given and the row is missing. */
 export async function runSeed(
   db: Database,
-  env: SettingEnvDefaults,
+  env: SettingEnvDefaults & { modelPin?: SeedModelPin },
   hooks: SeedHooks = {},
 ): Promise<SeedResult> {
   return db.transaction(async (tx) => {
@@ -75,6 +82,17 @@ export async function runSeed(
     for (const key of SEEDED_SETTING_KEYS) {
       const value = parseSetting(key, settingDefault(key, env));
       if (await insertSettingIfMissing(tx, key, value)) insertedSettings.push(key);
+    }
+    if (env.modelPin) {
+      const { model, llm } = env.modelPin;
+      const pin = parseSetting('engine.model_pin', {
+        model,
+        ...(llm ? { llm } : {}),
+        since: new Date().toISOString(),
+      });
+      if (await insertSettingIfMissing(tx, 'engine.model_pin', pin)) {
+        insertedSettings.push('engine.model_pin');
+      }
     }
     const topics = await hooks.taxonomy?.(tx);
     const questionSets = await hooks.questionSets?.(tx);
@@ -185,6 +203,12 @@ async function main(): Promise<void> {
         dailyBudgetUsd: config.dailyBudgetUsd,
         languageModes: config.languageModes,
         signupMode: config.signupMode,
+        modelPin: {
+          model: config.typesafeModel,
+          llm: config.llmFallbackEnabled
+            ? { fast: config.ollamaModelFast, strong: config.ollamaModelStrong }
+            : undefined,
+        },
       },
       defaultSeedHooks(),
     );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { BUNDLES } from '../../src/features/onboarding/bundles.js';
+import { STARTER_BUNDLES as BUNDLES } from '@bantoozi/shared';
 
 // The query parameters the API refuses in a feed address (packages/feeds discover/feed-url.ts).
 const CREDENTIAL_PARAMS = ['token', 'access_token', 'api_key', 'auth', 'password'];
@@ -74,6 +74,24 @@ describe('starter bundles (spec 09 §4 step 2)', () => {
     expect(BUNDLES.length).toBeGreaterThan(0);
     for (const bundle of BUNDLES) {
       expect(new Set(bundle.urls.map(hostOf)).size, bundle.id).toBeGreaterThanOrEqual(2);
+    }
+  });
+});
+
+describe('starter bundle feed languages (M8-T7)', () => {
+  it('declare lang en, sk or cs on every feed, with an https address', () => {
+    for (const bundle of BUNDLES) {
+      expect(bundle.feeds.length, bundle.id).toBeGreaterThan(0);
+      for (const feed of bundle.feeds) {
+        expect(['en', 'sk', 'cs'], feed.url).toContain(feed.lang);
+        expect(feed.url.startsWith('https://'), feed.url).toBe(true);
+      }
+    }
+  });
+
+  it('keep urls aligned with feeds', () => {
+    for (const bundle of BUNDLES) {
+      expect(bundle.urls).toEqual(bundle.feeds.map((feed) => feed.url));
     }
   });
 });

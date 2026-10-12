@@ -1,6 +1,7 @@
 import DOMPurify, { type DOMPurify as Purifier } from 'dompurify';
 import { useMemo } from 'react';
 
+import { httpsUrl } from '../features/article/http-url.js';
 import { cx } from './cx.js';
 
 /** The display allow-list of the server (packages/feeds, spec 03 §6.3) and the placeholder. */
@@ -51,14 +52,9 @@ const DROP_WITH_CONTENT = [
 
 const PLACEHOLDER_ATTRIBUTE = 'data-blocked-image';
 
-function isHttpUrl(value: string | null): boolean {
-  if (value === null) return false;
-  try {
-    const { protocol } = new URL(value);
-    return protocol === 'http:' || protocol === 'https:';
-  } catch {
-    return false;
-  }
+/** Images are HTTPS only (spec 11 §7); links may keep http. */
+function isHttpsUrl(value: string | null): boolean {
+  return httpsUrl(value) !== null;
 }
 
 function createPurifier(imagesAllowed: boolean): Purifier {
@@ -67,7 +63,7 @@ function createPurifier(imagesAllowed: boolean): Purifier {
   purifier.addHook('uponSanitizeElement', (node) => {
     if (node.nodeName !== 'IMG') return;
     const image = node as Element;
-    if (imagesAllowed && isHttpUrl(image.getAttribute('src'))) return;
+    if (imagesAllowed && isHttpsUrl(image.getAttribute('src'))) return;
     const placeholder = image.ownerDocument.createElement('span');
     placeholder.setAttribute(PLACEHOLDER_ATTRIBUTE, '');
     placeholder.textContent = (image.getAttribute('alt') ?? '').trim();

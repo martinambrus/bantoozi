@@ -4,14 +4,16 @@ import { createDatabase, createPgOriginLimiter, createPool } from '@bantoozi/db'
 import {
   FEED_SCHEDULE_CRON,
   HOUSE_CRON_SCHEDULES,
-  QUEUES,
   type HouseCronQueue,
   type HouseCronSchedule,
 } from '@bantoozi/shared';
-import { createLogger, loadConfig } from '@bantoozi/shared/server';
+import { createLogger, createMailer, loadConfig } from '@bantoozi/shared/server';
 
+import { createLibreTranslateProbe } from './alerts/probe.js';
 import { createBoss, pgBossBroker, registerHandlers } from './boss.js';
 import { createWorkerModels } from './classification-deps.js';
+import { createFileDeletionLedger } from './deletion-ledger.js';
+import { WORKER_POOL_LIMITS, startHealthServer, type HealthServer } from './health-server.js';
 import { createWorkerDeps } from './handlers/deps.js';
 import {
   assertWorkerMode,
@@ -23,6 +25,7 @@ import { createHandlers } from './handlers/index.js';
 import { enqueueOverdueHousekeeping } from './housekeeping.js';
 import { startOutboxRelay } from './outbox-relay.js';
 import { assertProductionReady } from './readiness.js';
+import { recordModelPin } from './model-pin.js';
 import { verifyQuestionSets } from './seed.js';
 
 /**
@@ -39,14 +42,14 @@ const logger = createLogger({
 
 const pool = createPool({
   connectionString: config.databaseUrlWorker,
-  max: 10,
+  max: WORKER_POOL_LIMITS.query,
   applicationName: 'bantoozi-worker',
 });
 const db = createDatabase(pool);
 // Feed fetch locks pin one connection each for a whole fetch (spec 03 §3): a pool of their own.
 const lockPool = createPool({
   connectionString: config.databaseUrlWorker,
-  max: QUEUES['feed.fetch'].concurrency,
+  max: WORKER_POOL_LIMITS.feedLocks,
   applicationName: 'bantoozi-worker-locks',
 });
 // An idle connection dropped by the server must not crash the process (pg emits 'error').
@@ -59,6 +62,12 @@ const settingsEnv = {
   languageModes: config.languageModes,
   signupMode: config.signupMode,
 };
+const mailer = createMailer({
+  transport: config.mailTransport,
+  from: config.mailFrom,
+  smtpUrl: config.smtpUrl,
+  logger,
+});
 const handlers = createHandlers(
   createWorkerDeps({
     db,
@@ -74,8 +83,20 @@ const handlers = createHandlers(
     limiter: createPgOriginLimiter(db),
     logger,
     classification: models.classification,
+    mailer,
+    adminEmails: config.adminEmails,
+    libreTranslateProbe: createLibreTranslateProbe(config.libretranslateUrl),
     providerValidation: models.providerValidation,
     ...(config.evalIngestOnly ? { evalIngestOnly: true } : {}),
+    ...(config.deletionLedgerPath !== undefined && config.deletionLedgerRecipient !== undefined
+      ? {
+          deletionLedger: createFileDeletionLedger({
+            path: config.deletionLedgerPath,
+            recipient: config.deletionLedgerRecipient,
+          }),
+        }
+      : {}),
+    ...(config.deletionHmacKey === undefined ? {} : { deletionHmacKey: config.deletionHmacKey }),
   }),
 );
 // EVAL_INGEST_ONLY (spec 10 §2.1): only fetching and extraction; a golden database refuses
@@ -94,6 +115,21 @@ await verifyQuestionSets(db).catch((error: unknown) => {
   throw error;
 });
 
+// Record the engine model pin under its row lock; a changed pin enqueues the model rebuild once.
+if (!config.evalIngestOnly) {
+  const pin = await recordModelPin(
+    db,
+    {
+      model: config.typesafeModel,
+      ...(config.llmFallbackEnabled
+        ? { llm: { fast: config.ollamaModelFast, strong: config.ollamaModelStrong } }
+        : {}),
+    },
+    new Date(),
+  );
+  if (pin.changed) logger.info('engine model pin changed: re-enrichment and re-matching enqueued');
+}
+
 // The heartbeat starts before any consumer: it is written first and the golden-database check
 // follows it, while `eval ingest-sample` creates the evaluation user first and checks heartbeats
 // after it, so a worker and a collection that start together always see each other (D-96).
@@ -101,6 +137,8 @@ let stopping = false;
 let heartbeat: Heartbeat | undefined;
 let boss: ReturnType<typeof createBoss> | undefined;
 let relay: ReturnType<typeof startOutboxRelay> | undefined;
+let health: HealthServer | undefined;
+const processId = `${hostname()}:${process.pid}`;
 async function shutdown(signal: string): Promise<void> {
   if (stopping) return;
   stopping = true;
@@ -108,10 +146,12 @@ async function shutdown(signal: string): Promise<void> {
   try {
     // The heartbeat advertises these consumers (an ingest-only collection checks it), so it is
     // removed only after the relay and the queue consumers have stopped.
+    await health?.close();
     await relay?.stop();
     await boss?.stop({ graceful: true, timeout: 20_000, wait: true });
     await heartbeat?.stop();
     await models.close();
+    mailer.close();
     await Promise.all([pool.end(), lockPool.end()]);
   } catch (error) {
     logger.error({ err: error }, 'worker shutdown failed');
@@ -121,7 +161,7 @@ async function shutdown(signal: string): Promise<void> {
 try {
   heartbeat = await startHeartbeat({
     db,
-    processId: `${hostname()}:${process.pid}`,
+    processId,
     queues: workerQueues,
     evalIngestOnly: config.evalIngestOnly,
     envCredentials: [
@@ -129,6 +169,11 @@ try {
       ...(config.ollamaApiKey ? (['ollama'] as const) : []),
     ],
     logger,
+    poolStats: () => ({
+      total: pool.totalCount,
+      idle: pool.idleCount,
+      waiting: pool.waitingCount,
+    }),
     onGoldenDatabase: (error) => {
       logger.error({ err: error }, 'stopping: the database became a golden evaluation database');
       process.exitCode = 1;
@@ -144,6 +189,20 @@ try {
 }
 
 if (!stopping) {
+  health = await startHealthServer({
+    host: config.workerMetricsHost,
+    port: config.workerMetricsPort,
+    token: config.metricsToken,
+    queues: workerQueues,
+    readHeartbeatAt: async () => {
+      const result = await pool.query<{ at: string | null }>(
+        `SELECT value -> $1 ->> 'at' AS at FROM settings WHERE key = 'worker.heartbeat'`,
+        [processId],
+      );
+      const at = result.rows[0]?.at;
+      return at === null || at === undefined ? undefined : new Date(at);
+    },
+  });
   boss = createBoss(config.databaseUrlWorker);
   boss.on('error', (err) => logger.error({ err }, 'pg-boss error'));
   await boss.start();

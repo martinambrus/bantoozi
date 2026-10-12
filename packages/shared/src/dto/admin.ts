@@ -39,6 +39,22 @@ export const AdminBreakerSchema = z
   })
   .strict();
 
+/** The latest `metrics.daily` snapshot: like-rate per lane and the regret rate (spec 10 §7, M8-T4). */
+export const AdminMetricsSchema = z
+  .object({
+    day: z.string(),
+    lanes: z.record(
+      z.string(),
+      z.object({ likeRate: z.number().nullable(), rated: Count }).strict(),
+    ),
+    /** Observed recovery from Everything/Hidden: `rate` is `null` when no article was eligible. */
+    regret: z
+      .object({ numerator: Count, denominator: Count, rate: z.number().nullable() })
+      .strict(),
+  })
+  .strict();
+export type AdminMetrics = z.infer<typeof AdminMetricsSchema>;
+
 export const AdminOverviewSchema = z
   .object({
     users: z.object({ total: Count, active7d: Count }).strict(),
@@ -76,6 +92,8 @@ export const AdminOverviewSchema = z
         tier2DailyCap: Count,
       })
       .strict(),
+    /** `null` until `house.metrics` has stored a snapshot. */
+    metrics: AdminMetricsSchema.nullable().optional(),
   })
   .strict();
 export type AdminOverview = z.infer<typeof AdminOverviewSchema>;
@@ -632,6 +650,16 @@ export const HostHealthDetailSchema = z
     heartbeats: z
       .record(z.string().regex(/^[a-z][a-z0-9_.-]{0,40}$/), IsoTimestampSchema)
       .refine((h) => Object.keys(h).length <= 16, 'too many heartbeats')
+      .optional(),
+    /** Per compose service: restarts so far and whether the container was OOM-killed (S17). */
+    containers: z
+      .record(
+        z.string().regex(/^[a-z][a-z0-9_.-]{0,40}$/),
+        z
+          .object({ restarts: z.number().int().min(0).max(1_000_000_000), oomKilled: z.boolean() })
+          .strict(),
+      )
+      .refine((c) => Object.keys(c).length <= 16, 'too many containers')
       .optional(),
   })
   .strict();

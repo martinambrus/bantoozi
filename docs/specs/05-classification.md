@@ -133,7 +133,11 @@ in the same outbox transaction. This makes an inaugural rating learnable when sl
   with a new `TYPESAFE_MODEL` or a different LLM fallback state (switched on or off, or new Ollama
   fallback models while on; their answers are cache entries too): under a row lock it records
   `settings['engine.model_pin']` and enqueues both `house.reenrich` and `house.rematch` once
-  (spec 11 §8). A `language_modes` change
+  (spec 11 §8); that rebuild runs in bulk priority and never through the LLM fallback (D-171). A
+  `house.reenrich`/`house.rematch` run that finds the primary engine unavailable is stored as a
+  pending run in `house.progress` and enqueued again by `house.reconcile` (D-173). `house.rematch`
+  revives an exhausted `invalid_request` row only when its stored answer is incompatible with the
+  current model, card text or match set. A `language_modes` change
   enqueues `house.reenrich {since, lang}` for each changed language: its admitted window articles
   re-enter at `pipeline.after('extracted', …)`, which translates first when the language is now
   `translate` (spec 07 §1), and matching follows enrichment as usual. That translation job carries

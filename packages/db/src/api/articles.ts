@@ -120,11 +120,9 @@ function viewScope(user: string, mode: ViewMode): SQL {
  * or a live selected request of an in-scope training/active subscription covers its revision.
  */
 function eligibleExpr(user: string): SQL {
+  // Needs `cr` (the {@link carrierCte} row of the article in the view) in scope.
   return sql`(
-    (a.pipeline_state <> 'stale' AND EXISTS (
-       SELECT 1 FROM vs e JOIN feed_items ef ON ef.feed_id = e.feed_id AND ef.article_id = a.id
-        WHERE e.view_key = c.view_key AND e.inference_mode = 'active'
-          AND ef.first_seen_at >= e.inference_activated_at))
+    (a.pipeline_state <> 'stale' AND coalesce(cr.active_carried, false))
     OR EXISTS (
        SELECT 1 FROM analysis_requests r
          JOIN vs e ON e.feed_id = r.feed_id AND e.view_key = c.view_key
@@ -144,6 +142,25 @@ interface ProjectionInput {
   /** `bookmarks`: every bookmarked article instead of the window. */
   bookmarks: boolean;
   labelId: string | undefined;
+}
+
+/**
+ * `carrier`: the facts of an article's in-scope carriers, computed once per (view, article): the
+ * smallest listable carrier feed, the smallest in-scope carrier feed (display fallback), and whether
+ * an active subscription carried it at/after its activation. Reading them here instead of in
+ * correlated subqueries keeps the planner from inlining them into every use (S18/S19).
+ */
+function carrierCte(source: SQL): SQL {
+  return sql`carrier AS (
+        SELECT c.view_key, c.article_id,
+               min(e.feed_id) FILTER (WHERE e.listable) AS display_feed_id,
+               min(e.feed_id) AS any_feed_id,
+               bool_or(e.inference_mode = 'active'
+                       AND ef.first_seen_at >= e.inference_activated_at) AS active_carried
+          FROM ${source} c
+          JOIN feed_items ef ON ef.article_id = c.article_id
+          JOIN vs e ON e.feed_id = ef.feed_id AND e.view_key = c.view_key
+         GROUP BY c.view_key, c.article_id)`;
 }
 
 /** `WITH vs, carried, proj` (steps 1–3 of the module comment). */
@@ -181,13 +198,12 @@ function projectionCtes(input: ProjectionInput): SQL {
   return sql`
     WITH vs AS (${viewScope(user, input.mode)}),
     carried AS (${carried}),
+    ${carrierCte(sql`carried`)},
     proj AS (
       SELECT c.view_key, c.article_id, coalesce(c.arrival, a.first_seen_at) AS arrival,
-             (SELECT min(e.feed_id) FROM vs e JOIN feed_items ef ON ef.feed_id = e.feed_id
-               WHERE e.view_key = c.view_key AND e.listable AND ef.article_id = c.article_id)
-               AS display_feed_id,
+             cr.display_feed_id,
              el.eligible, a.published_at, a.story_cluster_id,
-             ua.read_at, ua.archived_at, ua.label_ids, ua.rating,
+             ua.read_at, ua.archived_at, ua.label_ids, ua.rating, ua.score_source,
              CASE WHEN el.eligible THEN coalesce(ua.lane, 'new')
                   WHEN ua.lane = 'hidden' AND ua.rules_fired[1] ~ ${HIDE_RULE_PATTERN} THEN 'hidden'
                   ELSE 'new' END AS lane,
@@ -203,8 +219,9 @@ function projectionCtes(input: ProjectionInput): SQL {
                  WHERE fx.article_id = c.article_id AND NOT sx.allow_duplicates)) AS foldable
         FROM carried c
         JOIN articles a ON a.id = c.article_id
+        LEFT JOIN carrier cr ON cr.view_key = c.view_key AND cr.article_id = c.article_id
         LEFT JOIN user_article ua ON ua.user_id = ${user}::uuid AND ua.article_id = c.article_id
-        CROSS JOIN LATERAL (SELECT ${eligibleExpr(user)} AS eligible) el
+        CROSS JOIN LATERAL (SELECT ${eligibleExpr(user)} AS eligible OFFSET 0) el
        WHERE true ${label}
     )`;
 }
@@ -539,6 +556,55 @@ export async function countArticles(
   };
 }
 
+export interface ReaderLaneMix {
+  /** Visible unread Maybe rows. */
+  maybe: number;
+  /** Visible unread rows in For You, Maybe or Everything. */
+  scored: number;
+  /** The scored rows by the ranking path that produced their P. */
+  bySource: { cards: number; model: number; degraded: number };
+}
+
+/**
+ * The Maybe share inputs of `house.metrics` (spec 10 §7): the rows of the global unread view that
+ * `GET /articles/counts?status=unread` counts as For You, Maybe or Everything for this reader, from
+ * the same projection, folding, status and tier policy, split by `score_source`.
+ */
+export async function readerLaneMix(
+  tx: TenantTx,
+  input: { asOf: Date; minTier: number },
+): Promise<ReaderLaneMix> {
+  const result = await tx.execute<{
+    maybe: number;
+    scored: number;
+    cards: number;
+    model: number;
+    degraded: number;
+  }>(sql`
+    ${projectionCtes({
+      user: tenantUserId(tx),
+      mode: singleMode({}, 'all'),
+      asOf: input.asOf,
+      // Only the `outdated` flag reads it; the counts below do not.
+      scoreVersion: '',
+      bookmarks: false,
+      labelId: undefined,
+    })}
+    ${laneRowsCtes('all', 'unread', input.minTier)}
+    SELECT count(*) FILTER (WHERE lane = 'maybe')::int AS maybe,
+           count(*) FILTER (WHERE lane IN ('for_you', 'maybe', 'everything'))::int AS scored,
+           count(*) FILTER (WHERE lane IN ('for_you', 'maybe', 'everything') AND score_source = 'cards')::int AS cards,
+           count(*) FILTER (WHERE lane IN ('for_you', 'maybe', 'everything') AND score_source = 'model')::int AS model,
+           count(*) FILTER (WHERE lane IN ('for_you', 'maybe', 'everything') AND score_source = 'degraded')::int AS degraded
+      FROM rows`);
+  const row = result.rows[0];
+  return {
+    maybe: row?.maybe ?? 0,
+    scored: row?.scored ?? 0,
+    bySource: { cards: row?.cards ?? 0, model: row?.model ?? 0, degraded: row?.degraded ?? 0 },
+  };
+}
+
 /** Whether some eligible projection of the `lane=all` view has a missing/outdated rank. */
 async function viewRankingPending(
   tx: TenantTx,
@@ -733,13 +799,10 @@ export async function articleContexts(
     WITH vs AS (${viewScope(user, mode)}),
     c AS (SELECT 0::bigint AS view_key, x.id AS article_id
             FROM unnest(${sql.param([...ids])}::bigint[]) WITH ORDINALITY AS x(id, ord)),
+    ${carrierCte(sql`c`)},
     base AS (
       SELECT c.article_id, el.eligible, a.story_cluster_id,
-             coalesce(
-               (SELECT min(e.feed_id) FROM vs e JOIN feed_items ef ON ef.feed_id = e.feed_id
-                 WHERE e.listable AND ef.article_id = c.article_id),
-               (SELECT min(e.feed_id) FROM vs e JOIN feed_items ef ON ef.feed_id = e.feed_id
-                 WHERE ef.article_id = c.article_id)) AS display_feed_id,
+             coalesce(cr.display_feed_id, cr.any_feed_id) AS display_feed_id,
              coalesce(
                (SELECT max(ef.first_seen_at) FROM vs e JOIN feed_items ef ON ef.feed_id = e.feed_id
                  WHERE ef.article_id = c.article_id),
@@ -749,7 +812,8 @@ export async function articleContexts(
                   JOIN subscriptions sx ON sx.feed_id = fx.feed_id AND sx.user_id = ${user}::uuid
                  WHERE fx.article_id = c.article_id AND NOT sx.allow_duplicates)) AS foldable
         FROM c JOIN articles a ON a.id = c.article_id
-        CROSS JOIN LATERAL (SELECT ${eligibleExpr(user)} AS eligible) el)
+        LEFT JOIN carrier cr ON cr.view_key = c.view_key AND cr.article_id = c.article_id
+        CROSS JOIN LATERAL (SELECT ${eligibleExpr(user)} AS eligible OFFSET 0) el)
     SELECT b.article_id::text AS article_id, b.eligible, b.display_feed_id::text AS display_feed_id,
            b.arrival,
            CASE WHEN b.foldable THEN b.story_cluster_id::text END AS cluster_id,

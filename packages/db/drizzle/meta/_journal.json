@@ -134,6 +134,34 @@
       "when": 1791618000000,
       "tag": "0018_analysis_awaiting_extraction",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791704400000,
+      "tag": "0019_purge_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791790800000,
+      "tag": "0020_full_rank_covered",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791877200000,
+      "tag": "0021_rank_covered",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791963600000,
+      "tag": "0022_engine_call_demand_basis",
+      "breakpoints": true
     }
   ]
 }

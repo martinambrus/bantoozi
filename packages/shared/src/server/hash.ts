@@ -1,5 +1,6 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
+import { normalizeEmail } from '../dto/auth.js';
 import { canonicalJson } from '../text/canonical-json.js';
 
 /** Lower-case hex SHA-256 of a UTF-8 string or bytes. */
@@ -48,4 +49,9 @@ export function cardTextHash(card: CardTextInput): string {
       owner: card.visibility === 'private' ? card.owner_user_id : null,
     }),
   );
+}
+
+/** Hex HMAC-SHA256 of the normalized email under the deletion key (deletion ledger entry, spec 11 §5.1). */
+export function deletionEmailHmac(email: string, key: string): string {
+  return createHmac('sha256', key).update(normalizeEmail(email)).digest('hex');
 }

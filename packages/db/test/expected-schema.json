@@ -1,5 +1,5 @@
 {
-  "$comment": "Hand-written schema parity snapshot of spec 02 §1.2–§7 for M0 (tables transcribed from the spec text; policies from §5/§5.1; grants from §1.2; functions from §6 and the §5.2 integrity triggers). schema-parity.int.test.ts compares the migrated catalog with it.",
+  "$comment": "Hand-written schema parity snapshot of spec 02 \u00a71.2\u2013\u00a77 for M0 (tables transcribed from the spec text; policies from \u00a75/\u00a75.1; grants from \u00a71.2; functions from \u00a76 and the \u00a75.2 integrity triggers). schema-parity.int.test.ts compares the migrated catalog with it.",
   "extensions": ["citext", "pg_trgm", "pgcrypto", "plpgsql"],
   "tables": {
     "settings": {
@@ -787,6 +787,10 @@
         "feeds_due_idx": {
           "unique": false,
           "definition": "(next_fetch_at) WHERE subscriber_count > 0 AND status IN ('active','quarantined')"
+        },
+        "feeds_merged_into_id_idx": {
+          "unique": false,
+          "definition": "(merged_into_id) WHERE merged_into_id IS NOT NULL"
         }
       },
       "rls": false
@@ -831,7 +835,16 @@
           "deferrable": false
         }
       ],
-      "indexes": {},
+      "indexes": {
+        "story_clusters_representative_article_id_idx": {
+          "unique": false,
+          "definition": "(representative_article_id)"
+        },
+        "story_clusters_empty_idx": {
+          "unique": false,
+          "definition": "(id) WHERE size = 0"
+        }
+      },
       "rls": false
     },
     "articles": {
@@ -1102,7 +1115,12 @@
           "deferrable": false
         }
       ],
-      "indexes": {},
+      "indexes": {
+        "article_aliases_article_id_idx": {
+          "unique": false,
+          "definition": "(article_id)"
+        }
+      },
       "rls": false
     },
     "article_bodies": {
@@ -1189,7 +1207,12 @@
           "deferrable": false
         }
       ],
-      "indexes": {},
+      "indexes": {
+        "article_bodies_extracted_idx": {
+          "unique": false,
+          "definition": "(extracted_at) WHERE body_text IS NOT NULL OR body_html IS NOT NULL"
+        }
+      },
       "rls": false
     },
     "article_snapshots": {
@@ -1523,6 +1546,10 @@
         "engine_reservations_day_idx": {
           "unique": false,
           "definition": "(day, status)"
+        },
+        "engine_reservations_expires_at_idx": {
+          "unique": false,
+          "definition": "(expires_at) WHERE status = 'reserved'"
         }
       },
       "rls": false
@@ -1644,6 +1671,11 @@
           "type": "timestamp with time zone",
           "nullable": false,
           "default": "now()"
+        },
+        "demand_basis": {
+          "type": "text",
+          "nullable": true,
+          "default": null
         }
       },
       "primaryKey": ["id"],
@@ -1660,7 +1692,8 @@
         "billing IN ('known','uncertain')",
         "latency_ms >= 0",
         "attempts > 0",
-        "status IN ('ok','error','timeout','rate_limited','invalid_request', 'invalid_response','auth_error')"
+        "status IN ('ok','error','timeout','rate_limited','invalid_request', 'invalid_response','auth_error')",
+        "demand_basis IN ('active','training','other')"
       ],
       "foreignKeys": [
         {
@@ -1700,6 +1733,10 @@
         "engine_calls_attempt_idx": {
           "unique": true,
           "definition": "(logical_request_id, engine, attempts)"
+        },
+        "engine_calls_user_id_idx": {
+          "unique": false,
+          "definition": "(user_id)"
         }
       },
       "rls": false
@@ -1959,6 +1996,10 @@
         "interest_cards_topics_idx": {
           "unique": false,
           "definition": "USING gin (topic_ids)"
+        },
+        "interest_cards_parent_card_id_idx": {
+          "unique": false,
+          "definition": "(parent_card_id) WHERE parent_card_id IS NOT NULL"
         }
       },
       "rls": {
@@ -2278,6 +2319,10 @@
         "match_queue_order_idx": {
           "unique": false,
           "definition": "(priority, enqueued_at)"
+        },
+        "match_queue_card_id_idx": {
+          "unique": false,
+          "definition": "(card_id)"
         }
       },
       "rls": false
@@ -2317,7 +2362,12 @@
           "deferrable": false
         }
       ],
-      "indexes": {},
+      "indexes": {
+        "feed_cards_card_id_idx": {
+          "unique": false,
+          "definition": "(card_id)"
+        }
+      },
       "rls": false
     },
     "usage_daily": {
@@ -2457,6 +2507,10 @@
         "job_outbox_dedupe_idx": {
           "unique": true,
           "definition": "(queue, dedupe_key) WHERE delivered_at IS NULL AND dedupe_key IS NOT NULL"
+        },
+        "job_outbox_delivered_at_idx": {
+          "unique": false,
+          "definition": "(delivered_at) WHERE delivered_at IS NOT NULL"
         }
       },
       "rls": {
@@ -2587,7 +2641,12 @@
           "deferrable": false
         }
       ],
-      "indexes": {},
+      "indexes": {
+        "user_feed_preferences_feed_id_idx": {
+          "unique": false,
+          "definition": "(feed_id)"
+        }
+      },
       "rls": {
         "forced": true
       }
@@ -2731,6 +2790,14 @@
         "analysis_requests_user_article_idx": {
           "unique": false,
           "definition": "(user_id, article_id, created_at DESC)"
+        },
+        "analysis_requests_article_id_idx": {
+          "unique": false,
+          "definition": "(article_id)"
+        },
+        "analysis_requests_feed_id_idx": {
+          "unique": false,
+          "definition": "(feed_id)"
         }
       },
       "rls": {
@@ -2864,6 +2931,10 @@
         "card_publication_pending_idx": {
           "unique": true,
           "definition": "(card_id) WHERE status IN ('pending','approved')"
+        },
+        "card_publication_requests_card_id_idx": {
+          "unique": false,
+          "definition": "(card_id)"
         }
       },
       "rls": {
@@ -2986,7 +3057,12 @@
           "deferrable": "INITIALLY DEFERRED"
         }
       ],
-      "indexes": {},
+      "indexes": {
+        "user_labels_card_id_idx": {
+          "unique": false,
+          "definition": "(card_id)"
+        }
+      },
       "rls": {
         "forced": true
       }
@@ -3251,6 +3327,26 @@
         "user_article_bookmarks_idx": {
           "unique": false,
           "definition": "(user_id, bookmarked_at DESC) WHERE bookmarked_at IS NOT NULL"
+        },
+        "user_article_article_id_idx": {
+          "unique": false,
+          "definition": "(article_id)"
+        },
+        "user_article_bookmark_snapshot_id_idx": {
+          "unique": false,
+          "definition": "(bookmark_snapshot_id) WHERE bookmark_snapshot_id IS NOT NULL"
+        },
+        "user_article_bookmark_origin_feed_id_idx": {
+          "unique": false,
+          "definition": "(bookmark_origin_feed_id) WHERE bookmark_origin_feed_id IS NOT NULL"
+        },
+        "user_article_next_rank_at_idx": {
+          "unique": false,
+          "definition": "(next_rank_at) WHERE next_rank_at IS NOT NULL"
+        },
+        "user_article_pending_capture_idx": {
+          "unique": false,
+          "definition": "(article_id) WHERE bookmark_capture_status = 'pending'"
         }
       },
       "rls": {
@@ -3314,6 +3410,10 @@
         "feedback_events_user_idx": {
           "unique": false,
           "definition": "(user_id, created_at DESC)"
+        },
+        "feedback_events_article_id_idx": {
+          "unique": false,
+          "definition": "(article_id)"
         }
       },
       "rls": {
@@ -3528,6 +3628,10 @@
         "bookmark_snapshot_pins_expiry_idx": {
           "unique": false,
           "definition": "(expires_at)"
+        },
+        "bookmark_snapshot_pins_snapshot_id_idx": {
+          "unique": false,
+          "definition": "(snapshot_id)"
         }
       },
       "rls": {
@@ -3595,7 +3699,12 @@
           "deferrable": false
         }
       ],
-      "indexes": {},
+      "indexes": {
+        "card_suggestions_card_id_idx": {
+          "unique": false,
+          "definition": "(card_id)"
+        }
+      },
       "rls": {
         "forced": true
       }
@@ -3857,7 +3966,8 @@
             "archived_at",
             "label_ids",
             "feedback_prompted_at",
-            "state_version"
+            "state_version",
+            "next_rank_at"
           ],
           "UPDATE": [
             "opened_at",
@@ -3871,7 +3981,8 @@
             "label_ids",
             "feedback_prompted_at",
             "state_version",
-            "label_suggestions"
+            "label_suggestions",
+            "next_rank_at"
           ]
         }
       },
@@ -4106,6 +4217,15 @@
       "result": "TABLE(previous_snapshot_id bigint, capture_generation bigint)",
       "language": "plpgsql",
       "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
+    "rank_covered": {
+      "args": "",
+      "result": "boolean",
+      "language": "plpgsql",
+      "volatility": "s",
       "securityDefiner": true,
       "config": ["search_path=pg_catalog, public, pg_temp"],
       "execute": ["bantoozi_app"]

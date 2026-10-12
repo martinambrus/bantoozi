@@ -69,7 +69,12 @@ describe('isRankCurrent (spec 06 §7)', () => {
   });
 
   it('rejects rows of any other settings or ranker version, older or newer', () => {
-    for (const stale of [scoreVersion(2), scoreVersion(4), scoreVersion(3, '2'), '0:0']) {
+    for (const stale of [
+      scoreVersion(2),
+      scoreVersion(4),
+      scoreVersion(3, String(Number(RANKER_VERSION) + 1)),
+      '0:0',
+    ]) {
       expect(isRankCurrent({ scoreVersion: stale, rankRevision: '7' }, current)).toBe(false);
     }
   });

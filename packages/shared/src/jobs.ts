@@ -28,11 +28,34 @@ const iso = z.iso.datetime({ offset: true });
 const reasonSchema = z.string().regex(/^[a-z][a-z0-9_.:-]{0,63}$/, 'invalid reason');
 
 const empty = z.object({}).strict();
+/** A keyset position `(latest eligible arrival, article id)` of a reprocessing continuation. */
+const reprocessCursor = z.object({ key: iso, articleId: IdSchema }).strict();
 const articleOnly = z.object({ articleId: IdSchema }).strict();
 const userOnly = z.object({ userId: UuidSchema }).strict();
 const analysisPayload = z.object({ analysisRequestId: UuidSchema }).strict();
 const enrichPayload = z
   .object({ articleId: IdSchema, priority: z.enum(['interactive', 'bulk']).optional() })
+  .strict();
+
+const reenrichPayload = z
+  .object({
+    since: iso.optional(),
+    lang: z
+      .string()
+      .regex(/^[a-z]{2}$/)
+      .optional(),
+    // Set only on a continuation (spec 11 §6): the pass resumes strictly below this position,
+    // with `since` frozen at the first run.
+    cursor: reprocessCursor.optional(),
+  })
+  .strict();
+const rematchPayload = z
+  .object({
+    since: iso.optional(),
+    cardId: IdSchema.optional(),
+    // Set only on a continuation (spec 11 §6), as for `house.reenrich`.
+    cursor: reprocessCursor.optional(),
+  })
   .strict();
 
 export const TRANSLATE_SKIP_REASONS = ['no_key', 'cap', 'budget'] as const;
@@ -125,6 +148,8 @@ export const QUEUES = {
         forceTier2: z.boolean().optional(),
         replaceSkipped: z.boolean().optional(),
         modeChange: z.boolean().optional(),
+        // Set by a rebuild (`house.reenrich`): the enrichment that follows runs in bulk priority.
+        priority: z.enum(['interactive', 'bulk']).optional(),
         // Set only on the delayed retry of a transient failure at the provider's retry time
         // (spec 07 §3): that job is the last attempt.
         retried: z.boolean().optional(),
@@ -211,15 +236,7 @@ export const QUEUES = {
     options: { policy: 'stately', retryLimit: 0 },
   }),
   'house.reenrich': spec({
-    payload: z
-      .object({
-        since: iso.optional(),
-        lang: z
-          .string()
-          .regex(/^[a-z]{2}$/)
-          .optional(),
-      })
-      .strict(),
+    payload: reenrichPayload,
     concurrency: 1,
     options: { policy: 'singleton', retryLimit: 1 },
   }),
@@ -236,7 +253,7 @@ export const QUEUES = {
     options: { policy: 'singleton', retryLimit: 1 },
   }),
   'house.rematch': spec({
-    payload: z.object({ since: iso.optional(), cardId: IdSchema.optional() }).strict(),
+    payload: rematchPayload,
     concurrency: 1,
     options: { policy: 'stately', retryLimit: 1 },
   }),
@@ -382,7 +399,24 @@ export function sendSpecFor<Q extends QueueName>(queue: Q, payload: JobPayload<Q
         singletonKey:
           p['userId'] === undefined ? 'translate-cards:all' : `translate-cards:${id('userId')}`,
       };
+    case 'house.reenrich':
+      if (p['cursor'] !== undefined) {
+        // A continuation has a key of its own per position, so a fresh trigger is never absorbed.
+        const cursor = p['cursor'] as { key: string; articleId: string };
+        return {
+          kind: 'send',
+          singletonKey: `reenrich-cont:${String(p['lang'] ?? 'all')}:${cursor.key}:${cursor.articleId}`,
+        };
+      }
+      return { kind: 'send' };
     case 'house.rematch':
+      if (p['cursor'] !== undefined) {
+        const cursor = p['cursor'] as { key: string; articleId: string };
+        return {
+          kind: 'send',
+          singletonKey: `rematch-cont:${String(p['cardId'] ?? 'all')}:${cursor.key}:${cursor.articleId}`,
+        };
+      }
       return {
         kind: 'send',
         singletonKey: p['cardId'] === undefined ? 'rematch:all' : `rematch:${id('cardId')}`,
@@ -486,8 +520,10 @@ export interface HouseCronSchedule {
   everyMs: number;
 }
 
+const DAY_MS = 24 * 60 * 60_000;
+
 /**
- * Cron schedules (spec 11 §6) of the housekeeping jobs implemented so far; M8 adds the rest. A
+ * Cron schedules (spec 11 §6) of every housekeeping job. A
  * worker registers the schedule of each such queue it consumes, and enqueues an overdue one once
  * at startup.
  */
@@ -495,7 +531,17 @@ export const HOUSE_CRON_SCHEDULES: Readonly<Partial<Record<HouseCronQueue, House
   Object.freeze({
     'house.rescore-degraded': { cron: '*/10 * * * *', everyMs: 10 * 60_000 },
     'house.expire-rules': { cron: '5 * * * *', everyMs: 60 * 60_000 },
-    'house.nightly-learn': { cron: '0 1 * * *', everyMs: 24 * 60 * 60_000 },
+    'house.purge-auth': { cron: '20 * * * *', everyMs: 60 * 60_000 },
+    'house.reconcile': { cron: '*/10 * * * *', everyMs: 10 * 60_000 },
+    'house.archive': { cron: '15 3 * * *', everyMs: DAY_MS },
+    'house.purge-articles': { cron: '30 3 * * *', everyMs: DAY_MS },
+    'house.purge-bodies': { cron: '45 3 * * *', everyMs: DAY_MS },
+    'house.purge-engine-calls': { cron: '0 4 * * *', everyMs: DAY_MS },
+    'house.retire-cards': { cron: '30 4 * * *', everyMs: DAY_MS },
+    'house.purge-users': { cron: '0 5 * * *', everyMs: DAY_MS },
+    'house.nightly-learn': { cron: '0 1 * * *', everyMs: DAY_MS },
+    'house.metrics': { cron: '10 0 * * *', everyMs: DAY_MS },
+    'house.alerts': { cron: '*/5 * * * *', everyMs: 5 * 60_000 },
   });
 
 /** Jobs that persist progress in `settings['house.progress']` (spec 02 §2, spec 11 §6). */
@@ -503,11 +549,27 @@ export const HOUSE_PROGRESS_JOBS = [
   ...HOUSE_CRON_QUEUES,
   'house.reenrich',
   'house.rematch',
+  'house.translate-cards',
+  'house.retranslate-skipped',
 ] as const;
 export type HouseProgressJob = (typeof HOUSE_PROGRESS_JOBS)[number];
 
 /** A keyset position `(latest eligible arrival, article id)`, descending. */
 const recoveryCursor = z.object({ key: iso, articleId: IdSchema }).strict();
+
+/** The cursor of a rebuild job: its runs waiting for the primary engine (at most 20). */
+const pendingRuns = <S extends z.ZodType>(run: S) =>
+  z.object({ pending: z.array(run).max(20) }).strict();
+
+/**
+ * The cursor of a housekeeping job that sweeps in keyset pages under a time budget: the position
+ * (last examined id) of the one sweep a run left unfinished, by sweep name. A run that reaches
+ * the end of a sweep removes its entry; the next run resumes after the saved id.
+ */
+const sweepCursor = z
+  .object({ sweeps: z.record(z.string().min(1).max(40), z.string().min(1).max(40)) })
+  .strict();
+export type SweepCursor = z.output<typeof sweepCursor>;
 
 /**
  * Per-job cursor schemas of `settings['house.progress'][job].cursor` (spec 02 §2) for the jobs
@@ -519,6 +581,40 @@ export const HOUSE_PROGRESS_CURSORS = {
   'house.rescore-degraded': z
     .object({ enrich: recoveryCursor.optional(), answers: recoveryCursor.optional() })
     .strict(),
+  /**
+   * Runs that found Jev unavailable and wait for `house.reconcile` to enqueue them again, with
+   * their frozen `since` and cursor (spec 11 §6).
+   */
+  'house.reenrich': pendingRuns(reenrichPayload),
+  'house.rematch': pendingRuns(rematchPayload),
+  /** Keyset positions of the sweeps a budget cut short (spec 11 §6). */
+  'house.purge-articles': sweepCursor,
+  'house.purge-bodies': sweepCursor,
+  'house.retire-cards': sweepCursor,
+  /** The last user id of the due-user rank sweep a budget cut short, under `rank` (spec 11 §6). */
+  'house.reconcile': sweepCursor,
+  /**
+   * Set while users erased 7 days ago wait because the deletion ledger or its HMAC key is not
+   * configured (outside production): `house.alerts` raises `erasure.disabled` from it (spec 11 §5.1).
+   * `failed` is set by a run in which a ledger append, a deletion or a card reference failed or
+   * blocked users: the run is not complete and `house.alerts` raises `erasure.failed` until a later
+   * run completes cleanly.
+   */
+  'house.purge-users': z.union([
+    z.object({ disabled: z.literal('ledger_unconfigured') }).strict(),
+    z
+      .object({
+        failed: z
+          .object({
+            ledger: z.number().int().nonnegative(),
+            db: z.number().int().nonnegative(),
+            blocked: z.number().int().nonnegative(),
+          })
+          .strict(),
+        at: z.string(),
+      })
+      .strict(),
+  ]),
 } as const satisfies Partial<Record<HouseProgressJob, z.ZodType>>;
 export type HouseProgressCursor<J extends keyof typeof HOUSE_PROGRESS_CURSORS> = z.output<
   (typeof HOUSE_PROGRESS_CURSORS)[J]

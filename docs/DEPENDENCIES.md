@@ -51,6 +51,10 @@ pin exact versions (`save-exact`). Update this file in the same commit as any ve
 | robots.txt | robots-parser | 3.0.1 | feeds (robots.txt checks, spec 03 §8.1) |
 | Public suffix list | tldts | 7.4.15 | feeds (registrable domains, spec 03 §8.1) |
 | CLI | commander | 15.0.0 | worker, eval |
+| age encryption | age-encryption (typage) | 0.3.1 | worker (encrypt-only deletion ledger entries, spec 11 §5.1; the `age` CLI decrypts them offline), ops (streaming backup encryption/decryption and ledger decryption, spec 11 §4) |
+| HTTP load generator | autocannon (+ @types/autocannon 7.12.7, dev) | 8.0.0 | ops (M8-T8 load sanity test, spec 11 §9) |
+| YAML parser | yaml (dev) | 2.9.1 | ops (static compose credential test, spec 11 §9 launch item 12) |
+| Property tests | fast-check (dev) | 4.10.2 | ranker, worker (S22 targeted re-rank property test) |
 
 ## Web client (spec 01 §1, spec 09)
 
@@ -82,6 +86,12 @@ pin exact versions (`save-exact`). Update this file in the same commit as any ve
 | `postgres:16` (16.15) | `sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54` | `infra/compose.dev.yml`, `infra/compose.test.yml`; production compose (M8) |
 | `libretranslate/libretranslate:latest` (pushed 2026-09-03) | `sha256:7e7b72b0983c9d5f1e041ddac962ebfc1c20595e04366689cadff72069040027` | `infra/compose.dev.yml` (`translate` profile) |
 | `caddy:2` (v2.11.4) | `sha256:0c994536bddb66445885237f1a5dcc1916bccea922661c76b4e9fc24061f9b52` | production compose (M8); `infra/caddy/Caddyfile` validated with it |
+| `node:22.22-slim` (Node 22.22.3) | `sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752` | `infra/docker/Dockerfile` (base of the migrate, api and worker images) |
+| `axllent/mailpit:latest` | `sha256:030f06031ce5c60913ac9363da1ab0d4be6fd2a78147dd0e1ca0fcac665d6b34` | `infra/compose.yml`, `rehearsal` profile only (local mail catcher) |
+| `minio/minio` (RELEASE.2025-09-07T18-42-37Z) | `sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e` | `infra/compose.yml`, `rehearsal` profile only (S3-compatible stand-in for the off-site bucket when rehearsing `backup.sh` / `restore-test.sh`) |
+| `postgres:16` (same digest as above) | `sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54` | `infra/scripts/ops-lib.sh` (`POSTGRES_IMAGE`): the throwaway restore instance (no network) |
+
+**PostgreSQL 16 client tools (backup and restore).** `pg_dump`, `pg_dumpall` (in the live `postgres` container) and `pg_restore`, `psql` (in the throwaway container) are the PostgreSQL 16 client binaries shipped inside the pinned `postgres:16` image above; nothing is installed with `apt` and no binary is downloaded. The `backup-tools` image (`infra/docker/Dockerfile` target `backup-tools`, built from `node:22.22-slim` and the frozen-lockfile `dev-deps` stage) carries only the `apps/ops` commands (age streaming with `age-encryption`, an SigV4 S3 client on `node:crypto`/`fetch`, restore verification) and no PostgreSQL client. Its S3 client replaces an `rclone`/`mc` image, so no further image needs pinning.
 
 ## Security overrides (`pnpm.overrides` in the root `package.json`)
 

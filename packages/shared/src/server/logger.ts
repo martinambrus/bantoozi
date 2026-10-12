@@ -19,6 +19,26 @@ export const REDACT_PATHS = [
   '*.secret',
   'loginCode',
   '*.loginCode',
+  'smtpUrl',
+  '*.smtpUrl',
+  'databaseUrl',
+  '*.databaseUrl',
+  'databaseUrlWorker',
+  '*.databaseUrlWorker',
+  'databaseUrlMigrate',
+  '*.databaseUrlMigrate',
+  'testAdminDatabaseUrl',
+  '*.testAdminDatabaseUrl',
+  'DATABASE_URL',
+  '*.DATABASE_URL',
+  'DATABASE_URL_WORKER',
+  '*.DATABASE_URL_WORKER',
+  'DATABASE_URL_MIGRATE',
+  '*.DATABASE_URL_MIGRATE',
+  'TEST_ADMIN_DATABASE_URL',
+  '*.TEST_ADMIN_DATABASE_URL',
+  'SMTP_URL',
+  '*.SMTP_URL',
   'req.body.code',
   'req.body.apiKey',
   'req.headers.authorization',
@@ -36,6 +56,26 @@ export const REDACT_PATHS = [
   '*.body_html',
 ];
 
+/** The path of a request URL: the query string can carry search text or emails (spec 11 §7). */
+export function stripQuery(url: unknown): unknown {
+  if (typeof url !== 'string') return url;
+  const cut = url.search(/[?#]/);
+  return cut === -1 ? url : url.slice(0, cut);
+}
+
+/** Request serializer: method, path-only url, host and remote address; no query, no headers. */
+export function serializeRequest(request: unknown): Record<string, unknown> {
+  const r = (request ?? {}) as Record<string, unknown>;
+  const raw = (r['raw'] ?? {}) as Record<string, unknown>;
+  const url = stripQuery(r['originalUrl'] ?? r['url'] ?? raw['url']);
+  return {
+    method: r['method'] ?? raw['method'],
+    url,
+    ...(r['hostname'] === undefined ? {} : { hostname: r['hostname'] }),
+    ...(r['ip'] === undefined ? {} : { remoteAddress: r['ip'] }),
+  };
+}
+
 export interface CreateLoggerOptions {
   level?: string;
   /** Process/component name, e.g. `api`, `worker`. */
@@ -50,6 +90,7 @@ export interface CreateLoggerOptions {
 export function createLogger(options: CreateLoggerOptions = {}): Logger {
   const base: LoggerOptions = {
     level: options.level ?? 'info',
+    serializers: { req: serializeRequest },
     redact: { paths: REDACT_PATHS, censor: '[redacted]' },
     ...(options.name === undefined ? {} : { name: options.name }),
     ...(options.pretty === true

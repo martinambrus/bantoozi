@@ -53,7 +53,7 @@ export class TransientTranslationError extends Error {
 }
 
 /**
- * `article.translate {articleId, forceTier2?, replaceSkipped?, modeChange?}` (spec 07 §3).
+ * `article.translate {articleId, forceTier2?, replaceSkipped?, modeChange?, priority?}` (spec 07 §3).
  *
  * Runs only for current manual/active demand and a language in `translate` mode (never `en` or
  * `und`); off/untrained demand is a no-op. Tier 1 runs once per revision (a replay reuses the
@@ -96,7 +96,7 @@ export function createArticleTranslateHandler(
     ) {
       // The mode changed since the job was recorded (or there is nothing to translate): the
       // initial pipeline continues with native text.
-      if (initial) await continueInitial(deps, article, []);
+      if (initial) await continueInitial(deps, article, [], false, payload.priority);
       return;
     }
 
@@ -157,10 +157,10 @@ export function createArticleTranslateHandler(
     }
 
     if (initial) {
-      await continueInitial(deps, article, produced, replaceSkipped);
+      await continueInitial(deps, article, produced, replaceSkipped, payload.priority);
       return;
     }
-    await installRetranslation(deps, config, article, produced, replaceSkipped);
+    await installRetranslation(deps, config, article, produced, replaceSkipped, payload.priority);
   };
 }
 
@@ -192,7 +192,7 @@ async function retryTransient(
         produced.length > 0 &&
         (await storeRows(tx, article, produced, payload.replaceSkipped === true))
       ) {
-        await resetOnChangedText(tx, deps, config, article);
+        await resetOnChangedText(tx, deps, config, article, payload.priority);
       }
       if (retryAt === undefined) return;
       await enqueueTranslate(
@@ -239,6 +239,7 @@ async function continueInitial(
   article: ClassificationArticle,
   rows: readonly TranslationInput[],
   replaceSkipped = false,
+  priority?: 'interactive' | 'bulk',
 ): Promise<void> {
   await retryTransaction(deps.db, async (tx) => {
     if (!(await storeRows(tx, article, rows, replaceSkipped))) return;
@@ -253,7 +254,11 @@ async function continueInitial(
     await after(
       'translate',
       article.id,
-      { status: 'ok', revision: article.revision },
+      {
+        status: 'ok',
+        revision: article.revision,
+        ...(priority === undefined ? {} : { priority }),
+      },
       pipelineContext(deps, tx, sender),
     );
   });
@@ -272,9 +277,10 @@ async function installRetranslation(
   article: ClassificationArticle,
   produced: readonly TranslationInput[],
   replaceSkipped: boolean,
+  priority?: 'interactive' | 'bulk',
 ): Promise<void> {
   await retryTransaction(deps.db, async (tx) => {
     if (!(await storeRows(tx, article, produced, replaceSkipped))) return;
-    await resetOnChangedText(tx, deps, config, article);
+    await resetOnChangedText(tx, deps, config, article, priority);
   });
 }

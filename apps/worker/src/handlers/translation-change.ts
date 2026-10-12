@@ -30,6 +30,7 @@ export async function resetOnChangedText(
   deps: WorkerDeps,
   config: ClassificationConfig,
   article: ClassificationArticle,
+  priority?: 'interactive' | 'bulk',
 ): Promise<boolean> {
   const locked = await lockArticleRevision(tx, article.id, 'update');
   if (locked === null || locked.revision !== article.revision) return false;
@@ -54,7 +55,11 @@ export async function resetOnChangedText(
   await after(
     'translate',
     article.id,
-    { status: 'ok', revision: reset.revision },
+    {
+      status: 'ok',
+      revision: reset.revision,
+      ...(priority === undefined ? {} : { priority }),
+    },
     pipelineContext(deps, tx, sender),
   );
   return true;

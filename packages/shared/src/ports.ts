@@ -9,6 +9,9 @@ export type EngineName = 'typesafe' | 'llm' | 'laya';
 export type CallKind =
   'enrich' | 'match' | 'cluster' | 'suggest' | 'translate' | 'eval' | 'credential_probe';
 
+/** The authorization basis recorded on `engine_calls.demand_basis` (`other` is written only by metrics fallbacks). */
+export type DemandBasis = 'active' | 'training' | 'other';
+
 export type InferenceAuthorization =
   | {
       type: 'article';
@@ -64,6 +67,12 @@ export interface EngineCallRow {
   attempts: number;
   status: CallStatus;
   error?: string;
+  /**
+   * Why the call was authorized when it was made (spec 02 §3.1): `active` when an automatic witness
+   * (active subscription) carried it, `training` when only a selected request did. Absent for calls
+   * without article demand. Recorded once; never recomputed.
+   */
+  demandBasis?: DemandBasis;
   createdAt: Date;
 }
 
@@ -184,4 +193,16 @@ export interface OriginLimiter {
   release(origin: string, token: string): Promise<void>;
   /** Persist a cooldown until `until` (clamped to 24 h); never shortens a longer existing one. */
   block(origin: string, until: Date): Promise<void>;
+}
+
+/**
+ * The demand basis of the authorization an engine call is made under: `active` when any witness is
+ * automatic, `training` when only manual (selected request) witnesses carry it, none for suggest,
+ * credential-probe and eval authorizations. The same server-produced authorization the live recheck
+ * (`authorizeInference`) accepted; nothing is recomputed from current subscriptions.
+ */
+export function demandBasisOf(authorization: InferenceAuthorization): DemandBasis | undefined {
+  if (authorization.type !== 'article') return undefined;
+  if (authorization.witnesses.some((w) => w.kind === 'automatic')) return 'active';
+  return authorization.witnesses.some((w) => w.kind === 'manual') ? 'training' : undefined;
 }

@@ -169,6 +169,7 @@ export function createUserRankHandler(
       settingsVersion: settings.settingsVersion,
       scoreVersion: settings.scoreVersion,
       scoredAt: now,
+      ctxAt: user.ctxAt,
     };
     const moved = new Set<string>();
     let written = 0;

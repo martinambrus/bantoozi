@@ -25,8 +25,8 @@ when something needs a human, before users notice.
 | `postgres` | `postgres:16` | 6 GB | volume `pgdata`; `infra/postgres/init.sh` mounted into `/docker-entrypoint-initdb.d/` (spec 02 §1.1) with `POSTGRES_PASSWORD` and `BANTOOZI_{OWNER,APP,WORKER}_PASSWORD` from `.env`. Config: `shared_buffers=1536MB`, `work_mem=8MB`, `maintenance_work_mem=256MB`, `max_connections=100`, `wal_compression=on`. Not published to the host network |
 | `migrate` | dedicated migration target, command `pnpm db:migrate` | 512 MB | includes migration CLI + SQL artifacts; runs once per deploy with restart `"no"`; `api`/`worker`/`worker-laya` depend on successful completion |
 | `api` | built from `apps/api` | 768 MB | healthcheck `GET /api/v1/readyz` on its internal port |
-| `worker` | built from `apps/worker` | 1.5 GB | `WORKER_QUEUES=*` (every queue except the `.laya` ones); healthcheck on its metrics port. The image ships `packages/questions/library/*.json` beside the built `packages/questions`, since the seed loads the card library at runtime (D-50) |
-| `worker-laya` | the `worker` image | 3.5 GB | Compose profile `laya` (M9): enable it before setting `engine.laya`, which requires its heartbeat (spec 08 §9). Keep it while that setting lists a language and, after the setting is cleared, while **Laya work is outstanding**: a created, retrying or active job in either `.laya` queue, or an undelivered (pending or leased) `job_outbox` row for one, which the relay could still publish. Once a language is removed, each such job moves to the ordinary queue without an engine call (spec 04 §9), so this drains. `WORKER_QUEUES=article.enrich.laya,analysis.process.laya`; the only process that loads the checkpoint (spec 04 §9), from pinned, checksummed files on a read-only model volume. Own heartbeat and healthcheck on its metrics port |
+| `worker` | built from `apps/worker` | 1.5 GB | `WORKER_QUEUES=*` (every queue except the `.laya` ones); healthcheck `GET /healthz` on its metrics port (503 when its heartbeat is older than 2 min). The image ships `packages/questions/library/*.json` beside the built `packages/questions`, since the seed loads the card library at runtime (D-50) |
+| `worker-laya` | the `worker` image | 3.5 GB | Compose profile `laya` (M9; `deploy.sh` refuses the profile until M9 registers the Laya handlers, D-197): enable it before setting `engine.laya`, which requires its heartbeat (spec 08 §9). Keep it while that setting lists a language and, after the setting is cleared, while **Laya work is outstanding**: a created, retrying or active job in either `.laya` queue, or an undelivered (pending or leased) `job_outbox` row for one, which the relay could still publish. Once a language is removed, each such job moves to the ordinary queue without an engine call (spec 04 §9), so this drains. `WORKER_QUEUES=article.enrich.laya,analysis.process.laya`; the only process that loads the checkpoint (spec 04 §9), from pinned, checksummed files on a read-only model volume. Own heartbeat and healthcheck on its metrics port |
 | `libretranslate` | `libretranslate/libretranslate:latest` (pin a digest) | 3 GB | `LT_LOAD_ONLY=en,sk,cs`, `LT_DISABLE_WEB_UI=true`. Compose profile `translate`: enable it before setting a language mode to `translate` or `card_text_mode` to `english` (the API refuses those settings unless LibreTranslate answers its health probe, spec 08 §9), and keep it while such a setting is on |
 | `caddy` | `caddy:2` | 256 MB | TLS (Let's Encrypt), serves `apps/web/dist`, reverse-proxies `/api/*` → `api:3000`, security headers (§7) |
 
@@ -36,8 +36,8 @@ when something needs a human, before users notice.
 - **Resources:** `work_mem` is per sort/hash operation, not a per-server cap. Reserve ≥ 3 GB for host,
   filesystem cache and deploy/backup overhead; prove the enabled profile fits 16 GB. Two workers plus
   translation/Laya require the 32 GB profile or reduced limits; `worker-laya` counts as a second
-  worker. Each API pool starts at max 10, each worker at max 24 (including its feed-lock
-  connections), and `worker-laya`, whose two queues run at concurrency 1, at max 6. Account
+  worker. Each API pool starts at max 10, each worker at max 24 (a query pool of 10 and a feed-lock pool of 14 shared by the 16 `feed.fetch`
+  consumers; pg-boss's own pool of 4 is counted separately; D-179), and `worker-laya`, whose two queues run at concurrency 1, at max 6. Account
   separately for pg-boss and migration/backup connections and keep their **combined** maximum below
   80. Add an explicit total pool budget before enabling a second worker. No long-lived job lock may
   exhaust the query pool.
@@ -69,7 +69,8 @@ when something needs a human, before users notice.
 1. Resolve the approved release tag `vYYYY.MM.DD-N` to a commit, acquire a deploy lock and verify a
    clean checkout. Build immutable API/worker/migration/Caddy images with the frozen lockfile; static
    web assets are inside the Caddy image, not overwritten in a shared volume during a live deploy.
-2. Validate required secrets and the enabled profiles, check free disk/connection budget, and record
+2. Validate required secrets (including `DELETION_LEDGER_PATH`, `DELETION_LEDGER_RECIPIENT` and
+   `DELETION_HMAC_KEY`, a `DELETION_LEDGER_PATH` inside `/var/lib/bantoozi/ledger/`, and a non-empty `ADMIN_EMAILS`; example placeholders are refused, D-190, D-202) and the enabled profiles, check free disk/connection budget, and record
    the previous image digests, schema version and a fresh successful encrypted pre-deploy backup.
 3. Start healthy Postgres, then run the one-off migration image. Migrations acquire a database
    advisory lock and use bounded `lock_timeout`/`statement_timeout` (30 s and 5 min, set when the
@@ -90,14 +91,23 @@ when something needs a human, before users notice.
    when the `laya` profile is enabled. Step 2 fails if `engine.laya` lists a language, or Laya work
    is outstanding (§2), without that profile, so no work waits on a queue nothing consumes. It
    likewise fails if a language mode (the stored one, or `LANGUAGE_MODES` before the seed stores it)
-   is `translate` or `card_text_mode` is `english` without the `translate` profile.
+   is `translate` or `card_text_mode` is `english` without the `translate` profile. The stored values
+   are read through the Postgres container before anything is replaced. A fresh instance (no database
+   yet) and a local rehearsal without `BACKUP_S3_*` skip the pre-deploy backup and log why (D-180).
 5. Verify `/api/v1/readyz`, static asset routing, login-page delivery, worker heartbeat, outbox
-   dispatch and one fixture-backed queue traversal. Wait up to 120 s for readiness. Record release
+   dispatch and one queue traversal: a `house.purge-auth` outbox intent that must be delivered and
+   complete as a pg-boss job (a rehearsal also plants an expired `rate_limit_buckets` row that it must
+   delete; a feed fixture would need `FETCH_ALLOW_PRIVATE`, which production refuses). Wait up to
+   120 s for readiness. Record release
    SHA/digests and smoke results in the deploy log. The single-host beta allows a brief maintenance
    window; do not promise zero downtime.
 6. If smoke fails, restore previous **application images** while retaining compatible expanded
    schema; do not blindly reverse migrations or restore the database over writes made after deploy.
-   If compatibility cannot be demonstrated, remain in maintenance mode and use the recovery runbook.
+   If compatibility cannot be demonstrated (the restored images are not healthy), `deploy.sh` turns
+   maintenance mode on and it stays on until the operator turns it off. Maintenance mode is the flag
+   `/data/maintenance/on` in the `caddy-data` volume (`infra/scripts/maintenance.sh on|off|status`):
+   Caddy answers every public route with a static 503 page and `Retry-After: 300`, except
+   `/api/v1/readyz`. Then use the recovery runbook.
 
 **Proxy paths:** Caddy preserves `/api/v1/*` when proxying to the API (no accidental prefix stripping),
 serves hashed assets with immutable caching, and serves `index.html`/service worker with revalidation.
@@ -114,35 +124,58 @@ require WAL archiving/PITR and is not provided by a daily dump. Benchmark restor
 retained-bookmark corpus, since saved full content persists beyond the ordinary article-body window. A healthy daily backup meets the stated recovery target; a missed
 backup immediately increases exposure and must alert rather than being reported as covered.
 
-- Under a host lock, use `pg_dump -U postgres -Fc bantoozi` with a PostgreSQL 16 client and superuser
-  access, preserving every schema and all RLS-protected rows (`pgboss` and `eval` included). Capture
+- Under a host lock, use `pg_dump -U postgres -Fc bantoozi` with a PostgreSQL 16 client (run inside
+  the pinned `postgres` image, so no client is installed on the host) and superuser access, preserving every schema and all RLS-protected rows (`pgboss` and `eval` included). Capture
   `pg_dumpall --globals-only --no-role-passwords` as well: a single-database dump does not include
-  cluster roles. Restore role passwords from the separately encrypted deployment secrets.
+  cluster roles. Restore role passwords from the separately encrypted deployment secrets with
+  `recovery:role-passwords` (all three roles or none); the restore drill sets throwaway passwords and proves
+  each role logs in over password-authenticated loopback TCP (D-196).
   See [PostgreSQL 16 pg_dump](https://www.postgresql.org/docs/16/app-pgdump.html) and
   [pg_dumpall](https://www.postgresql.org/docs/16/app-pg-dumpall.html).
+- Serialize with account erasure: before the dump, take the session advisory lock
+  `ERASURE_BACKUP_LOCK_KEY` (`packages/shared/src/erasure-lock.ts`) and hold it until the deletion-ledger
+  copy is shipped and verified and the manifest is uploaded and verified, then release it (D-190). `house.purge-users` holds the same
+  lock around each user's whole purge (tombstone append to final commit), so every purge falls wholly
+  before a backup (user absent from the dump, tombstone in its ledger copy) or wholly after it. The
+  backup waits at most `BACKUP_ERASURE_LOCK_WAIT_S` (default 300 s) and otherwise fails with
+  `backup_failed`; a purge waits at most 60 s within its run budget, then stops the run as incomplete
+  and retries the user on the next run, never skipping the tombstone (D-189).
 - Stream dump, globals and a manifest into `age` encryption; do not retain an unencrypted dump on
   disk. The manifest includes UTC start/end, commit/image digests, schema version, backup ID and
   ciphertext checksums. Use `set -euo pipefail`, temp files + atomic rename, and restrictive modes.
-  An incomplete dump is never named or advertised as a valid backup.
+  An incomplete dump is never named or advertised as a valid backup. Objects are
+  `<prefix><id>/{dump,globals,manifest}.age` with `<id>` the UTC time `YYYYMMDDTHHMMSSZ`; the
+  manifest is uploaded last and is the commit point, and a failed run's parts are marked
+  `backup-failed` and pruned after 2 days. The encryption and the S3 client are `apps/ops` run
+  through `tsx` in the `backup-tools` image (`age-encryption` and its own SigV4 client; D-181).
 - Upload encrypted artifacts to an S3-compatible bucket and verify object size/checksum before
   emitting `backup_ok`. Keep encryption recovery keys outside this host/bucket and test recovery
   from those keys. Back up encrypted deployment secrets on change, including every provider
   master-key version needed by retained backups, plus deploy/restore instructions; Caddy state
   can be backed up or deliberately recreated from documented DNS/TLS configuration.
 - **Retention:** 7 daily, 4 weekly (Sunday), 6 monthly (1st), enforced locally and remotely by UTC
-  backup IDs; one backup may satisfy multiple buckets. Prune only after a verified replacement,
+  backup IDs; one backup may satisfy multiple buckets. Daily keeps every backup of the 7 newest UTC
+  dates that have one; weekly and monthly keep the newest backup of each of the 4 newest Sundays and
+  6 newest 1st-of-month dates that have one. Prune only after a verified replacement,
   never delete the last known-good restore-tested backup. Bucket permissions isolate routine writer
   and retention-delete credentials. An off-site successful upload, not a local file, meets the RPO.
 - **Weekly restore test** (`restore-test.sh`, Sunday 04:00 UTC): provision an isolated empty Postgres
   16 instance, restore roles/bootstrap ownership, create the database, then `pg_restore
   --exit-on-error` with ownership/ACLs intact. Use `psql -v ON_ERROR_STOP=1` for SQL/bootstrap scripts.
   See [PostgreSQL 16 pg_restore](https://www.postgresql.org/docs/16/app-pgrestore.html).
-  The test has no production network egress, SMTP, provider keys or exposed public API.
+  The test has no production network egress, SMTP, provider keys or exposed public API: the saved
+  release's api and worker images (from the manifest) run with `--network none` against the restore
+  over its unix socket, with an SMTP sink inside the api container (D-182).
 - Verify expected schemas/extensions/migration version, FK validity, sequences, active-set seeds,
-  restored RLS/role separation with two fixture tenants, and data bounds recorded in the manifest.
+  restored RLS/role separation with two fixture tenants (as `bantoozi_app` after `SET LOCAL ROLE`;
+  the throwaway database trusts its local socket because no role passwords are restored), and data
+  bounds recorded in the manifest (table row counts within `max(5, 10 %)`, since rows change while a
+  dump runs).
   A legitimately empty or quiet installation passes; “latest article < 24 h old” is not a backup
   integrity condition. Start the saved release against the restore with fake mail/providers and run
-  login/read/rank/outbox smoke tests. Include a cold bookmarked snapshot whose publisher fixture
+  login/read/rank/outbox smoke tests. The smoke account is created in the throwaway database first, because a
+  restored `settings.signup_mode` (for example `closed`) overrides the smoke environment and only an
+  existing account always receives a login code (D-195). Include a cold bookmarked snapshot whose publisher fixture
   returns 404: authorized full-text/HTML reads and exports must match the pre-backup checksum, with
   no refetch. Verify encrypted provider credentials against a fake provider using the separately
   restored key material, never production inference. Record restore duration and backup age.
@@ -159,6 +192,12 @@ backup immediately increases exposure and must alert rather than being reported 
    Revoke restored sessions/login codes so old revocations cannot be undone by restoring a snapshot.
 4. Do not immediately resume restored `pgboss` jobs: cancel/expire stale active leases through the
    pinned queue API, reset outbox/origin leases, and run reconciliation against current domain rows.
+   `recovery:prepare` does this in SQL: an `active` `pgboss.job` row, whose outbox intent was already
+   delivered and is therefore the only copy of its work, becomes runnable again (`retry` with
+   `start_after = now()`), whatever its retry count: an exhausted `retry_limit` is raised to
+   `retry_count + 1` so pg-boss runs it once more; handlers tolerate the repeated run (created and retry
+   jobs stay). Outbox and origin leases are cleared and `running` `analysis_requests` return to
+   `pending` (D-192, D-196).
    Rebuild eligible work, skipping deleted users, superseded revisions and no-longer-authorized
    subscription inference generations; rebuild pending local bookmark captures separately. Disable delivery of old
    authentication/operational emails; re-enable only newly generated messages after recovery.
@@ -175,7 +214,7 @@ backup immediately increases exposure and must alert rather than being reported 
 | Data | Kept |
 |---|---|
 | `articles` (+ feed_items, facets, answers) | 90 days after the latest carrier arrival (`max(feed_items.first_seen_at)`, the clock the reader window uses), **unless** any user has bookmarked, rated or labelled it (then kept while that user exists) or an `analysis_requests` row for it is still within its 180-day retention |
-| unprotected hot `article_bodies.body_text` / `body_html` | 30 days; clear only after bookmarked content has a durable snapshot, and never clear content needed by a pending capture; `body_lead` remains |
+| unprotected hot `article_bodies.body_text` / `body_html` | 30 days after extraction and after the article's latest carrier arrival; clear only after bookmarked content has a durable snapshot, and never clear content needed by a pending or failed capture; `body_lead` remains |
 | `article_snapshots` full saved text/HTML | indefinitely while at least one live bookmark references that immutable snapshot; cold after 30 days, never shortened or replaced by a lead |
 | `article_translations` | with the article |
 | `engine_calls` | 180 days (aggregated into `usage_daily` live) |
@@ -189,14 +228,14 @@ backup immediately increases exposure and must alert rather than being reported 
 | `login_codes` | 1 day after expiry |
 | `invites` | unused: 30 days after `expires_at` (a linked `waitlist.invite_code` becomes null); used: kept for invite accounting while either account exists, subject to erasure (§5.1), and deleted once both `created_by` and `used_by` are null |
 | `waitlist` | deleted at signup (spec 08 §2.1); otherwise 365 days after `created_at`, including rows whose invite expired unused |
-| `rate_limit_buckets` | 1 day after the bucket's window ends |
+| `rate_limit_buckets` | 8 days after `window_start`, a fixed bound above the longest limiter window (1 day) plus the 1-day grace, because the table stores no window length |
 | `origin_fetch_state` | 7 days after `last_used_at`, and only once `next_start_at`, any `blocked_until` cooldown and every lease have passed; the next fetch of that origin recreates it |
 | `feeds` | while subscribed. 30 days after the last subscription ends (`unsubscribed_at`), a feed with no `feed_items`, `analysis_requests`, `eval.rater_feeds` row, explicit `allow`/`block` `user_feed_preferences` row or merged feed pointing at it is deleted with its `feed_cards` and `inherit` preference rows. A bookmarked article keeps its `feed_items`, and so keeps its feed. A remembered image choice keeps its feed until the user resets it to `inherit` or is erased, so re-subscribing to the same URL finds the same choice (spec 08 §4.2) |
 | `story_clusters` | until the cluster has no member article and no `mute_story` rule names it (such a rule always has an expiry, at most 30 days after the mute that set it) |
 | non-public `interest_cards` | while held. `house.retire-cards` retires an unheld card; 30 days later its `card_answers` are deleted, then the card itself unless a library version, publication request or eval row references it (§6) |
 | `api_mutations` idempotency/undo receipts | until `expires_at` (at least 7 days after creation) |
 | `sessions` | 30 days after expiry or revocation |
-| deleted users | hard-deleted 7 days after `DELETE /me`; encrypted historic backups age out within 6 months and are never served directly |
+| deleted users | hard-deleted 7 days after `DELETE /me`; encrypted historic backups normally age out within 6 months and are never served directly; the newest restore-tested backup is kept until a newer one passes its restore test, so it can be older if backups or restore tests stop, and the privacy page says so (D-201) |
 | `eval` schema | while needed as the golden set, subject to rater erasure (§5.1) |
 | `metrics.daily` settings | 90 days of aggregate snapshot metrics (spec 10) |
 
@@ -212,7 +251,7 @@ Archive is reversible presentation state, not deletion. Exclude bookmarked/rated
 rows from automatic archive. Count distinct unread article IDs per subscribed feed, newest by that
 feed's arrival (`feed_items.first_seen_at`, then `id`); archive only rows that lie beyond 1,000 in **every** feed
 through which that user receives them. Since archive state is per article, applying each feed's cap
-independently would wrongly hide a newer item in another feed. Protected rows may exceed the cap.
+independently would wrongly hide a newer item in another feed. Protected rows may exceed the cap. A cleared rating is not protection, and only unprotected unread rows are counted toward the cap.
 
 Delete eligible snapshot rows before their owning article; the snapshot article FK deliberately
 blocks deleting saved content accidentally. Unreferenced snapshots still within their grace can
@@ -240,16 +279,25 @@ consumed, and delete unused invites bound to that email (clearing their email wo
 Remove a snapshot only after its last
 bookmark owner releases it; another user's preserved copy must survive this user's deletion. Remove
 user holdings before private cards with RESTRICT references. Shared public feed/article rows remain,
-and card publication requests stay as anonymized audit records (spec 02 §3.6).
+and card publication requests stay as anonymized audit records (spec 02 §3.6), with `creatorUserId` in their authorization evidence set to null.
 
-Before erasing the account, write an encrypted off-site deletion ledger entry
-`{userId, deletedAt, emailHmac}` that survives database restore. `emailHmac` is an HMAC of the
-normalized email under a key kept with the ledger, outside the database, so a replay can find
+Before erasing the account, write an encrypted deletion ledger entry
+`{userId, deletedAt, emailHmac}` that survives database restore: an append-only age-encrypted file
+(`DELETION_LEDGER_PATH` on the persistent worker volume `/var/lib/bantoozi/ledger`, encrypted to
+`DELETION_LEDGER_RECIPIENT`, one fsynced base64 line per entry) that every backup ships off-site as
+`ledger/deletion-ledger-<backup id>.age` (D-172). `emailHmac` is the hex HMAC-SHA256 of the
+normalized email under `DELETION_HMAC_KEY`, kept with the ledger, outside the database, so a replay can find
 pre-account rows in a backup taken before signup; do not store the email itself or content in the ledger. Use an idempotent entry
-key and retain it through the longest backup lifetime plus 7 days. Failure defers hard deletion and
-alerts the operator; a committed user purge must never lack its recovery tombstone. Account restore
-and ledger creation are serialized by the same per-user lock. Recovery replays ledger entries before
-public access, deletes personal rows again (including the waitlist rows and email-bound invites
+key and keep every shipped copy from the oldest retained backup onwards (the kept restore-tested backup included), pruning only copies older than both that backup and 193 days, and none while no valid backup remains (D-193). Failure, or no configured ledger, defers hard deletion and
+alerts the operator (`erasure.disabled` while users past grace wait; a run with any ledger append failure, deletion failure or card-reference block is incomplete, records `cursor: {failed: {ledger, db, blocked}, at}` and raises `erasure.failed` until a clean run, D-193); a production worker refuses to start without
+`DELETION_LEDGER_PATH`, `DELETION_LEDGER_RECIPIENT` and `DELETION_HMAC_KEY` (D-188). A committed user purge must never lack its recovery tombstone. Account restore
+and ledger creation are serialized by the same per-user lock: `purgeUser` holds the session advisory lock
+`hashtextextended('erasure:' || user_id, 0)` for the whole purge (tombstone, every batch, final delete), sign-in
+verification takes it as a transaction lock before re-checking that the account is still restorable, and the purge
+also deletes the user's `pgboss.job` and `pgboss.archive` rows (D-200). Recovery replays the union of all shipped copies, deduplicated by entry id, before
+public access; an entry acts on a restored user only when its id is that user's entry id and its `emailHmac` matches the
+restored email under `DELETION_HMAC_KEY` (the recipient is a public key, so a ledger entry alone is not trusted), and the
+replay reports skipped entries as `mismatched` (D-188). It deletes personal rows again (including the waitlist rows and email-bound invites
 matching `emailHmac`, handled as above) and clears restored queued work. Ledger storage access is
 operator-only and is included in the restore drill.
 
@@ -325,20 +373,20 @@ retention must not erase still-owned private cards or snapshots while publishing
 | `feed.schedule` | every minute | spec 03 §3 |
 | `house.rescore-degraded` | `*/10 * * * *` | recover the supported 14-day horizon (`RANK_WINDOW_DAYS`, spec 06 §11) fairly with persisted cursors/budget limits (spec 04 §5), including eligible deferred/exhausted match work and fallback answers; reuse current Call A, and reset terminal attempts only after their blocker changes (service failures while the primary engine is available and 6 h after they gave up, invalid requests never; D-80) |
 | `house.expire-rules` | `5 * * * *` | delete expired rules; `user.rank {full}` for the affected users |
-| `house.purge-auth` | `20 * * * *` | expired login codes, sessions, rate-limit buckets, idle `origin_fetch_state` rows, unused invites 30 days past expiry, used invites whose inviter and invitee accounts are both gone, waitlist rows older than 365 days and `api_mutations` receipts per §5, in bounded batches |
-| `house.reconcile` | `*/10 * * * *` | bounded repair of still-authorized inference, due pending/expired-lease `analysis_requests` within their 180-day retention, pending bookmark capture/outbox/match work and orphaned leases; expired `reserved` spend reservations become `uncertain` (§5); enqueue rank for due `user_article.next_rank_at`; nightly UTC window also refreshes feed subscribers/cards, cluster counts and `lang_hint` with persistent progress cursors |
-| `house.archive` | `15 3 * * *` | archive unprotected read items whose latest carrier arrival is older than 31 days and enforce the shared-article unread-cap rules in §5. Each archive is a versioned reader-state write: under the `user_article` row lock it rechecks the conditions, sets `archived_at` and increments `state_version`, so an older offline action gets `STALE_STATE` instead of silently undoing it (spec 08 §1.1). It records no feedback event |
+| `house.purge-auth` | `20 * * * *` | expired login codes, sessions, rate-limit buckets (8 days after `window_start`), idle `origin_fetch_state` rows, unused invites 30 days past expiry, used invites whose inviter and invitee accounts are both gone, waitlist rows older than 365 days and `api_mutations` receipts per §5, in bounded batches |
+| `house.reconcile` | `*/10 * * * *` | bounded repair of still-authorized inference, due pending/expired-lease `analysis_requests` within their 180-day retention, pending bookmark capture/outbox/match work and orphaned leases; expired `reserved` spend reservations become `uncertain` (§5); enqueue rank for due `user_article.next_rank_at` (deleted accounts skipped); enqueue the pending `house.reenrich`/`house.rematch` runs once, while the primary engine is available; nightly UTC window also refreshes feed subscribers/cards, cluster counts and `lang_hint` with persistent progress cursors |
+| `house.archive` | `15 3 * * *` | archive unprotected read items whose latest carrier arrival (through the user's own subscriptions, else the article's first sighting) is older than 31 days and enforce the shared-article unread-cap rules in §5. Each archive is a versioned reader-state write: under the `user_article` row lock it rechecks the conditions, sets `archived_at` and increments `state_version`, so an older offline action gets `STALE_STATE` instead of silently undoing it (spec 08 §1.1). It records no feedback event |
 | `house.purge-articles` | `30 3 * * *` | delete unreferenced articles whose latest carrier arrival is older than 90 days (§5), in batches of 5,000. Articles referenced from `eval.*` are never purged. Then delete member-less `story_clusters` that no `mute_story` rule names, and idle unreferenced `feeds` (§5), each under its row lock after rechecking the conditions |
-| `house.purge-bodies` | `45 3 * * *` | §5.2: preserve/verify owned full snapshots, mark eligible snapshots cold, clear redundant unprotected hot text/HTML after 30 days, and collect snapshots unreferenced for 7 days; never erase pending capture inputs |
-| `house.purge-engine-calls` | `0 4 * * *` | first cancel `pending`/`running` `analysis_requests` older than 180 days under their row lock (`last_error_code = 'retention_expired'`, lease cleared so a late completion fails its token check; account any upstream spend), settle `uncertain` spend reservations 7 days past their budget day at `reserved_usd` (adding that cost to the day's `usage_daily`, plus the call when no `engine_calls` row references it), then delete `engine_calls`, settled `engine_reservations` and expired terminal `analysis_requests` older than 180 days, and `feedback_events` older than 365 days; clean delivered outbox rows and invoke bounded queue-history maintenance per §5 |
-| `house.retire-cards` | `30 4 * * *` | set `retired_at` on cards with `visibility <> 'public'` (library and promoted cards are never retired) that have no holders (`user_cards`/`user_labels`) and are not referenced by `eval.rater_cards`; delete their `card_answers` 30 days later, then the card row itself unless a `library_card_versions`, `card_publication_requests` (kept as audit, spec 02 §3.6), `eval.rater_cards` or `eval.run_answers` row references it. Both steps recheck under the card row lock that reuse also takes (spec 05 §5.1): a card is retired only while unheld, and deleted only while still retired, unheld and unreferenced. Forks keep working (`parent_card_id` becomes null), and queue, feed-card and suggestion rows cascade |
-| `house.purge-users` | `0 5 * * *` | hard-delete users past the 7-day grace period |
+| `house.purge-bodies` | `45 3 * * *` | §5.2: preserve/verify owned full snapshots, mark eligible snapshots cold, clear redundant unprotected hot text/HTML once both its extraction and the article's latest carrier arrival are 30 days old, and collect snapshots unreferenced for 7 days; repair snapshots whose last reference left no `unreferenced_at` mark; never erase pending or failed capture inputs |
+| `house.purge-engine-calls` | `0 4 * * *` | first cancel `pending`/`running` `analysis_requests` older than 180 days under their row lock (`last_error_code = 'retention_expired'`, `completed_at` = now, lease cleared so a late completion fails its token check; account any upstream spend), settle `uncertain` spend reservations whose UTC budget day is at least 7 days before the run at `reserved_usd` (adding that cost to the day's `usage_daily`, plus the call when no `engine_calls` row references it), then delete `engine_calls`, settled `engine_reservations` and terminal `analysis_requests` 180 days after `completed_at` (else `created_at`), and `feedback_events` older than 365 days; clean delivered outbox rows and invoke bounded queue-history maintenance per §5 |
+| `house.retire-cards` | `30 4 * * *` | set `retired_at` on cards with `visibility <> 'public'` (library and promoted cards are never retired) that have no holders (`user_cards`/`user_labels`) and are not referenced by `eval.rater_cards`; delete their `card_answers` 30 days later, then the card row itself unless a `library_card_versions`, `card_publication_requests` (kept as audit, spec 02 §3.6), `eval.rater_cards` or `eval.run_answers` row references it. Both steps recheck under the card row lock that reuse also takes (spec 05 §5.1): a card is retired only while unheld, and deleted only while still retired, unheld and unreferenced. The job also clears `retired_at` on a retired card that has a holder again. Forks keep working (`parent_card_id` becomes null), and queue, feed-card and suggestion rows cascade |
+| `house.purge-users` | `0 5 * * *` | hard-delete users past the 7-day grace period, each under the erasure/backup lock of §4 (D-189) |
 | `house.nightly-learn` | `0 1 * * *` | enqueue `user.learn` when the effective training-input hash changed since the last **attempt** (implicit signals, undo/unrate, context and 180-day expiry included); `user.suggest` for active users, per spec 06 (**built in M7-T4**) |
 | `house.metrics` | `10 0 * * *` | online metrics (spec 10 §7) |
 | `house.alerts` | `*/5 * * * *` | evaluate the alert rules (§6.1) and send **all** operational emails. Other components only record state: `engine.circuit`, `engine.budget_alerts`, `ops.events` |
-| `house.reenrich` | on demand (admin changes the active enrich set, a language mode or `engine.laya`, or the model pin changes, §8) | re-enqueue still-demanded articles whose eligible carrier arrival is within `RANK_WINDOW_DAYS` (spec 06 §11), plus articles with a current completed explicit selection whatever their arrival (spec 05 §2), newest first, batches of 200 within budget; never opt users in or treat a model upgrade as permission for bulk untrained-feed inference |
-| `house.rematch` | on demand (match set, card text mode, prefilter setting or model pin changed; a library card's topics corrected) | spec 05 §2: re-enqueue admitted pairs in `RANK_WINDOW_DAYS`, or on an article with a current completed explicit selection, whose answer is incompatible or a `prefilter` marker (one card's pairs for `{cardId}`), newest first, batches of 200 within budget; full reranks for users active in 7 days; never opts users in |
-| `house.translate-cards` | on demand (`card_text_mode` switched to `english`, or `{userId}` when that user's cards gain demand while it is on) | spec 07 §5 |
+| `house.reenrich` | on demand (admin changes the active enrich set, a language mode or `engine.laya`, or the model pin changes, §8) | re-enqueue still-demanded articles whose eligible carrier arrival is within `RANK_WINDOW_DAYS` (spec 06 §11), plus articles with a current completed explicit selection whatever their arrival (spec 05 §2), newest first, batches of 200 within budget, always in bulk priority and never through the LLM fallback; while the primary engine is unavailable the run is stored as a pending run in `house.progress` (at most 20) for `house.reconcile`; never opt users in or treat a model upgrade as permission for bulk untrained-feed inference |
+| `house.rematch` | on demand (match set, card text mode, prefilter setting or model pin changed; a library card's topics corrected) | spec 05 §2: re-enqueue admitted pairs in `RANK_WINDOW_DAYS`, or on an article with a current completed explicit selection, whose answer is incompatible or a `prefilter` marker (one card's pairs for `{cardId}`), newest first, batches of 200 within budget, in bulk priority; an exhausted `invalid_request` row is revived only when its stored answer is incompatible with the current model, card text or match set; pending runs as for `house.reenrich`; full reranks for users active in 7 days; never opts users in |
+| `house.translate-cards` | on demand (`card_text_mode` switched to `english`, or `{userId}` when that user's cards gain demand while it is on) | spec 07 §5, in bulk priority, progress in `house.progress` |
 | `house.retranslate-skipped` | on demand (`POST /admin/translations/reprocess`, after the Ollama key, cap or budget is restored) | spec 07 §3: for still-demanded articles whose eligible carrier arrival is within `RANK_WINDOW_DAYS` and whose current-revision `ollama` row was skipped for a listed reason, send `article.translate {forceTier2, replaceSkipped}`, newest first, batches of 200 within the tier-2 cap and budget; items skipped again stay skipped until the next reprocess; never opts users in |
 
 Every job is idempotent, logs `{job, durationMs, affected, remaining}`, and exposes a counter. Persist
@@ -364,13 +412,13 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
 |---|---|
 | Engine breaker open | `settings['engine.circuit'].typesafe` is `open` with `openedAt` more than 30 min ago, or it is `auth` (immediately) |
 | Budget | `settings['engine.budget_alerts']` has `p80At` or `p100At` for today (spec 04 §6) |
-| Pipeline backlog | any queue > 5,000 due waiting jobs, oldest due job > 30 min, pending outbox > 5 min, or rising terminal failures; intentional future cooldown jobs are excluded |
-| Service health | missing worker/housekeeping heartbeat (including `worker-laya` while `engine.laya` lists a language or Laya work is outstanding, §2), LibreTranslate unreachable while a language mode is `translate` or `card_text_mode` is `english`, repeated OOM/restarts, exhausted DB pool, or external readiness failure; external monitor covers full-host failure |
-| Degraded share | more than 20 % of the last hour's new articles degraded |
-| Feed failures | more than 10 % of active subscribed feeds errored in the last 24 h |
-| Disk | filesystem containing Postgres or backup staging > 80 % full, < 10 GB free, or inode exhaustion; host script reports structured `host_health` capacity/heartbeat events via the bounded ops-event channel, without mounting PGDATA into an app container |
-| Backups | the backup script or the restore test reported failure through `POST /api/v1/admin/ops-event` (stored in `settings['ops.events']`), or no `backup_ok` event in the last 26 h |
-| Metrics | `for_you` like-rate below `maybe` like-rate for 3 consecutive days (spec 10 §7) |
+| Pipeline backlog | any queue > 5,000 due waiting jobs, oldest due job > 30 min, pending outbox > 5 min, or rising terminal failures (≥ 20 pg-boss jobs failed for good in the last hour and ≥ 3× the hourly mean of the 24 h before); intentional future cooldown jobs are excluded |
+| Service health | no worker heartbeat for 30 min, a housekeeping job whose `house.progress.updatedAt` is older than 2 of its cron periods (or that has no entry once a worker consuming it has been up longer than 2 periods, D-191), or LibreTranslate unreachable while a language mode is `translate` or `card_text_mode` is `english`. Also: clients waiting for a worker database connection (`pool.waiting > 0` in the heartbeat) on 3 consecutive `house.alerts` runs; a container with ≥ 3 restarts within 60 min or an OOM kill, from the `containers` field of the `host_health` report; and (from M9) `worker-laya` while `engine.laya` lists a language or Laya work is outstanding (§2). External readiness failure and full-host failure are the owner's external monitor's (D-177) |
+| Degraded share | at least 20 new articles in the last hour and more than 20 % of them degraded |
+| Feed failures | at least 5 subscribed `active`/`quarantined` feeds and more than 10 % of them with an error in the last 24 h |
+| Disk | filesystem containing Postgres or backup staging > 80 % full, < 10 GB free, or inode exhaustion; host script (cron, every 15 min) reports structured `host_health` capacity/heartbeat events via the bounded ops-event channel, without mounting PGDATA into an app container; no `host_health` event for over 1 h is itself an alert |
+| Backups | the backup script or the restore test reported failure through `POST /api/v1/admin/ops-event` (the latest `backup_failed`, `restore_ok` and `restore_failed` times are remembered in `alerts.state` like `backup_ok`, so a failure that left the 50-entry `ops.events` stays open until a newer success, D-191) (stored in `settings['ops.events']`), or no `backup_ok` event in the last 26 h (the latest `backup_ok` time is also kept in `alerts.state` so it outlives the 50-event `ops.events` list) |
+| Metrics | `for_you` like-rate below `maybe` like-rate with the 95 % Newcombe-Wilson interval of the difference entirely below 0 on 3 consecutive daily snapshots, each judged on its trailing 7-day lanes with at least 30 rated items in both (spec 10 §7) |
 
 ---
 
@@ -420,8 +468,10 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
    state (`LLM_FALLBACK_ENABLED` switched either way, or a new `OLLAMA_MODEL_FAST`/
    `OLLAMA_MODEL_STRONG` while it is on) records them in `settings['engine.model_pin']`, whose `llm`
    field exists only while the fallback is on. Under a row lock it enqueues `house.reenrich` and
-   `house.rematch` once, so the `RANK_WINDOW_DAYS` window is rebuilt within budget (spec 05 §2),
-   through the fallback when it is on and Jev is still unavailable.
+   `house.rematch` once, so the `RANK_WINDOW_DAYS` window is rebuilt within budget (spec 05 §2), in
+   bulk priority and never through the fallback (owner decision, D-171); if Jev is unavailable the
+   runs wait as pending runs for `house.reconcile`. `pnpm db:seed` inserts the row when missing
+   without a rebuild.
    Translation rows are not rebuilt: they stay valid for their article revision whatever model made
    them (spec 07 §3), so re-enrichment reuses the selected translation. In M9 the Laya worker records
    its checkpoint hash and calibration version the same way and enqueues `house.reenrich {lang}`
@@ -451,10 +501,19 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
       waitlist retention, and export;
       contact and `/bot` page published. SMTP SPF/DKIM/DMARC and delivered login mail verified.
 - [ ] Load sanity (M8-T8): 20 simulated users × 50 feeds × 10 cards for 1 hour.
-      - **Setup:** a generated fixture feed server (1,000 feeds, 5 new items per feed per hour, from
-        `packages/testing`) and the fake TypeSafe server with `latencyMs: 300`. The API runs with
+      - **Setup:** a generated fixture feed server (1,000 feeds on 50 ports, each listing its newest
+        3 items and publishing 5 new ones per hour, from `packages/testing`) and the fake TypeSafe
+        server with `latencyMs: 300` (`TYPESAFE_MODEL=jev-fake`). User `n` subscribes to 50 feeds
+        from `30n` and adopts 10 library cards from `4n`, so neighbours share 20 feeds and 6 cards.
+        `load:run` runs four phases (20/30/30/20 % of the time): all off, selected-article training,
+        automatic inference on a few feeds, and a failing provider (D-183). The **gate is the
+        `realistic` profile** (default): each user lists at page load, then polls the list every 5 s
+        while `rankingPending` and the counts every 30 s when idle (spec 09 §3), opens or rates
+        one article every 10–20 s and makes a navigation list every 30–60 s; p95 needs at least 300
+        list samples per phase. The `stress` profile (1 list/s and 1 open-or-rate/s per user) is
+        reported, not gated (D-187). The API runs with
         `NODE_ENV=test`, `RATE_LIMITS_ENABLED=false` and `FETCH_ALLOW_PRIVATE=true` in a separate test
-      Compose project/DB; never relax production config. `autocannon` simulates list/open/rate traffic.
+      Compose project/DB; never relax production config. Per-user schedulers (realistic) or `autocannon` (stress) simulate list/counts/open/rate traffic.
       - **On the target box:** CPU < 70 %, p95 `GET /articles` < 300 ms, no queue-backlog alert.
       - **On a local production-like stack** (when there is no host access): the same p95 and backlog
         criteria. CPU is reported but not gated.

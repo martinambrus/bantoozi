@@ -61,6 +61,9 @@ export const engineReservations = pgTable(
       sql`(status = 'settled') = (settled_at IS NOT NULL)`,
     ),
     index('engine_reservations_day_idx').on(t.day, t.status),
+    index('engine_reservations_expires_at_idx')
+      .on(t.expiresAt)
+      .where(sql`status = 'reserved'`),
   ],
 );
 
@@ -96,6 +99,8 @@ export const engineCalls = pgTable(
     status: text('status').notNull(),
     error: text('error'),
     createdAt: tstz('created_at').notNull().defaultNow(),
+    /** Why the call was authorized when it was made (migration 0022); NULL = no article demand or pre-0022. */
+    demandBasis: text('demand_basis'),
   },
   (t) => [
     check('engine_calls_engine_check', sql`engine IN ('typesafe','llm','laya','libretranslate')`),
@@ -116,9 +121,11 @@ export const engineCalls = pgTable(
       'engine_calls_status_check',
       sql`status IN ('ok','error','timeout','rate_limited','invalid_request','invalid_response','auth_error')`,
     ),
+    check('engine_calls_demand_basis_check', sql`demand_basis IN ('active','training','other')`),
     index('engine_calls_created_idx').on(t.createdAt),
     index('engine_calls_article_idx').on(t.articleId),
     uniqueIndex('engine_calls_attempt_idx').on(t.logicalRequestId, t.engine, t.attempts),
+    index('engine_calls_user_id_idx').on(t.userId),
   ],
 );
 
@@ -206,6 +213,9 @@ export const interestCards = pgTable(
       sql`(visibility = 'private') = (owner_user_id IS NOT NULL)`,
     ),
     index('interest_cards_topics_idx').using('gin', t.topicIds),
+    index('interest_cards_parent_card_id_idx')
+      .on(t.parentCardId)
+      .where(sql`parent_card_id IS NOT NULL`),
   ],
 );
 
@@ -317,6 +327,7 @@ export const matchQueue = pgTable(
     check('match_queue_attempts_check', sql`attempts >= 0`),
     check('match_queue_lease_check', sql`(lease_token IS NULL) = (lease_until IS NULL)`),
     index('match_queue_order_idx').on(t.priority, t.enqueuedAt),
+    index('match_queue_card_id_idx').on(t.cardId),
   ],
 );
 
@@ -334,6 +345,7 @@ export const feedCards = pgTable(
   (t) => [
     primaryKey({ name: 'feed_cards_pkey', columns: [t.feedId, t.cardId] }),
     check('feed_cards_holders_check', sql`holders > 0`),
+    index('feed_cards_card_id_idx').on(t.cardId),
   ],
 );
 

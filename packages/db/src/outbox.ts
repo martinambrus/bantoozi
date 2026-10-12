@@ -23,6 +23,18 @@ async function insertIntent(tx: Executor, intent: JobIntent, requester: string |
     ON CONFLICT DO NOTHING`);
 }
 
+/**
+ * Whether a rank of the caller is already on its way: an undelivered `user.rank` intent without a
+ * cursor (full or not), or a created/retry `rank:<user>` or `rank-full:<user>` job (migration 0021;
+ * the API role can read neither table). A read-side catch-up request is then redundant: the run
+ * reads the database state when it starts, so a rank that has not started yet covers it. An active
+ * job may already have read the state and does not.
+ */
+export async function rankCovered(tx: TenantTx): Promise<boolean> {
+  const result = await tx.execute<{ covered: boolean }>(sql`SELECT rank_covered() AS covered`);
+  return result.rows[0]?.covered === true;
+}
+
 /** A worker intent that becomes due only at `availableAt` (the relay skips it until then). */
 async function insertDelayedIntent(tx: Executor, intent: JobIntent, availableAt: Date) {
   await tx.execute(sql`
@@ -138,11 +150,28 @@ export function outboxRetryDelaySeconds(attempts: number): number {
   return Math.min(900, 2 ** Math.max(0, Math.min(attempts, 10)));
 }
 
-/** Purge delivered intents after the retention window; undelivered work is never purged for age. */
-export async function purgeDeliveredOutbox(db: Executor, olderThanDays = 7): Promise<number> {
-  const result = await db.execute(sql`
-    DELETE FROM job_outbox
-     WHERE delivered_at IS NOT NULL AND delivered_at < now() - make_interval(days => ${olderThanDays})`);
+/**
+ * Purge delivered intents after the retention window; undelivered work is never purged for age.
+ * With `limit` at most that many rows go (oldest first); `now` replaces the database clock.
+ */
+export async function purgeDeliveredOutbox(
+  db: Executor,
+  olderThanDays = 7,
+  options: { now?: Date; limit?: number } = {},
+): Promise<number> {
+  const cutoff =
+    options.now === undefined
+      ? sql`now() - make_interval(days => ${olderThanDays})`
+      : sql`${new Date(options.now.getTime() - olderThanDays * 86_400_000).toISOString()}::timestamptz`;
+  const result =
+    options.limit === undefined
+      ? await db.execute(sql`
+          DELETE FROM job_outbox WHERE delivered_at IS NOT NULL AND delivered_at < ${cutoff}`)
+      : await db.execute(sql`
+          DELETE FROM job_outbox
+           WHERE id IN (SELECT id FROM job_outbox
+                         WHERE delivered_at IS NOT NULL AND delivered_at < ${cutoff}
+                         ORDER BY id LIMIT ${options.limit})`);
   return result.rowCount ?? 0;
 }
 
@@ -172,11 +201,15 @@ export async function hasPendingEquivalentJob(
  * from its creation, also during its backoff: the backoff moves `available_at`, and a send that
  * keeps failing is exactly the backlog this reports.
  */
-export async function oldestPendingOutboxAgeSeconds(db: Executor): Promise<number | null> {
+export async function oldestPendingOutboxAgeSeconds(
+  db: Executor,
+  now?: Date,
+): Promise<number | null> {
+  const at = now === undefined ? sql`now()` : sql`${now.toISOString()}::timestamptz`;
   const result = await db.execute<{ age: number | null }>(sql`
-    SELECT extract(epoch FROM now() - min(CASE WHEN last_error IS NULL THEN available_at
+    SELECT extract(epoch FROM ${at} - min(CASE WHEN last_error IS NULL THEN available_at
                                                ELSE created_at END))::float8 AS age
       FROM job_outbox
-     WHERE delivered_at IS NULL AND (last_error IS NOT NULL OR available_at <= now())`);
+     WHERE delivered_at IS NULL AND (last_error IS NOT NULL OR available_at <= ${at})`);
   return result.rows[0]?.age ?? null;
 }

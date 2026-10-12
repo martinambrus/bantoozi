@@ -29,6 +29,13 @@ export interface RankWriteFence {
   scoreVersion: string;
   /** The run's snapshot time, stored as `scored_at`; a newer stored snapshot is never overwritten. */
   scoredAt: Date;
+  /**
+   * `RankUser.ctxAt` of the run (ISO, microseconds). A row whose `next_rank_at` is later than this was
+   * marked due by a reader action after the run captured its context (or holds a genuine future
+   * deadline): the write keeps the earlier of that value and its own, so the row is ranked again
+   * instead of the mark being erased by a result computed without the action (S22).
+   */
+  ctxAt: string;
 }
 
 export type RankWriteResult =
@@ -46,7 +53,8 @@ export type RankWriteResult =
  *    missing settings row is first stored with its default, so a first insert cannot slip past);
  * 2. writes only rows whose article still has the captured content and media revisions (the rest
  *    are reported as moved), and never replaces a row scored from a newer snapshot;
- * 3. sets only the ranking columns: reader state (read, rating, bookmark, labels, archive) is never
+ * 3. keeps a `next_rank_at` newer than the run's `ctxAt` (the earlier of it and the written one);
+ * 4. sets only the ranking columns: reader state (read, rating, bookmark, labels, archive) is never
  *    touched, and label suggestions are filtered against the labels the user holds and the row's
  *    current assignments at write time, so a concurrent label action is not undone.
  * Rows are written in article id order. Returns the article ids written.
@@ -129,7 +137,10 @@ export async function writeRankBatch(
       label_suggestions = ARRAY(SELECT s FROM unnest(EXCLUDED.label_suggestions) AS s
                                  WHERE s <> ALL (ua.label_ids)),
       score_version = EXCLUDED.score_version, rank_revision = EXCLUDED.rank_revision,
-      scored_at = EXCLUDED.scored_at, next_rank_at = EXCLUDED.next_rank_at
+      scored_at = EXCLUDED.scored_at,
+      next_rank_at = CASE WHEN ua.next_rank_at > ${fence.ctxAt}::timestamptz
+                          THEN least(ua.next_rank_at, EXCLUDED.next_rank_at)
+                          ELSE EXCLUDED.next_rank_at END
     WHERE ua.scored_at IS NULL OR ua.scored_at <= EXCLUDED.scored_at
     RETURNING ua.article_id::text AS article_id`);
   const written = result.rows.map((row) => row.article_id);

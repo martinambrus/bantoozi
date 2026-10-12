@@ -30,6 +30,26 @@ export interface AnalysisRequestRow {
   createdAt: Date;
 }
 
+/**
+ * Cancels open requests past their 180-day retention window as `retention_expired` (spec 11 §5),
+ * clearing the lease so a late completion fails its token check. `completedAt` defaults to the
+ * database clock. Callers hold the rows' locks; returns the number cancelled.
+ */
+export async function cancelRetentionExpired(
+  tx: Executor,
+  ids: readonly string[],
+  completedAt?: Date,
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  const result = await tx.execute(sql`
+    UPDATE analysis_requests
+       SET status = 'cancelled', last_error_code = 'retention_expired', lease_token = NULL,
+           lease_until = NULL,
+           completed_at = ${completedAt === undefined ? sql`now()` : sql`${completedAt.toISOString()}::timestamptz`}
+     WHERE id = ANY(${sql.param([...ids])}::uuid[]) AND status IN ('pending', 'running')`);
+  return result.rowCount ?? 0;
+}
+
 export type AnalysisClaim =
   | { status: 'missing' }
   /** Complete, failed or cancelled: a duplicate job is a no-op. */
@@ -76,11 +96,7 @@ export async function claimAnalysisRequest(
       return { status: 'busy', leaseUntil: toDate(row.lease_until) };
     }
     if (row.expired) {
-      await tx.execute(sql`
-        UPDATE analysis_requests
-           SET status = 'cancelled', last_error_code = 'retention_expired', lease_token = NULL,
-               lease_until = NULL, completed_at = now()
-         WHERE id = ${id}::uuid`);
+      await cancelRetentionExpired(tx, [id]);
       return { status: 'expired' };
     }
     if (row.status === 'pending' && !row.due) {

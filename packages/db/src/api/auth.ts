@@ -1,6 +1,11 @@
 import { randomInt } from 'node:crypto';
 
-import { CROCKFORD_ALPHABET, INVITE_CODE_LENGTH, planMinIntervalMap } from '@bantoozi/shared';
+import {
+  CROCKFORD_ALPHABET,
+  INVITE_CODE_LENGTH,
+  USER_ERASURE_LOCK_PREFIX,
+  planMinIntervalMap,
+} from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Database, Executor, Transaction } from '../client.js';
@@ -67,6 +72,11 @@ export async function findUserByEmail(db: Executor, email: string): Promise<Auth
  * rechecks `deleted_at`, so a restore and a purge cannot both win (spec 08 §2.1, spec 11 §5.1).
  */
 export async function lockUserForVerify(tx: Transaction, userId: string): Promise<AuthUser | null> {
+  // The per-user erasure lock first: a running purge holds it for the whole purge, so this waits
+  // and then finds the user gone (spec 11 §5.1).
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${USER_ERASURE_LOCK_PREFIX} || ${userId}::text, 0))`,
+  );
   const result = await tx.execute<AuthUserRow>(sql`
     SELECT id::text AS id, email::text AS email, deleted_at,
            (deleted_at IS NULL

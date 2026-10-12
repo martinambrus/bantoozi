@@ -1,5 +1,5 @@
 import { render } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { SafeHtml } from '../../src/components/safe-html.js';
 
@@ -208,7 +208,7 @@ describe('SafeHtml images while they are blocked', () => {
 });
 
 describe('SafeHtml images while they are allowed', () => {
-  it('keeps an http(s) image with the privacy attributes and nothing else', () => {
+  it('keeps an https image with the privacy attributes and nothing else', () => {
     const { container } = renderHtml(
       '<img src="https://cdn.test/a.png" alt="A cat" srcset="https://cdn.test/a2.png 2x" width="1" height="1" ' +
         'style="position: fixed" class="x" onerror="x()"><img src="http://cdn.test/b.png" alt="Plain http">',
@@ -220,10 +220,19 @@ describe('SafeHtml images while they are allowed', () => {
     expect(first).toHaveAttribute('alt', 'A cat');
     expect(first).toHaveAttribute('referrerpolicy', 'no-referrer');
     expect(first).toHaveAttribute('loading', 'lazy');
-    expect(second).toHaveAttribute('src', 'http://cdn.test/b.png');
-    expect(second).toHaveAttribute('referrerpolicy', 'no-referrer');
-    expect(second).toHaveAttribute('loading', 'lazy');
+    expect(second).toBeUndefined();
     expect(container.querySelectorAll('[srcset]')).toHaveLength(0);
+  });
+
+  it('drops an http: image to a placeholder (images are HTTPS only, links keep http)', () => {
+    const { container } = renderHtml(
+      '<p><a href="http://example.test/x">link</a></p><img src="http://cdn.test/b.png" alt="Plain http">',
+      true,
+    );
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelectorAll('[src]')).toHaveLength(0);
+    expect(container.querySelector('[data-blocked-image]')).toHaveTextContent('Plain http');
+    expect(container.querySelector('a')).toHaveAttribute('href', 'http://example.test/x');
   });
 
   it('gives an image without alt text an empty one', () => {
@@ -278,5 +287,28 @@ describe('the HTML sink', () => {
       )
       .map(([path]) => path);
     expect(users).toEqual(['../../src/components/safe-html.tsx']);
+  });
+});
+
+describe('SafeHtml images from a loopback address', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps an http://localhost image on a loopback page and still drops other http hosts', () => {
+    const { container } = renderHtml(
+      '<img src="http://localhost:4010/a.png" alt="Local"><img src="http://example.com/b.png" alt="Remote">',
+      true,
+    );
+    const images = [...container.querySelectorAll('img')];
+    expect(images).toHaveLength(1);
+    expect(images[0]).toHaveAttribute('src', 'http://localhost:4010/a.png');
+  });
+
+  it('drops an http://localhost image when the page is a non-loopback https origin', () => {
+    vi.stubGlobal('location', new URL('https://bantoozi.example/'));
+    const { container } = renderHtml('<img src="http://localhost:4010/a.png" alt="Local">', true);
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('[data-blocked-image]')).toHaveTextContent('Local');
   });
 });

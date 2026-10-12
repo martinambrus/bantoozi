@@ -1,4 +1,5 @@
 import { homedir } from 'node:os';
+import { posix } from 'node:path';
 import { inspect } from 'node:util';
 
 import { z } from 'zod';
@@ -71,6 +72,7 @@ export const ENV_VARS: readonly EnvVarSpec[] = [
     defaultValue: 'http://localhost:5173',
   },
   { name: 'API_PORT', usedBy: ['api'], defaultValue: '3000' },
+  { name: 'API_HOST', usedBy: ['api'] },
   { name: 'SESSION_COOKIE_NAME', usedBy: ['api'], defaultValue: 'bantoozi_sid' },
   { name: 'SESSION_TTL_DAYS', usedBy: ['api'], defaultValue: '60' },
   { name: 'SESSION_PEPPER', usedBy: ['api'], secret: true },
@@ -128,8 +130,12 @@ export const ENV_VARS: readonly EnvVarSpec[] = [
   { name: 'LOG_LEVEL', usedBy: ['all'], defaultValue: 'info' },
   { name: 'METRICS_TOKEN', usedBy: ['api', 'worker', 'scripts'], secret: true },
   { name: 'WORKER_METRICS_PORT', usedBy: ['worker'], defaultValue: '9101' },
+  { name: 'WORKER_METRICS_HOST', usedBy: ['worker'] },
   { name: 'OTEL_EXPORTER_OTLP_ENDPOINT', usedBy: ['all'] },
   { name: 'ADMIN_EMAILS', usedBy: ['api', 'worker'] },
+  { name: 'DELETION_LEDGER_PATH', usedBy: ['worker'] },
+  { name: 'DELETION_LEDGER_RECIPIENT', usedBy: ['worker'] },
+  { name: 'DELETION_HMAC_KEY', usedBy: ['worker'], secret: true },
 ];
 
 export type NodeEnv = 'development' | 'test' | 'production';
@@ -147,6 +153,7 @@ export interface Config {
   readonly pgDevPort: number;
   readonly publicBaseUrl: string;
   readonly apiPort: number;
+  readonly apiHost: string;
   readonly sessionCookieName: string;
   readonly sessionTtlDays: number;
   readonly sessionPepper: string | undefined;
@@ -186,8 +193,12 @@ export interface Config {
   readonly logLevel: LogLevel;
   readonly metricsToken: string | undefined;
   readonly workerMetricsPort: number;
+  readonly workerMetricsHost: string;
   readonly otelExporterOtlpEndpoint: string | undefined;
   readonly adminEmails: readonly string[];
+  readonly deletionLedgerPath: string | undefined;
+  readonly deletionLedgerRecipient: string | undefined;
+  readonly deletionHmacKey: string | undefined;
 }
 
 /** Fields that are required (non-undefined) for each process. */
@@ -222,6 +233,7 @@ const SECRET_FIELDS = new Set<keyof Config>([
   'ollamaApiKey',
   'providerMasterKeys',
   'metricsToken',
+  'deletionHmacKey',
 ]);
 
 /** A readable configuration error that never contains supplied values. */
@@ -297,6 +309,8 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
     pgDevPort: read('PG_DEV_PORT', portSchema, '5432') ?? 5432,
     publicBaseUrl: publicBaseUrl.replace(/\/+$/, ''),
     apiPort: read('API_PORT', portSchema, '3000') ?? 3000,
+    apiHost:
+      read('API_HOST', z.string().min(1), production ? '0.0.0.0' : '127.0.0.1') ?? '127.0.0.1',
     sessionCookieName:
       read('SESSION_COOKIE_NAME', z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), 'bantoozi_sid') ??
       'bantoozi_sid',
@@ -347,8 +361,18 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
       ) ?? 'info',
     metricsToken: read('METRICS_TOKEN', z.string().min(production ? 32 : 1), undefined),
     workerMetricsPort: read('WORKER_METRICS_PORT', portSchema, '9101') ?? 9101,
+    workerMetricsHost:
+      read('WORKER_METRICS_HOST', z.string().min(1), production ? '0.0.0.0' : '127.0.0.1') ??
+      '127.0.0.1',
     otelExporterOtlpEndpoint: read('OTEL_EXPORTER_OTLP_ENDPOINT', httpUrl, undefined),
     adminEmails: read('ADMIN_EMAILS', emailListSchema, undefined) ?? [],
+    deletionLedgerPath: read('DELETION_LEDGER_PATH', z.string().min(1), undefined),
+    deletionLedgerRecipient: read(
+      'DELETION_LEDGER_RECIPIENT',
+      z.string().regex(/^age1[a-z0-9]+$/),
+      undefined,
+    ),
+    deletionHmacKey: read('DELETION_HMAC_KEY', z.string().min(32), undefined),
   };
 
   for (const name of REQUIRED_VARS[kind]) {
@@ -367,6 +391,36 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
       problems.push('MAIL_TRANSPORT: "log" would print login codes; not allowed in production');
     } else if (config.smtpUrl === undefined) {
       problems.push('SMTP_URL: required in production');
+    }
+  }
+  if (production && kind === 'worker') {
+    // Without these `house.purge-users` would skip every erasure (spec 11 §5.1).
+    for (const [name, value] of [
+      ['DELETION_LEDGER_PATH', config.deletionLedgerPath],
+      ['DELETION_LEDGER_RECIPIENT', config.deletionLedgerRecipient],
+      ['DELETION_HMAC_KEY', config.deletionHmacKey],
+    ] as const) {
+      if (value === undefined && raw(name) === undefined) {
+        problems.push(`${name}: required in production (erasure would be skipped without it)`);
+      }
+    }
+  }
+  if (production && kind === 'worker') {
+    // The ledger must live on the persistent ledger volume (compose `ledger`), or a restart would
+    // lose the erasures it records (spec 11 §5.1). The worker sends every alert to ADMIN_EMAILS.
+    const ledgerPath = config.deletionLedgerPath;
+    if (ledgerPath !== undefined) {
+      const normalized = posix.normalize(ledgerPath);
+      if (!posix.isAbsolute(ledgerPath) || !normalized.startsWith(`${LEDGER_DIR}/`)) {
+        problems.push(
+          `DELETION_LEDGER_PATH: must be inside ${LEDGER_DIR}/ (the persistent ledger volume) in production`,
+        );
+      }
+    }
+    if (config.adminEmails.length === 0) {
+      problems.push(
+        'ADMIN_EMAILS: at least one address is required in production (the worker sends every alert to it)',
+      );
     }
   }
   if (production && relevant('TYPESAFE_MODEL') && !PINNED_MODEL.test(config.typesafeModel)) {
@@ -478,6 +532,9 @@ const workerQueuesSchema = z.string().transform((s, ctx) => {
     return z.NEVER;
   }
 });
+/** The persistent ledger volume inside the worker container (infra/compose.yml `ledger`). */
+const LEDGER_DIR = '/var/lib/bantoozi/ledger';
+
 const emailListSchema = z
   .string()
   .transform((s) =>

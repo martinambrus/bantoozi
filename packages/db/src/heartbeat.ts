@@ -12,9 +12,13 @@ export const HEARTBEAT_PRUNE_MS = 60 * 60 * 1000;
 
 export interface HeartbeatEntry {
   at: string;
+  /** When the process started (R5); absent from older workers. */
+  startedAt?: string | undefined;
   queues: string[];
   evalIngestOnly: boolean;
   envCredentials: ('typesafe' | 'ollama')[];
+  /** Database pool counters at the beat (S17); absent from older workers. */
+  pool?: { total: number; idle: number; waiting: number } | undefined;
 }
 
 /**

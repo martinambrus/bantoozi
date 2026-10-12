@@ -20,7 +20,8 @@
   "login": {
     "lead": "Zadajte svoj e-mail a pošleme vám kód na prihlásenie.",
     "noAccount": "Nemáte účet?",
-    "waitlist": "Zapísať sa do poradovníka"
+    "waitlist": "Zapísať sa do poradovníka",
+    "privacy": "Ochrana súkromia"
   },
   "join": {
     "title": "Pripojte sa k Bantoozi",

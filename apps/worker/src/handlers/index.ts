@@ -12,8 +12,22 @@ import type { WorkerDeps } from './deps.js';
 import { createFeedFetchHandler } from './feed-fetch.js';
 import { createFeedScheduleHandler } from './feed-schedule.js';
 import { createProviderValidateHandler } from './provider-validate.js';
+import { createAlertsHandler } from './house-alerts.js';
+import { createMetricsHandler } from './house-metrics.js';
+import { createArchiveHandler } from './house-archive.js';
 import { createExpireRulesHandler } from './house-expire-rules.js';
 import { createNightlyLearnHandler } from './house-nightly-learn.js';
+import { createPurgeArticlesHandler } from './house-purge-articles.js';
+import { createPurgeAuthHandler } from './house-purge-auth.js';
+import { createPurgeBodiesHandler } from './house-purge-bodies.js';
+import { createPurgeEngineCallsHandler } from './house-purge-engine-calls.js';
+import { createPurgeUsersHandler } from './house-purge-users.js';
+import { createRetranslateSkippedHandler } from './house-retranslate-skipped.js';
+import { createTranslateCardsHandler } from './house-translate-cards.js';
+import { createRetireCardsHandler } from './house-retire-cards.js';
+import { createReconcileHandler } from './house-reconcile.js';
+import { createReenrichHandler } from './house-reenrich.js';
+import { createRematchHandler } from './house-rematch.js';
 import { createRescoreDegradedHandler } from './house-rescore-degraded.js';
 import { createUserLearnHandler } from './user-learn.js';
 import { createUserRankHandler } from './user-rank.js';
@@ -84,6 +98,10 @@ export const CLASSIFICATION_QUEUES = [
   'card.backfill',
   'analysis.process',
   'house.rescore-degraded',
+  'house.reenrich',
+  'house.rematch',
+  'house.retranslate-skipped',
+  'house.translate-cards',
 ] as const satisfies readonly QueueName[];
 
 /** M7 learning stages that call the decision engine (spec 05 §7): implemented with classification dependencies. */
@@ -107,6 +125,22 @@ export const LEARNING_QUEUES = [
   'house.nightly-learn',
 ] as const satisfies readonly QueueName[];
 
+/** M8 retention housekeeping (spec 11 §5, §6): stored data only, no model dependencies. */
+export const RETENTION_QUEUES = [
+  'house.purge-auth',
+  'house.reconcile',
+  'house.archive',
+  'house.purge-articles',
+  'house.purge-bodies',
+  'house.purge-engine-calls',
+  'house.retire-cards',
+  'house.purge-users',
+  'house.metrics',
+] as const satisfies readonly QueueName[];
+
+/** M8 operational alerts (spec 11 §6.1): implemented when the worker has a mailer. */
+export const ALERT_QUEUES = ['house.alerts'] as const satisfies readonly QueueName[];
+
 /** Queues with real handlers so far (M1 ingestion, M2 classification and key validation, M5 ranking, M7 learning). */
 export const IMPLEMENTED_QUEUES = [
   ...INGESTION_QUEUES,
@@ -115,6 +149,8 @@ export const IMPLEMENTED_QUEUES = [
   ...PROVIDER_QUEUES,
   ...RANKING_QUEUES,
   ...LEARNING_QUEUES,
+  ...RETENTION_QUEUES,
+  ...ALERT_QUEUES,
 ] as const satisfies readonly QueueName[];
 
 const implemented = <Q extends QueueName>(handle: QueueHandler<Q>): HandlerEntry<Q> => ({
@@ -137,6 +173,15 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
     'house.expire-rules': implemented(createExpireRulesHandler(deps)),
     'user.learn': implemented(createUserLearnHandler(deps)),
     'house.nightly-learn': implemented(createNightlyLearnHandler(deps)),
+    'house.purge-auth': implemented(createPurgeAuthHandler(deps)),
+    'house.reconcile': implemented(createReconcileHandler(deps, classification)),
+    'house.archive': implemented(createArchiveHandler(deps)),
+    'house.purge-articles': implemented(createPurgeArticlesHandler(deps)),
+    'house.purge-bodies': implemented(createPurgeBodiesHandler(deps)),
+    'house.purge-engine-calls': implemented(createPurgeEngineCallsHandler(deps)),
+    'house.retire-cards': implemented(createRetireCardsHandler(deps)),
+    'house.purge-users': implemented(createPurgeUsersHandler(deps)),
+    'house.metrics': implemented(createMetricsHandler(deps)),
     ...(classification === undefined
       ? {}
       : {
@@ -155,8 +200,23 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
             createAnalysisProcessHandler(deps, classification, translation),
           ),
           'house.rescore-degraded': implemented(createRescoreDegradedHandler(deps, classification)),
+          'house.reenrich': implemented(createReenrichHandler(deps, classification)),
+          'house.rematch': implemented(createRematchHandler(deps, classification)),
+          'house.retranslate-skipped': implemented(
+            createRetranslateSkippedHandler(deps, classification),
+          ),
+          ...(translation === undefined
+            ? {}
+            : {
+                'house.translate-cards': implemented(
+                  createTranslateCardsHandler(deps, classification, translation),
+                ),
+              }),
           'user.suggest': implemented(createUserSuggestHandler(deps)),
         }),
+    ...(deps.mailer === undefined
+      ? {}
+      : { 'house.alerts': implemented(createAlertsHandler(deps)) }),
     ...(providerValidation === undefined
       ? {}
       : {

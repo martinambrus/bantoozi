@@ -36,7 +36,13 @@ export type Stage = (typeof STAGES)[number];
  * a merge included (spec 05 §6).
  */
 export type StageOutcome =
-  | { status: 'ok'; revision: string; clusterChanged?: boolean }
+  | {
+      status: 'ok';
+      revision: string;
+      clusterChanged?: boolean;
+      /** The priority of the job that completed the stage, passed to the stage it enqueues. */
+      priority?: 'interactive' | 'bulk';
+    }
   | { status: 'failed'; revision: string }
   | { status: 'degraded'; revision: string }
   | { status: 'invalid_request'; revision: string };
@@ -135,7 +141,17 @@ export async function after(
     case 'translate':
       // Both tiers failing still enriches, with the native text.
       if (!(await gate.hasInferenceDemand(articleId))) return;
-      await enqueueEnrich(sender, { articleId }, revision);
+      // A rebuild's translation (bulk) is followed by a bulk enrichment: never the LLM fallback.
+      await enqueueEnrich(
+        sender,
+        {
+          articleId,
+          ...(outcome.status === 'ok' && outcome.priority !== undefined
+            ? { priority: outcome.priority }
+            : {}),
+        },
+        revision,
+      );
       return;
     case 'enrich':
       if (outcome.status === 'ok') {

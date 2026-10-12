@@ -75,6 +75,7 @@ export const userFeedPreferences = pgTable(
       'user_feed_preferences_image_policy_check',
       sql`image_policy IN ('inherit','allow','block')`,
     ),
+    index('user_feed_preferences_feed_id_idx').on(t.feedId),
   ],
 );
 
@@ -137,6 +138,8 @@ export const analysisRequests = pgTable(
       t.articleId,
       t.createdAt.desc().nullsFirst(),
     ),
+    index('analysis_requests_article_id_idx').on(t.articleId),
+    index('analysis_requests_feed_id_idx').on(t.feedId),
   ],
 );
 
@@ -198,6 +201,7 @@ export const cardPublicationRequests = pgTable(
     uniqueIndex('card_publication_pending_idx')
       .on(t.cardId)
       .where(sql`status IN ('pending','approved')`),
+    index('card_publication_requests_card_id_idx').on(t.cardId),
   ],
 );
 
@@ -237,7 +241,10 @@ export const userLabels = pgTable(
     color: text('color').notNull().default('slate'),
     createdAt: tstz('created_at').notNull().defaultNow(),
   },
-  (t) => [primaryKey({ name: 'user_labels_pkey', columns: [t.userId, t.cardId] })],
+  (t) => [
+    primaryKey({ name: 'user_labels_pkey', columns: [t.userId, t.cardId] }),
+    index('user_labels_card_id_idx').on(t.cardId),
+  ],
 );
 
 export const userRules = pgTable(
@@ -365,6 +372,19 @@ export const userArticle = pgTable(
     index('user_article_bookmarks_idx')
       .on(t.userId, t.bookmarkedAt.desc().nullsFirst())
       .where(sql`bookmarked_at IS NOT NULL`),
+    index('user_article_article_id_idx').on(t.articleId),
+    index('user_article_bookmark_snapshot_id_idx')
+      .on(t.bookmarkSnapshotId)
+      .where(sql`bookmark_snapshot_id IS NOT NULL`),
+    index('user_article_bookmark_origin_feed_id_idx')
+      .on(t.bookmarkOriginFeedId)
+      .where(sql`bookmark_origin_feed_id IS NOT NULL`),
+    index('user_article_next_rank_at_idx')
+      .on(t.nextRankAt)
+      .where(sql`next_rank_at IS NOT NULL`),
+    index('user_article_pending_capture_idx')
+      .on(t.articleId)
+      .where(sql`bookmark_capture_status = 'pending'`),
   ],
 );
 
@@ -390,6 +410,7 @@ export const feedbackEvents = pgTable(
       sql`kind IN ('rate','unrate','open','read','unread','dwell','prompt_answer','bookmark','unbookmark','label','unlabel','mark_read','hide','unhide','undo')`,
     ),
     index('feedback_events_user_idx').on(t.userId, t.createdAt.desc().nullsFirst()),
+    index('feedback_events_article_id_idx').on(t.articleId),
   ],
 );
 
@@ -466,6 +487,7 @@ export const bookmarkSnapshotPins = pgTable(
       foreignColumns: [apiMutations.userId, apiMutations.id],
     }).onDelete('cascade'),
     index('bookmark_snapshot_pins_expiry_idx').on(t.expiresAt),
+    index('bookmark_snapshot_pins_snapshot_id_idx').on(t.snapshotId),
   ],
 );
 
@@ -489,5 +511,6 @@ export const cardSuggestions = pgTable(
   (t) => [
     primaryKey({ name: 'card_suggestions_pkey', columns: [t.userId, t.cardId] }),
     check('card_suggestions_score_check', sql`score BETWEEN 0 AND 1`),
+    index('card_suggestions_card_id_idx').on(t.cardId),
   ],
 );

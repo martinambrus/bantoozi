@@ -140,10 +140,25 @@ export async function insertUserModel(tx: Transaction, input: NewUserModel): Pro
   return result.rows[0]?.version ?? 0;
 }
 
-/** Deactivate the user's active model, if any; returns whether one was active. */
-export async function deactivateUserModels(tx: Transaction, userId: string): Promise<boolean> {
+/**
+ * Deactivate the user's active model, if any; returns whether one was active. With `invalidation`
+ * the model stopped being valid (not replaced by a newer one), and its metrics record when and why:
+ * `house.metrics` counts those for the invalidation rate and the time back on cards only (S17).
+ */
+export async function deactivateUserModels(
+  tx: Transaction,
+  userId: string,
+  invalidation?: { at: Date; reason: string },
+): Promise<boolean> {
+  const stamp =
+    invalidation === undefined
+      ? sql``
+      : sql`, metrics = metrics || ${JSON.stringify({
+          deactivatedAt: invalidation.at.toISOString(),
+          deactivatedReason: invalidation.reason,
+        })}::jsonb`;
   const result = await tx.execute(
-    sql`UPDATE user_models SET active = false WHERE user_id = ${userId}::uuid AND active`,
+    sql`UPDATE user_models SET active = false${stamp} WHERE user_id = ${userId}::uuid AND active`,
   );
   return (result.rowCount ?? 0) > 0;
 }

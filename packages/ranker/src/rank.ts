@@ -1,4 +1,10 @@
-import { compareBigIntStrings, type Explain, type Lane, type ScoreSource } from '@bantoozi/shared';
+import {
+  compareBigIntStrings,
+  RANK_WINDOW_DAYS,
+  type Explain,
+  type Lane,
+  type ScoreSource,
+} from '@bantoozi/shared';
 
 import type { Bm25Corpus } from './bm25/corpus.js';
 import { degradedScore } from './bm25/score.js';
@@ -76,8 +82,11 @@ export interface UserRankContext extends DemotionUserState {
   demotionDeadlines?: Readonly<Partial<Record<DemotionFlag, Date>>> | undefined;
   /** The compatible active model, if any (§8.1). */
   model?: ActiveModel | undefined;
-  /** Clusters with a member the user read in the window (§2 step 6i). */
-  readClusterIds: ReadonlySet<string>;
+  /**
+   * Clusters with a member the user read in the window (§2 step 6i), each with the time of the
+   * latest such read: the seen state ends `RANK_WINDOW_DAYS` after it.
+   */
+  readClusterIds: ReadonlyMap<string, Date>;
   /** Document frequencies over the user's whole window (§9). */
   bm25: Bm25Corpus;
 }
@@ -185,6 +194,12 @@ export function rankArticle(ctx: UserRankContext, item: RankItem, now: Date): Ra
     deadlines.push(...expiries(boosts.map((boost) => boost.rule)));
   }
   deadlines.push(...base.deadlines);
+  if (policy.rules.some((rule) => rule.code === RULE_CODES.seenStory)) {
+    // The story stops being seen when its latest read leaves the window: due then (§7 step 5).
+    const read = item.clusterId === undefined ? undefined : ctx.readClusterIds.get(item.clusterId);
+    if (read !== undefined)
+      deadlines.push(new Date(read.getTime() + RANK_WINDOW_DAYS * 86_400_000));
+  }
   return result(ctx, item, now, {
     lane: policy.lane,
     p: policy.p,

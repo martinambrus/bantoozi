@@ -12,7 +12,7 @@ import { useReaderItem, useWaitingChanges } from '../reader/actions/provider.js'
 import { BookmarkButton, RateButtons } from './article-buttons.js';
 import { Chip, ChipButton } from './chip-button.js';
 import { formatRelativeTime } from './format.js';
-import { httpUrl } from './http-url.js';
+import { httpsUrl } from './http-url.js';
 import { LabelDot } from './label-dot.js';
 import { SwipeRow } from './swipe-row.js';
 import { topReasonText } from './top-reason.js';
@@ -72,8 +72,8 @@ export function ArticleRow({
   const when = shown.publishedAt ?? shown.firstSeenAt;
   const relative = formatRelativeTime(when, Date.now(), i18n.language);
   const feed = shown.feed;
-  const feedIcon = shown.effectiveImagesAllowed ? httpUrl(feed?.iconUrl) : null;
-  const thumbnail = shown.effectiveImagesAllowed ? httpUrl(shown.imageUrl) : null;
+  const feedIcon = shown.effectiveImagesAllowed ? httpsUrl(feed?.iconUrl) : null;
+  const thumbnail = shown.effectiveImagesAllowed ? httpsUrl(shown.imageUrl) : null;
   const otherSources = shown.cluster === null ? 0 : shown.cluster.size - 1;
   const otherFeeds = shown.cluster?.otherFeeds ?? [];
   const reason = shown.topReason === null ? null : topReasonText(t, i18n.language, shown.topReason);

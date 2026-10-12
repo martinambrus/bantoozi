@@ -1,5 +1,6 @@
 import {
   conservativeRequestTokens,
+  demandBasisOf,
   isAppError,
   isBigIntString,
   isUuid,
@@ -8,6 +9,7 @@ import {
   settingDefault,
   utcDay,
   type CallKind,
+  type DemandBasis,
   type EngineCallRow,
   type EngineName,
   type SettingEnvDefaults,
@@ -307,7 +309,12 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
   /** External-call reservations of this process: attribution and the eval reserve at settlement. */
   const external = new Map<
     string,
-    { engine: ExternalCall['engine']; estimateUsd: number; userId: string | undefined }
+    {
+      engine: ExternalCall['engine'];
+      estimateUsd: number;
+      userId: string | undefined;
+      demandBasis: DemandBasis | undefined;
+    }
   >();
 
   function adapterError(engine: EngineName, error: unknown): undefined {
@@ -748,6 +755,8 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
           : lane.costUsd(usage);
     const inputTokens = usage?.inputTokens ?? 0;
     const outputTokens = usage?.outputTokens ?? 0;
+    // The authorization basis of this attempt as authorized now (spec 02 §3.1), stored, not recomputed.
+    const basis = demandBasisOf(sub.authorization);
     const call: EngineCallRow = {
       engine: lane.name,
       kind: ctx.kind,
@@ -772,6 +781,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
       attempts: sent.ordinal,
       status: attempt.ok ? 'ok' : attempt.status,
       ...(attempt.ok || attempt.detail === undefined ? {} : { error: attempt.detail }),
+      ...(basis === undefined ? {} : { demandBasis: basis }),
       createdAt: sent.createdAt,
     };
     const usageRow: UsageRow = {
@@ -1234,6 +1244,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
         engine: input.engine,
         estimateUsd: input.estimateUsd,
         userId: input.userId,
+        demandBasis: demandBasisOf(input.authorization),
       });
       return id;
     },
@@ -1268,6 +1279,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
         attempts: call.attempt,
         status: call.status,
         ...(call.error === undefined ? {} : { error: capDetail(call.error) }),
+        ...(tracked?.demandBasis === undefined ? {} : { demandBasis: tracked.demandBasis }),
         createdAt,
       };
       if (reservationId === undefined) {

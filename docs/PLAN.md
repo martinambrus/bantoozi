@@ -1299,6 +1299,22 @@ this does not complete M7 for the M8 launch gate.
 
 ## 14. M8: Operations and launch readiness
 
+**Status: implementation done 2026-10-11** on branch `claude/m8-ops` (from `c24debb`; commits in the
+task table below). Merged to `main` on 2026-10-12 through PR #26 after 15 Codex review rounds (D-188…D-202) and green CI; the last round's fixes (D-202) were verified by the drills and CI but not re-reviewed by Codex (daily quota). Follow-ups M8-F1…M8-F19 are in §14.1 (F2 and F19 done in the PR). Built with Opus analysts and Sonnet builders, each task test-first
+against a separate harness with a negative control. Tasks that need the real host (T5, T8, T9) ran
+against a local production-like Compose rehearsal; no host access was available. The first 60-minute
+load run failed (p95 147/211/411/503 ms, outbox backlog 5–7 min); profiling found the list projection
+recomputing eligibility and the display feed per row and the relay starving full-rank intents, fixed in
+`e5f5ca2` (D-185, migration 0020); the rerun passed at p95 82/136/191/212 ms with no backlog alert
+(`docs/launch/load-60min-2026-10-11.md`). Owner decisions after that: reader actions re-rank only the
+rows they change (D-186, `fcf2b65`, migration 0021), and the load test gates a `realistic` profile
+(spec 09 polling plus navigation lists, at least 300 list samples per phase) and reports a `stress`
+profile (D-187, `b8cad30`, `3b773e9`): realistic p95 32/34/45/74 ms, stress p95 81/127/184/212 ms,
+no backlog alert in either (`docs/launch/load-60min-{realistic,stress}-2026-10-11.md`). Deviations:
+D-171…D-202 in `docs/DECISIONS.md` (D-188…D-202 from the PR #26 Codex review rounds). Migrations 0019…0022; the next migration is 0023. Launch items needing the owner or the real host are marked
+**owner** in `docs/RUNBOOK.md` (launch checklist). **Launch ready** additionally needs those owner items
+and the G1 values applied in production. The D-185 owner question (full re-rank after every rating) is resolved by D-186.
+
 **Outcome:** the production stack runs on the target box (or a production-like local stack) with all
 housekeeping jobs, backups with a tested restore, alerts, and the security and launch checklists
 completed, ready for the invite-only beta.
@@ -1313,17 +1329,17 @@ Complete milestone M8 "Operations and launch readiness" exactly as specified in 
 
 **Tasks**
 
-| ID | Task | Needs | Lane | Specs |
-|---|---|---|---|---|
-| M8-T1 | Production `compose.yml` (named project), Dockerfiles, Caddyfile with security headers, `deploy.sh` | — | A | 11 §2–3, §7 |
-| M8-T2 | Housekeeping jobs: `house.purge-auth`, `house.reconcile`, `house.archive`, `house.purge-articles`, `house.purge-bodies`, cold bookmark compression, `house.purge-engine-calls`, `house.retire-cards`, `house.purge-users`, `house.reenrich`, `house.rematch`, `house.translate-cards`, `house.retranslate-skipped` | — | B | 11 §5–6, §8; 05 §2; 07 §5 |
-| M8-T3 | `house.alerts` (all emails, de-duplication in `alerts.state`, `ops.events` reading) | T2 | B | 11 §6.1 |
-| M8-T4 | `house.metrics` and the admin display | T2 | C | 10 §7 |
-| M8-T5 | `backup.sh` and `restore-test.sh` (superuser `pg_dump`), plus a documented host cron | T1 | A | 11 §4 |
-| M8-T6 | Security checklist verification | T1 | C | 11 §7 |
-| M8-T7 | Privacy page (en/sk), starter bundles verified live, SMTP deliverability notes | — | D | 09 §4; 11 §9 |
-| M8-T8 | Load sanity test: generated feed server, fake TypeSafe server at 300 ms, autocannon readers | T1–T4 | D | 11 §9 |
-| M8-T9 | Launch checklist run and `docs/RUNBOOK.md` (deploy, rollback, restore, breaker reset, budget raise, invite batch, model upgrade, applying the G1 settings) | T1–T8; all M7 merged for launch | A | 11 §3, §8–9 |
+| ID | Task | Needs | Lane | Specs | Status |
+|---|---|---|---|---|---|
+| M8-T1 | Production `compose.yml` (named project), Dockerfiles, Caddyfile with security headers, `deploy.sh` | — | A | 11 §2–3, §7 | ✓ `17cd5a0`, `dc19f1f`, `1c4e986` |
+| M8-T2 | Housekeeping jobs: `house.purge-auth`, `house.reconcile`, `house.archive`, `house.purge-articles`, `house.purge-bodies`, cold bookmark compression, `house.purge-engine-calls`, `house.retire-cards`, `house.purge-users`, `house.reenrich`, `house.rematch`, `house.translate-cards`, `house.retranslate-skipped` | — | B | 11 §5–6, §8; 05 §2; 07 §5 | ✓ `9c708fa`, `6b290f6`, `af32e06`, `f89ed7f`, `fc1678b`, `4cc0ab7`, `cd7fe11`, `ce37d80`, `58ee7ac`, `bfaea40` |
+| M8-T3 | `house.alerts` (all emails, de-duplication in `alerts.state`, `ops.events` reading) | T2 | B | 11 §6.1 | ✓ `5e059f1`, `f0a24d1` |
+| M8-T4 | `house.metrics` and the admin display | T2 | C | 10 §7 | ✓ `be2f7b8`, `f0a24d1` |
+| M8-T5 | `backup.sh` and `restore-test.sh` (superuser `pg_dump`), plus a documented host cron | T1 | A | 11 §4 | ✓ `5a86198`, `3f0858b` |
+| M8-T6 | Security checklist verification | T1 | C | 11 §7 | ✓ `d1f8815`, `c6b94e8` |
+| M8-T7 | Privacy page (en/sk), starter bundles verified live, SMTP deliverability notes | — | D | 09 §4; 11 §9 | ✓ `a22feab`, `c48a5e4` |
+| M8-T8 | Load sanity test: generated feed server, fake TypeSafe server at 300 ms, autocannon readers | T1–T4 | D | 11 §9 | ✓ `6bca05b`, `e5f5ca2`, `8a434b0`, `fcf2b65`, `b8cad30`, `3b773e9` |
+| M8-T9 | Launch checklist run and `docs/RUNBOOK.md` (deploy, rollback, restore, breaker reset, budget raise, invite batch, model upgrade, applying the G1 settings) | T1–T8; all M7 merged for launch | A | 11 §3, §8–9 | ✓ `9d916de`, `docs/RUNBOOK.md` (this commit) |
 
 **Done when:**
 
@@ -1399,6 +1415,34 @@ evidence or is explicitly marked blocked/owner. **Launch ready** requires all M7
 deployment inputs in §17) resolved. A local
 production-like rehearsal does not prove DNS, mail delivery, host capacity or production recovery.
 
+
+### 14.1 M8 follow-ups (after PR #26 is merged)
+
+Known gaps found during M8 that block neither the merge nor launch. Each is one small task; work them on
+one follow-up branch, test-first, committed as `M8-F<n>: <summary>`. Mark each ✓ with its commit.
+
+| ID | Follow-up | Where | Status |
+|---|---|---|---|
+| M8-F1 | Recovery mails name the incident only by its alert key; add the alert's title and first-seen time | `apps/worker/src/alerts/notify.ts` | |
+| M8-F2 | A failure event that drops out of the 50-entry `ops.events` list resolves its alert silently; keep the open failure in `alerts.state` until a later success | `apps/worker/src/alerts/rules.ts` || ✓ D-191 (PR #26 round 5) |
+| M8-F3 | `house.translate-cards` has no run time budget, and a weak or failed card translation is retried on every `{}` run; add the budget/continuation and a retry backoff | `apps/worker/src/handlers/house-translate-cards.ts` | |
+| M8-F4 | An enrich-set change together with a language-mode change re-enriches natively when no translation exists yet; translate first | `packages/db/src/classify/reprocess.ts` | |
+| M8-F5 | The E2E bookmark scenario simulates cold maintenance in SQL; drive the real `house.purge-bodies` instead (M6 handoff) | `apps/web/e2e`, `packages/testing/src/e2e` | |
+| M8-F6 | The unread-cap query of `house.archive` has no supporting index, and deleted users are not excluded from archiving (harmless); add the index (migration 0022) and the filter | `packages/db/src/house` | |
+| M8-F7 | The Caddy http→https redirect drops a non-default port (rehearsal only) | `infra/caddy/Caddyfile` | |
+| M8-F8 | `deploy.sh` does not pre-build the `backup-tools` image, so the first pre-deploy backup builds it lazily | `infra/scripts/deploy.sh` | |
+| M8-F9 | When `backup_ok`/`restore_ok` cannot be posted the scripts only warn; retry, then exit non-zero so the missing event is visible locally too | `infra/scripts/backup.sh`, `restore-test.sh` | |
+| M8-F10 | Metrics cost at scale: the regret denominator's cached part is not time-bounded, rating replay loads 30 days in memory, and the reader lane mix opens one tenant transaction per user nightly; bound and batch them | `apps/worker/src/metrics`, `packages/db/src/house/metrics.ts` | |
+| M8-F11 | `metricsRecovery`'s denominator still reads the cached `user_article` lane; read the feedback-time snapshot like the like-rates | `packages/db/src/house/metrics.ts` | |
+| M8-F12 | No test boots two full worker processes; add a two-worker ingestion/merge/quota/budget/origin-throttle int test (launch item 10) | `apps/worker/test` | |
+| M8-F13 | The S12 backup drill once failed at the MinIO bucket check before any code ran and passed on a rerun; find the race in the rehearsal start-up | `infra/scripts/deploy.sh` (rehearsal), `infra/compose.yml` | |
+| M8-F14 | `house.retire-cards` saves its sweep cursor but has no dedicated budget-cut test | `apps/worker/test/house-retention-*.int.test.ts` | |
+| M8-F15 | A row whose stored `next_rank_at` lies after the run's `ctxAt` but is already past keeps being re-ranked under clock skew (harmless); clamp it | `packages/db/src/rank/write.ts` | |
+| M8-F16 | Cleanups: `UndoReceipt.effects.rankFull` is dead data (drop it from new receipts), and the `s19-list-catchup` test header still describes the old full catch-up | `packages/db/src/api/article-actions.ts`, `apps/api/test` | |
+| M8-F17 | Load-test realism: the generated feed lists 3 items, so a feed polled less often than every ~36 min can miss items; one unexplained API restart was seen during heavy seeding | `packages/testing/src/load-feeds.ts`, `apps/ops/src/load` | |
+| M8-F18 | Rollback was rehearsed only by redeploying the same commit; rehearse `deploy.sh <previous tag>` across two real releases once a second release exists | `infra/scripts/deploy.sh`, RUNBOOK §3 | |
+| M8-F19 | Engine cost attribution (active / training / off-feed) is computed from the current subscriptions and analysis requests, so a past day's numbers change after an unsubscribe or a later request; record the authorization basis on each `engine_calls` row when the call is made (migration 0022) and attribute from it (PR #26 Codex comment 4248814596) | `packages/engine`, `packages/db/src/house/metrics.ts` || ✓ D-194, migration 0022 (in PR #26) |
+
 ---
 
 ## 15. M9: Optional extensions (after launch; each item can become its own goal)
@@ -1410,6 +1454,7 @@ production-like rehearsal does not prove DNS, mail delivery, host capacity or pr
 | **Opted-in anonymized feedback** to grow the golden set | after launch, with a privacy-policy update | spec 10 §8 |
 | **Search over my archive** (Postgres FTS; later hybrid search as in DreamCatcher) | user demand | background §2.2 |
 | **Open signup and plans** | when costs and moderation are understood | spec 08 §2, §6 |
+| **UUIDv7 time-range partitioning with tablespaces on other drives** | list p95 or vacuum/retention can't keep up after the S19 query/relay fixes (D-185) | owner idea 2026-10-11 (single host, Postgres 16; no multi-host); not yet specified |
 
 ---
 

@@ -290,7 +290,7 @@ When the page becomes visible again after `/open`:
 2. **Add feeds:**
    - paste a URL (discovery with candidate selection)
    - import OPML
-   - pick from starter bundles: a static list in `apps/web/src/features/onboarding/bundles.ts` with ~10 bundles
+   - pick from starter bundles: a static list in `packages/shared/src/starter-bundles.ts` (each feed with its declared language, checked by `bundles:check --live`; D-184) with ~10 bundles
      (Slovak news, Czech news, Tech, Science, …), each with 3–8 feed URLs, curated before launch
    - at least 1 feed is required to continue
    - every new subscription starts with classification Off. Explain that feed fetching and reading
