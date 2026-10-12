@@ -576,7 +576,7 @@ still has the receipt's resulting state version. A receipt without undo data (op
 a no-op) is `409 CONFLICT` with `details.reason: 'not_undoable'`; another user's or an unknown
 receipt is `404`. It restores only fields changed by that action,
 increments state versions, records an `undo` event referencing the original mutation and requests
-the same rank/learn invalidation, recomputed from the restored state (a stored `rankFull` is ignored). It never writes old ranking-cache fields or fabricates a rating.
+the same rank/learn invalidation, recomputed from the restored state (new receipts do not store `effects.rankFull`; an older receipt that has it still undoes and the value is ignored, D-203). It never writes old ranking-cache fields or fabricates a rating.
 An intervening device action/deleted label/inaccessible article returns `409 STALE_STATE` atomically;
 the client refreshes and explains that newer changes were kept. This restores pre-existing ratings,
 reasons, read state and SHIFT-hide correctly. Undo of a bulk mutation is one atomic operation, not
@@ -792,7 +792,7 @@ authorship policy, not a forged user approval.
 ## 10. Health and metrics
 
 - `GET /healthz`: liveness, always `200` while the process runs.
-- `GET /readyz`: `200` if the DB is reachable and migrations are current, otherwise `503`.
+- `GET /readyz`: `200` if the DB is reachable and every migration the release bundles is applied (newer ones from a later release are fine, so a rollback over the expanded schema is ready, D-207), otherwise `503`.
 - `GET /dev/last-email`: **only when `NODE_ENV=test`** (the route is not registered otherwise). Returns the last email captured by `MAIL_TRANSPORT=log`, for E2E tests.
 - `GET /metrics`: Prometheus text, protected by an admin session **or** a `METRICS_TOKEN` bearer.
   - Counters and histograms: HTTP requests, latency, errors by code.

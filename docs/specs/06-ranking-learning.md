@@ -362,7 +362,10 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
    `seen_story` makes the row due when the cluster's latest read leaves the window (that read plus
    `RANK_WINDOW_DAYS`). A write keeps a `next_rank_at` newer than the run's `ctxAt`, the time its
    context was loaded under `FOR SHARE` of the user row (the earlier of the two), so a reader action
-   committed during a run is not lost.
+   committed during a run is not lost. The exception is clock skew: a stored mark that is later than
+   `ctxAt`, at or before the run's snapshot time and still in the database's future (`clock_timestamp()`)
+   cannot come from an action, since an action's mark is never in the database's future, so the written
+   value replaces it instead of leaving the row due at the run's clock (D-203).
    Serialize rank runs per user and compare captured `users.rank_revision` and article
    `content_revision` immediately before writes. If either changed, discard those results and enqueue
    a replacement; a slower old run cannot overwrite newer settings/content. Reader-state columns are

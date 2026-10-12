@@ -172,6 +172,19 @@ It takes a pre-deploy backup, runs the same gates and smoke (readyz, login page,
 outbox dispatch, queue traversal) and keeps reader state, sessions and the schema. If that smoke fails too, it
 turns maintenance mode on (section 15).
 
+`deploy.sh` refuses unless the checkout is at the requested ref, so a rollback always means checking out the
+old release and running **that release's own** `deploy.sh`. The old release reports ready over the newer schema
+because `/readyz` only requires every migration the release bundles to be applied; extra newer migrations are
+fine (D-207). **Limit:** that rule arrived after the M8 release, so rolling back across a migration works only to
+releases that contain it. M8 itself (`2517cec`) still demands an exact migration match and cannot be rolled back
+to across migrations 0023 and 0024; for that case fix forward instead. Rehearsed locally on 2026-10-12: the
+older release's migrate, seed and worker run fine over the expanded schema, and a release whose database is
+one migration ahead serves reads, actions and outbox work (`/readyz` 200).
+
+If the automatic restore after a failed smoke ran, read its last lines: it now says `the requested release is NOT
+running` and names the commit of the images it restored. On a rollback those are the **newer** release's images,
+so "healthy" there says nothing about the release you asked for.
+
 **Fast path: image retag**, when the previous images are still on the host and a rebuild is not wanted. The
 images the script leaves behind are the mechanism:
 `<image>:previous` (the images running before the last deploy) and `<image>:<commit12>` (each deployed

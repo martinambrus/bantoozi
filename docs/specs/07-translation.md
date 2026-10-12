@@ -223,6 +223,12 @@ inserting a new card row:
   the same checks for that user's held cards and rematches each card as its pair publishes. A
   failed card is retried only on such a user event, which keeps attempts bounded; a selected
   request keeps its frozen card text.
+- The one-off unrestricted `{}` run is bounded like the other housekeeping sweeps: it stops starting
+  pages after `HOUSE_RUN_BUDGET_MS`, stores `cursor: {after: <last card id>}` in `house.progress` and the
+  next unrestricted run resumes after it. Every card the pass did not translate (weak or failed output,
+  or demand that lapsed meanwhile) gets `interest_cards.translation_attempted_at`; an unrestricted run
+  skips a card stamped within 6 h, a good translation clears the stamp, and a `{userId}` run always
+  retries (D-203).
   These derived fields are the only mutable part of the card body (spec 05 §5.1); the worker may
   also replace them through the explicit audited retranslation flow below, under the same demand
   and supported-language checks. Original card text/hash remain immutable.
