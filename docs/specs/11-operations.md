@@ -235,7 +235,7 @@ backup immediately increases exposure and must alert rather than being reported 
 | non-public `interest_cards` | while held. `house.retire-cards` retires an unheld card; 30 days later its `card_answers` are deleted, then the card itself unless a library version, publication request or eval row references it (§6) |
 | `api_mutations` idempotency/undo receipts | until `expires_at` (at least 7 days after creation) |
 | `sessions` | 30 days after expiry or revocation |
-| deleted users | hard-deleted 7 days after `DELETE /me`; encrypted historic backups age out within 6 months and are never served directly |
+| deleted users | hard-deleted 7 days after `DELETE /me`; encrypted historic backups normally age out within 6 months and are never served directly; the newest restore-tested backup is kept until a newer one passes its restore test, so it can be older if backups or restore tests stop, and the privacy page says so (D-201) |
 | `eval` schema | while needed as the golden set, subject to rater erasure (§5.1) |
 | `metrics.daily` settings | 90 days of aggregate snapshot metrics (spec 10) |
 

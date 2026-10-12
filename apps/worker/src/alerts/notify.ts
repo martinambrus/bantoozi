@@ -55,15 +55,21 @@ export function planNotifications(
     .sort((a, b) => waiting(a) - waiting(b) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
     // One digest lists DIGEST_MAX conditions; the rest stay unsent and lead the next run's digest.
     .slice(0, DIGEST_MAX);
-  const recoveries: string[] = [];
+  const cleared: string[] = [];
   const silent: string[] = [];
   for (const [key, entry] of Object.entries(state)) {
     if (key === BACKUP_MEMO_KEY || key === POOL_MEMO_KEY || !entry.active || firing.has(key))
       continue;
     if (skipped.some((id) => key === id || key.startsWith(`${id}.`) || key.startsWith(`${id}:`)))
       continue;
-    (entry.lastSentAt === null ? silent : recoveries).push(key);
+    (entry.lastSentAt === null ? silent : cleared).push(key);
   }
+  // A recovery mail lists at most DIGEST_MAX keys, so only those are planned (and later deleted):
+  // the rest stay open and are mailed by the next run. Oldest incident first, then by key.
+  const since = (key: string): number => Date.parse(state[key]?.firstAt ?? '') || 0;
+  const recoveries = cleared
+    .sort((a, b) => since(a) - since(b) || (a < b ? -1 : a > b ? 1 : 0))
+    .slice(0, DIGEST_MAX);
   return { alerts, recoveries, silent };
 }
 

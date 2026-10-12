@@ -775,4 +775,40 @@ describe('house.alerts de-duplication, recovery and delivery (spec 11 §6.1)', (
       await w.owner.query("DELETE FROM pgboss.job WHERE name LIKE 'r13.q%'");
     }
   });
+  it('mails 25 recoveries as 20 now and the other 5 on the next run, clearing only those listed (R14)', async () => {
+    const mailer = new RecordingMailer();
+    await w.baseline(T0);
+    for (let i = 0; i < 25; i += 1) {
+      const queue = `r14.q${String(i).padStart(2, '0')}`;
+      await w.owner.query("SELECT pgboss.create_queue($1, '{}')", [queue]);
+      await w.jobs({ queue, startAfter: before(2 * HOUR, T0) });
+    }
+    try {
+      // Open the 25 incidents (two runs mail all 25), then let them all clear at once.
+      await w.run(T0, { mailer });
+      await w.run(after(MINUTE, T0), { mailer });
+      expect(await w.activeEntries()).toHaveLength(25);
+      const opened = mailer.to(ADMIN).length;
+      await w.owner.query("DELETE FROM pgboss.job WHERE name LIKE 'r14.q%'");
+
+      const bullets = (text: string) => text.split('\n').filter((l) => l.startsWith('* '));
+      await w.run(after(2 * MINUTE, T0), { mailer });
+      expect(mailer.to(ADMIN)).toHaveLength(opened + 1);
+      const first = bullets(mailer.lastEmail()!.text ?? '');
+      expect(first).toHaveLength(20);
+      expect(await w.activeEntries(), 'only the listed twenty are cleared').toHaveLength(5);
+
+      await w.run(after(3 * MINUTE, T0), { mailer });
+      expect(mailer.to(ADMIN), 'the other five are mailed next run').toHaveLength(opened + 2);
+      const second = bullets(mailer.lastEmail()!.text ?? '');
+      expect(second).toHaveLength(5);
+      expect(new Set([...first, ...second]).size).toBe(25);
+      expect(await w.activeEntries()).toHaveLength(0);
+
+      await w.run(after(4 * MINUTE, T0), { mailer });
+      expect(mailer.to(ADMIN), 'nothing repeats').toHaveLength(opened + 2);
+    } finally {
+      await w.owner.query("DELETE FROM pgboss.job WHERE name LIKE 'r14.q%'");
+    }
+  });
 });

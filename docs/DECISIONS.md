@@ -1922,3 +1922,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   (`data->>'userId'`), so no relayed job keeps the erased user's id. (3) An alert digest listing at most 20
   conditions marks only those as sent; never-mailed conditions come first, then the oldest, so the rest go
   out on the next run. Spec 11 §5.1 updated.
+- D-201: 2026-10-12 M8-T3, M8-T7 (PR #26 Codex review round 14) — (1) The privacy page (en/sk) and the
+  spec 11 §5 retention row no longer promise that every backup ages out within six months: the retention
+  plan keeps the newest restore-tested backup until a newer one passes its restore test (it must never be
+  deleted), so if backups or restore tests stop, that one backup can be older than six months. Both say so,
+  and that every deletion made since a backup was taken is replayed if it is ever restored. (2) A recovery
+  digest that lists at most 20 cleared incidents removes only those from `alerts.state` (oldest `firstAt`
+  first, then key); the rest are mailed on the next run, like the alert overflow of D-200.

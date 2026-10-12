@@ -109,9 +109,12 @@
 
       <h2>Backups</h2>
       <p>
-        We keep encrypted daily, weekly and monthly backups. Deleted accounts age out of historic
-        backups within 6 months, and backups are never served directly. If a backup is ever
-        restored, deletions are replayed before anyone can sign in.
+        We keep encrypted daily, weekly and monthly backups. Deleted accounts normally age out of
+        historic backups within 6 months. The one exception is the most recent backup we have
+        verified by a test restore: we keep it until a newer backup passes that test, so if backups
+        or restore tests ever stop, that one backup can be older than 6 months. Backups are never
+        served directly, and if a backup is ever restored, every deletion made since it was taken is
+        replayed before anyone can sign in.
       </p>
 
       <h2>Export</h2>
