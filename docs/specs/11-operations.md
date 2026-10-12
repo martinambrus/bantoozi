@@ -283,8 +283,8 @@ Before erasing the account, write an encrypted deletion ledger entry
 `ledger/deletion-ledger-<backup id>.age` (D-172). `emailHmac` is the hex HMAC-SHA256 of the
 normalized email under `DELETION_HMAC_KEY`, kept with the ledger, outside the database, so a replay can find
 pre-account rows in a backup taken before signup; do not store the email itself or content in the ledger. Use an idempotent entry
-key and retain each shipped copy 193 days (the longest backup lifetime plus 7 days). Failure, or no configured ledger, defers hard deletion and
-alerts the operator (`erasure.disabled` while users past grace wait); a production worker refuses to start without
+key and keep every shipped copy from the oldest retained backup onwards (the kept restore-tested backup included), pruning only copies older than both that backup and 193 days, and none while no valid backup remains (D-193). Failure, or no configured ledger, defers hard deletion and
+alerts the operator (`erasure.disabled` while users past grace wait; a run with any ledger append failure, deletion failure or card-reference block is incomplete, records `cursor: {failed: {ledger, db, blocked}, at}` and raises `erasure.failed` until a clean run, D-193); a production worker refuses to start without
 `DELETION_LEDGER_PATH`, `DELETION_LEDGER_RECIPIENT` and `DELETION_HMAC_KEY` (D-188). A committed user purge must never lack its recovery tombstone. Account restore
 and ledger creation are serialized by the same per-user lock. Recovery replays the union of all shipped copies, deduplicated by entry id, before
 public access; an entry acts on a restored user only when its id is that user's entry id and its `emailHmac` matches the

@@ -658,6 +658,45 @@ describe('house.purge-users', () => {
     expect(retried[0]!.emailHmac).toBe(deletionEmailHmac(user.email, LEDGER_KEY));
   });
 
+  it('a failed ledger append leaves the run incomplete with a failure cursor, a clean run clears it (R7)', async () => {
+    const progressOf = async (): Promise<Record<string, unknown> | undefined> => {
+      const row = (
+        await h.owner.query<{ value: Record<string, Record<string, unknown>> }>(
+          "SELECT value FROM settings WHERE key = 'house.progress'",
+        )
+      ).rows[0];
+      return row?.value[PURGE_USERS];
+    };
+    await h.owner.query(
+      `UPDATE users SET deleted_at = NULL WHERE deleted_at IS NOT NULL AND deleted_at < $1`,
+      [before(7 * DAY)],
+    );
+    await c.run(PURGE_USERS, NOW, c.ledgerDeps(new FakeLedger(h.owner)));
+    const completedAt = (await progressOf())?.['completedAt'];
+    expect(completedAt, 'a clean run completes').toBeDefined();
+
+    const later = at(NOW, HOUR);
+    const user = await c.deletedUser(before(8 * DAY));
+    await c.run(
+      PURGE_USERS,
+      later,
+      c.ledgerDeps(new FakeLedger(h.owner, (entry) => entry.userId === user.id)),
+    );
+    expect(await c.userExists(user.id)).toBe(true);
+    const failed = await progressOf();
+    expect(failed?.['cursor']).toEqual({
+      failed: { ledger: 1, db: 0, blocked: 0 },
+      at: later.toISOString(),
+    });
+    expect(failed?.['completedAt'], 'completedAt is not advanced').toBe(completedAt);
+
+    await c.run(PURGE_USERS, at(later, HOUR), c.ledgerDeps(new FakeLedger(h.owner)));
+    expect(await c.userExists(user.id)).toBe(false);
+    const clean = await progressOf();
+    expect(clean?.['cursor']).toBeUndefined();
+    expect(clean?.['completedAt']).toBe(at(later, HOUR).toISOString());
+  });
+
   it('folds the user usage into the platform bucket, preserving every total, and drops the attribution', async () => {
     const user = await c.deletedUser(before(8 * DAY));
     const d1 = utcDay(before(41 * DAY));

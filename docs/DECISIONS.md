@@ -1854,3 +1854,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   Handlers are duplicate-tolerant by design. The output line reports `active_jobs_requeued` and
   `active_jobs_failed` instead of `active_jobs_cancelled`. Spec 11 §4.1 says "cancel/expire stale
   active leases"; it is updated to this behaviour.
+- D-193: 2026-10-12 M8-T2, M8-T3, M8-T5 (PR #26 Codex review round 7) — (1) Deletion-ledger copies in
+  the bucket are kept from the oldest backup the retention plan keeps (the kept restore-tested backup
+  included) onwards; a copy is pruned only when it is older than both that backup and 193 days, and no
+  copy is pruned while no valid backup remains. A fixed 193-day expiry could delete the copies an old
+  retained backup needs to replay later erasures. (2) A `house.purge-users` run with any ledger append
+  failure, deletion failure or card-reference block is incomplete: it records
+  `cursor: {failed: {ledger, db, blocked}, at}`, does not advance `completedAt`, and `house.alerts`
+  raises `erasure.failed` while that cursor is present; a later clean run clears both. Spec 02 §2 and
+  spec 11 §5.1 updated.

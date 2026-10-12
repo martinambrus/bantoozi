@@ -241,6 +241,50 @@ describe('house.alerts rules (spec 11 §6.1)', () => {
     expect(await emails(purgeUsers(undefined)), 'completed').toBe(0);
   });
 
+  it('erasure failed: a failure cursor fires once per 6 h and clears with one recovery mail (R7)', async () => {
+    const setCursor = async (cursor: unknown, at: Date): Promise<void> => {
+      const current = (
+        await h.owner.query<{ value: Record<string, unknown> }>(
+          "SELECT value FROM settings WHERE key = 'house.progress'",
+        )
+      ).rows[0]!.value;
+      await w.setting('house.progress', {
+        ...current,
+        'house.purge-users': {
+          updatedAt: iso(at),
+          version: 1,
+          ...(cursor === undefined ? { completedAt: iso(at) } : { cursor }),
+        },
+      });
+    };
+    await w.baseline(NOW);
+    // Keeps the world quiet at a later time without dropping `alerts.state` (which `baseline` does).
+    const quietAt = async (time: Date): Promise<void> => {
+      await w.liveness(time);
+      await w.events([opsEvent('backup_ok', before(HOUR, time)), hostHealth(before(MINUTE, time))]);
+    };
+    const mailer = new RecordingMailer();
+    await setCursor(
+      { failed: { ledger: 1, db: 0, blocked: 0 }, at: iso(before(MINUTE)) },
+      before(MINUTE),
+    );
+    await w.run(NOW, { mailer });
+    expect(mailer.to(ADMIN), 'fires').toHaveLength(1);
+    const soon = after(HOUR);
+    await quietAt(soon);
+    await setCursor({ failed: { ledger: 1, db: 0, blocked: 0 }, at: iso(NOW) }, NOW);
+    await w.run(soon, { mailer });
+    expect(mailer.to(ADMIN), 'de-duplicated within 6 h').toHaveLength(1);
+    const clean = after(2 * HOUR);
+    await quietAt(clean);
+    await setCursor(undefined, soon);
+    await w.run(clean, { mailer });
+    expect(mailer.to(ADMIN), 'one recovery').toHaveLength(2);
+    await quietAt(after(3 * HOUR));
+    await w.run(after(3 * HOUR), { mailer });
+    expect(mailer.to(ADMIN), 'no second recovery').toHaveLength(2);
+  });
+
   it('service health: LibreTranslate unreachable fires only while a language is translated or card text is english', async () => {
     const down = (): Promise<boolean> => Promise.resolve(false);
     const up = (): Promise<boolean> => Promise.resolve(true);

@@ -89,7 +89,29 @@ describe('backup store', () => {
     expect(ids()).toContain('20261011T023000Z');
   });
 
+  it('keeps every ledger copy from the oldest retained backup onwards, however old (R7)', async () => {
+    backup('20260101T023000Z', 'dump.age', 'globals.age', 'manifest.age', 'restore-tested.json');
+    backup('20261011T023000Z');
+    put('ledger/deletion-ledger-20250101T023000Z.age', 'older than every backup');
+    put('ledger/deletion-ledger-20260101T023000Z.age', 'the old backup');
+    put('ledger/deletion-ledger-20260301T023000Z.age', 'between');
+    put('ledger/deletion-ledger-20261001T023000Z.age', 'new');
+    await store.prune(new Date('2026-10-11T03:00:00Z'));
+    expect(ids()).toContain('20260101T023000Z');
+    expect(s3.objects.has('ledger/deletion-ledger-20250101T023000Z.age')).toBe(false);
+    expect(s3.objects.has('ledger/deletion-ledger-20260101T023000Z.age')).toBe(true);
+    expect(s3.objects.has('ledger/deletion-ledger-20260301T023000Z.age')).toBe(true);
+    expect(s3.objects.has('ledger/deletion-ledger-20261001T023000Z.age')).toBe(true);
+  });
+
+  it('keeps all ledger copies when no valid backup remains (R7)', async () => {
+    put('ledger/deletion-ledger-20250101T023000Z.age', 'old');
+    await store.prune(new Date('2026-10-11T03:00:00Z'));
+    expect(s3.objects.has('ledger/deletion-ledger-20250101T023000Z.age')).toBe(true);
+  });
+
   it('drops ledger copies past their retention only', async () => {
+    backup('20261011T023000Z');
     put('ledger/deletion-ledger-20250101T023000Z.age', 'old');
     put('ledger/deletion-ledger-20261001T023000Z.age', 'new');
     await store.prune(new Date('2026-10-11T03:00:00Z'));

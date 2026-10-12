@@ -594,8 +594,25 @@ export const HOUSE_PROGRESS_CURSORS = {
   /**
    * Set while users erased 7 days ago wait because the deletion ledger or its HMAC key is not
    * configured (outside production): `house.alerts` raises `erasure.disabled` from it (spec 11 §5.1).
+   * `failed` is set by a run in which a ledger append, a deletion or a card reference failed or
+   * blocked users: the run is not complete and `house.alerts` raises `erasure.failed` until a later
+   * run completes cleanly.
    */
-  'house.purge-users': z.object({ disabled: z.literal('ledger_unconfigured') }).strict(),
+  'house.purge-users': z.union([
+    z.object({ disabled: z.literal('ledger_unconfigured') }).strict(),
+    z
+      .object({
+        failed: z
+          .object({
+            ledger: z.number().int().nonnegative(),
+            db: z.number().int().nonnegative(),
+            blocked: z.number().int().nonnegative(),
+          })
+          .strict(),
+        at: z.string(),
+      })
+      .strict(),
+  ]),
 } as const satisfies Partial<Record<HouseProgressJob, z.ZodType>>;
 export type HouseProgressCursor<J extends keyof typeof HOUSE_PROGRESS_CURSORS> = z.output<
   (typeof HOUSE_PROGRESS_CURSORS)[J]

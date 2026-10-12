@@ -84,14 +84,28 @@ export function createPurgeUsersHandler(deps: WorkerDeps): QueueHandler<'house.p
       if (page.length < PURGE_USERS_PAGE) break;
     }
 
-    await recordHouseProgress(deps, JOB, now, complete);
+    // A user the run could not erase (ledger append, deletion or card reference) makes the run
+    // incomplete: the failure cursor keeps `house.alerts` raising `erasure.failed` until a clean run.
+    const failures = {
+      ledger: counts.ledgerFailed,
+      db: counts.failed,
+      blocked: counts.blocked,
+    };
+    const failing = failures.ledger > 0 || failures.db > 0 || failures.blocked > 0;
+    await recordHouseProgress(
+      deps,
+      JOB,
+      now,
+      complete && !failing,
+      failing ? { failed: failures, at: now.toISOString() } : undefined,
+    );
     deps.logger.info(
       {
         job: JOB,
         durationMs: Date.now() - started,
         affected: counts.deleted,
         ...counts,
-        remaining: complete ? 0 : null,
+        remaining: complete && !failing ? 0 : null,
       },
       'erased users purged',
     );

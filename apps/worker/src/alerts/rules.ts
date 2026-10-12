@@ -211,7 +211,8 @@ const serviceRule: AlertRule = {
 
 /**
  * `house.purge-users` last ran with users erased 7 days ago waiting and no deletion ledger or HMAC
- * key configured (its `disabled` cursor, spec 11 §5.1): erasure is not happening. Production
+ * key configured (its `disabled` cursor, spec 11 §5.1) or with a failed run (its `failed` cursor,
+ * raising `erasure.failed`): erasure is not happening. Production
  * refuses to start without the ledger, so this guards every other environment.
  */
 const erasureRule: AlertRule = {
@@ -222,6 +223,16 @@ const erasureRule: AlertRule = {
       progress['house.purge-users']?.cursor,
     );
     if (!cursor.success) return [];
+    if ('failed' in cursor.data) {
+      const { ledger, db, blocked } = cursor.data.failed;
+      return [
+        {
+          key: 'erasure.failed',
+          title: 'Account erasure is failing',
+          detail: `The last house.purge-users run could not erase every due account (ledger append failures ${ledger}, deletion failures ${db}, blocked by a card reference ${blocked}).`,
+        },
+      ];
+    }
     return [
       {
         key: 'erasure.disabled',

@@ -130,9 +130,13 @@ export class BackupStore {
         deleted += 1;
       }
     }
+    // A ledger copy is replayed after restoring any backup older than it, so none may go while a
+    // retained backup could need it; with no valid backup left every copy stays.
+    const oldestKept = [...plan.keep.keys()].sort()[0];
     for (const key of await this.ledgerKeys()) {
+      if (oldestKept === undefined) break;
       const id = /(\d{8}T\d{6}Z)\.age$/u.exec(key)?.[1];
-      if (id !== undefined && ledgerExpired(id, now)) {
+      if (id !== undefined && id < oldestKept && ledgerExpired(id, now)) {
         if (!dryRun) await this.client.deleteObject(key);
         deleted += 1;
       }
