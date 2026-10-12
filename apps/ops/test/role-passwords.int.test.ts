@@ -41,6 +41,8 @@ async function canLogin(role: string, password: string): Promise<boolean> {
   }
 }
 
+let testDatabase = '';
+
 beforeAll(async () => {
   testDb = await setupTestDatabase({
     pkg: 'ops',
@@ -53,14 +55,21 @@ beforeAll(async () => {
   admin = new pg.Pool({ connectionString: testDb.urls.admin, max: 2 });
   const database = (await admin.query<{ db: string }>('SELECT current_database() AS db')).rows[0]
     ?.db;
+  testDatabase = database ?? '';
   for (const [role] of roles) {
     await admin.query(`CREATE ROLE "${role}" LOGIN`);
-    await admin.query(`GRANT CONNECT ON DATABASE "${database}" TO "${role}"`);
+    await admin.query(`GRANT CONNECT ON DATABASE "${testDatabase}" TO "${role}"`);
   }
 });
 
 afterAll(async () => {
-  for (const [role] of roles) await admin.query(`DROP ROLE IF EXISTS "${role}"`);
+  // A role that still holds a privilege on the test database cannot be dropped (2BP01).
+  for (const [role] of roles) {
+    await admin
+      .query(`REVOKE CONNECT ON DATABASE "${testDatabase}" FROM "${role}"`)
+      .catch(() => undefined);
+    await admin.query(`DROP ROLE IF EXISTS "${role}"`);
+  }
   await admin.end();
   await dropCreatedTestDatabases();
 });

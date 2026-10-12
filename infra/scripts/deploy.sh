@@ -87,6 +87,9 @@ done
 if [ "$REHEARSAL" = 1 ]; then PROFILES+=(rehearsal); fi
 for p in "${PROFILES[@]:-}"; do [ -n "$p" ] && PROFILE_ARGS+=(--profile "$p"); done
 has_profile() { local p; for p in "${PROFILES[@]:-}"; do [ "$p" = "$1" ] && return 0; done; return 1; }
+# The worker-laya queues (article.enrich.laya, analysis.process.laya) have no handlers before M9, so a
+# worker-laya would refuse production startup; keep the profile unavailable until then (D-197).
+has_profile laya && die "the laya profile is not available before M9: its worker has no handlers yet; remove laya from COMPOSE_PROFILES"
 
 # ── 1. Lock, release and clean checkout ──────────────────────────────────────────────────────
 PROJECT="$(envfile_get COMPOSE_PROJECT_NAME)"

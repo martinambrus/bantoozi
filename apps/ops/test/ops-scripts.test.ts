@@ -257,6 +257,17 @@ describe('compose stack for the backup tooling', () => {
   });
 });
 
+describe('deploy refuses the laya profile until M9', () => {
+  it('stops before any backup or migration when COMPOSE_PROFILES includes laya', () => {
+    const script = read('infra/scripts/deploy.sh');
+    const gate = script.indexOf('has_profile laya && die');
+    expect(gate).toBeGreaterThan(-1);
+    expect(script.slice(gate, gate + 300)).toMatch(/M9/u);
+    expect(gate).toBeLessThan(script.indexOf('step "pre-deploy backup"'));
+    expect(gate).toBeLessThan(script.indexOf('step "migrate'));
+  });
+});
+
 describe('deploy connection budget', () => {
   const budget = (profiles: string): number =>
     Number(

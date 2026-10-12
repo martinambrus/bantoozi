@@ -1895,3 +1895,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   (this supersedes the `failed` branch of D-192): a final-attempt job captured after its intent was
   delivered is the only copy of that work. The output drops `active_jobs_failed`. Spec 11 §4 and §4.1
   updated.
+- D-197: 2026-10-12 M8-T1 (PR #26 Codex review round 10) — `deploy.sh` refuses the `laya` compose profile
+  before any backup or migration: `worker-laya` consumes `article.enrich.laya` and `analysis.process.laya`,
+  whose handlers stay the default `unavailable` stubs until M9, so its production readiness check would
+  stop it at every start. The service definition stays in `infra/compose.yml` for M9; the stored-state
+  gate (D-180) still refuses `engine.laya` or outstanding Laya work, which cannot arise before the Laya
+  worker's heartbeat exists. Also from this round: the `role-passwords` integration test revokes its
+  scratch roles' CONNECT before dropping them (CI failed with SQLSTATE 2BP01). Spec 11 §2 updated.
