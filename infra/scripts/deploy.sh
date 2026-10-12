@@ -224,10 +224,12 @@ else
   [ -x "$BACKUP" ] || die "the pre-deploy backup is required (spec 11 §3 step 2) but $BACKUP does not exist yet"
   if [ "$REHEARSAL" = 1 ] && [ "$(envfile_get BACKUP_S3_ENDPOINT)" = "http://minio:9000" ]; then
     # The S3 stand-in of the rehearsal profile: running, with the bucket present (a directory of the data root).
-    dc up -d --no-deps --no-build minio >/dev/null || die "the S3 stand-in (minio) did not start"
-    sleep 2
+    dc up -d --no-deps --no-build --wait --wait-timeout 120 minio >/dev/null || die "the S3 stand-in (minio) did not become healthy"
     dc exec -T minio mkdir -p "/data/$(envfile_get BACKUP_S3_BUCKET)" || die "could not create the bucket on the S3 stand-in"
   fi
+  # Built here, ahead of the backup, so a first image build cannot time out inside backup.sh.
+  step "build the backup tools image"
+  dc --profile tools build backup-tools >/dev/null 2>&1 || die "the backup tools image build failed"
   step "pre-deploy backup"
   "$BACKUP" --pre-deploy --env-file "$ENV_FILE" || die "the pre-deploy backup failed"
 fi
@@ -278,7 +280,12 @@ dc stop api >/dev/null 2>&1 || true
 has_profile translate && { dc up -d --no-deps --no-build libretranslate >/dev/null || die "libretranslate did not start"; }
 [ "$REHEARSAL" = 1 ] && { dc up -d --no-deps --no-build mailpit >/dev/null || die "the mail catcher did not start"; }
 # The S3-compatible stand-in for the off-site bucket (backup.sh / restore-test.sh rehearsal).
-[ "$REHEARSAL" = 1 ] && { dc up -d --no-deps --no-build minio >/dev/null || die "the S3 stand-in (minio) did not start"; }
+if [ "$REHEARSAL" = 1 ]; then
+  dc up -d --no-deps --no-build --wait --wait-timeout 120 minio >/dev/null || die "the S3 stand-in (minio) did not become healthy"
+  if [ "$(envfile_get BACKUP_S3_ENDPOINT)" = "http://minio:9000" ]; then
+    dc exec -T minio mkdir -p "/data/$(envfile_get BACKUP_S3_BUCKET)" || die "could not create the bucket on the S3 stand-in"
+  fi
+fi
 START=(api worker)
 has_profile laya && START+=(worker-laya)
 START_OK=1
