@@ -215,8 +215,9 @@ fi
 STAGE=event
 DURATION=$(( $(date -u +%s) - STARTED_EPOCH ))
 DETAIL="backup $ID ok$([ "$PRE_DEPLOY" = 1 ] && echo ' pre-deploy') schema=$SCHEMA_VERSION dump_bytes=$(json_field "$DUMP_JSON" size) duration_s=$DURATION $LEDGER_NOTE $PRUNE_NOTE"
-if ! post_event backup_ok "$DETAIL"; then
-  echo "backup: warning: the backup is verified but backup_ok could not be recorded: $(err_tail)" >&2
+if ! post_event_retry backup_ok "$DETAIL"; then
+  echo "backup: the backup is verified but backup_ok could not be recorded after retries (the missing event would raise a stale-backup alert): $(err_tail)" >&2
+  exit 1
 fi
 echo "BACKUP_ID=$ID"
 echo "backup: ok $(redact "$DETAIL")"

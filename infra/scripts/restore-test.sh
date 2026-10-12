@@ -402,7 +402,8 @@ echo "$RELEASE_LINE"
 echo "BACKUP_ID=$ID"
 echo "RESTORE_DURATION_S=$DURATION"
 echo "BACKUP_AGE_S=$BACKUP_AGE_S"
-if ! post_event restore_ok "restore of $ID ok duration_s=$DURATION backup_age_s=$BACKUP_AGE_S $(printf '%s' "$REPLAY_OUT" | cut -c1-200)"; then
-  echo "restore-test: warning: the restore is verified but restore_ok could not be recorded: $(err_tail)" >&2
+if ! post_event_retry restore_ok "restore of $ID ok duration_s=$DURATION backup_age_s=$BACKUP_AGE_S $(printf '%s' "$REPLAY_OUT" | cut -c1-200)"; then
+  echo "restore-test: the restore is verified but restore_ok could not be recorded after retries: $(err_tail)" >&2
+  exit 1
 fi
 STAGE=done

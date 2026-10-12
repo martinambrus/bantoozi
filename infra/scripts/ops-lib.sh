@@ -117,6 +117,17 @@ process.stdin.on("data", (c) => { detail += c; }).on("end", async () => {
 });' "$kind" >>"$ERRLOG" 2>&1
 }
 
+# post_event_retry <kind> <detail> : post_event up to 4 attempts, 5 s apart (the API may be restarting
+# or briefly busy); returns non-zero when every attempt failed so the caller can fail the run.
+post_event_retry() {
+  local attempt
+  for attempt in 1 2 3 4; do
+    post_event "$1" "$2" && return 0
+    [ "$attempt" -lt 4 ] && sleep "${POST_EVENT_RETRY_SLEEP:-5}"
+  done
+  return 1
+}
+
 # json_field <json-line> <name> : a number or plain string field of the one-line JSON the tools print.
 json_field() { printf '%s' "$1" | sed -nE "s/.*\"$2\":(\"([^\"]*)\"|([0-9]+)).*/\\2\\3/p"; }
 
