@@ -10,10 +10,11 @@ import { createApiHarness, type ApiHarness } from './support/harness.js';
 
 /**
  * S19 (S18 findings Q3): every list or counts call that finds ranking pending used to write one
- * `user.rank {full}` catch-up intent, while the relay keeps at most one full-rank job per user. With
- * a full-rank intent or job already pending, another intent is pure outbox churn (7.6k per 20
- * minutes in the load test) and, as it stalls behind the pending job, the oldest-intent age. The
- * catch-up must not be written then, and must still be written when nothing covers it.
+ * `user.rank` catch-up intent per call, and the relay keeps at most one such job per user. With an
+ * incremental catch-up intent (`user.rank {reason: 'list'}`) or job already pending, another intent
+ * is pure outbox churn (7.6k per 20 minutes in the load test) and, as it stalls behind the pending
+ * job, the oldest-intent age. The incremental catch-up must not be written then, and must still be
+ * written when nothing covers it.
  *
  * Counted from the owner role (the API role cannot read `job_outbox`): rows of the user before and
  * after two list calls.
