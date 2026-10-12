@@ -1824,3 +1824,15 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   long backup can therefore defer the 05:00 purge by a day. (2) The ledger replay changes nothing for
   an entry (including the used-invite scrub) until both the entry id and the email HMAC match the
   restored user. Spec 11 §4 and §6 updated.
+- D-190: 2026-10-12 M8-T1, M8-T5, M8-T8 (PR #26 Codex review round 4) — (1) `backup.sh` holds the
+  erasure/backup advisory lock of D-189 until `manifest.age` is uploaded and verified, not only until the
+  ledger copy is shipped, so no purge can commit between the ledger copy and the backup's commit point.
+  (2) The marks and placeholder rows written by reader actions (D-186) are limited to the rank window
+  (`rankWindowMembers`, the same predicate as `rankWindowPage`): an out-of-window cluster sibling, for
+  example an old row from an unsubscribed feed, is never marked due, so `house.reconcile` does not keep
+  re-enqueuing a rank the ranker can never clear. (3) `deploy.sh` requires `DELETION_LEDGER_PATH`,
+  `DELETION_LEDGER_RECIPIENT` and `DELETION_HMAC_KEY` in its preflight (before backup and migration) and
+  refuses the example placeholders, including the `age1changeme` recipient that the example env files
+  now ship. (4) The S16 deploy drill's outage step now uses a ranking-relevant preference change to
+  queue an outbox intent, because a reader action that changes no rank records nothing since D-186.
+  Spec 06 §7 and spec 11 §3 and §4 updated.

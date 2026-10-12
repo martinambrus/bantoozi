@@ -330,7 +330,8 @@ insertion goes through the transactional outbox (spec 03). Version numbers are s
      since the previous input snapshot; these enqueue a full rank and increment `rank_revision`, so
      deleting evidence is detected too. A **reader action** (read, open, unread, mark-read, rate,
      prompt answer, bulk rate, unhide, unlabel, undo) does neither: in its transaction it sets
-     `next_rank_at = clock_timestamp()` on the non-archived window rows whose inputs changed (every
+     `next_rank_at = clock_timestamp()` on the non-archived window rows whose inputs changed, and only on rows
+     the window visits (the `rankWindowPage` predicate, D-190) (every
      member of a cluster whose read evidence changed, with a placeholder `user_article` row for each
      member the user's subscriptions carry in the window that has none; the row itself on un-archive
      or when a label is removed; rows whose `rules_fired` has `demote:<flag>` when that active flag's

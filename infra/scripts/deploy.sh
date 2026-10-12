@@ -112,13 +112,13 @@ echo "deploy: project=$PROJECT commit=${COMMIT:0:12} mode=$([ "$REHEARSAL" = 1 ]
 # ── 2. Validate the environment, the profiles and the host ───────────────────────────────────
 REQUIRED=(PUBLIC_HOST ACME_EMAIL PUBLIC_BASE_URL POSTGRES_PASSWORD BANTOOZI_OWNER_PASSWORD
   BANTOOZI_APP_PASSWORD BANTOOZI_WORKER_PASSWORD SESSION_PEPPER METRICS_TOKEN TYPESAFE_MODEL
-  MAIL_TRANSPORT SMTP_URL)
+  MAIL_TRANSPORT SMTP_URL DELETION_LEDGER_PATH DELETION_LEDGER_RECIPIENT DELETION_HMAC_KEY)
 missing=()
 placeholder=()
 for v in "${REQUIRED[@]}"; do
   val="$(envfile_get "$v")"
   if [ -z "$val" ]; then missing+=("$v"); continue; fi
-  case "$val" in change-me* | *change-me* | *example.com*) [ "$REHEARSAL" = 1 ] || placeholder+=("$v") ;; esac
+  case "$val" in change-me* | *change-me* | age1changeme* | *example.com*) [ "$REHEARSAL" = 1 ] || placeholder+=("$v") ;; esac
 done
 if [ "${#missing[@]}" -gt 0 ]; then die "required variables missing or empty in the env file: ${missing[*]}"; fi
 if [ "${#placeholder[@]}" -gt 0 ]; then die "variables still hold placeholder values: ${placeholder[*]}"; fi

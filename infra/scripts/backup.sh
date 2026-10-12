@@ -157,7 +157,7 @@ for svc in postgres api worker; do
 done
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-# Serialize with house.purge-users from before the dump snapshot until the ledger copy is shipped: a
+# Serialize with house.purge-users from before the dump snapshot until the ledger copy and the manifest are shipped and verified: a
 # purge is then wholly before (user absent from the dump, tombstone in the copy) or wholly after
 # (user still in the dump, deleted_at set) this backup, never straddling it.
 STAGE=erasure-lock
@@ -192,12 +192,14 @@ if [ -n "$LEDGER_PATH" ]; then
   fi
 fi
 
-release_erasure_lock
-
 STAGE=manifest
 FINISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 MANIFEST="{\"version\":1,\"backupId\":\"$ID\",\"startedAt\":\"$STARTED_AT\",\"finishedAt\":\"$FINISHED_AT\",\"commit\":\"$COMMIT\",\"preDeploy\":$([ "$PRE_DEPLOY" = 1 ] && echo true || echo false),\"schemaVersion\":$SCHEMA_VERSION,\"images\":{$IMAGES},\"bounds\":$BOUNDS,\"objects\":[$DUMP_JSON,$GLOBALS_JSON]}"
 printf '%s' "$MANIFEST" | writer tools_run backup:put "${P}manifest.age" >/dev/null
+
+# backup:put verifies size and checksum, so the manifest (the commit point) is stored and verified here;
+# only now may a purge run again. A failure above leaves the lock to the exit trap.
+release_erasure_lock
 
 STAGE=prune
 PRUNE_NOTE="prune=skipped"

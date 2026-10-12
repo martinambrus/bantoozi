@@ -86,9 +86,12 @@ describe('backup and restore scripts (static checks)', () => {
     expect(backup.indexOf('STAGE=erasure-lock')).toBeGreaterThan(-1);
     expect(acquire).toBeLessThan(backup.indexOf('pg_dump -U postgres'));
     const ledgerShip = backup.indexOf('backup:put-raw "${BACKUP_S3_LEDGER_PREFIX}');
+    const manifestPut = backup.indexOf('backup:put "${P}manifest.age"');
     const release = backup.indexOf('release_erasure_lock\n', backup.indexOf('STAGE=ledger'));
     expect(release).toBeGreaterThan(ledgerShip);
-    expect(release).toBeLessThan(backup.indexOf('STAGE=manifest'));
+    // R4: the lock outlives the verified manifest upload (the commit point) and is released right after.
+    expect(release).toBeGreaterThan(manifestPut);
+    expect(release).toBeLessThan(backup.lastIndexOf('STAGE=prune'));
     const trap = backup.slice(backup.indexOf('on_exit() {'), backup.indexOf('trap on_exit EXIT'));
     expect(trap).toContain('release_erasure_lock');
   });
@@ -129,6 +132,15 @@ describe('deploy, maintenance and host-health scripts (static checks)', () => {
     expect(caddyfile).toMatch(/^\s*HTML 503$/mu);
     expect(compose).toContain('- caddy-data:/data');
     expect(read('infra/scripts/maintenance.sh')).toContain('FLAG_DIR=/data/maintenance');
+  });
+
+  it('requires the deletion ledger variables in the preflight, before any backup or migration (R4)', () => {
+    const deploy = read('infra/scripts/deploy.sh');
+    const required = deploy.slice(deploy.indexOf('REQUIRED=('), deploy.indexOf('missing=()'));
+    for (const v of ['DELETION_LEDGER_PATH', 'DELETION_LEDGER_RECIPIENT', 'DELETION_HMAC_KEY']) {
+      expect(required).toContain(v);
+    }
+    expect(deploy.indexOf('REQUIRED=(')).toBeLessThan(deploy.indexOf('backup.sh'));
   });
 
   it('gates the deploy on stored settings and turns maintenance on when compatibility is not shown', () => {

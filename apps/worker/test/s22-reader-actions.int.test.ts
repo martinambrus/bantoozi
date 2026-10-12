@@ -1,4 +1,4 @@
-import { markArticlesRead, tenantOutbox, withTenant } from '@bantoozi/db';
+import { markArticlesRead, tenantOutbox, usersDueForRank, withTenant } from '@bantoozi/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ClassifyHarness, DAY } from './support/classify.js';
@@ -184,4 +184,47 @@ describe('S22 bulk mark-read', () => {
       await world.close();
     }
   }, 300_000);
+});
+
+describe('R4 marks and placeholders stay inside the rank window', () => {
+  it('an old non-archived sibling from an unsubscribed feed is not marked and the user is not due', async () => {
+    const world = await RankWorld.create(h, spec());
+    try {
+      const outside = await h.feed();
+      const old = await h.article({
+        feedIds: [outside],
+        title: 'R4 old sibling',
+        firstSeenAt: new Date(Date.now() - 100 * DAY),
+      });
+      const oldNoRow = await h.article({
+        feedIds: [outside],
+        title: 'R4 old sibling without a row',
+        firstSeenAt: new Date(Date.now() - 100 * DAY),
+      });
+      await h.owner.query(
+        `UPDATE articles SET story_cluster_id = $1 WHERE id = ANY($2::bigint[])`,
+        [world.clusters[0], [old, oldNoRow]],
+      );
+      await h.owner.query(
+        `INSERT INTO user_article (user_id, article_id, scored_at) VALUES ($1, $2, now())`,
+        [world.userId, old],
+      );
+      await world.drain();
+      expect(await world.perform({ k: 'read', a: 0 }), 'the action changed something').toBe(true);
+      await world.drain();
+      const rows = await h.owner.query<{ article_id: string; next_rank_at: Date | null }>(
+        `SELECT article_id::text AS article_id, next_rank_at FROM user_article
+          WHERE user_id = $1 AND article_id = ANY($2::bigint[])`,
+        [world.userId, [old, oldNoRow]],
+      );
+      expect(rows.rows, 'no placeholder for the old row without one').toHaveLength(1);
+      expect(rows.rows[0]!.next_rank_at, 'the old row is not marked').toBeNull();
+      const due = await h.ownerDb.transaction((tx) =>
+        usersDueForRank(tx, { now: new Date(Date.now() + 60_000), after: null, limit: 1000 }),
+      );
+      expect(due).not.toContain(world.userId);
+    } finally {
+      await world.close();
+    }
+  });
 });

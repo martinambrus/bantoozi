@@ -25,7 +25,10 @@ export interface RankWindowInput {
   windowDays: number;
 }
 
-function windowCte(input: RankWindowInput): SQL {
+function windowCte(input: RankWindowInput, only?: SQL): SQL {
+  // `only`: a subquery of article ids that narrows the window to those candidates (same predicates).
+  const onlyRecent = only === undefined ? sql`` : sql`AND fi.article_id IN (${only})`;
+  const onlySelected = only === undefined ? sql`` : sql`AND r.article_id IN (${only})`;
   const cutoff = new Date(input.now.getTime() - input.windowDays * 86_400_000).toISOString();
   const selectionCutoff = new Date(
     input.now.getTime() - SELECTION_WINDOW_DAYS * 86_400_000,
@@ -35,7 +38,7 @@ function windowCte(input: RankWindowInput): SQL {
     recent AS (
       SELECT fi.article_id, max(fi.first_seen_at) AS arrival
         FROM feed_items fi JOIN subs s ON s.feed_id = fi.feed_id
-       WHERE fi.first_seen_at >= ${cutoff}::timestamptz
+       WHERE fi.first_seen_at >= ${cutoff}::timestamptz ${onlyRecent}
        GROUP BY fi.article_id),
     selected AS (
       SELECT DISTINCT r.article_id
@@ -46,7 +49,7 @@ function windowCte(input: RankWindowInput): SQL {
                             AND s.inference_version = r.inference_version
         JOIN feed_items fi ON fi.article_id = r.article_id AND fi.feed_id = r.feed_id
        WHERE r.user_id = ${input.userId}::uuid AND r.status = 'complete'
-         AND r.created_at > ${selectionCutoff}::timestamptz
+         AND r.created_at > ${selectionCutoff}::timestamptz ${onlySelected}
          AND r.article_id NOT IN (SELECT article_id FROM recent)),
     rank_window AS (
       SELECT article_id, arrival FROM recent
@@ -56,6 +59,15 @@ function windowCte(input: RankWindowInput): SQL {
                          ON x.feed_id = fi.feed_id WHERE fi.article_id = s.article_id),
                       a.first_seen_at)
         FROM selected s JOIN articles a ON a.id = s.article_id)`;
+}
+
+/**
+ * A subquery `(WITH … SELECT article_id FROM rank_window)` of the window articles among
+ * `only` (a `SELECT` of article ids): the exact membership predicate of `rankWindowPage`, so a mark
+ * or a placeholder never lands on a row no run visits.
+ */
+export function rankWindowMembers(input: RankWindowInput, only: SQL): SQL {
+  return sql`(WITH ${windowCte(input, only)} SELECT article_id FROM rank_window)`;
 }
 
 /**

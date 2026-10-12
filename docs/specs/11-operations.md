@@ -69,7 +69,8 @@ when something needs a human, before users notice.
 1. Resolve the approved release tag `vYYYY.MM.DD-N` to a commit, acquire a deploy lock and verify a
    clean checkout. Build immutable API/worker/migration/Caddy images with the frozen lockfile; static
    web assets are inside the Caddy image, not overwritten in a shared volume during a live deploy.
-2. Validate required secrets and the enabled profiles, check free disk/connection budget, and record
+2. Validate required secrets (including `DELETION_LEDGER_PATH`, `DELETION_LEDGER_RECIPIENT` and
+   `DELETION_HMAC_KEY`; example placeholders are refused, D-190) and the enabled profiles, check free disk/connection budget, and record
    the previous image digests, schema version and a fresh successful encrypted pre-deploy backup.
 3. Start healthy Postgres, then run the one-off migration image. Migrations acquire a database
    advisory lock and use bounded `lock_timeout`/`statement_timeout` (30 s and 5 min, set when the
@@ -131,7 +132,7 @@ backup immediately increases exposure and must alert rather than being reported 
   [pg_dumpall](https://www.postgresql.org/docs/16/app-pg-dumpall.html).
 - Serialize with account erasure: before the dump, take the session advisory lock
   `ERASURE_BACKUP_LOCK_KEY` (`packages/shared/src/erasure-lock.ts`) and hold it until the deletion-ledger
-  copy is shipped and verified, then release it before the manifest. `house.purge-users` holds the same
+  copy is shipped and verified and the manifest is uploaded and verified, then release it (D-190). `house.purge-users` holds the same
   lock around each user's whole purge (tombstone append to final commit), so every purge falls wholly
   before a backup (user absent from the dump, tombstone in its ledger copy) or wholly after it. The
   backup waits at most `BACKUP_ERASURE_LOCK_WAIT_S` (default 300 s) and otherwise fails with

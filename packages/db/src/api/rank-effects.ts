@@ -13,6 +13,7 @@ import { sql } from 'drizzle-orm';
 
 import { recordRankIntents } from '../ingest/rank-intents.js';
 import { loadRecentDislikes } from '../rank/context.js';
+import { rankWindowMembers } from '../rank/window.js';
 import type { TenantTx } from '../tenant.js';
 
 /**
@@ -175,7 +176,7 @@ export async function recordReaderRankEffects(
   const codes = diff.earlier.map(demoteCode);
   if (clusters.length === 0 && selves.length === 0 && codes.length === 0) return 'none';
 
-  const marked = await markRowsDue(tx, input.user, { clusters, selves, codes });
+  const marked = await markRowsDue(tx, input.user, input.now, { clusters, selves, codes });
   const created =
     clusters.length === 0
       ? 0
@@ -185,27 +186,38 @@ export async function recordReaderRankEffects(
   return 'marked';
 }
 
-/** `next_rank_at = clock_timestamp()` on the non-archived rows of the clusters, selves and codes. */
+/**
+ * `next_rank_at = clock_timestamp()` on the non-archived rows of the clusters, selves and codes that
+ * are in the user's rank window (the rows a run visits); a mark outside it could never be cleared.
+ */
 async function markRowsDue(
   tx: TenantTx,
   user: string,
+  now: Date,
   targets: { clusters: string[]; selves: string[]; codes: string[] },
 ): Promise<number> {
+  const candidates = sql`
+    SELECT x FROM unnest(${sql.param(targets.selves)}::bigint[]) AS x
+    UNION SELECT a.id FROM articles a
+           WHERE a.story_cluster_id = ANY(${sql.param(targets.clusters)}::bigint[])
+    UNION SELECT c.article_id FROM user_article c
+           WHERE c.user_id = ${user}::uuid AND c.rules_fired && ${sql.param(targets.codes)}::text[]`;
+  const members = rankWindowMembers(
+    { userId: user, now, windowDays: RANK_WINDOW_DAYS },
+    sql`WITH cand(id) AS (${candidates}) SELECT id FROM cand`,
+  );
   const result = await tx.execute<{ article_id: string }>(sql`
     UPDATE user_article ua SET next_rank_at = clock_timestamp()
      WHERE ua.user_id = ${user}::uuid AND ua.archived_at IS NULL
-       AND (ua.article_id = ANY(${sql.param(targets.selves)}::bigint[])
-            OR ua.article_id IN (SELECT a.id FROM articles a
-                                  WHERE a.story_cluster_id = ANY(${sql.param(targets.clusters)}::bigint[]))
-            OR ua.rules_fired && ${sql.param(targets.codes)}::text[])
+       AND ua.article_id IN ${members}
     RETURNING ua.article_id::text AS article_id`);
   return result.rows.length;
 }
 
 /**
- * A due placeholder row for every member of the clusters that a subscription of the user carries in
- * the rank window and that has no row yet. A concurrent run that is about to insert its (stale)
- * result for such a member then updates this row, and `writeRankBatch` keeps the mark.
+ * A due placeholder row for every member of the clusters that is in the user's rank window and has no
+ * row yet. A concurrent run that is about to insert its (stale) result for such a member then updates
+ * this row, and `writeRankBatch` keeps the mark.
  */
 async function insertClusterPlaceholders(
   tx: TenantTx,
@@ -213,16 +225,15 @@ async function insertClusterPlaceholders(
   clusters: string[],
   now: Date,
 ): Promise<number> {
-  const cutoff = new Date(now.getTime() - RANK_WINDOW_DAYS * 86_400_000).toISOString();
+  const members = rankWindowMembers(
+    { userId: user, now, windowDays: RANK_WINDOW_DAYS },
+    sql`SELECT a.id FROM articles a WHERE a.story_cluster_id = ANY(${sql.param(clusters)}::bigint[])`,
+  );
   const result = await tx.execute<{ article_id: string }>(sql`
     INSERT INTO user_article (user_id, article_id, next_rank_at)
-    SELECT ${user}::uuid, a.id, clock_timestamp()
-      FROM articles a
-     WHERE a.story_cluster_id = ANY(${sql.param(clusters)}::bigint[])
-       AND EXISTS (SELECT 1 FROM feed_items fi
-                     JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.user_id = ${user}::uuid
-                    WHERE fi.article_id = a.id AND fi.first_seen_at >= ${cutoff}::timestamptz)
-     ORDER BY a.id
+    SELECT ${user}::uuid, m.article_id, clock_timestamp()
+      FROM ${members} m
+     ORDER BY m.article_id
     ON CONFLICT (user_id, article_id) DO NOTHING
     RETURNING article_id::text AS article_id`);
   return result.rows.length;
