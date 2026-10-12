@@ -291,7 +291,10 @@ pre-account rows in a backup taken before signup; do not store the email itself 
 key and keep every shipped copy from the oldest retained backup onwards (the kept restore-tested backup included), pruning only copies older than both that backup and 193 days, and none while no valid backup remains (D-193). Failure, or no configured ledger, defers hard deletion and
 alerts the operator (`erasure.disabled` while users past grace wait; a run with any ledger append failure, deletion failure or card-reference block is incomplete, records `cursor: {failed: {ledger, db, blocked}, at}` and raises `erasure.failed` until a clean run, D-193); a production worker refuses to start without
 `DELETION_LEDGER_PATH`, `DELETION_LEDGER_RECIPIENT` and `DELETION_HMAC_KEY` (D-188). A committed user purge must never lack its recovery tombstone. Account restore
-and ledger creation are serialized by the same per-user lock. Recovery replays the union of all shipped copies, deduplicated by entry id, before
+and ledger creation are serialized by the same per-user lock: `purgeUser` holds the session advisory lock
+`hashtextextended('erasure:' || user_id, 0)` for the whole purge (tombstone, every batch, final delete), sign-in
+verification takes it as a transaction lock before re-checking that the account is still restorable, and the purge
+also deletes the user's `pgboss.job` and `pgboss.archive` rows (D-200). Recovery replays the union of all shipped copies, deduplicated by entry id, before
 public access; an entry acts on a restored user only when its id is that user's entry id and its `emailHmac` matches the
 restored email under `DELETION_HMAC_KEY` (the recipient is a public key, so a ledger entry alone is not trusted), and the
 replay reports skipped entries as `mismatched` (D-188). It deletes personal rows again (including the waitlist rows and email-bound invites

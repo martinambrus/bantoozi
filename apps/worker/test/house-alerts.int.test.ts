@@ -744,4 +744,35 @@ describe('house.alerts de-duplication, recovery and delivery (spec 11 §6.1)', (
     await w.run(healed, { mailer });
     expect(mailer.to(ADMIN), 'one recovery email for two runs at the same time').toHaveLength(2);
   });
+
+  it('mails 25 conditions as 20 now and the other 5 on the next run, not 6 hours later (R13)', async () => {
+    const mailer = new RecordingMailer();
+    await w.baseline(T0);
+    for (let i = 0; i < 25; i += 1) {
+      const queue = `r13.q${String(i).padStart(2, '0')}`;
+      await w.owner.query("SELECT pgboss.create_queue($1, '{}')", [queue]);
+      await w.jobs({ queue, startAfter: before(2 * HOUR, T0) });
+    }
+    try {
+      await w.run(T0, { mailer });
+      expect(mailer.to(ADMIN)).toHaveLength(1);
+      const bullets = (text: string) => text.split('\n').filter((l) => l.startsWith('* '));
+      const first = bullets(mailer.lastEmail()!.text ?? '');
+      expect(first).toHaveLength(20);
+      const sent = (await w.activeEntries()).filter((e) => e.lastSentAt !== null);
+      expect(sent, 'only the mailed conditions are marked sent').toHaveLength(20);
+
+      await w.run(after(MINUTE, T0), { mailer });
+      expect(mailer.to(ADMIN), 'the omitted five go out on the next run').toHaveLength(2);
+      const second = bullets(mailer.lastEmail()!.text ?? '');
+      expect(second).toHaveLength(5);
+      expect(new Set([...first, ...second]).size).toBe(25);
+      expect((await w.activeEntries()).filter((e) => e.lastSentAt !== null)).toHaveLength(25);
+
+      await w.run(after(2 * MINUTE, T0), { mailer });
+      expect(mailer.to(ADMIN), 'nothing is re-sent before 6 hours').toHaveLength(2);
+    } finally {
+      await w.owner.query("DELETE FROM pgboss.job WHERE name LIKE 'r13.q%'");
+    }
+  });
 });

@@ -1911,3 +1911,14 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   and resumes after it, clearing it when the sweep finishes, like the purge sweeps of D-188; before, every
   run restarted at the lowest user id, so under a sustained rank backlog later users were never enqueued.
   Spec 02 §2 updated.
+- D-200: 2026-10-12 M8-T2, M8-T3 (PR #26 Codex review round 13) — (1) Account restore and erasure share a
+  per-user advisory lock, `hashtextextended('erasure:' || user_id, 0)` (prefix defined in
+  `packages/shared/src/erasure-lock.ts`): `purgeUser` holds it as a session lock on its dedicated connection,
+  after the erasure/backup lock of D-189, for the tombstone, every predelete batch and the final delete;
+  sign-in verification takes it as a transaction lock before its `FOR UPDATE` re-check. A restore that waits
+  finds the account gone; a restore that wins makes the purge skip the user with no tombstone. A purge whose
+  final step finds the user no longer due now fails (counted as `failed`, so `erasure.failed` fires) instead
+  of skipping after its batches ran. (2) The purge deletes the user's `pgboss.job` and `pgboss.archive` rows
+  (`data->>'userId'`), so no relayed job keeps the erased user's id. (3) An alert digest listing at most 20
+  conditions marks only those as sent; never-mailed conditions come first, then the oldest, so the rest go
+  out on the next run. Spec 11 §5.1 updated.

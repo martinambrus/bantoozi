@@ -35,13 +35,26 @@ export function planNotifications(
   now: Date,
 ): NotificationPlan {
   const firing = new Set(conditions.map((condition) => condition.key));
-  const alerts = conditions.filter((condition) => {
+  const waiting = (condition: Condition): number => {
+    // Sort key: never-mailed conditions first (a new one by now, an open one by its firstAt), then
+    // the longest-unsent first, so a truncated digest rotates through every condition.
     const entry = state[condition.key];
-    if (entry === undefined || !entry.active) return true;
-    return (
-      entry.lastSentAt === null || Date.parse(entry.lastSentAt) <= now.getTime() - ALERT_RESEND_MS
-    );
-  });
+    if (entry === undefined || !entry.active) return Number.NEGATIVE_INFINITY;
+    return entry.lastSentAt === null
+      ? Date.parse(entry.firstAt) - 1e15
+      : Date.parse(entry.lastSentAt);
+  };
+  const alerts = conditions
+    .filter((condition) => {
+      const entry = state[condition.key];
+      if (entry === undefined || !entry.active) return true;
+      return (
+        entry.lastSentAt === null || Date.parse(entry.lastSentAt) <= now.getTime() - ALERT_RESEND_MS
+      );
+    })
+    .sort((a, b) => waiting(a) - waiting(b) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+    // One digest lists DIGEST_MAX conditions; the rest stay unsent and lead the next run's digest.
+    .slice(0, DIGEST_MAX);
   const recoveries: string[] = [];
   const silent: string[] = [];
   for (const [key, entry] of Object.entries(state)) {
@@ -108,6 +121,11 @@ export function applyRun(
     const open = existing?.active === true;
     const entry = open ? existing : { firstAt: at, lastSentAt: null, active: true };
     if (!due.has(key) && open) continue;
+    // A new condition cut from the digest is opened unsent, so the next run mails it first.
+    if (!due.has(key)) {
+      next[key] = entry;
+      continue;
+    }
     if (outcome.alertsSent === undefined) continue;
     if (outcome.alertsSent) {
       const { failures: _failures, ...rest } = entry;

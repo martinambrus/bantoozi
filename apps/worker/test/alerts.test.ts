@@ -33,7 +33,7 @@ describe('alert planning', () => {
       ['skipped'],
       NOW,
     );
-    expect(plan.alerts.map((a) => a.key)).toEqual(['old', 'new']);
+    expect(plan.alerts.map((a) => a.key)).toEqual(['new', 'old']);
     expect(plan.recoveries).toEqual(['gone']);
     expect(plan.silent).toEqual(['never']);
   });

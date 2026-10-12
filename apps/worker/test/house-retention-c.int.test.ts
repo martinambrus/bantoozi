@@ -1,6 +1,12 @@
 import { createHmac, randomUUID } from 'node:crypto';
 
-import { completeAnalysisRequest, purgeUser } from '@bantoozi/db';
+import {
+  bindTenant,
+  completeAnalysisRequest,
+  lockUserForVerify,
+  purgeUser,
+  restoreSoftDeletedUser,
+} from '@bantoozi/db';
 import { ERASURE_BACKUP_LOCK_KEY } from '@bantoozi/shared';
 import * as sharedServer from '@bantoozi/shared/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -591,6 +597,109 @@ describe('house.purge-users', () => {
     expect(ledger.attempts).toHaveLength(0);
     await c.run(PURGE_USERS, NOW, c.ledgerDeps(ledger));
     expect(await c.userExists(user.id)).toBe(false);
+  });
+
+  it('serializes an account restore with a running purge by the per-user lock (R13)', async () => {
+    const user = await c.deletedUser(before(8 * DAY));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let appended!: () => void;
+    const inAppend = new Promise<void>((resolve) => {
+      appended = resolve;
+    });
+    const ledger = new FakeLedger(h.owner);
+    const purge = purgeUser(
+      h.deps.db,
+      { id: user.id, email: user.email, deletedAt: before(8 * DAY) },
+      {
+        now: NOW,
+        emailHmac: (e) => deletionEmailHmac(e, LEDGER_KEY),
+        append: async (entry) => {
+          await ledger.append(entry);
+          appended();
+          await gate;
+        },
+      },
+    );
+    await inAppend;
+    // The tombstone is out; a login verification now tries to restore the account.
+    let restoreDone = false;
+    const restore = h.deps.db
+      .transaction(async (tx) => {
+        const row = await lockUserForVerify(tx, user.id);
+        if (row === null || !row.restorable) return 'gone' as const;
+        await restoreSoftDeletedUser(await bindTenant(tx, user.id));
+        return 'restored' as const;
+      })
+      .then((r) => {
+        restoreDone = true;
+        return r;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    expect(restoreDone, 'the restore waits while the purge holds the user lock').toBe(false);
+    release();
+    expect(await purge).toBe('deleted');
+    expect(await restore).toBe('gone');
+    expect(await c.userExists(user.id)).toBe(false);
+    expect(ledger.of(user.id)).toHaveLength(1);
+  });
+
+  it('skips a user whose restore won the lock first, with no tombstone and no deletion (R13)', async () => {
+    const user = await c.deletedUser(before(8 * DAY));
+    const restored = await h.deps.db.transaction(async (tx) => {
+      const row = await lockUserForVerify(tx, user.id);
+      if (row === null || !row.restorable) return false;
+      await restoreSoftDeletedUser(await bindTenant(tx, user.id));
+      return true;
+    });
+    expect(restored).toBe(true);
+    const ledger = new FakeLedger(h.owner);
+    const outcome = await purgeUser(
+      h.deps.db,
+      { id: user.id, email: user.email, deletedAt: before(8 * DAY) },
+      {
+        now: NOW,
+        emailHmac: (e) => deletionEmailHmac(e, LEDGER_KEY),
+        append: (entry) => ledger.append(entry),
+      },
+    );
+    expect(outcome).toBe('skipped');
+    expect(ledger.attempts).toHaveLength(0);
+    expect(await c.userExists(user.id)).toBe(true);
+  });
+
+  it('deletes the pg-boss jobs and archive rows that embed the purged user, only theirs (R13)', async () => {
+    const user = await c.deletedUser(before(8 * DAY));
+    const other = await c.deletedUser(null);
+    const rows = async (userId: string): Promise<number> =>
+      (
+        await h.owner.query(
+          `SELECT (SELECT count(*) FROM pgboss.job WHERE data->>'userId' = $1)
+                + (SELECT count(*) FROM pgboss.archive WHERE data->>'userId' = $1) AS n`,
+          [userId],
+        )
+      ).rows[0].n * 1;
+    for (const state of ['created', 'retry', 'active', 'completed']) {
+      for (const id of [user.id, other.id]) {
+        await h.owner.query(
+          `INSERT INTO pgboss.job (name, data, state) VALUES ('user.rank', $1::jsonb, $2::pgboss.job_state)`,
+          [JSON.stringify({ userId: id, state }), state],
+        );
+      }
+    }
+    await h.owner.query(
+      `INSERT INTO pgboss.archive SELECT *, now() FROM pgboss.job
+        WHERE data->>'userId' = $1 AND state = 'completed'`,
+      [user.id],
+    );
+    expect(await rows(user.id)).toBe(5);
+    const ledger = new FakeLedger(h.owner);
+    await c.run(PURGE_USERS, NOW, c.ledgerDeps(ledger));
+    expect(await c.userExists(user.id)).toBe(false);
+    expect(await rows(user.id)).toBe(0);
+    expect(await rows(other.id)).toBe(4);
   });
 
   it('defers the hard delete while the ledger is unconfigured', async () => {

@@ -6,3 +6,12 @@
  * `infra/scripts/backup.sh` uses the same literal (`ERASURE_BACKUP_LOCK_KEY=...`); a test compares them.
  */
 export const ERASURE_BACKUP_LOCK_KEY = 7_340_026_011;
+
+/**
+ * Prefix of the per-user erasure/restore advisory lock (spec 11 §5.1). The key is the bigint
+ * `hashtextextended(USER_ERASURE_LOCK_PREFIX || user_id, 0)`: `house.purge-users` holds it as a
+ * session lock for a whole purge (tombstone, every predelete batch, final delete) and an account
+ * restore takes it with `pg_advisory_xact_lock` before it reads or clears `users.deleted_at`, so
+ * the two never interleave between the purge's separate transactions.
+ */
+export const USER_ERASURE_LOCK_PREFIX = 'erasure:';

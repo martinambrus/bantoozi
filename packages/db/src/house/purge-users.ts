@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto';
 
-import { ERASURE_BACKUP_LOCK_KEY, PLATFORM_USER_ID, planMinIntervalMap } from '@bantoozi/shared';
+import {
+  ERASURE_BACKUP_LOCK_KEY,
+  PLATFORM_USER_ID,
+  USER_ERASURE_LOCK_PREFIX,
+  planMinIntervalMap,
+} from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
 
@@ -148,6 +153,27 @@ async function purgeUserLocked(
     append: (entry: DeletionLedgerEntry) => Promise<void>;
   },
 ): Promise<PurgeUserOutcome> {
+  // The per-user lock, session level on this connection, after the erasure/backup lock: an account
+  // restore (login verification) takes the same key, so it cannot land between the batches below
+  // and leave an active account with deleted data and a tombstone (spec 11 §5.1).
+  const userLock = sql`hashtextextended(${USER_ERASURE_LOCK_PREFIX} || ${user.id}::text, 0)`;
+  await db.execute(sql`SELECT pg_advisory_lock(${userLock})`);
+  try {
+    return await purgeUserHoldingLock(db, user, input);
+  } finally {
+    await db.execute(sql`SELECT pg_advisory_unlock(${userLock})`);
+  }
+}
+
+async function purgeUserHoldingLock(
+  db: Database,
+  user: DueUser,
+  input: {
+    now: Date;
+    emailHmac: (email: string) => string;
+    append: (entry: DeletionLedgerEntry) => Promise<void>;
+  },
+): Promise<PurgeUserOutcome> {
   const { now } = input;
   const prepared = await db.transaction(async (tx) => {
     const row = await lockDue(tx, user, now);
@@ -194,7 +220,11 @@ async function purgeUserLocked(
   }
 
   return db.transaction(async (tx) => {
-    if ((await lockDue(tx, user, now)) === undefined) return 'skipped' as const;
+    // With the user lock held nothing can restore the account after the tombstone: a skip here
+    // would leave an active account with deleted data, so it is an error, never an outcome.
+    if ((await lockDue(tx, user, now)) === undefined) {
+      throw new Error(`user ${user.id} stopped being due during its purge`);
+    }
     const feeds = await tx.execute<{ feed_id: string }>(sql`
       SELECT feed_id::text AS feed_id FROM subscriptions
        WHERE user_id = ${user.id}::uuid ORDER BY feed_id`);
@@ -215,6 +245,9 @@ async function purgeUserLocked(
       UPDATE invites SET email = NULL, note = NULL WHERE used_by = ${user.id}::uuid`);
     await tx.execute(sql`DELETE FROM invites WHERE email = ${prepared.email} AND used_at IS NULL`);
     await tx.execute(sql`DELETE FROM waitlist WHERE email = ${prepared.email}`);
+    // Queue rows that embed the user (pg-boss job and its archive), whatever their state.
+    await tx.execute(sql`DELETE FROM pgboss.job WHERE data->>'userId' = ${user.id}`);
+    await tx.execute(sql`DELETE FROM pgboss.archive WHERE data->>'userId' = ${user.id}`);
     // The evidence guard allows the creator clear only once `user_id` is NULL (spec 02 §3.6), so
     // the requests are found first, and cleared after the delete's FK has nulled their `user_id`.
     const evidenced = await tx.execute<{ id: string }>(sql`
