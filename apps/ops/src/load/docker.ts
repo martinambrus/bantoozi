@@ -183,6 +183,34 @@ export class LoadStack {
     this.envDir = undefined;
   }
 
+  /** RestartCount of every container of the project, by service. */
+  async restarts(): Promise<{ service: string; count: number }[]> {
+    const out = await run(
+      'docker',
+      [
+        'ps',
+        '-a',
+        '--filter',
+        `label=com.docker.compose.project=${LOAD_PROJECT}`,
+        '--format',
+        '{{.ID}} {{.Label "com.docker.compose.service"}}',
+      ],
+      { allowFailure: true },
+    );
+    const result: { service: string; count: number }[] = [];
+    for (const line of out.split('\n')) {
+      const [id, service] = line.trim().split(' ');
+      if (id === undefined || service === undefined || service === '') continue;
+      const count = Number(
+        (
+          await run('docker', ['inspect', '-f', '{{.RestartCount}}', id], { allowFailure: true })
+        ).trim(),
+      );
+      result.push({ service, count: Number.isFinite(count) ? count : 0 });
+    }
+    return result.sort((a, b) => a.service.localeCompare(b.service));
+  }
+
   async containers(): Promise<ServiceContainers> {
     const out = await run('docker', [
       'ps',

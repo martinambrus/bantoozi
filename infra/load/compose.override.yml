@@ -47,7 +47,7 @@ services:
       SIM_FEED_COUNT: '1000'
       SIM_ITEMS_PER_FEED_PER_HOUR: '5'
       # Items a feed lists: the first fetch of 620 subscribed feeds extracts about 1,900 pages.
-      SIM_FEED_WINDOW: '3'
+      SIM_FEED_WINDOW: '4'
       SIM_FEED_PORT_BASE: '8100'
       SIM_FEED_PORT_COUNT: '50'
       SIM_PROVIDER_PORT: '8082'
