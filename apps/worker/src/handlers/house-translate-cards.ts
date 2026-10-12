@@ -92,11 +92,15 @@ export function createTranslateCardsHandler(
       });
       for (const card of page) {
         counts.examined += 1;
-        if (await translateOne(deps, classification, translation, supported, card)) {
+        const outcome = await translateOne(deps, classification, translation, supported, card);
+        if (outcome === 'translated') {
           counts.translated += 1;
         } else {
           counts.kept += 1;
-          await markCardTranslationAttempt(deps.db, card.cardId, nowOf(deps));
+          // Only a real weak or failed attempt backs the card off; a lapsed or already filled one does not.
+          if (outcome === 'attempted') {
+            await markCardTranslationAttempt(deps.db, card.cardId, nowOf(deps));
+          }
         }
       }
       const last = page.at(-1);
@@ -124,14 +128,18 @@ export function createTranslateCardsHandler(
   };
 }
 
-/** Translate and store one card's pair; true when the pair was stored. */
+/**
+ * Translate and store one card's pair: `translated` when stored, `attempted` when the translator
+ * ran for current demand but the result was not usable, `skipped` when demand lapsed or vanished
+ * or a concurrent run filled the card.
+ */
 async function translateOne(
   deps: WorkerDeps,
   classification: ClassificationDeps,
   translation: TranslationDeps,
   supported: ReadonlySet<string>,
   card: CardAwaitingTranslation,
-): Promise<boolean> {
+): Promise<'translated' | 'attempted' | 'skipped'> {
   const notFor = isBlankText(card.notFor) ? null : card.notFor;
   const source: Record<CardTextField, string | null> = { interest: card.interest, not_for: notFor };
   const demanded = async (): Promise<boolean> =>
@@ -151,26 +159,28 @@ async function translateOne(
   for (const attempt of result.attempts) {
     await classification.router.recordExternalCall(toExternalCall(attempt, { logicalRequestId }));
   }
-  if (lapsed || result.status !== 'translated') return false;
+  if (lapsed) return 'skipped';
+  if (result.status !== 'translated') return 'attempted';
 
   const output: Record<CardTextField, string | null> = { interest: null, not_for: null };
   for (const { field, text } of result.translations) output[field] = text;
   const assessment = assessTranslation(source, output, card.lang);
-  if (assessment.skipped || assessment.quality !== 'ok' || output.interest === null) return false;
-  if (notFor !== null && output.not_for === null) return false;
+  if (assessment.skipped || assessment.quality !== 'ok' || output.interest === null)
+    return 'attempted';
+  if (notFor !== null && output.not_for === null) return 'attempted';
 
   return retryTransaction(deps.db, async (tx) => {
     const [current] = await cardsAwaitingTranslation(tx, {
       langs: [card.lang],
       cardId: card.cardId,
     });
-    if (current === undefined) return false;
+    if (current === undefined) return 'skipped' as const;
     const filled = await fillCardTranslation(tx, {
       cardId: card.cardId,
       interestEn: output.interest ?? '',
       notForEn: notFor === null ? null : output.not_for,
     });
-    if (filled !== 'filled') return false;
+    if (filled !== 'filled') return 'skipped' as const;
     const sender = workerOutbox(tx);
     await enqueueRematch(sender, { cardId: card.cardId });
     const active = new Set(await activeUserIds(tx, ACTIVE_USER_DAYS));
@@ -180,6 +190,6 @@ async function translateOne(
       current.holders.filter((userId) => active.has(userId)),
       { reason: 'card_translation', full: true },
     );
-    return true;
+    return 'translated' as const;
   });
 }
