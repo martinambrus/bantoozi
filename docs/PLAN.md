@@ -1424,7 +1424,7 @@ one follow-up branch, test-first, committed as `M8-F<n>: <summary>`. Mark each â
 | ID | Follow-up | Where | Status |
 |---|---|---|---|
 | M8-F1 | Recovery mails name the incident only by its alert key; add the alert's title and first-seen time | `apps/worker/src/alerts/notify.ts` | |
-| M8-F2 | A failure event that drops out of the 50-entry `ops.events` list resolves its alert silently; keep the open failure in `alerts.state` until a later success | `apps/worker/src/alerts/rules.ts` | |
+| M8-F2 | A failure event that drops out of the 50-entry `ops.events` list resolves its alert silently; keep the open failure in `alerts.state` until a later success | `apps/worker/src/alerts/rules.ts` || âœ“ D-191 (PR #26 round 5) |
 | M8-F3 | `house.translate-cards` has no run time budget, and a weak or failed card translation is retried on every `{}` run; add the budget/continuation and a retry backoff | `apps/worker/src/handlers/house-translate-cards.ts` | |
 | M8-F4 | An enrich-set change together with a language-mode change re-enriches natively when no translation exists yet; translate first | `packages/db/src/classify/reprocess.ts` | |
 | M8-F5 | The E2E bookmark scenario simulates cold maintenance in SQL; drive the real `house.purge-bodies` instead (M6 handoff) | `apps/web/e2e`, `packages/testing/src/e2e` | |

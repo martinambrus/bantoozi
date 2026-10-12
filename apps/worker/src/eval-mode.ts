@@ -89,6 +89,7 @@ export interface Heartbeat {
  */
 export async function startHeartbeat(options: HeartbeatOptions): Promise<Heartbeat> {
   const now = options.now ?? (() => new Date());
+  const startedAt = now().toISOString();
   let violated = false;
   let stopped = false;
   async function beat(): Promise<void> {
@@ -105,6 +106,7 @@ export async function startHeartbeat(options: HeartbeatOptions): Promise<Heartbe
     const entry = parseSetting('worker.heartbeat', {
       [options.processId]: {
         at: at.toISOString(),
+        startedAt,
         queues: [...options.queues],
         evalIngestOnly: options.evalIngestOnly,
         envCredentials: [...options.envCredentials],

@@ -385,6 +385,119 @@ describe('house.alerts rules (spec 11 §6.1)', () => {
     expect(mailer.to(ADMIN), 'no backup_ok for 29 h').toHaveLength(1);
   });
 
+  describe('R5: failures that roll out of ops.events stay open until a newer success', () => {
+    const flood = (end: Date): OpsEvent[] =>
+      Array.from({ length: 50 }, (_, i) => hostHealth(before(((50 - i) * MINUTE) / 2, end)));
+    /** Quiet sources at `at` with `extra` events and 50 newer host_health reports pushing the rest out. */
+    const tickWith = async (at: Date, mailer: RecordingMailer, extra: OpsEvent[]) => {
+      await w.liveness(at);
+      await w.events([...flood(at), ...extra]);
+      await w.run(at, { mailer });
+    };
+
+    it('a restore_failed pushed out of ops.events keeps backup.restore active with no recovery mail; a later restore_ok resolves it once', async () => {
+      const mailer = new RecordingMailer();
+      await w.baseline(NOW);
+      await w.events([
+        opsEvent('backup_ok', before(HOUR)),
+        opsEvent('restore_failed', before(30 * MINUTE)),
+        hostHealth(before(MINUTE)),
+      ]);
+      await w.run(NOW, { mailer });
+      expect(mailer.to(ADMIN), 'the failure is mailed').toHaveLength(1);
+
+      const t1 = after(10 * MINUTE);
+      await tickWith(t1, mailer, [opsEvent('backup_ok', before(HOUR, t1))]);
+      const t2 = after(20 * MINUTE);
+      await tickWith(t2, mailer, [opsEvent('backup_ok', before(HOUR, t2))]);
+      expect(mailer.to(ADMIN), 'no recovery while the failure is the latest known').toHaveLength(1);
+      expect(await w.activeEntries(), 'the incident stays open').toHaveLength(1);
+
+      const t3 = after(30 * MINUTE);
+      await tickWith(t3, mailer, [
+        opsEvent('backup_ok', before(HOUR, t3)),
+        opsEvent('restore_ok', before(MINUTE, t3)),
+      ]);
+      expect(mailer.to(ADMIN), 'one recovery after a newer restore_ok').toHaveLength(2);
+      expect(await w.activeEntries()).toHaveLength(0);
+      const t4 = after(40 * MINUTE);
+      await tickWith(t4, mailer, [opsEvent('backup_ok', before(HOUR, t4))]);
+      expect(mailer.to(ADMIN), 'the remembered restore_ok keeps it resolved').toHaveLength(2);
+    });
+
+    it('a backup_failed pushed out of ops.events keeps backup.failed active until a newer backup_ok', async () => {
+      const mailer = new RecordingMailer();
+      await w.baseline(NOW);
+      await w.events([
+        opsEvent('backup_ok', before(5 * HOUR)),
+        opsEvent('backup_failed', before(HOUR)),
+        hostHealth(before(MINUTE)),
+      ]);
+      await w.run(NOW, { mailer });
+      expect(mailer.to(ADMIN), 'the failure is mailed').toHaveLength(1);
+
+      const t1 = after(10 * MINUTE);
+      await tickWith(t1, mailer, []);
+      expect(mailer.to(ADMIN), 'no recovery from a rolled-out failure').toHaveLength(1);
+      expect(await w.activeEntries()).toHaveLength(1);
+
+      const t2 = after(20 * MINUTE);
+      await tickWith(t2, mailer, [opsEvent('backup_ok', before(MINUTE, t2))]);
+      expect(mailer.to(ADMIN), 'one recovery after a newer backup_ok').toHaveLength(2);
+      expect(await w.activeEntries()).toHaveLength(0);
+    });
+  });
+
+  describe('R5: a scheduled job with no house.progress entry', () => {
+    // house.reconcile runs every 10 minutes: overdue after 20 minutes without progress.
+    const withoutProgress = async (startedAt: Date | undefined) => {
+      const current = (
+        await h.owner.query<{ value: Record<string, unknown> }>(
+          "SELECT value FROM settings WHERE key = 'house.progress'",
+        )
+      ).rows[0]!.value;
+      const { 'house.reconcile': _gone, ...rest } = current;
+      await w.setting('house.progress', rest);
+      await w.setting('worker.heartbeat', {
+        'worker-1': {
+          at: iso(before(10_000)),
+          ...(startedAt === undefined ? {} : { startedAt: iso(startedAt) }),
+          queues: ['house.alerts', 'house.reconcile'],
+          evalIngestOnly: false,
+          envCredentials: [],
+        },
+      });
+    };
+
+    it('is quiet within 2 periods of the worker start and alerts after them', async () => {
+      expect(await emails(() => withoutProgress(before(15 * MINUTE))), 'worker up 15 min').toBe(0);
+      expect(await emails(() => withoutProgress(before(25 * MINUTE))), 'worker up 25 min').toBe(1);
+      expect(await emails(() => withoutProgress(undefined)), 'no start time known').toBe(0);
+    });
+
+    it('clears once the job records progress', async () => {
+      const mailer = new RecordingMailer();
+      await w.baseline(NOW);
+      await withoutProgress(before(25 * MINUTE));
+      await w.run(NOW, { mailer });
+      expect(mailer.to(ADMIN)).toHaveLength(1);
+      const later = after(5 * MINUTE);
+      await w.liveness(later);
+      await w.setting('worker.heartbeat', {
+        'worker-1': {
+          at: iso(before(10_000, later)),
+          startedAt: iso(before(30 * MINUTE)),
+          queues: ['house.alerts', 'house.reconcile'],
+          evalIngestOnly: false,
+          envCredentials: [],
+        },
+      });
+      await w.run(later, { mailer });
+      expect(mailer.to(ADMIN), 'one recovery').toHaveLength(2);
+      expect(await w.activeEntries()).toHaveLength(0);
+    });
+  });
+
   it('metrics: For You like-rate below Maybe for 3 consecutive daily snapshots fires', async () => {
     const lanes = (days: Array<[number, number, number]>) => async () => {
       for (const [daysAgo, forYou, rated] of days) {

@@ -7,10 +7,19 @@ export interface Condition {
   detail: string;
 }
 
+/** The `ops.events` kinds whose latest time `house.alerts` remembers besides `backup_ok`. */
+export const SEEN_KINDS = ['backup_failed', 'restore_ok', 'restore_failed'] as const;
+export type SeenKind = (typeof SEEN_KINDS)[number];
+
 /** What `house.alerts` remembers between runs besides incident state (spec 11 §6.1 "Backups"). */
 export interface AlertMemo {
   /** The latest `backup_ok` ever seen: `ops.events` keeps only 50 events. */
   backupOkAt?: Date;
+  /**
+   * The latest time ever seen of each of these `ops.events` kinds, so a failure or success rolled
+   * out of the 50 retained events still decides whether its incident is open (R5).
+   */
+  seen?: Partial<Record<SeenKind, Date>>;
   /** Consecutive `house.alerts` samples whose worker pool had waiting clients, and the last sample's time. */
   poolStreak?: { at: Date; count: number };
 }

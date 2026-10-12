@@ -9,10 +9,17 @@ import {
   applyRun,
   planNotifications,
   recoveryEmail,
+  seenMemoKey,
   type MailOutcome,
 } from '../alerts/notify.js';
 import { ALERT_RULES } from '../alerts/rules.js';
-import { safeText, type AlertMemo, type Condition } from '../alerts/types.js';
+import {
+  SEEN_KINDS,
+  safeText,
+  type AlertMemo,
+  type Condition,
+  type SeenKind,
+} from '../alerts/types.js';
 import { nowOf, type WorkerDeps } from './deps.js';
 import { recordHouseProgress } from './house-purge-auth.js';
 import type { QueueHandler } from './index.js';
@@ -59,7 +66,13 @@ export function createAlertsHandler(deps: WorkerDeps): QueueHandler<'house.alert
     );
     const memoEntry = state[BACKUP_MEMO_KEY];
     const poolEntry = state[POOL_MEMO_KEY];
+    const rememberedSeen: Partial<Record<SeenKind, Date>> = {};
+    for (const kind of SEEN_KINDS) {
+      const entry = state[seenMemoKey(kind)];
+      if (entry !== undefined) rememberedSeen[kind] = new Date(entry.firstAt);
+    }
     const memo: AlertMemo = {
+      seen: { ...rememberedSeen },
       ...(memoEntry === undefined ? {} : { backupOkAt: new Date(memoEntry.firstAt) }),
       ...(poolEntry === undefined
         ? {}
@@ -114,6 +127,12 @@ export function createAlertsHandler(deps: WorkerDeps): QueueHandler<'house.alert
       (rememberedPool === undefined ||
         memo.poolStreak.at.getTime() !== rememberedPool.at.getTime() ||
         memo.poolStreak.count !== rememberedPool.count);
+    const changedSeen: Partial<Record<SeenKind, Date>> = {};
+    for (const kind of SEEN_KINDS) {
+      const at = memo.seen?.[kind];
+      if (at !== undefined && at.getTime() !== rememberedSeen[kind]?.getTime())
+        changedSeen[kind] = at;
+    }
     await retryTransaction(deps.db, (tx) =>
       updateSettingLocked(tx, 'alerts.state', {}, (current) =>
         parseSetting(
@@ -126,6 +145,7 @@ export function createAlertsHandler(deps: WorkerDeps): QueueHandler<'house.alert
             memoChanged ? memo.backupOkAt : undefined,
             now,
             poolChanged ? memo.poolStreak : undefined,
+            changedSeen,
           ),
         ),
       ),

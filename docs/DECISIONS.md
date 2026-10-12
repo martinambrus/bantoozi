@@ -1836,3 +1836,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   now ship. (4) The S16 deploy drill's outage step now uses a ranking-relevant preference change to
   queue an outbox intent, because a reader action that changes no rank records nothing since D-186.
   Spec 06 §7 and spec 11 §3 and §4 updated.
+- D-191: 2026-10-12 M8-T3 (PR #26 Codex review round 5) — (1) `house.alerts` remembers the latest
+  `backup_failed`, `restore_ok` and `restore_failed` times in `alerts.state` (inactive
+  `memo.seen.<kind>` entries, beside `memo.backup_ok`), so a backup or restore failure that has left the
+  50-entry `ops.events` list stays open until a newer success, and no false recovery mail is sent (this
+  closes follow-up M8-F2). (2) A scheduled housekeeping job with no `house.progress` entry counts as
+  overdue once the earliest consuming worker has been up longer than two of its cron periods; worker
+  heartbeat entries carry an optional `startedAt` for this. Without a known start time the rule stays
+  quiet and the missing-heartbeat alert covers it. Engine cost attribution at call time (Codex comment
+  4248814596) needs a schema change and is follow-up M8-F19. Spec 02 §2 and spec 11 §6.1 updated.

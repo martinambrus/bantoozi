@@ -95,6 +95,8 @@ export const WorkerHeartbeatSchema = z.record(
   z
     .object({
       at: iso,
+      /** When this worker process started: the grace anchor of the overdue-housekeeping alert (R5). */
+      startedAt: iso.optional(),
       queues: z
         .array(z.string())
         .max(100)

@@ -15,7 +15,13 @@ import {
   utcDay,
   type SettingKey,
 } from '@bantoozi/shared';
-import { safeText, type AlertRule, type Condition, type RuleContext } from './types.js';
+import {
+  safeText,
+  type AlertRule,
+  type Condition,
+  type RuleContext,
+  type SeenKind,
+} from './types.js';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -161,9 +167,24 @@ const serviceRule: AlertRule = {
     const progress = (await read(context, 'house.progress')) ?? {};
     for (const [job, schedule] of Object.entries(HOUSE_CRON_SCHEDULES)) {
       const updatedAt = progress[job]?.updatedAt;
-      if (updatedAt === undefined) continue;
+      const grace = ALERT_THRESHOLDS.houseOverduePeriods * schedule.everyMs;
+      if (updatedAt === undefined) {
+        // Never recorded: overdue once a worker consuming the job has been up longer than the grace
+        // (the earliest `startedAt` among the heartbeats, so a fresh deploy is not alarmed).
+        const started = Object.values(heartbeats)
+          .filter((entry) => entry.startedAt !== undefined && entry.queues.includes(job))
+          .map((entry) => Date.parse(entry.startedAt!));
+        if (started.length > 0 && now.getTime() - Math.min(...started) > grace) {
+          out.push({
+            key: `service.house:${job}`,
+            title: `${job} is overdue`,
+            detail: `${job} has never recorded a run although a worker has been up for more than ${ALERT_THRESHOLDS.houseOverduePeriods} periods.`,
+          });
+        }
+        continue;
+      }
       const age = now.getTime() - Date.parse(updatedAt);
-      if (age > ALERT_THRESHOLDS.houseOverduePeriods * schedule.everyMs) {
+      if (age > grace) {
         out.push({
           key: `service.house:${job}`,
           title: `${job} is overdue`,
@@ -253,6 +274,18 @@ const latest = (events: OpsEvents, kind: string): number | undefined => {
   return times.length === 0 ? undefined : Math.max(...times);
 };
 
+/** The latest time of `kind` in the retained events or in the memo; the memo keeps the newer one (R5). */
+function remember(context: RuleContext, events: OpsEvents, kind: SeenKind): number | undefined {
+  const seen = latest(events, kind);
+  const seenBefore = context.memo.seen?.[kind]?.getTime();
+  const newest = Math.max(seen ?? -Infinity, seenBefore ?? -Infinity);
+  if (newest === -Infinity) return undefined;
+  if (seenBefore === undefined || newest > seenBefore) {
+    context.memo.seen = { ...context.memo.seen, [kind]: new Date(newest) };
+  }
+  return newest;
+}
+
 /** The latest `host_health` report: filesystem capacity and its freshness (spec 11 §6.1 "Disk"). */
 const diskRule: AlertRule = {
   id: 'disk',
@@ -314,7 +347,7 @@ const backupsRule: AlertRule = {
     }
     const lastOk = memo.backupOkAt?.getTime();
     const out: Condition[] = [];
-    const backupFailed = latest(events, 'backup_failed');
+    const backupFailed = remember(context, events, 'backup_failed');
     if (backupFailed !== undefined && (lastOk === undefined || backupFailed > lastOk)) {
       out.push({
         key: 'backup.failed',
@@ -322,8 +355,8 @@ const backupsRule: AlertRule = {
         detail: `The backup script reported a failure at ${new Date(backupFailed).toISOString()}.`,
       });
     }
-    const restoreFailed = latest(events, 'restore_failed');
-    const restoreOk = latest(events, 'restore_ok');
+    const restoreFailed = remember(context, events, 'restore_failed');
+    const restoreOk = remember(context, events, 'restore_ok');
     if (restoreFailed !== undefined && (restoreOk === undefined || restoreFailed > restoreOk)) {
       out.push({
         key: 'backup.restore',
