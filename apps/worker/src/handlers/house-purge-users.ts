@@ -1,4 +1,4 @@
-import { listUsersDueForPurge, purgeUser, type DueUser } from '@bantoozi/db';
+import { ERASURE_LOCK_WAIT_MS, listUsersDueForPurge, purgeUser, type DueUser } from '@bantoozi/db';
 import { deletionEmailHmac } from '@bantoozi/shared/server';
 
 import { nowOf, type WorkerDeps } from './deps.js';
@@ -36,7 +36,7 @@ export function createPurgeUsersHandler(deps: WorkerDeps): QueueHandler<'house.p
       );
       return;
     }
-    const counts = { deleted: 0, skipped: 0, blocked: 0, ledgerFailed: 0, failed: 0 };
+    const counts = { deleted: 0, skipped: 0, blocked: 0, ledgerFailed: 0, failed: 0, busy: 0 };
     let complete = true;
     let after: string | null = null;
     scan: for (;;) {
@@ -55,10 +55,20 @@ export function createPurgeUsersHandler(deps: WorkerDeps): QueueHandler<'house.p
             now,
             emailHmac: (email) => deletionEmailHmac(email, key),
             append: (entry) => ledger.append(entry),
+            lockWaitMs: Math.max(
+              0,
+              Math.min(ERASURE_LOCK_WAIT_MS, HOUSE_RUN_BUDGET_MS - (Date.now() - started)),
+            ),
           });
           if (outcome === 'deleted') counts.deleted += 1;
           else if (outcome === 'skipped') counts.skipped += 1;
-          else if (outcome === 'blocked') {
+          else if (outcome === 'busy') {
+            // A backup holds the erasure lock: leave this and every later user for the next run.
+            counts.busy += 1;
+            deps.logger.warn({ job: JOB, userId: user.id }, 'erasure_backup_lock_busy');
+            complete = false;
+            break scan;
+          } else if (outcome === 'blocked') {
             counts.blocked += 1;
             deps.logger.warn({ job: JOB, userId: user.id }, 'user_purge_blocked_by_card_reference');
           } else {

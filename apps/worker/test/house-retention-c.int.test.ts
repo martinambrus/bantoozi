@@ -1,6 +1,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
 
-import { completeAnalysisRequest } from '@bantoozi/db';
+import { completeAnalysisRequest, purgeUser } from '@bantoozi/db';
+import { ERASURE_BACKUP_LOCK_KEY } from '@bantoozi/shared';
 import * as sharedServer from '@bantoozi/shared/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -535,6 +536,61 @@ describe('house.purge-users', () => {
     expect(text).not.toContain('mixed.case');
     expect(text).not.toContain('example.test');
     expect(Object.keys(entry).sort()).toEqual(['deletedAt', 'emailHmac', 'id', 'userId']);
+  });
+
+  it('waits for the erasure/backup advisory lock and then purges (R3)', async () => {
+    const user = await c.deletedUser(before(8 * DAY));
+    const ledger = new FakeLedger(h.owner);
+    const holder = await h.owner.connect();
+    try {
+      await holder.query('SELECT pg_advisory_lock($1)', [ERASURE_BACKUP_LOCK_KEY]);
+      let finished = false;
+      const run = c.run(PURGE_USERS, NOW, c.ledgerDeps(ledger)).then(() => {
+        finished = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      expect(finished, 'the purge waits while a backup holds the lock').toBe(false);
+      expect(await c.userExists(user.id)).toBe(true);
+      expect(ledger.attempts, 'no tombstone appended while the lock is held').toHaveLength(0);
+      await holder.query('SELECT pg_advisory_unlock($1)', [ERASURE_BACKUP_LOCK_KEY]);
+      await run;
+    } finally {
+      holder.release();
+    }
+    expect(await c.userExists(user.id)).toBe(false);
+    expect(ledger.of(user.id)).toHaveLength(1);
+    const left = await h.owner.query(
+      'SELECT 1 FROM pg_locks WHERE locktype = $1 AND objid = $2 AND granted',
+      ['advisory', ERASURE_BACKUP_LOCK_KEY % 2 ** 32],
+    );
+    expect(left.rowCount, 'the purge released the lock').toBe(0);
+  });
+
+  it('keeps the user for the next run when the lock stays held past the wait (R3)', async () => {
+    const user = await c.deletedUser(before(8 * DAY));
+    const ledger = new FakeLedger(h.owner);
+    const holder = await h.owner.connect();
+    try {
+      await holder.query('SELECT pg_advisory_lock($1)', [ERASURE_BACKUP_LOCK_KEY]);
+      const outcome = await purgeUser(
+        h.deps.db,
+        { id: user.id, email: user.email, deletedAt: before(8 * DAY) },
+        {
+          now: NOW,
+          emailHmac: (e) => deletionEmailHmac(e, LEDGER_KEY),
+          append: (entry) => ledger.append(entry),
+          lockWaitMs: 600,
+        },
+      );
+      expect(outcome).toBe('busy');
+    } finally {
+      await holder.query('SELECT pg_advisory_unlock($1)', [ERASURE_BACKUP_LOCK_KEY]);
+      holder.release();
+    }
+    expect(await c.userExists(user.id)).toBe(true);
+    expect(ledger.attempts).toHaveLength(0);
+    await c.run(PURGE_USERS, NOW, c.ledgerDeps(ledger));
+    expect(await c.userExists(user.id)).toBe(false);
   });
 
   it('defers the hard delete while the ledger is unconfigured', async () => {

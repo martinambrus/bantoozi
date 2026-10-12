@@ -75,6 +75,24 @@ describe('backup and restore scripts (static checks)', () => {
     expect(backup.indexOf('STAGE=ledger')).toBeLessThan(backup.indexOf('STAGE=manifest'));
   });
 
+  it('holds the erasure advisory lock from before pg_dump until the ledger is shipped, released in the trap (R3)', async () => {
+    const backup = read('infra/scripts/backup.sh');
+    const shared = await import('@bantoozi/shared');
+    expect(backup).toContain(`ERASURE_BACKUP_LOCK_KEY=${shared.ERASURE_BACKUP_LOCK_KEY}`);
+    expect(String(shared.ERASURE_BACKUP_LOCK_KEY)).toMatch(/^\d+$/u);
+    const acquire = backup.indexOf('pg_advisory_lock(');
+    expect(acquire).toBeGreaterThan(-1);
+    expect(backup).toContain('lock_timeout');
+    expect(backup.indexOf('STAGE=erasure-lock')).toBeGreaterThan(-1);
+    expect(acquire).toBeLessThan(backup.indexOf('pg_dump -U postgres'));
+    const ledgerShip = backup.indexOf('backup:put-raw "${BACKUP_S3_LEDGER_PREFIX}');
+    const release = backup.indexOf('release_erasure_lock\n', backup.indexOf('STAGE=ledger'));
+    expect(release).toBeGreaterThan(ledgerShip);
+    expect(release).toBeLessThan(backup.indexOf('STAGE=manifest'));
+    const trap = backup.slice(backup.indexOf('on_exit() {'), backup.indexOf('trap on_exit EXIT'));
+    expect(trap).toContain('release_erasure_lock');
+  });
+
   it('keeps the writer and the retention credentials apart', () => {
     const backup = read('infra/scripts/backup.sh');
     expect(backup).toMatch(/writer\(\) \{ S3_ACCESS_KEY="\$WRITER_AK"/u);

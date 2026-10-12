@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 
-import { PLATFORM_USER_ID, planMinIntervalMap } from '@bantoozi/shared';
+import { ERASURE_BACKUP_LOCK_KEY, PLATFORM_USER_ID, planMinIntervalMap } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
+import pg from 'pg';
 
-import type { Database, Transaction } from '../client.js';
+import { createSessionDatabase, type Database, type Transaction } from '../client.js';
 
 const DAY_MS = 24 * 60 * 60_000;
 /** Days an erased account waits, restorable, before it is hard-deleted (spec 11 §5.1). */
@@ -47,7 +48,63 @@ export async function listUsersDueForPurge(
   }));
 }
 
-export type PurgeUserOutcome = 'deleted' | 'skipped' | 'blocked' | 'ledger_failed';
+export type PurgeUserOutcome = 'deleted' | 'skipped' | 'blocked' | 'ledger_failed' | 'busy';
+
+/** How long one purge waits for the erasure/backup lock before leaving the user for the next run. */
+export const ERASURE_LOCK_WAIT_MS = 60_000;
+const ERASURE_LOCK_POLL_MS = 200;
+
+/**
+ * Runs `work` while holding the session advisory lock {@link ERASURE_BACKUP_LOCK_KEY} on one
+ * dedicated connection, so a backup (which holds the same lock from before `pg_dump` until its
+ * deletion-ledger copy is shipped) never sees a tombstone appended without the matching delete
+ * state. Polls `pg_try_advisory_lock` for up to `waitMs`; returns `'busy'` without running `work`
+ * when the lock stays held, so the tombstone is never skipped (the user waits for the next run).
+ */
+export async function withErasureBackupLock<T>(
+  db: Database,
+  waitMs: number,
+  work: (db: Database) => Promise<T>,
+): Promise<T | 'busy'> {
+  const source = (db as unknown as { $client?: unknown }).$client;
+  const client: pg.PoolClient | pg.Pool | null =
+    source instanceof pg.Pool
+      ? await source.connect()
+      : ((source as pg.PoolClient | undefined) ?? null);
+  if (client === null) throw new Error('database has no client');
+  const owned = source instanceof pg.Pool;
+  const session = owned ? createSessionDatabase(client as pg.PoolClient) : db;
+  const deadline = Date.now() + waitMs;
+  let held = false;
+  let broken = false;
+  try {
+    for (;;) {
+      const got = await client.query<{ ok: boolean }>('SELECT pg_try_advisory_lock($1) AS ok', [
+        ERASURE_BACKUP_LOCK_KEY,
+      ]);
+      if (got.rows[0]?.ok === true) {
+        held = true;
+        break;
+      }
+      if (Date.now() >= deadline) return 'busy';
+      await new Promise((resolve) => setTimeout(resolve, ERASURE_LOCK_POLL_MS));
+    }
+    return await work(session);
+  } catch (err) {
+    broken = true;
+    throw err;
+  } finally {
+    if (held) {
+      try {
+        await client.query('SELECT pg_advisory_unlock($1)', [ERASURE_BACKUP_LOCK_KEY]);
+      } catch {
+        broken = true;
+      }
+    }
+    // A failed unlock must not return a connection that still holds the lock to the pool.
+    if (owned) (client as pg.PoolClient).release(broken && held ? true : undefined);
+  }
+}
 
 const lockDue = async (tx: Transaction, user: DueUser, now: Date) => {
   const cutoff = new Date(now.getTime() - USER_ERASURE_GRACE_DAYS * DAY_MS).toISOString();
@@ -67,6 +124,22 @@ const lockDue = async (tx: Transaction, user: DueUser, now: Date) => {
  * refreshed after the delete.
  */
 export async function purgeUser(
+  db: Database,
+  user: DueUser,
+  input: {
+    now: Date;
+    emailHmac: (email: string) => string;
+    append: (entry: DeletionLedgerEntry) => Promise<void>;
+    /** Max wait for the erasure/backup lock (default {@link ERASURE_LOCK_WAIT_MS}). */
+    lockWaitMs?: number;
+  },
+): Promise<PurgeUserOutcome> {
+  return withErasureBackupLock(db, input.lockWaitMs ?? ERASURE_LOCK_WAIT_MS, (session) =>
+    purgeUserLocked(session, user, input),
+  );
+}
+
+async function purgeUserLocked(
   db: Database,
   user: DueUser,
   input: {

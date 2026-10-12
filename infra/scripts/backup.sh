@@ -52,6 +52,10 @@ P="${BACKUP_S3_PREFIX}${ID}/"
 STAGE=init
 MAY_HAVE_PARTS=0
 STARTED_EPOCH="$(date -u +%s)"
+# Same literal as ERASURE_BACKUP_LOCK_KEY in packages/shared/src/erasure-lock.ts (a test compares them).
+ERASURE_BACKUP_LOCK_KEY=7340026011
+ERASURE_LOCK_WAIT_S="${BACKUP_ERASURE_LOCK_WAIT_S:-300}"
+LOCK_PID=""
 
 # Host lock: one backup (or prune) at a time per project.
 STATE_DIR="${BACKUP_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/bantoozi/backup}"
@@ -59,9 +63,48 @@ mkdir -p "$STATE_DIR"
 exec 9>"$STATE_DIR/$PROJECT.backup.lock"
 if ! flock -n 9; then echo "backup: another backup of $PROJECT is running" >&2; rm -rf "$WORK"; exit 75; fi
 
+# Erasure/backup lock (spec 11 §4, §5.1): a psql session in the postgres container holds the advisory
+# lock that house.purge-users takes around each user's ledger append + hard delete, from before pg_dump
+# until the ledger copy is shipped. The session lives as long as its stdin fifo (fd 7) stays open;
+# closing the fd (or the container exec dying) releases the lock. The wait is bounded by
+# lock_timeout, so a stuck purge fails the backup (backup_failed) instead of hanging it.
+acquire_erasure_lock() {
+  local fifo="$WORK/erasure-lock.in" out="$WORK/erasure-lock.out" waited=0
+  mkfifo "$fifo"
+  : > "$out"
+  dc exec -T postgres psql -U postgres -d bantoozi -X -tA -v ON_ERROR_STOP=1 <"$fifo" >"$out" 2>>"$ERRLOG" &
+  LOCK_PID=$!
+  exec 7<>"$fifo"
+  printf "SET lock_timeout = '%ss';\nSELECT pg_advisory_lock(%s);\nSELECT 'ERASURE_LOCKED';\n" \
+    "$ERASURE_LOCK_WAIT_S" "$ERASURE_BACKUP_LOCK_KEY" >&7
+  while ! grep -q ERASURE_LOCKED "$out" 2>/dev/null; do
+    if ! kill -0 "$LOCK_PID" 2>/dev/null; then
+      echo "could not take the erasure lock (a purge holds it or the session failed)" >>"$ERRLOG"
+      LOCK_PID=""
+      exec 7>&-
+      return 1
+    fi
+    waited=$((waited + 1))
+    if [ "$waited" -gt $(( (ERASURE_LOCK_WAIT_S + 30) * 5 )) ]; then
+      echo "timed out waiting for the erasure lock" >>"$ERRLOG"
+      release_erasure_lock
+      return 1
+    fi
+    sleep 0.2
+  done
+}
+release_erasure_lock() {
+  exec 7>&- || true
+  if [ -n "$LOCK_PID" ]; then
+    wait "$LOCK_PID" 2>/dev/null || true
+    LOCK_PID=""
+  fi
+}
+
 on_exit() {
   local rc=$?
   trap - EXIT
+  release_erasure_lock
   if [ "$rc" -ne 0 ]; then
     local tail_text
     tail_text="$(err_tail)"
@@ -114,6 +157,12 @@ for svc in postgres api worker; do
 done
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+# Serialize with house.purge-users from before the dump snapshot until the ledger copy is shipped: a
+# purge is then wholly before (user absent from the dump, tombstone in the copy) or wholly after
+# (user still in the dump, deleted_at set) this backup, never straddling it.
+STAGE=erasure-lock
+acquire_erasure_lock
+
 STAGE=dump
 MAY_HAVE_PARTS=1
 DUMP_JSON="$(dc exec -T postgres pg_dump -U postgres -Fc bantoozi 2>>"$ERRLOG" |
@@ -142,6 +191,8 @@ if [ -n "$LEDGER_PATH" ]; then
     LEDGER_NOTE="ledger=none-yet"
   fi
 fi
+
+release_erasure_lock
 
 STAGE=manifest
 FINISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

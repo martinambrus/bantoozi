@@ -19,6 +19,7 @@ export * from './dto/me.js';
 export * from './dto/provider-credentials.js';
 export * from './dto/rules.js';
 export * from './dto/subscriptions.js';
+export * from './erasure-lock.js';
 export * from './errors.js';
 export * from './ids.js';
 export * from './jobs.js';

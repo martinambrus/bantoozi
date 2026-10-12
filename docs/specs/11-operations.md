@@ -129,6 +129,14 @@ backup immediately increases exposure and must alert rather than being reported 
   cluster roles. Restore role passwords from the separately encrypted deployment secrets.
   See [PostgreSQL 16 pg_dump](https://www.postgresql.org/docs/16/app-pgdump.html) and
   [pg_dumpall](https://www.postgresql.org/docs/16/app-pg-dumpall.html).
+- Serialize with account erasure: before the dump, take the session advisory lock
+  `ERASURE_BACKUP_LOCK_KEY` (`packages/shared/src/erasure-lock.ts`) and hold it until the deletion-ledger
+  copy is shipped and verified, then release it before the manifest. `house.purge-users` holds the same
+  lock around each user's whole purge (tombstone append to final commit), so every purge falls wholly
+  before a backup (user absent from the dump, tombstone in its ledger copy) or wholly after it. The
+  backup waits at most `BACKUP_ERASURE_LOCK_WAIT_S` (default 300 s) and otherwise fails with
+  `backup_failed`; a purge waits at most 60 s within its run budget, then stops the run as incomplete
+  and retries the user on the next run, never skipping the tombstone (D-189).
 - Stream dump, globals and a manifest into `age` encryption; do not retain an unencrypted dump on
   disk. The manifest includes UTC start/end, commit/image digests, schema version, backup ID and
   ciphertext checksums. Use `set -euo pipefail`, temp files + atomic rename, and restrictive modes.
@@ -361,7 +369,7 @@ retention must not erase still-owned private cards or snapshots while publishing
 | `house.purge-bodies` | `45 3 * * *` | §5.2: preserve/verify owned full snapshots, mark eligible snapshots cold, clear redundant unprotected hot text/HTML once both its extraction and the article's latest carrier arrival are 30 days old, and collect snapshots unreferenced for 7 days; repair snapshots whose last reference left no `unreferenced_at` mark; never erase pending or failed capture inputs |
 | `house.purge-engine-calls` | `0 4 * * *` | first cancel `pending`/`running` `analysis_requests` older than 180 days under their row lock (`last_error_code = 'retention_expired'`, `completed_at` = now, lease cleared so a late completion fails its token check; account any upstream spend), settle `uncertain` spend reservations whose UTC budget day is at least 7 days before the run at `reserved_usd` (adding that cost to the day's `usage_daily`, plus the call when no `engine_calls` row references it), then delete `engine_calls`, settled `engine_reservations` and terminal `analysis_requests` 180 days after `completed_at` (else `created_at`), and `feedback_events` older than 365 days; clean delivered outbox rows and invoke bounded queue-history maintenance per §5 |
 | `house.retire-cards` | `30 4 * * *` | set `retired_at` on cards with `visibility <> 'public'` (library and promoted cards are never retired) that have no holders (`user_cards`/`user_labels`) and are not referenced by `eval.rater_cards`; delete their `card_answers` 30 days later, then the card row itself unless a `library_card_versions`, `card_publication_requests` (kept as audit, spec 02 §3.6), `eval.rater_cards` or `eval.run_answers` row references it. Both steps recheck under the card row lock that reuse also takes (spec 05 §5.1): a card is retired only while unheld, and deleted only while still retired, unheld and unreferenced. The job also clears `retired_at` on a retired card that has a holder again. Forks keep working (`parent_card_id` becomes null), and queue, feed-card and suggestion rows cascade |
-| `house.purge-users` | `0 5 * * *` | hard-delete users past the 7-day grace period |
+| `house.purge-users` | `0 5 * * *` | hard-delete users past the 7-day grace period, each under the erasure/backup lock of §4 (D-189) |
 | `house.nightly-learn` | `0 1 * * *` | enqueue `user.learn` when the effective training-input hash changed since the last **attempt** (implicit signals, undo/unrate, context and 180-day expiry included); `user.suggest` for active users, per spec 06 (**built in M7-T4**) |
 | `house.metrics` | `10 0 * * *` | online metrics (spec 10 §7) |
 | `house.alerts` | `*/5 * * * *` | evaluate the alert rules (§6.1) and send **all** operational emails. Other components only record state: `engine.circuit`, `engine.budget_alerts`, `ops.events` |

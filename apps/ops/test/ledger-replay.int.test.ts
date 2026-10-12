@@ -169,6 +169,40 @@ describe('deletion-ledger replay', () => {
     expect((await pool.query('SELECT 1 FROM users WHERE id = $1', [victim.id])).rowCount).toBe(0);
   });
 
+  it('mutates nothing for an entry whose e-mail hash does not match, including its used invite (R3)', async () => {
+    const victim = await createUser(pool, { email: 'invitee@example.test' });
+    const admin = await pool.query("SELECT id FROM users WHERE email = 'admin@example.test'");
+    await pool.query(
+      `INSERT INTO invites (code, created_by, email, note, used_by, used_at, expires_at)
+       VALUES ('INV-USED', $1, 'invitee@example.test', 'for the invitee', $2, now(), now() + interval '20 days')`,
+      [admin.rows[0].id, victim.id],
+    );
+    const entries = await decryptLedgerLines(
+      [identity],
+      [await ledgerLine(entryFor(victim.id, 'someone-else@example.test'))],
+    );
+    const result = await replayLedger(pool, entries, HMAC_KEY);
+    expect(result).toMatchObject({ users: 0, mismatched: 1 });
+    const invite = await pool.query(
+      "SELECT email::text AS email, note FROM invites WHERE code = 'INV-USED'",
+    );
+    expect(invite.rows[0]).toEqual({ email: 'invitee@example.test', note: 'for the invitee' });
+    // A mismatched id likewise.
+    const wrongId: LedgerEntry = {
+      ...entryFor(victim.id, 'invitee@example.test'),
+      id: 'e'.repeat(64),
+    };
+    await replayLedger(
+      pool,
+      await decryptLedgerLines([identity], [await ledgerLine(wrongId)]),
+      HMAC_KEY,
+    );
+    const again = await pool.query(
+      "SELECT email::text AS email, note FROM invites WHERE code = 'INV-USED'",
+    );
+    expect(again.rows[0]).toEqual({ email: 'invitee@example.test', note: 'for the invitee' });
+  });
+
   it('refuses a ledger it cannot decrypt', async () => {
     const other = await generateIdentity();
     await expect(

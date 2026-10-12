@@ -1810,3 +1810,17 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   first review round: `worker-laya` adds 10 connections (pool 6 plus its pg-boss pool 4) to the deploy
   budget, a backup without its manifest never takes a retention slot, and the ledger copy is shipped
   and verified before the manifest. Spec 02 §2, spec 10 §7 and spec 11 §5.1 updated.
+- D-189: 2026-10-12 M8-T2, M8-T5 (PR #26 Codex review round 3) — (1) Backups and account erasure are
+  serialized by one session advisory lock, `ERASURE_BACKUP_LOCK_KEY` (`7340026011`, defined in
+  `packages/shared/src/erasure-lock.ts`; `backup.sh` carries the same literal and a test compares them).
+  Without it a purge could append its tombstone after the backup copied the ledger yet commit after the
+  dump snapshot, leaving a valid backup that still holds the user but lacks the tombstone. `backup.sh`
+  takes the lock through a psql session in the postgres container before `pg_dump` and releases it
+  after the ledger copy is shipped and verified (and in its exit trap), waiting at most
+  `BACKUP_ERASURE_LOCK_WAIT_S` (default 300 s) before failing with `backup_failed`. `purgeUser` runs
+  each user's purge on one connection holding the lock (`pg_try_advisory_lock` polled every 200 ms, at
+  most 60 s and never past the run budget); a held lock returns `busy`, logs
+  `erasure_backup_lock_busy` and leaves the run incomplete, so the user is purged on the next run. A
+  long backup can therefore defer the 05:00 purge by a day. (2) The ledger replay changes nothing for
+  an entry (including the used-invite scrub) until both the entry id and the email HMAC match the
+  restored user. Spec 11 §4 and §6 updated.

@@ -508,6 +508,7 @@ sends one recovery mail. Rules are in `apps/worker/src/alerts/rules.ts`. A first
 | Disk capacity | a reported filesystem > 80 % used, < 10 GB free or no inodes | Free space (`docker system prune` only for unused images; never delete volumes); expand the disk |
 | No host health report | no `host_health` ops event in the last hour | The host health script is not posting; see below |
 | Backup failed / Restore test failed / No recent backup | a script reported failure via `POST /api/v1/admin/ops-event`, or no `backup_ok` for 26 h | Run the script by hand and read its output; check bucket credentials and free disk; section 4 |
+| Erasure disabled (`erasure.disabled`) | users past the 7-day grace wait while the deletion ledger or `DELETION_HMAC_KEY` is not configured (a production worker refuses to start without them) | Set `DELETION_LEDGER_PATH`, `DELETION_LEDGER_RECIPIENT` and `DELETION_HMAC_KEY` (section 1), redeploy; the next 05:00 `house.purge-users` run catches up. A worker log `erasure_backup_lock_busy` instead means a backup held the erasure lock (D-189): the purge retries on the next run, no action needed unless it repeats daily |
 | For You is not beating Maybe | the For You like-rate stayed below Maybe's for 3 consecutive days (>= 30 rated per lane) | A quality signal, not an outage: review the ranker thresholds and cards with the owner |
 
 Host-side reporting: the scripts call `POST /api/v1/admin/ops-event` with `Authorization: Bearer

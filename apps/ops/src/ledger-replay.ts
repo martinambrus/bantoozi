@@ -121,9 +121,6 @@ export async function replayLedger(
       result.mismatched += 1;
       continue;
     }
-    await pool.query('UPDATE invites SET email = NULL, note = NULL WHERE used_by = $1', [
-      entry.userId,
-    ]);
     const found = await pool.query<{ email: string }>(
       'SELECT email::text AS email FROM users WHERE id = $1',
       [entry.userId],
@@ -134,6 +131,10 @@ export async function replayLedger(
       result.mismatched += 1;
       continue;
     }
+    // Every mutation for an entry comes after both identity checks (entry id and e-mail HMAC).
+    await pool.query('UPDATE invites SET email = NULL, note = NULL WHERE used_by = $1', [
+      entry.userId,
+    ]);
     const deletedAt = new Date(entry.deletedAt);
     await pool.query(
       'UPDATE users SET deleted_at = LEAST(coalesce(deleted_at, $2::timestamptz), $2::timestamptz) WHERE id = $1',
