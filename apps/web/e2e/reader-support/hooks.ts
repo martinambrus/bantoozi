@@ -27,13 +27,26 @@ export async function fetchFeedNow(control: Control, feedUrl: string): Promise<v
   expect(queued, `the feed ${feedUrl} is known to the database`).toBe(1);
 }
 
-/** What 30-day compression does to a bookmark snapshot (house.purge-bodies, spec 11 §5.2). */
-export async function markSnapshotCold(control: Control, snapshotId: string): Promise<void> {
-  const done = await control.sql<{ markedCold: number; hotCopiesRemoved: number }>(
-    'markSnapshotCold',
+/**
+ * 30-day compression of a bookmark snapshot with the real `house.purge-bodies` (spec 11 §5.2): the
+ * snapshot and its article are aged by 31 days, the job is queued through the outbox and the
+ * worker runs it; this returns once the snapshot is cold and the hot copy is gone.
+ */
+export async function runColdMaintenance(control: Control, snapshotId: string): Promise<void> {
+  const aged = await control.sql<{ snapshots: number; bodies: number; articles: number }>(
+    'ageForColdMaintenance',
     { snapshotId },
   );
-  expect(done).toEqual({ markedCold: 1, hotCopiesRemoved: 1 });
+  expect(aged).toEqual({ snapshots: 1, bodies: 1, articles: 1 });
+  const { queued } = await control.sql<{ queued: number }>('runPurgeBodies', {});
+  expect(queued).toBe(1);
+  await expect
+    .poll(() => control.sql('snapshotMaintenance', { snapshotId }), {
+      message: 'the worker ran house.purge-bodies',
+      timeout: 60_000,
+      intervals: [500, 1_000],
+    })
+    .toEqual({ cold: true, hotCopy: false, snapshotHasText: true });
 }
 
 /** Leaves the article without a feed excerpt and without a stored body. */
