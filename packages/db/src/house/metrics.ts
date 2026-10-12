@@ -19,17 +19,36 @@ export interface MetricsRatingEvent {
   at: Date;
 }
 
+/** The most rating events one statement of the replay returns (M8-F10). */
+export const METRICS_RATING_PAGE = 500;
+
+/** A position in the replay order `(user_id, article_id, id)`. */
+export interface MetricsRatingCursor {
+  userId: string;
+  articleId: string;
+  id: string;
+}
+
 /**
- * The rating events with `from <= created_at < to`, grouped by user and article and in event order,
- * for the effective-rating replay of `house.metrics` (spec 10 §7). The undo of a `rating` or of a
- * `prompt_answer` restores the state before it. Callers must not retain the ids.
+ * One page (at most `limit` rows) of the rating events with `from <= created_at < to`, ordered by
+ * user, article and event id, strictly after `after`, for the effective-rating replay of
+ * `house.metrics` (spec 10 §7). The undo of a `rating` or of a `prompt_answer` restores the state
+ * before it. `cursor` is the position of the last row (`null` for an empty page). A pair's events
+ * can continue on the next page; the caller carries them over. Callers must not retain the ids.
  */
-export async function metricsRatingEvents(
+export async function metricsRatingEventsPage(
   db: Executor,
   from: Date,
   to: Date,
-): Promise<MetricsRatingEvent[]> {
+  after: MetricsRatingCursor | null,
+  limit: number = METRICS_RATING_PAGE,
+): Promise<{ events: MetricsRatingEvent[]; cursor: MetricsRatingCursor | null }> {
+  const position =
+    after === null
+      ? sql``
+      : sql`AND (e.user_id, e.article_id, e.id) > (${after.userId}::uuid, ${after.articleId}::bigint, ${after.id}::bigint)`;
   const result = await db.execute<{
+    id: string;
     user_id: string;
     article_id: string;
     kind: MetricsRatingEvent['kind'];
@@ -40,7 +59,7 @@ export async function metricsRatingEvents(
     prompted: boolean;
     at: number;
   }>(sql`
-    SELECT e.user_id::text AS user_id, e.article_id::text AS article_id, e.kind,
+    SELECT e.id::text AS id, e.user_id::text AS user_id, e.article_id::text AS article_id, e.kind,
            e.value->>'rating' AS rating, e.value->'before'->>'lane' AS lane,
            e.value->'before'->>'scoreSource' AS source, a.lang AS lang,
            (e.kind = 'prompt_answer' OR e.value->'selection'->>'method' = 'calibration') AS prompted,
@@ -51,18 +70,25 @@ export async function metricsRatingEvents(
        AND e.created_at < ${to.toISOString()}::timestamptz
        AND (e.kind IN ('rate', 'prompt_answer', 'unrate')
             OR (e.kind = 'undo' AND e.value->>'action' IN ('rating', 'prompt_answer')))
-     ORDER BY e.user_id, e.article_id, e.id`);
-  return result.rows.map((row) => ({
-    userId: row.user_id,
-    articleId: row.article_id,
-    kind: row.kind,
-    rating: row.rating === null ? null : Number(row.rating),
-    lane: row.lane,
-    source: row.source,
-    lang: row.lang,
-    prompted: row.prompted,
-    at: new Date(row.at),
-  }));
+       ${position}
+     ORDER BY e.user_id, e.article_id, e.id
+     LIMIT ${limit}`);
+  const last = result.rows.at(-1);
+  return {
+    events: result.rows.map((row) => ({
+      userId: row.user_id,
+      articleId: row.article_id,
+      kind: row.kind,
+      rating: row.rating === null ? null : Number(row.rating),
+      lane: row.lane,
+      source: row.source,
+      lang: row.lang,
+      prompted: row.prompted,
+      at: new Date(row.at),
+    })),
+    cursor:
+      last === undefined ? null : { userId: last.user_id, articleId: last.article_id, id: last.id },
+  };
 }
 
 /**
@@ -78,16 +104,27 @@ export async function metricsRecovery(
   const start = from.toISOString();
   const end = to.toISOString();
   const result = await db.execute<{ numerator: number; denominator: number }>(sql`
-    WITH downranked AS (
-      SELECT user_id, article_id,
+    WITH snapshots AS (
+      SELECT user_id, article_id, value->'before'->>'lane' AS lane,
              (kind IN ('open', 'bookmark') OR (kind IN ('rate', 'prompt_answer') AND value->>'rating' = '1')) AS recovered
         FROM feedback_events
        WHERE created_at >= ${start}::timestamptz AND created_at < ${end}::timestamptz
-         AND value->'before'->>'lane' IN ('everything', 'hidden')
+         AND value->'before'->>'lane' IS NOT NULL
+    ), downranked AS (
+      SELECT user_id, article_id, recovered FROM snapshots WHERE lane IN ('everything', 'hidden')
     ), eligible AS (
+      -- A pair with feedback counts by its feedback-time lane only (M8-F11); a pair without any is
+      -- counted from its cached lane, and only when it was scored and first seen in the window (M8-F10).
       SELECT user_id, article_id FROM downranked
       UNION
-      SELECT user_id, article_id FROM user_article WHERE lane IN ('everything', 'hidden')
+      SELECT ua.user_id, ua.article_id
+        FROM user_article ua
+        JOIN articles a ON a.id = ua.article_id
+       WHERE ua.lane IN ('everything', 'hidden')
+         AND ua.scored_at >= ${start}::timestamptz AND ua.scored_at < ${end}::timestamptz
+         AND a.first_seen_at >= ${start}::timestamptz AND a.first_seen_at < ${end}::timestamptz
+         AND NOT EXISTS (SELECT 1 FROM snapshots sn
+                          WHERE sn.user_id = ua.user_id AND sn.article_id = ua.article_id)
     )
     SELECT (SELECT count(*) FROM (SELECT DISTINCT user_id, article_id FROM downranked WHERE recovered) r)::int
              AS numerator,

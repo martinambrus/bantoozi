@@ -69,3 +69,24 @@ export async function bindTenant(tx: Transaction, userId: string): Promise<Tenan
   tenants.set(tenantTx, tenant);
   return tenantTx;
 }
+
+/**
+ * Run `fn` once per user of `userIds` inside a single transaction, rebinding `app.user_id` before
+ * each call (the setting is transaction-local and overwritten, so RLS scopes every call to its own
+ * user exactly as {@link withTenant} does). For read-only fan-outs over many users (nightly
+ * metrics), where one transaction per user costs more than the query. Keep batches small: the
+ * transaction stays open for the whole batch.
+ */
+export async function withTenants<T>(
+  db: Database,
+  userIds: readonly string[],
+  fn: (tx: TenantTx, userId: string) => Promise<T>,
+): Promise<T[]> {
+  const tenants = userIds.map((userId) => UuidSchema.parse(userId));
+  if (tenants.length === 0) return [];
+  return db.transaction(async (tx) => {
+    const out: T[] = [];
+    for (const userId of tenants) out.push(await fn(await bindTenant(tx, userId), userId));
+    return out;
+  });
+}

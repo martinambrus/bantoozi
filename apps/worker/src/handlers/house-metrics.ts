@@ -4,14 +4,16 @@ import {
   metricsEngine,
   metricsHides,
   metricsModels,
-  metricsRatingEvents,
+  METRICS_RATING_PAGE,
+  metricsRatingEventsPage,
+  type MetricsRatingEvent,
   metricsReaderUsers,
   metricsRecovery,
   metricsTrainingQueue,
   readerLaneMix,
   retryTransaction,
   updateSettingLocked,
-  withTenant,
+  withTenants,
 } from '@bantoozi/db';
 import {
   UserPreferencesSchema,
@@ -37,6 +39,34 @@ const JOB = 'house.metrics' as const;
 export const METRICS_RETENTION_DAYS = 90;
 const DAY_MS = 86_400_000;
 const READER_PAGE = 200;
+/** Readers counted per tenant-scoped transaction (M8-F10): a page of 200 is 8 transactions, not 200. */
+const READER_BATCH = 25;
+
+/**
+ * Replays the rating events of `from..to` in pages of {@link METRICS_RATING_PAGE} rows (M8-F10).
+ * The events of a user/article pair can straddle a page boundary, so the last pair of a page is
+ * carried to the next one and replayed together with its continuation; the result equals one
+ * replay over all events.
+ */
+async function replayRatings(deps: WorkerDeps, from: Date, to: Date) {
+  const ratings: ReturnType<typeof effectiveRatings> = [];
+  let carry: MetricsRatingEvent[] = [];
+  let cursor: Awaited<ReturnType<typeof metricsRatingEventsPage>>['cursor'] = null;
+  for (;;) {
+    const page = await metricsRatingEventsPage(deps.db, from, to, cursor);
+    const events = [...carry, ...page.events];
+    if (page.events.length < METRICS_RATING_PAGE) {
+      ratings.push(...effectiveRatings(events));
+      return ratings;
+    }
+    const lastOf = events.at(-1);
+    const pairOf = (e: MetricsRatingEvent) => `${e.userId}:${e.articleId}`;
+    const split = lastOf === undefined ? 0 : events.findIndex((e) => pairOf(e) === pairOf(lastOf));
+    ratings.push(...effectiveRatings(events.slice(0, split)));
+    carry = events.slice(split);
+    cursor = page.cursor;
+  }
+}
 
 /**
  * Maybe share inputs summed over the readers (spec 10 §7): per reader the unread counts of the
@@ -47,16 +77,26 @@ async function readerMix(deps: WorkerDeps, now: Date) {
   let after: string | null = null;
   for (;;) {
     const page = await metricsReaderUsers(deps.db, after, READER_PAGE);
-    for (const { userId, preferences } of page) {
-      const minTier = UserPreferencesSchema.parse(preferences ?? {}).defaultTier;
-      const mix = await withTenant(deps.db, userId, (tx) =>
-        readerLaneMix(tx, { asOf: now, minTier }),
+    for (let i = 0; i < page.length; i += READER_BATCH) {
+      const batch = page.slice(i, i + READER_BATCH);
+      const tiers = new Map(
+        batch.map(({ userId, preferences }) => [
+          userId,
+          UserPreferencesSchema.parse(preferences ?? {}).defaultTier,
+        ]),
       );
-      total.maybe += mix.maybe;
-      total.scored += mix.scored;
-      total.cards += mix.bySource.cards;
-      total.model += mix.bySource.model;
-      total.degraded += mix.bySource.degraded;
+      const mixes = await withTenants(
+        deps.db,
+        batch.map((reader) => reader.userId),
+        (tx, userId) => readerLaneMix(tx, { asOf: now, minTier: tiers.get(userId) ?? 0 }),
+      );
+      for (const mix of mixes) {
+        total.maybe += mix.maybe;
+        total.scored += mix.scored;
+        total.cards += mix.bySource.cards;
+        total.model += mix.bySource.model;
+        total.degraded += mix.bySource.degraded;
+      }
     }
     if (page.length < READER_PAGE) return total;
     after = page.at(-1)?.userId ?? null;
@@ -76,9 +116,7 @@ export function createMetricsHandler(deps: WorkerDeps): QueueHandler<'house.metr
     const now = nowOf(deps);
     const day = utcDay(new Date(now.getTime() - DAY_MS));
     const { start, end } = dayBounds(day);
-    const ratings = effectiveRatings(
-      await metricsRatingEvents(deps.db, new Date(windowStart(start, 30)), new Date(end)),
-    );
+    const ratings = await replayRatings(deps, new Date(windowStart(start, 30)), new Date(end));
     const bounds = (days: number) => ({
       from: windowStart(start, days),
       to: end,
