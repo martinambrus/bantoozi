@@ -14,7 +14,8 @@
 # security with two fixture tenants, the cold bookmarked snapshots (checksum, no refetch) and the
 # provider credentials (decrypted with the recovered keys, accepted by an in-process fake
 # provider); replay the deletion ledger and revoke restored sessions and login codes; run
-# `recovery:prepare` (spec 11 §4.1 step 4); then start the SAVED RELEASE (the api and worker image
+# `recovery:prepare` (spec 11 §4.1 step 4); set the three role passwords (`recovery:role-passwords`, spec 11
+# §4 step 3) and prove each role logs in over scram-authenticated loopback TCP; then start the SAVED RELEASE (the api and worker image
 # ids recorded in the manifest) against the restore and run the login/read/rank/outbox smoke
 # (spec 11 §4), printing `RELEASE_SMOKE login=ok read=ok rank=ok outbox=ok`. The release containers
 # have no network at all (`--network none`): they reach the throwaway Postgres through its unix
@@ -95,6 +96,7 @@ tools_netns() {
     docker run --rm -i --name "$(uniq_name verify)" --network "container:$PG_NAME" \
     --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true \
     -e PROVIDER_MASTER_KEY_ID -e PROVIDER_MASTER_KEYS -e DELETION_HMAC_KEY \
+    -e BANTOOZI_OWNER_PASSWORD -e BANTOOZI_APP_PASSWORD -e BANTOOZI_WORKER_PASSWORD \
     "${TOOLS_EXTRA[@]}" "$TOOLS_IMAGE" "$@" 2>>"$ERRLOG"
 }
 KEY_ID="$(envfile_get PROVIDER_MASTER_KEY_ID)"
@@ -162,6 +164,31 @@ STAGE=recovery-prepare
 # Spec 11 §4.1 step 4: the new workers must not resume a restored job lease or relay lease.
 RECOVERY_OUT="$(tools_netns recovery:prepare </dev/null)"
 
+STAGE=role-passwords
+# Spec 11 §4 step 3: the globals dump has no role passwords, so a restored cluster has three roles
+# nobody can log in as. `recovery:role-passwords` sets them from the deployment secrets; here
+# throwaway values stand in (the real ones never reach this run). Then the throwaway Postgres is
+# made to require scram-sha-256 on every TCP connection (its socket stays trusted for the release
+# smoke, which has no network) and each role must log in over loopback with its password and be
+# refused with a wrong one: the roles have working passwords after a restore.
+rand_pw() { head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
+BANTOOZI_OWNER_PASSWORD="$(rand_pw)"; BANTOOZI_APP_PASSWORD="$(rand_pw)"; BANTOOZI_WORKER_PASSWORD="$(rand_pw)"
+export BANTOOZI_OWNER_PASSWORD BANTOOZI_APP_PASSWORD BANTOOZI_WORKER_PASSWORD
+ROLES_OUT="$(tools_netns recovery:role-passwords </dev/null)"
+[ "$ROLES_OUT" = "ROLE_PASSWORDS set=3" ] || { echo "recovery:role-passwords said: $ROLES_OUT" >>"$ERRLOG"; false; }
+docker exec "$PG_NAME" sh -c "sed -i -E 's/^(host[[:space:]].*)[[:space:]]trust\$/\\1 scram-sha-256/' \"\$PGDATA/pg_hba.conf\" && ! grep -E '^host.*trust' \"\$PGDATA/pg_hba.conf\"" >/dev/null 2>>"$ERRLOG" ||
+  { echo "the throwaway pg_hba.conf still trusts TCP connections" >>"$ERRLOG"; false; }
+docker exec "$PG_NAME" psql -U postgres -X -q -c 'select pg_reload_conf()' >/dev/null 2>>"$ERRLOG"
+role_login() { # role_login <role> <password> : psql over loopback TCP, password auth only
+  PGPASSWORD="$2" docker exec -e PGPASSWORD "$PG_NAME" psql -X -q -t -A -h 127.0.0.1 -U "$1" -d bantoozi -c 'select 1' 2>/dev/null
+}
+for pair in "bantoozi_owner:$BANTOOZI_OWNER_PASSWORD" "bantoozi_app:$BANTOOZI_APP_PASSWORD" "bantoozi_worker:$BANTOOZI_WORKER_PASSWORD"; do
+  role="${pair%%:*}"; pw="${pair#*:}"
+  [ "$(role_login "$role" "$pw")" = 1 ] || { echo "role $role cannot log in with its restored password" >>"$ERRLOG"; false; }
+  [ -z "$(role_login "$role" "${pw}x")" ] || { echo "role $role accepts a wrong password" >>"$ERRLOG"; false; }
+done
+ROLE_LOGINS=ok
+
 STAGE=release-smoke
 # The saved release: the api and worker image ids the manifest recorded; the current compose images
 # when this host no longer has them (said in the output).
@@ -202,8 +229,8 @@ release_start() {
     # values for the isolated smoke (no network, nothing is purged here).
     export DELETION_LEDGER_PATH=/tmp/deletion-ledger.age DELETION_HMAC_KEY="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
     export DELETION_LEDGER_RECIPIENT=age1releasesmokethrowawayrecipientplaceholder0000000000000000000000
-    export DATABASE_URL="postgres://bantoozi_app:release-smoke@localhost/bantoozi?host=%2Fpgsock"
-    export DATABASE_URL_WORKER="postgres://bantoozi_worker:release-smoke@localhost/bantoozi?host=%2Fpgsock"
+    export DATABASE_URL="postgres://bantoozi_app:$BANTOOZI_APP_PASSWORD@localhost/bantoozi?host=%2Fpgsock"
+    export DATABASE_URL_WORKER="postgres://bantoozi_worker:$BANTOOZI_WORKER_PASSWORD@localhost/bantoozi?host=%2Fpgsock"
     docker run -d --name "$1" --network none --read-only --tmpfs /tmp --cap-drop ALL \
       --security-opt no-new-privileges:true --label bantoozi.restore-test=1 \
       -v "$SOCK_DIR:/pgsock:ro" \
@@ -368,6 +395,8 @@ STAGE=event
 printf '%s\n' "$VERIFY_OUT"
 printf '%s\n' "$REPLAY_OUT"
 printf '%s\n' "$RECOVERY_OUT"
+printf '%s\n' "$ROLES_OUT"
+echo "ROLE_LOGINS tcp_scram=$ROLE_LOGINS"
 echo "RELEASE_IMAGES source=$RELEASE_SOURCE"
 echo "$RELEASE_LINE"
 echo "BACKUP_ID=$ID"

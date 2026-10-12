@@ -20,7 +20,11 @@ describe('backup and restore scripts (static checks)', () => {
     expect(text).toContain('set -euo pipefail');
     expect(text).not.toMatch(/:latest/u);
     expect(text).not.toMatch(/\bcurl\b|\bwget\b/u);
-    expect(text).not.toMatch(/--password|PGPASSWORD|--token/u);
+    // A password only ever travels by environment name (`-e PGPASSWORD`), never as a value in argv.
+    expect(text).not.toMatch(/--password|--token|-e PGPASSWORD=/u);
+    expect(text.replaceAll(/PGPASSWORD="\$2" docker exec -e PGPASSWORD /gu, '')).not.toMatch(
+      /PGPASSWORD/u,
+    );
   });
 
   it('hands secrets to containers by name only', () => {
@@ -172,6 +176,26 @@ describe('deploy, maintenance and host-health scripts (static checks)', () => {
     expect(step).toContain('on conflict (email) do nothing');
     expect(insert).toBeLessThan(restore.indexOf('release_start "$API_NAME"'));
     expect(restore).not.toMatch(/update settings|insert into settings/iu);
+  });
+
+  it('sets the role passwords after the restore and proves each role logs in over scram TCP', () => {
+    const restore = read('infra/scripts/restore-test.sh');
+    const stage = restore.indexOf('STAGE=role-passwords');
+    expect(stage).toBeGreaterThan(restore.indexOf('recovery:prepare </dev/null'));
+    expect(stage).toBeLessThan(restore.indexOf('STAGE=release-smoke'));
+    const body = restore.slice(stage, restore.indexOf('STAGE=release-smoke'));
+    expect(body).toContain('recovery:role-passwords');
+    expect(body).toContain('scram-sha-256');
+    expect(body).toMatch(/-h 127\.0\.0\.1 -U "\$1"/u);
+    for (const role of ['bantoozi_owner', 'bantoozi_app', 'bantoozi_worker']) {
+      expect(body).toContain(role);
+    }
+    // Passwords travel by environment name, never on a command line.
+    expect(restore).toContain(
+      '-e BANTOOZI_OWNER_PASSWORD -e BANTOOZI_APP_PASSWORD -e BANTOOZI_WORKER_PASSWORD',
+    );
+    expect(restore).not.toContain('release-smoke@localhost');
+    expect(restore).toContain('echo "ROLE_LOGINS tcp_scram=$ROLE_LOGINS"');
   });
 
   it('starts the saved release without any network and reports the four smoke results', () => {

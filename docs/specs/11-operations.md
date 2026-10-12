@@ -127,7 +127,9 @@ backup immediately increases exposure and must alert rather than being reported 
 - Under a host lock, use `pg_dump -U postgres -Fc bantoozi` with a PostgreSQL 16 client (run inside
   the pinned `postgres` image, so no client is installed on the host) and superuser access, preserving every schema and all RLS-protected rows (`pgboss` and `eval` included). Capture
   `pg_dumpall --globals-only --no-role-passwords` as well: a single-database dump does not include
-  cluster roles. Restore role passwords from the separately encrypted deployment secrets.
+  cluster roles. Restore role passwords from the separately encrypted deployment secrets with
+  `recovery:role-passwords` (all three roles or none); the restore drill sets throwaway passwords and proves
+  each role logs in over password-authenticated loopback TCP (D-196).
   See [PostgreSQL 16 pg_dump](https://www.postgresql.org/docs/16/app-pgdump.html) and
   [pg_dumpall](https://www.postgresql.org/docs/16/app-pg-dumpall.html).
 - Serialize with account erasure: before the dump, take the session advisory lock
@@ -192,9 +194,10 @@ backup immediately increases exposure and must alert rather than being reported 
    pinned queue API, reset outbox/origin leases, and run reconciliation against current domain rows.
    `recovery:prepare` does this in SQL: an `active` `pgboss.job` row, whose outbox intent was already
    delivered and is therefore the only copy of its work, becomes runnable again (`retry` with
-   `start_after = now()`) or `failed` when its retries are exhausted, as pg-boss itself would fail it;
-   handlers tolerate the repeated run (created and retry jobs stay). Outbox and origin leases are
-   cleared and `running` `analysis_requests` return to `pending` (D-192).
+   `start_after = now()`), whatever its retry count: an exhausted `retry_limit` is raised to
+   `retry_count + 1` so pg-boss runs it once more; handlers tolerate the repeated run (created and retry
+   jobs stay). Outbox and origin leases are cleared and `running` `analysis_requests` return to
+   `pending` (D-192, D-196).
    Rebuild eligible work, skipping deleted users, superseded revisions and no-longer-authorized
    subscription inference generations; rebuild pending local bookmark captures separately. Disable delivery of old
    authentication/operational emails; re-enable only newly generated messages after recovery.

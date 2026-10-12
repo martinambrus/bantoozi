@@ -287,12 +287,20 @@ application error. **Preconditions:** the offline keys of 4.3, a host or fresh v
    the email on consumed invites. The commands are `ledger:replay` (and `restore:verify`) of the
    `bantoozi-backup-tools:local` image, as `restore-test.sh` runs them (it prints `REPLAY entries=... users=...
    waitlist=... invites=...`). Revoke all restored sessions and login codes (the replay does).
+   **Restore role passwords** before starting any service: the globals dump carries no role passwords
+   (`--no-role-passwords`), so without this step the app, worker and owner cannot log in. With the
+   recovered deployment secrets `BANTOOZI_OWNER_PASSWORD`, `BANTOOZI_APP_PASSWORD` and
+   `BANTOOZI_WORKER_PASSWORD` in the environment, run `recovery:role-passwords` against the restored
+   cluster as the superuser, with the same tools-container pattern as `recovery:prepare` below (pass the
+   variables with `-e NAME`, never on the command line). Expect `ROLE_PASSWORDS set=3`; it fails and changes
+   nothing if any value or role is missing. The weekly restore test does the same with throwaway passwords
+   and prints `ROLE_LOGINS tcp_scram=ok`.
 4. Queue recovery: do not resume restored `pgboss` jobs. Run `recovery:prepare` on the restored database
    **before any worker starts**: it puts every pg-boss job still `active` (their workers are gone) back to
-   `retry` so it runs again at once, or marks it `failed` when its retries are used up, resets
+   `retry` so it runs again at once (an exhausted retry limit is raised by one, so nothing is lost), resets
    outbox relay leases and origin fetch leases, returns `running` analysis requests to `pending` with the lease
    cleared, keeps queued jobs and undelivered outbox intents, and prints
-   `RECOVERY_PREPARE active_jobs_requeued=N active_jobs_failed=N outbox_leases_cleared=N origin_leases_cleared=N analysis_leases_reset=N outbox_pending=N`.
+   `RECOVERY_PREPARE active_jobs_requeued=N outbox_leases_cleared=N origin_leases_cleared=N analysis_leases_reset=N outbox_pending=N`.
    It does not touch spend reservations: keep paid inference paused until the day's totals are reconciled
    (step 5). Idempotent. With the restored database in a postgres container, as `restore-test.sh` does:
 

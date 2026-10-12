@@ -14,7 +14,7 @@ import { formatRecovery, prepareRecovery } from '../src/recovery-prepare.js';
 
 /**
  * `recovery:prepare` (spec 11 §4.1 step 4) against a migrated database standing in for a restored
- * copy: stale `active` pg-boss jobs are requeued (or failed when out of retries), outbox and origin leases are reset, and queued
+ * copy: stale `active` pg-boss jobs are requeued (the retry limit raised when exhausted), outbox and origin leases are reset, and queued
  * jobs and undelivered intents are kept.
  */
 
@@ -94,26 +94,36 @@ describe('recovery:prepare', () => {
   it('requeues active jobs, resets leases, keeps queued work, and is idempotent', async () => {
     const report = await prepareRecovery(pool);
     expect(report).toEqual({
-      activeJobsRequeued: 1,
-      activeJobsFailed: 1,
+      activeJobsRequeued: 2,
       outboxLeasesCleared: 2,
       originLeasesCleared: 1,
       analysisLeasesReset: 2,
       outboxPending: 3,
     });
     expect(formatRecovery(report)).toBe(
-      'RECOVERY_PREPARE active_jobs_requeued=1 active_jobs_failed=1 outbox_leases_cleared=2 origin_leases_cleared=1 analysis_leases_reset=2 outbox_pending=3',
+      'RECOVERY_PREPARE active_jobs_requeued=2 outbox_leases_cleared=2 origin_leases_cleared=1 analysis_leases_reset=2 outbox_pending=3',
     );
-    expect(await stateOf('recovery.test')).toEqual(['completed', 'created', 'failed', 'retry']);
+    expect(await stateOf('recovery.test')).toEqual(['completed', 'created', 'retry', 'retry']);
     // The requeued job is runnable now and keeps its data; the exhausted one is finished, not active.
     const runnable = await pool.query(
-      "SELECT data, retry_count FROM pgboss.job WHERE name = 'recovery.test' AND state = 'retry' AND start_after <= now()",
+      "SELECT data, retry_count FROM pgboss.job WHERE name = 'recovery.test' AND state = 'retry' AND start_after <= now() ORDER BY retry_count",
     );
-    expect(runnable.rows).toEqual([{ data: {}, retry_count: 1 }]);
+    expect(runnable.rows).toEqual([
+      { data: {}, retry_count: 1 },
+      { data: { n: 2 }, retry_count: 2 },
+    ]);
+    // The exhausted job (retry_count = retry_limit) gets one more run: its limit is raised past its count.
+    const limits = await pool.query(
+      "SELECT retry_count, retry_limit FROM pgboss.job WHERE name = 'recovery.test' AND state = 'retry' ORDER BY retry_count",
+    );
+    expect(limits.rows).toEqual([
+      { retry_count: 1, retry_limit: 2 },
+      { retry_count: 2, retry_limit: 3 },
+    ]);
     const failed = await pool.query(
-      "SELECT output FROM pgboss.job WHERE name = 'recovery.test' AND state = 'failed' AND completed_on IS NOT NULL",
+      "SELECT 1 FROM pgboss.job WHERE name = 'recovery.test' AND state = 'failed'",
     );
-    expect(failed.rows).toHaveLength(1);
+    expect(failed.rows).toHaveLength(0);
     // pg-boss 10.4.2 fetch (plans.fetchNextJob): the requeued job is the next eligible one.
     const fetched = await pool.query(
       `SELECT id, data FROM pgboss.job
@@ -121,7 +131,7 @@ describe('recovery:prepare', () => {
         ORDER BY priority DESC, created_on, id FOR UPDATE SKIP LOCKED`,
     );
     expect(fetched.rows.map((row: { data: unknown }) => row.data)).toContainEqual({});
-    expect(fetched.rows).toHaveLength(2);
+    expect(fetched.rows).toHaveLength(3);
     const leased = await pool.query(
       'SELECT count(*)::int AS n FROM job_outbox WHERE lease_token IS NOT NULL OR lease_until IS NOT NULL',
     );
@@ -133,7 +143,6 @@ describe('recovery:prepare', () => {
     const again = await prepareRecovery(pool);
     expect(again).toEqual({
       activeJobsRequeued: 0,
-      activeJobsFailed: 0,
       outboxLeasesCleared: 0,
       originLeasesCleared: 0,
       analysisLeasesReset: 0,

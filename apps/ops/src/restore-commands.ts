@@ -5,10 +5,11 @@ import { readIdentities } from './age-stream.js';
 import { parseManifest } from './backup-commands.js';
 import { decryptLedgerLines, formatReplay, replayLedger } from './ledger-replay.js';
 import { formatRecovery, prepareRecovery } from './recovery-prepare.js';
+import { formatRolePasswords, setRolePasswords } from './role-passwords.js';
 import { verifyRestore } from './restore-verify.js';
 
 /**
- * `restore:verify`, `ledger:replay` and `recovery:prepare`: run by `infra/scripts/restore-test.sh` in a container that
+ * `restore:verify`, `ledger:replay`, `recovery:prepare` and `recovery:role-passwords`: run by `infra/scripts/restore-test.sh` in a container that
  * shares the network namespace of the throwaway Postgres (which has no other network). The database
  * is reached over loopback as the superuser of that throwaway instance only.
  */
@@ -82,6 +83,17 @@ export function registerRestoreCommands(program: Command): void {
     .action(() =>
       withPool(async (pool) => {
         console.log(formatRecovery(await prepareRecovery(pool)));
+      }),
+    );
+
+  program
+    .command('recovery:role-passwords')
+    .description(
+      'After a restore: set the owner, app and worker role passwords from BANTOOZI_*_PASSWORD (spec 11 §4 step 3)',
+    )
+    .action(() =>
+      withPool(async (pool) => {
+        console.log(formatRolePasswords(await setRolePasswords(pool, process.env)));
       }),
     );
 }

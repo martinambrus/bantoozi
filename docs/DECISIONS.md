@@ -1883,3 +1883,15 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   pending list past 20 collapses the list into one unscoped `{}` run instead of dropping the oldest, so an
   outage that queues many scoped `house.rematch {cardId}` runs can no longer leave cards with stale
   answers; an unscoped run is never discarded. Spec 02 §2 and spec 11 §4 updated.
+- D-196: 2026-10-12 M8-T5 (PR #26 Codex review round 9) — (1) New `recovery:role-passwords` sets the
+  `bantoozi_owner`, `bantoozi_app` and `bantoozi_worker` passwords from `BANTOOZI_*_PASSWORD` in one
+  transaction (all three or none; `ALTER ROLE … PASSWORD` built with `format('%L')`, statement logging off),
+  because the globals dump uses `--no-role-passwords` and a real recovery into a new volume otherwise
+  leaves the services unable to log in. `restore-test.sh` runs it with random throwaway passwords, switches
+  the throwaway cluster's `host` lines to scram-sha-256 and proves each role logs in over loopback TCP
+  (and a wrong password is refused, `ROLE_LOGINS tcp_scram=ok`); the release smoke itself stays on the
+  trusted unix socket because its containers have no network. (2) `recovery:prepare` requeues every
+  restored `active` job, raising an exhausted `retry_limit` to `retry_count + 1`, instead of failing it
+  (this supersedes the `failed` branch of D-192): a final-attempt job captured after its intent was
+  delivered is the only copy of that work. The output drops `active_jobs_failed`. Spec 11 §4 and §4.1
+  updated.
