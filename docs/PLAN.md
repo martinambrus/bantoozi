@@ -1415,6 +1415,33 @@ evidence or is explicitly marked blocked/owner. **Launch ready** requires all M7
 deployment inputs in §17) resolved. A local
 production-like rehearsal does not prove DNS, mail delivery, host capacity or production recovery.
 
+
+### 14.1 M8 follow-ups (after PR #26 is merged)
+
+Known gaps found during M8 that block neither the merge nor launch. Each is one small task; work them on
+one follow-up branch, test-first, committed as `M8-F<n>: <summary>`. Mark each ✓ with its commit.
+
+| ID | Follow-up | Where | Status |
+|---|---|---|---|
+| M8-F1 | Recovery mails name the incident only by its alert key; add the alert's title and first-seen time | `apps/worker/src/alerts/notify.ts` | |
+| M8-F2 | A failure event that drops out of the 50-entry `ops.events` list resolves its alert silently; keep the open failure in `alerts.state` until a later success | `apps/worker/src/alerts/rules.ts` | |
+| M8-F3 | `house.translate-cards` has no run time budget, and a weak or failed card translation is retried on every `{}` run; add the budget/continuation and a retry backoff | `apps/worker/src/handlers/house-translate-cards.ts` | |
+| M8-F4 | An enrich-set change together with a language-mode change re-enriches natively when no translation exists yet; translate first | `packages/db/src/classify/reprocess.ts` | |
+| M8-F5 | The E2E bookmark scenario simulates cold maintenance in SQL; drive the real `house.purge-bodies` instead (M6 handoff) | `apps/web/e2e`, `packages/testing/src/e2e` | |
+| M8-F6 | The unread-cap query of `house.archive` has no supporting index, and deleted users are not excluded from archiving (harmless); add the index (migration 0022) and the filter | `packages/db/src/house` | |
+| M8-F7 | The Caddy http→https redirect drops a non-default port (rehearsal only) | `infra/caddy/Caddyfile` | |
+| M8-F8 | `deploy.sh` does not pre-build the `backup-tools` image, so the first pre-deploy backup builds it lazily | `infra/scripts/deploy.sh` | |
+| M8-F9 | When `backup_ok`/`restore_ok` cannot be posted the scripts only warn; retry, then exit non-zero so the missing event is visible locally too | `infra/scripts/backup.sh`, `restore-test.sh` | |
+| M8-F10 | Metrics cost at scale: the regret denominator's cached part is not time-bounded, rating replay loads 30 days in memory, and the reader lane mix opens one tenant transaction per user nightly; bound and batch them | `apps/worker/src/metrics`, `packages/db/src/house/metrics.ts` | |
+| M8-F11 | `metricsRecovery`'s denominator still reads the cached `user_article` lane; read the feedback-time snapshot like the like-rates | `packages/db/src/house/metrics.ts` | |
+| M8-F12 | No test boots two full worker processes; add a two-worker ingestion/merge/quota/budget/origin-throttle int test (launch item 10) | `apps/worker/test` | |
+| M8-F13 | The S12 backup drill once failed at the MinIO bucket check before any code ran and passed on a rerun; find the race in the rehearsal start-up | `infra/scripts/deploy.sh` (rehearsal), `infra/compose.yml` | |
+| M8-F14 | `house.retire-cards` saves its sweep cursor but has no dedicated budget-cut test | `apps/worker/test/house-retention-*.int.test.ts` | |
+| M8-F15 | A row whose stored `next_rank_at` lies after the run's `ctxAt` but is already past keeps being re-ranked under clock skew (harmless); clamp it | `packages/db/src/rank/write.ts` | |
+| M8-F16 | Cleanups: `UndoReceipt.effects.rankFull` is dead data (drop it from new receipts), and the `s19-list-catchup` test header still describes the old full catch-up | `packages/db/src/api/article-actions.ts`, `apps/api/test` | |
+| M8-F17 | Load-test realism: the generated feed lists 3 items, so a feed polled less often than every ~36 min can miss items; one unexplained API restart was seen during heavy seeding | `packages/testing/src/load-feeds.ts`, `apps/ops/src/load` | |
+| M8-F18 | Rollback was rehearsed only by redeploying the same commit; rehearse `deploy.sh <previous tag>` across two real releases once a second release exists | `infra/scripts/deploy.sh`, RUNBOOK §3 | |
+
 ---
 
 ## 15. M9: Optional extensions (after launch; each item can become its own goal)
