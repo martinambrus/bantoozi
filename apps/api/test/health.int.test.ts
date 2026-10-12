@@ -78,6 +78,25 @@ describe('health (spec 08 §10)', () => {
     }
   });
 
+  it('is 200 when the database is ahead of the release (rollback over an expanded schema)', async () => {
+    const newest = await ownerPool.query<{ created_at: string }>(
+      'SELECT max(created_at)::text AS created_at FROM drizzle.__drizzle_migrations',
+    );
+    const inserted = await ownerPool.query<{ id: number }>(
+      "INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ('synthetic-newer', $1) RETURNING id",
+      [Number(newest.rows[0]?.created_at) + 1000],
+    );
+    try {
+      const res = await server.inject({ method: 'GET', url: '/api/v1/readyz' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ status: 'ready', checks: { database: 'ok', migrations: 'ok' } });
+    } finally {
+      await ownerPool.query('DELETE FROM drizzle.__drizzle_migrations WHERE id = $1', [
+        inserted.rows[0]?.id,
+      ]);
+    }
+  });
+
   it('is 503 without leaking details when the database is unreachable, with limits on', async () => {
     const url = new URL(testDb.urls.app);
     url.port = '1';

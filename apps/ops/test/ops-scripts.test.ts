@@ -182,6 +182,17 @@ describe('deploy, maintenance and host-health scripts (static checks)', () => {
     expect(deploy).toMatch(/"\$MAINTENANCE" --env-file "\$ENV_FILE" on/u);
   });
 
+  it('names the restored images and does not claim the requested release runs after a failed smoke', () => {
+    const deploy = read('infra/scripts/deploy.sh');
+    expect(deploy).toContain('declare -A PREV_ID PREV_NAME PREV_SHA');
+    expect(deploy).toContain('PREV_SHA[$svc]=');
+    expect(deploy).toContain('failed its smoke; restored previous images of');
+    expect(deploy).toContain('the requested release is NOT running');
+    expect(deploy).toContain('the restored images (');
+    expect(deploy).toContain('are healthy against the expanded schema');
+    expect(deploy).not.toContain('compatibility demonstrated');
+  });
+
   it('pre-creates the smoke account in the throwaway database before the release starts', () => {
     const restore = read('infra/scripts/restore-test.sh');
     // A restored settings.signup_mode = 'closed' beats the SIGNUP_MODE of the smoke environment, so

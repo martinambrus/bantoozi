@@ -71,7 +71,12 @@ describe('readMigrationJournal', () => {
         { tag: '0000_a', when: 10 },
       ],
     });
-    expect(readMigrationJournal(dir)).toEqual({ count: 2, latestTag: '0001_b', latestWhen: 20 });
+    expect(readMigrationJournal(dir)).toEqual({
+      count: 2,
+      latestTag: '0001_b',
+      latestWhen: 20,
+      whens: [20, 10],
+    });
     write({ entries: [] });
     expect(() => readMigrationJournal(dir)).toThrow('invalid migration journal');
     write({ entries: [{ tag: 1, when: 'x' }] });

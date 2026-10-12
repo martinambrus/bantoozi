@@ -51,6 +51,7 @@ describe('migrate job', () => {
       ready: true,
       expectedLatest: journal.latestWhen,
       appliedLatest: journal.latestWhen,
+      newerApplied: 0,
     });
   });
 

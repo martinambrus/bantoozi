@@ -242,6 +242,7 @@ describe('upgrade from the previous release (spec 11 §9 item 12)', () => {
         ready: true,
         expectedLatest: bundled.latestWhen,
         appliedLatest: bundled.latestWhen,
+        newerApplied: 0,
       });
     } finally {
       await appPool.end();
