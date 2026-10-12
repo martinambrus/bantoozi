@@ -264,7 +264,7 @@ function insertCallSql(row: EngineCallRow, reservationId: string | null, cost: s
     INSERT INTO engine_calls (engine, kind, model, article_id, question_set_id, reservation_id,
                               logical_request_id, credential_version, article_revision, state_sha256,
                               card_ids, user_id, n_questions, input_tokens, output_tokens, cost_usd,
-                              billing, latency_ms, attempts, status, error, created_at)
+                              billing, latency_ms, attempts, status, error, created_at, demand_basis)
     VALUES (${row.engine}, ${row.kind}, ${row.model ?? null},
             (SELECT a.id FROM articles a WHERE a.id = ${row.articleId ?? null}::bigint),
             (SELECT q.id FROM question_sets q WHERE q.id = ${row.questionSetId ?? null}::bigint),
@@ -277,7 +277,7 @@ function insertCallSql(row: EngineCallRow, reservationId: string | null, cost: s
             ${row.billing}, ${row.latencyMs === undefined ? null : Math.round(row.latencyMs)},
             ${row.attempts}, ${row.status},
             ${row.error === undefined ? null : row.error.slice(0, MAX_ERROR_LENGTH)},
-            ${row.createdAt.toISOString()}::timestamptz)
+            ${row.createdAt.toISOString()}::timestamptz, ${row.demandBasis ?? null})
     ON CONFLICT DO NOTHING
     RETURNING id::text AS id`;
 }

@@ -99,6 +99,8 @@ export const engineCalls = pgTable(
     status: text('status').notNull(),
     error: text('error'),
     createdAt: tstz('created_at').notNull().defaultNow(),
+    /** Why the call was authorized when it was made (migration 0022); NULL = no article demand or pre-0022. */
+    demandBasis: text('demand_basis'),
   },
   (t) => [
     check('engine_calls_engine_check', sql`engine IN ('typesafe','llm','laya','libretranslate')`),
@@ -119,6 +121,7 @@ export const engineCalls = pgTable(
       'engine_calls_status_check',
       sql`status IN ('ok','error','timeout','rate_limited','invalid_request','invalid_response','auth_error')`,
     ),
+    check('engine_calls_demand_basis_check', sql`demand_basis IN ('active','training','other')`),
     index('engine_calls_created_idx').on(t.createdAt),
     index('engine_calls_article_idx').on(t.articleId),
     uniqueIndex('engine_calls_attempt_idx').on(t.logicalRequestId, t.engine, t.attempts),

@@ -590,7 +590,10 @@ CREATE TABLE engine_calls (
   status          text NOT NULL CHECK (status IN ('ok','error','timeout','rate_limited','invalid_request',
                                                   'invalid_response','auth_error')),
   error           text NULL,
-  created_at      timestamptz NOT NULL DEFAULT now()
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  -- migration 0022 (D-194): why the call was authorized, recorded at call time and never recomputed;
+  -- NULL for calls without article demand (suggest, probes, eval) and for rows from before 0022
+  demand_basis    text NULL CHECK (demand_basis IN ('active','training','other'))
 );
 CREATE INDEX engine_calls_created_idx ON engine_calls (created_at);
 CREATE INDEX engine_calls_article_idx ON engine_calls (article_id);

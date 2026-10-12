@@ -44,6 +44,8 @@ export interface CallFixture {
   costUsd?: number;
   articleId?: string | null;
   userId?: string | null;
+  /** The authorization basis recorded when the call was made; omitted = a row from before it. */
+  demandBasis?: 'active' | 'training' | 'other' | null;
   at: Date;
 }
 
@@ -281,8 +283,8 @@ export class MetricsS17World extends MetricsWorld {
   async call(fixture: CallFixture): Promise<void> {
     await this.owner.query(
       `INSERT INTO engine_calls (engine, kind, model, article_id, logical_request_id, user_id, cost_usd,
-                                 latency_ms, status, created_at)
-       VALUES ($1, $2, 'jev-test-1', $3, $4, $5, $6, $7, $8, $9)`,
+                                 latency_ms, status, created_at, demand_basis)
+       VALUES ($1, $2, 'jev-test-1', $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         fixture.engine ?? 'typesafe',
         fixture.kind,
@@ -293,6 +295,7 @@ export class MetricsS17World extends MetricsWorld {
         fixture.latencyMs === undefined ? 100 : fixture.latencyMs,
         fixture.status ?? 'ok',
         fixture.at,
+        fixture.demandBasis ?? null,
       ],
     );
   }

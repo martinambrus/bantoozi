@@ -1311,7 +1311,7 @@ rows they change (D-186, `fcf2b65`, migration 0021), and the load test gates a `
 (spec 09 polling plus navigation lists, at least 300 list samples per phase) and reports a `stress`
 profile (D-187, `b8cad30`, `3b773e9`): realistic p95 32/34/45/74 ms, stress p95 81/127/184/212 ms,
 no backlog alert in either (`docs/launch/load-60min-{realistic,stress}-2026-10-11.md`). Deviations:
-D-171…D-187 in `docs/DECISIONS.md`. Migrations 0019, 0020 and 0021; the next migration is 0022. Launch items needing the owner or the real host are marked
+D-171…D-194 in `docs/DECISIONS.md` (D-188…D-194 from the PR #26 Codex review rounds). Migrations 0019…0022; the next migration is 0023. Launch items needing the owner or the real host are marked
 **owner** in `docs/RUNBOOK.md` (launch checklist). **Launch ready** additionally needs those owner items
 and the G1 values applied in production. The D-185 owner question (full re-rank after every rating) is resolved by D-186.
 
@@ -1441,7 +1441,7 @@ one follow-up branch, test-first, committed as `M8-F<n>: <summary>`. Mark each �
 | M8-F16 | Cleanups: `UndoReceipt.effects.rankFull` is dead data (drop it from new receipts), and the `s19-list-catchup` test header still describes the old full catch-up | `packages/db/src/api/article-actions.ts`, `apps/api/test` | |
 | M8-F17 | Load-test realism: the generated feed lists 3 items, so a feed polled less often than every ~36 min can miss items; one unexplained API restart was seen during heavy seeding | `packages/testing/src/load-feeds.ts`, `apps/ops/src/load` | |
 | M8-F18 | Rollback was rehearsed only by redeploying the same commit; rehearse `deploy.sh <previous tag>` across two real releases once a second release exists | `infra/scripts/deploy.sh`, RUNBOOK §3 | |
-| M8-F19 | Engine cost attribution (active / training / off-feed) is computed from the current subscriptions and analysis requests, so a past day's numbers change after an unsubscribe or a later request; record the authorization basis on each `engine_calls` row when the call is made (migration 0022) and attribute from it (PR #26 Codex comment 4248814596) | `packages/engine`, `packages/db/src/house/metrics.ts` | |
+| M8-F19 | Engine cost attribution (active / training / off-feed) is computed from the current subscriptions and analysis requests, so a past day's numbers change after an unsubscribe or a later request; record the authorization basis on each `engine_calls` row when the call is made (migration 0022) and attribute from it (PR #26 Codex comment 4248814596) | `packages/engine`, `packages/db/src/house/metrics.ts` || ✓ D-194, migration 0022 (in PR #26) |
 
 ---
 

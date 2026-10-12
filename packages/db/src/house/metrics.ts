@@ -296,14 +296,19 @@ export async function metricsEngine(
   }>(sql`
     WITH w AS (
       SELECT c.*,
-             EXISTS (SELECT 1 FROM feed_items fi
+             -- The basis recorded when the call was made decides (migration 0022). Only a row
+             -- without one (written before it, or an article call from a path that records none) is
+             -- attributed from the subscriptions and requests that exist now.
+             CASE WHEN c.demand_basis IS NOT NULL THEN c.demand_basis = 'active'
+                  ELSE EXISTS (SELECT 1 FROM feed_items fi
                        JOIN subscriptions s ON s.feed_id = fi.feed_id
                       WHERE fi.article_id = c.article_id AND s.inference_mode = 'active'
                         AND (s.inference_activated_at IS NULL
-                             OR fi.first_seen_at >= s.inference_activated_at)) AS by_active,
-             EXISTS (SELECT 1 FROM analysis_requests r
+                             OR fi.first_seen_at >= s.inference_activated_at)) END AS by_active,
+             CASE WHEN c.demand_basis IS NOT NULL THEN c.demand_basis = 'training'
+                  ELSE EXISTS (SELECT 1 FROM analysis_requests r
                       WHERE r.article_id = c.article_id
-                        AND r.status IN ('pending', 'running', 'complete')) AS by_request
+                        AND r.status IN ('pending', 'running', 'complete')) END AS by_request
         FROM engine_calls c
        WHERE c.created_at >= ${start}::timestamptz AND c.created_at < ${end}::timestamptz)
     SELECT (count(*) FILTER (WHERE ${LIVE}))::int AS calls,

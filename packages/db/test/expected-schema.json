@@ -1671,6 +1671,11 @@
           "type": "timestamp with time zone",
           "nullable": false,
           "default": "now()"
+        },
+        "demand_basis": {
+          "type": "text",
+          "nullable": true,
+          "default": null
         }
       },
       "primaryKey": ["id"],
@@ -1687,7 +1692,8 @@
         "billing IN ('known','uncertain')",
         "latency_ms >= 0",
         "attempts > 0",
-        "status IN ('ok','error','timeout','rate_limited','invalid_request', 'invalid_response','auth_error')"
+        "status IN ('ok','error','timeout','rate_limited','invalid_request', 'invalid_response','auth_error')",
+        "demand_basis IN ('active','training','other')"
       ],
       "foreignKeys": [
         {

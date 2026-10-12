@@ -1863,3 +1863,14 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `cursor: {failed: {ledger, db, blocked}, at}`, does not advance `completedAt`, and `house.alerts`
   raises `erasure.failed` while that cursor is present; a later clean run clears both. Spec 02 §2 and
   spec 11 §5.1 updated.
+- D-194: 2026-10-12 M8-T4 (PR #26 Codex comment 4248814596, follow-up M8-F19 done in the PR at the
+  owner's request) — engine cost attribution uses the authorization that held at call time. Migration
+  0022 adds `engine_calls.demand_basis` (`active` | `training` | `other`, nullable). The router writes it
+  from the authorization it already holds (`demandBasisOf`): `active` when any automatic witness (an
+  active subscription) authorized the call, `training` when only manual witnesses (selected analysis
+  requests) did; it is not re-checked against live rows, so a call whose automatic witness went stale
+  between the handler's check and the call is still `active`. Calls without article demand (suggest,
+  credential probes, eval) and rows from before 0022 keep NULL; `house.metrics` uses the recorded basis
+  and falls back to the current subscriptions and requests only for NULL rows with an article. A past
+  day's cost split therefore no longer changes after an unsubscribe or a later request. Spec 02 §3.1
+  and spec 10 §7 updated.

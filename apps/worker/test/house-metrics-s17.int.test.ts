@@ -756,6 +756,92 @@ describe('S17 A5: engine latency, errors, coverage and billed cost', () => {
     expect(pick(s, 'windows.d7.engine.cache.savedUsd') as number).toBeCloseTo(0.04, 6);
   });
 
+  it('keeps a call authorized by an active subscription active after the user unsubscribes and the snapshot is recomputed', async () => {
+    const u = await w.user();
+    const feed = await w.feed();
+    await w.subscribe(u, feed, 'active', new Date(NOW.getTime() - 30 * DAY));
+    const article = await w.carried(feed, onDay(0, 5));
+    await w.call({
+      kind: 'enrich',
+      costUsd: 0.06,
+      articleId: article.id,
+      userId: u.id,
+      demandBasis: 'active',
+      at: onDay(0, 6),
+    });
+    await w.run(NOW);
+    expect(pick(await w.snapshot(YESTERDAY), 'windows.d7.engine.usd.active') as number).toBeCloseTo(
+      0.06,
+      6,
+    );
+
+    // The user leaves: no subscription carries the article any more.
+    await w.owner.query('DELETE FROM subscriptions WHERE user_id = $1', [u.id]);
+    await w.run(NOW);
+
+    const s = await w.snapshot(YESTERDAY);
+    expect(pick(s, 'windows.d7.engine.usd.active') as number).toBeCloseTo(0.06, 6);
+    expect(pick(s, 'windows.d7.engine.usd.other') as number).toBeCloseTo(0, 6);
+    expect(pick(s, 'windows.d7.engine.offFeedCalls')).toBe(0);
+  });
+
+  it('keeps a call authorized by a selected request training after a later request for the same article', async () => {
+    const u = await w.user();
+    const feed = await w.feed();
+    await w.subscribe(u, feed, 'training', new Date(NOW.getTime() - 30 * DAY));
+    const article = await w.carried(feed, onDay(0, 5));
+    // The call is made before any request exists in this world's rows, as a recorded basis.
+    await w.call({
+      kind: 'match',
+      costUsd: 0.05,
+      articleId: article.id,
+      demandBasis: 'training',
+      at: onDay(0, 6),
+    });
+    await w.run(NOW);
+    expect(
+      pick(await w.snapshot(YESTERDAY), 'windows.d7.engine.usd.training') as number,
+    ).toBeCloseTo(0.05, 6);
+
+    // A later request, and an activation that would now carry the article, change nothing.
+    const u2 = await w.user();
+    const feed2 = await w.feed();
+    await w.subscribe(u2, feed2, 'active', new Date(NOW.getTime() - 30 * DAY));
+    await h.carry(feed2, article.id, onDay(0, 5));
+    await w.request({
+      userId: u.id,
+      feedId: feed,
+      articleId: article.id,
+      status: 'complete',
+      createdAt: onDay(0, 7),
+    });
+    await w.run(NOW);
+
+    const s = await w.snapshot(YESTERDAY);
+    expect(pick(s, 'windows.d7.engine.usd.training') as number).toBeCloseTo(0.05, 6);
+    expect(pick(s, 'windows.d7.engine.usd.active') as number).toBeCloseTo(0, 6);
+  });
+
+  it('counts an article call recorded as off-feed other even when a subscription would carry it now', async () => {
+    const u = await w.user();
+    const feed = await w.feed();
+    const article = await w.carried(feed, onDay(0, 5));
+    await w.call({
+      kind: 'enrich',
+      costUsd: 0.01,
+      articleId: article.id,
+      demandBasis: 'other',
+      at: onDay(0, 6),
+    });
+    await w.subscribe(u, feed, 'active', new Date(NOW.getTime() - 30 * DAY));
+
+    await w.run(NOW);
+
+    const s = await w.snapshot(YESTERDAY);
+    expect(pick(s, 'windows.d7.engine.usd.other') as number).toBeCloseTo(0.01, 6);
+    expect(pick(s, 'windows.d7.engine.offFeedCalls')).toBe(1);
+  });
+
   it('reports the training queue age as the oldest pending or running selected request', async () => {
     const u = await w.user();
     const feed = await w.feed();

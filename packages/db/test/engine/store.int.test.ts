@@ -307,6 +307,38 @@ describe('reserveSpend and settleReservation (spec 04 §6)', () => {
     });
   });
 
+  it('stores the demand basis of a settled call and leaves it NULL when none is given (M8-F19)', async () => {
+    const demand = await automaticDemand();
+    const s = store(2);
+    const day = freshDay();
+    const withBasis = callRow({ demandBasis: 'training', userId: demand.userId });
+    const without = callRow({ userId: demand.userId });
+    for (const call of [withBasis, without]) {
+      const id = (await s.reserveSpend(reserveInput(day, demand.authorization)))!;
+      await s.settleReservation(
+        id,
+        { ...call, reservationId: id },
+        usageRow(day, { userId: demand.userId }),
+        'known',
+      );
+    }
+    const basis = async (logicalRequestId: string) =>
+      (
+        await ctx.owner.query<{ demand_basis: string | null }>(
+          'SELECT demand_basis FROM engine_calls WHERE logical_request_id = $1',
+          [logicalRequestId],
+        )
+      ).rows[0]?.demand_basis;
+    expect(await basis(withBasis.logicalRequestId)).toBe('training');
+    expect(await basis(without.logicalRequestId)).toBeNull();
+    await expect(
+      ctx.owner.query(
+        "UPDATE engine_calls SET demand_basis = 'bogus' WHERE logical_request_id = $1",
+        [withBasis.logicalRequestId],
+      ),
+    ).rejects.toThrow(/engine_calls_demand_basis_check/);
+  });
+
   it('replays a settlement idempotently (a retried settlement adds nothing)', async () => {
     const demand = await automaticDemand();
     const s = store(2);
