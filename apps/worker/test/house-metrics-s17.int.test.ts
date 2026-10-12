@@ -728,6 +728,28 @@ describe('S17 A5: engine latency, errors, coverage and billed cost', () => {
     expect(pick(s, 'windows.d7.engine.usd.training') as number).toBeCloseTo(0.07, 6);
   });
 
+  it('keeps evaluation, credential-probe and LibreTranslate costs out of the live cost split', async () => {
+    const { a1 } = await costWorld({ offFeedCall: false });
+    await w.call({ kind: 'eval', costUsd: 0.5, articleId: a1.id, at: onDay(0, 9) });
+    await w.call({ kind: 'credential_probe', costUsd: 0.25, at: onDay(0, 9) });
+    await w.call({
+      kind: 'enrich',
+      engine: 'libretranslate',
+      costUsd: 0.125,
+      articleId: a1.id,
+      at: onDay(0, 9),
+    });
+
+    await w.run(NOW);
+
+    const s = await w.snapshot(YESTERDAY);
+    // Only the live calls of the cost world count: 0.14 active + 0.07 training.
+    expect(pick(s, 'windows.d7.engine.billedUsdPerDay') as number).toBeCloseTo(0.21 / 7, 6);
+    expect(pick(s, 'windows.d7.engine.usd.active') as number).toBeCloseTo(0.14, 6);
+    expect(pick(s, 'windows.d7.engine.usd.training') as number).toBeCloseTo(0.07, 6);
+    expect(pick(s, 'windows.d7.engine.usd.other') as number).toBeCloseTo(0, 6);
+  });
+
   it('shows zero authorized provider calls for off feeds: an off feed article has no engine call', async () => {
     await costWorld({ offFeedCall: false });
 

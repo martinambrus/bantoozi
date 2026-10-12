@@ -318,9 +318,9 @@ export async function metricsEngine(
              FILTER (WHERE ${LIVE} AND c.status = 'ok' AND c.latency_ms IS NOT NULL) AS p50,
            percentile_cont(0.95) WITHIN GROUP (ORDER BY c.latency_ms)
              FILTER (WHERE ${LIVE} AND c.status = 'ok' AND c.latency_ms IS NOT NULL) AS p95,
-           coalesce(sum(c.cost_usd) FILTER (WHERE c.by_active), 0)::float8 AS active,
-           coalesce(sum(c.cost_usd) FILTER (WHERE NOT c.by_active AND c.by_request), 0)::float8 AS training,
-           coalesce(sum(c.cost_usd) FILTER (WHERE NOT c.by_active AND NOT c.by_request), 0)::float8 AS other,
+           coalesce(sum(c.cost_usd) FILTER (WHERE ${LIVE} AND c.by_active), 0)::float8 AS active,
+           coalesce(sum(c.cost_usd) FILTER (WHERE ${LIVE} AND NOT c.by_active AND c.by_request), 0)::float8 AS training,
+           coalesce(sum(c.cost_usd) FILTER (WHERE ${LIVE} AND NOT c.by_active AND NOT c.by_request), 0)::float8 AS other,
            (count(*) FILTER (WHERE ${LIVE} AND c.article_id IS NOT NULL
                                AND NOT c.by_active AND NOT c.by_request))::int AS off
       FROM w c`);

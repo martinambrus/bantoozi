@@ -1902,3 +1902,7 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   gate (D-180) still refuses `engine.laya` or outstanding Laya work, which cannot arise before the Laya
   worker's heartbeat exists. Also from this round: the `role-passwords` integration test revokes its
   scratch roles' CONNECT before dropping them (CI failed with SQLSTATE 2BP01). Spec 11 §2 updated.
+- D-198: 2026-10-12 M8-T4 (PR #26 Codex review round 11) — the engine cost split (`usd.active`,
+  `usd.training`, `usd.other`) and `billedUsdPerDay` count live calls only, with the same filter as the call,
+  error and latency counts (not `eval`, not `credential_probe`, not LibreTranslate), so evaluation traffic
+  no longer inflates the reported production spend. Spec 10 §7 already states live spend.
