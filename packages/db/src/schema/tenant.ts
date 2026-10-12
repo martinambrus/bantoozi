@@ -369,6 +369,9 @@ export const userArticle = pgTable(
     index('user_article_lane_idx')
       .on(t.userId, t.lane, t.pLike.desc().nullsLast(), t.articleId.desc().nullsFirst())
       .where(sql`archived_at IS NULL AND read_at IS NULL`),
+    index('user_article_unread_cap_idx')
+      .on(t.userId, t.articleId)
+      .where(sql`read_at IS NULL AND archived_at IS NULL`),
     index('user_article_bookmarks_idx')
       .on(t.userId, t.bookmarkedAt.desc().nullsFirst())
       .where(sql`bookmarked_at IS NOT NULL`),

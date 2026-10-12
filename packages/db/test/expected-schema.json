@@ -3324,6 +3324,10 @@
           "unique": false,
           "definition": "(user_id, lane, p_like DESC NULLS LAST, article_id DESC) WHERE archived_at IS NULL AND read_at IS NULL"
         },
+        "user_article_unread_cap_idx": {
+          "unique": false,
+          "definition": "(user_id, article_id) WHERE read_at IS NULL AND archived_at IS NULL"
+        },
         "user_article_bookmarks_idx": {
           "unique": false,
           "definition": "(user_id, bookmarked_at DESC) WHERE bookmarked_at IS NOT NULL"

@@ -34,6 +34,7 @@ function overCapCandidates(userId: string): SQL {
         JOIN (SELECT feed_id, article_id, max(first_seen_at) AS first_seen_at
                 FROM feed_items GROUP BY feed_id, article_id) c ON c.article_id = ua.article_id
         JOIN subscriptions s ON s.user_id = ua.user_id AND s.feed_id = c.feed_id
+        JOIN users u ON u.id = ua.user_id AND u.deleted_at IS NULL
        WHERE ua.user_id = ${userId}::uuid AND ua.read_at IS NULL AND ua.archived_at IS NULL
          AND ${unprotected}) ranked
      GROUP BY user_id, article_id HAVING min(rn) > ${UNREAD_CAP}`;
@@ -65,15 +66,20 @@ export async function usersOverUnreadCap(
   tx: Transaction,
   input: { after: string | null; limit: number },
 ): Promise<string[]> {
+  // One probe per subscription (M8-F6): the unread rows of the user are found through the partial
+  // unread index, never by scanning the table.
   const result = await tx.execute<{ user_id: string }>(sql`
     SELECT s.user_id::text AS user_id
       FROM subscriptions s
-      JOIN feed_items fi ON fi.feed_id = s.feed_id
-      JOIN user_article ua ON ua.user_id = s.user_id AND ua.article_id = fi.article_id
+      JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
+      CROSS JOIN LATERAL (
+        SELECT count(DISTINCT ua.article_id) AS unread
+          FROM feed_items fi
+          JOIN user_article ua ON ua.user_id = s.user_id AND ua.article_id = fi.article_id
+         WHERE fi.feed_id = s.feed_id
+           AND ua.read_at IS NULL AND ua.archived_at IS NULL AND ${unprotected}) c
      WHERE (${input.after}::uuid IS NULL OR s.user_id > ${input.after}::uuid)
-       AND ua.read_at IS NULL AND ua.archived_at IS NULL AND ${unprotected}
-     GROUP BY s.user_id, s.feed_id
-    HAVING count(DISTINCT ua.article_id) > ${UNREAD_CAP}
+       AND c.unread > ${UNREAD_CAP}
      ORDER BY s.user_id
      LIMIT ${input.limit}`);
   return [...new Set(result.rows.map((row) => row.user_id))];
