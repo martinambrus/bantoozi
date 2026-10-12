@@ -54,6 +54,7 @@ describe('alert planning', () => {
       firstAt: NOW.toISOString(),
       lastSentAt: NOW.toISOString(),
       active: true,
+      title: 'a',
     });
     const recoveryPlan = planNotifications(sent, [], [], NOW);
     expect(
