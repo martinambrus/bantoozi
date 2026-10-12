@@ -115,7 +115,7 @@ echo "deploy: project=$PROJECT commit=${COMMIT:0:12} mode=$([ "$REHEARSAL" = 1 ]
 # ── 2. Validate the environment, the profiles and the host ───────────────────────────────────
 REQUIRED=(PUBLIC_HOST ACME_EMAIL PUBLIC_BASE_URL POSTGRES_PASSWORD BANTOOZI_OWNER_PASSWORD
   BANTOOZI_APP_PASSWORD BANTOOZI_WORKER_PASSWORD SESSION_PEPPER METRICS_TOKEN TYPESAFE_MODEL
-  MAIL_TRANSPORT SMTP_URL DELETION_LEDGER_PATH DELETION_LEDGER_RECIPIENT DELETION_HMAC_KEY)
+  MAIL_TRANSPORT SMTP_URL ADMIN_EMAILS DELETION_LEDGER_PATH DELETION_LEDGER_RECIPIENT DELETION_HMAC_KEY)
 missing=()
 placeholder=()
 for v in "${REQUIRED[@]}"; do
@@ -125,6 +125,12 @@ for v in "${REQUIRED[@]}"; do
 done
 if [ "${#missing[@]}" -gt 0 ]; then die "required variables missing or empty in the env file: ${missing[*]}"; fi
 if [ "${#placeholder[@]}" -gt 0 ]; then die "variables still hold placeholder values: ${placeholder[*]}"; fi
+# The worker refuses a ledger path off the persistent volume (spec 11 §5.1); catch it before any backup.
+ledger_norm="$(realpath -m -- "$(envfile_get DELETION_LEDGER_PATH)" 2>/dev/null || true)"
+case "$(envfile_get DELETION_LEDGER_PATH)" in
+  /var/lib/bantoozi/ledger/*) [[ "$ledger_norm" == /var/lib/bantoozi/ledger/* ]] || die "DELETION_LEDGER_PATH must be inside /var/lib/bantoozi/ledger/ (the persistent ledger volume)" ;;
+  *) die "DELETION_LEDGER_PATH must be inside /var/lib/bantoozi/ledger/ (the persistent ledger volume)" ;;
+esac
 if [ "$(envfile_get MAIL_TRANSPORT)" != smtp ]; then die "MAIL_TRANSPORT must be smtp in production"; fi
 pw_dupes="$(for v in POSTGRES_PASSWORD BANTOOZI_OWNER_PASSWORD BANTOOZI_APP_PASSWORD BANTOOZI_WORKER_PASSWORD; do envfile_get "$v"; echo; done | grep -v '^$' | sort | uniq -d | wc -l)"
 [ "$pw_dupes" -eq 0 ] || die "the database passwords must be distinct"
@@ -349,6 +355,7 @@ smoke() {
 # rate-limit bucket is planted as the fixture and the handler must delete it; in production no
 # fixture row is written and the pg-boss job must complete.
 smoke_queue() {
+  local QUEUE_JOB_TIMEOUT_S="${DEPLOY_QUEUE_SMOKE_TIMEOUT_S:-330}"
   local key="deploy-smoke-$STAMP" since id deadline_q fixture="" gone
   psq() { dc exec -T postgres psql -U postgres -d bantoozi -X -tAq -v ON_ERROR_STOP=1 "$@" 2>/dev/null | tr -d '\r'; }
   since="$(psq -c "select to_char(clock_timestamp() at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')")" || true
@@ -361,13 +368,16 @@ smoke_queue() {
   id="$(psq -c "insert into job_outbox (queue, payload, dedupe_key) values ('house.purge-auth', '{}', '$key') returning id" | head -n 1)" || true
   [[ "$id" =~ ^[0-9]+$ ]] || { SMOKE_FAIL="the smoke outbox intent could not be written"; return 1; }
   deadline_q=$((SECONDS + 60))
+  # Delivery is expected within 60 s; the handler runs up to its own budget (HOUSE_RUN_BUDGET_MS, 5 min)
+  # so job completion gets that plus a margin.
+  deadline_job=$((SECONDS + QUEUE_JOB_TIMEOUT_S))
   until [ "$(psq -c "select delivered_at is not null from job_outbox where id = $id")" = t ]; do
     [ "$SECONDS" -lt "$deadline_q" ] || { SMOKE_FAIL="the outbox intent $id was not delivered within 60 s"; return 1; }
     sleep 2
   done
   echo "smoke: outbox dispatch ok (intent $id delivered to the queue)"
   until [ "$(psq -c "select count(*) from pgboss.job where name = 'house.purge-auth' and state = 'completed' and created_on >= '$since'")" -ge 1 ]; do
-    [ "$SECONDS" -lt "$deadline_q" ] || { SMOKE_FAIL="the house.purge-auth job of the smoke did not complete within 60 s"; return 1; }
+    [ "$SECONDS" -lt "$deadline_job" ] || { SMOKE_FAIL="the house.purge-auth job of the smoke did not complete within ${QUEUE_JOB_TIMEOUT_S} s"; return 1; }
     sleep 2
   done
   if [ -n "$fixture" ]; then

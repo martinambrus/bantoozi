@@ -1311,7 +1311,7 @@ rows they change (D-186, `fcf2b65`, migration 0021), and the load test gates a `
 (spec 09 polling plus navigation lists, at least 300 list samples per phase) and reports a `stress`
 profile (D-187, `b8cad30`, `3b773e9`): realistic p95 32/34/45/74 ms, stress p95 81/127/184/212 ms,
 no backlog alert in either (`docs/launch/load-60min-{realistic,stress}-2026-10-11.md`). Deviations:
-D-171…D-201 in `docs/DECISIONS.md` (D-188…D-201 from the PR #26 Codex review rounds). Migrations 0019…0022; the next migration is 0023. Launch items needing the owner or the real host are marked
+D-171…D-202 in `docs/DECISIONS.md` (D-188…D-202 from the PR #26 Codex review rounds). Migrations 0019…0022; the next migration is 0023. Launch items needing the owner or the real host are marked
 **owner** in `docs/RUNBOOK.md` (launch checklist). **Launch ready** additionally needs those owner items
 and the G1 values applied in production. The D-185 owner question (full re-rank after every rating) is resolved by D-186.
 

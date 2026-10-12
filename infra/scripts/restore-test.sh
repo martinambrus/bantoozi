@@ -227,11 +227,11 @@ release_start() {
     export SMTP_URL="$3"
     # A production worker refuses to start without the deletion ledger settings; these are throwaway
     # values for the isolated smoke (no network, nothing is purged here).
-    export DELETION_LEDGER_PATH=/tmp/deletion-ledger.age DELETION_HMAC_KEY="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    export DELETION_LEDGER_PATH=/var/lib/bantoozi/ledger/deletion-ledger.age DELETION_HMAC_KEY="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
     export DELETION_LEDGER_RECIPIENT=age1releasesmokethrowawayrecipientplaceholder0000000000000000000000
     export DATABASE_URL="postgres://bantoozi_app:$BANTOOZI_APP_PASSWORD@localhost/bantoozi?host=%2Fpgsock"
     export DATABASE_URL_WORKER="postgres://bantoozi_worker:$BANTOOZI_WORKER_PASSWORD@localhost/bantoozi?host=%2Fpgsock"
-    docker run -d --name "$1" --network none --read-only --tmpfs /tmp --cap-drop ALL \
+    docker run -d --name "$1" --network none --read-only --tmpfs /tmp --tmpfs /var/lib/bantoozi/ledger --cap-drop ALL \
       --security-opt no-new-privileges:true --label bantoozi.restore-test=1 \
       -v "$SOCK_DIR:/pgsock:ro" \
       -e NODE_ENV -e PUBLIC_BASE_URL -e MAIL_TRANSPORT -e SMTP_URL -e MAIL_FROM -e TYPESAFE_MODEL -e METRICS_TOKEN \

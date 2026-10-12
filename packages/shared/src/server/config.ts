@@ -1,4 +1,5 @@
 import { homedir } from 'node:os';
+import { posix } from 'node:path';
 import { inspect } from 'node:util';
 
 import { z } from 'zod';
@@ -404,6 +405,24 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
       }
     }
   }
+  if (production && kind === 'worker') {
+    // The ledger must live on the persistent ledger volume (compose `ledger`), or a restart would
+    // lose the erasures it records (spec 11 §5.1). The worker sends every alert to ADMIN_EMAILS.
+    const ledgerPath = config.deletionLedgerPath;
+    if (ledgerPath !== undefined) {
+      const normalized = posix.normalize(ledgerPath);
+      if (!posix.isAbsolute(ledgerPath) || !normalized.startsWith(`${LEDGER_DIR}/`)) {
+        problems.push(
+          `DELETION_LEDGER_PATH: must be inside ${LEDGER_DIR}/ (the persistent ledger volume) in production`,
+        );
+      }
+    }
+    if (config.adminEmails.length === 0) {
+      problems.push(
+        'ADMIN_EMAILS: at least one address is required in production (the worker sends every alert to it)',
+      );
+    }
+  }
   if (production && relevant('TYPESAFE_MODEL') && !PINNED_MODEL.test(config.typesafeModel)) {
     problems.push('TYPESAFE_MODEL: must be a pinned version (e.g. jev-1.13.0) in production');
   }
@@ -513,6 +532,9 @@ const workerQueuesSchema = z.string().transform((s, ctx) => {
     return z.NEVER;
   }
 });
+/** The persistent ledger volume inside the worker container (infra/compose.yml `ledger`). */
+const LEDGER_DIR = '/var/lib/bantoozi/ledger';
+
 const emailListSchema = z
   .string()
   .transform((s) =>

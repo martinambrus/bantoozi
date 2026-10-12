@@ -70,7 +70,7 @@ when something needs a human, before users notice.
    clean checkout. Build immutable API/worker/migration/Caddy images with the frozen lockfile; static
    web assets are inside the Caddy image, not overwritten in a shared volume during a live deploy.
 2. Validate required secrets (including `DELETION_LEDGER_PATH`, `DELETION_LEDGER_RECIPIENT` and
-   `DELETION_HMAC_KEY`; example placeholders are refused, D-190) and the enabled profiles, check free disk/connection budget, and record
+   `DELETION_HMAC_KEY`, a `DELETION_LEDGER_PATH` inside `/var/lib/bantoozi/ledger/`, and a non-empty `ADMIN_EMAILS`; example placeholders are refused, D-190, D-202) and the enabled profiles, check free disk/connection budget, and record
    the previous image digests, schema version and a fresh successful encrypted pre-deploy backup.
 3. Start healthy Postgres, then run the one-off migration image. Migrations acquire a database
    advisory lock and use bounded `lock_timeout`/`statement_timeout` (30 s and 5 min, set when the

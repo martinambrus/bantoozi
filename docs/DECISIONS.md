@@ -1929,3 +1929,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   and that every deletion made since a backup was taken is replayed if it is ever restored. (2) A recovery
   digest that lists at most 20 cleared incidents removes only those from `alerts.state` (oldest `firstAt`
   first, then key); the rest are mailed on the next run, like the alert overflow of D-200.
+- D-202: 2026-10-12 M8-T1, M8-T3, M8-T5 (PR #26 Codex review round 15) — (1) A production worker refuses a
+  `DELETION_LEDGER_PATH` that is not inside `/var/lib/bantoozi/ledger/` (normalized, so `..` escapes are refused),
+  the only persistent mount for the ledger; `deploy.sh` refuses it before any backup or migration; the restore
+  smoke's isolated worker uses that path on a tmpfs. (2) `ADMIN_EMAILS` is a required, non-placeholder deploy
+  value, and a production worker refuses an empty list, so alerts always have a recipient. (3) The deploy queue
+  smoke waits up to `DEPLOY_QUEUE_SMOKE_TIMEOUT_S` (default 330 s: the 5-minute handler budget plus 30 s) for the
+  `house.purge-auth` job to complete; outbox delivery is still expected within 60 s. Spec 01 §3 and spec 11 §3
+  and §5.1 updated.

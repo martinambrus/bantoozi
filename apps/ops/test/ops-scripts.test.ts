@@ -147,6 +147,24 @@ describe('deploy, maintenance and host-health scripts (static checks)', () => {
     expect(deploy.indexOf('REQUIRED=(')).toBeLessThan(deploy.indexOf('backup.sh'));
   });
 
+  it('refuses an off-volume ledger path and a missing admin list before any backup, and gives the queue job its own deadline (R15)', () => {
+    const deploy = read('infra/scripts/deploy.sh');
+    const required = deploy.slice(deploy.indexOf('REQUIRED=('), deploy.indexOf('missing=()'));
+    expect(required).toContain('ADMIN_EMAILS');
+    const check = deploy.indexOf('/var/lib/bantoozi/ledger/');
+    expect(check).toBeGreaterThan(deploy.indexOf('missing=()'));
+    expect(check).toBeLessThan(deploy.indexOf('backup.sh'));
+    expect(deploy).toMatch(/DELETION_LEDGER_PATH must be inside \/var\/lib\/bantoozi\/ledger\//u);
+    // The queue smoke: delivery within 60 s, the handler gets its own 330 s (HOUSE_RUN_BUDGET_MS 5 min + margin).
+    expect(deploy).toContain('DEPLOY_QUEUE_SMOKE_TIMEOUT_S:-330');
+    expect(deploy).toMatch(/deadline_q=\$\(\(SECONDS \+ 60\)\)/u);
+    expect(deploy).toMatch(/deadline_job=\$\(\(SECONDS \+ QUEUE_JOB_TIMEOUT_S\)\)/u);
+    expect(deploy).toContain('did not complete within ${QUEUE_JOB_TIMEOUT_S} s');
+    const smoke = read('infra/scripts/restore-test.sh');
+    expect(smoke).toContain('DELETION_LEDGER_PATH=/var/lib/bantoozi/ledger/deletion-ledger.age');
+    expect(smoke).toContain('--tmpfs /var/lib/bantoozi/ledger');
+  });
+
   it('gates the deploy on stored settings and turns maintenance on when compatibility is not shown', () => {
     const deploy = read('infra/scripts/deploy.sh');
     for (const check of [
