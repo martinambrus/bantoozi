@@ -1300,7 +1300,7 @@ this does not complete M7 for the M8 launch gate.
 ## 14. M8: Operations and launch readiness
 
 **Status: implementation done 2026-10-11** on branch `claude/m8-ops` (from `c24debb`; commits in the
-task table below; not yet merged). Built with Opus analysts and Sonnet builders, each task test-first
+task table below). Merged to `main` on 2026-10-12 through PR #26 after 15 Codex review rounds (D-188…D-202) and green CI; the last round's fixes (D-202) were verified by the drills and CI but not re-reviewed by Codex (daily quota). Follow-ups M8-F1…M8-F19 are in §14.1 (F2 and F19 done in the PR). Built with Opus analysts and Sonnet builders, each task test-first
 against a separate harness with a negative control. Tasks that need the real host (T5, T8, T9) ran
 against a local production-like Compose rehearsal; no host access was available. The first 60-minute
 load run failed (p95 147/211/411/503 ms, outbox backlog 5–7 min); profiling found the list projection
