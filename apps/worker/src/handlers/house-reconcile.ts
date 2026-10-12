@@ -9,13 +9,21 @@ import { enqueueReenrich, enqueueRematch } from '@bantoozi/shared';
 
 import { primaryAvailability } from '../classify/availability.js';
 import { nowOf, type ClassificationDeps, type WorkerDeps } from './deps.js';
-import { HOUSE_RUN_BUDGET_MS, recordHouseProgress, takePendingRuns } from './house-purge-auth.js';
+import {
+  HOUSE_RUN_BUDGET_MS,
+  readSweepCursors,
+  recordHouseProgress,
+  sweepCursorOf,
+  takePendingRuns,
+} from './house-purge-auth.js';
 import type { QueueHandler } from './index.js';
 
 const JOB = 'house.reconcile' as const;
 /** Reservations or users handled per transaction. */
 export const RECONCILE_BATCH = 500;
 const RANK_REASON = 'next_rank_at_due';
+/** The name of the due-user sweep in `house.progress`' saved cursor. */
+const RANK_SWEEP = 'rank';
 
 /**
  * `house.reconcile` (every 10 minutes, spec 11 §6): turns expired `reserved` engine reservations
@@ -45,10 +53,14 @@ export function createReconcileHandler(
       reservations += changed;
       if (changed < RECONCILE_BATCH) break;
     }
-    let after: string | null = null;
+    // The due-user sweep resumes after the position a budget-cut run saved: users stay due until
+    // ranked, so starting over each run would revisit the same low-id prefix and starve the rest.
+    const sweeps = await readSweepCursors(deps, JOB);
+    let after: string | null = sweeps[RANK_SWEEP] ?? null;
     while (complete) {
       if (Date.now() - started > HOUSE_RUN_BUDGET_MS) {
         complete = false;
+        if (after !== null) sweeps[RANK_SWEEP] = after;
         break;
       }
       const cursor: string | null = after;
@@ -58,12 +70,15 @@ export function createReconcileHandler(
         return page;
       });
       ranked += users.length;
-      if (users.length < RECONCILE_BATCH) break;
+      if (users.length < RECONCILE_BATCH) {
+        delete sweeps[RANK_SWEEP];
+        break;
+      }
       after = users.at(-1) ?? null;
     }
     const resumed =
       classification === undefined ? 0 : await resumePendingRebuilds(deps, classification, now);
-    await recordHouseProgress(deps, JOB, now, complete);
+    await recordHouseProgress(deps, JOB, now, complete, sweepCursorOf(sweeps));
     deps.logger.info(
       {
         job: JOB,

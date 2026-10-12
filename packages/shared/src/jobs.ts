@@ -591,6 +591,8 @@ export const HOUSE_PROGRESS_CURSORS = {
   'house.purge-articles': sweepCursor,
   'house.purge-bodies': sweepCursor,
   'house.retire-cards': sweepCursor,
+  /** The last user id of the due-user rank sweep a budget cut short, under `rank` (spec 11 §6). */
+  'house.reconcile': sweepCursor,
   /**
    * Set while users erased 7 days ago wait because the deletion ledger or its HMAC key is not
    * configured (outside production): `house.alerts` raises `erasure.disabled` from it (spec 11 §5.1).

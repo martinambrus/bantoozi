@@ -53,7 +53,8 @@ export async function recordHouseProgress(
 }
 
 /** The housekeeping jobs that resume their keyset sweeps from `house.progress` after a budget cut. */
-export type SweepJob = 'house.purge-articles' | 'house.purge-bodies' | 'house.retire-cards';
+export type SweepJob =
+  'house.purge-articles' | 'house.purge-bodies' | 'house.retire-cards' | 'house.reconcile';
 
 /**
  * The saved keyset positions of `job`'s unfinished sweeps, by sweep name; a missing or malformed

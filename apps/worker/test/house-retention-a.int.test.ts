@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { cutBudgetAfterPages } from './support/budget.js';
 import { ClassifyHarness } from './support/classify.js';
 import { DAY, MINUTE, RetentionWorld } from './support/retention-world.js';
 
@@ -409,6 +410,73 @@ describe('house.reconcile', () => {
     expect(await pending(due)).toBe(1);
     expect(await pending(later)).toBe(0);
   });
+
+  it('resumes the due-user sweep after the position a budget-cut run saved, and clears it when the sweep ends (R12)', async () => {
+    const feed = await h.feed();
+    const article = await w.article([{ feedId: feed, at: before(DAY) }]);
+    // More due users than one page (500), so a run cut after its first page leaves later ids unqueued.
+    for (let i = 0; i < 505; i += 1) {
+      const userId = await h.user();
+      await h.owner.query(
+        `INSERT INTO user_article (user_id, article_id, next_rank_at) VALUES ($1, $2, $3)`,
+        [userId, article, before(MINUTE)],
+      );
+    }
+    const due = (
+      await h.owner.query<{ id: string }>(
+        `SELECT u.id::text AS id FROM users u
+          WHERE u.deleted_at IS NULL
+            AND EXISTS (SELECT 1 FROM user_article ua WHERE ua.user_id = u.id
+                         AND ua.next_rank_at <= $1::timestamptz)
+          ORDER BY u.id`,
+        [NOW],
+      )
+    ).rows.map((row) => row.id);
+    expect(due.length).toBeGreaterThanOrEqual(505);
+    const queued = async (): Promise<Set<string>> =>
+      new Set(
+        (
+          await h.owner.query<{ id: string }>(
+            `SELECT DISTINCT payload ->> 'userId' AS id FROM job_outbox
+              WHERE queue = 'user.rank' AND delivered_at IS NULL`,
+          )
+        ).rows.map((row) => row.id),
+      );
+    const position = async (): Promise<string | undefined> => {
+      const row = (
+        await h.owner.query<{
+          value: Record<string, { cursor?: { sweeps?: { rank?: string } } }>;
+        }>("SELECT value FROM settings WHERE key = 'house.progress'")
+      ).rows[0];
+      return row?.value['house.reconcile']?.cursor?.sweeps?.rank;
+    };
+    // The run reads the clock for its start, once for the reservation page and once per user page.
+    const cut = async (): Promise<void> => {
+      const restore = cutBudgetAfterPages('house-reconcile', 2);
+      try {
+        await w.run('house.reconcile', NOW);
+      } finally {
+        restore();
+      }
+    };
+    await h.owner.query("DELETE FROM job_outbox WHERE queue = 'user.rank'");
+
+    await cut();
+    const first = await queued();
+    expect([...first].sort(), 'the cut run queued the first page').toEqual(due.slice(0, 500));
+    expect(await position(), 'and saved where it stopped').toBe(due[499]);
+
+    await cut();
+    const second = await queued();
+    expect(second.has(due.at(-1)!), 'the next run continues after the saved position').toBe(true);
+    expect(second.size).toBe(due.length);
+    expect(await position(), 'a sweep that reached its end clears the position').toBeUndefined();
+
+    // The pass after a finished one starts from the beginning again.
+    await h.owner.query("DELETE FROM job_outbox WHERE queue = 'user.rank'");
+    await w.run('house.reconcile', NOW);
+    expect((await queued()).size).toBe(due.length);
+  }, 120_000);
 });
 
 // ── house.archive ────────────────────────────────────────────────────────────────────────────

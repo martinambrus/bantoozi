@@ -1906,3 +1906,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `usd.training`, `usd.other`) and `billedUsdPerDay` count live calls only, with the same filter as the call,
   error and latency counts (not `eval`, not `credential_probe`, not LibreTranslate), so evaluation traffic
   no longer inflates the reported production spend. Spec 10 §7 already states live spend.
+- D-199: 2026-10-12 M8-T2 (PR #26 Codex review round 12) — `house.reconcile`'s due-user rank sweep keeps
+  its position in `house.progress` (`cursor: {sweeps: {rank: <last user id>}}`) when the run budget expires
+  and resumes after it, clearing it when the sweep finishes, like the purge sweeps of D-188; before, every
+  run restarted at the lowest user id, so under a sustained rank backlog later users were never enqueued.
+  Spec 02 §2 updated.
