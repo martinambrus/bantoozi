@@ -17,6 +17,8 @@ export interface ReprocessArticle {
   pipelineState: string;
   lang: string | null;
   key: string;
+  /** A usable stored translation exists for the current revision (not a skipped placeholder). */
+  hasTranslation?: boolean;
   facets: {
     revision: string;
     engine: string;
@@ -69,6 +71,7 @@ export async function reprocessWindowPage(
     pipeline_state: string;
     lang: string | null;
     key: string;
+    has_translation: boolean;
     facet_revision: string | null;
     facet_engine: string | null;
     facet_model: string | null;
@@ -100,6 +103,9 @@ export async function reprocessWindowPage(
     SELECT e.article_id::text AS article_id, a.content_revision::text AS revision,
            a.pipeline_state, a.lang,
            to_char(e.key AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS key,
+           EXISTS (SELECT 1 FROM article_translations t
+                    WHERE t.article_id = a.id AND t.article_revision = a.content_revision
+                      AND t.quality_detail->>'skipped' IS NULL) AS has_translation,
            f.article_revision::text AS facet_revision, f.engine AS facet_engine,
            f.model AS facet_model, f.state_variant AS facet_variant
       FROM e
@@ -116,6 +122,7 @@ export async function reprocessWindowPage(
     pipelineState: row.pipeline_state,
     lang: row.lang,
     key: row.key,
+    hasTranslation: row.has_translation,
     facets:
       row.facet_revision === null || row.facet_engine === null || row.facet_variant === null
         ? null

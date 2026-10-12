@@ -160,7 +160,15 @@ export function createArticleTranslateHandler(
       await continueInitial(deps, article, produced, replaceSkipped, payload.priority);
       return;
     }
-    await installRetranslation(deps, config, article, produced, replaceSkipped, payload.priority);
+    await installRetranslation(
+      deps,
+      config,
+      article,
+      produced,
+      replaceSkipped,
+      payload.priority,
+      payload.modeChange === true,
+    );
   };
 }
 
@@ -192,7 +200,9 @@ async function retryTransient(
         produced.length > 0 &&
         (await storeRows(tx, article, produced, payload.replaceSkipped === true))
       ) {
-        await resetOnChangedText(tx, deps, config, article, payload.priority);
+        await resetOnChangedText(tx, deps, config, article, payload.priority, {
+          enrichWithoutFacets: payload.modeChange === true,
+        });
       }
       if (retryAt === undefined) return;
       await enqueueTranslate(
@@ -278,9 +288,12 @@ async function installRetranslation(
   produced: readonly TranslationInput[],
   replaceSkipped: boolean,
   priority?: 'interactive' | 'bulk',
+  modeChange = false,
 ): Promise<void> {
   await retryTransaction(deps.db, async (tx) => {
     if (!(await storeRows(tx, article, produced, replaceSkipped))) return;
-    await resetOnChangedText(tx, deps, config, article, priority);
+    await resetOnChangedText(tx, deps, config, article, priority, {
+      enrichWithoutFacets: modeChange,
+    });
   });
 }

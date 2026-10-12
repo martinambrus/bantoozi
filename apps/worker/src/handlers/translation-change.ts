@@ -23,7 +23,8 @@ import { pipelineContext, type WorkerDeps } from './deps.js';
  * names the input they were built from (D-94). The reset deletes every answer of the old input and
  * queues current demand again, so no reader keeps a card answer of text the article no longer uses.
  * An identical input changes nothing, and an article not yet enriched uses the best row when it is:
- * its completion reads the rows again under the same lock. True when the article was reset.
+ * its completion reads the rows again under the same lock. With `enrichWithoutFacets` an article
+ * that has no facets at all under the active set is reset too. True when the article was reset.
  */
 export async function resetOnChangedText(
   tx: Transaction,
@@ -31,6 +32,7 @@ export async function resetOnChangedText(
   config: ClassificationConfig,
   article: ClassificationArticle,
   priority?: 'interactive' | 'bulk',
+  options: { enrichWithoutFacets?: boolean } = {},
 ): Promise<boolean> {
   const locked = await lockArticleRevision(tx, article.id, 'update');
   if (locked === null || locked.revision !== article.revision) return false;
@@ -38,9 +40,15 @@ export async function resetOnChangedText(
   const enrichSet = config.enrich;
   if (enrichSet === null) return false;
   const facets = await readFacets(tx, article.id, enrichSet.id);
-  if (facets === null || facets.articleRevision !== article.revision) return false;
   const rows = await listTranslations(tx, article.id, article.revision);
-  if (buildState(modelInput(article, rows, config), 'enrich').sha256 === facets.stateSha256) {
+  // No facets under the active set (an enrich-set change, M8-F4): a mode-change translation of such
+  // an article must still lead to enrichment, from the translation just stored.
+  if (facets === null) {
+    if (options.enrichWithoutFacets !== true) return false;
+  } else if (
+    facets.articleRevision !== article.revision ||
+    buildState(modelInput(article, rows, config), 'enrich').sha256 === facets.stateSha256
+  ) {
     return false;
   }
   const sender = workerOutbox(tx);
