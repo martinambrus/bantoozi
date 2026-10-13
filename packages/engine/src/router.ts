@@ -141,10 +141,14 @@ interface Lane {
   /** Acquired in this order around each wire attempt. */
   semaphores: readonly PrioritySemaphore[];
   limiter: RateLimiter | undefined;
-  /** Upper cost of one attempt, reserved before it is sent. */
-  estimateUsd(req: EngineRequest): number;
-  /** Cost of reported usage (failed attempts carry usage but no cost). */
-  costUsd(usage: Usage): number;
+  /** The price per million input tokens in force now (read lazily; undefined for unpriced-by-config lanes). */
+  priceNow(): number | undefined;
+  /** Upper cost of one attempt, reserved before it is sent, at the given price. */
+  estimateUsd(req: EngineRequest, price: number | undefined): number;
+  /** Cost of reported usage at the given price (failed attempts carry usage but no cost). */
+  costUsd(usage: Usage, price: number | undefined): number;
+  /** True when a successful attempt's cost is recomputed at the reservation-time price. */
+  repriceable: boolean;
   /** Input tokens the rate limiter charges for one attempt. */
   rateTokens(req: EngineRequest): number;
 }
@@ -179,6 +183,8 @@ type AttemptResult =
       ordinal: number;
       reservationId: string;
       reservedUsd: number;
+      /** The price per Mtok in force when this attempt reserved. */
+      price: number | undefined;
       createdAt: Date;
       credentialVersion: string | undefined;
       /** A credential was sent (only then can a 401/403 condemn it). */
@@ -342,7 +348,6 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
         return adapterError('typesafe', error);
       }
     }
-    const price = config.typesafe.pricePerMTokUsd;
     return {
       name: 'typesafe',
       provider: 'typesafe',
@@ -352,9 +357,11 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
       semaphores: [engineSlots],
       limiter,
       // Output tokens are free (spec 04 §3); input is the conservative §6.1 bound.
-      estimateUsd: (req) =>
-        typesafeCostUsd(conservativeRequestTokens(req.state, req.questions), price),
-      costUsd: (usage) => typesafeCostUsd(usage.inputTokens, price),
+      priceNow: () => config.typesafe.pricePerMTokUsd,
+      repriceable: injected === undefined,
+      estimateUsd: (req, price) =>
+        typesafeCostUsd(conservativeRequestTokens(req.state, req.questions), price ?? 0),
+      costUsd: (usage, price) => typesafeCostUsd(usage.inputTokens, price ?? 0),
       rateTokens: (req) => conservativeRequestTokens(req.state, req.questions),
     };
   }
@@ -385,6 +392,8 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
       semaphores: [llmSlots, engineSlots],
       limiter: undefined,
       // Input (with the system prompt and schema) plus the FULL output cap (spec 04 §6.1).
+      priceNow: () => undefined,
+      repriceable: false,
       estimateUsd: (req) =>
         estimateLlmCostUsd(
           estimateLlmInputTokens(req.state, req.questions),
@@ -525,7 +534,8 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
   ): Promise<AttemptResult> {
     if (ctx.signal.aborted) return { kind: 'cancelled' };
     const { lane } = run;
-    const estimateUsd = lane.estimateUsd(sub);
+    const price = lane.priceNow();
+    const estimateUsd = lane.estimateUsd(sub, price);
     // The eval cap is checked and taken synchronously: the router mutex (spec 04 §1).
     if (evalBudget !== undefined && !evalBudget.tryReserve(estimateUsd)) {
       return { kind: 'eval_budget' };
@@ -578,6 +588,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
       ordinal,
       reservationId,
       reservedUsd: estimateUsd,
+      price,
       createdAt,
       credentialVersion: auth?.credentialVersion,
       authenticated: auth !== undefined,
@@ -749,10 +760,12 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
     const cost = !known
       ? 0
       : attempt.ok
-        ? attempt.costUsd
+        ? lane.repriceable && usage !== undefined
+          ? lane.costUsd(usage, sent.price)
+          : attempt.costUsd
         : usage === undefined
           ? 0
-          : lane.costUsd(usage);
+          : lane.costUsd(usage, sent.price);
     const inputTokens = usage?.inputTokens ?? 0;
     const outputTokens = usage?.outputTokens ?? 0;
     // The authorization basis of this attempt as authorized now (spec 02 §3.1), stored, not recomputed.
@@ -1158,6 +1171,10 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
       );
       // Jev's state decides when the work is retried; the fallback's answers are provisional anyway.
       return outcome;
+    },
+
+    reconfigure(options) {
+      engineSlots.setCapacity(options.concurrency);
     },
 
     async status(): Promise<RouterStatus> {

@@ -1,6 +1,14 @@
 import { hostname } from 'node:os';
 
-import { createDatabase, createPgOriginLimiter, createPool } from '@bantoozi/db';
+import {
+  createDatabase,
+  createPgOriginLimiter,
+  createPool,
+  createRuntimeSettingsCache,
+  runtimeSettingsLoader,
+  type RuntimeSettingsCache,
+} from '@bantoozi/db';
+import { OLLAMA_PRICE_TABLE } from '@bantoozi/engine';
 import {
   FEED_SCHEDULE_CRON,
   HOUSE_CRON_SCHEDULES,
@@ -56,8 +64,63 @@ const lockPool = createPool({
 for (const p of [pool, lockPool]) {
   p.on('error', (err) => logger.warn({ err }, 'idle database connection error'));
 }
-const models = createWorkerModels(db, config, logger);
+// Live runtime settings (M8b-T4): the engine reads the price from this mutable copy at each estimate.
+const liveConfig: { -readonly [K in keyof typeof config]: (typeof config)[K] } = { ...config };
+const models = createWorkerModels(db, liveConfig, logger);
+const innerSettings = createRuntimeSettingsCache({
+  load: runtimeSettingsLoader(db),
+  env: {
+    typesafeModel: config.typesafeModel,
+    typesafeBaseUrl: config.typesafeBaseUrl,
+    typesafePricePerMtokUsd: config.typesafePricePerMtokUsd,
+    engineConcurrency: config.engineConcurrency,
+    llmFallbackEnabled: config.llmFallbackEnabled,
+    ollamaModelFast: config.ollamaModelFast,
+    ollamaModelStrong: config.ollamaModelStrong,
+    ollamaBaseUrl: config.ollamaBaseUrl,
+    ollamaMaxConcurrency: config.ollamaMaxConcurrency,
+    prefilterMinCards: config.prefilterMinCards,
+    ingestMaxAgeDays: config.ingestMaxAgeDays,
+    fetchTimeoutMs: config.fetchTimeoutMs,
+    fetchMaxBytes: config.fetchMaxBytes,
+    rateLimitsEnabled: config.rateLimitsEnabled,
+    libretranslateUrl: config.libretranslateUrl,
+  },
+  context: {
+    production: config.nodeEnv === 'production',
+    providerHostAllowlist: config.providerHostAllowlist,
+    ollamaPricedModels: Object.keys(OLLAMA_PRICE_TABLE),
+  },
+});
+// On each refresh that produced a new snapshot, apply the engine values that need no restart.
+let appliedSnapshot: Awaited<ReturnType<RuntimeSettingsCache['get']>> | undefined;
+const runtimeSettings: RuntimeSettingsCache = {
+  async get() {
+    const snapshot = await innerSettings.get();
+    if (snapshot !== appliedSnapshot) {
+      appliedSnapshot = snapshot;
+      liveConfig.typesafePricePerMtokUsd = snapshot.values.typesafePricePerMtokUsd;
+      try {
+        models.classification.router.reconfigure({
+          concurrency: snapshot.values.engineConcurrency,
+        });
+      } catch (error) {
+        logger.warn({ err: error }, 'engine concurrency setting could not be applied');
+      }
+    }
+    return snapshot;
+  },
+  invalidate: () => innerSettings.invalidate(),
+};
+// Keep the engine values current while no job reads the settings.
+const settingsTimer = setInterval(() => {
+  void runtimeSettings.get().catch((error: unknown) => {
+    logger.warn({ err: error }, 'runtime settings refresh failed');
+  });
+}, 10_000);
+settingsTimer.unref();
 const settingsEnv = {
+  prefilterMinCards: config.prefilterMinCards,
   dailyBudgetUsd: config.dailyBudgetUsd,
   languageModes: config.languageModes,
   signupMode: config.signupMode,
@@ -79,6 +142,7 @@ const handlers = createHandlers(
       allowPrivate: config.fetchAllowPrivate,
     },
     ingestMaxAgeDays: config.ingestMaxAgeDays,
+    runtimeSettings,
     settingsEnv,
     limiter: createPgOriginLimiter(db),
     logger,
@@ -143,6 +207,7 @@ async function shutdown(signal: string): Promise<void> {
   if (stopping) return;
   stopping = true;
   logger.info({ signal }, 'worker stopping');
+  clearInterval(settingsTimer);
   try {
     // The heartbeat advertises these consumers (an ingest-only collection checks it), so it is
     // removed only after the relay and the queue consumers have stopped.

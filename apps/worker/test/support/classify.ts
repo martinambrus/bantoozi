@@ -219,6 +219,7 @@ export type AskResponder = (
  */
 export class ScriptedRouter implements EngineRouter {
   readonly asks: AskRecord[] = [];
+  reconfigure(_options: { concurrency: number }): void {}
   readonly external: Array<{ call: ExternalCall; reservationId: string | undefined }> = [];
   readonly reservations: Array<{
     input: Parameters<EngineRouter['reserveExternalCall']>[0];

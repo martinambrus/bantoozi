@@ -39,7 +39,7 @@ import {
 } from '@bantoozi/feeds';
 
 import { after, afterNewCarrier } from '../pipeline.js';
-import { fetchWith, nowOf, pipelineContext, type WorkerDeps } from './deps.js';
+import { fetchWith, ingestMaxAgeDaysOf, nowOf, pipelineContext, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
 
 /**
@@ -72,7 +72,9 @@ export function createFeedFetchHandler(deps: WorkerDeps): QueueHandler<'feed.fet
     if (lock === null) return;
     try {
       // A transaction on the lock's session commits only while the lock is held.
-      await fetchFeed({ ...deps, db: lock.db }, liveId, force === true, lock);
+      // The live age limit is read once per job and holds for all its items.
+      const ingestMaxAgeDays = await ingestMaxAgeDaysOf(deps);
+      await fetchFeed({ ...deps, db: lock.db, ingestMaxAgeDays }, liveId, force === true, lock);
     } catch (error) {
       // A statement on a failed lock session reports its connection error: the lock is gone.
       if (!(error instanceof FeedFetchLockLostError) && !(await lock.stillHeld())) {

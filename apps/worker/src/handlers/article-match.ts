@@ -256,7 +256,7 @@ async function prefilter(
   const pending = [...job.held.keys()];
   if (
     !job.config.prefilterEnabled ||
-    pending.length <= PREFILTER_MIN_CARDS ||
+    pending.length <= job.config.prefilterMinCards ||
     !isPrimaryAnswer(facets, job.classification.primaryModel)
   ) {
     return;

@@ -1,4 +1,9 @@
-import type { Database, DeletionLedgerEntry, Transaction } from '@bantoozi/db';
+import type {
+  Database,
+  DeletionLedgerEntry,
+  RuntimeSettingsCache,
+  Transaction,
+} from '@bantoozi/db';
 import type { EngineRouter } from '@bantoozi/engine';
 import {
   createRobotsChecker,
@@ -9,10 +14,11 @@ import {
   type RobotsChecker,
   type SafeFetchResult,
 } from '@bantoozi/feeds';
-import type { JobSender, OriginLimiter, SettingEnvDefaults } from '@bantoozi/shared';
+import type { JobSender, OriginLimiter } from '@bantoozi/shared';
 import type { Mailer } from '@bantoozi/shared/server';
 import type pg from 'pg';
 
+import type { ClassificationEnv } from '../classify/config.js';
 import type { TranslationDeps } from '../classify/translation.js';
 import { createPipelineGate } from '../gate.js';
 import type { PipelineContext } from '../pipeline.js';
@@ -74,8 +80,13 @@ export interface WorkerDeps {
   fetch: FetchSettings;
   /** INGEST_MAX_AGE_DAYS: older publications are stored as `stale`. */
   ingestMaxAgeDays: number;
+  /**
+   * The live runtime settings (M8b-T4): `fetch.limits` is read per fetch and `ingest.max_age_days`
+   * once per feed.fetch job. Without a cache the static `fetch` and `ingestMaxAgeDays` values apply.
+   */
+  runtimeSettings?: RuntimeSettingsCache;
   /** Env fallbacks of settings (language modes, …). */
-  settingsEnv: SettingEnvDefaults;
+  settingsEnv: ClassificationEnv;
   /** The shared per-origin politeness limiter (PostgreSQL in production). */
   limiter: OriginLimiter;
   /** Process-wide robots.txt cache (spec 03 §8.1 step 2). */
@@ -129,7 +140,7 @@ export function createWorkerDeps(input: WorkerDepsInput): WorkerDeps {
 }
 
 /** safeFetch with the worker's limits, limiter and test seams. */
-export function fetchWith(
+export async function fetchWith(
   deps: WorkerDeps,
   url: string,
   options: {
@@ -145,11 +156,15 @@ export function fetchWith(
   },
 ): Promise<SafeFetchResult> {
   const now = deps.now;
+  const limits =
+    deps.runtimeSettings === undefined
+      ? deps.fetch
+      : (await deps.runtimeSettings.get()).values.fetchLimits;
   return safeFetch(url, {
     purpose: options.purpose,
     userAgent: options.userAgent ?? deps.fetch.userAgent,
-    timeoutMs: Math.min(options.timeoutMs ?? deps.fetch.timeoutMs, deps.fetch.timeoutMs),
-    maxBytes: deps.fetch.maxBytes,
+    timeoutMs: Math.min(options.timeoutMs ?? limits.timeoutMs, limits.timeoutMs),
+    maxBytes: limits.maxBytes,
     allowPrivate: deps.fetch.allowPrivate,
     limiter: deps.limiter,
     ...(options.conditional === undefined ? {} : { conditional: options.conditional }),
@@ -159,6 +174,13 @@ export function fetchWith(
     ...(deps.resolver === undefined ? {} : { resolver: deps.resolver }),
     ...(now === undefined ? {} : { now: () => now().getTime() }),
   });
+}
+
+/** The article age limit for stale publications: the live setting, else the static value. */
+export async function ingestMaxAgeDaysOf(deps: WorkerDeps): Promise<number> {
+  return deps.runtimeSettings === undefined
+    ? deps.ingestMaxAgeDays
+    : (await deps.runtimeSettings.get()).values.ingestMaxAgeDays;
 }
 
 /** The page fetch and robots policy extraction uses (spec 03 §8.1). */
