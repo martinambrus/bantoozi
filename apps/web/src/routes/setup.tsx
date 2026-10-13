@@ -1,10 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router';
 
-// M8b-T11: the first-run setup screen replaces this placeholder.
-export const Route = createFileRoute('/setup')({
-  component: SetupPlaceholder,
-});
+import { SetupPage } from '../features/setup/setup-page.js';
 
-function SetupPlaceholder() {
-  return <main />;
-}
+// No sign-in guard: setup is open only while no admin exists, and a closed one goes to /login, which
+// sends a signed-in visitor on. A guard here would race the redirect to /admin after the sign-in.
+export const Route = createFileRoute('/setup')({
+  component: SetupPage,
+});

@@ -52,6 +52,8 @@ export function signInServer(options: {
     me: null,
     routes: {
       ...READER_READS,
+      // The login page asks whether first-run setup is open (M8b-T11); by default it is closed.
+      'GET /setup': () => json(200, { open: false }),
       'POST /auth/request-code': () => json(202, { next: 'check_email' }),
       'POST /auth/verify': () => {
         server.me = options.account;

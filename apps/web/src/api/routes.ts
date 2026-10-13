@@ -63,6 +63,7 @@ import {
   CredentialListSchema,
   CredentialResultSchema,
   DevLastEmailSchema,
+  EmailSchema,
   DwellBodySchema,
   DwellResponseSchema,
   FeedIdParamsSchema,
@@ -216,6 +217,23 @@ export const routes = {
     idempotent: false,
     body: WaitlistBodySchema,
     response: WaitlistResponseSchema,
+  }),
+
+  // ── First-run setup (M8b-T6, T11) ──────────────────────────────────────────────────────────────
+  setupState: defineRoute({
+    method: 'GET',
+    path: '/setup',
+    auth: 'public',
+    idempotent: false,
+    response: z.object({ open: z.boolean() }).strict(),
+  }),
+  setupComplete: defineRoute({
+    method: 'POST',
+    path: '/setup/complete',
+    auth: 'public',
+    idempotent: false,
+    body: z.object({ token: z.string().max(256), email: EmailSchema }).strict(),
+    response: VerifyResponseSchema,
   }),
 
   // ── Me, preferences, export, delete (spec 08 §3) ───────────────────────────────────────────────

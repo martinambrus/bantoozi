@@ -114,7 +114,7 @@ export default defineConfig(
   },
   {
     files: ['apps/web/**/*.{ts,tsx}'],
-    ignores: ['apps/web/*.config.ts', 'apps/web/e2e/**'],
+    ignores: ['apps/web/*.config.ts', 'apps/web/e2e/**', 'apps/web/e2e-first-run/**'],
     languageOptions: { globals: { ...globals.browser } },
     plugins: { 'react-hooks': reactHooks },
     rules: {
@@ -157,7 +157,7 @@ export default defineConfig(
   },
   {
     // Playwright specs and their helpers run in Node and drive the browser (spec 01 §6).
-    files: ['apps/web/e2e/**/*.ts'],
+    files: ['apps/web/e2e/**/*.ts', 'apps/web/e2e-first-run/**/*.ts'],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
   {

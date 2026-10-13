@@ -7,7 +7,7 @@ export const EXPECTED_OPERATIONS = expectedOperations
   .filter((line) => line !== '');
 
 /**
- * The mutations that carry no Idempotency-Key: the sign-in flow (spec 08 §1.1), the waitlist and
+ * The mutations that carry no Idempotency-Key: the sign-in flow (spec 08 §1.1), the waitlist, first-run setup and
  * the bearer-token ops event, which has its own flow.
  */
 export const WITHOUT_IDEMPOTENCY_KEY = new Set([
@@ -15,6 +15,7 @@ export const WITHOUT_IDEMPOTENCY_KEY = new Set([
   'POST /auth/verify',
   'POST /auth/logout',
   'POST /waitlist',
+  'POST /setup/complete',
   'POST /admin/ops-event',
 ]);
 
