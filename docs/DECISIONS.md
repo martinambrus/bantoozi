@@ -2184,3 +2184,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   is validated with `validateRuntimeSetting`, an invalid row resolves to the environment default (the last-good value
   lives only in the API/worker settings cache, which already lists the key in the heartbeat `runtime.problems`), and
   the completion's share-locked comparison uses the resolved value.
+- D-229: 2026-10-13 (owner) — Ollama model names with the `-cloud` suffix are accepted. A local Ollama app names a
+  cloud model `<model>-cloud` (`gemma4:31b-cloud`), while the Ollama Cloud API that Bantoozi calls and the price
+  table (spec 04 §8) use the bare name. `normalizeOllamaModel` drops a trailing `-cloud` from
+  `engine.ollama_models` (before the price check; the bare name is stored) and from `OLLAMA_MODEL_FAST`/
+  `OLLAMA_MODEL_STRONG`. The price table itself is unchanged.

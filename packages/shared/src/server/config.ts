@@ -5,6 +5,7 @@ import { inspect } from 'node:util';
 import { z } from 'zod';
 
 import { ENV_RANGES } from '../env-ranges.js';
+import { normalizeOllamaModel } from '../runtime-settings.js';
 import { resolveWorkerQueues, type QueueName } from '../jobs.js';
 import {
   LanguageModesSchema,
@@ -344,8 +345,12 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
     providerMasterKeyId: read('PROVIDER_MASTER_KEY_ID', z.string().min(1).max(200), undefined),
     providerMasterKeys: raw('PROVIDER_MASTER_KEYS'),
     ollamaBaseUrl: read('OLLAMA_BASE_URL', httpUrl, 'https://ollama.com') ?? '',
-    ollamaModelFast: read('OLLAMA_MODEL_FAST', modelIdSchema, 'glm-5.3-flash') ?? 'glm-5.3-flash',
-    ollamaModelStrong: read('OLLAMA_MODEL_STRONG', modelIdSchema, 'glm-5.3') ?? 'glm-5.3',
+    ollamaModelFast: normalizeOllamaModel(
+      read('OLLAMA_MODEL_FAST', modelIdSchema, 'glm-5.3-flash') ?? 'glm-5.3-flash',
+    ),
+    ollamaModelStrong: normalizeOllamaModel(
+      read('OLLAMA_MODEL_STRONG', modelIdSchema, 'glm-5.3') ?? 'glm-5.3',
+    ),
     ollamaMaxConcurrency:
       read(
         'OLLAMA_MAX_CONCURRENCY',

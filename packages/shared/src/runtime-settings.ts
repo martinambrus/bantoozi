@@ -23,6 +23,16 @@ export const RUNTIME_SETTING_KEYS = [
 ] as const satisfies readonly SettingKey[];
 export type RuntimeSettingKey = (typeof RUNTIME_SETTING_KEYS)[number];
 
+/**
+ * A local Ollama app names a cloud model `<model>-cloud` (`gemma4:31b-cloud`); the Ollama Cloud API
+ * that Bantoozi calls and its price table use the bare name, so the suffix is dropped.
+ */
+export function normalizeOllamaModel(model: string): string {
+  return model.endsWith('-cloud') && model.length > '-cloud'.length
+    ? model.slice(0, -'-cloud'.length)
+    : model;
+}
+
 export interface RuntimeSettingsContext {
   production: boolean;
   /** `host` or `host:port` entries; an entry without a port matches the host on any port. */
@@ -135,13 +145,17 @@ export function validateRuntimeSetting(
     case 'translate.libretranslate_url':
       return checkUrl(parsed as string, ctx, { httpsOnly: false });
     case 'engine.ollama_models': {
-      const { fast, strong } = parsed as { fast: string; strong: string };
-      for (const m of [fast, strong]) {
+      const raw = parsed as { fast: string; strong: string };
+      const models = {
+        fast: normalizeOllamaModel(raw.fast),
+        strong: normalizeOllamaModel(raw.strong),
+      };
+      for (const m of [models.fast, models.strong]) {
         if (!ctx.ollamaPricedModels.includes(m)) {
           return { ok: false, message: `model "${m}" has no price in the price table` };
         }
       }
-      return { ok: true, value: parsed };
+      return { ok: true, value: models };
     }
     case 'engine.typesafe_price_per_mtok_usd':
       if (ctx.production && (parsed as number) <= 0) {
