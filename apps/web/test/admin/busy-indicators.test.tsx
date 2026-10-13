@@ -404,7 +404,7 @@ describe('runtime editor busy states', () => {
   it('follows a restart that is already pending when the page opens, then stops', async () => {
     let pending = true;
     let reads = 0;
-    await open(
+    const app = await open(
       '/admin/settings',
       {
         'GET /admin/settings': () => {
@@ -427,6 +427,19 @@ describe('runtime editor busy states', () => {
     const settled = reads;
     await wait(30_000);
     expect(reads).toBe(settled);
+
+    // Another change made elsewhere, seen on a later read (focus): a new window starts.
+    pending = true;
+    await act(async () => {
+      await app.queryClient.refetchQueries();
+    });
+    expect(await screen.findByText('Workers are restarting to apply the change…')).toBeVisible();
+    const resumed = reads;
+    await wait(7_000);
+    expect(reads).toBeGreaterThan(resumed);
+    pending = false;
+    await wait(4_000);
+    expect(screen.queryByText('Workers are restarting to apply the change…')).toBeNull();
   });
 
   it('keeps reading through a full worker heartbeat before it trusts "no restart pending"', async () => {
@@ -524,6 +537,43 @@ describe('overview', () => {
     await wait(4_000);
     idle(reset());
   });
+  it('follows one breaker reset at a time: the other engine waits until it is applied', async () => {
+    let typesafe = breaker({ state: 'open', openUntil: T2 });
+    const app = await open('/admin', {
+      'GET /admin/overview': () =>
+        json(
+          200,
+          makeOverview({
+            engine: {
+              ...makeOverview().engine,
+              breakers: { typesafe, llm: breaker({ state: 'open', openUntil: T2 }) },
+            },
+          }),
+        ),
+      'POST /admin/engine/reset-breaker': () => {
+        typesafe = { ...typesafe, resetRequestedAt: T1 };
+        return json(200, { engine: 'typesafe', resetRequestedAt: T1 });
+      },
+    });
+    const card = (name: string) => screen.getByRole('group', { name });
+    const reset = (name: string) =>
+      within(card(name)).getByRole('button', { name: 'Reset breaker' });
+    await screen.findByRole('group', { name: 'Jev (typesafe)' });
+
+    await app.user.click(reset('Jev (typesafe)'));
+    await app.user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Reset breaker' }),
+    );
+    await wait(1_000);
+    busy(reset('Jev (typesafe)'));
+    expect(reset('LLM fallback')).toBeDisabled();
+
+    typesafe = breaker({ state: 'closed', resetRequestedAt: T1 });
+    await wait(4_000);
+    idle(reset('Jev (typesafe)'));
+    expect(reset('LLM fallback')).toBeEnabled();
+  });
+
   it('ends the breaker wait after 30 s even while the overview cannot be read', async () => {
     let failing = false;
     const current = breaker({ state: 'open', openUntil: T2 });

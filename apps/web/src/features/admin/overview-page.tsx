@@ -159,11 +159,14 @@ function EngineCard({
   engine,
   breaker,
   watchStatus,
+  locked,
   onReset,
 }: {
   engine: BreakerEngine;
   breaker: Breaker;
   watchStatus: WatchStatus;
+  /** Another engine's reset is still waiting for the worker: one reset is followed at a time. */
+  locked: boolean;
   onReset: () => void;
 }) {
   const { t } = useTranslation('admin');
@@ -197,7 +200,12 @@ function EngineCard({
         </p>
       )}
       <div>
-        <Button variant="secondary" loading={watchStatus === 'waiting'} onClick={onReset}>
+        <Button
+          variant="secondary"
+          loading={watchStatus === 'waiting'}
+          disabled={locked}
+          onClick={onReset}
+        >
           {t('overview.breaker.reset')}
         </Button>
       </div>
@@ -369,6 +377,7 @@ export function AdminOverviewPage() {
                     engine={engine}
                     breaker={data.engine.breakers[engine]}
                     watchStatus={watch?.engine === engine ? watchStatus : null}
+                    locked={watchStatus === 'waiting' && watch?.engine !== engine}
                     onReset={() => setConfirming(engine)}
                   />
                 ))}

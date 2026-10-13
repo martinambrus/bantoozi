@@ -71,10 +71,14 @@ export function AdminSettingsPage() {
     },
   });
 
-  // A restart already pending when the page opens is followed too, for one bounded window.
+  // A restart seen pending without a save here (on opening the page, or a change made elsewhere) is
+  // followed too: each time one begins, a new bounded window starts unless one is still running.
   const restartPending = settings.data?.workers.some((worker) => worker.pendingRestart) ?? false;
   useEffect(() => {
-    if (restartPending) setSavedAt((current) => current ?? Date.now());
+    if (!restartPending) return;
+    setSavedAt((current) =>
+      current !== null && Date.now() - current < RESTART_WATCH_MS ? current : Date.now(),
+    );
   }, [restartPending]);
 
   /**
