@@ -126,15 +126,47 @@ describe('reader SQL hooks', () => {
   });
 
   describe('ageForColdMaintenance', () => {
+    /** A pool whose `query` must not be used by the hook and whose one client records every statement. */
+    function poolWithClient(rows: unknown[], failOn?: string) {
+      const log: Array<[string, unknown[]?]> = [];
+      const events: string[] = [];
+      const client = {
+        async query(text: string, values?: unknown[]) {
+          log.push(values === undefined ? [text] : [text, values]);
+          if (failOn !== undefined && text.includes(failOn)) throw new Error('boom');
+          return { rows };
+        },
+        release() {
+          events.push('release');
+        },
+      };
+      const poolCalls: string[] = [];
+      const db: HookDb = {
+        async query(text) {
+          poolCalls.push(text);
+          return { rows: [] };
+        },
+        async connect() {
+          events.push('connect');
+          return client;
+        },
+      };
+      return { db, log, events, poolCalls };
+    }
+
     it('moves the snapshot, body and carrier dates back and binds the id', async () => {
       const row = { snapshots: 1, bodies: 1, articles: 1 };
-      const { db, calls } = recordingDb([row]);
+      const { db, log, events, poolCalls } = poolWithClient([row]);
       await expect(runSqlHook(db, 'ageForColdMaintenance', { snapshotId: ID })).resolves.toBe(row);
-      // The immutability guard is off only around the one statement and always back on.
-      expect(calls).toHaveLength(3);
-      expect(calls[0]?.[0]).toContain('DISABLE TRIGGER article_snapshots_guard');
-      expect(calls[2]?.[0]).toContain('ENABLE TRIGGER article_snapshots_guard');
-      const [text = '', values] = calls[1] ?? [];
+      // Guard off, the one statement and guard on share ONE connection inside ONE transaction.
+      expect(poolCalls).toEqual([]);
+      expect(events).toEqual(['connect', 'release']);
+      expect(log).toHaveLength(5);
+      expect(log[0]?.[0]).toBe('BEGIN');
+      expect(log[1]?.[0]).toContain('DISABLE TRIGGER article_snapshots_guard');
+      expect(log[3]?.[0]).toContain('ENABLE TRIGGER article_snapshots_guard');
+      expect(log[4]?.[0]).toBe('COMMIT');
+      const [text = '', values] = log[2] ?? [];
       expect(values).toEqual([ID]);
       expect(text).not.toContain(ID);
       expect(text).toContain("captured_at - interval '31 days'");
@@ -142,6 +174,21 @@ describe('reader SQL hooks', () => {
       // It only ages: marking cold and clearing bodies is the job's work.
       expect(text).not.toContain('cold_at');
       expect(text).not.toContain('body_text = NULL');
+    });
+
+    it('rolls back and releases the connection when the ageing statement fails', async () => {
+      const { db, log, events } = poolWithClient([], 'captured_at');
+      await expect(runSqlHook(db, 'ageForColdMaintenance', { snapshotId: ID })).rejects.toThrow(
+        'boom',
+      );
+      expect(log.map(([text]) => text.split(' ')[0])).toEqual([
+        'BEGIN',
+        'ALTER',
+        'WITH',
+        'ROLLBACK',
+      ]);
+      expect(log.some(([text]) => text === 'COMMIT')).toBe(false);
+      expect(events).toEqual(['connect', 'release']);
     });
 
     it('refuses invalid parameters without querying', async () => {

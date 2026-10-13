@@ -3,6 +3,39 @@
 /** The part of `pg.Pool` the hooks use. */
 export interface HookDb {
   query(text: string, values?: unknown[]): Promise<{ rows: unknown[] }>;
+  /** A dedicated connection (`pg.Pool.connect`), for statements that must share one session. */
+  connect?(): Promise<HookClient>;
+}
+
+/** One checked-out connection; `release` returns it to the pool. */
+export interface HookClient {
+  query(text: string, values?: unknown[]): Promise<{ rows: unknown[] }>;
+  release(): void;
+}
+
+/**
+ * Runs `work` on ONE checked-out connection inside ONE transaction: `BEGIN`, the work, `COMMIT`,
+ * or `ROLLBACK` when it throws (the error is rethrown). The connection is always released.
+ */
+export async function inTransaction<T>(
+  db: HookDb,
+  work: (client: HookClient) => Promise<T>,
+): Promise<T> {
+  if (db.connect === undefined) throw new Error('this hook needs a database that can connect()');
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    try {
+      const result = await work(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
+  } finally {
+    client.release();
+  }
 }
 
 export class HookParamsError extends Error {

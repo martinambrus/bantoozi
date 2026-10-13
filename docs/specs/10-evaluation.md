@@ -601,8 +601,9 @@ source (`cards/model/degraded`), language, and prompt/calibration vs voluntary f
   separately, and hide/unhide reasons. A pair with a feedback-time snapshot counts once, by the lane
   the snapshot recorded before the action (D-204); a pair without one is counted from its cached lane
   and only when it was scored and the article first seen inside the window. The nightly job replays the
-  rating events in pages of 500 (a user/article pair split by a page boundary is carried to the next page,
-  so the result equals one replay) and counts the reader lane mix in batches of 25 readers per
+  rating events in pages of 500, folding each completed user/article pair straight into the day, 7-day
+  and 30-day counters (a pair split by a page boundary keeps only its running effective state across
+  pages, so memory does not grow with events or pairs and the result equals one replay) and counts the reader lane mix in batches of 25 readers per
   transaction. This is a lower-bound diagnostic: hidden articles are rarely
   exposed, so a low recovery rate **cannot** establish low false-negative regret. Use the blind
   golden set for that risk; no <2% production regret guarantee is inferred from unseen articles.

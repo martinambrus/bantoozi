@@ -6,7 +6,6 @@ import {
   metricsModels,
   METRICS_RATING_PAGE,
   metricsRatingEventsPage,
-  type MetricsRatingEvent,
   metricsReaderUsers,
   metricsRecovery,
   metricsTrainingQueue,
@@ -25,10 +24,10 @@ import {
 
 import {
   dayBounds,
-  effectiveRatings,
-  laneStats,
-  ratingSplits,
+  EffectiveRatingFold,
+  WindowTally,
   windowStart,
+  type EffectiveRating,
 } from '../metrics/compute.js';
 import { nowOf, type WorkerDeps } from './deps.js';
 import { recordHouseProgress } from './house-purge-auth.js';
@@ -43,29 +42,27 @@ const READER_PAGE = 200;
 const READER_BATCH = 25;
 
 /**
- * Replays the rating events of `from..to` in pages of {@link METRICS_RATING_PAGE} rows (M8-F10).
- * The events of a user/article pair can straddle a page boundary, so the last pair of a page is
- * carried to the next one and replayed together with its continuation; the result equals one
- * replay over all events.
+ * Replays the rating events of `from..to` in pages of {@link METRICS_RATING_PAGE} rows (M8-F10) and
+ * hands every completed user/article pair's effective rating to `sink` at once. A pair that
+ * straddles a page boundary is continued by the fold, which keeps only that pair's running state
+ * (ratings, not events), so neither the ratings nor a page's events outlive the page; the result
+ * equals one replay over all events.
  */
-async function replayRatings(deps: WorkerDeps, from: Date, to: Date) {
-  const ratings: ReturnType<typeof effectiveRatings> = [];
-  let carry: MetricsRatingEvent[] = [];
+export async function replayRatings(
+  deps: Pick<WorkerDeps, 'db'>,
+  from: Date,
+  to: Date,
+  sink: (rating: EffectiveRating) => void,
+): Promise<void> {
+  const fold = new EffectiveRatingFold(sink);
   let cursor: Awaited<ReturnType<typeof metricsRatingEventsPage>>['cursor'] = null;
   for (;;) {
     const page = await metricsRatingEventsPage(deps.db, from, to, cursor);
-    const events = [...carry, ...page.events];
-    if (page.events.length < METRICS_RATING_PAGE) {
-      ratings.push(...effectiveRatings(events));
-      return ratings;
-    }
-    const lastOf = events.at(-1);
-    const pairOf = (e: MetricsRatingEvent) => `${e.userId}:${e.articleId}`;
-    const split = lastOf === undefined ? 0 : events.findIndex((e) => pairOf(e) === pairOf(lastOf));
-    ratings.push(...effectiveRatings(events.slice(0, split)));
-    carry = events.slice(split);
+    fold.push(page.events);
+    if (page.events.length < METRICS_RATING_PAGE) break;
     cursor = page.cursor;
   }
+  fold.finish();
 }
 
 /**
@@ -116,13 +113,20 @@ export function createMetricsHandler(deps: WorkerDeps): QueueHandler<'house.metr
     const now = nowOf(deps);
     const day = utcDay(new Date(now.getTime() - DAY_MS));
     const { start, end } = dayBounds(day);
-    const ratings = await replayRatings(deps, new Date(windowStart(start, 30)), new Date(end));
+    // One pass folds each completed pair into the day, 7-day and 30-day tallies (M8-F10).
+    const tallies = new Map(
+      [1, 7, 30].map((days) => [days, new WindowTally(windowStart(start, days), end)]),
+    );
+    await replayRatings(deps, new Date(windowStart(start, 30)), new Date(end), (rating) => {
+      for (const tally of tallies.values()) tally.add(rating);
+    });
+    const tallyOf = (days: number): WindowTally => tallies.get(days) ?? new WindowTally(0, 0);
     const bounds = (days: number) => ({
       from: windowStart(start, days),
       to: end,
     });
     const lanesAndRegret = async (days: number) => ({
-      lanes: laneStats(ratings, windowStart(start, days), end),
+      lanes: tallyOf(days).laneStats(),
       regret: await metricsRecovery(deps.db, new Date(windowStart(start, days)), new Date(end)),
     });
     const trailing = async (days: number) => {
@@ -130,7 +134,7 @@ export function createMetricsHandler(deps: WorkerDeps): QueueHandler<'house.metr
       const [fromDate, toDate] = [new Date(from), new Date(to)];
       return {
         ...(await lanesAndRegret(days)),
-        ...ratingSplits(ratings, from, to),
+        ...tallyOf(days).splits(),
         hides: await metricsHides(deps.db, fromDate, toDate),
         models: await metricsModels(deps.db, fromDate, toDate, now),
         engine: await metricsEngine(deps.db, fromDate, toDate, days),

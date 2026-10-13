@@ -69,13 +69,15 @@ export function createTranslateCardsHandler(
     const langs = [...supported].filter((lang) => lang !== 'en' && lang !== 'und');
     const counts = { examined: 0, translated: 0, kept: 0 };
     const unrestricted = payload.userId === undefined;
-    const saved = HOUSE_PROGRESS_CURSORS[JOB].safeParse(
-      (
-        (await readStoredSetting(deps.db, 'house.progress')) as
-          Record<string, { cursor?: unknown } | undefined> | undefined
-      )?.[JOB]?.cursor,
-    );
-    let after: string | undefined = unrestricted && saved.success ? saved.data.after : undefined;
+    const saved = unrestricted
+      ? HOUSE_PROGRESS_CURSORS[JOB].safeParse(
+          (
+            (await readStoredSetting(deps.db, 'house.progress')) as
+              Record<string, { cursor?: unknown } | undefined> | undefined
+          )?.[JOB]?.cursor,
+        )
+      : undefined;
+    let after: string | undefined = saved?.success ? saved.data.after : undefined;
     let complete = true;
     const retryAfter = new Date(started.getTime() - TRANSLATE_RETRY_BACKOFF_MS);
     for (;;) {
@@ -116,7 +118,9 @@ export function createTranslateCardsHandler(
       },
       'translate-cards pass',
     );
-    if (unrestricted || saved.success === false) {
+    // Only the unrestricted pass owns the global progress entry: a {userId} run neither reads
+    // (above), writes, completes nor clears it.
+    if (unrestricted) {
       await recordHouseProgress(
         deps,
         JOB,

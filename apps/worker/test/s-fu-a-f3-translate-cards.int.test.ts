@@ -131,3 +131,70 @@ describe('M8-F3 weak or failed card translations are not retried on every {} run
     });
   }
 });
+
+describe('M8-F3 a {userId} run never touches the global house.translate-cards progress', () => {
+  const seed = async (entry: unknown): Promise<void> => {
+    await h.owner.query(
+      `INSERT INTO settings (key, value) VALUES ('house.progress', $1::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [JSON.stringify(entry === undefined ? {} : { [JOB]: entry })],
+    );
+  };
+  const raw = async (): Promise<unknown> =>
+    (await h.owner.query("SELECT value FROM settings WHERE key = 'house.progress'")).rows[0]?.value;
+  const runForUser = async (userId: string): Promise<void> => {
+    const { dispatch } = await import('../src/handlers/index.js');
+    const { parseJobPayload } = await import('@bantoozi/shared');
+    await dispatch(h.handlersWith({}), JOB, parseJobPayload(JOB, { userId }), {
+      queue: JOB,
+      jobId: 'direct',
+    });
+  };
+
+  it('with no saved progress writes nothing (no completedAt appears)', async () => {
+    await h.setSetting('card_text_mode', ENGLISH);
+    const { userId } = await holder(h, 'active');
+    await h.owner.query("DELETE FROM settings WHERE key = 'house.progress'");
+    await runForUser(userId);
+    expect(await raw(), 'no house.progress row is created').toBeUndefined();
+  });
+
+  it('with a completed pass and no cursor leaves completedAt and updatedAt unchanged', async () => {
+    await h.setSetting('card_text_mode', ENGLISH);
+    const { userId } = await holder(h, 'active');
+    const entry = {
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      completedAt: '2026-01-01T00:00:00.000Z',
+      version: 1,
+    };
+    await seed(entry);
+    await runForUser(userId);
+    expect(await progress()).toEqual(entry);
+  });
+
+  it('with a valid global cursor leaves the cursor untouched', async () => {
+    await h.setSetting('card_text_mode', ENGLISH);
+    const { userId } = await holder(h, 'active');
+    const entry = {
+      cursor: { after: '999999' },
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      version: 1,
+    };
+    await seed(entry);
+    await runForUser(userId);
+    expect(await progress()).toEqual(entry);
+  });
+
+  it('with a malformed global cursor leaves the entry untouched', async () => {
+    await h.setSetting('card_text_mode', ENGLISH);
+    const { userId } = await holder(h, 'active');
+    const entry = {
+      cursor: { after: 5 },
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      version: 1,
+    };
+    await seed(entry);
+    await runForUser(userId);
+    expect(await progress()).toEqual(entry);
+  });
+});

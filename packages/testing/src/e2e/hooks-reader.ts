@@ -1,6 +1,7 @@
 import {
   HookParamsError,
   httpUrl,
+  inTransaction,
   record,
   runner,
   type Hook,
@@ -149,16 +150,18 @@ const ageForColdMaintenance: Hook<{ snapshotId: string }> = {
   async run(db, { snapshotId }) {
     // The immutability guard (spec 02 §3.6) refuses a change of captured_at, which is the point of
     // ageing it: the real job reads the real clock. The guard is off only for this statement.
-    await db.query('ALTER TABLE article_snapshots DISABLE TRIGGER article_snapshots_guard');
-    try {
-      return await ageStatement(db, snapshotId);
-    } finally {
-      await db.query('ALTER TABLE article_snapshots ENABLE TRIGGER article_snapshots_guard');
-    }
+    // DISABLE, the UPDATE and ENABLE share one connection and one transaction (the DDL is
+    // transactional), so a pooled session never keeps the guard off and an error rolls it all back.
+    return inTransaction(db, async (client) => {
+      await client.query('ALTER TABLE article_snapshots DISABLE TRIGGER article_snapshots_guard');
+      const aged = await ageStatement(client, snapshotId);
+      await client.query('ALTER TABLE article_snapshots ENABLE TRIGGER article_snapshots_guard');
+      return aged;
+    });
   },
 };
 
-async function ageStatement(db: HookDb, snapshotId: string): Promise<unknown> {
+async function ageStatement(db: Pick<HookDb, 'query'>, snapshotId: string): Promise<unknown> {
   const { rows } = await db.query(
     `WITH snap AS (
          UPDATE article_snapshots SET captured_at = captured_at - interval '31 days'

@@ -2017,3 +2017,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `2517cec` across 0023/0024). Proven on a running stack with a synthetic newer migration (ready, reads,
   actions and outbox work) and a missing one (503). A full two-release rollback rehearsal against a release that
   contains the rule is possible from the next release on. Spec 08 §11 (`/readyz`) and spec 11 §3 updated.
+- D-208: 2026-10-13 M8-F10, M8-F3, M8-F5 (PR #27 Codex review round 1) — (1) The rating replay folds each
+  completed user/article pair into per-window tallies (lanes, source, language, origin) as it streams the 500-row
+  pages, keeping only the open pair's rating-state stack (needed so an undo restores the state before the rating
+  it undoes), so worker memory no longer grows with the number of ratings or pairs; results are identical.
+  (2) A `{userId}` run of `house.translate-cards` never reads, writes, completes or clears the unrestricted
+  sweep's `house.progress` entry. (3) The E2E aging hook disables the snapshot guard, ages the rows and re-enables
+  the guard in one transaction on one connection (rolled back on error), so the guard is never off globally.
+  Spec 10 §7 updated.
