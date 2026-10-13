@@ -103,6 +103,26 @@
     "changed": "Classification is now: {{mode}}.",
     "stale": "This setting was changed from another device. We've reloaded it. Check the current setting and try again."
   },
+  "agreement": {
+    "collecting": "{{likes}} of {{min}} likes and {{dislikes}} of {{min}} dislikes rated on analyzed articles",
+    "ready": "The analysis agrees with your ratings: of {{high}} it rated high you liked {{liked}}; of {{low}} it rated low you disliked {{disliked}}.",
+    "not_yet": "Not enough agreement yet: rate more analyzed articles, or the interests may not fit this feed.",
+    "one_sided": "You like (or dislike) nearly everything here, so automatic sorting would add little.",
+    "short": {
+      "collecting": "Collecting ratings",
+      "ready": "Ready for automatic",
+      "not_yet": "Not enough agreement yet",
+      "one_sided": "Ratings are one-sided"
+    },
+    "enable": "Enable",
+    "enableLabel": "Enable automatic classification for {{title}}"
+  },
+  "enableAutomatic": {
+    "title": "Enable automatic classification for {{title}}?",
+    "weekly_one": "About {{count}} new article a week will be analyzed as they arrive; older ones stay manual.",
+    "weekly_other": "About {{count}} new articles a week will be analyzed as they arrive; older ones stay manual.",
+    "noCount": "New articles will be analyzed as they arrive; older ones stay manual."
+  },
   "unsubscribe": {
     "action": "Unsubscribe",
     "title": "Unsubscribe from “{{title}}”?",

@@ -7,6 +7,13 @@ import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
 import { USER_A_ID, makeMe } from '../session/fixtures.js';
 import { gate } from '../interests/support.js';
+import {
+  LEARNING,
+  learningRoute,
+  makeAgreement,
+  makeLearning,
+  readyAgreement,
+} from '../learning/fixtures.js';
 import { bodyOf, type FakeServer } from '../support/app.js';
 import {
   DELETE_FEED,
@@ -60,7 +67,12 @@ function installFeedApi(server: FakeServer, subscriptions: () => Subscription[])
 }
 
 async function openSettings(
-  options: { alpha?: SubscriptionOverrides; me?: Me; title?: string } = {},
+  options: {
+    alpha?: SubscriptionOverrides;
+    me?: Me;
+    title?: string;
+    learning?: ReturnType<typeof makeLearning>;
+  } = {},
 ) {
   const alpha = makeSubscription({
     feed: { id: '5', title: 'Alpha' },
@@ -71,6 +83,8 @@ async function openSettings(
   });
   const { server, state } = feedsServer({
     me: options.me ?? makeMe(),
+    routes:
+      options.learning === undefined ? {} : { [LEARNING]: learningRoute(() => options.learning!) },
     subscriptions: [
       alpha,
       makeSubscription({ feed: { id: '6', title: 'Beta' }, folder: 'News' }),
@@ -93,6 +107,55 @@ async function saveChange(app: App, sheet: HTMLElement) {
   await app.user.click(save(sheet));
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 }
+
+describe('the agreement line in the feed settings', () => {
+  async function openTraining(agreement: ReturnType<typeof makeAgreement> | null) {
+    return openSettings({
+      alpha: { inferenceMode: 'training' },
+      learning: makeLearning({}, agreement === null ? [] : [agreement]),
+    });
+  }
+
+  it('tells how far the ratings are while they are collected', async () => {
+    const { sheet } = await openTraining(
+      makeAgreement('5', 'collecting', { likes: 2, dislikes: 1 }),
+    );
+
+    expect(
+      await within(sheet).findByText('2 of 3 likes and 1 of 3 dislikes rated on analyzed articles'),
+    ).toBeVisible();
+  });
+
+  it('says how often the analysis agreed when it is ready', async () => {
+    const { sheet } = await openTraining(readyAgreement('5'));
+
+    expect(
+      await within(sheet).findByText(
+        'The analysis agrees with your ratings: of 10 it rated high you liked 8; of 9 it rated low you disliked 7.',
+      ),
+    ).toBeVisible();
+  });
+
+  it.each([
+    ['not_yet', /^Not enough agreement yet/],
+    ['one_sided', /^You like \(or dislike\) nearly everything here/],
+  ] as const)('explains %s', async (status, words) => {
+    const { sheet } = await openTraining(makeAgreement('5', status));
+
+    expect(await within(sheet).findByText(words)).toBeVisible();
+  });
+
+  it('is absent for a feed that is not in training', async () => {
+    const { app, sheet } = await openSettings({
+      alpha: { inferenceMode: 'active' },
+      learning: makeLearning({}, [readyAgreement('5')]),
+    });
+
+    await within(sheet).findByRole('heading', { name: 'Classification' });
+    expect(within(sheet).queryByText(/agrees with your ratings/)).toBeNull();
+    expect(app.calls(LEARNING)).toHaveLength(0);
+  });
+});
 
 describe('the feed settings', () => {
   it('opens beside the list for the feed whose button was pressed, showing the current values', async () => {

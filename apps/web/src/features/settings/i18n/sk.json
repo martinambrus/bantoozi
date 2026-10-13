@@ -134,6 +134,30 @@
       "block": "Obrázky vždy blokovať"
     }
   },
+  "learning": {
+    "title": "Osobné učenie",
+    "description": "Váš vlastný model sa zapne sám, keď bude mať dosť hodnotení a bude ich predpovedať lepšie než samotné vaše záujmy.",
+    "explicit": "{{explicit}} z {{min}} hodnotení",
+    "likes": "{{likes}} z {{min}} „páči sa mi“",
+    "dislikes": "{{dislikes}} z {{min}} „nepáči sa mi“",
+    "active": "Aktívny od {{date}} (verzia {{version}})",
+    "rejected": "Posledný pokus ho nezapol:",
+    "reasons": {
+      "insufficient_explicit": "Zatiaľ ste nedali dosť hodnotení.",
+      "insufficient_class": "Zatiaľ nie je dosť hodnotení „páči sa mi“ alebo „nepáči sa mi“.",
+      "low_auc": "Vaše hodnotenia nepredpovedal dosť dobre.",
+      "below_baseline_auc": "Vaše hodnotenia nepredpovedal lepšie než samotné vaše záujmy.",
+      "worse_logloss": "Jeho predpovede boli menej spoľahlivé než predpovede samotných vašich záujmov.",
+      "rating_fingerprint_changed": "Vaše hodnotenia sa počas učenia zmenili, preto to skúsi znova.",
+      "context_changed": "Vaše záujmy alebo nastavenia sa počas učenia zmenili, preto to skúsi znova.",
+      "unknown": "Výsledok nebol dosť jednoznačný na zapnutie."
+    },
+    "deactivated": "Vypnutý {{date}}: {{reason}}",
+    "deactivatedReasons": {
+      "incompatible": "už nezodpovedá tomu, ako Bantoozi číta články, preto sa naučí nanovo",
+      "lost_evidence": "niektoré hodnotenia, z ktorých sa učil, sú preč"
+    }
+  },
   "sessions": {
     "title": "Relácie",
     "description": "Zariadenia, na ktorých ste prihlásený. Odhláste tie, ktoré nepoznáte.",

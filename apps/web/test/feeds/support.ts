@@ -2,6 +2,7 @@ import type { Me, Subscription } from '@bantoozi/shared';
 import { screen, within } from '@testing-library/react';
 
 import { json } from '../api/fake-fetch.js';
+import { makeLearning } from '../learning/fixtures.js';
 import { makeMe } from '../session/fixtures.js';
 import { bodyOf, type ApiRouteHandler, type FakeServer } from '../support/app.js';
 
@@ -72,7 +73,11 @@ export function feedsServer(options: FeedsServerOptions = {}) {
   const state = { subscriptions: options.subscriptions ?? [] };
   const server: FakeServer = {
     me: options.me ?? makeMe(),
-    routes: { [LIST]: () => json(200, state.subscriptions), ...options.routes },
+    routes: {
+      [LIST]: () => json(200, state.subscriptions),
+      'GET /me/learning': () => json(200, makeLearning()),
+      ...options.routes,
+    },
   };
   return { server, state };
 }

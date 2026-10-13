@@ -2,6 +2,14 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { failure, json } from '../api/fake-fetch.js';
+import {
+  LEARNING,
+  learningRoute,
+  makeAgreement,
+  makeLearning,
+  readyAgreement,
+} from '../learning/fixtures.js';
+import { bodyOf } from '../support/app.js';
 import { findToast, makeLabel, ratingResponse, undoResponse } from '../article/harness.js';
 import { makeSubscription, type SubscriptionOverrides } from '../feeds/support.js';
 import { SIDEBAR_COLLAPSED_KEY } from '../../src/features/reader/sidebar-collapsed.js';
@@ -630,5 +638,114 @@ describe('the collapsed sidebar', () => {
 
     await screen.findByRole('navigation', { name: 'Lane switcher' });
     expect(screen.queryByRole('button', { name: 'Collapse the sidebar' })).toBeNull();
+  });
+});
+
+describe('ready for automatic classification', () => {
+  const SET_INFERENCE = 'POST /subscriptions/:feedId/inference';
+  const training = (id: string, title: string) =>
+    feed(id, title, null, { inferenceMode: 'training', inferenceVersion: '3' });
+
+  it('offers Enable under the badge of a training feed whose analysis agrees with the ratings', async () => {
+    await open({
+      path: '/read/for_you',
+      subscriptions: [training('1', 'Verge'), training('2', 'Wired')],
+      routes: {
+        [LEARNING]: learningRoute(() =>
+          makeLearning({}, [readyAgreement('1'), makeAgreement('2', 'collecting', { likes: 2 })]),
+        ),
+      },
+    });
+
+    const verge = (await screen.findByRole('link', { name: 'Verge' })).closest('li')!;
+    expect(await within(verge).findByText('Ready for automatic')).toBeVisible();
+    expect(
+      within(verge).getByRole('button', { name: 'Enable automatic classification for Verge' }),
+    ).toHaveTextContent('Enable');
+    const wired = screen.getByRole('link', { name: 'Wired' }).closest('li')!;
+    expect(within(wired).queryByText('Ready for automatic')).toBeNull();
+    expect(within(wired).queryByRole('button')).toBeNull();
+  });
+
+  it('asks nothing when no feed is in training', async () => {
+    const { app } = await open({
+      path: '/read/for_you',
+      subscriptions: [
+        feed('1', 'Quiet', null),
+        feed('2', 'Auto', null, { inferenceMode: 'active' }),
+      ],
+    });
+
+    await screen.findByRole('link', { name: 'Quiet' });
+    expect(app.calls(LEARNING)).toHaveLength(0);
+  });
+
+  it('switches the feed to active only after the confirmation', async () => {
+    const sub = training('1', 'Verge');
+    const { app } = await open({
+      path: '/read/for_you',
+      subscriptions: [sub],
+      routes: {
+        [LEARNING]: learningRoute(() => makeLearning({}, [readyAgreement('1')])),
+        [SET_INFERENCE]: () =>
+          json(200, { subscription: { ...sub, inferenceMode: 'active', inferenceVersion: '4' } }),
+      },
+    });
+    await app.user.click(
+      await screen.findByRole('button', { name: 'Enable automatic classification for Verge' }),
+    );
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Enable automatic classification for Verge?',
+    });
+    expect(app.calls(SET_INFERENCE)).toHaveLength(0);
+
+    await app.user.click(
+      within(dialog).getByRole('button', { name: 'Enable automatic classification' }),
+    );
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(app.calls(SET_INFERENCE).map((request) => bodyOf(request))).toEqual([
+      { mode: 'active', expectedVersion: '3' },
+    ]);
+    expect(screen.queryByText('Ready for automatic')).toBeNull();
+  });
+
+  it('asks again after a rating is settled', async () => {
+    const story = item(1, { feed: { id: '1', title: 'Verge', iconUrl: null } });
+    const liked = acked(story, { rating: 1 });
+    let agreement = makeAgreement('1', 'collecting');
+    const { app } = await open({
+      path: '/read/feed/1',
+      items: [story],
+      subscriptions: [training('1', 'Verge')],
+      routes: {
+        [LEARNING]: learningRoute(() => makeLearning({}, [agreement])),
+        'POST /articles/:id/rating': () => ratingResponse(liked),
+      },
+    });
+    await screen.findByRole('link', { name: 'Verge' });
+    await waitFor(() => expect(app.calls(LEARNING)).toHaveLength(1));
+    agreement = readyAgreement('1');
+
+    await app.user.click(within(rowOf('Article 1')).getByRole('button', { name: 'Like' }));
+
+    expect(await screen.findByText('Ready for automatic')).toBeVisible();
+    expect(app.calls(LEARNING)).toHaveLength(2);
+  });
+
+  it('names the ready feed in the collapsed strip', async () => {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, '1');
+    await open({
+      path: '/read/for_you',
+      subscriptions: [training('1', 'Verge')],
+      routes: { [LEARNING]: learningRoute(() => makeLearning({}, [readyAgreement('1')])) },
+    });
+
+    const strip = within(await screen.findByRole('list', { name: 'Feeds' }));
+    expect(
+      await strip.findByRole('link', {
+        name: 'Verge, Training: selected articles, ready for automatic classification',
+      }),
+    ).toBeVisible();
   });
 });

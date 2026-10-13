@@ -4,6 +4,7 @@ import { OfflineSection } from '../offline/offline-section.js';
 import { DeleteAccountSection } from './delete-account-section.js';
 import { ExportSection } from './export-section.js';
 import { InvitesSection } from './invites-section.js';
+import { LearningSection } from './learning-section.js';
 import { PreferencesSection } from './preferences-section.js';
 import { ProfileSection } from './profile-section.js';
 import { SessionsSection } from './sessions-section.js';
@@ -15,6 +16,7 @@ export function SettingsPage() {
       <h1 className="text-2xl font-bold">{t('title')}</h1>
       <ProfileSection />
       <PreferencesSection />
+      <LearningSection />
       <OfflineSection />
       <SessionsSection />
       <InvitesSection />

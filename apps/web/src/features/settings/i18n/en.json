@@ -134,6 +134,30 @@
       "block": "Always block images"
     }
   },
+  "learning": {
+    "title": "Personal learning",
+    "description": "Your own model switches on by itself once it has enough ratings and predicts them better than your interests alone.",
+    "explicit": "{{explicit}} of {{min}} ratings",
+    "likes": "{{likes}} of {{min}} likes",
+    "dislikes": "{{dislikes}} of {{min}} dislikes",
+    "active": "Active since {{date}} (version {{version}})",
+    "rejected": "Last attempt didn't switch it on:",
+    "reasons": {
+      "insufficient_explicit": "You haven't given enough ratings yet.",
+      "insufficient_class": "There are not enough likes or dislikes yet.",
+      "low_auc": "It did not predict your ratings well enough.",
+      "below_baseline_auc": "It was not better than your interests alone at predicting your ratings.",
+      "worse_logloss": "Its predictions were less reliable than those of your interests alone.",
+      "rating_fingerprint_changed": "Your ratings changed while it was learning, so it will try again.",
+      "context_changed": "Your interests or settings changed while it was learning, so it will try again.",
+      "unknown": "The result was not clear enough to switch it on."
+    },
+    "deactivated": "Switched off on {{date}}: {{reason}}",
+    "deactivatedReasons": {
+      "incompatible": "it no longer fits how Bantoozi reads articles, so it will learn again",
+      "lost_evidence": "some of the ratings it learned from are gone"
+    }
+  },
   "sessions": {
     "title": "Sessions",
     "description": "The devices where you are signed in. Revoke any you don't recognise.",

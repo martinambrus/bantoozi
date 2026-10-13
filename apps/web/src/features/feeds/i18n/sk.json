@@ -105,6 +105,28 @@
     "changed": "Klasifikácia je teraz: {{mode}}.",
     "stale": "Toto nastavenie sa zmenilo na inom zariadení. Načítali sme ho znova. Skontrolujte aktuálne nastavenie a skúste to znova."
   },
+  "agreement": {
+    "collecting": "{{likes}} z {{min}} „páči sa mi“ a {{dislikes}} z {{min}} „nepáči sa mi“ pri hodnotených analyzovaných článkoch",
+    "ready": "Analýza sa zhoduje s vašimi hodnoteniami: z {{high}} článkov, ktoré ohodnotila vysoko, sa vám páčilo {{liked}}; z {{low}} článkov, ktoré ohodnotila nízko, sa vám nepáčilo {{disliked}}.",
+    "not_yet": "Zhoda zatiaľ nestačí: ohodnoťte ďalšie analyzované články, alebo záujmy nemusia tomuto zdroju sedieť.",
+    "one_sided": "Páči sa vám (alebo sa vám nepáči) takmer všetko, čo tu je, takže automatické triedenie by veľa nepridalo.",
+    "short": {
+      "collecting": "Zbierajú sa hodnotenia",
+      "ready": "Pripravené na automatické",
+      "not_yet": "Zhoda zatiaľ nestačí",
+      "one_sided": "Hodnotenia sú jednostranné"
+    },
+    "enable": "Zapnúť",
+    "enableLabel": "Zapnúť automatickú klasifikáciu pre {{title}}"
+  },
+  "enableAutomatic": {
+    "title": "Zapnúť automatickú klasifikáciu pre {{title}}?",
+    "weekly_one": "Približne {{count}} nový článok týždenne sa bude analyzovať hneď po príchode; staršie zostanú na ručný výber.",
+    "weekly_few": "Približne {{count}} nové články týždenne sa budú analyzovať hneď po príchode; staršie zostanú na ručný výber.",
+    "weekly_many": "Približne {{count}} článku týždenne sa bude analyzovať hneď po príchode; staršie zostanú na ručný výber.",
+    "weekly_other": "Približne {{count}} nových článkov týždenne sa bude analyzovať hneď po príchode; staršie zostanú na ručný výber.",
+    "noCount": "Nové články sa budú analyzovať hneď po príchode; staršie zostanú na ručný výber."
+  },
   "unsubscribe": {
     "action": "Prestať odoberať",
     "title": "Prestať odoberať „{{title}}“?",

@@ -1,5 +1,10 @@
-import { normalizeText, type ArticleCounts, type Subscription } from '@bantoozi/shared';
-import type { RefetchOptions } from '@tanstack/react-query';
+import {
+  normalizeText,
+  type ArticleCounts,
+  type LearningFeedAgreement,
+  type Subscription,
+} from '@bantoozi/shared';
+import { useQueryClient, type RefetchOptions } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useCallback, useId, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -21,14 +26,17 @@ import {
 } from '../../components/icons.js';
 import { useOnline } from '../../components/states/use-online.js';
 import { VisuallyHidden } from '../../components/visually-hidden.js';
-import { useMe } from '../../session/context.js';
+import { useAccountId, useMe } from '../../session/context.js';
 import { httpsUrl } from '../article/http-url.js';
 import { LabelDot } from '../article/label-dot.js';
 import { useLabels } from '../article/use-labels.js';
+import { EnableAutomaticDialog } from '../feeds/enable-automatic-dialog.js';
 import { ClassificationBadge } from '../feeds/feed-status.js';
 import { displayTitle, groupByFolder, type FolderGroup } from '../feeds/folders.js';
 import { useSubscriptions } from '../feeds/subscriptions.js';
+import { learningKey, useLearning } from '../learning/use-learning.js';
 import { useReconnect } from '../offline/use-connection.js';
+import { useSettledActions } from './actions/provider.js';
 import { FeedFilter } from './feed-filter.js';
 import type { Lane } from './lanes.js';
 import { useEverythingOpen, useFeedFilter } from './reader-state.js';
@@ -186,11 +194,73 @@ function unreadOf({ unread }: Subscription): number {
   return unread.forYou + unread.maybe + unread.everything + unread.new;
 }
 
+/**
+ * The feeds in training whose analysis agrees with the person's ratings, by feed id. Nothing is
+ * asked while no subscription is in training; a settled rating makes the agreement stale.
+ */
+function useReadyFeeds(subscriptions: readonly Subscription[]): Map<string, LearningFeedAgreement> {
+  const queryClient = useQueryClient();
+  const accountId = useAccountId();
+  const training = subscriptions.some((subscription) => subscription.inferenceMode === 'training');
+  const learning = useLearning(training);
+  useSettledActions((handle) => {
+    if (handle.action.type !== 'rate' || !training) return;
+    void queryClient.invalidateQueries({ queryKey: learningKey(accountId) });
+  });
+  return useMemo(() => {
+    const trainingIds = new Set(
+      subscriptions
+        .filter((subscription) => subscription.inferenceMode === 'training')
+        .map((subscription) => subscription.feed.id),
+    );
+    return new Map(
+      (training ? (learning.data?.feeds ?? []) : [])
+        .filter((agreement) => agreement.status === 'ready' && trainingIds.has(agreement.feedId))
+        .map((agreement) => [agreement.feedId, agreement]),
+    );
+  }, [training, learning.data, subscriptions]);
+}
+
+function ReadyForAutomatic({
+  subscription,
+  agreement,
+}: {
+  subscription: Subscription;
+  agreement: LearningFeedAgreement;
+}) {
+  const { t } = useTranslation('feeds');
+  const [asking, setAsking] = useState(false);
+  const name = displayTitle(subscription);
+  return (
+    <div className="flex flex-wrap items-center gap-2 ps-4 pt-1">
+      <span className="text-sm text-slate-600 dark:text-slate-300">
+        {t('agreement.short.ready')}
+      </span>
+      <Button
+        size="sm"
+        variant="secondary"
+        aria-label={t('agreement.enableLabel', { title: name })}
+        onClick={() => setAsking(true)}
+      >
+        {t('agreement.enable')}
+      </Button>
+      <EnableAutomaticDialog
+        open={asking}
+        onClose={() => setAsking(false)}
+        subscription={subscription}
+        agreement={agreement}
+      />
+    </div>
+  );
+}
+
 function FeedLink({
   subscription,
+  agreement,
   onNavigate,
 }: {
   subscription: Subscription;
+  agreement: LearningFeedAgreement | undefined;
   onNavigate?: (() => void) | undefined;
 }) {
   const { t } = useTranslation('reader');
@@ -225,6 +295,9 @@ function FeedLink({
         ) : null}
       </div>
       {badgeBelow ? <div className="ps-4">{badge}</div> : null}
+      {agreement === undefined ? null : (
+        <ReadyForAutomatic subscription={subscription} agreement={agreement} />
+      )}
     </li>
   );
 }
@@ -253,6 +326,7 @@ function FeedsSection({ onNavigate }: { onNavigate?: (() => void) | undefined })
   const subscriptions = useSubscriptions();
   const online = useOnline();
   useReloadOnReconnect(subscriptions);
+  const ready = useReadyFeeds(subscriptions.data ?? []);
   const [filter] = useFeedFilter();
   const groups = useMemo(
     () =>
@@ -301,6 +375,7 @@ function FeedsSection({ onNavigate }: { onNavigate?: (() => void) | undefined })
                       <FeedLink
                         key={subscription.feed.id}
                         subscription={subscription}
+                        agreement={ready.get(subscription.feed.id)}
                         onNavigate={onNavigate}
                       />
                     ))
@@ -331,6 +406,7 @@ function FeedsSection({ onNavigate }: { onNavigate?: (() => void) | undefined })
                           <FeedLink
                             key={subscription.feed.id}
                             subscription={subscription}
+                            agreement={ready.get(subscription.feed.id)}
                             onNavigate={onNavigate}
                           />
                         ))}
@@ -522,6 +598,7 @@ function CompactFeeds() {
   const { folderOrder } = useMe().preferences;
   const subscriptions = useSubscriptions();
   useReloadOnReconnect(subscriptions);
+  const ready = useReadyFeeds(subscriptions.data ?? []);
   const feeds = useMemo(
     () =>
       groupByFolder(
@@ -542,6 +619,7 @@ function CompactFeeds() {
             ? null
             : t(`feeds:mode.${subscription.inferenceMode}`),
           subscription.feed.status === 'quarantined' ? t('feeds:status.quarantined') : null,
+          ready.has(subscription.feed.id) ? t('sidebar.readyForAutomatic') : null,
           unread > 0 ? `${t('sidebar.unread')} ${unread}` : null,
         ]);
         return (

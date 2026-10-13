@@ -12,6 +12,7 @@ import { vi } from 'vitest';
 import { json } from '../api/fake-fetch.js';
 import { actionResponse, makeDetail, ratingResponse } from '../article/harness.js';
 import { createHarness } from '../auth/harness.js';
+import { makeLearning } from '../learning/fixtures.js';
 import { patchMeLikeTheApi } from '../feeds/support.js';
 import { makeMe } from '../session/fixtures.js';
 import { bodyOf, type ApiRouteHandler, type FakeServer } from '../support/app.js';
@@ -114,6 +115,7 @@ export function readerServer(options: ReaderOptions) {
     'GET /articles/:id': (_request, params) => json(200, makeDetail(known(params['id']))),
     'GET /subscriptions': () => json(200, state.subscriptions),
     'GET /labels': () => json(200, state.labels),
+    'GET /me/learning': () => json(200, makeLearning()),
     'PATCH /me': patchMeLikeTheApi(server),
     'POST /articles/:id/read': (_request, params) =>
       actionResponse(write(params['id'], { readAt: AS_OF })),

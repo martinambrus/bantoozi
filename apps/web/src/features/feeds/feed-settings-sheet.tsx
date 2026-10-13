@@ -21,6 +21,8 @@ import { Switch } from '../../components/switch.js';
 import { TextField } from '../../components/text-field.js';
 import { useToast } from '../../components/toast/toast-provider.js';
 import { useMe } from '../../session/context.js';
+import { AgreementLine } from '../learning/agreement-text.js';
+import { useLearning } from '../learning/use-learning.js';
 import { ClassificationControls } from './classification-controls.js';
 import { displayTitle, feedTitle } from './folders.js';
 import { InlineAlert } from './inline-alert.js';
@@ -114,6 +116,11 @@ export function FeedSettingsSheet({
   });
 
   const title = displayTitle(subscription);
+  const training = subscription.inferenceMode === 'training';
+  const learning = useLearning(training);
+  const agreement = training
+    ? learning.data?.feeds.find((candidate) => candidate.feedId === subscription.feed.id)
+    : undefined;
   const changes = changesOf(subscription, draft);
   const change = (next: Partial<Draft>) => setDraft((current) => ({ ...current, ...next }));
 
@@ -212,6 +219,7 @@ export function FeedSettingsSheet({
         </form>
         <div className="border-t border-slate-200 pt-4 dark:border-slate-700">
           <ClassificationControls subscription={subscription} />
+          {agreement === undefined ? null : <AgreementLine agreement={agreement} long />}
         </div>
         <div className="border-t border-slate-200 pt-4 dark:border-slate-700">
           <Button variant="danger" onClick={() => setAsking(true)}>
