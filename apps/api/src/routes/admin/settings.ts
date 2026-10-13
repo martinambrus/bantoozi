@@ -243,11 +243,14 @@ function planRuntime(
     stored.set(key, checked.value);
     const value = checked.value ?? state.defaults[key];
     next[key] = value;
-    const bool = key === 'engine.llm_fallback_enabled';
-    const differs = bool
-      ? Boolean(value) !== Boolean(state.values[key])
-      : !same(value, state.values[key]);
-    if (differs) effective.push(key);
+    // An unknown current value (null: no fresh worker reports its env default) differs from an explicit
+    // value, so `false` is stored; it changes the effect only when it flips the switch as far as known.
+    const differs = !same(value, state.values[key]);
+    const affects =
+      key === 'engine.llm_fallback_enabled'
+        ? Boolean(value) !== Boolean(state.values[key])
+        : differs;
+    if (affects) effective.push(key);
     if (differs || (checked.value === null && state.overridden.has(key))) changed.push(key);
   }
   const fallbackOn = Boolean(next['engine.llm_fallback_enabled']);

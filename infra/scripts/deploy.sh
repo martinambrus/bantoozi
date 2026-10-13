@@ -125,6 +125,11 @@ for v in "${REQUIRED[@]}"; do
 done
 # ADMIN_EMAILS is optional (bootstrap only, M8b-T7) but a placeholder in it is still an error.
 case "$(envfile_get ADMIN_EMAILS)" in change-me* | *change-me* | changeme* | age1changeme* | *example.com*) [ "$REHEARSAL" = 1 ] || placeholder+=(ADMIN_EMAILS) ;; esac
+# The development role passwords of .env.example are public (PR #28 review).
+for pair in POSTGRES_PASSWORD=postgres BANTOOZI_OWNER_PASSWORD=bantoozi_owner \
+  BANTOOZI_APP_PASSWORD=bantoozi_app BANTOOZI_WORKER_PASSWORD=bantoozi_worker; do
+  [ "$(envfile_get "${pair%%=*}")" = "${pair#*=}" ] && { [ "$REHEARSAL" = 1 ] || placeholder+=("${pair%%=*}"); }
+done
 if [ "${#missing[@]}" -gt 0 ]; then die "required variables missing or empty in the env file: ${missing[*]}"; fi
 if [ "${#placeholder[@]}" -gt 0 ]; then die "variables still hold placeholder values: ${placeholder[*]}"; fi
 # The worker refuses a ledger path off the persistent volume (spec 11 §5.1); catch it before any backup.

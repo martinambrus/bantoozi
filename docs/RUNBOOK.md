@@ -64,7 +64,8 @@ bucket and the `age` recipient/identity (section 4); provider keys (section 10).
    It fills only values that are **empty or start with `change-me` or `changeme`** and never overwrites a real
    value, so it can be run again at any time. It writes `SESSION_PEPPER`, `METRICS_TOKEN`, `DELETION_HMAC_KEY`, the
    provider keyring (`PROVIDER_MASTER_KEYS` with a fresh random key and `PROVIDER_MASTER_KEY_ID`) and, with
-   `--production`, the four database passwords (empty in `prod.example.env`). `--production` never generates the deletion-ledger identity; `setup:env` prints what to do
+   `--production`, the four database passwords when they are empty (as in `prod.example.env`), a placeholder, or
+   still the public development values of `.env.example`, which `deploy.sh` also refuses. `--production` never generates the deletion-ledger identity; `setup:env` prints what to do
    (`age-keygen` elsewhere, put only the public key in `DELETION_LEDGER_RECIPIENT`). The file is written with
    mode 0600 and the command never prints a secret value. `--add-provider-key` adds a new wrapping key to the
    keyring and makes it active (rotation, section 10). **Back up `PROVIDER_MASTER_KEYS` offline**: without it

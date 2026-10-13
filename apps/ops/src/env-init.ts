@@ -32,6 +32,14 @@ const isBlank = (value: string | undefined): boolean =>
   value.startsWith('change-me') ||
   value.startsWith('changeme');
 
+/** The database role passwords `.env.example` ships for development (spec 11 §2). */
+export const DEV_ROLE_PASSWORDS: Readonly<Record<string, string>> = {
+  POSTGRES_PASSWORD: 'postgres',
+  BANTOOZI_OWNER_PASSWORD: 'bantoozi_owner',
+  BANTOOZI_APP_PASSWORD: 'bantoozi_app',
+  BANTOOZI_WORKER_PASSWORD: 'bantoozi_worker',
+};
+
 const rand = (bytes: number): string => randomBytes(bytes).toString('base64url');
 
 function refuseSymlink(path: string): void {
@@ -119,13 +127,10 @@ export async function initEnv(options: EnvInitOptions): Promise<EnvInitResult> {
     fill('DELETION_HMAC_KEY', randomBytes(32).toString('hex'));
 
   if (options.production) {
-    for (const name of [
-      'POSTGRES_PASSWORD',
-      'BANTOOZI_OWNER_PASSWORD',
-      'BANTOOZI_APP_PASSWORD',
-      'BANTOOZI_WORKER_PASSWORD',
-    ]) {
-      if (isBlank(env.get(name))) fill(name, rand(24));
+    // The development passwords of `.env.example` are public: production replaces them too.
+    for (const [name, devDefault] of Object.entries(DEV_ROLE_PASSWORDS)) {
+      const value = env.get(name);
+      if (isBlank(value) || value === devDefault) fill(name, rand(24));
     }
   }
 

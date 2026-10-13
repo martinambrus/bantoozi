@@ -17,8 +17,8 @@ import { ProviderKeyring } from '@bantoozi/shared/server/credential-crypto';
 import { identityToRecipient } from 'age-encryption';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Each CLI spawn starts tsx (about 2 s); tests that run it twice need more than the 5 s default.
-vi.setConfig({ testTimeout: 30_000 });
+// Each CLI spawn starts tsx (about 2 s locally, far more on a cold CI runner under coverage).
+vi.setConfig({ testTimeout: 120_000 });
 
 // M8b-T8: `pnpm setup:env` (apps/ops env:init, scope A4). Runs the real CLI in a child process on
 // temp directories; no network, no database.
@@ -296,6 +296,21 @@ describe('env:init (M8b-T8)', () => {
     run(['--production']);
     expect(vars().POSTGRES_PASSWORD).not.toMatch(/^changeme/u);
     expect(vars().POSTGRES_PASSWORD!.length).toBeGreaterThanOrEqual(24);
+  });
+
+  it('--production replaces the development passwords of .env.example (PR #28 review)', () => {
+    writeFileSync(join(dir, '.env'), TEMPLATE);
+    run(['--production']);
+    const v = vars();
+    for (const [name, dev] of Object.entries({
+      POSTGRES_PASSWORD: 'postgres',
+      BANTOOZI_OWNER_PASSWORD: 'bantoozi_owner',
+      BANTOOZI_APP_PASSWORD: 'bantoozi_app',
+      BANTOOZI_WORKER_PASSWORD: 'bantoozi_worker',
+    })) {
+      expect(v[name]).not.toBe(dev);
+      expect(v[name]!.length).toBeGreaterThanOrEqual(24);
+    }
   });
 
   it('leaves the dev database passwords untouched without --production', () => {

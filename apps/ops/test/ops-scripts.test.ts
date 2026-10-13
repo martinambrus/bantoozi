@@ -320,6 +320,18 @@ describe('production env template and placeholders (M8b-T12)', () => {
     const patterns = deploy.match(/case "\$val" in ([^)]*)\)/u)?.[1] ?? '';
     expect(patterns).toContain('changeme*');
     expect(patterns).toContain('change-me*');
+    // The public development role passwords are refused too (PR #28 review).
+    for (const pair of [
+      'POSTGRES_PASSWORD=postgres',
+      'BANTOOZI_OWNER_PASSWORD=bantoozi_owner',
+      'BANTOOZI_APP_PASSWORD=bantoozi_app',
+      'BANTOOZI_WORKER_PASSWORD=bantoozi_worker',
+    ]) {
+      expect(deploy).toContain(pair);
+    }
+    expect(deploy.indexOf('for pair in POSTGRES_PASSWORD=postgres')).toBeLessThan(
+      deploy.indexOf('variables still hold placeholder values'),
+    );
   });
 
   it('passes PROVIDER_HOST_ALLOWLIST to the api and the workers and WORKER_SELF_RESTART to the workers', () => {
