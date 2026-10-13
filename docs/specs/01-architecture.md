@@ -176,6 +176,14 @@ codes), non-`https` `PUBLIC_BASE_URL`/`TYPESAFE_BASE_URL`/`OLLAMA_BASE_URL`, an 
 `.env.example` lists every variable with a comment and placeholder values only. Validation errors
 identify secret variable names/paths, never their supplied contents or a serialized config object.
 
+Thirteen of the values below are **defaults that runtime settings override** (M8b, spec 02 §2): the
+value stored in `settings` wins, `null` or no row means the env value. They are marked "runtime" in the
+notes: `TYPESAFE_MODEL`, `TYPESAFE_BASE_URL`, `TYPESAFE_PRICE_PER_MTOK_USD`, `ENGINE_CONCURRENCY`,
+`LLM_FALLBACK_ENABLED`, `OLLAMA_MODEL_FAST`/`OLLAMA_MODEL_STRONG` (one key), `OLLAMA_BASE_URL`,
+`OLLAMA_MAX_CONCURRENCY`, `PREFILTER_MIN_CARDS`, `INGEST_MAX_AGE_DAYS`, `FETCH_TIMEOUT_MS`/`FETCH_MAX_BYTES`
+(one key), `RATE_LIMITS_ENABLED` and `LIBRETRANSLATE_URL`. Production rules for the stored values
+(https, pinned and priced models, the provider host allowlist) are in spec 08 §9.
+
 | Variable | Default | Used by | Meaning |
 |---|---|---|---|
 | `NODE_ENV` | `development` | all | `development` / `test` / `production` |
@@ -197,29 +205,30 @@ identify secret variable names/paths, never their supplied contents or a seriali
 | `SMTP_URL` | — (required in production) | api, worker | `smtp://user:pass@host:587` (the worker sends alerts, spec 11 §6.1) |
 | `MAIL_FROM` | `Bantoozi <no-reply@localhost>` | api, worker | |
 | `SIGNUP_MODE` | `invite` | api | `invite` / `open` / `closed`; `settings['signup_mode']` overrides it |
-| `RATE_LIMITS_ENABLED` | `true` | api | `false` only for E2E/load tests with `NODE_ENV=test`; refused in production |
+| `RATE_LIMITS_ENABLED` | `true` | api | runtime default (`api.rate_limits_enabled`). `false` is allowed with `NODE_ENV=test`; in production it is accepted only through the setting and then turns off the general limits only (spec 08 §11) |
 | `TYPESAFE_API_KEY` | — | worker, eval | optional bootstrap Jev key, used only if no DB credential row exists; DB configuration/revocation takes precedence (spec 04 §1.2). Workers report only its presence in `worker.heartbeat`, so the admin status can show `source: 'env'` |
-| `TYPESAFE_MODEL` | `jev-1.13.0` | api, worker, eval | always a pinned version in production; the API freezes it into explicit analysis requests until a worker has recorded `settings['engine.model_pin']` (D-150) |
-| `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` | worker, eval | |
-| `TYPESAFE_PRICE_PER_MTOK_USD` | `0.042` | worker, eval | cost accounting (without it, eval's `--max-usd` could never trigger) |
-| `ENGINE_CONCURRENCY` | `8` | worker, eval | max in-flight Jev calls per process |
+| `TYPESAFE_MODEL` | `jev-1.13.0` | api, worker, eval | runtime default (`engine.typesafe_model`); always a pinned version in production, also as a stored value; the API freezes it into explicit analysis requests until a worker has recorded `settings['engine.model_pin']` (D-150) |
+| `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` | api, worker, eval | runtime default (`engine.typesafe_base_url`); in production a stored URL must be https and on `PROVIDER_HOST_ALLOWLIST` |
+| `TYPESAFE_PRICE_PER_MTOK_USD` | `0.042` | worker, eval | runtime default (`engine.typesafe_price_per_mtok_usd`); cost accounting (without it, eval's `--max-usd` could never trigger) |
+| `ENGINE_CONCURRENCY` | `8` | worker, eval | runtime default (`engine.concurrency`); max in-flight Jev calls per process |
 | `DAILY_BUDGET_USD` | `2.00` | worker | spend guard ([spec 04 §6](./04-decision-engine.md)) |
 | `OLLAMA_API_KEY` | — | worker, eval | optional bootstrap Ollama key, used only if no DB credential row exists; no fallback to it after DB disable/revoke. Its presence is reported like `TYPESAFE_API_KEY`'s |
 | `PROVIDER_MASTER_KEY_ID` | — | api, worker, eval | id of the active wrapping key in the host-only keyring; required for DB credential writes and production credential management |
 | `PROVIDER_MASTER_KEYS` | — | api, worker, eval | JSON map of key id to base64-encoded random 32-byte AES key; injected from a protected host secret, never DB/settings/browser/build args; include old ids during rotation only |
-| `OLLAMA_BASE_URL` | `https://ollama.com` | worker, eval | |
-| `OLLAMA_MODEL_FAST` | `glm-5.3-flash` | worker, eval | |
-| `OLLAMA_MODEL_STRONG` | `glm-5.3` | worker, eval | |
-| `OLLAMA_MAX_CONCURRENCY` | `1` | worker, eval | match the Ollama plan (Free 1, Pro 3, Max 10) |
-| `LLM_FALLBACK_ENABLED` | `false` | worker | enables `LlmFallbackEngine` in the fallback chain |
-| `LIBRETRANSLATE_URL` | `http://libretranslate:5000` | api, worker, eval | tier-1 translation (the API translates card texts, spec 07 §5) |
+| `OLLAMA_BASE_URL` | `https://ollama.com` | worker, eval | runtime default (`engine.ollama_base_url`) |
+| `OLLAMA_MODEL_FAST` | `glm-5.3-flash` | worker, eval | runtime default (`engine.ollama_models.fast`); a stored model needs a price in the Ollama price table |
+| `OLLAMA_MODEL_STRONG` | `glm-5.3` | worker, eval | runtime default (`engine.ollama_models.strong`) |
+| `OLLAMA_MAX_CONCURRENCY` | `1` | worker, eval | runtime default (`engine.ollama_max_concurrency`); match the Ollama plan (Free 1, Pro 3, Max 10) |
+| `LLM_FALLBACK_ENABLED` | `false` | worker | runtime default (`engine.llm_fallback_enabled`); enables `LlmFallbackEngine` in the fallback chain |
+| `LIBRETRANSLATE_URL` | `http://libretranslate:5000` | api, worker, eval | runtime default (`translate.libretranslate_url`); tier-1 translation (the API translates card texts, spec 07 §5) |
+| `PROVIDER_HOST_ALLOWLIST` | — | api, worker | comma list of `host` or `host:port` entries (lower-cased; an entry without a port matches any port). With `NODE_ENV=production` a stored TypeSafe, Ollama or LibreTranslate base URL must name one of them; empty means no stored URL is accepted. The env URLs themselves are not checked against it. Host-only: not a runtime setting |
 | `LANGUAGE_MODES` | `{"en":"native","sk":"native","cs":"native"}` | worker | JSON; the initial per-language classification mode ([spec 07 §1](./07-translation.md)). `pnpm db:seed` stores it as `settings['language_modes']` when that row is missing, so the API and workers read one effective value; later changes (such as the G1 result) go through `PATCH /admin/settings` or `apply-g1`, which enqueue the re-enrichment. Changing the env var afterwards has no effect |
 | `FETCH_USER_AGENT` | `BantooziBot/1.0 (+${PUBLIC_BASE_URL}/bot)` | api, worker, eval | honest UA; per-feed override allowed |
-| `FETCH_MAX_BYTES` | `5242880` | api, worker, eval | 5 MB for feeds and pages |
-| `FETCH_TIMEOUT_MS` | `20000` | api, worker, eval | (the API fetches during discovery, the first fetch and OPML import) |
+| `FETCH_MAX_BYTES` | `5242880` | api, worker, eval | runtime default (`fetch.limits.maxBytes`); 5 MB for feeds and pages |
+| `FETCH_TIMEOUT_MS` | `20000` | api, worker, eval | runtime default (`fetch.limits.timeoutMs`); the API fetches during discovery, the first fetch and OPML import |
 | `FETCH_ALLOW_PRIVATE` | `false` | api, worker, eval | tests only; refused when `NODE_ENV=production` (spec 03 §4) |
-| `INGEST_MAX_AGE_DAYS` | `14` | worker | automatic age window, in addition to subscription inference authorization; explicit manual analysis uses the selected snapshot policy (specs 03/05) |
-| `PREFILTER_MIN_CARDS` | `60` | worker | spec 05 §5.5 |
+| `INGEST_MAX_AGE_DAYS` | `14` | worker | runtime default (`ingest.max_age_days`); automatic age window, in addition to subscription inference authorization; explicit manual analysis uses the selected snapshot policy (specs 03/05) |
+| `PREFILTER_MIN_CARDS` | `60` | worker | runtime default (`engine.prefilter_min_cards`); the built-in 60 lives in the worker, the setting has no default of its own (D-214); spec 05 §5.5 |
 | `EVAL_INGEST_ONLY` | `false` | worker | M3a: stop the pipeline after extract (spec 10 §2.1) |
 | `EVAL_PUBLIC_URL` | `http://localhost:5180` | eval | base URL printed in rater links (spec 10 §2.2) |
 | `EVAL_CACHE_DIR` | `~/.cache/bantoozi-eval` | eval | engine-call cache shared by all worktrees (spec 10 §3) |
@@ -231,8 +240,9 @@ identify secret variable names/paths, never their supplied contents or a seriali
 | `DELETION_LEDGER_PATH` | — | worker | the append-only age-encrypted deletion ledger file (spec 11 §5.1); without it `house.purge-users` deletes nobody |
 | `DELETION_LEDGER_RECIPIENT` | — | worker | the age public key (`age1…`) entries are encrypted to; the identity is never on the host |
 | `DELETION_HMAC_KEY` | — | worker | ≥ 32 characters, secret; keys the `emailHmac` of ledger entries |
+| `WORKER_SELF_RESTART` | `true` in production, else `false` | worker | when a restart-class runtime setting changes (Jev model, base URLs, fallback, Ollama models or concurrency, LibreTranslate URL), the worker drains and exits so its supervisor (compose `restart: unless-stopped`) starts it with the new values; `false` only logs a warning and reports `pendingRestart` in its heartbeat (spec 11 §8) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | all | tracing is enabled only when set |
-| `ADMIN_EMAILS` | — | api, worker | comma list: these users may sign up without an invite and get `role=admin` on every login (spec 08 §2.1); alert recipients |
+| `ADMIN_EMAILS` | — | api, worker | optional, **bootstrap only**: a listed address may sign up without an invite and becomes admin when its account is created or at a login while no active admin exists; afterwards the stored role rules and a demotion sticks (spec 08 §2.1). Optional in production (D-202 (2) superseded, D-215). Alerts go to the active admins; this list is the fallback while there are none (spec 11 §6.1) |
 
 Runtime-tunable settings (budget, thresholds, language modes, circuit state) are **also** stored in
 the `settings` table ([spec 02](./02-data-model.md)). The table value wins over the env default, and
@@ -379,8 +389,11 @@ Secrets are never needed in CI. All third-party calls use fixtures.
   would recreate them under running sessions. The same applies to `compose.test.yml`.
 - `pnpm db:migrate && pnpm db:seed` (settings defaults, the taxonomy, question sets and the card
   library; no users)
-- The first admin signs in with an address listed in `ADMIN_EMAILS`, which needs no invite
-  (spec 08 §2.1)
+- `pnpm setup:env` fills the missing host secrets of `.env` (session pepper, metrics token, deletion
+  HMAC key, the provider keyring, a dev deletion-ledger identity); it never prints values
+- The first admin: start the API and open `/setup`. While no active admin exists the API logs a setup
+  token at start-up; token plus email creates the admin (spec 08 §2.1). An address in `ADMIN_EMAILS`
+  can still sign in with a code on a fresh database and is made admin then
 - `pnpm dev` runs api, worker and web with watch mode through Turborepo
 - Web on `http://localhost:5173` (Vite proxies `/api` to `:3000`)
 - Email in dev: codes are logged to the api console (`MAIL_TRANSPORT=log`) instead of being sent

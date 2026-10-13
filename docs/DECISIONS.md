@@ -2041,3 +2041,83 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   through the normal translate→enrich pipeline step (`after('translate', …)`), instead of stopping because only
   `enriched`/`matched` articles are reset; such an article is no longer stranded after `house.reenrich` sends it
   to translation. Other states and non-mode-change translations are unchanged.
+- D-212: 2026-10-13 M8b-T6, M8b-T11 — First-run setup is **one step** (`POST /setup/complete {token, email}`
+  creates or promotes the admin and signs in) and needs **no migration**. The analysis in `scope.md` proposed two
+  steps (token, then an emailed code through a new `login_codes` purpose) and migration 0025; the owner chose
+  one step on 2026-10-13. The state is the `settings['auth.setup']` row (API role already has the grants):
+  open `{digest, createdAt}`, consumed `{createdAt, consumedAt, userId}`, with `digest` the hex
+  `HMAC-SHA256(SESSION_PEPPER, "bantoozi:setup-token:v1:" + token)`; the token is never stored, the key is not
+  admin-patchable and is not listed by `GET /admin/settings`. The API generates a 256-bit token at every start
+  while no active admin exists, which rotates it, and logs it once at `warn` (stderr if the level hides `warn`).
+  Setup works in every signup mode and ignores invites and `ADMIN_EMAILS`. Spec 08 §2.1 (First-run setup, the
+  two routes), spec 02 §2 (`auth.setup`), spec 01 §3 and §8 updated; the next migration is still 0025.
+- D-213: 2026-10-13 M8b-T6 — `POST /setup/complete` is limited to 10 attempts per 15 minutes per IP and **every
+  attempt counts**, a wrong token included (the limiter hits before the handler runs), so the token cannot be
+  guessed faster than that; 256 bits make a guess hopeless regardless, the limit bounds load and log noise. The
+  group `setup-complete` is also one of the always-on groups of D-222. Spec 08 §11 updated.
+- D-214: 2026-10-13 M8b-T4 — The built-in prefilter minimum of 60 lives in the **worker**
+  (`DEFAULT_PREFILTER_MIN_CARDS`), not in the settings registry: `engine.prefilter_min_cards` has no default of
+  its own, so a null row means env `PREFILTER_MIN_CARDS`, else 60. The classification completion share-locks the
+  key with a `null` initial value so that its first write waits for a running completion (as D-84 does for the
+  other classification keys), and the snapshot comparison includes the minimum, so a completion started under
+  another minimum is discarded. A change enqueues `house.rematch` while `engine.prefilter_enabled` is on. Specs
+  01 §3, 02 §2, 05 §5.5 and 08 §9 updated.
+- D-215: 2026-10-13 M8b-T7 — `ADMIN_EMAILS` is **bootstrap only and optional**, superseding D-202 (2). A listed
+  address becomes admin when its account is created, or at a login while no active admin exists; otherwise the
+  stored role stands, so a demotion in the admin UI sticks (spec 08 §2.1 used to restore the role on every
+  verify). The "no active admin" check runs under the setup advisory lock, so concurrent bootstraps and the
+  first-run setup cannot both pass it. Operational alerts go to the active admins, with `ADMIN_EMAILS` as the
+  fallback while there is none or the lookup fails. `loadConfig` no longer requires the list in production,
+  `deploy.sh` no longer requires it (a placeholder in it is still refused) and its smoke test only warns when no
+  active admin exists. Specs 01 §3, §8, 08 §2.1 and 11 §3, §6.1 updated.
+- D-216: 2026-10-13 M8b-T6 — At setup, an email that matches an **active** user promotes that user in place (the
+  row, data and sessions stay), and one that matches a **soft-deleted** user is refused with the generic
+  `INVALID_CODE`: restoring or purging belongs to the login path (spec 08 §2.1 restore window), and a setup that
+  silently restored an account would be a second restore path with different checks. A matching waitlist row is
+  deleted, as on any signup. Spec 08 §2.1 updated.
+- D-217: 2026-10-13 M8b-T11 — An administrator may reach `/admin/*` before finishing onboarding. The first admin
+  created by setup has not been through the wizard and has the system to configure first; the redirect to
+  `/onboarding` still applies to every other route and to non-admins. Spec 09 §2 updated.
+- D-218: 2026-10-13 M8b-T5 — The stale-worker guard (`assertWorkerCurrent`: the process model must equal
+  `engine.model_pin.model`, else `StaleWorkerError` with a 30 s retry delay) covers `article.enrich`,
+  `article.match`, `house.reenrich`, `house.rematch` and `card.backfill`: the handlers that ask the model or
+  write model answers for the corpus. It does **not** cover `user.suggest`, which already compares the pin with
+  its own model and leaves the suggestions as they are on a mismatch (rolling deployment); `analysis.process`,
+  which verifies its frozen request (sets, modes and pinned model) against the live configuration and fails
+  closed; or `user.rank`, which asks no model and scores from stored answers. A guard there would only delay
+  ranking. A restarted worker passes the check, so the retry succeeds. Spec 11 §8 updated.
+- D-219: 2026-10-13 M8b-T2 — `GET/PATCH /admin/settings` computes the runtime values **per key** in the route
+  (`runtimeState`) instead of calling `effectiveRuntimeSettings`: the stored row if it validates, else the last
+  good value this API process saw for that key, else the default the API or the workers' heartbeats report
+  (`null` when nobody knows). A key whose row fails validation therefore does not drop the others, and the
+  default shown is the real env value of the process that uses it. The `last_good` memory is per API process
+  and lost on restart (then the env value stands, still reported as `env`). Spec 08 §9 updated.
+- D-220: 2026-10-13 M8b-T11 — The first-run E2E reads the setup token from the API's output through a filter
+  (`tee-api-log.mjs`) that turns each JSON log line into its `msg` and writes it to a file: a Playwright
+  `webServer` reaches only the runner's stdout, and the structured line would put the token inside JSON. The
+  token is in the log only because the E2E asks for it at `LOG_LEVEL=warn`. Spec 09 §9 updated.
+- D-221: 2026-10-13 M8b-T1, M8b-T4, M8b-T5 — The runtime keys split into two classes. **Live**: price,
+  `engine.concurrency` (the semaphore is resized), `engine.prefilter_min_cards`, `ingest.max_age_days`,
+  `fetch.limits`, `api.rate_limits_enabled`; they are read through a per-process cache (TTL 10 s, single flight,
+  last good value on a failed read) and apply without a restart. **Restart-class**: Jev model and base URL,
+  fallback switch, Ollama models, base URL and concurrency, LibreTranslate URL; they build long-lived clients,
+  so a change makes the worker drain and exit (`WORKER_SELF_RESTART`, default true in production), compose
+  restarts it from the new values, and the first start with a new effective model records the pin and the
+  rebuild once. Heartbeats carry `runtime` (fingerprint, model, `pendingRestart`, `problems`, keyring status,
+  env defaults), which the API reads for the admin screens. The API process applies its own keys (rate limits,
+  fetch limits, LibreTranslate client, the model it freezes into analysis requests) on the same TTL. Specs 01
+  §3, 02 §2, 08 §9, 11 §8 updated.
+- D-222: 2026-10-13 M8b-T3 — `api.rate_limits_enabled = false` is allowed in production but turns off only the
+  **general** limits (global per-IP, per-user mutations, per-route quotas). The unauthenticated groups
+  `auth-request-code`, `auth-verify`, `waitlist`, `setup-complete` and `ops-event` stay on, because they guard
+  mail sending, code guessing and token redemption. The environment value `RATE_LIMITS_ENABLED=false` is still
+  refused outside `NODE_ENV=test`. Spec 08 §11 and spec 01 §3 updated.
+- D-223: 2026-10-13 M8b-T1, M8b-T2 — In production a stored base URL (`engine.typesafe_base_url`,
+  `engine.ollama_base_url`, `translate.libretranslate_url`) must be on `PROVIDER_HOST_ALLOWLIST` (host or
+  `host:port`; empty list: none accepted), the first two must be https, a stored model must be a pinned version
+  (`jev-x.y.z`), the price above 0 and each Ollama model priced in the price table. The env URLs are not
+  checked against the list (they are host configuration). A changed `engine.typesafe_model`,
+  `engine.llm_fallback_enabled` or `engine.ollama_models` (while the fallback is on) is refused with `409
+  confirmation_required` until the PATCH carries `acknowledge: true`; locked decisions 7 and 8 were amended by
+  the owner (PLAN §14.2). The keyring itself stays outside the database (locked decision 13); the API only
+  reports its status. Specs 01 §3, 02 §2, 08 §9, §9.1 and 09 §8 updated.

@@ -267,7 +267,8 @@ flowchart TD
 | **M5** Ranking & lanes | M1, M2 | M3a, M4 | yes | M | ✓ done 2026-10-01 (§11) |
 | **M6** Web app (PWA) | M4, M5 | M3b | yes | L | ✓ done 2026-10-09 (§12) |
 | **M7** Personal learning & suggestions | M4, M5, M6 (its goal runs E2E), and **M3b for T7** (run T7 last, after M3b is merged) | M8 | yes | M | ✓ done 2026-10-10 (§13), merged via PR #25 |
-| **M8** Operations & launch readiness | M4, M5, M6, and M3b applied; final launch gate also requires all M7 | M7 implementation only | mostly (one-time host setup is manual) | M | not started |
+| **M8** Operations & launch readiness | M4, M5, M6, and M3b applied; final launch gate also requires all M7 | M7 implementation only | mostly (one-time host setup is manual) | M | ✓ done 2026-10-11 (§14), merged via PR #26; follow-ups via PR #27 (§14.1) |
+| **M8b** First-run setup & live administration | M8 | — | yes | M | ✓ done 2026-10-13 (§14.2) |
 | **M9** Optional extensions | launch | — | per item | — | not started |
 
 **Shared registration points:**
@@ -1463,18 +1464,18 @@ Admin → Providers explains what to run when the keyring is missing. Scope anal
 
 | ID | Task | Needs | Lane | Status |
 |---|---|---|---|---|
-| M8b-T1 | Runtime settings layer: per-key schemas with production rules (https, pinned and priced models, ranges, base-URL host allowlist), env fallback, a per-process TTL cache (single-flight, last good value) | — | A | |
-| M8b-T2 | Admin settings API for the new keys: source and defaults, reset, the LibreTranslate probe, a required acknowledgement for model-affecting keys | T1 | A | |
-| M8b-T3 | API live consumers: rate limits (auth, setup and ops-event limits always on in production), discovery fetch limits, LibreTranslate client swap | T1 | A | |
-| M8b-T4 | Worker live values: fetch and ingest limits, price, engine concurrency (resizable semaphore), `PREFILTER_MIN_CARDS` honoured (it is hard-coded to 60 today) | T1 | B | |
-| M8b-T5 | Worker restart-class values: built from effective settings at start-up; a drained self-restart when they change; the model pin and its rebuild exactly once; a not-yet-restarted worker defers classification; heartbeat reports runtime values and keyring status | T1, T4 | B | |
-| M8b-T6 | Setup token and first admin (one step): token generation, logging and rotation, `GET /setup`, `POST /setup/complete`, single use under a lock, rate limits | — | C | |
-| M8b-T7 | `ADMIN_EMAILS` bootstrap only; alerts to all active admins; drop the production requirement of D-202 | T6 | C | |
-| M8b-T8 | `pnpm setup:env`: fills only missing or placeholder secrets (keyring, session pepper, metrics token, deletion ledger for dev), idempotent, mode 0600, never prints values | — | D | |
-| M8b-T9 | Keyring status in the credentials API and an Admin → Providers banner with the exact command | T5, T8 | D | |
-| M8b-T10 | Web: typed, grouped settings editors with source and reset, applied-by-workers status, the model-change confirmation | T2, T5 | E | |
-| M8b-T11 | Web: `/setup` first-run screen, a login link while setup is open, redirect once closed | T6 | E | |
-| M8b-T12 | Specs, DECISIONS (D-212 on), RUNBOOK (first admin, model upgrade, rollback past M8b: copy UI-stored values to the env file first), a fresh-install E2E, full check | T1–T11 | lead | |
+| M8b-T1 | Runtime settings layer: per-key schemas with production rules (https, pinned and priced models, ranges, base-URL host allowlist), env fallback, a per-process TTL cache (single-flight, last good value) | — | A | ✓ `79e6531` |
+| M8b-T2 | Admin settings API for the new keys: source and defaults, reset, the LibreTranslate probe, a required acknowledgement for model-affecting keys | T1 | A | ✓ `f89254a` |
+| M8b-T3 | API live consumers: rate limits (auth, setup and ops-event limits always on in production), discovery fetch limits, LibreTranslate client swap | T1 | A | ✓ `b08d180` |
+| M8b-T4 | Worker live values: fetch and ingest limits, price, engine concurrency (resizable semaphore), `PREFILTER_MIN_CARDS` honoured (it is hard-coded to 60 today) | T1 | B | ✓ `e2f4e65` |
+| M8b-T5 | Worker restart-class values: built from effective settings at start-up; a drained self-restart when they change; the model pin and its rebuild exactly once; a not-yet-restarted worker defers classification; heartbeat reports runtime values and keyring status | T1, T4 | B | ✓ `8aca073` |
+| M8b-T6 | Setup token and first admin (one step): token generation, logging and rotation, `GET /setup`, `POST /setup/complete`, single use under a lock, rate limits | — | C | ✓ `1c9b07a` (one step, no migration, D-212) |
+| M8b-T7 | `ADMIN_EMAILS` bootstrap only; alerts to all active admins; drop the production requirement of D-202 | T6 | C | ✓ `fe43b4a` (D-215) |
+| M8b-T8 | `pnpm setup:env`: fills only missing or placeholder secrets (keyring, session pepper, metrics token, deletion ledger for dev), idempotent, mode 0600, never prints values | — | D | ✓ `e74c647` |
+| M8b-T9 | Keyring status in the credentials API and an Admin → Providers banner with the exact command | T5, T8 | D | ✓ `f1affc3` |
+| M8b-T10 | Web: typed, grouped settings editors with source and reset, applied-by-workers status, the model-change confirmation | T2, T5 | E | ✓ `1ba40d8` |
+| M8b-T11 | Web: `/setup` first-run screen, a login link while setup is open, redirect once closed | T6 | E | ✓ `7df186c`, `01a988d` |
+| M8b-T12 | Specs, DECISIONS (D-212 on), RUNBOOK (first admin, model upgrade, rollback past M8b: copy UI-stored values to the env file first), a fresh-install E2E, full check | T1–T11 | lead | ✓ D-212…D-223, `2cf70d1` and the docs commit |
 
 **Done when:** each task's harness passes (written first, seen failing, with a negative control); a fresh
 database with no admin and no `ADMIN_EMAILS` reaches an admin through `/setup`; a model change in the UI

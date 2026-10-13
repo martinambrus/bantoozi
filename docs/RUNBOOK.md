@@ -54,16 +54,33 @@ bucket and the `age` recipient/identity (section 4); provider keys (section 10).
    sudo install -m 600 "$BANTOOZI_ROOT/infra/env/prod.example.env" "$BANTOOZI_ENV"
    ```
 
-   Edit `$BANTOOZI_ENV` and replace **every** placeholder (`deploy.sh` refuses values containing
-   `change-me` or `example.com`). Generate secrets locally, for example `openssl rand -hex 24` (letters and
-   digits only for database passwords; no `$` or quote characters anywhere):
+   Let the repository fill the generated secrets first. From the checkout (Node and pnpm installed, `pnpm i`
+   done):
+
+   ```bash
+   pnpm setup:env --file "$BANTOOZI_ENV" --production
+   ```
+
+   It fills only values that are **empty or start with `change-me` or `changeme`** and never overwrites a real
+   value, so it can be run again at any time. It writes `SESSION_PEPPER`, `METRICS_TOKEN`, `DELETION_HMAC_KEY`, the
+   provider keyring (`PROVIDER_MASTER_KEYS` with a fresh random key and `PROVIDER_MASTER_KEY_ID`) and, with
+   `--production`, the four database passwords (empty in `prod.example.env`). `--production` never generates the deletion-ledger identity; `setup:env` prints what to do
+   (`age-keygen` elsewhere, put only the public key in `DELETION_LEDGER_RECIPIENT`). The file is written with
+   mode 0600 and the command never prints a secret value. `--add-provider-key` adds a new wrapping key to the
+   keyring and makes it active (rotation, section 10). **Back up `PROVIDER_MASTER_KEYS` offline**: without it
+   the stored provider credentials are unreadable.
+
+   Then edit `$BANTOOZI_ENV` and replace **every** remaining placeholder (`deploy.sh` refuses values containing
+   `change-me` or `example.com`). Generate other secrets locally, for example `openssl rand -hex 24` (letters
+   and digits only for database passwords; no `$` or quote characters anywhere):
 
    | Variable | Value |
    |---|---|
    | `PUBLIC_HOST`, `PUBLIC_BASE_URL`, `ACME_EMAIL` | the real domain, `https://<domain>`, a monitored address (**owner**) |
    | `POSTGRES_PASSWORD`, `BANTOOZI_OWNER_PASSWORD`, `BANTOOZI_APP_PASSWORD`, `BANTOOZI_WORKER_PASSWORD` | four **distinct** generated passwords |
    | `SESSION_PEPPER`, `METRICS_TOKEN` | generated, at least 32 characters |
-   | `ADMIN_EMAILS` | comma list: the admin account(s); also the alert recipients (**owner**) |
+   | `ADMIN_EMAILS` | **optional**, bootstrap only: addresses that become admin when their account is created or while no admin exists. Leave it empty (an `example.com` or `change-me` value is refused by `deploy.sh`); the first admin is created through `/setup` (step 4). Alerts go to the active admins |
+| `PROVIDER_HOST_ALLOWLIST` | comma list of hosts the provider base URLs may use when set in Admin → Settings, for example `api.typesafe.ai,ollama.com`. Empty means Settings accepts no custom base URL; the env URLs are unaffected |
    | `MAIL_TRANSPORT=smtp`, `SMTP_URL`, `MAIL_FROM` | from the mail provider (**owner**, section 12) |
    | `TYPESAFE_MODEL` | the pinned model, for example the value G1 was measured with (section 8) |
    | `PROVIDER_MASTER_KEY_ID`, `PROVIDER_MASTER_KEYS` | the keyring: id of the active key and a JSON map of id to base64 32-byte key; back up offline (**owner**) |
@@ -74,11 +91,22 @@ bucket and the `age` recipient/identity (section 4); provider keys (section 10).
    Keep a copy of the finished env file, encrypted, with the offline keys (**owner**; spec 11 §4).
 
 3. First deploy: section 2 (`deploy.sh` runs migrate, then seed, then starts the services).
-4. Admin account: sign in at `https://<PUBLIC_HOST>/login` with an address listed in `ADMIN_EMAILS`
-   (no invite needed); the login code arrives by e-mail. Create the first invites (section 7).
+4. Admin account (first-run setup). While the database has no active admin, the API prints a **setup token**
+   when it starts. Read it from the API log (`dc logs api | grep -i "setup token"`; one line, at `warn`, shown
+   once; log lines are JSON, the token is the text after the last colon of `msg`). Open
+   `https://<PUBLIC_HOST>/setup` (the login page also links to it while setup is open), enter the token and the
+   email of the first administrator and submit: the account is created as admin and signed in, with no email
+   code and no invite. **The token changes at every API start**, so after any restart use the newest line;
+   a wrong or old token gives a generic error, and 10 attempts per 15 minutes per IP are allowed. If an
+   account with that email already exists it becomes the admin. Once an admin exists `/setup` closes and no
+   token is printed. Then create the first invites (section 7). `ADMIN_EMAILS` is not needed; if it is set, a
+   listed address can also sign in with a code and becomes admin only while there is no admin.
 5. Stage the provider key (section 10), apply the G1 settings (section 9), then run the launch checklist at
    the end of this file.
 6. Cron (host crontab of the deploy user, `CRON_TZ=UTC` explicit): see section 4.1.
+
+The post-deploy smoke prints `WARNING no active admin account exists yet` until step 4 is done; that is
+expected on a fresh install.
 
 **Verify:** `curl -fsS https://<PUBLIC_HOST>/api/v1/readyz` answers 200; `dc ps` shows `api`, `worker`,
 `caddy`, `postgres` healthy; the header check of spec 11 §7:
@@ -210,6 +238,31 @@ the previous images crash on the current schema, or `readyz` stays failing after
 the schema by hand and do not restore a backup over live writes. Put the site in maintenance mode (section 15),
 fix forward with a patch release (deploy it as in section 2), and only if the data itself is damaged go to the
 recovery runbook (section 4.4). Record the incident.
+
+**Rolling back past M8b.** A release older than M8b ignores the runtime settings that Admin → Settings stores
+(it reads only the env file), and it requires `ADMIN_EMAILS`. **Before rolling back to such a release, copy every
+UI-stored runtime value back into `$BANTOOZI_ENV`**, otherwise the old release silently runs with the older env
+values (for example the previous model, which would also trigger a rebuild). Read the values in Admin → Settings
+(entries with source "stored") or `GET /api/v1/admin/settings`, and set, for each stored key:
+
+| Settings key | Env variable |
+|---|---|
+| `engine.typesafe_model` | `TYPESAFE_MODEL` |
+| `engine.typesafe_base_url` | `TYPESAFE_BASE_URL` |
+| `engine.typesafe_price_per_mtok_usd` | `TYPESAFE_PRICE_PER_MTOK_USD` |
+| `engine.concurrency` | `ENGINE_CONCURRENCY` |
+| `engine.llm_fallback_enabled` | `LLM_FALLBACK_ENABLED` |
+| `engine.ollama_models` (`fast`, `strong`) | `OLLAMA_MODEL_FAST`, `OLLAMA_MODEL_STRONG` |
+| `engine.ollama_base_url` | `OLLAMA_BASE_URL` |
+| `engine.ollama_max_concurrency` | `OLLAMA_MAX_CONCURRENCY` |
+| `engine.prefilter_min_cards` | `PREFILTER_MIN_CARDS` |
+| `ingest.max_age_days` | `INGEST_MAX_AGE_DAYS` |
+| `fetch.limits` (`timeoutMs`, `maxBytes`) | `FETCH_TIMEOUT_MS`, `FETCH_MAX_BYTES` |
+| `api.rate_limits_enabled` | `RATE_LIMITS_ENABLED` (production refuses `false`: leave it `true`) |
+| `translate.libretranslate_url` | `LIBRETRANSLATE_URL` |
+
+Also set `ADMIN_EMAILS` to the real admin address(es): the older release's deploy gate and worker refuse an empty
+list. The release's own `compose.yml` decides which variables reach a service. After the rollback, compare the model in use with the pin in `/admin`.
 
 **Verify:** section 2 smoke list, plus one login and one article open as a tester. **Undo:** repeat with the
 newer tag (`dc up … --force-recreate` after tagging `bantoozi-prod-<svc>:<commit12>` as `:latest`).
@@ -433,18 +486,30 @@ headroom (section 6).
 
    (`apps/eval/src/commands/replay.ts`; the report goes to `apps/eval/reports/` by default. Commit the report.)
 
-2. Set the new value in `$BANTOOZI_ENV` (`TYPESAFE_MODEL=...`; fallback models `OLLAMA_MODEL_FAST/STRONG`;
-   a new enrich question set is an admin setting `question_sets.active`) and restart:
-   `dc up -d --no-deps --force-recreate worker api` (the compose file passes `TYPESAFE_MODEL` to both).
-3. The first worker that starts with a new model records it in `settings['engine.model_pin']` under a row
-   lock and enqueues `house.reenrich` and `house.rematch` once, rebuilding the `RANK_WINDOW_DAYS` window
-   within budget (translations are reused). Watch `/admin` (backlog, spend) until the queues drain; the
-   rebuild never opts users in or enables untrained feeds.
+2. Set the new value in **Admin → Settings** (preferred): `Decision engine (Jev)` → model (a pinned version
+   such as `jev-1.14.0`; in production it must be pinned and priced), or `LLM fallback (Ollama)` for the fallback
+   switch and models. Changing one of these opens a confirmation that says the whole window will be
+   re-enriched and matched again, using budget: tick **"I ran eval replay and it passed"** only after step 1
+   passed, then confirm. The API answers `409 confirmation_required` to a change made without that
+   acknowledgement. Under **Applied by workers** the screen lists the live workers and how many still wait for
+   a restart. **The workers restart themselves**: each one drains its current jobs and exits within about 10 s of
+   noticing the change (`WORKER_SELF_RESTART`, default on in production) and compose brings it back with the new
+   model. Nothing needs to be run. If `WORKER_SELF_RESTART=false`, or a worker still shows "pending restart", run
+   `dc up -d --no-deps --force-recreate worker`. (Setting the value in `$BANTOOZI_ENV` instead still works,
+   needs `dc up -d --no-deps --force-recreate worker api`, and is overridden by any value stored in Settings; a
+   new enrich question set is the admin setting `question_sets.active`.)
+3. The first worker that starts with the new effective model records it in `settings['engine.model_pin']` under a
+   row lock and enqueues `house.reenrich` and `house.rematch` once, however many workers restart (the others
+   find the pin already set), rebuilding the `RANK_WINDOW_DAYS` window within budget (translations are reused).
+   Until a worker has restarted, its enrich and match jobs fail and are retried 30 s later instead of using the
+   old model (stale-worker guard). Watch `/admin` (backlog, spend) until the queues drain; the rebuild never opts
+   users in or enables untrained feeds.
 4. Check that feature meanings are still compatible. If `feature_spec_sha` changed, incompatible user models
    are deactivated and users fall back to cards scoring until retrained.
 
-**Verify:** new answers carry the new model id; no backlog alert; spend within budget. **Undo:** restore the
-old env value, recreate `worker api`; the pin change enqueues a rebuild again.
+**Verify:** new answers carry the new model id; no backlog alert; spend within budget. **Undo:** set the old model
+back in Settings (with the acknowledgement) or reset the key to the env value; the pin change enqueues a rebuild
+again.
 
 ---
 
@@ -498,6 +563,17 @@ dc exec -T worker node dist/cli.js credentials:revoke typesafe --admin "$ADMIN" 
 dc exec -T worker node dist/cli.js credentials:rewrap                                                 # after adding a master key: rewrap under PROVIDER_MASTER_KEY_ID
 ```
 
+**Keyring banner.** `/admin/providers` shows a banner when the API or a worker cannot use the key store, and
+staging is disabled while the API's own keyring is not usable. The banner names the process (the API or a worker)
+and the fix; all fixes are host-side because the keyring never lives in the database:
+
+| Banner | Cause | Fix |
+|---|---|---|
+| key store not set up (`missing`) | `PROVIDER_MASTER_KEYS` or `PROVIDER_MASTER_KEY_ID` empty | `pnpm setup:env --file "$BANTOOZI_ENV" --production` from the checkout, then recreate: `dc up -d --no-deps --force-recreate worker api` |
+| `PROVIDER_MASTER_KEYS` not valid (`malformed`) | not a JSON map of id to base64 32-byte key | correct the variable by hand, recreate `worker api` |
+| active key id not among the master keys (`active_key_missing`) | `PROVIDER_MASTER_KEY_ID` names no key in the map | set it to an existing id, recreate `worker api` |
+| API and worker use different keys (mismatch) | the two processes run with different env values (often one was not recreated) | make the env identical and recreate both |
+
 Providers: `typesafe`, `ollama`. Options: `--expected-revision`, `--candidate-version`. (In a developer
 checkout the same commands run as `pnpm worker-cli credentials:...`. The `dc exec … node dist/cli.js` form is
 derived from the Dockerfile and `apps/worker/dist/cli.js`; confirm it works on the first install.) The key
@@ -513,7 +589,7 @@ add the new key to `PROVIDER_MASTER_KEYS`, set `PROVIDER_MASTER_KEY_ID`, recreat
 
 ## 11. Alerts and external monitoring
 
-`house.alerts` runs every 5 minutes, mails `ADMIN_EMAILS`, at most once per 6 h per alert until resolved, and
+`house.alerts` runs every 5 minutes, mails all active admins (`ADMIN_EMAILS` only while there is none), at most once per 6 h per alert until resolved, and
 sends one recovery mail. Rules are in `apps/worker/src/alerts/rules.ts`. A first look is always: `dc ps`,
 `dc logs --tail 100 <service>`, the `/admin` overview page.
 
@@ -630,7 +706,7 @@ Contacts (**owner** fills in, keep a copy outside the host):
 |---|---|---|
 | Release owner | `<NAME>` | `<PHONE / E-MAIL>` |
 | Incident contact / on call | `<NAME>` | `<PHONE / E-MAIL>` |
-| Alert recipients (`ADMIN_EMAILS`) | `<ADDRESSES>` | |
+| Alert recipients (the active admin accounts; `ADMIN_EMAILS` only as fallback) | `<ADDRESSES>` | |
 | Hosting provider support | `<PROVIDER>` | `<URL / PHONE>` |
 | DNS / registrar | `<PROVIDER>` | `<URL>` |
 | SMTP provider | `<PROVIDER>` | `<URL>` |
