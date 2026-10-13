@@ -38,6 +38,7 @@ GET /me/export
 GET /metrics
 GET /readyz
 GET /rules
+GET /setup
 GET /subscriptions
 GET /subscriptions/export-opml
 GET /topics
@@ -90,6 +91,7 @@ POST /labels/:id/examples/remove
 POST /library/:id/adopt
 POST /library/:id/updates/:newId/apply
 POST /rules
+POST /setup/complete
 POST /subscriptions
 POST /subscriptions/:feedId/analyze
 POST /subscriptions/:feedId/inference

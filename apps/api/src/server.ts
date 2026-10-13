@@ -39,6 +39,7 @@ import { ruleRoutes } from './routes/rules.js';
 import { setupRoutes } from './routes/setup.js';
 import { subscriptionRoutes } from './routes/subscriptions.js';
 import { createCursorCodec } from './services/cursor.js';
+import { initSetupToken } from './services/setup.js';
 import './types.js';
 
 export const API_PREFIX = '/api/v1';
@@ -150,6 +151,9 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     if (request.auth !== null && reply.getHeader('cache-control') === undefined) {
       void reply.header('cache-control', 'private, no-store');
     }
+  });
+  app.addHook('onReady', async () => {
+    await initSetupToken(services, app.log);
   });
   app.addHook('onClose', async () => {
     if (options.mailer === undefined) services.mailer.close();

@@ -553,6 +553,10 @@ function crossUserCases(): Record<string, { attempts: Attempt[]; statuses: numbe
       attempts: [() => anon.post('/auth/verify', { email: b.email, code: '000000' })],
       statuses: [400],
     },
+    'POST /setup/complete': {
+      attempts: [() => anon.post('/setup/complete', { token: 'x'.repeat(43), email: b.email })],
+      statuses: [400],
+    },
     'POST /auth/logout': {
       attempts: [
         async () => apiClient(h.server, await createTestSession(h, a)).post('/auth/logout'),

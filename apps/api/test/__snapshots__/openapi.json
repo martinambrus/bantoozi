@@ -780,6 +780,463 @@
         }
       }
     },
+    "/api/v1/setup": {
+      "get": {
+        "summary": "Whether first-run setup is open (no active admin exists)",
+        "tags": [
+          "setup"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "open": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "open"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/setup/complete": {
+      "post": {
+        "summary": "Redeem the setup token: create the first admin and sign in",
+        "tags": [
+          "setup"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "email": {
+                    "type": "string",
+                    "maxLength": 318
+                  }
+                },
+                "required": [
+                  "token",
+                  "email"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "locale": {
+                          "type": "string",
+                          "enum": [
+                            "en",
+                            "sk"
+                          ]
+                        },
+                        "timezone": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "admin"
+                          ]
+                        },
+                        "plan": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "beta",
+                                "admin"
+                              ]
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "invitesLeft": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "preferences": {
+                          "type": "object",
+                          "properties": {
+                            "defaultTier": {
+                              "default": 1,
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    1
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    2
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    3
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    4
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    5
+                                  ]
+                                }
+                              ]
+                            },
+                            "hideEverything": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "simpleMode": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "sort": {
+                              "default": "score",
+                              "type": "string",
+                              "enum": [
+                                "score",
+                                "date"
+                              ]
+                            },
+                            "markReadOnExpand": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "markReadOnRate": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "feedbackPrompt": {
+                              "default": "occasionally",
+                              "type": "string",
+                              "enum": [
+                                "often",
+                                "occasionally",
+                                "never"
+                              ]
+                            },
+                            "exampleSuggestions": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "demote": {
+                              "default": {
+                                "clickbait": "auto",
+                                "promotional": "auto",
+                                "shallow": "auto",
+                                "stale": "auto"
+                              },
+                              "type": "object",
+                              "properties": {
+                                "clickbait": {
+                                  "default": "auto",
+                                  "type": "string",
+                                  "enum": [
+                                    "auto",
+                                    "on",
+                                    "off"
+                                  ]
+                                },
+                                "promotional": {
+                                  "default": "auto",
+                                  "type": "string",
+                                  "enum": [
+                                    "auto",
+                                    "on",
+                                    "off"
+                                  ]
+                                },
+                                "shallow": {
+                                  "default": "auto",
+                                  "type": "string",
+                                  "enum": [
+                                    "auto",
+                                    "on",
+                                    "off"
+                                  ]
+                                },
+                                "stale": {
+                                  "default": "auto",
+                                  "type": "string",
+                                  "enum": [
+                                    "auto",
+                                    "on",
+                                    "off"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "clickbait",
+                                "promotional",
+                                "shallow",
+                                "stale"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "implicitNegative": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "swipe": {
+                              "default": {
+                                "left": "dislike",
+                                "right": "like"
+                              },
+                              "type": "object",
+                              "properties": {
+                                "left": {
+                                  "default": "dislike",
+                                  "type": "string",
+                                  "enum": [
+                                    "dislike",
+                                    "read",
+                                    "none"
+                                  ]
+                                },
+                                "right": {
+                                  "default": "like",
+                                  "type": "string",
+                                  "enum": [
+                                    "like",
+                                    "bookmark",
+                                    "none"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "left",
+                                "right"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "theme": {
+                              "default": "system",
+                              "type": "string",
+                              "enum": [
+                                "system",
+                                "light",
+                                "dark"
+                              ]
+                            },
+                            "loadRemoteImages": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "implicitFeedback": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "folderOrder": {
+                              "default": [],
+                              "maxItems": 200,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              }
+                            },
+                            "onboardingCompletedAt": {
+                              "default": null,
+                              "nullable": true,
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                            }
+                          },
+                          "required": [
+                            "defaultTier",
+                            "hideEverything",
+                            "simpleMode",
+                            "sort",
+                            "markReadOnExpand",
+                            "markReadOnRate",
+                            "feedbackPrompt",
+                            "exampleSuggestions",
+                            "demote",
+                            "implicitNegative",
+                            "swipe",
+                            "theme",
+                            "loadRemoteImages",
+                            "implicitFeedback",
+                            "folderOrder",
+                            "onboardingCompletedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "quotas": {
+                          "type": "object",
+                          "properties": {
+                            "used": {
+                              "type": "object",
+                              "properties": {
+                                "maxFeeds": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxCards": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxLabels": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxForks": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxRules": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "maxFeeds",
+                                "maxCards",
+                                "maxLabels",
+                                "maxForks",
+                                "maxRules"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "limits": {
+                              "type": "object",
+                              "properties": {
+                                "maxFeeds": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxCards": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxLabels": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxForks": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxRules": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "opmlMaxFeeds": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "maxFeeds",
+                                "maxCards",
+                                "maxLabels",
+                                "maxForks",
+                                "maxRules",
+                                "opmlMaxFeeds"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "used",
+                            "limits"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "email",
+                        "displayName",
+                        "locale",
+                        "timezone",
+                        "role",
+                        "plan",
+                        "invitesLeft",
+                        "preferences",
+                        "quotas"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/invites": {
       "get": {
         "summary": "My invites and how many I have left",

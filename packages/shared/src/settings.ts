@@ -304,12 +304,23 @@ export const SETTINGS = {
   'auth.setup': def({
     schema: z
       .object({
-        digest: z.string().max(200).optional(),
-        createdAt: iso.optional(),
+        /** `HMAC-SHA256(SESSION_PEPPER, token)` as 64 hex characters; absent once consumed. */
+        digest: z
+          .string()
+          .regex(/^[0-9a-f]{64}$/)
+          .optional(),
+        createdAt: iso,
         consumedAt: iso.optional(),
         userId: UuidSchema.optional(),
       })
-      .strict(), // M8b-T6 tightens
+      .strict()
+      .refine(
+        (v) =>
+          v.consumedAt === undefined
+            ? v.digest !== undefined && v.userId === undefined
+            : v.digest === undefined && v.userId !== undefined,
+        'an open setup has a digest only; a consumed one has consumedAt and userId only',
+      ),
     defaultValue: noDefault,
     writers: ['api', 'worker'],
   }),

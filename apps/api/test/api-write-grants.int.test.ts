@@ -18,6 +18,8 @@ import type { LightMyRequestResponse } from 'fastify';
 import type { OpenAPIV3 } from 'openapi-types';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { setupTokenDigest } from '../src/services/setup.js';
+
 import { FixtureWeb, rssDocument } from './support/fixture-web.js';
 import {
   TEST_METRICS_TOKEN,
@@ -193,6 +195,33 @@ const CASES: Record<string, Case> = {
       email: user.email,
       code: lastCode(user.email),
     });
+  },
+  'POST /setup/complete': async () => {
+    // Setup is open only without an active admin: demote them for the call, then restore.
+    const admins = await h.owner.query<{ id: string }>(
+      `UPDATE users SET role = 'user' WHERE role = 'admin' RETURNING id::text AS id`,
+    );
+    const token = 'g'.repeat(43);
+    const email = `setup-${randomUUID()}@example.test`;
+    await h.owner.query(
+      `INSERT INTO settings (key, value) VALUES ('auth.setup', $1::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [
+        JSON.stringify({
+          digest: setupTokenDigest(h.config.sessionPepper, token),
+          createdAt: new Date().toISOString(),
+        }),
+      ],
+    );
+    try {
+      return await apiClient(h.server).post('/setup/complete', { token, email });
+    } finally {
+      await h.owner.query(`DELETE FROM settings WHERE key = 'auth.setup'`);
+      await h.owner.query(`DELETE FROM users WHERE email = $1`, [email]);
+      await h.owner.query(`UPDATE users SET role = 'admin' WHERE id = ANY($1::uuid[])`, [
+        admins.rows.map((r) => r.id),
+      ]);
+    }
   },
   'POST /auth/logout': async () =>
     apiClient(h.server, await createTestUser(h)).post('/auth/logout'),
