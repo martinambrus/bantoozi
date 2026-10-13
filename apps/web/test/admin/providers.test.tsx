@@ -439,6 +439,28 @@ describe('provider accounts (spec 09 §8)', () => {
     expect(app.unhandled).toEqual([]);
   });
 
+  it('frees Validate when no worker picks the validation up within two minutes', async () => {
+    vi.useFakeTimers({ now: NOW, shouldAdvanceTime: true });
+    const server: Server = { items: [jevCredential(), ollamaCredential()] };
+    const app = await openProviders(server, {
+      'POST /admin/engine/credentials/:provider/validate': () =>
+        json(202, { credential: server.items[0] }),
+    });
+    const validate = () => panel().getByRole('button', { name: 'Validate' });
+
+    await app.user.click(validate());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(validate()).toHaveAttribute('aria-busy', 'true');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(115_000);
+    });
+    expect(validate()).toBeEnabled();
+    expect(validate()).not.toHaveAttribute('aria-busy');
+  });
+
   it('stops polling at an inconclusive result and offers to validate again', async () => {
     vi.useFakeTimers({ now: NOW, shouldAdvanceTime: true });
     const server: Server = { items: [jevCredential(), ollamaCredential()] };

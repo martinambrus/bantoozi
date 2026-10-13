@@ -442,6 +442,42 @@ describe('runtime editor busy states', () => {
     expect(screen.queryByText('Workers are restarting to apply the change…')).toBeNull();
   });
 
+  it('gives a restart that begins again a fresh window', async () => {
+    let pending = true;
+    let reads = 0;
+    const app = await open(
+      '/admin/settings',
+      {
+        'GET /admin/settings': () => {
+          reads += 1;
+          return json(200, {
+            ...makeSettings({ workers: [worker({ pendingRestart: pending })] }),
+            values: { ...SETTINGS_VALUES },
+          });
+        },
+      },
+      {},
+    );
+    expect(await screen.findByText('Workers are restarting to apply the change…')).toBeVisible();
+    pending = false;
+    await wait(4_000);
+    expect(screen.queryByText('Workers are restarting to apply the change…')).toBeNull();
+
+    // A second restart, seen 100 s after the first began: it is followed past the first window.
+    await wait(96_000);
+    pending = true;
+    await act(async () => {
+      await app.queryClient.refetchQueries();
+    });
+    await wait(30_000);
+    const before = reads;
+    await wait(6_000);
+    expect(reads).toBeGreaterThan(before);
+    pending = false;
+    await wait(4_000);
+    expect(screen.queryByText('Workers are restarting to apply the change…')).toBeNull();
+  });
+
   it('keeps reading through a full worker heartbeat before it trusts "no restart pending"', async () => {
     let pending = false;
     const app = await open(
@@ -630,6 +666,28 @@ describe('feeds', () => {
     const settled = (app.calls('GET /admin/feeds') as unknown[]).length;
     await wait(15_000);
     expect(app.calls('GET /admin/feeds')).toHaveLength(settled);
+  });
+
+  it('stops following a reset feed once it has left the list (a status filter drops it)', async () => {
+    let gone = false;
+    let reads = 0;
+    const feed = makeFeed({ id: '42', title: 'Broken Blog', lastSuccessAt: T1, lastErrorAt: null });
+    const app = await open('/admin/feeds', {
+      'GET /admin/feeds': () => {
+        reads += 1;
+        return json(200, page(gone ? [] : [feed]));
+      },
+      'POST /admin/feeds/:id/reset': () => {
+        gone = true;
+        return json(200, { feed });
+      },
+    });
+    await screen.findByRole('table', { name: 'Feeds' });
+    await app.user.click(screen.getByRole('button', { name: 'Reset Broken Blog' }));
+    await wait(7_000);
+    const settled = reads;
+    await wait(15_000);
+    expect(reads).toBe(settled);
   });
 
   it('stops waiting for a fetch after two minutes', async () => {

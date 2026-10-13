@@ -161,7 +161,8 @@ export function AdminFeedsPage() {
     { refetchInterval: watching ? FETCH_POLL_MS : false },
   );
 
-  // A watch ends once its feed has been fetched again, or after the cap.
+  // A watch ends once its feed has been fetched again, once it has left the list (a reset feed is
+  // active again, so a status filter drops it; the rows hold every loaded page), or after the cap.
   useEffect(() => {
     const rows = feeds.rows;
     if (rows === undefined) return;
@@ -172,8 +173,9 @@ export function AdminFeedsPage() {
           if (at - watch.startedAt >= FETCH_WATCH_MS) return false;
           const row = rows.find((feed) => feed.id === id);
           return (
-            row === undefined ||
-            (row.lastSuccessAt === watch.lastSuccessAt && row.lastErrorAt === watch.lastErrorAt)
+            row !== undefined &&
+            row.lastSuccessAt === watch.lastSuccessAt &&
+            row.lastErrorAt === watch.lastErrorAt
           );
         }),
       );
