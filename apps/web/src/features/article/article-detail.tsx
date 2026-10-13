@@ -30,7 +30,7 @@ import {
 import { Paragraphs, SavedCopy } from './article-body.js';
 import { CapturePanel } from './capture-panel.js';
 import { DetailActions } from './detail-actions.js';
-import { httpUrl } from './http-url.js';
+import { httpUrl, httpsUrl } from './http-url.js';
 import { ImagePolicyPanel } from './image-policy-panel.js';
 import { articleKeys } from './query-keys.js';
 import { useArticleActions } from './use-article-actions.js';
@@ -129,6 +129,26 @@ function DetailContent({ data, imagesAllowed, snapshot }: DetailContentProps) {
         <p className="text-sm text-slate-600 dark:text-slate-300">{t('detail.noPreview')}</p>
       )}
     </div>
+  );
+}
+
+/**
+ * The article's own image (`imageUrl`, spec 03 §6.3) above its text, under the same policy as the
+ * list's thumbnail: stored text holds no images in the beta, so this is the only one the detail can
+ * show (D-233). An image the publisher no longer serves leaves no broken box.
+ */
+function LeadImage({ url }: { url: URL }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <img
+      src={url.href}
+      alt=""
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+      className="h-auto max-h-96 max-w-full self-start rounded-lg object-contain"
+    />
   );
 }
 
@@ -232,6 +252,7 @@ function DetailView({ item: row, sourceFeedId, saved = false, onWhyThis }: Artic
     imageSource === null || imageSource.effectiveImagesAllowed
       ? null
       : imageSource.mediaPolicyFeedId;
+  const leadImage = imageSource?.effectiveImagesAllowed === true ? httpsUrl(shown.imageUrl) : null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -240,6 +261,7 @@ function DetailView({ item: row, sourceFeedId, saved = false, onWhyThis }: Artic
           {t('detail.by', { author: shown.author })}
         </p>
       )}
+      {leadImage === null ? null : <LeadImage key={leadImage.href} url={leadImage} />}
       <DetailBody
         detail={detail}
         offline={offline}

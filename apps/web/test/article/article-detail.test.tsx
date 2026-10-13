@@ -1305,6 +1305,94 @@ describe('ArticleDetail image setting', () => {
   });
 });
 
+describe('ArticleDetail lead image', () => {
+  const PICTURED = { imageUrl: 'https://cdn.test/lead.jpg', mediaPolicyFeedId: '7' };
+  const leadImage = () => document.querySelector('img[src="https://cdn.test/lead.jpg"]');
+
+  it('shows the image of the article above its text while images are allowed', async () => {
+    renderDetail(makeItem({ ...PICTURED, effectiveImagesAllowed: true }));
+    await screen.findByRole('button', { name: 'Read original' });
+    const image = leadImage();
+    expect(image).not.toBeNull();
+    expect(image).toHaveAttribute('alt', '');
+    expect(image).toHaveAttribute('referrerpolicy', 'no-referrer');
+    expect(image).toHaveAttribute('loading', 'lazy');
+  });
+
+  it('asks for no image while images are not allowed', async () => {
+    renderDetail(makeItem({ ...PICTURED, effectiveImagesAllowed: false }));
+    expect(await screen.findByText("Images from this feed aren't loaded.")).toBeInTheDocument();
+    expect(document.querySelector('img')).toBeNull();
+  });
+
+  it('loads no image from a plain http address', async () => {
+    renderDetail(
+      makeItem({ ...PICTURED, imageUrl: 'http://cdn.test/lead.jpg', effectiveImagesAllowed: true }),
+    );
+    await screen.findByRole('button', { name: 'Read original' });
+    expect(document.querySelector('img')).toBeNull();
+  });
+
+  it('leaves no broken image when the publisher does not serve it', async () => {
+    renderDetail(makeItem({ ...PICTURED, effectiveImagesAllowed: true }));
+    await screen.findByRole('button', { name: 'Read original' });
+    fireEvent.error(leadImage()!);
+    expect(leadImage()).toBeNull();
+  });
+
+  it('appears once the feed allows its images', async () => {
+    const blocked = makeItem({ ...PICTURED, effectiveImagesAllowed: false });
+    let allowed = false;
+    const { user } = renderDetail(
+      blocked,
+      {},
+      {
+        routes: {
+          'GET /articles/:id': () =>
+            json(200, makeDetail({ ...blocked, effectiveImagesAllowed: allowed })),
+          'PUT /feed-preferences/:feedId': () => {
+            allowed = true;
+            return json(200, { feedId: '7', imagePolicy: 'allow', effectiveImagesAllowed: true });
+          },
+        },
+      },
+    );
+    await user.click(await screen.findByRole('button', { name: 'Change' }));
+    expect(leadImage()).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Always show images from this feed' }));
+    await waitFor(() => expect(leadImage()).not.toBeNull());
+  });
+
+  it('follows the choice kept with the saved copy in the bookmarks view', async () => {
+    const item = makeItem({
+      ...PICTURED,
+      effectiveImagesAllowed: false,
+      bookmarkedAt: '2026-05-31T09:00:00.000Z',
+    });
+    const snapshot = (effectiveImagesAllowed: boolean): BookmarkSnapshot => ({
+      id: '900',
+      sourceUrl: null,
+      title: item.title,
+      author: null,
+      publishedAt: null,
+      capturedAt: '2026-06-01T12:00:00.000Z',
+      contentRevision: '1',
+      completeness: 'complete',
+      text: 'Saved text.',
+      html: null,
+      mediaPolicyFeedId: '7',
+      effectiveImagesAllowed,
+    });
+    renderDetail(
+      item,
+      { saved: true },
+      { routes: detailRoute(item, { bookmarkSnapshot: snapshot(true) }) },
+    );
+    await screen.findByText('Saved text.');
+    expect(leadImage()).not.toBeNull();
+  });
+});
+
 describe('ArticleDetail in Slovak', () => {
   it('speaks Slovak', async () => {
     const item = makeItem({

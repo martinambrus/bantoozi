@@ -158,7 +158,8 @@ login without leaking the previous account's UI. Slow classification leaves arti
 - **Label suggestion chips:** dashed outline; tap to assign.
 - **Cluster badge:** "+3 sources", which expands to the other members.
 - **Rating state:** 👍/👎 highlighted.
-- **Expanding** an item shows the sanitized `excerptHtml` or `bodyLead`, a "Read original" button (opens
+- **Expanding** an item shows the article's `imageUrl` above its text under the same image policy as
+  the thumbnail (D-233), the sanitized `excerptHtml` or `bodyLead`, a "Read original" button (opens
   the URL in a new tab and calls `/open`), and the action bar: 👍 👎 🔖 label, Why this?, Mute story,
   more (block feed/domain/author, boost feed).
 - **Linkless items:** remain readable/rateable/bookmarkable; omit "Read original" and domain-based
@@ -489,9 +490,9 @@ JSON log's `msg` to a file, the spec reads the setup token from it, completes `/
    no archived image/media/attachment binary or embedded image data is included, even when that
    feed allows normal remote images. Partial/failed capture remains visibly distinct, and another
    account cannot read the snapshot.
-9. **Remembered images:** global images off, per-feed Always allow → the list's thumbnails load and
-   the detail no longer says that this feed's images are blocked (stored article HTML holds no images
-   in the beta, spec 03 §6.3; D-153); reload/login on another context and unsubscribe → bookmarked
+9. **Remembered images:** global images off, per-feed Always allow → the list's thumbnails and the
+   detail's lead image load and the detail no longer says that this feed's images are blocked (stored
+   article HTML holds no images in the beta, spec 03 §6.3; D-153, D-233); reload/login on another context and unsubscribe → bookmarked
    saved view keeps that source choice.
    Always block overrides global on. Inherit resets to the global value; no blocked placeholder
    secretly triggers a network request.

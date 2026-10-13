@@ -2210,3 +2210,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   value it showed, which is stale when another admin changed a compound setting (`question_sets.active`,
   `engine.laya`) after the page loaded. A replayed idempotency receipt from before this field answers `queued: []`.
   Spec 08 updated.
+- D-233: 2026-10-13 (owner request) — The expanded article shows its `imageUrl` above the text. Stored article HTML
+  holds no images in the beta (spec 03 §6.3) and spec 09 §3.2 gave the detail no image of its own (D-153), so after
+  "Always show images from this feed" the list's thumbnails loaded while the reading pane stayed bare. The lead image
+  follows the same policy as the thumbnail: `effectiveImagesAllowed` of the item, or of the saved copy in the
+  Bookmarks view; https only; `referrerpolicy="no-referrer"`, lazy loading and an empty alt; one the publisher no
+  longer serves is removed instead of showing a broken box. Spec 09 §3.2 and §9 scenario 9 updated.

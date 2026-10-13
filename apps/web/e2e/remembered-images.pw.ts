@@ -63,8 +63,8 @@ async function subscriptionOf(user: APIRequestContext, feedId: string): Promise<
 
 /**
  * The image of a list row (not its feed icon). Embedded images never reach the stored text of an
- * article in the beta (spec 03 §6.3), so this thumbnail is where the reader sees whether images are
- * loaded; the open article shows the same decision as the "aren't loaded" note.
+ * article in the beta (spec 03 §6.3), so this thumbnail and the same image above the open article's
+ * text (D-233) are where the reader sees whether images are loaded.
  */
 function thumbnail(row: Locator, item: ImageItem): Locator {
   return row.locator(`img[src$="${item.imagePath}"]`);
@@ -136,6 +136,7 @@ test('remembered images: the feed choice beats the global setting and outlives t
     const pane = await openArticle(page, glacier.title);
     await expect(pane.getByRole('button', { name: 'Read original' })).toBeVisible();
     await expect(pane.getByText(NOT_LOADED)).toHaveCount(0);
+    await expectImageLoaded(pane.locator(`img[src$="${glacier.imagePath}"]`));
     expect(await detailAllowsImages(user, glacierArticle.id)).toBe(true);
   });
 
