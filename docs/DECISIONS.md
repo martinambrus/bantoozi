@@ -2216,3 +2216,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   follows the same policy as the thumbnail: `effectiveImagesAllowed` of the item, or of the saved copy in the
   Bookmarks view; https only; `referrerpolicy="no-referrer"`, lazy loading and an empty alt; one the publisher no
   longer serves is removed instead of showing a broken box. Spec 09 §3.2 and §9 scenario 9 updated.
+- D-234: 2026-10-13 (owner request) — A "Show read" switch beside Simple mode, also in Settings → Lists, saved as the
+  new preference `showRead` (default false; old accounts read it as false, no migration). While it is on, the unread
+  views (every lane but Bookmarks and Hidden) ask `GET /articles` for `status=all`, which the API already offered, so
+  read and rated articles stay listed; a rated one no longer leaves after the 400 ms animation, a hidden one still
+  does (the server leaves hidden articles out of those lanes either way). The list with read articles is cached and
+  kept on the device apart from the unread one. Counts stay unread counts. Specs 08 §3.1 and 09 §3.1, §3.3 updated.

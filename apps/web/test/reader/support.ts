@@ -118,8 +118,14 @@ export function readerServer(options: ReaderOptions) {
     'POST /articles/:id/read': (_request, params) =>
       actionResponse(write(params['id'], { readAt: AS_OF })),
     'POST /articles/:id/rating': (request, params) => {
-      const { rating } = bodyOf(request) as { rating: 1 | -1 | null };
-      return ratingResponse(write(params['id'], { rating, readAt: AS_OF }));
+      const { rating, hide } = bodyOf(request) as { rating: 1 | -1 | null; hide?: boolean };
+      return ratingResponse(
+        write(params['id'], {
+          rating,
+          readAt: AS_OF,
+          ...(hide === true ? { archivedAt: AS_OF } : {}),
+        }),
+      );
     },
     ...options.routes,
   };

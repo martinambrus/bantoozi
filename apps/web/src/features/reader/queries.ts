@@ -7,7 +7,14 @@ import { routes } from '../../api/routes.js';
 import { useAccountId } from '../../session/context.js';
 import { articleKeys } from '../article/query-keys.js';
 import { subscriptionsKey } from '../feeds/subscriptions.js';
-import { scopeOf, usesSort, usesTier, type ReaderView, type ViewScope } from './view.js';
+import {
+  listsUnread,
+  scopeOf,
+  usesSort,
+  usesTier,
+  type ReaderView,
+  type ViewScope,
+} from './view.js';
 
 export const PAGE_SIZE = 30;
 
@@ -16,28 +23,34 @@ export interface ListFilter extends ViewScope {
   lane: ArticleViewLane;
   minTier?: number;
   sort?: 'score' | 'date';
+  status?: 'unread' | 'all';
 }
 
-type Settings = Pick<UserPreferences, 'defaultTier' | 'sort'>;
+type Settings = Pick<UserPreferences, 'defaultTier' | 'sort' | 'showRead'>;
 
-/** Spec 09 §3.1: the tier filters the lanes that have tiers, the sort only For you. */
+/**
+ * Spec 09 §3.1: the tier filters the lanes that have tiers, the sort only For you; "Show read" asks
+ * the unread lanes for the read articles too (D-234).
+ */
 export function listFilter(view: ReaderView, settings: Settings): ListFilter {
   return {
     lane: view.lane,
     ...scopeOf(view),
     ...(usesTier(view.lane) ? { minTier: settings.defaultTier } : {}),
     ...(usesSort(view.lane) ? { sort: settings.sort } : {}),
+    ...(listsUnread(view.lane) && settings.showRead ? { status: 'all' as const } : {}),
   };
 }
 
-/** The cache key of the pages of the view `which` (see `viewKey`) at a tier and a sort. */
+/** The cache key of the pages of the view `which` (see `viewKey`) at a tier, a sort and a status. */
 export function articleListKey(
   accountId: string,
   which: string,
   minTier: number | undefined,
   sort: ListFilter['sort'],
+  status: ListFilter['status'],
 ) {
-  return [...articleKeys.all(accountId), 'list', which, { minTier, sort }] as const;
+  return [...articleKeys.all(accountId), 'list', which, { minTier, sort, status }] as const;
 }
 
 /** What says how much is unread: the counts of the lanes, and each feed's in `GET /subscriptions`. */

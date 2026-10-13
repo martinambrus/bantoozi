@@ -27,17 +27,20 @@ function without(ids: ReadonlySet<string>, id: string): ReadonlySet<string> {
   return rest;
 }
 
-const isMarked = (item: ArticleListItem) => item.rating !== null || item.archivedAt !== null;
+const isRatedOrHidden = (item: ArticleListItem) => item.rating !== null || item.archivedAt !== null;
+const isHidden = (item: ArticleListItem) => item.archivedAt !== null;
 
 /**
  * Which rows to show in a list of unread articles: one that is rated or hidden leaves after the exit
- * animation, one that is only read stays until the list is loaded again (spec 09 §3.1, §3.3).
+ * animation, one that is only read stays until the list is loaded again (spec 09 §3.1, §3.3). With
+ * "Show read" only a hidden one leaves (D-234).
  */
 function useExitingRows(
   items: readonly ArticleListItem[],
   firstPage: unknown,
   listRef: React.RefObject<HTMLUListElement | null>,
   enabled: boolean,
+  isMarked: (item: ArticleListItem) => boolean,
 ) {
   const store = useReaderActions();
   // Every change of what the rows show comes through the store.
@@ -96,7 +99,7 @@ function useExitingRows(
         );
       }
     }
-  }, [enabled, items, store, listRef, firstPage, version]);
+  }, [enabled, items, store, listRef, firstPage, version, isMarked]);
 
   useEffect(() => {
     const pending = timers.current;
@@ -133,13 +136,14 @@ export interface VisibleRows {
 }
 
 /** The rows the view shows, worked out beside the page so that the header counts the same ones. */
-export function useVisibleRows(view: ReaderView, list: ReaderList): VisibleRows {
+export function useVisibleRows(view: ReaderView, list: ReaderList, showRead: boolean): VisibleRows {
   const listRef = useRef<HTMLUListElement>(null);
   const { visible, leaving } = useExitingRows(
     list.items,
     list.query.data?.pages[0],
     listRef,
     listsUnread(view.lane),
+    showRead ? isHidden : isRatedOrHidden,
   );
   return { visible, leaving, staying: visible.filter((item) => !leaving.has(item.id)), listRef };
 }

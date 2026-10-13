@@ -14,6 +14,7 @@ const fields = {
   defaultTier: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
   hideEverything: z.boolean(),
   simpleMode: z.boolean(),
+  showRead: z.boolean(),
   sort: z.enum(['score', 'date']),
   markReadOnExpand: z.boolean(),
   markReadOnRate: z.boolean(),
@@ -41,6 +42,8 @@ export interface UserPreferences {
   defaultTier: 1 | 2 | 3 | 4 | 5;
   hideEverything: boolean;
   simpleMode: boolean;
+  /** Unread lanes also list the articles already read or rated (D-234). */
+  showRead: boolean;
   sort: 'score' | 'date';
   markReadOnExpand: boolean;
   markReadOnRate: boolean;
@@ -64,6 +67,7 @@ export const DEFAULT_USER_PREFERENCES: Readonly<UserPreferences> = Object.freeze
   defaultTier: 1,
   hideEverything: false,
   simpleMode: false,
+  showRead: false,
   sort: 'score',
   markReadOnExpand: true,
   markReadOnRate: true,
@@ -84,6 +88,7 @@ export const UserPreferencesSchema: z.ZodType<UserPreferences> = z.object({
   defaultTier: fields.defaultTier.catch(DEFAULT_USER_PREFERENCES.defaultTier),
   hideEverything: fields.hideEverything.catch(DEFAULT_USER_PREFERENCES.hideEverything),
   simpleMode: fields.simpleMode.catch(DEFAULT_USER_PREFERENCES.simpleMode),
+  showRead: fields.showRead.catch(DEFAULT_USER_PREFERENCES.showRead),
   sort: fields.sort.catch(DEFAULT_USER_PREFERENCES.sort),
   markReadOnExpand: fields.markReadOnExpand.catch(DEFAULT_USER_PREFERENCES.markReadOnExpand),
   markReadOnRate: fields.markReadOnRate.catch(DEFAULT_USER_PREFERENCES.markReadOnRate),
@@ -127,6 +132,7 @@ export const UserPreferencesPatchSchema = z
     defaultTier: fields.defaultTier,
     hideEverything: fields.hideEverything,
     simpleMode: fields.simpleMode,
+    showRead: fields.showRead,
     sort: fields.sort,
     markReadOnExpand: fields.markReadOnExpand,
     markReadOnRate: fields.markReadOnRate,

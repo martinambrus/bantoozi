@@ -148,6 +148,8 @@ login without leaking the previous account's UI. Slow classification leaves arti
     `prefs.defaultTier`
   - sort toggle (score/date)
   - "Mark all read" (with confirmation) and the "Simple mode" toggle
+  - the "Show read" toggle in the unread views (`prefs.showRead`): the list asks for `status=all`, so
+    read and rated articles stay listed; only a hidden one leaves (D-234)
 
 ### 3.2 List item
 
@@ -201,7 +203,7 @@ login without leaking the previous account's UI. Slow classification leaves arti
   reason. Undo before submission cancels the pending action; after submission it uses the receipt.
   A later reason edit is a new mutation, never a changed body replayed under an old key.
 - **Rating** marks read (if `markReadOnRate`) and moves the item out of unread lists after a 400 ms
-  animation. **SHIFT + rate** or a long-press + rate also hides the item (`hide: true`).
+  animation, unless "Show read" is on. **SHIFT + rate** or a long-press + rate also hides the item (`hide: true`).
 - **Rating an already-rated item** in the same direction un-rates it (FeedIt behaviour).
 - **"Train the whole feed"** (feed view menu): like or dislike all visible unread items, with
   confirmation showing exact count; freeze up to 200 loaded visible ids/versions at confirmation.

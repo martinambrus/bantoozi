@@ -611,6 +611,33 @@ describe('leaving the list', () => {
     expect(rowTitles()).toEqual(['Article 1']);
   });
 
+  it('with Show read, keeps a rated article and still lets a hidden one leave', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { app } = await open({
+      path: '/read/for_you',
+      items: [item(1), item(2), item(3)],
+      me: makeMe({ preferences: { showRead: true } }),
+    });
+    expect(listQueries(app).at(-1)).toMatchObject({ lane: 'for_you', status: 'all' });
+    fireEvent.click(
+      within(await screen.findByRole('article', { name: 'Article 1' })).getByRole('button', {
+        name: 'Like',
+      }),
+    );
+    fireEvent.click(
+      within(screen.getByRole('article', { name: 'Article 2' })).getByRole('button', {
+        name: 'Like',
+      }),
+      { shiftKey: true },
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    expect(rowTitles()).toEqual(['Article 1', 'Article 3']);
+  });
+
   it('hands the focus to the next article when the focused one leaves', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await open({ path: '/read/for_you', items: [item(1), item(2)] });

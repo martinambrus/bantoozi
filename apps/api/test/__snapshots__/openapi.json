@@ -357,6 +357,10 @@
                               "default": false,
                               "type": "boolean"
                             },
+                            "showRead": {
+                              "default": false,
+                              "type": "boolean"
+                            },
                             "sort": {
                               "default": "score",
                               "type": "string",
@@ -515,6 +519,7 @@
                             "defaultTier",
                             "hideEverything",
                             "simpleMode",
+                            "showRead",
                             "sort",
                             "markReadOnExpand",
                             "markReadOnRate",
@@ -944,6 +949,10 @@
                               "default": false,
                               "type": "boolean"
                             },
+                            "showRead": {
+                              "default": false,
+                              "type": "boolean"
+                            },
                             "sort": {
                               "default": "score",
                               "type": "string",
@@ -1102,6 +1111,7 @@
                             "defaultTier",
                             "hideEverything",
                             "simpleMode",
+                            "showRead",
                             "sort",
                             "markReadOnExpand",
                             "markReadOnRate",
@@ -1535,6 +1545,10 @@
                           "default": false,
                           "type": "boolean"
                         },
+                        "showRead": {
+                          "default": false,
+                          "type": "boolean"
+                        },
                         "sort": {
                           "default": "score",
                           "type": "string",
@@ -1693,6 +1707,7 @@
                         "defaultTier",
                         "hideEverything",
                         "simpleMode",
+                        "showRead",
                         "sort",
                         "markReadOnExpand",
                         "markReadOnRate",
@@ -1890,6 +1905,9 @@
                         "type": "boolean"
                       },
                       "simpleMode": {
+                        "type": "boolean"
+                      },
+                      "showRead": {
                         "type": "boolean"
                       },
                       "sort": {
@@ -2118,6 +2136,10 @@
                           "default": false,
                           "type": "boolean"
                         },
+                        "showRead": {
+                          "default": false,
+                          "type": "boolean"
+                        },
                         "sort": {
                           "default": "score",
                           "type": "string",
@@ -2276,6 +2298,7 @@
                         "defaultTier",
                         "hideEverything",
                         "simpleMode",
+                        "showRead",
                         "sort",
                         "markReadOnExpand",
                         "markReadOnRate",
@@ -2538,6 +2561,10 @@
                               "default": false,
                               "type": "boolean"
                             },
+                            "showRead": {
+                              "default": false,
+                              "type": "boolean"
+                            },
                             "sort": {
                               "default": "score",
                               "type": "string",
@@ -2696,6 +2723,7 @@
                             "defaultTier",
                             "hideEverything",
                             "simpleMode",
+                            "showRead",
                             "sort",
                             "markReadOnExpand",
                             "markReadOnRate",

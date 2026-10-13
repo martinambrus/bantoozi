@@ -74,17 +74,18 @@ function listPages(
  */
 export function useArticleList(
   view: ReaderView,
-  settings: Pick<UserPreferences, 'defaultTier' | 'sort'>,
+  settings: Pick<UserPreferences, 'defaultTier' | 'sort' | 'showRead'>,
 ) {
   const api = useApi();
   const queryClient = useQueryClient();
   const accountId = useAccountId();
   const filter = listFilter(view, settings);
-  const which = viewKey(view);
-  const { minTier, sort } = filter;
+  const { minTier, sort, status } = filter;
+  // The device keeps the list with its read articles apart from the unread one.
+  const which = status === 'all' ? `${viewKey(view)}+read` : viewKey(view);
   const queryKey = useMemo(
-    () => articleListKey(accountId, which, minTier, sort),
-    [accountId, which, minTier, sort],
+    () => articleListKey(accountId, which, minTier, sort, status),
+    [accountId, which, minTier, sort, status],
   );
 
   const query = useInfiniteQuery({

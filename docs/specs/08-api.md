@@ -262,6 +262,7 @@ response or `GET /invites`. `POST /admin/waitlist/:id/invite` sends and reports 
   defaultTier: 1 | 2 | 3 | 4 | 5,              // default 1
   hideEverything: boolean,                      // default false: collapse the "Everything else" lane
   simpleMode: boolean,                          // default false (FeedIt Simple Mode)
+  showRead: boolean,                            // default false: unread lanes ask for status=all (D-234)
   sort: 'score' | 'date',                       // default 'score'
   markReadOnExpand: boolean,                    // default true
   markReadOnRate: boolean,                      // default true

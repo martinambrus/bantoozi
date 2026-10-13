@@ -162,7 +162,7 @@ describe('showing the saved list', () => {
     await screen.findByText('The excerpt of the article.');
 
     const cache = app.queryClient;
-    expect(cache.getQueryData(articleListKey(A, FOR_YOU, 1, 'score'))).toBeUndefined();
+    expect(cache.getQueryData(articleListKey(A, FOR_YOU, 1, 'score', undefined))).toBeUndefined();
     expect(cache.getQueryData(articleKeys.detail(A, '1', {}))).toBeUndefined();
     for (const query of cache.getQueryCache().getAll()) {
       const data = JSON.stringify(query.state.data ?? null);
@@ -266,7 +266,9 @@ describe('when the connection is back', () => {
     expect(rowTitles()).toEqual(['Article 7', 'Article 1']);
     expect(screen.queryByText(LINE)).toBeNull();
     expect(listQueries(app)).toHaveLength(before + 1);
-    expect(app.queryClient.getQueryData(articleListKey(A, FOR_YOU, 1, 'score'))).toBeDefined();
+    expect(
+      app.queryClient.getQueryData(articleListKey(A, FOR_YOU, 1, 'score', undefined)),
+    ).toBeDefined();
   });
 
   it('keeps the saved rows and the line until the live rows have arrived', async () => {

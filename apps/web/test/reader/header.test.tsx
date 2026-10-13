@@ -341,6 +341,37 @@ describe('Simple mode', () => {
   });
 });
 
+describe('Show read', () => {
+  it('saves the setting and asks for the list again with the read articles', async () => {
+    const { app } = await open({ path: '/read/for_you', items: [item(1)] });
+    const toggle = await screen.findByRole('switch', { name: 'Show read' });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(listQueries(app).at(-1)).not.toHaveProperty('status');
+
+    await app.user.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await waitFor(() => expect(app.calls(UPDATE_ME)).toHaveLength(1));
+    expect(bodyOf(app.calls(UPDATE_ME)[0]!)).toEqual({ preferences: { showRead: true } });
+    await waitFor(() =>
+      expect(listQueries(app).at(-1)).toEqual({
+        lane: 'for_you',
+        minTier: '1',
+        sort: 'score',
+        status: 'all',
+        limit: '30',
+      }),
+    );
+  });
+
+  it('is not in the views that list every article anyway', async () => {
+    await open({ path: '/read/bookmarks' });
+
+    await screen.findByRole('switch', { name: 'Simple mode' });
+    expect(screen.queryByRole('switch', { name: 'Show read' })).toBeNull();
+  });
+});
+
 describe('a sort or a Simple mode that could not be saved', () => {
   it('puts the sort back and says so', async () => {
     const { app } = await open({

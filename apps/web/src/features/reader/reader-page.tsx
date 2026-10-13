@@ -79,7 +79,7 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
   const { preferences } = useMe();
   const { title, subscription } = useViewTitle(view);
   const list = useArticleList(view, preferences);
-  const rows = useVisibleRows(view, list);
+  const rows = useVisibleRows(view, list, preferences.showRead);
   const scoped = useCounts(scopeOf(view), preferences.defaultTier);
   useObserveItems(list.items);
 

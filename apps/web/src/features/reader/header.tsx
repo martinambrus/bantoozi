@@ -21,7 +21,15 @@ import { MarkAllRead } from './mark-all-read.js';
 import { MoreMenu } from './more-menu.js';
 import { SCOPED_LANES, type ScopedLane } from './lanes.js';
 import { useSettingsWriter } from './reader-state.js';
-import { countOf, markReadLane, scopeOf, usesSort, usesTier, type ReaderView } from './view.js';
+import {
+  countOf,
+  listsUnread,
+  markReadLane,
+  scopeOf,
+  usesSort,
+  usesTier,
+  type ReaderView,
+} from './view.js';
 
 type Tier = 1 | 2 | 3 | 4 | 5;
 
@@ -205,6 +213,13 @@ export function ReaderHeader({
           checked={preferences.simpleMode}
           onCheckedChange={(simpleMode) => settings.change({ simpleMode })}
         />
+        {listsUnread(view.lane) ? (
+          <Switch
+            label={t('header.showRead')}
+            checked={preferences.showRead}
+            onCheckedChange={(showRead) => settings.change({ showRead })}
+          />
+        ) : null}
       </div>
     </div>
   );

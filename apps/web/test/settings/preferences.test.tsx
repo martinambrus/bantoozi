@@ -73,6 +73,12 @@ const CASES: Case[] = [
     explains: 'no excerpts and no thumbnails',
   },
   {
+    label: 'Show read articles',
+    kind: 'switch',
+    patch: { showRead: true },
+    explains: 'also show the articles you have read or rated',
+  },
+  {
     label: 'Mark as read when I open an article',
     kind: 'switch',
     patch: { markReadOnExpand: false },
@@ -171,7 +177,7 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
         (path) => !['theme', 'folderOrder', 'onboardingCompletedAt'].includes(path),
       );
       expect(CASES.flatMap((item) => leaves(item.patch)).sort()).toEqual(wanted.sort());
-      expect(prefs().getAllByRole('switch')).toHaveLength(8);
+      expect(prefs().getAllByRole('switch')).toHaveLength(9);
       expect(prefs().getAllByRole('radiogroup')).toHaveLength(9);
       for (const item of CASES) expect(control(item)).toBeVisible();
     });

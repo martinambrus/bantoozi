@@ -55,6 +55,10 @@
       "label": "Simple mode",
       "hint": "Lists show titles only, with no excerpts and no thumbnails."
     },
+    "showRead": {
+      "label": "Show read articles",
+      "hint": "Lists also show the articles you have read or rated, instead of only the unread ones."
+    },
     "markReadOnExpand": {
       "label": "Mark as read when I open an article",
       "hint": "An article you expand in a list counts as read."

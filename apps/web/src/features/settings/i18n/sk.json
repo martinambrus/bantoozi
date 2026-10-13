@@ -55,6 +55,10 @@
       "label": "Jednoduchý režim",
       "hint": "Zoznamy zobrazujú len nadpisy, bez úryvkov a miniatúr."
     },
+    "showRead": {
+      "label": "Zobrazovať prečítané články",
+      "hint": "Zoznamy ukazujú aj články, ktoré ste už prečítali alebo ohodnotili, nielen neprečítané."
+    },
     "markReadOnExpand": {
       "label": "Označiť ako prečítané pri otvorení článku",
       "hint": "Článok, ktorý v zozname rozbalíte, sa považuje za prečítaný."

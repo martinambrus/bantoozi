@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest", "--channel=stable", "--isolated=true", "--viewport=1920x1080"]
+    }
+  }
+}

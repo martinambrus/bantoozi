@@ -181,6 +181,7 @@ export function PreferencesSection() {
               <ChoiceSetting id="sort" text="sort" options={SORTS} />
               <ToggleSetting id="hideEverything" text="hideEverything" />
               <ToggleSetting id="simpleMode" text="simpleMode" />
+              <ToggleSetting id="showRead" text="showRead" />
             </Group>
             <Group title={t('preferences.groups.reading')}>
               <ToggleSetting id="markReadOnExpand" text="markReadOnExpand" />

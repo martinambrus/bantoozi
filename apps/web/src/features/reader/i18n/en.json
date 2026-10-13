@@ -51,6 +51,7 @@
     "sortScore": "Score",
     "sortDate": "Date",
     "simple": "Simple mode",
+    "showRead": "Show read",
     "recentActions": "Recent actions",
     "rateVisible_one": "Rate this visible article",
     "rateVisible_other": "Rate these {{count}} visible articles",
