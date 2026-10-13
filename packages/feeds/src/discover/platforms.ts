@@ -21,6 +21,8 @@ const YOUTUBE_CHANNEL_ID = /^UC[\w-]{22}$/;
 const YOUTUBE_PLAYLIST_ID = /^[\w-]{10,64}$/;
 /** A path segment safe to copy into another path: no separators, dots-only or encodings. */
 const SEGMENT = /^[\w.-]{1,100}$/;
+/** A Bluesky actor in a profile URL: a handle, or a `did:plc:` / `did:web:` identifier. */
+const BLUESKY_ACTOR = /^(?:[\w.-]{1,253}|did:(?:plc|web):[\w.:-]{1,200})$/;
 
 function link(url: string, title: string | null = null): PlatformFeedLink {
   return { url, title: cleanLabel(title) };
@@ -75,7 +77,12 @@ export function platformFeeds(input: string): PlatformFeedLink[] {
     return [link(`https://${host}/feed`)];
   }
 
-  if (host === 'bsky.app' && first === 'profile' && second !== undefined && SEGMENT.test(second)) {
+  if (
+    host === 'bsky.app' &&
+    first === 'profile' &&
+    second !== undefined &&
+    BLUESKY_ACTOR.test(second)
+  ) {
     return [link(`https://bsky.app/profile/${second}/rss`)];
   }
 

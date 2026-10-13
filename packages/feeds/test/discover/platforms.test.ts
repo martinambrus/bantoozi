@@ -38,6 +38,10 @@ describe('platformFeeds', () => {
     expect(urls('https://bsky.app/profile/alice.bsky.social')).toEqual([
       'https://bsky.app/profile/alice.bsky.social/rss',
     ]);
+    expect(urls('https://bsky.app/profile/did:plc:dhoindtmxo5mjmbdlovmt6o4')).toEqual([
+      'https://bsky.app/profile/did:plc:dhoindtmxo5mjmbdlovmt6o4/rss',
+    ]);
+    expect(urls('https://bsky.app/profile/did:key:abc')).toEqual([]);
     expect(urls('https://github.com/owner/repo')).toEqual([
       'https://github.com/owner/repo/releases.atom',
       'https://github.com/owner/repo/tags.atom',

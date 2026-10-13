@@ -834,4 +834,22 @@ describe('discoverFeed: well-known platforms', () => {
     const result = await discoverFeed('https://www.reddit.com/r/news', web.deps());
     expect(result).toMatchObject({ ok: false, code: 'FEED_HTTP_403' });
   });
+
+  it('derives the platform feed from the redirect destination of a failed page', async () => {
+    const web = new FakeWeb()
+      .route('https://short.example/x', {
+        fail: 'FEED_HTTP_403',
+        // what safeFetch reports: the URL being fetched when the redirect chain failed
+        message: 'blocked',
+      })
+      .route('https://www.reddit.com/r/news/.rss', { body: atom('r/news') });
+    const deps = web.deps({
+      fetch: async (url, options) => {
+        const result = await web.fetch(url, options);
+        return result.ok ? result : { ...result, finalUrl: 'https://www.reddit.com/r/news' };
+      },
+    });
+    const result = success(await discoverFeed('https://short.example/x', deps));
+    expect(result.candidates.map((candidate) => candidate.title)).toEqual(['r/news']);
+  });
 });

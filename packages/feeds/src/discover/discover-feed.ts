@@ -240,10 +240,12 @@ class Discovery {
     }
     if (failure !== undefined && attempts[0] !== undefined) {
       // A platform may refuse bots on its pages yet serve the feed it is known to have (D-231).
-      const rescued = await this.verifyAll(
-        this.queue(platformFeeds(attempts[0]), new Set<string>()),
-        false,
-      );
+      // The redirect destination first (a short link may lead to a platform page), then the input.
+      const known = [
+        ...(failure.finalUrl === undefined ? [] : platformFeeds(failure.finalUrl)),
+        ...platformFeeds(attempts[0]),
+      ];
+      const rescued = await this.verifyAll(this.queue(known, new Set<string>()), false);
       const feeds = feedsOf(rescued);
       if (feeds.length > 0) return conclude(feeds);
     }
