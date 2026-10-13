@@ -130,7 +130,7 @@ in the same outbox transaction. This makes an inaugural rating learnable when sl
   the last 7 days (others catch up lazily, spec 06 §7). Switching to `english` rematches cards whose
   translation already exists; `house.translate-cards` translates the missing ones and rematches
   them as they publish (spec 07 §5). A model-pin change is detected by the first worker that starts
-  with a new `TYPESAFE_MODEL` or a different LLM fallback state (switched on or off, or new Ollama
+  with a new effective Jev model (`engine.typesafe_model` or `TYPESAFE_MODEL`) or a different LLM fallback state (switched on or off, or new Ollama
   fallback models while on; their answers are cache entries too): under a row lock it records
   `settings['engine.model_pin']` and enqueues both `house.reenrich` and `house.rematch` once
   (spec 11 §8); that rebuild runs in bulk priority and never through the LLM fallback (D-171). A
@@ -585,7 +585,7 @@ from that request can satisfy this worker only when every current input fingerpr
    matches **all** §2 fingerprints and an approved primary engine/model. LLM/prefilter answers are
    provisional and cannot suppress recovery. Read the active configuration once for this job snapshot.
 3. **Prefilter (optional, disabled until G1 validates recall).** With more than
-   `PREFILTER_MIN_CARDS` (60) and current primary facets, keep a card when `topic_ids` is empty,
+   the effective `engine.prefilter_min_cards` (setting, else `PREFILTER_MIN_CARDS`, else 60) and current primary facets, keep a card when `topic_ids` is empty,
    any topic's L1 (`topic_id.split('.')[0]`) has `t1.<l1> ≥ 0.05`, or the card is a label. Other pairs
    may receive `engine='prefilter', p=0` as a storage-compatible **unknown/provisional marker**.
    It is not a measured zero and never justifies hidden/Everything-else placement, anti-interest

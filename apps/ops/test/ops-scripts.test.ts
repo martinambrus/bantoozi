@@ -98,7 +98,9 @@ describe('backup and restore scripts (static checks)', () => {
     expect(release).toBeLessThan(backup.lastIndexOf('STAGE=prune'));
     const trap = backup.slice(backup.indexOf('on_exit() {'), backup.indexOf('trap on_exit EXIT'));
     expect(trap).toContain('release_erasure_lock');
-  });
+    // The cost is the first dynamic `import('@bantoozi/shared')` (the whole barrel, transformed cold
+    // under coverage on a CI runner), not the assertions: it needs more than the default 5 s there.
+  }, 30_000);
 
   it('keeps the writer and the retention credentials apart', () => {
     const backup = read('infra/scripts/backup.sh');
@@ -147,10 +149,13 @@ describe('deploy, maintenance and host-health scripts (static checks)', () => {
     expect(deploy.indexOf('REQUIRED=(')).toBeLessThan(deploy.indexOf('backup.sh'));
   });
 
-  it('refuses an off-volume ledger path and a missing admin list before any backup, and gives the queue job its own deadline (R15)', () => {
+  it('refuses an off-volume ledger path before any backup, no longer requires ADMIN_EMAILS (M8b-T7), and gives the queue job its own deadline (R15)', () => {
     const deploy = read('infra/scripts/deploy.sh');
     const required = deploy.slice(deploy.indexOf('REQUIRED=('), deploy.indexOf('missing=()'));
-    expect(required).toContain('ADMIN_EMAILS');
+    // ADMIN_EMAILS is bootstrap only (owner 2026-10-13): optional; negative control: the rest stay required.
+    expect(required).not.toContain('ADMIN_EMAILS');
+    expect(required).toContain('DELETION_LEDGER_PATH');
+    expect(required).toContain('SMTP_URL');
     const check = deploy.indexOf('/var/lib/bantoozi/ledger/');
     expect(check).toBeGreaterThan(deploy.indexOf('missing=()'));
     expect(check).toBeLessThan(deploy.indexOf('backup.sh'));
@@ -163,6 +168,21 @@ describe('deploy, maintenance and host-health scripts (static checks)', () => {
     const smoke = read('infra/scripts/restore-test.sh');
     expect(smoke).toContain('DELETION_LEDGER_PATH=/var/lib/bantoozi/ledger/deletion-ledger.age');
     expect(smoke).toContain('--tmpfs /var/lib/bantoozi/ledger');
+  });
+
+  it('warns in the smoke when no active admin exists, without failing the deploy (M8b-T7)', () => {
+    const deploy = read('infra/scripts/deploy.sh');
+    const start = deploy.indexOf('smoke() {');
+    const smoke = deploy.slice(start, deploy.indexOf('smoke_queue() {'));
+    expect(start).toBeGreaterThan(0);
+    // It looks for an active admin (role admin, not soft-deleted) and says so when there is none.
+    expect(smoke).toMatch(/role\s*=\s*'admin'/u);
+    expect(smoke).toMatch(/deleted_at IS NULL/u);
+    expect(smoke).toMatch(/echo "smoke: WARNING[^"\n]*admin/iu);
+    // A warning only: the admin check must not set SMOKE_FAIL (the first-run setup creates the admin).
+    const line = smoke.split('\n').find((l) => /WARNING[^\n]*admin/iu.test(l)) ?? '';
+    expect(line).not.toContain('SMOKE_FAIL');
+    expect(line).not.toMatch(/return 1/u);
   });
 
   it('gates the deploy on stored settings and turns maintenance on when compatibility is not shown', () => {
@@ -283,6 +303,50 @@ describe('compose stack for the backup tooling', () => {
     for (const file of ['infra/env/prod.example.env', 'infra/env/local-rehearsal.env.example']) {
       expect(read(file)).toMatch(/^BACKUP_S3_SECRET_KEY=$/mu);
     }
+  });
+});
+
+describe('production env template and placeholders (M8b-T12)', () => {
+  it('ships empty role passwords and ADMIN_EMAILS, and deploy.sh treats changeme values as placeholders', () => {
+    const template = read('infra/env/prod.example.env');
+    for (const key of [
+      'POSTGRES_PASSWORD',
+      'BANTOOZI_OWNER_PASSWORD',
+      'BANTOOZI_APP_PASSWORD',
+      'BANTOOZI_WORKER_PASSWORD',
+      'ADMIN_EMAILS',
+    ]) {
+      expect(template).toMatch(new RegExp(`^${key}=$`, 'mu'));
+    }
+    const deploy = read('infra/scripts/deploy.sh');
+    const patterns = deploy.match(/case "\$val" in ([^)]*)\)/u)?.[1] ?? '';
+    expect(patterns).toContain('changeme*');
+    expect(patterns).toContain('change-me*');
+    // The public development role passwords are refused too (PR #28 review).
+    for (const pair of [
+      'POSTGRES_PASSWORD=postgres',
+      'BANTOOZI_OWNER_PASSWORD=bantoozi_owner',
+      'BANTOOZI_APP_PASSWORD=bantoozi_app',
+      'BANTOOZI_WORKER_PASSWORD=bantoozi_worker',
+    ]) {
+      expect(deploy).toContain(pair);
+    }
+    expect(deploy.indexOf('for pair in POSTGRES_PASSWORD=postgres')).toBeLessThan(
+      deploy.indexOf('variables still hold placeholder values'),
+    );
+  });
+
+  it('passes PROVIDER_HOST_ALLOWLIST to the api and the workers and WORKER_SELF_RESTART to the workers', () => {
+    const compose = read('infra/compose.yml');
+    const workerEnv = compose.slice(
+      compose.indexOf('x-worker-env:'),
+      compose.indexOf('\n\n', compose.indexOf('x-worker-env:')),
+    );
+    expect(workerEnv).toContain('PROVIDER_HOST_ALLOWLIST: ${PROVIDER_HOST_ALLOWLIST:-}');
+    expect(workerEnv).toContain('WORKER_SELF_RESTART: ${WORKER_SELF_RESTART:-true}');
+    expect(
+      compose.match(/PROVIDER_HOST_ALLOWLIST: \$\{PROVIDER_HOST_ALLOWLIST:-\}/gu),
+    ).toHaveLength(2);
   });
 });
 

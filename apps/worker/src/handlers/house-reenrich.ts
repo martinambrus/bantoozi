@@ -21,6 +21,7 @@ import { languageModeOf, loadClassificationConfig } from '../classify/config.js'
 import { nowOf, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import { recordRebuildProgress } from './house-purge-auth.js';
 import type { QueueHandler } from './index.js';
+import { assertWorkerCurrent, lockWorkerCurrent } from '../stale-worker.js';
 
 const JOB = 'house.reenrich' as const;
 /** Window articles examined per run (spec 11 §6); the rest continues in a follow-up job. */
@@ -49,6 +50,7 @@ export function createReenrichHandler(
   classification: ClassificationDeps,
 ): QueueHandler<'house.reenrich'> {
   return async (payload) => {
+    await assertWorkerCurrent(deps.db, classification);
     const started = nowOf(deps);
     const since =
       payload.since ??
@@ -87,6 +89,9 @@ export function createReenrichHandler(
       const action = decideReenrich(article, config, classification.primaryModel);
       if (action === 'none') continue;
       await retryTransaction(deps.db, async (tx) => {
+        // Decisions rest on this process's model: a moved restart-class value or pin discards them.
+        const stale = await lockWorkerCurrent(tx, classification);
+        if (stale !== null) throw stale;
         const sender = workerOutbox(tx);
         if (action === 'translate') {
           await enqueueTranslate(

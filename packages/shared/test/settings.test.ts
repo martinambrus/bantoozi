@@ -24,6 +24,23 @@ const env: SettingEnvDefaults = {
   signupMode: 'invite',
 };
 
+/** The live runtime keys (M8b-T2): admin-writable, `null` resets to the environment value. */
+const RUNTIME_KEYS_PINNED = [
+  'engine.typesafe_model',
+  'engine.typesafe_base_url',
+  'engine.typesafe_price_per_mtok_usd',
+  'engine.concurrency',
+  'engine.llm_fallback_enabled',
+  'engine.ollama_models',
+  'engine.ollama_base_url',
+  'engine.ollama_max_concurrency',
+  'engine.prefilter_min_cards',
+  'ingest.max_age_days',
+  'fetch.limits',
+  'api.rate_limits_enabled',
+  'translate.libretranslate_url',
+];
+
 /** The key registry of spec 02 §2 (static keys; `metrics.daily.<date>` is tested separately). */
 const SPEC_KEYS = [
   'engine.daily_budget_usd',
@@ -44,6 +61,21 @@ const SPEC_KEYS = [
   'house.progress',
   'alerts.state',
   'worker.heartbeat',
+  // M8b (docs/PLAN.md §14.2; spec 02 §2 is amended by M8b-T12)
+  'engine.typesafe_model',
+  'engine.typesafe_base_url',
+  'engine.typesafe_price_per_mtok_usd',
+  'engine.concurrency',
+  'engine.llm_fallback_enabled',
+  'engine.ollama_models',
+  'engine.ollama_base_url',
+  'engine.ollama_max_concurrency',
+  'engine.prefilter_min_cards',
+  'ingest.max_age_days',
+  'fetch.limits',
+  'api.rate_limits_enabled',
+  'translate.libretranslate_url',
+  'auth.setup',
 ];
 
 describe('settings registry (spec 02 §2)', () => {
@@ -143,6 +175,7 @@ describe('settings registry (spec 02 §2)', () => {
         'ranker.thresholds',
         'question_sets.active',
         'signup_mode',
+        ...RUNTIME_KEYS_PINNED,
       ].sort(),
     );
     expect([...SEEDED_SETTING_KEYS].sort()).toEqual([

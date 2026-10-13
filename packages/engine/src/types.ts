@@ -125,6 +125,11 @@ export interface RouterStatus {
 export interface EngineRouter {
   ask(req: EngineRequest, signal?: AbortSignal): Promise<EngineOutcome>;
   status(): Promise<RouterStatus>;
+  /**
+   * Apply live settings (M8b-T4): `concurrency` resizes the engine attempt semaphore. Synchronous;
+   * throws RangeError unless a positive integer. Attempts in flight keep their permits.
+   */
+  reconfigure(options: { concurrency: number }): void;
   /** Advisory only, never authorization to send. */
   canSpend(estimateUsd: number, priority: Priority): Promise<boolean>;
   /** Paid external calls MUST reserve before HTTP. */

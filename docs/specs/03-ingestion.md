@@ -324,8 +324,8 @@ separate tenant-isolated design before support, not an exception to this fetcher
    invalid `Location`; strip conditional validators on a change of request URL and never forward
    credentials/cookies. Article extraction checks robots for each destination before fetching it.
 4. **Limits:**
-   - headers timeout 10 s; total timeout `FETCH_TIMEOUT_MS` (20 s) for the entire redirect chain, DNS, decoding and body consumption, using one abort deadline
-   - body capped at `FETCH_MAX_BYTES` (5 MB), on **both compressed and decompressed** bytes; abort with
+   - headers timeout 10 s; total timeout `fetch.limits.timeoutMs` (else `FETCH_TIMEOUT_MS`, 20 s; a stored value applies to the next fetch) for the entire redirect chain, DNS, decoding and body consumption, using one abort deadline
+   - body capped at `fetch.limits.maxBytes` (else `FETCH_MAX_BYTES`, 5 MB), on **both compressed and decompressed** bytes; abort with
      `FEED_TOO_LARGE` when either is exceeded. Limit headers to 32 KiB and destroy/drain every response.
    - accepted encodings: gzip, deflate, br; explicitly decode the undici `request` stream once. Reject
      unsupported/corrupt encodings; never assume this low-level API decompresses automatically
@@ -562,7 +562,7 @@ For one fetch, in **one transaction per item**, so one bad item doesn't roll bac
    for destructive identity merge**. Generic titles, empty excerpts and reused site logos otherwise
    delete distinct articles. Store separate articles and let story clustering fold presentation.
 5. **Otherwise insert** the article:
-   - `pipeline_state = 'stale'` if `published_at` is older than `INGEST_MAX_AGE_DAYS` (default 14).
+   - `pipeline_state = 'stale'` if `published_at` is older than `ingest.max_age_days` (else `INGEST_MAX_AGE_DAYS`, default 14).
      Stored and visible; automatic inference is skipped. An explicitly selected training request may
      process a retained older article under spec 05's interactive demand contract.
    - Otherwise `'ingested'`, and the article is new.

@@ -1,8 +1,10 @@
 import {
+  closeOpenSetup,
   createInvites,
   listAdminInvites,
   findUserByEmail,
   lockAuthEmail,
+  lockSetup,
   lockWaitlistEntry,
   markWaitlistInvited,
   listAdminUsers,
@@ -110,6 +112,9 @@ export const accountRoutes: FastifyPluginAsyncZod = async (app) => {
       const { id } = request.params;
       let changed: string[] = [];
       const outcome = await request.mutate(async (tx) => {
+        // A promotion makes an active admin: the setup lock comes before the user rows (the lock
+        // order of every setup path) and closes an open setup token.
+        if (request.body.role === 'admin') await lockSetup(tx);
         const result = await updateAdminUser(tx, id, request.body);
         if (result.status === 'not_found') throw new AppError('NOT_FOUND', 'User not found');
         if (result.status === 'last_admin') {
@@ -118,6 +123,9 @@ export const accountRoutes: FastifyPluginAsyncZod = async (app) => {
           });
         }
         changed = result.changed;
+        if (request.body.role === 'admin' && result.user.deletedAt === null) {
+          await closeOpenSetup(tx, id);
+        }
         return {
           status: 200,
           body: { user: toUser(result.user), sessionsRevoked: result.sessionsRevoked },

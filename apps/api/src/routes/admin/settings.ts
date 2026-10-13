@@ -14,6 +14,7 @@ import {
   AdminSettingsPatchSchema,
   AdminSettingsSchema,
   AppError,
+  RUNTIME_SETTING_KEYS,
   canonicalJson,
   enqueueLearn,
   enqueueReenrich,
@@ -21,18 +22,32 @@ import {
   enqueueTranslateCards,
   mergeRankerConfig,
   readSetting,
+  validateRuntimeSetting,
   type AdminSettingKey,
   type AdminSettings,
   type AdminSettingsPatch,
   type AdminSettingsPatchResult,
   type AdminSettingsValues,
+  type RuntimeSettingKey,
+  type RuntimeSettingsContext,
   type SettingEnvDefaults,
 } from '@bantoozi/shared';
-import { missingLanguagePairs } from '@bantoozi/translate';
+import {
+  OLLAMA_PRICES,
+  missingLanguagePairs,
+  type LibreTranslateClient,
+} from '@bantoozi/translate';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 
-import type { ApiConfig, ApiServices } from '../../context.js';
-import { auditLog, freshWorkers, iso, layaConsumerPresent } from './shared.js';
+import type { ApiConfig } from '../../context.js';
+import {
+  auditLog,
+  freshWorkerRuntimeDefaults,
+  freshWorkerStatuses,
+  freshWorkers,
+  iso,
+  layaConsumerPresent,
+} from './shared.js';
 
 /**
  * `GET/PATCH /admin/settings` (spec 08 §9): the allow-listed admin keys, each validated by its
@@ -54,27 +69,137 @@ export function settingEnvDefaults(config: ApiConfig): SettingEnvDefaults {
   };
 }
 
+const isRuntimeKey = (key: string): key is RuntimeSettingKey =>
+  (RUNTIME_SETTING_KEYS as readonly string[]).includes(key);
+type BaseKey = Exclude<AdminSettingKey, RuntimeSettingKey>;
+const BASE_KEYS = ADMIN_PATCHABLE_SETTING_KEYS.filter((key): key is BaseKey => !isRuntimeKey(key));
+const STORED_KEYS = [...ADMIN_PATCHABLE_SETTING_KEYS, VERSION_KEY];
+
+/** Changing these re-enriches and re-matches the corpus, so the admin must confirm (M8b-T2). */
+const MODEL_AFFECTING: readonly RuntimeSettingKey[] = [
+  'engine.typesafe_model',
+  'engine.llm_fallback_enabled',
+  'engine.ollama_models',
+];
+
+function runtimeContext(config: ApiConfig): RuntimeSettingsContext {
+  return {
+    production: config.nodeEnv === 'production',
+    providerHostAllowlist: config.providerHostAllowlist,
+    ollamaPricedModels: Object.keys(OLLAMA_PRICES),
+  };
+}
+
+/** The environment defaults the API process knows itself; the rest comes from worker heartbeats. */
+function apiRuntimeDefaults(config: ApiConfig): Map<string, unknown> {
+  return new Map<string, unknown>([
+    ['engine.typesafe_model', config.typesafeModel],
+    ['api.rate_limits_enabled', config.rateLimitsEnabled],
+    ['translate.libretranslate_url', config.libretranslateUrl],
+    ['fetch.limits', { timeoutMs: config.fetchTimeoutMs, maxBytes: config.fetchMaxBytes }],
+  ]);
+}
+
+interface RuntimeState {
+  values: Record<RuntimeSettingKey, unknown>;
+  sources: Record<RuntimeSettingKey, 'env' | 'stored' | 'last_good'>;
+  defaults: Record<RuntimeSettingKey, unknown>;
+  /** Keys with a valid, non-null stored override. */
+  overridden: Set<RuntimeSettingKey>;
+  /** Keys with a non-null stored row, valid or not: a `null` patch clears every one of them. */
+  hasRow: Set<RuntimeSettingKey>;
+}
+
+/**
+ * The effective live runtime values: the valid stored row, else (for a row that no longer validates)
+ * the last good value this process saw, else the environment default (`null` when nobody knows it).
+ */
+function runtimeState(
+  rows: readonly StoredSettingRow[],
+  workerDefaults: ReadonlyMap<string, unknown>,
+  config: ApiConfig,
+  ctx: RuntimeSettingsContext,
+  lastGood: Map<string, unknown>,
+): RuntimeState {
+  const stored = new Map(rows.map((row) => [row.key, row.value]));
+  const api = apiRuntimeDefaults(config);
+  const state: RuntimeState = {
+    values: {},
+    sources: {},
+    defaults: {},
+    overridden: new Set(),
+    hasRow: new Set(),
+  } as never;
+  for (const key of RUNTIME_SETTING_KEYS) {
+    const fallback = api.get(key) ?? workerDefaults.get(key) ?? null;
+    state.defaults[key] = fallback;
+    const row = stored.get(key);
+    if (row !== undefined && row !== null) state.hasRow.add(key);
+    const checked =
+      row === undefined || row === null ? null : validateRuntimeSetting(key, row, ctx);
+    if (checked?.ok === true && checked.value !== null) {
+      state.values[key] = checked.value;
+      state.sources[key] = 'stored';
+      state.overridden.add(key);
+      lastGood.set(key, checked.value);
+    } else if (checked !== null && !checked.ok && lastGood.has(key)) {
+      state.values[key] = lastGood.get(key);
+      state.sources[key] = 'last_good';
+    } else {
+      state.values[key] = fallback;
+      state.sources[key] = 'env';
+    }
+  }
+  return state;
+}
+
 function effectiveValues(
   rows: readonly StoredSettingRow[],
   env: SettingEnvDefaults,
-): { values: AdminSettingsValues; version: number } {
+): { values: Omit<AdminSettingsValues, RuntimeSettingKey>; version: number } {
   const stored = new Map(rows.map((row) => [row.key, row.value]));
   const values = Object.fromEntries(
-    ADMIN_PATCHABLE_SETTING_KEYS.map((key) => [key, readSetting(key, stored.get(key), env)]),
-  ) as AdminSettingsValues;
+    BASE_KEYS.map((key) => [key, readSetting(key, stored.get(key), env)]),
+  ) as Omit<AdminSettingsValues, RuntimeSettingKey>;
   const version = readSetting(VERSION_KEY, stored.get(VERSION_KEY), env) ?? 0;
   return { values, version };
 }
 
-async function loadSettings(db: Executor, env: SettingEnvDefaults): Promise<AdminSettings> {
-  const rows = await readSettingRows(db, [...ADMIN_PATCHABLE_SETTING_KEYS, VERSION_KEY]);
-  const { values, version } = effectiveValues(rows, env);
+interface SettingsDeps {
+  env: SettingEnvDefaults;
+  config: ApiConfig;
+  ctx: RuntimeSettingsContext;
+  lastGood: Map<string, unknown>;
+  now: () => Date;
+}
+
+async function readRuntime(
+  tx: Executor,
+  rows: readonly StoredSettingRow[],
+  deps: SettingsDeps,
+  now: Date,
+): Promise<RuntimeState> {
+  const workerDefaults = await freshWorkerRuntimeDefaults(tx, now);
+  return runtimeState(rows, workerDefaults, deps.config, deps.ctx, deps.lastGood);
+}
+
+async function loadSettings(db: Executor, deps: SettingsDeps, now: Date): Promise<AdminSettings> {
+  const rows = await readSettingRows(db, STORED_KEYS);
+  const { values, version } = effectiveValues(rows, deps.env);
+  const runtime = await readRuntime(db, rows, deps, now);
   return {
-    values,
+    values: { ...values, ...runtime.values } as AdminSettingsValues,
     stored: rows
-      .filter((row) => (ADMIN_PATCHABLE_SETTING_KEYS as readonly string[]).includes(row.key))
+      .filter(
+        (row) =>
+          (ADMIN_PATCHABLE_SETTING_KEYS as readonly string[]).includes(row.key) &&
+          (!isRuntimeKey(row.key) || (row.value !== null && row.value !== undefined)),
+      )
       .map((row) => ({ key: row.key as AdminSettingKey, updatedAt: iso(row.updatedAt) })),
     rankerSettingsVersion: version,
+    sources: runtime.sources,
+    defaults: runtime.defaults,
+    workers: await freshWorkerStatuses(db, now),
   };
 }
 
@@ -82,10 +207,72 @@ async function loadSettings(db: Executor, env: SettingEnvDefaults): Promise<Admi
 const same = (a: unknown, b: unknown): boolean =>
   canonicalJson(a ?? null) === canonicalJson(b ?? null);
 
-function changedKeys(current: AdminSettingsValues, patch: AdminSettingsPatch): AdminSettingKey[] {
-  return ADMIN_PATCHABLE_SETTING_KEYS.filter(
-    (key) => patch[key] !== undefined && !same(current[key], patch[key]),
+function changedKeys(
+  current: Omit<AdminSettingsValues, RuntimeSettingKey>,
+  patch: AdminSettingsPatch,
+): BaseKey[] {
+  return BASE_KEYS.filter((key) => patch[key] !== undefined && !same(current[key], patch[key]));
+}
+
+interface RuntimePlan {
+  /** Each patched runtime key's new stored value (`null` = reset to the environment value). */
+  stored: Map<RuntimeSettingKey, unknown>;
+  /** The keys written: a different effective value, or a reset of a stored override. */
+  changed: RuntimeSettingKey[];
+  /** The effective value of every runtime key once the patch is applied. */
+  next: Record<RuntimeSettingKey, unknown>;
+  needsAcknowledge: boolean;
+}
+
+/** Validates the patched runtime keys (production rules included) and works out what changes. */
+function planRuntime(
+  patch: AdminSettingsPatch,
+  state: RuntimeState,
+  ctx: RuntimeSettingsContext,
+): RuntimePlan {
+  const stored = new Map<RuntimeSettingKey, unknown>();
+  const next = { ...state.values };
+  const changed: RuntimeSettingKey[] = [];
+  const effective: RuntimeSettingKey[] = [];
+  for (const key of RUNTIME_SETTING_KEYS) {
+    const raw = patch[key];
+    if (raw === undefined) continue;
+    const checked = validateRuntimeSetting(key, raw, ctx);
+    if (!checked.ok) {
+      throw new AppError('VALIDATION_FAILED', 'Invalid setting value', {
+        details: { key, message: checked.message },
+      });
+    }
+    stored.set(key, checked.value);
+    const value = checked.value ?? state.defaults[key];
+    next[key] = value;
+    // An unknown current value (null: no fresh worker reports its env default) differs from an explicit
+    // value, so `false` is stored; it changes the effect only when it flips the switch as far as known.
+    const differs = !same(value, state.values[key]);
+    const affects =
+      key === 'engine.llm_fallback_enabled'
+        ? Boolean(value) !== Boolean(state.values[key])
+        : differs;
+    if (affects) effective.push(key);
+    if (differs || (checked.value === null && state.hasRow.has(key))) changed.push(key);
+  }
+  const fallbackOn = Boolean(next['engine.llm_fallback_enabled']);
+  const needsAcknowledge = effective.some(
+    (key) => MODEL_AFFECTING.includes(key) && (key !== 'engine.ollama_models' || fallbackOn),
   );
+  return { stored, changed, next, needsAcknowledge };
+}
+
+function requireAcknowledge(plan: RuntimePlan, acknowledged: boolean | undefined): void {
+  if (plan.needsAcknowledge && acknowledged !== true) {
+    throw new AppError(
+      'CONFLICT',
+      'This change re-enriches and re-matches the corpus; confirm it',
+      {
+        details: { reason: 'confirmation_required', effects: ['reenrich', 'rematch'] },
+      },
+    );
+  }
 }
 
 /**
@@ -95,7 +282,7 @@ function changedKeys(current: AdminSettingsValues, patch: AdminSettingsPatch): A
  * are translated into English, spec 07 §5).
  */
 function requiredPairs(
-  next: AdminSettingsValues,
+  next: Pick<AdminSettingsValues, 'language_modes' | 'card_text_mode'>,
   changed: readonly AdminSettingKey[],
 ): [string, string][] {
   const sources = new Set<string>();
@@ -117,10 +304,9 @@ const pairName = ([source, target]: readonly [string, string]) => `${source}-${t
 
 /** The bounded `GET {LIBRETRANSLATE_URL}/languages` probe; refuses unless every pair is listed. */
 async function probeLibreTranslate(
-  services: ApiServices,
+  client: LibreTranslateClient | null,
   pairs: readonly [string, string][],
 ): Promise<void> {
-  const client = services.libreTranslate;
   const unavailable = (details: Record<string, unknown>) =>
     new AppError('ENGINE_UNAVAILABLE', 'LibreTranslate cannot translate the required languages', {
       details: { engine: 'libretranslate', ...details },
@@ -134,7 +320,7 @@ async function probeLibreTranslate(
   }
 }
 
-function validateMerged(next: AdminSettingsValues): void {
+function validateMerged(next: Pick<AdminSettingsValues, 'ranker.thresholds'>): void {
   try {
     mergeRankerConfig(next['ranker.thresholds']);
   } catch {
@@ -144,8 +330,40 @@ function validateMerged(next: AdminSettingsValues): void {
   }
 }
 
+/**
+ * Probes `pairs` at the effective URL: with the live (shared) client when that is the URL it follows,
+ * else with a temporary client that is always closed afterwards.
+ */
+async function probeAt(
+  app: Parameters<FastifyPluginAsyncZod>[0],
+  effectiveUrl: unknown,
+  pairs: readonly [string, string][],
+): Promise<void> {
+  const { services } = app;
+  if (
+    typeof effectiveUrl === 'string' &&
+    effectiveUrl !== (await services.liveLibreTranslateUrl())
+  ) {
+    const temporary = services.createProbeLibreTranslate(effectiveUrl);
+    try {
+      await probeLibreTranslate(temporary, pairs);
+    } finally {
+      await temporary.close().catch(() => undefined);
+    }
+    return;
+  }
+  await probeLibreTranslate(await services.getLibreTranslate(), pairs);
+}
+
 export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
-  const env = settingEnvDefaults(app.services.config);
+  const deps: SettingsDeps = {
+    env: settingEnvDefaults(app.services.config),
+    config: app.services.config,
+    ctx: runtimeContext(app.services.config),
+    lastGood: new Map(),
+    now: () => app.services.clock.now(),
+  };
+  const LT_KEY = 'translate.libretranslate_url';
 
   app.get(
     '/settings',
@@ -157,7 +375,7 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
         response: { 200: AdminSettingsSchema },
       },
     },
-    async (request) => request.withTx((tx) => loadSettings(tx, env)),
+    async (request) => request.withTx((tx) => loadSettings(tx, deps, deps.now())),
   );
 
   app.patch(
@@ -172,26 +390,34 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request, reply) => {
-      // A retry is answered from its receipt before the settings are probed again; a concurrent
-      // duplicate waits for this request to settle first.
       const outcome = await request.holdingKey(async () => {
         const saved = await request.savedOutcome<AdminSettingsPatchResult>();
         if (saved !== null) return saved;
-        const patch = request.body;
-        const { services } = app;
+        const { acknowledge, ...patch } = request.body;
 
-        // Slow outbound work first: the LibreTranslate probe runs before the transaction opens.
-        const before = await request.withTx(async (tx) =>
-          effectiveValues(await readSettingRows(tx, ADMIN_PATCHABLE_SETTING_KEYS), env),
-        );
-        const preview = { ...before.values, ...patch } as AdminSettingsValues;
+        const { before, beforeRuntime } = await request.withTx(async (tx) => {
+          const rows = await readSettingRows(tx, STORED_KEYS);
+          return {
+            before: effectiveValues(rows, deps.env),
+            beforeRuntime: await readRuntime(tx, rows, deps, deps.now()),
+          };
+        });
+        const plan = planRuntime(patch, beforeRuntime, deps.ctx);
+        requireAcknowledge(plan, acknowledge);
+        const preview = { ...before.values, ...patch, ...plan.next } as AdminSettingsValues;
         validateMerged(preview);
-        const probedPairs = requiredPairs(preview, changedKeys(before.values, patch));
+        const ltChanged = plan.changed.includes(LT_KEY);
+        const probedPairs = requiredPairs(
+          preview,
+          ltChanged ? ['language_modes', 'card_text_mode'] : changedKeys(before.values, patch),
+        );
+        const probeUrl = ltChanged ? plan.next[LT_KEY] : undefined;
+        /** The URL the probe asked, whether or not this PATCH changes it. */
+        const probedAt = plan.next[LT_KEY];
         if (probedPairs.length > 0) {
           try {
-            await probeLibreTranslate(services, probedPairs);
+            await probeAt(app, plan.next[LT_KEY], probedPairs);
           } catch (error) {
-            // A duplicate on another instance may have committed meanwhile: its receipt wins.
             const committed = await request.savedOutcome<AdminSettingsPatchResult>();
             if (committed !== null) return committed;
             throw error;
@@ -204,23 +430,37 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
           const patchedKeys = ADMIN_PATCHABLE_SETTING_KEYS.filter(
             (key) => patch[key] !== undefined,
           );
-          // The language-pair check reads both settings, so a patch of either locks both.
           const dependent = patchedKeys.some((key) => LANGUAGE_KEYS.includes(key))
-            ? LANGUAGE_KEYS
+            ? [...LANGUAGE_KEYS, LT_KEY]
             : [];
           await lockSettingRows(tx, [...patchedKeys, ...dependent, VERSION_KEY]);
-          // Unpatched keys keep their stored values; read every key after the locks are held.
-          const current = effectiveValues(
-            await readSettingRows(tx, [...ADMIN_PATCHABLE_SETTING_KEYS, VERSION_KEY]),
-            env,
-          );
-          const next = { ...current.values, ...patch } as AdminSettingsValues;
+          const rows = await readSettingRows(tx, STORED_KEYS);
+          const current = effectiveValues(rows, deps.env);
+          const currentRuntime = await readRuntime(tx, rows, deps, now);
+          const runtimePlan = planRuntime(patch, currentRuntime, deps.ctx);
+          requireAcknowledge(runtimePlan, acknowledge);
+          const next = { ...current.values, ...patch, ...runtimePlan.next } as AdminSettingsValues;
           validateMerged(next);
-          const changed = changedKeys(current.values, patch);
+          const baseChanged = changedKeys(current.values, patch);
+          const changed = ADMIN_PATCHABLE_SETTING_KEYS.filter(
+            (key) =>
+              (baseChanged as readonly string[]).includes(key) ||
+              (runtimePlan.changed as readonly string[]).includes(key),
+          );
 
-          // Recheck the probe against the locked values: a concurrent change may need more pairs.
-          const needed = requiredPairs(next, changed);
-          if (needed.some((pair) => !probed.has(pairName(pair)))) {
+          const ltNow = runtimePlan.changed.includes(LT_KEY);
+          const needed = requiredPairs(
+            next,
+            ltNow ? ['language_modes', 'card_text_mode'] : baseChanged,
+          );
+          if (
+            needed.some((pair) => !probed.has(pairName(pair))) ||
+            (needed.length > 0 && ltNow !== ltChanged) ||
+            // The language change was accepted on the capabilities of the URL probed before the
+            // transaction; the URL current under the lock must still be that one.
+            (needed.length > 0 && !same(runtimePlan.next[LT_KEY], probedAt)) ||
+            (ltNow && !same(runtimePlan.next[LT_KEY], probeUrl))
+          ) {
             throw new AppError('CONFLICT', 'Settings changed concurrently; retry', {
               details: { reason: 'settings_changed' },
             });
@@ -251,7 +491,8 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
           }
 
           for (const key of changed) {
-            await writeSetting(tx, { key, value: next[key], updatedBy: adminId });
+            const value = isRuntimeKey(key) ? runtimePlan.stored.get(key) : next[key];
+            await writeSetting(tx, { key, value, updatedBy: adminId });
           }
 
           // Side effects (spec 08 §9), all through the outbox in this transaction.
@@ -286,6 +527,9 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
             if (next.card_text_mode === 'english') await enqueueTranslateCards(outbox, {});
           }
           if (changed.includes('engine.prefilter_enabled')) rematch = true;
+          if (changed.includes('engine.prefilter_min_cards') && next['engine.prefilter_enabled']) {
+            rematch = true;
+          }
           if (changed.includes('language_modes')) {
             const prev = current.values.language_modes;
             const upd = next.language_modes;
@@ -303,10 +547,11 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
           for (const lang of [...reenrichLangs].sort()) await enqueueReenrich(outbox, { lang });
           if (rematch) await enqueueRematch(outbox, {});
 
-          const body = { ...(await loadSettings(tx, env)), changed };
+          const body = { ...(await loadSettings(tx, deps, now)), changed };
           return { status: 200, body };
         });
       });
+      app.services.runtime.invalidate();
       auditLog(request, { action: 'settings.patch', changed: outcome.body.changed });
       await reply.code(200).send(outcome.body);
     },

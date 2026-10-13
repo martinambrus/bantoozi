@@ -1,0 +1,10 @@
+{
+  "title": "First-run setup",
+  "lead": "Enter the setup token from the API log and the email of the first administrator.",
+  "token": "Setup token",
+  "email": "Email",
+  "submit": "Create admin account",
+  "invalid": "That setup token didn't work.",
+  "rateLimited_one": "Too many attempts. Try again in {{count}} minute.",
+  "rateLimited_other": "Too many attempts. Try again in {{count}} minutes."
+}

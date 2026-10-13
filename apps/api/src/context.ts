@@ -1,9 +1,11 @@
 import type { Database } from '@bantoozi/db';
 import type { DiscoverDeps } from '@bantoozi/feeds';
 import type { Clock } from '@bantoozi/shared';
+import type { RuntimeSettingsCache } from '@bantoozi/db';
 import type { Mailer, ProcessConfig } from '@bantoozi/shared/server';
 import type { LibreTranslateClient } from '@bantoozi/translate';
 
+import type { SetupRuntime } from './services/setup.js';
 import type { CursorCodec } from './services/cursor.js';
 import type { RateLimiter } from './plugins/rate-limit.js';
 
@@ -31,7 +33,18 @@ export interface ApiServices {
    * The tier-1 translator for card texts (spec 07 §5) and the admin LibreTranslate health probe
    * (spec 08 §9). `null` when no LibreTranslate is configured for this process.
    */
-  readonly libreTranslate: LibreTranslateClient | null;
+  readonly getLibreTranslate: () => Promise<LibreTranslateClient | null>;
+  /** The URL `getLibreTranslate` currently follows (a live override, else `LIBRETRANSLATE_URL`). */
+  readonly liveLibreTranslateUrl: () => Promise<string>;
+  /**
+   * A new LibreTranslate client for `baseUrl`, owned by the caller (who must `close()` it): the admin
+   * settings probe of a URL that is not the live one (spec 08 §9).
+   */
+  readonly createProbeLibreTranslate: (baseUrl: string) => LibreTranslateClient;
+  /** The live runtime settings (M8b-T3): one TTL cache per process, invalidated by an admin PATCH. */
+  readonly runtime: RuntimeSettingsCache;
+  /** First-run setup token state of this process (M8b-T6): fail-closed until it has rotated. */
+  readonly setup: SetupRuntime;
 }
 
 declare module 'fastify' {

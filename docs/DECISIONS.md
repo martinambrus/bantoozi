@@ -2041,3 +2041,146 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   through the normal translate→enrich pipeline step (`after('translate', …)`), instead of stopping because only
   `enriched`/`matched` articles are reset; such an article is no longer stranded after `house.reenrich` sends it
   to translation. Other states and non-mode-change translations are unchanged.
+- D-212: 2026-10-13 M8b-T6, M8b-T11 — First-run setup is **one step** (`POST /setup/complete {token, email}`
+  creates or promotes the admin and signs in) and needs **no migration**. The analysis in `scope.md` proposed two
+  steps (token, then an emailed code through a new `login_codes` purpose) and migration 0025; the owner chose
+  one step on 2026-10-13. The state is the `settings['auth.setup']` row (API role already has the grants):
+  open `{digest, createdAt}`, consumed `{createdAt, consumedAt, userId}`, with `digest` the hex
+  `HMAC-SHA256(SESSION_PEPPER, "bantoozi:setup-token:v1:" + token)`; the token is never stored, the key is not
+  admin-patchable and is not listed by `GET /admin/settings`. The API generates a 256-bit token at every start
+  while no active admin exists, which rotates it, and logs it once at `warn` (stderr if the level hides `warn`).
+  Setup works in every signup mode and ignores invites and `ADMIN_EMAILS`. Spec 08 §2.1 (First-run setup, the
+  two routes), spec 02 §2 (`auth.setup`), spec 01 §3 and §8 updated; the next migration is still 0025.
+- D-213: 2026-10-13 M8b-T6 — `POST /setup/complete` is limited to 10 attempts per 15 minutes per IP and **every
+  attempt counts**, a wrong token included (the limiter hits before the handler runs), so the token cannot be
+  guessed faster than that; 256 bits make a guess hopeless regardless, the limit bounds load and log noise. The
+  group `setup-complete` is also one of the always-on groups of D-222. Spec 08 §11 updated.
+- D-214: 2026-10-13 M8b-T4 — The built-in prefilter minimum of 60 lives in the **worker**
+  (`DEFAULT_PREFILTER_MIN_CARDS`), not in the settings registry: `engine.prefilter_min_cards` has no default of
+  its own, so a null row means env `PREFILTER_MIN_CARDS`, else 60. The classification completion share-locks the
+  key with a `null` initial value so that its first write waits for a running completion (as D-84 does for the
+  other classification keys), and the snapshot comparison includes the minimum, so a completion started under
+  another minimum is discarded. A change enqueues `house.rematch` while `engine.prefilter_enabled` is on. Specs
+  01 §3, 02 §2, 05 §5.5 and 08 §9 updated.
+- D-215: 2026-10-13 M8b-T7 — `ADMIN_EMAILS` is **bootstrap only and optional**, superseding D-202 (2). A listed
+  address becomes admin when its account is created, or at a login while no active admin exists; otherwise the
+  stored role stands, so a demotion in the admin UI sticks (spec 08 §2.1 used to restore the role on every
+  verify). The "no active admin" check runs under the setup advisory lock, so concurrent bootstraps and the
+  first-run setup cannot both pass it. Operational alerts go to the active admins, with `ADMIN_EMAILS` as the
+  fallback while there is none or the lookup fails. `loadConfig` no longer requires the list in production,
+  `deploy.sh` no longer requires it (a placeholder in it is still refused) and its smoke test only warns when no
+  active admin exists. Specs 01 §3, §8, 08 §2.1 and 11 §3, §6.1 updated.
+- D-216: 2026-10-13 M8b-T6 — At setup, an email that matches an **active** user promotes that user in place (the
+  row, data and sessions stay), and one that matches a **soft-deleted** user is refused with the generic
+  `INVALID_CODE`: restoring or purging belongs to the login path (spec 08 §2.1 restore window), and a setup that
+  silently restored an account would be a second restore path with different checks. A matching waitlist row is
+  deleted, as on any signup. Spec 08 §2.1 updated.
+- D-217: 2026-10-13 M8b-T11 — An administrator may reach `/admin/*` before finishing onboarding. The first admin
+  created by setup has not been through the wizard and has the system to configure first; the redirect to
+  `/onboarding` still applies to every other route and to non-admins. Spec 09 §2 updated.
+- D-218: 2026-10-13 M8b-T5 — The stale-worker guard (`assertWorkerCurrent`: the process model must equal
+  `engine.model_pin.model`, else `StaleWorkerError` with a 30 s retry delay) covers `article.enrich`,
+  `article.match`, `house.reenrich`, `house.rematch` and `card.backfill`: the handlers that ask the model or
+  write model answers for the corpus. It does **not** cover `user.suggest`, which already compares the pin with
+  its own model and leaves the suggestions as they are on a mismatch (rolling deployment); `analysis.process`,
+  which verifies its frozen request (sets, modes and pinned model) against the live configuration and fails
+  closed; or `user.rank`, which asks no model and scores from stored answers. A guard there would only delay
+  ranking. A restarted worker passes the check, so the retry succeeds. Spec 11 §8 updated.
+- D-219: 2026-10-13 M8b-T2 — `GET/PATCH /admin/settings` computes the runtime values **per key** in the route
+  (`runtimeState`) instead of calling `effectiveRuntimeSettings`: the stored row if it validates, else the last
+  good value this API process saw for that key, else the default the API or the workers' heartbeats report
+  (`null` when nobody knows). A key whose row fails validation therefore does not drop the others, and the
+  default shown is the real env value of the process that uses it. The `last_good` memory is per API process
+  and lost on restart (then the env value stands, still reported as `env`). Spec 08 §9 updated.
+- D-220: 2026-10-13 M8b-T11 — The first-run E2E reads the setup token from the API's output through a filter
+  (`tee-api-log.mjs`) that turns each JSON log line into its `msg` and writes it to a file: a Playwright
+  `webServer` reaches only the runner's stdout, and the structured line would put the token inside JSON. The
+  token is in the log only because the E2E asks for it at `LOG_LEVEL=warn`. Spec 09 §9 updated.
+- D-221: 2026-10-13 M8b-T1, M8b-T4, M8b-T5 — The runtime keys split into two classes. **Live**: price,
+  `engine.concurrency` (the semaphore is resized), `engine.prefilter_min_cards`, `ingest.max_age_days`,
+  `fetch.limits`, `api.rate_limits_enabled`; they are read through a per-process cache (TTL 10 s, single flight,
+  last good value on a failed read) and apply without a restart. **Restart-class**: Jev model and base URL,
+  fallback switch, Ollama models, base URL and concurrency, LibreTranslate URL; they build long-lived clients,
+  so a change makes the worker drain and exit (`WORKER_SELF_RESTART`, default true in production), compose
+  restarts it from the new values, and the first start with a new effective model records the pin and the
+  rebuild once. Heartbeats carry `runtime` (fingerprint, model, `pendingRestart`, `problems`, keyring status,
+  env defaults), which the API reads for the admin screens. The API process applies its own keys (rate limits,
+  fetch limits, LibreTranslate client, the model it freezes into analysis requests) on the same TTL. Specs 01
+  §3, 02 §2, 08 §9, 11 §8 updated.
+- D-222: 2026-10-13 M8b-T3 — `api.rate_limits_enabled = false` is allowed in production but turns off only the
+  **general** limits (global per-IP, per-user mutations, per-route quotas). The unauthenticated groups
+  `auth-request-code`, `auth-verify`, `waitlist`, `setup-complete` and `ops-event` stay on, because they guard
+  mail sending, code guessing and token redemption. The environment value `RATE_LIMITS_ENABLED=false` is still
+  refused outside `NODE_ENV=test`. Spec 08 §11 and spec 01 §3 updated.
+- D-223: 2026-10-13 M8b-T1, M8b-T2 — In production a stored base URL (`engine.typesafe_base_url`,
+  `engine.ollama_base_url`, `translate.libretranslate_url`) must be on `PROVIDER_HOST_ALLOWLIST` (host or
+  `host:port`; empty list: none accepted), the first two must be https, a stored model must be a pinned version
+  (`jev-x.y.z`), the price above 0 and each Ollama model priced in the price table. The env URLs are not
+  checked against the list (they are host configuration). A changed `engine.typesafe_model`,
+  `engine.llm_fallback_enabled` or `engine.ollama_models` (while the fallback is on) is refused with `409
+  confirmation_required` until the PATCH carries `acknowledge: true`; locked decisions 7 and 8 were amended by
+  the owner (PLAN §14.2). The keyring itself stays outside the database (locked decision 13); the API only
+  reports its status. Specs 01 §3, 02 §2, 08 §9, §9.1 and 09 §8 updated.
+- D-224: 2026-10-13 M8b-T6 (PR #28 review round 3) — An open `auth.setup` token is closed at the moment an
+  active admin exists, not only replaced at the next start: `initSetupToken` with an admin present, the
+  `ADMIN_EMAILS` bootstrap and the restore of a soft-deleted admin in `verify`, and `PATCH /admin/users/{id}`
+  with `role: 'admin'` all rewrite the row under the `bantoozi:setup` lock. The closed form is the strict
+  schema's consumed shape (`consumedAt` plus the id of an active admin, no digest): the schema is not loosened
+  and the API role has no `DELETE` on `settings` (no migration). `GET /admin/settings` already lists `stored`
+  keys, so the web enables Reset whenever a row is stored for the key, even if its source reads `env`.
+- D-225: 2026-10-13 M8b-T5 (PR #28 review round 4) — The stale-worker guard of D-218 fences classification on
+  **every** restart-class value, not only the model. `assertWorkerCurrent` takes the process's
+  `classification.currentness` (the booted restart fingerprint and pin, set by `createWorkerRuntime`) and, on
+  each guarded job, reads the runtime settings afresh (one query, bypassing the 10 s cache) and throws
+  `StaleWorkerError` (retry 30 s) when the fingerprint differs, or when the stored pin's `llm` differs from the
+  process's. A changed Ollama model pair, base URL or concurrency, LibreTranslate URL or Jev base URL therefore
+  stops the old process from writing answers before it drains, as a model change did. Deps built without
+  `currentness` (tests) compare the model only. The same round fixed the lock order of the first-run paths:
+  `verify` takes the `bantoozi:setup` lock before the auth-email lock like `completeSetup` (a deleted admin's
+  restore, only known after the challenge is read, rolls back and runs again holding the setup lock), and the
+  admin settings screen takes only the saved key's value, source, default and stored time from a save answer, and
+  merges the workers per process (newer heartbeat wins, a pending restart stays pending on a tie), so a late
+  answer cannot take back what a newer one set; no refetch is needed. Specs 11 §8 updated.
+- D-226: 2026-10-13 M8b-T5/T10 (PR #28 review round 5) — (1) The stale-worker check of D-218/D-225 runs again in
+  the **completion** transaction of every guarded handler, not only before the model call. `lockWorkerCurrent`
+  share-locks the seven restart-class setting rows (a missing row is stored as `null`, which reads as the
+  environment value) and the `engine.model_pin` row (only if it exists), reads the fingerprint through the
+  transaction and compares it and the pin (llm included) with the process's. `article.enrich` (answer and
+  degrade/fail writes) writes nothing and throws `StaleWorkerError` after the commit; `article.match` releases the
+  rows it holds (like a fenced-config mismatch, but without re-enqueueing) and throws once the job ends;
+  `house.reenrich`, `house.rematch` and `card.backfill` throw inside their write transactions, which roll
+  back. The queue retries after 30 s, by when a drained worker has restarted; a live-class change
+  (`engine.concurrency`) does not discard anything. (2) The admin settings screen numbers every settings
+  request (read or save) as it is sent; an answer newer than the last snapshot taken replaces the workers'
+  list and the environment defaults wholesale (an exited worker disappears), an older one only updates its own
+  key, and a read older than a snapshot already taken is dropped. This replaces the per-process merge of D-225.
+  (3) Env ranges wider than the runtime write bounds: the write bounds stay (the frozen T1/T2/T10 tests pin
+  them), and the **response** takes every env value. `packages/shared/src/env-ranges.ts` exports the env
+  ranges once (used by `server/config.ts`), and `AdminSettingsValuesSchema` shows the runtime keys with them
+  (price: any finite non-negative number) instead of the write schemas, so a worker default such as
+  `ENGINE_CONCURRENCY=128` no longer fails serialization of `GET`/`PATCH /admin/settings` (500); a `PATCH`
+  of that value is still refused by `validateRuntimeSetting` (400 with `details.key`). The web editors show an
+  out-of-range default as the default and keep the field's bounds for edits. OpenAPI snapshot updated;
+  specs 02 §2 and 08 §9 note the difference.
+- D-227: 2026-10-13 M8b-T6/T5 (PR #28 review round 6) — (1) Setup fails closed after a failed rotation: the API
+  keeps an in-process `setup.ready` flag that becomes true only after the start-up (or retry) transaction
+  commits, or an active admin is found. While false, `completeSetup` refuses every token (the existing generic
+  `400 INVALID_CODE`, chosen over 503 because it reveals nothing new), so a digest left by the previous process
+  cannot be redeemed. `GET /setup` and `POST /setup/complete` retry the rotation under the setup lock through
+  one shared in-flight attempt, so the new token is logged once; the request that triggered the retry is
+  still refused. `onReady` still never throws (offline OpenAPI build). Test seam: `BuildServerOptions.setupTokenGenerator`.
+  (2) The worker's 10 s runtime-check timer starts only after the real shutdown is wired, and the runtime's
+  `drain` goes through a `ShutdownGate` that waits for the wiring, so a self-restart can never exit undrained.
+- D-228: 2026-10-13 M8b-T5/T6 (PR #28 review round 7) — (1) The stale-worker guards (D-218, D-225, D-226) now also
+  cover `article.cluster`, `article.translate` and `house.translate-cards`. Each calls `assertWorkerCurrent` before
+  the first provider call and `lockWorkerCurrent` in the transaction that stores its result; on a mismatch the
+  result is discarded (no fold, no translation rows, no card pair) and the job fails with `StaleWorkerError`
+  for the 30 s retry. The audit of the other handlers that touch the router or the translators is in spec 11 §8:
+  `analysis.process`, `user.suggest` and `provider.validate` stay unguarded on purpose, the recovery jobs only
+  enqueue guarded work. (2) Environment URLs have a single bound: `ENV_RANGES.urlLength` (1 to 2048 characters) is
+  used by `server/config.ts` `httpUrl` and by the response schema of the three URL keys of `GET`/`PATCH
+  /admin/settings`, so a long env URL no longer fails serialization (500); a write keeps the 500-character UI
+  bound. (3) An invalid stored `engine.prefilter_min_cards` row no longer throws in `loadClassificationConfig`: it
+  is validated with `validateRuntimeSetting`, an invalid row resolves to the environment default (the last-good value
+  lives only in the API/worker settings cache, which already lists the key in the heartbeat `runtime.problems`), and
+  the completion's share-locked comparison uses the resolved value.

@@ -35,6 +35,8 @@ import {
 } from '@bantoozi/shared';
 import { createLogger, loadConfig } from '@bantoozi/shared/server';
 
+import { loadEffectiveValues } from './runtime.js';
+
 /**
  * `pnpm db:seed` (spec 02 §2): inserts only `card_text_mode`, `question_sets.active = {}` and
  * `language_modes` (from `LANGUAGE_MODES`) when they are missing, then runs the content hooks: the
@@ -197,17 +199,17 @@ async function main(): Promise<void> {
     applicationName: 'bantoozi-seed',
   });
   try {
+    const seedDb = createDatabase(pool);
+    const effective = await loadEffectiveValues(seedDb, config);
     const result = await runSeed(
-      createDatabase(pool),
+      seedDb,
       {
         dailyBudgetUsd: config.dailyBudgetUsd,
         languageModes: config.languageModes,
         signupMode: config.signupMode,
         modelPin: {
-          model: config.typesafeModel,
-          llm: config.llmFallbackEnabled
-            ? { fast: config.ollamaModelFast, strong: config.ollamaModelStrong }
-            : undefined,
+          model: effective.typesafeModel,
+          llm: effective.llmFallbackEnabled ? { ...effective.ollamaModels } : undefined,
         },
       },
       defaultSeedHooks(),

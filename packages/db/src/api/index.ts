@@ -14,4 +14,5 @@ export * from './quotas.js';
 export * from './rate-limit.js';
 export * from './rules.js';
 export * from './sessions.js';
+export * from './setup.js';
 export * from './subscriptions.js';

@@ -18,6 +18,7 @@ import { enqueueCluster } from '@bantoozi/shared';
 
 import { loadClassificationConfig, requireSet, sameClusterConfig } from '../classify/config.js';
 import { after } from '../pipeline.js';
+import { assertWorkerCurrent, lockWorkerCurrent, type StaleWorkerError } from '../stale-worker.js';
 import { nowOf, pipelineContext, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
 
@@ -38,6 +39,7 @@ export function createArticleClusterHandler(
   classification: ClassificationDeps,
 ): QueueHandler<'article.cluster'> {
   return async ({ articleId }) => {
+    await assertWorkerCurrent(deps.db, classification);
     const config = await loadClassificationConfig(deps.db, deps.settingsEnv);
     const enrichSet = requireSet(config.enrich, 'enrich');
     const clusterSet = requireSet(config.cluster, 'cluster');
@@ -102,7 +104,12 @@ export function createArticleClusterHandler(
     const target = candidates[keys.indexOf(decision.key)];
     if (target === undefined) return;
 
+    // The fold decision rests on this process's model: a restart-class value or the pin that moved
+    // during the call discards it, and the queue retries later (D-228).
+    let stale: StaleWorkerError | null = null;
     await retryTransaction(deps.db, async (tx) => {
+      stale = await lockWorkerCurrent(tx, classification);
+      if (stale !== null) return;
       const sender = workerOutbox(tx);
       // Under share locks: a switch committing meanwhile waits for this fold or is seen here.
       const current = await loadClassificationConfig(tx, deps.settingsEnv, { lock: true });
@@ -127,5 +134,6 @@ export function createArticleClusterHandler(
         pipelineContext(deps, tx, sender),
       );
     });
+    if (stale !== null) throw stale;
   };
 }

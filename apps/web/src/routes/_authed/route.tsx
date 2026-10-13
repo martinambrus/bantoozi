@@ -14,7 +14,14 @@ export const Route = createFileRoute('/_authed')({
   beforeLoad: async ({ context, location }) => {
     const me = await context.loadMe();
     if (me === null) throw redirect({ to: '/login', search: { redirect: location.href } });
-    if (me.preferences.onboardingCompletedAt === null && location.pathname !== '/onboarding') {
+    // An administrator may reach the administration before the wizard: the first admin created by
+    // first-run setup (M8b-T11) has not been through it, and has the system to configure first.
+    const adminArea = me.role === 'admin' && /^\/admin(\/|$)/.test(location.pathname);
+    if (
+      me.preferences.onboardingCompletedAt === null &&
+      location.pathname !== '/onboarding' &&
+      !adminArea
+    ) {
       throw redirect({ to: '/onboarding' });
     }
     return { me };

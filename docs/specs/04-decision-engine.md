@@ -378,12 +378,17 @@ The normalized answers are what is stored in `article_facets.answers`, `card_ans
 | 3xx | redirect | never followed (Authorization must not follow it); permanent `error` `http_3xx`, no retry (D-56) |
 
 - Per-attempt timeout: 30 s.
-- **Model pinning:** the `model` field is always `TYPESAFE_MODEL` (default `jev-1.13.0`), never an
-  alias; production additionally requires a pinned version.
+- **Model pinning:** the `model` field is always the effective Jev model (`engine.typesafe_model`, else
+  `TYPESAFE_MODEL`, default `jev-1.13.0`; spec 02 §2), never an alias; production additionally requires a
+  pinned version, for the stored value too. The router is built when the worker starts, so a changed model
+  applies after the worker's drained restart (spec 11 §8). The base URL (`engine.typesafe_base_url`) follows
+  the same rule.
 - The response's `model` is stored with every answer. A different model from the requested pin is
   an `invalid_response` in every environment; `jev-fake` is allowed only with the explicit test flag
   `allowFakeModel`, which production refuses (D-55).
-- **Cost:** `input_tokens × TYPESAFE_PRICE_PER_MTOK_USD / 1e6`. Output is free.
+- **Cost:** `input_tokens × price / 1e6`, the price being `engine.typesafe_price_per_mtok_usd`, else
+  `TYPESAFE_PRICE_PER_MTOK_USD`. A stored price applies without a restart (read per call through the settings
+  cache). Output is free.
 
 **Client-side rate limiter:** token buckets at **1,000 requests/min** and **200,000 input tokens/s**
 per API account across the deployment. Allocate static per-process shares whose sum is no greater
@@ -411,8 +416,9 @@ bounded by the job deadline, cancellation works while queued, and aging prevents
   admitted but before its send is not a wire attempt: its reservation is released instead of
   settled, with no `engine_calls` row, spend or call-cap slot, and its rate capacity is given back
   (D-95).
-- **Concurrency:** a process-wide semaphore of `ENGINE_CONCURRENCY` (default 8); the LLM also uses
-  `OLLAMA_MAX_CONCURRENCY`. Backoff does not hold a semaphore slot. Requests and responses have
+- **Concurrency:** a process-wide semaphore of the effective `engine.concurrency` (else `ENGINE_CONCURRENCY`,
+  default 8, resized live when the setting changes); the LLM also uses `engine.ollama_max_concurrency`
+  (else `OLLAMA_MAX_CONCURRENCY`, applied at restart). Backoff does not hold a semaphore slot. Requests and responses have
   bounded bytes (responses up to 1 MiB, D-56); abort transport and release capacity on
   timeout/cancellation.
 - **Logging:** one `engine_calls` row per **wire attempt**, grouped by `logical_request_id`, with

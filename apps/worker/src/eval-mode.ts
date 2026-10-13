@@ -74,6 +74,8 @@ export interface HeartbeatOptions {
   now?: () => Date;
   /** The database pool's counters at each beat (`house.alerts` reads `waiting`, spec 11 §6.1). */
   poolStats?: () => { total: number; idle: number; waiting: number };
+  /** The process's runtime report (M8b-T5, `WorkerRuntime.heartbeatRuntime`): JSON only, no secrets. */
+  runtime?: () => Record<string, unknown>;
 }
 
 export interface Heartbeat {
@@ -103,6 +105,7 @@ export async function startHeartbeat(options: HeartbeatOptions): Promise<Heartbe
   async function write(): Promise<void> {
     const at = now();
     const pool = options.poolStats?.();
+    const runtime = options.runtime?.();
     const entry = parseSetting('worker.heartbeat', {
       [options.processId]: {
         at: at.toISOString(),
@@ -111,6 +114,7 @@ export async function startHeartbeat(options: HeartbeatOptions): Promise<Heartbe
         evalIngestOnly: options.evalIngestOnly,
         envCredentials: [...options.envCredentials],
         ...(pool === undefined ? {} : { pool }),
+        ...(runtime === undefined ? {} : { runtime }),
       },
     })[options.processId];
     if (entry === undefined) throw new Error('heartbeat entry missing after validation');

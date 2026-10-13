@@ -1,4 +1,8 @@
-import { ADMIN_PATCHABLE_SETTING_KEYS, type AdminSettings } from '@bantoozi/shared';
+import {
+  ADMIN_PATCHABLE_SETTING_KEYS,
+  RUNTIME_SETTING_KEYS,
+  type AdminSettings,
+} from '@bantoozi/shared';
 import { act, screen, within } from '@testing-library/react';
 import type { UserEvent } from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -58,8 +62,13 @@ describe('admin settings editors (spec 09 §8)', () => {
   it('shows one JSON editor per patchable key with its effective value and whether it is stored', async () => {
     await openSettings();
 
+    const runtime: readonly string[] = RUNTIME_SETTING_KEYS;
     for (const key of ADMIN_PATCHABLE_SETTING_KEYS) {
-      expect(screen.getByRole('textbox', { name: key })).toBeVisible();
+      if (runtime.includes(key)) {
+        for (const el of screen.queryAllByLabelText(key)) expect(el.tagName).not.toBe('TEXTAREA');
+      } else {
+        expect(screen.getByRole('textbox', { name: key })).toBeVisible();
+      }
     }
     expect(editor(BUDGET)).toHaveValue('5');
     expect(editor('card_text_mode')).toHaveValue('"as_written"');

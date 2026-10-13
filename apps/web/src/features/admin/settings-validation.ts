@@ -1,5 +1,5 @@
 import {
-  AdminSettingsValuesSchema,
+  AdminSettingsWriteSchema,
   mergeRankerConfig,
   type AdminSettingKey,
 } from '@bantoozi/shared';
@@ -20,7 +20,7 @@ function issuesOf(error: unknown): readonly Issue[] | null {
 }
 
 /** The first few problems of a rejected value, each with the place it is found at. */
-function describeIssues(issues: readonly Issue[]): string {
+export function describeIssues(issues: readonly Issue[]): string {
   return issues
     .slice(0, 3)
     .map((issue) =>
@@ -42,7 +42,7 @@ export function checkSetting(key: AdminSettingKey, text: string): SettingCheck {
   } catch {
     return { ok: false, problem: 'json' };
   }
-  const result = AdminSettingsValuesSchema.shape[key].safeParse(parsed);
+  const result = AdminSettingsWriteSchema.shape[key].safeParse(parsed);
   if (!result.success) {
     return { ok: false, problem: 'schema', reason: describeIssues(result.error.issues) };
   }

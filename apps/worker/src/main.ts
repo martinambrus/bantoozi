@@ -11,7 +11,6 @@ import { createLogger, createMailer, loadConfig } from '@bantoozi/shared/server'
 
 import { createLibreTranslateProbe } from './alerts/probe.js';
 import { createBoss, pgBossBroker, registerHandlers } from './boss.js';
-import { createWorkerModels } from './classification-deps.js';
 import { createFileDeletionLedger } from './deletion-ledger.js';
 import { WORKER_POOL_LIMITS, startHealthServer, type HealthServer } from './health-server.js';
 import { createWorkerDeps } from './handlers/deps.js';
@@ -25,7 +24,8 @@ import { createHandlers } from './handlers/index.js';
 import { enqueueOverdueHousekeeping } from './housekeeping.js';
 import { startOutboxRelay } from './outbox-relay.js';
 import { assertProductionReady } from './readiness.js';
-import { recordModelPin } from './model-pin.js';
+import { createWorkerRuntime } from './runtime.js';
+import { createShutdownGate } from './shutdown-gate.js';
 import { verifyQuestionSets } from './seed.js';
 
 /**
@@ -56,8 +56,30 @@ const lockPool = createPool({
 for (const p of [pool, lockPool]) {
   p.on('error', (err) => logger.warn({ err }, 'idle database connection error'));
 }
-const models = createWorkerModels(db, config, logger);
+await assertWorkerMode(db, config.evalIngestOnly);
+
+await verifyQuestionSets(db).catch((error: unknown) => {
+  logger.error({ err: error }, 'stored question sets do not match this worker (run pnpm db:seed)');
+  throw error;
+});
+
+// The runtime builds the models from the effective settings and records the engine model pin under
+// its row lock (a changed pin enqueues the model rebuild once); it checks restart-class changes.
+const shutdownGate = createShutdownGate();
+const runtime = await createWorkerRuntime({
+  db,
+  config,
+  logger,
+  exit: (code) => process.exit(typeof process.exitCode === 'number' ? process.exitCode : code),
+  drain: () => shutdownGate.drain('settings-restart'),
+  selfRestart: config.workerSelfRestart,
+  recordPin: !config.evalIngestOnly,
+});
+const models = runtime.models;
+const runtimeSettings = runtime.settings;
+let settingsTimer: NodeJS.Timeout | undefined;
 const settingsEnv = {
+  prefilterMinCards: config.prefilterMinCards,
   dailyBudgetUsd: config.dailyBudgetUsd,
   languageModes: config.languageModes,
   signupMode: config.signupMode,
@@ -79,13 +101,14 @@ const handlers = createHandlers(
       allowPrivate: config.fetchAllowPrivate,
     },
     ingestMaxAgeDays: config.ingestMaxAgeDays,
+    runtimeSettings,
     settingsEnv,
     limiter: createPgOriginLimiter(db),
     logger,
     classification: models.classification,
     mailer,
     adminEmails: config.adminEmails,
-    libreTranslateProbe: createLibreTranslateProbe(config.libretranslateUrl),
+    libreTranslateProbe: createLibreTranslateProbe(runtime.values.libretranslateUrl),
     providerValidation: models.providerValidation,
     ...(config.evalIngestOnly ? { evalIngestOnly: true } : {}),
     ...(config.deletionLedgerPath !== undefined && config.deletionLedgerRecipient !== undefined
@@ -102,47 +125,27 @@ const handlers = createHandlers(
 // EVAL_INGEST_ONLY (spec 10 §2.1): only fetching and extraction; a golden database refuses
 // ordinary workers (D-96).
 const workerQueues = effectiveWorkerQueues(config.workerQueues, config.evalIngestOnly);
-await assertWorkerMode(db, config.evalIngestOnly);
-
 const unavailable = assertProductionReady(config.nodeEnv, handlers, workerQueues);
 if (unavailable.length > 0) {
   logger.warn({ unavailable }, 'stages not implemented yet: their jobs and intents stay pending');
 }
 
 // Stored question sets must match this code before any stage asks them (spec 05 §2).
-await verifyQuestionSets(db).catch((error: unknown) => {
-  logger.error({ err: error }, 'stored question sets do not match this worker (run pnpm db:seed)');
-  throw error;
-});
-
-// Record the engine model pin under its row lock; a changed pin enqueues the model rebuild once.
-if (!config.evalIngestOnly) {
-  const pin = await recordModelPin(
-    db,
-    {
-      model: config.typesafeModel,
-      ...(config.llmFallbackEnabled
-        ? { llm: { fast: config.ollamaModelFast, strong: config.ollamaModelStrong } }
-        : {}),
-    },
-    new Date(),
-  );
-  if (pin.changed) logger.info('engine model pin changed: re-enrichment and re-matching enqueued');
-}
-
-// The heartbeat starts before any consumer: it is written first and the golden-database check
-// follows it, while `eval ingest-sample` creates the evaluation user first and checks heartbeats
-// after it, so a worker and a collection that start together always see each other (D-96).
 let stopping = false;
 let heartbeat: Heartbeat | undefined;
 let boss: ReturnType<typeof createBoss> | undefined;
 let relay: ReturnType<typeof startOutboxRelay> | undefined;
 let health: HealthServer | undefined;
 const processId = `${hostname()}:${process.pid}`;
-async function shutdown(signal: string): Promise<void> {
-  if (stopping) return;
+let stopped: Promise<void> | undefined;
+function shutdown(signal: string): Promise<void> {
+  stopped ??= stop(signal);
+  return stopped;
+}
+async function stop(signal: string): Promise<void> {
   stopping = true;
   logger.info({ signal }, 'worker stopping');
+  if (settingsTimer !== undefined) clearInterval(settingsTimer);
   try {
     // The heartbeat advertises these consumers (an ingest-only collection checks it), so it is
     // removed only after the relay and the queue consumers have stopped.
@@ -169,6 +172,7 @@ try {
       ...(config.ollamaApiKey ? (['ollama'] as const) : []),
     ],
     logger,
+    runtime: () => ({ ...runtime.heartbeatRuntime() }),
     poolStats: () => ({
       total: pool.totalCount,
       idle: pool.idleCount,
@@ -231,5 +235,15 @@ if (!stopping) {
   logger.info({ ...registration, evalIngestOnly: config.evalIngestOnly }, 'worker started');
 }
 
+shutdownGate.wire(shutdown);
+// The runtime check may request a self-restart: start it only once the shutdown is wired.
+if (!stopping) {
+  settingsTimer = setInterval(() => {
+    runtime.check().catch((error: unknown) => {
+      logger.warn({ err: error }, 'runtime settings refresh failed');
+    });
+  }, 10_000);
+  settingsTimer.unref();
+}
 process.once('SIGTERM', () => void shutdown('SIGTERM'));
 process.once('SIGINT', () => void shutdown('SIGINT'));

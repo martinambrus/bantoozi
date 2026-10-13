@@ -19,7 +19,8 @@
     "lead": "Enter your email and we'll send you a code to sign in.",
     "noAccount": "Don't have an account?",
     "waitlist": "Join the waitlist",
-    "privacy": "Privacy"
+    "privacy": "Privacy",
+    "setup": "First-run setup"
   },
   "join": {
     "title": "Join Bantoozi",

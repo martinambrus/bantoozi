@@ -39,6 +39,7 @@ import {
   type BreakerState,
   type CredentialStatus,
   type EngineCircuit,
+  type KeyringOverview,
   type Provider,
 } from '@bantoozi/shared';
 import {
@@ -50,7 +51,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 
 import type { RateLimitRule } from '../../types.js';
 import { settingEnvDefaults } from './settings.js';
-import { auditLog, credentialStatus, freshWorkers } from './shared.js';
+import { auditLog, credentialStatus, freshWorkerKeyrings, freshWorkers } from './shared.js';
 
 /**
  * Engine administration (spec 08 §9, §9.1): overview and usage, the breaker reset request, the
@@ -262,9 +263,20 @@ export const engineRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request) =>
-      request.withTx(async (tx) => ({
-        items: await loadCredentials(tx, app.services.clock.now()),
-      })),
+      request.withTx(async (tx) => {
+        const now = app.services.clock.now();
+        const items = await loadCredentials(tx, now);
+        const workers = await freshWorkerKeyrings(tx, now);
+        const { config } = app.services;
+        const parsed = ProviderKeyring.parse(config.providerMasterKeyId, config.providerMasterKeys);
+        const api: KeyringOverview['api'] = parsed.ok
+          ? { status: 'ok', activeKeyId: parsed.keyring.activeKeyId }
+          : { status: parsed.reason };
+        const mismatch =
+          api.status === 'ok' &&
+          workers.some((w) => w.status === 'ok' && w.activeKeyId !== api.activeKeyId);
+        return { items, keyring: { api, workers, mismatch } };
+      }),
   );
 
   app.put(

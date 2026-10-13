@@ -64,8 +64,10 @@ const SPEC_01_VARIABLES = [
   'METRICS_TOKEN',
   'WORKER_METRICS_PORT',
   'WORKER_METRICS_HOST',
+  'WORKER_SELF_RESTART',
   'OTEL_EXPORTER_OTLP_ENDPOINT',
   'ADMIN_EMAILS',
+  'PROVIDER_HOST_ALLOWLIST',
   'DELETION_LEDGER_PATH',
   'DELETION_LEDGER_RECIPIENT',
   'DELETION_HMAC_KEY',
@@ -329,7 +331,7 @@ describe('loadConfig (spec 01 §3)', () => {
     expect(problemsOf(() => loadConfig({ process: 'worker', env: development }))).toEqual([]);
   });
 
-  it('refuses a production worker whose ledger path is off the persistent volume or whose admin list is empty (R15)', () => {
+  it('refuses a production worker whose ledger path is off the persistent volume and accepts an empty admin list (R15, M8b-T7)', () => {
     const prodWorker = {
       NODE_ENV: 'production',
       DATABASE_URL_WORKER: WORKER_URL,
@@ -355,12 +357,22 @@ describe('loadConfig (spec 01 §3)', () => {
     expect(problems({ DELETION_LEDGER_PATH: '/var/lib/bantoozi/ledger-other/l.age' })).toEqual([
       offVolume,
     ]);
-    const noAdmins =
-      'ADMIN_EMAILS: at least one address is required in production (the worker sends every alert to it)';
-    expect(problems({ ADMIN_EMAILS: '' })).toEqual([noAdmins]);
-    expect(problems({ ADMIN_EMAILS: ' , ' })).toEqual([noAdmins]);
+    // M8b-T7 (owner 2026-10-13): ADMIN_EMAILS is bootstrap only; production no longer requires it
+    // (D-202 (2) is superseded). Alerts go to the active admins, ADMIN_EMAILS is the fallback.
+    expect(problems({ ADMIN_EMAILS: '' })).toEqual([]);
+    expect(problems({ ADMIN_EMAILS: ' , ' })).toEqual([]);
     const { ADMIN_EMAILS: _a, ...noVar } = prodWorker;
-    expect(problemsOf(() => loadConfig({ process: 'worker', env: noVar }))).toEqual([noAdmins]);
+    expect(problemsOf(() => loadConfig({ process: 'worker', env: noVar }))).toEqual([]);
+    expect(loadConfig({ process: 'worker', env: noVar }).adminEmails).toEqual([]);
+    // Negative control: the other production rules stay enforced without the list.
+    expect(
+      problemsOf(() =>
+        loadConfig({
+          process: 'worker',
+          env: { ...noVar, DELETION_LEDGER_PATH: '/tmp/deletion-ledger.age' },
+        }),
+      ),
+    ).toEqual([offVolume]);
     // Development keeps both optional; the API does not need the list.
     expect(
       problemsOf(() =>
@@ -423,6 +435,22 @@ describe('loadConfig (spec 01 §3)', () => {
           },
         }),
       ),
+    ).toEqual(['SESSION_PEPPER: too short or too small']);
+  });
+
+  it('loads a production api config without ADMIN_EMAILS (M8b-T7: bootstrap only, never required)', () => {
+    const env = {
+      ...api,
+      NODE_ENV: 'production',
+      SESSION_PEPPER: 'p'.repeat(32),
+      SMTP_URL: 'smtp://mail.example.com:587',
+      PUBLIC_BASE_URL: 'https://bantoozi.example',
+    };
+    expect(problemsOf(() => loadConfig({ process: 'api', env }))).toEqual([]);
+    expect(loadConfig({ process: 'api', env }).adminEmails).toEqual([]);
+    // Negative control: the production rules still apply to the same env.
+    expect(
+      problemsOf(() => loadConfig({ process: 'api', env: { ...env, SESSION_PEPPER: 'short' } })),
     ).toEqual(['SESSION_PEPPER: too short or too small']);
   });
 

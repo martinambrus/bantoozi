@@ -52,7 +52,7 @@ Every per-user query runs under row-level security, and every limit that bounds 
     relay publishes through `packages/shared/src/jobs.ts` (specs 02/03). No acknowledged mutation may
     depend on an in-memory callback that could be lost after commit.
 - **Authorization:** all routes require an active, unrevoked session and a non-deleted user except
-  request-code, verify, waitlist, healthz and readyz (and the separately protected metrics/ops routes).
+  request-code, verify, waitlist, `GET /setup`, `POST /setup/complete`, healthz and readyz (and the separately protected metrics/ops routes).
   Admin roles are read from the current DB row on every request. Per-user RLS does not protect shared
   article/feed ids or auth/control-plane tables by itself: repositories must additionally constrain
   every detail, action, bulk member, example and rule reference to the authenticated user's owned
@@ -113,6 +113,8 @@ Every per-user query runs under row-level security, and every limit that bounds 
 | `POST /auth/logout` | — | Revoke the current session, clear the cookie → `204` |
 | `GET /auth/sessions` | — | The user's active sessions `[{id, userAgent, ip, createdAt, lastSeenAt, current}]` |
 | `DELETE /auth/sessions/:id` | — | Revoke one session → `204` |
+| `GET /setup` | — | Public, `Cache-Control: no-store` → `200 {open: boolean}`; `open` is true while no active admin exists |
+| `POST /setup/complete` | `{token, email}` | First-run setup (below). Public; needs the CSRF header (§1); no `Idempotency-Key`. Success sets the session cookie → `200 {user: Me}` |
 
 **`request-code` decision table.** "Mode" is the effective signup mode: `settings['signup_mode']` if
 set, otherwise `SIGNUP_MODE` (spec 02 §2). It is read on every request, so an admin change applies
@@ -122,7 +124,7 @@ is logged and treated as `closed` for signups (D-122).
 | Situation | Email sent |
 |---|---|
 | a `users` row exists (active, or soft-deleted and not yet purged) | login code (verifying restores a soft-deleted account) |
-| unknown email listed in `ADMIN_EMAILS`, mode ≠ `closed` | signup code (**admin bootstrap**: the first admin needs no invite) |
+| unknown email listed in `ADMIN_EMAILS`, mode ≠ `closed` | signup code (**admin bootstrap**: a listed address needs no invite) |
 | unknown email, mode `open` | signup code |
 | unknown email, mode `invite`, valid invite (unused, unexpired, email-bound invites must match) | signup code (invite remembered on the code row) |
 | unknown email, mode `invite`, no or invalid invite | "Bantoozi is invite-only" email with a waitlist link |
@@ -169,7 +171,11 @@ account.
 - if the email is on the waitlist, delete that row in the same transaction: the account replaces it
 
 **On every successful verify:**
-- set `role = 'admin'` if the email is in `ADMIN_EMAILS`, so the list can be extended later
+- `ADMIN_EMAILS` is **bootstrap only**: the user is made admin when the email is listed **and** either the
+  account is being created by this verify or no active admin exists (a login while there is none, for
+  example after the last admin was deleted). Otherwise the stored role stands, so a demotion in the admin
+  UI sticks. The "no active admin" check runs under the setup advisory lock (below), so two concurrent
+  bootstraps and a first-run setup cannot all pass it (D-215)
 - only when restoring within the 7-day window: clear `deleted_at`, call
   `refresh_feed_subscribers`/`refresh_feed_cards`, advance `rank_revision` and enqueue
   `user.rank {full: true}`. Ordinary logins need only normal freshness catch-up. A delayed purge must
@@ -186,8 +192,44 @@ email never hits the unique constraint through the signup path.
   everywhere means `users.last_active_at`. Check expiration/revocation on every request, reject
   deleted users, and clear cookies with the same Path/attributes on logout. Session ids exposed by
   `/auth/sessions` are database ids, never token hashes or tokens. Do not bind sessions rigidly to IP.
-  Admin edits cannot revoke an `ADMIN_EMAILS` bootstrap role permanently: the UI must explain that
-  the deployment allowlist must also be changed before demotion can persist.
+  An admin demotion is permanent: `ADMIN_EMAILS` no longer restores the role (above). The
+  last-active-admin guard of §9 still applies.
+
+#### First-run setup (M8b)
+
+A fresh install has no admin and needs no `ADMIN_EMAILS`. While **no active admin exists** (`role='admin'`
+and `deleted_at IS NULL`), setup is open:
+
+- **Token.** At start-up, after the server is ready, the API takes the advisory lock `bantoozi:setup`
+  and, if setup is open, generates 32 CSPRNG bytes (base64url, 43 characters), stores only its keyed digest
+  and `createdAt` in `settings['auth.setup']` (spec 02 §2) and logs the plaintext once, at `warn`
+  (to stderr when the log level hides `warn`): `First-run setup is open. Setup token (shown once, valid
+  until the next start): …`. **Every start rotates it**, so only the newest line works; the token is never
+  stored or returned. **Fail closed (D-227):** a process redeems no token until it has committed its own new
+  digest (or found an active admin). If the start-up rotation fails (the error is logged; start-up never
+  throws), `POST /setup/complete` answers the generic `400 INVALID_CODE` for every token, including one left
+  by the previous process, and the next `GET /setup` or `POST /setup/complete` retries the rotation under
+  the lock (one attempt at a time) and logs the new token once; the request that triggered a retry is still
+  refused. With an active admin the API generates and logs nothing and **closes** any open
+  row left by an earlier start: the row takes the consumed shape (`{createdAt, consumedAt, userId}` with
+  the id of an active admin, no digest), so a token logged earlier cannot be redeemed if that admin is
+  later deleted (the strict `auth.setup` schema is unchanged and the API role cannot `DELETE` settings, so
+  the row is rewritten, not removed; D-224). The same close runs, under the `bantoozi:setup` lock, at every
+  moment a user becomes an active admin: the `ADMIN_EMAILS` bootstrap in `verify`, the restore of a
+  soft-deleted admin at `verify`, and `PATCH /admin/users/{id}` with `role: 'admin'`. No migration is
+  involved (D-212). Every one of these paths takes the setup lock before the auth-email lock (D-225).
+- **Redeem.** `POST /setup/complete {token, email}`, in one transaction under the setup lock: recheck that
+  no active admin exists, compare the token digest in constant time, normalize the email, then either
+  create the user with `role='admin'` (locale from `Accept-Language`, plan `invites_left` as for any
+  signup) or **promote in place** an existing active user with that email (their data stays). A
+  soft-deleted user with that email is refused (D-216). It deletes a matching waitlist row, marks the setup
+  `consumed` (`{createdAt, consumedAt, userId}`) and creates the session like `verify`. No email is sent
+  and no invite, signup mode or `ADMIN_EMAILS` is consulted: it works in every signup mode.
+- **Errors.** A wrong token, a closed setup and every refusal above answer the same `400 INVALID_CODE`
+  ("Invalid setup token"), so the response says neither whether an admin exists nor why. Limits: spec 08 §11
+  (10 attempts per 15 minutes per IP, wrong ones included, D-213).
+- A single use: after success the same token, and any older one, fails. A token also stops working at the
+  moment any admin exists, not only at the next start (D-224).
 
 ### 2.2 Invites and waitlist
 
@@ -695,7 +737,7 @@ nor grants permission to analyze other articles.
 |---|---|
 | `GET /admin/overview` | users (total, active 7 d), feeds by status, articles ingested today, pipeline backlog per queue, engine status (breakers, spend today vs budget, LLM calls today), translation stats. Budget and caps are the effective settings; where a key is unset, the API reports the registry default, because worker-only env such as `DAILY_BUDGET_USD` is not API configuration |
 | `GET /admin/usage?days=30` | platform $/day by engine and kind (from `usage_daily`), and the top 20 users by attributed cost via `admin_usage_attribution(days)` (spec 02 §6, spec 04 §7) |
-| `GET /admin/settings` / `PATCH /admin/settings` | Allow-listed keys only (spec 02 §2 registry): `engine.daily_budget_usd`, `engine.llm_daily_cap`, `engine.prefilter_enabled`, `engine.laya`, `language_modes`, `card_text_mode`, `ranker.thresholds`, `translate.tier2_daily_cap`, `question_sets.active`, `signup_mode`. Each key is validated by its zod schema. **Side effects:** `ranker.thresholds` bumps `ranker.settings_version` and enqueues `user.rank {full}` for users active in the last 7 days, plus `user.learn` for those same recently active users when `strengthWeights` or `model` changed (spec 06 §8.4; the API cannot read other tenants' `user_models` under RLS, and the handler trains only when a user's model context or eligible samples changed); `question_sets.active.enrich` enqueues `house.reenrich`; `question_sets.active.match`, any `card_text_mode` change and any `engine.prefilter_enabled` change enqueue `house.rematch` (spec 05 §2); `card_text_mode = 'english'` also enqueues `house.translate-cards`, which translates missing cards and rematches them as their translations publish; `language_modes` changes enqueue `house.reenrich {lang}` for each language whose stored mode changed (the seed stores the initial modes, spec 02 §2), and `question_sets.active.cluster`/`.suggest` apply prospectively (spec 05 §2); each language added to or removed from `engine.laya` enqueues `house.reenrich {lang}`, because its enrich engine changes (spec 04 §9); `engine.prefilter_enabled` and `engine.laya` are set only after the recall validation (spec 05 §5.5) or replay (spec 10 §6) they require (an operator procedure; the API cannot verify it); a non-empty `engine.laya` is also refused unless `settings['worker.heartbeat']` has an entry younger than 90 s consuming both `.laya` queues, so producers never route work that nothing consumes (spec 11 §2). Likewise, a `language_modes` value of `translate` or `card_text_mode = 'english'` is refused unless a bounded API probe of `GET {LIBRETRANSLATE_URL}/languages` lists every language it needs (spec 11 §2): `{lang}→en` for each language newly set to `translate`, and for `card_text_mode = 'english'` every non-English `language_modes` language `→en`; the pairs are rechecked against the probe inside the settings transaction. A failed probe answers `503 ENGINE_UNAVAILABLE` with `details {engine:'libretranslate', reason, missing}` |
+| `GET /admin/settings` / `PATCH /admin/settings` | Allow-listed keys only (spec 02 §2 registry): `engine.daily_budget_usd`, `engine.llm_daily_cap`, `engine.prefilter_enabled`, `engine.laya`, `language_modes`, `card_text_mode`, `ranker.thresholds`, `translate.tier2_daily_cap`, `question_sets.active`, `signup_mode`, and the thirteen runtime keys of spec 02 §2 (`engine.typesafe_model`, `engine.typesafe_base_url`, `engine.typesafe_price_per_mtok_usd`, `engine.concurrency`, `engine.llm_fallback_enabled`, `engine.ollama_models`, `engine.ollama_base_url`, `engine.ollama_max_concurrency`, `engine.prefilter_min_cards`, `ingest.max_age_days`, `fetch.limits`, `api.rate_limits_enabled`, `translate.libretranslate_url`). Each key is validated by its zod schema. **Side effects:** `ranker.thresholds` bumps `ranker.settings_version` and enqueues `user.rank {full}` for users active in the last 7 days, plus `user.learn` for those same recently active users when `strengthWeights` or `model` changed (spec 06 §8.4; the API cannot read other tenants' `user_models` under RLS, and the handler trains only when a user's model context or eligible samples changed); `question_sets.active.enrich` enqueues `house.reenrich`; `question_sets.active.match`, any `card_text_mode` change and any `engine.prefilter_enabled` change enqueue `house.rematch` (spec 05 §2); `card_text_mode = 'english'` also enqueues `house.translate-cards`, which translates missing cards and rematches them as their translations publish; `language_modes` changes enqueue `house.reenrich {lang}` for each language whose stored mode changed (the seed stores the initial modes, spec 02 §2), and `question_sets.active.cluster`/`.suggest` apply prospectively (spec 05 §2); each language added to or removed from `engine.laya` enqueues `house.reenrich {lang}`, because its enrich engine changes (spec 04 §9); `engine.prefilter_enabled` and `engine.laya` are set only after the recall validation (spec 05 §5.5) or replay (spec 10 §6) they require (an operator procedure; the API cannot verify it); a non-empty `engine.laya` is also refused unless `settings['worker.heartbeat']` has an entry younger than 90 s consuming both `.laya` queues, so producers never route work that nothing consumes (spec 11 §2). Likewise, a `language_modes` value of `translate` or `card_text_mode = 'english'` is refused unless a bounded API probe of `GET {LIBRETRANSLATE_URL}/languages` lists every language it needs (spec 11 §2): `{lang}→en` for each language newly set to `translate`, and for `card_text_mode = 'english'` every non-English `language_modes` language `→en`; the pairs are rechecked against the probe inside the settings transaction. A failed probe answers `503 ENGINE_UNAVAILABLE` with `details {engine:'libretranslate', reason, missing}` |
 | `POST /admin/translations/reprocess` | `{reasons?: ('no_key'\|'cap'\|'budget')[]}` (default all three): enqueue `house.retranslate-skipped` → `202 {queued: true}`. The only retry for a tier-2 translation skipped on an unchanged article revision, used after the Ollama key, cap or budget is restored (spec 07 §3) |
 | `POST /admin/engine/reset-breaker` | `{engine}`: writes `engine.circuit.resetRequested[engine] = now`. Worker routers close that breaker (including auth mode) within 10 s (spec 04 §5) |
 | `GET /admin/engine/credentials` | Metadata-only configuration status for `typesafe` (Jev) and `ollama`: `CredentialStatus[]`; never plaintext, ciphertext, key suffix or reversible secret material |
@@ -727,6 +769,31 @@ Admin queries default to 30 rows, limit at 100, validate `days` 1..90 and search
 Each admin route's complete request/success/error DTO is part of its implementation task and OpenAPI
 contract, including explicit empty results; generic `any`/unbounded JSON is not an acceptable DTO.
 
+**Runtime settings (M8b).** `GET /admin/settings` returns, besides `values` and `stored`:
+`sources` (`{[runtimeKey]: 'env'|'stored'|'last_good'}`), `defaults` (the env value of each runtime key, or
+`null` when no process can tell: the API knows its own, workers report theirs in `worker.heartbeat`
+`runtime.defaults`) and `workers` (`[{processId, at, pendingRestart, problems}]` for heartbeats younger than
+90 s). The effective value of a key is the valid stored row, else (for a row that no longer validates) the
+last good value this API process saw, else the default (D-219); `values` and `defaults` show any value the
+environment accepts (spec 02 §2 lists the wider env ranges), while a `PATCH` keeps the narrower write bounds (D-226). A `PATCH` takes `null` to reset a runtime key
+and an optional `acknowledge: boolean`. Rules:
+
+- A runtime value is validated by the shared rules (spec 02 §2; in production https URLs on
+  `PROVIDER_HOST_ALLOWLIST`, a pinned `engine.typesafe_model`, a price above 0, Ollama models with a price).
+  A failure answers `400 VALIDATION_FAILED` with `details {key, message}`.
+- Changing `engine.typesafe_model`, `engine.llm_fallback_enabled`, or `engine.ollama_models` while the fallback
+  is on re-enriches and re-matches the corpus (spec 11 §8), so without `acknowledge: true` the PATCH answers
+  `409 CONFLICT` with `details {reason: 'confirmation_required', effects: ['reenrich', 'rematch']}`. A value
+  that does not change the effective value needs no acknowledgement.
+- A changed `translate.libretranslate_url` triggers the `GET /languages` probe above against the **new** URL
+  for the pairs the current `language_modes`/`card_text_mode` need (`503 ENGINE_UNAVAILABLE`, also
+  `reason: 'not_configured'`); pairs are rechecked inside the transaction (`409 settings_changed` on a race).
+- A changed `engine.prefilter_min_cards` enqueues `house.rematch` while `engine.prefilter_enabled` is on.
+- The API applies the live values itself: its settings cache (TTL 10 s, invalidated by a PATCH it served)
+  drives `api.rate_limits_enabled`, `fetch.limits` for discovery and OPML, the LibreTranslate client and the
+  Jev model it freezes into analysis requests until a pin exists. Workers apply theirs by the live/restart
+  split of spec 02 §2.
+
 ### 9.1 Provider credentials
 
 ```ts
@@ -737,6 +804,13 @@ CredentialStatus = {
   validatedAt:string|null, capabilities:ProviderCapabilities|null, lastErrorCode:string|null
 }
 ```
+
+`GET /admin/engine/credentials` returns `{items: CredentialStatus[], keyring}` with
+`keyring = {api: {status, activeKeyId?}, workers: [{workerId, status, activeKeyId?}], mismatch: boolean}`;
+`status` is `ok | missing | malformed | active_key_missing` and no key material is ever returned. `workers`
+lists heartbeats younger than 90 s (`runtime.keyring`); `mismatch` is true when the API's keyring is `ok` and a worker reports an
+`ok` keyring with another active key id. Staging a key while the API's keyring is not `ok` answers
+`503 ENGINE_UNAVAILABLE` with `details {reason: 'keyring_unavailable'}`.
 
 `source` is `db` when the provider has a credential row (a disabled tombstone included). Otherwise it
 is `env` when a `settings['worker.heartbeat']` entry younger than 90 s lists the provider in
@@ -816,11 +890,15 @@ authorship policy, not a forged user approval.
 | `POST /articles/:id/bookmark/retry-capture` | 20 / hour per user, plus safe-fetch host limits |
 | Provider credential stage/validate/activate/delete | 20 / hour per admin; validation additionally obeys shared engine admission |
 | `POST /admin/ops-event` | 30 / min per IP |
+| `POST /setup/complete` | 10 / 15 min per IP; every attempt counts, a wrong token included (D-213) |
 | `GET /me/export` | 2 / hour per user |
 | `POST /cards`, `POST /cards/from-article`, `PATCH /cards/*`, `POST /cards/*/examples*`, `POST /labels*`, `PATCH /labels/*` | 60 / hour per user, one shared bucket (each may trigger backfills) |
 
-All limits are enforced unless `RATE_LIMITS_ENABLED=false` (spec 01 §3). Only E2E and load-test
-environments with `NODE_ENV=test` set it to false. Config validation rejects `false` in production.
+All limits are enforced unless rate limits are disabled: `api.rate_limits_enabled` if stored, else
+`RATE_LIMITS_ENABLED` (spec 01 §3). The env value `false` is accepted with `NODE_ENV=test` only (E2E and
+load tests); config validation rejects it in production. In production the setting `false` turns off only
+the general limits (global per-IP, per-user mutation, per-route quotas); the unauthenticated groups
+`auth-request-code`, `auth-verify`, `waitlist`, `setup-complete` and `ops-event` stay on (D-222).
 Only Caddy's known internal proxy address/network is trusted for forwarded IP headers; never
 `trustProxy: true` for arbitrary clients. The API trusts loopback and the RFC 1918 private ranges of the compose
 network, whose API port is not published elsewhere (D-121). Limits are shared across API processes and restarts through

@@ -109,10 +109,11 @@ login without leaking the previous account's UI. Slow classification leaves arti
 
 | Route | Screen |
 |---|---|
-| `/login` | existing users: email → code (two steps) |
+| `/login` | existing users: email → code (two steps). While first-run setup is open (`GET /setup` says `open`), a link to `/setup` is shown |
+| `/setup` | first-run setup (spec 08 §2.1): one form with the setup token from the API log and the email of the first administrator, one step. Success signs in and goes to the admin area. Wrong token or closed setup: one generic message; a 429 shows the wait in minutes. When setup is closed the route redirects to `/login` |
 | `/join?code=…` | invite landing: explains invite-only, shows the prefilled invite code, asks for the email, then continues with the same code step as `/login` (sending `inviteCode`) |
 | `/waitlist` | public waitlist form |
-| `/onboarding` | the first-run wizard (§4); shown while `preferences.onboardingCompletedAt` is null. Finishing or skipping sets it |
+| `/onboarding` | the first-run wizard (§4); shown while `preferences.onboardingCompletedAt` is null. Finishing or skipping sets it. An administrator may open `/admin/*` before finishing it (the first admin has the system to configure first, D-217) |
 | `/` → `/read/for_you` | the reader (§3) |
 | `/read/:lane` | lanes: `for_you`, `maybe`, `everything`, `new`, `bookmarks`, and the explicit recovery view `hidden` |
 | `/read/feed/:feedId`, `/read/folder/:name`, `/read/label/:labelId` | filtered reader |
@@ -397,8 +398,20 @@ reports capture failures/partial snapshots and includes retained bookmark bodies
 Plain tables and forms, no polish needed:
 - **Overview:** tiles and queue depths; a breaker status badge with a Reset button.
 - **Usage:** a spend chart (last 30 days) and top users.
-- **Settings:** JSON editors with validation per key.
+- **Settings:** JSON editors with validation per key for the older keys. The thirteen runtime keys
+  (spec 02 §2) have typed editors in groups (Decision engine, LLM fallback, Ingestion and fetching, API,
+  Translation): number, text, switch and megabyte fields instead of JSON. Each shows its **source**
+  (stored, environment or last good value) and the default, with a Reset that stores `null`. Changing the
+  Jev model, the fallback switch or the Ollama models first opens an **acknowledgement dialog** that states
+  the change and its cost (the corpus is enriched and matched again) and requires ticking "I ran eval replay
+  and it passed"; the PATCH then carries `acknowledge: true` (spec 08 §9). An **Applied by workers** panel
+  lists the live workers, how many wait for a restart (`pendingRestart`) and any value a worker rejected.
+  Server rejections (`details.key`, the LibreTranslate probe) are shown at the key they concern.
 - **Provider accounts:** dedicated Jev and Ollama credential panels, separate from JSON settings.
+  A **keyring banner** appears when the API or a worker reports a key store that is not usable and names
+  the fix: `missing` → run `pnpm setup:env` on the host and restart; `malformed` → fix `PROVIDER_MASTER_KEYS`;
+  `active_key_missing` → fix `PROVIDER_MASTER_KEY_ID`; a `mismatch` between the API and a worker → make the
+  key id the same everywhere and restart both. While the API's keyring is not `ok`, staging a key is disabled.
   Show only configured source, active/candidate version, validation status and sanitized capabilities;
   never reveal a stored key, suffix or ciphertext. A password input stages a replacement (clear it
   immediately on submit/navigation), then explicit Validate and Activate steps preserve the old
@@ -449,6 +462,11 @@ Plain tables and forms, no polish needed:
    `img-src`, because the fixtures serve images from loopback http ports).
 
 Test files are named `*.pw.ts` so Vitest never picks them up (spec 01 §6).
+
+A separate Playwright configuration (`playwright.first-run.config.ts`) runs the **first-run** scenario on a
+fresh database with an empty `ADMIN_EMAILS`: the API's output is piped through a filter that writes the
+JSON log's `msg` to a file, the spec reads the setup token from it, completes `/setup` and lands in
+`/admin` without onboarding (D-220).
 
 **Scenarios:**
 

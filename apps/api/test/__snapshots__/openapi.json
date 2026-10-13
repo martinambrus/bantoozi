@@ -780,6 +780,463 @@
         }
       }
     },
+    "/api/v1/setup": {
+      "get": {
+        "summary": "Whether first-run setup is open (no active admin exists)",
+        "tags": [
+          "setup"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "open": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "open"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/setup/complete": {
+      "post": {
+        "summary": "Redeem the setup token: create the first admin and sign in",
+        "tags": [
+          "setup"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "email": {
+                    "type": "string",
+                    "maxLength": 318
+                  }
+                },
+                "required": [
+                  "token",
+                  "email"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "locale": {
+                          "type": "string",
+                          "enum": [
+                            "en",
+                            "sk"
+                          ]
+                        },
+                        "timezone": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "admin"
+                          ]
+                        },
+                        "plan": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "beta",
+                                "admin"
+                              ]
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "invitesLeft": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "preferences": {
+                          "type": "object",
+                          "properties": {
+                            "defaultTier": {
+                              "default": 1,
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    1
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    2
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    3
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    4
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    5
+                                  ]
+                                }
+                              ]
+                            },
+                            "hideEverything": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "simpleMode": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "sort": {
+                              "default": "score",
+                              "type": "string",
+                              "enum": [
+                                "score",
+                                "date"
+                              ]
+                            },
+                            "markReadOnExpand": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "markReadOnRate": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "feedbackPrompt": {
+                              "default": "occasionally",
+                              "type": "string",
+                              "enum": [
+                                "often",
+                                "occasionally",
+                                "never"
+                              ]
+                            },
+                            "exampleSuggestions": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "demote": {
+                              "default": {
+                                "clickbait": "auto",
+                                "promotional": "auto",
+                                "shallow": "auto",
+                                "stale": "auto"
+                              },
+                              "type": "object",
+                              "properties": {
+                                "clickbait": {
+                                  "default": "auto",
+                                  "type": "string",
+                                  "enum": [
+                                    "auto",
+                                    "on",
+                                    "off"
+                                  ]
+                                },
+                                "promotional": {
+                                  "default": "auto",
+                                  "type": "string",
+                                  "enum": [
+                                    "auto",
+                                    "on",
+                                    "off"
+                                  ]
+                                },
+                                "shallow": {
+                                  "default": "auto",
+                                  "type": "string",
+                                  "enum": [
+                                    "auto",
+                                    "on",
+                                    "off"
+                                  ]
+                                },
+                                "stale": {
+                                  "default": "auto",
+                                  "type": "string",
+                                  "enum": [
+                                    "auto",
+                                    "on",
+                                    "off"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "clickbait",
+                                "promotional",
+                                "shallow",
+                                "stale"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "implicitNegative": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "swipe": {
+                              "default": {
+                                "left": "dislike",
+                                "right": "like"
+                              },
+                              "type": "object",
+                              "properties": {
+                                "left": {
+                                  "default": "dislike",
+                                  "type": "string",
+                                  "enum": [
+                                    "dislike",
+                                    "read",
+                                    "none"
+                                  ]
+                                },
+                                "right": {
+                                  "default": "like",
+                                  "type": "string",
+                                  "enum": [
+                                    "like",
+                                    "bookmark",
+                                    "none"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "left",
+                                "right"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "theme": {
+                              "default": "system",
+                              "type": "string",
+                              "enum": [
+                                "system",
+                                "light",
+                                "dark"
+                              ]
+                            },
+                            "loadRemoteImages": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "implicitFeedback": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "folderOrder": {
+                              "default": [],
+                              "maxItems": 200,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              }
+                            },
+                            "onboardingCompletedAt": {
+                              "default": null,
+                              "nullable": true,
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                            }
+                          },
+                          "required": [
+                            "defaultTier",
+                            "hideEverything",
+                            "simpleMode",
+                            "sort",
+                            "markReadOnExpand",
+                            "markReadOnRate",
+                            "feedbackPrompt",
+                            "exampleSuggestions",
+                            "demote",
+                            "implicitNegative",
+                            "swipe",
+                            "theme",
+                            "loadRemoteImages",
+                            "implicitFeedback",
+                            "folderOrder",
+                            "onboardingCompletedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "quotas": {
+                          "type": "object",
+                          "properties": {
+                            "used": {
+                              "type": "object",
+                              "properties": {
+                                "maxFeeds": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxCards": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxLabels": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxForks": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxRules": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "maxFeeds",
+                                "maxCards",
+                                "maxLabels",
+                                "maxForks",
+                                "maxRules"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "limits": {
+                              "type": "object",
+                              "properties": {
+                                "maxFeeds": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxCards": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxLabels": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxForks": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxRules": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "opmlMaxFeeds": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "maxFeeds",
+                                "maxCards",
+                                "maxLabels",
+                                "maxForks",
+                                "maxRules",
+                                "opmlMaxFeeds"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "used",
+                            "limits"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "email",
+                        "displayName",
+                        "locale",
+                        "timezone",
+                        "role",
+                        "plan",
+                        "invitesLeft",
+                        "preferences",
+                        "quotas"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/invites": {
       "get": {
         "summary": "My invites and how many I have left",
@@ -17282,10 +17739,74 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "keyring": {
+                      "type": "object",
+                      "properties": {
+                        "api": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "ok",
+                                "missing",
+                                "malformed",
+                                "active_key_missing"
+                              ]
+                            },
+                            "activeKeyId": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "workers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "ok",
+                                  "missing",
+                                  "malformed",
+                                  "active_key_missing"
+                                ]
+                              },
+                              "activeKeyId": {
+                                "type": "string"
+                              },
+                              "workerId": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "workerId"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "mismatch": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "api",
+                        "workers",
+                        "mismatch"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
-                    "items"
+                    "items",
+                    "keyring"
                   ],
                   "additionalProperties": false
                 }
@@ -18239,6 +18760,109 @@
                             "open",
                             "closed"
                           ]
+                        },
+                        "engine.typesafe_model": {
+                          "nullable": true,
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "engine.typesafe_base_url": {
+                          "nullable": true,
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2048
+                        },
+                        "engine.typesafe_price_per_mtok_usd": {
+                          "nullable": true,
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "engine.concurrency": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 256
+                        },
+                        "engine.llm_fallback_enabled": {
+                          "nullable": true,
+                          "type": "boolean"
+                        },
+                        "engine.ollama_models": {
+                          "nullable": true,
+                          "type": "object",
+                          "properties": {
+                            "fast": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "strong": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            }
+                          },
+                          "required": [
+                            "fast",
+                            "strong"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "engine.ollama_base_url": {
+                          "nullable": true,
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2048
+                        },
+                        "engine.ollama_max_concurrency": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 64
+                        },
+                        "engine.prefilter_min_cards": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 1000000
+                        },
+                        "ingest.max_age_days": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 3650
+                        },
+                        "fetch.limits": {
+                          "nullable": true,
+                          "type": "object",
+                          "properties": {
+                            "timeoutMs": {
+                              "type": "integer",
+                              "minimum": 100,
+                              "maximum": 600000
+                            },
+                            "maxBytes": {
+                              "type": "integer",
+                              "minimum": 1024,
+                              "maximum": 1073741824
+                            }
+                          },
+                          "required": [
+                            "timeoutMs",
+                            "maxBytes"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "api.rate_limits_enabled": {
+                          "nullable": true,
+                          "type": "boolean"
+                        },
+                        "translate.libretranslate_url": {
+                          "nullable": true,
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2048
                         }
                       },
                       "required": [
@@ -18251,7 +18875,20 @@
                         "ranker.thresholds",
                         "translate.tier2_daily_cap",
                         "question_sets.active",
-                        "signup_mode"
+                        "signup_mode",
+                        "engine.typesafe_model",
+                        "engine.typesafe_base_url",
+                        "engine.typesafe_price_per_mtok_usd",
+                        "engine.concurrency",
+                        "engine.llm_fallback_enabled",
+                        "engine.ollama_models",
+                        "engine.ollama_base_url",
+                        "engine.ollama_max_concurrency",
+                        "engine.prefilter_min_cards",
+                        "ingest.max_age_days",
+                        "fetch.limits",
+                        "api.rate_limits_enabled",
+                        "translate.libretranslate_url"
                       ],
                       "additionalProperties": false
                     },
@@ -18272,7 +18909,20 @@
                               "ranker.thresholds",
                               "translate.tier2_daily_cap",
                               "question_sets.active",
-                              "signup_mode"
+                              "signup_mode",
+                              "engine.typesafe_model",
+                              "engine.typesafe_base_url",
+                              "engine.typesafe_price_per_mtok_usd",
+                              "engine.concurrency",
+                              "engine.llm_fallback_enabled",
+                              "engine.ollama_models",
+                              "engine.ollama_base_url",
+                              "engine.ollama_max_concurrency",
+                              "engine.prefilter_min_cards",
+                              "ingest.max_age_days",
+                              "fetch.limits",
+                              "api.rate_limits_enabled",
+                              "translate.libretranslate_url"
                             ]
                           },
                           "updatedAt": {
@@ -18292,12 +18942,78 @@
                       "type": "integer",
                       "minimum": 0,
                       "maximum": 9007199254740991
+                    },
+                    "sources": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "enum": [
+                          "env",
+                          "stored",
+                          "last_good"
+                        ]
+                      }
+                    },
+                    "defaults": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "nullable": true
+                      }
+                    },
+                    "workers": {
+                      "default": [],
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "processId": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          },
+                          "pendingRestart": {
+                            "type": "boolean"
+                          },
+                          "problems": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "message"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "processId",
+                          "at",
+                          "pendingRestart",
+                          "problems"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
                     "values",
                     "stored",
-                    "rankerSettingsVersion"
+                    "rankerSettingsVersion",
+                    "sources",
+                    "defaults",
+                    "workers"
                   ],
                   "additionalProperties": false
                 }
@@ -18624,6 +19340,22 @@
                       "open",
                       "closed"
                     ]
+                  },
+                  "engine.typesafe_model": {},
+                  "engine.typesafe_base_url": {},
+                  "engine.typesafe_price_per_mtok_usd": {},
+                  "engine.concurrency": {},
+                  "engine.llm_fallback_enabled": {},
+                  "engine.ollama_models": {},
+                  "engine.ollama_base_url": {},
+                  "engine.ollama_max_concurrency": {},
+                  "engine.prefilter_min_cards": {},
+                  "ingest.max_age_days": {},
+                  "fetch.limits": {},
+                  "api.rate_limits_enabled": {},
+                  "translate.libretranslate_url": {},
+                  "acknowledge": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false
@@ -18948,6 +19680,109 @@
                             "open",
                             "closed"
                           ]
+                        },
+                        "engine.typesafe_model": {
+                          "nullable": true,
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "engine.typesafe_base_url": {
+                          "nullable": true,
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2048
+                        },
+                        "engine.typesafe_price_per_mtok_usd": {
+                          "nullable": true,
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "engine.concurrency": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 256
+                        },
+                        "engine.llm_fallback_enabled": {
+                          "nullable": true,
+                          "type": "boolean"
+                        },
+                        "engine.ollama_models": {
+                          "nullable": true,
+                          "type": "object",
+                          "properties": {
+                            "fast": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "strong": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            }
+                          },
+                          "required": [
+                            "fast",
+                            "strong"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "engine.ollama_base_url": {
+                          "nullable": true,
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2048
+                        },
+                        "engine.ollama_max_concurrency": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 64
+                        },
+                        "engine.prefilter_min_cards": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 1000000
+                        },
+                        "ingest.max_age_days": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 3650
+                        },
+                        "fetch.limits": {
+                          "nullable": true,
+                          "type": "object",
+                          "properties": {
+                            "timeoutMs": {
+                              "type": "integer",
+                              "minimum": 100,
+                              "maximum": 600000
+                            },
+                            "maxBytes": {
+                              "type": "integer",
+                              "minimum": 1024,
+                              "maximum": 1073741824
+                            }
+                          },
+                          "required": [
+                            "timeoutMs",
+                            "maxBytes"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "api.rate_limits_enabled": {
+                          "nullable": true,
+                          "type": "boolean"
+                        },
+                        "translate.libretranslate_url": {
+                          "nullable": true,
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2048
                         }
                       },
                       "required": [
@@ -18960,7 +19795,20 @@
                         "ranker.thresholds",
                         "translate.tier2_daily_cap",
                         "question_sets.active",
-                        "signup_mode"
+                        "signup_mode",
+                        "engine.typesafe_model",
+                        "engine.typesafe_base_url",
+                        "engine.typesafe_price_per_mtok_usd",
+                        "engine.concurrency",
+                        "engine.llm_fallback_enabled",
+                        "engine.ollama_models",
+                        "engine.ollama_base_url",
+                        "engine.ollama_max_concurrency",
+                        "engine.prefilter_min_cards",
+                        "ingest.max_age_days",
+                        "fetch.limits",
+                        "api.rate_limits_enabled",
+                        "translate.libretranslate_url"
                       ],
                       "additionalProperties": false
                     },
@@ -18981,7 +19829,20 @@
                               "ranker.thresholds",
                               "translate.tier2_daily_cap",
                               "question_sets.active",
-                              "signup_mode"
+                              "signup_mode",
+                              "engine.typesafe_model",
+                              "engine.typesafe_base_url",
+                              "engine.typesafe_price_per_mtok_usd",
+                              "engine.concurrency",
+                              "engine.llm_fallback_enabled",
+                              "engine.ollama_models",
+                              "engine.ollama_base_url",
+                              "engine.ollama_max_concurrency",
+                              "engine.prefilter_min_cards",
+                              "ingest.max_age_days",
+                              "fetch.limits",
+                              "api.rate_limits_enabled",
+                              "translate.libretranslate_url"
                             ]
                           },
                           "updatedAt": {
@@ -19002,6 +19863,69 @@
                       "minimum": 0,
                       "maximum": 9007199254740991
                     },
+                    "sources": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "enum": [
+                          "env",
+                          "stored",
+                          "last_good"
+                        ]
+                      }
+                    },
+                    "defaults": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "nullable": true
+                      }
+                    },
+                    "workers": {
+                      "default": [],
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "processId": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          },
+                          "pendingRestart": {
+                            "type": "boolean"
+                          },
+                          "problems": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "message"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "processId",
+                          "at",
+                          "pendingRestart",
+                          "problems"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
                     "changed": {
                       "type": "array",
                       "items": {
@@ -19016,7 +19940,20 @@
                           "ranker.thresholds",
                           "translate.tier2_daily_cap",
                           "question_sets.active",
-                          "signup_mode"
+                          "signup_mode",
+                          "engine.typesafe_model",
+                          "engine.typesafe_base_url",
+                          "engine.typesafe_price_per_mtok_usd",
+                          "engine.concurrency",
+                          "engine.llm_fallback_enabled",
+                          "engine.ollama_models",
+                          "engine.ollama_base_url",
+                          "engine.ollama_max_concurrency",
+                          "engine.prefilter_min_cards",
+                          "ingest.max_age_days",
+                          "fetch.limits",
+                          "api.rate_limits_enabled",
+                          "translate.libretranslate_url"
                         ]
                       }
                     }
@@ -19025,6 +19962,9 @@
                     "values",
                     "stored",
                     "rankerSettingsVersion",
+                    "sources",
+                    "defaults",
+                    "workers",
                     "changed"
                   ],
                   "additionalProperties": false

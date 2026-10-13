@@ -1,4 +1,4 @@
-import { MeSchema, type Me, type RequestCodeResponse } from '@bantoozi/shared';
+import { MeSchema, type Me, type RequestCodeResponse, type VerifyResponse } from '@bantoozi/shared';
 import { hashKey, isCancelledError, type QueryClient } from '@tanstack/react-query';
 import type { i18n as I18n } from 'i18next';
 
@@ -7,6 +7,7 @@ import { isApiError, isRetryable } from '../api/errors.js';
 import { meKey } from '../api/query-keys.js';
 import { retryLaterMs } from '../api/retry-later.js';
 import { routes } from '../api/routes.js';
+
 import {
   clearAccount,
   clearedElsewhere,
@@ -73,6 +74,8 @@ export interface Session {
    * takes this one.
    */
   verifyCode: (input: { email: string; code: string }) => Promise<Me>;
+  /** First-run setup (M8b-T11): the setup token and an email make the first admin and sign it in. */
+  completeSetup: (input: { token: string; email: string }) => Promise<Me>;
   /**
    * Drops the state of the device at once and ends the server session. Until the server has ended
    * it, a marker keeps the device signed out and has the sign-out sent again: without a connection
@@ -464,7 +467,7 @@ export function createSession(options: SessionOptions): Session {
     }
   }
 
-  async function verifyCode(input: { email: string; code: string }): Promise<Me> {
+  async function signInWith(call: () => Promise<VerifyResponse>): Promise<Me> {
     const { user } = await exclusively(async () => {
       try {
         await endPendingLogout();
@@ -474,7 +477,7 @@ export function createSession(options: SessionOptions): Session {
         if (isRetryable(error)) throw error;
         clearLogoutPending();
       }
-      const answer = await api.call(routes.authVerify, { body: input });
+      const answer = await call();
       cookies += 1;
       // The session cookie of the browser is this account's now. The other tabs hear of the
       // sign-ins in the order they took the lock, so the last one they hear of holds the cookie.
@@ -490,6 +493,12 @@ export function createSession(options: SessionOptions): Session {
     }
     return user;
   }
+
+  const verifyCode = (input: { email: string; code: string }): Promise<Me> =>
+    signInWith(() => api.call(routes.authVerify, { body: input }));
+
+  const completeSetup = (input: { token: string; email: string }): Promise<Me> =>
+    signInWith(() => api.call(routes.setupComplete, { body: input }));
 
   async function dropDeletedAccount(
     accountId: string,
@@ -534,6 +543,7 @@ export function createSession(options: SessionOptions): Session {
         body: { email, locale, ...(inviteCode ? { inviteCode } : {}) },
       }),
     verifyCode,
+    completeSetup,
     logout,
     resetAccountState: () => reset('logout'),
     dropDeletedAccount,

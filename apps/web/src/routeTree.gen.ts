@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthedRouteRouteImport } from './routes/_authed/route'
 import { Route as JoinRouteImport } from './routes/join'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as SetupRouteImport } from './routes/setup'
 import { Route as WaitlistRouteImport } from './routes/waitlist'
 import { Route as AuthedAppRouteRouteImport } from './routes/_authed/_app/route'
 import { Route as AuthedOnboardingRouteImport } from './routes/_authed/onboarding'
@@ -55,6 +56,11 @@ const JoinRoute = JoinRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WaitlistRoute = WaitlistRouteImport.update({
@@ -182,6 +188,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
+  '/setup': typeof SetupRoute
   '/waitlist': typeof WaitlistRoute
   '/onboarding': typeof AuthedOnboardingRoute
   '/admin': typeof AuthedAppAdminRouteRouteWithChildren
@@ -210,6 +217,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
+  '/setup': typeof SetupRoute
   '/waitlist': typeof WaitlistRoute
   '/onboarding': typeof AuthedOnboardingRoute
   '/feeds': typeof AuthedAppFeedsRoute
@@ -238,6 +246,7 @@ export interface FileRoutesById {
   '/_authed': typeof AuthedRouteRouteWithChildren
   '/join': typeof JoinRoute
   '/login': typeof LoginRoute
+  '/setup': typeof SetupRoute
   '/waitlist': typeof WaitlistRoute
   '/_authed/_app': typeof AuthedAppRouteRouteWithChildren
   '/_authed/onboarding': typeof AuthedOnboardingRoute
@@ -269,6 +278,7 @@ export interface FileRouteTypes {
     | '/'
     | '/join'
     | '/login'
+    | '/setup'
     | '/waitlist'
     | '/onboarding'
     | '/admin'
@@ -297,6 +307,7 @@ export interface FileRouteTypes {
     | '/'
     | '/join'
     | '/login'
+    | '/setup'
     | '/waitlist'
     | '/onboarding'
     | '/feeds'
@@ -324,6 +335,7 @@ export interface FileRouteTypes {
     | '/_authed'
     | '/join'
     | '/login'
+    | '/setup'
     | '/waitlist'
     | '/_authed/_app'
     | '/_authed/onboarding'
@@ -355,6 +367,7 @@ export interface RootRouteChildren {
   AuthedRouteRoute: typeof AuthedRouteRouteWithChildren
   JoinRoute: typeof JoinRoute
   LoginRoute: typeof LoginRoute
+  SetupRoute: typeof SetupRoute
   WaitlistRoute: typeof WaitlistRoute
 }
 
@@ -386,6 +399,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/waitlist': {
@@ -648,6 +668,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthedRouteRoute: AuthedRouteRouteWithChildren,
   JoinRoute: JoinRoute,
   LoginRoute: LoginRoute,
+  SetupRoute: SetupRoute,
   WaitlistRoute: WaitlistRoute,
 }
 export const routeTree = rootRouteImport

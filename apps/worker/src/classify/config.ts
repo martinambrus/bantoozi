@@ -11,6 +11,7 @@ import {
   parseSetting,
   readSetting,
   settingDefault,
+  validateRuntimeSetting,
   type CardTextMode,
   type LanguageModes,
   type SettingEnvDefaults,
@@ -26,6 +27,8 @@ import {
  * as well.
  */
 
+const PREFILTER_MIN_CARDS_KEY = 'engine.prefilter_min_cards' as const;
+
 /** The settings a completion compares with its snapshot. */
 const CLASSIFICATION_SETTING_KEYS = [
   'question_sets.active',
@@ -33,6 +36,12 @@ const CLASSIFICATION_SETTING_KEYS = [
   'language_modes',
   'engine.prefilter_enabled',
 ] as const;
+
+/** The built-in prefilter threshold: the env default of `engine.prefilter_min_cards` (spec 05 §5.3). */
+export const DEFAULT_PREFILTER_MIN_CARDS = 60;
+
+/** The environment defaults the classification configuration reads (`PREFILTER_MIN_CARDS` optional). */
+export type ClassificationEnv = SettingEnvDefaults & { prefilterMinCards?: number };
 
 /** An active stored set whose version this worker's code builds, with the same sha (spec 05 §2). */
 export interface ActiveQuestionSet {
@@ -48,6 +57,8 @@ export interface ClassificationConfig {
   cardTextMode: CardTextMode;
   languageModes: LanguageModes;
   prefilterEnabled: boolean;
+  /** Effective `engine.prefilter_min_cards` (stored value, else the env default). */
+  prefilterMinCards: number;
 }
 
 /**
@@ -113,17 +124,18 @@ export function enrichQuestions(set: ActiveQuestionSet): Record<string, Question
  */
 export async function loadClassificationConfig(
   db: Executor,
-  env: SettingEnvDefaults,
+  env: ClassificationEnv,
   options: { lock?: boolean } = {},
 ): Promise<ClassificationConfig> {
   if (options.lock === true) {
-    await shareLockSettings(
-      db,
-      CLASSIFICATION_SETTING_KEYS.map((key) => ({
+    await shareLockSettings(db, [
+      ...CLASSIFICATION_SETTING_KEYS.map((key) => ({
         key,
         initial: parseSetting(key, settingDefault(key, env)),
       })),
-    );
+      // No default of its own: a null row means the env value and fences the first write.
+      { key: PREFILTER_MIN_CARDS_KEY, initial: null },
+    ]);
   }
   const sets = await loadActiveQuestionSets(db);
   const cardTextMode =
@@ -137,6 +149,7 @@ export async function loadClassificationConfig(
       await readStoredSetting(db, 'engine.prefilter_enabled'),
       env,
     ) ?? false;
+  const prefilterMinCards = await effectivePrefilterMinCards(db, env);
   return {
     enrich: verifiedSet('enrich', sets.enrich),
     match: verifiedSet('match', sets.match),
@@ -144,7 +157,26 @@ export async function loadClassificationConfig(
     cardTextMode,
     languageModes,
     prefilterEnabled,
+    prefilterMinCards,
   };
+}
+
+/**
+ * The effective `engine.prefilter_min_cards`: the stored row when it validates (the runtime-setting
+ * rule), else the environment default. An invalid row is ignored here, not thrown on (PR #28 round 7,
+ * D-228): the live settings cache reports it in the heartbeat `runtime.problems`, and the job keeps
+ * running on the value it resolves, which the completion compares again under its share lock.
+ */
+async function effectivePrefilterMinCards(db: Executor, env: ClassificationEnv): Promise<number> {
+  const fallback = env.prefilterMinCards ?? DEFAULT_PREFILTER_MIN_CARDS;
+  const stored = await readStoredSetting(db, PREFILTER_MIN_CARDS_KEY);
+  if (stored === undefined || stored === null) return fallback;
+  const checked = validateRuntimeSetting(PREFILTER_MIN_CARDS_KEY, stored, {
+    production: false,
+    providerHostAllowlist: [],
+    ollamaPricedModels: [],
+  });
+  return checked.ok && typeof checked.value === 'number' ? checked.value : fallback;
 }
 
 /**
@@ -207,6 +239,7 @@ export function sameMatchConfig(
     snapshot.match?.sha256 === current.match?.sha256 &&
     snapshot.match?.id === current.match?.id &&
     snapshot.cardTextMode === current.cardTextMode &&
-    snapshot.prefilterEnabled === current.prefilterEnabled
+    snapshot.prefilterEnabled === current.prefilterEnabled &&
+    snapshot.prefilterMinCards === current.prefilterMinCards
   );
 }

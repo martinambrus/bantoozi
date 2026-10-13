@@ -28,6 +28,11 @@ export interface PrioritySemaphore {
   /** Waiters currently queued. */
   readonly waiting: number;
   readonly capacity: number;
+  /**
+   * Resize live: permits already held are never revoked, a shrink grants nothing until `inUse` is
+   * below the new capacity, a growth serves waiters at once. Throws RangeError unless positive integer.
+   */
+  setCapacity(n: number): void;
 }
 
 export interface PrioritySemaphoreOptions {
@@ -53,10 +58,11 @@ export function waiterOrderKey(priority: Priority, enqueuedAt: number, agingMs: 
 }
 
 export function createPrioritySemaphore(options: PrioritySemaphoreOptions): PrioritySemaphore {
-  const { capacity } = options;
-  if (!Number.isInteger(capacity) || capacity < 1) {
-    throw new RangeError('capacity must be a positive integer');
-  }
+  const checkCapacity = (n: number): number => {
+    if (!Number.isInteger(n) || n < 1) throw new RangeError('capacity must be a positive integer');
+    return n;
+  };
+  let capacity = checkCapacity(options.capacity);
   const agingMs = options.agingMs ?? DEFAULT_AGING_MS;
   const now = options.now ?? Date.now;
   let inUse = 0;
@@ -94,7 +100,13 @@ export function createPrioritySemaphore(options: PrioritySemaphoreOptions): Prio
     get waiting() {
       return queue.length;
     },
-    capacity,
+    get capacity() {
+      return capacity;
+    },
+    setCapacity(n) {
+      capacity = checkCapacity(n);
+      dispatch();
+    },
     acquire(priority, acquireOptions = {}) {
       const { signal, deadlineMs } = acquireOptions;
       if (signal?.aborted === true) return Promise.resolve({ ok: false, reason: 'cancelled' });

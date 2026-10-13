@@ -71,6 +71,14 @@ export async function shareLockSettings(
 }
 
 /**
+ * Share-lock `key` when its row exists, without storing anything: for a row that is only read when
+ * present (a missing row means "none", and its first insert is not fenced). Run inside a transaction.
+ */
+export async function shareLockStoredSetting(tx: Executor, key: string): Promise<void> {
+  await tx.execute(sql`SELECT key FROM settings WHERE key = ${key} FOR SHARE`);
+}
+
+/**
  * Read-modify-write one JSON setting under its row lock (spec 02 §3.3): a missing key is first
  * inserted with `initial` (`ON CONFLICT DO NOTHING`), then locked, so concurrent writers never
  * overwrite each other. `update` returns the new value (validated by the caller) and the stored

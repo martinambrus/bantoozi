@@ -116,6 +116,11 @@ jobs:
         env:
           E2E_ALL_ENGINES: '1'
 
+      # The first-run screen needs a fresh database without ADMIN_EMAILS, so it has its own config.
+      - name: First-run end-to-end test
+        run: pnpm --filter @bantoozi/web e2e:first-run
+        timeout-minutes: 10
+
       - name: Upload end-to-end report
         if: failure()
         uses: actions/upload-artifact@v4

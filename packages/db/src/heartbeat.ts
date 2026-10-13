@@ -1,5 +1,7 @@
 import { sql } from 'drizzle-orm';
 
+import type { JsonValue } from '@bantoozi/shared';
+
 import type { Executor } from './client.js';
 
 /**
@@ -19,6 +21,8 @@ export interface HeartbeatEntry {
   envCredentials: ('typesafe' | 'ollama')[];
   /** Database pool counters at the beat (S17); absent from older workers. */
   pool?: { total: number; idle: number; waiting: number } | undefined;
+  /** Effective runtime values and problems (M8b-T5 writes it); absent until then. */
+  runtime?: Record<string, JsonValue> | undefined;
 }
 
 /**

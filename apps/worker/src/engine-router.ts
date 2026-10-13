@@ -56,7 +56,10 @@ export function engineConfigFromWorker(
     typesafe: {
       baseUrl: config.typesafeBaseUrl,
       model: config.typesafeModel,
-      pricePerMTokUsd: config.typesafePricePerMtokUsd,
+      // Read lazily at each estimate: the live runtime setting changes it without a restart.
+      get pricePerMTokUsd(): number {
+        return config.typesafePricePerMtokUsd;
+      },
       ...(options.rateLimitShare === undefined ? {} : { rateLimitShare: options.rateLimitShare }),
       ...(!production && config.typesafeModel === JEV_FAKE_MODEL ? { allowFakeModel: true } : {}),
     },

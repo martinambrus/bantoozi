@@ -37,7 +37,7 @@ function matchPath(pattern: string, pathname: string): Record<string, string> | 
 
 /**
  * A fake API: `GET /me` from `server.me` unless the test routes it itself, every other operation
- * from `server.routes`, and 404 `NOT_FOUND` for anything unhandled (listed in `unhandled`, so a test
+ * from `server.routes` (`GET /setup` answers closed unless routed), and 404 `NOT_FOUND` for anything unhandled (listed in `unhandled`, so a test
  * can assert there was none). Mutate `server` during a test to change later answers.
  */
 export function createFakeServer(server: FakeServer) {
@@ -54,6 +54,8 @@ export function createFakeServer(server: FakeServer) {
       const params = matchPath(pattern, path);
       if (params !== null) return route(request, params);
     }
+    // The login page asks whether first-run setup is open (M8b-T11); by default it is closed.
+    if (operation === 'GET /setup') return json(200, { open: false });
     unhandled.push(operation);
     return failure(404, 'NOT_FOUND');
   };

@@ -115,13 +115,20 @@ echo "deploy: project=$PROJECT commit=${COMMIT:0:12} mode=$([ "$REHEARSAL" = 1 ]
 # ── 2. Validate the environment, the profiles and the host ───────────────────────────────────
 REQUIRED=(PUBLIC_HOST ACME_EMAIL PUBLIC_BASE_URL POSTGRES_PASSWORD BANTOOZI_OWNER_PASSWORD
   BANTOOZI_APP_PASSWORD BANTOOZI_WORKER_PASSWORD SESSION_PEPPER METRICS_TOKEN TYPESAFE_MODEL
-  MAIL_TRANSPORT SMTP_URL ADMIN_EMAILS DELETION_LEDGER_PATH DELETION_LEDGER_RECIPIENT DELETION_HMAC_KEY)
+  MAIL_TRANSPORT SMTP_URL DELETION_LEDGER_PATH DELETION_LEDGER_RECIPIENT DELETION_HMAC_KEY)
 missing=()
 placeholder=()
 for v in "${REQUIRED[@]}"; do
   val="$(envfile_get "$v")"
   if [ -z "$val" ]; then missing+=("$v"); continue; fi
-  case "$val" in change-me* | *change-me* | age1changeme* | *example.com*) [ "$REHEARSAL" = 1 ] || placeholder+=("$v") ;; esac
+  case "$val" in change-me* | *change-me* | changeme* | age1changeme* | *example.com*) [ "$REHEARSAL" = 1 ] || placeholder+=("$v") ;; esac
+done
+# ADMIN_EMAILS is optional (bootstrap only, M8b-T7) but a placeholder in it is still an error.
+case "$(envfile_get ADMIN_EMAILS)" in change-me* | *change-me* | changeme* | age1changeme* | *example.com*) [ "$REHEARSAL" = 1 ] || placeholder+=(ADMIN_EMAILS) ;; esac
+# The development role passwords of .env.example are public (PR #28 review).
+for pair in POSTGRES_PASSWORD=postgres BANTOOZI_OWNER_PASSWORD=bantoozi_owner \
+  BANTOOZI_APP_PASSWORD=bantoozi_app BANTOOZI_WORKER_PASSWORD=bantoozi_worker; do
+  [ "$(envfile_get "${pair%%=*}")" = "${pair#*=}" ] && { [ "$REHEARSAL" = 1 ] || placeholder+=("${pair%%=*}"); }
 done
 if [ "${#missing[@]}" -gt 0 ]; then die "required variables missing or empty in the env file: ${missing[*]}"; fi
 if [ "${#placeholder[@]}" -gt 0 ]; then die "variables still hold placeholder values: ${placeholder[*]}"; fi
@@ -356,6 +363,12 @@ smoke() {
     done
     echo "smoke: $svc heartbeat healthy"
   done
+  # No active admin yet is expected on a fresh install (the first-run setup creates one): warn only.
+  local admins
+  admins="$(dc exec -T postgres psql -U postgres -d bantoozi -X -tAq -c "SELECT count(*) FROM users WHERE role = 'admin' AND deleted_at IS NULL" 2>/dev/null | tr -d '\r' || true)"
+  if [ "$admins" = 0 ]; then
+    echo "smoke: WARNING no active admin account exists yet; open /setup with the setup token to create one"
+  fi
   smoke_queue
 }
 

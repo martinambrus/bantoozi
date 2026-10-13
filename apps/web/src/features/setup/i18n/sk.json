@@ -1,0 +1,12 @@
+{
+  "title": "Prvé nastavenie",
+  "lead": "Zadajte inštalačný token z logu API a e-mail prvého správcu.",
+  "token": "Inštalačný token",
+  "email": "E-mail",
+  "submit": "Vytvoriť účet správcu",
+  "invalid": "Tento inštalačný token nefungoval.",
+  "rateLimited_one": "Príliš veľa pokusov. Skúste to znova o {{count}} minútu.",
+  "rateLimited_few": "Príliš veľa pokusov. Skúste to znova o {{count}} minúty.",
+  "rateLimited_many": "Príliš veľa pokusov. Skúste to znova o {{count}} minúty.",
+  "rateLimited_other": "Príliš veľa pokusov. Skúste to znova o {{count}} minút."
+}

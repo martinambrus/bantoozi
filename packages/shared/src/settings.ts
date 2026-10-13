@@ -112,6 +112,11 @@ export const WorkerHeartbeatSchema = z.record(
         })
         .strict()
         .optional(),
+      /**
+       * The effective runtime values and problems of the process (M8b-T5 fills it): unknown-shaped
+       * until M8b-T1/T5 define it. Never carries secrets.
+       */
+      runtime: z.record(z.string(), JsonValueSchema).optional(),
     })
     .strict(),
 );
@@ -147,6 +152,27 @@ interface SettingDefinition<S extends z.ZodType> {
 }
 
 const def = <S extends z.ZodType>(d: SettingDefinition<S>): SettingDefinition<S> => d;
+
+/** Live runtime settings (M8b-T1): null or no row = the env default. */
+const runtimeModelName = z.string().min(1).max(200);
+const runtimeModel = runtimeModelName.nullable();
+const runtimeInt = (min: number, max: number) => z.number().int().min(min).max(max).nullable();
+const runtimeUrl = z
+  .string()
+  .min(1)
+  .max(500)
+  .refine((v) => {
+    try {
+      const u = new URL(v);
+      return (u.protocol === 'http:' || u.protocol === 'https:') && !u.username && !u.password;
+    } catch {
+      return false;
+    }
+  }, 'must be an http(s) URL without credentials')
+  .nullable();
+const noDefault = () => undefined;
+/** The live runtime keys are admin-writable (M8b-T2); `null` resets one to its environment value. */
+const runtimeWriters = ['admin'] as const;
 
 const closedBreaker: BreakerState = { state: 'closed', reopenCount: 0 };
 
@@ -195,6 +221,108 @@ export const SETTINGS = {
     schema: EngineModelPinSchema,
     defaultValue: () => undefined,
     writers: ['seed', 'worker'],
+  }),
+  'engine.typesafe_model': def({
+    schema: runtimeModel,
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'engine.typesafe_base_url': def({
+    schema: runtimeUrl,
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'engine.typesafe_price_per_mtok_usd': def({
+    schema: z.number().finite().min(0).max(10).nullable(),
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'engine.concurrency': def({
+    schema: runtimeInt(1, 64),
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'engine.llm_fallback_enabled': def({
+    schema: z.boolean().nullable(),
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'engine.ollama_models': def({
+    schema: z.object({ fast: runtimeModelName, strong: runtimeModelName }).strict().nullable(),
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'engine.ollama_base_url': def({
+    schema: runtimeUrl,
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'engine.ollama_max_concurrency': def({
+    schema: runtimeInt(1, 64),
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'engine.prefilter_min_cards': def({
+    schema: runtimeInt(1, 10_000),
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'ingest.max_age_days': def({
+    schema: runtimeInt(1, 365),
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'fetch.limits': def({
+    schema: z
+      .object({
+        timeoutMs: z.number().int().min(1_000).max(120_000),
+        maxBytes: z
+          .number()
+          .int()
+          .min(65_536)
+          .max(50 * 1024 * 1024),
+      })
+      .strict()
+      .nullable(),
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'api.rate_limits_enabled': def({
+    schema: z.boolean().nullable(),
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'translate.libretranslate_url': def({
+    schema: runtimeUrl,
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  /**
+   * First-run setup state (M8b-T6): only the keyed digest of the token, never the token. Never
+   * admin-patchable and never listed by `GET /admin/settings`.
+   */
+  'auth.setup': def({
+    schema: z
+      .object({
+        /** `HMAC-SHA256(SESSION_PEPPER, token)` as 64 hex characters; absent once consumed. */
+        digest: z
+          .string()
+          .regex(/^[0-9a-f]{64}$/)
+          .optional(),
+        createdAt: iso,
+        consumedAt: iso.optional(),
+        userId: UuidSchema.optional(),
+      })
+      .strict()
+      .refine(
+        (v) =>
+          v.consumedAt === undefined
+            ? v.digest !== undefined && v.userId === undefined
+            : v.digest === undefined && v.userId !== undefined,
+        'an open setup has a digest only; a consumed one has consumedAt and userId only',
+      ),
+    defaultValue: noDefault,
+    writers: ['api', 'worker'],
   }),
   language_modes: def({
     schema: LanguageModesSchema,

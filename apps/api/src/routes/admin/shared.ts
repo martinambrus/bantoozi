@@ -7,6 +7,8 @@ import {
 } from '@bantoozi/db';
 import {
   LAYA_QUEUES,
+  KeyringReportSchema,
+  type KeyringStatus,
   WorkerHeartbeatSchema,
   type CredentialStatus,
   type Provider,
@@ -54,6 +56,119 @@ export async function freshWorkers(db: Executor, now: Date): Promise<FreshWorker
     workers.push({ queues: value.queues, envCredentials: value.envCredentials });
   }
   return workers;
+}
+
+/**
+ * The keyring state each fresh worker reports in `runtime.keyring`, keyed by the heartbeat process
+ * id. Stale entries, entries without the report and malformed reports are left out silently.
+ */
+export async function freshWorkerKeyrings(
+  db: Executor,
+  now: Date,
+): Promise<{ workerId: string; status: KeyringStatus; activeKeyId?: string }[]> {
+  let stored: unknown;
+  try {
+    stored = await readStoredSetting(db, 'worker.heartbeat');
+  } catch {
+    return [];
+  }
+  if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return [];
+  const result: { workerId: string; status: KeyringStatus; activeKeyId?: string }[] = [];
+  for (const [processId, entry] of Object.entries(stored as Record<string, unknown>)) {
+    const parsed = WorkerHeartbeatSchema.safeParse({ [processId]: entry });
+    const value = parsed.success ? parsed.data[processId] : undefined;
+    if (value === undefined) continue;
+    const age = now.getTime() - Date.parse(value.at);
+    if (!Number.isFinite(age) || age > HEARTBEAT_FRESH_MS || age < -HEARTBEAT_FRESH_MS) continue;
+    const report = KeyringReportSchema.safeParse(value.runtime?.['keyring']);
+    if (!report.success) continue;
+    const { status, activeKeyId } = report.data;
+    result.push({
+      workerId: processId,
+      status,
+      ...(status === 'ok' && activeKeyId !== undefined ? { activeKeyId } : {}),
+    });
+  }
+  return result;
+}
+
+export interface WorkerRuntimeStatus {
+  processId: string;
+  at: string;
+  pendingRestart: boolean;
+  problems: { key: string; message: string }[];
+}
+
+/**
+ * The runtime status each fresh worker reports (`runtime.pendingRestart`, `runtime.problems`,
+ * M8b-T5), by process id. Malformed fields count as nothing to report.
+ */
+export async function freshWorkerStatuses(db: Executor, now: Date): Promise<WorkerRuntimeStatus[]> {
+  let stored: unknown;
+  try {
+    stored = await readStoredSetting(db, 'worker.heartbeat');
+  } catch {
+    return [];
+  }
+  if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return [];
+  const result: WorkerRuntimeStatus[] = [];
+  for (const [processId, entry] of Object.entries(stored as Record<string, unknown>)) {
+    const parsed = WorkerHeartbeatSchema.safeParse({ [processId]: entry });
+    const value = parsed.success ? parsed.data[processId] : undefined;
+    if (value === undefined) continue;
+    const age = now.getTime() - Date.parse(value.at);
+    if (!Number.isFinite(age) || age > HEARTBEAT_FRESH_MS || age < -HEARTBEAT_FRESH_MS) continue;
+    const rawProblems = value.runtime?.['problems'];
+    const problems = (Array.isArray(rawProblems) ? rawProblems : []).flatMap((item) => {
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) return [];
+      const { key, message } = item as Record<string, unknown>;
+      return typeof key === 'string' && typeof message === 'string' ? [{ key, message }] : [];
+    });
+    result.push({
+      processId,
+      at: value.at,
+      pendingRestart: value.runtime?.['pendingRestart'] === true,
+      problems,
+    });
+  }
+  return result.sort((a, b) => a.processId.localeCompare(b.processId));
+}
+
+/**
+ * The environment defaults the fresh workers report in `runtime.defaults` (`{settingKey: value}`,
+ * M8b-T5); the most recent fresh heartbeat wins per key. Malformed rows count as no defaults.
+ */
+export async function freshWorkerRuntimeDefaults(
+  db: Executor,
+  now: Date,
+): Promise<Map<string, unknown>> {
+  const result = new Map<string, unknown>();
+  let stored: unknown;
+  try {
+    stored = await readStoredSetting(db, 'worker.heartbeat');
+  } catch {
+    return result;
+  }
+  if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return result;
+  const beats: { at: number; defaults: Record<string, unknown> }[] = [];
+  for (const [processId, entry] of Object.entries(stored as Record<string, unknown>)) {
+    const parsed = WorkerHeartbeatSchema.safeParse({ [processId]: entry });
+    const value = parsed.success ? parsed.data[processId] : undefined;
+    if (value === undefined) continue;
+    const at = Date.parse(value.at);
+    const age = now.getTime() - at;
+    if (!Number.isFinite(age) || age > HEARTBEAT_FRESH_MS || age < -HEARTBEAT_FRESH_MS) continue;
+    const defaults = value.runtime?.defaults;
+    if (defaults === null || typeof defaults !== 'object' || Array.isArray(defaults)) continue;
+    beats.push({ at, defaults: defaults as Record<string, unknown> });
+  }
+  beats.sort((a, b) => b.at - a.at);
+  for (const beat of beats) {
+    for (const [key, value] of Object.entries(beat.defaults)) {
+      if (!result.has(key)) result.set(key, value);
+    }
+  }
+  return result;
 }
 
 /** Whether a fresh worker consumes both dedicated Laya queues (spec 08 §9 `engine.laya`). */

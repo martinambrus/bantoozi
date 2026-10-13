@@ -1,6 +1,7 @@
 import multipart from '@fastify/multipart';
 import {
   MIGRATIONS_FOLDER,
+  type RuntimeSettingsCache,
   createPgOriginLimiter,
   readMigrationJournal,
   type Database,
@@ -17,6 +18,7 @@ import {
 } from 'fastify-type-provider-zod';
 
 import type { ApiConfig, ApiServices } from './context.js';
+import { createApiRuntimeSettings, liveRuntime } from './services/runtime.js';
 import { registerAuth } from './plugins/auth.js';
 import { registerCsrf } from './plugins/csrf.js';
 import { registerErrorHandlers } from './plugins/errors.js';
@@ -36,8 +38,10 @@ import { libraryRoutes } from './routes/library.js';
 import { meRoutes } from './routes/me.js';
 import { opsRoutes } from './routes/ops.js';
 import { ruleRoutes } from './routes/rules.js';
+import { setupRoutes } from './routes/setup.js';
 import { subscriptionRoutes } from './routes/subscriptions.js';
 import { createCursorCodec } from './services/cursor.js';
+import { createSetupRuntime, initSetupToken } from './services/setup.js';
 import './types.js';
 
 export const API_PREFIX = '/api/v1';
@@ -72,26 +76,43 @@ export interface BuildServerOptions {
   discoverDeps?: DiscoverDeps;
   /** Default: a client for `LIBRETRANSLATE_URL`; `null` disables card-text translation. */
   libreTranslate?: LibreTranslateClient | null;
+  /** TTL and clock of the live runtime settings cache (default 10 s, `Date.now`). */
+  runtimeSettings?: { ttlMs?: number; now?: () => number };
+  /** Builds the LibreTranslate client for an effective URL (initial and every swap). */
+  createLibreTranslate?: (baseUrl: string) => LibreTranslateClient;
+  /** Builds the short-lived client that probes a not-yet-live URL for the admin settings (spec 08 §9). */
+  createProbeLibreTranslate?: (baseUrl: string) => LibreTranslateClient;
   /** The bundled migrations whose newest entry `/readyz` expects (default: packages/db/drizzle). */
   migrationsFolder?: string;
   trustedProxies?: readonly string[];
+  /** Test seam: the generator of first-run setup tokens (default: 256 random bits, base64url). */
+  setupTokenGenerator?: () => string;
 }
 
-function defaultDiscoverDeps(db: Database, config: ApiConfig, clock: Clock): DiscoverDeps {
+function defaultDiscoverDeps(
+  db: Database,
+  config: ApiConfig,
+  clock: Clock,
+  runtime: RuntimeSettingsCache,
+): DiscoverDeps {
   const limiter = createPgOriginLimiter(db);
   return {
-    fetch: (url, options) =>
-      safeFetch(url, {
+    fetch: async (url, options) => {
+      const live = await liveRuntime({ runtime });
+      const maxBytes = live?.fetchLimits.maxBytes ?? config.fetchMaxBytes;
+      const timeoutMs = live?.fetchLimits.timeoutMs ?? config.fetchTimeoutMs;
+      return safeFetch(url, {
         purpose: 'discovery',
         userAgent: config.fetchUserAgent,
-        maxBytes: config.fetchMaxBytes,
+        maxBytes,
         allowPrivate: config.fetchAllowPrivate,
         limiter,
-        timeoutMs: Math.min(options.timeoutMs ?? config.fetchTimeoutMs, config.fetchTimeoutMs),
+        timeoutMs: Math.min(options.timeoutMs ?? timeoutMs, timeoutMs),
         ...(options.maxRedirects === undefined ? {} : { maxRedirects: options.maxRedirects }),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
         now: () => clock.now().getTime(),
-      }),
+      });
+    },
     parse: parseFeed,
     decode: decodeBody,
     allowPrivate: config.fetchAllowPrivate,
@@ -111,6 +132,27 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
       : { loggerInstance: options.logger as FastifyBaseLogger }),
   }).withTypeProvider<ZodTypeProvider>();
 
+  const runtime = createApiRuntimeSettings(db, config, options.runtimeSettings);
+  const makeLibreTranslate =
+    options.createLibreTranslate ??
+    ((baseUrl: string) => createLibreTranslateClient({ baseUrl, clock }));
+  // The client follows the effective URL; a client built here is closed on a swap and on close.
+  let owned: { url: string; client: LibreTranslateClient } | null = null;
+  const makeProbeLibreTranslate =
+    options.createProbeLibreTranslate ??
+    ((baseUrl: string) => createLibreTranslateClient({ baseUrl, clock, maxAttempts: 1 }));
+  const liveLibreTranslateUrl = async (): Promise<string> =>
+    (await liveRuntime({ runtime }))?.libretranslateUrl ?? config.libretranslateUrl;
+  const getLibreTranslate = async (): Promise<LibreTranslateClient | null> => {
+    if (options.libreTranslate !== undefined) return options.libreTranslate;
+    const url = await liveLibreTranslateUrl();
+    if (owned?.url === url) return owned.client;
+    const old = owned;
+    owned = { url, client: makeLibreTranslate(url) };
+    if (old !== null) void old.client.close().catch(() => undefined);
+    return owned.client;
+  };
+
   const services: ApiServices = {
     db,
     config,
@@ -124,12 +166,17 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
         ...(options.logger === undefined ? {} : { logger: options.logger }),
       }),
     cursors: createCursorCodec(config.sessionPepper, () => clock.now()),
-    limiter: createRateLimiter(db, config.rateLimitsEnabled),
-    discoverDeps: options.discoverDeps ?? defaultDiscoverDeps(db, config, clock),
-    libreTranslate:
-      options.libreTranslate === undefined
-        ? createLibreTranslateClient({ baseUrl: config.libretranslateUrl, clock })
-        : options.libreTranslate,
+    limiter: createRateLimiter(
+      db,
+      async () => (await liveRuntime({ runtime }))?.rateLimitsEnabled ?? config.rateLimitsEnabled,
+      config.nodeEnv === 'production',
+    ),
+    discoverDeps: options.discoverDeps ?? defaultDiscoverDeps(db, config, clock, runtime),
+    getLibreTranslate,
+    liveLibreTranslateUrl,
+    createProbeLibreTranslate: makeProbeLibreTranslate,
+    runtime,
+    setup: createSetupRuntime(options.setupTokenGenerator),
   };
   app.decorate('services', services);
   app.setValidatorCompiler(validatorCompiler);
@@ -150,9 +197,12 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
       void reply.header('cache-control', 'private, no-store');
     }
   });
+  app.addHook('onReady', async () => {
+    await initSetupToken(services, app.log);
+  });
   app.addHook('onClose', async () => {
     if (options.mailer === undefined) services.mailer.close();
-    if (options.libreTranslate === undefined) await services.libreTranslate?.close();
+    if (owned !== null) await owned.client.close();
   });
 
   await registerSwagger(app);
@@ -168,6 +218,7 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
       });
       await api.register(openApiRoute);
       await api.register(authRoutes, { prefix: '/auth' });
+      await api.register(setupRoutes, { prefix: '/setup' });
       await api.register(inviteRoutes);
       await api.register(meRoutes, { prefix: '/me' });
       await api.register(subscriptionRoutes);

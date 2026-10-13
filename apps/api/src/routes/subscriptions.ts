@@ -59,6 +59,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 
 import { captureSelectionSnapshot, loadSnapshotConfig } from '../services/analysis.js';
+import { liveTypesafeModel } from '../services/runtime.js';
 import { importOpml } from '../services/opml.js';
 import { currentScoreVersion } from '../services/score-version.js';
 import {
@@ -304,6 +305,7 @@ export const subscriptionRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       const { feedId } = request.params;
       const { articles, expectedInferenceVersion, startTraining } = request.body;
+      const typesafeModel = await liveTypesafeModel(app.services);
       const outcome = await request.mutate(async (tx, { outbox, now }) => {
         const user = await readOwnUser(tx, { lock: true });
         await lockFeeds(tx, [feedId]);
@@ -330,7 +332,7 @@ export const subscriptionRoutes: FastifyPluginAsyncZod = async (app) => {
             details: { articleIds: [...problems.keys()] },
           });
         }
-        const config = await loadSnapshotConfig(tx, app.services.config);
+        const config = await loadSnapshotConfig(tx, app.services.config, typesafeModel);
         let version = current.version;
         if (transition.enterTraining) {
           // The explicit combined action: CAS off → training with the selection (spec 08 §4.1).

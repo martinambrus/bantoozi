@@ -1,4 +1,5 @@
 import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import { STARTER_BUNDLES } from '@bantoozi/shared';
 import { Command } from 'commander';
@@ -10,6 +11,7 @@ import {
   renderMarkdown,
   validateBundles,
 } from './bundles-check.js';
+import { initEnv } from './env-init.js';
 import { registerLoadCommands } from './load/commands.js';
 import { registerRestoreCommands } from './restore-commands.js';
 
@@ -45,6 +47,42 @@ program
       process.exitCode = 1;
     }
   });
+
+program
+  .command('env:init')
+  .description('Fill missing host secrets into the env file (M8b-T8)')
+  .option('--file <file>', 'env file to fill (default: .env in the repo root)')
+  .option(
+    '--template <file>',
+    'template copied when the env file is missing (default: .env.example)',
+  )
+  .option(
+    '--production',
+    'also fill empty database role passwords; never generate the ledger identity',
+  )
+  .option('--add-provider-key', 'add a new provider wrapping key and make it active')
+  .action(
+    async (options: {
+      file?: string;
+      template?: string;
+      production?: boolean;
+      addProviderKey?: boolean;
+    }) => {
+      const root = process.env.INIT_CWD ?? process.cwd();
+      try {
+        const result = await initEnv({
+          envFile: options.file ?? join(root, '.env'),
+          template: options.template ?? join(root, '.env.example'),
+          production: options.production === true,
+          addProviderKey: options.addProviderKey === true,
+        });
+        for (const note of result.notes) console.log(note);
+      } catch (error) {
+        console.error(`env:init: ${error instanceof Error ? error.message : String(error)}`);
+        process.exitCode = 1;
+      }
+    },
+  );
 
 registerBackupCommands(program);
 registerRestoreCommands(program);

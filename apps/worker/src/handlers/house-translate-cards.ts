@@ -22,6 +22,7 @@ import {
 
 import type { TranslationDeps } from '../classify/translation.js';
 import { loadClassificationConfig } from '../classify/config.js';
+import { assertWorkerCurrent, lockWorkerCurrent, type StaleWorkerError } from '../stale-worker.js';
 import { nowOf, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import { HOUSE_RUN_BUDGET_MS, recordHouseProgress } from './house-purge-auth.js';
 import type { QueueHandler } from './index.js';
@@ -54,6 +55,8 @@ export function createTranslateCardsHandler(
   translation: TranslationDeps,
 ): QueueHandler<'house.translate-cards'> {
   return async (payload) => {
+    // The LibreTranslate client is restart-class (D-228): a stale process neither calls it nor stores pairs.
+    await assertWorkerCurrent(deps.db, classification);
     const started = nowOf(deps);
     const startedMs = Date.now();
     const config = await loadClassificationConfig(deps.db, deps.settingsEnv);
@@ -173,7 +176,10 @@ async function translateOne(
     return 'attempted';
   if (notFor !== null && output.not_for === null) return 'attempted';
 
-  return retryTransaction(deps.db, async (tx) => {
+  let stale: StaleWorkerError | null = null;
+  const stored = await retryTransaction(deps.db, async (tx) => {
+    stale = await lockWorkerCurrent(tx, classification);
+    if (stale !== null) return 'skipped' as const;
     const [current] = await cardsAwaitingTranslation(tx, {
       langs: [card.lang],
       cardId: card.cardId,
@@ -196,4 +202,6 @@ async function translateOne(
     );
     return 'translated' as const;
   });
+  if (stale !== null) throw stale;
+  return stored;
 }

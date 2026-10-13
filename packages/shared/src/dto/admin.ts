@@ -1,8 +1,10 @@
 import { z } from 'zod';
 
 import { IdSchema, RevisionSchema, UuidSchema, UuidStringSchema } from '../ids.js';
+import { ENV_RANGES } from '../env-ranges.js';
 import { TRANSLATE_SKIP_REASONS } from '../jobs.js';
 import { PLAN_NAMES } from '../plans.js';
+import { RUNTIME_SETTING_KEYS } from '../runtime-settings.js';
 import { RankerThresholdsSchema } from '../ranker-config.js';
 import {
   CardTextModeSchema,
@@ -147,6 +149,7 @@ export const ADMIN_PATCHABLE_SETTING_KEYS = [
   'translate.tier2_daily_cap',
   'question_sets.active',
   'signup_mode',
+  ...RUNTIME_SETTING_KEYS,
 ] as const;
 export type AdminSettingKey = (typeof ADMIN_PATCHABLE_SETTING_KEYS)[number];
 export const AdminSettingKeySchema = z.enum(ADMIN_PATCHABLE_SETTING_KEYS);
@@ -162,10 +165,74 @@ const settingShape = {
   'translate.tier2_daily_cap': SETTINGS['translate.tier2_daily_cap'].schema,
   'question_sets.active': QuestionSetsActiveSchema,
   signup_mode: SignupModeSchema,
+  'engine.typesafe_model': SETTINGS['engine.typesafe_model'].schema,
+  'engine.typesafe_base_url': SETTINGS['engine.typesafe_base_url'].schema,
+  'engine.typesafe_price_per_mtok_usd': SETTINGS['engine.typesafe_price_per_mtok_usd'].schema,
+  'engine.concurrency': SETTINGS['engine.concurrency'].schema,
+  'engine.llm_fallback_enabled': SETTINGS['engine.llm_fallback_enabled'].schema,
+  'engine.ollama_models': SETTINGS['engine.ollama_models'].schema,
+  'engine.ollama_base_url': SETTINGS['engine.ollama_base_url'].schema,
+  'engine.ollama_max_concurrency': SETTINGS['engine.ollama_max_concurrency'].schema,
+  'engine.prefilter_min_cards': SETTINGS['engine.prefilter_min_cards'].schema,
+  'ingest.max_age_days': SETTINGS['ingest.max_age_days'].schema,
+  'fetch.limits': SETTINGS['fetch.limits'].schema,
+  'api.rate_limits_enabled': SETTINGS['api.rate_limits_enabled'].schema,
+  'translate.libretranslate_url': SETTINGS['translate.libretranslate_url'].schema,
+} as const;
+
+/** What a write accepts per key (the narrow bounds): used to validate an edit before it is sent. */
+export const AdminSettingsWriteSchema = z.object(settingShape).strict();
+
+const envInt = (range: { min: number; max: number }) =>
+  z.number().int().min(range.min).max(range.max).nullable();
+const displayUrl = z
+  .string()
+  .min(ENV_RANGES.urlLength.min)
+  .max(ENV_RANGES.urlLength.max)
+  .nullable();
+const displayModel = z.string().min(1).max(200).nullable();
+
+/**
+ * How the response shows the live runtime keys: the effective value may be an environment default,
+ * so the ranges are the environment's (`ENV_RANGES`), wider than the bounds a PATCH accepts.
+ */
+const runtimeDisplayShape = {
+  'engine.typesafe_model': displayModel,
+  'engine.typesafe_base_url': displayUrl,
+  'engine.typesafe_price_per_mtok_usd': z.number().finite().min(0).nullable(),
+  'engine.concurrency': envInt(ENV_RANGES.engineConcurrency),
+  'engine.llm_fallback_enabled': z.boolean().nullable(),
+  'engine.ollama_models': z
+    .object({ fast: z.string().min(1).max(200), strong: z.string().min(1).max(200) })
+    .strict()
+    .nullable(),
+  'engine.ollama_base_url': displayUrl,
+  'engine.ollama_max_concurrency': envInt(ENV_RANGES.ollamaMaxConcurrency),
+  'engine.prefilter_min_cards': envInt(ENV_RANGES.prefilterMinCards),
+  'ingest.max_age_days': envInt(ENV_RANGES.ingestMaxAgeDays),
+  'fetch.limits': z
+    .object({
+      timeoutMs: z
+        .number()
+        .int()
+        .min(ENV_RANGES.fetchTimeoutMs.min)
+        .max(ENV_RANGES.fetchTimeoutMs.max),
+      maxBytes: z
+        .number()
+        .int()
+        .min(ENV_RANGES.fetchMaxBytes.min)
+        .max(ENV_RANGES.fetchMaxBytes.max),
+    })
+    .strict()
+    .nullable(),
+  'api.rate_limits_enabled': z.boolean().nullable(),
+  'translate.libretranslate_url': displayUrl,
 } as const;
 
 /** The effective value of every admin key (the stored row, else its default). */
-export const AdminSettingsValuesSchema = z.object(settingShape).strict();
+export const AdminSettingsValuesSchema = z
+  .object({ ...settingShape, ...runtimeDisplayShape })
+  .strict();
 export type AdminSettingsValues = z.infer<typeof AdminSettingsValuesSchema>;
 
 export const AdminSettingsSchema = z
@@ -177,16 +244,57 @@ export const AdminSettingsSchema = z
     ),
     /** `ranker.settings_version` (read-only; bumped by ranking-relevant changes, spec 06 §7). */
     rankerSettingsVersion: Count,
+    /** Where each live runtime key's value comes from (M8b-T2). */
+    sources: z.record(z.string(), z.enum(['env', 'stored', 'last_good'])),
+    /** The environment default of each live runtime key; `null` when no process can tell. */
+    defaults: z.record(z.string(), z.unknown().nullable()),
+    /** The live workers (heartbeat ≤ 90 s) and what each reports about the runtime settings (M8b-T10). */
+    workers: z
+      .array(
+        z
+          .object({
+            processId: z.string(),
+            at: IsoTimestampSchema,
+            pendingRestart: z.boolean(),
+            problems: z.array(z.object({ key: z.string(), message: z.string() }).strict()),
+          })
+          .strict(),
+      )
+      .default([]),
   })
   .strict();
 export type AdminSettings = z.infer<typeof AdminSettingsSchema>;
 
 /** A patch replaces the value of each supplied key; at least one key, unknown keys rejected. */
+/**
+ * The runtime keys take any JSON here and are validated by the route (production rules, `details.key`);
+ * `null` resets one to its environment value.
+ */
+const runtimePatchShape = {
+  'engine.typesafe_model': z.unknown(),
+  'engine.typesafe_base_url': z.unknown(),
+  'engine.typesafe_price_per_mtok_usd': z.unknown(),
+  'engine.concurrency': z.unknown(),
+  'engine.llm_fallback_enabled': z.unknown(),
+  'engine.ollama_models': z.unknown(),
+  'engine.ollama_base_url': z.unknown(),
+  'engine.ollama_max_concurrency': z.unknown(),
+  'engine.prefilter_min_cards': z.unknown(),
+  'ingest.max_age_days': z.unknown(),
+  'fetch.limits': z.unknown(),
+  'api.rate_limits_enabled': z.unknown(),
+  'translate.libretranslate_url': z.unknown(),
+} as const;
+
 export const AdminSettingsPatchSchema = z
-  .object(settingShape)
+  .object({ ...settingShape, ...runtimePatchShape })
   .partial()
+  .extend({
+    /** Confirms a change that re-enriches and re-matches the corpus (M8b-T2). */
+    acknowledge: z.boolean().optional(),
+  })
   .strict()
-  .refine((patch) => Object.keys(patch).length > 0, 'empty patch');
+  .refine((patch) => Object.keys(patch).some((key) => key !== 'acknowledge'), 'empty patch');
 export type AdminSettingsPatch = z.infer<typeof AdminSettingsPatchSchema>;
 
 export const AdminSettingsPatchResultSchema = AdminSettingsSchema.extend({
@@ -245,7 +353,23 @@ export const CandidateActionBodySchema = z
   .object({ candidateVersion: IdSchema, expectedRevision: RevisionSchema })
   .strict();
 export const RevokeCredentialQuerySchema = z.object({ expectedRevision: RevisionSchema }).strict();
-export const CredentialListSchema = z.object({ items: z.array(CredentialStatusSchema) }).strict();
+export const KeyringStatusSchema = z.enum(['ok', 'missing', 'malformed', 'active_key_missing']);
+export type KeyringStatus = z.infer<typeof KeyringStatusSchema>;
+export const KeyringReportSchema = z
+  .object({ status: KeyringStatusSchema, activeKeyId: z.string().optional() })
+  .strict();
+/** Keyring state of the API and the fresh workers; never any key material (M8b-T9). */
+export const KeyringOverviewSchema = z
+  .object({
+    api: KeyringReportSchema,
+    workers: z.array(KeyringReportSchema.extend({ workerId: z.string() }).strict()),
+    mismatch: z.boolean(),
+  })
+  .strict();
+export type KeyringOverview = z.infer<typeof KeyringOverviewSchema>;
+export const CredentialListSchema = z
+  .object({ items: z.array(CredentialStatusSchema), keyring: KeyringOverviewSchema })
+  .strict();
 export const CredentialResultSchema = z.object({ credential: CredentialStatusSchema }).strict();
 
 // ── Feeds ────────────────────────────────────────────────────────────────────────────────────────
@@ -311,7 +435,7 @@ export const AdminUserSchema = z
     createdAt: IsoTimestampSchema,
     lastActiveAt: IsoTimestampSchema.nullable(),
     deletedAt: IsoTimestampSchema.nullable(),
-    /** Listed in `ADMIN_EMAILS`: a demotion lasts only until the next login (spec 08 §2.1). */
+    /** Listed in `ADMIN_EMAILS`: marks addresses made admin at account creation (bootstrap only; the role is stored and a demotion sticks, spec 08 §2.1). */
     adminBootstrap: z.boolean(),
   })
   .strict();

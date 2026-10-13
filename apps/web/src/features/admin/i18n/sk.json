@@ -153,7 +153,45 @@
       "rankerRejected": "Server zamietol zlúčenú konfiguráciu rankera.",
       "unknownQuestionSet": "Neznáma sada otázok pre „{{kind}}“.",
       "settingsChanged": "Nastavenia sa počas ukladania zmenili. Načítali sa najnovšie hodnoty; skontrolujte svoju úpravu a uložte znova.",
-      "layaWorkerMissing": "Žiadny bežiaci worker nespracúva fronty Laya, preto sa engine.laya nedá nastaviť."
+      "layaWorkerMissing": "Žiadny bežiaci worker nespracúva fronty Laya, preto sa engine.laya nedá nastaviť.",
+      "rejected": "Server túto hodnotu neprijal: {{reason}}"
+    },
+    "groups": {
+      "engine": "Rozhodovací systém (Jev)",
+      "ollama": "Záložné LLM (Ollama)",
+      "ingestion": "Preberanie a sťahovanie",
+      "api": "Rozhranie API",
+      "translation": "Preklad"
+    },
+    "source": {
+      "stored": "Zdroj: uložená hodnota",
+      "env": "Zdroj: prostredie",
+      "lastGood": "Zdroj: posledná platná hodnota"
+    },
+    "defaultValue": "Predvolené: {{value}}",
+    "defaultUnknown": "neznáme",
+    "stateUnknown": "Aktuálna hodnota nie je známa: vyberte zapnuté alebo vypnuté.",
+    "on": "zapnuté",
+    "off": "vypnuté",
+    "models": "rýchly {{fast}}, silný {{strong}}",
+    "limits": "{{timeoutMs}} ms, {{megabytes}} MB",
+    "reset": "Obnoviť predvolené {{key}}",
+    "ack": {
+      "title": "Táto zmena znovu obohatí korpus",
+      "body": "{{key}} sa mení z {{from}} na {{to}}. Každý článok sa obohatí a priradí znova, čo spotrebuje rozpočet enginu. Pred uložením zmenu skontrolujte na zlatej vzorke.",
+      "checkbox": "Spustil som eval replay a prešiel",
+      "confirm": "Potvrdiť a uložiť",
+      "cancel": "Zrušiť"
+    },
+    "workers": {
+      "title": "Použité workermi",
+      "live_one": "{{count}} živý worker",
+      "live_few": "{{count}} živé workery",
+      "live_many": "{{count}} živého workera",
+      "live_other": "{{count}} živých workerov",
+      "none": "Žiadny živý worker",
+      "pendingRestart": "Čaká na reštart: {{pending}} z {{total}} workerov",
+      "problem": "Worker zamietol: {{message}}"
     }
   },
   "providers": {
@@ -226,6 +264,14 @@
       "keyRejected": "Server tento kľúč neprijal. Skontrolujte, či ste vložili celý kľúč bez medzier.",
       "noCandidate": "Už neexistuje žiadny pripravený kľúč. Zobrazuje sa najnovší stav.",
       "expired": "Toto overenie je staršie ako 24 hodín, preto sa kľúč nedá aktivovať. Najprv ho overte znova."
+    },
+    "keyring": {
+      "missing": "Úložisko kľúčov poskytovateľov nie je nastavené na {{where}}. Na hostiteľovi spustite `pnpm setup:env`, ktorý vytvorí hlavné kľúče, a potom reštartujte.",
+      "malformed": "PROVIDER_MASTER_KEYS na {{where}} nie je platné. Opravte PROVIDER_MASTER_KEYS v prostredí a potom reštartujte.",
+      "active_key_missing": "Aktívne ID kľúča na {{where}} nie je medzi hlavnými kľúčmi. Opravte PROVIDER_MASTER_KEY_ID v prostredí a potom reštartujte.",
+      "mismatch": "API používa kľúč {{api}}, ale worker používa kľúč {{worker}}. Nastavte všade rovnaké PROVIDER_MASTER_KEY_ID a potom reštartujte API aj workery.",
+      "api": "API",
+      "worker": "worker {{id}}"
     }
   },
   "feeds": {

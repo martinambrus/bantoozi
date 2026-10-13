@@ -10,5 +10,5 @@
     "moduleResolution": "Bundler",
     "types": ["node"]
   },
-  "include": ["playwright.config.ts", "e2e"]
+  "include": ["playwright.config.ts", "playwright.first-run.config.ts", "e2e", "e2e-first-run"]
 }

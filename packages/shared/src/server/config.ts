@@ -4,6 +4,7 @@ import { inspect } from 'node:util';
 
 import { z } from 'zod';
 
+import { ENV_RANGES } from '../env-ranges.js';
 import { resolveWorkerQueues, type QueueName } from '../jobs.js';
 import {
   LanguageModesSchema,
@@ -131,8 +132,11 @@ export const ENV_VARS: readonly EnvVarSpec[] = [
   { name: 'METRICS_TOKEN', usedBy: ['api', 'worker', 'scripts'], secret: true },
   { name: 'WORKER_METRICS_PORT', usedBy: ['worker'], defaultValue: '9101' },
   { name: 'WORKER_METRICS_HOST', usedBy: ['worker'] },
+  { name: 'WORKER_SELF_RESTART', usedBy: ['worker'] },
   { name: 'OTEL_EXPORTER_OTLP_ENDPOINT', usedBy: ['all'] },
   { name: 'ADMIN_EMAILS', usedBy: ['api', 'worker'] },
+  // Comma list of hosts the TypeSafe/Ollama/LibreTranslate base URLs may point at in production (M8b-T1).
+  { name: 'PROVIDER_HOST_ALLOWLIST', usedBy: ['api', 'worker'] },
   { name: 'DELETION_LEDGER_PATH', usedBy: ['worker'] },
   { name: 'DELETION_LEDGER_RECIPIENT', usedBy: ['worker'] },
   { name: 'DELETION_HMAC_KEY', usedBy: ['worker'], secret: true },
@@ -194,8 +198,12 @@ export interface Config {
   readonly metricsToken: string | undefined;
   readonly workerMetricsPort: number;
   readonly workerMetricsHost: string;
+  /** Whether the worker drains and exits when a restart-class runtime value changed (default: production). */
+  readonly workerSelfRestart: boolean;
   readonly otelExporterOtlpEndpoint: string | undefined;
   readonly adminEmails: readonly string[];
+  /** Lower-cased hosts a provider base URL may use in production (M8b-T1 enforces); empty = none set. */
+  readonly providerHostAllowlist: readonly string[];
   readonly deletionLedgerPath: string | undefined;
   readonly deletionLedgerRecipient: string | undefined;
   readonly deletionHmacKey: string | undefined;
@@ -325,7 +333,12 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
     typesafeModel: read('TYPESAFE_MODEL', modelIdSchema, 'jev-1.13.0') ?? 'jev-1.13.0',
     typesafeBaseUrl: read('TYPESAFE_BASE_URL', httpUrl, 'https://api.typesafe.ai') ?? '',
     typesafePricePerMtokUsd: read('TYPESAFE_PRICE_PER_MTOK_USD', nonNegative, '0.042') ?? 0.042,
-    engineConcurrency: read('ENGINE_CONCURRENCY', intIn(1, 256), '8') ?? 8,
+    engineConcurrency:
+      read(
+        'ENGINE_CONCURRENCY',
+        intIn(ENV_RANGES.engineConcurrency.min, ENV_RANGES.engineConcurrency.max),
+        '8',
+      ) ?? 8,
     dailyBudgetUsd: read('DAILY_BUDGET_USD', nonNegative, '2.00') ?? 2,
     ollamaApiKey: read('OLLAMA_API_KEY', apiKeySchema, undefined),
     providerMasterKeyId: read('PROVIDER_MASTER_KEY_ID', z.string().min(1).max(200), undefined),
@@ -333,7 +346,12 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
     ollamaBaseUrl: read('OLLAMA_BASE_URL', httpUrl, 'https://ollama.com') ?? '',
     ollamaModelFast: read('OLLAMA_MODEL_FAST', modelIdSchema, 'glm-5.3-flash') ?? 'glm-5.3-flash',
     ollamaModelStrong: read('OLLAMA_MODEL_STRONG', modelIdSchema, 'glm-5.3') ?? 'glm-5.3',
-    ollamaMaxConcurrency: read('OLLAMA_MAX_CONCURRENCY', intIn(1, 64), '1') ?? 1,
+    ollamaMaxConcurrency:
+      read(
+        'OLLAMA_MAX_CONCURRENCY',
+        intIn(ENV_RANGES.ollamaMaxConcurrency.min, ENV_RANGES.ollamaMaxConcurrency.max),
+        '1',
+      ) ?? 1,
     llmFallbackEnabled: read('LLM_FALLBACK_ENABLED', booleanSchema, 'false') ?? false,
     libretranslateUrl: read('LIBRETRANSLATE_URL', httpUrl, 'http://libretranslate:5000') ?? '',
     languageModes:
@@ -342,11 +360,31 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
     fetchUserAgent:
       read('FETCH_USER_AGENT', z.string().min(1).max(512), undefined) ??
       `BantooziBot/1.0 (+${publicBaseUrl.replace(/\/+$/, '')}/bot)`,
-    fetchMaxBytes: read('FETCH_MAX_BYTES', intIn(1024, 1024 ** 3), '5242880') ?? 5242880,
-    fetchTimeoutMs: read('FETCH_TIMEOUT_MS', intIn(100, 600_000), '20000') ?? 20000,
+    fetchMaxBytes:
+      read(
+        'FETCH_MAX_BYTES',
+        intIn(ENV_RANGES.fetchMaxBytes.min, ENV_RANGES.fetchMaxBytes.max),
+        '5242880',
+      ) ?? 5242880,
+    fetchTimeoutMs:
+      read(
+        'FETCH_TIMEOUT_MS',
+        intIn(ENV_RANGES.fetchTimeoutMs.min, ENV_RANGES.fetchTimeoutMs.max),
+        '20000',
+      ) ?? 20000,
     fetchAllowPrivate: read('FETCH_ALLOW_PRIVATE', booleanSchema, 'false') ?? false,
-    ingestMaxAgeDays: read('INGEST_MAX_AGE_DAYS', intIn(1, 3650), '14') ?? 14,
-    prefilterMinCards: read('PREFILTER_MIN_CARDS', intIn(1, 1_000_000), '60') ?? 60,
+    ingestMaxAgeDays:
+      read(
+        'INGEST_MAX_AGE_DAYS',
+        intIn(ENV_RANGES.ingestMaxAgeDays.min, ENV_RANGES.ingestMaxAgeDays.max),
+        '14',
+      ) ?? 14,
+    prefilterMinCards:
+      read(
+        'PREFILTER_MIN_CARDS',
+        intIn(ENV_RANGES.prefilterMinCards.min, ENV_RANGES.prefilterMinCards.max),
+        '60',
+      ) ?? 60,
     evalIngestOnly: read('EVAL_INGEST_ONLY', booleanSchema, 'false') ?? false,
     evalPublicUrl: read('EVAL_PUBLIC_URL', httpUrl, 'http://localhost:5180') ?? '',
     evalCacheDir: expandHome(
@@ -364,8 +402,11 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
     workerMetricsHost:
       read('WORKER_METRICS_HOST', z.string().min(1), production ? '0.0.0.0' : '127.0.0.1') ??
       '127.0.0.1',
+    workerSelfRestart:
+      read('WORKER_SELF_RESTART', booleanSchema, production ? 'true' : 'false') ?? production,
     otelExporterOtlpEndpoint: read('OTEL_EXPORTER_OTLP_ENDPOINT', httpUrl, undefined),
     adminEmails: read('ADMIN_EMAILS', emailListSchema, undefined) ?? [],
+    providerHostAllowlist: read('PROVIDER_HOST_ALLOWLIST', hostListSchema, undefined) ?? [],
     deletionLedgerPath: read('DELETION_LEDGER_PATH', z.string().min(1), undefined),
     deletionLedgerRecipient: read(
       'DELETION_LEDGER_RECIPIENT',
@@ -407,7 +448,7 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
   }
   if (production && kind === 'worker') {
     // The ledger must live on the persistent ledger volume (compose `ledger`), or a restart would
-    // lose the erasures it records (spec 11 §5.1). The worker sends every alert to ADMIN_EMAILS.
+    // lose the erasures it records (spec 11 §5.1). ADMIN_EMAILS is optional (bootstrap only, M8b-T7).
     const ledgerPath = config.deletionLedgerPath;
     if (ledgerPath !== undefined) {
       const normalized = posix.normalize(ledgerPath);
@@ -416,11 +457,6 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
           `DELETION_LEDGER_PATH: must be inside ${LEDGER_DIR}/ (the persistent ledger volume) in production`,
         );
       }
-    }
-    if (config.adminEmails.length === 0) {
-      problems.push(
-        'ADMIN_EMAILS: at least one address is required in production (the worker sends every alert to it)',
-      );
     }
   }
   if (production && relevant('TYPESAFE_MODEL') && !PINNED_MODEL.test(config.typesafeModel)) {
@@ -483,16 +519,21 @@ const booleanSchema = z
   .toLowerCase()
   .pipe(z.enum(['true', 'false', '1', '0']))
   .transform((v) => v === 'true' || v === '1');
-const httpUrl = z.string().refine((s) => {
-  try {
-    const u = new URL(s);
-    return (
-      (u.protocol === 'http:' || u.protocol === 'https:') && u.username === '' && u.password === ''
-    );
-  } catch {
-    return false;
-  }
-}, 'must be an http(s) URL without credentials');
+const httpUrl = z
+  .string()
+  .max(ENV_RANGES.urlLength.max, `must be at most ${ENV_RANGES.urlLength.max} characters`)
+  .refine((s) => {
+    try {
+      const u = new URL(s);
+      return (
+        (u.protocol === 'http:' || u.protocol === 'https:') &&
+        u.username === '' &&
+        u.password === ''
+      );
+    } catch {
+      return false;
+    }
+  }, 'must be an http(s) URL without credentials');
 const postgresUrl = z.string().refine((s) => {
   try {
     const u = new URL(s);
@@ -534,6 +575,16 @@ const workerQueuesSchema = z.string().transform((s, ctx) => {
 });
 /** The persistent ledger volume inside the worker container (infra/compose.yml `ledger`). */
 const LEDGER_DIR = '/var/lib/bantoozi/ledger';
+
+const hostListSchema = z
+  .string()
+  .transform((s) =>
+    s
+      .split(',')
+      .map((h) => h.trim().toLowerCase())
+      .filter((h) => h.length > 0),
+  )
+  .pipe(z.array(z.string().regex(/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/)).max(100));
 
 const emailListSchema = z
   .string()

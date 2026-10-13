@@ -20,7 +20,7 @@ import { Time } from './format.js';
 import { checkSetting } from './settings-validation.js';
 import { conflictReason } from './use-admin.js';
 
-function saveError(t: TFunction, error: unknown): string {
+export function saveError(t: TFunction, error: unknown): string {
   if (isApiError(error)) {
     const reason = error.details?.['reason'];
     if (error.status === 503 && error.details?.['engine'] === 'libretranslate') {
@@ -37,6 +37,10 @@ function saveError(t: TFunction, error: unknown): string {
     if (error.status === 400) {
       const key = error.details?.['key'];
       if (key === 'ranker.thresholds') return t('settings.errors.rankerRejected');
+      if (typeof key === 'string' && key !== 'question_sets.active') {
+        const why = error.details?.['message'] ?? reason;
+        return t('settings.errors.rejected', { reason: typeof why === 'string' ? why : 'invalid' });
+      }
       if (key === 'question_sets.active') {
         return t('settings.errors.unknownQuestionSet', { kind: String(error.details?.['kind']) });
       }
@@ -53,7 +57,9 @@ export interface SettingEditorProps {
   value: unknown;
   /** When the value was stored; null while the key still reads its default. */
   storedAt: string | null;
-  onSaved: (result: AdminSettingsPatchResult) => void;
+  /** Called as the request is sent: its place in the order of the screen's settings requests. */
+  onSend: () => number;
+  onSaved: (result: AdminSettingsPatchResult, sequence: number) => void;
   /** The settings changed under the editor: the screen loads them again. */
   onStale: () => void;
 }
@@ -63,6 +69,7 @@ export function SettingEditor({
   settingKey,
   value,
   storedAt,
+  onSend,
   onSaved,
   onStale,
 }: SettingEditorProps) {
@@ -91,12 +98,13 @@ export function SettingEditor({
     const sent = text;
     const signIn = session.currentSignIn();
     setFailure(null);
+    const sequence = onSend();
     try {
       const result = await update.mutateAsync({
         body: { [settingKey]: checked.value } as AdminSettingsPatch,
       });
       if (session.currentSignIn() !== signIn) return;
-      onSaved(result);
+      onSaved(result, sequence);
       // Text edited while the save was on its way stays, still to be saved.
       setEdit((current) => (current === sent ? null : current));
       toast.show({

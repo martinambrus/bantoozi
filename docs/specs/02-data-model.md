@@ -338,11 +338,30 @@ through `PATCH /admin/settings`.
 | `ranker.settings_version` | int | 0 | bumped by the API on ranking-relevant settings changes, and by `eval apply-g1` (spec 06 §7) |
 | `question_sets.active` | `{enrich?: stringId, match?: stringId, cluster?: stringId, suggest?: stringId}` | `{}` | seed (only when a kind is absent), admin |
 | `signup_mode` | `'invite'\|'open'\|'closed'` | env `SIGNUP_MODE` | admin |
+| `engine.typesafe_model` | string 1-200 or `null`; in production a pinned version (`jev-1.13.0`, no `latest`) | `null` = env `TYPESAFE_MODEL` | admin |
+| `engine.typesafe_base_url` | http(s) URL without credentials, ≤ 500, or `null`; production: https and a host on `PROVIDER_HOST_ALLOWLIST`; trailing slashes are stripped | `null` = env `TYPESAFE_BASE_URL` | admin |
+| `engine.typesafe_price_per_mtok_usd` | number 0-10 or `null`; production: > 0 | `null` = env `TYPESAFE_PRICE_PER_MTOK_USD` | admin |
+| `engine.concurrency` | int 1-64 or `null` | `null` = env `ENGINE_CONCURRENCY` | admin |
+| `engine.llm_fallback_enabled` | boolean or `null` | `null` = env `LLM_FALLBACK_ENABLED` | admin |
+| `engine.ollama_models` | `{fast: string, strong: string}` or `null`; each model must have a price in the Ollama price table | `null` = env `OLLAMA_MODEL_FAST`/`OLLAMA_MODEL_STRONG` | admin |
+| `engine.ollama_base_url` | like `engine.typesafe_base_url` | `null` = env `OLLAMA_BASE_URL` | admin |
+| `engine.ollama_max_concurrency` | int 1-64 or `null` | `null` = env `OLLAMA_MAX_CONCURRENCY` | admin |
+| `engine.prefilter_min_cards` | int 1-10000 or `null` | `null` = env `PREFILTER_MIN_CARDS`, else 60 (the worker holds the 60; the key has no default of its own, D-214) | admin |
+| `ingest.max_age_days` | int 1-365 or `null` | `null` = env `INGEST_MAX_AGE_DAYS` | admin |
+| `fetch.limits` | `{timeoutMs: int 1000-120000, maxBytes: int 65536-52428800}` or `null` | `null` = env `FETCH_TIMEOUT_MS`/`FETCH_MAX_BYTES` | admin |
+| `api.rate_limits_enabled` | boolean or `null` | `null` = env `RATE_LIMITS_ENABLED` | admin |
+| `translate.libretranslate_url` | like `engine.typesafe_base_url`, but http is allowed in production | `null` = env `LIBRETRANSLATE_URL` | admin |
+| `auth.setup` | open: `{digest: 64 hex, createdAt: iso}`; consumed: `{createdAt: iso, consumedAt: iso, userId: uuid}`. `digest` = hex `HMAC-SHA256(SESSION_PEPPER, "bantoozi:setup-token:v1:" + token)`; the token itself is never stored | no row = setup never opened (an admin exists) | API (token rotation at start while no active admin exists, spec 08 §2.1) and the setup redemption; never admin-patchable and never listed by `GET /admin/settings` |
 | `ops.events` | `[{kind, detail, at}]`, the last 50 | `[]` | `POST /admin/ops-event` |
 | `house.progress` | `{[job]: {cursor?: JsonValue, updatedAt: iso, version: int, completedAt?: iso}}`; per-job cursor schema registered in shared jobs; `completedAt` advances only after a full successful pass. A `house.reenrich`/`house.rematch` run that finds the primary engine unavailable stores itself as `cursor: {pending: [payload, …]}` (at most 20; adding one past the cap collapses the list into a single unscoped `{}` run, which covers every scoped one, D-195) for `house.reconcile` to enqueue again (spec 11 §6). A budget-cut sweep of `house.purge-articles`, `house.purge-bodies`, `house.retire-cards` or `house.reconcile` (its due-user rank sweep, `sweeps.rank`) stores `cursor: {sweeps: {<sweep>: <last id>}}` and resumes after it, and a finished sweep clears it (D-188, D-199); an unrestricted `house.translate-cards` run cut short by the run budget stores `cursor: {after: <last card id>}` and the next unrestricted run resumes after it (a finished pass clears it; a `{userId}` run never reads or writes it, D-203); `house.purge-users` stores `cursor: {disabled: 'ledger_unconfigured'}` while erasure waits for the ledger (D-188) or `cursor: {failed: {ledger, db, blocked}, at}` after an incomplete run (D-193) | `{}` | housekeeping jobs; startup catch-up (spec 11 §6) |
 | `alerts.state` | `{[alertKey]: {firstAt, lastSentAt, active, failures?, title?}}` (`title` is the alert title, ≤ 120 characters, written on every run the condition holds and used by the recovery mail; an older entry has none and the mail shows its key, D-203); the reserved keys `memo.backup_ok`, `memo.seen.backup_failed`, `memo.seen.restore_ok`, `memo.seen.restore_failed` (D-191) (`firstAt` = the latest `backup_ok`, never active; survives the 50-event limit of `ops.events`) and `memo.pool_waiting` (the streak of `house.alerts` runs that saw waiting pool clients) are not incidents (spec 11 §6.1, D-177) | `{}` | `house.alerts` |
 | `metrics.daily.<YYYY-MM-DD>` | metrics JSON (spec 10 §7) | — | `house.metrics` |
-| `worker.heartbeat` | `{[processId]: {at: iso, startedAt?: iso (D-191), queues: string[], evalIngestOnly: boolean, envCredentials: ('typesafe'\|'ollama')[]}}` | `{}` | every worker process, every 30 s (entries older than 1 h are pruned). An entry also carries `pool: {total, idle, waiting}` of the worker's query pool (absent from older workers), which the pool alert reads. `envCredentials` lists the providers with a non-empty bootstrap env key, presence only, never key material or length (spec 08 §9.1). `eval ingest-sample` needs an entry younger than 90 s with `evalIngestOnly = true` (spec 10 §2.1) |
+| `worker.heartbeat` | `{[processId]: {at: iso, startedAt?: iso (D-191), queues: string[], evalIngestOnly: boolean, envCredentials: ('typesafe'\|'ollama')[], runtime?: {…}}}` | `{}` | every worker process, every 30 s (entries older than 1 h are pruned). An entry also carries `pool: {total, idle, waiting}` of the worker's query pool (absent from older workers), which the pool alert reads. `runtime` (M8b, D-221) carries `fingerprint` (hash of the restart-class values the process was built from), `model`, `llm` (`{fast, strong}` or `null`), `pendingRestart`, `problems` (`[{key, message}]` for stored runtime rows that failed validation), `keyring` (`{status: 'ok'\|'missing'\|'malformed'\|'active_key_missing', activeKeyId?}`, never key material) and `defaults` (the env value of each worker-side runtime key, which `GET /admin/settings` shows as the default). `envCredentials` lists the providers with a non-empty bootstrap env key, presence only, never key material or length (spec 08 §9.1). `eval ingest-sample` needs an entry younger than 90 s with `evalIngestOnly = true` (spec 10 §2.1) |
+
+The ranges above are the bounds a write accepts. They are narrower than the environment's on purpose
+(`ENGINE_CONCURRENCY` 1-256, `INGEST_MAX_AGE_DAYS` 1-3650, `PREFILTER_MIN_CARDS` 1-1 000 000, `FETCH_TIMEOUT_MS` 100-600 000,
+`FETCH_MAX_BYTES` 1 KiB-1 GiB, `TYPESAFE_PRICE_PER_MTOK_USD` any non-negative number, `shared/env-ranges.ts`):
+`GET /admin/settings` shows any value the environment accepts as an effective value or default (D-226).
 
 `pnpm db:seed` inserts **only** `card_text_mode`, `question_sets.active = {}` and `language_modes`
 (from `LANGUAGE_MODES`) when they are missing. Deploys run the seed before starting the services, so
@@ -352,6 +371,17 @@ default stays effective until an admin sets a value. A classification completion
 key it compares with its snapshot (spec 05 §5.5 step 6) with its default before share-locking it,
 so that the key's first write waits for the completion (D-84); of those keys only
 `engine.prefilter_enabled` is not seeded, and its default has no env fallback.
+
+**Runtime keys (M8b).** The thirteen rows above that name an env value (`engine.typesafe_model` through
+`translate.libretranslate_url`) override the matching env value; `null` or no row
+means the env value, and a `PATCH` with `null` resets a key. The seed never writes them. A stored row that
+no longer validates (for example after `PROVIDER_HOST_ALLOWLIST` shrank) is ignored: the process keeps the
+last good value it saw, else the env value, and reports the key in `problems`. Restart-class keys (Jev
+model, both base URLs, fallback switch, Ollama models and concurrency, LibreTranslate URL) take effect in a
+worker only when it restarts; live-class keys (price, concurrency of the Jev engine, prefilter minimum, ingest
+age, fetch limits, rate limits) are read through a per-process cache with a short TTL (D-221). Workers
+build their clients from the values in force when they start; the effective `engine.model_pin` is derived
+from them (spec 11 §8).
 
 ---
 

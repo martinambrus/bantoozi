@@ -76,6 +76,7 @@ import { failureDisposition, type FailureDisposition } from '../classify/outcome
 import { after } from '../pipeline.js';
 import { nowOf, pipelineContext, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
+import { assertWorkerCurrent, lockWorkerCurrent, type StaleWorkerError } from '../stale-worker.js';
 
 /** Prefilter applies only above this many pending cards (spec 05 §5.5 step 3). */
 export const PREFILTER_MIN_CARDS = 60;
@@ -107,6 +108,8 @@ interface MatchJob {
   lost: boolean;
   /** The compared configuration changed: current work was enqueued, so stop sending. */
   stale: boolean;
+  /** The process is no longer current (PR #28 round 5): the job throws this once its rows are released. */
+  workerStale: StaleWorkerError | null;
   /** The job budget ran out with packs left: a follow-up job asks them. */
   yielded: boolean;
 }
@@ -134,6 +137,7 @@ export function createArticleMatchHandler(
   classification: ClassificationDeps,
 ): QueueHandler<'article.match'> {
   return async ({ articleId, l2Attempts }) => {
+    await assertWorkerCurrent(deps.db, classification);
     const started = nowOf(deps).getTime();
     const config = await loadClassificationConfig(deps.db, deps.settingsEnv);
     const enrichSet = requireSet(config.enrich, 'enrich');
@@ -183,6 +187,7 @@ export function createArticleMatchHandler(
       questions: new Map(),
       lost: false,
       stale: false,
+      workerStale: null,
       yielded: false,
     };
 
@@ -203,6 +208,7 @@ export function createArticleMatchHandler(
       job.held.clear();
     }
     await finish(job);
+    if (job.workerStale !== null) throw job.workerStale;
   };
 }
 
@@ -256,7 +262,7 @@ async function prefilter(
   const pending = [...job.held.keys()];
   if (
     !job.config.prefilterEnabled ||
-    pending.length <= PREFILTER_MIN_CARDS ||
+    pending.length <= job.config.prefilterMinCards ||
     !isPrimaryAnswer(facets, job.classification.primaryModel)
   ) {
     return;
@@ -724,6 +730,15 @@ async function revisionHolds(tx: Transaction, job: MatchJob): Promise<boolean> {
  * the job stops sending (`stale`) and the caller writes nothing.
  */
 async function configHolds(tx: Transaction, job: MatchJob): Promise<boolean> {
+  // A restart-class value or the pin moved since this process booted (PR #28 round 5): nothing is
+  // written, the rows are released and the job fails for a later retry by a restarted worker.
+  const staleWorker = await lockWorkerCurrent(tx, job.classification);
+  if (staleWorker !== null) {
+    await releaseHeld(tx, job, [...job.held.keys()], { kind: 'release' });
+    job.stale = true;
+    job.workerStale = staleWorker;
+    return false;
+  }
   const current = await loadClassificationConfig(tx, job.deps.settingsEnv, { lock: true });
   if (sameMatchConfig(job.config, current, job.article.lang)) return true;
   await releaseHeld(tx, job, [...job.held.keys()], { kind: 'release' });
@@ -820,10 +835,16 @@ async function dropUndemanded(
  * trace, so its replay still holds, answers and completes the rows the database kept leased.
  */
 async function jobTransaction<T>(job: MatchJob, fn: (tx: Transaction) => Promise<T>): Promise<T> {
-  const before = { held: new Map(job.held), stale: job.stale, lost: job.lost };
+  const before = {
+    held: new Map(job.held),
+    stale: job.stale,
+    workerStale: job.workerStale,
+    lost: job.lost,
+  };
   const restore = () => {
     job.held = new Map(before.held);
     job.stale = before.stale;
+    job.workerStale = before.workerStale;
     job.lost = before.lost;
   };
   try {

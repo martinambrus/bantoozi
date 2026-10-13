@@ -35,6 +35,7 @@ import {
 import { buildState, modelInput } from '../classify/model-input.js';
 import { nowOf, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
+import { assertWorkerCurrent, lockWorkerCurrent } from '../stale-worker.js';
 
 /** Where the backfill sends an article (spec 05 §5.4 steps 2 and 5). */
 type ArticleWork =
@@ -59,6 +60,7 @@ export function createCardBackfillHandler(
   classification: ClassificationDeps,
 ): QueueHandler<'card.backfill'> {
   return async (payload) => {
+    await assertWorkerCurrent(deps.db, classification);
     const user = await userPlan(deps.db, payload.userId);
     if (user === null || user.deleted) return;
     const held = await heldBackfillCards(deps.db, payload.userId, payload.cardIds);
@@ -111,6 +113,9 @@ export function createCardBackfillHandler(
     }
 
     await retryTransaction(deps.db, async (tx) => {
+      // Decisions rest on this process's model: a moved restart-class value or pin discards them.
+      const stale = await lockWorkerCurrent(tx, classification);
+      if (stale !== null) throw stale;
       const sender = workerOutbox(tx);
       for (const item of work) {
         await upsertMatchQueue(tx, {

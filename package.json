@@ -17,6 +17,7 @@
     "test": "turbo run test --",
     "test:int": "turbo run test:int",
     "e2e": "pnpm --filter @bantoozi/web e2e",
+    "setup:env": "pnpm --filter @bantoozi/ops cli env:init",
     "db:migrate": "pnpm --filter @bantoozi/db migrate",
     "db:seed": "pnpm --filter @bantoozi/worker seed",
     "db:dev:up": "docker compose -f infra/compose.dev.yml up -d --no-recreate --wait postgres",

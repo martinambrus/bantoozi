@@ -10,6 +10,10 @@ import {
   findUsableInvite,
   findUserByEmail,
   insertSignupUser,
+  activeAdminExists,
+  closeOpenSetup,
+  isSoftDeletedAdmin,
+  lockSetup,
   issueLoginCode,
   lockActiveLoginCode,
   lockAuthEmail,
@@ -323,74 +327,105 @@ export async function verifyLoginCode(
   const { db, config } = services;
   const { email } = input;
   const fail = { ok: false } as const;
-  return db.transaction(async (tx): Promise<VerifyResult> => {
-    await lockAuthEmail(tx, email);
-    const challenge = await lockActiveLoginCode(tx, email);
-    if (challenge === null || challenge.expired) return fail;
-    if (challenge.attempts >= LOGIN_CODE_MAX_ATTEMPTS) return fail;
-    const digest = loginCodeDigest(config.sessionPepper, {
-      challengeNonce: challenge.challengeNonce,
-      email,
-      code: input.code,
-    });
-    if (!digestsEqual(digest, challenge.codeHash)) {
-      await recordFailedLoginAttempt(tx, {
-        id: challenge.id,
-        maxAttempts: LOGIN_CODE_MAX_ATTEMPTS,
-      });
-      return fail;
+  // Lock order of every path: the setup lock, then the auth-email lock (completeSetup does the same,
+  // so the two cannot deadlock). A listed address needs the setup lock; restoring a deleted admin
+  // is only known after the challenge is read, so that case rolls back and runs again with it.
+  class RetryWithSetupLock extends Error {}
+  const listed = isAdminEmail(config, email);
+  let withSetupLock = listed;
+  for (;;) {
+    try {
+      return await verifyOnce(withSetupLock);
+    } catch (error) {
+      // The transaction is rolled back: the consumed code and the attempt counter are restored.
+      if (!(error instanceof RetryWithSetupLock)) throw error;
+      withSetupLock = true;
     }
-    if (!(await consumeLoginCode(tx, challenge.id))) return fail;
+  }
 
-    const admin = isAdminEmail(config, email);
-    let userId: string;
-    let restore = false;
-    if (challenge.purpose === 'login') {
-      // A purged user takes its code row with it (ON DELETE CASCADE); the checks below also refuse
-      // a row that no longer matches, so a login code never turns into a signup authorization.
-      if (challenge.loginUserId === null) return fail;
-      const user = await lockUserForVerify(tx, challenge.loginUserId);
-      if (user === null || user.email !== email || !user.restorable) return fail;
-      userId = user.id;
-      restore = user.deletedAt !== null;
-    } else {
-      if ((await findUserByEmail(tx, email)) !== null) return fail;
-      const mode = await effectiveSignupMode(tx, config, log);
-      const invite =
-        challenge.inviteCode !== null &&
-        (await findUsableInvite(tx, { code: challenge.inviteCode, email, lock: true }))
-          ? challenge.inviteCode
-          : null;
-      const eligible = mode !== 'closed' && (admin || mode === 'open' || invite !== null);
-      if (!eligible) return fail;
-      userId = newUserId();
-      const inserted = await insertSignupUser(tx, {
-        id: userId,
+  async function verifyOnce(setupLocked: boolean): Promise<VerifyResult> {
+    return db.transaction(async (tx): Promise<VerifyResult> => {
+      if (setupLocked) await lockSetup(tx);
+      await lockAuthEmail(tx, email);
+      const challenge = await lockActiveLoginCode(tx, email);
+      if (challenge === null || challenge.expired) return fail;
+      if (challenge.attempts >= LOGIN_CODE_MAX_ATTEMPTS) return fail;
+      const digest = loginCodeDigest(config.sessionPepper, {
+        challengeNonce: challenge.challengeNonce,
         email,
-        locale: challenge.locale ?? preferredLocale(input.acceptLanguage),
-        role: admin ? 'admin' : 'user',
-        invitesLeft: planLimits(DEFAULT_PLAN).invitesOnSignup,
+        code: input.code,
       });
-      // Both are impossible under the email lock and the invite row lock; never commit half a signup.
-      if (!inserted) throw new Error('signup user already exists');
-      if (invite !== null && !(await consumeInvite(tx, { code: invite, email, userId }))) {
-        throw new Error('locked invite could not be consumed');
+      if (!digestsEqual(digest, challenge.codeHash)) {
+        await recordFailedLoginAttempt(tx, {
+          id: challenge.id,
+          maxAttempts: LOGIN_CODE_MAX_ATTEMPTS,
+        });
+        return fail;
       }
-      await deleteWaitlistEntry(tx, email);
-    }
+      if (!(await consumeLoginCode(tx, challenge.id))) return fail;
 
-    await recordVerifiedLogin(tx, { userId, admin });
-    const tenant = await bindTenant(tx, userId);
-    if (restore) await restoreSoftDeletedUser(tenant);
-    const { token, tokenHash } = newSessionToken();
-    const session = await createSession(tx, {
-      userId,
-      tokenHash,
-      userAgent: input.userAgent,
-      ip: input.ip,
-      ttlDays: config.sessionTtlDays,
+      // ADMIN_EMAILS is bootstrap only (M8b-T7): a listed address becomes admin when its account is
+      // created, or at a login while no active admin exists. Decided under the setup lock so two
+      // concurrent bootstraps and the first-run setup cannot both pass the "no admin yet" check.
+      let admin = listed;
+      let userId: string;
+      let restore = false;
+      let adminRestored = false;
+      if (challenge.purpose === 'login') {
+        // A purged user takes its code row with it (ON DELETE CASCADE); the checks below also refuse
+        // a row that no longer matches, so a login code never turns into a signup authorization.
+        if (challenge.loginUserId === null) return fail;
+        // Restoring a deleted admin makes an active admin again: the setup lock comes before the
+        // email lock (the lock order of every setup path), so run again holding it from the start.
+        if (!listed && (await isSoftDeletedAdmin(tx, challenge.loginUserId))) {
+          if (!setupLocked) throw new RetryWithSetupLock();
+          adminRestored = true;
+        }
+        const user = await lockUserForVerify(tx, challenge.loginUserId);
+        if (user === null || user.email !== email || !user.restorable) return fail;
+        userId = user.id;
+        restore = user.deletedAt !== null;
+        admin = listed && !(await activeAdminExists(tx));
+      } else {
+        if ((await findUserByEmail(tx, email)) !== null) return fail;
+        const mode = await effectiveSignupMode(tx, config, log);
+        const invite =
+          challenge.inviteCode !== null &&
+          (await findUsableInvite(tx, { code: challenge.inviteCode, email, lock: true }))
+            ? challenge.inviteCode
+            : null;
+        const eligible = mode !== 'closed' && (listed || mode === 'open' || invite !== null);
+        if (!eligible) return fail;
+        userId = newUserId();
+        const inserted = await insertSignupUser(tx, {
+          id: userId,
+          email,
+          locale: challenge.locale ?? preferredLocale(input.acceptLanguage),
+          role: admin ? 'admin' : 'user',
+          invitesLeft: planLimits(DEFAULT_PLAN).invitesOnSignup,
+        });
+        // Both are impossible under the email lock and the invite row lock; never commit half a signup.
+        if (!inserted) throw new Error('signup user already exists');
+        if (invite !== null && !(await consumeInvite(tx, { code: invite, email, userId }))) {
+          throw new Error('locked invite could not be consumed');
+        }
+        await deleteWaitlistEntry(tx, email);
+      }
+
+      await recordVerifiedLogin(tx, { userId, admin });
+      if (admin || (restore && adminRestored)) await closeOpenSetup(tx, userId);
+      const tenant = await bindTenant(tx, userId);
+      if (restore) await restoreSoftDeletedUser(tenant);
+      const { token, tokenHash } = newSessionToken();
+      const session = await createSession(tx, {
+        userId,
+        tokenHash,
+        userAgent: input.userAgent,
+        ip: input.ip,
+        ttlDays: config.sessionTtlDays,
+      });
+      const me = await loadMe(tenant);
+      return { ok: true, me, token, expiresAt: session.expiresAt };
     });
-    const me = await loadMe(tenant);
-    return { ok: true, me, token, expiresAt: session.expiresAt };
-  });
+  }
 }

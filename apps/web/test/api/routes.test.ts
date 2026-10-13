@@ -17,8 +17,8 @@ const entries = Object.entries(routes) as [string, AnyRoute][];
 const operation = (route: AnyRoute) => `${route.method} ${route.path}`;
 
 describe('route table', () => {
-  it('lists the 101 operations of apps/api/test/expected-operations.txt', () => {
-    expect(EXPECTED_OPERATIONS).toHaveLength(101);
+  it('lists the 103 operations of apps/api/test/expected-operations.txt', () => {
+    expect(EXPECTED_OPERATIONS).toHaveLength(103);
     expect(entries.map(([, route]) => operation(route)).sort()).toEqual(
       [...EXPECTED_OPERATIONS].sort(),
     );
@@ -64,7 +64,7 @@ describe('route table', () => {
     expect(routes.adminOpsEvent.auth).toBe('public');
   });
 
-  it('keeps the public routes to the sign-in flow, the waitlist and the probes', () => {
+  it('keeps the public routes to the sign-in flow, the waitlist, first-run setup and the probes', () => {
     const publicOperations = entries
       .filter(([, route]) => route.auth === 'public')
       .map(([, route]) => operation(route))
@@ -77,7 +77,9 @@ describe('route table', () => {
         'POST /admin/ops-event',
         'POST /auth/request-code',
         'POST /auth/verify',
+        'POST /setup/complete',
         'POST /waitlist',
+        'GET /setup',
       ].sort(),
     );
   });

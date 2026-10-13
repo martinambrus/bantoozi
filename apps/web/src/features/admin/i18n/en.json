@@ -149,7 +149,43 @@
       "rankerRejected": "The server rejected the merged ranker configuration.",
       "unknownQuestionSet": "Unknown question set for “{{kind}}”.",
       "settingsChanged": "Settings changed while saving. The latest values were loaded; review your edit and save again.",
-      "layaWorkerMissing": "No running worker consumes the Laya queues, so engine.laya cannot be set."
+      "layaWorkerMissing": "No running worker consumes the Laya queues, so engine.laya cannot be set.",
+      "rejected": "The server did not accept this value: {{reason}}"
+    },
+    "groups": {
+      "engine": "Decision engine (Jev)",
+      "ollama": "LLM fallback (Ollama)",
+      "ingestion": "Ingestion and fetching",
+      "api": "API",
+      "translation": "Translation"
+    },
+    "source": {
+      "stored": "Source: stored",
+      "env": "Source: environment",
+      "lastGood": "Source: last good value"
+    },
+    "defaultValue": "Default: {{value}}",
+    "defaultUnknown": "not known",
+    "stateUnknown": "Current value not known: choose on or off.",
+    "on": "on",
+    "off": "off",
+    "models": "fast {{fast}}, strong {{strong}}",
+    "limits": "{{timeoutMs}} ms, {{megabytes}} MB",
+    "reset": "Reset {{key}}",
+    "ack": {
+      "title": "This change re-enriches the corpus",
+      "body": "{{key}} changes from {{from}} to {{to}}. Every article is enriched and matched again, which uses the engine budget. Check the change against the golden set before you save it.",
+      "checkbox": "I ran eval replay and it passed",
+      "confirm": "Confirm and save",
+      "cancel": "Cancel"
+    },
+    "workers": {
+      "title": "Applied by workers",
+      "live_one": "{{count}} live worker",
+      "live_other": "{{count}} live workers",
+      "none": "No live workers",
+      "pendingRestart": "Pending restart: {{pending}} of {{total}} workers",
+      "problem": "Rejected by worker: {{message}}"
     }
   },
   "providers": {
@@ -222,6 +258,14 @@
       "keyRejected": "The server did not accept this key. Check that you pasted the whole key without spaces.",
       "noCandidate": "There is no staged key any more. The latest state is shown.",
       "expired": "This validation is older than 24 hours, so the key cannot be activated. Validate it again first."
+    },
+    "keyring": {
+      "missing": "The provider key store is not set up on {{where}}. Run `pnpm setup:env` on the host to generate the master keys, then restart.",
+      "malformed": "PROVIDER_MASTER_KEYS on {{where}} is not valid. Fix PROVIDER_MASTER_KEYS in the environment, then restart.",
+      "active_key_missing": "The active key id on {{where}} is not among the master keys. Fix PROVIDER_MASTER_KEY_ID in the environment, then restart.",
+      "mismatch": "The API uses key {{api}} but a worker uses key {{worker}}. Make PROVIDER_MASTER_KEY_ID the same everywhere, then restart the API and the workers.",
+      "api": "the API",
+      "worker": "worker {{id}}"
     }
   },
   "feeds": {

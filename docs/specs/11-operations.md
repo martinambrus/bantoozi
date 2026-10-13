@@ -71,7 +71,7 @@ when something needs a human, before users notice.
    clean checkout. Build immutable API/worker/migration/Caddy images with the frozen lockfile; static
    web assets are inside the Caddy image, not overwritten in a shared volume during a live deploy.
 2. Validate required secrets (including `DELETION_LEDGER_PATH`, `DELETION_LEDGER_RECIPIENT` and
-   `DELETION_HMAC_KEY`, a `DELETION_LEDGER_PATH` inside `/var/lib/bantoozi/ledger/`, and a non-empty `ADMIN_EMAILS`; example placeholders are refused, D-190, D-202) and the enabled profiles, check free disk/connection budget, and record
+   `DELETION_HMAC_KEY` and a `DELETION_LEDGER_PATH` inside `/var/lib/bantoozi/ledger/`; example placeholders are refused, D-190, D-202). `ADMIN_EMAILS` is optional (bootstrap only, D-215): it is no longer required, but a placeholder in it is still refused. The first admin comes from the setup token (spec 08 §2.1), and the post-deploy smoke test only **warns** when no active admin exists yet. Validate also the enabled profiles, check free disk/connection budget, and record
    the previous image digests, schema version and a fresh successful encrypted pre-deploy backup. The
    `backup-tools` image is built first (a failed build stops the deploy), so a first image build cannot
    time out inside `backup.sh` (D-205).
@@ -405,7 +405,9 @@ rank/learn/re-enrich work uses the transactional outbox, and model-triggering sc
 active-user/retention checks and current per-user-feed inference demand. Bookmark capture is a
 separate local queue and remains available when all inference modes are off.
 
-### 6.1 Alerts (emails to `ADMIN_EMAILS`, de-duplicated: each alert at most once per 6 h until resolved)
+### 6.1 Alerts (emails to the active admins, de-duplicated: each alert at most once per 6 h until resolved)
+
+Recipients are the emails of all active admin users (`role='admin'`, not soft-deleted), ordered; `ADMIN_EMAILS` is the fallback only while there is none or the lookup fails, and with neither the run logs that alerts cannot be sent (M8b, D-215).
 
 `house.alerts` also records resolved transitions and sends one recovery notification per active
 incident. Mail transport failure leaves the notification pending; mark `lastSentAt` only after SMTP
@@ -470,7 +472,12 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
 
 1. Run `eval replay` with the new `TYPESAFE_MODEL`, question set, Laya checkpoint or calibration
    or, while `LLM_FALLBACK_ENABLED`, Ollama fallback models (spec 10 §6). It must pass.
-2. Set the env or settings value, then restart the worker.
+2. Set the value in **Admin → Settings** (`engine.typesafe_model`, `engine.llm_fallback_enabled`,
+   `engine.ollama_models`; spec 08 §9 requires the acknowledgement that step 1 passed) or in the env
+   file. A settings change needs no manual restart: each worker notices the changed restart-class value
+   (it re-reads the settings every 10 s), drains and exits, and compose restarts it (`WORKER_SELF_RESTART`,
+   default true in production, spec 01 §3); with `false` the worker only warns and reports
+   `pendingRestart`, and the operator restarts it. An env change still needs `up -d --force-recreate`.
 3. New answers carry the new model id. Old answers no longer satisfy current cache lookups (spec 02
    §3.3). The first worker that starts with a new `TYPESAFE_MODEL` or a different LLM fallback
    state (`LLM_FALLBACK_ENABLED` switched either way, or a new `OLLAMA_MODEL_FAST`/
@@ -479,7 +486,24 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
    `house.rematch` once, so the `RANK_WINDOW_DAYS` window is rebuilt within budget (spec 05 §2), in
    bulk priority and never through the fallback (owner decision, D-171); if Jev is unavailable the
    runs wait as pending runs for `house.reconcile`. `pnpm db:seed` inserts the row when missing
-   without a rebuild.
+   without a rebuild. The pin is derived from the **effective** values (stored setting over env, D-221), so
+   the rebuild runs exactly once whichever worker restarts first. **Stale-worker guard:** between a restart-class value
+   or the pin moving and a worker restarting, that worker fails `article.enrich`, `article.match`,
+   `house.reenrich`, `house.rematch` and `card.backfill` with a retry delay of 30 s instead of asking the old
+   model or writing its answers; the retry lands on a restarted worker. A worker is stale when the restart
+   fingerprint of the **current** effective settings (one fresh read per job, the condition behind
+   `pendingRestart`) differs from the one it booted with, or when `engine.model_pin` names another model or
+   another fallback state and Ollama model pair than the process records (D-218, D-225). The check also runs in the
+   completion transaction, after share-locking the restart-class setting rows and the pin row: a value that moved while
+   the model call was in flight discards the answer, releases the held rows and fails the job for the 30 s retry (D-226).
+   **Which handlers are guarded (D-228):** guarded at the start and in the completion are every handler that asks
+   the engine or a translator and stores a result classification reads: `article.enrich`, `article.match`,
+   `article.cluster` (the fold decision), `article.translate` (tier-1/tier-2 rows), `house.translate-cards` (the English
+   card pair), `house.reenrich`, `house.rematch` and `card.backfill`. Deliberately unguarded: `analysis.process`
+   (user-requested, records its own model snapshot), `user.suggest` (checks the pin itself and leases per user),
+   `provider.validate` (probes a candidate key; stores no classification result), and the dispatch-only recovery
+   jobs `house.rescore-degraded`, `house.reconcile` and `house.retranslate-skipped` (they enqueue work that is
+   itself guarded).
    Translation rows are not rebuilt: they stay valid for their article revision whatever model made
    them (spec 07 §3), so re-enrichment reuses the selected translation. In M9 the Laya worker records
    its checkpoint hash and calibration version the same way and enqueues `house.reenrich {lang}`

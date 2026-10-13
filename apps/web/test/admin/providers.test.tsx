@@ -6,7 +6,7 @@ import { accountKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
 import { gate } from '../interests/support.js';
 import { bodyOf, renderApp, type ApiRouteHandler, type FakeServer } from '../support/app.js';
-import { T1, adminMe, adminRoutes, makeCredential, unhandledGuard } from './support.js';
+import { OK_KEYRING, T1, adminMe, adminRoutes, makeCredential, unhandledGuard } from './support.js';
 
 const SECRET = 'sk-test-SECRET-9f3a7c41';
 const JEV = 'Jev (typesafe)';
@@ -53,7 +53,8 @@ async function openProviders(server: Server, routes: Record<string, ApiRouteHand
     server: {
       me: adminMe(),
       routes: adminRoutes({
-        'GET /admin/engine/credentials': () => json(200, { items: server.items }),
+        'GET /admin/engine/credentials': () =>
+          json(200, { items: server.items, keyring: OK_KEYRING }),
         ...routes,
       }),
     },
@@ -67,7 +68,8 @@ async function openWithServer(credentials: Server, routes: Record<string, ApiRou
   const server: FakeServer = {
     me: adminMe(),
     routes: adminRoutes({
-      'GET /admin/engine/credentials': () => json(200, { items: credentials.items }),
+      'GET /admin/engine/credentials': () =>
+        json(200, { items: credentials.items, keyring: OK_KEYRING }),
       ...routes,
     }),
   };
@@ -351,7 +353,7 @@ describe('provider accounts (spec 09 §8)', () => {
     const app = await openProviders(server, {
       'GET /admin/engine/credentials': () => {
         reads += 1;
-        return json(200, { items: server.items });
+        return json(200, { items: server.items, keyring: OK_KEYRING });
       },
       'POST /admin/engine/credentials/:provider/validate': () => {
         server.items = [jevCredential({ candidateStatus: 'validating' }), ollamaCredential()];
@@ -407,7 +409,7 @@ describe('provider accounts (spec 09 §8)', () => {
     const app = await openProviders(server, {
       'GET /admin/engine/credentials': () => {
         reads += 1;
-        return json(200, { items: server.items });
+        return json(200, { items: server.items, keyring: OK_KEYRING });
       },
       'POST /admin/engine/credentials/:provider/validate': () => {
         server.items = [jevCredential({ candidateStatus: 'validating' }), ollamaCredential()];
