@@ -71,6 +71,8 @@ export interface ProviderPanelProps {
   onStale: () => void;
   /** A validation was requested: the screen looks for its result until it arrives. */
   onValidationRequested: (watch: ValidationWatch) => void;
+  /** A requested validation has no result yet (queued or running on a worker). */
+  validationInProgress: boolean;
 }
 
 /** An answer that comes after the sign-in that asked has ended shows nothing. */
@@ -80,6 +82,7 @@ export function ProviderPanel({
   onCredential,
   onStale,
   onValidationRequested,
+  validationInProgress,
 }: ProviderPanelProps) {
   const { t } = useTranslation('admin');
   const api = useApi();
@@ -141,7 +144,8 @@ export function ProviderPanel({
         body: { candidateVersion, expectedRevision: credential.revision },
       });
       if (session.currentSignIn() !== signIn) return;
-      onValidationRequested({ snapshot: snapshotOf(credential), startedAt: Date.now() });
+      // The request only queues the worker job: the screen waits until the worker changes this state.
+      onValidationRequested({ snapshot: snapshotOf(result.credential), startedAt: Date.now() });
       onCredential(result.credential);
     } catch (error) {
       if (session.currentSignIn() !== signIn) return;
@@ -287,7 +291,7 @@ export function ProviderPanel({
           <div className="flex flex-col items-start gap-2">
             <Button
               variant="secondary"
-              loading={validate.isPending}
+              loading={validate.isPending || validationInProgress}
               disabled={busy || candidateStatus === 'validating'}
               onClick={() => void requestValidation()}
             >

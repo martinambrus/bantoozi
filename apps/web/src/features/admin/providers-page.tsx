@@ -118,6 +118,7 @@ export function AdminProvidersPage() {
                     onValidationRequested={(watch) =>
                       setWatches((current) => ({ ...current, [provider]: watch }))
                     }
+                    validationInProgress={validationRunning([credential], watches, Date.now())}
                   />
                 );
               })}

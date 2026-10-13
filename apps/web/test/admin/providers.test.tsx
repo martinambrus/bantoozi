@@ -402,6 +402,43 @@ describe('provider accounts (spec 09 §8)', () => {
     expect(app.unhandled).toEqual([]);
   });
 
+  it('keeps Validate busy until the worker reports, although the request only queues the job', async () => {
+    vi.useFakeTimers({ now: NOW, shouldAdvanceTime: true });
+    const server: Server = { items: [jevCredential(), ollamaCredential()] };
+    const app = await openProviders(server, {
+      // The server answers before a worker picks the job up: the credential is unchanged.
+      'POST /admin/engine/credentials/:provider/validate': () =>
+        json(202, { credential: server.items[0] }),
+    });
+    const validate = () => panel().getByRole('button', { name: 'Validate' });
+
+    await app.user.click(validate());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+    expect(validate()).toBeDisabled();
+    expect(validate()).toHaveAttribute('aria-busy', 'true');
+
+    server.items = [jevCredential({ candidateStatus: 'validating' }), ollamaCredential()];
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(await panel().findByText('Validating…')).toBeVisible();
+    expect(validate()).toHaveAttribute('aria-busy', 'true');
+
+    server.items = [
+      jevCredential({ candidateStatus: 'valid', validatedAt: T1 }),
+      ollamaCredential(),
+    ];
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(await panel().findByText('Valid')).toBeVisible();
+    expect(validate()).toBeEnabled();
+    expect(validate()).not.toHaveAttribute('aria-busy');
+    expect(app.unhandled).toEqual([]);
+  });
+
   it('stops polling at an inconclusive result and offers to validate again', async () => {
     vi.useFakeTimers({ now: NOW, shouldAdvanceTime: true });
     const server: Server = { items: [jevCredential(), ollamaCredential()] };
