@@ -1,0 +1,144 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  eligibleRows,
+  FEED_AGREEMENT,
+  feedAgreement,
+  learningCounts,
+  sampleFeedIds,
+  trainUserModel,
+} from '../../src/index.js';
+import type { RawFeatureSnapshot, TrainingSample } from '../../src/index.js';
+import { CFG, drivenSamples, NOW, RATING_SHA, sample, trainArgs } from './support/synth.js';
+
+const ELIG = { now: NOW, historyDays: CFG.model.historyDays, ratingSha: RATING_SHA };
+
+function rowsOf(samples: TrainingSample[]) {
+  return eligibleRows(samples, ELIG).rows;
+}
+
+function withManifest(s: TrainingSample, feedIds: unknown): TrainingSample {
+  if (s.features === null) throw new Error('no snapshot');
+  const features = { ...s.features, sourceManifest: { inferenceFeedIds: feedIds } };
+  return { ...s, features: features as unknown as RawFeatureSnapshot };
+}
+
+function withSourceFeed(s: TrainingSample, feedId: string | null): TrainingSample {
+  if (s.features === null) throw new Error('no snapshot');
+  const features = { ...s.features, values: { ...s.features.values, sourceFeedId: feedId } };
+  return { ...s, features };
+}
+
+/** Liked samples carry a high card probability, disliked a low one: the cards separate them. */
+function separated(likes: number, dislikes: number): TrainingSample[] {
+  const out: TrainingSample[] = [];
+  for (let i = 0; i < likes; i += 1) out.push(sample(i, 1, { pA: 0.9 - i * 0.01 }));
+  for (let i = 0; i < dislikes; i += 1) out.push(sample(100 + i, 0, { pA: 0.1 + i * 0.01 }));
+  return out;
+}
+
+describe('learningCounts', () => {
+  it('matches the trainer metrics on the same samples', () => {
+    const samples = drivenSamples(120, 'counts');
+    const { metrics } = trainUserModel(trainArgs(samples), { mode: 'research' });
+    expect(learningCounts(rowsOf(samples))).toEqual({
+      explicit: metrics.nExplicit,
+      likes: metrics.nPos,
+      dislikes: metrics.nNeg,
+    });
+  });
+
+  it('does not count an ineligible sample', () => {
+    const old = sample(900, 1, { ageDays: 400 });
+    const rows = rowsOf([...separated(3, 3), old]);
+    expect(learningCounts(rows)).toEqual({ explicit: 6, likes: 3, dislikes: 3 });
+    expect(eligibleRows([old], ELIG).skipped).toEqual({ too_old: 1 });
+  });
+});
+
+describe('sampleFeedIds', () => {
+  it('prefers the manifest feed ids', () => {
+    const s = withManifest(sample(1, 1), ['3', '4']);
+    expect(sampleFeedIds(s.features)).toEqual(['3', '4']);
+  });
+
+  it('falls back to the source feed', () => {
+    expect(sampleFeedIds(sample(1, 1).features)).toEqual(['7']);
+    expect(sampleFeedIds(withSourceFeed(sample(1, 1), null).features)).toEqual([]);
+    expect(sampleFeedIds(null)).toEqual([]);
+  });
+
+  it('ignores a malformed manifest', () => {
+    expect(sampleFeedIds(withManifest(sample(1, 1), [1, 2]).features)).toEqual(['7']);
+    expect(sampleFeedIds(withManifest(sample(1, 1), 'x').features)).toEqual(['7']);
+  });
+});
+
+describe('feedAgreement', () => {
+  it('filters by manifest, by source feed fallback, and counts a multi-feed sample for both', () => {
+    const samples = [
+      withManifest(sample(1, 1), ['3']),
+      withManifest(sample(2, 0), ['3', '4']),
+      sample(3, 1),
+      withSourceFeed(sample(4, 0), '4'),
+    ];
+    const rows = rowsOf(samples);
+    const at = (id: string) => feedAgreement(rows, id, CFG, 'seed');
+    expect([at('3').likes, at('3').dislikes]).toEqual([1, 1]);
+    expect([at('4').likes, at('4').dislikes]).toEqual([0, 2]);
+    expect([at('7').likes, at('7').dislikes]).toEqual([1, 0]);
+    expect([at('9').likes, at('9').dislikes]).toEqual([0, 0]);
+  });
+
+  it('is collecting with two likes', () => {
+    const r = feedAgreement(rowsOf(separated(2, 6)), '7', CFG, 'seed');
+    expect(r.status).toBe('collecting');
+  });
+
+  it('is one_sided with ten likes and one dislike', () => {
+    const r = feedAgreement(rowsOf(separated(10, 1)), '7', CFG, 'seed');
+    expect(r.status).toBe('one_sided');
+    expect(FEED_AGREEMENT.oneSidedMinTotal).toBe(10);
+  });
+
+  it('is ready when the cards separate the ratings', () => {
+    const r = feedAgreement(rowsOf(separated(6, 6)), '7', CFG, 'seed');
+    expect(r.status).toBe('ready');
+    expect(r.auc).toBe(1);
+    expect(r.aucLow).not.toBeNull();
+    expect(r.aucLow ?? 0).toBeGreaterThanOrEqual(CFG.model.minCvAuc);
+    expect(r.ratedHigh).toEqual({ total: 6, liked: 6 });
+    expect(r.ratedLow).toEqual({ total: 6, disliked: 6 });
+  });
+
+  it('is not_yet when the cards do not track the ratings', () => {
+    const samples = Array.from({ length: 12 }, (_, i) =>
+      sample(i, i % 2 === 0 ? 1 : 0, { pA: 0.1 + (((i * 5) % 12) / 12) * 0.8 }),
+    );
+    const r = feedAgreement(rowsOf(samples), '7', CFG, 'seed');
+    expect(r.likes).toBe(6);
+    expect(r.dislikes).toBe(6);
+    expect(r.status).toBe('not_yet');
+  });
+
+  it('splits rated articles at the For-you threshold', () => {
+    const samples = [
+      sample(1, 1, { pA: 0.9 }),
+      sample(2, 0, { pA: 0.9 }),
+      sample(3, 0, { pA: 0.2 }),
+      sample(4, 1, { pA: 0.2 }),
+      sample(5, 0, { pA: 0.2 }),
+    ];
+    const r = feedAgreement(rowsOf(samples), '7', CFG, 'seed');
+    expect(r.ratedHigh).toEqual({ total: 2, liked: 1 });
+    expect(r.ratedLow).toEqual({ total: 3, disliked: 2 });
+  });
+
+  it('is deterministic for the same seed', () => {
+    const rows = rowsOf(drivenSamples(80, 'det'));
+    const a = feedAgreement(rows, '7', CFG, 'seed-1');
+    const b = feedAgreement(rows, '7', CFG, 'seed-1');
+    expect(a).toEqual(b);
+    expect(a.aucLow).not.toBeNull();
+  });
+});

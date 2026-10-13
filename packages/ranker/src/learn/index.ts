@@ -7,6 +7,7 @@ export * from './metrics.js';
 export * from './platt.js';
 export * from './random.js';
 export * from './activation.js';
+export * from './agreement.js';
 export * from './folds.js';
 export * from './model.js';
 export * from './own-inputs.js';

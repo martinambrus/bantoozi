@@ -71,7 +71,8 @@ export function chooseLambda(lossByLambda: readonly { lambda: number; loss: numb
   return Math.max(...finite.filter((e) => e.loss <= min + tol).map((e) => e.lambda));
 }
 
-interface Row {
+/** One eligible training sample with its stored snapshot. */
+export interface TrainingRow {
   s: TrainingSample;
   f: RawFeatureSnapshot;
   vecs: Map<string, Record<string, number>>;
@@ -86,7 +87,7 @@ interface Design {
   X: number[][];
   y: number[];
   w: number[];
-  std: (rows: readonly Row[]) => number[][];
+  std: (rows: readonly TrainingRow[]) => number[][];
 }
 
 interface Ctx {
@@ -96,7 +97,7 @@ interface Ctx {
 }
 
 function vectorOf(
-  row: Row,
+  row: TrainingRow,
   own: readonly string[],
   cfg: ReadonlyRankerConfig,
 ): Record<string, number> {
@@ -110,7 +111,7 @@ function vectorOf(
 }
 
 /** Own inputs, columns, zero-variance dropping and standardization from one partition only (spec 06 §8.3). */
-function buildDesign(rows: readonly Row[], ctx: Ctx): Design {
+function buildDesign(rows: readonly TrainingRow[], ctx: Ctx): Design {
   const own = ownInputs(
     rows.map((r) => r.s),
     ctx.held,
@@ -144,7 +145,7 @@ function buildDesign(rows: readonly Row[], ctx: Ctx): Design {
       scale.push(sd);
     }
   }
-  const std = (list: readonly Row[]): number[][] =>
+  const std = (list: readonly TrainingRow[]): number[][] =>
     list.map((row) => {
       const v = vectorOf(row, own, ctx.cfg);
       return names.map((name, j) => ((v[name] ?? 0) - (mean[j] ?? 0)) / (scale[j] ?? 1));
@@ -184,14 +185,14 @@ function logitsOf(
 
 interface FoldFit {
   design: Design;
-  trainRows: Row[];
+  trainRows: TrainingRow[];
   fits: LogisticFit[];
   valX: number[][];
   valY: number[];
-  valRows: Row[];
+  valRows: TrainingRow[];
 }
 
-function cvFolds(rows: readonly Row[], plan: FoldPlan, ctx: Ctx): FoldFit[] {
+function cvFolds(rows: readonly TrainingRow[], plan: FoldPlan, ctx: Ctx): FoldFit[] {
   const out: FoldFit[] = [];
   for (let f = 0; f < plan.k; f += 1) {
     const trainRows = rows.filter((_, i) => plan.folds[i] !== f);
@@ -238,7 +239,7 @@ function lambdaLosses(folds: readonly FoldFit[], ctx: Ctx): { lambda: number; lo
 
 /** λ and Platt chosen on a partition's own inner folds; the largest λ and identity when none can be formed. */
 function innerSelect(
-  rows: readonly Row[],
+  rows: readonly TrainingRow[],
   seed: string,
   ctx: Ctx,
 ): { lambda: number; platt: PlattParams } {
@@ -256,12 +257,40 @@ function innerSelect(
   return { lambda, platt: o === null ? IDENTITY : fitPlatt(o.z, o.y) };
 }
 
-function baselineScore(row: Row, cfg: ReadonlyRankerConfig): number {
+/** The eligible rows, latest sample per article, and the skip counts (spec 06 §8.1). */
+export function eligibleRows(
+  samples: readonly TrainingSample[],
+  elig: { now: Date; historyDays: number; ratingSha: string | null },
+): { rows: TrainingRow[]; skipped: Record<string, number> } {
+  const skipped: Record<string, number> = {};
+  const bump = (reason: string): void => {
+    skipped[reason] = (skipped[reason] ?? 0) + 1;
+  };
+  const ordered = [...samples].sort(compareSamples);
+  const latest = new Map<string, TrainingRow>();
+  for (const s of ordered) {
+    const e = sampleEligibility(s, elig);
+    if (!e.ok) {
+      bump(e.reason);
+      continue;
+    }
+    const prev = latest.get(s.articleId);
+    if (prev !== undefined) {
+      bump('duplicate');
+      if (prev.s.feedbackAt.getTime() > s.feedbackAt.getTime()) continue;
+    }
+    latest.set(s.articleId, { s, f: s.features as RawFeatureSnapshot, vecs: new Map() });
+  }
+  return { rows: [...latest.values()], skipped };
+}
+
+/** The clipped cards-only score of a row. */
+export function baselineScore(row: TrainingRow, cfg: ReadonlyRankerConfig): number {
   return Math.min(Math.max(snapshotCardScore(row.f, cfg.strengthWeights) ?? 0, CLIP), 1 - CLIP);
 }
 
 function baselineOf(
-  rows: readonly Row[],
+  rows: readonly TrainingRow[],
   cfg: ReadonlyRankerConfig,
 ): { scores: number[]; y: number[]; groups: string[] } {
   const explicit = rows.filter((r) => r.s.explicit);
@@ -285,27 +314,7 @@ export function trainUserModel(
   const mc = cfg.model;
   const research = opts.mode === 'research';
   const elig = { now: args.now, historyDays: mc.historyDays, ratingSha: args.ratingSha };
-  const skipped: Record<string, number> = {};
-  const bump = (reason: string): void => {
-    skipped[reason] = (skipped[reason] ?? 0) + 1;
-  };
-
-  const ordered = [...args.samples].sort(compareSamples);
-  const latest = new Map<string, Row>();
-  for (const s of ordered) {
-    const e = sampleEligibility(s, elig);
-    if (!e.ok) {
-      bump(e.reason);
-      continue;
-    }
-    const prev = latest.get(s.articleId);
-    if (prev !== undefined) {
-      bump('duplicate');
-      if (prev.s.feedbackAt.getTime() > s.feedbackAt.getTime()) continue;
-    }
-    latest.set(s.articleId, { s, f: s.features as RawFeatureSnapshot, vecs: new Map() });
-  }
-  const rows = [...latest.values()];
+  const { rows, skipped } = eligibleRows(args.samples, elig);
   const explicitRows = rows.filter((r) => r.s.explicit);
   const nPos = explicitRows.filter((r) => r.s.y === 1).length;
   const metrics: TrainMetrics = {
