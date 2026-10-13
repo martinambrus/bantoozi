@@ -522,9 +522,13 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
             if (prev.enrich !== upd.enrich) reenrichAll = true;
             if (prev.match !== upd.match) rematch = true;
           }
+          const queued = new Set<AdminSettingsPatchResult['queued'][number]>();
           if (changed.includes('card_text_mode')) {
             rematch = true;
-            if (next.card_text_mode === 'english') await enqueueTranslateCards(outbox, {});
+            if (next.card_text_mode === 'english') {
+              await enqueueTranslateCards(outbox, {});
+              queued.add('house.translate-cards');
+            }
           }
           if (changed.includes('engine.prefilter_enabled')) rematch = true;
           if (changed.includes('engine.prefilter_min_cards') && next['engine.prefilter_enabled']) {
@@ -545,15 +549,24 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
           }
           if (reenrichAll) await enqueueReenrich(outbox, {});
           for (const lang of [...reenrichLangs].sort()) await enqueueReenrich(outbox, { lang });
-          if (rematch) await enqueueRematch(outbox, {});
+          if (reenrichAll || reenrichLangs.size > 0) queued.add('house.reenrich');
+          if (rematch) {
+            await enqueueRematch(outbox, {});
+            queued.add('house.rematch');
+          }
 
-          const body = { ...(await loadSettings(tx, deps, now)), changed };
+          const body = {
+            ...(await loadSettings(tx, deps, now)),
+            changed,
+            queued: [...queued].sort(),
+          };
           return { status: 200, body };
         });
       });
       app.services.runtime.invalidate();
       auditLog(request, { action: 'settings.patch', changed: outcome.body.changed });
-      await reply.code(200).send(outcome.body);
+      // A receipt stored before `queued` existed replays without it (and queued nothing known).
+      await reply.code(200).send({ ...outcome.body, queued: outcome.body.queued ?? [] });
     },
   );
 };

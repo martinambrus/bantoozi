@@ -98,7 +98,6 @@ export function SettingEditor({
   async function save() {
     if (!checked.ok) return;
     const sent = text;
-    const before = value;
     const signIn = session.currentSignIn();
     setFailure(null);
     const sequence = onSend();
@@ -108,7 +107,7 @@ export function SettingEditor({
       });
       if (session.currentSignIn() !== signIn) return;
       onSaved(result, sequence);
-      const queues = savedQueues(settingKey, result, before);
+      const queues = savedQueues(result);
       if (queues !== undefined) work.start(queues);
       // Text edited while the save was on its way stays, still to be saved.
       setEdit((current) => (current === sent ? null : current));

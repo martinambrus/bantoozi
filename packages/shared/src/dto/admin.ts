@@ -300,6 +300,11 @@ export type AdminSettingsPatch = z.infer<typeof AdminSettingsPatchSchema>;
 export const AdminSettingsPatchResultSchema = AdminSettingsSchema.extend({
   /** Keys whose value actually changed (setting an unchanged value is a no-op). */
   changed: z.array(AdminSettingKeySchema),
+  /**
+   * The house queues this save stored work for (spec 08 §9), from the server's own comparison with
+   * the stored values, so a screen can follow exactly the work it started.
+   */
+  queued: z.array(z.enum(['house.reenrich', 'house.rematch', 'house.translate-cards'])),
 }).strict();
 export type AdminSettingsPatchResult = z.infer<typeof AdminSettingsPatchResultSchema>;
 

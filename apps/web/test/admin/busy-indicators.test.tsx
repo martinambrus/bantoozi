@@ -84,6 +84,7 @@ describe('settings save that queues re-processing', () => {
         json(200, {
           ...makeSettings({ values: { ...SETTINGS_VALUES, card_text_mode: 'english' } }),
           changed: ['card_text_mode'],
+          queued: ['house.rematch', 'house.translate-cards'],
         }),
       'GET /admin/overview': () => overviewOf(queues),
     });
@@ -142,6 +143,10 @@ describe('settings save that queues re-processing', () => {
         return json(200, {
           ...makeSettings({ values: { ...SETTINGS_VALUES, [key!]: answers[key!] } }),
           changed: [key],
+          queued:
+            key === 'card_text_mode'
+              ? ['house.rematch', 'house.translate-cards']
+              : ['house.rematch'],
         });
       },
       'GET /admin/overview': () => overviewOf(queues),
@@ -181,6 +186,7 @@ describe('settings save that queues re-processing', () => {
         json(200, {
           ...makeSettings({ values: { ...SETTINGS_VALUES, card_text_mode: 'english' } }),
           changed: ['card_text_mode'],
+          queued: ['house.rematch', 'house.translate-cards'],
         }),
       'GET /admin/overview': () => overviewOf([queue('house.rematch', 5, 1)]),
     });
@@ -202,6 +208,7 @@ describe('settings save that queues re-processing', () => {
         json(200, {
           ...makeSettings({ values: { ...SETTINGS_VALUES, signup_mode: 'open' } }),
           changed: ['signup_mode'],
+          queued: [],
         }),
     });
     const group = await screen.findByRole('group', { name: 'signup_mode' });
@@ -215,12 +222,20 @@ describe('settings save that queues re-processing', () => {
   });
 });
 
-describe('question set changes', () => {
+describe('question set changes follow the work the server reports', () => {
   const before = { enrich: '1', match: '2', suggest: '4' };
   it.each([
-    ['a new suggest set queues nothing', { ...before, suggest: '9' }, false],
-    ['a new enrich set re-processes (control)', { ...before, enrich: '7' }, true],
-  ])('%s', async (_name, after, shown) => {
+    ['a new suggest set the server queued nothing for', { ...before, suggest: '9' }, [], false],
+    ['a new enrich set (control)', { ...before, enrich: '7' }, ['house.reenrich'], true],
+    // Another admin changed the enrich set after this page loaded: the save looks suggest-only
+    // here, but the server compares with the stored set and re-enriches.
+    [
+      'a stale page whose save the server re-enriches for',
+      { ...before, suggest: '9' },
+      ['house.reenrich'],
+      true,
+    ],
+  ] as const)('%s', async (_name, after, queued, shown) => {
     const app = await open('/admin/settings', {
       'GET /admin/settings': () =>
         json(200, makeSettings({ values: { ...SETTINGS_VALUES, 'question_sets.active': before } })),
@@ -228,6 +243,7 @@ describe('question set changes', () => {
         json(200, {
           ...makeSettings({ values: { ...SETTINGS_VALUES, 'question_sets.active': after } }),
           changed: ['question_sets.active'],
+          queued: [...queued],
         }),
       'GET /admin/overview': () => overviewOf([]),
     });
@@ -333,6 +349,7 @@ describe('runtime editor busy states', () => {
               workers: [worker()],
             }),
             changed: ['engine.prefilter_min_cards'],
+            queued: ['house.rematch'],
           }),
         'GET /admin/overview': () => overviewOf(queues),
       },
@@ -377,6 +394,7 @@ describe('runtime editor busy states', () => {
               workers: [worker({ pendingRestart: true })],
             }),
             changed: ['engine.concurrency'],
+            queued: [],
           }),
       },
       {},
@@ -495,6 +513,7 @@ describe('runtime editor busy states', () => {
               workers: [worker({ pendingRestart: false })],
             }),
             changed: ['engine.concurrency'],
+            queued: [],
           }),
       },
       {},
