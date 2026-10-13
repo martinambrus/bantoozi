@@ -17,6 +17,7 @@ import { Command } from 'commander';
 import type pg from 'pg';
 
 import { createCliLogger } from './cli-logger.js';
+import { loadEffectiveValues } from './runtime.js';
 import { openCredentialSession, registerCredentialCommands } from './credentials/index.js';
 import { createWorkerDeps, fetchWith, type WorkerDeps } from './handlers/deps.js';
 import { createHandlers } from './handlers/index.js';
@@ -194,7 +195,12 @@ program
 
 registerCredentialCommands(program, {
   io: { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr },
-  open: async () => openCredentialSession(loadConfig({ process: 'worker' }), createCliLogger()),
+  open: async () => {
+    const config = loadConfig({ process: 'worker' });
+    return openCredentialSession(config, createCliLogger(), {
+      effective: (db) => loadEffectiveValues(db, config),
+    });
+  },
 });
 
 await program.parseAsync(process.argv);

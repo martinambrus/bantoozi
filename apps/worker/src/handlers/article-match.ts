@@ -76,6 +76,7 @@ import { failureDisposition, type FailureDisposition } from '../classify/outcome
 import { after } from '../pipeline.js';
 import { nowOf, pipelineContext, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
+import { assertWorkerCurrent } from '../stale-worker.js';
 
 /** Prefilter applies only above this many pending cards (spec 05 §5.5 step 3). */
 export const PREFILTER_MIN_CARDS = 60;
@@ -134,6 +135,7 @@ export function createArticleMatchHandler(
   classification: ClassificationDeps,
 ): QueueHandler<'article.match'> {
   return async ({ articleId, l2Attempts }) => {
+    await assertWorkerCurrent(deps.db, classification.primaryModel);
     const started = nowOf(deps).getTime();
     const config = await loadClassificationConfig(deps.db, deps.settingsEnv);
     const enrichSet = requireSet(config.enrich, 'enrich');

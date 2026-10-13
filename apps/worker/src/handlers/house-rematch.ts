@@ -28,6 +28,7 @@ import { nowOf, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import { REPROCESS_BATCH, REPROCESS_CONTINUATION_DELAY_MS } from './house-reenrich.js';
 import { recordRebuildProgress } from './house-purge-auth.js';
 import type { QueueHandler } from './index.js';
+import { assertWorkerCurrent } from '../stale-worker.js';
 
 const JOB = 'house.rematch' as const;
 /** Users active in the app within this many days get a full rerank (spec 06 §7). */
@@ -50,6 +51,7 @@ export function createRematchHandler(
   classification: ClassificationDeps,
 ): QueueHandler<'house.rematch'> {
   return async (payload) => {
+    await assertWorkerCurrent(deps.db, classification.primaryModel);
     const started = nowOf(deps);
     const since =
       payload.since ??

@@ -34,6 +34,7 @@ import { failureDisposition } from '../classify/outcomes.js';
 import { after } from '../pipeline.js';
 import { nowOf, pipelineContext, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
+import { assertWorkerCurrent } from '../stale-worker.js';
 
 /** Articles in these states already continued from a successful Call A of their revision. */
 const ENRICHED_STATES: readonly string[] = ['enriched', 'matched'];
@@ -60,6 +61,7 @@ export function createArticleEnrichHandler(
   classification: ClassificationDeps,
 ): QueueHandler<'article.enrich'> {
   return async (payload) => {
+    await assertWorkerCurrent(deps.db, classification.primaryModel);
     const { articleId } = payload;
     const priority = payload.priority ?? 'interactive';
     const config = await loadClassificationConfig(deps.db, deps.settingsEnv);

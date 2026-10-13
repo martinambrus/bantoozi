@@ -1,14 +1,6 @@
 import { hostname } from 'node:os';
 
-import {
-  createDatabase,
-  createPgOriginLimiter,
-  createPool,
-  createRuntimeSettingsCache,
-  runtimeSettingsLoader,
-  type RuntimeSettingsCache,
-} from '@bantoozi/db';
-import { OLLAMA_PRICE_TABLE } from '@bantoozi/engine';
+import { createDatabase, createPgOriginLimiter, createPool } from '@bantoozi/db';
 import {
   FEED_SCHEDULE_CRON,
   HOUSE_CRON_SCHEDULES,
@@ -19,7 +11,6 @@ import { createLogger, createMailer, loadConfig } from '@bantoozi/shared/server'
 
 import { createLibreTranslateProbe } from './alerts/probe.js';
 import { createBoss, pgBossBroker, registerHandlers } from './boss.js';
-import { createWorkerModels } from './classification-deps.js';
 import { createFileDeletionLedger } from './deletion-ledger.js';
 import { WORKER_POOL_LIMITS, startHealthServer, type HealthServer } from './health-server.js';
 import { createWorkerDeps } from './handlers/deps.js';
@@ -33,7 +24,7 @@ import { createHandlers } from './handlers/index.js';
 import { enqueueOverdueHousekeeping } from './housekeeping.js';
 import { startOutboxRelay } from './outbox-relay.js';
 import { assertProductionReady } from './readiness.js';
-import { recordModelPin } from './model-pin.js';
+import { createWorkerRuntime } from './runtime.js';
 import { verifyQuestionSets } from './seed.js';
 
 /**
@@ -64,57 +55,29 @@ const lockPool = createPool({
 for (const p of [pool, lockPool]) {
   p.on('error', (err) => logger.warn({ err }, 'idle database connection error'));
 }
-// Live runtime settings (M8b-T4): the engine reads the price from this mutable copy at each estimate.
-const liveConfig: { -readonly [K in keyof typeof config]: (typeof config)[K] } = { ...config };
-const models = createWorkerModels(db, liveConfig, logger);
-const innerSettings = createRuntimeSettingsCache({
-  load: runtimeSettingsLoader(db),
-  env: {
-    typesafeModel: config.typesafeModel,
-    typesafeBaseUrl: config.typesafeBaseUrl,
-    typesafePricePerMtokUsd: config.typesafePricePerMtokUsd,
-    engineConcurrency: config.engineConcurrency,
-    llmFallbackEnabled: config.llmFallbackEnabled,
-    ollamaModelFast: config.ollamaModelFast,
-    ollamaModelStrong: config.ollamaModelStrong,
-    ollamaBaseUrl: config.ollamaBaseUrl,
-    ollamaMaxConcurrency: config.ollamaMaxConcurrency,
-    prefilterMinCards: config.prefilterMinCards,
-    ingestMaxAgeDays: config.ingestMaxAgeDays,
-    fetchTimeoutMs: config.fetchTimeoutMs,
-    fetchMaxBytes: config.fetchMaxBytes,
-    rateLimitsEnabled: config.rateLimitsEnabled,
-    libretranslateUrl: config.libretranslateUrl,
-  },
-  context: {
-    production: config.nodeEnv === 'production',
-    providerHostAllowlist: config.providerHostAllowlist,
-    ollamaPricedModels: Object.keys(OLLAMA_PRICE_TABLE),
-  },
+await assertWorkerMode(db, config.evalIngestOnly);
+
+await verifyQuestionSets(db).catch((error: unknown) => {
+  logger.error({ err: error }, 'stored question sets do not match this worker (run pnpm db:seed)');
+  throw error;
 });
-// On each refresh that produced a new snapshot, apply the engine values that need no restart.
-let appliedSnapshot: Awaited<ReturnType<RuntimeSettingsCache['get']>> | undefined;
-const runtimeSettings: RuntimeSettingsCache = {
-  async get() {
-    const snapshot = await innerSettings.get();
-    if (snapshot !== appliedSnapshot) {
-      appliedSnapshot = snapshot;
-      liveConfig.typesafePricePerMtokUsd = snapshot.values.typesafePricePerMtokUsd;
-      try {
-        models.classification.router.reconfigure({
-          concurrency: snapshot.values.engineConcurrency,
-        });
-      } catch (error) {
-        logger.warn({ err: error }, 'engine concurrency setting could not be applied');
-      }
-    }
-    return snapshot;
-  },
-  invalidate: () => innerSettings.invalidate(),
-};
-// Keep the engine values current while no job reads the settings.
+
+// The runtime builds the models from the effective settings and records the engine model pin under
+// its row lock (a changed pin enqueues the model rebuild once); it checks restart-class changes.
+let shuttingDown: (signal: string) => Promise<void> = () => Promise.resolve();
+const runtime = await createWorkerRuntime({
+  db,
+  config,
+  logger,
+  exit: (code) => process.exit(typeof process.exitCode === 'number' ? process.exitCode : code),
+  drain: () => shuttingDown('settings-restart'),
+  selfRestart: config.workerSelfRestart,
+  recordPin: !config.evalIngestOnly,
+});
+const models = runtime.models;
+const runtimeSettings = runtime.settings;
 const settingsTimer = setInterval(() => {
-  void runtimeSettings.get().catch((error: unknown) => {
+  runtime.check().catch((error: unknown) => {
     logger.warn({ err: error }, 'runtime settings refresh failed');
   });
 }, 10_000);
@@ -149,7 +112,7 @@ const handlers = createHandlers(
     classification: models.classification,
     mailer,
     adminEmails: config.adminEmails,
-    libreTranslateProbe: createLibreTranslateProbe(config.libretranslateUrl),
+    libreTranslateProbe: createLibreTranslateProbe(runtime.values.libretranslateUrl),
     providerValidation: models.providerValidation,
     ...(config.evalIngestOnly ? { evalIngestOnly: true } : {}),
     ...(config.deletionLedgerPath !== undefined && config.deletionLedgerRecipient !== undefined
@@ -166,45 +129,24 @@ const handlers = createHandlers(
 // EVAL_INGEST_ONLY (spec 10 §2.1): only fetching and extraction; a golden database refuses
 // ordinary workers (D-96).
 const workerQueues = effectiveWorkerQueues(config.workerQueues, config.evalIngestOnly);
-await assertWorkerMode(db, config.evalIngestOnly);
-
 const unavailable = assertProductionReady(config.nodeEnv, handlers, workerQueues);
 if (unavailable.length > 0) {
   logger.warn({ unavailable }, 'stages not implemented yet: their jobs and intents stay pending');
 }
 
 // Stored question sets must match this code before any stage asks them (spec 05 §2).
-await verifyQuestionSets(db).catch((error: unknown) => {
-  logger.error({ err: error }, 'stored question sets do not match this worker (run pnpm db:seed)');
-  throw error;
-});
-
-// Record the engine model pin under its row lock; a changed pin enqueues the model rebuild once.
-if (!config.evalIngestOnly) {
-  const pin = await recordModelPin(
-    db,
-    {
-      model: config.typesafeModel,
-      ...(config.llmFallbackEnabled
-        ? { llm: { fast: config.ollamaModelFast, strong: config.ollamaModelStrong } }
-        : {}),
-    },
-    new Date(),
-  );
-  if (pin.changed) logger.info('engine model pin changed: re-enrichment and re-matching enqueued');
-}
-
-// The heartbeat starts before any consumer: it is written first and the golden-database check
-// follows it, while `eval ingest-sample` creates the evaluation user first and checks heartbeats
-// after it, so a worker and a collection that start together always see each other (D-96).
 let stopping = false;
 let heartbeat: Heartbeat | undefined;
 let boss: ReturnType<typeof createBoss> | undefined;
 let relay: ReturnType<typeof startOutboxRelay> | undefined;
 let health: HealthServer | undefined;
 const processId = `${hostname()}:${process.pid}`;
-async function shutdown(signal: string): Promise<void> {
-  if (stopping) return;
+let stopped: Promise<void> | undefined;
+function shutdown(signal: string): Promise<void> {
+  stopped ??= stop(signal);
+  return stopped;
+}
+async function stop(signal: string): Promise<void> {
   stopping = true;
   logger.info({ signal }, 'worker stopping');
   clearInterval(settingsTimer);
@@ -234,6 +176,7 @@ try {
       ...(config.ollamaApiKey ? (['ollama'] as const) : []),
     ],
     logger,
+    runtime: () => ({ ...runtime.heartbeatRuntime() }),
     poolStats: () => ({
       total: pool.totalCount,
       idle: pool.idleCount,
@@ -296,5 +239,6 @@ if (!stopping) {
   logger.info({ ...registration, evalIngestOnly: config.evalIngestOnly }, 'worker started');
 }
 
+shuttingDown = shutdown;
 process.once('SIGTERM', () => void shutdown('SIGTERM'));
 process.once('SIGINT', () => void shutdown('SIGINT'));

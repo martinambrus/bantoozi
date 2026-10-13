@@ -21,6 +21,7 @@ import { languageModeOf, loadClassificationConfig } from '../classify/config.js'
 import { nowOf, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import { recordRebuildProgress } from './house-purge-auth.js';
 import type { QueueHandler } from './index.js';
+import { assertWorkerCurrent } from '../stale-worker.js';
 
 const JOB = 'house.reenrich' as const;
 /** Window articles examined per run (spec 11 §6); the rest continues in a follow-up job. */
@@ -49,6 +50,7 @@ export function createReenrichHandler(
   classification: ClassificationDeps,
 ): QueueHandler<'house.reenrich'> {
   return async (payload) => {
+    await assertWorkerCurrent(deps.db, classification.primaryModel);
     const started = nowOf(deps);
     const since =
       payload.since ??
