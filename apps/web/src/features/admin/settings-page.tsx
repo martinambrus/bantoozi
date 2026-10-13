@@ -6,7 +6,7 @@ import {
   type AdminSettingsPatchResult,
 } from '@bantoozi/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { writeQueryData } from '../../api/cache-writes.js';
@@ -45,7 +45,8 @@ export function AdminSettingsPage() {
   const sent = useRef(0);
   const applied = useRef(0);
   const send = () => (sent.current += 1);
-  // When a runtime key was last saved: the workers it restarts are followed from then on.
+  // When the workers' restart began to be followed: the last runtime save, or the first answer that
+  // already showed a worker waiting for a restart (a change made elsewhere).
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
   const settings = useQuery({
@@ -69,6 +70,12 @@ export function AdminSettingsPage() {
       return waiting || elapsed < RESTART_GRACE_MS ? RESTART_POLL_MS : false;
     },
   });
+
+  // A restart already pending when the page opens is followed too, for one bounded window.
+  const restartPending = settings.data?.workers.some((worker) => worker.pendingRestart) ?? false;
+  useEffect(() => {
+    if (restartPending) setSavedAt((current) => current ?? Date.now());
+  }, [restartPending]);
 
   /**
    * Takes what one editor saved from the answer: the key's value, source, default and stored time.

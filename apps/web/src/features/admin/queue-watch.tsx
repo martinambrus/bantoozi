@@ -73,8 +73,6 @@ export function savedQueues(
 interface Watch {
   queues: readonly string[];
   startedAt: number;
-  /** When a read last showed the queues holding work (the start until one does). */
-  lastWorkAt: number;
 }
 
 function backlog(data: AdminOverview | undefined, queues: readonly string[]): number {
@@ -86,16 +84,20 @@ function backlog(data: AdminOverview | undefined, queues: readonly string[]): nu
   );
 }
 
+/**
+ * `lastWorkAt`: when a read last showed the queues holding work (the start until one does). Only a
+ * read taken after it can say the queues drained, and they must have stayed quiet for the grace.
+ */
 function isDone(
   data: AdminOverview | undefined,
   updatedAt: number,
   watch: Watch,
+  lastWorkAt: number,
   now: number,
 ): boolean {
   if (now - watch.startedAt >= QUEUE_WATCH_CAP_MS) return true;
-  // Only a read taken after the request and after the last work seen can say the queues drained.
-  if (updatedAt <= watch.lastWorkAt || backlog(data, watch.queues) > 0) return false;
-  return now - watch.lastWorkAt >= QUEUE_GRACE_MS;
+  if (updatedAt <= lastWorkAt || backlog(data, watch.queues) > 0) return false;
+  return now - lastWorkAt >= QUEUE_GRACE_MS;
 }
 
 /**
@@ -107,29 +109,32 @@ export function useQueueWatch() {
   const adminKey = useAdminKey();
   const [watch, setWatch] = useState<Watch | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  // The watch as the query function sees it: it records each read that still shows work.
-  const current = useRef<Watch | null>(null);
-  current.current = watch;
+  // When a read last showed this watch's queues holding work. Every watch on the screen shares the
+  // overview query (one request may serve them all), so each records it from the shared result.
+  const lastWork = useRef(0);
 
   const query = useQuery({
     queryKey: adminKey('overview'),
-    queryFn: async ({ signal }) => {
-      const data = await api.call(routes.adminOverview, undefined, { signal });
-      const active = current.current;
-      if (active !== null && backlog(data, active.queues) > 0) {
-        const at = Date.now();
-        setWatch((w) => (w === active ? { ...w, lastWorkAt: at } : w));
-      }
-      return data;
-    },
+    queryFn: ({ signal }) => api.call(routes.adminOverview, undefined, { signal }),
     enabled: watch !== null,
     refetchInterval: (q) =>
-      watch !== null && !isDone(q.state.data, q.state.dataUpdatedAt, watch, Date.now())
+      watch !== null &&
+      !isDone(q.state.data, q.state.dataUpdatedAt, watch, lastWork.current, Date.now())
         ? QUEUE_POLL_MS
         : false,
   });
 
-  const busy = watch !== null && !isDone(query.data, query.dataUpdatedAt, watch, now);
+  const { data, dataUpdatedAt } = query;
+  useEffect(() => {
+    if (watch === null || dataUpdatedAt < watch.startedAt) return;
+    if (backlog(data, watch.queues) > 0) {
+      lastWork.current = Math.max(lastWork.current, dataUpdatedAt);
+    }
+  }, [watch, data, dataUpdatedAt]);
+
+  const busy =
+    watch !== null &&
+    !isDone(data, dataUpdatedAt, watch, Math.max(lastWork.current, watch.startedAt), now);
 
   useEffect(() => {
     if (!busy) return;
@@ -142,7 +147,8 @@ export function useQueueWatch() {
     start: (queues: readonly string[]) => {
       const startedAt = Date.now();
       setNow(startedAt);
-      setWatch({ queues, startedAt, lastWorkAt: startedAt });
+      lastWork.current = startedAt;
+      setWatch({ queues, startedAt });
     },
   };
 }

@@ -130,6 +130,51 @@ describe('settings save that queues re-processing', () => {
     expect(save()).not.toHaveAttribute('aria-busy');
   });
 
+  it('keeps two overlapping saves busy through the relay gap, each from the shared reads', async () => {
+    let queues: Queue[] = [];
+    const answers: Record<string, unknown> = {
+      card_text_mode: 'english',
+      'engine.prefilter_enabled': true,
+    };
+    const app = await open('/admin/settings', {
+      'PATCH /admin/settings': (request) => {
+        const [key] = Object.keys(bodyOf(request) as Record<string, unknown>);
+        return json(200, {
+          ...makeSettings({ values: { ...SETTINGS_VALUES, [key!]: answers[key!] } }),
+          changed: [key],
+        });
+      },
+      'GET /admin/overview': () => overviewOf(queues),
+    });
+    const editors = [
+      ['card_text_mode', '"english"'],
+      ['engine.prefilter_enabled', 'true'],
+    ] as const;
+    for (const [key, text] of editors) {
+      const group = await screen.findByRole('group', { name: key });
+      const field = within(group).getByLabelText(key);
+      await app.user.clear(field);
+      await app.user.type(field, text);
+      await app.user.click(within(group).getByRole('button', { name: `Save ${key}` }));
+    }
+    const saves = () => editors.map(([key]) => screen.getByRole('button', { name: `Save ${key}` }));
+
+    queues = [queue('house.rematch', 4, 1)];
+    await wait(30_000);
+    saves().forEach(busy);
+
+    // The work ends; its follow-up intents are not relayed yet.
+    queues = [];
+    await wait(4_000);
+    saves().forEach(busy);
+
+    await wait(14_000);
+    for (const [key] of editors) {
+      const group = screen.getByRole('group', { name: key });
+      expect(within(group).queryByRole('status')).toBeNull();
+    }
+  });
+
   it('gives up waiting after ten minutes', async () => {
     const app = await open('/admin/settings', {
       'PATCH /admin/settings': () =>
@@ -351,6 +396,34 @@ describe('runtime editor busy states', () => {
     expect(screen.queryByText('Workers are restarting to apply the change…')).toBeNull();
     // Past the grace period of a worker that has not reported yet, nothing is read any more.
     await wait(40_000);
+    const settled = reads;
+    await wait(30_000);
+    expect(reads).toBe(settled);
+  });
+
+  it('follows a restart that is already pending when the page opens, then stops', async () => {
+    let pending = true;
+    let reads = 0;
+    await open(
+      '/admin/settings',
+      {
+        'GET /admin/settings': () => {
+          reads += 1;
+          return json(200, {
+            ...makeSettings({ workers: [worker({ pendingRestart: pending })] }),
+            values: { ...SETTINGS_VALUES },
+          });
+        },
+      },
+      {},
+    );
+    expect(await screen.findByText('Workers are restarting to apply the change…')).toBeVisible();
+
+    pending = false;
+    await wait(4_000);
+    expect(screen.queryByText('Workers are restarting to apply the change…')).toBeNull();
+    // A bounded window: once it has passed, nothing is read any more.
+    await wait(120_000);
     const settled = reads;
     await wait(30_000);
     expect(reads).toBe(settled);
