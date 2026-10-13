@@ -10,7 +10,7 @@ import {
   subscribe,
   waitForExtraction,
 } from './reader-support/api.js';
-import { arrive, clearArticleText, markSnapshotCold } from './reader-support/hooks.js';
+import { arrive, clearArticleText, runColdMaintenance } from './reader-support/hooks.js';
 import { imageRequests, requestsFor, WORKER_AGENT } from './reader-support/origin.js';
 import {
   chooseFeedImages,
@@ -200,7 +200,7 @@ test('bookmark mirror: the saved copy outlives the subscription, the page and co
 
   await test.step('the original page fails and the snapshot is compressed', async () => {
     await control.scriptRoute('science', new URL(full.url).pathname, 404);
-    await markSnapshotCold(control, saved.id);
+    await runColdMaintenance(control, saved.id);
   });
 
   const reader = await browse.as(email);
@@ -219,7 +219,11 @@ test('bookmark mirror: the saved copy outlives the subscription, the page and co
     );
 
     const after = (await articleDetail(user, article.id, true)).bookmarkSnapshot;
-    expect(after).toEqual(saved);
+    // Compression needed the capture to be 31 days old: that date moved, nothing else did.
+    const capturedAt = (snapshot: object | null | undefined) =>
+      new Date((snapshot as { capturedAt: string }).capturedAt).getTime();
+    expect(capturedAt(after)).toBe(capturedAt(saved) - 31 * 86_400_000);
+    expect({ ...after, capturedAt: null }).toEqual({ ...saved, capturedAt: null });
   });
 
   await test.step('the partial and the failed capture read differently', async () => {

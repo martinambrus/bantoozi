@@ -250,7 +250,7 @@ export interface UndoReceipt {
   kind: 'reader' | 'bookmark' | 'unbookmark';
   action: string;
   targets: UndoTarget[];
-  effects: { rankFull: boolean; learn: boolean };
+  effects: { rankFull?: boolean; learn: boolean };
   articleId?: string;
   stateVersion?: string;
   prior?: { bookmarkedAt: string; originFeedId: string | null; captureStatus: string };
@@ -1034,7 +1034,6 @@ export async function markArticleRead(
       'read',
       [{ articleId: input.articleId, resultVersion: version, before }],
       {
-        rankFull: false,
         // An explicit consented read is an implicit-negative sample; undoing it revokes evidence.
         learn: behavioral,
       },
@@ -1096,7 +1095,6 @@ export async function markArticleUnread(tx: TenantTx, input: ActionInput): Promi
       'unread',
       [{ articleId: input.articleId, resultVersion: version, before }],
       {
-        rankFull: false,
         learn: revokesRead,
       },
     ),
@@ -1131,7 +1129,6 @@ export async function unhideArticle(tx: TenantTx, input: ActionInput): Promise<A
       'unhide',
       [{ articleId: input.articleId, resultVersion: version, before }],
       {
-        rankFull: false,
         learn: false,
       },
     ),
@@ -1563,7 +1560,7 @@ export async function rateArticle(
     articleIds: [input.articleId],
     changed: true,
     exampleSuggestion: suggestion,
-    undo: undoReceipt('reader', 'rating', [target], { rankFull: false, learn: true }),
+    undo: undoReceipt('reader', 'rating', [target], { learn: true }),
   };
 }
 
@@ -1609,7 +1606,7 @@ export async function answerPrompt(
   return {
     articleIds: [input.articleId],
     changed: true,
-    undo: undoReceipt('reader', 'prompt_answer', [target], { rankFull: false, learn: true }),
+    undo: undoReceipt('reader', 'prompt_answer', [target], { learn: true }),
   };
 }
 
@@ -1657,7 +1654,7 @@ export async function rateArticlesBulk(
   return {
     articleIds: input.targets.map((t) => t.articleId),
     changed: true,
-    undo: undoReceipt('reader', 'rate_bulk', targets, { rankFull: false, learn: true }),
+    undo: undoReceipt('reader', 'rate_bulk', targets, { learn: true }),
   };
 }
 
@@ -1721,7 +1718,7 @@ export async function markArticlesRead(
     count: targets.length,
     ...(targets.length === 0
       ? {}
-      : { undo: undoReceipt('reader', 'mark_read', targets, { rankFull: false, learn: false }) }),
+      : { undo: undoReceipt('reader', 'mark_read', targets, { learn: false }) }),
   };
 }
 
@@ -1776,7 +1773,7 @@ export async function bookmarkArticle(
       'bookmark',
       'bookmark',
       [{ articleId: input.articleId, resultVersion: version, before: {} }],
-      { rankFull: false, learn: true },
+      { learn: true },
     ),
   };
 }
@@ -1825,7 +1822,7 @@ export async function unbookmarkArticle(
         'unbookmark',
         'unbookmark',
         [{ articleId: input.articleId, resultVersion: version, before: {} }],
-        { rankFull: false, learn: true },
+        { learn: true },
       ),
       articleId: input.articleId,
       stateVersion: version,
@@ -1923,7 +1920,6 @@ export async function labelArticle(
       'label',
       [{ articleId: input.articleId, resultVersion: version, before }],
       {
-        rankFull: false,
         learn: false,
       },
     ),
@@ -1962,7 +1958,6 @@ export async function unlabelArticle(
       'unlabel',
       [{ articleId: input.articleId, resultVersion: version, before }],
       {
-        rankFull: false,
         learn: false,
       },
     ),

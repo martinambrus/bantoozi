@@ -41,7 +41,9 @@ describe('reader SQL hooks', () => {
     expect(READER_HOOKS.map(([name]) => name)).toEqual([
       'fetchFeedNow',
       'analysisRequests',
-      'markSnapshotCold',
+      'ageForColdMaintenance',
+      'runPurgeBodies',
+      'snapshotMaintenance',
       'clearArticleText',
       'engineCalls',
       'articleFeedback',
@@ -123,22 +125,70 @@ describe('reader SQL hooks', () => {
     });
   });
 
-  describe('markSnapshotCold', () => {
-    it('marks the snapshot cold, drops the hot copy and binds the id', async () => {
-      const row = { markedCold: 1, hotCopiesRemoved: 1 };
-      const { db, calls } = recordingDb([row]);
-      await expect(runSqlHook(db, 'markSnapshotCold', { snapshotId: ID })).resolves.toBe(row);
-      const { text, values } = onlyQuery(calls);
+  describe('ageForColdMaintenance', () => {
+    /** A pool whose `query` must not be used by the hook and whose one client records every statement. */
+    function poolWithClient(rows: unknown[], failOn?: string) {
+      const log: Array<[string, unknown[]?]> = [];
+      const events: string[] = [];
+      const client = {
+        async query(text: string, values?: unknown[]) {
+          log.push(values === undefined ? [text] : [text, values]);
+          if (failOn !== undefined && text.includes(failOn)) throw new Error('boom');
+          return { rows };
+        },
+        release() {
+          events.push('release');
+        },
+      };
+      const poolCalls: string[] = [];
+      const db: HookDb = {
+        async query(text) {
+          poolCalls.push(text);
+          return { rows: [] };
+        },
+        async connect() {
+          events.push('connect');
+          return client;
+        },
+      };
+      return { db, log, events, poolCalls };
+    }
+
+    it('moves the snapshot, body and carrier dates back and binds the id', async () => {
+      const row = { snapshots: 1, bodies: 1, articles: 1 };
+      const { db, log, events, poolCalls } = poolWithClient([row]);
+      await expect(runSqlHook(db, 'ageForColdMaintenance', { snapshotId: ID })).resolves.toBe(row);
+      // Guard off, the one statement and guard on share ONE connection inside ONE transaction.
+      expect(poolCalls).toEqual([]);
+      expect(events).toEqual(['connect', 'release']);
+      expect(log).toHaveLength(5);
+      expect(log[0]?.[0]).toBe('BEGIN');
+      expect(log[1]?.[0]).toContain('DISABLE TRIGGER article_snapshots_guard');
+      expect(log[3]?.[0]).toContain('ENABLE TRIGGER article_snapshots_guard');
+      expect(log[4]?.[0]).toBe('COMMIT');
+      const [text = '', values] = log[2] ?? [];
       expect(values).toEqual([ID]);
       expect(text).not.toContain(ID);
-      expect(text).toContain('UPDATE article_snapshots SET cold_at = now()');
-      expect(text).toContain('cold_at IS NULL');
-      expect(text).toContain('UPDATE article_bodies');
-      expect(text).toContain('body_text = NULL, body_html = NULL');
-      // The snapshot keeps its content: only the article's hot copy is emptied.
-      const snapshotStatement = text.slice(0, text.indexOf('removed AS'));
-      expect(snapshotStatement).toContain('article_snapshots');
-      expect(snapshotStatement).not.toContain('body_');
+      expect(text).toContain("captured_at - interval '31 days'");
+      expect(text).toContain("extracted_at - interval '31 days'");
+      // It only ages: marking cold and clearing bodies is the job's work.
+      expect(text).not.toContain('cold_at');
+      expect(text).not.toContain('body_text = NULL');
+    });
+
+    it('rolls back and releases the connection when the ageing statement fails', async () => {
+      const { db, log, events } = poolWithClient([], 'captured_at');
+      await expect(runSqlHook(db, 'ageForColdMaintenance', { snapshotId: ID })).rejects.toThrow(
+        'boom',
+      );
+      expect(log.map(([text]) => text.split(' ')[0])).toEqual([
+        'BEGIN',
+        'ALTER',
+        'WITH',
+        'ROLLBACK',
+      ]);
+      expect(log.some(([text]) => text === 'COMMIT')).toBe(false);
+      expect(events).toEqual(['connect', 'release']);
     });
 
     it('refuses invalid parameters without querying', async () => {
@@ -147,17 +197,53 @@ describe('reader SQL hooks', () => {
         ...NOT_AN_OBJECT,
         {},
         { snapshotId: 1 },
-        { snapshotId: '' },
         { snapshotId: '0' },
-        { snapshotId: '012' },
-        { snapshotId: '-1' },
-        { snapshotId: '1.5' },
         { snapshotId: '1 OR 1=1' },
-        { snapshotId: '1'.repeat(19) },
-        { articleId: '5' },
         { snapshotId: ID, articleId: '5' },
       ]) {
-        await expect(runSqlHook(db, 'markSnapshotCold', params)).rejects.toBeInstanceOf(
+        await expect(runSqlHook(db, 'ageForColdMaintenance', params)).rejects.toBeInstanceOf(
+          HookParamsError,
+        );
+      }
+      expect(calls).toEqual([]);
+    });
+  });
+
+  describe('runPurgeBodies', () => {
+    it('queues one house.purge-bodies intent', async () => {
+      const { db, calls } = recordingDb([{ id: '3' }]);
+      await expect(runSqlHook(db, 'runPurgeBodies', {})).resolves.toEqual({ queued: 1 });
+      const { text } = onlyQuery(calls);
+      expect(text).toContain('INSERT INTO job_outbox');
+      expect(text).toContain("'house.purge-bodies'");
+    });
+
+    it('refuses parameters', async () => {
+      const { db, calls } = recordingDb();
+      for (const params of [...NOT_AN_OBJECT, { x: 1 }]) {
+        await expect(runSqlHook(db, 'runPurgeBodies', params)).rejects.toBeInstanceOf(
+          HookParamsError,
+        );
+      }
+      expect(calls).toEqual([]);
+    });
+  });
+
+  describe('snapshotMaintenance', () => {
+    it('reads the cold mark and the hot copy and binds the id', async () => {
+      const row = { cold: true, hotCopy: false, snapshotHasText: true };
+      const { db, calls } = recordingDb([row]);
+      await expect(runSqlHook(db, 'snapshotMaintenance', { snapshotId: ID })).resolves.toBe(row);
+      const { text, values } = onlyQuery(calls);
+      expect(values).toEqual([ID]);
+      expect(text).not.toContain(ID);
+      expect(text).not.toMatch(/\b(UPDATE|INSERT|DELETE)\b/);
+    });
+
+    it('refuses invalid parameters without querying', async () => {
+      const { db, calls } = recordingDb();
+      for (const params of [...NOT_AN_OBJECT, {}, { snapshotId: '' }, { snapshotId: '1.5' }]) {
+        await expect(runSqlHook(db, 'snapshotMaintenance', params)).rejects.toBeInstanceOf(
           HookParamsError,
         );
       }

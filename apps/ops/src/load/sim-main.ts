@@ -29,7 +29,7 @@ async function main(): Promise<void> {
     publicHost: env('SIM_PUBLIC_HOST', 'load-sim'),
     feedCount: num('SIM_FEED_COUNT', 1000),
     itemsPerFeedPerHour: num('SIM_ITEMS_PER_FEED_PER_HOUR', 5),
-    window: num('SIM_FEED_WINDOW', 6),
+    window: num('SIM_FEED_WINDOW', 4),
     ports: Array.from({ length: num('SIM_FEED_PORT_COUNT', 50) }, (_, i) => portBase + i),
     clock,
   });

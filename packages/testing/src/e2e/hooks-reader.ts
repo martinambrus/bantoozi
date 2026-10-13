@@ -1,9 +1,11 @@
 import {
   HookParamsError,
   httpUrl,
+  inTransaction,
   record,
   runner,
   type Hook,
+  type HookDb,
   type NamedHook,
 } from './hooks-kit.js';
 
@@ -137,31 +139,86 @@ const feedbackEvents: Hook<{ email: string; articleId: string }> = {
 };
 
 /**
- * What `house.purge-bodies` does to a bookmark snapshot at 30 days (spec 11 §5.2), which M8 has not
- * built yet: the snapshot is marked cold and the redundant hot copy of the article's full text and
- * HTML is removed; the snapshot keeps its content.
+ * Ages a bookmark snapshot and its article by 31 days so that the real `house.purge-bodies` (spec 11
+ * §5.2) finds them due: the snapshot's capture, the stored body's extraction and the article's
+ * carrier arrivals all move back. Nothing is marked cold or cleared here.
  */
-const markSnapshotCold: Hook<{ snapshotId: string }> = {
+const ageForColdMaintenance: Hook<{ snapshotId: string }> = {
+  parse: (params) => ({
+    snapshotId: databaseId(record(params, ['snapshotId'])['snapshotId'], 'snapshotId'),
+  }),
+  async run(db, { snapshotId }) {
+    // The immutability guard (spec 02 §3.6) refuses a change of captured_at, which is the point of
+    // ageing it: the real job reads the real clock. The guard is off only for this statement.
+    // DISABLE, the UPDATE and ENABLE share one connection and one transaction (the DDL is
+    // transactional), so a pooled session never keeps the guard off and an error rolls it all back.
+    return inTransaction(db, async (client) => {
+      await client.query('ALTER TABLE article_snapshots DISABLE TRIGGER article_snapshots_guard');
+      const aged = await ageStatement(client, snapshotId);
+      await client.query('ALTER TABLE article_snapshots ENABLE TRIGGER article_snapshots_guard');
+      return aged;
+    });
+  },
+};
+
+async function ageStatement(db: Pick<HookDb, 'query'>, snapshotId: string): Promise<unknown> {
+  const { rows } = await db.query(
+    `WITH snap AS (
+         UPDATE article_snapshots SET captured_at = captured_at - interval '31 days'
+          WHERE id = $1::bigint
+          RETURNING article_id
+       ), body AS (
+         UPDATE article_bodies b SET extracted_at = b.extracted_at - interval '31 days'
+           FROM snap WHERE b.article_id = snap.article_id
+          RETURNING b.article_id
+       ), items AS (
+         UPDATE feed_items fi SET first_seen_at = fi.first_seen_at - interval '31 days'
+           FROM snap WHERE fi.article_id = snap.article_id
+          RETURNING fi.article_id
+       ), art AS (
+         UPDATE articles a SET first_seen_at = a.first_seen_at - interval '31 days'
+           FROM snap WHERE a.id = snap.article_id
+          RETURNING a.id
+       )
+       SELECT (SELECT count(*) FROM snap)::int AS "snapshots",
+              (SELECT count(*) FROM body)::int AS "bodies",
+              (SELECT count(*) FROM art)::int AS "articles"`,
+    [snapshotId],
+  );
+  return rows[0];
+}
+
+/** Queues the real `house.purge-bodies` through the outbox; the worker relays and runs it. */
+const runPurgeBodies: Hook<Record<string, never>> = {
+  parse: (params) => {
+    record(params, []);
+    return {};
+  },
+  async run(db) {
+    const { rows } = await db.query(
+      `INSERT INTO job_outbox (queue, payload) VALUES ('house.purge-bodies', '{}'::jsonb)
+       RETURNING id`,
+    );
+    return { queued: rows.length };
+  },
+};
+
+/** Whether the snapshot is cold and whether its article still holds a hot copy of the text. */
+const snapshotMaintenance: Hook<{ snapshotId: string }> = {
   parse: (params) => ({
     snapshotId: databaseId(record(params, ['snapshotId'])['snapshotId'], 'snapshotId'),
   }),
   async run(db, { snapshotId }) {
     const { rows } = await db.query(
-      `WITH cold AS (
-         UPDATE article_snapshots SET cold_at = now()
-          WHERE id = $1::bigint AND cold_at IS NULL
-          RETURNING article_id
-       ), removed AS (
-         UPDATE article_bodies b SET body_text = NULL, body_html = NULL
-           FROM cold c
-          WHERE b.article_id = c.article_id
-          RETURNING b.article_id
-       )
-       SELECT (SELECT count(*) FROM cold)::int AS "markedCold",
-              (SELECT count(*) FROM removed)::int AS "hotCopiesRemoved"`,
+      `SELECT (s.cold_at IS NOT NULL) AS "cold",
+              (b.body_text IS NOT NULL OR b.body_html IS NOT NULL) AS "hotCopy",
+              (s.body_text IS NOT NULL) AS "snapshotHasText"
+         FROM article_snapshots s
+         LEFT JOIN article_bodies b ON b.article_id = s.article_id
+        WHERE s.id = $1::bigint`,
       [snapshotId],
     );
-    return rows[0];
+    return rows[0] ?? null;
   },
 };
 
@@ -197,7 +254,9 @@ const clearArticleText: Hook<{ articleId: string }> = {
 export const READER_HOOKS: readonly NamedHook[] = [
   ['fetchFeedNow', runner(fetchFeedNow)],
   ['analysisRequests', runner(analysisRequests)],
-  ['markSnapshotCold', runner(markSnapshotCold)],
+  ['ageForColdMaintenance', runner(ageForColdMaintenance)],
+  ['runPurgeBodies', runner(runPurgeBodies)],
+  ['snapshotMaintenance', runner(snapshotMaintenance)],
   ['clearArticleText', runner(clearArticleText)],
   ['engineCalls', runner(engineCalls)],
   ['articleFeedback', runner(feedbackEvents)],

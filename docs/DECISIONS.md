@@ -1937,3 +1937,107 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   smoke waits up to `DEPLOY_QUEUE_SMOKE_TIMEOUT_S` (default 330 s: the 5-minute handler budget plus 30 s) for the
   `house.purge-auth` job to complete; outbox delivery is still expected within 60 s. Spec 01 §3 and spec 11 §3
   and §5.1 updated.
+- D-203: 2026-10-12 M8 follow-ups, lane A (M8-F1, F3, F14, F15, F16) — (1) A recovery mail names each cleared
+  incident by its alert title and UTC first-seen time (`first seen YYYY-MM-DD HH:MM UTC`) instead of the bare
+  key: `house.alerts` stores the title (`safeText`, 120 characters) in the `alerts.state` entry every run the
+  condition holds, so an entry stored before this change has none and falls back to its key (the title field is
+  optional in the settings schema). (2) `house.translate-cards` runs under `HOUSE_RUN_BUDGET_MS`: past the
+  budget it stops starting pages, stores `cursor: {after: <last card id>}` in `house.progress`
+  (`HOUSE_PROGRESS_CURSORS['house.translate-cards']`) and the next unrestricted `{}` run resumes after it; a
+  finished pass clears the cursor and advances `completedAt`; a `{userId}` run neither reads nor writes it. An
+  unrestricted run skips a card whose new `interest_cards.translation_attempted_at` (migration 0024) is within
+  6 h (`TRANSLATE_RETRY_BACKOFF_MS`); the column is stamped for every card the pass did not translate (weak or
+  failed output, or demand that lapsed meanwhile) and cleared by `fillCardTranslation` on a good translation.
+  A `{userId}` run always retries. (3) Regression test only for the budget-cut sweep of `house.retire-cards`
+  (no code change). (4) The `next_rank_at` fence of the rank write (spec 06 §7 step 5) keeps `least()` of the
+  stored and written mark only when the stored one is later than the run's `ctxAt` and either later than the
+  run's `scoredAt` or not in the database's future (`<= clock_timestamp()`); a stored mark later than `ctxAt`,
+  at or before `scoredAt` and still in the database's future (clock skew between the worker and the database)
+  is replaced by the written one, so the row does not stay due at the run's clock. (5) New undo receipts omit
+  `effects.rankFull` (the field is optional in the receipt type); old receipts that carry it still parse and
+  undo, and the stored value is still ignored (spec 08 §5.4). Migration 0024. Spec 02 §2 and §3, spec 06 §7,
+  spec 07 §5, spec 08 §5.4, spec 11 §6 and §6.1 updated.
+- D-204: 2026-10-12 M8 follow-ups, lane B (M8-F4, F6, F10, F11) — (1) `house.reenrich` queues
+  `article.translate {modeChange, bulk}` first when the article's language is now `translate` and it has
+  neither facets in the `translated` state variant nor a usable stored translation for the current revision
+  (a skipped placeholder does not count); an `article.translate` carrying `modeChange` that stores a
+  translation resets an article that has no facets at all under the active set (`enrichWithoutFacets` in
+  `resetOnChangedText`), so enrichment follows from the translated text; before, only an article with facets
+  whose input state changed was reset. (2) Migration 0023 adds the partial index
+  `user_article_unread_cap_idx (user_id, article_id) WHERE read_at IS NULL AND archived_at IS NULL`;
+  `usersOverUnreadCap` counts per subscription with a lateral subquery over the feed's items and leaves out
+  users with `deleted_at` set, and the cap candidate query does the same. (3) `house.metrics`: the recovery
+  denominator counts a pair that has no feedback snapshot, from its cached `user_article.lane`, only when
+  `scored_at` and the article's `first_seen_at` are both inside the window; a pair with a feedback snapshot
+  counts once, by the lane in `value->'before'->>'lane'` at feedback time (F11), so a pair later re-ranked into
+  or out of `everything`/`hidden` is not counted by its current lane. The rating replay reads
+  `metricsRatingEventsPage` pages of 500 events in `(user_id, article_id, id)` order and carries the last
+  user/article pair of a full page into the next one, so the result equals a single replay; the per-reader lane
+  mix runs in batches of 25 readers per transaction (`withTenants` rebinds `app.user_id` before each reader),
+  so a page of 200 readers is 8 transactions instead of 200. Migration 0023. Spec 02 §3, spec 10 §7, spec 11
+  §5 and §6 updated.
+- D-205: 2026-10-12 M8 follow-ups, lane C (M8-F7, F8, F9, F13, F17) — (1) The Caddyfile has an explicit
+  `http://{$PUBLIC_HOST}` block that redirects permanently to `https://{$PUBLIC_HOST}:{$HTTPS_PORT:443}{uri}`
+  (the port is always written, which browsers drop for 443); the implicit redirect lost a non-default HTTPS
+  port in a rehearsal. Compose passes `HTTPS_PORT` to caddy. (2) `deploy.sh` builds the `backup-tools` image
+  before the pre-deploy backup and stops with an error if the build fails, so a first image build cannot time
+  out inside `backup.sh`. (3) `backup.sh` and `restore-test.sh` post `backup_ok`/`restore_ok` through
+  `post_event_retry` (4 attempts, 5 s apart, `POST_EVENT_RETRY_SLEEP`) and exit 1 if the event is still not
+  recorded; before, a failed post only logged a warning and the run succeeded (the missing event would raise a
+  stale-backup alert anyway). (4) The rehearsal's `minio` has a healthcheck (`mc ready local`), `deploy.sh`
+  starts it with `up -d --wait` (120 s) instead of a fixed sleep, both before the pre-deploy backup and again
+  in the replace step, where it also creates the bucket (a directory of the data root) once minio is healthy
+  and before the application containers start.
+  (5) The load test's feed window is 4 in `infra/load/compose.override.yml`, `sim-main.ts` and the
+  `packages/testing` feed generator default: at the converged 900 s poll interval and 5 items per hour the
+  newest-items bound is 4; `LoadStack.restarts()` reads the Docker `RestartCount` of every container of the
+  project and the load report records it (and renders `## Container restarts`). Spec 11 §2, §3, §4 and §9
+  updated.
+- D-206: 2026-10-12 M8 follow-ups, lane D (M8-F5, F12) — (1) The E2E bookmark scenario now compresses its
+  snapshot with the real `house.purge-bodies` instead of a test-only imitation: the hook `ageForColdMaintenance`
+  moves the snapshot's `captured_at`, the stored body's `extracted_at` and the article's and feed items'
+  `first_seen_at` back by 31 days (disabling `article_snapshots_guard` for that one statement, re-enabled in a
+  `finally`), `runPurgeBodies` queues the job through `job_outbox`, and the test polls until the snapshot is
+  cold, the hot copy is gone and the snapshot keeps its text; the scenario asserts `capturedAt` moved back by
+  exactly 31 days and nothing else in the snapshot changed. (2) `apps/worker/test/two-workers.int.test.ts`
+  runs two full worker instances (each with its own pools, pg-boss client, handlers and outbox relay) against
+  one database: overlapping feeds ingested once with racing quota-limited subscribes and budget reservations,
+  origin spacing kept across both instances, a wrapper merged into its target while the other instance extracts
+  the target, and a revision change applied once while both fetch the carriers (spec 11 §9 checklist). Tests only; no spec change beyond the checklist
+  already in spec 11 §9.
+- D-207: 2026-10-12 M8-F18 (rollback rehearsal) — A local rehearsal of rolling back from the follow-up branch
+  (migrations 0023, 0024) to the M8 release (`2517cec`) found that `/readyz` demanded the newest applied migration
+  to equal the release's newest bundled one, so every rollback across a migration failed its smoke, although the
+  older release's migrate, seed and worker ran fine over the expanded schema (spec 11 §3 step 6). Readiness now
+  requires every bundled migration to be applied and accepts newer ones (`migrationStatus` reports
+  `newerApplied`); a missing bundled migration still fails. `deploy.sh`'s automatic restore after a failed smoke
+  records each previous image's commit and logs that the requested release is NOT running instead of claiming
+  compatibility. The runbook's rollback procedure says to check out the old release and run its own
+  `deploy.sh`, and that rollback across a migration works only to releases containing this rule (not to
+  `2517cec` across 0023/0024). Proven on a running stack with a synthetic newer migration (ready, reads,
+  actions and outbox work) and a missing one (503). A full two-release rollback rehearsal against a release that
+  contains the rule is possible from the next release on. Spec 08 §11 (`/readyz`) and spec 11 §3 updated.
+- D-208: 2026-10-13 M8-F10, M8-F3, M8-F5 (PR #27 Codex review round 1) — (1) The rating replay folds each
+  completed user/article pair into per-window tallies (lanes, source, language, origin) as it streams the 500-row
+  pages, keeping only the open pair's rating-state stack (needed so an undo restores the state before the rating
+  it undoes), so worker memory no longer grows with the number of ratings or pairs; results are identical.
+  (2) A `{userId}` run of `house.translate-cards` never reads, writes, completes or clears the unrestricted
+  sweep's `house.progress` entry. (3) The E2E aging hook disables the snapshot guard, ages the rows and re-enables
+  the guard in one transaction on one connection (rolled back on error), so the guard is never off globally.
+  Spec 10 §7 updated.
+- D-209: 2026-10-13 M8-F4 (PR #27 Codex review round 2) — `house.reenrich` counts an article as already
+  translated only when it has a usable current-revision translation: target `en`, quality not `fail`, a
+  translated title and not a skipped placeholder, the rows `selectBestTranslation` would accept. A stored
+  `fail` row no longer sends the article to native enrichment; it is translated first.
+- D-210: 2026-10-13 M8-F10, M8-F1 (PR #27 Codex review round 3) — (1) The streaming rating fold keeps at most two
+  rating states for the open pair: the current one and the one before the last change. That is exact because an
+  undo is accepted only within `UNDO_WINDOW_MS` and only for the latest mutation of the article (every mutation,
+  the undo included, advances `state_version`, which the undo must match), so two undos in a row are impossible.
+  Per-pair memory is constant however many events a pair has. (2) An incident stored without a title that is still
+  open and not yet due for its reminder gets the title persisted on the run that observes it, without mail or a
+  `lastSentAt` change, so its recovery mail names it.
+- D-211: 2026-10-13 M8-F4 (PR #27 Codex review round 4) — a mode-change translation of an article in
+  `degraded` or `translated` state with no facets under the active enrich set continues into `article.enrich`
+  through the normal translate→enrich pipeline step (`after('translate', …)`), instead of stopping because only
+  `enriched`/`matched` articles are reset; such an article is no longer stranded after `house.reenrich` sends it
+  to translation. Other states and non-mode-change translations are unchanged.

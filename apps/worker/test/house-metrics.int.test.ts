@@ -138,7 +138,8 @@ describe('house.metrics recovery from Everything/Hidden (the regret rate, spec 1
     await w.bookmark(u, r3!, 'everything', onDay(0, 11));
     // Downranked and acted on, but not a recovery (a dislike).
     await w.rate(u, r4!, -1, 'everything', onDay(0, 12));
-    // Downranked and never acted on: only the cached lane (what pre-action score history leaves).
+    // Downranked and never acted on, but not scored or first seen in the window: since M8-F10 the
+    // cached-only rows no longer count (they are outside the window's denominator).
     await w.cachedLane(u, r5!, 'everything');
     await w.cachedLane(u, r6!, 'hidden');
     // Never downranked: opened from For You.
@@ -150,11 +151,11 @@ describe('house.metrics recovery from Everything/Hidden (the regret rate, spec 1
 
     const snapshot = await w.snapshot(YESTERDAY);
     expect(pick(snapshot, 'regret.numerator')).toBe(3);
-    expect(pick(snapshot, 'regret.denominator')).toBe(6);
+    expect(pick(snapshot, 'regret.denominator')).toBe(4);
     expect(pick(snapshot, 'windows.d7.regret.numerator')).toBe(3);
-    expect(pick(snapshot, 'windows.d7.regret.denominator')).toBe(6);
+    expect(pick(snapshot, 'windows.d7.regret.denominator')).toBe(4);
     expect(pick(snapshot, 'windows.d30.regret.numerator')).toBe(3);
-    expect(pick(snapshot, 'windows.d30.regret.denominator')).toBe(6);
+    expect(pick(snapshot, 'windows.d30.regret.denominator')).toBe(4);
   });
 });
 

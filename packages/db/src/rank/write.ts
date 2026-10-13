@@ -53,7 +53,10 @@ export type RankWriteResult =
  *    missing settings row is first stored with its default, so a first insert cannot slip past);
  * 2. writes only rows whose article still has the captured content and media revisions (the rest
  *    are reported as moved), and never replaces a row scored from a newer snapshot;
- * 3. keeps a `next_rank_at` newer than the run's `ctxAt` (the earlier of it and the written one);
+ * 3. keeps a `next_rank_at` newer than the run's `ctxAt` (the earlier of it and the written one),
+ *    unless it lies in the database's future yet is not after the run's snapshot time (clock skew:
+ *    an action's mark is never in the database's future; this one would leave the row due at the
+ *    run's clock, so the written value replaces it);
  * 4. sets only the ranking columns: reader state (read, rating, bookmark, labels, archive) is never
  *    touched, and label suggestions are filtered against the labels the user holds and the row's
  *    current assignments at write time, so a concurrent label action is not undone.
@@ -139,6 +142,8 @@ export async function writeRankBatch(
       score_version = EXCLUDED.score_version, rank_revision = EXCLUDED.rank_revision,
       scored_at = EXCLUDED.scored_at,
       next_rank_at = CASE WHEN ua.next_rank_at > ${fence.ctxAt}::timestamptz
+                           AND (ua.next_rank_at > ${scoredAt}::timestamptz
+                               OR ua.next_rank_at <= clock_timestamp())
                           THEN least(ua.next_rank_at, EXCLUDED.next_rank_at)
                           ELSE EXCLUDED.next_rank_at END
     WHERE ua.scored_at IS NULL OR ua.scored_at <= EXCLUDED.scored_at

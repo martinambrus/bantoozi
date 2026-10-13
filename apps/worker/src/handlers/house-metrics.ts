@@ -4,14 +4,15 @@ import {
   metricsEngine,
   metricsHides,
   metricsModels,
-  metricsRatingEvents,
+  METRICS_RATING_PAGE,
+  metricsRatingEventsPage,
   metricsReaderUsers,
   metricsRecovery,
   metricsTrainingQueue,
   readerLaneMix,
   retryTransaction,
   updateSettingLocked,
-  withTenant,
+  withTenants,
 } from '@bantoozi/db';
 import {
   UserPreferencesSchema,
@@ -23,10 +24,10 @@ import {
 
 import {
   dayBounds,
-  effectiveRatings,
-  laneStats,
-  ratingSplits,
+  EffectiveRatingFold,
+  WindowTally,
   windowStart,
+  type EffectiveRating,
 } from '../metrics/compute.js';
 import { nowOf, type WorkerDeps } from './deps.js';
 import { recordHouseProgress } from './house-purge-auth.js';
@@ -37,6 +38,32 @@ const JOB = 'house.metrics' as const;
 export const METRICS_RETENTION_DAYS = 90;
 const DAY_MS = 86_400_000;
 const READER_PAGE = 200;
+/** Readers counted per tenant-scoped transaction (M8-F10): a page of 200 is 8 transactions, not 200. */
+const READER_BATCH = 25;
+
+/**
+ * Replays the rating events of `from..to` in pages of {@link METRICS_RATING_PAGE} rows (M8-F10) and
+ * hands every completed user/article pair's effective rating to `sink` at once. A pair that
+ * straddles a page boundary is continued by the fold, which keeps only that pair's running state
+ * (ratings, not events), so neither the ratings nor a page's events outlive the page; the result
+ * equals one replay over all events.
+ */
+export async function replayRatings(
+  deps: Pick<WorkerDeps, 'db'>,
+  from: Date,
+  to: Date,
+  sink: (rating: EffectiveRating) => void,
+): Promise<void> {
+  const fold = new EffectiveRatingFold(sink);
+  let cursor: Awaited<ReturnType<typeof metricsRatingEventsPage>>['cursor'] = null;
+  for (;;) {
+    const page = await metricsRatingEventsPage(deps.db, from, to, cursor);
+    fold.push(page.events);
+    if (page.events.length < METRICS_RATING_PAGE) break;
+    cursor = page.cursor;
+  }
+  fold.finish();
+}
 
 /**
  * Maybe share inputs summed over the readers (spec 10 §7): per reader the unread counts of the
@@ -47,16 +74,26 @@ async function readerMix(deps: WorkerDeps, now: Date) {
   let after: string | null = null;
   for (;;) {
     const page = await metricsReaderUsers(deps.db, after, READER_PAGE);
-    for (const { userId, preferences } of page) {
-      const minTier = UserPreferencesSchema.parse(preferences ?? {}).defaultTier;
-      const mix = await withTenant(deps.db, userId, (tx) =>
-        readerLaneMix(tx, { asOf: now, minTier }),
+    for (let i = 0; i < page.length; i += READER_BATCH) {
+      const batch = page.slice(i, i + READER_BATCH);
+      const tiers = new Map(
+        batch.map(({ userId, preferences }) => [
+          userId,
+          UserPreferencesSchema.parse(preferences ?? {}).defaultTier,
+        ]),
       );
-      total.maybe += mix.maybe;
-      total.scored += mix.scored;
-      total.cards += mix.bySource.cards;
-      total.model += mix.bySource.model;
-      total.degraded += mix.bySource.degraded;
+      const mixes = await withTenants(
+        deps.db,
+        batch.map((reader) => reader.userId),
+        (tx, userId) => readerLaneMix(tx, { asOf: now, minTier: tiers.get(userId) ?? 0 }),
+      );
+      for (const mix of mixes) {
+        total.maybe += mix.maybe;
+        total.scored += mix.scored;
+        total.cards += mix.bySource.cards;
+        total.model += mix.bySource.model;
+        total.degraded += mix.bySource.degraded;
+      }
     }
     if (page.length < READER_PAGE) return total;
     after = page.at(-1)?.userId ?? null;
@@ -76,15 +113,20 @@ export function createMetricsHandler(deps: WorkerDeps): QueueHandler<'house.metr
     const now = nowOf(deps);
     const day = utcDay(new Date(now.getTime() - DAY_MS));
     const { start, end } = dayBounds(day);
-    const ratings = effectiveRatings(
-      await metricsRatingEvents(deps.db, new Date(windowStart(start, 30)), new Date(end)),
+    // One pass folds each completed pair into the day, 7-day and 30-day tallies (M8-F10).
+    const tallies = new Map(
+      [1, 7, 30].map((days) => [days, new WindowTally(windowStart(start, days), end)]),
     );
+    await replayRatings(deps, new Date(windowStart(start, 30)), new Date(end), (rating) => {
+      for (const tally of tallies.values()) tally.add(rating);
+    });
+    const tallyOf = (days: number): WindowTally => tallies.get(days) ?? new WindowTally(0, 0);
     const bounds = (days: number) => ({
       from: windowStart(start, days),
       to: end,
     });
     const lanesAndRegret = async (days: number) => ({
-      lanes: laneStats(ratings, windowStart(start, days), end),
+      lanes: tallyOf(days).laneStats(),
       regret: await metricsRecovery(deps.db, new Date(windowStart(start, days)), new Date(end)),
     });
     const trailing = async (days: number) => {
@@ -92,7 +134,7 @@ export function createMetricsHandler(deps: WorkerDeps): QueueHandler<'house.metr
       const [fromDate, toDate] = [new Date(from), new Date(to)];
       return {
         ...(await lanesAndRegret(days)),
-        ...ratingSplits(ratings, from, to),
+        ...tallyOf(days).splits(),
         hides: await metricsHides(deps.db, fromDate, toDate),
         models: await metricsModels(deps.db, fromDate, toDate, now),
         engine: await metricsEngine(deps.db, fromDate, toDate, days),

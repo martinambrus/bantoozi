@@ -28,8 +28,9 @@ when something needs a human, before users notice.
 | `worker` | built from `apps/worker` | 1.5 GB | `WORKER_QUEUES=*` (every queue except the `.laya` ones); healthcheck `GET /healthz` on its metrics port (503 when its heartbeat is older than 2 min). The image ships `packages/questions/library/*.json` beside the built `packages/questions`, since the seed loads the card library at runtime (D-50) |
 | `worker-laya` | the `worker` image | 3.5 GB | Compose profile `laya` (M9; `deploy.sh` refuses the profile until M9 registers the Laya handlers, D-197): enable it before setting `engine.laya`, which requires its heartbeat (spec 08 §9). Keep it while that setting lists a language and, after the setting is cleared, while **Laya work is outstanding**: a created, retrying or active job in either `.laya` queue, or an undelivered (pending or leased) `job_outbox` row for one, which the relay could still publish. Once a language is removed, each such job moves to the ordinary queue without an engine call (spec 04 §9), so this drains. `WORKER_QUEUES=article.enrich.laya,analysis.process.laya`; the only process that loads the checkpoint (spec 04 §9), from pinned, checksummed files on a read-only model volume. Own heartbeat and healthcheck on its metrics port |
 | `libretranslate` | `libretranslate/libretranslate:latest` (pin a digest) | 3 GB | `LT_LOAD_ONLY=en,sk,cs`, `LT_DISABLE_WEB_UI=true`. Compose profile `translate`: enable it before setting a language mode to `translate` or `card_text_mode` to `english` (the API refuses those settings unless LibreTranslate answers its health probe, spec 08 §9), and keep it while such a setting is on |
-| `caddy` | `caddy:2` | 256 MB | TLS (Let's Encrypt), serves `apps/web/dist`, reverse-proxies `/api/*` → `api:3000`, security headers (§7) |
+| `caddy` | `caddy:2` | 256 MB | TLS (Let's Encrypt), serves `apps/web/dist`, reverse-proxies `/api/*` → `api:3000`, security headers (§7). It receives `HTTPS_PORT` (default 443) and an explicit `http://` block redirects permanently to `https://$PUBLIC_HOST:$HTTPS_PORT{uri}`, always with the port, so a rehearsal on a non-default port keeps it (D-205) |
 
+- **Rehearsal S3 stand-in:** the `minio` service (rehearsal only) has a healthcheck (`mc ready local`, every 3 s, up to 20 retries); `deploy.sh` starts it with `up -d --wait` and creates the backup bucket as a directory of its data root once it is healthy (D-205).
 - **Logging:** the Docker `json-file` driver with `max-size=20m`, `max-file=5` for every service.
 - **Restart policy:** `unless-stopped` for long-lived services; `"no"` for migrations/seeding. Pin
   every production image by digest and retain the previous release's image digests.
@@ -71,7 +72,9 @@ when something needs a human, before users notice.
    web assets are inside the Caddy image, not overwritten in a shared volume during a live deploy.
 2. Validate required secrets (including `DELETION_LEDGER_PATH`, `DELETION_LEDGER_RECIPIENT` and
    `DELETION_HMAC_KEY`, a `DELETION_LEDGER_PATH` inside `/var/lib/bantoozi/ledger/`, and a non-empty `ADMIN_EMAILS`; example placeholders are refused, D-190, D-202) and the enabled profiles, check free disk/connection budget, and record
-   the previous image digests, schema version and a fresh successful encrypted pre-deploy backup.
+   the previous image digests, schema version and a fresh successful encrypted pre-deploy backup. The
+   `backup-tools` image is built first (a failed build stops the deploy), so a first image build cannot
+   time out inside `backup.sh` (D-205).
 3. Start healthy Postgres, then run the one-off migration image. Migrations acquire a database
    advisory lock and use bounded `lock_timeout`/`statement_timeout` (30 s and 5 min, set when the
    connection opens, so they also bound the wait for the advisory lock; a timeout fails the job with
@@ -87,7 +90,7 @@ when something needs a human, before users notice.
    application containers. On SIGTERM API stops accepting requests, workers stop claiming new jobs,
    and both close pools after drain. Compose `stop_grace_period` exceeds the documented longest
    graceful deadline; forced shutdown relies on leases/idempotency, never on assumed exactly-once
-   completion. Start the translation profile when required, then API/worker/Caddy, and `worker-laya`
+   completion. Start the translation profile when required (and, in a rehearsal, wait for `minio` to be healthy and create its bucket before the application containers start, D-205), then API/worker/Caddy, and `worker-laya`
    when the `laya` profile is enabled. Step 2 fails if `engine.laya` lists a language, or Laya work
    is outstanding (§2), without that profile, so no work waits on a queue nothing consumes. It
    likewise fails if a language mode (the stored one, or `LANGUAGE_MODES` before the seed stores it)
@@ -107,7 +110,10 @@ when something needs a human, before users notice.
    maintenance mode on and it stays on until the operator turns it off. Maintenance mode is the flag
    `/data/maintenance/on` in the `caddy-data` volume (`infra/scripts/maintenance.sh on|off|status`):
    Caddy answers every public route with a static 503 page and `Retry-After: 300`, except
-   `/api/v1/readyz`. Then use the recovery runbook.
+   `/api/v1/readyz`. Then use the recovery runbook. After restoring, `deploy.sh` logs the commit of the
+   restored images and that the requested release is NOT running (on a rollback the restored images are
+   the newer release's). A rollback is a deploy of the older release from its own checkout; it is ready over
+   the expanded schema because readiness accepts migrations newer than the release bundles (D-207).
 
 **Proxy paths:** Caddy preserves `/api/v1/*` when proxying to the API (no accidental prefix stripping),
 serves hashed assets with immutable caching, and serves `index.html`/service worker with revalidation.
@@ -149,7 +155,9 @@ backup immediately increases exposure and must alert rather than being reported 
   `backup-failed` and pruned after 2 days. The encryption and the S3 client are `apps/ops` run
   through `tsx` in the `backup-tools` image (`age-encryption` and its own SigV4 client; D-181).
 - Upload encrypted artifacts to an S3-compatible bucket and verify object size/checksum before
-  emitting `backup_ok`. Keep encryption recovery keys outside this host/bucket and test recovery
+  emitting `backup_ok`. Posting `backup_ok` (and the restore test's `restore_ok`) is retried 4 times, 5 s apart;
+  if it is still not recorded the script exits 1 even though the backup is verified, because a missing event
+  would raise the stale-backup alert (D-205). Keep encryption recovery keys outside this host/bucket and test recovery
   from those keys. Back up encrypted deployment secrets on change, including every provider
   master-key version needed by retained backups, plus deploy/restore instructions; Caddy state
   can be backed up or deliberately recreated from documented DNS/TLS configuration.
@@ -251,7 +259,7 @@ Archive is reversible presentation state, not deletion. Exclude bookmarked/rated
 rows from automatic archive. Count distinct unread article IDs per subscribed feed, newest by that
 feed's arrival (`feed_items.first_seen_at`, then `id`); archive only rows that lie beyond 1,000 in **every** feed
 through which that user receives them. Since archive state is per article, applying each feed's cap
-independently would wrongly hide a newer item in another feed. Protected rows may exceed the cap. A cleared rating is not protection, and only unprotected unread rows are counted toward the cap.
+independently would wrongly hide a newer item in another feed. Protected rows may exceed the cap. A cleared rating is not protection, and only unprotected unread rows are counted toward the cap. The count runs per subscription (a lateral subquery over the feed's items) through the partial index `user_article_unread_cap_idx (user_id, article_id) WHERE read_at IS NULL AND archived_at IS NULL`, and users with `deleted_at` set are left out (D-204).
 
 Delete eligible snapshot rows before their owning article; the snapshot article FK deliberately
 blocks deleting saved content accidentally. Unreferenced snapshots still within their grace can
@@ -384,9 +392,9 @@ retention must not erase still-owned private cards or snapshots while publishing
 | `house.nightly-learn` | `0 1 * * *` | enqueue `user.learn` when the effective training-input hash changed since the last **attempt** (implicit signals, undo/unrate, context and 180-day expiry included); `user.suggest` for active users, per spec 06 (**built in M7-T4**) |
 | `house.metrics` | `10 0 * * *` | online metrics (spec 10 §7) |
 | `house.alerts` | `*/5 * * * *` | evaluate the alert rules (§6.1) and send **all** operational emails. Other components only record state: `engine.circuit`, `engine.budget_alerts`, `ops.events` |
-| `house.reenrich` | on demand (admin changes the active enrich set, a language mode or `engine.laya`, or the model pin changes, §8) | re-enqueue still-demanded articles whose eligible carrier arrival is within `RANK_WINDOW_DAYS` (spec 06 §11), plus articles with a current completed explicit selection whatever their arrival (spec 05 §2), newest first, batches of 200 within budget, always in bulk priority and never through the LLM fallback; while the primary engine is unavailable the run is stored as a pending run in `house.progress` (at most 20) for `house.reconcile`; never opt users in or treat a model upgrade as permission for bulk untrained-feed inference |
+| `house.reenrich` | on demand (admin changes the active enrich set, a language mode or `engine.laya`, or the model pin changes, §8) | re-enqueue still-demanded articles whose eligible carrier arrival is within `RANK_WINDOW_DAYS` (spec 06 §11), plus articles with a current completed explicit selection whatever their arrival (spec 05 §2), newest first, batches of 200 within budget, always in bulk priority and never through the LLM fallback; while the primary engine is unavailable the run is stored as a pending run in `house.progress` (at most 20) for `house.reconcile`; never opt users in or treat a model upgrade as permission for bulk untrained-feed inference. An article whose language is now `translate` and that has no usable stored translation for its current revision, and no facets from translated text, is sent `article.translate {modeChange, bulk}` first; when that translation is stored for an article with no facets under the active set, enrichment follows from it (D-204) |
 | `house.rematch` | on demand (match set, card text mode, prefilter setting or model pin changed; a library card's topics corrected) | spec 05 §2: re-enqueue admitted pairs in `RANK_WINDOW_DAYS`, or on an article with a current completed explicit selection, whose answer is incompatible or a `prefilter` marker (one card's pairs for `{cardId}`), newest first, batches of 200 within budget, in bulk priority; an exhausted `invalid_request` row is revived only when its stored answer is incompatible with the current model, card text or match set; pending runs as for `house.reenrich`; full reranks for users active in 7 days; never opts users in |
-| `house.translate-cards` | on demand (`card_text_mode` switched to `english`, or `{userId}` when that user's cards gain demand while it is on) | spec 07 §5, in bulk priority, progress in `house.progress` |
+| `house.translate-cards` | on demand (`card_text_mode` switched to `english`, or `{userId}` when that user's cards gain demand while it is on) | spec 07 §5, in bulk priority, under `HOUSE_RUN_BUDGET_MS` with the resumable cursor `{after}` in `house.progress`; an unrestricted run skips a card not translated within the last 6 h (`translation_attempted_at`), a `{userId}` run always retries (D-203) |
 | `house.retranslate-skipped` | on demand (`POST /admin/translations/reprocess`, after the Ollama key, cap or budget is restored) | spec 07 §3: for still-demanded articles whose eligible carrier arrival is within `RANK_WINDOW_DAYS` and whose current-revision `ollama` row was skipped for a listed reason, send `article.translate {forceTier2, replaceSkipped}`, newest first, batches of 200 within the tier-2 cap and budget; items skipped again stay skipped until the next reprocess; never opts users in |
 
 Every job is idempotent, logs `{job, durationMs, affected, remaining}`, and exposes a counter. Persist
@@ -404,7 +412,7 @@ incident. Mail transport failure leaves the notification pending; mark `lastSent
 acceptance. Bound and redact details, retry with backoff, and keep reporting failures measurable.
 A retry may duplicate an email after an uncertain SMTP acknowledgment; do not promise exactly once.
 
-`house.alerts` keeps its state in `settings['alerts.state']` (`{[alertKey]: {firstAt, lastSentAt, active}}`).
+`house.alerts` keeps its state in `settings['alerts.state']` (`{[alertKey]: {firstAt, lastSentAt, active, title?}}`; the `title` of the alert is stored on each run the condition holds). A recovery notification lists each cleared incident by its stored title (the key for an entry stored without one) and its UTC first-seen time (D-203).
 It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMTP_URL`, `MAIL_FROM` and
 `MAIL_TRANSPORT`). The worker therefore needs the mail settings too (spec 01 §3).
 
@@ -523,7 +531,9 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
       catches up missed cron work and drains old outbox intents without duplicate side effects.
 - [ ] Two workers pass concurrent ingestion, merge, revision, quota, budget and origin-throttle tests;
       load test uses the actual configured pool/memory budget, and at least one high-latency/failing
-      provider scenario proves degraded reading stays available.
+      provider scenario proves degraded reading stays available. The load feeds list the newest 4 items
+      (the bound at the converged 900 s interval and 5 items/h) and the load report records each
+      container's `RestartCount` (D-205).
 - [ ] Production DNS/TLS, system time synchronization, external uptime/backup monitor, alert recipient,
       release owner, incident contact and the maintenance/restore instructions are recorded.
 - [ ] Fresh-instance bootstrap and upgrade from the previous schema both pass migration/seed tests;

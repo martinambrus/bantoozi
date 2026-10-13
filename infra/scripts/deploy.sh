@@ -194,13 +194,16 @@ has_profile laya && APP_SERVICES+=(worker-laya)
 APP_SERVICES+=(caddy)
 
 # Previous application images (restored if the smoke fails) and the schema version.
-declare -A PREV_ID PREV_NAME
+declare -A PREV_ID PREV_NAME PREV_SHA
 for svc in "${APP_SERVICES[@]}"; do
   cid="$(dc ps -aq "$svc" 2>/dev/null | head -n 1 || true)"
   if [ -n "$cid" ]; then
     PREV_ID[$svc]="$(docker inspect -f '{{.Image}}' "$cid")"
     PREV_NAME[$svc]="$(docker inspect -f '{{.Config.Image}}' "$cid")"
     docker tag "${PREV_ID[$svc]}" "${PREV_NAME[$svc]%%:*}:previous" >/dev/null
+    # The commit the previous image was built from: every deploy tags its images with the 12-character
+    # commit (below), so the tag names the release the "previous" images belong to.
+    PREV_SHA[$svc]="$(docker image inspect "${PREV_ID[$svc]}" --format '{{range .RepoTags}}{{println .}}{{end}}' 2>/dev/null | sed -nE 's/.*:([0-9a-f]{12})$/\1/p' | head -n 1 || true)"
     echo "deploy: previous $svc image ${PREV_ID[$svc]#sha256:}"
   else
     echo "deploy: previous $svc image none (first deploy)"
@@ -224,10 +227,12 @@ else
   [ -x "$BACKUP" ] || die "the pre-deploy backup is required (spec 11 §3 step 2) but $BACKUP does not exist yet"
   if [ "$REHEARSAL" = 1 ] && [ "$(envfile_get BACKUP_S3_ENDPOINT)" = "http://minio:9000" ]; then
     # The S3 stand-in of the rehearsal profile: running, with the bucket present (a directory of the data root).
-    dc up -d --no-deps --no-build minio >/dev/null || die "the S3 stand-in (minio) did not start"
-    sleep 2
+    dc up -d --no-deps --no-build --wait --wait-timeout 120 minio >/dev/null || die "the S3 stand-in (minio) did not become healthy"
     dc exec -T minio mkdir -p "/data/$(envfile_get BACKUP_S3_BUCKET)" || die "could not create the bucket on the S3 stand-in"
   fi
+  # Built here, ahead of the backup, so a first image build cannot time out inside backup.sh.
+  step "build the backup tools image"
+  dc --profile tools build backup-tools >/dev/null 2>&1 || die "the backup tools image build failed"
   step "pre-deploy backup"
   "$BACKUP" --pre-deploy --env-file "$ENV_FILE" || die "the pre-deploy backup failed"
 fi
@@ -278,7 +283,12 @@ dc stop api >/dev/null 2>&1 || true
 has_profile translate && { dc up -d --no-deps --no-build libretranslate >/dev/null || die "libretranslate did not start"; }
 [ "$REHEARSAL" = 1 ] && { dc up -d --no-deps --no-build mailpit >/dev/null || die "the mail catcher did not start"; }
 # The S3-compatible stand-in for the off-site bucket (backup.sh / restore-test.sh rehearsal).
-[ "$REHEARSAL" = 1 ] && { dc up -d --no-deps --no-build minio >/dev/null || die "the S3 stand-in (minio) did not start"; }
+if [ "$REHEARSAL" = 1 ]; then
+  dc up -d --no-deps --no-build --wait --wait-timeout 120 minio >/dev/null || die "the S3 stand-in (minio) did not become healthy"
+  if [ "$(envfile_get BACKUP_S3_ENDPOINT)" = "http://minio:9000" ]; then
+    dc exec -T minio mkdir -p "/data/$(envfile_get BACKUP_S3_BUCKET)" || die "could not create the bucket on the S3 stand-in"
+  fi
+fi
 START=(api worker)
 has_profile laya && START+=(worker-laya)
 START_OK=1
@@ -395,14 +405,19 @@ if [ "$SMOKE_OK" != 1 ]; then
   echo "deploy: SMOKE FAILED: $SMOKE_FAIL" >&2
   for svc in api worker; do dc logs --no-color --tail 15 "$svc" 2>&1 | sed "s/^/  $svc: /" >&2 || true; done
   restored=0
+  PREV_COMMIT=""
   for svc in "${APP_SERVICES[@]}"; do
     if [ -n "${PREV_ID[$svc]:-}" ]; then
       docker tag "${PREV_ID[$svc]}" "${PREV_NAME[$svc]}" >/dev/null
       dc up -d --no-deps --no-build --force-recreate "$svc" >/dev/null 2>&1 || echo "deploy: could not restart previous $svc" >&2
       restored=1
+      [ -n "$PREV_COMMIT" ] || PREV_COMMIT="${PREV_SHA[$svc]:-}"
       echo "deploy: restored previous $svc image ${PREV_ID[$svc]#sha256:}" >&2
     fi
   done
+  if [ "$restored" = 1 ]; then
+    echo "deploy: requested $REF (${COMMIT:0:12}) failed its smoke; restored previous images of ${PREV_COMMIT:-unknown commit} — the requested release is NOT running" >&2
+  fi
   if [ "$restored" = 0 ]; then
     dc stop "${APP_SERVICES[@]}" >/dev/null 2>&1 || true
     echo "deploy: no previous images exist (first deploy): application containers stopped" >&2
@@ -421,7 +436,7 @@ if [ "$SMOKE_OK" != 1 ]; then
     done
   fi
   if [ "$COMPATIBLE" = 1 ]; then
-    echo "deploy: the restored previous images are healthy against the expanded schema: compatibility demonstrated" >&2
+    echo "deploy: the restored images (${PREV_COMMIT:-unknown commit}) are healthy against the expanded schema; $REF is NOT running" >&2
   else
     echo "deploy: compatibility with the expanded schema is not demonstrated: switching maintenance mode on" >&2
     if [ -x "$MAINTENANCE" ] && "$MAINTENANCE" --env-file "$ENV_FILE" on >&2; then

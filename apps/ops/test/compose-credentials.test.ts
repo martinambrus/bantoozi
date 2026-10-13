@@ -162,7 +162,7 @@ describe('compose credentials (spec 11 §9 item 12)', () => {
 
   it('gives caddy no database or backup credentials', () => {
     const r = resolve('caddy');
-    expect(r.names).toEqual(['ACME_EMAIL', 'PUBLIC_HOST']);
+    expect(r.names).toEqual(['ACME_EMAIL', 'HTTPS_PORT', 'PUBLIC_HOST']);
     expect(r.names.filter((n) => DB_URL_NAMES.includes(n))).toEqual([]);
     expect(r.refs.filter((ref) => DB_PASSWORD_REFS.includes(ref))).toEqual([]);
     expect(mentions(r, ROLE_LITERALS)).toEqual([]);

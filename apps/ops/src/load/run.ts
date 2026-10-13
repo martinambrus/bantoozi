@@ -453,6 +453,7 @@ export async function runLoad(options: LoadRunOptions): Promise<LoadReport> {
         listPageLimit: LIST_PAGE_LIMIT,
       },
       measures,
+      restarts: await stack.restarts(),
       generatedAt: new Date().toISOString(),
     });
     await writeFile(

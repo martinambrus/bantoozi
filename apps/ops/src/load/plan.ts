@@ -230,7 +230,14 @@ export interface LoadReport {
     degradedReadingOk: boolean;
     cpuGated: false;
   };
+  /** Container RestartCount per service at the end of the run (a crash loop would show here). */
+  restarts: ContainerRestarts[];
   generatedAt: string;
+}
+
+export interface ContainerRestarts {
+  service: string;
+  count: number;
 }
 
 export interface ReportInput {
@@ -240,6 +247,8 @@ export interface ReportInput {
   articles: number;
   traffic: { listRatePerUser: number; actionRatePerUser: number; listPageLimit: number };
   measures: PhaseMeasure[];
+  /** Container restarts read from docker; optional so callers without docker report none. */
+  restarts?: ContainerRestarts[];
   generatedAt: string;
 }
 
@@ -290,6 +299,7 @@ export function buildReport(input: ReportInput): LoadReport {
         failing !== undefined && failing.errors5xx === 0 && failing.p95ArticlesMs < P95_LIMIT_MS,
       cpuGated: false,
     },
+    restarts: input.restarts ?? [],
     generatedAt: input.generatedAt,
   };
 }
@@ -346,6 +356,13 @@ export function renderMarkdown(report: LoadReport): string {
       `| ${phase.name} | ${services.map((s) => Math.round((phase.memMaxBytes[s] ?? 0) / MIB)).join(' | ')} |`,
     );
   }
+  lines.push('', '## Container restarts', '');
+  const restarted = report.restarts.filter((entry) => entry.count > 0);
+  lines.push(
+    restarted.length === 0
+      ? `No container restarted during the run (RestartCount 0 for ${report.restarts.length} services).`
+      : `Restarted containers (RestartCount): ${restarted.map((entry) => `${entry.service} ${entry.count}`).join(', ')}.`,
+  );
   lines.push('', '## Criteria', '');
   lines.push(
     `- p95 GET /articles < ${P95_LIMIT_MS} ms in every phase: ${report.criteria.p95Ok ? 'PASS' : 'FAIL'}`,

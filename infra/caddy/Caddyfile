@@ -28,6 +28,12 @@
 	}
 }
 
+# Explicit http redirect: the implicit one drops a non-default https port (a rehearsal publishes
+# HTTPS_PORT; production uses 443, which the redirect omits).
+http://{$PUBLIC_HOST:localhost} {
+	redir https://{$PUBLIC_HOST:localhost}:{$HTTPS_PORT:443}{uri} permanent
+}
+
 {$PUBLIC_HOST:localhost} {
 	root * /srv/web
 	import security_headers

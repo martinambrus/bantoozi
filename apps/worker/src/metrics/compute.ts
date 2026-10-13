@@ -33,6 +33,77 @@ const isLane = (lane: string | null): lane is MetricLane =>
   METRIC_LANES.some((known) => known === lane);
 
 /**
+ * Streaming form of {@link effectiveRatings} (M8-F10 review): events arrive in any number of
+ * chunks, ordered per user and article across them, and each completed pair is handed to `emit` at
+ * once. Only the one open pair's current and previous state (at most two ratings, not events) are
+ * retained, so the memory is independent of the number of events and pairs.
+ */
+export class EffectiveRatingFold {
+  private pair: string | undefined;
+  // The current effective state and the one before it. An undo needs the version its own mutation
+  // produced (spec 08 §5.4), and undoing advances that version, so an undo always reverts the latest
+  // rating event and never one further back: two states are exact. `undefined` is "not known".
+  private top: EffectiveRating | null | undefined;
+  private prev: EffectiveRating | null | undefined;
+
+  constructor(private readonly emit: (rating: EffectiveRating) => void) {}
+
+  push(events: readonly MetricsRatingEvent[]): void {
+    for (const event of events) {
+      const id = `${event.userId}:${event.articleId}`;
+      if (id !== this.pair) {
+        this.flush();
+        this.pair = id;
+        this.top = undefined;
+        this.prev = undefined;
+      }
+      if (event.kind === 'undo') {
+        this.top = this.prev ?? null;
+        this.prev = undefined;
+      } else if (event.kind === 'unrate') {
+        this.set(null);
+      } else if (isLane(event.lane) && (event.rating === 1 || event.rating === -1)) {
+        this.set({
+          at: event.at.getTime(),
+          lane: event.lane,
+          liked: event.rating === 1,
+          source: isSource(event.source) ? event.source : null,
+          lang: event.lang !== null && LANG.test(event.lang) ? event.lang : 'unknown',
+          prompted: event.prompted,
+        });
+      } else {
+        this.set(null);
+      }
+    }
+  }
+
+  private set(state: EffectiveRating | null): void {
+    this.prev = this.top;
+    this.top = state;
+  }
+
+  /** Emits the open pair (if it has an effective rating); call once after the last chunk. */
+  finish(): void {
+    this.flush();
+    this.pair = undefined;
+    this.top = undefined;
+    this.prev = undefined;
+  }
+
+  /** What the fold holds between chunks: the open pair's states only, never events or emitted ratings. */
+  retained(): { openPair: string | undefined; states: number } {
+    return {
+      openPair: this.pair,
+      states: (this.top === undefined ? 0 : 1) + (this.prev === undefined ? 0 : 1),
+    };
+  }
+
+  private flush(): void {
+    if (this.top) this.emit(this.top);
+  }
+}
+
+/**
  * Replays the events (ordered per user and article) into at most one effective rating per pair
  * (spec 10 §7): a rating (or a prompt answer) replaces the earlier one, an unrate clears it, and
  * the undo of a rating or of a prompt answer restores the state before it. Ratings without a known
@@ -40,70 +111,9 @@ const isLane = (lane: string | null): lane is MetricLane =>
  */
 export function effectiveRatings(events: readonly MetricsRatingEvent[]): EffectiveRating[] {
   const out: EffectiveRating[] = [];
-  let pair: string | undefined;
-  let states: Array<EffectiveRating | null> = [];
-  const flush = (): void => {
-    const top = states.at(-1);
-    if (top) out.push(top);
-  };
-  for (const event of events) {
-    const id = `${event.userId}:${event.articleId}`;
-    if (id !== pair) {
-      flush();
-      pair = id;
-      states = [];
-    }
-    if (event.kind === 'undo') {
-      states.pop();
-    } else if (event.kind === 'unrate') {
-      states.push(null);
-    } else if (isLane(event.lane) && (event.rating === 1 || event.rating === -1)) {
-      states.push({
-        at: event.at.getTime(),
-        lane: event.lane,
-        liked: event.rating === 1,
-        source: isSource(event.source) ? event.source : null,
-        lang: event.lang !== null && LANG.test(event.lang) ? event.lang : 'unknown',
-        prompted: event.prompted,
-      });
-    } else {
-      states.push(null);
-    }
-  }
-  flush();
-  return out;
-}
-
-/** Like-rate and rated count per lane over `from <= at < to`; a lane with no rating has a `null` rate. */
-export function laneStats(
-  ratings: readonly EffectiveRating[],
-  from: number,
-  to: number,
-): MetricsSnapshot['lanes'] {
-  const lanes: MetricsSnapshot['lanes'] = {};
-  for (const lane of METRIC_LANES) {
-    const inLane = ratings.filter((r) => r.lane === lane && r.at >= from && r.at < to);
-    const likes = inLane.filter((r) => r.liked).length;
-    lanes[lane] = {
-      likeRate: inLane.length === 0 ? null : likes / inLane.length,
-      rated: inLane.length,
-    };
-  }
-  return lanes;
-}
-
-/** Like-rate and rated count per lane of the ratings with `at` in `[from, to)`, empty lanes left out. */
-function populatedLanes(ratings: readonly EffectiveRating[]): Record<string, MetricsLane> {
-  const out: Record<string, MetricsLane> = {};
-  for (const lane of METRIC_LANES) {
-    const inLane = ratings.filter((r) => r.lane === lane);
-    if (inLane.length > 0) {
-      out[lane] = {
-        likeRate: inLane.filter((r) => r.liked).length / inLane.length,
-        rated: inLane.length,
-      };
-    }
-  }
+  const fold = new EffectiveRatingFold((rating) => out.push(rating));
+  fold.push(events);
+  fold.finish();
   return out;
 }
 
@@ -117,6 +127,125 @@ export interface RatingSplits {
 /** Most languages reported separately; the rest fold into `other` so a snapshot stays bounded. */
 export const MAX_LANGUAGES = 20;
 
+type Tally = Map<string, { rated: number; likes: number }>;
+
+/**
+ * Like-rate counters of the ratings with `from <= at < to`, filled one rating at a time (M8-F10
+ * review): per lane, and per lane within the ranking source, article language and origin. The
+ * retained state is a few counters per distinct source/language/origin, not the ratings.
+ */
+export class WindowTally {
+  private readonly lanes = new Map<string, { rated: number; likes: number }>();
+  private readonly dims = {
+    source: new Map<string, Tally>(),
+    lang: new Map<string, Tally>(),
+    origin: new Map<string, Tally>(),
+  };
+  private readonly perLanguage = new Map<string, number>();
+
+  constructor(
+    private readonly from: number,
+    private readonly to: number,
+  ) {}
+
+  add(r: EffectiveRating): void {
+    if (r.at < this.from || r.at >= this.to) return;
+    bump(this.lanes, r.lane, r.liked);
+    if (r.source !== null) this.bucket(this.dims.source, r.source, r);
+    this.bucket(this.dims.lang, r.lang, r);
+    this.bucket(this.dims.origin, r.prompted ? 'prompt' : 'voluntary', r);
+    this.perLanguage.set(r.lang, (this.perLanguage.get(r.lang) ?? 0) + 1);
+  }
+
+  /** Counters held: lane cells plus split cells; bounded by sources, languages and origins. */
+  size(): number {
+    let n = this.lanes.size;
+    for (const dim of Object.values(this.dims)) for (const t of dim.values()) n += t.size;
+    return n + this.perLanguage.size;
+  }
+
+  /** Like-rate and rated count per lane; a lane with no rating has a `null` rate. */
+  laneStats(): MetricsSnapshot['lanes'] {
+    const out: MetricsSnapshot['lanes'] = {};
+    for (const lane of METRIC_LANES) {
+      const cell = this.lanes.get(lane);
+      out[lane] = {
+        likeRate: cell === undefined ? null : cell.likes / cell.rated,
+        rated: cell?.rated ?? 0,
+      };
+    }
+    return out;
+  }
+
+  /** The like-rate per lane split by source (legacy in no bucket), language (`unknown` apart) and origin. */
+  splits(): RatingSplits {
+    const kept = new Set(
+      [...this.perLanguage]
+        .filter(([lang]) => lang !== 'unknown')
+        .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : 1))
+        .slice(0, MAX_LANGUAGES)
+        .map(([lang]) => lang),
+    );
+    const render = (dim: Map<string, Tally>, name: (raw: string) => string) => {
+      const merged = new Map<string, Tally>();
+      for (const [raw, tally] of dim) {
+        const into = merged.get(name(raw)) ?? new Map();
+        for (const [lane, cell] of tally) {
+          const have = into.get(lane) ?? { rated: 0, likes: 0 };
+          into.set(lane, { rated: have.rated + cell.rated, likes: have.likes + cell.likes });
+        }
+        merged.set(name(raw), into);
+      }
+      return Object.fromEntries(
+        [...merged]
+          .sort(([a], [b]) => (a < b ? -1 : 1))
+          .map(([key, tally]) => [key, populated(tally)]),
+      );
+    };
+    return {
+      bySource: render(this.dims.source, (raw) => raw),
+      byLanguage: render(this.dims.lang, (raw) =>
+        raw === 'unknown' || kept.has(raw) ? raw : 'other',
+      ),
+      byOrigin: render(this.dims.origin, (raw) => raw),
+    };
+  }
+
+  private bucket(dim: Map<string, Tally>, name: string, r: EffectiveRating): void {
+    const tally = dim.get(name) ?? new Map();
+    dim.set(name, tally);
+    bump(tally, r.lane, r.liked);
+  }
+}
+
+function bump(tally: Tally, lane: string, liked: boolean): void {
+  const cell = tally.get(lane) ?? { rated: 0, likes: 0 };
+  cell.rated += 1;
+  if (liked) cell.likes += 1;
+  tally.set(lane, cell);
+}
+
+/** Lanes with at least one rating, in {@link METRIC_LANES} order. */
+function populated(tally: Tally): Record<string, MetricsLane> {
+  const out: Record<string, MetricsLane> = {};
+  for (const lane of METRIC_LANES) {
+    const cell = tally.get(lane);
+    if (cell !== undefined) out[lane] = { likeRate: cell.likes / cell.rated, rated: cell.rated };
+  }
+  return out;
+}
+
+/** Like-rate and rated count per lane over `from <= at < to`; a lane with no rating has a `null` rate. */
+export function laneStats(
+  ratings: readonly EffectiveRating[],
+  from: number,
+  to: number,
+): MetricsSnapshot['lanes'] {
+  const tally = new WindowTally(from, to);
+  for (const r of ratings) tally.add(r);
+  return tally.laneStats();
+}
+
 /**
  * The like-rate per lane split by ranking source (legacy snapshots in no bucket), article language
  * (`unknown` apart) and origin (prompt or calibration vs voluntary), for `from <= at < to`.
@@ -126,33 +255,9 @@ export function ratingSplits(
   from: number,
   to: number,
 ): RatingSplits {
-  const inWindow = ratings.filter((r) => r.at >= from && r.at < to);
-  const group = (key: (r: EffectiveRating) => string | null) => {
-    const buckets = new Map<string, EffectiveRating[]>();
-    for (const rating of inWindow) {
-      const name = key(rating);
-      if (name !== null) buckets.set(name, [...(buckets.get(name) ?? []), rating]);
-    }
-    return Object.fromEntries(
-      [...buckets]
-        .sort(([a], [b]) => (a < b ? -1 : 1))
-        .map(([name, rows]) => [name, populatedLanes(rows)]),
-    );
-  };
-  const perLanguage = new Map<string, number>();
-  for (const r of inWindow) perLanguage.set(r.lang, (perLanguage.get(r.lang) ?? 0) + 1);
-  const kept = new Set(
-    [...perLanguage]
-      .filter(([lang]) => lang !== 'unknown')
-      .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : 1))
-      .slice(0, MAX_LANGUAGES)
-      .map(([lang]) => lang),
-  );
-  return {
-    bySource: group((r) => r.source),
-    byLanguage: group((r) => (r.lang === 'unknown' || kept.has(r.lang) ? r.lang : 'other')),
-    byOrigin: group((r) => (r.prompted ? 'prompt' : 'voluntary')),
-  };
+  const tally = new WindowTally(from, to);
+  for (const r of ratings) tally.add(r);
+  return tally.splits();
 }
 
 /** The start (UTC midnight, ms) of `day` (`YYYY-MM-DD`) and of the day after it. */

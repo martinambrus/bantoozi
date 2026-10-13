@@ -203,6 +203,8 @@ export const interestCards = pgTable(
       .default(sql`'{}'`),
     createdAt: tstz('created_at').notNull().defaultNow(),
     retiredAt: tstz('retired_at'),
+    /** The last weak or failed card translation (migration 0024); NULL = none or translated. */
+    translationAttemptedAt: tstz('translation_attempted_at'),
   },
   (t) => [
     check('interest_cards_kind_check', sql`kind IN ('interest','label')`),

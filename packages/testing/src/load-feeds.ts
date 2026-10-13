@@ -200,7 +200,7 @@ interface Layout {
 function layoutOf(options: LoadFeedsOptions): Layout {
   const feedCount = options.feedCount ?? 1000;
   const perHour = options.itemsPerFeedPerHour ?? 5;
-  const window = options.window ?? 6;
+  const window = options.window ?? 4;
   if (!Number.isInteger(feedCount) || feedCount < 1) throw new RangeError('feedCount must be >= 1');
   if (!(Number.isFinite(perHour) && perHour > 0)) throw new RangeError('itemsPerFeedPerHour > 0');
   if (!Number.isInteger(window) || window < 1) throw new RangeError('window must be >= 1');

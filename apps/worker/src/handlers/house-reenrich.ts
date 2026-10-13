@@ -185,6 +185,9 @@ export function decideReenrich(
   if (translates) {
     if (article.pipelineState === 'extracted') return 'translate';
     if (settled && facets !== null && facets.stateVariant !== 'translated') return 'translate';
+    // No facets under the active set and no stored translation: translate first, enrich follows.
+    if (article.hasTranslation === false && facets?.stateVariant !== 'translated')
+      return 'translate';
     return 'enrich';
   }
   if (settled && facets !== null && facets.stateVariant === 'translated') {

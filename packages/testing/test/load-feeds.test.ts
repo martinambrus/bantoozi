@@ -76,7 +76,7 @@ describe('startLoadFeedServer', () => {
     expect(first.status).toBe(200);
     expect(first.headers.get('content-type')).toContain('rss+xml');
     const guids = itemGuids(first.body);
-    expect(guids).toHaveLength(6);
+    expect(guids).toHaveLength(4);
     // Same bytes on a second request: deterministic, no wall-clock text.
     expect((await text(server.feedUrl(0))).body).toBe(first.body);
 
@@ -84,7 +84,7 @@ describe('startLoadFeedServer', () => {
     const later = itemGuids((await text(server.feedUrl(0))).body);
     const numbers = (list: string[]) => list.map((g) => Number(g.split(':')[1]));
     expect(Math.max(...numbers(later)) - Math.max(...numbers(guids))).toBe(5);
-    expect(later).toHaveLength(6);
+    expect(later).toHaveLength(4);
   });
 
   it('spreads the feeds over the origins and rejects bad indexes', async () => {

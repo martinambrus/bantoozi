@@ -116,7 +116,7 @@ export function createAlertsHandler(deps: WorkerDeps): QueueHandler<'house.alert
           deps,
           mailer,
           admins,
-          recoveryEmail(plan.recoveries),
+          recoveryEmail(plan.recoveries, state),
         );
       }
     }

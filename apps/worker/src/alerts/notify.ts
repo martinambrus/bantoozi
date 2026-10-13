@@ -88,8 +88,19 @@ export function alertEmail(alerts: readonly Condition[]): { subject: string; tex
 }
 
 /** The recovery digest email of the incidents that cleared. */
-export function recoveryEmail(keys: readonly string[]): { subject: string; text: string } {
-  const lines = keys.slice(0, DIGEST_MAX).map((key) => `* ${safeText(key, 120)}`);
+export function recoveryEmail(
+  keys: readonly string[],
+  state: AlertState = {},
+): { subject: string; text: string } {
+  const lines = keys.slice(0, DIGEST_MAX).map((key) => {
+    const entry = state[key];
+    const title = entry?.title === undefined ? key : entry.title;
+    const first = entry === undefined ? Number.NaN : Date.parse(entry.firstAt);
+    const since = Number.isNaN(first)
+      ? ''
+      : `\n  first seen ${new Date(first).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+    return `* ${safeText(title, 120)}${since}`;
+  });
   if (keys.length > DIGEST_MAX) lines.push(`... and ${keys.length - DIGEST_MAX} more`);
   return {
     subject: `[Bantoozi] RECOVERED: ${keys.length} alert${keys.length === 1 ? '' : 's'} cleared`,
@@ -122,11 +133,16 @@ export function applyRun(
   const at = now.toISOString();
   const failed = (entry: AlertState[string]) => ({ ...entry, failures: (entry.failures ?? 0) + 1 });
   const due = new Set(plan.alerts.map((alert) => alert.key));
-  for (const { key } of conditions) {
+  for (const { key, title } of conditions) {
     const existing = next[key];
     const open = existing?.active === true;
-    const entry = open ? existing : { firstAt: at, lastSentAt: null, active: true };
-    if (!due.has(key) && open) continue;
+    const base = open ? existing : { firstAt: at, lastSentAt: null, active: true };
+    const entry = { ...base, title: safeText(title, 120) };
+    if (!due.has(key) && open) {
+      // Not due for its reminder: nothing is sent, but a legacy entry gets its title for the recovery mail.
+      if (existing.title !== entry.title) next[key] = entry;
+      continue;
+    }
     // A new condition cut from the digest is opened unsent, so the next run mails it first.
     if (!due.has(key)) {
       next[key] = entry;

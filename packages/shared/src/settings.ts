@@ -259,6 +259,8 @@ export const SETTINGS = {
           firstAt: iso,
           lastSentAt: iso.nullable(),
           active: z.boolean(),
+          /** The alert title the incident was mailed under (absent on entries stored before M8-F1). */
+          title: z.string().max(200).optional(),
           failures: z.number().int().min(0).max(1_000_000).optional(),
           /** Consecutive samples a streak rule has counted (a `memo.*` entry, never an incident). */
           streak: z.number().int().min(0).max(1_000_000).optional(),

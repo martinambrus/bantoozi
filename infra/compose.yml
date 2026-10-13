@@ -268,6 +268,7 @@ services:
     environment:
       PUBLIC_HOST: ${PUBLIC_HOST:-localhost}
       ACME_EMAIL: ${ACME_EMAIL:?}
+      HTTPS_PORT: ${HTTPS_PORT:-443}
     ports:
       - '${HTTP_PORT:-80}:80'
       - '${HTTPS_PORT:-443}:443'
@@ -322,6 +323,13 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
     volumes:
       - minio-data:/data
+    healthcheck:
+      # The liveness endpoint answers once the server accepts requests (deploy.sh waits for it).
+      test: [CMD, mc, ready, local]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 3s
     logging: *logging
 
 volumes:
