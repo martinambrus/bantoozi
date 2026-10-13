@@ -9,6 +9,7 @@ import { errorMessage } from '../../components/error-message.js';
 import { CheckIcon } from '../../components/icons.js';
 import { Spinner } from '../../components/spinner.js';
 import { LoadingState } from '../../components/states/loading-state.js';
+import { useToast } from '../../components/toast/toast-provider.js';
 import { VisuallyHidden } from '../../components/visually-hidden.js';
 import { InlineAlert } from '../feeds/inline-alert.js';
 import { conflictReason } from '../interests/card-errors.js';
@@ -178,6 +179,9 @@ function TopicGroup({ group, children }: { group: Group; children: ReactNode }) 
   );
 }
 
+/** One toast for both lists: a new failure replaces the last one instead of stacking up. */
+const CHIP_FAILURE_TOAST = 'onboarding-chip-failure';
+
 export interface LibraryChipsProps {
   kind: ChipKind;
   /** Shared by the two lists, whose chips change the same cards. */
@@ -200,7 +204,14 @@ export function LibraryChips({
 }: LibraryChipsProps) {
   const { t } = useTranslation('onboarding');
   const headingId = useId();
+  const toast = useToast();
   const [failure, setFailure] = useState<string | null>(null);
+  // The alert sits below a long list, out of view of the chip that was pressed, so a toast says it too.
+  const fail = (message: string | null) => {
+    setFailure(message);
+    if (message === null) toast.dismiss(CHIP_FAILURE_TOAST);
+    else toast.show({ id: CHIP_FAILURE_TOAST, message, tone: 'error' });
+  };
   const groups = groupByTopic(library, topics, t('interests:library.other'));
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
@@ -221,7 +232,7 @@ export function LibraryChips({
                   held={holding(cards, card)}
                   kind={kind}
                   changes={changes}
-                  onFailure={setFailure}
+                  onFailure={fail}
                 />
               ))}
             </TopicGroup>

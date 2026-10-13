@@ -534,6 +534,29 @@ describe('interests (spec 09 §4 step 3)', () => {
     expect(state.cards).toEqual([]);
   });
 
+  it('also shows a refused chip in a toast, because the alert sits below the long list', async () => {
+    const { app } = await openWizard('/onboarding?step=interests', {
+      ...options,
+      routes: {
+        'POST /library/:id/adopt': () =>
+          failure(409, 'QUOTA_EXCEEDED', { limit: 'maxCards', used: 50, max: 50 }),
+      },
+    });
+    const likes = await screen.findByRole('region', { name: 'Pick topics you like' });
+    const message = "You've reached your plan's limit for interest cards: 50 of 50.";
+
+    await app.user.click(within(likes).getByRole('button', { name: 'EV battery tech' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    const toasts = () =>
+      screen.queryAllByText(message).filter((node) => node.closest('[role="alert"]') === null);
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+
+    await app.user.click(within(likes).getByRole('button', { name: 'Rust programming' }));
+    await waitFor(() => expect(app.calls('POST /library/:id/adopt')).toHaveLength(2));
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+  });
+
   it('keeps the pressed chip busy with a spinner while its request is on its way', async () => {
     const answer = gate();
     const { app } = await openWizard('/onboarding?step=interests', {
