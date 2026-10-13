@@ -196,6 +196,19 @@ export const AdminSettingsSchema = z
     sources: z.record(z.string(), z.enum(['env', 'stored', 'last_good'])),
     /** The environment default of each live runtime key; `null` when no process can tell. */
     defaults: z.record(z.string(), z.unknown().nullable()),
+    /** The live workers (heartbeat ≤ 90 s) and what each reports about the runtime settings (M8b-T10). */
+    workers: z
+      .array(
+        z
+          .object({
+            processId: z.string(),
+            at: IsoTimestampSchema,
+            pendingRestart: z.boolean(),
+            problems: z.array(z.object({ key: z.string(), message: z.string() }).strict()),
+          })
+          .strict(),
+      )
+      .default([]),
   })
   .strict();
 export type AdminSettings = z.infer<typeof AdminSettingsSchema>;

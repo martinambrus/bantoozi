@@ -149,7 +149,42 @@
       "rankerRejected": "The server rejected the merged ranker configuration.",
       "unknownQuestionSet": "Unknown question set for “{{kind}}”.",
       "settingsChanged": "Settings changed while saving. The latest values were loaded; review your edit and save again.",
-      "layaWorkerMissing": "No running worker consumes the Laya queues, so engine.laya cannot be set."
+      "layaWorkerMissing": "No running worker consumes the Laya queues, so engine.laya cannot be set.",
+      "rejected": "The server did not accept this value: {{reason}}"
+    },
+    "groups": {
+      "engine": "Decision engine (Jev)",
+      "ollama": "LLM fallback (Ollama)",
+      "ingestion": "Ingestion and fetching",
+      "api": "API",
+      "translation": "Translation"
+    },
+    "source": {
+      "stored": "Source: stored",
+      "env": "Source: environment",
+      "lastGood": "Source: last good value"
+    },
+    "defaultValue": "Default: {{value}}",
+    "defaultUnknown": "not known",
+    "on": "on",
+    "off": "off",
+    "models": "fast {{fast}}, strong {{strong}}",
+    "limits": "{{timeoutMs}} ms, {{megabytes}} MB",
+    "reset": "Reset {{key}}",
+    "ack": {
+      "title": "This change re-enriches the corpus",
+      "body": "{{key}} changes from {{from}} to {{to}}. Every article is enriched and matched again, which uses the engine budget. Check the change against the golden set before you save it.",
+      "checkbox": "I ran eval replay and it passed",
+      "confirm": "Confirm and save",
+      "cancel": "Cancel"
+    },
+    "workers": {
+      "title": "Applied by workers",
+      "live_one": "{{count}} live worker",
+      "live_other": "{{count}} live workers",
+      "none": "No live workers",
+      "pendingRestart": "Pending restart: {{pending}} of {{total}} workers",
+      "problem": "Rejected by worker: {{message}}"
     }
   },
   "providers": {

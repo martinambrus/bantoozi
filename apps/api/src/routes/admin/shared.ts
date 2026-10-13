@@ -92,6 +92,48 @@ export async function freshWorkerKeyrings(
   return result;
 }
 
+export interface WorkerRuntimeStatus {
+  processId: string;
+  at: string;
+  pendingRestart: boolean;
+  problems: { key: string; message: string }[];
+}
+
+/**
+ * The runtime status each fresh worker reports (`runtime.pendingRestart`, `runtime.problems`,
+ * M8b-T5), by process id. Malformed fields count as nothing to report.
+ */
+export async function freshWorkerStatuses(db: Executor, now: Date): Promise<WorkerRuntimeStatus[]> {
+  let stored: unknown;
+  try {
+    stored = await readStoredSetting(db, 'worker.heartbeat');
+  } catch {
+    return [];
+  }
+  if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return [];
+  const result: WorkerRuntimeStatus[] = [];
+  for (const [processId, entry] of Object.entries(stored as Record<string, unknown>)) {
+    const parsed = WorkerHeartbeatSchema.safeParse({ [processId]: entry });
+    const value = parsed.success ? parsed.data[processId] : undefined;
+    if (value === undefined) continue;
+    const age = now.getTime() - Date.parse(value.at);
+    if (!Number.isFinite(age) || age > HEARTBEAT_FRESH_MS || age < -HEARTBEAT_FRESH_MS) continue;
+    const rawProblems = value.runtime?.['problems'];
+    const problems = (Array.isArray(rawProblems) ? rawProblems : []).flatMap((item) => {
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) return [];
+      const { key, message } = item as Record<string, unknown>;
+      return typeof key === 'string' && typeof message === 'string' ? [{ key, message }] : [];
+    });
+    result.push({
+      processId,
+      at: value.at,
+      pendingRestart: value.runtime?.['pendingRestart'] === true,
+      problems,
+    });
+  }
+  return result.sort((a, b) => a.processId.localeCompare(b.processId));
+}
+
 /**
  * The environment defaults the fresh workers report in `runtime.defaults` (`{settingKey: value}`,
  * M8b-T5); the most recent fresh heartbeat wins per key. Malformed rows count as no defaults.

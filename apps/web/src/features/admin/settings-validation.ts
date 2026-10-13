@@ -20,7 +20,7 @@ function issuesOf(error: unknown): readonly Issue[] | null {
 }
 
 /** The first few problems of a rejected value, each with the place it is found at. */
-function describeIssues(issues: readonly Issue[]): string {
+export function describeIssues(issues: readonly Issue[]): string {
   return issues
     .slice(0, 3)
     .map((issue) =>

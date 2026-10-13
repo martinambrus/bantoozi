@@ -20,7 +20,7 @@ import { Time } from './format.js';
 import { checkSetting } from './settings-validation.js';
 import { conflictReason } from './use-admin.js';
 
-function saveError(t: TFunction, error: unknown): string {
+export function saveError(t: TFunction, error: unknown): string {
   if (isApiError(error)) {
     const reason = error.details?.['reason'];
     if (error.status === 503 && error.details?.['engine'] === 'libretranslate') {
@@ -37,6 +37,10 @@ function saveError(t: TFunction, error: unknown): string {
     if (error.status === 400) {
       const key = error.details?.['key'];
       if (key === 'ranker.thresholds') return t('settings.errors.rankerRejected');
+      if (typeof key === 'string' && key !== 'question_sets.active') {
+        const why = error.details?.['message'] ?? reason;
+        return t('settings.errors.rejected', { reason: typeof why === 'string' ? why : 'invalid' });
+      }
       if (key === 'question_sets.active') {
         return t('settings.errors.unknownQuestionSet', { kind: String(error.details?.['kind']) });
       }

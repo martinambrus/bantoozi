@@ -146,6 +146,7 @@ export function makeSettings(over: Partial<AdminSettings> = {}): AdminSettings {
     rankerSettingsVersion: 3,
     sources: {},
     defaults: {},
+    workers: [],
     ...over,
   };
 }

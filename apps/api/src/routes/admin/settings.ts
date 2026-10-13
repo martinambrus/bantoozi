@@ -44,6 +44,7 @@ import type { ApiConfig } from '../../context.js';
 import {
   auditLog,
   freshWorkerRuntimeDefaults,
+  freshWorkerStatuses,
   freshWorkers,
   iso,
   layaConsumerPresent,
@@ -195,6 +196,7 @@ async function loadSettings(db: Executor, deps: SettingsDeps, now: Date): Promis
     rankerSettingsVersion: version,
     sources: runtime.sources,
     defaults: runtime.defaults,
+    workers: await freshWorkerStatuses(db, now),
   };
 }
 
