@@ -27,7 +27,7 @@ export interface EnvInitResult {
 }
 
 const isBlank = (value: string | undefined): boolean =>
-  value === undefined || value === '' || value.startsWith('change-me');
+  value === undefined || value === '' || value.startsWith('change-me') || value.startsWith('changeme');
 
 const rand = (bytes: number): string => randomBytes(bytes).toString('base64url');
 
@@ -122,7 +122,7 @@ export async function initEnv(options: EnvInitOptions): Promise<EnvInitResult> {
       'BANTOOZI_APP_PASSWORD',
       'BANTOOZI_WORKER_PASSWORD',
     ]) {
-      if (env.get(name) === '') fill(name, rand(24));
+      if (isBlank(env.get(name))) fill(name, rand(24));
     }
   }
 

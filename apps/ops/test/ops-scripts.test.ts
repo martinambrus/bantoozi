@@ -304,6 +304,38 @@ describe('compose stack for the backup tooling', () => {
   });
 });
 
+describe('production env template and placeholders (M8b-T12)', () => {
+  it('ships empty role passwords and ADMIN_EMAILS, and deploy.sh treats changeme values as placeholders', () => {
+    const template = read('infra/env/prod.example.env');
+    for (const key of [
+      'POSTGRES_PASSWORD',
+      'BANTOOZI_OWNER_PASSWORD',
+      'BANTOOZI_APP_PASSWORD',
+      'BANTOOZI_WORKER_PASSWORD',
+      'ADMIN_EMAILS',
+    ]) {
+      expect(template).toMatch(new RegExp(`^${key}=$`, 'mu'));
+    }
+    const deploy = read('infra/scripts/deploy.sh');
+    const patterns = deploy.match(/case "\$val" in ([^)]*)\)/u)?.[1] ?? '';
+    expect(patterns).toContain('changeme*');
+    expect(patterns).toContain('change-me*');
+  });
+
+  it('passes PROVIDER_HOST_ALLOWLIST to the api and the workers and WORKER_SELF_RESTART to the workers', () => {
+    const compose = read('infra/compose.yml');
+    const workerEnv = compose.slice(
+      compose.indexOf('x-worker-env:'),
+      compose.indexOf('\n\n', compose.indexOf('x-worker-env:')),
+    );
+    expect(workerEnv).toContain('PROVIDER_HOST_ALLOWLIST: ${PROVIDER_HOST_ALLOWLIST:-}');
+    expect(workerEnv).toContain('WORKER_SELF_RESTART: ${WORKER_SELF_RESTART:-true}');
+    expect(
+      compose.match(/PROVIDER_HOST_ALLOWLIST: \$\{PROVIDER_HOST_ALLOWLIST:-\}/gu),
+    ).toHaveLength(2);
+  });
+});
+
 describe('deploy refuses the laya profile until M9', () => {
   it('stops before any backup or migration when COMPOSE_PROFILES includes laya', () => {
     const script = read('infra/scripts/deploy.sh');

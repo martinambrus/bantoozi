@@ -288,6 +288,16 @@ describe('env:init (M8b-T8)', () => {
     expect(v.BANTOOZI_APP_PASSWORD).toBe('already-real-password');
   });
 
+  it('--production replaces changeme placeholder role passwords (older prod.example.env)', () => {
+    writeFileSync(
+      join(dir, '.env'),
+      TEMPLATE.replace('POSTGRES_PASSWORD=postgres', 'POSTGRES_PASSWORD=changeme0postgres0pw0000'),
+    );
+    run(['--production']);
+    expect(vars().POSTGRES_PASSWORD).not.toMatch(/^changeme/u);
+    expect(vars().POSTGRES_PASSWORD!.length).toBeGreaterThanOrEqual(24);
+  });
+
   it('leaves the dev database passwords untouched without --production', () => {
     writeFileSync(
       join(dir, '.env'),
