@@ -697,6 +697,27 @@ ranking until enough compatible feedback exists.
   activation also enqueues `user.suggest`. A failure to train must not suppress future retries after
   new evidence arrives.
 
+### 8.5 Learning status and feed agreement (read-only, D-236, D-237)
+
+`GET /me/learning` (spec 08 §3) reports, computed live from the same samples and eligibility as the
+trainer (`eligibleRows`, `learningCounts`): the effective activation thresholds, the current
+eligible explicit counts, the active model (version, `trained_at`), the newest non-superseded
+attempt with its rejection reasons, and a deactivation when no model is active. It writes nothing.
+
+**Feed agreement** (`feedAgreement`, `packages/ranker/src/learn/agreement.ts`) answers, for each
+subscription in `training` mode, whether the interest cards already sort that feed the way the user
+does. It uses the user's eligible explicit ratings whose event-time snapshot was classified for the
+feed (`sourceManifest.inferenceFeedIds`, else `values.sourceFeedId`), scores each with the
+trainer's cards-only baseline (`baselineScore`), and computes the AUC and the 95% grouped-bootstrap
+lower bound (`groupedBootstrapCi`, story-cluster groups, seed `agreement|user|feed`). Status:
+`one_sided` when there are ≥ 10 ratings and the smaller class is < 15 %; `collecting` while likes or
+dislikes are < 3; `ready` when the lower bound is ≥ `model.minCvAuc`; else `not_yet`
+(`FEED_AGREEMENT`). No fixed rating count: how many ratings it takes follows from how clearly the
+cards agree. It only informs an explicit offer in the UI; it never changes `inference_mode` (§8.3
+"no learned-model threshold changes that mode" still holds). `pnpm evaluate agreement-replay`
+replays the rule on the G1 golden ratings (rating count to `ready`, and the cards' AUC on the
+feed's later ratings as the false-alarm check) to tune `FEED_AGREEMENT`.
+
 ---
 
 ## 9. Degraded ranking (BM25)

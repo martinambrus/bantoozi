@@ -333,6 +333,11 @@ When the page becomes visible again after `/open`:
 - **List:** folders (drag to reorder → `preferences.folderOrder`; rename → `POST /subscriptions/folders/rename`), feeds with their health status, last success, error
   text, and a per-feed settings drawer (title override, folder, allow duplicates, hide from sidebar,
   image override, inference mode, unsubscribe).
+- **Feed agreement (D-236):** for a Training feed the settings drawer shows its agreement line from
+  `GET /me/learning` (still collecting, agrees, not enough agreement, or one-sided). Only when it is
+  `ready` does the sidebar show "Ready for automatic" with an Enable button under the feed's badge;
+  Enable opens a confirmation with the evidence in words and the feed's new articles per week, and
+  only the confirmation switches the feed to Active. Nothing switches on its own.
 - **Classification controls:** Off → explicit Training enables only the selection UI; the user then
   requests analysis for particular articles. "Enable automatic classification" explicitly sets
   Active for new arrivals and shows the activation time. Switching back to Training/Off stops new
@@ -384,7 +389,8 @@ When the page becomes visible again after `/open`:
 ## 7. Settings
 
 Profile (name, language, timezone, theme → `preferences.theme`) · Reading preferences (all fields of spec 08 §3.1 with
-explanations) · Sessions (devices, revoke) · Invites (left, create, list, copy link) · Export data ·
+explanations) · Personal learning (`GET /me/learning`: ratings, likes and dislikes against the
+activation thresholds, "Active since", or the last attempt's reasons in words; D-237) · Sessions (devices, revoke) · Invites (left, create, list, copy link) · Export data ·
 Delete account (typed confirmation).
 Only one tab or window of an account edits the reading preferences at a time (a per-account Web
 Lock held while the section is on screen): another one shows that they are being adjusted

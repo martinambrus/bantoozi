@@ -2231,3 +2231,16 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   classification, a problem state and the count, and a dot marks unread. The feed filter and folder links are left
   out of the strip; feeds keep the folder order. The choice is per device (localStorage
   `bantoozi:sidebar-collapsed`), not an account preference. Spec 09 §3.1 updated.
+- D-236: 2026-10-14 (owner request) — Feed agreement: a visible, evidence-based offer to enable automatic
+  classification. Spec 08 §4.1 / 09 §4 keep Active an explicit choice with no hidden rating threshold; the owner wanted
+  to know when a Training feed is ready. For each Training feed the ranker compares the cards-only baseline score with
+  the user's eligible explicit ratings of that feed's analysed articles: AUC with a 95% grouped-bootstrap lower bound
+  ≥ `model.minCvAuc` (the personal model's own floor) and ≥ 3 likes and 3 dislikes (`FEED_AGREEMENT`, also a
+  one-sided state at ≥ 10 ratings with < 15 % minority). No fixed count: agreement decides how many ratings it takes.
+  The sidebar offers "Ready for automatic" + Enable only in that state, behind a confirmation; nothing switches by
+  itself. `pnpm evaluate agreement-replay` benchmarks the rule on the G1 ratings before tuning. Spec 06 §8.5, 08 §3,
+  09 §5.
+- D-237: 2026-10-14 (owner request) — Personal learning status: `GET /me/learning` (read-only, live, same eligibility as
+  the trainer) and a Settings section showing progress toward the activation thresholds, the active model's date and
+  version, or why the last attempt did not activate (reason codes in words). The personal model still activates by
+  itself (spec 06 §8.3); this only makes it visible. No migration. Spec 06 §8.5, 08 §3, 09 §7.
