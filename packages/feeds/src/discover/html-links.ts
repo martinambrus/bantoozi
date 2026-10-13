@@ -73,3 +73,61 @@ function documentBase(document: LinkDocument, documentUrl: string): string {
     ? base.href
     : documentUrl;
 }
+
+/** A feed-looking `<a href>` of an HTML page (spec 03 §10 step 3). Not proof: it is fetched and parsed. */
+export interface AnchorFeedLink {
+  /** The `href`, resolved against the document base URL; not validated yet. */
+  url: string;
+  /** The cleaned anchor text or `title` attribute, or `null`. */
+  title: string | null;
+}
+
+interface AnchorElement extends LinkElement {
+  textContent: string | null;
+}
+
+interface AnchorDocument {
+  querySelector(selectors: string): LinkElement | null;
+  querySelectorAll(selectors: string): Iterable<AnchorElement>;
+}
+
+/** Path extensions that mark a feed document. */
+const FEED_EXTENSION = /\.(rss|rdf|atom|xml)$/i;
+/**
+ * `feed`, `rss`, `rdf` or `atom` as a whole word of the path or query (`/rss.php?rub=au`,
+ * `/feed/`, `?format=atom`), so `/feedback` and `/atomic` do not match.
+ */
+const FEED_WORD = /(^|[^a-z0-9])(feed|rss|rdf|atom)([^a-z0-9]|$)/i;
+
+/**
+ * Feed-looking `<a href>` links of an HTML document, for pages that name their feed only in the
+ * body (`<a href="/rss.php?rub=au">RSS</a>`), as the FeedIt prototype's SimplePie locator does.
+ * Only http(s) links qualify, whose path ends in `.rss`/`.rdf`/`.atom`/`.xml` or whose path or
+ * query contains a feed word. Order: same host before other hosts, then a feed extension before a
+ * feed word, then document order; duplicates and the document itself are dropped. The caller
+ * fetches and parses every link it keeps.
+ */
+export function findAnchorFeeds(html: string, documentUrl: string): AnchorFeedLink[] {
+  const { document } = parseHTML(html) as unknown as { document: AnchorDocument };
+  const base = documentBase(document, documentUrl);
+  const host = URL.parse(documentUrl)?.host;
+  const seen = new Set<string>([documentUrl]);
+  const ranked: Array<{ rank: number; link: AnchorFeedLink }> = [];
+  for (const element of document.querySelectorAll('a[href]')) {
+    const href = (element.getAttribute('href') ?? '').trim();
+    if (href === '' || href.startsWith('#')) continue;
+    const url = URL.parse(href, base);
+    if (url === null || (url.protocol !== 'http:' && url.protocol !== 'https:')) continue;
+    url.hash = '';
+    const extension = FEED_EXTENSION.test(url.pathname);
+    if (!extension && !FEED_WORD.test(url.pathname + url.search)) continue;
+    if (seen.has(url.href)) continue;
+    seen.add(url.href);
+    const label = cleanLabel(element.textContent) ?? cleanLabel(element.getAttribute('title'));
+    ranked.push({
+      rank: (url.host === host ? 0 : 2) + (extension ? 0 : 1),
+      link: { url: url.href, title: label },
+    });
+  }
+  return ranked.sort((a, b) => a.rank - b.rank).map((entry) => entry.link);
+}

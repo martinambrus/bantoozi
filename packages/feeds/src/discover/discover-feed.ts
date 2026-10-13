@@ -8,7 +8,7 @@ import type {
 import { sniffFeed, type FeedKind, type ParseFeedResult, type ParsedFeed } from '../parse/index.js';
 
 import { validateFeedUrl, type FeedUrlCheck, type FeedUrlRejection } from './feed-url.js';
-import { findAlternateFeeds, type AlternateFeedLink } from './html-links.js';
+import { findAlternateFeeds, findAnchorFeeds, type AlternateFeedLink } from './html-links.js';
 import { cleanLabel } from './text.js';
 
 /** One deadline shared by every request of a discovery, redirects included (spec 03 §10 step 6). */
@@ -28,6 +28,9 @@ export const FEED_PROBE_PATHS: readonly string[] = Object.freeze([
   '/feed.xml',
   '/index.xml',
 ]);
+
+/** Feed-looking `<a>` links fetched when a page declares no feed (spec 03 §10 step 3, D-230). */
+export const DISCOVERY_MAX_ANCHOR_CANDIDATES = 5;
 
 /** `safeFetch` follows at most this many redirects per fetch (spec 03 §4.3). */
 const MAX_REDIRECTS_PER_FETCH = 5;
@@ -253,10 +256,10 @@ class Discovery {
     const finalIdentity = canonicalizeUrl(response.finalUrl);
     if (finalIdentity.ok) tried.add(finalIdentity.url);
 
-    const links = findAlternateFeeds(decoded.text, response.finalUrl);
-    const alternates = this.queue(prioritized(links), tried);
-    const verifications = await this.verifyAll(alternates, false);
-    let feeds = feedsOf(verifications);
+    const verifications: Verification[] = [];
+    let feeds = await this.verifyPageLinks(decoded.text, response.finalUrl, tried, verifications);
+    if (feeds.length === 0)
+      feeds = await this.fromOriginRoot(response.finalUrl, tried, verifications);
     if (feeds.length === 0) {
       const probes = this.queue(probeLinks(response.finalUrl), tried);
       const probeVerifications = await this.verifyAll(probes, true);
@@ -266,11 +269,73 @@ class Discovery {
     return feeds.length > 0 ? conclude(feeds) : this.noFeed(verifications);
   }
 
-  /** Validated, not yet tried links, in order, at most {@link DISCOVERY_MAX_CANDIDATES}. */
-  private queue(links: readonly CandidateLink[], tried: Set<string>): QueueItem[] {
+  /**
+   * Verifies the feeds an HTML page declares (`<link rel="alternate">`) and, when none verifies,
+   * its feed-looking anchors (D-230). Every verification is appended to `verifications`.
+   */
+  private async verifyPageLinks(
+    html: string,
+    pageUrl: string,
+    tried: Set<string>,
+    verifications: Verification[],
+  ): Promise<VerifiedFeed[]> {
+    const alternates = this.queue(prioritized(findAlternateFeeds(html, pageUrl)), tried);
+    const declared = await this.verifyAll(alternates, false);
+    verifications.push(...declared);
+    const feeds = feedsOf(declared);
+    if (feeds.length > 0) return feeds;
+    const anchors = this.queue(
+      findAnchorFeeds(html, pageUrl),
+      tried,
+      DISCOVERY_MAX_ANCHOR_CANDIDATES,
+    );
+    const anchored = await this.verifyAll(anchors, false);
+    verifications.push(...anchored);
+    return feedsOf(anchored);
+  }
+
+  /**
+   * A deep page (an article, a category) often declares no feed while the site's front page does:
+   * the origin root is fetched once and read like the page itself (D-230, as FeedIt does).
+   */
+  private async fromOriginRoot(
+    pageUrl: string,
+    tried: Set<string>,
+    verifications: Verification[],
+  ): Promise<VerifiedFeed[]> {
+    const page = new URL(pageUrl);
+    const root = new URL('/', page).href;
+    if (page.pathname === '/' && page.search === '') return [];
+    const accepted = this.accept(root);
+    if (!accepted.ok || tried.has(accepted.canonicalUrl) || !this.canStart()) return [];
+    tried.add(accepted.canonicalUrl);
+    const response = await this.fetch(accepted.fetchUrl, 'feed');
+    if (!response.ok) {
+      verifications.push({ kind: 'failed', failure: response });
+      return [];
+    }
+    const contentType = response.headers['content-type'];
+    const decoded = this.deps.decode(response.bodyBytes, contentType);
+    if (!decoded.ok) return [];
+    const parsed = await this.parse(decoded.text, response.finalUrl, contentType);
+    if (parsed.ok) return [this.verified(accepted, response, parsed, null)];
+    if (sniffFeed(decoded.text, contentType) !== 'html') return [];
+    return this.verifyPageLinks(decoded.text, response.finalUrl, tried, verifications);
+  }
+
+  /**
+   * Validated, not yet tried links, in order, at most `limit` (default
+   * {@link DISCOVERY_MAX_CANDIDATES}); the limit counts accepted links, so rejected and duplicate
+   * ones never use it up.
+   */
+  private queue(
+    links: readonly CandidateLink[],
+    tried: Set<string>,
+    limit = DISCOVERY_MAX_CANDIDATES,
+  ): QueueItem[] {
     const items: QueueItem[] = [];
     for (const link of links) {
-      if (items.length >= DISCOVERY_MAX_CANDIDATES) break;
+      if (items.length >= limit) break;
       const accepted = this.accept(link.url);
       if (!accepted.ok || tried.has(accepted.canonicalUrl)) continue;
       tried.add(accepted.canonicalUrl);
