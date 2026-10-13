@@ -792,4 +792,20 @@ describe('discoverFeed: feed anchors in the page body', () => {
     expect(result.candidates.map((candidate) => candidate.title)).toEqual(['Whole site']);
     expect(web.urls()).toEqual([`${SITE}/posts/hello`, `${SITE}/`, `${SITE}/site.xml`]);
   });
+
+  it('counts the anchor cap after validation and deduplication', async () => {
+    const tracked = Array.from(
+      { length: 6 },
+      (_, i) => `<a href="/feed?utm_source=n${i}">tracked</a>`,
+    ).join('');
+    const web = new FakeWeb()
+      .route(`${SITE}/`, {
+        body: htmlPage('', `${tracked}<a href="/rss/main">Real</a>`),
+        contentType: HTML,
+      })
+      .route(`${SITE}/feed`, { body: htmlPage(), contentType: HTML })
+      .route(`${SITE}/rss/main`, { body: rss('Real feed') });
+    const result = success(await discoverFeed(`${SITE}/`, web.deps()));
+    expect(result.candidates.map((candidate) => candidate.title)).toEqual(['Real feed']);
+  });
 });

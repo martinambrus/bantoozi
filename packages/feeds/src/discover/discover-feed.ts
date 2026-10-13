@@ -284,8 +284,11 @@ class Discovery {
     verifications.push(...declared);
     const feeds = feedsOf(declared);
     if (feeds.length > 0) return feeds;
-    const anchorLinks = findAnchorFeeds(html, pageUrl).slice(0, DISCOVERY_MAX_ANCHOR_CANDIDATES);
-    const anchors = this.queue(anchorLinks, tried);
+    const anchors = this.queue(
+      findAnchorFeeds(html, pageUrl),
+      tried,
+      DISCOVERY_MAX_ANCHOR_CANDIDATES,
+    );
     const anchored = await this.verifyAll(anchors, false);
     verifications.push(...anchored);
     return feedsOf(anchored);
@@ -320,11 +323,19 @@ class Discovery {
     return this.verifyPageLinks(decoded.text, response.finalUrl, tried, verifications);
   }
 
-  /** Validated, not yet tried links, in order, at most {@link DISCOVERY_MAX_CANDIDATES}. */
-  private queue(links: readonly CandidateLink[], tried: Set<string>): QueueItem[] {
+  /**
+   * Validated, not yet tried links, in order, at most `limit` (default
+   * {@link DISCOVERY_MAX_CANDIDATES}); the limit counts accepted links, so rejected and duplicate
+   * ones never use it up.
+   */
+  private queue(
+    links: readonly CandidateLink[],
+    tried: Set<string>,
+    limit = DISCOVERY_MAX_CANDIDATES,
+  ): QueueItem[] {
     const items: QueueItem[] = [];
     for (const link of links) {
-      if (items.length >= DISCOVERY_MAX_CANDIDATES) break;
+      if (items.length >= limit) break;
       const accepted = this.accept(link.url);
       if (!accepted.ok || tried.has(accepted.canonicalUrl)) continue;
       tried.add(accepted.canonicalUrl);
