@@ -32,6 +32,14 @@ function createIcon(displayName: string, shapes: ReactNode) {
 
 export const MenuIcon = createIcon('MenuIcon', <path d="M4 6h16M4 12h16M4 18h16" />);
 
+export const FeedIcon = createIcon(
+  'FeedIcon',
+  <>
+    <path d="M5 5a14 14 0 0 1 14 14M5 11a8 8 0 0 1 8 8" />
+    <circle cx="6" cy="18" r="1" />
+  </>,
+);
+
 export const CloseIcon = createIcon('CloseIcon', <path d="M6 6l12 12M18 6L6 18" />);
 
 export const CheckIcon = createIcon('CheckIcon', <path d="M5 12.5l4.5 4.5L19 7.5" />);

@@ -242,6 +242,7 @@ test('remembered images: the feed choice beats the global setting and outlives t
 
   await test.step('Use global setting follows the global value in both directions', async () => {
     const pane = articlePane(page);
+    await pane.getByRole('button', { name: 'Change', exact: true }).click();
     await pane.getByRole('button', { name: 'Use global setting' }).click();
     await expect(page.getByText('Image setting saved')).toBeVisible();
     await expect(pane.getByText(NOT_LOADED)).toHaveCount(0);

@@ -11,7 +11,7 @@ import { IconButton } from '../../components/icon-button.js';
 import {
   ChevronDownIcon,
   ChevronRightIcon,
-  MenuIcon,
+  FeedIcon,
   WarningIcon,
 } from '../../components/icons.js';
 import { useOnline } from '../../components/states/use-online.js';
@@ -92,6 +92,15 @@ function EverythingRow({ counts, onNavigate }: Omit<LaneLinkProps, 'lane'>) {
   const [open, setOpen] = useEverythingOpen();
   return (
     <li className="flex items-center gap-1">
+      <div className="min-w-0 flex-1">
+        {open ? (
+          <LaneLink lane="everything" counts={counts} onNavigate={onNavigate} />
+        ) : (
+          <span className="flex min-h-11 items-center px-3 text-sm font-medium text-slate-600 dark:text-slate-300">
+            {t('lanes.everything')}
+          </span>
+        )}
+      </div>
       <button
         type="button"
         aria-expanded={open}
@@ -104,15 +113,6 @@ function EverythingRow({ counts, onNavigate }: Omit<LaneLinkProps, 'lane'>) {
       >
         {open ? <ChevronDownIcon className="size-4" /> : <ChevronRightIcon className="size-4" />}
       </button>
-      {open ? (
-        <div className="min-w-0 flex-1">
-          <LaneLink lane="everything" counts={counts} onNavigate={onNavigate} />
-        </div>
-      ) : (
-        <span className="px-1 text-sm font-medium text-slate-600 dark:text-slate-300">
-          {t('lanes.everything')}
-        </span>
-      )}
     </li>
   );
 }
@@ -202,6 +202,7 @@ function FeedLink({
           <span className="truncate">{displayTitle(subscription)}</span>
           <Count label={t('sidebar.unread')} value={unreadOf(subscription)} />
         </Link>
+        <ClassificationBadge mode={subscription.inferenceMode} />
         {feed.status === 'quarantined' ? (
           <span
             role="img"
@@ -212,9 +213,6 @@ function FeedLink({
           </span>
         ) : null}
       </div>
-      <p className="px-4 pb-1">
-        <ClassificationBadge mode={subscription.inferenceMode} />
-      </p>
     </li>
   );
 }
@@ -418,12 +416,12 @@ export function LaneSwitcher({
       className="flex items-center gap-1 border-b border-slate-200 px-2 py-1 dark:border-slate-800"
     >
       <IconButton label={t('topBar.browse')} aria-haspopup="dialog" onClick={onBrowse}>
-        <MenuIcon />
+        <FeedIcon />
       </IconButton>
       <LaneList
         counts={counts}
         foldable={false}
-        className="relative flex min-w-0 flex-1 gap-1 overflow-x-auto"
+        className="relative flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       />
     </nav>
   );

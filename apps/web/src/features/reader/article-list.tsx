@@ -231,7 +231,7 @@ export function ArticleList({
                 key={item.id}
                 data-article-id={item.id}
                 className={cx(
-                  'rounded-xl transition-all duration-400 motion-reduce:transition-none',
+                  'rounded-xl transition-[transform,opacity] duration-400 motion-reduce:transition-none',
                   item.id === expandedId && 'ring-2 ring-indigo-600 dark:ring-indigo-300',
                   leaving.has(item.id) && 'pointer-events-none -translate-x-4 opacity-0',
                 )}

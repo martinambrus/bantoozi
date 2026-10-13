@@ -430,6 +430,7 @@ describe('icons', () => {
     'BookmarkFilledIcon',
     'TagIcon',
     'EyeOffIcon',
+    'FeedIcon',
     'UndoIcon',
     'InfoIcon',
     'WarningIcon',
