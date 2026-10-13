@@ -43,7 +43,7 @@ function LabelTrigger({ articleId, ...trigger }: MenuTriggerProps & { articleId:
   }, [request, articleId, ref]);
 
   return (
-    <Button {...trigger} variant="secondary">
+    <Button {...trigger} variant="ghost">
       <TagIcon className="size-4" />
       {t('detail.labels')}
     </Button>
@@ -118,14 +118,14 @@ export function DetailActions({ item, actions, onWhyThis }: DetailActionsProps) 
       <BookmarkButton bookmarked={item.bookmarkedAt !== null} onToggle={actions.toggleBookmark} />
       <LabelMenu item={item} actions={actions} />
       {onWhyThis === undefined ? null : (
-        <Button variant="secondary" onClick={onWhyThis}>
+        <Button variant="ghost" onClick={onWhyThis}>
           <InfoIcon className="size-4" />
           {t('detail.whyThis')}
         </Button>
       )}
       <Menu
         trigger={(props) => (
-          <Button {...props} variant="secondary" loading={rules.pending}>
+          <Button {...props} variant="ghost" loading={rules.pending}>
             <EyeOffIcon className="size-4" />
             {t('detail.muteStory')}
             <ChevronDownIcon className="size-4" />
@@ -142,7 +142,7 @@ export function DetailActions({ item, actions, onWhyThis }: DetailActionsProps) 
         <Menu
           align="end"
           trigger={(props) => (
-            <Button {...props} variant="secondary" loading={rules.pending}>
+            <Button {...props} variant="ghost" loading={rules.pending}>
               <MoreIcon className="size-4" />
               {t('common:actions.more')}
             </Button>

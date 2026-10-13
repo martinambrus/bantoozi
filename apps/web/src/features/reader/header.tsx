@@ -150,7 +150,7 @@ export function ReaderHeader({
             {t('header.rankingPending')}
           </p>
         ) : null}
-        <div className="ms-auto flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:ms-auto sm:w-auto">
           <Button variant="secondary" loading={refreshing} onClick={refresh}>
             <RefreshIcon className="size-4" />
             {t('header.refresh')}

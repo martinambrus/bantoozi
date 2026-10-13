@@ -104,6 +104,7 @@
     "allow": "Vždy zobrazovať obrázky z tohto zdroja",
     "block": "Vždy blokovať",
     "inherit": "Použiť globálne nastavenie",
+    "change": "Zmeniť",
     "saved": "Nastavenie obrázkov je uložené"
   },
   "reasonBar": {

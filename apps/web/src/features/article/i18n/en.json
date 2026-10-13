@@ -98,6 +98,7 @@
     "allow": "Always show images from this feed",
     "block": "Always block",
     "inherit": "Use global setting",
+    "change": "Change",
     "saved": "Image setting saved"
   },
   "reasonBar": {

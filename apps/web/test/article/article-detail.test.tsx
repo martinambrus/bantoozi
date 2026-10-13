@@ -1175,12 +1175,24 @@ describe('ArticleDetail image setting', () => {
       },
     );
     expect(await screen.findByText("Images from this feed aren't loaded.")).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Change' }));
     await user.click(screen.getByRole('button', { name }));
 
     await waitFor(() => expect(calls('PUT', '/feed-preferences/7')).toHaveLength(1));
     expect(bodyOf(calls('PUT', '/feed-preferences/7')[0]!)).toEqual({ imagePolicy });
     expect(await findToast('Image setting saved')).toBeInTheDocument();
     await waitFor(() => expect(calls('GET', '/articles/101')).toHaveLength(2));
+  });
+
+  it('keeps the three choices behind one button until it is pressed', async () => {
+    const { user } = renderDetail(BLOCKED);
+    const change = await screen.findByRole('button', { name: 'Change' });
+    expect(change).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: 'Always block' })).toBeNull();
+
+    await user.click(change);
+    expect(change).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'Always block' })).toBeVisible();
   });
 
   it('is not offered while images are allowed', async () => {
@@ -1204,6 +1216,7 @@ describe('ArticleDetail image setting', () => {
         routes: { 'PUT /feed-preferences/:feedId': () => failure(500, 'INTERNAL') },
       },
     );
+    await user.click(await screen.findByRole('button', { name: 'Change' }));
     await user.click(await screen.findByRole('button', { name: 'Always block' }));
     expect(await findToast('Something went wrong on our side. Try again.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Always block' })).toBeEnabled();
@@ -1219,6 +1232,7 @@ describe('ArticleDetail image setting', () => {
         {},
         { routes: { 'PUT /feed-preferences/:feedId': () => answer.promise } },
       );
+      await user.click(await screen.findByRole('button', { name: 'Change' }));
       await user.click(await screen.findByRole('button', { name: 'Always block' }));
       await waitFor(() => expect(calls('PUT', '/feed-preferences/7')).toHaveLength(1));
 
@@ -1239,6 +1253,7 @@ describe('ArticleDetail image setting', () => {
         {},
         { routes: { 'PUT /feed-preferences/:feedId': () => answer.promise } },
       );
+      await user.click(await screen.findByRole('button', { name: 'Change' }));
       await user.click(await screen.findByRole('button', { name: 'Always block' }));
       await waitFor(() => expect(calls('PUT', '/feed-preferences/7')).toHaveLength(1));
 
