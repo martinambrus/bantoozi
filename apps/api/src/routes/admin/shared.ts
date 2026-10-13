@@ -56,6 +56,43 @@ export async function freshWorkers(db: Executor, now: Date): Promise<FreshWorker
   return workers;
 }
 
+/**
+ * The environment defaults the fresh workers report in `runtime.defaults` (`{settingKey: value}`,
+ * M8b-T5); the most recent fresh heartbeat wins per key. Malformed rows count as no defaults.
+ */
+export async function freshWorkerRuntimeDefaults(
+  db: Executor,
+  now: Date,
+): Promise<Map<string, unknown>> {
+  const result = new Map<string, unknown>();
+  let stored: unknown;
+  try {
+    stored = await readStoredSetting(db, 'worker.heartbeat');
+  } catch {
+    return result;
+  }
+  if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return result;
+  const beats: { at: number; defaults: Record<string, unknown> }[] = [];
+  for (const [processId, entry] of Object.entries(stored as Record<string, unknown>)) {
+    const parsed = WorkerHeartbeatSchema.safeParse({ [processId]: entry });
+    const value = parsed.success ? parsed.data[processId] : undefined;
+    if (value === undefined) continue;
+    const at = Date.parse(value.at);
+    const age = now.getTime() - at;
+    if (!Number.isFinite(age) || age > HEARTBEAT_FRESH_MS || age < -HEARTBEAT_FRESH_MS) continue;
+    const defaults = value.runtime?.defaults;
+    if (defaults === null || typeof defaults !== 'object' || Array.isArray(defaults)) continue;
+    beats.push({ at, defaults: defaults as Record<string, unknown> });
+  }
+  beats.sort((a, b) => b.at - a.at);
+  for (const beat of beats) {
+    for (const [key, value] of Object.entries(beat.defaults)) {
+      if (!result.has(key)) result.set(key, value);
+    }
+  }
+  return result;
+}
+
 /** Whether a fresh worker consumes both dedicated Laya queues (spec 08 §9 `engine.laya`). */
 export function layaConsumerPresent(workers: readonly FreshWorker[]): boolean {
   return workers.some((worker) => LAYA_QUEUES.every((queue) => worker.queues.includes(queue)));

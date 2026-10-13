@@ -159,6 +159,20 @@ describe('settings (spec 08 §9, spec 02 §2)', () => {
         'ranker.thresholds',
         'signup_mode',
         'translate.tier2_daily_cap',
+        // The live runtime keys (M8b-T2).
+        'engine.typesafe_model',
+        'engine.typesafe_base_url',
+        'engine.typesafe_price_per_mtok_usd',
+        'engine.concurrency',
+        'engine.llm_fallback_enabled',
+        'engine.ollama_models',
+        'engine.ollama_base_url',
+        'engine.ollama_max_concurrency',
+        'engine.prefilter_min_cards',
+        'ingest.max_age_days',
+        'fetch.limits',
+        'api.rate_limits_enabled',
+        'translate.libretranslate_url',
       ].sort(),
     );
     expect(body.values['engine.llm_daily_cap']).toBe(200);

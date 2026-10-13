@@ -34,14 +34,17 @@ export function AdminSettingsPage() {
    * can be older than the screen.
    */
   function adopt(key: AdminSettingKey, result: AdminSettingsPatchResult) {
-    const { values, stored, rankerSettingsVersion } = result;
+    const { values, stored, rankerSettingsVersion, sources, defaults } = result;
     writeQueryData<AdminSettings>(queryClient, adminKey('settings'), (current) => {
-      if (current === undefined) return { values, stored, rankerSettingsVersion };
+      if (current === undefined)
+        return { values, stored, rankerSettingsVersion, sources, defaults };
       const saved = stored.filter((entry) => entry.key === key);
       return {
         values: { ...current.values, [key]: values[key] },
         stored: [...current.stored.filter((entry) => entry.key !== key), ...saved],
         rankerSettingsVersion: Math.max(current.rankerSettingsVersion, rankerSettingsVersion),
+        sources: { ...current.sources, ...sources },
+        defaults: { ...current.defaults, ...defaults },
       };
     });
   }

@@ -171,8 +171,8 @@ const runtimeUrl = z
   }, 'must be an http(s) URL without credentials')
   .nullable();
 const noDefault = () => undefined;
-/** M8b-T2 adds `'admin'` to the writers of the live runtime keys (kept out of the patch list until then). */
-const runtimeWriters = [] as const;
+/** The live runtime keys are admin-writable (M8b-T2); `null` resets one to its environment value. */
+const runtimeWriters = ['admin'] as const;
 
 const closedBreaker: BreakerState = { state: 'closed', reopenCount: 0 };
 

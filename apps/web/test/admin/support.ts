@@ -124,6 +124,19 @@ export const SETTINGS_VALUES: AdminSettings['values'] = {
   'translate.tier2_daily_cap': 300,
   'question_sets.active': {},
   signup_mode: 'invite',
+  'engine.typesafe_model': 'jev-1.13.0',
+  'engine.typesafe_base_url': null,
+  'engine.typesafe_price_per_mtok_usd': null,
+  'engine.concurrency': null,
+  'engine.llm_fallback_enabled': null,
+  'engine.ollama_models': null,
+  'engine.ollama_base_url': null,
+  'engine.ollama_max_concurrency': null,
+  'engine.prefilter_min_cards': null,
+  'ingest.max_age_days': null,
+  'fetch.limits': null,
+  'api.rate_limits_enabled': null,
+  'translate.libretranslate_url': null,
 };
 
 export function makeSettings(over: Partial<AdminSettings> = {}): AdminSettings {
@@ -131,6 +144,8 @@ export function makeSettings(over: Partial<AdminSettings> = {}): AdminSettings {
     values: SETTINGS_VALUES,
     stored: [{ key: 'engine.daily_budget_usd', updatedAt: T1 }],
     rankerSettingsVersion: 3,
+    sources: {},
+    defaults: {},
     ...over,
   };
 }
