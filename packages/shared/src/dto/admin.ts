@@ -354,7 +354,7 @@ export const AdminUserSchema = z
     createdAt: IsoTimestampSchema,
     lastActiveAt: IsoTimestampSchema.nullable(),
     deletedAt: IsoTimestampSchema.nullable(),
-    /** Listed in `ADMIN_EMAILS`: a demotion lasts only until the next login (spec 08 §2.1). */
+    /** Listed in `ADMIN_EMAILS`: marks addresses made admin at account creation (bootstrap only; the role is stored and a demotion sticks, spec 08 §2.1). */
     adminBootstrap: z.boolean(),
   })
   .strict();

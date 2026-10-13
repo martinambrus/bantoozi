@@ -10,6 +10,8 @@ import {
   findUsableInvite,
   findUserByEmail,
   insertSignupUser,
+  activeAdminExists,
+  lockSetup,
   issueLoginCode,
   lockActiveLoginCode,
   lockAuthEmail,
@@ -342,7 +344,12 @@ export async function verifyLoginCode(
     }
     if (!(await consumeLoginCode(tx, challenge.id))) return fail;
 
-    const admin = isAdminEmail(config, email);
+    // ADMIN_EMAILS is bootstrap only (M8b-T7): a listed address becomes admin when its account is
+    // created, or at a login while no active admin exists. Decided under the setup lock so two
+    // concurrent bootstraps and the first-run setup cannot both pass the "no admin yet" check.
+    const listed = isAdminEmail(config, email);
+    if (listed) await lockSetup(tx);
+    let admin = listed;
     let userId: string;
     let restore = false;
     if (challenge.purpose === 'login') {
@@ -353,6 +360,7 @@ export async function verifyLoginCode(
       if (user === null || user.email !== email || !user.restorable) return fail;
       userId = user.id;
       restore = user.deletedAt !== null;
+      admin = listed && !(await activeAdminExists(tx));
     } else {
       if ((await findUserByEmail(tx, email)) !== null) return fail;
       const mode = await effectiveSignupMode(tx, config, log);
@@ -361,7 +369,7 @@ export async function verifyLoginCode(
         (await findUsableInvite(tx, { code: challenge.inviteCode, email, lock: true }))
           ? challenge.inviteCode
           : null;
-      const eligible = mode !== 'closed' && (admin || mode === 'open' || invite !== null);
+      const eligible = mode !== 'closed' && (listed || mode === 'open' || invite !== null);
       if (!eligible) return fail;
       userId = newUserId();
       const inserted = await insertSignupUser(tx, {

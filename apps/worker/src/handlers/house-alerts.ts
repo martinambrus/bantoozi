@@ -1,4 +1,9 @@
-import { readStoredSetting, retryTransaction, updateSettingLocked } from '@bantoozi/db';
+import {
+  activeAdminEmails,
+  readStoredSetting,
+  retryTransaction,
+  updateSettingLocked,
+} from '@bantoozi/db';
 import { parseSetting } from '@bantoozi/shared';
 import type { EmailMessage, Mailer } from '@bantoozi/shared/server';
 
@@ -26,6 +31,23 @@ import type { QueueHandler } from './index.js';
 
 const JOB = 'house.alerts' as const;
 
+/**
+ * Alert recipients (M8b-T7): the active admins in the database; `ADMIN_EMAILS` only while there is
+ * none. A failed lookup also falls back to the list rather than dropping the alerts.
+ */
+async function alertRecipients(deps: WorkerDeps): Promise<readonly string[]> {
+  try {
+    const emails = await activeAdminEmails(deps.db);
+    if (emails.length > 0) return emails;
+  } catch (error) {
+    deps.logger.warn(
+      { job: JOB, error: safeText(error instanceof Error ? error.message : error, 200) },
+      'admin recipients lookup failed; using ADMIN_EMAILS',
+    );
+  }
+  return deps.adminEmails ?? [];
+}
+
 /** Sends one message to each admin; delivered when at least one address accepted it. Never throws. */
 async function deliver(
   deps: WorkerDeps,
@@ -50,7 +72,7 @@ async function deliver(
 
 /**
  * `house.alerts` (every 5 minutes, spec 11 §6, §6.1): evaluates every alert rule and mails
- * ADMIN_EMAILS one digest of the alerts due (a new incident, or one unsent for 6 h) and one of the
+ * the active admins (ADMIN_EMAILS only as a fallback) one digest of the alerts due (a new incident, or one unsent for 6 h) and one of the
  * recoveries. Mail goes out before the state update, outside any transaction; `lastSentAt` is set
  * only after a send was accepted and an undelivered mail stays pending for the next run.
  */
@@ -59,7 +81,7 @@ export function createAlertsHandler(deps: WorkerDeps): QueueHandler<'house.alert
     const now = nowOf(deps);
     const { mailer } = deps;
     if (mailer === undefined) throw new Error('house.alerts needs a mailer');
-    const admins = deps.adminEmails ?? [];
+    const admins = await alertRecipients(deps);
     const state = parseSetting(
       'alerts.state',
       (await readStoredSetting(deps.db, 'alerts.state')) ?? {},
@@ -103,7 +125,10 @@ export function createAlertsHandler(deps: WorkerDeps): QueueHandler<'house.alert
     const outcome: MailOutcome = {};
     if (admins.length === 0) {
       if (plan.alerts.length + plan.recoveries.length > 0) {
-        deps.logger.warn({ job: JOB }, 'ADMIN_EMAILS is empty: alerts cannot be sent');
+        deps.logger.warn(
+          { job: JOB },
+          'no active admin and ADMIN_EMAILS is empty: alerts cannot be sent',
+        );
       }
       plan.alerts = [];
       plan.recoveries = [];

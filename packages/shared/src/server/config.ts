@@ -412,7 +412,7 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
   }
   if (production && kind === 'worker') {
     // The ledger must live on the persistent ledger volume (compose `ledger`), or a restart would
-    // lose the erasures it records (spec 11 §5.1). The worker sends every alert to ADMIN_EMAILS.
+    // lose the erasures it records (spec 11 §5.1). ADMIN_EMAILS is optional (bootstrap only, M8b-T7).
     const ledgerPath = config.deletionLedgerPath;
     if (ledgerPath !== undefined) {
       const normalized = posix.normalize(ledgerPath);
@@ -421,11 +421,6 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
           `DELETION_LEDGER_PATH: must be inside ${LEDGER_DIR}/ (the persistent ledger volume) in production`,
         );
       }
-    }
-    if (config.adminEmails.length === 0) {
-      problems.push(
-        'ADMIN_EMAILS: at least one address is required in production (the worker sends every alert to it)',
-      );
     }
   }
   if (production && relevant('TYPESAFE_MODEL') && !PINNED_MODEL.test(config.typesafeModel)) {

@@ -147,10 +147,13 @@ describe('deploy, maintenance and host-health scripts (static checks)', () => {
     expect(deploy.indexOf('REQUIRED=(')).toBeLessThan(deploy.indexOf('backup.sh'));
   });
 
-  it('refuses an off-volume ledger path and a missing admin list before any backup, and gives the queue job its own deadline (R15)', () => {
+  it('refuses an off-volume ledger path before any backup, no longer requires ADMIN_EMAILS (M8b-T7), and gives the queue job its own deadline (R15)', () => {
     const deploy = read('infra/scripts/deploy.sh');
     const required = deploy.slice(deploy.indexOf('REQUIRED=('), deploy.indexOf('missing=()'));
-    expect(required).toContain('ADMIN_EMAILS');
+    // ADMIN_EMAILS is bootstrap only (owner 2026-10-13): optional; negative control: the rest stay required.
+    expect(required).not.toContain('ADMIN_EMAILS');
+    expect(required).toContain('DELETION_LEDGER_PATH');
+    expect(required).toContain('SMTP_URL');
     const check = deploy.indexOf('/var/lib/bantoozi/ledger/');
     expect(check).toBeGreaterThan(deploy.indexOf('missing=()'));
     expect(check).toBeLessThan(deploy.indexOf('backup.sh'));
@@ -163,6 +166,21 @@ describe('deploy, maintenance and host-health scripts (static checks)', () => {
     const smoke = read('infra/scripts/restore-test.sh');
     expect(smoke).toContain('DELETION_LEDGER_PATH=/var/lib/bantoozi/ledger/deletion-ledger.age');
     expect(smoke).toContain('--tmpfs /var/lib/bantoozi/ledger');
+  });
+
+  it('warns in the smoke when no active admin exists, without failing the deploy (M8b-T7)', () => {
+    const deploy = read('infra/scripts/deploy.sh');
+    const start = deploy.indexOf('smoke() {');
+    const smoke = deploy.slice(start, deploy.indexOf('smoke_queue() {'));
+    expect(start).toBeGreaterThan(0);
+    // It looks for an active admin (role admin, not soft-deleted) and says so when there is none.
+    expect(smoke).toMatch(/role\s*=\s*'admin'/u);
+    expect(smoke).toMatch(/deleted_at IS NULL/u);
+    expect(smoke).toMatch(/echo "smoke: WARNING[^"\n]*admin/iu);
+    // A warning only: the admin check must not set SMOKE_FAIL (the first-run setup creates the admin).
+    const line = smoke.split('\n').find((l) => /WARNING[^\n]*admin/iu.test(l)) ?? '';
+    expect(line).not.toContain('SMOKE_FAIL');
+    expect(line).not.toMatch(/return 1/u);
   });
 
   it('gates the deploy on stored settings and turns maintenance on when compatibility is not shown', () => {

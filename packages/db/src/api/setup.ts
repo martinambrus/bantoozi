@@ -16,6 +16,14 @@ export async function activeAdminExists(db: Executor): Promise<boolean> {
   return result.rows.length > 0;
 }
 
+/** Emails of the active (not soft-deleted) admins, ordered (alert recipients, M8b-T7). */
+export async function activeAdminEmails(db: Executor): Promise<string[]> {
+  const result = await db.execute<{ email: string }>(
+    sql`SELECT email::text AS email FROM users WHERE role = 'admin' AND deleted_at IS NULL ORDER BY email`,
+  );
+  return result.rows.map((row) => row.email);
+}
+
 /** Serialize setup attempts and token rotation: a transaction-scoped advisory lock. */
 export async function lockSetup(tx: Transaction): Promise<void> {
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended('bantoozi:setup', 0))`);

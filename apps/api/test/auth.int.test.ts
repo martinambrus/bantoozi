@@ -523,15 +523,24 @@ describe('signup and verify side effects (spec 08 §2.1)', () => {
     expect(after.rowCount).toBe(0);
   });
 
-  it('re-applies the admin role from ADMIN_EMAILS on every verify', async () => {
-    const admin = (await userRow(ADMIN)) ?? (await createUser(h.owner, { email: ADMIN }));
+  it('does not re-apply the admin role from ADMIN_EMAILS at verify while another admin exists (M8b-T7: bootstrap only, a demotion sticks)', async () => {
+    const other = await createUser(h.owner, { email: nextEmail('other-admin'), role: 'admin' });
+    const listed = (await userRow(ADMIN)) ?? (await createUser(h.owner, { email: ADMIN }));
     await h.owner.query(`UPDATE users SET role = 'user' WHERE email = $1`, [ADMIN]);
     await requestCode({ email: ADMIN });
     const res = await verify(ADMIN, lastCode(ADMIN));
     expect(res.statusCode).toBe(200);
-    expect(res.json<{ user: { role: string } }>().user.role).toBe('admin');
+    expect(res.json<{ user: { role: string } }>().user.role).toBe('user');
+    expect((await userRow(ADMIN))?.role).toBe('user');
+    expect(listed).toBeDefined();
+    // Negative control: with no active admin left, the listed address is promoted at the verify.
+    await h.owner.query(`UPDATE users SET deleted_at = now() WHERE id = $1`, [other.id]);
+    await requestCode({ email: ADMIN });
+    const again = await verify(ADMIN, lastCode(ADMIN));
+    expect(again.statusCode).toBe(200);
+    expect(again.json<{ user: { role: string } }>().user.role).toBe('admin');
     expect((await userRow(ADMIN))?.role).toBe('admin');
-    expect(admin).toBeDefined();
+    await h.owner.query(`UPDATE users SET deleted_at = NULL WHERE id = $1`, [other.id]);
   });
 
   it('restores a soft-deleted account within 7 days: feeds refreshed, full rank enqueued', async () => {
