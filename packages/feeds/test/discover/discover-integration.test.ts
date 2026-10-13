@@ -127,7 +127,7 @@ describe('spec 03 §10 discovery over the real safeFetch, decodeBody and parseFe
       candidates: [{ url: server.url('/rss.xml'), type: 'rdf' }],
       validated: { parsed: { kind: 'rdf' } },
     });
-    expect(requestedPaths().slice(0, 4)).toEqual(['/blog/', '/feed', '/rss', '/rss.xml']);
+    expect(requestedPaths().slice(0, 4)).toEqual(['/blog/', '/', '/feed', '/rss']);
   });
 
   it('reports FEED_NOT_A_FEED when nothing parses as a feed', async () => {
@@ -135,7 +135,7 @@ describe('spec 03 §10 discovery over the real safeFetch, decodeBody and parseFe
     for (const path of FEED_PROBE_PATHS) server.route(path, { status: 404, body: 'not found' });
     const result = await discoverFeed(server.url('/about'), wire());
     expect(result).toMatchObject({ ok: false, code: 'FEED_NOT_A_FEED' });
-    expect(requestedPaths()).toEqual(['/about', ...FEED_PROBE_PATHS]);
+    expect(requestedPaths()).toEqual(['/about', '/', ...FEED_PROBE_PATHS]);
   });
 
   it('adopts a permanently redirected feed URL but keeps a temporarily redirected one', async () => {

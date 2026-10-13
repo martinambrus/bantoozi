@@ -2189,3 +2189,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   table (spec 04 §8) use the bare name. `normalizeOllamaModel` drops a trailing `-cloud` from
   `engine.ollama_models` (before the price check; the bare name is stored) and from `OLLAMA_MODEL_FAST`/
   `OLLAMA_MODEL_STRONG`. The price table itself is unchanged.
+- D-230: 2026-10-13 (owner request) — Feed discovery also follows feed-looking anchors and the origin root, as the
+  FeedIt prototype's SimplePie locator does (spec 03 §10 step 3). `https://auto.bazos.sk` names its feed only as
+  `<a href="https://www.bazos.sk/rss.php?rub=au">RSS</a>`, with no `<link rel="alternate">`, so discovery ended with
+  `FEED_NOT_A_FEED`. Order is now declared links, then at most 5 feed-looking anchors (`findAnchorFeeds`), then one
+  fetch of the origin root when the page is deeper than `/` (its declared links, then its anchors), then the six path
+  probes. Every candidate is still fetched and parsed, and the 20 s deadline, 10-request budget and URL policy
+  apply unchanged. FeedIt's disabled TLS verification and `FeedCatcher` user agent are not adopted.
