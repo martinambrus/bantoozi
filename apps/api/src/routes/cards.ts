@@ -54,6 +54,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 
 import { idempotencyKey } from '../plugins/tenant.js';
+import { liveTypesafeModel } from '../services/runtime.js';
 import type { AuthContext, RateLimitRule } from '../types.js';
 
 /**
@@ -222,7 +223,7 @@ export async function prepareCardText(
   }));
   if (replay) return { status: null };
   const notFor = text.notFor === undefined || text.notFor === null ? null : text.notFor;
-  const client = app.services.libreTranslate;
+  const client = await app.services.getLibreTranslate();
   if (mode !== 'english' || client === null) {
     const { lang } = detectLanguage(`${text.interest} ${notFor ?? ''}`, {
       hint: auth.locale,
@@ -502,9 +503,8 @@ export const cardRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (request) => {
       const { locale } = requireAuth(request);
-      const rows = await request.withTx((tx) =>
-        listCardSuggestions(tx, { fallbackModel: app.services.config.typesafeModel }),
-      );
+      const fallbackModel = await liveTypesafeModel(app.services);
+      const rows = await request.withTx((tx) => listCardSuggestions(tx, { fallbackModel }));
       return rows.map((row) => ({ card: libraryCardDto(row.card, locale), score: row.score }));
     },
   );

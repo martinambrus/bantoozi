@@ -323,14 +323,14 @@ function validateMerged(next: Pick<AdminSettingsValues, 'ranker.thresholds'>): v
 }
 
 /** The LibreTranslate client for the effective URL: the injected one unless a live override differs. */
-function probeClient(
+async function probeClient(
   app: Parameters<FastifyPluginAsyncZod>[0],
   effectiveUrl: unknown,
-): LibreTranslateClient | null {
+): Promise<LibreTranslateClient | null> {
   if (typeof effectiveUrl === 'string' && effectiveUrl !== app.services.config.libretranslateUrl) {
     return createLibreTranslateClient({ baseUrl: effectiveUrl, maxAttempts: 1 });
   }
-  return app.services.libreTranslate;
+  return app.services.getLibreTranslate();
 }
 
 export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
@@ -392,7 +392,7 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
         const probeUrl = ltChanged ? plan.next[LT_KEY] : undefined;
         if (probedPairs.length > 0) {
           try {
-            await probeLibreTranslate(probeClient(app, plan.next[LT_KEY]), probedPairs);
+            await probeLibreTranslate(await probeClient(app, plan.next[LT_KEY]), probedPairs);
           } catch (error) {
             const committed = await request.savedOutcome<AdminSettingsPatchResult>();
             if (committed !== null) return committed;
@@ -524,6 +524,7 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
           return { status: 200, body };
         });
       });
+      app.services.runtime.invalidate();
       auditLog(request, { action: 'settings.patch', changed: outcome.body.changed });
       await reply.code(200).send(outcome.body);
     },

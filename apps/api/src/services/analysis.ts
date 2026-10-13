@@ -65,7 +65,11 @@ const notConfigured = () =>
  * it, `TYPESAFE_MODEL` (default `jev-1.13.0`) stands in. Without active sets nothing can be frozen
  * (`409 CONFLICT`).
  */
-export async function loadSnapshotConfig(tx: TenantTx, config: ApiConfig): Promise<SnapshotConfig> {
+export async function loadSnapshotConfig(
+  tx: TenantTx,
+  config: ApiConfig,
+  typesafeModel: string = config.typesafeModel,
+): Promise<SnapshotConfig> {
   const env = settingEnv(config);
   const sets = await loadActiveQuestionSets(tx);
   const ref = (kind: 'enrich' | 'match'): AnalysisSetRef => {
@@ -81,7 +85,7 @@ export async function loadSnapshotConfig(tx: TenantTx, config: ApiConfig): Promi
     cardTextMode:
       readSetting('card_text_mode', await readStoredSetting(tx, 'card_text_mode'), env) ??
       'as_written',
-    primaryModel: pin?.model ?? config.typesafeModel,
+    primaryModel: pin?.model ?? typesafeModel,
   };
 }
 
@@ -135,9 +139,12 @@ export async function captureSelectionSnapshot(
  * The environment defaults of the fingerprint settings (spec 06 §8.1): the model an unset pin
  * stands for and the language and card text modes of a missing setting.
  */
-export function ratingDefaultsFor(config: ApiConfig): RatingDefaults {
+export function ratingDefaultsFor(
+  config: ApiConfig,
+  typesafeModel: string = config.typesafeModel,
+): RatingDefaults {
   return {
-    model: config.typesafeModel,
+    model: typesafeModel,
     languageModes: config.languageModes,
     cardTextMode: 'as_written',
   };
@@ -149,7 +156,10 @@ export function ratingDefaultsFor(config: ApiConfig): RatingDefaults {
  * answers and facets with, built under the language modes and card text mode of the snapshot's one
  * locked settings read. Null when the article is gone.
  */
-export function matchFingerprintFor(config: ApiConfig): MatchFingerprint {
+export function matchFingerprintFor(
+  config: ApiConfig,
+  typesafeModel: string = config.typesafeModel,
+): MatchFingerprint {
   const env = settingEnv(config);
   const current = async (tx: TenantTx, input: Parameters<MatchFingerprint>[1]) => {
     const article = await loadClassificationArticle(tx, input.articleId);
@@ -185,5 +195,5 @@ export function matchFingerprintFor(config: ApiConfig): MatchFingerprint {
       cardInputSha256,
     };
   };
-  return Object.assign(current, { defaults: ratingDefaultsFor(config) });
+  return Object.assign(current, { defaults: ratingDefaultsFor(config, typesafeModel) });
 }

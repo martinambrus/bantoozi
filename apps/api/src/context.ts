@@ -1,6 +1,7 @@
 import type { Database } from '@bantoozi/db';
 import type { DiscoverDeps } from '@bantoozi/feeds';
 import type { Clock } from '@bantoozi/shared';
+import type { RuntimeSettingsCache } from '@bantoozi/db';
 import type { Mailer, ProcessConfig } from '@bantoozi/shared/server';
 import type { LibreTranslateClient } from '@bantoozi/translate';
 
@@ -31,7 +32,9 @@ export interface ApiServices {
    * The tier-1 translator for card texts (spec 07 §5) and the admin LibreTranslate health probe
    * (spec 08 §9). `null` when no LibreTranslate is configured for this process.
    */
-  readonly libreTranslate: LibreTranslateClient | null;
+  readonly getLibreTranslate: () => Promise<LibreTranslateClient | null>;
+  /** The live runtime settings (M8b-T3): one TTL cache per process, invalidated by an admin PATCH. */
+  readonly runtime: RuntimeSettingsCache;
 }
 
 declare module 'fastify' {
