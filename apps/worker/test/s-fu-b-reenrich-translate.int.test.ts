@@ -152,4 +152,38 @@ describe('house.reenrich: enrich-set change together with a switch to translate 
     expect(ids(await recorded('article.translate', since, [sk]))).toEqual([sk]);
     expect(await recorded('article.enrich', since, [sk])).toEqual([]);
   });
+
+  it.each(['degraded', 'translated'] as const)(
+    'a %s article without facets or a usable translation is translated, then enriched from the translation (PR #27 round 4)',
+    async (state) => {
+      const r = await reader(h);
+      const sk = await h.article({
+        feedIds: [r.feedId],
+        lang: 'sk',
+        ...SLOVAK,
+        firstSeenAt: ago(DAY),
+      });
+      await h.owner.query('UPDATE articles SET pipeline_state = $2 WHERE id = $1', [sk, state]);
+      await h.setSetting('language_modes', MODES_SK_TRANSLATE);
+      const since = await h.mark();
+      await h.dispatch('house.reenrich', { lang: 'sk' });
+
+      expect(ids(await recorded('article.translate', since, [sk]))).toEqual([sk]);
+      expect(await recorded('article.enrich', since, [sk])).toEqual([]);
+
+      await h.run('article.translate', forArticles(sk));
+      await drainRebuild(h);
+
+      const asks = h.router.asksFor(sk, 'enrich');
+      expect(asks.length).toBeGreaterThan(0);
+      for (const ask of asks) {
+        expect(JSON.stringify(ask.request.state)).toContain(pseudoTranslate(SLOVAK.title));
+      }
+      const facets = await h.owner.query<{ variant: string }>(
+        `SELECT state_variant AS variant FROM article_facets WHERE article_id = $1 AND question_set_id = $2`,
+        [sk, h.sets.enrich],
+      );
+      expect(facets.rows).toEqual([{ variant: 'translated' }]);
+    },
+  );
 });

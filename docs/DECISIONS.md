@@ -2036,3 +2036,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   Per-pair memory is constant however many events a pair has. (2) An incident stored without a title that is still
   open and not yet due for its reminder gets the title persisted on the run that observes it, without mail or a
   `lastSentAt` change, so its recovery mail names it.
+- D-211: 2026-10-13 M8-F4 (PR #27 Codex review round 4) — a mode-change translation of an article in
+  `degraded` or `translated` state with no facets under the active enrich set continues into `article.enrich`
+  through the normal translate→enrich pipeline step (`after('translate', …)`), instead of stopping because only
+  `enriched`/`matched` articles are reset; such an article is no longer stranded after `house.reenrich` sends it
+  to translation. Other states and non-mode-change translations are unchanged.
