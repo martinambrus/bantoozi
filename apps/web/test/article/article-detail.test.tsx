@@ -1195,6 +1195,25 @@ describe('ArticleDetail image setting', () => {
     expect(screen.getByRole('button', { name: 'Always block' })).toBeVisible();
   });
 
+  it('gives the focus back to the disclosure when a saved choice is hidden', async () => {
+    const { user, calls } = renderDetail(
+      BLOCKED,
+      {},
+      { routes: { 'PUT /feed-preferences/:feedId': savePreference } },
+    );
+    await user.click(await screen.findByRole('button', { name: 'Change' }));
+    await user.click(screen.getByRole('button', { name: 'Always block' }));
+
+    await waitFor(() => expect(calls('PUT', '/feed-preferences/7')).toHaveLength(1));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Change' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      ),
+    );
+    expect(screen.getByRole('button', { name: 'Change' })).toHaveFocus();
+  });
+
   it('is not offered while images are allowed', async () => {
     renderDetail(makeItem({ effectiveImagesAllowed: true, mediaPolicyFeedId: '7' }));
     await screen.findByText('The excerpt of the article.');

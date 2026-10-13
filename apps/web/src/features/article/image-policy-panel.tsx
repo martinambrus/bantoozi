@@ -1,6 +1,6 @@
 import type { ImagePolicy } from '@bantoozi/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApiMutation } from '../../api/mutation.js';
@@ -27,6 +27,7 @@ export function ImagePolicyPanel({ feedId }: { feedId: string }) {
   const { t, i18n } = useTranslation('article');
   const choicesId = useId();
   const [open, setOpen] = useState(false);
+  const changeRef = useRef<HTMLButtonElement>(null);
   const accountId = useAccountId();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -35,7 +36,9 @@ export function ImagePolicyPanel({ feedId }: { feedId: string }) {
     onMutate: () => session.currentSignIn(),
     onSuccess: (_answer, _variables, signIn) => {
       if (session.currentSignIn() !== signIn) return;
+      // The pressed choice is about to be hidden: the disclosure takes the focus it had.
       setOpen(false);
+      changeRef.current?.focus();
       toast.show({ message: i18n.t('article:images.saved'), tone: 'success' });
       return queryClient.invalidateQueries({ queryKey: articleKeys.all(accountId) });
     },
@@ -50,6 +53,7 @@ export function ImagePolicyPanel({ feedId }: { feedId: string }) {
       <div className="flex flex-wrap items-center gap-x-2">
         <p className="text-sm text-slate-700 dark:text-slate-200">{t('images.blocked')}</p>
         <Button
+          ref={changeRef}
           variant="ghost"
           size="sm"
           aria-expanded={open}
