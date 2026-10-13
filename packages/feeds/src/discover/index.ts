@@ -32,3 +32,4 @@ export {
   type AnchorFeedLink,
   type AlternateFeedType,
 } from './html-links.js';
+export { platformFeeds, type PlatformFeedLink } from './platforms.js';

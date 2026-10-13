@@ -2196,3 +2196,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   fetch of the origin root when the page is deeper than `/` (its declared links, then its anchors), then the six path
   probes. Every candidate is still fetched and parsed, and the 20 s deadline, 10-request budget and URL policy
   apply unchanged. FeedIt's disabled TLS verification and `FeedCatcher` user agent are not adopted.
+- D-231: 2026-10-13 (owner request, stacked on D-230) — Discovery knows well-known platforms and two more probe
+  paths (spec 03 §10 step 3). `platformFeeds` (pure, no network) derives YouTube channel/playlist, Reddit
+  subreddit/user, Medium, Substack, Bluesky profile, GitHub releases/tags and Mastodon-style `/@user.rss` feeds from
+  the page URL; they are verified like any candidate, tried after anchors and before the origin root, and also
+  tried when the user's own page fails (platforms often refuse bots on pages but serve the feed). YouTube `@handle`
+  pages are not rewritten (the channel id needs the page, which declares its feed). Probes grow from 6 to 8
+  (`/feed.json` for JSON Feed, `/?feed=rss2` for WordPress); with the page and the origin root that is exactly
+  the 10-request budget, so a probe starved by redirect hops is skipped, never a budget overrun.
