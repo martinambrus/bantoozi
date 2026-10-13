@@ -46,6 +46,15 @@ program
     }
   });
 
+program
+  .command('env:init')
+  .description('Fill missing host secrets into the env file (M8b-T8)')
+  .action(() => {
+    // M8b-T8
+    console.error('env:init: not implemented');
+    process.exitCode = 2;
+  });
+
 registerBackupCommands(program);
 registerRestoreCommands(program);
 registerLoadCommands(program);

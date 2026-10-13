@@ -36,6 +36,7 @@ import { libraryRoutes } from './routes/library.js';
 import { meRoutes } from './routes/me.js';
 import { opsRoutes } from './routes/ops.js';
 import { ruleRoutes } from './routes/rules.js';
+import { setupRoutes } from './routes/setup.js';
 import { subscriptionRoutes } from './routes/subscriptions.js';
 import { createCursorCodec } from './services/cursor.js';
 import './types.js';
@@ -168,6 +169,7 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
       });
       await api.register(openApiRoute);
       await api.register(authRoutes, { prefix: '/auth' });
+      await api.register(setupRoutes, { prefix: '/setup' });
       await api.register(inviteRoutes);
       await api.register(meRoutes, { prefix: '/me' });
       await api.register(subscriptionRoutes);

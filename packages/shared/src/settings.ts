@@ -112,6 +112,11 @@ export const WorkerHeartbeatSchema = z.record(
         })
         .strict()
         .optional(),
+      /**
+       * The effective runtime values and problems of the process (M8b-T5 fills it): unknown-shaped
+       * until M8b-T1/T5 define it. Never carries secrets.
+       */
+      runtime: z.record(z.string(), JsonValueSchema).optional(),
     })
     .strict(),
 );
@@ -147,6 +152,15 @@ interface SettingDefinition<S extends z.ZodType> {
 }
 
 const def = <S extends z.ZodType>(d: SettingDefinition<S>): SettingDefinition<S> => d;
+
+/** M8b-T1 tightens: placeholder shapes of the live runtime settings (null or no row = the env default). */
+const runtimeString = z.string().min(1).max(500).nullable(); // M8b-T1 tightens
+const runtimeInt = z.number().int().nullable(); // M8b-T1 tightens
+const runtimeNumber = z.number().finite().nullable(); // M8b-T1 tightens
+const runtimeBool = z.boolean().nullable(); // M8b-T1 tightens
+const noDefault = () => undefined;
+/** M8b-T2 adds `'admin'` to the writers of the live runtime keys (kept out of the patch list until then). */
+const runtimeWriters = [] as const;
 
 const closedBreaker: BreakerState = { state: 'closed', reopenCount: 0 };
 
@@ -195,6 +209,93 @@ export const SETTINGS = {
     schema: EngineModelPinSchema,
     defaultValue: () => undefined,
     writers: ['seed', 'worker'],
+  }),
+  'engine.typesafe_model': def({
+    schema: runtimeString, // M8b-T1 tightens
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'engine.typesafe_base_url': def({
+    schema: runtimeString, // M8b-T1 tightens
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'engine.typesafe_price_per_mtok_usd': def({
+    schema: runtimeNumber, // M8b-T1 tightens
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'engine.concurrency': def({
+    schema: runtimeInt, // M8b-T1 tightens
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'engine.llm_fallback_enabled': def({
+    schema: runtimeBool, // M8b-T1 tightens
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'engine.ollama_models': def({
+    schema: z
+      .object({ fast: z.string().min(1).max(200), strong: z.string().min(1).max(200) })
+      .strict()
+      .nullable(), // M8b-T1 tightens
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'engine.ollama_base_url': def({
+    schema: runtimeString, // M8b-T1 tightens
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'engine.ollama_max_concurrency': def({
+    schema: runtimeInt, // M8b-T1 tightens
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'engine.prefilter_min_cards': def({
+    schema: runtimeInt, // M8b-T1 tightens
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'ingest.max_age_days': def({
+    schema: runtimeInt, // M8b-T1 tightens
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'fetch.limits': def({
+    schema: z
+      .object({ timeoutMs: z.number().int(), maxBytes: z.number().int() })
+      .strict()
+      .nullable(), // M8b-T1 tightens
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'api.rate_limits_enabled': def({
+    schema: runtimeBool, // M8b-T1 tightens
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  'translate.libretranslate_url': def({
+    schema: runtimeString, // M8b-T1 tightens
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
+  /**
+   * First-run setup state (M8b-T6): only the keyed digest of the token, never the token. Never
+   * admin-patchable and never listed by `GET /admin/settings`.
+   */
+  'auth.setup': def({
+    schema: z
+      .object({
+        digest: z.string().max(200).optional(),
+        createdAt: iso.optional(),
+        consumedAt: iso.optional(),
+        userId: UuidSchema.optional(),
+      })
+      .strict(), // M8b-T6 tightens
+    defaultValue: noDefault,
+    writers: ['api', 'worker'],
   }),
   language_modes: def({
     schema: LanguageModesSchema,

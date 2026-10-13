@@ -133,6 +133,8 @@ export const ENV_VARS: readonly EnvVarSpec[] = [
   { name: 'WORKER_METRICS_HOST', usedBy: ['worker'] },
   { name: 'OTEL_EXPORTER_OTLP_ENDPOINT', usedBy: ['all'] },
   { name: 'ADMIN_EMAILS', usedBy: ['api', 'worker'] },
+  // Comma list of hosts the TypeSafe/Ollama/LibreTranslate base URLs may point at in production (M8b-T1).
+  { name: 'PROVIDER_HOST_ALLOWLIST', usedBy: ['api', 'worker'] },
   { name: 'DELETION_LEDGER_PATH', usedBy: ['worker'] },
   { name: 'DELETION_LEDGER_RECIPIENT', usedBy: ['worker'] },
   { name: 'DELETION_HMAC_KEY', usedBy: ['worker'], secret: true },
@@ -196,6 +198,8 @@ export interface Config {
   readonly workerMetricsHost: string;
   readonly otelExporterOtlpEndpoint: string | undefined;
   readonly adminEmails: readonly string[];
+  /** Lower-cased hosts a provider base URL may use in production (M8b-T1 enforces); empty = none set. */
+  readonly providerHostAllowlist: readonly string[];
   readonly deletionLedgerPath: string | undefined;
   readonly deletionLedgerRecipient: string | undefined;
   readonly deletionHmacKey: string | undefined;
@@ -366,6 +370,7 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
       '127.0.0.1',
     otelExporterOtlpEndpoint: read('OTEL_EXPORTER_OTLP_ENDPOINT', httpUrl, undefined),
     adminEmails: read('ADMIN_EMAILS', emailListSchema, undefined) ?? [],
+    providerHostAllowlist: read('PROVIDER_HOST_ALLOWLIST', hostListSchema, undefined) ?? [],
     deletionLedgerPath: read('DELETION_LEDGER_PATH', z.string().min(1), undefined),
     deletionLedgerRecipient: read(
       'DELETION_LEDGER_RECIPIENT',
@@ -534,6 +539,16 @@ const workerQueuesSchema = z.string().transform((s, ctx) => {
 });
 /** The persistent ledger volume inside the worker container (infra/compose.yml `ledger`). */
 const LEDGER_DIR = '/var/lib/bantoozi/ledger';
+
+const hostListSchema = z
+  .string()
+  .transform((s) =>
+    s
+      .split(',')
+      .map((h) => h.trim().toLowerCase())
+      .filter((h) => h.length > 0),
+  )
+  .pipe(z.array(z.string().regex(/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/)).max(100));
 
 const emailListSchema = z
   .string()
