@@ -135,7 +135,7 @@ export function createArticleMatchHandler(
   classification: ClassificationDeps,
 ): QueueHandler<'article.match'> {
   return async ({ articleId, l2Attempts }) => {
-    await assertWorkerCurrent(deps.db, classification.primaryModel);
+    await assertWorkerCurrent(deps.db, classification);
     const started = nowOf(deps).getTime();
     const config = await loadClassificationConfig(deps.db, deps.settingsEnv);
     const enrichSet = requireSet(config.enrich, 'enrich');

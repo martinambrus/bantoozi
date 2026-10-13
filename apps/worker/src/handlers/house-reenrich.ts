@@ -50,7 +50,7 @@ export function createReenrichHandler(
   classification: ClassificationDeps,
 ): QueueHandler<'house.reenrich'> {
   return async (payload) => {
-    await assertWorkerCurrent(deps.db, classification.primaryModel);
+    await assertWorkerCurrent(deps.db, classification);
     const started = nowOf(deps);
     const since =
       payload.since ??

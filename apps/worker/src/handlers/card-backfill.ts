@@ -60,7 +60,7 @@ export function createCardBackfillHandler(
   classification: ClassificationDeps,
 ): QueueHandler<'card.backfill'> {
   return async (payload) => {
-    await assertWorkerCurrent(deps.db, classification.primaryModel);
+    await assertWorkerCurrent(deps.db, classification);
     const user = await userPlan(deps.db, payload.userId);
     if (user === null || user.deleted) return;
     const held = await heldBackfillCards(deps.db, payload.userId, payload.cardIds);

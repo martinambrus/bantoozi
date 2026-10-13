@@ -229,15 +229,24 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
   };
   applied = boot;
 
+  const processPin = {
+    model: processModel,
+    ...(values.llmFallbackEnabled ? { llm: { ...values.ollamaModels } } : {}),
+  };
+  // The stale-worker guard re-reads the settings on every classification job (one query, never the
+  // 10 s cache), so a restart-class change fences the job at once, not up to a tick later.
+  const guardCache = createWorkerSettingsCache(db, config);
+  models.classification.currentness = {
+    fingerprint,
+    pin: processPin,
+    async restartFingerprint() {
+      guardCache.invalidate();
+      return restartFingerprint((await guardCache.get()).values);
+    },
+  };
+
   if (options.recordPin !== false) {
-    const pin = await recordModelPin(
-      db,
-      {
-        model: processModel,
-        ...(values.llmFallbackEnabled ? { llm: { ...values.ollamaModels } } : {}),
-      },
-      (options.now ?? (() => new Date()))(),
-    );
+    const pin = await recordModelPin(db, processPin, (options.now ?? (() => new Date()))());
     if (pin.changed)
       logger.info({}, 'engine model pin changed: re-enrichment and re-matching enqueued');
   }

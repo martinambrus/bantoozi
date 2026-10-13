@@ -50,6 +50,16 @@ export interface ClassificationDeps {
   /** TYPESAFE_MODEL: answers of this Jev model are the approved primary result (spec 05 §2). */
   primaryModel: string;
   /**
+   * What the stale-worker guard compares (PR #28 round 4): the restart fingerprint and the model pin
+   * this process booted with, and a fresh read of the current fingerprint (one settings query).
+   * Absent in tests that build their own deps: only the model is then compared.
+   */
+  currentness?: {
+    fingerprint: string;
+    pin: { model: string; llm?: { fast: string; strong: string } | undefined };
+    restartFingerprint(): Promise<string>;
+  };
+  /**
    * Lease of claimed `match_queue` rows and analysis requests. It must outlast one router call
    * (`callDeadlineMs` plus the final attempt's timeout); handlers renew it before every pack.
    */

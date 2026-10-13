@@ -23,6 +23,20 @@ const isRuntimeKey = (key: string): boolean =>
   (RUNTIME_SETTING_KEYS as readonly string[]).includes(key);
 const BASE_KEYS = ADMIN_PATCHABLE_SETTING_KEYS.filter((key) => !isRuntimeKey(key));
 
+type Workers = AdminSettings['workers'];
+
+/** Per process, the entry of the newer heartbeat; on a tie a pending restart stays pending. */
+function mergeWorkers(current: Workers, incoming: Workers): Workers {
+  const merged = new Map(current.map((worker) => [worker.processId, worker]));
+  for (const worker of incoming) {
+    const have = merged.get(worker.processId);
+    if (have === undefined || worker.at > have.at) merged.set(worker.processId, worker);
+    else if (worker.at === have.at && worker.pendingRestart && !have.pendingRestart)
+      merged.set(worker.processId, worker);
+  }
+  return [...merged.values()];
+}
+
 export function AdminSettingsPage() {
   const { t } = useTranslation('admin');
   const { t: tc } = useTranslation('common');
@@ -37,10 +51,12 @@ export function AdminSettingsPage() {
   });
 
   /**
-   * Takes what one editor saved from the answer: the value of its key, when it was stored, and the
-   * ranker settings version once that is newer. Saves of two editors can answer in another order
-   * than they were made, each with all the settings as they stood then, so the rest of an answer
-   * can be older than the screen.
+   * Takes what one editor saved from the answer: the key's value, source, default and stored time,
+   * and the ranker settings version once that is newer. Saves of two editors can answer in another
+   * order than they were made, each with all the settings as they stood then, so nothing outside
+   * the saved key is taken from an answer. The workers' status is merged per process, the newer
+   * heartbeat winning (a worker that waits for a restart keeps waiting until its process is gone),
+   * so an older answer cannot take back what a newer one reported.
    */
   function adopt(key: AdminSettingKey, result: AdminSettingsPatchResult) {
     const { values, stored, rankerSettingsVersion, sources, defaults, workers } = result;
@@ -48,13 +64,15 @@ export function AdminSettingsPage() {
       if (current === undefined)
         return { values, stored, rankerSettingsVersion, sources, defaults, workers };
       const saved = stored.filter((entry) => entry.key === key);
+      const own = <T,>(map: Record<string, T>): Record<string, T> =>
+        key in map ? { [key]: map[key] as T } : {};
       return {
         values: { ...current.values, [key]: values[key] },
         stored: [...current.stored.filter((entry) => entry.key !== key), ...saved],
         rankerSettingsVersion: Math.max(current.rankerSettingsVersion, rankerSettingsVersion),
-        sources: { ...current.sources, ...sources },
-        defaults: { ...current.defaults, ...defaults },
-        workers,
+        sources: { ...current.sources, ...own(sources) },
+        defaults: { ...current.defaults, ...own(defaults) },
+        workers: mergeWorkers(current.workers, workers),
       };
     });
   }

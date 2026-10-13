@@ -98,7 +98,9 @@ describe('backup and restore scripts (static checks)', () => {
     expect(release).toBeLessThan(backup.lastIndexOf('STAGE=prune'));
     const trap = backup.slice(backup.indexOf('on_exit() {'), backup.indexOf('trap on_exit EXIT'));
     expect(trap).toContain('release_erasure_lock');
-  });
+    // The cost is the first dynamic `import('@bantoozi/shared')` (the whole barrel, transformed cold
+    // under coverage on a CI runner), not the assertions: it needs more than the default 5 s there.
+  }, 30_000);
 
   it('keeps the writer and the retention credentials apart', () => {
     const backup = read('infra/scripts/backup.sh');

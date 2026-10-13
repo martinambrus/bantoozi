@@ -487,11 +487,13 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
    bulk priority and never through the fallback (owner decision, D-171); if Jev is unavailable the
    runs wait as pending runs for `house.reconcile`. `pnpm db:seed` inserts the row when missing
    without a rebuild. The pin is derived from the **effective** values (stored setting over env, D-221), so
-   the rebuild runs exactly once whichever worker restarts first. **Stale-worker guard:** between the pin
-   moving and a worker restarting, that worker (whose process model is not the pinned one) fails
-   `article.enrich`, `article.match`, `house.reenrich`, `house.rematch` and `card.backfill` with a retry
-   delay of 30 s instead of asking the old model or writing its answers; the retry lands on a restarted
-   worker (D-218).
+   the rebuild runs exactly once whichever worker restarts first. **Stale-worker guard:** between a restart-class value
+   or the pin moving and a worker restarting, that worker fails `article.enrich`, `article.match`,
+   `house.reenrich`, `house.rematch` and `card.backfill` with a retry delay of 30 s instead of asking the old
+   model or writing its answers; the retry lands on a restarted worker. A worker is stale when the restart
+   fingerprint of the **current** effective settings (one fresh read per job, the condition behind
+   `pendingRestart`) differs from the one it booted with, or when `engine.model_pin` names another model or
+   another fallback state and Ollama model pair than the process records (D-218, D-225).
    Translation rows are not rebuilt: they stay valid for their article revision whatever model made
    them (spec 07 §3), so re-enrichment reuses the selected translation. In M9 the Laya worker records
    its checkpoint hash and calibration version the same way and enqueues `house.reenrich {lang}`

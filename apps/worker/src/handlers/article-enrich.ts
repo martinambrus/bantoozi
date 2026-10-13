@@ -61,7 +61,7 @@ export function createArticleEnrichHandler(
   classification: ClassificationDeps,
 ): QueueHandler<'article.enrich'> {
   return async (payload) => {
-    await assertWorkerCurrent(deps.db, classification.primaryModel);
+    await assertWorkerCurrent(deps.db, classification);
     const { articleId } = payload;
     const priority = payload.priority ?? 'interactive';
     const config = await loadClassificationConfig(deps.db, deps.settingsEnv);

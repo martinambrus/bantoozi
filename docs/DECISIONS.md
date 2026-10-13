@@ -2128,3 +2128,16 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   schema's consumed shape (`consumedAt` plus the id of an active admin, no digest): the schema is not loosened
   and the API role has no `DELETE` on `settings` (no migration). `GET /admin/settings` already lists `stored`
   keys, so the web enables Reset whenever a row is stored for the key, even if its source reads `env`.
+- D-225: 2026-10-13 M8b-T5 (PR #28 review round 4) — The stale-worker guard of D-218 fences classification on
+  **every** restart-class value, not only the model. `assertWorkerCurrent` takes the process's
+  `classification.currentness` (the booted restart fingerprint and pin, set by `createWorkerRuntime`) and, on
+  each guarded job, reads the runtime settings afresh (one query, bypassing the 10 s cache) and throws
+  `StaleWorkerError` (retry 30 s) when the fingerprint differs, or when the stored pin's `llm` differs from the
+  process's. A changed Ollama model pair, base URL or concurrency, LibreTranslate URL or Jev base URL therefore
+  stops the old process from writing answers before it drains, as a model change did. Deps built without
+  `currentness` (tests) compare the model only. The same round fixed the lock order of the first-run paths:
+  `verify` takes the `bantoozi:setup` lock before the auth-email lock like `completeSetup` (a deleted admin's
+  restore, only known after the challenge is read, rolls back and runs again holding the setup lock), and the
+  admin settings screen takes only the saved key's value, source, default and stored time from a save answer, and
+  merges the workers per process (newer heartbeat wins, a pending restart stays pending on a tie), so a late
+  answer cannot take back what a newer one set; no refetch is needed. Specs 11 §8 updated.

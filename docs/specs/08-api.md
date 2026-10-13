@@ -212,7 +212,7 @@ and `deleted_at IS NULL`), setup is open:
   the row is rewritten, not removed; D-224). The same close runs, under the `bantoozi:setup` lock, at every
   moment a user becomes an active admin: the `ADMIN_EMAILS` bootstrap in `verify`, the restore of a
   soft-deleted admin at `verify`, and `PATCH /admin/users/{id}` with `role: 'admin'`. No migration is
-  involved (D-212).
+  involved (D-212). Every one of these paths takes the setup lock before the auth-email lock (D-225).
 - **Redeem.** `POST /setup/complete {token, email}`, in one transaction under the setup lock: recheck that
   no active admin exists, compare the token digest in constant time, normalize the email, then either
   create the user with `role='admin'` (locale from `Accept-Language`, plan `invites_left` as for any
