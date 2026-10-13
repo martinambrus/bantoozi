@@ -153,11 +153,23 @@ interface SettingDefinition<S extends z.ZodType> {
 
 const def = <S extends z.ZodType>(d: SettingDefinition<S>): SettingDefinition<S> => d;
 
-/** M8b-T1 tightens: placeholder shapes of the live runtime settings (null or no row = the env default). */
-const runtimeString = z.string().min(1).max(500).nullable(); // M8b-T1 tightens
-const runtimeInt = z.number().int().nullable(); // M8b-T1 tightens
-const runtimeNumber = z.number().finite().nullable(); // M8b-T1 tightens
-const runtimeBool = z.boolean().nullable(); // M8b-T1 tightens
+/** Live runtime settings (M8b-T1): null or no row = the env default. */
+const runtimeModelName = z.string().min(1).max(200);
+const runtimeModel = runtimeModelName.nullable();
+const runtimeInt = (min: number, max: number) => z.number().int().min(min).max(max).nullable();
+const runtimeUrl = z
+  .string()
+  .min(1)
+  .max(500)
+  .refine((v) => {
+    try {
+      const u = new URL(v);
+      return (u.protocol === 'http:' || u.protocol === 'https:') && !u.username && !u.password;
+    } catch {
+      return false;
+    }
+  }, 'must be an http(s) URL without credentials')
+  .nullable();
 const noDefault = () => undefined;
 /** M8b-T2 adds `'admin'` to the writers of the live runtime keys (kept out of the patch list until then). */
 const runtimeWriters = [] as const;
@@ -211,73 +223,77 @@ export const SETTINGS = {
     writers: ['seed', 'worker'],
   }),
   'engine.typesafe_model': def({
-    schema: runtimeString, // M8b-T1 tightens
+    schema: runtimeModel,
     defaultValue: noDefault,
     writers: runtimeWriters,
   }),
   'engine.typesafe_base_url': def({
-    schema: runtimeString, // M8b-T1 tightens
+    schema: runtimeUrl,
     defaultValue: noDefault,
     writers: runtimeWriters,
   }),
   'engine.typesafe_price_per_mtok_usd': def({
-    schema: runtimeNumber, // M8b-T1 tightens
+    schema: z.number().finite().min(0).max(10).nullable(),
     defaultValue: noDefault,
     writers: runtimeWriters,
   }),
   'engine.concurrency': def({
-    schema: runtimeInt, // M8b-T1 tightens
+    schema: runtimeInt(1, 64),
     defaultValue: noDefault,
     writers: runtimeWriters,
   }),
   'engine.llm_fallback_enabled': def({
-    schema: runtimeBool, // M8b-T1 tightens
+    schema: z.boolean().nullable(),
     defaultValue: noDefault,
     writers: runtimeWriters,
   }),
   'engine.ollama_models': def({
-    schema: z
-      .object({ fast: z.string().min(1).max(200), strong: z.string().min(1).max(200) })
-      .strict()
-      .nullable(), // M8b-T1 tightens
+    schema: z.object({ fast: runtimeModelName, strong: runtimeModelName }).strict().nullable(),
     defaultValue: noDefault,
     writers: runtimeWriters,
   }),
   'engine.ollama_base_url': def({
-    schema: runtimeString, // M8b-T1 tightens
+    schema: runtimeUrl,
     defaultValue: noDefault,
     writers: runtimeWriters,
   }),
   'engine.ollama_max_concurrency': def({
-    schema: runtimeInt, // M8b-T1 tightens
+    schema: runtimeInt(1, 64),
     defaultValue: noDefault,
     writers: runtimeWriters,
   }),
   'engine.prefilter_min_cards': def({
-    schema: runtimeInt, // M8b-T1 tightens
+    schema: runtimeInt(1, 10_000),
     defaultValue: noDefault,
     writers: runtimeWriters,
   }),
   'ingest.max_age_days': def({
-    schema: runtimeInt, // M8b-T1 tightens
+    schema: runtimeInt(1, 365),
     defaultValue: noDefault,
     writers: runtimeWriters,
   }),
   'fetch.limits': def({
     schema: z
-      .object({ timeoutMs: z.number().int(), maxBytes: z.number().int() })
+      .object({
+        timeoutMs: z.number().int().min(1_000).max(120_000),
+        maxBytes: z
+          .number()
+          .int()
+          .min(65_536)
+          .max(50 * 1024 * 1024),
+      })
       .strict()
-      .nullable(), // M8b-T1 tightens
+      .nullable(),
     defaultValue: noDefault,
     writers: runtimeWriters,
   }),
   'api.rate_limits_enabled': def({
-    schema: runtimeBool, // M8b-T1 tightens
+    schema: z.boolean().nullable(),
     defaultValue: noDefault,
     writers: runtimeWriters,
   }),
   'translate.libretranslate_url': def({
-    schema: runtimeString, // M8b-T1 tightens
+    schema: runtimeUrl,
     defaultValue: noDefault,
     writers: runtimeWriters,
   }),
