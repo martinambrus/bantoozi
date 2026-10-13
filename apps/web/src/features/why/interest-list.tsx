@@ -7,6 +7,7 @@ import { CardEditor } from '../interests/card-editor.js';
 import { useCards } from '../interests/queries.js';
 import { Meter, percentOf } from './meter.js';
 import { Section } from './section.js';
+import { usePressed } from './use-pressed.js';
 import { useCardTeacher, type Side } from './use-card-teacher.js';
 
 type ScoredCard = Explain['cards'][number];
@@ -26,6 +27,11 @@ function InterestRow({ scored, held, busy, onTeach, onEdit }: InterestRowProps) 
   const title = held?.title ?? scored.title;
   const strength = held?.strength ?? scored.strength;
   const percent = percentOf(scored.p);
+  const { pressed, press } = usePressed<Side>(busy);
+  const teach = (side: Side) => {
+    press(side);
+    onTeach(side);
+  };
 
   return (
     <li
@@ -56,7 +62,8 @@ function InterestRow({ scored, held, busy, onTeach, onEdit }: InterestRowProps) 
           size="sm"
           aria-describedby={titleId}
           disabled={busy}
-          onClick={() => onTeach('no')}
+          loading={pressed === 'no'}
+          onClick={() => teach('no')}
         >
           {t('interests.notThis')}
         </Button>
@@ -65,7 +72,8 @@ function InterestRow({ scored, held, busy, onTeach, onEdit }: InterestRowProps) 
           size="sm"
           aria-describedby={titleId}
           disabled={busy}
-          onClick={() => onTeach('yes')}
+          loading={pressed === 'yes'}
+          onClick={() => teach('yes')}
         >
           {t('interests.exactly')}
         </Button>

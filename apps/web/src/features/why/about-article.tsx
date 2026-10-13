@@ -8,6 +8,7 @@ import { useTopicIndex } from '../interests/topics.js';
 import { Meter, percentOf } from './meter.js';
 import { Section } from './section.js';
 import type { Demotions, NeverShowFlag } from './use-demotions.js';
+import { usePressed } from './use-pressed.js';
 
 type Facets = NonNullable<Explain['facets']>;
 
@@ -62,6 +63,7 @@ function Depth({ depth }: { depth: number }) {
 export function AboutArticle({ facets, demotions }: { facets: Facets; demotions: Demotions }) {
   const { t } = useTranslation('why');
   const me = useMe();
+  const { pressed, press } = usePressed<string>(demotions.pending);
   const topic = useTopicPath(facets.topic);
   const type = t(`about.contentTypes.${facets.contentType.choice}`, {
     defaultValue: t('about.contentTypes.other'),
@@ -91,7 +93,11 @@ export function AboutArticle({ facets, demotions }: { facets: Facets; demotions:
                     variant="ghost"
                     size="sm"
                     disabled={demotions.pending}
-                    onClick={() => demotions.neverShow(flag)}
+                    loading={pressed === flag}
+                    onClick={() => {
+                      press(flag);
+                      demotions.neverShow(flag);
+                    }}
                   >
                     {t(`about.never.${flag}`)}
                   </Button>

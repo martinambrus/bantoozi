@@ -2,11 +2,13 @@ import type { Subscription } from '@bantoozi/shared';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '../../components/button.js';
+import { Spinner } from '../../components/spinner.js';
 import { formatRelativeTime } from '../../i18n/dates.js';
 import { DeadFeedBanner } from './dead-feed-banner.js';
 import { feedErrorReason, showsLastError } from './feed-format.js';
 import { ClassificationBadge, HealthBadge, UnreadCounts } from './feed-status.js';
 import { displayTitle } from './folders.js';
+import { useFirstFetchPending } from './subscriptions.js';
 
 export interface FeedRowProps {
   subscription: Subscription;
@@ -17,6 +19,7 @@ export function FeedRow({ subscription, onOpenSettings }: FeedRowProps) {
   const { t, i18n } = useTranslation('feeds');
   const { feed } = subscription;
   const title = displayTitle(subscription);
+  const fetching = useFirstFetchPending(subscription);
 
   return (
     <li className="flex flex-col gap-3 py-4">
@@ -26,7 +29,15 @@ export function FeedRow({ subscription, onOpenSettings }: FeedRowProps) {
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <HealthBadge status={feed.status} />
             <ClassificationBadge mode={subscription.inferenceMode} />
-            {feed.lastSuccessAt === null ? (
+            {fetching ? (
+              <span
+                role="status"
+                className="inline-flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300"
+              >
+                <Spinner className="size-4" />
+                {t('row.fetchingFirst')}
+              </span>
+            ) : feed.lastSuccessAt === null ? (
               <span className="text-sm text-slate-600 dark:text-slate-300">
                 {t('row.neverUpdated')}
               </span>

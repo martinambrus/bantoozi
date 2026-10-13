@@ -195,6 +195,30 @@ describe('"Never show me …"', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows only the pressed button busy while the preference is saved', async () => {
+    const answer = gate();
+    const app = await renderDrawer({
+      explain: WITH_FACETS,
+      routes: {
+        'PATCH /me': async () => {
+          await answer.opened;
+          return json(200, meWith({ clickbait: 'on' }));
+        },
+      },
+    });
+    const clickbait = app.panel.getByRole('button', { name: 'Never show me clickbait' });
+    const outdated = app.panel.getByRole('button', { name: 'Never show me outdated news' });
+
+    await app.user.click(clickbait);
+
+    await waitFor(() => expect(clickbait).toHaveAttribute('aria-busy', 'true'));
+    expect(clickbait).toBeDisabled();
+    expect(outdated).toBeDisabled();
+    expect(outdated).not.toHaveAttribute('aria-busy');
+    answer.release();
+    await findToast('Clickbait will be ranked lower from now on');
+  });
+
   it('says why when the preference cannot be saved and keeps the offer', async () => {
     const app = await renderDrawer({
       explain: WITH_FACETS,
@@ -228,6 +252,34 @@ describe('the rules that were applied', () => {
     expect(app.panel.queryByRole('listitem', { name: 'Boosted source' })).toBeNull();
     expect(app.panel.getByRole('listitem', { name: 'Story already seen' })).toBeInTheDocument();
     await waitFor(() => expect(app.calls('GET', '/articles/101')).toHaveLength(2));
+  });
+
+  it('shows the pressed "Undo" busy until the rule is deleted', async () => {
+    const answer = gate();
+    const app = await renderDrawer({
+      explain: makeExplain({
+        rules: [
+          { code: 'boost_feed', ruleId: '55' },
+          { code: 'block_feed', ruleId: '56' },
+        ],
+      }),
+      routes: {
+        'DELETE /rules/:id': async () => {
+          await answer.opened;
+          return noContent();
+        },
+      },
+    });
+    const boosted = ruleRow(app, 'Boosted source').getByRole('button', { name: 'Undo' });
+    const blocked = ruleRow(app, 'Blocked source').getByRole('button', { name: 'Undo' });
+
+    await app.user.click(boosted);
+
+    await waitFor(() => expect(boosted).toHaveAttribute('aria-busy', 'true'));
+    expect(blocked).toBeDisabled();
+    expect(blocked).not.toHaveAttribute('aria-busy');
+    answer.release();
+    await findToast('Rule removed');
   });
 
   it('offers "Undo" only for a rule that has an id', async () => {
@@ -502,7 +554,7 @@ describe('mute a keyword', () => {
     await app.user.click(await screen.findByRole('menuitem', { name: word }));
   }
 
-  it('confirms two words muted in quick succession, each undo taking back its own rule', async () => {
+  it('keeps the button busy until the word is muted, then takes the next one, each undo taking back its own rule', async () => {
     const first = gate();
     const app = await renderDrawer({
       routes: {
@@ -516,10 +568,16 @@ describe('mute a keyword', () => {
 
     await mute(app, 'batteries');
     await waitFor(() => expect(app.calls('POST', '/rules')).toHaveLength(1));
-    await mute(app, 'pilot');
-    const pilot = await findToast('Muted keyword: “pilot”');
+    const trigger = app.panel.getByRole('button', { name: 'Mute a keyword' });
+    expect(trigger).toBeDisabled();
+    expect(trigger).toHaveAttribute('aria-busy', 'true');
+
     first.release();
     const batteries = await findToast('Muted keyword: “batteries”');
+    await waitFor(() => expect(trigger).toBeEnabled());
+    expect(trigger).not.toHaveAttribute('aria-busy');
+    await mute(app, 'pilot');
+    const pilot = await findToast('Muted keyword: “pilot”');
 
     await app.user.click(within(batteries).getByRole('button', { name: 'Undo' }));
     await waitFor(() => expect(app.calls('DELETE', '/rules/77')).toHaveLength(1));
@@ -527,6 +585,32 @@ describe('mute a keyword', () => {
     await app.user.click(within(pilot).getByRole('button', { name: 'Undo' }));
     await waitFor(() => expect(app.calls('DELETE', '/rules/78')).toHaveLength(1));
     expect(app.calls('DELETE', '/rules/77')).toHaveLength(1);
+  });
+
+  it('shows the source buttons busy, and disabled, while the rule is created', async () => {
+    const answer = gate();
+    const app = await renderDrawer({
+      routes: {
+        'POST /rules': async () => {
+          await answer.opened;
+          return json(201, { rule: makeRule('55', 'boost_feed', '7') });
+        },
+      },
+    });
+    const boost = app.panel.getByRole('button', { name: 'Boost this feed' });
+    const block = app.panel.getByRole('button', { name: 'Block this feed' });
+
+    await app.user.click(boost);
+
+    await waitFor(() => expect(boost).toHaveAttribute('aria-busy', 'true'));
+    expect(boost).toBeDisabled();
+    expect(block).toBeDisabled();
+    expect(block).not.toHaveAttribute('aria-busy');
+    expect(app.calls('POST', '/rules')).toHaveLength(1);
+    answer.release();
+    await waitFor(() => expect(boost).not.toHaveAttribute('aria-busy'));
+    expect(boost).toBeEnabled();
+    expect(block).toBeEnabled();
   });
 
   it('confirms with an undo when the answer comes after the drawer has closed', async () => {

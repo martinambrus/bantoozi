@@ -1,5 +1,6 @@
 import type { ArticleListItem, CreateRuleBody, RuleExpiryDays } from '@bantoozi/shared';
 import { useQueryClient } from '@tanstack/react-query';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApi } from '../../api/context.js';
@@ -11,6 +12,8 @@ import { httpUrl } from './http-url.js';
 import { articleKeys } from './query-keys.js';
 
 export interface RuleActions {
+  /** A rule is being created: a further one is ignored until the answer is in. */
+  pending: boolean;
   muteStory(days: RuleExpiryDays): void;
   /** Null when the article has no feed, no usable address or no author to base the rule on. */
   blockFeed: (() => void) | null;
@@ -32,6 +35,19 @@ export function useRuleActions(item: ArticleListItem): RuleActions {
   const queryClient = useQueryClient();
   const toast = useToast();
   const { i18n } = useTranslation('article');
+  const [pending, setPending] = useState(false);
+  const busy = useRef(false);
+
+  /** Runs one creation at a time; a call made while one is on its way does nothing. */
+  function once(work: () => Promise<void>): void {
+    if (busy.current) return;
+    busy.current = true;
+    setPending(true);
+    void work().finally(() => {
+      busy.current = false;
+      setPending(false);
+    });
+  }
 
   const reloadArticles = () => {
     void queryClient.invalidateQueries({ queryKey: articleKeys.all(accountId) });
@@ -101,38 +117,47 @@ export function useRuleActions(item: ArticleListItem): RuleActions {
   const author = item.author?.trim() ?? '';
 
   return {
-    muteStory: (days) => void muteStory(days),
+    pending,
+    muteStory: (days) => once(() => muteStory(days)),
     blockFeed:
       feed === null
         ? null
         : () =>
-            void create(
-              { kind: 'block_feed', value: feed.id },
-              i18n.t('article:rules.blockedFeed', { target: feed.title }),
+            once(() =>
+              create(
+                { kind: 'block_feed', value: feed.id },
+                i18n.t('article:rules.blockedFeed', { target: feed.title }),
+              ),
             ),
     boostFeed:
       feed === null
         ? null
         : () =>
-            void create(
-              { kind: 'boost_feed', value: feed.id },
-              i18n.t('article:rules.boostedFeed', { target: feed.title }),
+            once(() =>
+              create(
+                { kind: 'boost_feed', value: feed.id },
+                i18n.t('article:rules.boostedFeed', { target: feed.title }),
+              ),
             ),
     blockDomain:
       hostname === null
         ? null
         : () =>
-            void create(
-              { kind: 'block_domain', value: hostname },
-              i18n.t('article:rules.blockedDomain', { target: hostname }),
+            once(() =>
+              create(
+                { kind: 'block_domain', value: hostname },
+                i18n.t('article:rules.blockedDomain', { target: hostname }),
+              ),
             ),
     blockAuthor:
       author === ''
         ? null
         : () =>
-            void create(
-              { kind: 'block_author', value: author },
-              i18n.t('article:rules.blockedAuthor', { target: author }),
+            once(() =>
+              create(
+                { kind: 'block_author', value: author },
+                i18n.t('article:rules.blockedAuthor', { target: author }),
+              ),
             ),
   };
 }

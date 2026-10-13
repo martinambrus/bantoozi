@@ -42,6 +42,7 @@
     "show": "Show",
     "showHidden": "Show hidden",
     "refresh": "Refresh",
+    "rankingPending": "Ranking new articles…",
     "markAll": "Mark all read",
     "tier": "Minimum tier",
     "tierValue": "Tier {{tier}} and above",

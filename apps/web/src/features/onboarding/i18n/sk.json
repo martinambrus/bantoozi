@@ -16,6 +16,7 @@
     "title": "Pridajte svoje zdroje",
     "lead": "Načítavanie a čítanie funguje bez akejkoľvek umelej inteligencie a každý nový zdroj začína s vypnutou klasifikáciou. O tom, či sa niečo analyzuje, rozhodnete neskôr, pre každý zdroj zvlášť.",
     "yours": "Vaše zdroje",
+    "fetchingFirst": "Sťahujem články…",
     "count_one": "Odoberáte {{count}} zdroj.",
     "count_few": "Odoberáte {{count}} zdroje.",
     "count_many": "Odoberáte {{count}} zdroja.",

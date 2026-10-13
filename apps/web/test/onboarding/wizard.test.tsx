@@ -391,6 +391,23 @@ describe('starter bundles (spec 09 §4 step 2)', () => {
   });
 });
 
+describe('feeds step: first fetches', () => {
+  it('marks a feed that has no result yet as fetching', async () => {
+    await openWizard('/onboarding?step=feeds', {
+      subscriptions: [
+        feed('1', 'Alpha'),
+        feed('2', 'Waiting one', { feed: { lastSuccessAt: null, lastErrorAt: null } }),
+      ],
+    });
+    const list = within(await screen.findByRole('list', { name: 'Your feeds' }));
+
+    expect(list.getAllByText('Fetching articles…')).toHaveLength(1);
+    expect(
+      within(list.getByText('Waiting one').closest('li')!).getByText('Fetching articles…'),
+    ).toBeVisible();
+  });
+});
+
 describe('interests (spec 09 §4 step 3)', () => {
   const options: WizardOptions = {
     subscriptions: [feed('1', 'Alpha')],
@@ -515,6 +532,31 @@ describe('interests (spec 09 §4 step 3)', () => {
       '/api/v1/cards/501',
     ]);
     expect(state.cards).toEqual([]);
+  });
+
+  it('keeps the pressed chip busy with a spinner while its request is on its way', async () => {
+    const answer = gate();
+    const { app } = await openWizard('/onboarding?step=interests', {
+      ...options,
+      routes: {
+        'POST /library/:id/adopt': async () => {
+          await answer.opened;
+          return failure(500, 'internal');
+        },
+      },
+    });
+    const likes = await screen.findByRole('region', { name: 'Pick topics you like' });
+    const chip = () => within(likes).getByRole('button', { name: 'EV battery tech' });
+    expect(chip()).not.toHaveAttribute('aria-busy');
+
+    await app.user.click(chip());
+
+    await waitFor(() => expect(chip()).toHaveAttribute('aria-busy', 'true'));
+    expect(chip()).toBeDisabled();
+    expect(chip().querySelector('svg')).not.toBeNull();
+    answer.release();
+    await waitFor(() => expect(chip()).not.toHaveAttribute('aria-busy'));
+    expect(chip().querySelector('svg')).toBeNull();
   });
 
   it('shows a card the account already holds as pressed', async () => {

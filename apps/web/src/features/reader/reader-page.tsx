@@ -1,6 +1,6 @@
 import type { ArticleCounts, ArticleListItem } from '@bantoozi/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Sheet } from '../../components/sheet.js';
@@ -112,14 +112,29 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
   }
 
   const { reload, poll } = list;
-  const refreshCounts = useCallback(() => {
-    for (const queryKey of unreadKeys(accountId)) {
-      void queryClient.refetchQueries({ queryKey, type: 'active' }, { cancelRefetch: false });
-    }
-  }, [queryClient, accountId]);
+  const refreshCounts = useCallback(
+    () =>
+      Promise.all(
+        unreadKeys(accountId).map((queryKey) =>
+          queryClient
+            .refetchQueries({ queryKey, type: 'active' }, { cancelRefetch: false })
+            .catch(() => undefined),
+        ),
+      ),
+    [queryClient, accountId],
+  );
+  // The button stays busy until both are back, and a second press while they are on the way does
+  // nothing.
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshingNow = useRef(false);
   const refresh = useCallback(() => {
-    void reload();
-    refreshCounts();
+    if (refreshingNow.current) return;
+    refreshingNow.current = true;
+    setRefreshing(true);
+    void Promise.all([reload(), refreshCounts()]).finally(() => {
+      refreshingNow.current = false;
+      setRefreshing(false);
+    });
   }, [reload, refreshCounts]);
   const refreshList = useCallback(() => void poll(), [poll]);
 
@@ -130,7 +145,8 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
     list.items.some(
       ({ analysis }) => analysis.status === 'pending' || analysis.status === 'running',
     );
-  usePolling({ busy, refreshList, refreshCounts });
+  const pollCounts = useCallback(() => void refreshCounts(), [refreshCounts]);
+  usePolling({ busy, refreshList, refreshCounts: pollCounts });
 
   return (
     <ReaderShortcuts
@@ -150,6 +166,12 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
           visible={rows.staying}
           onLaneChange={onLaneChange}
           refresh={refresh}
+          refreshing={refreshing}
+          rankingPending={
+            list.rankingPending ||
+            everything?.rankingPending === true ||
+            scoped.data?.rankingPending === true
+          }
         />
         {subscription === undefined ? null : (
           <DeadFeedBanner feed={subscription.feed} title={title} />

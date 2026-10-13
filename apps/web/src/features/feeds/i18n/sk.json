@@ -41,6 +41,7 @@
     "statusLabel": "Stav zdroja:",
     "classificationLabel": "Klasifikácia:",
     "neverUpdated": "Zatiaľ neaktualizovaný",
+    "fetchingFirst": "Sťahujem prvé články…",
     "updated": "Aktualizované {{when}}",
     "lastError": "Posledná chyba: {{reason}}",
     "unreadLabel": "Neprečítané články",

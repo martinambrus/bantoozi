@@ -33,18 +33,20 @@ async function renderShell({
   path = '/read/maybe',
   user = { ...ada, role: 'user' },
   offline,
+  signingOut,
   onLogout = vi.fn(),
   language = 'en',
 }: {
   path?: (typeof PATHS)[number];
   user?: AppShellUser;
   offline?: boolean | undefined;
+  signingOut?: boolean | undefined;
   onLogout?: () => void;
   language?: Language;
 } = {}) {
   const rootRoute = createRootRoute({
     component: () => (
-      <AppShellLayout user={user} onLogout={onLogout} offline={offline}>
+      <AppShellLayout user={user} onLogout={onLogout} offline={offline} signingOut={signingOut}>
         <Outlet />
       </AppShellLayout>
     ),
@@ -168,6 +170,16 @@ describe('AppShellLayout', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Sign out' }));
     expect(onLogout).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('shows the account menu busy while signing out and offers no second Sign out', async () => {
+    const user = userEvent.setup();
+    await renderShell({ signingOut: true });
+    const trigger = screen.getByRole('button', { name: 'Account menu: Ada Lovelace' });
+    expect(trigger).toHaveAttribute('aria-busy', 'true');
+    expect(trigger).toBeDisabled();
+    await user.click(trigger);
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 
   it.each([null, '', '  '])(

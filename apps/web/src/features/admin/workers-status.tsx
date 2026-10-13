@@ -2,6 +2,7 @@ import type { AdminSettings } from '@bantoozi/shared';
 import { useTranslation } from 'react-i18next';
 
 import { Hint } from './admin-ui.js';
+import { BackgroundWork } from './queue-watch.js';
 
 /** How many live workers there are and how many of them wait for a restart to apply a setting. */
 export function WorkersStatus({ workers }: { workers: AdminSettings['workers'] }) {
@@ -19,7 +20,10 @@ export function WorkersStatus({ workers }: { workers: AdminSettings['workers'] }
           : t('settings.workers.live', { count: workers.length })}
       </p>
       {pending === 0 ? null : (
-        <Hint>{t('settings.workers.pendingRestart', { pending, total: workers.length })}</Hint>
+        <>
+          <Hint>{t('settings.workers.pendingRestart', { pending, total: workers.length })}</Hint>
+          <BackgroundWork status={false} label={t('settings.workers.restarting')} />
+        </>
       )}
     </div>
   );

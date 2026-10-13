@@ -17,6 +17,7 @@ import { useToast } from '../../components/toast/toast-provider.js';
 import { useSession } from '../../session/context.js';
 import { Alert, Hint } from './admin-ui.js';
 import { Time } from './format.js';
+import { BackgroundWork, savedQueues, useQueueWatch } from './queue-watch.js';
 import { checkSetting } from './settings-validation.js';
 import { conflictReason } from './use-admin.js';
 
@@ -80,6 +81,7 @@ export function SettingEditor({
   const [failure, setFailure] = useState<unknown>(null);
   // Null until the text is touched, so an editor nobody edited follows the latest value.
   const [edit, setEdit] = useState<string | null>(null);
+  const work = useQueueWatch();
 
   const effective = JSON.stringify(value, null, 2);
   const text = edit ?? effective;
@@ -105,6 +107,8 @@ export function SettingEditor({
       });
       if (session.currentSignIn() !== signIn) return;
       onSaved(result, sequence);
+      const queues = savedQueues(settingKey, result);
+      if (queues !== undefined) work.start(queues);
       // Text edited while the save was on its way stays, still to be saved.
       setEdit((current) => (current === sent ? null : current));
       toast.show({
@@ -150,10 +154,11 @@ export function SettingEditor({
         )}
       </Hint>
       {failure === null ? null : <Alert>{saveError(t, failure)}</Alert>}
+      {work.busy ? <BackgroundWork label={t('settings.reprocessing')} /> : null}
       <div className="flex flex-wrap gap-2">
         <Button
           disabled={!dirty || !checked.ok}
-          loading={update.isPending}
+          loading={update.isPending || work.busy}
           onClick={() => void save()}
         >
           {t('settings.save', { key: settingKey })}

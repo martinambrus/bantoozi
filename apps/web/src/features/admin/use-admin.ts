@@ -41,6 +41,7 @@ export interface Paged<T> {
 export function useAdminPages<T>(
   key: readonly unknown[],
   load: (cursor: string | undefined, signal: AbortSignal) => Promise<Paged<T>>,
+  options: { refetchInterval?: number | false } = {},
 ) {
   const adminKey = useAdminKey();
   const query = useInfiniteQuery({
@@ -48,6 +49,7 @@ export function useAdminPages<T>(
     queryFn: ({ pageParam, signal }) => load(pageParam, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+    refetchInterval: options.refetchInterval ?? false,
   });
   const rows = useMemo(() => query.data?.pages.flatMap((page) => page.items), [query.data]);
   return {

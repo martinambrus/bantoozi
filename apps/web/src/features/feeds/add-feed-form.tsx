@@ -117,6 +117,7 @@ export function AddFeedForm() {
           candidates={candidates}
           headingRef={chooserHeading}
           pending={subscribe.isPending}
+          choosing={subscribe.isPending ? (subscribe.variables?.body.url ?? null) : null}
           onChoose={(url) => send(url, true)}
           onCancel={() => {
             setCandidates(null);
@@ -133,12 +134,15 @@ function Chooser({
   candidates,
   headingRef,
   pending,
+  choosing,
   onChoose,
   onCancel,
 }: {
   candidates: Candidates;
   headingRef: RefObject<HTMLHeadingElement | null>;
   pending: boolean;
+  /** The address of the candidate whose request is on its way. */
+  choosing: string | null;
   onChoose: (url: string) => void;
   onCancel: () => void;
 }) {
@@ -178,6 +182,7 @@ function Chooser({
               <Button
                 variant="secondary"
                 size="sm"
+                loading={choosing === candidate.url}
                 disabled={pending}
                 aria-label={t('add.chooser.add', { title: name })}
                 onClick={() => onChoose(candidate.url)}

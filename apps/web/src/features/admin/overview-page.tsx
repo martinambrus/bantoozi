@@ -16,6 +16,7 @@ import { useToast } from '../../components/toast/toast-provider.js';
 import { useSession } from '../../session/context.js';
 import { Alert, Cell, DataTable, Hint, PageTitle, RowHeader, SectionTitle } from './admin-ui.js';
 import { Time, useFormat } from './format.js';
+import { BackgroundWork, useQueueWatch } from './queue-watch.js';
 import { useAdminKey } from './use-admin.js';
 
 type Breaker = AdminOverview['engine']['breakers']['typesafe'];
@@ -193,7 +194,7 @@ function EngineCard({
         </p>
       )}
       <div>
-        <Button variant="secondary" onClick={onReset}>
+        <Button variant="secondary" loading={watchStatus === 'waiting'} onClick={onReset}>
           {t('overview.breaker.reset')}
         </Button>
       </div>
@@ -257,11 +258,13 @@ function Translations({ overview }: { overview: AdminOverview }) {
   const toast = useToast();
   const session = useSession();
   const [failure, setFailure] = useState<unknown>(null);
+  const work = useQueueWatch();
   const reprocess = useApiMutation(routes.adminTranslationsReprocess, {
     onMutate: () => session.currentSignIn(),
     onSuccess: (_answer, _variables, signIn) => {
       if (session.currentSignIn() !== signIn) return;
       setFailure(null);
+      work.start(['house.retranslate-skipped']);
       toast.show({ message: t('overview.translations.queued'), tone: 'success' });
     },
     onError: setFailure,
@@ -293,11 +296,12 @@ function Translations({ overview }: { overview: AdminOverview }) {
       <div className="flex flex-col items-start gap-2">
         <Button
           variant="secondary"
-          loading={reprocess.isPending}
+          loading={reprocess.isPending || work.busy}
           onClick={() => reprocess.mutate()}
         >
           {t('overview.translations.reprocess')}
         </Button>
+        {work.busy ? <BackgroundWork label={t('overview.translations.running')} /> : null}
         <Hint>{t('overview.translations.reprocessHint')}</Hint>
         {failure === null ? null : <Alert>{errorMessage(t, failure)}</Alert>}
       </div>
