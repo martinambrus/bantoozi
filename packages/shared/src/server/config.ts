@@ -519,16 +519,21 @@ const booleanSchema = z
   .toLowerCase()
   .pipe(z.enum(['true', 'false', '1', '0']))
   .transform((v) => v === 'true' || v === '1');
-const httpUrl = z.string().refine((s) => {
-  try {
-    const u = new URL(s);
-    return (
-      (u.protocol === 'http:' || u.protocol === 'https:') && u.username === '' && u.password === ''
-    );
-  } catch {
-    return false;
-  }
-}, 'must be an http(s) URL without credentials');
+const httpUrl = z
+  .string()
+  .max(ENV_RANGES.urlLength.max, `must be at most ${ENV_RANGES.urlLength.max} characters`)
+  .refine((s) => {
+    try {
+      const u = new URL(s);
+      return (
+        (u.protocol === 'http:' || u.protocol === 'https:') &&
+        u.username === '' &&
+        u.password === ''
+      );
+    } catch {
+      return false;
+    }
+  }, 'must be an http(s) URL without credentials');
 const postgresUrl = z.string().refine((s) => {
   try {
     const u = new URL(s);

@@ -11,6 +11,7 @@ import {
   parseSetting,
   readSetting,
   settingDefault,
+  validateRuntimeSetting,
   type CardTextMode,
   type LanguageModes,
   type SettingEnvDefaults,
@@ -148,12 +149,7 @@ export async function loadClassificationConfig(
       await readStoredSetting(db, 'engine.prefilter_enabled'),
       env,
     ) ?? false;
-  const storedMin = readSetting(
-    PREFILTER_MIN_CARDS_KEY,
-    await readStoredSetting(db, PREFILTER_MIN_CARDS_KEY),
-    env,
-  );
-  const prefilterMinCards = storedMin ?? env.prefilterMinCards ?? DEFAULT_PREFILTER_MIN_CARDS;
+  const prefilterMinCards = await effectivePrefilterMinCards(db, env);
   return {
     enrich: verifiedSet('enrich', sets.enrich),
     match: verifiedSet('match', sets.match),
@@ -163,6 +159,24 @@ export async function loadClassificationConfig(
     prefilterEnabled,
     prefilterMinCards,
   };
+}
+
+/**
+ * The effective `engine.prefilter_min_cards`: the stored row when it validates (the runtime-setting
+ * rule), else the environment default. An invalid row is ignored here, not thrown on (PR #28 round 7,
+ * D-228): the live settings cache reports it in the heartbeat `runtime.problems`, and the job keeps
+ * running on the value it resolves, which the completion compares again under its share lock.
+ */
+async function effectivePrefilterMinCards(db: Executor, env: ClassificationEnv): Promise<number> {
+  const fallback = env.prefilterMinCards ?? DEFAULT_PREFILTER_MIN_CARDS;
+  const stored = await readStoredSetting(db, PREFILTER_MIN_CARDS_KEY);
+  if (stored === undefined || stored === null) return fallback;
+  const checked = validateRuntimeSetting(PREFILTER_MIN_CARDS_KEY, stored, {
+    production: false,
+    providerHostAllowlist: [],
+    ollamaPricedModels: [],
+  });
+  return checked.ok && typeof checked.value === 'number' ? checked.value : fallback;
 }
 
 /**

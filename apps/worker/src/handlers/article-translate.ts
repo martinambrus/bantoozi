@@ -30,6 +30,7 @@ import {
   type TranslationJob,
 } from '../classify/translation.js';
 import { after } from '../pipeline.js';
+import { assertWorkerCurrent, lockWorkerCurrent, type StaleWorkerError } from '../stale-worker.js';
 import { nowOf, pipelineContext, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
 import { hasRetriesLeft } from './transient.js';
@@ -75,6 +76,9 @@ export function createArticleTranslateHandler(
   translation: TranslationDeps,
 ): QueueHandler<'article.translate'> {
   return async (payload, context) => {
+    // The translators are restart-class clients (the LibreTranslate URL, the Ollama models): a
+    // process that is no longer what the database asks for neither calls them nor stores rows (D-228).
+    await assertWorkerCurrent(deps.db, classification);
     const { articleId } = payload;
     const flagged =
       payload.forceTier2 === true || payload.replaceSkipped === true || payload.modeChange === true;
@@ -96,7 +100,8 @@ export function createArticleTranslateHandler(
     ) {
       // The mode changed since the job was recorded (or there is nothing to translate): the
       // initial pipeline continues with native text.
-      if (initial) await continueInitial(deps, article, [], false, payload.priority);
+      if (initial)
+        await continueInitial(deps, classification, article, [], false, payload.priority);
       return;
     }
 
@@ -125,7 +130,7 @@ export function createArticleTranslateHandler(
       if (tier1.kind === 'transient') {
         if (
           retriesLeft &&
-          (await retryTransient(deps, config, article, payload, produced, tier1))
+          (await retryTransient(deps, classification, config, article, payload, produced, tier1))
         ) {
           return;
         }
@@ -152,16 +157,26 @@ export function createArticleTranslateHandler(
       if (tier2.kind === 'no_demand') return;
       if (tier2.kind === 'row') produced.push(tier2.row);
       else if (tier2.kind === 'transient' && retriesLeft) {
-        if (await retryTransient(deps, config, article, payload, produced, tier2)) return;
+        if (await retryTransient(deps, classification, config, article, payload, produced, tier2)) {
+          return;
+        }
       }
     }
 
     if (initial) {
-      await continueInitial(deps, article, produced, replaceSkipped, payload.priority);
+      await continueInitial(
+        deps,
+        classification,
+        article,
+        produced,
+        replaceSkipped,
+        payload.priority,
+      );
       return;
     }
     await installRetranslation(
       deps,
+      classification,
       config,
       article,
       produced,
@@ -185,6 +200,7 @@ export function createArticleTranslateHandler(
  */
 async function retryTransient(
   deps: WorkerDeps,
+  classification: ClassificationDeps,
   config: ClassificationConfig,
   article: ClassificationArticle,
   payload: JobPayload<'article.translate'>,
@@ -195,7 +211,10 @@ async function retryTransient(
   const waitMs = retryAt === undefined ? 0 : retryAt.getTime() - nowOf(deps).getTime();
   if (waitMs > MAX_TRANSLATION_RETRY_WAIT_MS) return false;
   if (produced.length > 0 || retryAt !== undefined) {
+    let stale: StaleWorkerError | null = null;
     await retryTransaction(deps.db, async (tx) => {
+      stale = await lockWorkerCurrent(tx, classification);
+      if (stale !== null) return;
       if (
         produced.length > 0 &&
         (await storeRows(tx, article, produced, payload.replaceSkipped === true))
@@ -211,6 +230,7 @@ async function retryTransient(
         { revision: article.revision },
       );
     });
+    if (stale !== null) throw stale;
   }
   if (retryAt === undefined) throw new TransientTranslationError(failure.reason);
   return true;
@@ -246,12 +266,16 @@ async function storeRows(
  */
 async function continueInitial(
   deps: WorkerDeps,
+  classification: ClassificationDeps,
   article: ClassificationArticle,
   rows: readonly TranslationInput[],
   replaceSkipped = false,
   priority?: 'interactive' | 'bulk',
 ): Promise<void> {
+  let stale: StaleWorkerError | null = null;
   await retryTransaction(deps.db, async (tx) => {
+    stale = await lockWorkerCurrent(tx, classification);
+    if (stale !== null) return;
     if (!(await storeRows(tx, article, rows, replaceSkipped))) return;
     const moved = await transitionPipelineState(tx, {
       articleId: article.id,
@@ -272,6 +296,7 @@ async function continueInitial(
       pipelineContext(deps, tx, sender),
     );
   });
+  if (stale !== null) throw stale;
 }
 
 /**
@@ -283,6 +308,7 @@ async function continueInitial(
  */
 async function installRetranslation(
   deps: WorkerDeps,
+  classification: ClassificationDeps,
   config: ClassificationConfig,
   article: ClassificationArticle,
   produced: readonly TranslationInput[],
@@ -290,10 +316,14 @@ async function installRetranslation(
   priority?: 'interactive' | 'bulk',
   modeChange = false,
 ): Promise<void> {
+  let stale: StaleWorkerError | null = null;
   await retryTransaction(deps.db, async (tx) => {
+    stale = await lockWorkerCurrent(tx, classification);
+    if (stale !== null) return;
     if (!(await storeRows(tx, article, produced, replaceSkipped))) return;
     await resetOnChangedText(tx, deps, config, article, priority, {
       enrichWithoutFacets: modeChange,
     });
   });
+  if (stale !== null) throw stale;
 }

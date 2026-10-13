@@ -11,4 +11,6 @@ export const ENV_RANGES = {
   ingestMaxAgeDays: { min: 1, max: 3650 },
   fetchTimeoutMs: { min: 100, max: 600_000 },
   fetchMaxBytes: { min: 1024, max: 1024 ** 3 },
+  /** Characters of an environment http(s) URL; the settings response shows any URL that passes. */
+  urlLength: { min: 1, max: 2048 },
 } as const;

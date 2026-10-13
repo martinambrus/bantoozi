@@ -18771,7 +18771,7 @@
                           "nullable": true,
                           "type": "string",
                           "minLength": 1,
-                          "maxLength": 500
+                          "maxLength": 2048
                         },
                         "engine.typesafe_price_per_mtok_usd": {
                           "nullable": true,
@@ -18813,7 +18813,7 @@
                           "nullable": true,
                           "type": "string",
                           "minLength": 1,
-                          "maxLength": 500
+                          "maxLength": 2048
                         },
                         "engine.ollama_max_concurrency": {
                           "nullable": true,
@@ -18862,7 +18862,7 @@
                           "nullable": true,
                           "type": "string",
                           "minLength": 1,
-                          "maxLength": 500
+                          "maxLength": 2048
                         }
                       },
                       "required": [
@@ -19691,7 +19691,7 @@
                           "nullable": true,
                           "type": "string",
                           "minLength": 1,
-                          "maxLength": 500
+                          "maxLength": 2048
                         },
                         "engine.typesafe_price_per_mtok_usd": {
                           "nullable": true,
@@ -19733,7 +19733,7 @@
                           "nullable": true,
                           "type": "string",
                           "minLength": 1,
-                          "maxLength": 500
+                          "maxLength": 2048
                         },
                         "engine.ollama_max_concurrency": {
                           "nullable": true,
@@ -19782,7 +19782,7 @@
                           "nullable": true,
                           "type": "string",
                           "minLength": 1,
-                          "maxLength": 500
+                          "maxLength": 2048
                         }
                       },
                       "required": [

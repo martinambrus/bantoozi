@@ -185,7 +185,11 @@ export const AdminSettingsWriteSchema = z.object(settingShape).strict();
 
 const envInt = (range: { min: number; max: number }) =>
   z.number().int().min(range.min).max(range.max).nullable();
-const displayText = z.string().min(1).max(500).nullable();
+const displayUrl = z
+  .string()
+  .min(ENV_RANGES.urlLength.min)
+  .max(ENV_RANGES.urlLength.max)
+  .nullable();
 const displayModel = z.string().min(1).max(200).nullable();
 
 /**
@@ -194,7 +198,7 @@ const displayModel = z.string().min(1).max(200).nullable();
  */
 const runtimeDisplayShape = {
   'engine.typesafe_model': displayModel,
-  'engine.typesafe_base_url': displayText,
+  'engine.typesafe_base_url': displayUrl,
   'engine.typesafe_price_per_mtok_usd': z.number().finite().min(0).nullable(),
   'engine.concurrency': envInt(ENV_RANGES.engineConcurrency),
   'engine.llm_fallback_enabled': z.boolean().nullable(),
@@ -202,7 +206,7 @@ const runtimeDisplayShape = {
     .object({ fast: z.string().min(1).max(200), strong: z.string().min(1).max(200) })
     .strict()
     .nullable(),
-  'engine.ollama_base_url': displayText,
+  'engine.ollama_base_url': displayUrl,
   'engine.ollama_max_concurrency': envInt(ENV_RANGES.ollamaMaxConcurrency),
   'engine.prefilter_min_cards': envInt(ENV_RANGES.prefilterMinCards),
   'ingest.max_age_days': envInt(ENV_RANGES.ingestMaxAgeDays),
@@ -222,7 +226,7 @@ const runtimeDisplayShape = {
     .strict()
     .nullable(),
   'api.rate_limits_enabled': z.boolean().nullable(),
-  'translate.libretranslate_url': displayText,
+  'translate.libretranslate_url': displayUrl,
 } as const;
 
 /** The effective value of every admin key (the stored row, else its default). */

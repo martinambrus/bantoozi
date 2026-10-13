@@ -2171,3 +2171,16 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   still refused. `onReady` still never throws (offline OpenAPI build). Test seam: `BuildServerOptions.setupTokenGenerator`.
   (2) The worker's 10 s runtime-check timer starts only after the real shutdown is wired, and the runtime's
   `drain` goes through a `ShutdownGate` that waits for the wiring, so a self-restart can never exit undrained.
+- D-228: 2026-10-13 M8b-T5/T6 (PR #28 review round 7) — (1) The stale-worker guards (D-218, D-225, D-226) now also
+  cover `article.cluster`, `article.translate` and `house.translate-cards`. Each calls `assertWorkerCurrent` before
+  the first provider call and `lockWorkerCurrent` in the transaction that stores its result; on a mismatch the
+  result is discarded (no fold, no translation rows, no card pair) and the job fails with `StaleWorkerError`
+  for the 30 s retry. The audit of the other handlers that touch the router or the translators is in spec 11 §8:
+  `analysis.process`, `user.suggest` and `provider.validate` stay unguarded on purpose, the recovery jobs only
+  enqueue guarded work. (2) Environment URLs have a single bound: `ENV_RANGES.urlLength` (1 to 2048 characters) is
+  used by `server/config.ts` `httpUrl` and by the response schema of the three URL keys of `GET`/`PATCH
+  /admin/settings`, so a long env URL no longer fails serialization (500); a write keeps the 500-character UI
+  bound. (3) An invalid stored `engine.prefilter_min_cards` row no longer throws in `loadClassificationConfig`: it
+  is validated with `validateRuntimeSetting`, an invalid row resolves to the environment default (the last-good value
+  lives only in the API/worker settings cache, which already lists the key in the heartbeat `runtime.problems`), and
+  the completion's share-locked comparison uses the resolved value.

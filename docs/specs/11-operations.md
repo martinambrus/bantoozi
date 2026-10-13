@@ -496,6 +496,14 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
    another fallback state and Ollama model pair than the process records (D-218, D-225). The check also runs in the
    completion transaction, after share-locking the restart-class setting rows and the pin row: a value that moved while
    the model call was in flight discards the answer, releases the held rows and fails the job for the 30 s retry (D-226).
+   **Which handlers are guarded (D-228):** guarded at the start and in the completion are every handler that asks
+   the engine or a translator and stores a result classification reads: `article.enrich`, `article.match`,
+   `article.cluster` (the fold decision), `article.translate` (tier-1/tier-2 rows), `house.translate-cards` (the English
+   card pair), `house.reenrich`, `house.rematch` and `card.backfill`. Deliberately unguarded: `analysis.process`
+   (user-requested, records its own model snapshot), `user.suggest` (checks the pin itself and leases per user),
+   `provider.validate` (probes a candidate key; stores no classification result), and the dispatch-only recovery
+   jobs `house.rescore-degraded`, `house.reconcile` and `house.retranslate-skipped` (they enqueue work that is
+   itself guarded).
    Translation rows are not rebuilt: they stay valid for their article revision whatever model made
    them (spec 07 §3), so re-enrichment reuses the selected translation. In M9 the Laya worker records
    its checkpoint hash and calibration version the same way and enqueues `house.reenrich {lang}`
