@@ -34,7 +34,6 @@ import {
 } from '@bantoozi/shared';
 import {
   OLLAMA_PRICES,
-  createLibreTranslateClient,
   missingLanguagePairs,
   type LibreTranslateClient,
 } from '@bantoozi/translate';
@@ -107,6 +106,8 @@ interface RuntimeState {
   defaults: Record<RuntimeSettingKey, unknown>;
   /** Keys with a valid, non-null stored override. */
   overridden: Set<RuntimeSettingKey>;
+  /** Keys with a non-null stored row, valid or not: a `null` patch clears every one of them. */
+  hasRow: Set<RuntimeSettingKey>;
 }
 
 /**
@@ -127,11 +128,13 @@ function runtimeState(
     sources: {},
     defaults: {},
     overridden: new Set(),
+    hasRow: new Set(),
   } as never;
   for (const key of RUNTIME_SETTING_KEYS) {
     const fallback = api.get(key) ?? workerDefaults.get(key) ?? null;
     state.defaults[key] = fallback;
     const row = stored.get(key);
+    if (row !== undefined && row !== null) state.hasRow.add(key);
     const checked =
       row === undefined || row === null ? null : validateRuntimeSetting(key, row, ctx);
     if (checked?.ok === true && checked.value !== null) {
@@ -251,7 +254,7 @@ function planRuntime(
         ? Boolean(value) !== Boolean(state.values[key])
         : differs;
     if (affects) effective.push(key);
-    if (differs || (checked.value === null && state.overridden.has(key))) changed.push(key);
+    if (differs || (checked.value === null && state.hasRow.has(key))) changed.push(key);
   }
   const fallbackOn = Boolean(next['engine.llm_fallback_enabled']);
   const needsAcknowledge = effective.some(
@@ -327,15 +330,29 @@ function validateMerged(next: Pick<AdminSettingsValues, 'ranker.thresholds'>): v
   }
 }
 
-/** The LibreTranslate client for the effective URL: the injected one unless a live override differs. */
-async function probeClient(
+/**
+ * Probes `pairs` at the effective URL: with the live (shared) client when that is the URL it follows,
+ * else with a temporary client that is always closed afterwards.
+ */
+async function probeAt(
   app: Parameters<FastifyPluginAsyncZod>[0],
   effectiveUrl: unknown,
-): Promise<LibreTranslateClient | null> {
-  if (typeof effectiveUrl === 'string' && effectiveUrl !== app.services.config.libretranslateUrl) {
-    return createLibreTranslateClient({ baseUrl: effectiveUrl, maxAttempts: 1 });
+  pairs: readonly [string, string][],
+): Promise<void> {
+  const { services } = app;
+  if (
+    typeof effectiveUrl === 'string' &&
+    effectiveUrl !== (await services.liveLibreTranslateUrl())
+  ) {
+    const temporary = services.createProbeLibreTranslate(effectiveUrl);
+    try {
+      await probeLibreTranslate(temporary, pairs);
+    } finally {
+      await temporary.close().catch(() => undefined);
+    }
+    return;
   }
-  return app.services.getLibreTranslate();
+  await probeLibreTranslate(await services.getLibreTranslate(), pairs);
 }
 
 export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
@@ -395,9 +412,11 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
           ltChanged ? ['language_modes', 'card_text_mode'] : changedKeys(before.values, patch),
         );
         const probeUrl = ltChanged ? plan.next[LT_KEY] : undefined;
+        /** The URL the probe asked, whether or not this PATCH changes it. */
+        const probedAt = plan.next[LT_KEY];
         if (probedPairs.length > 0) {
           try {
-            await probeLibreTranslate(await probeClient(app, plan.next[LT_KEY]), probedPairs);
+            await probeAt(app, plan.next[LT_KEY], probedPairs);
           } catch (error) {
             const committed = await request.savedOutcome<AdminSettingsPatchResult>();
             if (committed !== null) return committed;
@@ -412,7 +431,7 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
             (key) => patch[key] !== undefined,
           );
           const dependent = patchedKeys.some((key) => LANGUAGE_KEYS.includes(key))
-            ? LANGUAGE_KEYS
+            ? [...LANGUAGE_KEYS, LT_KEY]
             : [];
           await lockSettingRows(tx, [...patchedKeys, ...dependent, VERSION_KEY]);
           const rows = await readSettingRows(tx, STORED_KEYS);
@@ -437,6 +456,9 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
           if (
             needed.some((pair) => !probed.has(pairName(pair))) ||
             (needed.length > 0 && ltNow !== ltChanged) ||
+            // The language change was accepted on the capabilities of the URL probed before the
+            // transaction; the URL current under the lock must still be that one.
+            (needed.length > 0 && !same(runtimePlan.next[LT_KEY], probedAt)) ||
             (ltNow && !same(runtimePlan.next[LT_KEY], probeUrl))
           ) {
             throw new AppError('CONFLICT', 'Settings changed concurrently; retry', {

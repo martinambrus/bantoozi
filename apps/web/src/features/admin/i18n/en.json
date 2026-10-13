@@ -166,6 +166,7 @@
     },
     "defaultValue": "Default: {{value}}",
     "defaultUnknown": "not known",
+    "stateUnknown": "Current value not known: choose on or off.",
     "on": "on",
     "off": "off",
     "models": "fast {{fast}}, strong {{strong}}",

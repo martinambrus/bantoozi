@@ -33,6 +33,13 @@ export interface ApiServices {
    * (spec 08 §9). `null` when no LibreTranslate is configured for this process.
    */
   readonly getLibreTranslate: () => Promise<LibreTranslateClient | null>;
+  /** The URL `getLibreTranslate` currently follows (a live override, else `LIBRETRANSLATE_URL`). */
+  readonly liveLibreTranslateUrl: () => Promise<string>;
+  /**
+   * A new LibreTranslate client for `baseUrl`, owned by the caller (who must `close()` it): the admin
+   * settings probe of a URL that is not the live one (spec 08 §9).
+   */
+  readonly createProbeLibreTranslate: (baseUrl: string) => LibreTranslateClient;
   /** The live runtime settings (M8b-T3): one TTL cache per process, invalidated by an admin PATCH. */
   readonly runtime: RuntimeSettingsCache;
 }

@@ -70,6 +70,8 @@ export interface HarnessOptions {
   clock?: Clock;
   discoverDeps?: DiscoverDeps;
   libreTranslate?: LibreTranslateClient | null;
+  /** The factory of the temporary client that probes a not-yet-live URL (spec 08 §9). */
+  createProbeLibreTranslate?: (baseUrl: string) => LibreTranslateClient;
 }
 
 export interface ApiHarness {
@@ -138,6 +140,9 @@ export async function createApiHarness(options: HarnessOptions = {}): Promise<Ap
       mailer,
       discoverDeps: o.discoverDeps ?? offlineDiscoverDeps,
       libreTranslate: o.libreTranslate ?? null,
+      ...(o.createProbeLibreTranslate === undefined
+        ? {}
+        : { createProbeLibreTranslate: o.createProbeLibreTranslate }),
       ...(o.clock === undefined ? {} : { clock: o.clock }),
     });
     await server.ready();

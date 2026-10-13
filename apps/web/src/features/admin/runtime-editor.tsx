@@ -118,7 +118,12 @@ export function RuntimeEditor({
       from: formatValue(t, settingKey, effective),
       to: formatValue(t, settingKey, body === null ? defaultValue : body),
     };
-    if (ACKNOWLEDGED_KEYS.includes(settingKey)) setPending(shown);
+    // An explicit "off" from an unknown fallback state needs no confirmation (the API decides).
+    const offFromUnknown =
+      settingKey === 'engine.llm_fallback_enabled' &&
+      body === false &&
+      (effective === null || effective === undefined);
+    if (ACKNOWLEDGED_KEYS.includes(settingKey) && !offFromUnknown) setPending(shown);
     else void submit(body, false, shown);
   }
 
@@ -137,6 +142,40 @@ export function RuntimeEditor({
             setEdit({ ...draft, [field.part ?? '']: next });
             setFailure(null);
           };
+          if (field.kind === 'switch' && (base[field.part ?? ''] ?? '') === '') {
+            // The current value is unknown, so a single checkbox would pass an unset switch off as
+            // "off": the admin chooses on or off explicitly.
+            return (
+              <div key={id} className="flex flex-col gap-1">
+                <span id={`${id}-label`} className={`${LABEL_CLASSES} font-mono`}>
+                  {label}
+                </span>
+                <div
+                  role="radiogroup"
+                  aria-labelledby={`${id}-label`}
+                  className="flex flex-wrap gap-4"
+                >
+                  {(['true', 'false'] as const).map((choice) => (
+                    <label
+                      key={choice}
+                      className="flex min-h-11 min-w-11 cursor-pointer items-center gap-2 text-base text-slate-900 dark:text-slate-100"
+                    >
+                      <input
+                        type="radio"
+                        name={id}
+                        value={choice}
+                        checked={text === choice}
+                        onChange={() => change(choice)}
+                        className="size-5 cursor-pointer accent-indigo-600 dark:accent-indigo-400"
+                      />
+                      <span>{t(choice === 'true' ? 'settings.on' : 'settings.off')}</span>
+                    </label>
+                  ))}
+                </div>
+                <Hint>{t('settings.stateUnknown')}</Hint>
+              </div>
+            );
+          }
           if (field.kind === 'switch') {
             return (
               <Checkbox

@@ -80,6 +80,8 @@ export interface BuildServerOptions {
   runtimeSettings?: { ttlMs?: number; now?: () => number };
   /** Builds the LibreTranslate client for an effective URL (initial and every swap). */
   createLibreTranslate?: (baseUrl: string) => LibreTranslateClient;
+  /** Builds the short-lived client that probes a not-yet-live URL for the admin settings (spec 08 §9). */
+  createProbeLibreTranslate?: (baseUrl: string) => LibreTranslateClient;
   /** The bundled migrations whose newest entry `/readyz` expects (default: packages/db/drizzle). */
   migrationsFolder?: string;
   trustedProxies?: readonly string[];
@@ -134,9 +136,14 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     ((baseUrl: string) => createLibreTranslateClient({ baseUrl, clock }));
   // The client follows the effective URL; a client built here is closed on a swap and on close.
   let owned: { url: string; client: LibreTranslateClient } | null = null;
+  const makeProbeLibreTranslate =
+    options.createProbeLibreTranslate ??
+    ((baseUrl: string) => createLibreTranslateClient({ baseUrl, clock, maxAttempts: 1 }));
+  const liveLibreTranslateUrl = async (): Promise<string> =>
+    (await liveRuntime({ runtime }))?.libretranslateUrl ?? config.libretranslateUrl;
   const getLibreTranslate = async (): Promise<LibreTranslateClient | null> => {
     if (options.libreTranslate !== undefined) return options.libreTranslate;
-    const url = (await liveRuntime({ runtime }))?.libretranslateUrl ?? config.libretranslateUrl;
+    const url = await liveLibreTranslateUrl();
     if (owned?.url === url) return owned.client;
     const old = owned;
     owned = { url, client: makeLibreTranslate(url) };
@@ -164,6 +171,8 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     ),
     discoverDeps: options.discoverDeps ?? defaultDiscoverDeps(db, config, clock, runtime),
     getLibreTranslate,
+    liveLibreTranslateUrl,
+    createProbeLibreTranslate: makeProbeLibreTranslate,
     runtime,
   };
   app.decorate('services', services);

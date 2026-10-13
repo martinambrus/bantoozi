@@ -81,7 +81,12 @@ export type Draft = Record<string, string>;
 const partId = (field: FieldSpec) => field.part ?? '';
 
 function textOf(kind: FieldKind, value: unknown): string {
-  if (kind === 'switch') return value === true ? 'true' : 'false';
+  // A switch is tri-state: an unknown value (null: no process can tell its default) is `''`, distinct
+  // from an explicit `false`.
+  if (kind === 'switch') {
+    if (value === null || value === undefined) return '';
+    return value === true ? 'true' : 'false';
+  }
   if (value === null || value === undefined) return '';
   if (kind === 'megabytes') return typeof value === 'number' ? String(value / MB) : '';
   return String(value);

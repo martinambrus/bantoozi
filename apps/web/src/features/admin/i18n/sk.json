@@ -170,6 +170,7 @@
     },
     "defaultValue": "Predvolené: {{value}}",
     "defaultUnknown": "neznáme",
+    "stateUnknown": "Aktuálna hodnota nie je známa: vyberte zapnuté alebo vypnuté.",
     "on": "zapnuté",
     "off": "vypnuté",
     "models": "rýchly {{fast}}, silný {{strong}}",
