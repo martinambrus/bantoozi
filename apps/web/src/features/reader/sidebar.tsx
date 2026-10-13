@@ -1,7 +1,7 @@
 import { normalizeText, type ArticleCounts, type Subscription } from '@bantoozi/shared';
 import type { RefetchOptions } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { useCallback, useId, useMemo, type ReactNode } from 'react';
+import { useCallback, useId, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Badge } from '../../components/badge.js';
@@ -9,14 +9,20 @@ import { Button } from '../../components/button.js';
 import { FOCUS_RING, cx } from '../../components/cx.js';
 import { IconButton } from '../../components/icon-button.js';
 import {
+  BookmarkIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   FeedIcon,
+  HelpIcon,
+  InboxIcon,
+  ListIcon,
+  StarIcon,
   WarningIcon,
 } from '../../components/icons.js';
 import { useOnline } from '../../components/states/use-online.js';
 import { VisuallyHidden } from '../../components/visually-hidden.js';
 import { useMe } from '../../session/context.js';
+import { httpsUrl } from '../article/http-url.js';
 import { LabelDot } from '../article/label-dot.js';
 import { useLabels } from '../article/use-labels.js';
 import { ClassificationBadge } from '../feeds/feed-status.js';
@@ -189,20 +195,25 @@ function FeedLink({
 }) {
   const { t } = useTranslation('reader');
   const { feed } = subscription;
+  const name = displayTitle(subscription);
+  // A long badge would squeeze the name to a few letters: it goes below it, and a line ends the feed.
+  const badgeBelow = subscription.inferenceMode !== 'off';
+  const badge = <ClassificationBadge mode={subscription.inferenceMode} />;
   return (
-    <li>
+    <li className={cx(badgeBelow && 'mb-1 border-b border-slate-200 pb-2 dark:border-slate-700')}>
       <div className="flex items-center gap-1">
         <Link
           to="/read/feed/$feedId"
           params={{ feedId: feed.id }}
           activeOptions={CURRENT}
           onClick={onNavigate}
+          title={name}
           className={cx(LINK, 'flex-1')}
         >
-          <span className="truncate">{displayTitle(subscription)}</span>
+          <span className="truncate">{name}</span>
           <Count label={t('sidebar.unread')} value={unreadOf(subscription)} />
         </Link>
-        <ClassificationBadge mode={subscription.inferenceMode} />
+        {badgeBelow ? null : badge}
         {feed.status === 'quarantined' ? (
           <span
             role="img"
@@ -213,6 +224,7 @@ function FeedLink({
           </span>
         ) : null}
       </div>
+      {badgeBelow ? <div className="ps-4">{badge}</div> : null}
     </li>
   );
 }
@@ -299,6 +311,7 @@ function FeedsSection({ onNavigate }: { onNavigate?: (() => void) | undefined })
                         params={{ name: group.name }}
                         activeOptions={CURRENT}
                         onClick={onNavigate}
+                        title={group.name}
                         className={LINK}
                       >
                         <span className="truncate">{group.name}</span>
@@ -365,6 +378,7 @@ function LabelsSection({ onNavigate }: { onNavigate?: (() => void) | undefined }
                   params={{ labelId: label.id }}
                   activeOptions={CURRENT}
                   onClick={onNavigate}
+                  title={label.name}
                   className={LINK}
                 >
                   <LabelDot color={label.color} />
@@ -380,6 +394,8 @@ function LabelsSection({ onNavigate }: { onNavigate?: (() => void) | undefined }
 }
 
 export interface ReaderSidebarProps {
+  /** The id of the navigation, for the button that collapses it. */
+  id?: string | undefined;
   counts: ArticleCounts | undefined;
   /** The lanes are in the top bar instead (narrow screens). */
   withoutLanes?: boolean;
@@ -388,15 +404,214 @@ export interface ReaderSidebarProps {
 }
 
 /** Lanes, then the feeds by folder, then the labels (spec 09 §3.1). */
-export function ReaderSidebar({ counts, withoutLanes = false, onNavigate }: ReaderSidebarProps) {
+export function ReaderSidebar({
+  id,
+  counts,
+  withoutLanes = false,
+  onNavigate,
+}: ReaderSidebarProps) {
   const { t } = useTranslation('reader');
   return (
-    <nav aria-label={t('sidebar.label')} className="flex flex-col gap-6">
+    <nav id={id} aria-label={t('sidebar.label')} className="flex flex-col gap-6">
       {withoutLanes ? null : (
         <LaneList counts={counts} foldable className="flex flex-col" onNavigate={onNavigate} />
       )}
       <FeedsSection onNavigate={onNavigate} />
       <LabelsSection onNavigate={onNavigate} />
+    </nav>
+  );
+}
+
+const COMPACT_LINK = cx(
+  'relative grid size-11 place-items-center rounded-lg text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800',
+  'aria-[current=page]:bg-indigo-50 aria-[current=page]:text-indigo-900 dark:aria-[current=page]:bg-indigo-950 dark:aria-[current=page]:text-indigo-100',
+  FOCUS_RING,
+);
+
+const DIVIDER = 'mx-2 border-t border-slate-200 dark:border-slate-700';
+
+const LANE_ICONS = {
+  for_you: StarIcon,
+  maybe: HelpIcon,
+  everything: ListIcon,
+  new: InboxIcon,
+  bookmarks: BookmarkIcon,
+} as const;
+
+/** The name of a collapsed entry with what its full row would say: the number and the states. */
+function compactName(name: string, extras: readonly (string | null)[]): string {
+  return [name, ...extras.filter((extra) => extra !== null)].join(', ');
+}
+
+/** A dot for unread (or saved) articles; the number is in the name of the link. */
+function CompactDot({ shown }: { shown: boolean }) {
+  return shown ? (
+    <span
+      aria-hidden="true"
+      className="absolute end-1 top-1 size-2 rounded-full bg-indigo-600 dark:bg-indigo-300"
+    />
+  ) : null;
+}
+
+/** The feed's icon when its images may load, else the first letter of its name. */
+function FeedAvatar({ subscription, name }: { subscription: Subscription; name: string }) {
+  const [failed, setFailed] = useState(false);
+  const icon = subscription.effectiveImagesAllowed ? httpsUrl(subscription.feed.iconUrl) : null;
+  if (icon !== null && !failed) {
+    return (
+      <img
+        src={icon.href}
+        alt=""
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+        className="size-5 rounded-sm"
+      />
+    );
+  }
+  const letter = Array.from(name.trim())[0]?.toLocaleUpperCase() ?? '?';
+  return (
+    <span
+      aria-hidden="true"
+      className="grid size-7 place-items-center rounded-md bg-slate-200 text-sm font-semibold text-slate-800 dark:bg-slate-700 dark:text-slate-100"
+    >
+      {letter}
+    </span>
+  );
+}
+
+function CompactLanes({ counts }: { counts: ArticleCounts | undefined }) {
+  const { t } = useTranslation('reader');
+  const { hideEverything } = useMe().preferences;
+  const [everythingOpen] = useEverythingOpen();
+  const lanes = (['for_you', 'maybe', 'everything', 'new', 'bookmarks'] as const).filter(
+    (lane) => lane !== 'everything' || (!hideEverything && everythingOpen),
+  );
+  return (
+    <ul role="list" aria-label={t('sidebar.lanes')} className="flex flex-col items-center gap-1">
+      {lanes.map((lane) => {
+        const Icon = LANE_ICONS[lane];
+        const count = counts === undefined ? 0 : countOf(counts, lane);
+        const label = compactName(t(`lanes.${lane}`), [
+          count > 0
+            ? `${t(lane === 'bookmarks' ? 'sidebar.saved' : 'sidebar.unread')} ${count}`
+            : null,
+        ]);
+        return (
+          <li key={lane}>
+            <Link
+              to="/read/$lane"
+              params={{ lane }}
+              activeOptions={CURRENT}
+              aria-label={label}
+              title={label}
+              className={COMPACT_LINK}
+            >
+              <Icon />
+              <CompactDot shown={count > 0} />
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function CompactFeeds() {
+  const { t, i18n } = useTranslation('reader');
+  const { folderOrder } = useMe().preferences;
+  const subscriptions = useSubscriptions();
+  useReloadOnReconnect(subscriptions);
+  const feeds = useMemo(
+    () =>
+      groupByFolder(
+        (subscriptions.data ?? []).filter((subscription) => !subscription.hidden),
+        folderOrder,
+        i18n.language,
+      ).flatMap((group) => group.feeds),
+    [subscriptions.data, folderOrder, i18n.language],
+  );
+  if (feeds.length === 0) return null;
+  return (
+    <ul role="list" aria-label={t('sidebar.feeds')} className="flex flex-col items-center gap-1">
+      {feeds.map((subscription) => {
+        const name = displayTitle(subscription);
+        const unread = unreadOf(subscription);
+        const label = compactName(name, [
+          subscription.inferenceMode === 'off'
+            ? null
+            : t(`feeds:mode.${subscription.inferenceMode}`),
+          subscription.feed.status === 'quarantined' ? t('feeds:status.quarantined') : null,
+          unread > 0 ? `${t('sidebar.unread')} ${unread}` : null,
+        ]);
+        return (
+          <li key={subscription.feed.id}>
+            <Link
+              to="/read/feed/$feedId"
+              params={{ feedId: subscription.feed.id }}
+              activeOptions={CURRENT}
+              aria-label={label}
+              title={label}
+              className={COMPACT_LINK}
+            >
+              <FeedAvatar subscription={subscription} name={name} />
+              <CompactDot shown={unread > 0} />
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function CompactLabels() {
+  const { t } = useTranslation('reader');
+  const labels = useLabels(true);
+  useReloadOnReconnect(labels);
+  if (labels.data === undefined || labels.data.length === 0) return null;
+  return (
+    <ul role="list" aria-label={t('sidebar.labels')} className="flex flex-col items-center gap-1">
+      {labels.data.map((label) => (
+        <li key={label.id}>
+          <Link
+            to="/read/label/$labelId"
+            params={{ labelId: label.id }}
+            activeOptions={CURRENT}
+            aria-label={label.name}
+            title={label.name}
+            className={COMPACT_LINK}
+          >
+            <span
+              aria-hidden="true"
+              className="size-3 rounded-full"
+              style={{ backgroundColor: label.color }}
+            />
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * The collapsed sidebar of a wide screen (D-235): the lanes as icons, the feeds as their icons or
+ * first letters, the labels as their colours. Every link is named in full, with its count.
+ */
+export function CompactSidebar({
+  id,
+  counts,
+}: {
+  id?: string | undefined;
+  counts: ArticleCounts | undefined;
+}) {
+  const { t } = useTranslation('reader');
+  return (
+    <nav id={id} aria-label={t('sidebar.label')} className="flex flex-col gap-3">
+      <CompactLanes counts={counts} />
+      <hr className={DIVIDER} />
+      <CompactFeeds />
+      <hr className={DIVIDER} />
+      <CompactLabels />
     </nav>
   );
 }

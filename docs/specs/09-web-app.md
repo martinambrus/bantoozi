@@ -143,6 +143,12 @@ login without leaking the previous account's UI. Slow classification leaves arti
     rule/card/preference for an intentional edit. Hidden recovery never changes normal lane defaults.
   - Per-feed classification badge: **Off**, **Training: selected articles**, or **Active: new
     articles**. Off is the default; subscribing/importing/adding interests does not enable inference.
+    Off sits beside the name; Training and Active go below it, with a line under the feed, so the
+    name keeps its width. Every feed, folder and label name carries its full text as a tooltip (D-235).
+- **Collapsed sidebar (desktop):** a button at the top folds the sidebar to a narrow strip: lane
+  icons, feed icons (when the feed's images are allowed) or first letters, and label colours, each
+  link named and titled in full with its count and state, with a dot for unread. The choice is kept
+  per device in browser storage (D-235).
 - **List header:**
   - the tier slider (1–5, FeedIt's) filtering `for_you`/`maybe` by minimum tier; its value is saved to
     `prefs.defaultTier`

@@ -26,7 +26,9 @@
     "retryLabels": "Retry loading labels",
     "unread": "Unread:",
     "saved": "Saved:",
-    "everythingToggle": "Everything else lane"
+    "everythingToggle": "Everything else lane",
+    "collapse": "Collapse the sidebar",
+    "expand": "Expand the sidebar"
   },
   "topBar": {
     "label": "Lane switcher",

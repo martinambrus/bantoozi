@@ -1,14 +1,19 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { failure, json } from '../api/fake-fetch.js';
 import { findToast, makeLabel, ratingResponse, undoResponse } from '../article/harness.js';
 import { makeSubscription, type SubscriptionOverrides } from '../feeds/support.js';
+import { SIDEBAR_COLLAPSED_KEY } from '../../src/features/reader/sidebar-collapsed.js';
 import { makeMe } from '../session/fixtures.js';
 import { acked } from './actions/fake-transport.js';
 import { createReaderHarness, item, rowOf, sidebar } from './support.js';
 
 const { open } = createReaderHarness();
+
+afterEach(() => {
+  localStorage.removeItem(SIDEBAR_COLLAPSED_KEY);
+});
 
 const lanes = () => screen.getByRole('list', { name: 'Lanes' });
 const laneNames = () =>
@@ -236,6 +241,28 @@ describe('the reader sidebar feeds and folders', () => {
     expect(within(await rowOf('Quiet')).getByText('Off')).toBeVisible();
     expect(within(await rowOf('Learner')).getByText('Training: selected articles')).toBeVisible();
     expect(within(await rowOf('Auto')).getByText('Active: new articles')).toBeVisible();
+  });
+
+  it('puts a long classification below the full name, ends that feed with a line, and titles every name', async () => {
+    await open({
+      path: '/read/for_you',
+      subscriptions: [
+        feed('1', 'A feed with a rather long name', 'Tech', { inferenceMode: 'training' }),
+        feed('2', 'Quiet', null, { inferenceMode: 'off' }),
+      ],
+    });
+
+    const learner = await screen.findByRole('link', { name: 'A feed with a rather long name' });
+    expect(learner).toHaveAttribute('title', 'A feed with a rather long name');
+    const badge = within(learner.closest('li')!).getByText('Training: selected articles');
+    expect(learner.parentElement).not.toContainElement(badge);
+    expect(learner.closest('li')).toHaveClass('border-b');
+
+    const quiet = screen.getByRole('link', { name: 'Quiet' });
+    expect(quiet).toHaveAttribute('title', 'Quiet');
+    expect(quiet.parentElement).toContainElement(within(quiet.closest('li')!).getByText('Off'));
+    expect(quiet.closest('li')).not.toHaveClass('border-b');
+    expect(screen.getByRole('link', { name: 'Tech' })).toHaveAttribute('title', 'Tech');
   });
 
   it('says when there are no feeds', async () => {
@@ -536,5 +563,72 @@ describe('the reader sidebar without a connection', () => {
     expect(await nav.findByText("The feeds couldn't be loaded.")).toBeVisible();
     expect(nav.getByText("The labels couldn't be loaded.")).toBeVisible();
     expect(nav.queryByText(/back online/)).toBeNull();
+  });
+});
+
+describe('the collapsed sidebar', () => {
+  const subscriptions = [
+    feed('1', 'verge', 'Tech', {
+      inferenceMode: 'training',
+      unread: { forYou: 2, maybe: 0, everything: 0, new: 0 },
+    }),
+    feed('2', 'Flaky', null, { feed: { status: 'quarantined' } }),
+  ];
+
+  it('folds to icons and first letters with full names, and stays folded on this device', async () => {
+    const { app } = await open({
+      path: '/read/for_you',
+      counts: { forYou: 3, bookmarks: 2 },
+      subscriptions,
+      labels: [makeLabel('11', 'Batteries', '#0ea5e9')],
+    });
+    await screen.findByRole('link', { name: /^verge/ });
+    const collapse = screen.getByRole('button', { name: 'Collapse the sidebar' });
+    expect(collapse).toHaveAttribute('aria-expanded', 'true');
+    expect(collapse).toHaveAttribute('aria-controls', sidebar().id);
+
+    await app.user.click(collapse);
+
+    const expand = screen.getByRole('button', { name: 'Expand the sidebar' });
+    expect(expand).toHaveAttribute('aria-expanded', 'false');
+    expect(localStorage.getItem(SIDEBAR_COLLAPSED_KEY)).toBe('1');
+    expect(within(lanes()).getByRole('link', { name: 'For you, Unread: 3' })).toHaveAttribute(
+      'href',
+      '/read/for_you',
+    );
+    expect(within(lanes()).getByRole('link', { name: 'Bookmarks, Saved: 2' })).toBeVisible();
+    const feeds = within(screen.getByRole('list', { name: 'Feeds' }));
+    const verge = feeds.getByRole('link', {
+      name: 'verge, Training: selected articles, Unread: 2',
+    });
+    expect(verge).toHaveAttribute('title', 'verge, Training: selected articles, Unread: 2');
+    expect(verge).toHaveTextContent('V');
+    expect(feeds.getByRole('link', { name: 'Flaky, Having problems' })).toBeVisible();
+    expect(await screen.findByRole('link', { name: 'Batteries' })).toHaveAttribute(
+      'href',
+      '/read/label/11',
+    );
+    expect(screen.queryByRole('searchbox')).toBeNull();
+  });
+
+  it('opens folded when this device folded it, and unfolds again', async () => {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, '1');
+    const { app } = await open({ path: '/read/for_you', subscriptions });
+
+    await app.user.click(await screen.findByRole('button', { name: 'Expand the sidebar' }));
+
+    expect(await screen.findByRole('heading', { name: 'Feeds' })).toBeVisible();
+    expect(localStorage.getItem(SIDEBAR_COLLAPSED_KEY)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Collapse the sidebar' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
+  it('is not offered on a narrow screen', async () => {
+    await open({ path: '/read/for_you', desktop: false });
+
+    await screen.findByRole('navigation', { name: 'Lane switcher' });
+    expect(screen.queryByRole('button', { name: 'Collapse the sidebar' })).toBeNull();
   });
 });

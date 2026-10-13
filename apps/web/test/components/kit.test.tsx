@@ -443,6 +443,11 @@ describe('icons', () => {
     'OfflineIcon',
     'SunIcon',
     'MoonIcon',
+    'StarIcon',
+    'HelpIcon',
+    'ListIcon',
+    'InboxIcon',
+    'SidebarIcon',
   ];
 
   const components = Object.entries(icons) as [string, ComponentType<{ className?: string }>][];

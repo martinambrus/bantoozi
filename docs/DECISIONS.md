@@ -2222,3 +2222,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   read and rated articles stay listed; a rated one no longer leaves after the 400 ms animation, a hidden one still
   does (the server leaves hidden articles out of those lanes either way). The list with read articles is cached and
   kept on the device apart from the unread one. Counts stay unread counts. Specs 08 §3.1 and 09 §3.1, §3.3 updated.
+- D-235: 2026-10-13 (owner request) — Sidebar. A Training or Active classification badge beside a feed squeezed its
+  name to a few letters, with no tooltip: those two badges now sit below the name, with a line under that feed; Off
+  (short) stays beside it. Feed, folder and label links carry their full name as `title`. On a wide screen a button
+  collapses the sidebar to a 4 rem strip: lane icons (For you star, Maybe question mark, Everything else list, New
+  inbox, Bookmarks bookmark), each feed's icon when its images are allowed (same policy as the list, spec 09 §1) or
+  else its first letter, and label colours; every link's accessible name and tooltip give the full name, the
+  classification, a problem state and the count, and a dot marks unread. The feed filter and folder links are left
+  out of the strip; feeds keep the folder order. The choice is per device (localStorage
+  `bantoozi:sidebar-collapsed`), not an account preference. Spec 09 §3.1 updated.

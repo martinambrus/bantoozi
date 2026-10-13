@@ -1,8 +1,11 @@
 import type { ArticleCounts, ArticleListItem } from '@bantoozi/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useId, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { cx } from '../../components/cx.js';
+import { IconButton } from '../../components/icon-button.js';
+import { SidebarIcon } from '../../components/icons.js';
 import { Sheet } from '../../components/sheet.js';
 import { useAccountId, useMe } from '../../session/context.js';
 import { DeadFeedBanner } from '../feeds/dead-feed-banner.js';
@@ -14,7 +17,8 @@ import { ReaderHeader } from './header.js';
 import type { ScopedLane } from './lanes.js';
 import { unreadKeys, useCounts } from './queries.js';
 import { ReaderShortcuts } from './shortcuts/reader-shortcuts.js';
-import { LaneSwitcher, ReaderSidebar } from './sidebar.js';
+import { useSidebarCollapsed } from './sidebar-collapsed.js';
+import { CompactSidebar, LaneSwitcher, ReaderSidebar } from './sidebar.js';
 import { useArticleList } from './use-article-list.js';
 import { useDesktop } from './use-desktop.js';
 import { usePolling } from './use-polling.js';
@@ -38,12 +42,32 @@ function ReaderFrame({ counts, children }: ReaderFrameProps) {
   const { t } = useTranslation('reader');
   const desktop = useDesktop();
   const [browsing, setBrowsing] = useState(false);
+  const [collapsed, setCollapsed] = useSidebarCollapsed();
+  const sidebarId = useId();
 
   if (desktop) {
     return (
       <div className="mx-auto flex w-full max-w-[96rem] items-start gap-6 px-4 py-4">
-        <div className="sticky top-[calc(4rem+var(--update-bar-height,0px))] max-h-[calc(100dvh-5rem-var(--update-bar-height,0px))] w-64 shrink-0 overflow-y-auto">
-          <ReaderSidebar counts={counts} />
+        <div
+          className={cx(
+            'sticky top-[calc(4rem+var(--update-bar-height,0px))] flex max-h-[calc(100dvh-5rem-var(--update-bar-height,0px))] shrink-0 flex-col gap-2 overflow-y-auto',
+            collapsed ? 'w-16 items-center' : 'w-64',
+          )}
+        >
+          <IconButton
+            label={t(collapsed ? 'sidebar.expand' : 'sidebar.collapse')}
+            aria-expanded={!collapsed}
+            aria-controls={sidebarId}
+            onClick={() => setCollapsed(!collapsed)}
+            className={collapsed ? undefined : 'self-end'}
+          >
+            <SidebarIcon />
+          </IconButton>
+          {collapsed ? (
+            <CompactSidebar id={sidebarId} counts={counts} />
+          ) : (
+            <ReaderSidebar id={sidebarId} counts={counts} />
+          )}
         </div>
         <div className="min-w-0 flex-1">{children}</div>
       </div>

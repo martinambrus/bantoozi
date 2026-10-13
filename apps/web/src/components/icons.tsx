@@ -190,3 +190,38 @@ export const MoonIcon = createIcon(
   'MoonIcon',
   <path d="M20.5 14.2A8.5 8.5 0 1 1 9.8 3.5a6.8 6.8 0 0 0 10.7 10.7z" />,
 );
+
+export const StarIcon = createIcon(
+  'StarIcon',
+  <path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.8L12 16.85 6.75 19.6l1-5.8L3.5 9.7l5.9-.9z" />,
+);
+
+export const HelpIcon = createIcon(
+  'HelpIcon',
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.7" />
+    <path d="M12 17.25h.01" />
+  </>,
+);
+
+export const ListIcon = createIcon(
+  'ListIcon',
+  <path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" />,
+);
+
+export const InboxIcon = createIcon(
+  'InboxIcon',
+  <>
+    <path d="M4 13.5l2.4-7.2A1.5 1.5 0 0 1 7.8 5.3h8.4a1.5 1.5 0 0 1 1.4 1l2.4 7.2V18a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18z" />
+    <path d="M4 13.5h4.5l1 2h5l1-2H20" />
+  </>,
+);
+
+export const SidebarIcon = createIcon(
+  'SidebarIcon',
+  <>
+    <rect x="3.5" y="4.5" width="17" height="15" rx="1.5" />
+    <path d="M9.5 4.5v15" />
+  </>,
+);
