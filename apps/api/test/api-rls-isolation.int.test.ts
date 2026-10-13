@@ -879,3 +879,34 @@ describe('every mutation as A with B ids changes nothing of B (spec 08 §12 "Cro
     expect(detail.bookmarkedAt).not.toBeNull();
   });
 });
+
+describe('GET /me/learning shows the caller only (spec 08 §12)', () => {
+  it("A sees none of C's ratings, training feeds or models", async () => {
+    const c = await createTestUser(h);
+    const feed = await createFeed(h.owner);
+    await createSubscription(h.owner, { userId: c.id, feedId: feed.id, mode: 'training' });
+    const article = await createArticle(h.owner, { feedIds: [feed.id] });
+    await h.owner.query(
+      `INSERT INTO user_article (user_id, article_id, rating, rated_at) VALUES ($1, $2, 1, now())`,
+      [c.id, article.id],
+    );
+    await h.owner.query(
+      `INSERT INTO feedback_events (user_id, article_id, kind, value)
+       VALUES ($1, $2, 'rate', '{"v":1,"rating":1,"signalOrigin":"explicit"}'::jsonb)`,
+      [c.id, article.id],
+    );
+    await h.owner.query(
+      `INSERT INTO user_models (user_id, version, feature_spec_sha, n_labels, n_pos, n_neg, weights,
+                                intercept, scaler, calibration, metrics, active)
+       VALUES ($1, 7, $2, 0, 0, 0, '{}', 0, '{}', '{}', '{"status":"activated"}'::jsonb, true)`,
+      [c.id, 'a'.repeat(64)],
+    );
+    const own = await json(apiClient(h.server, c).get('/me/learning'));
+    expect(own.model.active).toMatchObject({ version: 7 });
+    expect(own.feeds.map((f: { feedId: string }) => f.feedId)).toEqual([String(feed.id)]);
+    const mine = await json(aApi.get('/me/learning'));
+    expect(mine.model.active).toBeNull();
+    expect(mine.model.counts).toEqual({ explicit: 0, likes: 0, dislikes: 0 });
+    expect(mine.feeds).toEqual([]);
+  });
+});

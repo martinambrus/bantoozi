@@ -78,6 +78,7 @@ import {
   LabelBodySchema,
   LabelListSchema,
   LabelMutationResponseSchema,
+  LearningStatusSchema,
   LibraryCandidatesQuerySchema,
   LibraryCandidatesSchema,
   LibraryPageSchema,
@@ -243,6 +244,13 @@ export const routes = {
     auth: 'user',
     idempotent: false,
     response: MeSchema,
+  }),
+  meLearning: defineRoute({
+    method: 'GET',
+    path: '/me/learning',
+    auth: 'user',
+    idempotent: false,
+    response: LearningStatusSchema,
   }),
   meUpdate: defineRoute({
     method: 'PATCH',

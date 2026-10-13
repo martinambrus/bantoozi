@@ -15,6 +15,7 @@ export * from './dto/auth.js';
 export * from './dto/cards.js';
 export * from './dto/common.js';
 export * from './dto/explain.js';
+export * from './dto/learning.js';
 export * from './dto/me.js';
 export * from './dto/provider-credentials.js';
 export * from './dto/rules.js';

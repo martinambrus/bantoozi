@@ -287,3 +287,18 @@ export async function exportBookmarksPage(
           },
   }));
 }
+
+/** The tenant's training-mode subscriptions with the feed's items first seen in the last 7 days. */
+export async function listTrainingFeeds(
+  tx: TenantTx,
+): Promise<{ feedId: string; items7d: number | null }[]> {
+  const result = await tx.execute<{ feed_id: string; items_7d: string | null }>(sql`
+    SELECT s.feed_id::text AS feed_id, f.publish_stats->>'items_7d' AS items_7d
+      FROM subscriptions s JOIN feeds f ON f.id = s.feed_id
+     WHERE s.user_id = ${tenantUserId(tx)}::uuid AND s.inference_mode = 'training'
+     ORDER BY s.feed_id`);
+  return result.rows.map((row) => {
+    const items = row.items_7d === null ? Number.NaN : Number(row.items_7d);
+    return { feedId: row.feed_id, items7d: Number.isFinite(items) ? items : null };
+  });
+}

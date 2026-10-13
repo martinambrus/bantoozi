@@ -35,6 +35,7 @@ GET /library
 GET /library/updates
 GET /me
 GET /me/export
+GET /me/learning
 GET /metrics
 GET /readyz
 GET /rules

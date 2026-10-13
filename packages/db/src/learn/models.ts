@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 
 import type { Executor, Transaction } from '../client.js';
+import { toDate, type RawTimestamp } from '../timestamps.js';
 
 /** The `user_models` columns learning reads back (spec 02 `user_models`). */
 export interface StoredModelRow {
@@ -8,6 +9,7 @@ export interface StoredModelRow {
   active: boolean;
   featureSpecSha: string;
   metrics: Record<string, unknown>;
+  trainedAt: Date;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -91,8 +93,9 @@ export async function loadModelState(
     active: boolean;
     feature_spec_sha: string;
     metrics: unknown;
+    trained_at: RawTimestamp;
   }>(sql`
-    SELECT version, active, feature_spec_sha, metrics FROM user_models
+    SELECT version, active, feature_spec_sha, metrics, trained_at FROM user_models
      WHERE user_id = ${userId}::uuid AND (active OR version = (
        SELECT max(version) FROM user_models WHERE user_id = ${userId}::uuid) OR version = (
        SELECT max(version) FROM user_models WHERE user_id = ${userId}::uuid
@@ -103,6 +106,7 @@ export async function loadModelState(
     active: row.active,
     featureSpecSha: row.feature_spec_sha,
     metrics: isRecord(row.metrics) ? row.metrics : {},
+    trainedAt: toDate(row.trained_at),
   }));
   return {
     latest: rows[0] ?? null,
