@@ -138,7 +138,11 @@ export function applyRun(
     const open = existing?.active === true;
     const base = open ? existing : { firstAt: at, lastSentAt: null, active: true };
     const entry = { ...base, title: safeText(title, 120) };
-    if (!due.has(key) && open) continue;
+    if (!due.has(key) && open) {
+      // Not due for its reminder: nothing is sent, but a legacy entry gets its title for the recovery mail.
+      if (existing.title !== entry.title) next[key] = entry;
+      continue;
+    }
     // A new condition cut from the digest is opened unsent, so the next run mails it first.
     if (!due.has(key)) {
       next[key] = entry;

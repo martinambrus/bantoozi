@@ -60,6 +60,33 @@ describe('EffectiveRatingFold (M8-F10 review)', () => {
     expect(got).toEqual(expected);
   });
 
+  it('retains a constant number of states for a pair with 10,000 rating events', () => {
+    // Each undo follows its own rating (spec 08 §5.4: an undo needs the version that mutation produced).
+    const events: MetricsRatingEvent[] = [];
+    for (let n = 0; n < 10_000; n += 1) {
+      const kind = n % 5 === 4 ? 'undo' : n % 13 === 7 ? 'unrate' : 'rate';
+      events.push(event({ n, kind, rating: kind === 'rate' ? (n % 3 === 0 ? 1 : -1) : null }));
+    }
+    // Oracle: the unbounded stack replay (every rating or unrate pushes, an undo pops).
+    const stack: Array<number | null> = [];
+    for (const e of events) {
+      if (e.kind === 'undo') stack.pop();
+      else stack.push(e.kind === 'unrate' ? null : e.at.getTime());
+    }
+    const top = stack.at(-1);
+    const expected = top === null || top === undefined ? [] : [top];
+    const got: EffectiveRating[] = [];
+    const fold = new EffectiveRatingFold((r) => got.push(r));
+    let most = 0;
+    for (const page of inPages(events, PAGE)) {
+      fold.push(page);
+      most = Math.max(most, fold.retained().states);
+    }
+    expect(most).toBeLessThanOrEqual(2);
+    fold.finish();
+    expect(got.map((r) => r.at)).toEqual(expected);
+  });
+
   it('keeps the same ratings for many pairs cut at arbitrary page edges', () => {
     const events: MetricsRatingEvent[] = [];
     for (let p = 0; p < 40; p += 1) {

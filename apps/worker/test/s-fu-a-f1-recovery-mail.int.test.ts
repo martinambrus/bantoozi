@@ -112,4 +112,33 @@ describe('M8-F1 recovery mail content', () => {
     ).toBe(true);
     expect(await w.activeEntries(), 'incident closed').toHaveLength(0);
   });
+
+  it('persists the title of a legacy active incident that is not due, without mail, and the recovery names it', async () => {
+    const mailer = new RecordingMailer();
+    const { alertText } = await openAndHeal(mailer);
+    const title = alertTitle(alertText);
+    const state = await w.state();
+    const legacy = Object.fromEntries(
+      Object.entries(state).map(([key, e]) => [
+        key,
+        { firstAt: e.firstAt, lastSentAt: e.lastSentAt, active: e.active },
+      ]),
+    );
+    await w.setting('alerts.state', legacy);
+
+    // Still active, 10 minutes after the alert: not due for the 6-hour reminder.
+    await tick(after(10 * MINUTE), mailer);
+    expect(mailer.to(ADMIN), 'no mail for a not-due incident').toHaveLength(1);
+    const stored = Object.values(await w.state()).filter((e) => e.active);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]!.title).toBe(title);
+    expect(stored[0]!.lastSentAt, 'lastSentAt unchanged').toBe(
+      Object.values(legacy)[0]!.lastSentAt,
+    );
+
+    await w.breaker('closed');
+    await tick(after(20 * MINUTE), mailer);
+    expect(mailer.to(ADMIN)).toHaveLength(2);
+    expect(mailer.sent[1]!.text, 'the recovery mail shows the title').toContain(title);
+  });
 });

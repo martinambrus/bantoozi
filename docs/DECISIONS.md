@@ -2029,3 +2029,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   translated only when it has a usable current-revision translation: target `en`, quality not `fail`, a
   translated title and not a skipped placeholder, the rows `selectBestTranslation` would accept. A stored
   `fail` row no longer sends the article to native enrichment; it is translated first.
+- D-210: 2026-10-13 M8-F10, M8-F1 (PR #27 Codex review round 3) — (1) The streaming rating fold keeps at most two
+  rating states for the open pair: the current one and the one before the last change. That is exact because an
+  undo is accepted only within `UNDO_WINDOW_MS` and only for the latest mutation of the article (every mutation,
+  the undo included, advances `state_version`, which the undo must match), so two undos in a row are impossible.
+  Per-pair memory is constant however many events a pair has. (2) An incident stored without a title that is still
+  open and not yet due for its reminder gets the title persisted on the run that observes it, without mail or a
+  `lastSentAt` change, so its recovery mail names it.

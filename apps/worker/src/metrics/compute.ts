@@ -35,12 +35,16 @@ const isLane = (lane: string | null): lane is MetricLane =>
 /**
  * Streaming form of {@link effectiveRatings} (M8-F10 review): events arrive in any number of
  * chunks, ordered per user and article across them, and each completed pair is handed to `emit` at
- * once. Only the one open pair's state stack (ratings, not events) is retained, so the memory is
- * independent of the number of events and pairs.
+ * once. Only the one open pair's current and previous state (at most two ratings, not events) are
+ * retained, so the memory is independent of the number of events and pairs.
  */
 export class EffectiveRatingFold {
   private pair: string | undefined;
-  private states: Array<EffectiveRating | null> = [];
+  // The current effective state and the one before it. An undo needs the version its own mutation
+  // produced (spec 08 §5.4), and undoing advances that version, so an undo always reverts the latest
+  // rating event and never one further back: two states are exact. `undefined` is "not known".
+  private top: EffectiveRating | null | undefined;
+  private prev: EffectiveRating | null | undefined;
 
   constructor(private readonly emit: (rating: EffectiveRating) => void) {}
 
@@ -50,14 +54,16 @@ export class EffectiveRatingFold {
       if (id !== this.pair) {
         this.flush();
         this.pair = id;
-        this.states = [];
+        this.top = undefined;
+        this.prev = undefined;
       }
       if (event.kind === 'undo') {
-        this.states.pop();
+        this.top = this.prev ?? null;
+        this.prev = undefined;
       } else if (event.kind === 'unrate') {
-        this.states.push(null);
+        this.set(null);
       } else if (isLane(event.lane) && (event.rating === 1 || event.rating === -1)) {
-        this.states.push({
+        this.set({
           at: event.at.getTime(),
           lane: event.lane,
           liked: event.rating === 1,
@@ -66,26 +72,34 @@ export class EffectiveRatingFold {
           prompted: event.prompted,
         });
       } else {
-        this.states.push(null);
+        this.set(null);
       }
     }
+  }
+
+  private set(state: EffectiveRating | null): void {
+    this.prev = this.top;
+    this.top = state;
   }
 
   /** Emits the open pair (if it has an effective rating); call once after the last chunk. */
   finish(): void {
     this.flush();
     this.pair = undefined;
-    this.states = [];
+    this.top = undefined;
+    this.prev = undefined;
   }
 
   /** What the fold holds between chunks: the open pair's states only, never events or emitted ratings. */
   retained(): { openPair: string | undefined; states: number } {
-    return { openPair: this.pair, states: this.states.length };
+    return {
+      openPair: this.pair,
+      states: (this.top === undefined ? 0 : 1) + (this.prev === undefined ? 0 : 1),
+    };
   }
 
   private flush(): void {
-    const top = this.states.at(-1);
-    if (top) this.emit(top);
+    if (this.top) this.emit(this.top);
   }
 }
 
