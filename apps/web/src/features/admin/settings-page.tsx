@@ -6,7 +6,7 @@ import {
   type AdminSettingsPatchResult,
 } from '@bantoozi/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { writeQueryData } from '../../api/cache-writes.js';
@@ -22,6 +22,14 @@ import { WorkersStatus } from './workers-status.js';
 
 const isRuntimeKey = (key: string): boolean =>
   (RUNTIME_SETTING_KEYS as readonly string[]).includes(key);
+/** After a runtime save the workers are read again every few seconds, for this long at most. */
+const RESTART_POLL_MS = 3000;
+const RESTART_WATCH_MS = 120_000;
+/**
+ * A worker notices a changed value with its settings check (every 10 s) and reports the pending
+ * restart with its next heartbeat (every 30 s): an answer without one this soon proves nothing.
+ */
+const RESTART_GRACE_MS = 45_000;
 const BASE_KEYS = ADMIN_PATCHABLE_SETTING_KEYS.filter((key) => !isRuntimeKey(key));
 
 export function AdminSettingsPage() {
@@ -37,6 +45,9 @@ export function AdminSettingsPage() {
   const sent = useRef(0);
   const applied = useRef(0);
   const send = () => (sent.current += 1);
+  // When the workers' restart began to be followed: the last runtime save, or the first answer that
+  // already showed a worker waiting for a restart (a change made elsewhere).
+  const [savedAt, setSavedAt] = useState<number | null>(null);
 
   const settings = useQuery({
     queryKey: adminKey('settings'),
@@ -51,7 +62,22 @@ export function AdminSettingsPage() {
       applied.current = Math.max(applied.current, sequence);
       return data;
     },
+    refetchInterval: (query) => {
+      if (savedAt === null) return false;
+      const elapsed = Date.now() - savedAt;
+      if (elapsed >= RESTART_WATCH_MS) return false;
+      const waiting = query.state.data?.workers.some((worker) => worker.pendingRestart) ?? false;
+      return waiting || elapsed < RESTART_GRACE_MS ? RESTART_POLL_MS : false;
+    },
   });
+
+  // Each restart cycle seen beginning (pending turns true: on opening the page, after a save here or
+  // a change made elsewhere) gets a fresh bounded window; a worker that stays pending does not
+  // extend it.
+  const restartPending = settings.data?.workers.some((worker) => worker.pendingRestart) ?? false;
+  useEffect(() => {
+    if (restartPending) setSavedAt(Date.now());
+  }, [restartPending]);
 
   /**
    * Takes what one editor saved from the answer: the key's value, source, default and stored time.
@@ -135,7 +161,10 @@ export function AdminSettingsPage() {
                         ),
                       ]}
                       onSend={send}
-                      onSaved={(result, sequence) => adopt(key, result, sequence)}
+                      onSaved={(result, sequence) => {
+                        adopt(key, result, sequence);
+                        setSavedAt(Date.now());
+                      }}
                       onStale={() => void refresh('settings')}
                     />
                   ))}

@@ -16,6 +16,7 @@
     "title": "Add your feeds",
     "lead": "Fetching and reading work without any AI, and every new feed starts with classification Off. You decide later, feed by feed, whether anything is analyzed.",
     "yours": "Your feeds",
+    "fetchingFirst": "Fetching articles…",
     "count_one": "You follow {{count}} feed.",
     "count_other": "You follow {{count}} feeds.",
     "needOne": "Add at least one feed to continue.",

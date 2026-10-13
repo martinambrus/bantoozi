@@ -87,7 +87,9 @@ describe('the feed list', () => {
     it('shows a feed that was never fetched as not updated yet', async () => {
       await openFeeds({
         subscriptions: [
-          makeSubscription({ feed: { id: '1', title: 'Alpha', lastSuccessAt: null } }),
+          makeSubscription({
+            feed: { id: '1', title: 'Alpha', status: 'paused', lastSuccessAt: null },
+          }),
         ],
       });
 

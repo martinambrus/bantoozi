@@ -16,6 +16,7 @@ import { useRuleActions } from '../article/use-rule-actions.js';
 import { CardEditor } from '../interests/card-editor.js';
 import { Section } from './section.js';
 import { titleWords } from './title-words.js';
+import { usePressed } from './use-pressed.js';
 import { useRuleRemoval } from './use-rule-removal.js';
 
 /** One word of the title, chosen from a menu, becomes a muted keyword (spec 09 §3.5). */
@@ -61,7 +62,7 @@ function MuteKeyword({ words }: { words: string[] }) {
   return (
     <Menu
       trigger={(props) => (
-        <Button {...props} variant="secondary">
+        <Button {...props} variant="secondary" loading={create.isPending}>
           <EyeOffIcon className="size-4" />
           {t('actions.muteKeyword')}
           <ChevronDownIcon className="size-4" />
@@ -82,6 +83,7 @@ export function Actions({ item }: { item: ArticleListItem }) {
   const { t } = useTranslation('why');
   const { t: tArticle } = useTranslation('article');
   const rules = useRuleActions(item);
+  const { pressed, press } = usePressed<string>(rules.pending);
   const [makingCard, setMakingCard] = useState(false);
   const actionsRef = useRef<HTMLDivElement>(null);
   const words = titleWords(item.title);
@@ -99,7 +101,16 @@ export function Actions({ item }: { item: ArticleListItem }) {
           {t('actions.makeCard')}
         </Button>
         {sourceActions.map(({ label, run }) => (
-          <Button key={label} variant="secondary" onClick={run}>
+          <Button
+            key={label}
+            variant="secondary"
+            disabled={rules.pending}
+            loading={pressed === label}
+            onClick={() => {
+              press(label);
+              run();
+            }}
+          >
             {label}
           </Button>
         ))}

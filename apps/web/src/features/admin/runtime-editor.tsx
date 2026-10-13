@@ -25,6 +25,7 @@ import {
   sameDraft,
   type Draft,
 } from './runtime-fields.js';
+import { BackgroundWork, savedQueues, useQueueWatch } from './queue-watch.js';
 import { saveError } from './setting-editor.js';
 import { conflictReason } from './use-admin.js';
 
@@ -71,6 +72,8 @@ export function RuntimeEditor({
   const [failure, setFailure] = useState<unknown>(null);
   const [edit, setEdit] = useState<Draft | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
+  const [resetting, setResetting] = useState(false);
+  const work = useQueueWatch();
   const errorId = useId();
 
   const fields = FIELDS[settingKey];
@@ -88,6 +91,7 @@ export function RuntimeEditor({
     const sent = draft;
     const signIn = session.currentSignIn();
     setFailure(null);
+    setResetting(body === null);
     const sequence = onSend();
     try {
       const result = await update.mutateAsync({
@@ -98,6 +102,8 @@ export function RuntimeEditor({
       });
       if (session.currentSignIn() !== signIn) return;
       onSaved(result, sequence);
+      const queues = savedQueues(settingKey, result);
+      if (queues !== undefined) work.start(queues);
       // Text edited while the save was on its way stays, still to be saved.
       setEdit((current) =>
         body === null || (current !== null && sameDraft(current, sent)) ? null : current,
@@ -116,6 +122,8 @@ export function RuntimeEditor({
       }
       setFailure(error);
       if (conflictReason(error) === 'settings_changed') onStale();
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -232,10 +240,11 @@ export function RuntimeEditor({
         </Hint>
       ))}
       {failure === null ? null : <Alert>{saveError(t, failure)}</Alert>}
+      {work.busy ? <BackgroundWork label={t('settings.reprocessing')} /> : null}
       <div className="flex flex-wrap gap-2">
         <Button
           disabled={!dirty || !checked.ok}
-          loading={update.isPending}
+          loading={(update.isPending && !resetting) || work.busy}
           onClick={() => {
             if (checked.ok) request(checked.value);
           }}
@@ -244,7 +253,8 @@ export function RuntimeEditor({
         </Button>
         <Button
           variant="ghost"
-          disabled={(source === 'env' && !hasStoredRow) || update.isPending}
+          disabled={(source === 'env' && !hasStoredRow) || update.isPending || work.busy}
+          loading={update.isPending && resetting}
           onClick={() => request(null)}
         >
           {t('settings.reset', { key: settingKey })}
@@ -264,11 +274,13 @@ export function RuntimeEditor({
         <AcknowledgeDialog
           settingKey={settingKey}
           pending={pending}
-          onCancel={() => setPending(null)}
+          busy={update.isPending}
+          onCancel={() => {
+            if (!update.isPending) setPending(null);
+          }}
           onConfirm={() => {
             const confirmed = pending;
-            setPending(null);
-            void submit(confirmed.value, true, confirmed);
+            void submit(confirmed.value, true, confirmed).finally(() => setPending(null));
           }}
         />
       )}
@@ -279,11 +291,14 @@ export function RuntimeEditor({
 function AcknowledgeDialog({
   settingKey,
   pending,
+  busy,
   onCancel,
   onConfirm,
 }: {
   settingKey: string;
   pending: Pending;
+  /** The confirmed request is in flight: the dialog stays until it is answered. */
+  busy: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -307,10 +322,10 @@ function AcknowledgeDialog({
         onChange={(event) => setTicked(event.target.checked)}
       />
       <div className="flex flex-wrap justify-end gap-2">
-        <Button variant="secondary" onClick={onCancel}>
+        <Button variant="secondary" disabled={busy} onClick={onCancel}>
           {t('settings.ack.cancel')}
         </Button>
-        <Button disabled={!ticked} onClick={onConfirm}>
+        <Button disabled={!ticked} loading={busy} onClick={onConfirm}>
           {t('settings.ack.confirm')}
         </Button>
       </div>

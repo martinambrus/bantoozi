@@ -16,6 +16,7 @@ import { useToast } from '../../components/toast/toast-provider.js';
 import { useSession } from '../../session/context.js';
 import { Alert, Cell, DataTable, Hint, PageTitle, RowHeader, SectionTitle } from './admin-ui.js';
 import { Time, useFormat } from './format.js';
+import { BackgroundWork, useQueueWatch, useTick } from './queue-watch.js';
 import { useAdminKey } from './use-admin.js';
 
 type Breaker = AdminOverview['engine']['breakers']['typesafe'];
@@ -42,9 +43,12 @@ interface ResetWatch {
   startedAt: number;
 }
 
-/** Whether the overview was last loaded within the watch period of the request. */
-function isWatching(loadedAt: number, watch: ResetWatch): boolean {
-  return loadedAt - watch.startedAt < WATCH_MS;
+/**
+ * Whether the watch period of the request is still running, by this browser's clock: failed reads
+ * of the overview must not hold the wait (and the busy Reset) open.
+ */
+function isWatching(now: number, watch: ResetWatch): boolean {
+  return now - watch.startedAt < WATCH_MS;
 }
 
 function isApplied(data: AdminOverview | undefined, watch: ResetWatch): boolean {
@@ -155,11 +159,14 @@ function EngineCard({
   engine,
   breaker,
   watchStatus,
+  locked,
   onReset,
 }: {
   engine: BreakerEngine;
   breaker: Breaker;
   watchStatus: WatchStatus;
+  /** Another engine's reset is still waiting for the worker: one reset is followed at a time. */
+  locked: boolean;
   onReset: () => void;
 }) {
   const { t } = useTranslation('admin');
@@ -193,7 +200,12 @@ function EngineCard({
         </p>
       )}
       <div>
-        <Button variant="secondary" onClick={onReset}>
+        <Button
+          variant="secondary"
+          loading={watchStatus === 'waiting'}
+          disabled={locked}
+          onClick={onReset}
+        >
           {t('overview.breaker.reset')}
         </Button>
       </div>
@@ -257,11 +269,13 @@ function Translations({ overview }: { overview: AdminOverview }) {
   const toast = useToast();
   const session = useSession();
   const [failure, setFailure] = useState<unknown>(null);
+  const work = useQueueWatch();
   const reprocess = useApiMutation(routes.adminTranslationsReprocess, {
     onMutate: () => session.currentSignIn(),
     onSuccess: (_answer, _variables, signIn) => {
       if (session.currentSignIn() !== signIn) return;
       setFailure(null);
+      work.start(['house.retranslate-skipped']);
       toast.show({ message: t('overview.translations.queued'), tone: 'success' });
     },
     onError: setFailure,
@@ -293,11 +307,12 @@ function Translations({ overview }: { overview: AdminOverview }) {
       <div className="flex flex-col items-start gap-2">
         <Button
           variant="secondary"
-          loading={reprocess.isPending}
+          loading={reprocess.isPending || work.busy}
           onClick={() => reprocess.mutate()}
         >
           {t('overview.translations.reprocess')}
         </Button>
+        {work.busy ? <BackgroundWork label={t('overview.translations.running')} /> : null}
         <Hint>{t('overview.translations.reprocessHint')}</Hint>
         {failure === null ? null : <Alert>{errorMessage(t, failure)}</Alert>}
       </div>
@@ -320,17 +335,15 @@ export function AdminOverviewPage() {
     queryKey: adminKey('overview'),
     queryFn: ({ signal }) => api.call(routes.adminOverview, undefined, { signal }),
     refetchInterval: (query) =>
-      watch !== null &&
-      !isApplied(query.state.data, watch) &&
-      isWatching(query.state.dataUpdatedAt, watch)
+      watch !== null && !isApplied(query.state.data, watch) && isWatching(Date.now(), watch)
         ? POLL_MS
         : false,
   });
 
+  const pending = watch !== null && !isApplied(overview.data, watch);
+  const now = useTick(pending);
   let watchStatus: WatchStatus = null;
-  if (watch !== null && !isApplied(overview.data, watch)) {
-    watchStatus = isWatching(overview.dataUpdatedAt, watch) ? 'waiting' : 'stalled';
-  }
+  if (pending) watchStatus = isWatching(now, watch) ? 'waiting' : 'stalled';
 
   async function resetBreaker(engine: BreakerEngine) {
     setNotice(null);
@@ -364,6 +377,7 @@ export function AdminOverviewPage() {
                     engine={engine}
                     breaker={data.engine.breakers[engine]}
                     watchStatus={watch?.engine === engine ? watchStatus : null}
+                    locked={watchStatus === 'waiting' && watch?.engine !== engine}
                     onReset={() => setConfirming(engine)}
                   />
                 ))}

@@ -7,6 +7,7 @@ import { routes } from '../../api/routes.js';
 import { FOCUS_RING, cx } from '../../components/cx.js';
 import { errorMessage } from '../../components/error-message.js';
 import { CheckIcon } from '../../components/icons.js';
+import { Spinner } from '../../components/spinner.js';
 import { LoadingState } from '../../components/states/loading-state.js';
 import { VisuallyHidden } from '../../components/visually-hidden.js';
 import { InlineAlert } from '../feeds/inline-alert.js';
@@ -70,6 +71,7 @@ function Chip({ card, held, kind, changes, onFailure }: ChipProps) {
   const pressed = held !== undefined && (held.strength === 'never') === (kind === 'never');
   const blocked = held !== undefined && !pressed;
   const changedByOther = (changes.changing.get(card.id) ?? kind) !== kind;
+  const busy = changes.changing.get(card.id) === kind;
 
   async function toggle() {
     if (!changes.start(card.id, kind)) return;
@@ -101,8 +103,9 @@ function Chip({ card, held, kind, changes, onFailure }: ChipProps) {
       <button
         type="button"
         aria-pressed={pressed}
+        aria-busy={busy ? true : undefined}
         aria-describedby={blocked ? reasonId : undefined}
-        disabled={blocked || changedByOther}
+        disabled={blocked || changedByOther || busy}
         onClick={() => {
           void toggle();
         }}
@@ -117,7 +120,7 @@ function Chip({ card, held, kind, changes, onFailure }: ChipProps) {
             : 'border-slate-500 bg-white text-slate-900 hover:bg-slate-100 dark:border-slate-400 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800',
         )}
       >
-        {pressed ? <CheckIcon className="size-4" /> : null}
+        {busy ? <Spinner className="size-4" /> : pressed ? <CheckIcon className="size-4" /> : null}
         {card.title}
       </button>
       {blocked ? (

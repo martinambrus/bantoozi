@@ -149,6 +149,14 @@ describe('"Not really about this" and "Yes, exactly this"', () => {
     );
     expect(row(app, EV).getByRole('button', { name: EXACTLY })).toBeDisabled();
     expect(row(app, 'Solar power').getByRole('button', { name: NOT_THIS })).toBeDisabled();
+    expect(row(app, EV).getByRole('button', { name: NOT_THIS })).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
+    expect(row(app, EV).getByRole('button', { name: EXACTLY })).not.toHaveAttribute('aria-busy');
+    expect(row(app, 'Solar power').getByRole('button', { name: NOT_THIS })).not.toHaveAttribute(
+      'aria-busy',
+    );
     answer.resolve(forkOf31());
     await findToast("Learned: this isn't EV battery tech");
     await waitFor(() => expect(row(app, EV).getByRole('button', { name: NOT_THIS })).toBeEnabled());

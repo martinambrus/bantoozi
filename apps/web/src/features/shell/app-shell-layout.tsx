@@ -19,6 +19,8 @@ export interface AppShellUser {
 export interface AppShellLayoutProps {
   user: AppShellUser;
   onLogout: () => void;
+  /** The sign-out is on its way: the account menu shows it and takes no second one. */
+  signingOut?: boolean | undefined;
   /** Shows the offline banner. */
   offline?: boolean | undefined;
   children: ReactNode;
@@ -65,7 +67,11 @@ function NavLinks({
   );
 }
 
-function UserMenu({ user, onLogout }: Pick<AppShellLayoutProps, 'user' | 'onLogout'>) {
+function UserMenu({
+  user,
+  onLogout,
+  signingOut = false,
+}: Pick<AppShellLayoutProps, 'user' | 'onLogout' | 'signingOut'>) {
   const { t } = useTranslation('shell');
   const displayName = user.displayName?.trim();
   const name = displayName === undefined || displayName === '' ? user.email : displayName;
@@ -84,6 +90,7 @@ function UserMenu({ user, onLogout }: Pick<AppShellLayoutProps, 'user' | 'onLogo
         <Button
           {...props}
           variant="ghost"
+          loading={signingOut}
           aria-label={t('userMenu.label', { name })}
           className="px-2"
         >
@@ -98,13 +105,21 @@ function UserMenu({ user, onLogout }: Pick<AppShellLayoutProps, 'user' | 'onLogo
         </Button>
       )}
     >
-      <MenuItem onSelect={onLogout}>{t('common:actions.signOut')}</MenuItem>
+      <MenuItem disabled={signingOut} onSelect={onLogout}>
+        {t('common:actions.signOut')}
+      </MenuItem>
     </Menu>
   );
 }
 
 /** The signed-in frame (spec 09 §1): landmarks, a skip link, the section navigation and the account menu. */
-export function AppShellLayout({ user, onLogout, offline, children }: AppShellLayoutProps) {
+export function AppShellLayout({
+  user,
+  onLogout,
+  signingOut,
+  offline,
+  children,
+}: AppShellLayoutProps) {
   const { t } = useTranslation('shell');
   const toast = useToast();
   const [navOpen, setNavOpen] = useState(false);
@@ -157,7 +172,7 @@ export function AppShellLayout({ user, onLogout, offline, children }: AppShellLa
             <NavLinks admin={admin} />
           </nav>
           <div className="ml-auto">
-            <UserMenu user={user} onLogout={onLogout} />
+            <UserMenu user={user} onLogout={onLogout} signingOut={signingOut} />
           </div>
         </div>
       </header>

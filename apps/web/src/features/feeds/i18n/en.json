@@ -39,6 +39,7 @@
     "statusLabel": "Feed status:",
     "classificationLabel": "Classification:",
     "neverUpdated": "Not updated yet",
+    "fetchingFirst": "Fetching first articles…",
     "updated": "Updated {{when}}",
     "lastError": "Last error: {{reason}}",
     "unreadLabel": "Unread articles",

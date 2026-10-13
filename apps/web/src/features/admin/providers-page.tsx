@@ -9,6 +9,7 @@ import { routes } from '../../api/routes.js';
 import { QueryState } from '../../components/states/query-state.js';
 import { Alert, Hint, PageTitle } from './admin-ui.js';
 import { ProviderPanel } from './provider-panel.js';
+import { useTick } from './queue-watch.js';
 import {
   VALIDATION_POLL_MS,
   validationRunning,
@@ -80,6 +81,9 @@ export function AdminProvidersPage() {
     refetchInterval: (query) =>
       validationRunning(query.state.data?.items, watches, Date.now()) ? VALIDATION_POLL_MS : false,
   });
+  // A watch with no result yet ends at its cap by this browser's clock: re-rendered every second
+  // while one runs, so Validate does not stay busy when no new data arrives.
+  const now = useTick(validationRunning(credentials.data?.items, watches, Date.now()));
 
   function replace(credential: CredentialStatus) {
     writeQueryData<CredentialItems>(queryClient, adminKey('credentials'), (current) =>
@@ -118,6 +122,7 @@ export function AdminProvidersPage() {
                     onValidationRequested={(watch) =>
                       setWatches((current) => ({ ...current, [provider]: watch }))
                     }
+                    validationInProgress={validationRunning([credential], watches, now)}
                   />
                 );
               })}

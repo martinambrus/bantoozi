@@ -85,7 +85,8 @@
       "empty": "Za posledných 24 hodín sa neuložili žiadne preklady.",
       "reprocess": "Spracovať preklady znova",
       "reprocessHint": "Znova preloží články, ktorých preklad sa preskočil, napríklad keď bola prekladová služba nedostupná.",
-      "queued": "Opätovné spracovanie preskočených prekladov je zaradené do fronty."
+      "queued": "Opätovné spracovanie preskočených prekladov je zaradené do fronty.",
+      "running": "Preklady sa na pozadí spracúvajú znova…"
     },
     "metrics": {
       "title": "Kvalita odporúčaní",
@@ -191,8 +192,10 @@
       "live_other": "{{count}} živých workerov",
       "none": "Žiadny živý worker",
       "pendingRestart": "Čaká na reštart: {{pending}} z {{total}} workerov",
-      "problem": "Worker zamietol: {{message}}"
-    }
+      "problem": "Worker zamietol: {{message}}",
+      "restarting": "Workery sa reštartujú, aby použili zmenu…"
+    },
+    "reprocessing": "Články a karty sa na pozadí spracúvajú znova…"
   },
   "providers": {
     "intro": "Kľúče sú uložené zašifrované a po odoslaní sa už nikdy nezobrazia. Pripravte nový kľúč, overte ho malým testovacím volaním a potom ho aktivujte. Aktívny kľúč funguje, kým sa nový neaktivuje.",

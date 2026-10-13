@@ -3,6 +3,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { useState, type ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { useRuleActions } from '../../src/features/article/use-rule-actions.js';
 import { FOCUS_RING } from '../../src/components/cx.js';
 import { ArticleDetail } from '../../src/features/article/article-detail.js';
 import { failure, json, noContent } from '../api/fake-fetch.js';
@@ -633,6 +634,79 @@ describe('ArticleDetail rules', () => {
     expect(
       await findToast("You've reached your plan's limit for rules: 200 of 200."),
     ).toBeInTheDocument();
+  });
+
+  it.each([
+    ['More', 'Block this feed', 'POST', '/rules', '/rules'],
+    [
+      'Mute story',
+      'Mute for 3 days',
+      'POST',
+      '/articles/101/mute-story',
+      '/articles/:id/mute-story',
+    ],
+  ])(
+    'keeps the %s button busy and disabled until the rule is created',
+    async (trigger, choice, method, path, route) => {
+      const answer = deferred<void>();
+      const { user, calls } = renderDetail(
+        ITEM,
+        {},
+        {
+          routes: {
+            ...ruleRoutes('block_feed', '7'),
+            [`${method} ${route}`]: async () => {
+              await answer.promise;
+              return json(201, { rule: makeRule('55', 'block_feed', '7') });
+            },
+          },
+        },
+      );
+      await user.click(await screen.findByRole('button', { name: trigger }));
+      await user.click(await screen.findByRole('menuitem', { name: choice }));
+
+      const button = await screen.findByRole('button', { name: trigger });
+      await waitFor(() => expect(button).toHaveAttribute('aria-busy', 'true'));
+      expect(button).toBeDisabled();
+      expect(calls(method, path)).toHaveLength(1);
+
+      answer.resolve();
+      await waitFor(() => expect(button).not.toHaveAttribute('aria-busy'));
+      expect(button).toBeEnabled();
+      expect(calls(method, path)).toHaveLength(1);
+    },
+  );
+
+  it('ignores a second rule asked for while the first is on its way', async () => {
+    const answer = deferred<void>();
+    function Twice() {
+      const rules = useRuleActions(ITEM);
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            rules.blockFeed?.();
+            rules.blockFeed?.();
+          }}
+        >
+          Twice
+        </button>
+      );
+    }
+    const { user, calls } = renderReader(<Twice />, {
+      routes: {
+        'POST /rules': async () => {
+          await answer.promise;
+          return json(201, { rule: makeRule('55', 'block_feed', '7') });
+        },
+      },
+    });
+    await user.click(screen.getByRole('button', { name: 'Twice' }));
+    await user.click(screen.getByRole('button', { name: 'Twice' }));
+    answer.resolve();
+    await findToast('Blocked source: Example Weekly');
+
+    expect(calls('POST', '/rules')).toHaveLength(1);
   });
 
   it('reports a rule that could not be taken back', async () => {

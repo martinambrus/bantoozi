@@ -128,6 +128,36 @@ describe('adding a feed', () => {
     expect(await screen.findByRole('heading', { level: 3, name: 'Main feed' })).toBeVisible();
   });
 
+  it('keeps the chosen candidate busy and the others disabled while its request is on its way', async () => {
+    const { app, server } = await openFeeds();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.routes[CREATE] = async (request) => {
+      const { url } = bodyOf(request) as { url: string };
+      if (url === 'example.com') return json(200, { status: 'choose', candidates: CANDIDATES });
+      await held;
+      return json(201, {
+        subscription: makeSubscription({ feed: { id: '9', title: 'Main feed' } }),
+      });
+    };
+
+    await submit(app, 'example.com');
+    const chooser = await screen.findByRole('region', { name: 'Choose a feed' });
+    const chosen = () => within(chooser).getByRole('button', { name: 'Add Main feed' });
+    const other = () =>
+      within(chooser).getByRole('button', { name: 'Add https://example.com/comments.atom' });
+    await app.user.click(chosen());
+
+    await waitFor(() => expect(chosen()).toHaveAttribute('aria-busy', 'true'));
+    expect(chosen()).toBeDisabled();
+    expect(other()).toBeDisabled();
+    expect(other()).not.toHaveAttribute('aria-busy');
+    release();
+    expect(await screen.findByText(/^Added “Main feed”\./)).toBeVisible();
+  });
+
   it('names a candidate without a title by its address', async () => {
     const { app, server } = await openFeeds();
     server.routes[CREATE] = (request) => {

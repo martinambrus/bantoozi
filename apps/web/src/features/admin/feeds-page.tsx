@@ -1,6 +1,6 @@
 import { FeedStatusSchema, type AdminFeed } from '@bantoozi/shared';
 import { getRouteApi } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApi } from '../../api/context.js';
@@ -26,6 +26,7 @@ import {
 } from './admin-ui.js';
 import { FeedOptionsDialog } from './feed-options-dialog.js';
 import { Time, useFormat } from './format.js';
+import { useTick } from './queue-watch.js';
 import { conflictReason, useAdminPages, useRefresh } from './use-admin.js';
 
 const route = getRouteApi('/_authed/_app/admin/feeds');
@@ -36,6 +37,17 @@ const STATUS_TONES: Record<AdminFeed['status'], BadgeTone> = {
   dead: 'danger',
   paused: 'neutral',
 };
+
+/** A reset feed is looked at every few seconds until it has been fetched again, for this long at most. */
+const FETCH_POLL_MS = 3000;
+const FETCH_WATCH_MS = 120_000;
+
+interface FetchWatch {
+  /** What the row showed as the reset was requested; a fetch changes one of them. */
+  lastSuccessAt: string | null;
+  lastErrorAt: string | null;
+  startedAt: number;
+}
 
 const feedName = (feed: AdminFeed) => feed.title ?? feed.url;
 
@@ -127,10 +139,49 @@ export function AdminFeedsPage() {
   const [resetting, setResetting] = useState<string | null>(null);
   const [editing, setEditing] = useState<AdminFeed | null>(null);
   const reset = useApiMutation(routes.adminFeedReset);
+  const [fetchWatches, setFetchWatches] = useState<Record<string, FetchWatch>>({});
 
-  const feeds = useAdminPages<AdminFeed>(['feeds', { status, q }], (cursor, signal) =>
-    api.call(routes.adminFeedList, { query: { cursor, status, q } }, { signal }),
+  const watching = Object.keys(fetchWatches).length > 0;
+  const now = useTick(watching);
+
+  const waitingFor = (feed: AdminFeed, at: number): boolean => {
+    const watch = fetchWatches[feed.id];
+    return (
+      watch !== undefined &&
+      at - watch.startedAt < FETCH_WATCH_MS &&
+      feed.lastSuccessAt === watch.lastSuccessAt &&
+      feed.lastErrorAt === watch.lastErrorAt
+    );
+  };
+
+  const feeds = useAdminPages<AdminFeed>(
+    ['feeds', { status, q }],
+    (cursor, signal) =>
+      api.call(routes.adminFeedList, { query: { cursor, status, q } }, { signal }),
+    { refetchInterval: watching ? FETCH_POLL_MS : false },
   );
+
+  // A watch ends once its feed has been fetched again, once it has left the list (a reset feed is
+  // active again, so a status filter drops it; the rows hold every loaded page), or after the cap.
+  useEffect(() => {
+    const rows = feeds.rows;
+    if (rows === undefined) return;
+    setFetchWatches((current) => {
+      const at = Date.now();
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([id, watch]) => {
+          if (at - watch.startedAt >= FETCH_WATCH_MS) return false;
+          const row = rows.find((feed) => feed.id === id);
+          return (
+            row !== undefined &&
+            row.lastSuccessAt === watch.lastSuccessAt &&
+            row.lastErrorAt === watch.lastErrorAt
+          );
+        }),
+      );
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [feeds.rows, now]);
 
   async function resetFeed(feed: AdminFeed) {
     setNotice(null);
@@ -139,6 +190,14 @@ export function AdminFeedsPage() {
     try {
       await reset.mutateAsync({ params: { id: feed.id } });
       if (session.currentSignIn() !== signIn) return;
+      setFetchWatches((current) => ({
+        ...current,
+        [feed.id]: {
+          lastSuccessAt: feed.lastSuccessAt,
+          lastErrorAt: feed.lastErrorAt,
+          startedAt: Date.now(),
+        },
+      }));
       toast.show({ message: t('feeds.resetDone'), tone: 'success' });
       void refresh('feeds');
     } catch (error) {
@@ -212,7 +271,7 @@ export function AdminFeedsPage() {
                 <FeedRow
                   key={feed.id}
                   feed={feed}
-                  resetting={resetting === feed.id}
+                  resetting={resetting === feed.id || waitingFor(feed, now)}
                   resetLocked={resetting !== null}
                   onReset={() => void resetFeed(feed)}
                   onEdit={() => setEditing(feed)}

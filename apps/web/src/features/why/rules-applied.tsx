@@ -8,6 +8,7 @@ import { topReasonText } from '../article/top-reason.js';
 import { useCards } from '../interests/queries.js';
 import { Section } from './section.js';
 import type { DemotionFlag, Demotions } from './use-demotions.js';
+import { usePressed } from './use-pressed.js';
 import { useRuleRemoval } from './use-rule-removal.js';
 
 const DEMOTION_FLAGS: readonly string[] = ['clickbait', 'promotional', 'shallow', 'stale'];
@@ -26,6 +27,7 @@ interface RuleRowProps {
 
 function RuleRow({ sentence, action }: RuleRowProps) {
   const sentenceId = useId();
+  const { pressed, press } = usePressed<true>(action?.busy ?? false);
   return (
     <li
       aria-labelledby={sentenceId}
@@ -38,7 +40,11 @@ function RuleRow({ sentence, action }: RuleRowProps) {
           size="sm"
           aria-describedby={sentenceId}
           disabled={action.busy}
-          onClick={action.run}
+          loading={pressed === true}
+          onClick={() => {
+            press(true);
+            action.run();
+          }}
         >
           {action.label}
         </Button>

@@ -398,6 +398,51 @@ describe('Refresh', () => {
   });
 });
 
+describe('Refresh while it loads', () => {
+  it('stays busy and takes no second press until the list and the counts are back', async () => {
+    let calls = 0;
+    const second = deferred<void>();
+    const { app } = await open({
+      path: '/read/for_you',
+      list: async () => {
+        calls += 1;
+        if (calls === 2) await second.promise;
+        return json(200, page([item(1), item(2)]));
+      },
+    });
+    const button = await screen.findByRole('button', { name: 'Refresh' });
+    await screen.findByRole('article', { name: 'Article 1' });
+    expect(button).not.toHaveAttribute('aria-busy');
+
+    await app.user.click(button);
+
+    await waitFor(() => expect(button).toHaveAttribute('aria-busy', 'true'));
+    expect(button).toBeDisabled();
+    await app.user.click(button);
+    second.resolve();
+    await waitFor(() => expect(button).not.toHaveAttribute('aria-busy'));
+    expect(button).toBeEnabled();
+    expect(listQueries(app)).toHaveLength(2);
+  });
+});
+
+describe('ranking of new articles', () => {
+  it('says so while the server is still ranking, and not otherwise', async () => {
+    let pending = true;
+    const { app } = await open({
+      path: '/read/for_you',
+      list: () => json(200, page([item(1)], { rankingPending: pending })),
+    });
+    const header = await headerOf('For you');
+
+    expect(await within(header).findByText('Ranking new articles…')).toBeVisible();
+
+    pending = false;
+    await app.user.click(within(header).getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(within(header).queryByText('Ranking new articles…')).toBeNull());
+  });
+});
+
 describe('the More menu', () => {
   it('opens the hidden articles', async () => {
     const { app } = await open({ path: '/read/for_you' });

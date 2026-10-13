@@ -85,7 +85,8 @@
       "empty": "No translations were stored in the last 24 hours.",
       "reprocess": "Reprocess translations",
       "reprocessHint": "Translates again the articles whose translation was skipped, for example while the translation service was unavailable.",
-      "queued": "Reprocessing of the skipped translations is queued."
+      "queued": "Reprocessing of the skipped translations is queued.",
+      "running": "Reprocessing translations in the background…"
     },
     "metrics": {
       "title": "Recommendation quality",
@@ -185,8 +186,10 @@
       "live_other": "{{count}} live workers",
       "none": "No live workers",
       "pendingRestart": "Pending restart: {{pending}} of {{total}} workers",
-      "problem": "Rejected by worker: {{message}}"
-    }
+      "problem": "Rejected by worker: {{message}}",
+      "restarting": "Workers are restarting to apply the change…"
+    },
+    "reprocessing": "Re-processing articles and cards in the background…"
   },
   "providers": {
     "intro": "Keys are stored encrypted and are never shown again after you submit them. Stage a new key, validate it with a small test call, then activate it. The active key keeps working until the new one is activated.",

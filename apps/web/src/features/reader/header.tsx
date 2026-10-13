@@ -13,6 +13,7 @@ import { LABEL_CLASSES } from '../../components/field.js';
 import { RefreshIcon } from '../../components/icons.js';
 import { SegmentedControl } from '../../components/segmented-control.js';
 import { Select } from '../../components/select.js';
+import { Spinner } from '../../components/spinner.js';
 import { Switch } from '../../components/switch.js';
 import { useMe } from '../../session/context.js';
 import { ClassificationBadge } from '../feeds/feed-status.js';
@@ -89,6 +90,10 @@ export interface ReaderHeaderProps {
   onLaneChange: ((lane: ScopedLane) => void) | undefined;
   /** Starts the list and the counts again. */
   refresh: () => void;
+  /** The list or the counts are being fetched because of a refresh. */
+  refreshing?: boolean | undefined;
+  /** New articles are still being ranked. */
+  rankingPending?: boolean | undefined;
 }
 
 /** The title and count of the view, and what the reader can do with it (spec 09 §3.1). */
@@ -101,6 +106,8 @@ export function ReaderHeader({
   visible,
   onLaneChange,
   refresh,
+  refreshing = false,
+  rankingPending = false,
 }: ReaderHeaderProps) {
   const { t } = useTranslation('reader');
   const { preferences } = useMe();
@@ -134,8 +141,17 @@ export function ReaderHeader({
             {t(countKey, { value: count })}
           </p>
         )}
+        {rankingPending ? (
+          <p
+            role="status"
+            className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"
+          >
+            <Spinner className="size-4" />
+            {t('header.rankingPending')}
+          </p>
+        ) : null}
         <div className="ms-auto flex flex-wrap items-center gap-2">
-          <Button variant="secondary" onClick={refresh}>
+          <Button variant="secondary" loading={refreshing} onClick={refresh}>
             <RefreshIcon className="size-4" />
             {t('header.refresh')}
           </Button>

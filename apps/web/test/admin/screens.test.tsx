@@ -580,9 +580,9 @@ describe('feeds (spec 09 §8)', () => {
     expect(app.calls('POST /admin/feeds/:id/reset')[0]!.pathname).toBe(
       '/api/v1/admin/feeds/42/reset',
     );
-    await vi.waitFor(() => expect(resetBroken()).toBeEnabled());
-    expect(resetBroken()).not.toHaveAttribute('aria-busy');
-    expect(resetOther()).toBeEnabled();
+    // The reset only queues the fetch: the row stays busy until the feed has been fetched again.
+    expect(resetBroken()).toHaveAttribute('aria-busy', 'true');
+    await vi.waitFor(() => expect(resetOther()).toBeEnabled());
   });
 
   it('edits the user-agent and the hard-feed flag, replacing the options as a whole', async () => {

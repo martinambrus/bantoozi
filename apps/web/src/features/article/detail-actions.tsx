@@ -125,7 +125,7 @@ export function DetailActions({ item, actions, onWhyThis }: DetailActionsProps) 
       )}
       <Menu
         trigger={(props) => (
-          <Button {...props} variant="secondary">
+          <Button {...props} variant="secondary" loading={rules.pending}>
             <EyeOffIcon className="size-4" />
             {t('detail.muteStory')}
             <ChevronDownIcon className="size-4" />
@@ -142,7 +142,7 @@ export function DetailActions({ item, actions, onWhyThis }: DetailActionsProps) 
         <Menu
           align="end"
           trigger={(props) => (
-            <Button {...props} variant="secondary">
+            <Button {...props} variant="secondary" loading={rules.pending}>
               <MoreIcon className="size-4" />
               {t('common:actions.more')}
             </Button>
