@@ -159,6 +159,37 @@ describe('settings save that queues re-processing', () => {
   });
 });
 
+describe('question set changes', () => {
+  const before = { enrich: '1', match: '2', suggest: '4' };
+  it.each([
+    ['a new suggest set queues nothing', { ...before, suggest: '9' }, false],
+    ['a new enrich set re-processes (control)', { ...before, enrich: '7' }, true],
+  ])('%s', async (_name, after, shown) => {
+    const app = await open('/admin/settings', {
+      'GET /admin/settings': () =>
+        json(200, makeSettings({ values: { ...SETTINGS_VALUES, 'question_sets.active': before } })),
+      'PATCH /admin/settings': () =>
+        json(200, {
+          ...makeSettings({ values: { ...SETTINGS_VALUES, 'question_sets.active': after } }),
+          changed: ['question_sets.active'],
+        }),
+      'GET /admin/overview': () => overviewOf([]),
+    });
+    const group = await screen.findByRole('group', { name: 'question_sets.active' });
+    const field = within(group).getByLabelText('question_sets.active');
+    await app.user.clear(field);
+    await app.user.type(field, JSON.stringify(after).replaceAll('{', '{{'));
+    await app.user.click(within(group).getByRole('button', { name: 'Save question_sets.active' }));
+    await wait(1_000);
+    if (shown) {
+      expect(within(group).getByRole('status')).toHaveTextContent(/Re-processing/);
+    } else {
+      expect(within(group).queryByRole('status')).toBeNull();
+      expect(app.calls('GET /admin/overview')).toHaveLength(0);
+    }
+  });
+});
+
 const saveButton = (key: string) => screen.getByRole('button', { name: `Save ${key}` });
 const resetButton = (key: string) => screen.getByRole('button', { name: `Reset ${key}` });
 
@@ -403,6 +434,40 @@ describe('overview', () => {
 
     current = breaker({ state: 'closed', resetRequestedAt: T1 });
     await wait(4_000);
+    idle(reset());
+  });
+  it('ends the breaker wait after 30 s even while the overview cannot be read', async () => {
+    let failing = false;
+    const current = breaker({ state: 'open', openUntil: T2 });
+    const app = await open('/admin', {
+      'GET /admin/overview': () =>
+        failing
+          ? json(503, { error: { code: 'SERVICE_UNAVAILABLE', message: 'down' } })
+          : json(
+              200,
+              makeOverview({
+                engine: {
+                  ...makeOverview().engine,
+                  breakers: { typesafe: current, llm: breaker() },
+                },
+              }),
+            ),
+      'POST /admin/engine/reset-breaker': () => {
+        failing = true;
+        return json(200, { engine: 'typesafe', resetRequestedAt: T1 });
+      },
+    });
+    const card = await screen.findByRole('group', { name: 'Jev (typesafe)' });
+    const reset = () => within(card).getByRole('button', { name: 'Reset breaker' });
+
+    await app.user.click(reset());
+    await app.user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Reset breaker' }),
+    );
+    await wait(1_000);
+    busy(reset());
+
+    await wait(31_000);
     idle(reset());
   });
 });

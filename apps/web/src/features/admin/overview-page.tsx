@@ -16,7 +16,7 @@ import { useToast } from '../../components/toast/toast-provider.js';
 import { useSession } from '../../session/context.js';
 import { Alert, Cell, DataTable, Hint, PageTitle, RowHeader, SectionTitle } from './admin-ui.js';
 import { Time, useFormat } from './format.js';
-import { BackgroundWork, useQueueWatch } from './queue-watch.js';
+import { BackgroundWork, useQueueWatch, useTick } from './queue-watch.js';
 import { useAdminKey } from './use-admin.js';
 
 type Breaker = AdminOverview['engine']['breakers']['typesafe'];
@@ -43,9 +43,12 @@ interface ResetWatch {
   startedAt: number;
 }
 
-/** Whether the overview was last loaded within the watch period of the request. */
-function isWatching(loadedAt: number, watch: ResetWatch): boolean {
-  return loadedAt - watch.startedAt < WATCH_MS;
+/**
+ * Whether the watch period of the request is still running, by this browser's clock: failed reads
+ * of the overview must not hold the wait (and the busy Reset) open.
+ */
+function isWatching(now: number, watch: ResetWatch): boolean {
+  return now - watch.startedAt < WATCH_MS;
 }
 
 function isApplied(data: AdminOverview | undefined, watch: ResetWatch): boolean {
@@ -324,17 +327,15 @@ export function AdminOverviewPage() {
     queryKey: adminKey('overview'),
     queryFn: ({ signal }) => api.call(routes.adminOverview, undefined, { signal }),
     refetchInterval: (query) =>
-      watch !== null &&
-      !isApplied(query.state.data, watch) &&
-      isWatching(query.state.dataUpdatedAt, watch)
+      watch !== null && !isApplied(query.state.data, watch) && isWatching(Date.now(), watch)
         ? POLL_MS
         : false,
   });
 
+  const pending = watch !== null && !isApplied(overview.data, watch);
+  const now = useTick(pending);
   let watchStatus: WatchStatus = null;
-  if (watch !== null && !isApplied(overview.data, watch)) {
-    watchStatus = isWatching(overview.dataUpdatedAt, watch) ? 'waiting' : 'stalled';
-  }
+  if (pending) watchStatus = isWatching(now, watch) ? 'waiting' : 'stalled';
 
   async function resetBreaker(engine: BreakerEngine) {
     setNotice(null);
