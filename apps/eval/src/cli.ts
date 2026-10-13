@@ -2,6 +2,7 @@ import { pathToFileURL } from 'node:url';
 
 import { Command } from 'commander';
 
+import { registerAgreementReplay } from './commands/agreement-replay.js';
 import { registerApplyG1 } from './commands/apply-g1.js';
 import { registerDryRun } from './commands/dry-run.js';
 import { registerGate } from './commands/gate.js';
@@ -40,6 +41,7 @@ export const EVAL_COMMANDS = [
   ['apply-g1', 'Apply the G1 decision file to settings (spec 10 §1)'],
   ['dry-run', 'Run the whole pipeline on synthetic data in a separate database (spec 10 §3)'],
   ['learning-curve', 'Offline learning-curve check (M7)'],
+  ['agreement-replay', 'Replay the per-feed card agreement rule on stored ratings'],
 ] as const;
 
 export type EvalCommandName = (typeof EVAL_COMMANDS)[number][0];
@@ -92,6 +94,7 @@ const REGISTRATIONS: readonly RegisterCommand[] = [
   registerApplyG1,
   registerDryRun,
   registerLearningCurve,
+  registerAgreementReplay,
 ];
 
 export interface BuildCliOptions {

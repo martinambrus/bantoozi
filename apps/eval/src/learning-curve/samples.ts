@@ -33,6 +33,8 @@ export interface LearningArticle {
   author: string | null;
   /** The lowest numeric carrier feed id. */
   sourceFeedId: string | null;
+  /** Every numeric carrier feed id, ascending. */
+  carrierFeedIds: string[];
 }
 
 /** Parse one sample row into the fields the learning curve reads. */
@@ -62,6 +64,7 @@ export function learningArticle(row: {
     wordCount: snapshot.input?.wordCount ?? null,
     author: snapshot.input?.author ?? null,
     sourceFeedId: feeds[0] ?? null,
+    carrierFeedIds: feeds,
   };
 }
 
@@ -140,7 +143,7 @@ export function buildRaterSamples(input: {
     const results = raterCardResults(run, raterId, articleId);
     const { facets, engine } = facetsOf(run, articleId);
     const seen = Math.min(article.publishedAt ?? article.firstSeenAt, article.firstSeenAt);
-    const features: RawFeatureSnapshot = {
+    const features: RawFeatureSnapshot & { sourceManifest: { inferenceFeedIds: string[] } } = {
       specSha: RAW_SNAPSHOT_SPEC_SHA,
       ratingSha: 'learning-curve',
       snapshotAt: new Date(at).toISOString(),
@@ -168,6 +171,7 @@ export function buildRaterSamples(input: {
         sourceFeedId: article.sourceFeedId,
         author: article.author,
       },
+      sourceManifest: { inferenceFeedIds: article.carrierFeedIds },
     };
     (article.split === 'dev' ? dev : test).push({
       articleId,
