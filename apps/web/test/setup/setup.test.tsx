@@ -103,7 +103,9 @@ describe('/setup when setup is open', () => {
     expect(bodyOf(sent[0]!)).toEqual({ token: TOKEN, email: EMAIL });
     expect(sent[0]!.headers.get('X-Bantoozi-Client')).toBe('web');
     expect(sent[0]!.headers.has('Idempotency-Key')).toBe(false);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Administration' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Administration' }),
+    ).toBeInTheDocument();
     // The returned user is the session: no further sign-in step.
     expect(app.calls('POST /auth/request-code')).toHaveLength(0);
     expect(app.calls('POST /auth/verify')).toHaveLength(0);
@@ -191,7 +193,9 @@ describe('negative control (passes before and after the feature)', () => {
     expect(pathname(login)).toBe('/login');
     cleanup();
     const signedIn = await open('/admin', { ...setupServer(false), me: admin });
-    expect(await screen.findByRole('heading', { level: 1, name: 'Administration' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Administration' }),
+    ).toBeInTheDocument();
     expect(pathname(signedIn)).toBe('/admin');
   });
 });
