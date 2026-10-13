@@ -27,7 +27,10 @@ export interface EnvInitResult {
 }
 
 const isBlank = (value: string | undefined): boolean =>
-  value === undefined || value === '' || value.startsWith('change-me') || value.startsWith('changeme');
+  value === undefined ||
+  value === '' ||
+  value.startsWith('change-me') ||
+  value.startsWith('changeme');
 
 const rand = (bytes: number): string => randomBytes(bytes).toString('base64url');
 
