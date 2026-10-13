@@ -2204,3 +2204,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   pages are not rewritten (the channel id needs the page, which declares its feed). Probes grow from 6 to 8
   (`/feed.json` for JSON Feed, `/?feed=rss2` for WordPress); with the page and the origin root that is exactly
   the 10-request budget, so a probe starved by redirect hops is skipped, never a budget overrun.
+- D-232: 2026-10-13 (PR #29 Codex follow-up) — `PATCH /admin/settings` answers `queued`: the house queues the save
+  stored work for (`house.reenrich`, `house.rematch`, `house.translate-cards`), from the server's own comparison with
+  the stored values. The settings screen keeps Save busy until exactly those queues drain, instead of guessing from the
+  value it showed, which is stale when another admin changed a compound setting (`question_sets.active`,
+  `engine.laya`) after the page loaded. A replayed idempotency receipt from before this field answers `queued: []`.
+  Spec 08 updated.

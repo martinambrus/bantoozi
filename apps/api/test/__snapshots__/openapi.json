@@ -19956,6 +19956,17 @@
                           "translate.libretranslate_url"
                         ]
                       }
+                    },
+                    "queued": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "house.reenrich",
+                          "house.rematch",
+                          "house.translate-cards"
+                        ]
+                      }
                     }
                   },
                   "required": [
@@ -19965,7 +19976,8 @@
                     "sources",
                     "defaults",
                     "workers",
-                    "changed"
+                    "changed",
+                    "queued"
                   ],
                   "additionalProperties": false
                 }

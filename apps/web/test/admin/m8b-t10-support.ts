@@ -103,5 +103,6 @@ export function patchAnswer(
       stored: stored as NonNullable<RuntimeFixture['stored']>,
     }),
     changed: Object.keys(patch).filter((key) => key !== 'acknowledge'),
+    queued: [],
   });
 }

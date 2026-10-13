@@ -54,7 +54,7 @@ function applyingPatch(state: { values: AdminSettings['values'] }): ApiRouteHand
       (key) => key in patch && JSON.stringify(patch[key]) !== JSON.stringify(state.values[key]),
     );
     state.values = { ...state.values, ...patch };
-    return json(200, { ...makeSettings({ values: state.values }), changed });
+    return json(200, { ...makeSettings({ values: state.values }), changed, queued: [] });
   };
 }
 

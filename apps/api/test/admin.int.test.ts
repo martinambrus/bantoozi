@@ -300,6 +300,16 @@ describe('settings (spec 08 §9, spec 02 §2)', () => {
     const jobs = await outbox();
     expect(jobs).toContainEqual({ queue: 'house.reenrich', payload: {} });
     expect(jobs).toContainEqual({ queue: 'house.rematch', payload: {} });
+    // The answer names the house queues it stored work for, so the screen follows exactly that.
+    expect(res.json().queued).toEqual(['house.reenrich', 'house.rematch']);
+
+    // A suggest-only change queues nothing, and says so.
+    const suggest = await createQuestionSet('suggest');
+    const suggestOnly = await client.patch('/admin/settings', {
+      'question_sets.active': { enrich, match, suggest },
+    });
+    expect(suggestOnly.statusCode).toBe(200);
+    expect(suggestOnly.json().queued).toEqual([]);
   });
 
   it('engine.prefilter_enabled changes enqueue house.rematch', async () => {
@@ -308,6 +318,7 @@ describe('settings (spec 08 §9, spec 02 §2)', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(await outbox()).toEqual([{ queue: 'house.rematch', payload: {} }]);
+    expect(res.json().queued).toEqual(['house.rematch']);
   });
 
   it('refuses translate modes and english card text while LibreTranslate is down, accepts them once its probe lists the languages', async () => {

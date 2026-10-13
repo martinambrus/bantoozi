@@ -18,56 +18,13 @@ export const QUEUE_WATCH_CAP_MS = 600_000;
  */
 export const QUEUE_GRACE_MS = 15_000;
 
-const laya = (value: unknown): Set<string> =>
-  new Set((value as { enrich?: string[] } | undefined)?.enrich ?? []);
-const sameSet = (a: Set<string>, b: Set<string>): boolean =>
-  a.size === b.size && [...a].every((item) => b.has(item));
-
 /**
- * The house queues the server queued work on for a saved key (spec 08 §9, mirroring PATCH
- * /admin/settings); none when the save changed nothing or queued nothing. `previous` is the value the
- * editor showed before the save. `ranker.thresholds` is left out: `user.rank` is busy with every
- * user's own work, so it never drains.
+ * The house queues a saved setting stored work for, as the server reports them (it compares with
+ * the stored values, which may differ from what this screen showed); none when it queued nothing.
+ * `ranker.thresholds` queues per-user rank work, which is never reported: `user.rank` never drains.
  */
-export function savedQueues(
-  key: string,
-  result: AdminSettingsPatchResult,
-  previous?: unknown,
-): readonly string[] | undefined {
-  if (!result.changed.includes(key as never)) return undefined;
-  const next = result.values as Record<string, unknown>;
-  const queues: string[] = [];
-  switch (key) {
-    case 'question_sets.active': {
-      // Only a new enrich or match set re-processes articles; a new suggest set queues nothing.
-      const before = previous as { enrich?: unknown; match?: unknown } | undefined;
-      const after = next[key] as { enrich?: unknown; match?: unknown };
-      if (before === undefined || before.enrich !== after.enrich) queues.push('house.reenrich');
-      if (before === undefined || before.match !== after.match) queues.push('house.rematch');
-      break;
-    }
-    case 'card_text_mode':
-      queues.push('house.rematch');
-      if (next[key] === 'english') queues.push('house.translate-cards');
-      break;
-    case 'engine.prefilter_enabled':
-      queues.push('house.rematch');
-      break;
-    case 'engine.prefilter_min_cards':
-      // The server rematches for a new minimum only while the prefilter is on.
-      if (next['engine.prefilter_enabled'] === true) queues.push('house.rematch');
-      break;
-    case 'language_modes':
-      queues.push('house.reenrich');
-      break;
-    case 'engine.laya':
-      // Only a change of the languages enriched with Laya re-processes articles.
-      if (previous === undefined || !sameSet(laya(previous), laya(next[key]))) {
-        queues.push('house.reenrich');
-      }
-      break;
-  }
-  return queues.length === 0 ? undefined : queues;
+export function savedQueues(result: AdminSettingsPatchResult): readonly string[] | undefined {
+  return result.queued.length === 0 ? undefined : result.queued;
 }
 
 interface Watch {
