@@ -541,7 +541,7 @@ describe('discoverFeed: request budget, deadline and concurrency', () => {
 });
 
 describe('discoverFeed: probing common paths', () => {
-  it('probes the six paths on the final origin and takes the first feed in path order', async () => {
+  it('probes the common paths on the final origin and takes the first feed in path order', async () => {
     const [feed, rssPath, rssXml, atomXml] = [deferred(), deferred(), deferred(), deferred()];
     const origin = 'https://www.blog.example';
     const web = new FakeWeb()
@@ -807,5 +807,49 @@ describe('discoverFeed: feed anchors in the page body', () => {
       .route(`${SITE}/rss/main`, { body: rss('Real feed') });
     const result = success(await discoverFeed(`${SITE}/`, web.deps()));
     expect(result.candidates.map((candidate) => candidate.title)).toEqual(['Real feed']);
+  });
+});
+
+describe('discoverFeed: well-known platforms', () => {
+  it('uses the platform feed when a page declares none', async () => {
+    const web = new FakeWeb()
+      .route('https://github.com/owner/repo', { body: htmlPage(), contentType: HTML })
+      .route('https://github.com/owner/repo/releases.atom', { body: atom('Releases') })
+      .route('https://github.com/owner/repo/tags.atom', { body: atom('Tags') });
+    const result = success(await discoverFeed('https://github.com/owner/repo', web.deps()));
+    expect(result.candidates.map((candidate) => candidate.title)).toEqual(['Releases', 'Tags']);
+    expect(web.urls()).not.toContain('https://github.com/');
+  });
+
+  it('tries the platform feed when the page itself refuses the fetch', async () => {
+    const web = new FakeWeb()
+      .route('https://www.reddit.com/r/news', { fail: 'FEED_HTTP_403' })
+      .route('https://www.reddit.com/r/news/.rss', { body: atom('r/news') });
+    const result = success(await discoverFeed('https://www.reddit.com/r/news', web.deps()));
+    expect(result.candidates.map((candidate) => candidate.title)).toEqual(['r/news']);
+  });
+
+  it('still reports the page failure when the platform feed fails too', async () => {
+    const web = new FakeWeb().route('https://www.reddit.com/r/news', { fail: 'FEED_HTTP_403' });
+    const result = await discoverFeed('https://www.reddit.com/r/news', web.deps());
+    expect(result).toMatchObject({ ok: false, code: 'FEED_HTTP_403' });
+  });
+
+  it('derives the platform feed from the redirect destination of a failed page', async () => {
+    const web = new FakeWeb()
+      .route('https://short.example/x', {
+        fail: 'FEED_HTTP_403',
+        // what safeFetch reports: the URL being fetched when the redirect chain failed
+        message: 'blocked',
+      })
+      .route('https://www.reddit.com/r/news/.rss', { body: atom('r/news') });
+    const deps = web.deps({
+      fetch: async (url, options) => {
+        const result = await web.fetch(url, options);
+        return result.ok ? result : { ...result, finalUrl: 'https://www.reddit.com/r/news' };
+      },
+    });
+    const result = success(await discoverFeed('https://short.example/x', deps));
+    expect(result.candidates.map((candidate) => candidate.title)).toEqual(['r/news']);
   });
 });

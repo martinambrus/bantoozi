@@ -9,6 +9,7 @@ import { sniffFeed, type FeedKind, type ParseFeedResult, type ParsedFeed } from 
 
 import { validateFeedUrl, type FeedUrlCheck, type FeedUrlRejection } from './feed-url.js';
 import { findAlternateFeeds, findAnchorFeeds, type AlternateFeedLink } from './html-links.js';
+import { platformFeeds } from './platforms.js';
 import { cleanLabel } from './text.js';
 
 /** One deadline shared by every request of a discovery, redirects included (spec 03 §10 step 6). */
@@ -27,6 +28,8 @@ export const FEED_PROBE_PATHS: readonly string[] = Object.freeze([
   '/atom.xml',
   '/feed.xml',
   '/index.xml',
+  '/feed.json',
+  '/?feed=rss2',
 ]);
 
 /** Feed-looking `<a>` links fetched when a page declares no feed (spec 03 §10 step 3, D-230). */
@@ -235,6 +238,17 @@ class Discovery {
       failure = response;
       if (!TRANSPORT_FAILURES.has(response.code)) break;
     }
+    if (failure !== undefined && attempts[0] !== undefined) {
+      // A platform may refuse bots on its pages yet serve the feed it is known to have (D-231).
+      // The redirect destination first (a short link may lead to a platform page), then the input.
+      const known = [
+        ...(failure.finalUrl === undefined ? [] : platformFeeds(failure.finalUrl)),
+        ...platformFeeds(attempts[0]),
+      ];
+      const rescued = await this.verifyAll(this.queue(known, new Set<string>()), false);
+      const feeds = feedsOf(rescued);
+      if (feeds.length > 0) return conclude(feeds);
+    }
     return failure === undefined ? this.stoppedFailure() : fetchFailure(failure);
   }
 
@@ -258,8 +272,15 @@ class Discovery {
 
     const verifications: Verification[] = [];
     let feeds = await this.verifyPageLinks(decoded.text, response.finalUrl, tried, verifications);
-    if (feeds.length === 0)
+    if (feeds.length === 0) {
+      const platform = this.queue(platformFeeds(response.finalUrl), tried);
+      const platformVerifications = await this.verifyAll(platform, false);
+      verifications.push(...platformVerifications);
+      feeds = feedsOf(platformVerifications);
+    }
+    if (feeds.length === 0) {
       feeds = await this.fromOriginRoot(response.finalUrl, tried, verifications);
+    }
     if (feeds.length === 0) {
       const probes = this.queue(probeLinks(response.finalUrl), tried);
       const probeVerifications = await this.verifyAll(probes, true);
