@@ -28,6 +28,7 @@ export function ImagePolicyPanel({ feedId }: { feedId: string }) {
   const choicesId = useId();
   const [open, setOpen] = useState(false);
   const changeRef = useRef<HTMLButtonElement>(null);
+  const choicesRef = useRef<HTMLDivElement>(null);
   const accountId = useAccountId();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -36,9 +37,15 @@ export function ImagePolicyPanel({ feedId }: { feedId: string }) {
     onMutate: () => session.currentSignIn(),
     onSuccess: (_answer, _variables, signIn) => {
       if (session.currentSignIn() !== signIn) return;
-      // The pressed choice is about to be hidden: the disclosure takes the focus it had.
+      // The pressed choice is about to be hidden: the disclosure takes the focus it had, unless the
+      // reader has moved on to another control while the answer was on its way.
+      const active = document.activeElement;
+      const keptHere =
+        active === null ||
+        active === document.body ||
+        choicesRef.current?.contains(active) === true;
       setOpen(false);
-      changeRef.current?.focus();
+      if (keptHere) changeRef.current?.focus();
       toast.show({ message: i18n.t('article:images.saved'), tone: 'success' });
       return queryClient.invalidateQueries({ queryKey: articleKeys.all(accountId) });
     },
@@ -63,7 +70,7 @@ export function ImagePolicyPanel({ feedId }: { feedId: string }) {
           {t('images.change')}
         </Button>
       </div>
-      <div id={choicesId} hidden={!open} className="flex flex-wrap gap-2">
+      <div ref={choicesRef} id={choicesId} hidden={!open} className="flex flex-wrap gap-2">
         {POLICIES.map(({ policy, label }) => (
           <Button
             key={policy}

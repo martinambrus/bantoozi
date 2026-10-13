@@ -1214,6 +1214,25 @@ describe('ArticleDetail image setting', () => {
     expect(screen.getByRole('button', { name: 'Change' })).toHaveFocus();
   });
 
+  it('leaves the focus where the reader moved it while the answer was on its way', async () => {
+    const answer = deferred<Response>();
+    const { user, calls } = renderDetail(
+      BLOCKED,
+      {},
+      { routes: { 'PUT /feed-preferences/:feedId': () => answer.promise } },
+    );
+    await user.click(await screen.findByRole('button', { name: 'Change' }));
+    await user.click(screen.getByRole('button', { name: 'Always block' }));
+    await waitFor(() => expect(calls('PUT', '/feed-preferences/7')).toHaveLength(1));
+
+    const elsewhere = screen.getByRole('button', { name: 'Bookmark' });
+    elsewhere.focus();
+    answer.resolve(json(200, { feedId: '7', imagePolicy: 'block', effectiveImagesAllowed: false }));
+
+    expect(await findToast('Image setting saved')).toBeInTheDocument();
+    expect(elsewhere).toHaveFocus();
+  });
+
   it('is not offered while images are allowed', async () => {
     renderDetail(makeItem({ effectiveImagesAllowed: true, mediaPolicyFeedId: '7' }));
     await screen.findByText('The excerpt of the article.');
