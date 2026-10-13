@@ -6,6 +6,7 @@ import {
   type AdminSettingsPatchResult,
 } from '@bantoozi/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { writeQueryData } from '../../api/cache-writes.js';
@@ -23,20 +24,6 @@ const isRuntimeKey = (key: string): boolean =>
   (RUNTIME_SETTING_KEYS as readonly string[]).includes(key);
 const BASE_KEYS = ADMIN_PATCHABLE_SETTING_KEYS.filter((key) => !isRuntimeKey(key));
 
-type Workers = AdminSettings['workers'];
-
-/** Per process, the entry of the newer heartbeat; on a tie a pending restart stays pending. */
-function mergeWorkers(current: Workers, incoming: Workers): Workers {
-  const merged = new Map(current.map((worker) => [worker.processId, worker]));
-  for (const worker of incoming) {
-    const have = merged.get(worker.processId);
-    if (have === undefined || worker.at > have.at) merged.set(worker.processId, worker);
-    else if (worker.at === have.at && worker.pendingRestart && !have.pendingRestart)
-      merged.set(worker.processId, worker);
-  }
-  return [...merged.values()];
-}
-
 export function AdminSettingsPage() {
   const { t } = useTranslation('admin');
   const { t: tc } = useTranslation('common');
@@ -45,21 +32,38 @@ export function AdminSettingsPage() {
   const adminKey = useAdminKey();
   const refresh = useRefresh();
 
+  // Every settings request (a read or a save) takes the next number as it is sent; `applied` is the
+  // number of the newest snapshot taken so far.
+  const sent = useRef(0);
+  const applied = useRef(0);
+  const send = () => (sent.current += 1);
+
   const settings = useQuery({
     queryKey: adminKey('settings'),
-    queryFn: ({ signal }) => api.call(routes.adminSettingsGet, undefined, { signal }),
+    queryFn: async ({ signal }) => {
+      const sequence = send();
+      const data = await api.call(routes.adminSettingsGet, undefined, { signal });
+      // A read that is older than a snapshot already taken (a save answered meanwhile) is dropped.
+      if (sequence < applied.current) {
+        const newer = queryClient.getQueryData<AdminSettings>(adminKey('settings'));
+        if (newer !== undefined) return newer;
+      }
+      applied.current = Math.max(applied.current, sequence);
+      return data;
+    },
   });
 
   /**
-   * Takes what one editor saved from the answer: the key's value, source, default and stored time,
-   * and the ranker settings version once that is newer. Saves of two editors can answer in another
-   * order than they were made, each with all the settings as they stood then, so nothing outside
-   * the saved key is taken from an answer. The workers' status is merged per process, the newer
-   * heartbeat winning (a worker that waits for a restart keeps waiting until its process is gone),
-   * so an older answer cannot take back what a newer one reported.
+   * Takes what one editor saved from the answer: the key's value, source, default and stored time.
+   * Saves answer in another order than they were sent, each with all the settings as they stood
+   * then. An answer newer than every snapshot taken so far also replaces the workers' status and the
+   * environment defaults wholesale (a worker that exited is gone) and the ranker settings version;
+   * an older one changes nothing outside the key it saved.
    */
-  function adopt(key: AdminSettingKey, result: AdminSettingsPatchResult) {
+  function adopt(key: AdminSettingKey, result: AdminSettingsPatchResult, sequence: number) {
     const { values, stored, rankerSettingsVersion, sources, defaults, workers } = result;
+    const newest = sequence > applied.current;
+    if (newest) applied.current = sequence;
     writeQueryData<AdminSettings>(queryClient, adminKey('settings'), (current) => {
       if (current === undefined)
         return { values, stored, rankerSettingsVersion, sources, defaults, workers };
@@ -71,8 +75,10 @@ export function AdminSettingsPage() {
         stored: [...current.stored.filter((entry) => entry.key !== key), ...saved],
         rankerSettingsVersion: Math.max(current.rankerSettingsVersion, rankerSettingsVersion),
         sources: { ...current.sources, ...own(sources) },
-        defaults: { ...current.defaults, ...own(defaults) },
-        workers: mergeWorkers(current.workers, workers),
+        defaults: newest
+          ? { ...current.defaults, ...defaults }
+          : { ...current.defaults, ...own(defaults) },
+        workers: newest ? workers : current.workers,
       };
     });
   }
@@ -98,7 +104,8 @@ export function AdminSettingsPage() {
                     settingKey={key}
                     value={data.values[key]}
                     storedAt={data.stored.find((entry) => entry.key === key)?.updatedAt ?? null}
-                    onSaved={(result) => adopt(key, result)}
+                    onSend={send}
+                    onSaved={(result, sequence) => adopt(key, result, sequence)}
                     onStale={() => void refresh('settings')}
                   />
                 ))}
@@ -127,7 +134,8 @@ export function AdminSettingsPage() {
                           ),
                         ),
                       ]}
-                      onSaved={(result) => adopt(key, result)}
+                      onSend={send}
+                      onSaved={(result, sequence) => adopt(key, result, sequence)}
                       onStale={() => void refresh('settings')}
                     />
                   ))}

@@ -358,6 +358,11 @@ through `PATCH /admin/settings`.
 | `metrics.daily.<YYYY-MM-DD>` | metrics JSON (spec 10 §7) | — | `house.metrics` |
 | `worker.heartbeat` | `{[processId]: {at: iso, startedAt?: iso (D-191), queues: string[], evalIngestOnly: boolean, envCredentials: ('typesafe'\|'ollama')[], runtime?: {…}}}` | `{}` | every worker process, every 30 s (entries older than 1 h are pruned). An entry also carries `pool: {total, idle, waiting}` of the worker's query pool (absent from older workers), which the pool alert reads. `runtime` (M8b, D-221) carries `fingerprint` (hash of the restart-class values the process was built from), `model`, `llm` (`{fast, strong}` or `null`), `pendingRestart`, `problems` (`[{key, message}]` for stored runtime rows that failed validation), `keyring` (`{status: 'ok'\|'missing'\|'malformed'\|'active_key_missing', activeKeyId?}`, never key material) and `defaults` (the env value of each worker-side runtime key, which `GET /admin/settings` shows as the default). `envCredentials` lists the providers with a non-empty bootstrap env key, presence only, never key material or length (spec 08 §9.1). `eval ingest-sample` needs an entry younger than 90 s with `evalIngestOnly = true` (spec 10 §2.1) |
 
+The ranges above are the bounds a write accepts. They are narrower than the environment's on purpose
+(`ENGINE_CONCURRENCY` 1-256, `INGEST_MAX_AGE_DAYS` 1-3650, `PREFILTER_MIN_CARDS` 1-1 000 000, `FETCH_TIMEOUT_MS` 100-600 000,
+`FETCH_MAX_BYTES` 1 KiB-1 GiB, `TYPESAFE_PRICE_PER_MTOK_USD` any non-negative number, `shared/env-ranges.ts`):
+`GET /admin/settings` shows any value the environment accepts as an effective value or default (D-226).
+
 `pnpm db:seed` inserts **only** `card_text_mode`, `question_sets.active = {}` and `language_modes`
 (from `LANGUAGE_MODES`) when they are missing. Deploys run the seed before starting the services, so
 the API compares a `language_modes` change against the modes the workers actually use and enqueues

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { IdSchema, RevisionSchema, UuidSchema, UuidStringSchema } from '../ids.js';
+import { ENV_RANGES } from '../env-ranges.js';
 import { TRANSLATE_SKIP_REASONS } from '../jobs.js';
 import { PLAN_NAMES } from '../plans.js';
 import { RUNTIME_SETTING_KEYS } from '../runtime-settings.js';
@@ -179,8 +180,55 @@ const settingShape = {
   'translate.libretranslate_url': SETTINGS['translate.libretranslate_url'].schema,
 } as const;
 
+/** What a write accepts per key (the narrow bounds): used to validate an edit before it is sent. */
+export const AdminSettingsWriteSchema = z.object(settingShape).strict();
+
+const envInt = (range: { min: number; max: number }) =>
+  z.number().int().min(range.min).max(range.max).nullable();
+const displayText = z.string().min(1).max(500).nullable();
+const displayModel = z.string().min(1).max(200).nullable();
+
+/**
+ * How the response shows the live runtime keys: the effective value may be an environment default,
+ * so the ranges are the environment's (`ENV_RANGES`), wider than the bounds a PATCH accepts.
+ */
+const runtimeDisplayShape = {
+  'engine.typesafe_model': displayModel,
+  'engine.typesafe_base_url': displayText,
+  'engine.typesafe_price_per_mtok_usd': z.number().finite().min(0).nullable(),
+  'engine.concurrency': envInt(ENV_RANGES.engineConcurrency),
+  'engine.llm_fallback_enabled': z.boolean().nullable(),
+  'engine.ollama_models': z
+    .object({ fast: z.string().min(1).max(200), strong: z.string().min(1).max(200) })
+    .strict()
+    .nullable(),
+  'engine.ollama_base_url': displayText,
+  'engine.ollama_max_concurrency': envInt(ENV_RANGES.ollamaMaxConcurrency),
+  'engine.prefilter_min_cards': envInt(ENV_RANGES.prefilterMinCards),
+  'ingest.max_age_days': envInt(ENV_RANGES.ingestMaxAgeDays),
+  'fetch.limits': z
+    .object({
+      timeoutMs: z
+        .number()
+        .int()
+        .min(ENV_RANGES.fetchTimeoutMs.min)
+        .max(ENV_RANGES.fetchTimeoutMs.max),
+      maxBytes: z
+        .number()
+        .int()
+        .min(ENV_RANGES.fetchMaxBytes.min)
+        .max(ENV_RANGES.fetchMaxBytes.max),
+    })
+    .strict()
+    .nullable(),
+  'api.rate_limits_enabled': z.boolean().nullable(),
+  'translate.libretranslate_url': displayText,
+} as const;
+
 /** The effective value of every admin key (the stored row, else its default). */
-export const AdminSettingsValuesSchema = z.object(settingShape).strict();
+export const AdminSettingsValuesSchema = z
+  .object({ ...settingShape, ...runtimeDisplayShape })
+  .strict();
 export type AdminSettingsValues = z.infer<typeof AdminSettingsValuesSchema>;
 
 export const AdminSettingsSchema = z

@@ -4,6 +4,7 @@ import { inspect } from 'node:util';
 
 import { z } from 'zod';
 
+import { ENV_RANGES } from '../env-ranges.js';
 import { resolveWorkerQueues, type QueueName } from '../jobs.js';
 import {
   LanguageModesSchema,
@@ -332,7 +333,12 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
     typesafeModel: read('TYPESAFE_MODEL', modelIdSchema, 'jev-1.13.0') ?? 'jev-1.13.0',
     typesafeBaseUrl: read('TYPESAFE_BASE_URL', httpUrl, 'https://api.typesafe.ai') ?? '',
     typesafePricePerMtokUsd: read('TYPESAFE_PRICE_PER_MTOK_USD', nonNegative, '0.042') ?? 0.042,
-    engineConcurrency: read('ENGINE_CONCURRENCY', intIn(1, 256), '8') ?? 8,
+    engineConcurrency:
+      read(
+        'ENGINE_CONCURRENCY',
+        intIn(ENV_RANGES.engineConcurrency.min, ENV_RANGES.engineConcurrency.max),
+        '8',
+      ) ?? 8,
     dailyBudgetUsd: read('DAILY_BUDGET_USD', nonNegative, '2.00') ?? 2,
     ollamaApiKey: read('OLLAMA_API_KEY', apiKeySchema, undefined),
     providerMasterKeyId: read('PROVIDER_MASTER_KEY_ID', z.string().min(1).max(200), undefined),
@@ -340,7 +346,12 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
     ollamaBaseUrl: read('OLLAMA_BASE_URL', httpUrl, 'https://ollama.com') ?? '',
     ollamaModelFast: read('OLLAMA_MODEL_FAST', modelIdSchema, 'glm-5.3-flash') ?? 'glm-5.3-flash',
     ollamaModelStrong: read('OLLAMA_MODEL_STRONG', modelIdSchema, 'glm-5.3') ?? 'glm-5.3',
-    ollamaMaxConcurrency: read('OLLAMA_MAX_CONCURRENCY', intIn(1, 64), '1') ?? 1,
+    ollamaMaxConcurrency:
+      read(
+        'OLLAMA_MAX_CONCURRENCY',
+        intIn(ENV_RANGES.ollamaMaxConcurrency.min, ENV_RANGES.ollamaMaxConcurrency.max),
+        '1',
+      ) ?? 1,
     llmFallbackEnabled: read('LLM_FALLBACK_ENABLED', booleanSchema, 'false') ?? false,
     libretranslateUrl: read('LIBRETRANSLATE_URL', httpUrl, 'http://libretranslate:5000') ?? '',
     languageModes:
@@ -349,11 +360,31 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
     fetchUserAgent:
       read('FETCH_USER_AGENT', z.string().min(1).max(512), undefined) ??
       `BantooziBot/1.0 (+${publicBaseUrl.replace(/\/+$/, '')}/bot)`,
-    fetchMaxBytes: read('FETCH_MAX_BYTES', intIn(1024, 1024 ** 3), '5242880') ?? 5242880,
-    fetchTimeoutMs: read('FETCH_TIMEOUT_MS', intIn(100, 600_000), '20000') ?? 20000,
+    fetchMaxBytes:
+      read(
+        'FETCH_MAX_BYTES',
+        intIn(ENV_RANGES.fetchMaxBytes.min, ENV_RANGES.fetchMaxBytes.max),
+        '5242880',
+      ) ?? 5242880,
+    fetchTimeoutMs:
+      read(
+        'FETCH_TIMEOUT_MS',
+        intIn(ENV_RANGES.fetchTimeoutMs.min, ENV_RANGES.fetchTimeoutMs.max),
+        '20000',
+      ) ?? 20000,
     fetchAllowPrivate: read('FETCH_ALLOW_PRIVATE', booleanSchema, 'false') ?? false,
-    ingestMaxAgeDays: read('INGEST_MAX_AGE_DAYS', intIn(1, 3650), '14') ?? 14,
-    prefilterMinCards: read('PREFILTER_MIN_CARDS', intIn(1, 1_000_000), '60') ?? 60,
+    ingestMaxAgeDays:
+      read(
+        'INGEST_MAX_AGE_DAYS',
+        intIn(ENV_RANGES.ingestMaxAgeDays.min, ENV_RANGES.ingestMaxAgeDays.max),
+        '14',
+      ) ?? 14,
+    prefilterMinCards:
+      read(
+        'PREFILTER_MIN_CARDS',
+        intIn(ENV_RANGES.prefilterMinCards.min, ENV_RANGES.prefilterMinCards.max),
+        '60',
+      ) ?? 60,
     evalIngestOnly: read('EVAL_INGEST_ONLY', booleanSchema, 'false') ?? false,
     evalPublicUrl: read('EVAL_PUBLIC_URL', httpUrl, 'http://localhost:5180') ?? '',
     evalCacheDir: expandHome(

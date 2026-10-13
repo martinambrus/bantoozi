@@ -34,7 +34,7 @@ import { failureDisposition } from '../classify/outcomes.js';
 import { after } from '../pipeline.js';
 import { nowOf, pipelineContext, type ClassificationDeps, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
-import { assertWorkerCurrent } from '../stale-worker.js';
+import { assertWorkerCurrent, lockWorkerCurrent, type StaleWorkerError } from '../stale-worker.js';
 
 /** Articles in these states already continued from a successful Call A of their revision. */
 const ENRICHED_STATES: readonly string[] = ['enriched', 'matched'];
@@ -109,8 +109,13 @@ export function createArticleEnrichHandler(
       deadlineMs: nowOf(deps).getTime() + classification.callDeadlineMs,
     });
 
+    // The restart check of the start holds at the completion too (PR #28 round 5): a restart-class
+    // value or the pin that moved during the call discards the answer, and the queue retries later.
+    let stale: StaleWorkerError | null = null;
     if (outcome.ok) {
       await retryTransaction(deps.db, async (tx) => {
+        stale = await lockWorkerCurrent(tx, classification);
+        if (stale !== null) return;
         const locked = await lockArticleRevision(tx, articleId, 'update');
         // A reset replaced the input meanwhile: its own intents enrich the new revision.
         if (locked === null || locked.revision !== article.revision) return;
@@ -149,6 +154,7 @@ export function createArticleEnrichHandler(
           pipelineContext(deps, tx, workerOutbox(tx)),
         );
       });
+      if (stale !== null) throw stale;
       return;
     }
 
@@ -172,6 +178,8 @@ export function createArticleEnrichHandler(
       );
     }
     await retryTransaction(deps.db, async (tx) => {
+      stale = await lockWorkerCurrent(tx, classification);
+      if (stale !== null) return;
       const locked = await lockArticleRevision(tx, articleId, 'update');
       if (locked === null || locked.revision !== article.revision) return;
       // The failure answered the snapshot's request: under a changed configuration the job runs
@@ -193,6 +201,7 @@ export function createArticleEnrichHandler(
         pipelineContext(deps, tx, workerOutbox(tx)),
       );
     });
+    if (stale !== null) throw stale;
   };
 }
 

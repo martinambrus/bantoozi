@@ -18776,14 +18776,13 @@
                         "engine.typesafe_price_per_mtok_usd": {
                           "nullable": true,
                           "type": "number",
-                          "minimum": 0,
-                          "maximum": 10
+                          "minimum": 0
                         },
                         "engine.concurrency": {
                           "nullable": true,
                           "type": "integer",
                           "minimum": 1,
-                          "maximum": 64
+                          "maximum": 256
                         },
                         "engine.llm_fallback_enabled": {
                           "nullable": true,
@@ -18826,13 +18825,13 @@
                           "nullable": true,
                           "type": "integer",
                           "minimum": 1,
-                          "maximum": 10000
+                          "maximum": 1000000
                         },
                         "ingest.max_age_days": {
                           "nullable": true,
                           "type": "integer",
                           "minimum": 1,
-                          "maximum": 365
+                          "maximum": 3650
                         },
                         "fetch.limits": {
                           "nullable": true,
@@ -18840,13 +18839,13 @@
                           "properties": {
                             "timeoutMs": {
                               "type": "integer",
-                              "minimum": 1000,
-                              "maximum": 120000
+                              "minimum": 100,
+                              "maximum": 600000
                             },
                             "maxBytes": {
                               "type": "integer",
-                              "minimum": 65536,
-                              "maximum": 52428800
+                              "minimum": 1024,
+                              "maximum": 1073741824
                             }
                           },
                           "required": [
@@ -19697,14 +19696,13 @@
                         "engine.typesafe_price_per_mtok_usd": {
                           "nullable": true,
                           "type": "number",
-                          "minimum": 0,
-                          "maximum": 10
+                          "minimum": 0
                         },
                         "engine.concurrency": {
                           "nullable": true,
                           "type": "integer",
                           "minimum": 1,
-                          "maximum": 64
+                          "maximum": 256
                         },
                         "engine.llm_fallback_enabled": {
                           "nullable": true,
@@ -19747,13 +19745,13 @@
                           "nullable": true,
                           "type": "integer",
                           "minimum": 1,
-                          "maximum": 10000
+                          "maximum": 1000000
                         },
                         "ingest.max_age_days": {
                           "nullable": true,
                           "type": "integer",
                           "minimum": 1,
-                          "maximum": 365
+                          "maximum": 3650
                         },
                         "fetch.limits": {
                           "nullable": true,
@@ -19761,13 +19759,13 @@
                           "properties": {
                             "timeoutMs": {
                               "type": "integer",
-                              "minimum": 1000,
-                              "maximum": 120000
+                              "minimum": 100,
+                              "maximum": 600000
                             },
                             "maxBytes": {
                               "type": "integer",
-                              "minimum": 65536,
-                              "maximum": 52428800
+                              "minimum": 1024,
+                              "maximum": 1073741824
                             }
                           },
                           "required": [

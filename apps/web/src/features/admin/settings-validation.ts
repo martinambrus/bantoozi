@@ -1,5 +1,5 @@
 import {
-  AdminSettingsValuesSchema,
+  AdminSettingsWriteSchema,
   mergeRankerConfig,
   type AdminSettingKey,
 } from '@bantoozi/shared';
@@ -42,7 +42,7 @@ export function checkSetting(key: AdminSettingKey, text: string): SettingCheck {
   } catch {
     return { ok: false, problem: 'json' };
   }
-  const result = AdminSettingsValuesSchema.shape[key].safeParse(parsed);
+  const result = AdminSettingsWriteSchema.shape[key].safeParse(parsed);
   if (!result.success) {
     return { ok: false, problem: 'schema', reason: describeIssues(result.error.issues) };
   }

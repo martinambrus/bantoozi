@@ -1,4 +1,5 @@
 import type {
+  Executor,
   Database,
   DeletionLedgerEntry,
   RuntimeSettingsCache,
@@ -57,7 +58,7 @@ export interface ClassificationDeps {
   currentness?: {
     fingerprint: string;
     pin: { model: string; llm?: { fast: string; strong: string } | undefined };
-    restartFingerprint(): Promise<string>;
+    restartFingerprint(executor?: Executor): Promise<string>;
   };
   /**
    * Lease of claimed `match_queue` rows and analysis requests. It must outlast one router call

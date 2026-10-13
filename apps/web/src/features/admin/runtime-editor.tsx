@@ -39,7 +39,9 @@ export interface RuntimeEditorProps {
   hasStoredRow: boolean;
   /** What the live workers refused of this key. */
   problems: readonly string[];
-  onSaved: (result: AdminSettingsPatchResult) => void;
+  /** Called as the request is sent: its place in the order of the screen's settings requests. */
+  onSend: () => number;
+  onSaved: (result: AdminSettingsPatchResult, sequence: number) => void;
   onStale: () => void;
 }
 
@@ -58,6 +60,7 @@ export function RuntimeEditor({
   source,
   hasStoredRow,
   problems,
+  onSend,
   onSaved,
   onStale,
 }: RuntimeEditorProps) {
@@ -85,6 +88,7 @@ export function RuntimeEditor({
     const sent = draft;
     const signIn = session.currentSignIn();
     setFailure(null);
+    const sequence = onSend();
     try {
       const result = await update.mutateAsync({
         body: {
@@ -93,7 +97,7 @@ export function RuntimeEditor({
         } as AdminSettingsPatch,
       });
       if (session.currentSignIn() !== signIn) return;
-      onSaved(result);
+      onSaved(result, sequence);
       // Text edited while the save was on its way stays, still to be saved.
       setEdit((current) =>
         body === null || (current !== null && sameDraft(current, sent)) ? null : current,

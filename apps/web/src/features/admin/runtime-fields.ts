@@ -1,5 +1,5 @@
 import {
-  AdminSettingsValuesSchema,
+  AdminSettingsWriteSchema,
   type AdminSettingKey,
   type RuntimeSettingKey,
 } from '@bantoozi/shared';
@@ -131,7 +131,7 @@ export function checkDraft(key: RuntimeSettingKey, draft: Draft): RuntimeCheck {
       : Object.fromEntries(
           fields.map((field) => [field.part, fieldValue(field, draft[partId(field)] ?? '')]),
         );
-  const result = AdminSettingsValuesSchema.shape[key].safeParse(value);
+  const result = AdminSettingsWriteSchema.shape[key].safeParse(value);
   if (!result.success) return { ok: false, reason: describeIssues(result.error.issues) };
   return { ok: true, value: result.data };
 }

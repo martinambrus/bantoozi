@@ -30,6 +30,7 @@ export * from './policies/inference.js';
 export * from './ports.js';
 export * from './preferences.js';
 export * from './ranker-config.js';
+export * from './env-ranges.js';
 export * from './runtime-settings.js';
 export * from './settings.js';
 export * from './starter-bundles.js';

@@ -493,7 +493,9 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
    model or writing its answers; the retry lands on a restarted worker. A worker is stale when the restart
    fingerprint of the **current** effective settings (one fresh read per job, the condition behind
    `pendingRestart`) differs from the one it booted with, or when `engine.model_pin` names another model or
-   another fallback state and Ollama model pair than the process records (D-218, D-225).
+   another fallback state and Ollama model pair than the process records (D-218, D-225). The check also runs in the
+   completion transaction, after share-locking the restart-class setting rows and the pin row: a value that moved while
+   the model call was in flight discards the answer, releases the held rows and fails the job for the 30 s retry (D-226).
    Translation rows are not rebuilt: they stay valid for their article revision whatever model made
    them (spec 07 §3), so re-enrichment reuses the selected translation. In M9 the Laya worker records
    its checkpoint hash and calibration version the same way and enqueues `house.reenrich {lang}`

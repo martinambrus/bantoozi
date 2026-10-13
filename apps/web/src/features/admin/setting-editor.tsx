@@ -57,7 +57,9 @@ export interface SettingEditorProps {
   value: unknown;
   /** When the value was stored; null while the key still reads its default. */
   storedAt: string | null;
-  onSaved: (result: AdminSettingsPatchResult) => void;
+  /** Called as the request is sent: its place in the order of the screen's settings requests. */
+  onSend: () => number;
+  onSaved: (result: AdminSettingsPatchResult, sequence: number) => void;
   /** The settings changed under the editor: the screen loads them again. */
   onStale: () => void;
 }
@@ -67,6 +69,7 @@ export function SettingEditor({
   settingKey,
   value,
   storedAt,
+  onSend,
   onSaved,
   onStale,
 }: SettingEditorProps) {
@@ -95,12 +98,13 @@ export function SettingEditor({
     const sent = text;
     const signIn = session.currentSignIn();
     setFailure(null);
+    const sequence = onSend();
     try {
       const result = await update.mutateAsync({
         body: { [settingKey]: checked.value } as AdminSettingsPatch,
       });
       if (session.currentSignIn() !== signIn) return;
-      onSaved(result);
+      onSaved(result, sequence);
       // Text edited while the save was on its way stays, still to be saved.
       setEdit((current) => (current === sent ? null : current));
       toast.show({

@@ -769,7 +769,8 @@ contract, including explicit empty results; generic `any`/unbounded JSON is not 
 `null` when no process can tell: the API knows its own, workers report theirs in `worker.heartbeat`
 `runtime.defaults`) and `workers` (`[{processId, at, pendingRestart, problems}]` for heartbeats younger than
 90 s). The effective value of a key is the valid stored row, else (for a row that no longer validates) the
-last good value this API process saw, else the default (D-219). A `PATCH` takes `null` to reset a runtime key
+last good value this API process saw, else the default (D-219); `values` and `defaults` show any value the
+environment accepts (spec 02 §2 lists the wider env ranges), while a `PATCH` keeps the narrower write bounds (D-226). A `PATCH` takes `null` to reset a runtime key
 and an optional `acknowledge: boolean`. Rules:
 
 - A runtime value is validated by the shared rules (spec 02 §2; in production https URLs on

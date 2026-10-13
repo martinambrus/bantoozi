@@ -4,6 +4,7 @@ import {
   createRuntimeSettingsCache,
   runtimeSettingsLoader,
   type Database,
+  type Executor,
   type RuntimeSettingsCache,
 } from '@bantoozi/db';
 import { OLLAMA_PRICE_TABLE } from '@bantoozi/engine';
@@ -136,7 +137,7 @@ function envDefaults(config: WorkerRuntimeConfig): Record<string, unknown> {
 
 /** The settings cache of a process: stored rows over the environment values. */
 export function createWorkerSettingsCache(
-  db: Database,
+  db: Executor,
   config: WorkerRuntimeConfig,
 ): RuntimeSettingsCache {
   return createRuntimeSettingsCache({
@@ -239,9 +240,12 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
   models.classification.currentness = {
     fingerprint,
     pin: processPin,
-    async restartFingerprint() {
-      guardCache.invalidate();
-      return restartFingerprint((await guardCache.get()).values);
+    async restartFingerprint(executor) {
+      // Inside a completion transaction the values are read through it (under its share locks).
+      const cache =
+        executor === undefined ? guardCache : createWorkerSettingsCache(executor, config);
+      cache.invalidate();
+      return restartFingerprint((await cache.get()).values);
     },
   };
 

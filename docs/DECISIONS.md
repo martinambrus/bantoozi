@@ -2141,3 +2141,24 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   admin settings screen takes only the saved key's value, source, default and stored time from a save answer, and
   merges the workers per process (newer heartbeat wins, a pending restart stays pending on a tie), so a late
   answer cannot take back what a newer one set; no refetch is needed. Specs 11 §8 updated.
+- D-226: 2026-10-13 M8b-T5/T10 (PR #28 review round 5) — (1) The stale-worker check of D-218/D-225 runs again in
+  the **completion** transaction of every guarded handler, not only before the model call. `lockWorkerCurrent`
+  share-locks the seven restart-class setting rows (a missing row is stored as `null`, which reads as the
+  environment value) and the `engine.model_pin` row (only if it exists), reads the fingerprint through the
+  transaction and compares it and the pin (llm included) with the process's. `article.enrich` (answer and
+  degrade/fail writes) writes nothing and throws `StaleWorkerError` after the commit; `article.match` releases the
+  rows it holds (like a fenced-config mismatch, but without re-enqueueing) and throws once the job ends;
+  `house.reenrich`, `house.rematch` and `card.backfill` throw inside their write transactions, which roll
+  back. The queue retries after 30 s, by when a drained worker has restarted; a live-class change
+  (`engine.concurrency`) does not discard anything. (2) The admin settings screen numbers every settings
+  request (read or save) as it is sent; an answer newer than the last snapshot taken replaces the workers'
+  list and the environment defaults wholesale (an exited worker disappears), an older one only updates its own
+  key, and a read older than a snapshot already taken is dropped. This replaces the per-process merge of D-225.
+  (3) Env ranges wider than the runtime write bounds: the write bounds stay (the frozen T1/T2/T10 tests pin
+  them), and the **response** takes every env value. `packages/shared/src/env-ranges.ts` exports the env
+  ranges once (used by `server/config.ts`), and `AdminSettingsValuesSchema` shows the runtime keys with them
+  (price: any finite non-negative number) instead of the write schemas, so a worker default such as
+  `ENGINE_CONCURRENCY=128` no longer fails serialization of `GET`/`PATCH /admin/settings` (500); a `PATCH`
+  of that value is still refused by `validateRuntimeSetting` (400 with `details.key`). The web editors show an
+  out-of-range default as the default and keep the field's bounds for edits. OpenAPI snapshot updated;
+  specs 02 §2 and 08 §9 note the difference.
