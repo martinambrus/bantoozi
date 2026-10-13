@@ -112,8 +112,19 @@ describe('settings save that queues re-processing', () => {
     await wait(4_000);
     busy(save());
 
+    // The translation finished, but its follow-up rematch intents are not relayed yet: an empty
+    // read right after work is not the end.
     queues = [queue('feed.fetch', 9, 9)];
     await wait(4_000);
+    busy(save());
+    queues = [queue('house.rematch', 2)];
+    await wait(4_000);
+    busy(save());
+
+    queues = [queue('feed.fetch', 9, 9)];
+    await wait(4_000);
+    busy(save());
+    await wait(14_000);
     expect(within(group).queryByRole('status')).toBeNull();
     // Unchanged text again after the save: nothing to save, but no longer busy.
     expect(save()).not.toHaveAttribute('aria-busy');
@@ -294,6 +305,8 @@ describe('runtime editor busy states', () => {
 
     queues = [];
     await wait(4_000);
+    busy(saveButton('engine.prefilter_min_cards'));
+    await wait(14_000);
     const group = screen.getByRole('group', { name: 'engine.prefilter_min_cards' });
     expect(within(group).queryByRole('status')).toBeNull();
     expect(saveButton('engine.prefilter_min_cards')).not.toHaveAttribute('aria-busy');
@@ -402,6 +415,8 @@ describe('overview', () => {
 
     queues = [];
     await wait(4_000);
+    busy(button());
+    await wait(14_000);
     idle(button());
   });
 

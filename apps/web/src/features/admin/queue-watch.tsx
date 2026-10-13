@@ -1,6 +1,6 @@
 import type { AdminOverview, AdminSettingsPatchResult } from '@bantoozi/shared';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useApi } from '../../api/context.js';
 import { routes } from '../../api/routes.js';
@@ -11,7 +11,11 @@ import { useAdminKey } from './use-admin.js';
 export const QUEUE_POLL_MS = 3000;
 /** Queued work that has not drained after this long is left alone. */
 export const QUEUE_WATCH_CAP_MS = 600_000;
-/** The outbox relays an intent to its queue a moment after the request: an empty queue this soon proves nothing. */
+/**
+ * The outbox relays an intent to its queue a moment after it is stored (by the request, or by a job
+ * that queues follow-up work): the queues must stay empty this long after the request and after the
+ * last work seen before the work counts as done.
+ */
 export const QUEUE_GRACE_MS = 15_000;
 
 const laya = (value: unknown): Set<string> =>
@@ -69,8 +73,8 @@ export function savedQueues(
 interface Watch {
   queues: readonly string[];
   startedAt: number;
-  /** Some of the queues was seen holding work since the watch began. */
-  seen: boolean;
+  /** When a read last showed the queues holding work (the start until one does). */
+  lastWorkAt: number;
 }
 
 function backlog(data: AdminOverview | undefined, queues: readonly string[]): number {
@@ -88,11 +92,10 @@ function isDone(
   watch: Watch,
   now: number,
 ): boolean {
-  const elapsed = now - watch.startedAt;
-  if (elapsed >= QUEUE_WATCH_CAP_MS) return true;
-  // Only a read taken after the request can say the queues drained.
-  if (updatedAt < watch.startedAt || backlog(data, watch.queues) > 0) return false;
-  return watch.seen || elapsed >= QUEUE_GRACE_MS;
+  if (now - watch.startedAt >= QUEUE_WATCH_CAP_MS) return true;
+  // Only a read taken after the request and after the last work seen can say the queues drained.
+  if (updatedAt <= watch.lastWorkAt || backlog(data, watch.queues) > 0) return false;
+  return now - watch.lastWorkAt >= QUEUE_GRACE_MS;
 }
 
 /**
@@ -104,10 +107,21 @@ export function useQueueWatch() {
   const adminKey = useAdminKey();
   const [watch, setWatch] = useState<Watch | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  // The watch as the query function sees it: it records each read that still shows work.
+  const current = useRef<Watch | null>(null);
+  current.current = watch;
 
   const query = useQuery({
     queryKey: adminKey('overview'),
-    queryFn: ({ signal }) => api.call(routes.adminOverview, undefined, { signal }),
+    queryFn: async ({ signal }) => {
+      const data = await api.call(routes.adminOverview, undefined, { signal });
+      const active = current.current;
+      if (active !== null && backlog(data, active.queues) > 0) {
+        const at = Date.now();
+        setWatch((w) => (w === active ? { ...w, lastWorkAt: at } : w));
+      }
+      return data;
+    },
     enabled: watch !== null,
     refetchInterval: (q) =>
       watch !== null && !isDone(q.state.data, q.state.dataUpdatedAt, watch, Date.now())
@@ -116,17 +130,6 @@ export function useQueueWatch() {
   });
 
   const busy = watch !== null && !isDone(query.data, query.dataUpdatedAt, watch, now);
-  const holdsWork =
-    watch !== null &&
-    query.dataUpdatedAt >= watch.startedAt &&
-    backlog(query.data, watch.queues) > 0;
-
-  useEffect(() => {
-    if (holdsWork)
-      setWatch((current) =>
-        current === null || current.seen ? current : { ...current, seen: true },
-      );
-  }, [holdsWork]);
 
   useEffect(() => {
     if (!busy) return;
@@ -139,7 +142,7 @@ export function useQueueWatch() {
     start: (queues: readonly string[]) => {
       const startedAt = Date.now();
       setNow(startedAt);
-      setWatch({ queues, startedAt, seen: false });
+      setWatch({ queues, startedAt, lastWorkAt: startedAt });
     },
   };
 }

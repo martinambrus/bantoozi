@@ -1,6 +1,10 @@
 import { act, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  FIRST_FETCH_GIVE_UP_MS,
+  isFirstFetchPending,
+} from '../../src/features/feeds/subscriptions.js';
 import { createHarness } from '../auth/harness.js';
 import {
   LIST,
@@ -74,6 +78,14 @@ describe('feeds whose first fetch is still queued', () => {
     const settled = app.calls(LIST).length;
     await advance(20_000);
     expect(app.calls(LIST)).toHaveLength(settled);
+  });
+
+  it('times the wait per account: another account subscribing to the same feed waits afresh', () => {
+    const feed = waiting('805');
+    const t0 = 1_000_000;
+    expect(isFirstFetchPending(feed, 'account-a', t0)).toBe(true);
+    expect(isFirstFetchPending(feed, 'account-a', t0 + FIRST_FETCH_GIVE_UP_MS)).toBe(false);
+    expect(isFirstFetchPending(feed, 'account-b', t0 + FIRST_FETCH_GIVE_UP_MS + 1)).toBe(true);
   });
 
   it('does not call a feed that failed its first fetch fetching', async () => {
