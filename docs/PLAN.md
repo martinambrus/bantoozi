@@ -194,8 +194,8 @@ Background and rationale: [`background.md`](./background.md).
 | 4 | Migration | **None.** No FeedIt.sk accounts or data. Everything is trained or fine-tuned from scratch; the golden set is built new |
 | 5 | Hosting | **Self-hosted on one box, minimal spend, no GPU** |
 | 6 | Signup | **Invite-only** at launch, with a waitlist |
-| 7 | Translation / LLM provider | Tier 1 = **free CPU machine translation** (LibreTranslate/Argos). Tier 2 and the LLM fallback = **Ollama Cloud GLM** (`glm-5.3-flash`, `glm-5.3`). **No Claude** (too expensive for the quality needed) |
-| 8 | Decision model | **Jev** (TypeSafe) through its HTTP API, pinned version (`jev-1.13.0`). Laya is an optional later engine |
+| 7 | Translation / LLM provider | Tier 1 = **free CPU machine translation** (LibreTranslate/Argos). Tier 2 and the LLM fallback = **Ollama Cloud GLM** (default `glm-5.3-flash`, `glm-5.3`; an admin may change the models in the UI after confirming an `eval replay` passed, owner 2026-10-13, M8b). **No Claude** (too expensive for the quality needed) |
+| 8 | Decision model | **Jev** (TypeSafe) through its HTTP API, pinned version (default `jev-1.13.0`; an admin may change the pinned model in the UI after confirming an `eval replay` passed, which triggers the model-pin rebuild of spec 11 §8, owner 2026-10-13, M8b). Laya is an optional later engine |
 | 9 | Inference eligibility | **No inference for untrained/off subscriptions.** Training is per selected article; trained/active subscriptions admit automatic new-article inference. The state is per reader/feed, not global |
 | 10 | Bookmarks | Preserve captured full readable text and sanitized HTML indefinitely while bookmarked; exclude images/media/attachments. Cold compression must be lossless and transparent |
 | 11 | Sharing and updates | Text-only cards may be shared. Public promotion needs exact-version creator approval while active within 30 days; after 30 consecutive days of inactivity an eligible candidate may be promoted under the audited inactivity policy. Explicit declines remain a veto. Semantic library updates are opt-in |
@@ -1442,6 +1442,44 @@ one follow-up branch, test-first, committed as `M8-F<n>: <summary>`. Mark each �
 | M8-F17 | Load-test realism: the generated feed lists 3 items, so a feed polled less often than every ~36 min can miss items; one unexplained API restart was seen during heavy seeding | `packages/testing/src/load-feeds.ts`, `apps/ops/src/load` || ✓ a4c1867, 03823b3 |
 | M8-F18 | Rollback was rehearsed only by redeploying the same commit; rehearse `deploy.sh <previous tag>` across two real releases once a second release exists | `infra/scripts/deploy.sh`, RUNBOOK §3 || ✓ 245c7d2 (rehearsal found the readiness bug; full two-release rehearsal from the next release on, D-207) |
 | M8-F19 | Engine cost attribution (active / training / off-feed) is computed from the current subscriptions and analysis requests, so a past day's numbers change after an unsubscribe or a later request; record the authorization basis on each `engine_calls` row when the call is made (migration 0022) and attribute from it (PR #26 Codex comment 4248814596) | `packages/engine`, `packages/db/src/house/metrics.ts` || ✓ D-194, migration 0022 (in PR #26) |
+
+
+### 14.2 M8b: First-run setup and live administration
+
+**Owner decisions (2026-10-13).** A fresh install gets its first admin through a one-time **setup token**:
+while no active admin exists, the API logs a random token at start-up and `/setup` takes the token and an
+email in **one step**, creating that account as admin and signing it in. `ADMIN_EMAILS` becomes **bootstrap
+only**: it promotes an address when the account is created or while no active admin exists, so a demotion in
+the UI sticks; operational alerts go to all active admins. These env-only values become **live settings**
+(settings table first, env as the default): the LLM fallback switch, Ollama models and concurrency; ingest max
+age, prefilter minimum cards, fetch timeout and size, rate limits, engine concurrency; `TYPESAFE_MODEL`
+(changeable after confirming an `eval replay` passed; locked decisions 7 and 8 amended); and the TypeSafe,
+Ollama and LibreTranslate base URLs and the TypeSafe price. In production a base URL must be on a host
+allowlist set in the env file. Values that need new clients (model, base URLs, fallback, Ollama) apply through
+a drained, automatic worker restart; the rest apply within the settings cache TTL. `pnpm setup:env` fills
+missing secrets (including the provider keyring, which stays outside the database, locked decision 13) and
+Admin → Providers explains what to run when the keyring is missing. Scope analysis:
+`~/.cache/bantoozi-m8b/scope.md` (lead's working copy).
+
+| ID | Task | Needs | Lane | Status |
+|---|---|---|---|---|
+| M8b-T1 | Runtime settings layer: per-key schemas with production rules (https, pinned and priced models, ranges, base-URL host allowlist), env fallback, a per-process TTL cache (single-flight, last good value) | — | A | |
+| M8b-T2 | Admin settings API for the new keys: source and defaults, reset, the LibreTranslate probe, a required acknowledgement for model-affecting keys | T1 | A | |
+| M8b-T3 | API live consumers: rate limits (auth, setup and ops-event limits always on in production), discovery fetch limits, LibreTranslate client swap | T1 | A | |
+| M8b-T4 | Worker live values: fetch and ingest limits, price, engine concurrency (resizable semaphore), `PREFILTER_MIN_CARDS` honoured (it is hard-coded to 60 today) | T1 | B | |
+| M8b-T5 | Worker restart-class values: built from effective settings at start-up; a drained self-restart when they change; the model pin and its rebuild exactly once; a not-yet-restarted worker defers classification; heartbeat reports runtime values and keyring status | T1, T4 | B | |
+| M8b-T6 | Setup token and first admin (one step): token generation, logging and rotation, `GET /setup`, `POST /setup/complete`, single use under a lock, rate limits | — | C | |
+| M8b-T7 | `ADMIN_EMAILS` bootstrap only; alerts to all active admins; drop the production requirement of D-202 | T6 | C | |
+| M8b-T8 | `pnpm setup:env`: fills only missing or placeholder secrets (keyring, session pepper, metrics token, deletion ledger for dev), idempotent, mode 0600, never prints values | — | D | |
+| M8b-T9 | Keyring status in the credentials API and an Admin → Providers banner with the exact command | T5, T8 | D | |
+| M8b-T10 | Web: typed, grouped settings editors with source and reset, applied-by-workers status, the model-change confirmation | T2, T5 | E | |
+| M8b-T11 | Web: `/setup` first-run screen, a login link while setup is open, redirect once closed | T6 | E | |
+| M8b-T12 | Specs, DECISIONS (D-212 on), RUNBOOK (first admin, model upgrade, rollback past M8b: copy UI-stored values to the env file first), a fresh-install E2E, full check | T1–T11 | lead | |
+
+**Done when:** each task's harness passes (written first, seen failing, with a negative control); a fresh
+database with no admin and no `ADMIN_EMAILS` reaches an admin through `/setup`; a model change in the UI
+restarts the workers once and runs exactly one rebuild; `pnpm typecheck && pnpm lint && pnpm test && pnpm
+test:int && pnpm e2e` passes; the PR is clean on CI and Codex.
 
 ---
 
