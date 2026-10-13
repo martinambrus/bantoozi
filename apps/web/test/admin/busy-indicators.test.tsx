@@ -42,10 +42,10 @@ const wait = (ms: number) =>
   });
 
 type Queue = { queue: string; created: number; retry: number; active: number; failed: number };
-const queue = (name: string, created: number, active = 0): Queue => ({
+const queue = (name: string, created: number, active = 0, retry = 0): Queue => ({
   queue: name,
   created,
-  retry: 0,
+  retry,
   active,
   failed: 0,
 });
@@ -104,6 +104,11 @@ describe('settings save that queues re-processing', () => {
     busy(save());
 
     queues = [queue('house.rematch', 0, 1)];
+    await wait(4_000);
+    busy(save());
+
+    // A job that failed transiently waits for its retry: still not done.
+    queues = [queue('house.rematch', 0, 0, 1)];
     await wait(4_000);
     busy(save());
 
@@ -301,10 +306,45 @@ describe('runtime editor busy states', () => {
     await wait(4_000);
     expect(screen.queryByText('Workers are restarting to apply the change…')).toBeNull();
     // Past the grace period of a worker that has not reported yet, nothing is read any more.
-    await wait(20_000);
+    await wait(40_000);
     const settled = reads;
     await wait(30_000);
     expect(reads).toBe(settled);
+  });
+
+  it('keeps reading through a full worker heartbeat before it trusts "no restart pending"', async () => {
+    let pending = false;
+    const app = await open(
+      '/admin/settings',
+      {
+        'GET /admin/settings': () =>
+          json(200, {
+            ...makeSettings({ workers: [worker({ pendingRestart: pending })] }),
+            values: { ...SETTINGS_VALUES },
+          }),
+        'PATCH /admin/settings': () =>
+          json(200, {
+            ...makeSettings({
+              values: { ...SETTINGS_VALUES, 'engine.concurrency': 6 },
+              workers: [worker({ pendingRestart: false })],
+            }),
+            changed: ['engine.concurrency'],
+          }),
+      },
+      {},
+    );
+    await screen.findByRole('group', { name: 'engine.concurrency' });
+    await type(app, 'engine.concurrency', '6');
+    await app.user.click(saveButton('engine.concurrency'));
+
+    // The worker's settings check (10 s) and its next heartbeat (30 s) report the restart late.
+    await wait(38_000);
+    pending = true;
+    expect(
+      await screen.findByText('Workers are restarting to apply the change…', undefined, {
+        timeout: 5_000,
+      }),
+    ).toBeVisible();
   });
 });
 

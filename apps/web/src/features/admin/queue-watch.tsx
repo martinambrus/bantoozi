@@ -48,9 +48,12 @@ interface Watch {
 }
 
 function backlog(data: AdminOverview | undefined, queues: readonly string[]): number {
-  return (data?.queues ?? [])
-    .filter((row) => queues.includes(row.queue))
-    .reduce((sum, row) => sum + row.created + row.active, 0);
+  return (
+    (data?.queues ?? [])
+      .filter((row) => queues.includes(row.queue))
+      // A job waiting for another attempt after a transient failure is not done either.
+      .reduce((sum, row) => sum + row.created + row.retry + row.active, 0)
+  );
 }
 
 function isDone(

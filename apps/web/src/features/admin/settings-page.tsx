@@ -25,8 +25,11 @@ const isRuntimeKey = (key: string): boolean =>
 /** After a runtime save the workers are read again every few seconds, for this long at most. */
 const RESTART_POLL_MS = 3000;
 const RESTART_WATCH_MS = 120_000;
-/** A worker reports a pending restart with its next heartbeat; an answer without one this soon proves nothing. */
-const RESTART_GRACE_MS = 15_000;
+/**
+ * A worker notices a changed value with its settings check (every 10 s) and reports the pending
+ * restart with its next heartbeat (every 30 s): an answer without one this soon proves nothing.
+ */
+const RESTART_GRACE_MS = 45_000;
 const BASE_KEYS = ADMIN_PATCHABLE_SETTING_KEYS.filter((key) => !isRuntimeKey(key));
 
 export function AdminSettingsPage() {
