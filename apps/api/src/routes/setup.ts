@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { setSessionCookie } from '../plugins/auth.js';
 import { preferredLocale } from '../services/auth.js';
-import { completeSetup, setupOpen } from '../services/setup.js';
+import { completeSetup, ensureSetupToken, setupOpen } from '../services/setup.js';
 import type { RateLimitRule } from '../types.js';
 
 /** `POST /setup/complete`: 10 attempts per 15 minutes per IP (a wrong token counts like any other). */
@@ -37,6 +37,7 @@ export const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (_request, reply) => {
       void reply.header('cache-control', 'no-store');
+      await ensureSetupToken(app.services, app.log);
       return { open: await setupOpen(app.services) };
     },
   );
@@ -54,6 +55,11 @@ export const setupRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (request, reply) => {
       const { config, clock } = app.services;
+      if (!app.services.setup.ready) {
+        // The start-up rotation failed: retry it, but refuse this request (its token predates it).
+        await ensureSetupToken(app.services, app.log);
+        throw new AppError('INVALID_CODE', 'Invalid setup token');
+      }
       const header = request.headers['accept-language'];
       const result = await completeSetup(app.services, {
         token: request.body.token,

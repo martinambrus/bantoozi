@@ -50,15 +50,30 @@ export async function setupOpen(services: Pick<ApiServices, 'db'>): Promise<bool
 }
 
 /**
- * Called when the server is ready: with no active admin, rotate the token and print it (warn log,
- * or stderr when the level hides warn). Never throws: a failure is logged and setup stays closed.
+ * Per-process token state. `ready` is false until this process has either persisted its own new
+ * digest or found an active admin; while false, no token is redeemable (a digest left by the
+ * previous process must not work), and the rotation is retried by `ensureSetupToken`.
  */
-export async function initSetupToken(
-  services: Pick<ApiServices, 'db' | 'config' | 'clock'>,
+export interface SetupRuntime {
+  ready: boolean;
+  inflight: Promise<void> | null;
+  generateToken: () => string;
+}
+
+export function createSetupRuntime(generateToken?: () => string): SetupRuntime {
+  return {
+    ready: false,
+    inflight: null,
+    generateToken: generateToken ?? (() => randomBytes(32).toString('base64url')),
+  };
+}
+
+async function rotateSetupToken(
+  services: Pick<ApiServices, 'db' | 'config' | 'clock' | 'setup'>,
   log: FastifyBaseLogger,
 ): Promise<void> {
   try {
-    const { db, config, clock } = services;
+    const { db, config, clock, setup } = services;
     const token = await db.transaction(async (tx) => {
       await lockSetup(tx);
       const adminId = await anyActiveAdminId(tx);
@@ -67,7 +82,7 @@ export async function initSetupToken(
         await closeOpenSetup(tx, adminId);
         return null;
       }
-      const fresh = randomBytes(32).toString('base64url');
+      const fresh = setup.generateToken();
       await replaceSetupState(
         tx,
         parseSetting(SETUP_KEY, {
@@ -77,6 +92,8 @@ export async function initSetupToken(
       );
       return fresh;
     });
+    // Committed: only now may this process redeem tokens (the one logged below, or none).
+    setup.ready = true;
     if (token === null) return;
     const message = `First-run setup is open. Setup token (shown once, valid until the next start): ${token}`;
     const probe = (log as { isLevelEnabled?: (level: string) => boolean }).isLevelEnabled;
@@ -86,6 +103,26 @@ export async function initSetupToken(
     log.error({ err: error }, 'could not prepare the first-run setup token');
   }
 }
+
+/**
+ * Rotates the token and prints it once (warn log, or stderr when the level hides warn) unless this
+ * process is already ready. Concurrent callers share one attempt. Never throws: on failure the
+ * process stays not ready (setup refuses every token) and the next call retries.
+ */
+export function ensureSetupToken(
+  services: Pick<ApiServices, 'db' | 'config' | 'clock' | 'setup'>,
+  log: FastifyBaseLogger,
+): Promise<void> {
+  const { setup } = services;
+  if (setup.ready) return Promise.resolve();
+  setup.inflight ??= rotateSetupToken(services, log).finally(() => {
+    setup.inflight = null;
+  });
+  return setup.inflight;
+}
+
+/** Called when the server is ready (never throws, so the offline OpenAPI build is unaffected). */
+export const initSetupToken = ensureSetupToken;
 
 export interface CompleteSetupInput {
   token: string;
@@ -105,11 +142,13 @@ export type CompleteSetupResult =
  * refusal returns `{ok: false}` (the caller answers one generic error).
  */
 export async function completeSetup(
-  services: Pick<ApiServices, 'db' | 'config' | 'clock'>,
+  services: Pick<ApiServices, 'db' | 'config' | 'clock' | 'setup'>,
   input: CompleteSetupInput,
 ): Promise<CompleteSetupResult> {
   const { db, config, clock } = services;
   const fail = { ok: false } as const;
+  // Fail closed until this process has persisted its own digest (the stored one may be older).
+  if (!services.setup.ready) return fail;
   return db.transaction(async (tx): Promise<CompleteSetupResult> => {
     await lockSetup(tx);
     if (await activeAdminExists(tx)) return fail;

@@ -5,6 +5,7 @@ import type { RuntimeSettingsCache } from '@bantoozi/db';
 import type { Mailer, ProcessConfig } from '@bantoozi/shared/server';
 import type { LibreTranslateClient } from '@bantoozi/translate';
 
+import type { SetupRuntime } from './services/setup.js';
 import type { CursorCodec } from './services/cursor.js';
 import type { RateLimiter } from './plugins/rate-limit.js';
 
@@ -42,6 +43,8 @@ export interface ApiServices {
   readonly createProbeLibreTranslate: (baseUrl: string) => LibreTranslateClient;
   /** The live runtime settings (M8b-T3): one TTL cache per process, invalidated by an admin PATCH. */
   readonly runtime: RuntimeSettingsCache;
+  /** First-run setup token state of this process (M8b-T6): fail-closed until it has rotated. */
+  readonly setup: SetupRuntime;
 }
 
 declare module 'fastify' {

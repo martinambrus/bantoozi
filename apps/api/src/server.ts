@@ -41,7 +41,7 @@ import { ruleRoutes } from './routes/rules.js';
 import { setupRoutes } from './routes/setup.js';
 import { subscriptionRoutes } from './routes/subscriptions.js';
 import { createCursorCodec } from './services/cursor.js';
-import { initSetupToken } from './services/setup.js';
+import { createSetupRuntime, initSetupToken } from './services/setup.js';
 import './types.js';
 
 export const API_PREFIX = '/api/v1';
@@ -85,6 +85,8 @@ export interface BuildServerOptions {
   /** The bundled migrations whose newest entry `/readyz` expects (default: packages/db/drizzle). */
   migrationsFolder?: string;
   trustedProxies?: readonly string[];
+  /** Test seam: the generator of first-run setup tokens (default: 256 random bits, base64url). */
+  setupTokenGenerator?: () => string;
 }
 
 function defaultDiscoverDeps(
@@ -174,6 +176,7 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     liveLibreTranslateUrl,
     createProbeLibreTranslate: makeProbeLibreTranslate,
     runtime,
+    setup: createSetupRuntime(options.setupTokenGenerator),
   };
   app.decorate('services', services);
   app.setValidatorCompiler(validatorCompiler);

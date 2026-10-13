@@ -2162,3 +2162,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   of that value is still refused by `validateRuntimeSetting` (400 with `details.key`). The web editors show an
   out-of-range default as the default and keep the field's bounds for edits. OpenAPI snapshot updated;
   specs 02 §2 and 08 §9 note the difference.
+- D-227: 2026-10-13 M8b-T6/T5 (PR #28 review round 6) — (1) Setup fails closed after a failed rotation: the API
+  keeps an in-process `setup.ready` flag that becomes true only after the start-up (or retry) transaction
+  commits, or an active admin is found. While false, `completeSetup` refuses every token (the existing generic
+  `400 INVALID_CODE`, chosen over 503 because it reveals nothing new), so a digest left by the previous process
+  cannot be redeemed. `GET /setup` and `POST /setup/complete` retry the rotation under the setup lock through
+  one shared in-flight attempt, so the new token is logged once; the request that triggered the retry is
+  still refused. `onReady` still never throws (offline OpenAPI build). Test seam: `BuildServerOptions.setupTokenGenerator`.
+  (2) The worker's 10 s runtime-check timer starts only after the real shutdown is wired, and the runtime's
+  `drain` goes through a `ShutdownGate` that waits for the wiring, so a self-restart can never exit undrained.

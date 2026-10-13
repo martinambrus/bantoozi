@@ -25,6 +25,7 @@ import { enqueueOverdueHousekeeping } from './housekeeping.js';
 import { startOutboxRelay } from './outbox-relay.js';
 import { assertProductionReady } from './readiness.js';
 import { createWorkerRuntime } from './runtime.js';
+import { createShutdownGate } from './shutdown-gate.js';
 import { verifyQuestionSets } from './seed.js';
 
 /**
@@ -64,24 +65,19 @@ await verifyQuestionSets(db).catch((error: unknown) => {
 
 // The runtime builds the models from the effective settings and records the engine model pin under
 // its row lock (a changed pin enqueues the model rebuild once); it checks restart-class changes.
-let shuttingDown: (signal: string) => Promise<void> = () => Promise.resolve();
+const shutdownGate = createShutdownGate();
 const runtime = await createWorkerRuntime({
   db,
   config,
   logger,
   exit: (code) => process.exit(typeof process.exitCode === 'number' ? process.exitCode : code),
-  drain: () => shuttingDown('settings-restart'),
+  drain: () => shutdownGate.drain('settings-restart'),
   selfRestart: config.workerSelfRestart,
   recordPin: !config.evalIngestOnly,
 });
 const models = runtime.models;
 const runtimeSettings = runtime.settings;
-const settingsTimer = setInterval(() => {
-  runtime.check().catch((error: unknown) => {
-    logger.warn({ err: error }, 'runtime settings refresh failed');
-  });
-}, 10_000);
-settingsTimer.unref();
+let settingsTimer: NodeJS.Timeout | undefined;
 const settingsEnv = {
   prefilterMinCards: config.prefilterMinCards,
   dailyBudgetUsd: config.dailyBudgetUsd,
@@ -149,7 +145,7 @@ function shutdown(signal: string): Promise<void> {
 async function stop(signal: string): Promise<void> {
   stopping = true;
   logger.info({ signal }, 'worker stopping');
-  clearInterval(settingsTimer);
+  if (settingsTimer !== undefined) clearInterval(settingsTimer);
   try {
     // The heartbeat advertises these consumers (an ingest-only collection checks it), so it is
     // removed only after the relay and the queue consumers have stopped.
@@ -239,6 +235,15 @@ if (!stopping) {
   logger.info({ ...registration, evalIngestOnly: config.evalIngestOnly }, 'worker started');
 }
 
-shuttingDown = shutdown;
+shutdownGate.wire(shutdown);
+// The runtime check may request a self-restart: start it only once the shutdown is wired.
+if (!stopping) {
+  settingsTimer = setInterval(() => {
+    runtime.check().catch((error: unknown) => {
+      logger.warn({ err: error }, 'runtime settings refresh failed');
+    });
+  }, 10_000);
+  settingsTimer.unref();
+}
 process.once('SIGTERM', () => void shutdown('SIGTERM'));
 process.once('SIGINT', () => void shutdown('SIGINT'));

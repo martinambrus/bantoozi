@@ -205,7 +205,12 @@ and `deleted_at IS NULL`), setup is open:
   and `createdAt` in `settings['auth.setup']` (spec 02 §2) and logs the plaintext once, at `warn`
   (to stderr when the log level hides `warn`): `First-run setup is open. Setup token (shown once, valid
   until the next start): …`. **Every start rotates it**, so only the newest line works; the token is never
-  stored or returned. With an active admin the API generates and logs nothing and **closes** any open
+  stored or returned. **Fail closed (D-227):** a process redeems no token until it has committed its own new
+  digest (or found an active admin). If the start-up rotation fails (the error is logged; start-up never
+  throws), `POST /setup/complete` answers the generic `400 INVALID_CODE` for every token, including one left
+  by the previous process, and the next `GET /setup` or `POST /setup/complete` retries the rotation under
+  the lock (one attempt at a time) and logs the new token once; the request that triggered a retry is still
+  refused. With an active admin the API generates and logs nothing and **closes** any open
   row left by an earlier start: the row takes the consumed shape (`{createdAt, consumedAt, userId}` with
   the id of an active admin, no digest), so a token logged earlier cannot be redeemed if that admin is
   later deleted (the strict `auth.setup` schema is unchanged and the API role cannot `DELETE` settings, so
