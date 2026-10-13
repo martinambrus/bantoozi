@@ -2,7 +2,9 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 import {
   activeAdminExists,
+  anyActiveAdminId,
   bindTenant,
+  closeOpenSetup,
   createSession,
   deleteWaitlistEntry,
   findUserByEmail,
@@ -59,7 +61,12 @@ export async function initSetupToken(
     const { db, config, clock } = services;
     const token = await db.transaction(async (tx) => {
       await lockSetup(tx);
-      if (await activeAdminExists(tx)) return null;
+      const adminId = await anyActiveAdminId(tx);
+      if (adminId !== null) {
+        // Setup is closed for good: a token logged earlier must not revive if the admin goes away.
+        await closeOpenSetup(tx, adminId);
+        return null;
+      }
       const fresh = randomBytes(32).toString('base64url');
       await replaceSetupState(
         tx,

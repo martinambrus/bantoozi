@@ -56,3 +56,38 @@ export async function promoteActiveUserToAdmin(
     RETURNING id::text AS id`);
   return result.rows[0]?.id ?? null;
 }
+
+/**
+ * Close an outstanding open `auth.setup` row (spec 08 §2.1) because `adminUserId` is an active
+ * admin: the row takes the strict schema's only non-open form (`consumedAt` and `userId`, no
+ * digest) and keeps `createdAt`, so `POST /setup/complete` refuses every token like a consumed
+ * setup. A consumed row is left as it is. Call under {@link lockSetup} whenever a user becomes an
+ * active admin, so a token logged earlier cannot be redeemed after that admin is deleted. (The API
+ * role cannot DELETE from `settings`, hence the rewrite.)
+ */
+export async function closeOpenSetup(tx: Executor, adminUserId: string): Promise<void> {
+  await tx.execute(sql`
+    UPDATE settings
+       SET value = jsonb_build_object(
+             'createdAt', value -> 'createdAt',
+             'consumedAt', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+             'userId', ${adminUserId}::text),
+           updated_at = now()
+     WHERE key = 'auth.setup' AND value ? 'digest'`);
+}
+
+/** The id of one active admin (the lowest), or `null`. */
+export async function anyActiveAdminId(db: Executor): Promise<string | null> {
+  const result = await db.execute<{ id: string }>(sql`
+    SELECT id::text AS id FROM users
+     WHERE role = 'admin' AND deleted_at IS NULL ORDER BY id LIMIT 1`);
+  return result.rows[0]?.id ?? null;
+}
+
+/** Whether the user is a soft-deleted admin (its restore makes an active admin again). */
+export async function isSoftDeletedAdmin(tx: Executor, userId: string): Promise<boolean> {
+  const result = await tx.execute(sql`
+    SELECT 1 FROM users
+     WHERE id = ${userId}::uuid AND role = 'admin' AND deleted_at IS NOT NULL`);
+  return result.rows.length > 0;
+}

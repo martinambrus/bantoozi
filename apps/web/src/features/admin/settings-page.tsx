@@ -101,6 +101,7 @@ export function AdminSettingsPage() {
                       value={data.values[key]}
                       defaultValue={data.defaults[key] ?? null}
                       source={data.sources[key] ?? 'env'}
+                      hasStoredRow={data.stored.some((entry) => entry.key === key)}
                       problems={[
                         ...new Set(
                           data.workers.flatMap((worker) =>

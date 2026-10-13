@@ -205,8 +205,14 @@ and `deleted_at IS NULL`), setup is open:
   and `createdAt` in `settings['auth.setup']` (spec 02 §2) and logs the plaintext once, at `warn`
   (to stderr when the log level hides `warn`): `First-run setup is open. Setup token (shown once, valid
   until the next start): …`. **Every start rotates it**, so only the newest line works; the token is never
-  stored or returned. With an active admin the API writes and logs nothing. No migration is involved
-  (D-212).
+  stored or returned. With an active admin the API generates and logs nothing and **closes** any open
+  row left by an earlier start: the row takes the consumed shape (`{createdAt, consumedAt, userId}` with
+  the id of an active admin, no digest), so a token logged earlier cannot be redeemed if that admin is
+  later deleted (the strict `auth.setup` schema is unchanged and the API role cannot `DELETE` settings, so
+  the row is rewritten, not removed; D-224). The same close runs, under the `bantoozi:setup` lock, at every
+  moment a user becomes an active admin: the `ADMIN_EMAILS` bootstrap in `verify`, the restore of a
+  soft-deleted admin at `verify`, and `PATCH /admin/users/{id}` with `role: 'admin'`. No migration is
+  involved (D-212).
 - **Redeem.** `POST /setup/complete {token, email}`, in one transaction under the setup lock: recheck that
   no active admin exists, compare the token digest in constant time, normalize the email, then either
   create the user with `role='admin'` (locale from `Accept-Language`, plan `invites_left` as for any
@@ -217,7 +223,8 @@ and `deleted_at IS NULL`), setup is open:
 - **Errors.** A wrong token, a closed setup and every refusal above answer the same `400 INVALID_CODE`
   ("Invalid setup token"), so the response says neither whether an admin exists nor why. Limits: spec 08 §11
   (10 attempts per 15 minutes per IP, wrong ones included, D-213).
-- A single use: after success the same token, and any older one, fails.
+- A single use: after success the same token, and any older one, fails. A token also stops working at the
+  moment any admin exists, not only at the next start (D-224).
 
 ### 2.2 Invites and waitlist
 

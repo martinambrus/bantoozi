@@ -99,8 +99,9 @@ bucket and the `age` recipient/identity (section 4); provider keys (section 10).
    email of the first administrator and submit: the account is created as admin and signed in, with no email
    code and no invite. **The token changes at every API start**, so after any restart use the newest line;
    a wrong or old token gives a generic error, and 10 attempts per 15 minutes per IP are allowed. If an
-   account with that email already exists it becomes the admin. Once an admin exists `/setup` closes and no
-   token is printed. Then create the first invites (section 7). `ADMIN_EMAILS` is not needed; if it is set, a
+   account with that email already exists it becomes the admin. Once an admin exists `/setup` closes, no
+   token is printed and any earlier token stops working for good (it does not revive if that admin is
+   deleted later; restart the API with no admin to get a new one). Then create the first invites (section 7). `ADMIN_EMAILS` is not needed; if it is set, a
    listed address can also sign in with a code and becomes admin only while there is no admin.
 5. Stage the provider key (section 10), apply the G1 settings (section 9), then run the launch checklist at
    the end of this file.

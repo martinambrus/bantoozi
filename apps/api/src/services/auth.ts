@@ -11,6 +11,8 @@ import {
   findUserByEmail,
   insertSignupUser,
   activeAdminExists,
+  closeOpenSetup,
+  isSoftDeletedAdmin,
   lockSetup,
   issueLoginCode,
   lockActiveLoginCode,
@@ -352,10 +354,17 @@ export async function verifyLoginCode(
     let admin = listed;
     let userId: string;
     let restore = false;
+    let adminRestored = false;
     if (challenge.purpose === 'login') {
       // A purged user takes its code row with it (ON DELETE CASCADE); the checks below also refuse
       // a row that no longer matches, so a login code never turns into a signup authorization.
       if (challenge.loginUserId === null) return fail;
+      // Restoring a deleted admin makes an active admin again: take the setup lock first (the lock
+      // order of every setup path) so the open setup token can be closed below.
+      if (!listed && (await isSoftDeletedAdmin(tx, challenge.loginUserId))) {
+        await lockSetup(tx);
+        adminRestored = true;
+      }
       const user = await lockUserForVerify(tx, challenge.loginUserId);
       if (user === null || user.email !== email || !user.restorable) return fail;
       userId = user.id;
@@ -388,6 +397,7 @@ export async function verifyLoginCode(
     }
 
     await recordVerifiedLogin(tx, { userId, admin });
+    if (admin || (restore && adminRestored)) await closeOpenSetup(tx, userId);
     const tenant = await bindTenant(tx, userId);
     if (restore) await restoreSoftDeletedUser(tenant);
     const { token, tokenHash } = newSessionToken();

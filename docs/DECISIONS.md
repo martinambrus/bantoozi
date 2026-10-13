@@ -2121,3 +2121,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   confirmation_required` until the PATCH carries `acknowledge: true`; locked decisions 7 and 8 were amended by
   the owner (PLAN §14.2). The keyring itself stays outside the database (locked decision 13); the API only
   reports its status. Specs 01 §3, 02 §2, 08 §9, §9.1 and 09 §8 updated.
+- D-224: 2026-10-13 M8b-T6 (PR #28 review round 3) — An open `auth.setup` token is closed at the moment an
+  active admin exists, not only replaced at the next start: `initSetupToken` with an admin present, the
+  `ADMIN_EMAILS` bootstrap and the restore of a soft-deleted admin in `verify`, and `PATCH /admin/users/{id}`
+  with `role: 'admin'` all rewrite the row under the `bantoozi:setup` lock. The closed form is the strict
+  schema's consumed shape (`consumedAt` plus the id of an active admin, no digest): the schema is not loosened
+  and the API role has no `DELETE` on `settings` (no migration). `GET /admin/settings` already lists `stored`
+  keys, so the web enables Reset whenever a row is stored for the key, even if its source reads `env`.

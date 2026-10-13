@@ -35,6 +35,8 @@ export interface RuntimeEditorProps {
   /** The environment default; null when no process can tell. */
   defaultValue: unknown;
   source: 'env' | 'stored' | 'last_good';
+  /** Whether a row is stored for the key, valid or not (an invalid one reads as `env`). */
+  hasStoredRow: boolean;
   /** What the live workers refused of this key. */
   problems: readonly string[];
   onSaved: (result: AdminSettingsPatchResult) => void;
@@ -54,6 +56,7 @@ export function RuntimeEditor({
   value,
   defaultValue,
   source,
+  hasStoredRow,
   problems,
   onSaved,
   onStale,
@@ -237,7 +240,7 @@ export function RuntimeEditor({
         </Button>
         <Button
           variant="ghost"
-          disabled={source === 'env' || update.isPending}
+          disabled={(source === 'env' && !hasStoredRow) || update.isPending}
           onClick={() => request(null)}
         >
           {t('settings.reset', { key: settingKey })}
