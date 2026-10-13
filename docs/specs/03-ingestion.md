@@ -986,9 +986,17 @@ site, a daily blog, a weekly podcast, and a feed that breaks and recovers.
 3. Else, if it is HTML:
    - collect `<link rel="alternate">` with type `application/rss+xml`, `application/atom+xml`,
      `application/feed+json` or `application/json` (resolved hrefs)
-   - if there are none, probe up to 6 common paths on the same origin: `/feed`, `/rss`, `/rss.xml`,
-     `/atom.xml`, `/feed.xml`, `/index.xml`
+   - if there are none, probe up to 8 common paths on the same origin: `/feed`, `/rss`, `/rss.xml`,
+     `/atom.xml`, `/feed.xml`, `/index.xml`, `/feed.json`, `/?feed=rss2` (D-231)
    - each probe must sniff as a feed
+   - (D-230) between declared links and path probes: when no declared link verifies, up to 5
+     feed-looking `<a href>` links (path ending `.rss`/`.rdf`/`.atom`/`.xml`, or `feed`/`rss`/`rdf`/
+     `atom` as a whole word of path or query; same host first) are fetched and parsed, then, when the
+     page is not the origin root, the origin root is read the same way (declared links, then anchors)
+   - (D-231) well-known platform feeds derived from the URL (`platformFeeds`: YouTube channel and
+     playlist, Reddit `r/`/`user/`, Medium, Substack, Bluesky profile, GitHub releases/tags,
+     Mastodon-style `/@user.rss`) are tried after anchors and before the origin root, and also when the
+     user's page itself refuses the fetch; the probe list also has `/feed.json` and `/?feed=rss2`
 4. Result:
    - no candidate → `FEED_NOT_A_FEED`
    - one → subscribe

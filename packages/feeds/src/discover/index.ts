@@ -1,6 +1,7 @@
 /** Feed discovery (spec 03 §10) and feed URL validation (spec 03 §4, §5, §11) — M1-T6. */
 export {
   DISCOVERY_DEADLINE_MS,
+  DISCOVERY_MAX_ANCHOR_CANDIDATES,
   DISCOVERY_MAX_CANDIDATES,
   DISCOVERY_MAX_CONCURRENT_PROBES,
   DISCOVERY_MAX_REQUESTS,
@@ -26,6 +27,9 @@ export {
 export {
   ALTERNATE_FEED_TYPES,
   findAlternateFeeds,
+  findAnchorFeeds,
   type AlternateFeedLink,
+  type AnchorFeedLink,
   type AlternateFeedType,
 } from './html-links.js';
+export { platformFeeds, type PlatformFeedLink } from './platforms.js';

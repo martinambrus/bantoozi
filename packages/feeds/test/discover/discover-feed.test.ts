@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DISCOVERY_DEADLINE_MS,
+  DISCOVERY_MAX_ANCHOR_CANDIDATES,
   DISCOVERY_MAX_CANDIDATES,
   DISCOVERY_MAX_REQUESTS,
   FEED_PROBE_PATHS,
@@ -540,14 +541,14 @@ describe('discoverFeed: request budget, deadline and concurrency', () => {
 });
 
 describe('discoverFeed: probing common paths', () => {
-  it('probes the six paths on the final origin and takes the first feed in path order', async () => {
+  it('probes the common paths on the final origin and takes the first feed in path order', async () => {
     const [feed, rssPath, rssXml, atomXml] = [deferred(), deferred(), deferred(), deferred()];
     const origin = 'https://www.blog.example';
     const web = new FakeWeb()
       .route('https://blog.example/', {
         body: htmlPage(),
         contentType: HTML,
-        finalUrl: `${origin}/start`,
+        finalUrl: `${origin}/`,
       })
       .route(`${origin}/feed`, { fail: 'FEED_HTTP_404', gate: feed.promise })
       .route(`${origin}/rss`, { body: htmlPage(), contentType: HTML, gate: rssPath.promise })
@@ -718,5 +719,137 @@ describe('discoverFeed: cancellation', () => {
     expect(web.urls()).toEqual([`${SITE}/`, `${SITE}/feed`]);
     expect(web.calls[0]?.options.signal).toBe(controller.signal);
     expect(web.calls[1]?.options.signal?.aborted).toBe(true);
+  });
+});
+
+describe('discoverFeed: feed anchors in the page body', () => {
+  it('verifies a feed linked only by an anchor, on another host, before probing paths', async () => {
+    const feedUrl = 'https://www.blog.example/rss.php?rub=au';
+    const web = new FakeWeb()
+      .route(`${SITE}/`, {
+        body: htmlPage('', `<a href="${feedUrl}">RSS</a><a href="/about">About</a>`),
+        contentType: HTML,
+      })
+      .route(feedUrl, { body: rss('Cars'), contentType: 'text/xml' });
+    const result = success(await discoverFeed(`${SITE}/`, web.deps()));
+    expect(result.candidates).toEqual([
+      { url: feedUrl, canonicalUrl: feedUrl, title: 'Cars', type: 'rss' },
+    ]);
+    expect(web.urls()).toEqual([`${SITE}/`, feedUrl]);
+  });
+
+  it('offers several verified anchors and skips the ones that are not feeds', async () => {
+    const web = new FakeWeb()
+      .route(`${SITE}/`, {
+        body: htmlPage(
+          '',
+          '<a href="/cars.rss">Cars</a><a href="/feed/news">News</a><a href="/feed/help">Help</a>',
+        ),
+        contentType: HTML,
+      })
+      .route(`${SITE}/cars.rss`, { body: rss('Cars') })
+      .route(`${SITE}/feed/news`, { body: atom('News') })
+      .route(`${SITE}/feed/help`, { body: htmlPage(), contentType: HTML });
+    const result = success(await discoverFeed(`${SITE}/`, web.deps()));
+    expect(result.candidates.map((candidate) => candidate.title)).toEqual(['Cars', 'News']);
+  });
+
+  it('falls back to the common paths when no anchor is a feed, and caps the anchors', async () => {
+    const anchors = Array.from({ length: 8 }, (_, i) => `<a href="/feed/${i}">f</a>`).join('');
+    const web = new FakeWeb()
+      .route(`${SITE}/`, { body: htmlPage('', anchors), contentType: HTML })
+      .route(`${SITE}/feed`, { body: rss('Probed') });
+    const result = success(await discoverFeed(`${SITE}/`, web.deps()));
+    expect(result.candidates.map((candidate) => candidate.title)).toEqual(['Probed']);
+    const anchorFetches = web.urls().filter((url) => /\/feed\/\d$/.test(url));
+    expect(anchorFetches).toHaveLength(DISCOVERY_MAX_ANCHOR_CANDIDATES);
+  });
+
+  it('does not look at anchors when the page declares a verified alternate', async () => {
+    const web = new FakeWeb()
+      .route(`${SITE}/`, {
+        body: htmlPage(alternate(RSS, '/real.xml'), '<a href="/feed/other">Other</a>'),
+        contentType: HTML,
+      })
+      .route(`${SITE}/real.xml`, { body: rss('Declared') });
+    const result = success(await discoverFeed(`${SITE}/`, web.deps()));
+    expect(result.candidates.map((candidate) => candidate.title)).toEqual(['Declared']);
+    expect(web.urls()).toEqual([`${SITE}/`, `${SITE}/real.xml`]);
+  });
+
+  it('reads the origin root when a deep page names no feed', async () => {
+    const web = new FakeWeb()
+      .route(`${SITE}/posts/hello`, {
+        body: htmlPage('', '<p>No feed here</p>'),
+        contentType: HTML,
+      })
+      .route(`${SITE}/`, {
+        body: htmlPage(alternate(RSS, '/site.xml')),
+        contentType: HTML,
+      })
+      .route(`${SITE}/site.xml`, { body: rss('Whole site') });
+    const result = success(await discoverFeed(`${SITE}/posts/hello`, web.deps()));
+    expect(result.candidates.map((candidate) => candidate.title)).toEqual(['Whole site']);
+    expect(web.urls()).toEqual([`${SITE}/posts/hello`, `${SITE}/`, `${SITE}/site.xml`]);
+  });
+
+  it('counts the anchor cap after validation and deduplication', async () => {
+    const tracked = Array.from(
+      { length: 6 },
+      (_, i) => `<a href="/feed?utm_source=n${i}">tracked</a>`,
+    ).join('');
+    const web = new FakeWeb()
+      .route(`${SITE}/`, {
+        body: htmlPage('', `${tracked}<a href="/rss/main">Real</a>`),
+        contentType: HTML,
+      })
+      .route(`${SITE}/feed`, { body: htmlPage(), contentType: HTML })
+      .route(`${SITE}/rss/main`, { body: rss('Real feed') });
+    const result = success(await discoverFeed(`${SITE}/`, web.deps()));
+    expect(result.candidates.map((candidate) => candidate.title)).toEqual(['Real feed']);
+  });
+});
+
+describe('discoverFeed: well-known platforms', () => {
+  it('uses the platform feed when a page declares none', async () => {
+    const web = new FakeWeb()
+      .route('https://github.com/owner/repo', { body: htmlPage(), contentType: HTML })
+      .route('https://github.com/owner/repo/releases.atom', { body: atom('Releases') })
+      .route('https://github.com/owner/repo/tags.atom', { body: atom('Tags') });
+    const result = success(await discoverFeed('https://github.com/owner/repo', web.deps()));
+    expect(result.candidates.map((candidate) => candidate.title)).toEqual(['Releases', 'Tags']);
+    expect(web.urls()).not.toContain('https://github.com/');
+  });
+
+  it('tries the platform feed when the page itself refuses the fetch', async () => {
+    const web = new FakeWeb()
+      .route('https://www.reddit.com/r/news', { fail: 'FEED_HTTP_403' })
+      .route('https://www.reddit.com/r/news/.rss', { body: atom('r/news') });
+    const result = success(await discoverFeed('https://www.reddit.com/r/news', web.deps()));
+    expect(result.candidates.map((candidate) => candidate.title)).toEqual(['r/news']);
+  });
+
+  it('still reports the page failure when the platform feed fails too', async () => {
+    const web = new FakeWeb().route('https://www.reddit.com/r/news', { fail: 'FEED_HTTP_403' });
+    const result = await discoverFeed('https://www.reddit.com/r/news', web.deps());
+    expect(result).toMatchObject({ ok: false, code: 'FEED_HTTP_403' });
+  });
+
+  it('derives the platform feed from the redirect destination of a failed page', async () => {
+    const web = new FakeWeb()
+      .route('https://short.example/x', {
+        fail: 'FEED_HTTP_403',
+        // what safeFetch reports: the URL being fetched when the redirect chain failed
+        message: 'blocked',
+      })
+      .route('https://www.reddit.com/r/news/.rss', { body: atom('r/news') });
+    const deps = web.deps({
+      fetch: async (url, options) => {
+        const result = await web.fetch(url, options);
+        return result.ok ? result : { ...result, finalUrl: 'https://www.reddit.com/r/news' };
+      },
+    });
+    const result = success(await discoverFeed('https://short.example/x', deps));
+    expect(result.candidates.map((candidate) => candidate.title)).toEqual(['r/news']);
   });
 });

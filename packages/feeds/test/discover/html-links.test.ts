@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { ALTERNATE_FEED_TYPES, findAlternateFeeds } from '../../src/discover/index.js';
+import {
+  ALTERNATE_FEED_TYPES,
+  findAlternateFeeds,
+  findAnchorFeeds,
+} from '../../src/discover/index.js';
 
 const PAGE = 'https://blog.example/posts/hello?x=1';
 
@@ -105,6 +109,49 @@ describe('findAlternateFeeds', () => {
       'application/atom+xml',
       'application/feed+json',
       'application/json',
+    ]);
+  });
+});
+
+describe('findAnchorFeeds', () => {
+  const AUTO = 'https://auto.bazos.sk/';
+
+  it('finds a feed named only by an anchor, with its text as the title', () => {
+    const html = page(
+      '',
+      '<p><a href="https://www.bazos.sk/rss.php?rub=au">RSS</a>, <form></form></p>',
+    );
+    expect(findAnchorFeeds(html, AUTO)).toEqual([
+      { url: 'https://www.bazos.sk/rss.php?rub=au', title: 'RSS' },
+    ]);
+  });
+
+  it('ranks the same host and feed extensions first, then document order', () => {
+    const html = page(
+      '',
+      `<a href="https://other.example/feed/">other word</a>
+       <a href="/news/feed/">local word</a>
+       <a href="https://other.example/a.xml">other ext</a>
+       <a href="/b.rss" title="Local ext">  </a>`,
+    );
+    expect(findAnchorFeeds(html, AUTO).map((link) => link.url)).toEqual([
+      'https://auto.bazos.sk/b.rss',
+      'https://auto.bazos.sk/news/feed/',
+      'https://other.example/a.xml',
+      'https://other.example/feed/',
+    ]);
+    expect(findAnchorFeeds(html, AUTO)[0]?.title).toBe('Local ext');
+  });
+
+  it('ignores whole-word look-alikes, fragments, non-http links, duplicates and the page itself', () => {
+    const html = page(
+      '',
+      `<a href="/feedback">Feedback</a><a href="/atomic">Atomic</a><a href="/products">Products</a>
+       <a href="#rss">jump</a><a href="mailto:rss@x.example">mail</a><a href="javascript:rss()">js</a>
+       <a href="/rss/">Self</a><a href="/rss/#top">Self again</a><a href="/rss">RSS</a>`,
+    );
+    expect(findAnchorFeeds(html, 'https://blog.example/rss/').map((link) => link.url)).toEqual([
+      'https://blog.example/rss',
     ]);
   });
 });
