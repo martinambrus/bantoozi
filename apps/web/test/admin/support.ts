@@ -315,6 +315,13 @@ export function makeCandidate(over: Partial<LibraryCandidate> = {}): LibraryCand
 }
 
 /** Default answers for every admin read, so a test overrides only what it is about. */
+/** A healthy keyring answer of the credentials list (M8b-T9). */
+export const OK_KEYRING = {
+  api: { status: 'ok', activeKeyId: 'k1' },
+  workers: [],
+  mismatch: false,
+};
+
 export function adminRoutes(
   over: Record<string, ApiRouteHandler> = {},
 ): Record<string, ApiRouteHandler> {
@@ -323,7 +330,10 @@ export function adminRoutes(
     'GET /admin/usage': () => json(200, makeUsage()),
     'GET /admin/settings': () => json(200, makeSettings()),
     'GET /admin/engine/credentials': () =>
-      json(200, { items: [makeCredential('typesafe'), makeCredential('ollama')] }),
+      json(200, {
+        items: [makeCredential('typesafe'), makeCredential('ollama')],
+        keyring: OK_KEYRING,
+      }),
     'GET /admin/feeds': () => json(200, page([makeFeed()])),
     'GET /admin/users': () => json(200, page([makeUser()])),
     'GET /admin/invites': () => json(200, page([makeInvite()])),

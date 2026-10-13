@@ -63,6 +63,8 @@ function lastError(t: TFunction, code: string): string {
 
 export interface ProviderPanelProps {
   credential: CredentialStatus;
+  /** The keyring of the API or a worker has a problem: a staged key could not be used. */
+  keyringBlocked: boolean;
   /** The server answered with a newer state of this credential. */
   onCredential: (credential: CredentialStatus) => void;
   /** The state moved under the panel: the screen reads the list again. */
@@ -74,6 +76,7 @@ export interface ProviderPanelProps {
 /** An answer that comes after the sign-in that asked has ended shows nothing. */
 export function ProviderPanel({
   credential,
+  keyringBlocked,
   onCredential,
   onStale,
   onValidationRequested,
@@ -272,7 +275,7 @@ export function ProviderPanel({
             type="submit"
             variant="secondary"
             loading={staging}
-            disabled={apiKey === '' || busy}
+            disabled={apiKey === '' || busy || keyringBlocked}
           >
             {t('providers.stage')}
           </Button>

@@ -226,6 +226,14 @@
       "keyRejected": "Server tento kľúč neprijal. Skontrolujte, či ste vložili celý kľúč bez medzier.",
       "noCandidate": "Už neexistuje žiadny pripravený kľúč. Zobrazuje sa najnovší stav.",
       "expired": "Toto overenie je staršie ako 24 hodín, preto sa kľúč nedá aktivovať. Najprv ho overte znova."
+    },
+    "keyring": {
+      "missing": "Úložisko kľúčov poskytovateľov nie je nastavené na {{where}}. Na hostiteľovi spustite `pnpm setup:env`, ktorý vytvorí hlavné kľúče, a potom reštartujte.",
+      "malformed": "PROVIDER_MASTER_KEYS na {{where}} nie je platné. Opravte PROVIDER_MASTER_KEYS v prostredí a potom reštartujte.",
+      "active_key_missing": "Aktívne ID kľúča na {{where}} nie je medzi hlavnými kľúčmi. Opravte PROVIDER_MASTER_KEY_ID v prostredí a potom reštartujte.",
+      "mismatch": "API používa kľúč {{api}}, ale worker používa kľúč {{worker}}. Nastavte všade rovnaké PROVIDER_MASTER_KEY_ID a potom reštartujte API aj workery.",
+      "api": "API",
+      "worker": "worker {{id}}"
     }
   },
   "feeds": {

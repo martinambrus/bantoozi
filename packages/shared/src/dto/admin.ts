@@ -288,7 +288,23 @@ export const CandidateActionBodySchema = z
   .object({ candidateVersion: IdSchema, expectedRevision: RevisionSchema })
   .strict();
 export const RevokeCredentialQuerySchema = z.object({ expectedRevision: RevisionSchema }).strict();
-export const CredentialListSchema = z.object({ items: z.array(CredentialStatusSchema) }).strict();
+export const KeyringStatusSchema = z.enum(['ok', 'missing', 'malformed', 'active_key_missing']);
+export type KeyringStatus = z.infer<typeof KeyringStatusSchema>;
+export const KeyringReportSchema = z
+  .object({ status: KeyringStatusSchema, activeKeyId: z.string().optional() })
+  .strict();
+/** Keyring state of the API and the fresh workers; never any key material (M8b-T9). */
+export const KeyringOverviewSchema = z
+  .object({
+    api: KeyringReportSchema,
+    workers: z.array(KeyringReportSchema.extend({ workerId: z.string() }).strict()),
+    mismatch: z.boolean(),
+  })
+  .strict();
+export type KeyringOverview = z.infer<typeof KeyringOverviewSchema>;
+export const CredentialListSchema = z
+  .object({ items: z.array(CredentialStatusSchema), keyring: KeyringOverviewSchema })
+  .strict();
 export const CredentialResultSchema = z.object({ credential: CredentialStatusSchema }).strict();
 
 // ── Feeds ────────────────────────────────────────────────────────────────────────────────────────

@@ -7,6 +7,8 @@ import {
 } from '@bantoozi/db';
 import {
   LAYA_QUEUES,
+  KeyringReportSchema,
+  type KeyringStatus,
   WorkerHeartbeatSchema,
   type CredentialStatus,
   type Provider,
@@ -54,6 +56,40 @@ export async function freshWorkers(db: Executor, now: Date): Promise<FreshWorker
     workers.push({ queues: value.queues, envCredentials: value.envCredentials });
   }
   return workers;
+}
+
+/**
+ * The keyring state each fresh worker reports in `runtime.keyring`, keyed by the heartbeat process
+ * id. Stale entries, entries without the report and malformed reports are left out silently.
+ */
+export async function freshWorkerKeyrings(
+  db: Executor,
+  now: Date,
+): Promise<{ workerId: string; status: KeyringStatus; activeKeyId?: string }[]> {
+  let stored: unknown;
+  try {
+    stored = await readStoredSetting(db, 'worker.heartbeat');
+  } catch {
+    return [];
+  }
+  if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return [];
+  const result: { workerId: string; status: KeyringStatus; activeKeyId?: string }[] = [];
+  for (const [processId, entry] of Object.entries(stored as Record<string, unknown>)) {
+    const parsed = WorkerHeartbeatSchema.safeParse({ [processId]: entry });
+    const value = parsed.success ? parsed.data[processId] : undefined;
+    if (value === undefined) continue;
+    const age = now.getTime() - Date.parse(value.at);
+    if (!Number.isFinite(age) || age > HEARTBEAT_FRESH_MS || age < -HEARTBEAT_FRESH_MS) continue;
+    const report = KeyringReportSchema.safeParse(value.runtime?.['keyring']);
+    if (!report.success) continue;
+    const { status, activeKeyId } = report.data;
+    result.push({
+      workerId: processId,
+      status,
+      ...(status === 'ok' && activeKeyId !== undefined ? { activeKeyId } : {}),
+    });
+  }
+  return result;
 }
 
 /**

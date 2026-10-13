@@ -222,6 +222,14 @@
       "keyRejected": "The server did not accept this key. Check that you pasted the whole key without spaces.",
       "noCandidate": "There is no staged key any more. The latest state is shown.",
       "expired": "This validation is older than 24 hours, so the key cannot be activated. Validate it again first."
+    },
+    "keyring": {
+      "missing": "The provider key store is not set up on {{where}}. Run `pnpm setup:env` on the host to generate the master keys, then restart.",
+      "malformed": "PROVIDER_MASTER_KEYS on {{where}} is not valid. Fix PROVIDER_MASTER_KEYS in the environment, then restart.",
+      "active_key_missing": "The active key id on {{where}} is not among the master keys. Fix PROVIDER_MASTER_KEY_ID in the environment, then restart.",
+      "mismatch": "The API uses key {{api}} but a worker uses key {{worker}}. Make PROVIDER_MASTER_KEY_ID the same everywhere, then restart the API and the workers.",
+      "api": "the API",
+      "worker": "worker {{id}}"
     }
   },
   "feeds": {

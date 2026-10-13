@@ -17739,10 +17739,74 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "keyring": {
+                      "type": "object",
+                      "properties": {
+                        "api": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "ok",
+                                "missing",
+                                "malformed",
+                                "active_key_missing"
+                              ]
+                            },
+                            "activeKeyId": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "workers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "ok",
+                                  "missing",
+                                  "malformed",
+                                  "active_key_missing"
+                                ]
+                              },
+                              "activeKeyId": {
+                                "type": "string"
+                              },
+                              "workerId": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "workerId"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "mismatch": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "api",
+                        "workers",
+                        "mismatch"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
-                    "items"
+                    "items",
+                    "keyring"
                   ],
                   "additionalProperties": false
                 }
