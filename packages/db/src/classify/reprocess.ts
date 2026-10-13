@@ -105,6 +105,7 @@ export async function reprocessWindowPage(
            to_char(e.key AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS key,
            EXISTS (SELECT 1 FROM article_translations t
                     WHERE t.article_id = a.id AND t.article_revision = a.content_revision
+                      AND t.target_lang = 'en' AND t.quality <> 'fail' AND t.title IS NOT NULL
                       AND t.quality_detail->>'skipped' IS NULL) AS has_translation,
            f.article_revision::text AS facet_revision, f.engine AS facet_engine,
            f.model AS facet_model, f.state_variant AS facet_variant

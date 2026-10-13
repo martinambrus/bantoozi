@@ -126,4 +126,30 @@ describe('house.reenrich: enrich-set change together with a switch to translate 
     expect(await recorded('article.translate', since, [sk])).toEqual([]);
     expect(ids(await recorded('article.enrich', since, [sk]))).toEqual([sk]);
   });
+
+  it('a stored translation of quality fail is not usable: the article is translated first (PR #27 review)', async () => {
+    const r = await reader(h);
+    const sk = await h.article({
+      feedIds: [r.feedId],
+      lang: 'sk',
+      ...SLOVAK,
+      firstSeenAt: ago(DAY),
+    });
+    await h.enrichDirect(sk, { state: 'matched' });
+    await h.owner.query(
+      `INSERT INTO article_translations
+         (article_id, article_revision, source_sha256, target_lang, engine, source_lang, title, quality)
+       SELECT id, content_revision, repeat('0', 64), 'en', 'libretranslate', 'sk', NULL, 'fail'
+         FROM articles WHERE id = $1`,
+      [sk],
+    );
+
+    await enrichSetChanged(sk);
+    await h.setSetting('language_modes', MODES_SK_TRANSLATE);
+    const since = await h.mark();
+    await h.dispatch('house.reenrich', { lang: 'sk' });
+
+    expect(ids(await recorded('article.translate', since, [sk]))).toEqual([sk]);
+    expect(await recorded('article.enrich', since, [sk])).toEqual([]);
+  });
 });

@@ -2025,3 +2025,7 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   sweep's `house.progress` entry. (3) The E2E aging hook disables the snapshot guard, ages the rows and re-enables
   the guard in one transaction on one connection (rolled back on error), so the guard is never off globally.
   Spec 10 §7 updated.
+- D-209: 2026-10-13 M8-F4 (PR #27 Codex review round 2) — `house.reenrich` counts an article as already
+  translated only when it has a usable current-revision translation: target `en`, quality not `fail`, a
+  translated title and not a skipped placeholder, the rows `selectBestTranslation` would accept. A stored
+  `fail` row no longer sends the article to native enrichment; it is translated first.
