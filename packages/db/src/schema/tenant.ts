@@ -79,6 +79,44 @@ export const userFeedPreferences = pgTable(
   ],
 );
 
+/**
+ * A card draft the user asked for (D-240, migration 0025): the articles it describes, the user's
+ * locale at the time, and the worker's answer. Short-lived: the API removes the user's drafts older
+ * than a day when it creates one, and `house.purge-users` goes with the user (cascade).
+ */
+export const cardDrafts = pgTable(
+  'card_drafts',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    articleIds: int8('article_ids').array().notNull(),
+    locale: text('locale').notNull(),
+    status: text('status').notNull().default('pending'),
+    title: text('title'),
+    interest: text('interest'),
+    source: text('source'),
+    errorCode: text('error_code'),
+    createdAt: tstz('created_at').notNull().defaultNow(),
+    completedAt: tstz('completed_at'),
+  },
+  (t) => [
+    check('card_drafts_status_check', sql`status IN ('pending','complete','failed')`),
+    check('card_drafts_source_check', sql`source IN ('llm','fallback')`),
+    check('card_drafts_articles_check', sql`cardinality(article_ids) BETWEEN 1 AND 5`),
+    check(
+      'card_drafts_completed_at',
+      sql`(status IN ('complete','failed')) = (completed_at IS NOT NULL)`,
+    ),
+    check(
+      'card_drafts_complete_result',
+      sql`status <> 'complete' OR (interest IS NOT NULL AND source IS NOT NULL)`,
+    ),
+    index('card_drafts_user_created_idx').on(t.userId, t.createdAt),
+  ],
+);
+
 export const analysisRequests = pgTable(
   'analysis_requests',
   {

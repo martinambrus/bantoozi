@@ -6,7 +6,13 @@ import { CardEditor } from '../../src/features/interests/card-editor.js';
 import { cardsKey } from '../../src/features/interests/queries.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
 import { bodyOf, renderReader } from '../article/harness.js';
-import { cardResult, makeCard, makeSubscription } from '../interests/support.js';
+import {
+  DRAFT_ID,
+  cardDraftRoutes,
+  cardResult,
+  makeCard,
+  makeSubscription,
+} from '../interests/support.js';
 import type { ApiRouteHandler } from '../support/app.js';
 import { USER_A_ID } from '../session/fixtures.js';
 import { HELD, checkUnhandled, track } from './support.js';
@@ -37,6 +43,7 @@ async function openEditor(routes: Record<string, ApiRouteHandler> = {}) {
     renderReader(<CardEditor fromArticle={ARTICLE} onClose={onClose} />, {
       routes: {
         'GET /subscriptions': () => json(200, [makeSubscription('11', 'Hacker News')]),
+        ...cardDraftRoutes(),
         ...routes,
       },
     }),
@@ -55,7 +62,7 @@ describe('the card editor made from an article', () => {
     expect(form.getByLabelText(LABELS.notFor)).toHaveValue('');
     expect(form.getByRole('radio', { name: 'Like' })).toBeChecked();
     expect(dialog).toHaveAccessibleDescription(
-      'Starts from the title of this article, which is kept as the first example of what you want to read.',
+      'Keeps the title of this article as the first example of what you want to read.',
     );
   });
 
@@ -133,5 +140,80 @@ describe('the card editor made from an article', () => {
 
     expect(onClose).toHaveBeenCalledOnce();
     expect(app.calls('POST', '/cards/from-article')).toHaveLength(0);
+  });
+});
+
+describe('the drafted name and interest (D-240)', () => {
+  const DRAFTED = {
+    status: 'complete' as const,
+    title: 'Battery technology',
+    interest: 'New battery chemistries and how they reach production.',
+    source: 'llm' as const,
+  };
+
+  it('asks for a draft of the article and fills the name and the interest with it', async () => {
+    const { app, form, dialog } = await openEditor(cardDraftRoutes(DRAFTED));
+
+    await waitFor(() => expect(form.getByLabelText(LABELS.interest)).toHaveValue(DRAFTED.interest));
+    expect(form.getByLabelText(LABELS.name)).toHaveValue(DRAFTED.title);
+    expect(
+      within(dialog).getByText(
+        'Name and description drafted from the article. Check them and change anything before saving.',
+      ),
+    ).toHaveAttribute('role', 'status');
+    expect(app.calls('POST', '/cards/drafts').map(bodyOf)).toEqual([{ articleIds: ['101'] }]);
+  });
+
+  it('never overwrites what the person typed before the draft came', async () => {
+    let answer: Record<string, unknown> = { status: 'pending' };
+    const routes = cardDraftRoutes();
+    const { app, form } = await openEditor({
+      ...routes,
+      'GET /cards/drafts/:id': () =>
+        json(200, { id: DRAFT_ID, title: null, interest: null, source: null, ...answer }),
+    });
+    expect(await form.findByText('Writing a name and description from the article…')).toBeVisible();
+    await app.user.type(form.getByLabelText(LABELS.name), 'Mine');
+    answer = DRAFTED;
+
+    await waitFor(
+      () => expect(form.getByLabelText(LABELS.interest)).toHaveValue(DRAFTED.interest),
+      {
+        timeout: 3_000,
+      },
+    );
+    expect(form.getByLabelText(LABELS.name)).toHaveValue('Mine');
+  });
+
+  it('makes one card from several articles, every title an example', async () => {
+    const onClose = vi.fn();
+    const articles = [ARTICLE, { id: '102', title: 'Sodium-ion cells go on sale' }];
+    const app = track(
+      renderReader(<CardEditor fromArticles={articles} onClose={onClose} />, {
+        routes: {
+          'GET /subscriptions': () => json(200, []),
+          ...cardDraftRoutes(DRAFTED),
+          'POST /cards/from-article': () => json(201, cardResult(CREATED)),
+        },
+      }),
+    );
+    app.queryClient.setQueryData<CardDto[]>(cardsKey(USER_A_ID), HELD);
+    const dialog = await screen.findByRole('dialog', { name: 'New card from these articles' });
+    const form = within(dialog);
+    await waitFor(() => expect(form.getByLabelText(LABELS.interest)).toHaveValue(DRAFTED.interest));
+    expect(app.calls('POST', '/cards/drafts').map(bodyOf)).toEqual([
+      { articleIds: ['101', '102'] },
+    ]);
+
+    await app.user.click(form.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(bodyOf(app.calls('POST', '/cards/from-article')[0]!)).toEqual({
+      articleId: '101',
+      moreArticleIds: ['102'],
+      interest: DRAFTED.interest,
+      title: DRAFTED.title,
+      strength: 'like',
+    });
   });
 });

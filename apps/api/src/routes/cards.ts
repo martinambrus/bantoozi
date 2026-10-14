@@ -1,9 +1,11 @@
 import {
   addCardExample,
+  createCardDraft,
   createCardFromArticle,
   createUserCard,
   deleteUserCard,
   dismissCardSuggestion,
+  getCardDraft,
   getUserCard,
   listCardSuggestions,
   listPublicationRequests,
@@ -23,6 +25,9 @@ import {
 import {
   AddExampleBodySchema,
   AppError,
+  CardDraftBodySchema,
+  CardDraftParamsSchema,
+  CardDraftSchema,
   CardFromArticleBodySchema,
   CardIdParamsSchema,
   CardListSchema,
@@ -74,6 +79,14 @@ export const CARD_WRITE_LIMIT: RateLimitRule = {
   per: 'user',
 };
 const CARD_WRITE = { rateLimits: [CARD_WRITE_LIMIT] } as const;
+
+/** `POST /cards/drafts`: 30/hour per user; each draft may cost one LLM call (D-240). */
+export const CARD_DRAFT_LIMIT: RateLimitRule = {
+  group: 'card_draft',
+  max: 30,
+  windowSeconds: 3600,
+  per: 'user',
+};
 
 export function requireAuth(request: FastifyRequest): AuthContext {
   if (request.auth === null) throw new AppError('UNAUTHENTICATED', 'Sign in required');
@@ -307,6 +320,51 @@ export const cardRoutes: FastifyPluginAsyncZod = async (app) => {
   );
 
   app.post(
+    '/cards/drafts',
+    {
+      config: { rateLimits: [CARD_DRAFT_LIMIT] },
+      schema: {
+        tags,
+        summary: 'Ask for a proposed card name and interest describing these articles',
+        body: CardDraftBodySchema,
+        response: { 202: CardDraftSchema },
+      },
+    },
+    async (request, reply) => {
+      const { locale } = requireAuth(request);
+      const outcome = await request.mutate(async (tx) => {
+        const { id } = await createCardDraft(tx, {
+          articleIds: request.body.articleIds,
+          locale,
+        });
+        return {
+          status: 202,
+          body: { id, status: 'pending' as const, title: null, interest: null, source: null },
+        };
+      });
+      await reply.code(202).send(outcome.body);
+    },
+  );
+
+  app.get(
+    '/cards/drafts/:id',
+    {
+      schema: {
+        tags,
+        summary: 'A card draft: pending, or the proposed name and interest',
+        params: CardDraftParamsSchema,
+        response: { 200: CardDraftSchema },
+      },
+    },
+    async (request) => {
+      requireAuth(request);
+      const draft = await request.withTx((tx) => getCardDraft(tx, request.params.id));
+      if (draft === null) throw new AppError('NOT_FOUND', 'Card draft not found');
+      return draft;
+    },
+  );
+
+  app.post(
     '/cards',
     {
       config: CARD_WRITE,
@@ -359,6 +417,7 @@ export const cardRoutes: FastifyPluginAsyncZod = async (app) => {
         return request.mutate(async (tx) => {
           const mutation = await createCardFromArticle(tx, {
             articleId: body.articleId,
+            ...(body.moreArticleIds === undefined ? {} : { moreArticleIds: body.moreArticleIds }),
             interest: body.interest,
             strength: body.strength,
             ...(body.title === undefined ? {} : { title: body.title }),

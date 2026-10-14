@@ -86,6 +86,7 @@ const CALL_KINDS: readonly CallKind[] = [
   'translate',
   'eval',
   'credential_probe',
+  'card_draft',
 ];
 const CALL_ENGINES = ['typesafe', 'llm', 'laya', 'libretranslate'] as const;
 const CALL_STATUSES = [
@@ -408,6 +409,9 @@ export function createPgEngineStore(db: Database, options: PgEngineStoreOptions)
       if (input.kind === 'credential_probe' && input.authorization.type !== 'credential_probe') {
         return null;
       }
+      // A card draft's demand is its pending draft row, and nothing else (D-240).
+      if ((input.kind === 'card_draft') !== (input.authorization.type === 'card_draft'))
+        return null;
       const id = newUuid();
       const reserved = reserveUsd(input.estimateUsd);
       return db.transaction(async (tx) => {

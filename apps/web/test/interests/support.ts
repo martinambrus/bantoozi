@@ -1,4 +1,5 @@
 import type {
+  CardDraft,
   CardDto,
   CardMutationResponse,
   CardSuggestionSchema,
@@ -238,4 +239,27 @@ export function gate() {
     release = resolve;
   });
   return { opened, release: () => release() };
+}
+
+export const DRAFT_ID = '7d2f3c1a-9b4e-4c8d-8e1f-2a3b4c5d6e7f';
+
+/**
+ * `POST /cards/drafts` and `GET /cards/drafts/:id` (D-240): the draft is asked for and then reads
+ * as `answer` — by default a failed draft, so the editor keeps what it started with.
+ */
+export function cardDraftRoutes(
+  answer: Partial<CardDraft> = { status: 'failed' },
+): Record<string, ApiRouteHandler> {
+  const draft = (overrides: Partial<CardDraft>): CardDraft => ({
+    id: DRAFT_ID,
+    status: 'pending',
+    title: null,
+    interest: null,
+    source: null,
+    ...overrides,
+  });
+  return {
+    'POST /cards/drafts': () => json(202, draft({})),
+    'GET /cards/drafts/:id': () => json(200, draft(answer)),
+  };
 }

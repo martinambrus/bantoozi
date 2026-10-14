@@ -8,6 +8,15 @@ import {
 import { languageName } from '@bantoozi/shared/server';
 import type { Dispatcher } from 'undici';
 
+import {
+  CARD_DRAFT_MAX_ATTEMPTS,
+  CARD_DRAFT_OPTIONS,
+  cardDraftInputTokens,
+  cardDraftMessages,
+  parseCardDraftContent,
+  type CardDraftInput,
+  type CardDraftText,
+} from './card-draft.js';
 import { isCount, isPlainObject, ownValue } from './guards.js';
 import {
   attemptSignal,
@@ -148,6 +157,17 @@ export type Tier2AttemptResult =
       attempt: TranslationAttempt;
     };
 
+/** One `/api/chat` attempt whose content parsed to `value` (card drafts; tier 2 maps it to `texts`). */
+export type ChatAttemptResult<T> =
+  | {
+      ok: true;
+      value: T;
+      model: string;
+      reportedModel?: string;
+      attempt: TranslationAttempt;
+    }
+  | Extract<Tier2AttemptResult, { ok: false }>;
+
 export interface Tier2Estimate {
   inputTokens: number;
   /** The enforced output maximum (`num_predict`). */
@@ -184,6 +204,12 @@ export interface OllamaTranslator {
   ): Promise<Tier2AttemptResult>;
   /** The admission estimate to reserve before an attempt. */
   estimate(input: Tier2Input): Tier2Estimate;
+  /** Exactly one HTTP attempt of a card draft (D-240). */
+  draftCardOnce(
+    input: CardDraftInput & { auth: TranslatorAuth; attempt?: number; signal?: AbortSignal },
+  ): Promise<ChatAttemptResult<CardDraftText>>;
+  /** The admission estimate of one card draft attempt. */
+  estimateCardDraft(input: CardDraftInput): Tier2Estimate;
   close(): Promise<void>;
 }
 
@@ -271,6 +297,21 @@ export function estimateTier2Cost(
   const price = priceOf(input.model, prices);
   const inputTokens = conservativeTokens(request.messages) + REQUEST_OVERHEAD_TOKENS;
   const outputTokens = TIER2_OPTIONS.num_predict;
+  return {
+    inputTokens,
+    outputTokens,
+    estimateUsd: tier2CostUsd(price, { inputTokens, outputTokens }),
+  };
+}
+
+/** The admission estimate of one card draft attempt: its exact messages and `num_predict`. */
+export function estimateCardDraftCost(
+  input: CardDraftInput,
+  prices: PriceTable = OLLAMA_PRICES,
+): Tier2Estimate {
+  const price = priceOf(input.model, prices);
+  const inputTokens = cardDraftInputTokens(input);
+  const outputTokens = CARD_DRAFT_OPTIONS.num_predict;
   return {
     inputTokens,
     outputTokens,
@@ -416,14 +457,20 @@ export function createOllamaTranslator(options: OllamaTranslatorOptions): Ollama
   const dispatcher: Dispatcher = options.dispatcher ?? (ownAgent as Dispatcher);
   const clock = options.clock ?? systemClock;
 
-  async function translateOnce(
-    input: Tier2Input & { auth: TranslatorAuth; attempt?: number; signal?: AbortSignal },
-  ): Promise<Tier2AttemptResult> {
-    const n = input.attempt ?? 1;
-    if (!Number.isSafeInteger(n) || n < 1 || n > TIER2_MAX_ATTEMPTS) {
-      throw new RangeError(`tier 2: attempt must be between 1 and ${TIER2_MAX_ATTEMPTS}`);
-    }
-    const body = JSON.stringify(buildTier2Request(input));
+  /**
+   * One `/api/chat` attempt with an already built `body`: the HTTP exchange, the envelope checks and
+   * the accounting record shared by translation and card drafts; `parse` validates the content.
+   */
+  async function chatOnce<T>(input: {
+    body: string;
+    model: string;
+    auth: TranslatorAuth;
+    attempt: number;
+    signal?: AbortSignal | undefined;
+    parse: (content: string) => { ok: true; value: T } | { ok: false; problem: string };
+  }): Promise<ChatAttemptResult<T>> {
+    const n = input.attempt;
+    const body = input.body;
     const price = priceOf(input.model, prices);
     const version = input.auth.credentialVersion;
     const credential =
@@ -518,7 +565,7 @@ export function createOllamaTranslator(options: OllamaTranslatorOptions): Ollama
         };
       }
 
-      const invalid = (problem: string, usage?: Envelope['usage']): Tier2AttemptResult => ({
+      const invalid = (problem: string, usage?: Envelope['usage']): ChatAttemptResult<T> => ({
         ok: false,
         reason: 'invalid_response',
         retryable: true,
@@ -555,11 +602,11 @@ export function createOllamaTranslator(options: OllamaTranslatorOptions): Ollama
       if (envelope.problem !== undefined || envelope.content === undefined) {
         return invalid(envelope.problem ?? 'envelope', envelope.usage);
       }
-      const content = parseTier2Content(envelope.content, input.source);
+      const content = input.parse(envelope.content);
       if (!content.ok) return invalid(content.problem, envelope.usage);
       return {
         ok: true,
-        texts: content.texts,
+        value: content.value,
         model: input.model,
         ...(envelope.reportedModel === undefined ? {} : { reportedModel: envelope.reportedModel }),
         attempt: record('ok', { httpStatus: statusCode, usage: envelope.usage }),
@@ -569,9 +616,63 @@ export function createOllamaTranslator(options: OllamaTranslatorOptions): Ollama
     }
   }
 
+  async function translateOnce(
+    input: Tier2Input & { auth: TranslatorAuth; attempt?: number; signal?: AbortSignal },
+  ): Promise<Tier2AttemptResult> {
+    const n = input.attempt ?? 1;
+    if (!Number.isSafeInteger(n) || n < 1 || n > TIER2_MAX_ATTEMPTS) {
+      throw new RangeError(`tier 2: attempt must be between 1 and ${TIER2_MAX_ATTEMPTS}`);
+    }
+    const result = await chatOnce({
+      body: JSON.stringify(buildTier2Request(input)),
+      model: input.model,
+      auth: input.auth,
+      attempt: n,
+      signal: input.signal,
+      parse: (content) => {
+        const parsed = parseTier2Content(content, input.source);
+        return parsed.ok ? { ok: true, value: parsed.texts } : parsed;
+      },
+    });
+    if (!result.ok) return result;
+    const { value, ...rest } = result;
+    return { ...rest, texts: value };
+  }
+
+  async function draftCardOnce(
+    input: CardDraftInput & { auth: TranslatorAuth; attempt?: number; signal?: AbortSignal },
+  ): Promise<ChatAttemptResult<CardDraftText>> {
+    const n = input.attempt ?? 1;
+    if (!Number.isSafeInteger(n) || n < 1 || n > CARD_DRAFT_MAX_ATTEMPTS) {
+      throw new RangeError(`card draft: attempt must be between 1 and ${CARD_DRAFT_MAX_ATTEMPTS}`);
+    }
+    if (typeof input.model !== 'string' || !MODEL_ID.test(input.model)) {
+      throw new TypeError('card draft: invalid model id');
+    }
+    const request = {
+      model: input.model,
+      stream: false,
+      options: {
+        temperature: CARD_DRAFT_OPTIONS.temperature,
+        num_predict: CARD_DRAFT_OPTIONS.num_predict,
+      },
+      messages: cardDraftMessages(input),
+    };
+    return chatOnce({
+      body: JSON.stringify(request),
+      model: input.model,
+      auth: input.auth,
+      attempt: n,
+      signal: input.signal,
+      parse: parseCardDraftContent,
+    });
+  }
+
   return {
     translateOnce,
+    draftCardOnce,
     estimate: (input) => estimateTier2Cost(input, prices),
+    estimateCardDraft: (input) => estimateCardDraftCost(input, prices),
     async close() {
       await ownAgent?.close();
     },

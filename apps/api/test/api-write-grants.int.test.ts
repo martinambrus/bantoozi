@@ -454,6 +454,10 @@ const CASES: Record<string, Case> = {
       strength: 'like',
     });
   },
+  'POST /cards/drafts': async () => {
+    const r = await reader();
+    return r.api.post('/cards/drafts', { articleIds: [await article(r.feedId)] });
+  },
   'PATCH /cards/:id': async () => {
     const r = await reader();
     const card = await json(

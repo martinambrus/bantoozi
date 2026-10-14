@@ -8,6 +8,7 @@ export const PACKAGE_NAME = '@bantoozi/translate';
 
 export * from './assess.js';
 export * from './best-row.js';
+export * from './card-draft.js';
 export * from './card-text.js';
 export * from './languages-cache.js';
 export * from './libretranslate.js';

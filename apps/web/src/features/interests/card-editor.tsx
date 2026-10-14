@@ -1,6 +1,6 @@
 import { CARD_LIMITS, type CardDto } from '@bantoozi/shared';
 import type { TFunction } from 'i18next';
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApiMutation } from '../../api/mutation.js';
@@ -22,6 +22,7 @@ import { ExampleLists } from './examples.js';
 import { useCardCache, useSubscriptions, type UpdateOffer } from './queries.js';
 import { DEFAULT_STRENGTH, type Strength } from './strengths.js';
 import { UpdateDiff } from './update-diff.js';
+import { useCardDraft } from './use-card-draft.js';
 
 type CreateBody = RouteInput<typeof routes.cardCreate>['body'];
 type UpdateBody = NonNullable<RouteInput<typeof routes.cardUpdate>['body']>;
@@ -115,22 +116,56 @@ export interface CardEditorProps {
   review?: UpdateOffer | undefined;
   /** Without a card: the article the new card is made from, whose title starts the interest text. */
   fromArticle?: { id: string; title: string } | undefined;
+  /**
+   * Without a card: up to five articles the new card is made from (instead of `fromArticle`). Their
+   * titles become its examples; a drafted name and interest fill the fields (D-240).
+   */
+  fromArticles?: readonly { id: string; title: string }[] | undefined;
   /** Where the focus goes on closing when the row that opened the editor is gone. */
   returnFocus?: ModalProps['returnFocus'];
   onClose: () => void;
 }
 
 /** The sheet that creates a card or changes one. The parent shows it only while it is wanted. */
-export function CardEditor({ card, review, fromArticle, returnFocus, onClose }: CardEditorProps) {
+export function CardEditor({
+  card,
+  review,
+  fromArticle,
+  fromArticles,
+  returnFocus,
+  onClose,
+}: CardEditorProps) {
   const { t } = useTranslation('interests');
   const cache = useCardCache();
   const subscriptions = useSubscriptions();
   const create = useApiMutation(routes.cardCreate);
   const createFromArticle = useApiMutation(routes.cardFromArticle);
   const update = useApiMutation(routes.cardUpdate);
-  const source = card === undefined ? fromArticle : undefined;
+  const sources = useMemo(
+    () =>
+      card !== undefined
+        ? undefined
+        : (fromArticles ?? (fromArticle === undefined ? undefined : [fromArticle])),
+    [card, fromArticle, fromArticles],
+  );
+  const source = sources?.[0];
+  const many = (sources?.length ?? 0) > 1;
   // A card saved meanwhile (another tab) fills the fields the person has not changed.
   const [values, setValues] = useDraft(card, (current) => valuesOf(current, source?.title));
+  // The fields the person typed in: a draft that arrives later never overwrites them.
+  const typed = useRef(new Set<TextKey>());
+  const sourceIds = useMemo(() => sources?.map((article) => article.id), [sources]);
+  const drafting = useCardDraft(sourceIds);
+  const draft = drafting.status === 'ready' ? drafting.draft : undefined;
+  useEffect(() => {
+    if (draft === undefined || draft.interest === null) return;
+    const { title, interest } = draft;
+    setValues((current) => ({
+      ...current,
+      ...(typed.current.has('title') || title === null ? {} : { title }),
+      ...(typed.current.has('interest') ? {} : { interest }),
+    }));
+  }, [draft, setValues]);
   const [errors, setErrors] = useState<Errors>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [focusRequest, setFocusRequest] = useState<{ field: CardField } | null>(null);
@@ -144,6 +179,7 @@ export function CardEditor({ card, review, fromArticle, returnFocus, onClose }: 
   }, [focusRequest]);
 
   function edit(field: TextKey, value: string) {
+    typed.current.add(field);
     setValues((current) => ({ ...current, [field]: value }));
     setErrors(({ [field]: _removed, ...rest }) => rest);
   }
@@ -171,7 +207,15 @@ export function CardEditor({ card, review, fromArticle, returnFocus, onClose }: 
         cache.apply(
           source === undefined
             ? await create.mutateAsync({ body })
-            : await createFromArticle.mutateAsync({ body: { ...body, articleId: source.id } }),
+            : await createFromArticle.mutateAsync({
+                body: {
+                  ...body,
+                  articleId: source.id,
+                  ...(many
+                    ? { moreArticleIds: (sources ?? []).slice(1).map((article) => article.id) }
+                    : {}),
+                },
+              }),
         );
       } else {
         const body = changesOf(card, values);
@@ -195,14 +239,27 @@ export function CardEditor({ card, review, fromArticle, returnFocus, onClose }: 
   const flagged = [hints.severalTopics, hints.negation, hints.number];
   const hintTexts = [t('hints.oneTopic'), t('hints.noNot'), t('hints.noNumbers')];
   const hasExamples = card !== undefined && card.examplesYes.length + card.examplesNo.length > 0;
-  const createTitle = source === undefined ? t('editor.createTitle') : t('editor.fromArticleTitle');
+  const createTitle =
+    source === undefined
+      ? t('editor.createTitle')
+      : t(many ? 'editor.fromArticlesTitle' : 'editor.fromArticleTitle');
+  const draftNote =
+    drafting.status === 'drafting'
+      ? t(many ? 'editor.draftingMany' : 'editor.drafting')
+      : draft?.source === 'llm'
+        ? t(many ? 'editor.draftedMany' : 'editor.drafted')
+        : null;
 
   return (
     <Sheet
       open
       onClose={onClose}
       title={card === undefined ? createTitle : t('editor.editTitle')}
-      description={source === undefined ? undefined : t('editor.fromArticleHint')}
+      description={
+        source === undefined
+          ? undefined
+          : t(many ? 'editor.fromArticlesHint' : 'editor.fromArticleHint')
+      }
       dismissible={!saving}
       returnFocus={returnFocus}
     >
@@ -212,6 +269,11 @@ export function CardEditor({ card, review, fromArticle, returnFocus, onClose }: 
             <legend className="px-1 text-sm font-semibold">{t('editor.review')}</legend>
             <UpdateDiff offer={review} stacked />
           </fieldset>
+        )}
+        {source === undefined ? null : (
+          <p role="status" className="text-sm text-slate-600 empty:hidden dark:text-slate-300">
+            {draftNote}
+          </p>
         )}
         <TextField
           ref={(node) => {

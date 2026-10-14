@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { CARD_LIMITS } from '../cards.js';
-import { IdSchema } from '../ids.js';
+import { IdSchema, UuidSchema } from '../ids.js';
 import { IsoTimestampSchema, pageSchema, PageQuerySchema } from './common.js';
 import { StrengthSchema } from './explain.js';
 
@@ -118,12 +118,51 @@ export const RemoveExampleBodySchema = z
 export const CardFromArticleBodySchema = z
   .object({
     articleId: IdSchema,
+    /** More articles whose titles also become examples (D-240): five titles in all at most. */
+    moreArticleIds: z
+      .array(IdSchema)
+      .max(CARD_LIMITS.examplesPerSide - 1)
+      .optional(),
     interest,
     notFor: notFor.nullable().optional(),
     title: title.optional(),
     strength: CardStrengthSchema,
   })
   .strict();
+
+/** Articles a card draft may describe at most: as many as a card holds examples on one side. */
+export const CARD_DRAFT_MAX_ARTICLES = CARD_LIMITS.examplesPerSide;
+
+/** `POST /cards/drafts` (D-240): draft a card's name and interest from articles the user sees. */
+export const CardDraftBodySchema = z
+  .object({
+    articleIds: z
+      .array(IdSchema)
+      .min(1)
+      .max(CARD_DRAFT_MAX_ARTICLES)
+      .refine((ids) => new Set(ids).size === ids.length, 'duplicate article ids'),
+  })
+  .strict();
+export type CardDraftBody = z.infer<typeof CardDraftBodySchema>;
+
+/** `:id` of `GET /cards/drafts/:id`. */
+export const CardDraftParamsSchema = z.object({ id: UuidSchema }).strict();
+
+/**
+ * A card draft: `pending` while the worker writes it; `complete` with the proposed name and
+ * interest, written by the LLM (`llm`) or, when it could not run, from the articles themselves
+ * (`fallback`); `failed` when not even that was possible.
+ */
+export const CardDraftSchema = z
+  .object({
+    id: z.uuid(),
+    status: z.enum(['pending', 'complete', 'failed']),
+    title: z.string().max(CARD_LIMITS.titleMax).nullable(),
+    interest: z.string().max(CARD_LIMITS.interestMax).nullable(),
+    source: z.enum(['llm', 'fallback']).nullable(),
+  })
+  .strict();
+export type CardDraft = z.infer<typeof CardDraftSchema>;
 
 /** The answer of every card mutation that leaves the user holding a card. */
 export const CardMutationResponseSchema = z

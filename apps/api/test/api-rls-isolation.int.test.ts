@@ -72,6 +72,7 @@ const B = {
   sharedCard: '',
   fork: '',
   privateCard: '',
+  draft: '',
   label: '',
   rules: [] as string[],
   cluster: '',
@@ -154,6 +155,7 @@ async function bDigest(): Promise<string> {
        'analysis', (SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM analysis_requests r WHERE r.user_id = $1),
        'suggestions', (SELECT jsonb_agg(to_jsonb(s) ORDER BY s.card_id) FROM card_suggestions s WHERE s.user_id = $1),
        'publication', (SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM card_publication_requests p WHERE p.user_id = $1),
+       'drafts', (SELECT jsonb_agg(to_jsonb(d) ORDER BY d.id) FROM card_drafts d WHERE d.user_id = $1),
        'forks', (SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id) FROM interest_cards c WHERE c.owner_user_id = $1),
        'events', (SELECT count(*) FROM feedback_events e WHERE e.user_id = $1),
        'receipts', (SELECT count(*) FROM api_mutations m WHERE m.user_id = $1),
@@ -295,6 +297,9 @@ beforeAll(async () => {
     )
   ).card.id;
 
+  // A card draft B asked for from its private articles.
+  B.draft = (await json(bApi.post('/cards/drafts', { articleIds: [p1] }), 202)).id;
+
   // Rules, including a muted story (which creates the story's cluster).
   B.rules.push(
     (await json(bApi.post('/rules', { kind: 'mute_keyword', value: `${MARK}keyword` }), 201)).rule
@@ -415,6 +420,8 @@ function getRequests(path: string): { url: string; query?: Record<string, string
         { url: '/articles/counts', query: { labelId: B.label } },
         { url: '/articles/counts', query: { folder: `${MARK} folder` } },
       ];
+    case '/cards/drafts/:id':
+      return [{ url: `/cards/drafts/${B.draft}` }];
     case '/library':
       return [{ url: '/library' }, { url: '/library', query: { q: MARK } }];
     default:
@@ -729,6 +736,21 @@ function crossUserCases(): Record<string, { attempts: Attempt[]; statuses: numbe
         strength: 'like',
       }),
     ),
+    'POST /cards/drafts': notFound(async () => {
+      // B-only articles read as missing, and no draft row appears for A or B.
+      const res = await aApi.post('/cards/drafts', { articleIds: [p1, p2] });
+      const rows = await h.owner.query<{ n: number }>(
+        'SELECT count(*)::int AS n FROM card_drafts WHERE user_id = $1',
+        [a.id],
+      );
+      expect(rows.rows[0]!.n, 'drafts of A').toBe(0);
+      const bOnly = await h.owner.query<{ n: number }>(
+        'SELECT count(*)::int AS n FROM card_drafts WHERE user_id = $1',
+        [b.id],
+      );
+      expect(bOnly.rows[0]!.n, 'drafts of B').toBe(1);
+      return res;
+    }),
     'PATCH /cards/:id': notFound(
       () => aApi.patch(`/cards/${B.fork}`, { strength: 'never' }),
       () => aApi.patch(`/cards/${B.privateCard}`, { title: 'Hijacked' }),

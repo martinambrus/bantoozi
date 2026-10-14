@@ -7,7 +7,14 @@
 export type EngineName = 'typesafe' | 'llm' | 'laya';
 
 export type CallKind =
-  'enrich' | 'match' | 'cluster' | 'suggest' | 'translate' | 'eval' | 'credential_probe';
+  | 'enrich'
+  | 'match'
+  | 'cluster'
+  | 'suggest'
+  | 'translate'
+  | 'eval'
+  | 'credential_probe'
+  | 'card_draft';
 
 /** The authorization basis recorded on `engine_calls.demand_basis` (`other` is written only by metrics fallbacks). */
 export type DemandBasis = 'active' | 'training' | 'other';
@@ -30,7 +37,9 @@ export type InferenceAuthorization =
       /** The token of the validation lease the probe runs under (D-90). */
       validationToken: string;
     }
-  | { type: 'eval'; runId: string }; // separately authorized eval; never inferred from a feed fetch
+  | { type: 'eval'; runId: string } // separately authorized eval; never inferred from a feed fetch
+  // A pending card draft the user asked for (D-240): its row is the demand.
+  | { type: 'card_draft'; userId: string; draftId: string };
 
 export type CallStatus =
   | 'ok'
@@ -96,7 +105,7 @@ export const PLATFORM_USER_ID = '00000000-0000-0000-0000-000000000000';
 /** Non-engine calls logged through the router (translation, spec 07 §2). */
 export interface ExternalCall {
   engine: 'libretranslate' | 'llm' | 'typesafe';
-  kind: 'translate' | 'eval' | 'credential_probe';
+  kind: 'translate' | 'eval' | 'credential_probe' | 'card_draft';
   model?: string;
   articleId?: string;
   inputTokens: number;

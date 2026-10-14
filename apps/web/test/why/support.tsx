@@ -6,7 +6,7 @@ import { WhyThisSheet } from '../../src/features/why/why-this-sheet.js';
 import type { Language } from '../../src/i18n/index.js';
 import { json } from '../api/fake-fetch.js';
 import { makeDetail, renderReader } from '../article/harness.js';
-import { TOPICS, makeCard, type Topic } from '../interests/support.js';
+import { TOPICS, cardDraftRoutes, makeCard, type Topic } from '../interests/support.js';
 import { makeItem } from '../reader/actions/fake-transport.js';
 import type { ApiRouteHandler } from '../support/app.js';
 
@@ -83,6 +83,7 @@ export function drawerRoutes(fixtures: DrawerFixtures = {}): Record<string, ApiR
     'GET /cards': () => json(200, cards),
     'GET /topics': () => json(200, topics),
     'GET /subscriptions': () => json(200, []),
+    ...cardDraftRoutes(),
   };
 }
 

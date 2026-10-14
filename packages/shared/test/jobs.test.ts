@@ -43,6 +43,7 @@ const SPEC_03_QUEUES: Record<string, number> = {
   'user.rank': 4,
   'user.learn': 2,
   'user.suggest': 1,
+  'card.draft': 2,
   'house.rescore-degraded': 1,
   'house.expire-rules': 1,
   'house.purge-auth': 1,

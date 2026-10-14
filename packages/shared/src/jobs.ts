@@ -227,6 +227,12 @@ export const QUEUES = {
     concurrency: 1,
     options: { policy: 'stately', retryLimit: 1 },
   }),
+  // A card draft the person is waiting for in the editor (D-240): quick, one retry.
+  'card.draft': spec({
+    payload: z.object({ draftId: UuidSchema }).strict(),
+    concurrency: 2,
+    options: { policy: 'standard', retryLimit: 1 },
+  }),
   ...houseSpecs,
   'provider.validate': spec({
     payload: z
@@ -388,6 +394,8 @@ export function sendSpecFor<Q extends QueueName>(queue: Q, payload: JobPayload<Q
       return { kind: 'debounced', key: `learn:${id('userId')}`, seconds: 60 };
     case 'user.suggest':
       return { kind: 'send', singletonKey: `suggest:${id('userId')}` };
+    case 'card.draft':
+      return { kind: 'send', singletonKey: `card-draft:${id('draftId')}` };
     case 'provider.validate':
       return {
         kind: 'send',
@@ -496,6 +504,8 @@ export const enqueueLearn = (s: JobSender, p: JobPayloadInput<'user.learn'>) =>
   enqueue(s, 'user.learn', p);
 export const enqueueSuggest = (s: JobSender, p: JobPayloadInput<'user.suggest'>) =>
   enqueue(s, 'user.suggest', p);
+export const enqueueCardDraft = (s: JobSender, p: JobPayloadInput<'card.draft'>) =>
+  enqueue(s, 'card.draft', p);
 export const enqueueHouse = (s: JobSender, queue: HouseCronQueue) => enqueue(s, queue, {});
 export const enqueueProviderValidate = (s: JobSender, p: JobPayloadInput<'provider.validate'>) =>
   enqueue(s, 'provider.validate', p);

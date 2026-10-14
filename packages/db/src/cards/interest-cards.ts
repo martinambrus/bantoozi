@@ -1,3 +1,4 @@
+import { CARD_LIMITS } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { TenantTx } from '../tenant.js';
@@ -94,6 +95,8 @@ export interface AdoptLibraryCardInput {
 /** Fields of `POST /cards/from-article`. */
 export interface CreateCardFromArticleInput extends CreateUserCardInput {
   articleId: string;
+  /** More articles whose titles also become examples (D-240), up to five titles in all. */
+  moreArticleIds?: readonly string[] | undefined;
 }
 
 /**
@@ -334,6 +337,7 @@ export async function createCardFromArticle(
   input: CreateCardFromArticleInput,
 ): Promise<CardMutation> {
   const articleId = validateId(input.articleId, 'articleId');
+  const moreIds = (input.moreArticleIds ?? []).map((id) => validateId(id, 'articleId'));
   const title = input.title === undefined ? null : validateCardTitle(input.title);
   const interest = validateCardInterest(input.interest);
   const notFor = validateCardNotFor(input.notFor);
@@ -347,7 +351,14 @@ export async function createCardFromArticle(
   requireScope(subscriptions, scopeFeedId);
   const covered = coveredFeeds(subscriptions, scopeFeedId);
   await lockFeeds(tx, activeFeedIds(covered));
-  const example = await articleExample(tx, me.userId, articleId);
+  const examples: string[] = [];
+  for (const id of [articleId, ...moreIds]) {
+    const example = await articleExample(tx, me.userId, id);
+    if (!examples.includes(example)) examples.push(example);
+  }
+  if (examples.length > CARD_LIMITS.examplesPerSide) {
+    throw invalidField('articleId', 'too_many_examples');
+  }
   const shared = await obtainCard(tx, me.userId, {
     kind: 'interest',
     title: title ?? defaultCardTitle(interest),
@@ -362,7 +373,7 @@ export async function createCardFromArticle(
     i18n: {},
     translation,
   });
-  const fork = await obtainCard(tx, me.userId, forkSpec(shared.card, { yes: [example], no: [] }));
+  const fork = await obtainCard(tx, me.userId, forkSpec(shared.card, { yes: examples, no: [] }));
   return holdCard(tx, me, {
     card: fork.card,
     strength,
