@@ -380,7 +380,9 @@ When the page becomes visible again after `/open`:
     first), and "Replace and save" resends the card with `replaceCardId`.
   - **Card drafts (D-240):** an editor opened from one or more articles asks `POST /cards/drafts`, says
     "Writing a name and description…" while it waits (polling `GET /cards/drafts/:id` each second, at
-    most 30 s) and fills the name and the interest with the draft, never over text the person typed.
+    most 30 s; the empty name and interest fields say "Loading…") and fills them with the draft, never
+    over text the person typed; without a draft the interest falls back to the first article's title.
+    Saving any card refreshes `GET /me/learning`, so a suggestion the card answered goes away.
     A draft written by the LLM is labelled as drafted; a fallback draft fills silently. All the
     articles' titles become examples on save.
   - **Library:** browse by topic, search, add with a strength.

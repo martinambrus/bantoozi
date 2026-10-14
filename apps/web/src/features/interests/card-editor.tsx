@@ -1,4 +1,5 @@
 import { CARD_LIMITS, type CardDto } from '@bantoozi/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -15,7 +16,9 @@ import type { ModalProps } from '../../components/modal.js';
 import { Sheet } from '../../components/sheet.js';
 import { TextArea } from '../../components/text-area.js';
 import { TextField } from '../../components/text-field.js';
+import { useAccountId } from '../../session/context.js';
 import { FormAlert } from '../auth/form-alert.js';
+import { learningKey } from '../learning/use-learning.js';
 import { checkAuthoring } from './authoring-hints.js';
 import { CardSwap } from './card-swap.js';
 import { cardFieldIssue, cardFieldMessage, saveMessage, type CardField } from './card-errors.js';
@@ -50,10 +53,10 @@ const MAX: Record<TextKey, number> = {
 
 type Errors = Partial<Record<CardField, string>>;
 
-function valuesOf(card: CardDto | undefined, articleTitle: string | undefined): Values {
+function valuesOf(card: CardDto | undefined): Values {
   return {
     title: card?.title ?? '',
-    interest: card?.interest ?? articleTitle ?? '',
+    interest: card?.interest ?? '',
     notFor: card?.notFor ?? '',
     strength: card?.strength ?? DEFAULT_STRENGTH,
     scope: card?.scopeFeedId ?? '',
@@ -140,6 +143,8 @@ export function CardEditor({
   const { t } = useTranslation('interests');
   const cache = useCardCache();
   const subscriptions = useSubscriptions();
+  const queryClient = useQueryClient();
+  const accountId = useAccountId();
   const create = useApiMutation(routes.cardCreate);
   const createFromArticle = useApiMutation(routes.cardFromArticle);
   const update = useApiMutation(routes.cardUpdate);
@@ -153,12 +158,18 @@ export function CardEditor({
   const source = sources?.[0];
   const many = (sources?.length ?? 0) > 1;
   // A card saved meanwhile (another tab) fills the fields the person has not changed.
-  const [values, setValues] = useDraft(card, (current) => valuesOf(current, source?.title));
+  const [values, setValues] = useDraft(card, valuesOf);
   // The fields the person typed in: a draft that arrives later never overwrites them.
   const typed = useRef(new Set<TextKey>());
   const sourceIds = useMemo(() => sources?.map((article) => article.id), [sources]);
   const drafting = useCardDraft(sourceIds);
   const draft = drafting.status === 'ready' ? drafting.draft : undefined;
+  const waiting = source !== undefined && drafting.status === 'drafting';
+  // Without a usable draft the interest starts from the first article's title.
+  const fallbackTitle =
+    source !== undefined && (drafting.status === 'unavailable' || draft?.interest === null)
+      ? source.title
+      : undefined;
   useEffect(() => {
     if (draft === undefined || draft.interest === null) return;
     const { title, interest } = draft;
@@ -168,6 +179,12 @@ export function CardEditor({
       ...(typed.current.has('interest') ? {} : { interest }),
     }));
   }, [draft, setValues]);
+  useEffect(() => {
+    if (fallbackTitle === undefined || typed.current.has('interest')) return;
+    setValues((current) =>
+      current.interest === '' ? { ...current, interest: fallbackTitle } : current,
+    );
+  }, [fallbackTitle, setValues]);
   const [errors, setErrors] = useState<Errors>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [swapping, setSwapping] = useState(false);
@@ -232,6 +249,7 @@ export function CardEditor({
           cache.apply(await update.mutateAsync({ params: { id: card.id }, body }));
         }
       }
+      void queryClient.invalidateQueries({ queryKey: learningKey(accountId) });
       onClose();
     } catch (error) {
       if (card === undefined && quotaDetails(error)?.limit === 'maxCards') setSwapping(true);
@@ -291,6 +309,7 @@ export function CardEditor({
           }}
           label={t('editor.name')}
           value={values.title}
+          placeholder={waiting && values.title === '' ? t('editor.loading') : undefined}
           maxLength={CARD_LIMITS.titleMax}
           hint={counter('title')}
           error={errors.title}
@@ -302,6 +321,7 @@ export function CardEditor({
           }}
           label={t('editor.interest')}
           value={values.interest}
+          placeholder={waiting && values.interest === '' ? t('editor.loading') : undefined}
           rows={3}
           maxLength={CARD_LIMITS.interestMax}
           hint={counter('interest')}

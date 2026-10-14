@@ -1,5 +1,6 @@
 import {
   accessibleArticleTitles,
+  cardsMadeFromFeedArticles,
   listTrainingFeeds,
   loadLearnSamples,
   loadModelState,
@@ -11,9 +12,11 @@ import {
 } from '@bantoozi/db';
 import {
   eligibleRows,
+  FEED_AGREEMENT,
   feedAgreement,
   learningCounts,
   resolveRankerSettings,
+  uncoveredSuggests,
   type TrainingSample,
 } from '@bantoozi/ranker';
 import type { LearningStatus } from '@bantoozi/shared';
@@ -73,16 +76,35 @@ export async function loadLearningStatus(
         }
       : null;
 
-  const agreements = (await listTrainingFeeds(tx)).map((feed) => ({
-    feed,
-    agreement: feedAgreement(rows, feed.feedId, config, `agreement|${userId}|${feed.feedId}`),
-  }));
+  const trainingFeeds = await listTrainingFeeds(tx);
+  const acted = await cardsMadeFromFeedArticles(
+    tx,
+    trainingFeeds.map((feed) => feed.feedId),
+  );
+  // Likes rated before the user made a card from the feed's articles no longer count as uncovered.
+  const agreements = trainingFeeds.map((feed) => {
+    const { uncovered, ...agreement } = feedAgreement(
+      rows,
+      feed.feedId,
+      config,
+      `agreement|${userId}|${feed.feedId}`,
+    );
+    const actedAt = acted.get(feed.feedId);
+    const items =
+      actedAt === undefined ? uncovered.items : uncovered.items.filter((i) => i.at > actedAt);
+    return {
+      feed,
+      agreement,
+      count: items.length,
+      articleIds: items.slice(0, FEED_AGREEMENT.uncoveredArticles).map((i) => i.articleId),
+    };
+  });
   const titles = await accessibleArticleTitles(
     tx,
-    agreements.flatMap(({ agreement }) => agreement.uncovered.articleIds),
+    agreements.flatMap(({ articleIds }) => articleIds),
   );
-  const feeds = agreements.map(({ feed, agreement: { uncovered, ...agreement } }) => {
-    const articles = uncovered.articleIds.flatMap((id) => {
+  const feeds = agreements.map(({ feed, agreement, count, articleIds }) => {
+    const articles = articleIds.flatMap((id) => {
       const title = titles.get(id);
       return title === undefined ? [] : [{ id, title }];
     });
@@ -90,8 +112,8 @@ export async function loadLearningStatus(
       feedId: feed.feedId,
       ...agreement,
       uncovered: {
-        count: uncovered.count,
-        suggest: uncovered.suggest && articles.length > 0,
+        count,
+        suggest: uncoveredSuggests(count, agreement.likes) && articles.length > 0,
         articles,
       },
       articlesPerWeek: feed.items7d === null ? null : Math.round(feed.items7d),

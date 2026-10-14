@@ -759,6 +759,31 @@ export async function accessibleArticleTitles(
   return new Map(result.rows.map((row) => [row.id, row.title]));
 }
 
+/**
+ * Per feed of `feedIds`, when the caller last made a card from that feed's articles: the latest
+ * `user_cards.created_at` among held cards (any strength) whose `body.examples_yes` holds the example
+ * title of an article the feed carries. Feeds without such a card are absent.
+ */
+export async function cardsMadeFromFeedArticles(
+  tx: TenantTx,
+  feedIds: readonly string[],
+): Promise<Map<string, Date>> {
+  if (feedIds.length === 0) return new Map();
+  const result = await tx.execute<{ feed_id: string; acted_at: Date }>(sql`
+    SELECT fi.feed_id::text AS feed_id, max(uc.created_at) AS acted_at
+      FROM user_cards uc
+      JOIN interest_cards ic ON ic.id = uc.card_id
+      CROSS JOIN LATERAL jsonb_array_elements_text(
+             CASE WHEN jsonb_typeof(ic.body -> 'examples_yes') = 'array'
+                  THEN ic.body -> 'examples_yes' ELSE '[]'::jsonb END) AS ex(example)
+      JOIN feed_items fi ON fi.feed_id = ANY(${sql.param([...feedIds])}::bigint[])
+      JOIN articles a ON a.id = fi.article_id
+     WHERE uc.user_id = ${tenantUserId(tx)}::uuid
+       AND ex.example = btrim(left(btrim(regexp_replace(a.title, '[[:space:]]+', ' ', 'g')), 200))
+     GROUP BY fi.feed_id`);
+  return new Map(result.rows.map((row) => [row.feed_id, new Date(row.acted_at)]));
+}
+
 /** Whether the caller subscribes to `feedId` (feed-scoped actions, spec 08 §4). */
 export async function ownsSubscription(tx: TenantTx, feedId: string): Promise<boolean> {
   const result = await tx.execute<{ ok: boolean }>(sql`

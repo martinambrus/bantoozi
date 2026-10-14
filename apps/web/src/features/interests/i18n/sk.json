@@ -49,6 +49,7 @@
     "fromArticleHint": "Názov tohto článku sa zachová ako prvý príklad toho, o čom chcete čítať.",
     "fromArticlesTitle": "Nová karta z týchto článkov",
     "fromArticlesHint": "Názvy týchto článkov sa zachovajú ako príklady toho, o čom chcete čítať.",
+    "loading": "Načítava sa…",
     "drafting": "Píšem názov a opis podľa článku…",
     "draftingMany": "Píšem názov a opis podľa článkov…",
     "drafted": "Názov a opis sú navrhnuté podľa článku. Pred uložením ich skontrolujte a upravte.",

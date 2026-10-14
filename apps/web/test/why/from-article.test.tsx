@@ -3,6 +3,7 @@ import { configure, getConfig, screen, waitFor, within } from '@testing-library/
 import { describe, expect, it, vi } from 'vitest';
 
 import { CardEditor } from '../../src/features/interests/card-editor.js';
+import { learningKey } from '../../src/features/learning/use-learning.js';
 import { cardsKey } from '../../src/features/interests/queries.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
 import { bodyOf, renderReader } from '../article/harness.js';
@@ -57,7 +58,7 @@ describe('the card editor made from an article', () => {
   it('starts the interest from the title of the article and explains where the example comes from', async () => {
     const { dialog, form } = await openEditor();
 
-    expect(form.getByLabelText(LABELS.interest)).toHaveValue(ARTICLE.title);
+    await waitFor(() => expect(form.getByLabelText(LABELS.interest)).toHaveValue(ARTICLE.title));
     expect(form.getByLabelText(LABELS.name)).toHaveValue('');
     expect(form.getByLabelText(LABELS.notFor)).toHaveValue('');
     expect(form.getByRole('radio', { name: 'Like' })).toBeChecked();
@@ -77,6 +78,7 @@ describe('the card editor made from an article', () => {
       'POST /cards/from-article': () => json(201, cardResult(CREATED)),
     });
     const interest = form.getByLabelText(LABELS.interest);
+    await waitFor(() => expect(interest).toHaveValue(ARTICLE.title));
 
     await app.user.clear(interest);
     await app.user.type(interest, '  Solid-state batteries ');
@@ -106,6 +108,7 @@ describe('the card editor made from an article', () => {
     const { app, form, onClose } = await openEditor({
       'POST /cards/from-article': () => failure(409, 'CONFLICT', { reason: 'already_held' }),
     });
+    await waitFor(() => expect(form.getByLabelText(LABELS.interest)).toHaveValue(ARTICLE.title));
     await app.user.type(form.getByLabelText(LABELS.name), 'Batteries');
 
     await app.user.click(form.getByRole('button', { name: 'Save' }));
@@ -133,6 +136,7 @@ describe('the card editor made from an article', () => {
           ? failure(409, 'QUOTA_EXCEEDED', { limit: 'maxCards', used: 3, max: 3 })
           : json(201, cardResult(CREATED)),
     });
+    await waitFor(() => expect(form.getByLabelText(LABELS.interest)).toHaveValue(ARTICLE.title));
     await app.user.click(form.getByRole('button', { name: 'Save' }));
 
     const group = await form.findByRole('group', { name: 'Replace a card to make room' });
@@ -155,6 +159,7 @@ describe('the card editor made from an article', () => {
   it('asks for a description before sending anything, as it does for any card', async () => {
     const { app, form } = await openEditor();
     const interest = form.getByLabelText(LABELS.interest);
+    await waitFor(() => expect(interest).toHaveValue(ARTICLE.title));
 
     await app.user.clear(interest);
     await app.user.click(form.getByRole('button', { name: 'Save' }));
@@ -173,6 +178,53 @@ describe('the card editor made from an article', () => {
 
     expect(onClose).toHaveBeenCalledOnce();
     expect(app.calls('POST', '/cards/from-article')).toHaveLength(0);
+  });
+});
+
+describe('the card editor while the draft is written', () => {
+  it('shows empty fields with a Loading placeholder, then the article title when no draft comes', async () => {
+    let answer: Record<string, unknown> = { status: 'pending' };
+    const { form } = await openEditor({
+      'GET /cards/drafts/:id': () =>
+        json(200, { id: DRAFT_ID, title: null, interest: null, source: null, ...answer }),
+    });
+    const interest = form.getByLabelText(LABELS.interest);
+    const name = form.getByLabelText(LABELS.name);
+    expect(interest).toHaveValue('');
+    expect(interest).toHaveAttribute('placeholder', 'Loading…');
+    expect(name).toHaveValue('');
+    expect(name).toHaveAttribute('placeholder', 'Loading…');
+    expect(form.getByLabelText(LABELS.notFor)).not.toHaveAttribute('placeholder');
+
+    answer = { status: 'failed' };
+    await waitFor(() => expect(interest).toHaveValue(ARTICLE.title), { timeout: 3_000 });
+    expect(name).toHaveValue('');
+    expect(name).not.toHaveAttribute('placeholder');
+  });
+
+  it('keeps what was typed while the draft is pending', async () => {
+    const { app, form } = await openEditor({
+      'GET /cards/drafts/:id': () =>
+        json(200, { id: DRAFT_ID, title: null, interest: null, source: null, status: 'pending' }),
+    });
+    await app.user.type(form.getByLabelText(LABELS.interest), 'Batteries and cells');
+
+    expect(form.getByLabelText(LABELS.interest)).toHaveValue('Batteries and cells');
+    expect(form.getByLabelText(LABELS.interest)).not.toHaveAttribute('placeholder');
+  });
+
+  it('marks the learning status stale once the card is saved', async () => {
+    const { app, form, onClose } = await openEditor({
+      'POST /cards/from-article': () => json(201, cardResult(CREATED)),
+    });
+    app.queryClient.setQueryData(learningKey(USER_A_ID), { feeds: [] });
+    await waitFor(() => expect(form.getByLabelText(LABELS.interest)).toHaveValue(ARTICLE.title));
+    expect(app.queryClient.getQueryState(learningKey(USER_A_ID))?.isInvalidated).toBe(false);
+
+    await app.user.click(form.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(app.queryClient.getQueryState(learningKey(USER_A_ID))?.isInvalidated).toBe(true);
   });
 });
 

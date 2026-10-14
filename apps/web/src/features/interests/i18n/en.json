@@ -49,6 +49,7 @@
     "fromArticleHint": "Keeps the title of this article as the first example of what you want to read.",
     "fromArticlesTitle": "New card from these articles",
     "fromArticlesHint": "Keeps the titles of these articles as examples of what you want to read.",
+    "loading": "Loading…",
     "drafting": "Writing a name and description from the article…",
     "draftingMany": "Writing a name and description from the articles…",
     "drafted": "Name and description drafted from the article. Check them and change anything before saving.",

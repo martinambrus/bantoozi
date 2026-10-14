@@ -5,6 +5,7 @@ import {
   FEED_AGREEMENT,
   feedAgreement,
   learningCounts,
+  uncoveredSuggests,
   sampleFeedIds,
   trainUserModel,
 } from '../../src/index.js';
@@ -148,7 +149,31 @@ describe('feedAgreement', () => {
       count: 3,
       articleIds: ['art-2', 'art-3', 'art-1'],
       suggest: true,
+      items: [
+        { articleId: 'art-2', at: expect.any(Date) },
+        { articleId: 'art-3', at: expect.any(Date) },
+        { articleId: 'art-1', at: expect.any(Date) },
+      ],
     });
+    const times = r.uncovered.items.map((item) => item.at.getTime());
+    expect(times).toEqual([...times].sort((a, b) => b - a));
+  });
+
+  it('lists every uncovered like as an item, beyond the drafted articles', () => {
+    const likes = Array.from({ length: 8 }, (_, i) => sample(i, 1, { pA: 0.05 }));
+    const r = feedAgreement(rowsOf(likes), '7', CFG, 'seed');
+    expect(r.uncovered.items).toHaveLength(8);
+    expect(r.uncovered.articleIds).toEqual(
+      r.uncovered.items.slice(0, FEED_AGREEMENT.uncoveredArticles).map((item) => item.articleId),
+    );
+  });
+
+  it('applies the suggestion rule to a count and the likes of the feed', () => {
+    expect(uncoveredSuggests(FEED_AGREEMENT.uncoveredMin - 1, 2)).toBe(false);
+    expect(uncoveredSuggests(0, 0)).toBe(false);
+    expect(uncoveredSuggests(3, 10)).toBe(true);
+    expect(uncoveredSuggests(3, 11)).toBe(false);
+    expect(uncoveredSuggests(3, 3)).toBe(true);
   });
 
   it('suggests no card below the minimum count or share of the likes', () => {

@@ -723,6 +723,10 @@ below `lanes.maybe` (every held card scored them low, the "unexplained likes" of
 the newest `FEED_AGREEMENT.uncoveredArticles` (5) article ids, and `suggest` when there are at least
 `uncoveredMin` (3) of them and they are at least `uncoveredMinShare` (30 %) of the feed's likes. The
 UI then suggests a new card drafted from those articles (spec 09 §5); nothing is created by itself.
+Uncovered likes rest on rating-time snapshots, which a new card never changes, so once the user holds a
+card whose `examples_yes` contains the title of an article the feed carries, the feed's uncovered likes
+rated before that holding's `created_at` no longer count (`GET /me/learning` recomputes count, articles
+and `suggest` from the rest); new evidence after it can raise a new suggestion.
 
 ---
 
