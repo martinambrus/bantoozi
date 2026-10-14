@@ -825,3 +825,93 @@ describe('feed settings from the sidebar', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
+
+describe('the hint to add interests', () => {
+  const training = (id: string, title: string) =>
+    feed(id, title, null, { inferenceMode: 'training', inferenceVersion: '3' });
+  const uncovered = (suggest: boolean, count = 4) => ({
+    count,
+    suggest,
+    articles: [{ id: 'a1', title: 'Liked' }],
+  });
+  const HINT = 'Interests to add for Verge';
+  const TEXT =
+    "Your interests miss much of what you like in this feed: every card rated 4 articles you liked low. Open the feed's settings to make an interest from them.";
+
+  it('marks a feed whose likes the cards miss, and no other', async () => {
+    await open({
+      path: '/read/for_you',
+      subscriptions: [training('1', 'Verge'), training('2', 'Wired')],
+      routes: {
+        [LEARNING]: learningRoute(() =>
+          makeLearning({}, [
+            makeAgreement('1', 'collecting', { uncovered: uncovered(true) }),
+            makeAgreement('2', 'collecting', { uncovered: uncovered(false) }),
+          ]),
+        ),
+      },
+    });
+
+    const verge = (await screen.findByRole('link', { name: 'Verge' })).closest('li')!;
+    expect(await within(verge).findByRole('button', { name: HINT })).toBeVisible();
+    const wired = screen.getByRole('link', { name: 'Wired' }).closest('li')!;
+    expect(within(wired).queryByRole('button', { name: /^Interests to add/ })).toBeNull();
+  });
+
+  it('explains itself as the description of the icon when it has the focus', async () => {
+    const { app } = await open({
+      path: '/read/for_you',
+      subscriptions: [training('1', 'Verge')],
+      routes: {
+        [LEARNING]: learningRoute(() =>
+          makeLearning({}, [makeAgreement('1', 'collecting', { uncovered: uncovered(true) })]),
+        ),
+      },
+    });
+    const hint = await screen.findByRole('button', { name: HINT });
+    expect(hint).toHaveAccessibleDescription(TEXT);
+    expect(screen.getByRole('tooltip', { hidden: true })).not.toBeVisible();
+
+    await app.user.tab();
+    hint.focus();
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(TEXT);
+  });
+
+  it('opens the settings of that feed, like the gear', async () => {
+    const { app } = await open({
+      path: '/read/for_you',
+      subscriptions: [training('1', 'Verge'), training('2', 'Wired')],
+      routes: {
+        [LEARNING]: learningRoute(() =>
+          makeLearning({}, [makeAgreement('1', 'collecting', { uncovered: uncovered(true) })]),
+        ),
+      },
+    });
+
+    await app.user.click(await screen.findByRole('button', { name: HINT }));
+
+    const sheet = await screen.findByRole('dialog', { name: 'Feed settings' });
+    expect(sheet).toHaveAccessibleDescription('Verge');
+  });
+
+  it('names the feed in the collapsed strip', async () => {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, '1');
+    await open({
+      path: '/read/for_you',
+      subscriptions: [training('1', 'Verge')],
+      routes: {
+        [LEARNING]: learningRoute(() =>
+          makeLearning({}, [makeAgreement('1', 'collecting', { uncovered: uncovered(true) })]),
+        ),
+      },
+    });
+
+    const strip = within(await screen.findByRole('list', { name: 'Feeds' }));
+    expect(
+      await strip.findByRole('link', {
+        name: 'Verge, Training: selected articles, interests to add',
+      }),
+    ).toBeVisible();
+  });
+});

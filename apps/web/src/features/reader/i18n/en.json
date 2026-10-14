@@ -21,6 +21,10 @@
     "feedsFailed": "The feeds couldn't be loaded.",
     "labelsFailed": "The labels couldn't be loaded.",
     "feedsOffline": "The feeds load once the device is back online.",
+    "interestsToAdd": "Interests to add for {{title}}",
+    "interestsToAddHint_one": "Your interests miss much of what you like in this feed: every card rated {{count}} article you liked low. Open the feed's settings to make an interest from them.",
+    "interestsToAddHint_other": "Your interests miss much of what you like in this feed: every card rated {{count}} articles you liked low. Open the feed's settings to make an interest from them.",
+    "interestsToAddShort": "interests to add",
     "readyForAutomatic": "ready for automatic classification",
     "labelsOffline": "The labels load once the device is back online.",
     "retryFeeds": "Retry loading feeds",
@@ -125,7 +129,11 @@
     "none": "Not hidden any more. It leaves this list when the list is loaded again."
   },
   "list": {
-    "loadMore": "Load more"
+    "loadMore": "Load more",
+    "newArticles_one": "{{count}} new article · Show",
+    "newArticles_other": "{{count}} new articles · Show",
+    "showNew_one": "Show {{count}} new article",
+    "showNew_other": "Show {{count}} new articles"
   },
   "pane": {
     "label": "Article",

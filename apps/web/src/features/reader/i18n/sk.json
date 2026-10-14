@@ -21,6 +21,12 @@
     "feedsFailed": "Zdroje sa nepodarilo načítať.",
     "labelsFailed": "Štítky sa nepodarilo načítať.",
     "feedsOffline": "Zdroje sa načítajú, keď bude zariadenie znova online.",
+    "interestsToAdd": "Z\u00e1ujmy na pridanie pre {{title}}",
+    "interestsToAddHint_one": "Va\u0161e z\u00e1ujmy m\u00ed\u0148aj\u00fa ve\u013ea z toho, \u010do sa v\u00e1m v tomto zdroji p\u00e1\u010di: ka\u017ed\u00e1 karta ohodnotila n\u00edzko {{count}} \u010dl\u00e1nok, ktor\u00fd sa v\u00e1m p\u00e1\u010dil. Otvorte nastavenia zdroja a vytvorte z nich z\u00e1ujem.",
+    "interestsToAddHint_few": "Va\u0161e z\u00e1ujmy m\u00ed\u0148aj\u00fa ve\u013ea z toho, \u010do sa v\u00e1m v tomto zdroji p\u00e1\u010di: ka\u017ed\u00e1 karta ohodnotila n\u00edzko {{count}} \u010dl\u00e1nky, ktor\u00e9 sa v\u00e1m p\u00e1\u010dili. Otvorte nastavenia zdroja a vytvorte z nich z\u00e1ujem.",
+    "interestsToAddHint_many": "Va\u0161e z\u00e1ujmy m\u00ed\u0148aj\u00fa ve\u013ea z toho, \u010do sa v\u00e1m v tomto zdroji p\u00e1\u010di: ka\u017ed\u00e1 karta ohodnotila n\u00edzko {{count}} \u010dl\u00e1nku, ktor\u00fd sa v\u00e1m p\u00e1\u010dil. Otvorte nastavenia zdroja a vytvorte z nich z\u00e1ujem.",
+    "interestsToAddHint_other": "Va\u0161e z\u00e1ujmy m\u00ed\u0148aj\u00fa ve\u013ea z toho, \u010do sa v\u00e1m v tomto zdroji p\u00e1\u010di: ka\u017ed\u00e1 karta ohodnotila n\u00edzko {{count}} \u010dl\u00e1nkov, ktor\u00e9 sa v\u00e1m p\u00e1\u010dili. Otvorte nastavenia zdroja a vytvorte z nich z\u00e1ujem.",
+    "interestsToAddShort": "z\u00e1ujmy na pridanie",
     "readyForAutomatic": "pripravené na automatickú klasifikáciu",
     "labelsOffline": "Štítky sa načítajú, keď bude zariadenie znova online.",
     "retryFeeds": "Znova načítať zdroje",
@@ -139,7 +145,15 @@
     "none": "Skrytie bolo zrušené. Zo zoznamu zmizne, keď sa zoznam načíta znova."
   },
   "list": {
-    "loadMore": "Načítať viac"
+    "loadMore": "Načítať viac",
+    "newArticles_one": "{{count}} nový článok · Zobraziť",
+    "newArticles_few": "{{count}} nové články · Zobraziť",
+    "newArticles_many": "{{count}} nového článku · Zobraziť",
+    "newArticles_other": "{{count}} nových článkov · Zobraziť",
+    "showNew_one": "Zobraziť {{count}} nový článok",
+    "showNew_few": "Zobraziť {{count}} nové články",
+    "showNew_many": "Zobraziť {{count}} nového článku",
+    "showNew_other": "Zobraziť {{count}} nových článkov"
   },
   "pane": {
     "label": "Článok",
