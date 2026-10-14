@@ -1,5 +1,9 @@
 import type { LearningFeedAgreement } from '@bantoozi/shared';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { Button } from '../../components/button.js';
+import { CardEditor } from '../interests/card-editor.js';
 
 /** How many likes and dislikes a feed needs before its agreement is judged (the ranker's `FEED_AGREEMENT.minEachClass`). */
 export const AGREEMENT_MIN_EACH_CLASS = 3;
@@ -28,4 +32,38 @@ export function AgreementLine({
 }) {
   const text = useAgreementText(agreement, long);
   return <p className="text-sm text-slate-700 dark:text-slate-200">{text}</p>;
+}
+
+/** Where the cards miss what the person likes in a feed: says so and opens the card editor on those articles. */
+export function UncoveredSuggestion({
+  agreement,
+  feedTitle,
+}: {
+  agreement: LearningFeedAgreement;
+  feedTitle: string;
+}) {
+  const { t } = useTranslation('feeds');
+  const [making, setMaking] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const { suggest, count, articles } = agreement.uncovered;
+  if (!suggest || articles.length === 0) return null;
+  return (
+    <div ref={box} className="flex flex-col items-start gap-2">
+      <p className="text-sm text-slate-700 dark:text-slate-200">{t('uncovered.text', { count })}</p>
+      <Button
+        variant="secondary"
+        aria-label={t('uncovered.makeLabel', { title: feedTitle })}
+        onClick={() => setMaking(true)}
+      >
+        {t('uncovered.make')}
+      </Button>
+      {making ? (
+        <CardEditor
+          fromArticles={articles}
+          returnFocus={() => box.current?.querySelector('button') ?? null}
+          onClose={() => setMaking(false)}
+        />
+      ) : null}
+    </div>
+  );
 }

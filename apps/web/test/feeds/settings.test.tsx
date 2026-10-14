@@ -6,7 +6,7 @@ import { subscriptionsKey } from '../../src/features/feeds/subscriptions.js';
 import { UUID_V4, failure, json, noContent } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
 import { USER_A_ID, makeMe } from '../session/fixtures.js';
-import { gate } from '../interests/support.js';
+import { cardDraftRoutes, gate } from '../interests/support.js';
 import {
   LEARNING,
   learningRoute,
@@ -154,6 +154,68 @@ describe('the agreement line in the feed settings', () => {
     await within(sheet).findByRole('heading', { name: 'Classification' });
     expect(within(sheet).queryByText(/agrees with your ratings/)).toBeNull();
     expect(app.calls(LEARNING)).toHaveLength(0);
+  });
+});
+
+describe('the suggestion to make an interest in the feed settings', () => {
+  const UNCOVERED = {
+    count: 4,
+    suggest: true,
+    articles: [
+      { id: '41', title: 'Solid-state cells' },
+      { id: '40', title: 'Sodium-ion at scale' },
+    ],
+  };
+
+  async function openTraining(uncovered: typeof UNCOVERED) {
+    const { server, state } = feedsServer({
+      me: makeMe(),
+      routes: {
+        ...cardDraftRoutes(),
+        [LEARNING]: learningRoute(() => makeLearning({}, [readyAgreement('5', { uncovered })])),
+      },
+      subscriptions: [
+        makeSubscription({
+          feed: { id: '5', title: 'Alpha' },
+          inferenceMode: 'training',
+          inferenceVersion: '3',
+        }),
+      ],
+    });
+    installFeedApi(server, () => state.subscriptions);
+    const app = await open({ path: '/feeds', server });
+    await app.user.click(await screen.findByRole('button', { name: 'Settings for Alpha' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Feed settings' });
+    return { app, sheet };
+  }
+
+  it('offers a card made from the liked articles no card covers, and opens the editor with them', async () => {
+    const { app, sheet } = await openTraining(UNCOVERED);
+
+    expect(
+      await within(sheet).findByText(
+        'Your interests miss much of what you like here: every card rated 4 articles you liked low.',
+      ),
+    ).toBeVisible();
+    await app.user.click(
+      within(sheet).getByRole('button', {
+        name: 'Make an interest from what you like in Alpha',
+      }),
+    );
+
+    const editor = await screen.findByRole('dialog', { name: 'New card from these articles' });
+    expect(editor).toBeVisible();
+    await waitFor(() =>
+      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([{ articleIds: ['41', '40'] }]),
+    );
+  });
+
+  it('says nothing when the cards cover what is liked, however many were missed', async () => {
+    const { sheet } = await openTraining({ ...UNCOVERED, suggest: false });
+
+    await within(sheet).findByText(/^The analysis agrees with your ratings/);
+    expect(within(sheet).queryByText(/Your interests miss much/)).toBeNull();
+    expect(within(sheet).queryByRole('button', { name: /Make an interest/ })).toBeNull();
   });
 });
 

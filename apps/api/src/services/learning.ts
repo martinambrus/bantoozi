@@ -1,4 +1,5 @@
 import {
+  accessibleArticleTitles,
   listTrainingFeeds,
   loadLearnSamples,
   loadModelState,
@@ -72,14 +73,30 @@ export async function loadLearningStatus(
         }
       : null;
 
-  const feeds = [];
-  for (const feed of await listTrainingFeeds(tx)) {
-    feeds.push({
-      feedId: feed.feedId,
-      ...feedAgreement(rows, feed.feedId, config, `agreement|${userId}|${feed.feedId}`),
-      articlesPerWeek: feed.items7d === null ? null : Math.round(feed.items7d),
+  const agreements = (await listTrainingFeeds(tx)).map((feed) => ({
+    feed,
+    agreement: feedAgreement(rows, feed.feedId, config, `agreement|${userId}|${feed.feedId}`),
+  }));
+  const titles = await accessibleArticleTitles(
+    tx,
+    agreements.flatMap(({ agreement }) => agreement.uncovered.articleIds),
+  );
+  const feeds = agreements.map(({ feed, agreement: { uncovered, ...agreement } }) => {
+    const articles = uncovered.articleIds.flatMap((id) => {
+      const title = titles.get(id);
+      return title === undefined ? [] : [{ id, title }];
     });
-  }
+    return {
+      feedId: feed.feedId,
+      ...agreement,
+      uncovered: {
+        count: uncovered.count,
+        suggest: uncovered.suggest && articles.length > 0,
+        articles,
+      },
+      articlesPerWeek: feed.items7d === null ? null : Math.round(feed.items7d),
+    };
+  });
 
   return {
     model: {

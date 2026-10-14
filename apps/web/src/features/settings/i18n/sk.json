@@ -156,7 +156,8 @@
     "deactivatedReasons": {
       "incompatible": "už nezodpovedá tomu, ako Bantoozi číta články, preto sa naučí nanovo",
       "lost_evidence": "niektoré hodnotenia, z ktorých sa učil, sú preč"
-    }
+    },
+    "uncoveredTitle": "Záujmy na pridanie"
   },
   "sessions": {
     "title": "Relácie",

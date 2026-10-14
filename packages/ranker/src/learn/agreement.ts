@@ -8,6 +8,12 @@ export const FEED_AGREEMENT = {
   minEachClass: 3,
   oneSidedMinTotal: 10,
   oneSidedMaxShare: 0.15,
+  /** Likes every card scored below `lanes.maybe` before a new card is suggested (D-241)… */
+  uncoveredMin: 3,
+  /** …and their least share of the feed's likes. */
+  uncoveredMinShare: 0.3,
+  /** The most recent uncovered likes a suggested card is drafted from. */
+  uncoveredArticles: 5,
 } as const;
 
 /** Explicit rating counts, as the trainer counts them. */
@@ -49,6 +55,12 @@ export function feedAgreement(
   aucLow: number | null;
   ratedHigh: { total: number; liked: number };
   ratedLow: { total: number; disliked: number };
+  /**
+   * Liked articles that every card scored below `lanes.maybe`, the "unexplained likes" of spec 06
+   * §10 (D-241): their count, the most recent ones' ids (newest first) and whether there are enough
+   * of them to suggest a new card.
+   */
+  uncovered: { count: number; articleIds: string[]; suggest: boolean };
 } {
   const mine = rows.filter((r) => r.s.explicit && sampleFeedIds(r.f).includes(feedId));
   const scores = mine.map((r) => baselineScore(r, cfg));
@@ -63,6 +75,10 @@ export function feedAgreement(
       (m) => auc(scores, y, m),
       seed,
     )?.[0] ?? null;
+
+  const uncovered = mine
+    .filter((r, i) => r.s.y === 1 && (scores[i] ?? 0) < cfg.lanes.maybe)
+    .sort((a, b) => b.s.feedbackAt.getTime() - a.s.feedbackAt.getTime());
 
   const total = likes + dislikes;
   let status: FeedAgreementStatus;
@@ -84,5 +100,12 @@ export function feedAgreement(
     aucLow: low95,
     ratedHigh: { total: high.length, liked: high.filter((r) => r.s.y === 1).length },
     ratedLow: { total: low.length, disliked: low.filter((r) => r.s.y === 0).length },
+    uncovered: {
+      count: uncovered.length,
+      articleIds: uncovered.slice(0, FEED_AGREEMENT.uncoveredArticles).map((r) => r.s.articleId),
+      suggest:
+        uncovered.length >= FEED_AGREEMENT.uncoveredMin &&
+        uncovered.length >= FEED_AGREEMENT.uncoveredMinShare * likes,
+    },
   };
 }

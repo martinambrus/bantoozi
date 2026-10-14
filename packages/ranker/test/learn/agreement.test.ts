@@ -134,6 +134,47 @@ describe('feedAgreement', () => {
     expect(r.ratedLow).toEqual({ total: 3, disliked: 2 });
   });
 
+  it('lists the likes every card scored below Maybe, newest first, and suggests a card at enough of them (D-241)', () => {
+    const samples = [
+      sample(1, 1, { pA: 0.05, ageDays: 3 }),
+      sample(2, 1, { pA: 0.05, ageDays: 1 }),
+      sample(3, 1, { pA: 0.05, ageDays: 2 }),
+      sample(4, 1, { pA: 0.9 }),
+      sample(5, 0, { pA: 0.05 }),
+    ];
+    const r = feedAgreement(rowsOf(samples), '7', CFG, 'seed');
+    expect(r.uncovered).toEqual({
+      count: 3,
+      articleIds: ['art-2', 'art-3', 'art-1'],
+      suggest: true,
+    });
+  });
+
+  it('suggests no card below the minimum count or share of the likes', () => {
+    const few = feedAgreement(
+      rowsOf([sample(1, 1, { pA: 0.05 }), sample(2, 1, { pA: 0.05 })]),
+      '7',
+      CFG,
+      'seed',
+    );
+    expect(few.uncovered).toMatchObject({ count: FEED_AGREEMENT.uncoveredMin - 1, suggest: false });
+    const covered = Array.from({ length: 10 }, (_, i) => sample(10 + i, 1, { pA: 0.9 }));
+    const share = feedAgreement(
+      rowsOf([...covered, ...[1, 2, 3].map((i) => sample(i, 1, { pA: 0.05 }))]),
+      '7',
+      CFG,
+      'seed',
+    );
+    expect(share.uncovered).toMatchObject({ count: 3, suggest: false });
+  });
+
+  it('keeps at most the configured number of uncovered articles', () => {
+    const likes = Array.from({ length: 8 }, (_, i) => sample(i, 1, { pA: 0.05 }));
+    const r = feedAgreement(rowsOf(likes), '7', CFG, 'seed');
+    expect(r.uncovered.count).toBe(8);
+    expect(r.uncovered.articleIds).toHaveLength(FEED_AGREEMENT.uncoveredArticles);
+  });
+
   it('is deterministic for the same seed', () => {
     const rows = rowsOf(drivenSamples(80, 'det'));
     const a = feedAgreement(rows, '7', CFG, 'seed-1');

@@ -37,6 +37,7 @@ export function makeAgreement(
     aucLow: null,
     ratedHigh: { total: 0, liked: 0 },
     ratedLow: { total: 0, disliked: 0 },
+    uncovered: { count: 0, suggest: false, articles: [] },
     articlesPerWeek: null,
     ...over,
   };

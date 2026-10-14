@@ -747,6 +747,18 @@ export async function accessibleArticleIds(
   return new Set(result.rows.map((row) => row.id));
 }
 
+/** The titles of the accessible articles among `ids` (the predicate above), by id. */
+export async function accessibleArticleTitles(
+  tx: TenantTx,
+  ids: readonly string[],
+): Promise<Map<string, string>> {
+  const accessible = await accessibleArticleIds(tx, ids);
+  if (accessible.size === 0) return new Map();
+  const result = await tx.execute<{ id: string; title: string }>(sql`
+    SELECT id::text AS id, title FROM articles WHERE id = ANY(${sql.param([...accessible])}::bigint[])`);
+  return new Map(result.rows.map((row) => [row.id, row.title]));
+}
+
 /** Whether the caller subscribes to `feedId` (feed-scoped actions, spec 08 §4). */
 export async function ownsSubscription(tx: TenantTx, feedId: string): Promise<boolean> {
   const result = await tx.execute<{ ok: boolean }>(sql`

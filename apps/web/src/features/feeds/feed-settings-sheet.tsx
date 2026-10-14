@@ -21,7 +21,7 @@ import { Switch } from '../../components/switch.js';
 import { TextField } from '../../components/text-field.js';
 import { useToast } from '../../components/toast/toast-provider.js';
 import { useMe } from '../../session/context.js';
-import { AgreementLine } from '../learning/agreement-text.js';
+import { AgreementLine, UncoveredSuggestion } from '../learning/agreement-text.js';
 import { useLearning } from '../learning/use-learning.js';
 import { ClassificationControls } from './classification-controls.js';
 import { displayTitle, feedTitle } from './folders.js';
@@ -220,6 +220,9 @@ export function FeedSettingsSheet({
         <div className="border-t border-slate-200 pt-4 dark:border-slate-700">
           <ClassificationControls subscription={subscription} />
           {agreement === undefined ? null : <AgreementLine agreement={agreement} long />}
+          {agreement === undefined ? null : (
+            <UncoveredSuggestion agreement={agreement} feedTitle={title} />
+          )}
         </div>
         <div className="border-t border-slate-200 pt-4 dark:border-slate-700">
           <Button variant="danger" onClick={() => setAsking(true)}>

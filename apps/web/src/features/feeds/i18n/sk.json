@@ -177,5 +177,13 @@
       "tooLarge": "Tento súbor OPML je príliš veľký. Rozdeľte ho na menšie súbory a importujte ich postupne.",
       "tooManyFeeds": "Počet zdrojov v súbore ({{used}}) presahuje limit vášho plánu pre jeden import ({{max}}). Rozdeľte súbor a importujte ho po častiach."
     }
+  },
+  "uncovered": {
+    "text_one": "Vaše záujmy míňajú veľa z toho, čo sa vám tu páči: každá karta ohodnotila nízko {{count}} článok, ktorý sa vám páčil.",
+    "text_few": "Vaše záujmy míňajú veľa z toho, čo sa vám tu páči: každá karta ohodnotila nízko {{count}} články, ktoré sa vám páčili.",
+    "text_many": "Vaše záujmy míňajú veľa z toho, čo sa vám tu páči: každá karta ohodnotila nízko {{count}} článku, ktorý sa vám páčil.",
+    "text_other": "Vaše záujmy míňajú veľa z toho, čo sa vám tu páči: každá karta ohodnotila nízko {{count}} článkov, ktoré sa vám páčili.",
+    "make": "Vytvoriť záujem z týchto",
+    "makeLabel": "Vytvoriť záujem z toho, čo sa vám páči v zdroji {{title}}"
   }
 }

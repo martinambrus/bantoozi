@@ -67,7 +67,7 @@ async function rate(
   cardId: string,
   rating: 1 | -1,
   p: number,
-): Promise<void> {
+): Promise<string> {
   const article = await createArticle(h.owner, { feedIds: [feedId] });
   const at = new Date(Date.now() - 3_600_000);
   await h.owner.query(
@@ -115,6 +115,7 @@ async function rate(
       at,
     ],
   );
+  return article.id;
 }
 
 async function storeModel(
@@ -165,6 +166,26 @@ describe('GET /me/learning', () => {
     });
     expect(body.feeds[0]!.auc).toBe(1);
     expect(body.feeds[0]!.aucLow).not.toBeNull();
+  });
+
+  it('lists the likes every card scored below Maybe with their titles and suggests a card (D-241)', async () => {
+    const user = await createTestUser(h);
+    const feedId = await subscribe(user, 'training');
+    const card = await createCard(h.owner, { title: 'Learning card' });
+    const uncovered: string[] = [];
+    for (let i = 0; i < 3; i += 1) uncovered.push(await rate(user, feedId, card.id, 1, 0.05));
+    await rate(user, feedId, card.id, 1, 0.9);
+    await rate(user, feedId, card.id, -1, 0.05);
+    const titles = await h.owner.query<{ id: string; title: string }>(
+      `SELECT id::text AS id, title FROM articles WHERE id = ANY($1::bigint[])`,
+      [uncovered],
+    );
+    const body = await status(user);
+    expect(body.feeds[0]!.uncovered.count).toBe(3);
+    expect(body.feeds[0]!.uncovered.suggest).toBe(true);
+    expect([...body.feeds[0]!.uncovered.articles].sort((a, b) => a.id.localeCompare(b.id))).toEqual(
+      titles.rows.sort((a, b) => a.id.localeCompare(b.id)),
+    );
   });
 
   it('reports a training feed with two likes as collecting, and lists only training feeds', async () => {

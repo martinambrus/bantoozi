@@ -16,6 +16,17 @@ export const LearningFeedAgreementSchema = z
     aucLow: z.number().nullable(),
     ratedHigh: z.object({ total: count, liked: count }).strict(),
     ratedLow: z.object({ total: count, disliked: count }).strict(),
+    /**
+     * Liked articles that every card scored below Maybe (D-241): how many, whether that is enough to
+     * suggest a new card, and the most recent ones (newest first) to draft it from.
+     */
+    uncovered: z
+      .object({
+        count,
+        suggest: z.boolean(),
+        articles: z.array(z.object({ id: z.string(), title: z.string() }).strict()),
+      })
+      .strict(),
     articlesPerWeek: count.nullable(),
   })
   .strict();
