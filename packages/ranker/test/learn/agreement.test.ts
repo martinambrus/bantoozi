@@ -46,7 +46,8 @@ describe('learningCounts', () => {
       likes: metrics.nPos,
       dislikes: metrics.nNeg,
     });
-  });
+    // Trains a whole model: slow under coverage, like the other trainer tests.
+  }, 60_000);
 
   it('does not count an ineligible sample', () => {
     const old = sample(900, 1, { ageDays: 400 });
