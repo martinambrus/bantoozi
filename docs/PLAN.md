@@ -177,7 +177,7 @@ show me what I care about—and always tell me why."
    HTML while bookmarked. Cold content may be losslessly compressed; capture failures/partial bodies
    are explicit. Images and other media/attachments are excluded from archive capture (§17 Q14).
 
-**v1 non-goals:** AI summaries or any generated text, social features, a full-text search engine,
+**v1 non-goals:** AI summaries or any generated text (except proposed card drafts, D-240), social features, a full-text search engine,
 native apps (the PWA covers mobile), and migrating FeedIt.sk data.
 
 Background and rationale: [`background.md`](./background.md).
@@ -190,7 +190,7 @@ Background and rationale: [`background.md`](./background.md).
 |---|---|---|
 | 1 | Stack | **TypeScript monorepo** (pnpm + Turborepo; Node 22; Fastify; Drizzle; pg-boss; React PWA). Details in spec 01 |
 | 2 | Tenancy | **Multi-tenant from day one**: a shared article layer, per-user data under Postgres RLS |
-| 3 | Generative LLM | **Only** as the fallback decision engine and for translation. No LLM card authoring, summaries or labelling teachers |
+| 3 | Generative LLM | **Only** as the fallback decision engine, for translation and, since 2026-10-14 (owner, D-240), for **proposed card drafts** (a name and an interest sentence the person reviews and edits before saving). No other LLM card authoring, no summaries, no labelling teachers |
 | 4 | Migration | **None.** No FeedIt.sk accounts or data. Everything is trained or fine-tuned from scratch; the golden set is built new |
 | 5 | Hosting | **Self-hosted on one box, minimal spend, no GPU** |
 | 6 | Signup | **Invite-only** at launch, with a waitlist |

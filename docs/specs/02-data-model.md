@@ -130,6 +130,7 @@ sequences have no default API grant.
 | `user_models` | no writes | worker alone trains and activates models |
 | `bookmark_snapshot_pins` | `INSERT` only | vetted bookmark/undo repository pins original snapshot through the ten-minute undo deadline: only the `previous_snapshot_id` that `clear_bookmark_snapshot` returned in the same transaction, never a caller-chosen snapshot |
 | `analysis_requests` | `INSERT (id, user_id, feed_id, article_id, article_revision, inference_version, input_snapshot, input_sha)` only | exact selected-article manual authorization; validated immutable snapshot, worker owns completion |
+| `card_drafts` | `INSERT (id, user_id, article_ids, locale)`, `SELECT`, `DELETE` | card drafts for the editor (D-240, migration 0025); the worker answers them |
 | `card_publication_requests`, `provider_credentials`, `article_snapshots`, `library_card_versions` | no direct writes | narrow consent/admin/bookmark functions below; worker maintains lifecycle |
 | `job_outbox` | `INSERT` only | durable job intent; requester RLS (§5), no API relay privileges |
 | `drizzle.__drizzle_migrations` | `SELECT` (with `USAGE ON SCHEMA drizzle`) | `/readyz` |
@@ -599,7 +600,7 @@ CREATE INDEX engine_reservations_day_idx ON engine_reservations (day, status);
 CREATE TABLE engine_calls (
   id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   engine          text NOT NULL CHECK (engine IN ('typesafe','llm','laya','libretranslate')),
-  kind            text NOT NULL CHECK (kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval')),
+  kind            text NOT NULL CHECK (kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft')),
   model           text NULL,
   article_id      bigint NULL REFERENCES articles(id) ON DELETE SET NULL,
   question_set_id bigint NULL REFERENCES question_sets(id) ON DELETE RESTRICT,
@@ -1049,6 +1050,22 @@ CREATE TABLE user_feed_preferences (
   updated_at   timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, feed_id)
 );
+
+CREATE TABLE card_drafts (                        -- D-240, migration 0025; tenant RLS like analysis_requests
+  id           uuid PRIMARY KEY,
+  user_id      uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  article_ids  bigint[] NOT NULL CHECK (cardinality(article_ids) BETWEEN 1 AND 5),
+  locale       text NOT NULL,
+  status       text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','complete','failed')),
+  title        text,                                -- may stay null on a complete draft
+  interest     text,
+  source       text CHECK (source IN ('llm','fallback')),
+  error_code   text,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  completed_at timestamptz,                         -- set exactly when complete or failed
+  CHECK (status <> 'complete' OR (interest IS NOT NULL AND source IS NOT NULL))
+);
+CREATE INDEX card_drafts_user_created_idx ON card_drafts (user_id, created_at);
 
 CREATE TABLE analysis_requests (                  -- explicit selected-article training demand
   id                  uuid PRIMARY KEY,          -- server-generated, receipt binds client idempotency key

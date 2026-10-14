@@ -2262,3 +2262,23 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   held 49 cards, so suggesting new cards was pointless at 50. Cost scales with held cards: matching one article cost
   $0.00033 at ~50 cards on the dev stack (about 8k input tokens), so ~$0.001 at 150, still under the daily budget
   guard. At the limit, creating a card offers to replace one (D-241). No migration. Spec 08 §6.
+- D-240: 2026-10-14 (owner request; amends locked decision PLAN §2 #3) — Proposed card drafts. Making a card from
+  articles now proposes its name and interest sentence, written by the LLM (Ollama Cloud GLM, `OLLAMA_MODEL_FAST`) in
+  the person's language from 1–5 articles' titles and excerpts. Only a proposal: the editor fills the fields (never
+  over typed text) and the person edits before saving. Provider keys are decrypted only by the worker (spec 11), so
+  the API records a `card_drafts` row (migration 0025, tenant RLS, 24 h lifetime) and a `card.draft {draftId}` intent;
+  the worker reserves spend as `engine = llm`, `kind = card_draft` (new call kind, priority interactive) under a
+  `card_draft` authorization that holds only while the draft is the user's, pending and under 30 minutes old, with one
+  repair attempt on invalid output like tier 2. Without a key, budget or valid output, a fallback names the articles'
+  strongest level-2 topic and takes the first title, as the editor did before. The article text is data, never
+  instructions (system prompt); no tools, no `format`. `POST /cards/from-article` also takes `moreArticleIds` so a
+  card made from several articles keeps all their titles as examples. `POST /cards/drafts` is limited to 30/hour per
+  user. Spec 08 §7 and rate limits, 09 §3.5 and §6, PLAN §2 #3 and the v1 non-goals.
+- D-241: 2026-10-14 (owner request) — New-card suggestions come from the feed agreement, not from single ratings.
+  `feedAgreement` also reports a training feed's uncovered likes (explicit likes every held card scored below
+  `lanes.maybe`); with at least 3 of them making up at least 30 % of the feed's likes, `GET /me/learning` sets
+  `uncovered.suggest` and lists the newest five with titles. The feed's settings drawer and Settings → Personal
+  learning then offer "Make an interest from these", a card drafted from those articles (D-240) with their titles as
+  examples. The owner chose this over a prompt after each uncovered like: one like is weak evidence, a per-rating
+  prompt would fill the card limit with narrow cards, and with D-238 an unanalysed article is scored only after the
+  rating. No migration. Spec 06 §8.5, 08 §3 (`GET /me/learning`), 09 §5 and §7.
