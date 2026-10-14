@@ -1,3 +1,4 @@
+import { CARD_LIMITS } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { TenantTx } from '../tenant.js';
@@ -94,6 +95,8 @@ export interface AdoptLibraryCardInput {
 /** Fields of `POST /cards/from-article`. */
 export interface CreateCardFromArticleInput extends CreateUserCardInput {
   articleId: string;
+  /** More articles whose titles also become examples (D-240), up to five titles in all. */
+  moreArticleIds?: readonly string[] | undefined;
 }
 
 /**
@@ -334,6 +337,7 @@ export async function createCardFromArticle(
   input: CreateCardFromArticleInput,
 ): Promise<CardMutation> {
   const articleId = validateId(input.articleId, 'articleId');
+  const moreIds = (input.moreArticleIds ?? []).map((id) => validateId(id, 'articleId'));
   const title = input.title === undefined ? null : validateCardTitle(input.title);
   const interest = validateCardInterest(input.interest);
   const notFor = validateCardNotFor(input.notFor);
@@ -347,7 +351,14 @@ export async function createCardFromArticle(
   requireScope(subscriptions, scopeFeedId);
   const covered = coveredFeeds(subscriptions, scopeFeedId);
   await lockFeeds(tx, activeFeedIds(covered));
-  const example = await articleExample(tx, me.userId, articleId);
+  const examples: string[] = [];
+  for (const id of [articleId, ...moreIds]) {
+    const example = await articleExample(tx, me.userId, id);
+    if (!examples.includes(example)) examples.push(example);
+  }
+  if (examples.length > CARD_LIMITS.examplesPerSide) {
+    throw invalidField('articleId', 'too_many_examples');
+  }
   const shared = await obtainCard(tx, me.userId, {
     kind: 'interest',
     title: title ?? defaultCardTitle(interest),
@@ -362,7 +373,7 @@ export async function createCardFromArticle(
     i18n: {},
     translation,
   });
-  const fork = await obtainCard(tx, me.userId, forkSpec(shared.card, { yes: [example], no: [] }));
+  const fork = await obtainCard(tx, me.userId, forkSpec(shared.card, { yes: examples, no: [] }));
   return holdCard(tx, me, {
     card: fork.card,
     strength,
@@ -627,6 +638,34 @@ export async function deleteUserCard(
   const subscriptions = await loadSubscriptions(tx, me.userId);
   const refreshFeedIds = activeFeedIds(coveredFeeds(subscriptions, holding.scopeFeedId));
   await lockFeeds(tx, refreshFeedIds);
+  await tx.execute(sql`
+    DELETE FROM user_cards WHERE user_id = ${me.userId}::uuid AND card_id = ${cardId}::bigint`);
+  const effects = await applyEffects(tx, me.userId, {
+    refreshFeedIds,
+    backfill: null,
+    rankFull: true,
+    learn: true,
+    labelIdChange: null,
+    reason: 'cards',
+  });
+  return { effects };
+}
+
+/**
+ * **Delete to make room** for a create in the same transaction: as {@link deleteUserCard}, but
+ * every active feed of the user is locked first, in id order, so the create that follows only
+ * re-locks feeds already held.
+ */
+export async function deleteUserCardForReplacement(
+  tx: TenantTx,
+  input: { cardId: string },
+): Promise<CardRemoval> {
+  const cardId = validateId(input.cardId, 'cardId');
+  const me = await lockTenant(tx);
+  const holding = await requireCardHolding(tx, me.userId, cardId);
+  const subscriptions = await loadSubscriptions(tx, me.userId);
+  await lockFeeds(tx, activeFeedIds(coveredFeeds(subscriptions, null)));
+  const refreshFeedIds = activeFeedIds(coveredFeeds(subscriptions, holding.scopeFeedId));
   await tx.execute(sql`
     DELETE FROM user_cards WHERE user_id = ${me.userId}::uuid AND card_id = ${cardId}::bigint`);
   const effects = await applyEffects(tx, me.userId, {

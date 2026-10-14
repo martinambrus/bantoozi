@@ -1,6 +1,7 @@
 import { CARD_LIMITS, type CardDto } from '@bantoozi/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApiMutation } from '../../api/mutation.js';
@@ -10,18 +11,23 @@ import { Badge } from '../../components/badge.js';
 import { Button } from '../../components/button.js';
 import { cx } from '../../components/cx.js';
 import { useDraft } from '../../components/draft.js';
+import { quotaDetails } from '../../components/error-message.js';
 import type { ModalProps } from '../../components/modal.js';
 import { Sheet } from '../../components/sheet.js';
 import { TextArea } from '../../components/text-area.js';
 import { TextField } from '../../components/text-field.js';
+import { useAccountId } from '../../session/context.js';
 import { FormAlert } from '../auth/form-alert.js';
+import { learningKey } from '../learning/use-learning.js';
 import { checkAuthoring } from './authoring-hints.js';
+import { CardSwap } from './card-swap.js';
 import { cardFieldIssue, cardFieldMessage, saveMessage, type CardField } from './card-errors.js';
 import { ScopeSelect, StrengthControl } from './controls.js';
 import { ExampleLists } from './examples.js';
 import { useCardCache, useSubscriptions, type UpdateOffer } from './queries.js';
 import { DEFAULT_STRENGTH, type Strength } from './strengths.js';
 import { UpdateDiff } from './update-diff.js';
+import { useCardDraft } from './use-card-draft.js';
 
 type CreateBody = RouteInput<typeof routes.cardCreate>['body'];
 type UpdateBody = NonNullable<RouteInput<typeof routes.cardUpdate>['body']>;
@@ -47,10 +53,10 @@ const MAX: Record<TextKey, number> = {
 
 type Errors = Partial<Record<CardField, string>>;
 
-function valuesOf(card: CardDto | undefined, articleTitle: string | undefined): Values {
+function valuesOf(card: CardDto | undefined): Values {
   return {
     title: card?.title ?? '',
-    interest: card?.interest ?? articleTitle ?? '',
+    interest: card?.interest ?? '',
     notFor: card?.notFor ?? '',
     strength: card?.strength ?? DEFAULT_STRENGTH,
     scope: card?.scopeFeedId ?? '',
@@ -115,24 +121,74 @@ export interface CardEditorProps {
   review?: UpdateOffer | undefined;
   /** Without a card: the article the new card is made from, whose title starts the interest text. */
   fromArticle?: { id: string; title: string } | undefined;
+  /**
+   * Without a card: up to five articles the new card is made from (instead of `fromArticle`). Their
+   * titles become its examples; a drafted name and interest fill the fields (D-240).
+   */
+  fromArticles?: readonly { id: string; title: string }[] | undefined;
   /** Where the focus goes on closing when the row that opened the editor is gone. */
   returnFocus?: ModalProps['returnFocus'];
   onClose: () => void;
 }
 
 /** The sheet that creates a card or changes one. The parent shows it only while it is wanted. */
-export function CardEditor({ card, review, fromArticle, returnFocus, onClose }: CardEditorProps) {
+export function CardEditor({
+  card,
+  review,
+  fromArticle,
+  fromArticles,
+  returnFocus,
+  onClose,
+}: CardEditorProps) {
   const { t } = useTranslation('interests');
   const cache = useCardCache();
   const subscriptions = useSubscriptions();
+  const queryClient = useQueryClient();
+  const accountId = useAccountId();
   const create = useApiMutation(routes.cardCreate);
   const createFromArticle = useApiMutation(routes.cardFromArticle);
   const update = useApiMutation(routes.cardUpdate);
-  const source = card === undefined ? fromArticle : undefined;
+  const sources = useMemo(
+    () =>
+      card !== undefined
+        ? undefined
+        : (fromArticles ?? (fromArticle === undefined ? undefined : [fromArticle])),
+    [card, fromArticle, fromArticles],
+  );
+  const source = sources?.[0];
+  const many = (sources?.length ?? 0) > 1;
   // A card saved meanwhile (another tab) fills the fields the person has not changed.
-  const [values, setValues] = useDraft(card, (current) => valuesOf(current, source?.title));
+  const [values, setValues] = useDraft(card, valuesOf);
+  // The fields the person typed in: a draft that arrives later never overwrites them.
+  const typed = useRef(new Set<TextKey>());
+  const sourceIds = useMemo(() => sources?.map((article) => article.id), [sources]);
+  const drafting = useCardDraft(sourceIds);
+  const draft = drafting.status === 'ready' ? drafting.draft : undefined;
+  const waiting = source !== undefined && drafting.status === 'drafting';
+  // Without a usable draft the interest starts from the first article's title.
+  const fallbackTitle =
+    source !== undefined && (drafting.status === 'unavailable' || draft?.interest === null)
+      ? source.title
+      : undefined;
+  useEffect(() => {
+    if (draft === undefined || draft.interest === null) return;
+    const { title, interest } = draft;
+    setValues((current) => ({
+      ...current,
+      ...(typed.current.has('title') || title === null ? {} : { title }),
+      ...(typed.current.has('interest') ? {} : { interest }),
+    }));
+  }, [draft, setValues]);
+  useEffect(() => {
+    if (fallbackTitle === undefined || typed.current.has('interest')) return;
+    setValues((current) =>
+      current.interest === '' ? { ...current, interest: fallbackTitle } : current,
+    );
+  }, [fallbackTitle, setValues]);
   const [errors, setErrors] = useState<Errors>({});
   const [failure, setFailure] = useState<string | null>(null);
+  const [swapping, setSwapping] = useState(false);
+  const [replaceId, setReplaceId] = useState<string | null>(null);
   const [focusRequest, setFocusRequest] = useState<{ field: CardField } | null>(null);
   const fields = useRef<Partial<Record<CardField, HTMLElement | null>>>({});
   const saving = create.isPending || createFromArticle.isPending || update.isPending;
@@ -144,6 +200,7 @@ export function CardEditor({ card, review, fromArticle, returnFocus, onClose }: 
   }, [focusRequest]);
 
   function edit(field: TextKey, value: string) {
+    typed.current.add(field);
     setValues((current) => ({ ...current, [field]: value }));
     setErrors(({ [field]: _removed, ...rest }) => rest);
   }
@@ -157,6 +214,7 @@ export function CardEditor({ card, review, fromArticle, returnFocus, onClose }: 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving) return;
+    if (swapping && replaceId === null) return;
     const found = validate(t, values);
     const first = TEXT_FIELDS.find((field) => found[field] !== undefined);
     if (first !== undefined) {
@@ -167,20 +225,34 @@ export function CardEditor({ card, review, fromArticle, returnFocus, onClose }: 
     setFailure(null);
     try {
       if (card === undefined) {
-        const body = createBody(values);
-        cache.apply(
+        const body = {
+          ...createBody(values),
+          ...(replaceId === null ? {} : { replaceCardId: replaceId }),
+        };
+        const result =
           source === undefined
             ? await create.mutateAsync({ body })
-            : await createFromArticle.mutateAsync({ body: { ...body, articleId: source.id } }),
-        );
+            : await createFromArticle.mutateAsync({
+                body: {
+                  ...body,
+                  articleId: source.id,
+                  ...(many
+                    ? { moreArticleIds: (sources ?? []).slice(1).map((article) => article.id) }
+                    : {}),
+                },
+              });
+        if (replaceId !== null) cache.remove(replaceId);
+        cache.apply(result);
       } else {
         const body = changesOf(card, values);
         if (Object.keys(body).length > 0) {
           cache.apply(await update.mutateAsync({ params: { id: card.id }, body }));
         }
       }
+      void queryClient.invalidateQueries({ queryKey: learningKey(accountId) });
       onClose();
     } catch (error) {
+      if (card === undefined && quotaDetails(error)?.limit === 'maxCards') setSwapping(true);
       const issue = cardFieldIssue(error);
       if (issue !== null) {
         reject({ [issue.field]: cardFieldMessage(t, issue) }, issue.field);
@@ -195,14 +267,27 @@ export function CardEditor({ card, review, fromArticle, returnFocus, onClose }: 
   const flagged = [hints.severalTopics, hints.negation, hints.number];
   const hintTexts = [t('hints.oneTopic'), t('hints.noNot'), t('hints.noNumbers')];
   const hasExamples = card !== undefined && card.examplesYes.length + card.examplesNo.length > 0;
-  const createTitle = source === undefined ? t('editor.createTitle') : t('editor.fromArticleTitle');
+  const createTitle =
+    source === undefined
+      ? t('editor.createTitle')
+      : t(many ? 'editor.fromArticlesTitle' : 'editor.fromArticleTitle');
+  const draftNote =
+    drafting.status === 'drafting'
+      ? t(many ? 'editor.draftingMany' : 'editor.drafting')
+      : draft?.source === 'llm'
+        ? t(many ? 'editor.draftedMany' : 'editor.drafted')
+        : null;
 
   return (
     <Sheet
       open
       onClose={onClose}
       title={card === undefined ? createTitle : t('editor.editTitle')}
-      description={source === undefined ? undefined : t('editor.fromArticleHint')}
+      description={
+        source === undefined
+          ? undefined
+          : t(many ? 'editor.fromArticlesHint' : 'editor.fromArticleHint')
+      }
       dismissible={!saving}
       returnFocus={returnFocus}
     >
@@ -213,12 +298,18 @@ export function CardEditor({ card, review, fromArticle, returnFocus, onClose }: 
             <UpdateDiff offer={review} stacked />
           </fieldset>
         )}
+        {source === undefined ? null : (
+          <p role="status" className="text-sm text-slate-600 empty:hidden dark:text-slate-300">
+            {draftNote}
+          </p>
+        )}
         <TextField
           ref={(node) => {
             fields.current.title = node;
           }}
           label={t('editor.name')}
           value={values.title}
+          placeholder={waiting && values.title === '' ? t('editor.loading') : undefined}
           maxLength={CARD_LIMITS.titleMax}
           hint={counter('title')}
           error={errors.title}
@@ -230,6 +321,7 @@ export function CardEditor({ card, review, fromArticle, returnFocus, onClose }: 
           }}
           label={t('editor.interest')}
           value={values.interest}
+          placeholder={waiting && values.interest === '' ? t('editor.loading') : undefined}
           rows={3}
           maxLength={CARD_LIMITS.interestMax}
           hint={counter('interest')}
@@ -300,13 +392,16 @@ export function CardEditor({ card, review, fromArticle, returnFocus, onClose }: 
             />
           </section>
         )}
+        {!swapping ? null : (
+          <CardSwap value={replaceId} onChange={setReplaceId} disabled={saving} />
+        )}
         {failure === null ? null : <FormAlert>{failure}</FormAlert>}
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="secondary" disabled={saving} onClick={onClose}>
             {t('common:actions.cancel')}
           </Button>
-          <Button type="submit" loading={saving}>
-            {t('common:actions.save')}
+          <Button type="submit" loading={saving} disabled={swapping && replaceId === null}>
+            {swapping ? t('swap.confirm') : t('common:actions.save')}
           </Button>
         </div>
       </form>

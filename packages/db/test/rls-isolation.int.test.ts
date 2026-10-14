@@ -141,6 +141,15 @@ const PER_USER_TABLES: PerUserTable[] = [
     foreignInsert: { code: '23514', constraint: 'analysis_requests_insert_check' },
   },
   {
+    table: 'card_drafts',
+    may: { insert: true, update: false, delete: true },
+    insert: (u) => [
+      "INSERT INTO card_drafts (id, user_id, article_ids, locale) VALUES ($1, $2, ARRAY[$3::bigint], 'en')",
+      [randomUUID(), u, f.spareArticle],
+    ],
+    update: (u) => ["UPDATE card_drafts SET status = 'failed' WHERE user_id = $1", [u]],
+  },
+  {
     table: 'card_publication_requests',
     may: { insert: false, update: false, delete: false },
     insert: (u) => [
@@ -415,6 +424,12 @@ async function seed(owner: pg.Pool): Promise<Fixtures> {
     `INSERT INTO user_rules (user_id, kind, value)
      VALUES ($1, 'mute_keyword', 'crypto'), ($2, 'block_domain', 'example.org')`,
     [a, b],
+  );
+
+  await owner.query(
+    `INSERT INTO card_drafts (id, user_id, article_ids, locale)
+     VALUES ($1, $3, ARRAY[$5::bigint], 'en'), ($2, $4, ARRAY[$5::bigint], 'sk')`,
+    [randomUUID(), randomUUID(), a, b, article],
   );
 
   const snapshot = (name: string) =>

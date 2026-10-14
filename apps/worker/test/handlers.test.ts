@@ -14,6 +14,7 @@ import {
 import {
   ALERT_QUEUES,
   CLASSIFICATION_QUEUES,
+  DRAFT_QUEUES,
   HANDLERS,
   IMPLEMENTED_QUEUES,
   RETENTION_QUEUES,
@@ -93,6 +94,7 @@ describe('handler map', () => {
         ...INGESTION_QUEUES,
         ...CLASSIFICATION_QUEUES,
         ...SUGGEST_QUEUES,
+        ...DRAFT_QUEUES,
         ...RANKING_QUEUES,
         ...LEARNING_QUEUES,
         ...RETENTION_QUEUES,

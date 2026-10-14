@@ -11,6 +11,7 @@ import {
 } from '../learning/fixtures.js';
 import { bodyOf } from '../support/app.js';
 import { findToast, makeLabel, ratingResponse, undoResponse } from '../article/harness.js';
+import { cardDraftRoutes } from '../interests/support.js';
 import {
   DELETE_FEED,
   UPDATE_FEED,
@@ -823,5 +824,104 @@ describe('feed settings from the sidebar', () => {
     expect(app.calls(DELETE_FEED)).toHaveLength(1);
     await waitFor(() => expect(screen.queryByRole('link', { name: 'Wired' })).toBeNull());
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('the hint to add interests', () => {
+  const training = (id: string, title: string) =>
+    feed(id, title, null, { inferenceMode: 'training', inferenceVersion: '3' });
+  const uncovered = (suggest: boolean, count = 4) => ({
+    count,
+    suggest,
+    articles: [{ id: 'a1', title: 'Liked' }],
+  });
+  const HINT = 'Make an interest from what you like in Verge';
+  const TEXT =
+    'Your interests miss much of what you like in this feed: every card rated 4 articles you liked low. Click to make an interest from them.';
+
+  it('marks a feed whose likes the cards miss, and no other', async () => {
+    await open({
+      path: '/read/for_you',
+      subscriptions: [training('1', 'Verge'), training('2', 'Wired')],
+      routes: {
+        [LEARNING]: learningRoute(() =>
+          makeLearning({}, [
+            makeAgreement('1', 'collecting', { uncovered: uncovered(true) }),
+            makeAgreement('2', 'collecting', { uncovered: uncovered(false) }),
+          ]),
+        ),
+      },
+    });
+
+    const verge = (await screen.findByRole('link', { name: 'Verge' })).closest('li')!;
+    expect(await within(verge).findByRole('button', { name: HINT })).toBeVisible();
+    const wired = screen.getByRole('link', { name: 'Wired' }).closest('li')!;
+    expect(within(wired).queryByRole('button', { name: /^Make an interest/ })).toBeNull();
+  });
+
+  it('explains itself as the description of the icon when it has the focus', async () => {
+    const { app } = await open({
+      path: '/read/for_you',
+      subscriptions: [training('1', 'Verge')],
+      routes: {
+        [LEARNING]: learningRoute(() =>
+          makeLearning({}, [makeAgreement('1', 'collecting', { uncovered: uncovered(true) })]),
+        ),
+      },
+    });
+    const hint = await screen.findByRole('button', { name: HINT });
+    expect(hint).toHaveAccessibleDescription(TEXT);
+    expect(screen.getByRole('tooltip', { hidden: true })).not.toBeVisible();
+
+    await app.user.tab();
+    hint.focus();
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(TEXT);
+  });
+
+  it('opens the card editor drafted from those articles, after the gear', async () => {
+    const { app } = await open({
+      path: '/read/for_you',
+      subscriptions: [training('1', 'Verge'), training('2', 'Wired')],
+      routes: {
+        [LEARNING]: learningRoute(() =>
+          makeLearning({}, [makeAgreement('1', 'collecting', { uncovered: uncovered(true) })]),
+        ),
+        ...cardDraftRoutes(),
+      },
+    });
+    const hint = await screen.findByRole('button', { name: HINT });
+    const row = hint.closest('li')!;
+    const buttons = within(row).getAllByRole('button');
+    expect(buttons.at(-1)).toBe(hint);
+    expect(buttons.at(-2)).toHaveAccessibleName('Settings for Verge');
+
+    await app.user.click(hint);
+
+    expect(await screen.findByRole('dialog', { name: 'New card from this article' })).toBeVisible();
+    await waitFor(() =>
+      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([{ articleIds: ['a1'] }]),
+    );
+    expect(screen.queryByRole('dialog', { name: 'Feed settings' })).toBeNull();
+  });
+
+  it('names the feed in the collapsed strip', async () => {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, '1');
+    await open({
+      path: '/read/for_you',
+      subscriptions: [training('1', 'Verge')],
+      routes: {
+        [LEARNING]: learningRoute(() =>
+          makeLearning({}, [makeAgreement('1', 'collecting', { uncovered: uncovered(true) })]),
+        ),
+      },
+    });
+
+    const strip = within(await screen.findByRole('list', { name: 'Feeds' }));
+    expect(
+      await strip.findByRole('link', {
+        name: 'Verge, Training: selected articles, interests to add',
+      }),
+    ).toBeVisible();
   });
 });

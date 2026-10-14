@@ -1682,7 +1682,7 @@
       "unique": [["reservation_id"]],
       "checks": [
         "engine IN ('typesafe','llm','laya','libretranslate')",
-        "kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval')",
+        "kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft')",
         "credential_version > 0",
         "article_revision > 0",
         "n_questions >= 0",
@@ -2809,6 +2809,91 @@
         "forced": true
       }
     },
+    "card_drafts": {
+      "columns": {
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "user_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        "article_ids": {
+          "type": "bigint[]",
+          "nullable": false,
+          "default": null
+        },
+        "locale": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": "'pending'"
+        },
+        "title": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "interest": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "source": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "error_code": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "completed_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        }
+      },
+      "primaryKey": ["id"],
+      "unique": [],
+      "checks": [
+        "status IN ('pending','complete','failed')",
+        "source IN ('llm','fallback')",
+        "cardinality(article_ids) BETWEEN 1 AND 5",
+        "(status IN ('complete','failed')) = (completed_at IS NOT NULL)",
+        "status <> 'complete' OR (interest IS NOT NULL AND source IS NOT NULL)"
+      ],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "card_drafts_user_created_idx": {
+          "unique": false,
+          "definition": "(user_id, created_at)"
+        }
+      },
+      "rls": {
+        "forced": true
+      }
+    },
     "card_publication_requests": {
       "columns": {
         "id": {
@@ -3745,6 +3830,14 @@
       "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
     },
     {
+      "table": "card_drafts",
+      "name": "card_drafts_tenant",
+      "command": "ALL",
+      "roles": ["public"],
+      "using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
       "table": "card_publication_requests",
       "name": "card_publication_requests_tenant",
       "command": "ALL",
@@ -3892,6 +3985,7 @@
         "articles": ["SELECT"],
         "bookmark_snapshot_pins": ["SELECT", "INSERT"],
         "card_answers": ["SELECT"],
+        "card_drafts": ["SELECT", "DELETE"],
         "card_publication_requests": ["SELECT"],
         "card_suggestions": ["SELECT"],
         "engine_calls": [],
@@ -3940,6 +4034,9 @@
         },
         "articles": {
           "UPDATE": ["story_cluster_id"]
+        },
+        "card_drafts": {
+          "INSERT": ["id", "user_id", "article_ids", "locale"]
         },
         "card_suggestions": {
           "UPDATE": ["dismissed_at"]

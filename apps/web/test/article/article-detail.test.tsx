@@ -1363,7 +1363,7 @@ describe('ArticleDetail lead image', () => {
     await waitFor(() => expect(leadImage()).not.toBeNull());
   });
 
-  it('follows the choice kept with the saved copy in the bookmarks view', async () => {
+  it('shows no lead image with the saved copy, which keeps no images', async () => {
     const item = makeItem({
       ...PICTURED,
       effectiveImagesAllowed: false,
@@ -1389,7 +1389,7 @@ describe('ArticleDetail lead image', () => {
       { routes: detailRoute(item, { bookmarkSnapshot: snapshot(true) }) },
     );
     await screen.findByText('Saved text.');
-    expect(leadImage()).not.toBeNull();
+    expect(leadImage()).toBeNull();
   });
 });
 

@@ -433,6 +433,7 @@ describe('icons', () => {
     'FeedIcon',
     'UndoIcon',
     'InfoIcon',
+    'LightbulbIcon',
     'WarningIcon',
     'ExternalIcon',
     'SearchIcon',

@@ -21,6 +21,12 @@
     "feedsFailed": "Zdroje sa nepodarilo načítať.",
     "labelsFailed": "Štítky sa nepodarilo načítať.",
     "feedsOffline": "Zdroje sa načítajú, keď bude zariadenie znova online.",
+    "interestsToAdd": "Záujmy na pridanie pre {{title}}",
+    "interestsToAddHint_one": "Vaše záujmy míňajú veľa z toho, čo sa vám v tomto zdroji páči: každá karta ohodnotila nízko {{count}} článok, ktorý sa vám páčil. Kliknutím z nich vytvoríte záujem.",
+    "interestsToAddHint_few": "Vaše záujmy míňajú veľa z toho, čo sa vám v tomto zdroji páči: každá karta ohodnotila nízko {{count}} články, ktoré sa vám páčili. Kliknutím z nich vytvoríte záujem.",
+    "interestsToAddHint_many": "Vaše záujmy míňajú veľa z toho, čo sa vám v tomto zdroji páči: každá karta ohodnotila nízko {{count}} článku, ktorý sa vám páčil. Kliknutím z nich vytvoríte záujem.",
+    "interestsToAddHint_other": "Vaše záujmy míňajú veľa z toho, čo sa vám v tomto zdroji páči: každá karta ohodnotila nízko {{count}} článkov, ktoré sa vám páčili. Kliknutím z nich vytvoríte záujem.",
+    "interestsToAddShort": "záujmy na pridanie",
     "readyForAutomatic": "pripravené na automatickú klasifikáciu",
     "labelsOffline": "Štítky sa načítajú, keď bude zariadenie znova online.",
     "retryFeeds": "Znova načítať zdroje",
@@ -139,7 +145,15 @@
     "none": "Skrytie bolo zrušené. Zo zoznamu zmizne, keď sa zoznam načíta znova."
   },
   "list": {
-    "loadMore": "Načítať viac"
+    "loadMore": "Načítať viac",
+    "newArticles_one": "{{count}} nový článok · Zobraziť",
+    "newArticles_few": "{{count}} nové články · Zobraziť",
+    "newArticles_many": "{{count}} nového článku · Zobraziť",
+    "newArticles_other": "{{count}} nových článkov · Zobraziť",
+    "showNew_one": "Zobraziť {{count}} nový článok",
+    "showNew_few": "Zobraziť {{count}} nové články",
+    "showNew_many": "Zobraziť {{count}} nového článku",
+    "showNew_other": "Zobraziť {{count}} nových článkov"
   },
   "pane": {
     "label": "Článok",

@@ -32,6 +32,7 @@ import { createRescoreDegradedHandler } from './house-rescore-degraded.js';
 import { createUserLearnHandler } from './user-learn.js';
 import { createUserRankHandler } from './user-rank.js';
 import { createUserSuggestHandler } from './user-suggest.js';
+import { createCardDraftHandler } from './card-draft.js';
 
 /**
  * The handler map (spec 03 §2): one entry for every queue of `packages/shared` jobs.ts. A stage that
@@ -107,6 +108,9 @@ export const CLASSIFICATION_QUEUES = [
 /** M7 learning stages that call the decision engine (spec 05 §7): implemented with classification dependencies. */
 export const SUGGEST_QUEUES = ['user.suggest'] as const satisfies readonly QueueName[];
 
+/** Card drafts for the card editor (D-240): implemented with classification dependencies. */
+export const DRAFT_QUEUES = ['card.draft'] as const satisfies readonly QueueName[];
+
 /** M2 provider key validation (spec 04 §1.2): implemented when the worker has the probe dependencies. */
 export const PROVIDER_QUEUES = ['provider.validate'] as const satisfies readonly QueueName[];
 
@@ -146,6 +150,7 @@ export const IMPLEMENTED_QUEUES = [
   ...INGESTION_QUEUES,
   ...CLASSIFICATION_QUEUES,
   ...SUGGEST_QUEUES,
+  ...DRAFT_QUEUES,
   ...PROVIDER_QUEUES,
   ...RANKING_QUEUES,
   ...LEARNING_QUEUES,
@@ -213,6 +218,7 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
                 ),
               }),
           'user.suggest': implemented(createUserSuggestHandler(deps)),
+          'card.draft': implemented(createCardDraftHandler(deps, classification, translation)),
         }),
     ...(deps.mailer === undefined
       ? {}

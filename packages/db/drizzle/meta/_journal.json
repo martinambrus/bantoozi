@@ -176,6 +176,13 @@
       "when": 1792136400000,
       "tag": "0024_card_translation_attempted_at",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792222800000,
+      "tag": "0025_card_drafts",
+      "breakpoints": true
     }
   ]
 }

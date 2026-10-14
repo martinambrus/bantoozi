@@ -1,3 +1,4 @@
 import { unitTestConfig } from '../../vitest.shared.js';
 
-export default unitTestConfig({ coverageLinesThreshold: 80 });
+// The trainer tests fit whole models: slow on a shared CI runner under coverage.
+export default unitTestConfig({ coverageLinesThreshold: 80, testTimeout: 30_000 });

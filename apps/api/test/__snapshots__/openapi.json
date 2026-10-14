@@ -2687,6 +2687,44 @@
                             ],
                             "additionalProperties": false
                           },
+                          "uncovered": {
+                            "type": "object",
+                            "properties": {
+                              "count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "suggest": {
+                                "type": "boolean"
+                              },
+                              "articles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "title": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "title"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              }
+                            },
+                            "required": [
+                              "count",
+                              "suggest",
+                              "articles"
+                            ],
+                            "additionalProperties": false
+                          },
                           "articlesPerWeek": {
                             "nullable": true,
                             "type": "integer",
@@ -2703,6 +2741,7 @@
                           "aucLow",
                           "ratedHigh",
                           "ratedLow",
+                          "uncovered",
                           "articlesPerWeek"
                         ],
                         "additionalProperties": false
@@ -14132,6 +14171,9 @@
                   "scopeFeedId": {
                     "nullable": true,
                     "type": "string"
+                  },
+                  "replaceCardId": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -14296,6 +14338,201 @@
         }
       }
     },
+    "/api/v1/cards/usage": {
+      "get": {
+        "summary": "Liked articles each held card matched in the last 90 days",
+        "tags": [
+          "cards"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cardId": {
+                        "type": "string"
+                      },
+                      "likedMatches": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "cardId",
+                      "likedMatches"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/cards/drafts": {
+      "post": {
+        "summary": "Ask for a proposed card name and interest describing these articles",
+        "tags": [
+          "cards"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "articleIds": {
+                    "minItems": 1,
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "articleIds"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "complete",
+                        "failed"
+                      ]
+                    },
+                    "title": {
+                      "nullable": true,
+                      "type": "string",
+                      "maxLength": 60
+                    },
+                    "interest": {
+                      "nullable": true,
+                      "type": "string",
+                      "maxLength": 300
+                    },
+                    "source": {
+                      "nullable": true,
+                      "type": "string",
+                      "enum": [
+                        "llm",
+                        "fallback"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "title",
+                    "interest",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/cards/drafts/{id}": {
+      "get": {
+        "summary": "A card draft: pending, or the proposed name and interest",
+        "tags": [
+          "cards"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "complete",
+                        "failed"
+                      ]
+                    },
+                    "title": {
+                      "nullable": true,
+                      "type": "string",
+                      "maxLength": 60
+                    },
+                    "interest": {
+                      "nullable": true,
+                      "type": "string",
+                      "maxLength": 300
+                    },
+                    "source": {
+                      "nullable": true,
+                      "type": "string",
+                      "enum": [
+                        "llm",
+                        "fallback"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "title",
+                    "interest",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/cards/from-article": {
       "post": {
         "summary": "Create a card with an article title as its first example",
@@ -14311,6 +14548,13 @@
                 "properties": {
                   "articleId": {
                     "type": "string"
+                  },
+                  "moreArticleIds": {
+                    "maxItems": 4,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
                   },
                   "interest": {
                     "type": "string",
@@ -14335,6 +14579,9 @@
                       "like",
                       "never"
                     ]
+                  },
+                  "replaceCardId": {
+                    "type": "string"
                   }
                 },
                 "required": [

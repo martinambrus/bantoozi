@@ -156,7 +156,8 @@
     "deactivatedReasons": {
       "incompatible": "it no longer fits how Bantoozi reads articles, so it will learn again",
       "lost_evidence": "some of the ratings it learned from are gone"
-    }
+    },
+    "uncoveredTitle": "Interests to add"
   },
   "sessions": {
     "title": "Sessions",

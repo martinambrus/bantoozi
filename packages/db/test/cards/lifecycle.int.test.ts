@@ -1,3 +1,4 @@
+import { PLANS } from '@bantoozi/shared';
 import { cardTextHash } from '@bantoozi/shared/server';
 import { createArticle, createFeed, createSubscription, createUser } from '@bantoozi/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -1174,7 +1175,7 @@ describe('quotas (spec 08 §6)', () => {
 
   it('maxCards counts holdings (never cards too) and blocks create, adopt and from-article', async () => {
     const r = await createReader(ctx);
-    await holdFillers(r.id, 49, false);
+    await holdFillers(r.id, PLANS.beta.maxCards - 1, false);
     const lastText = uniqueText('The fiftieth card');
     const last = await asUser(ctx, r.id, (tx) =>
       createUserCard(tx, { interest: lastText, strength: 'never' }),
@@ -1186,7 +1187,10 @@ describe('quotas (spec 08 §6)', () => {
       interest: uniqueText('Library'),
     });
     const article = await createArticle(ctx.owner, { feedIds: [r.active[0]] });
-    const quota = { code: 'QUOTA_EXCEEDED', details: { limit: 'maxCards', used: 50, max: 50 } };
+    const quota = {
+      code: 'QUOTA_EXCEEDED',
+      details: { limit: 'maxCards', used: PLANS.beta.maxCards, max: PLANS.beta.maxCards },
+    };
     const tooMany = uniqueText('One too many');
     expect(
       await appErrorOf(

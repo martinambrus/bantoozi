@@ -6,7 +6,7 @@ import {
 } from '@bantoozi/shared';
 import { useQueryClient, type RefetchOptions } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { useCallback, useId, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Badge } from '../../components/badge.js';
@@ -20,11 +20,13 @@ import {
   FeedIcon,
   HelpIcon,
   InboxIcon,
+  LightbulbIcon,
   ListIcon,
   SettingsIcon,
   StarIcon,
   WarningIcon,
 } from '../../components/icons.js';
+import { Tooltip } from '../../components/tooltip.js';
 import { useOnline } from '../../components/states/use-online.js';
 import { VisuallyHidden } from '../../components/visually-hidden.js';
 import { useAccountId, useMe } from '../../session/context.js';
@@ -36,6 +38,7 @@ import { FeedSettingsSheet } from '../feeds/feed-settings-sheet.js';
 import { ClassificationBadge } from '../feeds/feed-status.js';
 import { displayTitle, groupByFolder, type FolderGroup } from '../feeds/folders.js';
 import { useSubscriptions } from '../feeds/subscriptions.js';
+import { CardEditor } from '../interests/card-editor.js';
 import { learningKey, useLearning } from '../learning/use-learning.js';
 import { useReconnect } from '../offline/use-connection.js';
 import { useSettledActions } from './actions/provider.js';
@@ -196,11 +199,22 @@ function unreadOf({ unread }: Subscription): number {
   return unread.forYou + unread.maybe + unread.everything + unread.new;
 }
 
+/** Whether the analysis of a feed finds likes that every card rates low, with articles to draft from. */
+function suggestsInterest(agreement: LearningFeedAgreement | undefined): boolean {
+  return (
+    agreement !== undefined &&
+    agreement.uncovered.suggest &&
+    agreement.uncovered.articles.length > 0
+  );
+}
+
 /**
- * The feeds in training whose analysis agrees with the person's ratings, by feed id. Nothing is
- * asked while no subscription is in training; a settled rating makes the agreement stale.
+ * The analysis of the feeds in training, by feed id. Nothing is asked while no subscription is in
+ * training; a settled rating makes the agreement stale.
  */
-function useReadyFeeds(subscriptions: readonly Subscription[]): Map<string, LearningFeedAgreement> {
+function useTrainingFeeds(
+  subscriptions: readonly Subscription[],
+): Map<string, LearningFeedAgreement> {
   const queryClient = useQueryClient();
   const accountId = useAccountId();
   const training = subscriptions.some((subscription) => subscription.inferenceMode === 'training');
@@ -217,7 +231,7 @@ function useReadyFeeds(subscriptions: readonly Subscription[]): Map<string, Lear
     );
     return new Map(
       (training ? (learning.data?.feeds ?? []) : [])
-        .filter((agreement) => agreement.status === 'ready' && trainingIds.has(agreement.feedId))
+        .filter((agreement) => trainingIds.has(agreement.feedId))
         .map((agreement) => [agreement.feedId, agreement]),
     );
   }, [training, learning.data, subscriptions]);
@@ -266,6 +280,46 @@ const SETTINGS_BUTTON = cx(
   '[@media(hover:hover)]:[.group:not(:hover)_&:not(:focus-visible)]:p-0',
   '[@media(hover:hover)]:[.group:not(:hover)_&:not(:focus-visible)]:opacity-0',
 );
+
+/**
+ * The lightbulb of a feed whose likes no card covers: says so in a tooltip and opens the card editor
+ * drafted from those articles (D-241), the same as "Make an interest from these" in the feed drawer.
+ */
+function InterestHint({
+  agreement,
+  feedTitle,
+}: {
+  agreement: LearningFeedAgreement;
+  feedTitle: string;
+}) {
+  const { t } = useTranslation('reader');
+  const [making, setMaking] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <Tooltip text={t('sidebar.interestsToAddHint', { count: agreement.uncovered.count })}>
+        {(tooltip) => (
+          <IconButton
+            {...tooltip}
+            ref={button}
+            label={t('feeds:uncovered.makeLabel', { title: feedTitle })}
+            onClick={() => setMaking(true)}
+            className="shrink-0 text-amber-700 dark:text-amber-300"
+          >
+            <LightbulbIcon className="size-4" />
+          </IconButton>
+        )}
+      </Tooltip>
+      {making ? (
+        <CardEditor
+          fromArticles={agreement.uncovered.articles}
+          returnFocus={() => button.current}
+          onClose={() => setMaking(false)}
+        />
+      ) : null}
+    </>
+  );
+}
 
 function FeedLink({
   subscription,
@@ -324,9 +378,13 @@ function FeedLink({
         >
           <SettingsIcon className="size-4" />
         </IconButton>
+        {/* Last, so the gear appearing on hover does not move it. */}
+        {suggestsInterest(agreement) ? (
+          <InterestHint agreement={agreement!} feedTitle={name} />
+        ) : null}
       </div>
       {badgeBelow ? <div className="ps-4">{badge}</div> : null}
-      {agreement === undefined ? null : (
+      {agreement?.status !== 'ready' ? null : (
         <ReadyForAutomatic subscription={subscription} agreement={agreement} />
       )}
     </li>
@@ -357,7 +415,7 @@ function FeedsSection({ onNavigate }: { onNavigate?: (() => void) | undefined })
   const subscriptions = useSubscriptions();
   const online = useOnline();
   useReloadOnReconnect(subscriptions);
-  const ready = useReadyFeeds(subscriptions.data ?? []);
+  const learning = useTrainingFeeds(subscriptions.data ?? []);
   const [filter] = useFeedFilter();
   const [settingsFeedId, setSettingsFeedId] = useState<string | null>(null);
   const settings = subscriptions.data?.find(
@@ -424,7 +482,7 @@ function FeedsSection({ onNavigate }: { onNavigate?: (() => void) | undefined })
                         <FeedLink
                           key={subscription.feed.id}
                           subscription={subscription}
-                          agreement={ready.get(subscription.feed.id)}
+                          agreement={learning.get(subscription.feed.id)}
                           onNavigate={onNavigate}
                           onOpenSettings={setSettingsFeedId}
                         />
@@ -456,7 +514,7 @@ function FeedsSection({ onNavigate }: { onNavigate?: (() => void) | undefined })
                             <FeedLink
                               key={subscription.feed.id}
                               subscription={subscription}
-                              agreement={ready.get(subscription.feed.id)}
+                              agreement={learning.get(subscription.feed.id)}
                               onNavigate={onNavigate}
                               onOpenSettings={setSettingsFeedId}
                             />
@@ -659,7 +717,7 @@ function CompactFeeds() {
   const { folderOrder } = useMe().preferences;
   const subscriptions = useSubscriptions();
   useReloadOnReconnect(subscriptions);
-  const ready = useReadyFeeds(subscriptions.data ?? []);
+  const learning = useTrainingFeeds(subscriptions.data ?? []);
   const feeds = useMemo(
     () =>
       groupByFolder(
@@ -680,7 +738,12 @@ function CompactFeeds() {
             ? null
             : t(`feeds:mode.${subscription.inferenceMode}`),
           subscription.feed.status === 'quarantined' ? t('feeds:status.quarantined') : null,
-          ready.has(subscription.feed.id) ? t('sidebar.readyForAutomatic') : null,
+          learning.get(subscription.feed.id)?.status === 'ready'
+            ? t('sidebar.readyForAutomatic')
+            : null,
+          suggestsInterest(learning.get(subscription.feed.id))
+            ? t('sidebar.interestsToAddShort')
+            : null,
           unread > 0 ? `${t('sidebar.unread')} ${unread}` : null,
         ]);
         return (

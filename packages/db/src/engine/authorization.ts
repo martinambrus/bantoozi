@@ -2,6 +2,7 @@ import { isBigIntString, isUuid, type InferenceAuthorization } from '@bantoozi/s
 import { sql, type SQL } from 'drizzle-orm';
 
 import type { Executor } from '../client.js';
+import { cardDraftAuthorized } from '../cards/drafts.js';
 import { SELECTION_WINDOW_DAYS } from '../ingest/demand.js';
 
 /**
@@ -64,6 +65,12 @@ export async function isInferenceAuthorized(
       return suggestAuthorized(db, authorization, options.lock === true);
     case 'credential_probe':
       return probeAuthorized(db, authorization, options.lock === true);
+    case 'card_draft':
+      return (
+        uuid(authorization.userId) &&
+        uuid(authorization.draftId) &&
+        cardDraftAuthorized(db, authorization)
+      );
     case 'eval':
       return (
         typeof authorization.runId === 'string' &&

@@ -252,7 +252,11 @@ function DetailView({ item: row, sourceFeedId, saved = false, onWhyThis }: Artic
     imageSource === null || imageSource.effectiveImagesAllowed
       ? null
       : imageSource.mediaPolicyFeedId;
-  const leadImage = imageSource?.effectiveImagesAllowed === true ? httpsUrl(shown.imageUrl) : null;
+  // A saved copy keeps no images or other media: its lead image is the live article's, not shown.
+  const leadImage =
+    snapshot === null && imageSource?.effectiveImagesAllowed === true
+      ? httpsUrl(shown.imageUrl)
+      : null;
 
   return (
     <div className="flex flex-col gap-4">

@@ -72,6 +72,7 @@ const B = {
   sharedCard: '',
   fork: '',
   privateCard: '',
+  draft: '',
   label: '',
   rules: [] as string[],
   cluster: '',
@@ -154,6 +155,7 @@ async function bDigest(): Promise<string> {
        'analysis', (SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM analysis_requests r WHERE r.user_id = $1),
        'suggestions', (SELECT jsonb_agg(to_jsonb(s) ORDER BY s.card_id) FROM card_suggestions s WHERE s.user_id = $1),
        'publication', (SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM card_publication_requests p WHERE p.user_id = $1),
+       'drafts', (SELECT jsonb_agg(to_jsonb(d) ORDER BY d.id) FROM card_drafts d WHERE d.user_id = $1),
        'forks', (SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id) FROM interest_cards c WHERE c.owner_user_id = $1),
        'events', (SELECT count(*) FROM feedback_events e WHERE e.user_id = $1),
        'receipts', (SELECT count(*) FROM api_mutations m WHERE m.user_id = $1),
@@ -295,6 +297,9 @@ beforeAll(async () => {
     )
   ).card.id;
 
+  // A card draft B asked for from its private articles.
+  B.draft = (await json(bApi.post('/cards/drafts', { articleIds: [p1] }), 202)).id;
+
   // Rules, including a muted story (which creates the story's cluster).
   B.rules.push(
     (await json(bApi.post('/rules', { kind: 'mute_keyword', value: `${MARK}keyword` }), 201)).rule
@@ -415,6 +420,8 @@ function getRequests(path: string): { url: string; query?: Record<string, string
         { url: '/articles/counts', query: { labelId: B.label } },
         { url: '/articles/counts', query: { folder: `${MARK} folder` } },
       ];
+    case '/cards/drafts/:id':
+      return [{ url: `/cards/drafts/${B.draft}` }];
     case '/library':
       return [{ url: '/library' }, { url: '/library', query: { q: MARK } }];
     default:
@@ -498,6 +505,31 @@ describe('every GET operation as A leaks nothing of B (spec 08 §12)', () => {
     expect(await json(aApi.get('/cards/suggestions'))).toEqual([]);
     expect(await json(aApi.get('/cards/publication-requests'))).toEqual([]);
     expect(await json(aApi.get('/library/updates'))).toEqual([]);
+    const set = await h.owner.query<{ sha: string }>(
+      `INSERT INTO question_sets (kind, version, sha256, definition)
+       VALUES ('match', $1, encode(sha256(convert_to($1, 'UTF8')), 'hex'), '{}'::jsonb)
+       RETURNING sha256 AS sha`,
+      [`usage-isolation-${randomUUID()}`],
+    );
+    const liked = await createArticle(h.owner, { feedIds: [B.sharedFeed], title: 'Liked story' });
+    await h.owner.query(
+      'INSERT INTO user_article (user_id, article_id, rating, rated_at) VALUES ($1, $2, 1, now())',
+      [b.id, liked.id],
+    );
+    await h.owner.query(
+      `INSERT INTO card_answers (article_id, card_id, p, engine, question_set_sha, article_revision,
+                                 state_sha256, card_input_sha256, state_variant)
+       SELECT a.id, c.card_id, 0.9, 'typesafe', $3, a.content_revision, 'state', 'input', 'native'
+         FROM articles a CROSS JOIN unnest($2::bigint[]) AS c(card_id) WHERE a.id = $1`,
+      [liked.id, [B.sharedCard, B.fork], set.rows[0]!.sha],
+    );
+    expect(await json(bApi.get('/cards/usage'))).toContainEqual({
+      cardId: B.fork,
+      likedMatches: 1,
+    });
+    expect(await json(aApi.get('/cards/usage'))).toEqual([
+      { cardId: B.sharedCard, likedMatches: 0 },
+    ]);
     expect((await json(aApi.get('/invites'))).items).toEqual([]);
     const sessions = await json(aApi.get('/auth/sessions'));
     expect(sessions.map((s: { id: string }) => s.id)).toEqual([a.sessionId]);
@@ -729,6 +761,21 @@ function crossUserCases(): Record<string, { attempts: Attempt[]; statuses: numbe
         strength: 'like',
       }),
     ),
+    'POST /cards/drafts': notFound(async () => {
+      // B-only articles read as missing, and no draft row appears for A or B.
+      const res = await aApi.post('/cards/drafts', { articleIds: [p1, p2] });
+      const rows = await h.owner.query<{ n: number }>(
+        'SELECT count(*)::int AS n FROM card_drafts WHERE user_id = $1',
+        [a.id],
+      );
+      expect(rows.rows[0]!.n, 'drafts of A').toBe(0);
+      const bOnly = await h.owner.query<{ n: number }>(
+        'SELECT count(*)::int AS n FROM card_drafts WHERE user_id = $1',
+        [b.id],
+      );
+      expect(bOnly.rows[0]!.n, 'drafts of B').toBe(1);
+      return res;
+    }),
     'PATCH /cards/:id': notFound(
       () => aApi.patch(`/cards/${B.fork}`, { strength: 'never' }),
       () => aApi.patch(`/cards/${B.privateCard}`, { title: 'Hijacked' }),

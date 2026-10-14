@@ -253,7 +253,7 @@ response or `GET /invites`. `POST /admin/waitlist/:id/invite` sends and reports 
 | `GET /me` | — | `Me` = `{id, email, displayName, locale, timezone, role, plan, invitesLeft, preferences, quotas: {used, limits}}` |
 | `PATCH /me` | `{displayName?, locale?, timezone?, preferences?}` | Partial update. `preferences` is deep-merged and validated (§3.1), timezone must be an accepted IANA identifier. Ranking-relevant changes advance `rank_revision` and enqueue `user.rank {full:true}` (spec 06) |
 | `DELETE /me` | — | Sets `deleted_at`, revokes all sessions, and calls `refresh_feed_subscribers` and `refresh_feed_cards` for the user's feeds (soft-deleted users no longer count) → `204`. `house.purge-users` hard-deletes after 7 days |
-| `GET /me/learning` | — | Read-only learning status (spec 06 §8.5, D-236, D-237) → `200 {model: {thresholds: {minExplicit, minEachClass, minCvAuc}, counts: {explicit, likes, dislikes}, active: {version, since} \| null, lastAttempt: {at, status: 'activated'\|'rejected', reasons: string[], cvAuc, baselineAuc} \| null, deactivated: {at, reason: 'incompatible'\|'lost_evidence'} \| null}, feeds: [{feedId, status: 'collecting'\|'ready'\|'not_yet'\|'one_sided', likes, dislikes, auc, aucLow, ratedHigh: {total, liked}, ratedLow: {total, disliked}, articlesPerWeek}]}`; `feeds` lists the caller's `training` subscriptions only. Computed live; no writes |
+| `GET /me/learning` | — | Read-only learning status (spec 06 §8.5, D-236, D-237) → `200 {model: {thresholds: {minExplicit, minEachClass, minCvAuc}, counts: {explicit, likes, dislikes}, active: {version, since} \| null, lastAttempt: {at, status: 'activated'\|'rejected', reasons: string[], cvAuc, baselineAuc} \| null, deactivated: {at, reason: 'incompatible'\|'lost_evidence'} \| null}, feeds: [{feedId, status: 'collecting'\|'ready'\|'not_yet'\|'one_sided', likes, dislikes, auc, aucLow, ratedHigh: {total, liked}, ratedLow: {total, disliked}, uncovered: {count, suggest, articles: [{id, title}]}, articlesPerWeek}]}` (`uncovered`: spec 06 §8.5, D-241; `articles` are the newest ≤ 5 the caller can still see); `feeds` lists the caller's `training` subscriptions only. Computed live; no writes |
 | `GET /me/export` | — | Stream a consistent read-only snapshot as `application/json` attachment: `{schemaVersion: 2, exportedAt, user, subscriptions, feedPreferences, opml, cards, labels, rules, ratings: [{url, title, rating, reason, ratedAt}], bookmarks: [{url, title, bookmarkedAt, capture: BookmarkCapture, snapshot: BookmarkSnapshot \| null}]}`. Include full retained bookmark text/HTML; exclude provider/session/code/token secrets and every other user's data. Cancel on disconnect and rate-limit large exports |
 
 ### 3.1 `UserPreferences` (stored in `users.preferences`; zod defaults applied on read)
@@ -567,8 +567,13 @@ article/revision and frozen context; reject an unrelated/obsolete id, never sile
 "latest" request. Persist the association in the event as `feedback_events.value.analysisRequestId`,
 which the worker's completion reads to record `user.learn` (D-73). Delayed features may attach only via that
 specific request's frozen pre-feedback inputs (specs 05/06); unrelated live future analysis cannot
-retrofit training evidence. A rating without a request id remains valid explicit reader feedback
-but cannot itself cause inference.
+retrofit training evidence. A non-null rating or a prompt answer without a request id asks for the
+article's analysis itself (D-238): in the same transaction, before the rating is applied, it reuses
+a current request of the article on one of the user's training/active feeds or creates one as
+`POST /subscriptions/:feedId/analyze` would (first training feed carrying it, else an active one),
+and links it as if the client had sent its id. It asks for nothing for an off feed, an article an
+active feed admits on its own, an article that changed since it was shown, or while classification
+is not configured; the rating is kept either way.
 
 | Endpoint | Body | Effect |
 |---|---|---|
@@ -641,7 +646,7 @@ needed by still-valid undo receipts, so undo does not refer to content already d
 | Limit | `beta` | `admin` |
 |---|---|---|
 | `maxFeeds` | 200 | 2,000 |
-| `maxCards` (interest cards incl. never) | 50 | 500 |
+| `maxCards` (interest cards incl. never) | 150 | 500 |
 | `maxLabels` | 20 | 200 |
 | `maxForks` (private cards) | 20 | 200 |
 | `maxRules` | 200 | 2,000 |
@@ -676,12 +681,15 @@ client must replace its cached id.
 | Endpoint | Body | Behaviour (spec 05 §5.1) |
 |---|---|---|
 | `GET /cards` | — | The user's interest cards |
-| `POST /cards` | `{title?, interest, notFor?, strength, scopeFeedId?}` | Create or reuse → `201 {card}`. Quota `maxCards` |
+| `POST /cards` | `{title?, interest, notFor?, strength, scopeFeedId?, replaceCardId?}` | Create or reuse → `201 {card}`. Quota `maxCards`; with `replaceCardId` the user's holding of that card is removed first in the same transaction (404 when not held; a failed create keeps it, D-242) |
 | `PATCH /cards/:id` | `{title?, interest?, notFor?, strength?, scopeFeedId? \| null}` | `title` only sets the user's override. `interest`/`notFor` re-point to another card (new id) |
 | `DELETE /cards/:id` | — | Remove from the user |
 | `POST /cards/:id/examples` | `{articleId, side: 'yes' \| 'no'}` | Add the article title as an example (private fork, new id) → `{card}`. Quota `maxForks` |
 | `POST /cards/:id/examples/remove` | `{side, text}` | Remove an example (new fork id) → `{card}` |
-| `POST /cards/from-article` | `{articleId, interest, notFor?, title?, strength}` | Shared text card plus a private fork with the article title as `examples_yes` → `201 {card}`. Quotas `maxCards`, `maxForks` |
+| `POST /cards/from-article` | `{articleId, moreArticleIds?[0..4], interest, notFor?, title?, strength, replaceCardId?}` | Shared text card plus a private fork with the article titles (`articleId` first) as `examples_yes` → `201 {card}`. Quotas `maxCards`, `maxForks` |
+| `GET /cards/usage` | — | Per held card, the distinct articles the user rated +1 in the last 90 days that the card answered (current revision, not the prefilter) with `p ≥ lanes.maybe` → `[{cardId, likedMatches}]` (D-242; orders the swap list) |
+| `POST /cards/drafts` | `{articleIds[1..5]}` (distinct, each visible to the user as for from-article) | Record a card draft and its `card.draft {draftId}` intent → `202 {id, status: 'pending', title: null, interest: null, source: null}`. Drafts older than a day are removed first (D-240) |
+| `GET /cards/drafts/:id` | — | Own draft only → `{id, status: 'pending' \| 'complete' \| 'failed', title, interest, source: 'llm' \| 'fallback' \| null}`; `title` may be null on a complete draft |
 | `GET /library` | `?topic=&q=&cursor=&limit=` | Current public cards (`visibility = 'public'`, not retired, not an older library version), localized, ordered by L1 topic then id, in the paginated envelope; each carries `l1TopicId`, `version` and `held` |
 | `POST /library/:id/adopt` | `{strength, scopeFeedId?}` | Hold a library card. A superseded library version is `409 CONFLICT {reason: 'superseded'}` (D-39) |
 | `GET /library/updates` | — | Available immutable semantic successors for the user's library holdings: `[{currentCardId,newCardId,librarySlug,fromVersion,toVersion,diff,hasPrivateCustomization}]`. Private forks receive advisory notices only |
@@ -894,6 +902,7 @@ authorship policy, not a forged user approval.
 | `POST /admin/ops-event` | 30 / min per IP |
 | `POST /setup/complete` | 10 / 15 min per IP; every attempt counts, a wrong token included (D-213) |
 | `GET /me/export` | 2 / hour per user |
+| `POST /cards/drafts` | 30 / hour per user (each may cost one LLM call, D-240) |
 | `POST /cards`, `POST /cards/from-article`, `PATCH /cards/*`, `POST /cards/*/examples*`, `POST /labels*`, `PATCH /labels/*` | 60 / hour per user, one shared bucket (each may trigger backfills) |
 
 All limits are enforced unless rate limits are disabled: `api.rate_limits_enabled` if stored, else

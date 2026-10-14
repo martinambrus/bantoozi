@@ -114,6 +114,14 @@ export const InfoIcon = createIcon(
   </>,
 );
 
+export const LightbulbIcon = createIcon(
+  'LightbulbIcon',
+  <>
+    <path d="M9 18h6M10 21h4" />
+    <path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z" />
+  </>,
+);
+
 export const WarningIcon = createIcon(
   'WarningIcon',
   <>

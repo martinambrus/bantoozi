@@ -94,9 +94,11 @@ policy. The normal global/per-feed image preference remains unchanged.
 
 **Refresh and errors:** poll list/counts every 5 seconds only while a visible page has
 `rankingPending`/explicit pending analysis requests, back off to 30 seconds when idle, and pause
-offline/background polling. The idle 30-second poll refreshes the counts only; the visible list is
-reloaded by the 5-second busy poll, the Refresh control and navigation, so rows do not move or
-vanish under the reader (D-152). New items in off/unselected training feeds are not unfinished jobs and
+offline/background polling. The idle 30-second poll refreshes the counts; the visible list is
+reloaded by the 5-second busy poll, the Refresh control and navigation, and keeps up with new
+articles without moving rows under the reader (D-152, D-243): when the current view's count rises
+above its value at the last list load, the list reloads by itself only while it is scrolled to the
+top and no article is open; otherwise "N new articles · Show" above the list loads them on demand. New items in off/unselected training feeds are not unfinished jobs and
 must not cause endless polling or "AI is working" messages.
 Cancel obsolete queries on route changes. No SSE infrastructure is required for the first version.
 Refresh from page one on `STALE_CURSOR`; de-duplicate ids and preserve selection/scroll by id.
@@ -170,7 +172,7 @@ login without leaking the previous account's UI. Slow classification leaves arti
 - **Cluster badge:** "+3 sources", which expands to the other members.
 - **Rating state:** 👍/👎 highlighted.
 - **Expanding** an item shows the article's `imageUrl` above its text under the same image policy as
-  the thumbnail (D-233), the sanitized `excerptHtml` or `bodyLead`, a "Read original" button (opens
+  the thumbnail (D-233; never above a saved bookmark copy, which keeps no images), the sanitized `excerptHtml` or `bodyLead`, a "Read original" button (opens
   the URL in a new tab and calls `/open`), and the action bar: 👍 👎 🔖 label, Why this?, Mute story,
   more (block feed/domain/author, boost feed).
 - **Linkless items:** remain readable/rateable/bookmarkable; omit "Read original" and domain-based
@@ -186,7 +188,9 @@ login without leaking the previous account's UI. Slow classification leaves arti
   In an off feed, "Start training and analyze these N" may use the explicit combined
   `startTraining:true` action. Store the returned request ids with the selected items and send the
   matching `analysisRequestId` with their ratings, including offline replay; never attach a later
-  unrelated request implicitly. Direct off-feed views remain neutral even when a duplicate item
+  unrelated request implicitly. Rating an unanalysed article of a training feed without selecting it
+  first is enough: the server asks for its analysis and the item shows that request's status
+  (D-238). Direct off-feed views remain neutral even when a duplicate item
   already has cached scores through another active source.
 - **Saved bookmarks:** show capture status "Saving article", "Full text saved", "Partial text
   saved" or "Could not capture article". Open the saved snapshot by default from Bookmarks, with its
@@ -279,7 +283,7 @@ Rendered from `explain` (spec 06 §6.2):
    the preference).
 5. **Personal model** (if any): the top 3 contributing factors in plain language ("You often like
    articles from this source", "Matches for your Love interests", "Your card *EV battery tech*").
-6. **Actions:** make a card from this (prefilled editor, §6), boost/block source, block author, mute
+6. **Actions:** make a card from this (prefilled editor, §6; the name and interest are drafted from the article, D-240), boost/block source, block author, mute
    keyword (select a word from the title).
 
 ### 3.6 "Did you like it?" prompt
@@ -341,6 +345,14 @@ When the page becomes visible again after `/open`:
   `ready` does the sidebar show "Ready for automatic" with an Enable button under the feed's badge;
   Enable opens a confirmation with the evidence in words and the feed's new articles per week, and
   only the confirmation switches the feed to Active. Nothing switches on its own.
+- **New card suggestion (D-241):** when the feed's `uncovered.suggest` holds, the drawer adds "Your interests
+  miss much of what you like here" with **Make an interest from these**, which opens the card editor drafted
+  from those articles (§6 card drafts); their titles become the card's examples. This is the only place a new
+  card is suggested; ratings never prompt for one.
+  The sidebar marks such a feed with a lightbulb button beside its name (always visible, with an HTML
+  tooltip saying the same in words, positioned outside the sidebar's scroll area), placed after the gear
+  so the gear appearing on hover never moves it; it opens the same drafted card editor as "Make an
+  interest from these". The collapsed strip adds "interests to add" to the feed's name.
 - **Classification controls:** Off → explicit Training enables only the selection UI; the user then
   requests analysis for particular articles. "Enable automatic classification" explicitly sets
   Active for new arrivals and shows the activation time. Switching back to Training/Off stops new
@@ -363,6 +375,16 @@ When the page becomes visible again after `/open`:
   - **My interests:** cards with their strength selector (Must / Love / Like / Never) and scope
     selector (all feeds / one feed); edit; examples list (remove); delete.
   - **Suggestions:** Add / Dismiss.
+  - **Card limit (D-242):** when creating a card fails with `QUOTA_EXCEEDED` `maxCards`, the editor offers
+    "Replace a card to make room": the held cards ordered by `GET /cards/usage` (fewest recent liked matches
+    first), and "Replace and save" resends the card with `replaceCardId`.
+  - **Card drafts (D-240):** an editor opened from one or more articles asks `POST /cards/drafts`, says
+    "Writing a name and description…" while it waits (polling `GET /cards/drafts/:id` each second, at
+    most 30 s; the empty name and interest fields say "Loading…") and fills them with the draft, never
+    over text the person typed; without a draft the interest falls back to the first article's title.
+    Saving any card refreshes `GET /me/learning`, so a suggestion the card answered goes away.
+    A draft written by the LLM is labelled as drafted; a fallback draft fills silently. All the
+    articles' titles become examples on save.
   - **Library:** browse by topic, search, add with a strength.
   - **Library updates:** show old/new semantic text side by side and the version; actions are
     "Apply this update", "Keep my current version" and "Customize instead". Applying explicitly
@@ -393,7 +415,7 @@ When the page becomes visible again after `/open`:
 
 Profile (name, language, timezone, theme → `preferences.theme`) · Reading preferences (all fields of spec 08 §3.1 with
 explanations) · Personal learning (`GET /me/learning`: ratings, likes and dislikes against the
-activation thresholds, "Active since", or the last attempt's reasons in words; D-237) · Sessions (devices, revoke) · Invites (left, create, list, copy link) · Export data ·
+activation thresholds, "Active since", or the last attempt's reasons in words; D-237; and "Interests to add": the training feeds whose `uncovered.suggest` holds, each with "Make an interest from these", D-241) · Sessions (devices, revoke) · Invites (left, create, list, copy link) · Export data ·
 Delete account (typed confirmation).
 Only one tab or window of an account edits the reading preferences at a time (a per-account Web
 Lock held while the section is on screen): another one shows that they are being adjusted

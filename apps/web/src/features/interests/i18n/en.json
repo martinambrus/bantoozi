@@ -46,7 +46,14 @@
     "createTitle": "New interest card",
     "editTitle": "Edit interest card",
     "fromArticleTitle": "New card from this article",
-    "fromArticleHint": "Starts from the title of this article, which is kept as the first example of what you want to read.",
+    "fromArticleHint": "Keeps the title of this article as the first example of what you want to read.",
+    "fromArticlesTitle": "New card from these articles",
+    "fromArticlesHint": "Keeps the titles of these articles as examples of what you want to read.",
+    "loading": "Loading…",
+    "drafting": "Writing a name and description from the article…",
+    "draftingMany": "Writing a name and description from the articles…",
+    "drafted": "Name and description drafted from the article. Check them and change anything before saving.",
+    "draftedMany": "Name and description drafted from the articles. Check them and change anything before saving.",
     "name": "Name (optional)",
     "interest": "I want to read about…",
     "notFor": "…but not about",
@@ -68,6 +75,15 @@
       "contention": "This card changed while you were saving it. Try saving again.",
       "targetHeld": "You already have a card with this text, but with a different strength, scope or name. Edit that card instead, or make its settings match first."
     }
+  },
+  "swap": {
+    "legend": "Replace a card to make room",
+    "hint": "You've reached your plan's limit for interest cards. Choose a card to remove; the new one takes its place. Cards that matched the fewest articles you liked come first.",
+    "loading": "Loading your cards…",
+    "failed": "Couldn't load your cards. Close this and try again.",
+    "matched_one": "Matched {{count}} liked article in the last 90 days",
+    "matched_other": "Matched {{count}} liked articles in the last 90 days",
+    "confirm": "Replace and save"
   },
   "hints": {
     "heading": "Writing a good card",

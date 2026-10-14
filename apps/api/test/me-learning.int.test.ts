@@ -67,9 +67,9 @@ async function rate(
   cardId: string,
   rating: 1 | -1,
   p: number,
-): Promise<void> {
+  at: Date = new Date(Date.now() - 3_600_000),
+): Promise<string> {
   const article = await createArticle(h.owner, { feedIds: [feedId] });
-  const at = new Date(Date.now() - 3_600_000);
   await h.owner.query(
     `INSERT INTO user_article (user_id, article_id, rating, rated_at) VALUES ($1, $2, $3, $4)`,
     [user.id, article.id, rating, at],
@@ -115,6 +115,7 @@ async function rate(
       at,
     ],
   );
+  return article.id;
 }
 
 async function storeModel(
@@ -129,6 +130,36 @@ async function storeModel(
                               intercept, scaler, calibration, metrics, active, trained_at)
      VALUES ($1, $2, $3, 0, 0, 0, '{}', 0, '{}', '{}', $4::jsonb, $5, $6)`,
     [user.id, version, 'a'.repeat(64), JSON.stringify(metrics), active, trainedAt],
+  );
+}
+
+/** The user holds a card whose examples are the titles of `articleIds`, made at `madeAt`. */
+async function holdCardMadeFrom(
+  user: TestUser,
+  articleIds: readonly string[],
+  madeAt: Date,
+): Promise<void> {
+  const titles = await h.owner.query<{ title: string }>(
+    `SELECT title FROM articles WHERE id = ANY($1::bigint[])`,
+    [articleIds],
+  );
+  const body = {
+    interest: 'Batteries and how they reach production',
+    not_for: null,
+    interest_en: null,
+    not_for_en: null,
+    examples_yes: titles.rows.map((row) => row.title),
+    examples_no: [],
+  };
+  const card = await h.owner.query<{ id: string }>(
+    `INSERT INTO interest_cards (kind, title, body, text_hash, lang, origin, visibility, owner_user_id, creator_user_id)
+     VALUES ('interest', 'Made from articles', $1::jsonb, md5($1::text), 'en', 'fork', 'private', $2, $2)
+     RETURNING id::text AS id`,
+    [JSON.stringify(body), user.id],
+  );
+  await h.owner.query(
+    `INSERT INTO user_cards (user_id, card_id, strength, created_at) VALUES ($1, $2, 'like', $3)`,
+    [user.id, card.rows[0]!.id, madeAt],
   );
 }
 
@@ -165,6 +196,54 @@ describe('GET /me/learning', () => {
     });
     expect(body.feeds[0]!.auc).toBe(1);
     expect(body.feeds[0]!.aucLow).not.toBeNull();
+  });
+
+  it('lists the likes every card scored below Maybe with their titles and suggests a card (D-241)', async () => {
+    const user = await createTestUser(h);
+    const feedId = await subscribe(user, 'training');
+    const card = await createCard(h.owner, { title: 'Learning card' });
+    const uncovered: string[] = [];
+    for (let i = 0; i < 3; i += 1) uncovered.push(await rate(user, feedId, card.id, 1, 0.05));
+    await rate(user, feedId, card.id, 1, 0.9);
+    await rate(user, feedId, card.id, -1, 0.05);
+    const titles = await h.owner.query<{ id: string; title: string }>(
+      `SELECT id::text AS id, title FROM articles WHERE id = ANY($1::bigint[])`,
+      [uncovered],
+    );
+    const body = await status(user);
+    expect(body.feeds[0]!.uncovered.count).toBe(3);
+    expect(body.feeds[0]!.uncovered.suggest).toBe(true);
+    expect([...body.feeds[0]!.uncovered.articles].sort((a, b) => a.id.localeCompare(b.id))).toEqual(
+      titles.rows.sort((a, b) => a.id.localeCompare(b.id)),
+    );
+  });
+
+  it('stops suggesting a card once the user holds one made from the feed articles, until newer likes', async () => {
+    const user = await createTestUser(h);
+    const feedId = await subscribe(user, 'training');
+    const other = await subscribe(user, 'training');
+    const card = await createCard(h.owner, { title: 'Learning card' });
+    const uncovered: string[] = [];
+    for (let i = 0; i < 3; i += 1) uncovered.push(await rate(user, feedId, card.id, 1, 0.05));
+    for (let i = 0; i < 3; i += 1) await rate(user, other, card.id, 1, 0.05);
+    const before = await status(user);
+    expect(before.feeds.map((f) => f.uncovered.suggest)).toEqual([true, true]);
+
+    await holdCardMadeFrom(user, uncovered, new Date(Date.now() - 1_800_000));
+    const after = await status(user);
+    const mine = after.feeds.find((f) => f.feedId === feedId)!;
+    expect(mine.uncovered).toEqual({ count: 0, suggest: false, articles: [] });
+    expect(mine.likes).toBe(3);
+    expect(after.feeds.find((f) => f.feedId === other)!.uncovered).toMatchObject({
+      count: 3,
+      suggest: true,
+    });
+
+    const later = await rate(user, feedId, card.id, 1, 0.05, new Date(Date.now() - 600_000));
+    const counted = (await status(user)).feeds.find((f) => f.feedId === feedId)!;
+    expect(counted.uncovered.count).toBe(1);
+    expect(counted.uncovered.suggest).toBe(false);
+    expect(counted.uncovered.articles.map((a) => a.id)).toEqual([later]);
   });
 
   it('reports a training feed with two likes as collecting, and lists only training feeds', async () => {

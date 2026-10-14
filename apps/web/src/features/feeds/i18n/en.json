@@ -167,5 +167,11 @@
       "tooLarge": "That OPML file is too large. Split it into smaller files and import them one at a time.",
       "tooManyFeeds": "This file lists {{used}} feeds, but your plan allows importing {{max}} at a time. Split the file and import it in parts."
     }
+  },
+  "uncovered": {
+    "text_one": "Your interests miss much of what you like here: every card rated {{count}} article you liked low.",
+    "text_other": "Your interests miss much of what you like here: every card rated {{count}} articles you liked low.",
+    "make": "Make an interest from these",
+    "makeLabel": "Make an interest from what you like in {{title}}"
   }
 }

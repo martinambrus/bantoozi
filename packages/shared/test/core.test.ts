@@ -112,7 +112,7 @@ describe('plans (spec 08 §6)', () => {
   it('matches the plan table', () => {
     expect(PLANS.beta).toEqual({
       maxFeeds: 200,
-      maxCards: 50,
+      maxCards: 150,
       maxLabels: 20,
       maxForks: 20,
       maxRules: 200,

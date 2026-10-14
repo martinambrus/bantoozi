@@ -718,6 +718,16 @@ cards agree. It only informs an explicit offer in the UI; it never changes `infe
 replays the rule on the G1 golden ratings (rating count to `ready`, and the cards' AUC on the
 feed's later ratings as the false-alarm check) to tune `FEED_AGREEMENT`.
 
+**Uncovered likes** (D-241): the same rows also give the feed's explicit likes whose baseline score is
+below `lanes.maybe` (every held card scored them low, the "unexplained likes" of §10): their count,
+the newest `FEED_AGREEMENT.uncoveredArticles` (5) article ids, and `suggest` when there are at least
+`uncoveredMin` (3) of them and they are at least `uncoveredMinShare` (30 %) of the feed's likes. The
+UI then suggests a new card drafted from those articles (spec 09 §5); nothing is created by itself.
+Uncovered likes rest on rating-time snapshots, which a new card never changes, so once the user holds a
+card whose `examples_yes` contains the title of an article the feed carries, the feed's uncovered likes
+rated before that holding's `created_at` no longer count (`GET /me/learning` recomputes count, articles
+and `suggest` from the rest); new evidence after it can raise a new suggestion.
+
 ---
 
 ## 9. Degraded ranking (BM25)

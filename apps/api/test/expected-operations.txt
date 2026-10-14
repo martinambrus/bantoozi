@@ -24,8 +24,10 @@ GET /articles/calibration
 GET /articles/counts
 GET /auth/sessions
 GET /cards
+GET /cards/drafts/:id
 GET /cards/publication-requests
 GET /cards/suggestions
+GET /cards/usage
 GET /dev/last-email
 GET /feed-preferences
 GET /healthz
@@ -82,6 +84,7 @@ POST /auth/verify
 POST /cards
 POST /cards/:id/examples
 POST /cards/:id/examples/remove
+POST /cards/drafts
 POST /cards/from-article
 POST /cards/publication-requests/:id/respond
 POST /cards/suggestions/:cardId/dismiss

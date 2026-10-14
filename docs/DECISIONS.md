@@ -2244,3 +2244,54 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   the trainer) and a Settings section showing progress toward the activation thresholds, the active model's date and
   version, or why the last attempt did not activate (reason codes in words). The personal model still activates by
   itself (spec 06 §8.3); this only makes it visible. No migration. Spec 06 §8.5, 08 §3, 09 §7.
+- D-238: 2026-10-14 (owner request) — A rating asks for its article's analysis. Spec 08 §5.3 said a rating without
+  `analysisRequestId` "cannot itself cause inference", so ratings of unanalysed articles in New (the natural thing to
+  rate in a Training feed) silently taught nothing: neither the feed agreement (D-236) nor the personal model can use a
+  rating without the analysis's card scores. Now `/rating` (non-null) and `/prompt-answer` without an id, in the same
+  transaction and before the rating is applied, reuse a current request of the article on one of the user's
+  training/active feeds or create one exactly as `POST /subscriptions/:feedId/analyze` does (frozen pre-feedback input,
+  `analysis.process` intent, card-translation demand), on the first training feed carrying it, else an active one;
+  the rating then links it like a selected request, and its completion records `user.learn` (D-73). Nothing is asked
+  for an off feed, an un-rating, bulk rating, an article an active feed admits on its own, an article that changed
+  since it was shown, or while classification is not configured. A reused request was created before the rating, so
+  it is still pre-feedback input. Each such rating costs one analysis, like a selection, under the same spend guard;
+  the selection rate limit (20/hour) does not apply to ratings. The 31 ratings the owner gave unanalysed The Verge
+  articles before this change were rated again through the API with the same value (their rating time moved to the
+  re-rating). No migration. Spec 08 §5.3, 09 §3.
+- D-239: 2026-10-14 (owner request) — The beta plan's `maxCards` rises from 50 to 150 (admin stays 500). The owner
+  held 49 cards, so suggesting new cards was pointless at 50. Cost scales with held cards: matching one article cost
+  $0.00033 at ~50 cards on the dev stack (about 8k input tokens), so ~$0.001 at 150, still under the daily budget
+  guard. At the limit, creating a card offers to replace one (D-241). No migration. Spec 08 §6.
+- D-240: 2026-10-14 (owner request; amends locked decision PLAN §2 #3) — Proposed card drafts. Making a card from
+  articles now proposes its name and interest sentence, written by the LLM (Ollama Cloud GLM, `OLLAMA_MODEL_FAST`) in
+  the person's language from 1–5 articles' titles and excerpts. Only a proposal: the editor fills the fields (never
+  over typed text) and the person edits before saving. Provider keys are decrypted only by the worker (spec 11), so
+  the API records a `card_drafts` row (migration 0025, tenant RLS, 24 h lifetime) and a `card.draft {draftId}` intent;
+  the worker reserves spend as `engine = llm`, `kind = card_draft` (new call kind, priority interactive) under a
+  `card_draft` authorization that holds only while the draft is the user's, pending and under 30 minutes old, with one
+  repair attempt on invalid output like tier 2. Without a key, budget or valid output, a fallback names the articles'
+  strongest level-2 topic and takes the first title, as the editor did before. The article text is data, never
+  instructions (system prompt); no tools, no `format`. `POST /cards/from-article` also takes `moreArticleIds` so a
+  card made from several articles keeps all their titles as examples. `POST /cards/drafts` is limited to 30/hour per
+  user. Spec 08 §7 and rate limits, 09 §3.5 and §6, PLAN §2 #3 and the v1 non-goals.
+- D-241: 2026-10-14 (owner request) — New-card suggestions come from the feed agreement, not from single ratings.
+  `feedAgreement` also reports a training feed's uncovered likes (explicit likes every held card scored below
+  `lanes.maybe`); with at least 3 of them making up at least 30 % of the feed's likes, `GET /me/learning` sets
+  `uncovered.suggest` and lists the newest five with titles. The feed's settings drawer and Settings → Personal
+  learning then offer "Make an interest from these", a card drafted from those articles (D-240) with their titles as
+  examples. The owner chose this over a prompt after each uncovered like: one like is weak evidence, a per-rating
+  prompt would fill the card limit with narrow cards, and with D-238 an unanalysed article is scored only after the
+  rating. No migration. Spec 06 §8.5, 08 §3 (`GET /me/learning`), 09 §5 and §7.
+- D-242: 2026-10-14 (owner request) — Swap a card at the card limit. `POST /cards` and `POST /cards/from-article`
+  take `replaceCardId`: in the create's transaction the user's holding of that card is removed first
+  (`deleteUserCardForReplacement`, which locks all the user's active feeds in id order before the create re-locks
+  them), so a failing create keeps it and an unheld id is 404. `GET /cards/usage` counts, per held card, the distinct
+  liked articles of the last 90 days the card answered with `p ≥ lanes.maybe`; the editor's "Replace a card to make
+  room" lists the held cards by that count, fewest first. Library adoption at the limit still only reports the
+  limit. No migration. Spec 08 §7, 09 §6.
+- D-243: 2026-10-14 (owner request; amends D-152) — The article list keeps up with new articles like the counts do.
+  When a counts poll shows the current view's number above its value at the last list load, the list reloads by
+  itself while it is scrolled to the top (≤ 80 px) and no article is open; otherwise "N new articles · Show" appears
+  above the list and loads them from page one. A falling count (the reader's own actions) never triggers either.
+  Rows still never move under a reader who is scrolled down or reading. An auto-reload may coincide with a reader
+  action still being sent; the list shows unsettled actions over whatever it loads, so that is harmless. Spec 09 §1.

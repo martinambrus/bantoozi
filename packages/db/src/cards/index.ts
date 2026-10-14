@@ -7,11 +7,27 @@
  */
 export type { LibraryCardDiff } from './body.js';
 export {
+  CARD_DRAFT_DEMAND_MINUTES,
+  CARD_DRAFT_TTL_HOURS,
+  cardDraftAuthorized,
+  createCardDraft,
+  finishCardDraft,
+  getCardDraft,
+  loadCardDraftArticles,
+  loadCardDraftWork,
+  type CardDraftArticle,
+  type CardDraftSource,
+  type CardDraftStatus,
+  type CardDraftView,
+  type CardDraftWork,
+} from './drafts.js';
+export {
   addCardExample,
   adoptLibraryCard,
   createCardFromArticle,
   createUserCard,
   deleteUserCard,
+  deleteUserCardForReplacement,
   editCardText,
   removeCardExample,
   renameCard,
@@ -23,6 +39,7 @@ export {
   type CreateUserCardInput,
   type UpdateUserCardInput,
 } from './interest-cards.js';
+export { listCardUsage, type CardUsage } from './usage.js';
 export {
   addLabelExample,
   createUserLabel,

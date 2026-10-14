@@ -1,10 +1,12 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { makeMe } from '../session/fixtures.js';
-import { LEARNING, makeLearning } from '../learning/fixtures.js';
+import { cardDraftRoutes } from '../interests/support.js';
+import { LEARNING, makeAgreement, makeLearning } from '../learning/fixtures.js';
 import { json } from '../api/fake-fetch.js';
-import { openSettings, section } from './support.js';
+import { bodyOf } from '../support/app.js';
+import { makeSubscription, openSettings, section } from './support.js';
 
 const learning = () => within(section('Personal learning'));
 
@@ -62,5 +64,76 @@ describe('the personal learning section', () => {
     await open({ deactivated: { at: '2026-10-08T10:00:00.000Z', reason: 'lost_evidence' } });
 
     expect(learning().getByText(/^Switched off on Oct 8, 2026: /)).toBeVisible();
+  });
+});
+
+describe('the interests to add in the personal learning section', () => {
+  const suggesting = (feedId: string, count: number, titles: string[]) =>
+    makeAgreement(feedId, 'ready', {
+      uncovered: {
+        count,
+        suggest: true,
+        articles: titles.map((title, index) => ({ id: `${feedId}${index}`, title })),
+      },
+    });
+
+  const subscriptions = () =>
+    json(200, [
+      makeSubscription('1', 'Alpha', { inferenceMode: 'training' }),
+      makeSubscription('2', 'Beta', { inferenceMode: 'training' }),
+      makeSubscription('3', 'Gamma', { inferenceMode: 'training' }),
+    ]);
+
+  async function openWith(feeds: ReturnType<typeof makeAgreement>[], me = makeMe()) {
+    return openSettings({
+      me,
+      routes: {
+        ...cardDraftRoutes(),
+        'GET /subscriptions': subscriptions,
+        [LEARNING]: () => json(200, makeLearning({}, feeds)),
+      },
+    });
+  }
+
+  it('lists only the feeds that suggest one, and opens the editor from one of them', async () => {
+    const app = await openWith([
+      suggesting('1', 3, ['Solid-state cells', 'Sodium-ion']),
+      makeAgreement('2', 'ready', { uncovered: { count: 4, suggest: false, articles: [] } }),
+      suggesting('9', 5, ['A feed not subscribed']),
+    ]);
+
+    const list = await learning().findByRole('list', { name: 'Interests to add' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(list).getByText('Alpha')).toBeVisible();
+    expect(learning().queryByText('Beta')).toBeNull();
+    expect(learning().queryByText('A feed not subscribed')).toBeNull();
+
+    await app.user.click(
+      within(list).getByRole('button', { name: 'Make an interest from what you like in Alpha' }),
+    );
+    expect(
+      await screen.findByRole('dialog', { name: 'New card from these articles' }),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([{ articleIds: ['10', '11'] }]),
+    );
+  });
+
+  it('shows no list when no feed suggests one', async () => {
+    await openWith([makeAgreement('1', 'ready')]);
+
+    await screen.findByText(/ratings$/);
+    expect(learning().queryByText('Interests to add')).toBeNull();
+  });
+
+  it('counts the missed articles with Slovak plural forms', async () => {
+    await openWith(
+      [suggesting('1', 3, ['Solid-state cells']), suggesting('2', 5, ['Sodium-ion'])],
+      makeMe({ locale: 'sk' }),
+    );
+
+    const slovak = within(section('Osobné učenie'));
+    expect(await slovak.findByText(/každá karta ohodnotila nízko 3 články/)).toBeVisible();
+    expect(slovak.getByText(/každá karta ohodnotila nízko 5 článkov/)).toBeVisible();
   });
 });

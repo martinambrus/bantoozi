@@ -48,8 +48,8 @@ export type { CredentialResolver, ProviderAuth } from '@bantoozi/shared/server';
 export type Priority = 'interactive' | 'bulk';
 
 export interface EngineRequest {
-  /** Translation and credential probes use ExternalCall instead. */
-  kind: Exclude<CallKind, 'translate' | 'credential_probe'>;
+  /** Translation, credential probes and card drafts use ExternalCall instead. */
+  kind: Exclude<CallKind, 'translate' | 'credential_probe' | 'card_draft'>;
   state: JsonValue;
   /** Keys: `[a-zA-Z0-9_.-]{1,64}`. */
   questions: Record<string, Question>;
