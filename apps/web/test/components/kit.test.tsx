@@ -448,6 +448,7 @@ describe('icons', () => {
     'ListIcon',
     'InboxIcon',
     'SidebarIcon',
+    'SettingsIcon',
   ];
 
   const components = Object.entries(icons) as [string, ComponentType<{ className?: string }>][];

@@ -11,7 +11,12 @@ import {
 } from '../learning/fixtures.js';
 import { bodyOf } from '../support/app.js';
 import { findToast, makeLabel, ratingResponse, undoResponse } from '../article/harness.js';
-import { makeSubscription, type SubscriptionOverrides } from '../feeds/support.js';
+import {
+  DELETE_FEED,
+  UPDATE_FEED,
+  makeSubscription,
+  type SubscriptionOverrides,
+} from '../feeds/support.js';
 import { SIDEBAR_COLLAPSED_KEY } from '../../src/features/reader/sidebar-collapsed.js';
 import { makeMe } from '../session/fixtures.js';
 import { acked } from './actions/fake-transport.js';
@@ -664,7 +669,7 @@ describe('ready for automatic classification', () => {
     ).toHaveTextContent('Enable');
     const wired = screen.getByRole('link', { name: 'Wired' }).closest('li')!;
     expect(within(wired).queryByText('Ready for automatic')).toBeNull();
-    expect(within(wired).queryByRole('button')).toBeNull();
+    expect(within(wired).queryByRole('button', { name: /^Enable/ })).toBeNull();
   });
 
   it('asks nothing when no feed is in training', async () => {
@@ -747,5 +752,76 @@ describe('ready for automatic classification', () => {
         name: 'Verge, Training: selected articles, ready for automatic classification',
       }),
     ).toBeVisible();
+  });
+});
+
+describe('feed settings from the sidebar', () => {
+  const subscriptions = [feed('1', 'Verge', 'Tech'), feed('2', 'Wired', null)];
+
+  it('opens the settings of a feed with the folders to choose from', async () => {
+    const { app } = await open({ path: '/read/for_you', subscriptions });
+
+    await app.user.click(await screen.findByRole('button', { name: 'Settings for Verge' }));
+
+    const sheet = await screen.findByRole('dialog', { name: 'Feed settings' });
+    expect(sheet).toHaveAccessibleDescription('Verge');
+    expect(within(sheet).getByRole('option', { name: 'Tech' })).toBeInTheDocument();
+    expect(within(sheet).getByRole('button', { name: 'Unsubscribe' })).toBeVisible();
+    expect(app.router.state.location.pathname).toBe('/read/for_you');
+  });
+
+  it('hides a feed from the sidebar', async () => {
+    const { app, state } = await open({
+      path: '/read/for_you',
+      subscriptions,
+      routes: {
+        [UPDATE_FEED]: (request, params) => {
+          const saved = {
+            ...state.subscriptions.find((row) => row.feed.id === params['feedId'])!,
+            ...(bodyOf(request) as object),
+          };
+          state.subscriptions = state.subscriptions.map((row) =>
+            row.feed.id === saved.feed.id ? saved : row,
+          );
+          return json(200, { subscription: saved });
+        },
+      },
+    });
+
+    await app.user.click(await screen.findByRole('button', { name: 'Settings for Wired' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Feed settings' });
+    await app.user.click(within(sheet).getByRole('switch', { name: /Hide from sidebar/ }));
+    await app.user.click(within(sheet).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Wired' })).toBeNull());
+    expect(app.calls(UPDATE_FEED).map(bodyOf)).toEqual([{ hidden: true }]);
+    expect(screen.queryByRole('dialog', { name: 'Feed settings' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Verge' })).toBeVisible();
+  });
+
+  it('unsubscribes after the confirmation', async () => {
+    const { app, state } = await open({
+      path: '/read/for_you',
+      subscriptions,
+      routes: {
+        [DELETE_FEED]: (_request, params) => {
+          state.subscriptions = state.subscriptions.filter(
+            (row) => row.feed.id !== params['feedId'],
+          );
+          return new Response(null, { status: 204 });
+        },
+      },
+    });
+
+    await app.user.click(await screen.findByRole('button', { name: 'Settings for Wired' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Feed settings' });
+    await app.user.click(within(sheet).getByRole('button', { name: 'Unsubscribe' }));
+    const confirm = await screen.findByRole('dialog', { name: 'Unsubscribe from “Wired”?' });
+    await app.user.click(within(confirm).getByRole('button', { name: 'Unsubscribe' }));
+
+    expect(await findToast('Unsubscribed from “Wired”.')).toBeVisible();
+    expect(app.calls(DELETE_FEED)).toHaveLength(1);
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Wired' })).toBeNull());
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

@@ -21,6 +21,7 @@ import {
   HelpIcon,
   InboxIcon,
   ListIcon,
+  SettingsIcon,
   StarIcon,
   WarningIcon,
 } from '../../components/icons.js';
@@ -31,6 +32,7 @@ import { httpsUrl } from '../article/http-url.js';
 import { LabelDot } from '../article/label-dot.js';
 import { useLabels } from '../article/use-labels.js';
 import { EnableAutomaticDialog } from '../feeds/enable-automatic-dialog.js';
+import { FeedSettingsSheet } from '../feeds/feed-settings-sheet.js';
 import { ClassificationBadge } from '../feeds/feed-status.js';
 import { displayTitle, groupByFolder, type FolderGroup } from '../feeds/folders.js';
 import { useSubscriptions } from '../feeds/subscriptions.js';
@@ -254,14 +256,27 @@ function ReadyForAutomatic({
   );
 }
 
+// `.group` is the feed's row: away from it and without the focus, the button folds to nothing.
+// Tailwind finds only whole class names in the source, so each one is written out.
+const SETTINGS_BUTTON = cx(
+  'shrink-0 text-slate-500 dark:text-slate-400',
+  '[@media(hover:hover)]:[.group:not(:hover)_&:not(:focus-visible)]:w-0',
+  '[@media(hover:hover)]:[.group:not(:hover)_&:not(:focus-visible)]:min-w-0',
+  '[@media(hover:hover)]:[.group:not(:hover)_&:not(:focus-visible)]:overflow-hidden',
+  '[@media(hover:hover)]:[.group:not(:hover)_&:not(:focus-visible)]:p-0',
+  '[@media(hover:hover)]:[.group:not(:hover)_&:not(:focus-visible)]:opacity-0',
+);
+
 function FeedLink({
   subscription,
   agreement,
   onNavigate,
+  onOpenSettings,
 }: {
   subscription: Subscription;
   agreement: LearningFeedAgreement | undefined;
   onNavigate?: (() => void) | undefined;
+  onOpenSettings: (feedId: string) => void;
 }) {
   const { t } = useTranslation('reader');
   const { feed } = subscription;
@@ -270,7 +285,12 @@ function FeedLink({
   const badgeBelow = subscription.inferenceMode !== 'off';
   const badge = <ClassificationBadge mode={subscription.inferenceMode} />;
   return (
-    <li className={cx(badgeBelow && 'mb-1 border-b border-slate-200 pb-2 dark:border-slate-700')}>
+    <li
+      className={cx(
+        'group',
+        badgeBelow && 'mb-1 border-b border-slate-200 pb-2 dark:border-slate-700',
+      )}
+    >
       <div className="flex items-center gap-1">
         <Link
           to="/read/feed/$feedId"
@@ -293,6 +313,17 @@ function FeedLink({
             <WarningIcon className="size-4" />
           </span>
         ) : null}
+        {/* Where a pointer can hover, it takes no room until the feed is hovered or it has the
+            focus, so the name keeps its width; on touch screens it is always there. */}
+        <IconButton
+          label={t('feeds:row.settingsFor', { title: name })}
+          title={t('feeds:row.settings')}
+          data-feed-settings={feed.id}
+          onClick={() => onOpenSettings(feed.id)}
+          className={SETTINGS_BUTTON}
+        >
+          <SettingsIcon className="size-4" />
+        </IconButton>
       </div>
       {badgeBelow ? <div className="ps-4">{badge}</div> : null}
       {agreement === undefined ? null : (
@@ -328,6 +359,18 @@ function FeedsSection({ onNavigate }: { onNavigate?: (() => void) | undefined })
   useReloadOnReconnect(subscriptions);
   const ready = useReadyFeeds(subscriptions.data ?? []);
   const [filter] = useFeedFilter();
+  const [settingsFeedId, setSettingsFeedId] = useState<string | null>(null);
+  const settings = subscriptions.data?.find(
+    (subscription) => subscription.feed.id === settingsFeedId,
+  );
+  // The settings offer every folder, also those whose feeds are all hidden from the sidebar.
+  const folders = useMemo(
+    () =>
+      groupByFolder(subscriptions.data ?? [], folderOrder, i18n.language).flatMap((group) =>
+        group.name === null ? [] : [group.name],
+      ),
+    [subscriptions.data, folderOrder, i18n.language],
+  );
   const groups = useMemo(
     () =>
       groupByFolder(
@@ -351,75 +394,93 @@ function FeedsSection({ onNavigate }: { onNavigate?: (() => void) | undefined })
   }, [groups, filter]);
 
   return (
-    <Section title={t('sidebar.feeds')}>
-      {(headingId) => {
-        if (subscriptions.data === undefined) {
-          return !online || subscriptions.isError ? (
+    <>
+      <Section title={t('sidebar.feeds')}>
+        {(headingId) => {
+          if (subscriptions.data === undefined) {
+            return !online || subscriptions.isError ? (
+              <>
+                <p className={MUTED}>
+                  {t(online ? 'sidebar.feedsFailed' : 'sidebar.feedsOffline')}
+                </p>
+                <Retry
+                  label={t('sidebar.retryFeeds')}
+                  onRetry={() => void subscriptions.refetch()}
+                />
+              </>
+            ) : (
+              <p className={MUTED}>{t('common:states.loading')}</p>
+            );
+          }
+          if (groups.length === 0) return <p className={MUTED}>{t('sidebar.noFeeds')}</p>;
+          return (
             <>
-              <p className={MUTED}>{t(online ? 'sidebar.feedsFailed' : 'sidebar.feedsOffline')}</p>
-              <Retry label={t('sidebar.retryFeeds')} onRetry={() => void subscriptions.refetch()} />
-            </>
-          ) : (
-            <p className={MUTED}>{t('common:states.loading')}</p>
-          );
-        }
-        if (groups.length === 0) return <p className={MUTED}>{t('sidebar.noFeeds')}</p>;
-        return (
-          <>
-            <FeedFilter noMatch={shown.length === 0} />
-            {shown.length === 0 ? null : (
-              <ul role="list" aria-labelledby={headingId} className="flex flex-col">
-                {shown.map(({ group, feeds }) =>
-                  group.name === null ? (
-                    feeds.map((subscription) => (
-                      <FeedLink
-                        key={subscription.feed.id}
-                        subscription={subscription}
-                        agreement={ready.get(subscription.feed.id)}
-                        onNavigate={onNavigate}
-                      />
-                    ))
-                  ) : (
-                    <li key={group.name}>
-                      <Link
-                        to="/read/folder/$name"
-                        params={{ name: group.name }}
-                        activeOptions={CURRENT}
-                        onClick={onNavigate}
-                        title={group.name}
-                        className={LINK}
-                      >
-                        <span className="truncate">{group.name}</span>
-                        <Count
-                          label={t('sidebar.unread')}
-                          value={group.feeds.reduce(
-                            (sum, subscription) => sum + unreadOf(subscription),
-                            0,
-                          )}
+              <FeedFilter noMatch={shown.length === 0} />
+              {shown.length === 0 ? null : (
+                <ul role="list" aria-labelledby={headingId} className="flex flex-col">
+                  {shown.map(({ group, feeds }) =>
+                    group.name === null ? (
+                      feeds.map((subscription) => (
+                        <FeedLink
+                          key={subscription.feed.id}
+                          subscription={subscription}
+                          agreement={ready.get(subscription.feed.id)}
+                          onNavigate={onNavigate}
+                          onOpenSettings={setSettingsFeedId}
                         />
-                      </Link>
-                      <ul
-                        role="list"
-                        className="ms-3 flex flex-col border-s border-slate-200 dark:border-slate-700"
-                      >
-                        {feeds.map((subscription) => (
-                          <FeedLink
-                            key={subscription.feed.id}
-                            subscription={subscription}
-                            agreement={ready.get(subscription.feed.id)}
-                            onNavigate={onNavigate}
+                      ))
+                    ) : (
+                      <li key={group.name}>
+                        <Link
+                          to="/read/folder/$name"
+                          params={{ name: group.name }}
+                          activeOptions={CURRENT}
+                          onClick={onNavigate}
+                          title={group.name}
+                          className={LINK}
+                        >
+                          <span className="truncate">{group.name}</span>
+                          <Count
+                            label={t('sidebar.unread')}
+                            value={group.feeds.reduce(
+                              (sum, subscription) => sum + unreadOf(subscription),
+                              0,
+                            )}
                           />
-                        ))}
-                      </ul>
-                    </li>
-                  ),
-                )}
-              </ul>
-            )}
-          </>
-        );
-      }}
-    </Section>
+                        </Link>
+                        <ul
+                          role="list"
+                          className="ms-3 flex flex-col border-s border-slate-200 dark:border-slate-700"
+                        >
+                          {feeds.map((subscription) => (
+                            <FeedLink
+                              key={subscription.feed.id}
+                              subscription={subscription}
+                              agreement={ready.get(subscription.feed.id)}
+                              onNavigate={onNavigate}
+                              onOpenSettings={setSettingsFeedId}
+                            />
+                          ))}
+                        </ul>
+                      </li>
+                    ),
+                  )}
+                </ul>
+              )}
+            </>
+          );
+        }}
+      </Section>
+      {settings === undefined ? null : (
+        <FeedSettingsSheet
+          key={settings.feed.id}
+          subscription={settings}
+          folders={folders}
+          onSaved={() => {}}
+          onClose={() => setSettingsFeedId(null)}
+        />
+      )}
+    </>
   );
 }
 
