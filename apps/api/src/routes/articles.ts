@@ -71,6 +71,7 @@ import {
   type ArticleListItem,
   type ArticleStatus,
   type ArticleViewLane,
+  type JobSender,
   type MarkReadLane,
   type UserPreferences,
 } from '@bantoozi/shared';
@@ -78,6 +79,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 
 import { queryHash } from '../services/cursor.js';
 import { matchFingerprintFor } from '../services/analysis.js';
+import { analysisForRating } from '../services/rating-analysis.js';
 import { liveTypesafeModel } from '../services/runtime.js';
 import { currentScoreVersion } from '../services/score-version.js';
 import type { MutationContext, MutationOutcome } from '../types.js';
@@ -260,6 +262,21 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
   const matchFingerprint = async () =>
     matchFingerprintFor(app.services.config, await liveTypesafeModel(app.services));
   const { cursors, clock } = app.services;
+  // A rating or prompt answer without a request id asks for the article's analysis (D-238).
+  const ratingAnalysis = async (
+    tx: TenantTx,
+    ctx: { outbox: JobSender; now: Date },
+    input: { articleId: string; fence: ArticleFence; analysisRequestId: string | undefined },
+  ): Promise<string | undefined> =>
+    input.analysisRequestId ??
+    (await analysisForRating(tx, {
+      articleId: input.articleId,
+      contentRevision: input.fence.contentRevision,
+      config: app.services.config,
+      typesafeModel: await liveTypesafeModel(app.services),
+      outbox: ctx.outbox,
+      now: ctx.now,
+    }));
 
   // ── Views (T6) ──────────────────────────────────────────────────────────────────────────────
 
@@ -595,6 +612,14 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
       const { id } = request.params;
       const body = request.body;
       const outcome = await request.mutate(async (tx, ctx) => {
+        const analysisRequestId =
+          body.rating === null
+            ? body.analysisRequestId
+            : await ratingAnalysis(tx, ctx, {
+                articleId: id,
+                fence: body,
+                analysisRequestId: body.analysisRequestId,
+              });
         const result = await rateArticle(tx, {
           matchFingerprint: await matchFingerprint(),
           articleId: id,
@@ -602,7 +627,7 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
           rating: body.rating,
           reason: body.reason ?? null,
           hide: body.hide === true,
-          analysisRequestId: body.analysisRequestId,
+          analysisRequestId,
           selection: body.selection,
           now: ctx.now,
           outbox: ctx.outbox,
@@ -635,7 +660,11 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
           articleId: id,
           fence: fenceOf(body),
           liked: body.liked,
-          analysisRequestId: body.analysisRequestId,
+          analysisRequestId: await ratingAnalysis(tx, ctx, {
+            articleId: id,
+            fence: body,
+            analysisRequestId: body.analysisRequestId,
+          }),
           now: ctx.now,
           outbox: ctx.outbox,
         });

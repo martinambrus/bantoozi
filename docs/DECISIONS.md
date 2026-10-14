@@ -2244,3 +2244,17 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   the trainer) and a Settings section showing progress toward the activation thresholds, the active model's date and
   version, or why the last attempt did not activate (reason codes in words). The personal model still activates by
   itself (spec 06 §8.3); this only makes it visible. No migration. Spec 06 §8.5, 08 §3, 09 §7.
+- D-238: 2026-10-14 (owner request) — A rating asks for its article's analysis. Spec 08 §5.3 said a rating without
+  `analysisRequestId` "cannot itself cause inference", so ratings of unanalysed articles in New (the natural thing to
+  rate in a Training feed) silently taught nothing: neither the feed agreement (D-236) nor the personal model can use a
+  rating without the analysis's card scores. Now `/rating` (non-null) and `/prompt-answer` without an id, in the same
+  transaction and before the rating is applied, reuse a current request of the article on one of the user's
+  training/active feeds or create one exactly as `POST /subscriptions/:feedId/analyze` does (frozen pre-feedback input,
+  `analysis.process` intent, card-translation demand), on the first training feed carrying it, else an active one;
+  the rating then links it like a selected request, and its completion records `user.learn` (D-73). Nothing is asked
+  for an off feed, an un-rating, bulk rating, an article an active feed admits on its own, an article that changed
+  since it was shown, or while classification is not configured. A reused request was created before the rating, so
+  it is still pre-feedback input. Each such rating costs one analysis, like a selection, under the same spend guard;
+  the selection rate limit (20/hour) does not apply to ratings. The 31 ratings the owner gave unanalysed The Verge
+  articles before this change were rated again through the API with the same value (their rating time moved to the
+  re-rating). No migration. Spec 08 §5.3, 09 §3.

@@ -567,8 +567,13 @@ article/revision and frozen context; reject an unrelated/obsolete id, never sile
 "latest" request. Persist the association in the event as `feedback_events.value.analysisRequestId`,
 which the worker's completion reads to record `user.learn` (D-73). Delayed features may attach only via that
 specific request's frozen pre-feedback inputs (specs 05/06); unrelated live future analysis cannot
-retrofit training evidence. A rating without a request id remains valid explicit reader feedback
-but cannot itself cause inference.
+retrofit training evidence. A non-null rating or a prompt answer without a request id asks for the
+article's analysis itself (D-238): in the same transaction, before the rating is applied, it reuses
+a current request of the article on one of the user's training/active feeds or creates one as
+`POST /subscriptions/:feedId/analyze` would (first training feed carrying it, else an active one),
+and links it as if the client had sent its id. It asks for nothing for an off feed, an article an
+active feed admits on its own, an article that changed since it was shown, or while classification
+is not configured; the rating is kept either way.
 
 | Endpoint | Body | Effect |
 |---|---|---|

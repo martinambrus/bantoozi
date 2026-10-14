@@ -100,6 +100,50 @@ async function subscriptionMode(userId: string, feedId: string) {
   return result.rows[0];
 }
 
+/** Training subscription to a fresh feed carrying one article, as `alice` sees it. */
+async function trainingArticle(
+  user: TestUser,
+  mode: 'training' | 'active' | 'off' = 'training',
+  activatedAt?: Date,
+) {
+  const feed = await createFeed(h.owner);
+  await createSubscription(h.owner, {
+    userId: user.id,
+    feedId: feed.id,
+    mode,
+    ...(activatedAt === undefined ? {} : { activatedAt }),
+  });
+  const article = await createArticle(h.owner, { feedIds: [feed.id] });
+  return { feed, article };
+}
+
+const rate = (user: TestUser, article: ArticleFixture, body: Record<string, unknown>) =>
+  apiClient(h.server, user).post(`/articles/${article.id}/rating`, {
+    stateVersion: '0',
+    contentRevision: article.contentRevision,
+    ...body,
+  });
+
+async function rateEvents(userId: string, articleId: string) {
+  const result = await h.owner.query<{ value: Record<string, unknown> }>(
+    `SELECT value FROM feedback_events
+      WHERE user_id = $1 AND article_id = $2 AND kind = 'rate' ORDER BY id`,
+    [userId, articleId],
+  );
+  return result.rows.map((row) => row.value);
+}
+
+describe('a rating before classification is configured (D-238)', () => {
+  it('is kept without asking for an analysis', async () => {
+    const alice = await createTestUser(h);
+    const { article } = await trainingArticle(alice);
+    const res = await rate(alice, article, { rating: 1 });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(await requestRows(alice.id)).toHaveLength(0);
+    expect((await rateEvents(alice.id, article.id))[0]).not.toHaveProperty('analysisRequestId');
+  });
+});
+
 describe('POST /subscriptions/:feedId/analyze', () => {
   it('is a 409 conflict until classification question sets are active', async () => {
     const { alice, feed, articles } = await setup();
@@ -339,5 +383,91 @@ describe('unsubscribe keeps completed analysis requests (spec 08 §4.1)', () => 
       [alice.id, feed.id],
     );
     expect(live.rowCount).toBe(0);
+  });
+});
+
+describe('a rating asks for the analysis of an unanalysed article (D-238)', () => {
+  it('creates a frozen request in a training feed, links the rating to it and reuses it', async () => {
+    const alice = await createTestUser(h);
+    const { feed, article } = await trainingArticle(alice);
+
+    const res = await rate(alice, article, { rating: -1, hide: true });
+    expect(res.statusCode, res.body).toBe(200);
+
+    const [request, ...more] = await requestRows(alice.id);
+    expect(more).toEqual([]);
+    expect(request).toMatchObject({ article_id: article.id, status: 'pending' });
+    expect(AnalysisInputSnapshotSchema.safeParse(request!.input_snapshot).success).toBe(true);
+    expect(await analysisIntents([request!.id])).toEqual([request!.id]);
+    expect(res.json().item.analysis).toEqual({
+      mode: 'training',
+      status: 'pending',
+      requestId: request!.id,
+    });
+    const [event] = await rateEvents(alice.id, article.id);
+    expect(event).toMatchObject({
+      analysisRequestId: request!.id,
+      inputSha: expect.stringMatching(/^[0-9a-f]{64}$/),
+      features: { sourceManifest: { inferenceFeedIds: [feed.id] } },
+    });
+
+    // Rating again attaches the same request; so does a prompt answer.
+    const again = await rate(alice, article, {
+      stateVersion: res.json().item.stateVersion,
+      rating: 1,
+    });
+    expect(again.statusCode, again.body).toBe(200);
+    const answer = await apiClient(h.server, alice).post(`/articles/${article.id}/prompt-answer`, {
+      stateVersion: again.json().item.stateVersion,
+      contentRevision: article.contentRevision,
+      liked: true,
+    });
+    expect(answer.statusCode, answer.body).toBe(200);
+    expect(await requestRows(alice.id)).toHaveLength(1);
+    expect((await rateEvents(alice.id, article.id))[1]).toMatchObject({
+      analysisRequestId: request!.id,
+    });
+  });
+
+  it('keeps an id the client sent and asks nothing for an un-rating, an off feed or an admitted article', async () => {
+    const alice = await createTestUser(h);
+    const { feed, article } = await trainingArticle(alice);
+    const selected = await apiClient(h.server, alice).post(`/subscriptions/${feed.id}/analyze`, {
+      articles: selection([article]),
+      expectedInferenceVersion: '1',
+    });
+    expect(selected.statusCode, selected.body).toBe(202);
+    const [{ id }] = selected.json().requests as [{ id: string }];
+    expect((await rate(alice, article, { rating: 1, analysisRequestId: id })).statusCode).toBe(200);
+
+    const other = await createArticle(h.owner, { feedIds: [feed.id] });
+    expect((await rate(alice, other, { rating: null })).statusCode).toBe(200);
+
+    const off = await trainingArticle(alice, 'off');
+    expect((await rate(alice, off.article, { rating: -1 })).statusCode).toBe(200);
+
+    // An active feed analyses what arrives after it became active on its own.
+    const admitted = await trainingArticle(alice, 'active', new Date(Date.now() - 86_400_000));
+    expect((await rate(alice, admitted.article, { rating: 1 })).statusCode).toBe(200);
+
+    expect((await requestRows(alice.id)).map((row) => row.id)).toEqual([id]);
+  });
+
+  it('asks for an older article of an active feed', async () => {
+    const alice = await createTestUser(h);
+    const { article } = await trainingArticle(alice, 'active', new Date(Date.now() + 86_400_000));
+    expect((await rate(alice, article, { rating: 1 })).statusCode).toBe(200);
+    expect(await requestRows(alice.id)).toMatchObject([{ article_id: article.id }]);
+  });
+
+  it('asks for nothing when the article changed since it was shown; the rating is stale', async () => {
+    const alice = await createTestUser(h);
+    const { article } = await trainingArticle(alice);
+    await h.owner.query(
+      `UPDATE articles SET content_revision = content_revision + 1 WHERE id = $1`,
+      [article.id],
+    );
+    expect((await rate(alice, article, { rating: 1 })).statusCode).toBe(409);
+    expect(await requestRows(alice.id)).toHaveLength(0);
   });
 });

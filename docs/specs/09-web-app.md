@@ -186,7 +186,9 @@ login without leaking the previous account's UI. Slow classification leaves arti
   In an off feed, "Start training and analyze these N" may use the explicit combined
   `startTraining:true` action. Store the returned request ids with the selected items and send the
   matching `analysisRequestId` with their ratings, including offline replay; never attach a later
-  unrelated request implicitly. Direct off-feed views remain neutral even when a duplicate item
+  unrelated request implicitly. Rating an unanalysed article of a training feed without selecting it
+  first is enough: the server asks for its analysis and the item shows that request's status
+  (D-238). Direct off-feed views remain neutral even when a duplicate item
   already has cached scores through another active source.
 - **Saved bookmarks:** show capture status "Saving article", "Full text saved", "Partial text
   saved" or "Could not capture article". Open the saved snapshot by default from Bookmarks, with its
