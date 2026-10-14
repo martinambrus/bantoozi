@@ -14,7 +14,17 @@
     "analyze_one": "Analyzovať {{count}} vybraný článok",
     "analyze_few": "Analyzovať {{count}} vybrané články",
     "analyze_many": "Analyzovať {{count}} vybraného článku",
-    "analyze_other": "Analyzovať {{count}} vybraných článkov"
+    "analyze_other": "Analyzovať {{count}} vybraných článkov",
+    "like": "Páči sa mi",
+    "dislike": "Nepáči sa mi",
+    "likeAll_one": "Páči sa mi, vybrané: {{count}}",
+    "likeAll_few": "Páči sa mi, vybrané: {{count}}",
+    "likeAll_many": "Páči sa mi, vybrané: {{count}}",
+    "likeAll_other": "Páči sa mi, vybrané: {{count}}",
+    "dislikeAll_one": "Nepáči sa mi, vybrané: {{count}}",
+    "dislikeAll_few": "Nepáči sa mi, vybrané: {{count}}",
+    "dislikeAll_many": "Nepáči sa mi, vybrané: {{count}}",
+    "dislikeAll_other": "Nepáči sa mi, vybrané: {{count}}"
   },
   "limit": "Naraz môžete vybrať najviac {{max}} článkov.",
   "errors": {

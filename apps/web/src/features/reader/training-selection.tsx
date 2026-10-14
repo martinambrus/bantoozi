@@ -1,7 +1,10 @@
 import type { ArticleListItem } from '@bantoozi/shared';
 import { useState, type ReactNode, type RefObject } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import type { ArticleRowProps } from '../article/article-row.js';
+import { Button } from '../../components/button.js';
+import { useReaderActions } from './actions/provider.js';
 import { AnalyzePanel } from '../training/analyze-panel.js';
 import { useArticleSelection } from '../training/selection.js';
 import { useViewTitle } from './use-view-title.js';
@@ -39,10 +42,45 @@ function focusFirstListed(list: HTMLElement | null, articleIds: readonly string[
   list?.focus();
 }
 
+/** Like or dislike every selected article, one action each, then clear the selection. */
+function BulkActions({
+  items,
+  onDone,
+}: {
+  items: readonly ArticleListItem[];
+  onDone: (articleIds: readonly string[]) => void;
+}) {
+  const { t } = useTranslation('training');
+  const store = useReaderActions();
+  const count = items.length;
+
+  function rateAll(rating: 1 | -1) {
+    for (const item of items) {
+      store.dispatch(item, {
+        type: 'rate',
+        rating,
+        ...(item.analysis.requestId === null ? {} : { analysisRequestId: item.analysis.requestId }),
+      });
+    }
+    onDone(items.map(({ id }) => id));
+  }
+
+  return (
+    <>
+      <Button aria-label={t('panel.likeAll', { count })} onClick={() => rateAll(1)}>
+        {t('panel.like')}
+      </Button>
+      <Button aria-label={t('panel.dislikeAll', { count })} onClick={() => rateAll(-1)}>
+        {t('panel.dislike')}
+      </Button>
+    </>
+  );
+}
+
 /**
  * Choosing articles of a feed to have exactly those analyzed (spec 09 §3.2, spec 06 §10). Only the
  * feed view of a feed the person follows offers it, the app never chooses anything, and the choice
- * lasts as long as the view does. `listRef` is the list of rows the focus returns to.
+ * lasts as long as the view does. Only the chosen articles nobody is analyzing are ever sent. `listRef` is the list of rows the focus returns to.
  */
 export function useFeedTraining(
   view: ReaderView,
@@ -50,6 +88,7 @@ export function useFeedTraining(
 ): FeedTraining {
   const { subscription } = useViewTitle(view);
   const selection = useArticleSelection();
+  const analyzable = selection.items.filter((item) => SELECTABLE.has(item.analysis.status));
   // A refusal can remove every chosen article; the panel stays to say so.
   const [refused, setRefused] = useState(false);
 
@@ -63,15 +102,23 @@ export function useFeedTraining(
         <div className="rounded-xl border border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
           <AnalyzePanel
             subscription={subscription}
-            items={selection.items}
+            items={analyzable}
+            selectedCount={selection.items.length}
+            showAnalyze={analyzable.length > 0 || selection.items.length === 0}
             onDrop={(articleIds) => {
               setRefused(true);
               selection.remove(articleIds);
             }}
-            onRemove={(articleId) => {
-              setRefused(false);
-              selection.remove([articleId]);
-            }}
+            listSelected={false}
+            actions={
+              <BulkActions
+                items={selection.items}
+                onDone={(articleIds) => {
+                  setRefused(false);
+                  selection.remove(articleIds);
+                }}
+              />
+            }
             returnFocus={(articleIds) => {
               focusFirstListed(listRef.current, articleIds);
             }}
@@ -83,15 +130,12 @@ export function useFeedTraining(
           />
         </div>
       ) : null,
-    selectionOf: (item) =>
-      SELECTABLE.has(item.analysis.status)
-        ? {
-            selected: selection.has(item.id),
-            onChange: (selected) => {
-              setRefused(false);
-              selection.toggle(item, selected);
-            },
-          }
-        : undefined,
+    selectionOf: (item) => ({
+      selected: selection.has(item.id),
+      onChange: (selected) => {
+        setRefused(false);
+        selection.toggle(item, selected);
+      },
+    }),
   };
 }

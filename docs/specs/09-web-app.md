@@ -181,8 +181,11 @@ login without leaking the previous account's UI. Slow classification leaves arti
 - **Translated items:** a subtle "translated" marker. A toggle shows the English translation of the
   title and excerpt when available.
 - **Untrained items:** show "Not analyzed" and retain normal read/rate/bookmark actions. In a feed
-  set to Training, offer a selection checkbox and "Analyze selected N articles" (at most 20 per
-  submission), with exact selected titles visible before submission. Do not auto-select a calibration
+  view, every row has a selection checkbox (analyzed ones too); the panel above the list shows only
+  the count and the buttons "Analyze selected N articles" (at most 20 per submission; only the
+  selected articles not analyzed yet, hidden when there are none), Like and Dislike (one rating per
+  selected article, each as from its own row, so D-238 applies; the selection clears). The ticked
+  rows are the selection: no separate list of titles. Do not auto-select a calibration
   batch, all visible items or future arrivals. Cached answers may satisfy the request immediately;
   queued work shows its actual request status. Active feeds also allow explicit selection of old
   backlog; the normal active switch does not analyze it automatically.

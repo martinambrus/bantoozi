@@ -10,7 +10,13 @@
     "start_one": "Start training and analyze this article",
     "start_other": "Start training and analyze these {{count}}",
     "analyze_one": "Analyze selected {{count}} article",
-    "analyze_other": "Analyze selected {{count}} articles"
+    "analyze_other": "Analyze selected {{count}} articles",
+    "like": "Like",
+    "dislike": "Dislike",
+    "likeAll_one": "Like {{count}} selected article",
+    "likeAll_other": "Like {{count}} selected articles",
+    "dislikeAll_one": "Dislike {{count}} selected article",
+    "dislikeAll_other": "Dislike {{count}} selected articles"
   },
   "limit": "You can select at most {{max}} articles at a time.",
   "errors": {
