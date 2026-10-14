@@ -20,6 +20,8 @@ import {
   type LabelPickerRequest,
 } from '../reader/shortcuts/label-picker.js';
 import { BookmarkButton, RateButtons } from './article-buttons.js';
+import { MakeCard } from './make-card.js';
+import { MuteKeyword } from './mute-keyword.js';
 import { LabelDot } from './label-dot.js';
 import type { ArticleActions } from './use-article-actions.js';
 import { useLabels } from './use-labels.js';
@@ -123,6 +125,8 @@ export function DetailActions({ item, actions, onWhyThis }: DetailActionsProps) 
           {t('detail.whyThis')}
         </Button>
       )}
+      <MakeCard item={item} variant="ghost" />
+      <MuteKeyword item={item} variant="ghost" />
       <Menu
         trigger={(props) => (
           <Button {...props} variant="ghost" loading={rules.pending}>

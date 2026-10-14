@@ -173,7 +173,8 @@ login without leaking the previous account's UI. Slow classification leaves arti
 - **Rating state:** 👍/👎 highlighted.
 - **Expanding** an item shows the article's `imageUrl` above its text under the same image policy as
   the thumbnail (D-233; never above a saved bookmark copy, which keeps no images), the sanitized `excerptHtml` or `bodyLead`, a "Read original" button (opens
-  the URL in a new tab and calls `/open`), and the action bar: 👍 👎 🔖 label, Why this?, Mute story,
+  the URL in a new tab and calls `/open`), and the action bar: 👍 👎 🔖 label, Why this?, Make a card
+  from this, Mute a keyword (title words not already muted by an active rule), Mute story,
   more (block feed/domain/author, boost feed).
 - **Linkless items:** remain readable/rateable/bookmarkable; omit "Read original" and domain-based
   actions when no usable URL exists. Show missing-image/author/date fallbacks without broken controls.
