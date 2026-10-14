@@ -30,24 +30,25 @@ export function useCardDraft(articleIds: readonly string[] | undefined): CardDra
   const [id, setId] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [expired, setExpired] = useState(false);
-  const asked = useRef(false);
+  // One request per editor, kept across a StrictMode re-run of the effect: each run listens to it.
+  const request = useRef<Promise<CardDraft> | null>(null);
   // The articles of one editor do not change while it is open: the first list is the one asked for.
   const ids = useRef(articleIds);
   const wanted = articleIds !== undefined && articleIds.length > 0;
 
   useEffect(() => {
     const first = ids.current;
-    if (first === undefined || first.length === 0 || asked.current) return undefined;
-    asked.current = true;
+    if (first === undefined || first.length === 0) return undefined;
+    request.current ??= api.call(routes.cardDraftCreate, { body: { articleIds: [...first] } });
     let live = true;
-    api
-      .call(routes.cardDraftCreate, { body: { articleIds: [...first] } })
-      .then((draft) => {
+    request.current.then(
+      (draft) => {
         if (live) setId(draft.id);
-      })
-      .catch(() => {
+      },
+      () => {
         if (live) setFailed(true);
-      });
+      },
+    );
     const timer = setTimeout(() => {
       if (live) setExpired(true);
     }, CARD_DRAFT_GIVE_UP_MS);

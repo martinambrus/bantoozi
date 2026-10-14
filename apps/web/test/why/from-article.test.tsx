@@ -1,5 +1,5 @@
 import { CARD_LIMITS, type CardDto } from '@bantoozi/shared';
-import { screen, waitFor, within } from '@testing-library/react';
+import { configure, getConfig, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CardEditor } from '../../src/features/interests/card-editor.js';
@@ -195,6 +195,27 @@ describe('the drafted name and interest (D-240)', () => {
       ),
     ).toHaveAttribute('role', 'status');
     expect(app.calls('POST', '/cards/drafts').map(bodyOf)).toEqual([{ articleIds: ['101'] }]);
+  });
+
+  it('fills the fields under StrictMode, whose second effect run must not lose the draft', async () => {
+    const strict = getConfig().reactStrictMode;
+    configure({ reactStrictMode: true });
+    try {
+      const onClose = vi.fn();
+      const app = track(
+        renderReader(<CardEditor fromArticle={ARTICLE} onClose={onClose} />, {
+          routes: { 'GET /subscriptions': () => json(200, []), ...cardDraftRoutes(DRAFTED) },
+        }),
+      );
+      app.queryClient.setQueryData<CardDto[]>(cardsKey(USER_A_ID), HELD);
+      const dialog = await screen.findByRole('dialog', { name: 'New card from this article' });
+      await waitFor(() =>
+        expect(within(dialog).getByLabelText(LABELS.interest)).toHaveValue(DRAFTED.interest),
+      );
+      expect(app.calls('POST', '/cards/drafts')).toHaveLength(1);
+    } finally {
+      configure({ reactStrictMode: strict });
+    }
   });
 
   it('never overwrites what the person typed before the draft came', async () => {
