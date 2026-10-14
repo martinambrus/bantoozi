@@ -14,9 +14,7 @@ export function NewArticlesBanner({ count, onShow }: NewArticlesBannerProps) {
     <>
       {/* Always mounted, so a screen reader hears the number when it appears; takes no room. */}
       <VisuallyHidden>
-        <span role="status" aria-live="polite">
-          {count > 0 ? t('list.showNew', { count }) : ''}
-        </span>
+        <span role="status">{count > 0 ? t('list.showNew', { count }) : ''}</span>
       </VisuallyHidden>
       {count > 0 ? (
         <div className="flex justify-center">
