@@ -7,7 +7,7 @@ import type {
   Subscription,
 } from '@bantoozi/shared';
 import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { isApiError } from '../../api/errors.js';
@@ -43,6 +43,14 @@ export interface AnalyzePanelProps {
    * panel keeps the focus.
    */
   returnFocus?: ((articleIds: readonly string[]) => void) | undefined;
+  /** False leaves the titles out, for a list whose rows already show what is selected. */
+  listSelected?: boolean | undefined;
+  /** How many articles are selected in all, when `items` are only those that can be analyzed. */
+  selectedCount?: number | undefined;
+  /** False leaves out the button that sends the articles, and what is said about it. */
+  showAnalyze?: boolean | undefined;
+  /** More buttons, in the row of the one that sends the articles. */
+  actions?: ReactNode;
 }
 
 type Refusal =
@@ -152,6 +160,10 @@ export function AnalyzePanel({
   onDrop,
   onRemove,
   returnFocus,
+  listSelected = true,
+  selectedCount,
+  showAnalyze = true,
+  actions,
 }: AnalyzePanelProps) {
   const { t } = useTranslation('training');
   const queryClient = useQueryClient();
@@ -174,11 +186,13 @@ export function AnalyzePanel({
 
   const off = subscription.inferenceMode === 'off';
   const empty = items.length === 0;
-  const hint = empty
-    ? t('panel.hint', { max: MAX_SELECTED_ARTICLES })
-    : off
-      ? t('panel.offNote')
-      : null;
+  const hint = !showAnalyze
+    ? null
+    : empty
+      ? t('panel.hint', { max: MAX_SELECTED_ARTICLES })
+      : off
+        ? t('panel.offNote')
+        : null;
   const refusal = analyze.error === null ? null : refusalOf(analyze.error);
 
   // A refusal is about the selection that was sent: the person adding or removing an article ends
@@ -307,9 +321,9 @@ export function AnalyzePanel({
       className="flex flex-col gap-3 outline-none"
     >
       <p className="text-sm font-medium">
-        {t('panel.count', { selected: items.length, max: MAX_SELECTED_ARTICLES })}
+        {t('panel.count', { selected: selectedCount ?? items.length, max: MAX_SELECTED_ARTICLES })}
       </p>
-      {empty ? null : (
+      {empty || !listSelected ? null : (
         <ol
           aria-label={t('panel.selected')}
           className="flex list-decimal flex-col gap-1 ps-6 text-sm"
@@ -344,19 +358,22 @@ export function AnalyzePanel({
           {hint}
         </p>
       )}
-      <div>
-        <Button
-          disabled={empty}
-          loading={analyze.isPending}
-          aria-describedby={hint === null ? undefined : hintId}
-          onClick={() => {
-            void send();
-          }}
-        >
-          {empty
-            ? t('panel.none')
-            : t(off ? 'panel.start' : 'panel.analyze', { count: items.length })}
-        </Button>
+      <div className="flex flex-wrap gap-2">
+        {showAnalyze ? (
+          <Button
+            disabled={empty}
+            loading={analyze.isPending}
+            aria-describedby={hint === null ? undefined : hintId}
+            onClick={() => {
+              void send();
+            }}
+          >
+            {empty
+              ? t('panel.none')
+              : t(off ? 'panel.start' : 'panel.analyze', { count: items.length })}
+          </Button>
+        ) : null}
+        {actions}
       </div>
       {message === null ? null : <InlineAlert>{message}</InlineAlert>}
     </section>

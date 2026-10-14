@@ -139,20 +139,10 @@ async function choose(app: App, ...chosen: string[]) {
 
 const panel = () => screen.queryByRole('region', { name: 'Articles to analyze' });
 
-const namedIn = (region: HTMLElement) =>
-  within(within(region).getByRole('list', { name: 'Selected articles' }))
-    .getAllByRole('listitem')
-    .map((entry) => entry.textContent);
-
 const sendButton = (name: string | RegExp) => screen.getByRole('button', { name });
 
 /** The button that opens the row of `title`, which is where the focus is meant to land. */
 const titleOf = (title: string) => rowOf(title).querySelector('h3 button');
-
-const removeButton = (title: string) =>
-  within(screen.getByRole('region', { name: 'Articles to analyze' })).getByRole('button', {
-    name: `Remove ${title}`,
-  });
 
 /** The list is read again, as it is when something else the person did makes it stale. */
 async function reload(app: App) {
@@ -183,12 +173,12 @@ describe('which rows have a checkbox', () => {
   ];
 
   it.each<Mode>(['off', 'training', 'active'])(
-    'are on the rows nobody is analyzing in a feed that is %s, and nothing is selected',
+    'are on every row of a feed that is %s, and nothing is selected',
     async (mode) => {
       const { app } = await openFeed(ROWS, { subscriptions: [verge(mode)] });
 
-      expect(withBox(titles(6))).toEqual(['Article 1', 'Article 5', 'Article 6']);
-      expect(screen.getAllByRole('checkbox')).toHaveLength(3);
+      expect(withBox(titles(6))).toEqual(titles(6));
+      expect(screen.getAllByRole('checkbox')).toHaveLength(6);
       expect(screen.queryByRole('button', { name: /select all/i })).toBeNull();
       expect(ticked(titles(6))).toEqual([]);
       expect(panel()).toBeNull();
@@ -248,7 +238,7 @@ describe('which rows have a checkbox', () => {
 });
 
 describe('choosing articles', () => {
-  it('shows the exact titles in the order they were chosen and sends nothing', async () => {
+  it('counts the articles chosen, whatever their titles, and sends nothing', async () => {
     const tricky = ['A <b>bold</b> claim', 'Solid-state batteries & the “pilot” line'];
     const { app } = await openFeed([
       item(1, { title: tricky[0]! }),
@@ -259,7 +249,6 @@ describe('choosing articles', () => {
     await choose(app, tricky[1]!, 'Article 2', tricky[0]!);
 
     const region = screen.getByRole('region', { name: 'Articles to analyze' });
-    expect(namedIn(region)).toEqual([tricky[1], 'Article 2', tricky[0]]);
     expect(within(region).getByText('3 of 20 selected')).toBeVisible();
     expect(ticked([tricky[0]!, 'Article 2', tricky[1]!])).toHaveLength(3);
     expect(app.calls(ANALYZE)).toHaveLength(0);
@@ -284,9 +273,6 @@ describe('choosing articles', () => {
 
     await choose(app, 'Article 1');
 
-    expect(namedIn(screen.getByRole('region', { name: 'Articles to analyze' }))).toEqual([
-      'Article 2',
-    ]);
     expect(ticked(titles(2))).toEqual(['Article 2']);
     await choose(app, 'Article 2');
     expect(panel()).toBeNull();
@@ -303,9 +289,6 @@ describe('choosing articles', () => {
     await screen.findByRole('article', { name: 'Article 3' });
     expect(withBox(titles(3))).toEqual(['Article 1', 'Article 2', 'Article 3']);
     expect(ticked(titles(3))).toEqual(['Article 1']);
-    expect(namedIn(screen.getByRole('region', { name: 'Articles to analyze' }))).toEqual([
-      'Article 1',
-    ]);
     expect(app.calls(ANALYZE)).toHaveLength(0);
   });
 
@@ -427,7 +410,7 @@ describe('sending the selected articles', () => {
     await waitFor(() => expect(listQueries(app).length).toBeGreaterThan(loaded));
     expect(await within(rowOf('Article 1')).findByText('Queued for analysis')).toBeVisible();
     expect(within(rowOf('Article 3')).getByText('Queued for analysis')).toBeVisible();
-    expect(withBox(titles(4))).toEqual(['Article 2', 'Article 4']);
+    expect(withBox(titles(4))).toEqual(titles(4));
     expect(ticked(titles(4))).toEqual([]);
     for (const title of ['Article 2', 'Article 4']) {
       expect(within(rowOf(title)).getByText('Not analyzed')).toBeVisible();
@@ -453,7 +436,6 @@ describe('sending the selected articles', () => {
 
     expect(await within(rowOf('Article 1')).findByText('Queued for analysis')).toBeVisible();
     const region = screen.getByRole('region', { name: 'Articles to analyze' });
-    expect(namedIn(region)).toEqual(['Article 3']);
     expect(within(region).getByText('1 of 20 selected')).toBeVisible();
     expect(ticked(titles(4))).toEqual(['Article 3']);
     await waitFor(() => expect(sendButton('Analyze selected 1 article')).toBeEnabled());
@@ -548,8 +530,6 @@ describe('sending the selected articles', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       '1 selected article changed and was removed from your selection. Check the list, then analyze again.',
     );
-    const region = screen.getByRole('region', { name: 'Articles to analyze' });
-    expect(namedIn(region)).toEqual(['Article 1', 'Article 3']);
     expect(ticked(titles(3))).toEqual(['Article 1', 'Article 3']);
     await screen.findByText('Article 2 was corrected');
 
@@ -638,42 +618,6 @@ describe('where the focus goes when the selection is sent', () => {
     expect(document.activeElement).toBe(list);
   });
 
-  it('stays on the button of a title chosen meanwhile, which keeps the panel', async () => {
-    const answer = deferred<Response>();
-    const { app } = await openFeed([item(1), item(2), item(3)], {
-      routes: { [ANALYZE]: () => answer.promise },
-    });
-    await choose(app, 'Article 1', 'Article 2');
-    await app.user.click(sendButton('Analyze selected 2 articles'));
-    await choose(app, 'Article 3');
-    act(() => {
-      removeButton('Article 3').focus();
-    });
-
-    answer.resolve(accepted(1, 2));
-
-    await waitFor(() => expect(namedIn(panel()!)).toEqual(['Article 3']));
-    expect(removeButton('Article 3')).toHaveFocus();
-  });
-
-  it('is the panel when its button for an article sent goes, and one chosen meanwhile stays', async () => {
-    const answer = deferred<Response>();
-    const { app } = await openFeed([item(1), item(2), item(3)], {
-      routes: { [ANALYZE]: () => answer.promise },
-    });
-    await choose(app, 'Article 1', 'Article 2');
-    await app.user.click(sendButton('Analyze selected 2 articles'));
-    await choose(app, 'Article 3');
-    act(() => {
-      removeButton('Article 1').focus();
-    });
-
-    answer.resolve(accepted(1, 2));
-
-    await waitFor(() => expect(namedIn(panel()!)).toEqual(['Article 3']));
-    expect(panel()).toHaveFocus();
-  });
-
   it('stays where the person took it while the articles were sent', async () => {
     const answer = deferred<Response>();
     const { app } = await openFeed([item(1), item(2), item(3)], {
@@ -694,55 +638,20 @@ describe('where the focus goes when the selection is sent', () => {
 });
 
 describe('taking a chosen article out', () => {
-  it('has a button on each title that takes that article out and nothing else', async () => {
+  it('is the checkbox of its row, which takes that article out and nothing else', async () => {
     const { app } = await openFeed([item(1), item(2), item(3)]);
     await choose(app, 'Article 1', 'Article 2', 'Article 3');
 
-    await app.user.click(removeButton('Article 2'));
+    await choose(app, 'Article 2');
 
     const region = screen.getByRole('region', { name: 'Articles to analyze' });
-    expect(namedIn(region)).toEqual(['Article 1', 'Article 3']);
     expect(ticked(titles(3))).toEqual(['Article 1', 'Article 3']);
     expect(within(region).getByText('2 of 20 selected')).toBeVisible();
     expect(sendButton('Analyze selected 2 articles')).toBeEnabled();
     expect(app.calls(ANALYZE)).toHaveLength(0);
   });
 
-  it('takes out an article whose row has left the list, and sends the rest', async () => {
-    const { app, served } = await openFeed([item(1), item(2), item(3)]);
-    await choose(app, 'Article 1', 'Article 2', 'Article 3');
-    served.items = [item(1)];
-    await reload(app);
-    await waitFor(() => expect(screen.queryByRole('article', { name: 'Article 3' })).toBeNull());
-    const region = screen.getByRole('region', { name: 'Articles to analyze' });
-    expect(namedIn(region)).toEqual(['Article 1', 'Article 2', 'Article 3']);
-
-    await app.user.click(removeButton('Article 3'));
-
-    expect(namedIn(region)).toEqual(['Article 1', 'Article 2']);
-    await app.user.click(sendButton('Analyze selected 2 articles'));
-    await waitFor(() => expect(app.calls(ANALYZE)).toHaveLength(1));
-    expect(
-      (bodyOf(app.calls(ANALYZE)[0]!) as { articles: { id: string }[] }).articles.map(
-        ({ id }) => id,
-      ),
-    ).toEqual(['1', '2']);
-  });
-
-  it('takes the panel away with the last title', async () => {
-    const { app } = await openFeed([item(1), item(2)]);
-    await choose(app, 'Article 1', 'Article 2');
-
-    await app.user.click(removeButton('Article 1'));
-    expect(panel()).not.toBeNull();
-    await app.user.click(removeButton('Article 2'));
-
-    expect(panel()).toBeNull();
-    expect(ticked(titles(2))).toEqual([]);
-    expect(app.calls(ANALYZE)).toHaveLength(0);
-  });
-
-  it('takes the panel away with the last title after a refusal dropped some', async () => {
+  it('takes the panel away with the last one, also after a refusal dropped some', async () => {
     const { app } = await openFeed([item(1), item(2)], {
       routes: { [ANALYZE]: () => failure(409, 'STALE_STATE', { articleIds: ['2'] }) },
     });
@@ -750,35 +659,10 @@ describe('taking a chosen article out', () => {
     await app.user.click(sendButton('Analyze selected 2 articles'));
     expect(await screen.findByRole('alert')).toBeVisible();
 
-    await app.user.click(removeButton('Article 1'));
+    await choose(app, 'Article 1');
 
     expect(panel()).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
-  });
-
-  it('puts the focus on the button of the next title, and on the row of the last title', async () => {
-    const { app } = await openFeed([item(1), item(2)]);
-    await choose(app, 'Article 1', 'Article 2');
-
-    await app.user.click(removeButton('Article 1'));
-    expect(removeButton('Article 2')).toHaveFocus();
-    await app.user.click(removeButton('Article 2'));
-
-    expect(panel()).toBeNull();
-    expect(document.activeElement).toBe(titleOf('Article 2'));
-  });
-
-  it('puts the focus on the list when the last title taken out has no row any more', async () => {
-    const { app, served } = await openFeed([item(1), item(2)]);
-    await choose(app, 'Article 2');
-    served.items = [item(1)];
-    await reload(app);
-    await waitFor(() => expect(screen.queryByRole('article', { name: 'Article 2' })).toBeNull());
-
-    await app.user.click(removeButton('Article 2'));
-
-    expect(panel()).toBeNull();
-    expect(document.activeElement).toBe(rowOf('Article 1').closest('ul'));
   });
 });
 
@@ -806,10 +690,7 @@ describe('the message about a refused request', () => {
     await refused(['2']);
 
     expect(screen.getByRole('alert')).toHaveTextContent(REFUSED);
-    expect(namedIn(screen.getByRole('region', { name: 'Articles to analyze' }))).toEqual([
-      'Article 1',
-      'Article 3',
-    ]);
+    expect(ticked(titles(4))).toEqual(['Article 1', 'Article 3']);
   });
 
   it('is gone when the person chooses another article', async () => {
@@ -831,18 +712,11 @@ describe('the message about a refused request', () => {
 
   it('is gone when the person chooses the last article again, which makes the selection that was sent', async () => {
     const { app } = await refused(['3']);
-    expect(namedIn(screen.getByRole('region', { name: 'Articles to analyze' }))).toEqual([
-      'Article 1',
-      'Article 2',
-    ]);
+    expect(ticked(titles(4))).toEqual(['Article 1', 'Article 2']);
 
     await choose(app, 'Article 3');
 
-    expect(namedIn(screen.getByRole('region', { name: 'Articles to analyze' }))).toEqual([
-      'Article 1',
-      'Article 2',
-      'Article 3',
-    ]);
+    expect(ticked(titles(4))).toEqual(['Article 1', 'Article 2', 'Article 3']);
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
@@ -853,14 +727,6 @@ describe('the message about a refused request', () => {
 
     expect(screen.queryByRole('alert')).toBeNull();
     expect(ticked(titles(4))).toEqual(['Article 3']);
-  });
-
-  it('is gone when the person takes a title out of the panel', async () => {
-    const { app } = await refused(['2']);
-
-    await app.user.click(removeButton('Article 3'));
-
-    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('stays, with the panel, when it emptied the selection, and is gone when the person chooses one', async () => {
@@ -937,34 +803,20 @@ describe('what the controls offer', () => {
     expect(panel()).toBeNull();
   });
 
-  it('names the button of each title, makes it 44 px and gives it a focus ring', async () => {
+  it('names the buttons of the bar, makes them 44 px and gives them a focus ring', async () => {
     const { app } = await openFeed([item(1), item(2)]);
     await choose(app, 'Article 1', 'Article 2');
 
-    const region = screen.getByRole('region', { name: 'Articles to analyze' });
-    const buttons = within(region).getAllByRole('button', { name: /^Remove / });
+    const buttons = within(panel()!).getAllByRole('button');
     expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
-      'Remove Article 1',
-      'Remove Article 2',
+      null,
+      'Like 2 selected articles',
+      'Dislike 2 selected articles',
     ]);
     for (const button of buttons) {
       expect(button.className).toContain('min-h-11');
-      expect(button.className).toContain('min-w-11');
       for (const token of FOCUS_RING.split(' ')) expect(button.className).toContain(token);
     }
-  });
-
-  it('can take a title out from the keyboard', async () => {
-    const { app } = await openFeed([item(1), item(2)]);
-    await choose(app, 'Article 1', 'Article 2');
-
-    removeButton('Article 1').focus();
-    await app.user.keyboard('{Enter}');
-
-    expect(ticked(titles(2))).toEqual(['Article 2']);
-    expect(namedIn(screen.getByRole('region', { name: 'Articles to analyze' }))).toEqual([
-      'Article 2',
-    ]);
   });
 });
 
@@ -987,20 +839,127 @@ describe('in Slovak', () => {
     expect(within(rowOf('Article 4')).getByText('Analýza zlyhala')).toBeVisible();
     expect(within(rowOf('Article 2')).getByText('Neanalyzované')).toBeVisible();
   });
+});
 
-  it('names the button that takes a title out of the selection', async () => {
+describe('the selection bar', () => {
+  const bulk = (name: RegExp) => within(panel()!).getByRole('button', { name });
+
+  const ratedBodies = (app: App) =>
+    app.calls(RATE).map((request) => ({
+      url: request.pathname,
+      body: bodyOf(request) as Record<string, unknown>,
+    }));
+
+  it('shows the count and the buttons, with no titles and no buttons to take one out', async () => {
+    const { app } = await openFeed([item(1), item(2)]);
+    await choose(app, 'Article 1', 'Article 2');
+
+    const region = panel()!;
+    expect(within(region).getByText('2 of 20 selected')).toBeVisible();
+    expect(within(region).queryByRole('list')).toBeNull();
+    expect(within(region).queryByText('Article 1')).toBeNull();
+    expect(within(region).queryAllByRole('button', { name: /^Remove / })).toEqual([]);
+    expect(
+      within(region)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Analyze selected 2 articles', 'Like', 'Dislike']);
+    for (const button of within(region).getAllByRole('button')) {
+      expect(button).toHaveAttribute('data-variant', 'primary');
+    }
+    expect(bulk(/^Like 2 selected articles$/)).toBeVisible();
+    expect(bulk(/^Dislike 2 selected articles$/)).toBeVisible();
+  });
+
+  it('likes every selected article once, with the request of one that has it, and clears the selection', async () => {
+    const { app } = await openFeed([item(1, { analysis: asked('failed', 1) }), item(2), item(3)]);
+    await choose(app, 'Article 1', 'Article 2');
+
+    await app.user.click(bulk(/^Like 2 selected articles$/));
+
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
+    const sent = ratedBodies(app);
+    const body = (id: string) => sent.find(({ url }) => url === `/api/v1/articles/${id}/rating`);
+    expect(body('1')?.body).toMatchObject({ rating: 1, analysisRequestId: requestId(1) });
+    expect(body('2')?.body).toMatchObject({ rating: 1 });
+    expect(body('2')?.body).not.toHaveProperty('analysisRequestId');
+    expect(panel()).toBeNull();
+    expect(ticked(titles(3))).toEqual([]);
+    expect(app.calls('POST /articles/rate-bulk')).toHaveLength(0);
+  });
+
+  it('dislikes every selected article once and clears the selection', async () => {
+    const { app } = await openFeed([item(1), item(2), item(3)]);
+    await choose(app, 'Article 1', 'Article 3');
+
+    await app.user.click(bulk(/^Dislike 2 selected articles$/));
+
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
+    expect(ratedBodies(app).map(({ url, body }) => [url, body['rating']])).toEqual([
+      ['/api/v1/articles/1/rating', -1],
+      ['/api/v1/articles/3/rating', -1],
+    ]);
+    expect(panel()).toBeNull();
+  });
+
+  it('words the buttons in Slovak', async () => {
     const { app } = await openFeed([item(1), item(2)], { me: makeMe({ locale: 'sk' }) });
     await choose(app, 'Article 1', 'Article 2');
+
     const region = screen.getByRole('region', { name: 'Články na analýzu' });
+    expect(within(region).queryByRole('list')).toBeNull();
+    expect(within(region).getAllByRole('button')).toHaveLength(3);
+    expect(within(region).getByRole('button', { name: /^Páči sa mi, vybrané: 2$/ })).toBeVisible();
+  });
 
-    await app.user.click(
-      within(region).getByRole('button', { name: 'Odobrať z výberu: Article 1' }),
-    );
+  it('has a checkbox on every row, and Like rates an analyzed article too', async () => {
+    const { app } = await openFeed([item(1), item(2, { analysis: asked('complete', 2) })]);
+    expect(withBox(titles(2))).toEqual(['Article 1', 'Article 2']);
+    await choose(app, 'Article 2');
 
-    expect(within(region).getByText('Vybrané: 1 z 20')).toBeVisible();
-    expect(
-      within(region).queryByRole('button', { name: 'Odobrať z výberu: Article 1' }),
-    ).not.toBeInTheDocument();
-    expect(ticked(titles(2))).toEqual(['Article 2']);
+    await app.user.click(bulk(/^Like 1 selected article$/));
+
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(1));
+    expect(ratedBodies(app)[0]).toMatchObject({
+      url: '/api/v1/articles/2/rating',
+      body: { rating: 1, analysisRequestId: requestId(2) },
+    });
+    expect(app.calls(ANALYZE)).toHaveLength(0);
+  });
+
+  it('hides Analyze while only analyzed articles are selected, and still counts them', async () => {
+    const { app } = await openFeed([
+      item(1),
+      item(2, { analysis: asked('complete', 2) }),
+      item(3, { analysis: asked('pending', 3) }),
+    ]);
+    await choose(app, 'Article 2', 'Article 3');
+
+    const region = panel()!;
+    expect(within(region).getByText('2 of 20 selected')).toBeVisible();
+    expect(within(region).queryByRole('button', { name: /Analyze|analyze/ })).toBeNull();
+    expect(within(region).queryByText(/Select up to/)).toBeNull();
+    expect(within(region).getAllByRole('button')).toHaveLength(2);
+
+    await choose(app, 'Article 1');
+    expect(sendButton('Analyze selected 1 article')).toBeEnabled();
+  });
+
+  it('sends only the analyzable articles of a mixed selection', async () => {
+    const { app } = await openFeed([
+      item(1),
+      item(2, { analysis: asked('complete', 2) }),
+      item(3, { analysis: asked('failed', 3) }),
+    ]);
+    await choose(app, 'Article 1', 'Article 2', 'Article 3');
+    expect(within(panel()!).getByText('3 of 20 selected')).toBeVisible();
+
+    await app.user.click(sendButton('Analyze selected 2 articles'));
+
+    await waitFor(() => expect(app.calls(ANALYZE)).toHaveLength(1));
+    const { articles } = bodyOf(app.calls(ANALYZE)[0]!) as { articles: { id: string }[] };
+    expect(articles.map(({ id }) => id)).toEqual(['1', '3']);
+    await waitFor(() => expect(ticked(titles(3))).toEqual(['Article 2']));
+    expect(within(panel()!).getByText('1 of 20 selected')).toBeVisible();
   });
 });

@@ -77,14 +77,16 @@ test('select training: one article is analyzed, reaches For you, and Why this? f
   });
 
   const panel = page.getByRole('region', { name: 'Articles to analyze' });
-  await test.step('selecting one article names it and offers to start training for it', async () => {
+  await test.step('selecting one article counts it and offers to start training for it', async () => {
     await articleRow(page, selected.title)
       .getByRole('checkbox', { name: `Select ${selected.title}` })
       .check();
     await expect(panel).toContainText('1 of 20 selected');
-    const chosen = panel.getByRole('list', { name: 'Selected articles' }).getByRole('listitem');
-    await expect(chosen).toHaveCount(1);
-    await expect(chosen).toHaveText(selected.title);
+    // The panel only counts: the row's own checkbox is the selection (no list of titles).
+    await expect(panel.getByRole('list', { name: 'Selected articles' })).toHaveCount(0);
+    await expect(
+      articleRow(page, selected.title).getByRole('checkbox', { name: `Select ${selected.title}` }),
+    ).toBeChecked();
     await expect(
       panel.getByRole('button', { name: 'Start training and analyze this article', exact: true }),
     ).toBeEnabled();

@@ -73,15 +73,24 @@ export interface DrawerFixtures {
   detail?: Partial<ArticleDetail>;
   cards?: CardDto[];
   topics?: Topic[];
+  /** The rules `GET /rules` answers with. */
+  rules?: unknown[];
 }
 
 /** What the drawer reads: the detail, the cards, the taxonomy and (for the editor) the feeds. */
 export function drawerRoutes(fixtures: DrawerFixtures = {}): Record<string, ApiRouteHandler> {
-  const { item = ITEM, explain = makeExplain(), cards = HELD, topics = TOPICS } = fixtures;
+  const {
+    item = ITEM,
+    explain = makeExplain(),
+    cards = HELD,
+    topics = TOPICS,
+    rules = [],
+  } = fixtures;
   return {
     'GET /articles/:id': () => json(200, makeDetail(item, { explain, ...fixtures.detail })),
     'GET /cards': () => json(200, cards),
     'GET /topics': () => json(200, topics),
+    'GET /rules': () => json(200, rules),
     'GET /subscriptions': () => json(200, []),
     ...cardDraftRoutes(),
   };

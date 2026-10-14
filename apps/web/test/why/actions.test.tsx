@@ -795,3 +795,58 @@ describe('accessibility', () => {
     ).toHaveAccessibleDescription('Boosted source');
   });
 });
+
+describe('mute a keyword leaves out muted words', () => {
+  const TITLE = makeItem({ title: 'Batteries and solar power' });
+  const open = async (rules: unknown[], routes = {}) => {
+    const app = await renderDrawer({ item: TITLE, rules, routes });
+    return app;
+  };
+  const words = async (app: Awaited<ReturnType<typeof renderDrawer>>) => {
+    await app.user.click(app.panel.getByRole('button', { name: 'Mute a keyword' }));
+    return within(await screen.findByRole('menu', { name: 'Mute a keyword' }))
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent);
+  };
+
+  it('offers every word when no rule exists', async () => {
+    expect(await words(await open([]))).toEqual(['Batteries', 'and', 'solar', 'power']);
+  });
+
+  it('leaves out a muted word, however it is written', async () => {
+    const app = await open([
+      makeRule('1', 'mute_keyword', 'SOLAR'),
+      makeRule('2', 'mute_keyword', 'batteries'),
+      makeRule('3', 'block_author', 'power'),
+    ]);
+    expect(await words(app)).toEqual(['and', 'power']);
+  });
+
+  it('shows no menu when every word is muted', async () => {
+    const app = await open(
+      ['batteries', 'and', 'solar', 'power'].map((w, i) => makeRule(`${i + 1}`, 'mute_keyword', w)),
+    );
+    expect(app.panel.queryByRole('button', { name: 'Mute a keyword' })).toBeNull();
+  });
+
+  it('drops a word once it is muted', async () => {
+    const rules: ReturnType<typeof makeRule>[] = [];
+    const app = await renderDrawer({
+      item: TITLE,
+      rules,
+      routes: {
+        'GET /rules': () => json(200, rules),
+        'POST /rules': (request) => {
+          const { value } = bodyOf(request) as { value: string };
+          const rule = makeRule('77', 'mute_keyword', value);
+          rules.push(rule);
+          return json(201, { rule });
+        },
+      },
+    });
+    await app.user.click(app.panel.getByRole('button', { name: 'Mute a keyword' }));
+    await app.user.click(await screen.findByRole('menuitem', { name: 'solar' }));
+    await findToast('Muted keyword: “solar”');
+    expect(await words(app)).toEqual(['Batteries', 'and', 'power']);
+  });
+});

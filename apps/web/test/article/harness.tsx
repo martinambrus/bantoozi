@@ -142,7 +142,10 @@ export function detailRoute(
   item: ArticleListItem,
   overrides: Partial<ArticleDetail> = {},
 ): Record<string, ApiRouteHandler> {
-  return { 'GET /articles/:id': () => json(200, makeDetail(item, overrides)) };
+  return {
+    'GET /articles/:id': () => json(200, makeDetail(item, overrides)),
+    'GET /rules': () => json(200, []),
+  };
 }
 
 /** The answer of an action route: the new item and the receipt. */
