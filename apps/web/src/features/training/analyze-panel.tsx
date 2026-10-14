@@ -186,6 +186,8 @@ export function AnalyzePanel({
 
   const off = subscription.inferenceMode === 'off';
   const empty = items.length === 0;
+  const batch = items.slice(0, MAX_SELECTED_ARTICLES);
+  const partial = items.length > batch.length;
   const hint = !showAnalyze
     ? null
     : empty
@@ -266,7 +268,7 @@ export function AnalyzePanel({
     if (empty || sending.current) return;
     sending.current = true;
     const signIn = session.currentSignIn();
-    const sent = items;
+    const sent = batch;
     let requests: AnalyzeResponse['requests'];
     try {
       ({ requests } = await analyze.mutateAsync({
@@ -321,7 +323,9 @@ export function AnalyzePanel({
       className="flex flex-col gap-3 outline-none"
     >
       <p className="text-sm font-medium">
-        {t('panel.count', { selected: selectedCount ?? items.length, max: MAX_SELECTED_ARTICLES })}
+        {selectedCount === undefined
+          ? t('panel.count', { selected: items.length, max: MAX_SELECTED_ARTICLES })
+          : t('panel.total', { count: selectedCount })}
       </p>
       {empty || !listSelected ? null : (
         <ol
@@ -370,7 +374,12 @@ export function AnalyzePanel({
           >
             {empty
               ? t('panel.none')
-              : t(off ? 'panel.start' : 'panel.analyze', { count: items.length })}
+              : partial
+                ? t(off ? 'panel.startOf' : 'panel.analyzeOf', {
+                    max: batch.length,
+                    total: items.length,
+                  })
+                : t(off ? 'panel.start' : 'panel.analyze', { count: items.length })}
           </Button>
         ) : null}
         {actions}

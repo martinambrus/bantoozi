@@ -6,6 +6,12 @@
     "count": "Vybrané: {{selected}} z {{max}}",
     "hint": "Vyberte najviac {{max}} článkov. Nič sa neanalyzuje, kým nestlačíte tlačidlo.",
     "offNote": "Tým sa zdroj prepne na trénovanie: analyzujú sa iba články, ktoré vyberiete.",
+    "total_one": "Vybrané: {{count}}",
+    "total_few": "Vybrané: {{count}}",
+    "total_many": "Vybrané: {{count}}",
+    "total_other": "Vybrané: {{count}}",
+    "analyzeOf": "Analyzovať {{max}} z {{total}}",
+    "startOf": "Spustiť trénovanie a analyzovať {{max}} z {{total}}",
     "none": "Vyberte články na analýzu",
     "start_one": "Spustiť trénovanie a analyzovať tento článok",
     "start_few": "Spustiť trénovanie a analyzovať tieto {{count}} články",
@@ -25,6 +31,10 @@
     "dislikeAll_few": "Nepáči sa mi, vybrané: {{count}}",
     "dislikeAll_many": "Nepáči sa mi, vybrané: {{count}}",
     "dislikeAll_other": "Nepáči sa mi, vybrané: {{count}}"
+  },
+  "selectAll": {
+    "select": "Vybrať všetky články",
+    "deselect": "Zrušiť výber všetkých článkov"
   },
   "limit": "Naraz môžete vybrať najviac {{max}} článkov.",
   "errors": {

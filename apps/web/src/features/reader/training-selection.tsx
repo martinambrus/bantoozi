@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { ArticleRowProps } from '../article/article-row.js';
 import { Button } from '../../components/button.js';
+import { Checkbox } from '../../components/checkbox.js';
 import { useReaderActions } from './actions/provider.js';
 import { AnalyzePanel } from '../training/analyze-panel.js';
 import { useArticleSelection } from '../training/selection.js';
@@ -18,6 +19,8 @@ const SELECTABLE: ReadonlySet<AnalysisStatus> = new Set(['not_requested', 'faile
 export interface FeedTraining {
   /** The chosen titles and the button that sends them, above the rows; null while none is chosen. */
   panel: ReactNode;
+  /** The checkbox that selects or deselects every loaded row; null where rows cannot be chosen. */
+  selectAll: ReactNode;
   /** The checkbox of a row, for the rows that can be chosen. */
   selectionOf: (item: ArticleListItem) => ArticleRowProps['selection'];
 }
@@ -85,15 +88,23 @@ function BulkActions({
 export function useFeedTraining(
   view: ReaderView,
   listRef: RefObject<HTMLElement | null>,
+  rows: readonly ArticleListItem[],
 ): FeedTraining {
+  const { t } = useTranslation('training');
   const { subscription } = useViewTitle(view);
-  const selection = useArticleSelection();
-  const analyzable = selection.items.filter((item) => SELECTABLE.has(item.analysis.status));
+  const selection = useArticleSelection(Infinity);
+  // The first ones sent are the first ones in the list.
+  const position = new Map(rows.map((row, index) => [row.id, index]));
+  const analyzable = selection.items
+    .filter((item) => SELECTABLE.has(item.analysis.status))
+    .sort((a, b) => (position.get(a.id) ?? rows.length) - (position.get(b.id) ?? rows.length));
+  const chosen = rows.filter((row) => selection.has(row.id)).length;
+  const every = rows.length > 0 && chosen === rows.length;
   // A refusal can remove every chosen article; the panel stays to say so.
   const [refused, setRefused] = useState(false);
 
   if (view.kind !== 'feed' || subscription === undefined) {
-    return { panel: null, selectionOf: () => undefined };
+    return { panel: null, selectAll: null, selectionOf: () => undefined };
   }
 
   return {
@@ -130,6 +141,19 @@ export function useFeedTraining(
           />
         </div>
       ) : null,
+    selectAll:
+      rows.length === 0 ? null : (
+        <Checkbox
+          label={t(every ? 'selectAll.deselect' : 'selectAll.select')}
+          checked={every}
+          indeterminate={chosen > 0 && !every}
+          onChange={() => {
+            setRefused(false);
+            if (every) selection.remove(rows.map(({ id }) => id));
+            else selection.addAll(rows);
+          }}
+        />
+      ),
     selectionOf: (item) => ({
       selected: selection.has(item.id),
       onChange: (selected) => {

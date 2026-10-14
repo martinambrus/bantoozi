@@ -208,7 +208,7 @@ export function ArticleList({
 }: ArticleListProps) {
   const { t } = useTranslation('reader');
   const { query, canLoadMore, loadMore, reload, saved, looking } = list;
-  const training = useFeedTraining(view, listRef);
+  const training = useFeedTraining(view, listRef, visible);
   const sentinel = useSentinel(canLoadMore, () => void loadMore());
   const failed = query.isError && query.data !== undefined && !isCursorRefused(query.error);
 
@@ -229,6 +229,7 @@ export function ArticleList({
         <div className="flex flex-col gap-3">
           {saved === null ? null : <SavedNotice savedAt={saved.savedAt} />}
           {training.panel}
+          {training.selectAll}
           <ul ref={listRef} role="list" tabIndex={-1} className="flex flex-col gap-3 outline-none">
             {rows.map((item) => (
               <li

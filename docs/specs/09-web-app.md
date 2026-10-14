@@ -181,9 +181,12 @@ login without leaking the previous account's UI. Slow classification leaves arti
 - **Translated items:** a subtle "translated" marker. A toggle shows the English translation of the
   title and excerpt when available.
 - **Untrained items:** show "Not analyzed" and retain normal read/rate/bookmark actions. In a feed
-  view, every row has a selection checkbox (analyzed ones too); the panel above the list shows only
-  the count and the buttons "Analyze selected N articles" (at most 20 per submission; only the
-  selected articles not analyzed yet, hidden when there are none), Like and Dislike (one rating per
+  view, every row has a selection checkbox (analyzed ones too), and a tri-state "Select all articles"
+  checkbox above the list ticks or unticks every loaded row (mixed state when some are ticked; the
+  reader's selection has no cap); the panel above the list shows only "N selected" and the buttons
+  "Analyze selected N articles" (at most 20 per submission, in list order, "Analyze 20 of M" when
+  more are analyzable; only the selected articles not analyzed yet, hidden when there are none),
+  Like and Dislike (one rating per
   selected article, each as from its own row, so D-238 applies; the selection clears). The ticked
   rows are the selection: no separate list of titles. Do not auto-select a calibration
   batch, all visible items or future arrivals. Cached answers may satisfy the request immediately;

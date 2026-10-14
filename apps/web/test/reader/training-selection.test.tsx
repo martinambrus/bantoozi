@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { FOCUS_RING } from '../../src/components/cx.js';
 import { failure, json } from '../api/fake-fetch.js';
-import { deferred, findToast, makeDetail } from '../article/harness.js';
+import { deferred, makeDetail } from '../article/harness.js';
 import { makeSubscription } from '../feeds/support.js';
 import { requestId } from '../onboarding/support.js';
 import { makeMe } from '../session/fixtures.js';
@@ -178,8 +178,8 @@ describe('which rows have a checkbox', () => {
       const { app } = await openFeed(ROWS, { subscriptions: [verge(mode)] });
 
       expect(withBox(titles(6))).toEqual(titles(6));
-      expect(screen.getAllByRole('checkbox')).toHaveLength(6);
-      expect(screen.queryByRole('button', { name: /select all/i })).toBeNull();
+      expect(screen.getAllByRole('checkbox')).toHaveLength(7);
+      expect(screen.getByRole('checkbox', { name: 'Select all articles' })).not.toBeChecked();
       expect(ticked(titles(6))).toEqual([]);
       expect(panel()).toBeNull();
       expect(app.calls(ANALYZE)).toHaveLength(0);
@@ -249,7 +249,7 @@ describe('choosing articles', () => {
     await choose(app, tricky[1]!, 'Article 2', tricky[0]!);
 
     const region = screen.getByRole('region', { name: 'Articles to analyze' });
-    expect(within(region).getByText('3 of 20 selected')).toBeVisible();
+    expect(within(region).getByText('3 selected')).toBeVisible();
     expect(ticked([tricky[0]!, 'Article 2', tricky[1]!])).toHaveLength(3);
     expect(app.calls(ANALYZE)).toHaveLength(0);
   });
@@ -292,23 +292,83 @@ describe('choosing articles', () => {
     expect(app.calls(ANALYZE)).toHaveLength(0);
   });
 
-  it('refuses a 21st article, says so, and sends the 20', async () => {
-    const { app } = await openFeed(numbered(21));
-    await choose(app, ...titles(20));
-    expect(screen.getByText('20 of 20 selected')).toBeVisible();
+  it('has no limit: 25 loaded rows can all be selected', async () => {
+    const { app } = await openFeed(numbered(25));
+    await choose(app, ...titles(25));
 
-    await app.user.click(boxOf('Article 21'));
+    expect(ticked(titles(25))).toHaveLength(25);
+    expect(screen.getByText('25 selected')).toBeVisible();
+    expect(screen.queryByText(/at most/)).toBeNull();
+  });
+});
 
-    expect(await findToast('You can select at most 20 articles at a time.')).toBeVisible();
-    expect(boxOf('Article 21')).not.toBeChecked();
-    expect(screen.getByText('20 of 20 selected')).toBeVisible();
-    expect(app.calls(ANALYZE)).toHaveLength(0);
+describe('select all', () => {
+  const all = () => screen.getByRole('checkbox', { name: /^(Select|Deselect) all articles$/ });
 
-    await app.user.click(sendButton('Analyze selected 20 articles'));
+  it('is a tri-state checkbox above the rows of a feed, and in no other view', async () => {
+    const { app } = await openFeed(numbered(3));
+    const box = all();
+    expect(box).toHaveAccessibleName('Select all articles');
+    expect(box).not.toBeChecked();
+    expect(box).not.toBePartiallyChecked();
+    expect(box.compareDocumentPosition(rowOf('Article 1'))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    await choose(app, 'Article 2');
+    expect(all()).toBePartiallyChecked();
+    expect(all()).toHaveAccessibleName('Select all articles');
+
+    await go(app, '/read/$lane', { lane: 'new' });
+    await screen.findByRole('article', { name: 'Elsewhere 21' });
+    expect(screen.queryByRole('checkbox', { name: /all articles/ })).toBeNull();
+  });
+
+  it('selects every loaded row from none or some, and deselects all when all are selected', async () => {
+    const { app } = await openFeed(numbered(3));
+
+    await app.user.click(all());
+    expect(ticked(titles(3))).toEqual(titles(3));
+    expect(all()).toBeChecked();
+    expect(all()).toHaveAccessibleName('Deselect all articles');
+
+    await app.user.click(all());
+    expect(ticked(titles(3))).toEqual([]);
+    expect(panel()).toBeNull();
+
+    await choose(app, 'Article 1');
+    await app.user.click(all());
+    expect(ticked(titles(3))).toEqual(titles(3));
+    expect(screen.getByText('3 selected')).toBeVisible();
+  });
+
+  it('ticks all 25 loaded rows; Analyze sends 20 of them, then the next 5', async () => {
+    const { app } = await openFeed(numbered(25));
+    await app.user.click(all());
+    expect(ticked(titles(25))).toHaveLength(25);
+    expect(screen.getByText('25 selected')).toBeVisible();
+
+    await app.user.click(sendButton('Analyze 20 of 25'));
 
     await waitFor(() => expect(app.calls(ANALYZE)).toHaveLength(1));
     const { articles } = bodyOf(app.calls(ANALYZE)[0]!) as { articles: { id: string }[] };
     expect(articles.map(({ id }) => id)).toEqual(titles(20).map((_title, i) => String(i + 1)));
+    await app.user.click(
+      await screen.findByRole('button', { name: 'Analyze selected 5 articles' }),
+    );
+    await waitFor(() => expect(app.calls(ANALYZE)).toHaveLength(2));
+    const second = bodyOf(app.calls(ANALYZE)[1]!) as { articles: { id: string }[] };
+    expect(second.articles.map(({ id }) => id)).toEqual(['21', '22', '23', '24', '25']);
+  });
+
+  it('rates all 25 selected articles with Like', async () => {
+    const { app } = await openFeed(numbered(25), {
+      routes: { [RATE]: () => json(200, { ok: true }) },
+    });
+    await app.user.click(all());
+
+    await app.user.click(sendButton('Like 25 selected articles'));
+
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(25));
+    await waitFor(() => expect(panel()).toBeNull());
   });
 });
 
@@ -377,9 +437,9 @@ describe('sending the selected articles', () => {
     expect(request!.pathname).toBe('/api/v1/subscriptions/7/analyze');
     expect(bodyOf(request!)).toStrictEqual({
       articles: [
-        { id: '4', contentRevision: '6' },
         { id: '1', contentRevision: '2' },
         { id: '3', contentRevision: '9' },
+        { id: '4', contentRevision: '6' },
       ],
       expectedInferenceVersion: '5',
       ...extra,
@@ -436,7 +496,7 @@ describe('sending the selected articles', () => {
 
     expect(await within(rowOf('Article 1')).findByText('Queued for analysis')).toBeVisible();
     const region = screen.getByRole('region', { name: 'Articles to analyze' });
-    expect(within(region).getByText('1 of 20 selected')).toBeVisible();
+    expect(within(region).getByText('1 selected')).toBeVisible();
     expect(ticked(titles(4))).toEqual(['Article 3']);
     await waitFor(() => expect(sendButton('Analyze selected 1 article')).toBeEnabled());
   });
@@ -541,8 +601,8 @@ describe('sending the selected articles', () => {
     expect(bodyOf(app.calls(ANALYZE)[1]!)).toStrictEqual({
       articles: [
         { id: '1', contentRevision: '2' },
-        { id: '3', contentRevision: '2' },
         { id: '2', contentRevision: '3' },
+        { id: '3', contentRevision: '2' },
       ],
       expectedInferenceVersion: '5',
     });
@@ -561,25 +621,23 @@ describe('sending the selected articles', () => {
     );
     expect(ticked(titles(2))).toEqual([]);
     expect(
-      within(screen.getByRole('region', { name: 'Articles to analyze' })).getByText(
-        '0 of 20 selected',
-      ),
+      within(screen.getByRole('region', { name: 'Articles to analyze' })).getByText('0 selected'),
     ).toBeVisible();
   });
 });
 
 describe('where the focus goes when the selection is sent', () => {
-  it('is the title of the first article sent, in the order they were chosen', async () => {
+  it('is the title of the first article sent, in list order', async () => {
     const { app } = await openFeed([item(1), item(2), item(3)]);
     await choose(app, 'Article 3', 'Article 2');
     await app.user.click(sendButton('Analyze selected 2 articles'));
 
     await waitFor(() => expect(panel()).toBeNull());
 
-    expect(document.activeElement).toBe(titleOf('Article 3'));
+    expect(document.activeElement).toBe(titleOf('Article 2'));
     await waitFor(() => expect(app.queryClient.isFetching()).toBe(0));
     expect(await within(rowOf('Article 2')).findByText('Queued for analysis')).toBeVisible();
-    expect(document.activeElement).toBe(titleOf('Article 3'));
+    expect(document.activeElement).toBe(titleOf('Article 2'));
   });
 
   it('is the title of the first article sent that the list still has', async () => {
@@ -646,7 +704,7 @@ describe('taking a chosen article out', () => {
 
     const region = screen.getByRole('region', { name: 'Articles to analyze' });
     expect(ticked(titles(3))).toEqual(['Article 1', 'Article 3']);
-    expect(within(region).getByText('2 of 20 selected')).toBeVisible();
+    expect(within(region).getByText('2 selected')).toBeVisible();
     expect(sendButton('Analyze selected 2 articles')).toBeEnabled();
     expect(app.calls(ANALYZE)).toHaveLength(0);
   });
@@ -742,9 +800,7 @@ describe('the message about a refused request', () => {
 
     expect(screen.queryByRole('alert')).toBeNull();
     expect(
-      within(screen.getByRole('region', { name: 'Articles to analyze' })).getByText(
-        '1 of 20 selected',
-      ),
+      within(screen.getByRole('region', { name: 'Articles to analyze' })).getByText('1 selected'),
     ).toBeVisible();
   });
 
@@ -781,7 +837,10 @@ describe('what the controls offer', () => {
     const { app } = await openFeed([item(1), item(2)]);
     await choose(app, 'Article 1');
 
-    for (const [index, box] of screen.getAllByRole('checkbox').entries()) {
+    const [selectAll, ...boxes] = screen.getAllByRole('checkbox');
+    expect(selectAll).toHaveAccessibleName('Select all articles');
+    expect(selectAll!.closest('label')?.className).toContain('min-h-11');
+    for (const [index, box] of boxes.entries()) {
       expect(box).toHaveAccessibleName(`Select Article ${index + 1}`);
       expect(box.closest('label')?.className).toContain('min-h-11');
       for (const token of FOCUS_RING.split(' ')) expect(box.className).toContain(token);
@@ -831,7 +890,7 @@ describe('in Slovak', () => {
     await choose(app, 'Article 1', 'Article 3');
 
     const region = screen.getByRole('region', { name: 'Články na analýzu' });
-    expect(within(region).getByText('Vybrané: 2 z 20')).toBeVisible();
+    expect(within(region).getByText('Vybrané: 2')).toBeVisible();
     await app.user.click(sendButton('Analyzovať 2 vybrané články'));
 
     expect(await within(rowOf('Article 1')).findByText('Čaká na analýzu')).toBeVisible();
@@ -855,7 +914,7 @@ describe('the selection bar', () => {
     await choose(app, 'Article 1', 'Article 2');
 
     const region = panel()!;
-    expect(within(region).getByText('2 of 20 selected')).toBeVisible();
+    expect(within(region).getByText('2 selected')).toBeVisible();
     expect(within(region).queryByRole('list')).toBeNull();
     expect(within(region).queryByText('Article 1')).toBeNull();
     expect(within(region).queryAllByRole('button', { name: /^Remove / })).toEqual([]);
@@ -936,7 +995,7 @@ describe('the selection bar', () => {
     await choose(app, 'Article 2', 'Article 3');
 
     const region = panel()!;
-    expect(within(region).getByText('2 of 20 selected')).toBeVisible();
+    expect(within(region).getByText('2 selected')).toBeVisible();
     expect(within(region).queryByRole('button', { name: /Analyze|analyze/ })).toBeNull();
     expect(within(region).queryByText(/Select up to/)).toBeNull();
     expect(within(region).getAllByRole('button')).toHaveLength(2);
@@ -952,7 +1011,7 @@ describe('the selection bar', () => {
       item(3, { analysis: asked('failed', 3) }),
     ]);
     await choose(app, 'Article 1', 'Article 2', 'Article 3');
-    expect(within(panel()!).getByText('3 of 20 selected')).toBeVisible();
+    expect(within(panel()!).getByText('3 selected')).toBeVisible();
 
     await app.user.click(sendButton('Analyze selected 2 articles'));
 
@@ -960,6 +1019,6 @@ describe('the selection bar', () => {
     const { articles } = bodyOf(app.calls(ANALYZE)[0]!) as { articles: { id: string }[] };
     expect(articles.map(({ id }) => id)).toEqual(['1', '3']);
     await waitFor(() => expect(ticked(titles(3))).toEqual(['Article 2']));
-    expect(within(panel()!).getByText('1 of 20 selected')).toBeVisible();
+    expect(within(panel()!).getByText('1 selected')).toBeVisible();
   });
 });

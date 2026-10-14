@@ -7,10 +7,21 @@ export interface CheckboxProps extends Omit<ComponentProps<'input'>, 'type' | 'c
   label: ReactNode;
   hint?: ReactNode;
   error?: ReactNode;
+  /** Shows the mixed state of a group; the box itself is still checked or not. */
+  indeterminate?: boolean;
 }
 
 /** A labelled checkbox; the whole label row is the 44 px target. `className` styles the wrapper. */
-export function Checkbox({ label, hint, error, id: idProp, className, ...rest }: CheckboxProps) {
+export function Checkbox({
+  label,
+  hint,
+  error,
+  indeterminate = false,
+  id: idProp,
+  className,
+  ref,
+  ...rest
+}: CheckboxProps) {
   const field = useFieldIds(idProp, { hint, error });
   return (
     <div className={cx('flex flex-col', className)}>
@@ -20,6 +31,11 @@ export function Checkbox({ label, hint, error, id: idProp, className, ...rest }:
       >
         <input
           {...rest}
+          ref={(input) => {
+            if (input !== null) input.indeterminate = indeterminate;
+            if (typeof ref === 'function') return ref(input);
+            if (ref) ref.current = input;
+          }}
           id={field.id}
           type="checkbox"
           aria-describedby={field.describedBy}
