@@ -21,13 +21,16 @@ export const UNIT_TEST_EXCLUDE = [
   '**/dist/**',
 ];
 
-export function unitTestConfig(options: { coverageLinesThreshold?: number } = {}) {
+export function unitTestConfig(
+  options: { coverageLinesThreshold?: number; testTimeout?: number } = {},
+) {
   const threshold = options.coverageLinesThreshold;
   return defineConfig({
     ...resolveConfig,
     test: {
       include: ['**/*.test.ts', '**/*.test.tsx'],
       exclude: UNIT_TEST_EXCLUDE,
+      ...(options.testTimeout === undefined ? {} : { testTimeout: options.testTimeout }),
       coverage: {
         provider: 'v8',
         include: ['src/**'],
