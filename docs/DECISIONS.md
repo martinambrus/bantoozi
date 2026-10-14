@@ -2289,3 +2289,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   liked articles of the last 90 days the card answered with `p ≥ lanes.maybe`; the editor's "Replace a card to make
   room" lists the held cards by that count, fewest first. Library adoption at the limit still only reports the
   limit. No migration. Spec 08 §7, 09 §6.
+- D-243: 2026-10-14 (owner request; amends D-152) — The article list keeps up with new articles like the counts do.
+  When a counts poll shows the current view's number above its value at the last list load, the list reloads by
+  itself while it is scrolled to the top (≤ 80 px) and no article is open; otherwise "N new articles · Show" appears
+  above the list and loads them from page one. A falling count (the reader's own actions) never triggers either.
+  Rows still never move under a reader who is scrolled down or reading. An auto-reload may coincide with a reader
+  action still being sent; the list shows unsettled actions over whatever it loads, so that is harmless. Spec 09 §1.

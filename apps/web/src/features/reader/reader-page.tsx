@@ -1,6 +1,6 @@
 import type { ArticleCounts, ArticleListItem } from '@bantoozi/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useId, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { cx } from '../../components/cx.js';
@@ -15,6 +15,7 @@ import { ArticleList, useVisibleRows } from './article-list.js';
 import { DetailPane } from './detail-pane.js';
 import { ReaderHeader } from './header.js';
 import type { ScopedLane } from './lanes.js';
+import { NewArticlesBanner } from './new-articles-banner.js';
 import { unreadKeys, useCounts } from './queries.js';
 import { ReaderShortcuts } from './shortcuts/reader-shortcuts.js';
 import { useSidebarCollapsed } from './sidebar-collapsed.js';
@@ -23,7 +24,10 @@ import { useArticleList } from './use-article-list.js';
 import { useDesktop } from './use-desktop.js';
 import { usePolling } from './use-polling.js';
 import { useViewTitle } from './use-view-title.js';
-import { detailScope, scopeOf, viewKey, type ReaderView } from './view.js';
+import { countOf, detailScope, scopeOf, viewKey, type ReaderView } from './view.js';
+
+/** How far down the page the reader may be for the list to still count as being at its top. */
+const TOP_PX = 80;
 
 export interface ReaderPageProps {
   view: ReaderView;
@@ -172,6 +176,61 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
   const pollCounts = useCallback(() => void refreshCounts(), [refreshCounts]);
   usePolling({ busy, refreshList, refreshCounts: pollCounts });
 
+  // D-243: the number the view's counts held when the list was last loaded, and how many articles
+  // the counts have added since, which the list loads by itself at the top and offers otherwise.
+  const count =
+    scoped.data === undefined || scoped.isPlaceholderData
+      ? undefined
+      : countOf(scoped.data, view.lane);
+  const baseline = useRef<number | null>(null);
+  const [added, setAdded] = useState(0);
+  const addedNow = useRef(0);
+  const offer = useCallback((next: number) => {
+    if (addedNow.current === next) return;
+    addedNow.current = next;
+    setAdded(next);
+  }, []);
+  const latestCount = useRef(count);
+  const expandedNow = useRef(expanded !== null);
+  useEffect(() => {
+    latestCount.current = count;
+    expandedNow.current = expanded !== null;
+  });
+  const { dataUpdatedAt } = list.query;
+  const { defaultTier } = preferences;
+  useEffect(() => {
+    baseline.current = null;
+    offer(0);
+  }, [defaultTier, offer]);
+  useEffect(() => {
+    if (dataUpdatedAt === 0) return;
+    baseline.current = latestCount.current ?? null;
+    offer(0);
+  }, [dataUpdatedAt, offer]);
+  useEffect(() => {
+    if (count === undefined) return;
+    const known = baseline.current;
+    if (known === null) {
+      baseline.current = count;
+      return;
+    }
+    if (count <= known) {
+      offer(0);
+      return;
+    }
+    if (window.scrollY <= TOP_PX && !expandedNow.current) {
+      baseline.current = count;
+      offer(0);
+      void reload();
+      return;
+    }
+    offer(count - known);
+  }, [count, reload, offer]);
+  const showNew = useCallback(() => {
+    window.scrollTo({ top: 0 });
+    void reload();
+  }, [reload]);
+
   return (
     <ReaderShortcuts
       rows={rows}
@@ -201,15 +260,18 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
           <DeadFeedBanner feed={subscription.feed} title={title} />
         )}
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
-          <ArticleList
-            view={view}
-            list={list}
-            rows={rows}
-            expandedId={expanded?.id ?? null}
-            onToggle={toggle}
-            onWhyThis={explain}
-            simple={preferences.simpleMode}
-          />
+          <div className="flex min-w-0 flex-col gap-3">
+            <NewArticlesBanner count={added} onShow={showNew} />
+            <ArticleList
+              view={view}
+              list={list}
+              rows={rows}
+              expandedId={expanded?.id ?? null}
+              onToggle={toggle}
+              onWhyThis={explain}
+              simple={preferences.simpleMode}
+            />
+          </div>
           <DetailPane
             view={view}
             item={expanded}
