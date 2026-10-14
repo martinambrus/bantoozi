@@ -6,7 +6,7 @@ import {
 } from '@bantoozi/shared';
 import { useQueryClient, type RefetchOptions } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { useCallback, useId, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Badge } from '../../components/badge.js';
@@ -38,6 +38,7 @@ import { FeedSettingsSheet } from '../feeds/feed-settings-sheet.js';
 import { ClassificationBadge } from '../feeds/feed-status.js';
 import { displayTitle, groupByFolder, type FolderGroup } from '../feeds/folders.js';
 import { useSubscriptions } from '../feeds/subscriptions.js';
+import { CardEditor } from '../interests/card-editor.js';
 import { learningKey, useLearning } from '../learning/use-learning.js';
 import { useReconnect } from '../offline/use-connection.js';
 import { useSettledActions } from './actions/provider.js';
@@ -280,6 +281,46 @@ const SETTINGS_BUTTON = cx(
   '[@media(hover:hover)]:[.group:not(:hover)_&:not(:focus-visible)]:opacity-0',
 );
 
+/**
+ * The lightbulb of a feed whose likes no card covers: says so in a tooltip and opens the card editor
+ * drafted from those articles (D-241), the same as "Make an interest from these" in the feed drawer.
+ */
+function InterestHint({
+  agreement,
+  feedTitle,
+}: {
+  agreement: LearningFeedAgreement;
+  feedTitle: string;
+}) {
+  const { t } = useTranslation('reader');
+  const [making, setMaking] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <Tooltip text={t('sidebar.interestsToAddHint', { count: agreement.uncovered.count })}>
+        {(tooltip) => (
+          <IconButton
+            {...tooltip}
+            ref={button}
+            label={t('feeds:uncovered.makeLabel', { title: feedTitle })}
+            onClick={() => setMaking(true)}
+            className="shrink-0 text-amber-700 dark:text-amber-300"
+          >
+            <LightbulbIcon className="size-4" />
+          </IconButton>
+        )}
+      </Tooltip>
+      {making ? (
+        <CardEditor
+          fromArticles={agreement.uncovered.articles}
+          returnFocus={() => button.current}
+          onClose={() => setMaking(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
 function FeedLink({
   subscription,
   agreement,
@@ -326,20 +367,6 @@ function FeedLink({
             <WarningIcon className="size-4" />
           </span>
         ) : null}
-        {suggestsInterest(agreement) ? (
-          <Tooltip text={t('sidebar.interestsToAddHint', { count: agreement!.uncovered.count })}>
-            {(tooltip) => (
-              <IconButton
-                {...tooltip}
-                label={t('sidebar.interestsToAdd', { title: name })}
-                onClick={() => onOpenSettings(feed.id)}
-                className="shrink-0 text-amber-700 dark:text-amber-300"
-              >
-                <LightbulbIcon className="size-4" />
-              </IconButton>
-            )}
-          </Tooltip>
-        ) : null}
         {/* Where a pointer can hover, it takes no room until the feed is hovered or it has the
             focus, so the name keeps its width; on touch screens it is always there. */}
         <IconButton
@@ -351,6 +378,10 @@ function FeedLink({
         >
           <SettingsIcon className="size-4" />
         </IconButton>
+        {/* Last, so the gear appearing on hover does not move it. */}
+        {suggestsInterest(agreement) ? (
+          <InterestHint agreement={agreement!} feedTitle={name} />
+        ) : null}
       </div>
       {badgeBelow ? <div className="ps-4">{badge}</div> : null}
       {agreement?.status !== 'ready' ? null : (

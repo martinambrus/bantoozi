@@ -350,8 +350,9 @@ When the page becomes visible again after `/open`:
   from those articles (§6 card drafts); their titles become the card's examples. This is the only place a new
   card is suggested; ratings never prompt for one.
   The sidebar marks such a feed with a lightbulb button beside its name (always visible, with an HTML
-  tooltip saying the same in words, positioned outside the sidebar's scroll area); it opens the feed's
-  settings drawer like the gear. The collapsed strip adds "interests to add" to the feed's name.
+  tooltip saying the same in words, positioned outside the sidebar's scroll area), placed after the gear
+  so the gear appearing on hover never moves it; it opens the same drafted card editor as "Make an
+  interest from these". The collapsed strip adds "interests to add" to the feed's name.
 - **Classification controls:** Off → explicit Training enables only the selection UI; the user then
   requests analysis for particular articles. "Enable automatic classification" explicitly sets
   Active for new arrivals and shows the activation time. Switching back to Training/Off stops new
