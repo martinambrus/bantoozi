@@ -2258,3 +2258,7 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   the selection rate limit (20/hour) does not apply to ratings. The 31 ratings the owner gave unanalysed The Verge
   articles before this change were rated again through the API with the same value (their rating time moved to the
   re-rating). No migration. Spec 08 §5.3, 09 §3.
+- D-239: 2026-10-14 (owner request) — The beta plan's `maxCards` rises from 50 to 150 (admin stays 500). The owner
+  held 49 cards, so suggesting new cards was pointless at 50. Cost scales with held cards: matching one article cost
+  $0.00033 at ~50 cards on the dev stack (about 8k input tokens), so ~$0.001 at 150, still under the daily budget
+  guard. At the limit, creating a card offers to replace one (D-241). No migration. Spec 08 §6.

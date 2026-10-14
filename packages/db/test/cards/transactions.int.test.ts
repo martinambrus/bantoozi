@@ -1,3 +1,4 @@
+import { PLANS } from '@bantoozi/shared';
 import { createArticle } from '@bantoozi/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -223,9 +224,9 @@ describe('concurrency', () => {
     expect(await holdings(ctx, a.id)).toEqual([]);
   });
 
-  it('re-checks quotas under the users-row lock: two concurrent creates at 49 cards admit one', async () => {
+  it('re-checks quotas under the users-row lock: two concurrent creates one card below maxCards admit one', async () => {
     const r = await createReader(ctx);
-    for (let i = 0; i < 49; i += 1) {
+    for (let i = 0; i < PLANS.beta.maxCards - 1; i += 1) {
       const id = await insertCard(ctx, { visibility: 'shared', interest: uniqueText('Filler') });
       await ctx.owner.query(
         "INSERT INTO user_cards (user_id, card_id, strength) VALUES ($1, $2, 'like')",
@@ -253,10 +254,10 @@ describe('concurrency', () => {
     expect((await first).created).toBe(true);
     expect(await second).toEqual({
       code: 'QUOTA_EXCEEDED',
-      details: { limit: 'maxCards', used: 50, max: 50 },
+      details: { limit: 'maxCards', used: PLANS.beta.maxCards, max: PLANS.beta.maxCards },
     });
     expect(await cardsWithText(secondText)).toEqual([]);
-    expect(await holdings(ctx, r.id)).toHaveLength(50);
+    expect(await holdings(ctx, r.id)).toHaveLength(PLANS.beta.maxCards);
   });
 
   it('serializes a from-article create with a concurrent create of its text-only card', async () => {

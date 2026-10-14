@@ -22,7 +22,7 @@ export type PlanName = (typeof PLAN_NAMES)[number];
 export const PLANS: Readonly<Record<PlanName, Readonly<PlanLimits>>> = {
   beta: {
     maxFeeds: 200,
-    maxCards: 50,
+    maxCards: 150,
     maxLabels: 20,
     maxForks: 20,
     maxRules: 200,

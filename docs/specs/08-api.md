@@ -646,7 +646,7 @@ needed by still-valid undo receipts, so undo does not refer to content already d
 | Limit | `beta` | `admin` |
 |---|---|---|
 | `maxFeeds` | 200 | 2,000 |
-| `maxCards` (interest cards incl. never) | 50 | 500 |
+| `maxCards` (interest cards incl. never) | 150 | 500 |
 | `maxLabels` | 20 | 200 |
 | `maxForks` (private cards) | 20 | 200 |
 | `maxRules` | 200 | 2,000 |
