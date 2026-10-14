@@ -369,6 +369,9 @@ When the page becomes visible again after `/open`:
   - **My interests:** cards with their strength selector (Must / Love / Like / Never) and scope
     selector (all feeds / one feed); edit; examples list (remove); delete.
   - **Suggestions:** Add / Dismiss.
+  - **Card limit (D-242):** when creating a card fails with `QUOTA_EXCEEDED` `maxCards`, the editor offers
+    "Replace a card to make room": the held cards ordered by `GET /cards/usage` (fewest recent liked matches
+    first), and "Replace and save" resends the card with `replaceCardId`.
   - **Card drafts (D-240):** an editor opened from one or more articles asks `POST /cards/drafts`, says
     "Writing a name and description…" while it waits (polling `GET /cards/drafts/:id` each second, at
     most 30 s) and fills the name and the interest with the draft, never over text the person typed.

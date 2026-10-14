@@ -77,6 +77,12 @@ export type CardDto = z.infer<typeof CardSchema>;
 
 export const CardListSchema = z.array(CardSchema);
 
+/** `GET /cards/usage`: how many recently liked articles each held card matched. */
+export const CardUsageSchema = z.array(
+  z.object({ cardId: z.string(), likedMatches: z.number().int().nonnegative() }).strict(),
+);
+export type CardUsageDto = z.infer<typeof CardUsageSchema>;
+
 /** `POST /cards`. */
 export const CreateCardBodySchema = z
   .object({
@@ -85,6 +91,8 @@ export const CreateCardBodySchema = z
     notFor: notFor.nullable().optional(),
     strength: CardStrengthSchema,
     scopeFeedId: IdSchema.nullable().optional(),
+    /** At the card limit: a held card to remove in the same transaction to make room. */
+    replaceCardId: IdSchema.optional(),
   })
   .strict();
 
@@ -127,6 +135,8 @@ export const CardFromArticleBodySchema = z
     notFor: notFor.nullable().optional(),
     title: title.optional(),
     strength: CardStrengthSchema,
+    /** At the card limit: a held card to remove in the same transaction to make room. */
+    replaceCardId: IdSchema.optional(),
   })
   .strict();
 

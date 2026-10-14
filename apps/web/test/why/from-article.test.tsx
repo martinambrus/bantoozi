@@ -119,6 +119,39 @@ describe('the card editor made from an article', () => {
     expect(form.getByRole('button', { name: 'Save' })).toBeEnabled();
   });
 
+  it('offers to replace a held card at the card limit and resends with the chosen one', async () => {
+    const { app, form, onClose } = await openEditor({
+      'GET /cards': () => json(200, HELD),
+      'GET /cards/usage': () =>
+        json(200, [
+          { cardId: '31', likedMatches: 4 },
+          { cardId: '32', likedMatches: 2 },
+          { cardId: '33', likedMatches: 0 },
+        ]),
+      'POST /cards/from-article': (request) =>
+        (bodyOf(request) as { replaceCardId?: string }).replaceCardId === undefined
+          ? failure(409, 'QUOTA_EXCEEDED', { limit: 'maxCards', used: 3, max: 3 })
+          : json(201, cardResult(CREATED)),
+    });
+    await app.user.click(form.getByRole('button', { name: 'Save' }));
+
+    const group = await form.findByRole('group', { name: 'Replace a card to make room' });
+    const radios = await within(group).findAllByRole('radio');
+    expect(radios.map((radio) => radio.getAttribute('value'))).toEqual(['33', '32', '31']);
+
+    await app.user.click(within(group).getByRole('radio', { name: /Solar power/ }));
+    await app.user.click(form.getByRole('button', { name: 'Replace and save' }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(app.calls('POST', '/cards/from-article').map(bodyOf)).toEqual([
+      { articleId: '101', interest: ARTICLE.title, strength: 'like' },
+      { articleId: '101', interest: ARTICLE.title, strength: 'like', replaceCardId: '32' },
+    ]);
+    expect(
+      app.queryClient.getQueryData<CardDto[]>(cardsKey(USER_A_ID))?.map((card) => card.id),
+    ).toEqual(['31', '33', '41']);
+  });
+
   it('asks for a description before sending anything, as it does for any card', async () => {
     const { app, form } = await openEditor();
     const interest = form.getByLabelText(LABELS.interest);

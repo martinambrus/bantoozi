@@ -27,6 +27,7 @@ export {
   createCardFromArticle,
   createUserCard,
   deleteUserCard,
+  deleteUserCardForReplacement,
   editCardText,
   removeCardExample,
   renameCard,
@@ -38,6 +39,7 @@ export {
   type CreateUserCardInput,
   type UpdateUserCardInput,
 } from './interest-cards.js';
+export { listCardUsage, type CardUsage } from './usage.js';
 export {
   addLabelExample,
   createUserLabel,

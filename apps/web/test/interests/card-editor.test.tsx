@@ -1,9 +1,11 @@
-import { CARD_LIMITS } from '@bantoozi/shared';
+import { CARD_LIMITS, type CardDto } from '@bantoozi/shared';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import { accountKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
 import { createHarness } from '../auth/harness.js';
+import { USER_A_ID } from '../session/fixtures.js';
 import { bodyOf, type ApiRouteHandler } from '../support/app.js';
 import {
   cardResult,
@@ -405,6 +407,81 @@ describe('creating a card', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(app.calls('POST /cards')).toHaveLength(0);
+  });
+});
+
+describe('replacing a card at the card limit', () => {
+  const HELD = [
+    makeCard({ id: '201', title: 'Alpha' }),
+    makeCard({ id: '202', title: 'Beta' }),
+    makeCard({ id: '203', title: 'Gamma' }),
+    makeCard({ id: '204', title: 'Delta' }),
+  ];
+  const USAGE = [
+    { cardId: '201', likedMatches: 3 },
+    { cardId: '202', likedMatches: 0 },
+    { cardId: '203', likedMatches: 0 },
+    { cardId: '204', likedMatches: 1 },
+  ];
+  const FULL = () => failure(409, 'QUOTA_EXCEEDED', { limit: 'maxCards', used: 4, max: 4 });
+
+  it('offers the held cards, fewest liked matches first, and resends with the chosen one', async () => {
+    const created = makeCard({ id: '301', title: 'Space launches' });
+    const { app, form } = await openCreate(
+      { cards: HELD },
+      {
+        'GET /cards/usage': () => json(200, USAGE),
+        'POST /cards': (request) =>
+          (bodyOf(request) as { replaceCardId?: string }).replaceCardId === undefined
+            ? FULL()
+            : json(201, cardResult(created)),
+      },
+    );
+    await app.user.type(form.getByLabelText(LABELS.interest), 'Space launches');
+    await app.user.click(form.getByRole('button', { name: 'Save' }));
+
+    const group = await form.findByRole('group', { name: 'Replace a card to make room' });
+    const radios = await within(group).findAllByRole('radio');
+    expect(radios.map((radio) => radio.getAttribute('value'))).toEqual([
+      '202',
+      '203',
+      '204',
+      '201',
+    ]);
+    expect(within(group).getByRole('radio', { name: /Delta/ })).toHaveAccessibleName(
+      /Matched 1 liked article in the last 90 days/,
+    );
+    expect(within(group).getByRole('radio', { name: /Alpha/ })).toHaveAccessibleName(
+      /Matched 3 liked articles in the last 90 days/,
+    );
+    expect(form.getByRole('button', { name: 'Replace and save' })).toBeDisabled();
+
+    await app.user.click(within(group).getByRole('radio', { name: /Delta/ }));
+    await app.user.click(form.getByRole('button', { name: 'Replace and save' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    const bodies = app.calls('POST /cards').map(bodyOf);
+    expect(bodies).toEqual([
+      { interest: 'Space launches', strength: 'like' },
+      { interest: 'Space launches', strength: 'like', replaceCardId: '204' },
+    ]);
+    const cached = app.queryClient.getQueryData<CardDto[]>(accountKey(USER_A_ID, 'cards'));
+    expect(cached?.map((card) => card.id)).toEqual(['201', '202', '203', '301']);
+  });
+
+  it('keeps today’s behaviour on Cancel', async () => {
+    const { app, form } = await openCreate(
+      { cards: HELD },
+      { 'GET /cards/usage': () => json(200, USAGE), 'POST /cards': FULL },
+    );
+    await app.user.type(form.getByLabelText(LABELS.interest), 'Space launches');
+    await app.user.click(form.getByRole('button', { name: 'Save' }));
+    await form.findByRole('group', { name: 'Replace a card to make room' });
+
+    await app.user.click(form.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(app.calls('POST /cards')).toHaveLength(1);
   });
 });
 

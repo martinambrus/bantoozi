@@ -75,6 +75,17 @@
       "targetHeld": "Kartu s týmto textom už máte, ale s inou silou, rozsahom alebo názvom. Upravte radšej tú kartu alebo najprv zosúlaďte jej nastavenia."
     }
   },
+  "swap": {
+    "legend": "Nahraďte kartu, aby sa uvoľnilo miesto",
+    "hint": "Dosiahli ste limit svojho plánu pre záujmové karty. Vyberte kartu, ktorá sa odstráni; nová zaujme jej miesto. Najskôr sú karty, ktoré sa zhodovali s najmenším počtom článkov, ktoré sa vám páčili.",
+    "loading": "Načítavajú sa vaše karty…",
+    "failed": "Vaše karty sa nepodarilo načítať. Zatvorte okno a skúste to znova.",
+    "matched_one": "Zhodovala sa s {{count}} článkom, ktorý sa vám páčil, za posledných 90 dní",
+    "matched_few": "Zhodovala sa s {{count}} článkami, ktoré sa vám páčili, za posledných 90 dní",
+    "matched_many": "Zhodovala sa s {{count}} článku, ktoré sa vám páčili, za posledných 90 dní",
+    "matched_other": "Zhodovala sa s {{count}} článkami, ktoré sa vám páčili, za posledných 90 dní",
+    "confirm": "Nahradiť a uložiť"
+  },
   "hints": {
     "heading": "Ako napísať dobrú kartu",
     "oneTopic": "Popíšte jednu tému",

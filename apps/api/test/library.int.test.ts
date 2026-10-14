@@ -609,6 +609,7 @@ describe('OpenAPI', () => {
         'GET /api/v1/cards/publication-requests',
         'POST /api/v1/cards/publication-requests/{id}/respond',
         'GET /api/v1/cards/suggestions',
+        'GET /api/v1/cards/usage',
         'POST /api/v1/cards/suggestions/{cardId}/dismiss',
         'GET /api/v1/library',
         'POST /api/v1/library/{id}/adopt',

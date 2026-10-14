@@ -2282,3 +2282,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   examples. The owner chose this over a prompt after each uncovered like: one like is weak evidence, a per-rating
   prompt would fill the card limit with narrow cards, and with D-238 an unanalysed article is scored only after the
   rating. No migration. Spec 06 §8.5, 08 §3 (`GET /me/learning`), 09 §5 and §7.
+- D-242: 2026-10-14 (owner request) — Swap a card at the card limit. `POST /cards` and `POST /cards/from-article`
+  take `replaceCardId`: in the create's transaction the user's holding of that card is removed first
+  (`deleteUserCardForReplacement`, which locks all the user's active feeds in id order before the create re-locks
+  them), so a failing create keeps it and an unheld id is 404. `GET /cards/usage` counts, per held card, the distinct
+  liked articles of the last 90 days the card answered with `p ≥ lanes.maybe`; the editor's "Replace a card to make
+  room" lists the held cards by that count, fewest first. Library adoption at the limit still only reports the
+  limit. No migration. Spec 08 §7, 09 §6.

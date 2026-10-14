@@ -505,6 +505,31 @@ describe('every GET operation as A leaks nothing of B (spec 08 §12)', () => {
     expect(await json(aApi.get('/cards/suggestions'))).toEqual([]);
     expect(await json(aApi.get('/cards/publication-requests'))).toEqual([]);
     expect(await json(aApi.get('/library/updates'))).toEqual([]);
+    const set = await h.owner.query<{ sha: string }>(
+      `INSERT INTO question_sets (kind, version, sha256, definition)
+       VALUES ('match', $1, encode(sha256(convert_to($1, 'UTF8')), 'hex'), '{}'::jsonb)
+       RETURNING sha256 AS sha`,
+      [`usage-isolation-${randomUUID()}`],
+    );
+    const liked = await createArticle(h.owner, { feedIds: [B.sharedFeed], title: 'Liked story' });
+    await h.owner.query(
+      'INSERT INTO user_article (user_id, article_id, rating, rated_at) VALUES ($1, $2, 1, now())',
+      [b.id, liked.id],
+    );
+    await h.owner.query(
+      `INSERT INTO card_answers (article_id, card_id, p, engine, question_set_sha, article_revision,
+                                 state_sha256, card_input_sha256, state_variant)
+       SELECT a.id, c.card_id, 0.9, 'typesafe', $3, a.content_revision, 'state', 'input', 'native'
+         FROM articles a CROSS JOIN unnest($2::bigint[]) AS c(card_id) WHERE a.id = $1`,
+      [liked.id, [B.sharedCard, B.fork], set.rows[0]!.sha],
+    );
+    expect(await json(bApi.get('/cards/usage'))).toContainEqual({
+      cardId: B.fork,
+      likedMatches: 1,
+    });
+    expect(await json(aApi.get('/cards/usage'))).toEqual([
+      { cardId: B.sharedCard, likedMatches: 0 },
+    ]);
     expect((await json(aApi.get('/invites'))).items).toEqual([]);
     const sessions = await json(aApi.get('/auth/sessions'));
     expect(sessions.map((s: { id: string }) => s.id)).toEqual([a.sessionId]);

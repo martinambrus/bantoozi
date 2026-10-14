@@ -650,3 +650,31 @@ export async function deleteUserCard(
   });
   return { effects };
 }
+
+/**
+ * **Delete to make room** for a create in the same transaction: as {@link deleteUserCard}, but
+ * every active feed of the user is locked first, in id order, so the create that follows only
+ * re-locks feeds already held.
+ */
+export async function deleteUserCardForReplacement(
+  tx: TenantTx,
+  input: { cardId: string },
+): Promise<CardRemoval> {
+  const cardId = validateId(input.cardId, 'cardId');
+  const me = await lockTenant(tx);
+  const holding = await requireCardHolding(tx, me.userId, cardId);
+  const subscriptions = await loadSubscriptions(tx, me.userId);
+  await lockFeeds(tx, activeFeedIds(coveredFeeds(subscriptions, null)));
+  const refreshFeedIds = activeFeedIds(coveredFeeds(subscriptions, holding.scopeFeedId));
+  await tx.execute(sql`
+    DELETE FROM user_cards WHERE user_id = ${me.userId}::uuid AND card_id = ${cardId}::bigint`);
+  const effects = await applyEffects(tx, me.userId, {
+    refreshFeedIds,
+    backfill: null,
+    rankFull: true,
+    learn: true,
+    labelIdChange: null,
+    reason: 'cards',
+  });
+  return { effects };
+}

@@ -75,6 +75,15 @@
       "targetHeld": "You already have a card with this text, but with a different strength, scope or name. Edit that card instead, or make its settings match first."
     }
   },
+  "swap": {
+    "legend": "Replace a card to make room",
+    "hint": "You've reached your plan's limit for interest cards. Choose a card to remove; the new one takes its place. Cards that matched the fewest articles you liked come first.",
+    "loading": "Loading your cards…",
+    "failed": "Couldn't load your cards. Close this and try again.",
+    "matched_one": "Matched {{count}} liked article in the last 90 days",
+    "matched_other": "Matched {{count}} liked articles in the last 90 days",
+    "confirm": "Replace and save"
+  },
   "hints": {
     "heading": "Writing a good card",
     "oneTopic": "Describe one topic",

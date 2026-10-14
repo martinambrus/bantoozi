@@ -57,6 +57,7 @@ import {
   CardListSchema,
   CardMutationResponseSchema,
   CardSuggestionListSchema,
+  CardUsageSchema,
   CreateCardBodySchema,
   CreateInviteBodySchema,
   CreateInviteResponseSchema,
@@ -571,6 +572,13 @@ export const routes = {
     auth: 'user',
     idempotent: false,
     response: CardListSchema,
+  }),
+  cardUsage: defineRoute({
+    method: 'GET',
+    path: '/cards/usage',
+    auth: 'user',
+    idempotent: false,
+    response: CardUsageSchema,
   }),
   cardCreate: defineRoute({
     method: 'POST',

@@ -223,6 +223,7 @@ export function interestsServer(
       'GET /cards': () => json(200, cards),
       'GET /subscriptions': () => json(200, subscriptions),
       'GET /cards/suggestions': () => json(200, suggestions),
+      'GET /cards/usage': () => json(200, []),
       'GET /library/updates': () => json(200, updates),
       'GET /cards/publication-requests': () => json(200, requests),
       'GET /topics': () => json(200, topics),

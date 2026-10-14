@@ -14171,6 +14171,9 @@
                   "scopeFeedId": {
                     "nullable": true,
                     "type": "string"
+                  },
+                  "replaceCardId": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -14328,6 +14331,44 @@
                     "translation"
                   ],
                   "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/cards/usage": {
+      "get": {
+        "summary": "Liked articles each held card matched in the last 90 days",
+        "tags": [
+          "cards"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cardId": {
+                        "type": "string"
+                      },
+                      "likedMatches": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "cardId",
+                      "likedMatches"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               }
             }
@@ -14538,6 +14579,9 @@
                       "like",
                       "never"
                     ]
+                  },
+                  "replaceCardId": {
+                    "type": "string"
                   }
                 },
                 "required": [

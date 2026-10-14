@@ -10,12 +10,14 @@ import { Badge } from '../../components/badge.js';
 import { Button } from '../../components/button.js';
 import { cx } from '../../components/cx.js';
 import { useDraft } from '../../components/draft.js';
+import { quotaDetails } from '../../components/error-message.js';
 import type { ModalProps } from '../../components/modal.js';
 import { Sheet } from '../../components/sheet.js';
 import { TextArea } from '../../components/text-area.js';
 import { TextField } from '../../components/text-field.js';
 import { FormAlert } from '../auth/form-alert.js';
 import { checkAuthoring } from './authoring-hints.js';
+import { CardSwap } from './card-swap.js';
 import { cardFieldIssue, cardFieldMessage, saveMessage, type CardField } from './card-errors.js';
 import { ScopeSelect, StrengthControl } from './controls.js';
 import { ExampleLists } from './examples.js';
@@ -168,6 +170,8 @@ export function CardEditor({
   }, [draft, setValues]);
   const [errors, setErrors] = useState<Errors>({});
   const [failure, setFailure] = useState<string | null>(null);
+  const [swapping, setSwapping] = useState(false);
+  const [replaceId, setReplaceId] = useState<string | null>(null);
   const [focusRequest, setFocusRequest] = useState<{ field: CardField } | null>(null);
   const fields = useRef<Partial<Record<CardField, HTMLElement | null>>>({});
   const saving = create.isPending || createFromArticle.isPending || update.isPending;
@@ -193,6 +197,7 @@ export function CardEditor({
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving) return;
+    if (swapping && replaceId === null) return;
     const found = validate(t, values);
     const first = TEXT_FIELDS.find((field) => found[field] !== undefined);
     if (first !== undefined) {
@@ -203,8 +208,11 @@ export function CardEditor({
     setFailure(null);
     try {
       if (card === undefined) {
-        const body = createBody(values);
-        cache.apply(
+        const body = {
+          ...createBody(values),
+          ...(replaceId === null ? {} : { replaceCardId: replaceId }),
+        };
+        const result =
           source === undefined
             ? await create.mutateAsync({ body })
             : await createFromArticle.mutateAsync({
@@ -215,8 +223,9 @@ export function CardEditor({
                     ? { moreArticleIds: (sources ?? []).slice(1).map((article) => article.id) }
                     : {}),
                 },
-              }),
-        );
+              });
+        if (replaceId !== null) cache.remove(replaceId);
+        cache.apply(result);
       } else {
         const body = changesOf(card, values);
         if (Object.keys(body).length > 0) {
@@ -225,6 +234,7 @@ export function CardEditor({
       }
       onClose();
     } catch (error) {
+      if (card === undefined && quotaDetails(error)?.limit === 'maxCards') setSwapping(true);
       const issue = cardFieldIssue(error);
       if (issue !== null) {
         reject({ [issue.field]: cardFieldMessage(t, issue) }, issue.field);
@@ -362,13 +372,16 @@ export function CardEditor({
             />
           </section>
         )}
+        {!swapping ? null : (
+          <CardSwap value={replaceId} onChange={setReplaceId} disabled={saving} />
+        )}
         {failure === null ? null : <FormAlert>{failure}</FormAlert>}
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="secondary" disabled={saving} onClick={onClose}>
             {t('common:actions.cancel')}
           </Button>
-          <Button type="submit" loading={saving}>
-            {t('common:actions.save')}
+          <Button type="submit" loading={saving} disabled={swapping && replaceId === null}>
+            {swapping ? t('swap.confirm') : t('common:actions.save')}
           </Button>
         </div>
       </form>

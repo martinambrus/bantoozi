@@ -681,12 +681,13 @@ client must replace its cached id.
 | Endpoint | Body | Behaviour (spec 05 §5.1) |
 |---|---|---|
 | `GET /cards` | — | The user's interest cards |
-| `POST /cards` | `{title?, interest, notFor?, strength, scopeFeedId?}` | Create or reuse → `201 {card}`. Quota `maxCards` |
+| `POST /cards` | `{title?, interest, notFor?, strength, scopeFeedId?, replaceCardId?}` | Create or reuse → `201 {card}`. Quota `maxCards`; with `replaceCardId` the user's holding of that card is removed first in the same transaction (404 when not held; a failed create keeps it, D-242) |
 | `PATCH /cards/:id` | `{title?, interest?, notFor?, strength?, scopeFeedId? \| null}` | `title` only sets the user's override. `interest`/`notFor` re-point to another card (new id) |
 | `DELETE /cards/:id` | — | Remove from the user |
 | `POST /cards/:id/examples` | `{articleId, side: 'yes' \| 'no'}` | Add the article title as an example (private fork, new id) → `{card}`. Quota `maxForks` |
 | `POST /cards/:id/examples/remove` | `{side, text}` | Remove an example (new fork id) → `{card}` |
-| `POST /cards/from-article` | `{articleId, moreArticleIds?[0..4], interest, notFor?, title?, strength}` | Shared text card plus a private fork with the article titles (`articleId` first) as `examples_yes` → `201 {card}`. Quotas `maxCards`, `maxForks` |
+| `POST /cards/from-article` | `{articleId, moreArticleIds?[0..4], interest, notFor?, title?, strength, replaceCardId?}` | Shared text card plus a private fork with the article titles (`articleId` first) as `examples_yes` → `201 {card}`. Quotas `maxCards`, `maxForks` |
+| `GET /cards/usage` | — | Per held card, the distinct articles the user rated +1 in the last 90 days that the card answered (current revision, not the prefilter) with `p ≥ lanes.maybe` → `[{cardId, likedMatches}]` (D-242; orders the swap list) |
 | `POST /cards/drafts` | `{articleIds[1..5]}` (distinct, each visible to the user as for from-article) | Record a card draft and its `card.draft {draftId}` intent → `202 {id, status: 'pending', title: null, interest: null, source: null}`. Drafts older than a day are removed first (D-240) |
 | `GET /cards/drafts/:id` | — | Own draft only → `{id, status: 'pending' \| 'complete' \| 'failed', title, interest, source: 'llm' \| 'fallback' \| null}`; `title` may be null on a complete draft |
 | `GET /library` | `?topic=&q=&cursor=&limit=` | Current public cards (`visibility = 'public'`, not retired, not an older library version), localized, ordered by L1 topic then id, in the paginated envelope; each carries `l1TopicId`, `version` and `held` |

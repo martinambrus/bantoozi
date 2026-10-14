@@ -27,6 +27,7 @@ GET /cards
 GET /cards/drafts/:id
 GET /cards/publication-requests
 GET /cards/suggestions
+GET /cards/usage
 GET /dev/last-email
 GET /feed-preferences
 GET /healthz
