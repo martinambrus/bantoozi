@@ -370,6 +370,45 @@ describe('rows the reader read keep their place across background reloads', () =
     await waitFor(() => expect(rowTitles()).toEqual(['Article 1', 'Article 3']));
   });
 
+  it('drops the read rows when the counts of a Refresh come back first with new articles', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const rows = [item(1), item(2), item(3)];
+    const server = unreadServer(rows, () => true);
+    let held: ReturnType<typeof deferred<Response>> | null = null;
+    let requested = 0;
+    const opened = await open({
+      path: '/read/for_you',
+      items: rows,
+      list: () => {
+        if (held === null) return server.list();
+        requested += 1;
+        return held.promise.then(() => server.list());
+      },
+      routes: server.readRoute,
+    });
+    const { state } = opened;
+    await screen.findByRole('article', { name: 'Article 1' });
+    fireEvent.click(screen.getByRole('button', { name: 'Article 2' }));
+    await advance(5_500);
+    expect(rowTitles()).toEqual(['Article 1', 'Article 2', 'Article 3']);
+    // Collapsed again, so a rise of the counts may reload the list by itself.
+    fireEvent.click(screen.getByRole('button', { name: 'Article 2' }));
+
+    // The counts of the Refresh come back with new articles while its own list is still on the way.
+    const hold = deferred<Response>();
+    held = hold;
+    state.counts = { ...state.counts, forYou: state.counts.forYou + 2 };
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await advance(1_000);
+    // The Refresh's own list request, then the one the risen count started, which cancels it.
+    expect(requested).toBe(2);
+    held = null;
+    hold.resolve(new Response());
+    await advance(1_000);
+
+    expect(rowTitles()).toEqual(['Article 1', 'Article 3']);
+  });
+
   it('does not keep polling for a kept row whose analysis was pending', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const rows = [
