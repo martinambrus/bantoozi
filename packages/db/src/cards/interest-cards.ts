@@ -228,7 +228,10 @@ export async function repointCard(
     checkQuota('maxForks', counts.forks, forks, me.limits.maxForks);
     await tx.execute(sql`
       UPDATE user_cards
-         SET card_id = ${target.id}::bigint, strength = ${args.strength},
+         SET card_id = ${target.id}::bigint,
+             class_since = CASE WHEN (strength = 'never') <> (${args.strength} = 'never')
+                                THEN now() ELSE class_since END,
+             strength = ${args.strength},
              scope_feed_id = ${args.scopeFeedId}::bigint, title_override = ${args.titleOverride},
              updated_at = now()
        WHERE user_id = ${me.userId}::uuid AND card_id = ${current.id}::bigint`);
@@ -562,7 +565,9 @@ export async function updateUserCard(
   }
   await tx.execute(sql`
     UPDATE user_cards
-       SET strength = ${nextStrength}, scope_feed_id = ${nextScope}::bigint,
+       SET class_since = CASE WHEN (strength = 'never') <> (${nextStrength} = 'never')
+                              THEN now() ELSE class_since END,
+           strength = ${nextStrength}, scope_feed_id = ${nextScope}::bigint,
            title_override = ${override}, updated_at = now()
      WHERE user_id = ${me.userId}::uuid AND card_id = ${cardId}::bigint`);
   const settingsChanged = scopeChanged || strengthChanged;

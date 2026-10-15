@@ -2303,7 +2303,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   feed's articles hides only this suggestion and a like card only D-241's. `GET /me/learning` adds `unwanted`
   per feed. The feed drawer and Settings → Personal learning ("Topics to avoid") offer "Make a Never card from
   these"; the sidebar gets a rose EyeOff button after the gear and the bulb; the card editor opens on Never
-  (`initialStrength`). Evidence is per feed, the card is global. No migration. Spec 06 §8.5, 08 §3, 09 §5 and §7.
+  (`initialStrength`). Evidence is per feed, the card is global. Spec 06 §8.5, 08 §3, 09 §5 and §7.
+  PR #38 review: the `{like, never}` cut-offs are the time the holding entered its current class, not its creation, so
+  converting a card between Never and the other strengths judges only the ratings made after the switch. Migration 0026
+  adds `user_cards.class_since` (backfilled to `created_at`); writes that move a holding between Never and the other
+  strengths set it to `now()`, writes within a class keep it.
 - D-245: 2026-10-15 (owner reports; amends D-243) — Rows the reader acted on keep their place across background reloads. The
   owner saw bulk-rated (read) rows stick at the top of an unread feed view, and an opened article vanish on a refresh. Cause: the
   visible rows were whatever the last server page said, and the set of rows that had left was tied to page one's identity, so any

@@ -781,7 +781,8 @@ export async function accessibleArticleTitles(
 
 /**
  * Per feed of `feedIds`, when the caller last made a card from that feed's articles: the latest
- * `user_cards.created_at` among held cards whose `body.examples_yes` holds the example title of an
+ * `user_cards.class_since` (when the holding entered its current class) among held cards whose
+ * `body.examples_yes` holds the example title of an
  * article the feed carries, apart for cards that are not Never (`like`) and Never cards (`never`).
  * Feeds without such a card are absent; a missing kind is `null`.
  */
@@ -796,8 +797,8 @@ export async function cardsMadeFromFeedArticles(
     never_at: Date | null;
   }>(sql`
     SELECT fi.feed_id::text AS feed_id,
-           max(uc.created_at) FILTER (WHERE uc.strength <> 'never') AS like_at,
-           max(uc.created_at) FILTER (WHERE uc.strength = 'never') AS never_at
+           max(uc.class_since) FILTER (WHERE uc.strength <> 'never') AS like_at,
+           max(uc.class_since) FILTER (WHERE uc.strength = 'never') AS never_at
       FROM user_cards uc
       JOIN interest_cards ic ON ic.id = uc.card_id
       CROSS JOIN LATERAL jsonb_array_elements_text(

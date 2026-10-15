@@ -140,7 +140,7 @@ async function holdCardMadeFrom(
   articleIds: readonly string[],
   madeAt: Date,
   strength: 'like' | 'never' = 'like',
-): Promise<void> {
+): Promise<string> {
   const titles = await h.owner.query<{ title: string }>(
     `SELECT title FROM articles WHERE id = ANY($1::bigint[])`,
     [articleIds],
@@ -160,9 +160,11 @@ async function holdCardMadeFrom(
     [JSON.stringify(body), user.id],
   );
   await h.owner.query(
-    `INSERT INTO user_cards (user_id, card_id, strength, created_at) VALUES ($1, $2, $4, $3)`,
+    `INSERT INTO user_cards (user_id, card_id, strength, created_at, class_since)
+     VALUES ($1, $2, $4, $3, $3)`,
     [user.id, card.rows[0]!.id, madeAt, strength],
   );
+  return card.rows[0]!.id;
 }
 
 describe('GET /me/learning', () => {
@@ -278,6 +280,40 @@ describe('GET /me/learning', () => {
     const afterNever = (await status(user)).feeds[0]!;
     expect(afterNever.unwanted).toEqual({ count: 0, suggest: false, articles: [] });
     expect(afterNever.dislikes).toBe(4);
+  });
+
+  it('counts only dislikes rated after a like card was converted to Never', async () => {
+    const user = await createTestUser(h);
+    const feedId = await subscribe(user, 'training');
+    const card = await createCard(h.owner, { title: 'Learning card' });
+    const unwanted: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      unwanted.push(await rate(user, feedId, card.id, -1, 0.05, undefined, 'off_topic'));
+    }
+    // Made as a like before the dislikes, so it does not cut them off while it stays a like.
+    const cardId = await holdCardMadeFrom(user, unwanted, new Date(Date.now() - 7_200_000), 'like');
+    expect((await status(user)).feeds[0]!.unwanted.count).toBe(3);
+
+    const res = await apiClient(h.server, user).patch(`/cards/${cardId}`, { strength: 'never' });
+    expect(res.statusCode).toBe(200);
+    expect((await status(user)).feeds[0]!.unwanted).toEqual({
+      count: 0,
+      suggest: false,
+      articles: [],
+    });
+
+    const later = await rate(
+      user,
+      feedId,
+      card.id,
+      -1,
+      0.05,
+      new Date(Date.now() + 60_000),
+      'off_topic',
+    );
+    const after = (await status(user)).feeds[0]!;
+    expect(after.unwanted.count).toBe(1);
+    expect(after.unwanted.articles.map((article) => article.id)).toEqual([later]);
   });
 
   it('does not count likes as unwanted and lets a Never card not retire uncovered likes', async () => {
