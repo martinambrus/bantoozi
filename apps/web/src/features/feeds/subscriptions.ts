@@ -122,12 +122,15 @@ export function useSubscriptionsCache() {
           ),
         );
       },
-      /** Takes in the mode and version an answer reports for one feed. */
+      /**
+       * Takes in the mode and version an answer reports for one feed, unless the feed has moved past
+       * them meanwhile: a late answer must not put back an older version.
+       */
       setInference: (feedId: string, inference: AnalyzeResponse['inference']) => {
         if (!lasts()) return undefined;
         return writeQueryData<Subscription[]>(queryClient, key, (list) =>
           list?.map((item) =>
-            item.feed.id === feedId
+            item.feed.id === feedId && BigInt(inference.version) >= BigInt(item.inferenceVersion)
               ? { ...item, inferenceMode: inference.mode, inferenceVersion: inference.version }
               : item,
           ),

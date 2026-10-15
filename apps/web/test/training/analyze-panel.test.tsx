@@ -1063,6 +1063,31 @@ describe('an answer that comes after the panel is gone', () => {
   });
 });
 
+describe('an answer older than the subscription in the cache', () => {
+  it('leaves the newer mode and version the feed got meanwhile', async () => {
+    const answer = deferred<Response>();
+    const view = renderPanel(
+      { items: picked.slice(0, 1) },
+      { routes: { [ROUTE]: () => answer.promise } },
+    );
+    const subscriptions = subscriptionsKey(USER_A_ID);
+    view.queryClient.setQueryData<Subscription[]>(subscriptions, [off]);
+    await view.user.click(send());
+    await waitFor(() => expect(analyzed(view)).toHaveLength(1));
+
+    view.queryClient.setQueryData<Subscription[]>(subscriptions, [active]);
+    answer.resolve(
+      json(202, {
+        inference: ANSWERED,
+        requests: [{ id: requestId(1), articleId: '1', status: 'pending' }],
+      }),
+    );
+
+    await waitFor(() => expect(view.onSubmitted).toHaveBeenCalledTimes(1));
+    expect(view.queryClient.getQueryData<Subscription[]>(subscriptions)).toEqual([active]);
+  });
+});
+
 describe('an answer that comes after signing in again', () => {
   const listed = [...articleKeys.all(USER_A_ID), 'list', 'for_you'];
 
