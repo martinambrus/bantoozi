@@ -311,6 +311,50 @@ describe('maxCards', () => {
     );
   });
 
+  it('POST /library/:id/adopt with replaceCardId at the limit holds the new card and drops the replaced one', async () => {
+    const r = await reader();
+    const [victim] = await seedHoldings(r.user.id, LIMITS.maxCards, 'card');
+    const library = await libraryCard();
+    expectQuota(
+      await r.api.post(`/library/${library.v1}/adopt`, { strength: 'like' }),
+      'maxCards',
+      LIMITS.maxCards,
+      LIMITS.maxCards,
+    );
+    const swapped = await r.api.post(`/library/${library.v1}/adopt`, {
+      strength: 'like',
+      replaceCardId: victim,
+    });
+    expectStatus(swapped, 200);
+    const held = await r.api.get('/cards');
+    const ids = (held.json() as { id: string }[]).map((card) => card.id);
+    expect(ids).toContain(library.v1);
+    expect(ids).not.toContain(victim);
+    expect((await usage(r.api)).maxCards).toBe(LIMITS.maxCards);
+  });
+
+  it('POST /library/:id/adopt with a replaceCardId that is not held fails as the editor path does, and changes nothing', async () => {
+    const r = await reader();
+    await seedHoldings(r.user.id, LIMITS.maxCards, 'card');
+    const library = await libraryCard();
+    const [stranger] = await seedHoldings((await reader()).user.id, 1, 'card');
+    const viaEditor = await r.api.post('/cards', {
+      interest: `Replace stranger ${tag()}`,
+      strength: 'like',
+      replaceCardId: stranger,
+    });
+    const viaAdopt = await r.api.post(`/library/${library.v1}/adopt`, {
+      strength: 'like',
+      replaceCardId: stranger,
+    });
+    expect(viaEditor.statusCode).toBeGreaterThanOrEqual(400);
+    expect(viaAdopt.statusCode).toBe(viaEditor.statusCode);
+    expect(viaAdopt.json().error?.code ?? viaAdopt.json().code).toBe(
+      viaEditor.json().error?.code ?? viaEditor.json().code,
+    );
+    expect((await usage(r.api)).maxCards).toBe(LIMITS.maxCards);
+  });
+
   it('at the limit, changes that do not add a holding still succeed (edit, library update)', async () => {
     const r = await reader();
     const library = await libraryCard();

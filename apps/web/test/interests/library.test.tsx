@@ -469,20 +469,65 @@ describe('adding a card', () => {
     expect(within(row).queryByRole('button', { name: 'Add' })).not.toBeInTheDocument();
   });
 
-  it('explains a full plan with what is used and the maximum', async () => {
-    const app = await openLibrary({
-      'GET /library': page([battery]),
-      'POST /library/:id/adopt': () =>
-        failure(409, 'QUOTA_EXCEEDED', { limit: 'maxCards', used: 50, max: 50 }),
+  describe('at the card limit', () => {
+    const HELD = [makeCard({ id: '201', title: 'Alpha' }), makeCard({ id: '202', title: 'Beta' })];
+    const USAGE = [
+      { cardId: '201', likedMatches: 3 },
+      { cardId: '202', likedMatches: 0 },
+    ];
+    const FULL = () => failure(409, 'QUOTA_EXCEEDED', { limit: 'maxCards', used: 2, max: 2 });
+
+    it('offers the swap, and confirming sends the strength with the chosen card', async () => {
+      const adopted = makeCard({ id: '605', title: 'EV battery tech', origin: 'library' });
+      const app = await openLibrary(
+        {
+          'GET /library': page([battery]),
+          'GET /cards/usage': () => json(200, USAGE),
+          'POST /library/:id/adopt': (request) =>
+            (bodyOf(request) as { replaceCardId?: string }).replaceCardId === undefined
+              ? FULL()
+              : json(200, cardResult(adopted)),
+        },
+        { cards: HELD },
+      );
+      const row = await rowOf('EV battery tech');
+
+      await app.user.click(within(row).getByRole('button', { name: 'Add' }));
+
+      const group = await within(row).findByRole('group', { name: 'Replace a card to make room' });
+      expect(within(row).getByRole('button', { name: 'Replace and save' })).toBeDisabled();
+      await app.user.click(await within(group).findByRole('radio', { name: /Beta/ }));
+      await app.user.click(within(row).getByRole('button', { name: 'Replace and save' }));
+
+      await waitFor(() => expect(app.calls('POST /library/:id/adopt')).toHaveLength(2));
+      expect(app.calls('POST /library/:id/adopt').map(bodyOf)).toEqual([
+        { strength: 'like' },
+        { strength: 'like', replaceCardId: '202' },
+      ]);
+      expect(await within(row).findByText('In your interests')).toBeVisible();
     });
-    const row = await rowOf('EV battery tech');
 
-    await app.user.click(within(row).getByRole('button', { name: 'Add' }));
+    it('sends nothing more on Cancel', async () => {
+      const app = await openLibrary(
+        {
+          'GET /library': page([battery]),
+          'GET /cards/usage': () => json(200, USAGE),
+          'POST /library/:id/adopt': FULL,
+        },
+        { cards: HELD },
+      );
+      const row = await rowOf('EV battery tech');
+      await app.user.click(within(row).getByRole('button', { name: 'Add' }));
+      await within(row).findByRole('group', { name: 'Replace a card to make room' });
 
-    expect(await within(row).findByRole('alert')).toHaveTextContent(
-      "You've reached your plan's limit for interest cards: 50 of 50.",
-    );
-    expect(within(row).getByRole('button', { name: 'Add' })).toBeEnabled();
+      await app.user.click(within(row).getByRole('button', { name: 'Cancel' }));
+
+      expect(
+        within(row).queryByRole('group', { name: 'Replace a card to make room' }),
+      ).not.toBeInTheDocument();
+      expect(within(row).getByRole('button', { name: 'Add' })).toBeEnabled();
+      expect(app.calls('POST /library/:id/adopt')).toHaveLength(1);
+    });
   });
 
   it('keeps the card addable and says why after any other error', async () => {
