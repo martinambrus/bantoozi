@@ -195,8 +195,11 @@ login without leaking the previous account's UI. Slow classification leaves arti
   "Analyze selected N articles" (at most 20 per submission, in list order, "Analyze 20 of M" when
   more are analyzable; only the selected articles not analyzed yet, hidden when there are none),
   Like and Dislike (one rating per
-  selected article, each as from its own row, so D-238 applies; the selection clears). The ticked
-  rows are the selection: no separate list of titles. Do not auto-select a calibration
+  selected article, each as from its own row, so D-238 applies; the selection clears). A selected
+  article rated, un-rated or hidden on its own leaves the selection at once, so a later bulk action
+  never re-rates it, and a selected article the list no longer holds (rated or hidden elsewhere, dropped
+  by a reload, or on a page a refresh did not bring back) leaves it too (D-250). The ticked rows are the
+  selection: no separate list of titles. Do not auto-select a calibration
   batch, all visible items or future arrivals. Cached answers may satisfy the request immediately;
   queued work shows its actual request status. Active feeds also allow explicit selection of old
   backlog; the normal active switch does not analyze it automatically.

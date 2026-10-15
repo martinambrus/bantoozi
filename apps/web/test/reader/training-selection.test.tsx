@@ -1,5 +1,5 @@
 import type { ArticleListItem, Subscription } from '@bantoozi/shared';
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { FOCUS_RING } from '../../src/components/cx.js';
@@ -411,6 +411,47 @@ describe('select all', () => {
 
     await waitFor(() => expect(app.calls(RATE)).toHaveLength(25));
     await waitFor(() => expect(panel()).toBeNull());
+  });
+});
+
+describe('an article the list no longer holds', () => {
+  const selectAll = (app: App) =>
+    app.user.click(screen.getByRole('checkbox', { name: 'Select all articles' }));
+
+  it('leaves the selection when the next load omits it (rated elsewhere), and a bulk Dislike sends nothing for it', async () => {
+    const { app, served } = await openFeed(numbered(3), {
+      routes: { [RATE]: () => json(200, { ok: true }) },
+    });
+    await selectAll(app);
+    expect(within(panel()!).getByText('3 selected')).toBeVisible();
+
+    served.items = [item(1), item(3)];
+    await app.user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'Article 2' })).toBeNull());
+
+    await waitFor(() => expect(within(panel()!).getByText('2 selected')).toBeVisible());
+    expect(ticked(['Article 1', 'Article 3'])).toEqual(['Article 1', 'Article 3']);
+    await app.user.click(
+      within(panel()!).getByRole('button', { name: /^Dislike 2 selected articles$/ }),
+    );
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
+    expect(app.calls(RATE).map((request) => request.pathname)).toEqual([
+      '/api/v1/articles/1/rating',
+      '/api/v1/articles/3/rating',
+    ]);
+  });
+
+  it('drops the selected articles of a later page when a refresh returns page one only', async () => {
+    const { app, served } = await openFeed(numbered(25));
+    await selectAll(app);
+    expect(within(panel()!).getByText('25 selected')).toBeVisible();
+
+    served.items = numbered(20);
+    await app.user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'Article 21' })).toBeNull());
+
+    await waitFor(() => expect(within(panel()!).getByText('20 selected')).toBeVisible());
+    expect(ticked(titles(20))).toEqual(titles(20));
   });
 });
 
@@ -1123,5 +1164,70 @@ describe('the selection bar', () => {
     expect(articles.map(({ id }) => id)).toEqual(['1', '3']);
     await waitFor(() => expect(ticked(titles(3))).toEqual(['Article 2']));
     expect(within(panel()!).getByText('1 selected')).toBeVisible();
+  });
+
+  describe('an article rated or hidden on its own', () => {
+    const selectAll = (app: App) =>
+      app.user.click(screen.getByRole('checkbox', { name: 'Select all articles' }));
+
+    it('leaves the selection, and a bulk Dislike then skips it', async () => {
+      const { app } = await openFeed(numbered(3));
+      await selectAll(app);
+      expect(within(panel()!).getByText('3 selected')).toBeVisible();
+
+      await app.user.click(likeOf('Article 2'));
+
+      await waitFor(() => expect(within(panel()!).getByText('2 selected')).toBeVisible());
+      expect(app.calls(RATE)).toHaveLength(1);
+      await app.user.click(bulk(/^Dislike 2 selected articles$/));
+      await waitFor(() => expect(app.calls(RATE)).toHaveLength(3));
+      expect(ratedBodies(app).map(({ url, body }) => [url, body['rating']])).toEqual([
+        ['/api/v1/articles/2/rating', 1],
+        ['/api/v1/articles/1/rating', -1],
+        ['/api/v1/articles/3/rating', -1],
+      ]);
+      expect(panel()).toBeNull();
+    });
+
+    it('leaves the selection when it is hidden too', async () => {
+      const { app } = await openFeed(numbered(3));
+      await selectAll(app);
+
+      fireEvent.click(likeOf('Article 2'), { shiftKey: true });
+
+      await waitFor(() => expect(within(panel()!).getByText('2 selected')).toBeVisible());
+      await app.user.click(bulk(/^Dislike 2 selected articles$/));
+      await waitFor(() => expect(app.calls(RATE)).toHaveLength(3));
+      expect(
+        ratedBodies(app)
+          .filter(({ body }) => body['rating'] === -1)
+          .map(({ url }) => url),
+      ).toEqual(['/api/v1/articles/1/rating', '/api/v1/articles/3/rating']);
+    });
+
+    it('is unticked in a list that keeps rated rows (Show read)', async () => {
+      const { app } = await openFeed(numbered(3), {
+        me: makeMe({ preferences: { showRead: true } }),
+      });
+      await selectAll(app);
+
+      await app.user.click(likeOf('Article 2'));
+
+      await waitFor(() => expect(ticked(titles(3))).toEqual(['Article 1', 'Article 3']));
+      expect(screen.getByRole('article', { name: 'Article 2' })).toBeVisible();
+      expect(within(panel()!).getByText('2 selected')).toBeVisible();
+      expect(screen.getByRole('checkbox', { name: 'Select all articles' })).toBePartiallyChecked();
+    });
+
+    it('does not touch the bulk buttons: Like rates every selected article and empties it', async () => {
+      const { app } = await openFeed(numbered(3));
+      await selectAll(app);
+
+      await app.user.click(bulk(/^Like 3 selected articles$/));
+
+      await waitFor(() => expect(app.calls(RATE)).toHaveLength(3));
+      expect(ratedBodies(app).map(({ body }) => body['rating'])).toEqual([1, 1, 1]);
+      expect(panel()).toBeNull();
+    });
   });
 });

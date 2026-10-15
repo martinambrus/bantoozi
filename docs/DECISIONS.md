@@ -2343,3 +2343,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
 - D-249: 2026-10-15 (follow-up to D-242) — Adding a library card at the card limit offers the same swap as the editor.
   `POST /library/:id/adopt` accepts `replaceCardId` and removes that holding in the same transaction before adopting
   (same errors as `POST /cards`); Interests → Library shows "Replace a card to make room" on `QUOTA_EXCEEDED` `maxCards`.
+- D-250: 2026-10-15 (owner report; amends the D-238 selection panel) — After "Select all" in a feed, an article the owner
+  rated up with its own thumb left the list but stayed selected, and a later bulk Dislike re-rated it down (bulk ratings
+  skip only articles already at that rating). Now a selected article whose rating or hidden state changes by anything other
+  than the panel's own Like/Dislike leaves the selection at once; the count and the "Select all" state follow. A rating that
+  arrives from elsewhere (another device, a rolled-back failure) also unticks the article; Undo does not re-select it.
+  PR #41 review: with Show read off a rating made on another device only makes the next load omit the article, so a
+  selected article the rows no longer hold (D-245 kept rows count as held) leaves the selection as well, including
+  later-page articles a page-one refresh does not bring back.

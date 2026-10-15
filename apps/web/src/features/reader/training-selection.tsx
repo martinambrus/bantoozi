@@ -1,5 +1,12 @@
 import type { ArticleListItem } from '@bantoozi/shared';
-import { useEffect, useState, type ReactNode, type RefObject } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ArticleRowProps } from '../article/article-row.js';
@@ -98,7 +105,7 @@ export function useFeedTraining(
   // The first ones sent are the first ones in the list.
   const position = new Map(rows.map((row, index) => [row.id, index]));
   // The chosen articles as the list has them now, not as they were when they were ticked: their
-  // analysis may have started since. One the list no longer holds keeps the way it was chosen.
+  // analysis may have started since. One the list no longer holds is not chosen any more (see below).
   const current = new Map(rows.map((row) => [row.id, row]));
   const chosenNow = selection.items.map((item) => current.get(item.id) ?? item);
   const analyzable = chosenNow
@@ -114,6 +121,46 @@ export function useFeedTraining(
   useEffect(() => {
     if (empty) clear();
   }, [empty, clear]);
+
+  // A selected article rated or hidden on its own (not by the bulk buttons, which take their own
+  // articles out) leaves the selection, so a later bulk action cannot re-rate it.
+  const store = useReaderActions();
+  const storeVersion = useSyncExternalStore(store.subscribe, store.getVersion);
+  const seen = useRef(new Map<string, { rating: number | null; hidden: boolean }>());
+  const { remove } = selection;
+  const selectedItems = selection.items;
+  // The selection as it is now, for an answer that comes after the render that sent the request.
+  const latestItems = useRef(selectedItems);
+  useEffect(() => {
+    latestItems.current = selectedItems;
+  });
+  // A chosen article the rows no longer hold (rated or hidden on another device, dropped by a
+  // reload, or on a page a refresh did not bring back) leaves the selection: it is not on the
+  // screen, so it must not be rated or analyzed by a bulk action. A list that is merely replaced
+  // by a placeholder holds the same rows, so nothing is missing then.
+  const missing = selectedItems.filter((chosenItem) => !current.has(chosenItem.id));
+  const missingKey = missing.map((chosenItem) => chosenItem.id).join(',');
+  useEffect(() => {
+    if (missingKey !== '') remove(missingKey.split(','));
+  }, [missingKey, remove]);
+  useEffect(() => {
+    const known = seen.current;
+    const ids = new Set(selectedItems.map((chosenItem) => chosenItem.id));
+    for (const id of known.keys()) if (!ids.has(id)) known.delete(id);
+    const changed: string[] = [];
+    for (const chosenItem of selectedItems) {
+      const shown = store.view(current.get(chosenItem.id) ?? chosenItem);
+      const now = { rating: shown.rating, hidden: shown.archivedAt !== null };
+      const before = known.get(chosenItem.id);
+      if (before === undefined) known.set(chosenItem.id, now);
+      else if (before.rating !== now.rating || before.hidden !== now.hidden) {
+        changed.push(chosenItem.id);
+        known.delete(chosenItem.id);
+      }
+    }
+    if (changed.length > 0) remove(changed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- current is rebuilt every render
+  }, [storeVersion, selectedItems, store, remove]);
 
   if (view.kind !== 'feed' || subscription === undefined) {
     return { panel: null, selectAll: null, selectionOf: () => undefined };
@@ -147,6 +194,13 @@ export function useFeedTraining(
             }}
             onSubmitted={(_requests, sentIds) => {
               setRefused(false);
+              // The panel went while the request was on its way (the list dropped every article
+              // sent): the focus it had fell to the page, so it returns to the list as well.
+              const active = document.activeElement;
+              const nothingElse = latestItems.current.every(({ id }) => sentIds.includes(id));
+              if (nothingElse && (active === null || active === document.body)) {
+                focusFirstListed(listRef.current, sentIds);
+              }
               // An article chosen while the request was on its way stays chosen.
               selection.remove(sentIds);
             }}
