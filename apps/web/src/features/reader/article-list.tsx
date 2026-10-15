@@ -104,7 +104,9 @@ function useKeptRows(
         continue;
       }
       const shown = store.view(row);
-      if (state.kept.has(row.id) || (shown.readAt !== null && !isMarked(shown))) {
+      // A marked row (rated or hidden here) is kept as well, hidden through `gone`, so that Undo
+      // or a failed action shows it again where it was.
+      if (state.kept.has(row.id) || shown.readAt !== null || isMarked(shown)) {
         kept.set(row.id, { item: row, after: previous });
         previous = row.id;
       }
@@ -139,6 +141,10 @@ function useExitingRows(
   const rows = useKeptRows(items, generation, enabled, isMarked);
 
   useEffect(() => {
+    // A list loaded on request starts over: an exit that was under way must not hide a row of it.
+    for (const timer of timers.current.values()) clearTimeout(timer);
+    timers.current.clear();
+    setLeaving(NONE);
     setGone(NONE);
   }, [generation]);
 

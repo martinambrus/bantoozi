@@ -230,6 +230,7 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
       return;
     }
     if (count <= known) {
+      reloadedFor.current = null;
       offer(0);
       return;
     }

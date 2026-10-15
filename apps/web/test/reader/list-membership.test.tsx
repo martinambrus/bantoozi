@@ -165,6 +165,91 @@ describe('rows the reader rated keep their place across background reloads', () 
     await waitFor(() => expect(rowTitles()).toEqual(['Article 1', 'Article 2', 'Article 3']));
   });
 
+  it('brings a row back on Undo after a poll landed between the rating and the Undo', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const rows = [item(1), item(2), item(3)];
+    const server = unreadServer(rows, () => true);
+    const opened = await open({
+      path: '/read/for_you',
+      items: rows,
+      list: server.list,
+      routes: {
+        'POST /articles/:id/rating': (_request, params) => {
+          server.read.add(params['id']!);
+          return ratingResponse(
+            acked(
+              rows.find((row) => row.id === params['id'])!,
+              { rating: 1, readAt: READ_AT },
+            ),
+          );
+        },
+        'POST /articles/undo': () =>
+          json(200, {
+            count: 1,
+            mutationId: receipt(900),
+            items: [item(2, { stateVersion: '6' })],
+          }),
+      },
+    });
+    await screen.findByRole('article', { name: 'Article 1' });
+    const polled = lists(opened);
+    while (lists(opened) === polled) await advance(100);
+    await advance(3_000);
+    fireEvent.click(likeOf('Article 2'));
+    await advance(600);
+    expect(rowTitles()).toEqual(['Article 1', 'Article 3']);
+    // The poll lands while the Undo toast is still up.
+    const before = lists(opened);
+    for (let step = 0; step < 30 && lists(opened) === before; step += 1) await advance(100);
+    expect(lists(opened)).toBeGreaterThan(before);
+    await advance(200);
+    expect(rowTitles()).toEqual(['Article 1', 'Article 3']);
+
+    const toast = await findToast('Marked as liked');
+    fireEvent.click(within(toast).getByRole('button', { name: 'Undo' }));
+    await advance(100);
+
+    expect(rowTitles()).toEqual(['Article 1', 'Article 2', 'Article 3']);
+  });
+
+  it('keeps a row the explicit reload returns visible when its exit timer fires after the reload', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const rows = [item(1), item(2), item(3)];
+    let rated = false;
+    const { app } = await open({
+      path: '/read/for_you',
+      me: makeMe({ preferences: { markReadOnRate: false } }),
+      list: () =>
+        json(
+          200,
+          page(
+            rows.map((row) => (rated && row.id === rows[1]!.id ? { ...row, rating: 1 } : row)),
+            { rankingPending: true },
+          ),
+        ),
+      routes: {
+        'POST /articles/:id/rating': (_request, params) => {
+          rated = true;
+          return ratingResponse(
+            acked(
+              rows.find((row) => row.id === params['id'])!,
+              { rating: 1 },
+            ),
+          );
+        },
+      },
+    });
+    await screen.findByRole('article', { name: 'Article 1' });
+    fireEvent.click(likeOf('Article 2'));
+    await advance(100);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await advance(1_000);
+
+    expect(app.calls('GET /articles').length).toBeGreaterThan(1);
+    expect(rowTitles()).toEqual(['Article 1', 'Article 2', 'Article 3']);
+  });
+
   it('brings rated rows that are still unread back when the reader refreshes', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const rows = [item(1), item(2), item(3)];

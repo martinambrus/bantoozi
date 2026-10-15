@@ -67,6 +67,35 @@ describe('new articles while the reader is open', () => {
     expect(lists(app)).toBe(refreshed + 1);
   });
 
+  it('reloads again when the count returns to the baseline and rises to the same number', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let broken = false;
+    const { app, state } = await open({
+      path: '/read/for_you',
+      items: [item(1), item(2)],
+      list: () =>
+        broken
+          ? json(503, { error: { code: 'UNAVAILABLE', message: 'down (test)' } })
+          : json(200, page([item(1), item(2)])),
+    });
+    await screen.findByRole('article', { name: 'Article 1' });
+    const base = state.counts.forYou;
+    broken = true;
+    state.counts = { ...state.counts, forYou: base + 2 };
+    await advance(31_000);
+    expect(await screen.findByRole('button', { name: 'Show 2 new articles' })).toBeInTheDocument();
+
+    state.counts = { ...state.counts, forYou: base };
+    await advance(31_000);
+    expect(screen.queryByRole('button', { name: /new articles?/ })).toBeNull();
+    broken = false;
+    const listed = lists(app);
+    state.counts = { ...state.counts, forYou: base + 2 };
+    await advance(31_000);
+
+    expect(lists(app)).toBeGreaterThan(listed);
+  });
+
   it('keeps offering the new articles when the reload by itself fails', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     let broken = false;
