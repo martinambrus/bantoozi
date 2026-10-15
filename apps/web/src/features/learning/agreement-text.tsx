@@ -67,3 +67,38 @@ export function UncoveredSuggestion({
     </div>
   );
 }
+
+/** Where no Never card hides what the person dislikes in a feed: says so and opens the card editor on those articles, set to Never. */
+export function UnwantedSuggestion({
+  agreement,
+  feedTitle,
+}: {
+  agreement: LearningFeedAgreement;
+  feedTitle: string;
+}) {
+  const { t } = useTranslation('feeds');
+  const [making, setMaking] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const { suggest, count, articles } = agreement.unwanted;
+  if (!suggest || articles.length === 0) return null;
+  return (
+    <div ref={box} className="flex flex-col items-start gap-2">
+      <p className="text-sm text-slate-700 dark:text-slate-200">{t('unwanted.text', { count })}</p>
+      <Button
+        variant="secondary"
+        aria-label={t('unwanted.makeLabel', { title: feedTitle })}
+        onClick={() => setMaking(true)}
+      >
+        {t('unwanted.make')}
+      </Button>
+      {making ? (
+        <CardEditor
+          fromArticles={articles}
+          initialStrength="never"
+          returnFocus={() => box.current?.querySelector('button') ?? null}
+          onClose={() => setMaking(false)}
+        />
+      ) : null}
+    </div>
+  );
+}

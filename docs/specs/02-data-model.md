@@ -1134,6 +1134,7 @@ CREATE TABLE user_cards (
   title_override text NULL,                        -- the user's own name for the card (cards are shared and immutable)
   created_at     timestamptz NOT NULL DEFAULT now(),
   updated_at     timestamptz NOT NULL DEFAULT now(),
+  class_since    timestamptz NOT NULL DEFAULT now(), -- when it entered its class (never / not never), D-244
   PRIMARY KEY (user_id, card_id),
   FOREIGN KEY (user_id, scope_feed_id) REFERENCES subscriptions(user_id, feed_id) ON DELETE CASCADE
 );

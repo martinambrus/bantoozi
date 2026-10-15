@@ -103,6 +103,11 @@ describe('feedAgreement', () => {
     expect(FEED_AGREEMENT.oneSidedMinTotal).toBe(10);
   });
 
+  it('is ready, not one_sided, when the cards separate a small minority of likes', () => {
+    const r = feedAgreement(rowsOf(separated(12, 100)), '7', CFG, 'seed');
+    expect(r.status).toBe('ready');
+  });
+
   it('is ready when the cards separate the ratings', () => {
     const r = feedAgreement(rowsOf(separated(6, 6)), '7', CFG, 'seed');
     expect(r.status).toBe('ready');
@@ -166,6 +171,53 @@ describe('feedAgreement', () => {
     expect(r.uncovered.articleIds).toEqual(
       r.uncovered.items.slice(0, FEED_AGREEMENT.uncoveredArticles).map((item) => item.articleId),
     );
+  });
+
+  it('lists topical dislikes that no Never card caught, newest first, and suggests a card at enough of them', () => {
+    const samples = [
+      sample(1, 0, { ageDays: 3, reason: 'off_topic', pN: 0.1 }),
+      sample(2, 0, { ageDays: 1, reason: null, pN: null }),
+      sample(3, 0, { ageDays: 2, reason: 'off_topic', pN: 0.1 }),
+      sample(4, 0, { reason: 'clickbait' }),
+      sample(5, 0, { reason: 'seen' }),
+      sample(6, 0, { reason: 'off_topic', pN: 0.9 }),
+      sample(7, 1, { reason: 'off_topic', pN: 0.1 }),
+    ];
+    const r = feedAgreement(rowsOf(samples), '7', CFG, 'seed');
+    expect(r.unwanted).toEqual({
+      count: 3,
+      articleIds: ['art-2', 'art-3', 'art-1'],
+      suggest: true,
+      items: [
+        { articleId: 'art-2', at: expect.any(Date) },
+        { articleId: 'art-3', at: expect.any(Date) },
+        { articleId: 'art-1', at: expect.any(Date) },
+      ],
+    });
+  });
+
+  it('counts a dislike a Never card scored below Maybe, not one it scored at Maybe or above', () => {
+    const low = feedAgreement(rowsOf([sample(1, 0, { pN: 0.1 })]), '7', CFG, 'seed');
+    const high = feedAgreement(rowsOf([sample(1, 0, { pN: 0.9 })]), '7', CFG, 'seed');
+    expect(low.unwanted.count).toBe(1);
+    expect(high.unwanted.count).toBe(0);
+  });
+
+  it('never counts likes as unwanted, whatever their reason or card scores', () => {
+    const likes = Array.from({ length: 6 }, (_, i) => sample(i, 1, { pN: 0.05, reason: null }));
+    const r = feedAgreement(rowsOf(likes), '7', CFG, 'seed');
+    expect(r.unwanted).toEqual({ count: 0, articleIds: [], suggest: false, items: [] });
+  });
+
+  it('suggests no Never card below the minimum count or share of the feed dislikes', () => {
+    const few = Array.from({ length: 2 }, (_, i) => sample(i, 0));
+    expect(feedAgreement(rowsOf(few), '7', CFG, 'seed').unwanted.suggest).toBe(false);
+    const share = [
+      ...Array.from({ length: 3 }, (_, i) => sample(i, 0)),
+      ...Array.from({ length: 8 }, (_, i) => sample(10 + i, 0, { reason: 'clickbait' })),
+    ];
+    expect(feedAgreement(rowsOf(share), '7', CFG, 'seed').unwanted.suggest).toBe(false);
+    expect(feedAgreement(rowsOf(share.slice(0, 7)), '7', CFG, 'seed').unwanted.suggest).toBe(true);
   });
 
   it('applies the suggestion rule to a count and the likes of the feed', () => {

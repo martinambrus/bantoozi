@@ -2295,6 +2295,19 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   above the list and loads them from page one. A falling count (the reader's own actions) never triggers either.
   Rows still never move under a reader who is scrolled down or reading. An auto-reload may coincide with a reader
   action still being sent; the list shows unsettled actions over whatever it loads, so that is harmless. Spec 09 §1.
+- D-244: 2026-10-15 (owner request) — Never-card suggestions follow the same concept as like suggestions.
+  `feedAgreement` also reports a training feed's unwanted dislikes: explicit dislikes with reason none or
+  `off_topic` that no Never card caught (`p >= lanes.maybe`, event-time snapshot), newest first; `suggest` uses the
+  D-241 rule (at least 3 and 30 %) against the feed's dislikes. `LearnSample`/`TrainingSample` carry `reason`, and
+  `cardsMadeFromFeedArticles` returns per feed separate `{like, never}` cut-offs, so a Never card made from the
+  feed's articles hides only this suggestion and a like card only D-241's. `GET /me/learning` adds `unwanted`
+  per feed. The feed drawer and Settings → Personal learning ("Topics to avoid") offer "Make a Never card from
+  these"; the sidebar gets a rose EyeOff button after the gear and the bulb; the card editor opens on Never
+  (`initialStrength`). Evidence is per feed, the card is global. Spec 06 §8.5, 08 §3, 09 §5 and §7.
+  PR #38 review: the `{like, never}` cut-offs are the time the holding entered its current class, not its creation, so
+  converting a card between Never and the other strengths judges only the ratings made after the switch. Migration 0026
+  adds `user_cards.class_since` (backfilled to `created_at`); writes that move a holding between Never and the other
+  strengths set it to `now()`, writes within a class keep it.
 - D-245: 2026-10-15 (owner reports; amends D-243) — Rows the reader acted on keep their place across background reloads. The
   owner saw bulk-rated (read) rows stick at the top of an unread feed view, and an opened article vanish on a refresh. Cause: the
   visible rows were whatever the last server page said, and the set of rows that had left was tied to page one's identity, so any
@@ -2303,6 +2316,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   while still rated or hidden; rows read in this view are kept at their position when a refetch no longer lists them; only Refresh,
   "Show N new articles" and navigation reset both. D-243's note that an automatic reload during an unsettled action is harmless held
   for row content but not for which rows are shown. Spec 09 §1.
+- D-246: 2026-10-15 (owner report; amends D-236) — Feed agreement decides before the one-sided check. The owner rated ~1 800
+  articles of a classified-ad feed (216 likes, 1 597 dislikes; cards AUC 0.945, 95 % lower bound 0.92) and never saw the "Ready for
+  automatic" offer: the rule returned `one_sided` for any feed with ≥ 10 ratings and a minority share < 15 % before it looked at the
+  agreement, so a feed the user mostly dislikes could never become `ready` however clearly the cards separated it. Now `ready`
+  (each class ≥ 3, lower bound ≥ `model.minCvAuc`) is checked first; `one_sided` only explains a feed that is not ready. The
+  grouped-bootstrap lower bound already widens when the minority class is small, so no separate share floor is needed.
 - D-247: 2026-10-15 (owner request; amends spec 09 §3.1) — The Sort control (Score / Date) also shows in the view of one
   feed, folder or label while it shows all its lanes, bound to the new preference `feedSort` (default `date`, which
   keeps today's order; old accounts read it as `date`, no migration) and sent as `sort`. It is separate from `sort`, so

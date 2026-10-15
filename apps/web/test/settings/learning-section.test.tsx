@@ -137,3 +137,59 @@ describe('the interests to add in the personal learning section', () => {
     expect(slovak.getByText(/každá karta ohodnotila nízko 5 článkov/)).toBeVisible();
   });
 });
+
+describe('the topics to avoid in the personal learning section', () => {
+  const suggesting = (feedId: string, count: number, titles: string[]) =>
+    makeAgreement(feedId, 'ready', {
+      unwanted: {
+        count,
+        suggest: true,
+        articles: titles.map((title, index) => ({ id: `${feedId}${index}`, title })),
+      },
+    });
+
+  async function openWith(feeds: ReturnType<typeof makeAgreement>[]) {
+    return openSettings({
+      me: makeMe(),
+      routes: {
+        ...cardDraftRoutes(),
+        'GET /subscriptions': () =>
+          json(200, [
+            makeSubscription('1', 'Alpha', { inferenceMode: 'training' }),
+            makeSubscription('2', 'Beta', { inferenceMode: 'training' }),
+          ]),
+        [LEARNING]: () => json(200, makeLearning({}, feeds)),
+      },
+    });
+  }
+
+  it('lists only the feeds that suggest one, and opens the editor on Never', async () => {
+    const app = await openWith([
+      suggesting('1', 3, ['Gossip', 'Royals']),
+      makeAgreement('2', 'ready', { unwanted: { count: 4, suggest: false, articles: [] } }),
+    ]);
+
+    const list = await learning().findByRole('list', { name: 'Topics to avoid' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(list).getByText('Alpha')).toBeVisible();
+    expect(learning().queryByText('Beta')).toBeNull();
+
+    await app.user.click(
+      within(list).getByRole('button', {
+        name: 'Make a Never card from what you dislike in Alpha',
+      }),
+    );
+    const editor = await screen.findByRole('dialog', { name: 'New card from these articles' });
+    expect(within(editor).getByRole('radio', { name: 'Never' })).toBeChecked();
+    await waitFor(() =>
+      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([{ articleIds: ['10', '11'] }]),
+    );
+  });
+
+  it('shows no list when no feed suggests one', async () => {
+    await openWith([makeAgreement('1', 'ready')]);
+
+    await screen.findByText(/ratings$/);
+    expect(learning().queryByText('Topics to avoid')).toBeNull();
+  });
+});

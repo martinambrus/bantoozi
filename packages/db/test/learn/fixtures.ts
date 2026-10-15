@@ -62,6 +62,7 @@ export interface LearnSample {
   explicit: boolean;
   feedbackAt: Date;
   groupId: string;
+  reason: string | null;
   features: Features | null;
 }
 
@@ -211,9 +212,9 @@ export class Scenario {
     });
   }
 
-  rate(articleId: string, rating: 1 | -1 | null) {
+  rate(articleId: string, rating: 1 | -1 | null, reason: 'off_topic' | 'clickbait' | null = null) {
     return this.run(articleId, (tx, base) =>
-      rateArticle(tx, { ...base, rating, reason: null, hide: false }),
+      rateArticle(tx, { ...base, rating, reason, hide: false }),
     );
   }
 

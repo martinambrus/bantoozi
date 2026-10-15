@@ -925,3 +925,108 @@ describe('the hint to add interests', () => {
     ).toBeVisible();
   });
 });
+
+describe('the hint to avoid topics', () => {
+  const training = (id: string, title: string) =>
+    feed(id, title, null, { inferenceMode: 'training', inferenceVersion: '3' });
+  const unwanted = (suggest: boolean, count = 4) => ({
+    count,
+    suggest,
+    articles: [{ id: 'd1', title: 'Disliked' }],
+  });
+  const NEVER_HINT = 'Make a Never card from what you dislike in Verge';
+  const TEXT =
+    'You often dislike articles in this feed that none of your Never cards hides: 4 of them. Click to make a Never card from them.';
+
+  it('marks a feed whose dislikes no Never card hides, and no other', async () => {
+    await open({
+      path: '/read/for_you',
+      subscriptions: [training('1', 'Verge'), training('2', 'Wired')],
+      routes: {
+        [LEARNING]: learningRoute(() =>
+          makeLearning({}, [
+            makeAgreement('1', 'collecting', { unwanted: unwanted(true) }),
+            makeAgreement('2', 'collecting', { unwanted: unwanted(false) }),
+          ]),
+        ),
+      },
+    });
+
+    const verge = (await screen.findByRole('link', { name: 'Verge' })).closest('li')!;
+    expect(await within(verge).findByRole('button', { name: NEVER_HINT })).toBeVisible();
+    const wired = screen.getByRole('link', { name: 'Wired' }).closest('li')!;
+    expect(within(wired).queryByRole('button', { name: /^Make a Never card/ })).toBeNull();
+  });
+
+  it('explains itself as the description of the icon when it has the focus', async () => {
+    const { app } = await open({
+      path: '/read/for_you',
+      subscriptions: [training('1', 'Verge')],
+      routes: {
+        [LEARNING]: learningRoute(() =>
+          makeLearning({}, [makeAgreement('1', 'collecting', { unwanted: unwanted(true) })]),
+        ),
+      },
+    });
+    const hint = await screen.findByRole('button', { name: NEVER_HINT });
+    expect(hint).toHaveAccessibleDescription(TEXT);
+
+    await app.user.tab();
+    hint.focus();
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(TEXT);
+  });
+
+  it('opens the card editor on Never, after the gear and the bulb', async () => {
+    const { app } = await open({
+      path: '/read/for_you',
+      subscriptions: [training('1', 'Verge')],
+      routes: {
+        [LEARNING]: learningRoute(() =>
+          makeLearning({}, [
+            makeAgreement('1', 'collecting', {
+              unwanted: unwanted(true),
+              uncovered: { count: 2, suggest: true, articles: [{ id: 'a1', title: 'Liked' }] },
+            }),
+          ]),
+        ),
+        ...cardDraftRoutes(),
+      },
+    });
+    const hint = await screen.findByRole('button', { name: NEVER_HINT });
+    const buttons = within(hint.closest('li')!).getAllByRole('button');
+    expect(buttons.at(-1)).toBe(hint);
+    expect(buttons.at(-2)).toHaveAccessibleName('Make an interest from what you like in Verge');
+    expect(buttons.at(-3)).toHaveAccessibleName('Settings for Verge');
+
+    await app.user.click(hint);
+
+    const editor = await screen.findByRole('dialog', { name: 'New card from this article' });
+    expect(within(editor).getByRole('radio', { name: 'Never' })).toBeChecked();
+    // A Never card names what to hide, and its texts say so.
+    expect(within(editor).getByLabelText("I don't want to read about…")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([{ articleIds: ['d1'] }]),
+    );
+  });
+
+  it('names the topics to avoid in the collapsed strip', async () => {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, '1');
+    await open({
+      path: '/read/for_you',
+      subscriptions: [training('1', 'Verge')],
+      routes: {
+        [LEARNING]: learningRoute(() =>
+          makeLearning({}, [makeAgreement('1', 'collecting', { unwanted: unwanted(true) })]),
+        ),
+      },
+    });
+
+    const strip = within(await screen.findByRole('list', { name: 'Feeds' }));
+    expect(
+      await strip.findByRole('link', {
+        name: 'Verge, Training: selected articles, topics to avoid',
+      }),
+    ).toBeVisible();
+  });
+});

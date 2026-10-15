@@ -27,6 +27,17 @@ export const LearningFeedAgreementSchema = z
         articles: z.array(z.object({ id: z.string(), title: z.string() }).strict()),
       })
       .strict(),
+    /**
+     * Topical dislikes no Never card caught: how many, whether that is enough to suggest a Never
+     * card, and the most recent ones (newest first) to draft it from.
+     */
+    unwanted: z
+      .object({
+        count,
+        suggest: z.boolean(),
+        articles: z.array(z.object({ id: z.string(), title: z.string() }).strict()),
+      })
+      .strict(),
     articlesPerWeek: count.nullable(),
   })
   .strict();

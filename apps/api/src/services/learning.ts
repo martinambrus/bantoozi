@@ -81,40 +81,57 @@ export async function loadLearningStatus(
     tx,
     trainingFeeds.map((feed) => feed.feedId),
   );
-  // Likes rated before the user made a card from the feed's articles no longer count as uncovered.
+  // Likes rated before the user made a card from the feed's articles no longer count as uncovered,
+  // nor dislikes rated before a Never card made from them as unwanted.
   const agreements = trainingFeeds.map((feed) => {
-    const { uncovered, ...agreement } = feedAgreement(
+    const { uncovered, unwanted, ...agreement } = feedAgreement(
       rows,
       feed.feedId,
       config,
       `agreement|${userId}|${feed.feedId}`,
     );
     const actedAt = acted.get(feed.feedId);
-    const items =
-      actedAt === undefined ? uncovered.items : uncovered.items.filter((i) => i.at > actedAt);
+    const since = (items: { articleId: string; at: Date }[], cutoff: Date | null | undefined) => {
+      const kept = cutoff == null ? items : items.filter((i) => i.at > cutoff);
+      return {
+        count: kept.length,
+        articleIds: kept.slice(0, FEED_AGREEMENT.uncoveredArticles).map((i) => i.articleId),
+      };
+    };
     return {
       feed,
       agreement,
-      count: items.length,
-      articleIds: items.slice(0, FEED_AGREEMENT.uncoveredArticles).map((i) => i.articleId),
+      uncovered: since(uncovered.items, actedAt?.like),
+      unwanted: since(unwanted.items, actedAt?.never),
     };
   });
   const titles = await accessibleArticleTitles(
     tx,
-    agreements.flatMap(({ articleIds }) => articleIds),
+    agreements.flatMap(({ uncovered, unwanted }) => [
+      ...uncovered.articleIds,
+      ...unwanted.articleIds,
+    ]),
   );
-  const feeds = agreements.map(({ feed, agreement, count, articleIds }) => {
-    const articles = articleIds.flatMap((id) => {
+  const named = (articleIds: string[]) =>
+    articleIds.flatMap((id) => {
       const title = titles.get(id);
       return title === undefined ? [] : [{ id, title }];
     });
+  const feeds = agreements.map(({ feed, agreement, uncovered, unwanted }) => {
+    const likeArticles = named(uncovered.articleIds);
+    const neverArticles = named(unwanted.articleIds);
     return {
       feedId: feed.feedId,
       ...agreement,
       uncovered: {
-        count,
-        suggest: uncoveredSuggests(count, agreement.likes) && articles.length > 0,
-        articles,
+        count: uncovered.count,
+        suggest: uncoveredSuggests(uncovered.count, agreement.likes) && likeArticles.length > 0,
+        articles: likeArticles,
+      },
+      unwanted: {
+        count: unwanted.count,
+        suggest: uncoveredSuggests(unwanted.count, agreement.dislikes) && neverArticles.length > 0,
+        articles: neverArticles,
       },
       articlesPerWeek: feed.items7d === null ? null : Math.round(feed.items7d),
     };

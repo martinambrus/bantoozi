@@ -35,7 +35,12 @@
     "saved": "Uložené:",
     "everythingToggle": "Zoznam Všetko ostatné",
     "collapse": "Zbaliť bočný panel",
-    "expand": "Rozbaliť bočný panel"
+    "expand": "Rozbaliť bočný panel",
+    "topicsToAvoidHint_one": "Často sa vám v tomto zdroji nepáčia články, ktoré žiadna z vašich kariet Nikdy neskrýva: {{count}} z nich. Kliknutím z nich vytvoríte kartu Nikdy.",
+    "topicsToAvoidHint_few": "Často sa vám v tomto zdroji nepáčia články, ktoré žiadna z vašich kariet Nikdy neskrýva: {{count}} z nich. Kliknutím z nich vytvoríte kartu Nikdy.",
+    "topicsToAvoidHint_many": "Často sa vám v tomto zdroji nepáčia články, ktoré žiadna z vašich kariet Nikdy neskrýva: {{count}} z nich. Kliknutím z nich vytvoríte kartu Nikdy.",
+    "topicsToAvoidHint_other": "Často sa vám v tomto zdroji nepáčia články, ktoré žiadna z vašich kariet Nikdy neskrýva: {{count}} z nich. Kliknutím z nich vytvoríte kartu Nikdy.",
+    "topicsToAvoidShort": "témy, ktorým sa vyhnúť"
   },
   "topBar": {
     "label": "Prepínač zoznamov",

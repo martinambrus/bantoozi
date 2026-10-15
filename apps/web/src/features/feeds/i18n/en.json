@@ -173,5 +173,11 @@
     "text_other": "Your interests miss much of what you like here: every card rated {{count}} articles you liked low.",
     "make": "Make an interest from these",
     "makeLabel": "Make an interest from what you like in {{title}}"
+  },
+  "unwanted": {
+    "text_one": "You often dislike articles here that none of your Never cards hides: {{count}} of them.",
+    "text_other": "You often dislike articles here that none of your Never cards hides: {{count}} of them.",
+    "make": "Make a Never card from these",
+    "makeLabel": "Make a Never card from what you dislike in {{title}}"
   }
 }

@@ -219,6 +219,68 @@ describe('the suggestion to make an interest in the feed settings', () => {
   });
 });
 
+describe('the suggestion to make a Never card in the feed settings', () => {
+  const UNWANTED = {
+    count: 4,
+    suggest: true,
+    articles: [
+      { id: '51', title: 'Celebrity gossip' },
+      { id: '50', title: 'Royal wedding' },
+    ],
+  };
+
+  async function openTraining(unwanted: typeof UNWANTED) {
+    const { server, state } = feedsServer({
+      me: makeMe(),
+      routes: {
+        ...cardDraftRoutes(),
+        [LEARNING]: learningRoute(() => makeLearning({}, [readyAgreement('5', { unwanted })])),
+      },
+      subscriptions: [
+        makeSubscription({
+          feed: { id: '5', title: 'Alpha' },
+          inferenceMode: 'training',
+          inferenceVersion: '3',
+        }),
+      ],
+    });
+    installFeedApi(server, () => state.subscriptions);
+    const app = await open({ path: '/feeds', server });
+    await app.user.click(await screen.findByRole('button', { name: 'Settings for Alpha' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Feed settings' });
+    return { app, sheet };
+  }
+
+  it('offers a Never card made from the disliked articles, and opens the editor on Never', async () => {
+    const { app, sheet } = await openTraining(UNWANTED);
+
+    expect(
+      await within(sheet).findByText(
+        'You often dislike articles here that none of your Never cards hides: 4 of them.',
+      ),
+    ).toBeVisible();
+    await app.user.click(
+      within(sheet).getByRole('button', {
+        name: 'Make a Never card from what you dislike in Alpha',
+      }),
+    );
+
+    const editor = await screen.findByRole('dialog', { name: 'New card from these articles' });
+    expect(within(editor).getByRole('radio', { name: 'Never' })).toBeChecked();
+    await waitFor(() =>
+      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([{ articleIds: ['51', '50'] }]),
+    );
+  });
+
+  it('says nothing when the Never cards hide what is disliked, however many were missed', async () => {
+    const { sheet } = await openTraining({ ...UNWANTED, suggest: false });
+
+    await within(sheet).findByText(/^The analysis agrees with your ratings/);
+    expect(within(sheet).queryByText(/none of your Never cards/)).toBeNull();
+    expect(within(sheet).queryByRole('button', { name: /Make a Never card/ })).toBeNull();
+  });
+});
+
 describe('the feed settings', () => {
   it('opens beside the list for the feed whose button was pressed, showing the current values', async () => {
     const { sheet } = await openSettings({

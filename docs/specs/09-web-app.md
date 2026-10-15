@@ -368,6 +368,12 @@ When the page becomes visible again after `/open`:
   tooltip saying the same in words, positioned outside the sidebar's scroll area), placed after the gear
   so the gear appearing on hover never moves it; it opens the same drafted card editor as "Make an
   interest from these". The collapsed strip adds "interests to add" to the feed's name.
+- **Never card suggestion (D-244):** when the feed's `unwanted.suggest` holds, the drawer adds "You often
+  dislike articles here that none of your Never cards hides" with **Make a Never card from these**, which opens
+  the card editor drafted from those articles with strength Never (`initialStrength`; the editor's label and
+  hints follow the Never strength). The sidebar marks such a feed with a rose EyeOff button, after the gear and
+  the lightbulb, with a tooltip saying the same in words and the label "Make a Never card from what you
+  dislike in {title}". The collapsed strip adds ", topics to avoid". Evidence is per feed; the card is global.
 - **Classification controls:** Off → explicit Training enables only the selection UI; the user then
   requests analysis for particular articles. "Enable automatic classification" explicitly sets
   Active for new arrivals and shows the activation time. Switching back to Training/Off stops new
@@ -431,7 +437,7 @@ When the page becomes visible again after `/open`:
 
 Profile (name, language, timezone, theme → `preferences.theme`) · Reading preferences (all fields of spec 08 §3.1 with
 explanations) · Personal learning (`GET /me/learning`: ratings, likes and dislikes against the
-activation thresholds, "Active since", or the last attempt's reasons in words; D-237; and "Interests to add": the training feeds whose `uncovered.suggest` holds, each with "Make an interest from these", D-241) · Sessions (devices, revoke) · Invites (left, create, list, copy link) · Export data ·
+activation thresholds, "Active since", or the last attempt's reasons in words; D-237; and "Interests to add": the training feeds whose `uncovered.suggest` holds, each with "Make an interest from these", D-241; and "Topics to avoid": the same for `unwanted.suggest`, each with "Make a Never card from these", D-244) · Sessions (devices, revoke) · Invites (left, create, list, copy link) · Export data ·
 Delete account (typed confirmation).
 Only one tab or window of an account edits the reading preferences at a time (a per-account Web
 Lock held while the section is on screen): another one shows that they are being adjusted

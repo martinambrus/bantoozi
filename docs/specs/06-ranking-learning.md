@@ -709,10 +709,11 @@ subscription in `training` mode, whether the interest cards already sort that fe
 does. It uses the user's eligible explicit ratings whose event-time snapshot was classified for the
 feed (`sourceManifest.inferenceFeedIds`, else `values.sourceFeedId`), scores each with the
 trainer's cards-only baseline (`baselineScore`), and computes the AUC and the 95% grouped-bootstrap
-lower bound (`groupedBootstrapCi`, story-cluster groups, seed `agreement|user|feed`). Status:
+lower bound (`groupedBootstrapCi`, story-cluster groups, seed `agreement|user|feed`). Status, in
+this order: `ready` when likes and dislikes are each ≥ 3 and the lower bound is ≥ `model.minCvAuc`;
 `one_sided` when there are ≥ 10 ratings and the smaller class is < 15 %; `collecting` while likes or
-dislikes are < 3; `ready` when the lower bound is ≥ `model.minCvAuc`; else `not_yet`
-(`FEED_AGREEMENT`). No fixed rating count: how many ratings it takes follows from how clearly the
+dislikes are < 3; else `not_yet` (`FEED_AGREEMENT`; a small minority share explains a feed that is
+not ready, it never holds back one the cards already separate, D-246). No fixed rating count: how many ratings it takes follows from how clearly the
 cards agree. It only informs an explicit offer in the UI; it never changes `inference_mode` (§8.3
 "no learned-model threshold changes that mode" still holds). `pnpm evaluate agreement-replay`
 replays the rule on the G1 golden ratings (rating count to `ready`, and the cards' AUC on the
@@ -727,6 +728,17 @@ Uncovered likes rest on rating-time snapshots, which a new card never changes, s
 card whose `examples_yes` contains the title of an article the feed carries, the feed's uncovered likes
 rated before that holding's `created_at` no longer count (`GET /me/learning` recomputes count, articles
 and `suggest` from the rest); new evidence after it can raise a new suggestion.
+
+**Unwanted dislikes** (D-244): the mirror for Never cards. The same rows give the feed's explicit
+dislikes whose reason is none or `off_topic` (a dislike for another reason says nothing about the
+topic) and that no Never card caught: no held card with strength `never` had `p >= lanes.maybe` for
+the article at rating time (event-time snapshot). `unwanted` reports their count, the newest
+`FEED_AGREEMENT.uncoveredArticles` (5) article ids, newest first, and `suggest` by the same rule as
+uncovered likes (at least 3 and at least 30 % of the feed's dislikes). The UI then suggests a Never
+card drafted from those articles; nothing is created by itself. Once the user holds a Never card whose
+`examples_yes` contains the title of an article the feed carries, the feed's unwanted dislikes rated
+before that holding's `created_at` no longer count. Cut-offs are kept per kind: a Never card hides only
+the unwanted suggestion and a like card only the uncovered one. Evidence is per feed, the card is global.
 
 ---
 

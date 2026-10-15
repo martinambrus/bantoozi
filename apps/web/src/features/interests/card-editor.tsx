@@ -53,12 +53,12 @@ const MAX: Record<TextKey, number> = {
 
 type Errors = Partial<Record<CardField, string>>;
 
-function valuesOf(card: CardDto | undefined): Values {
+function valuesOf(card: CardDto | undefined, initialStrength: Strength = DEFAULT_STRENGTH): Values {
   return {
     title: card?.title ?? '',
     interest: card?.interest ?? '',
     notFor: card?.notFor ?? '',
-    strength: card?.strength ?? DEFAULT_STRENGTH,
+    strength: card?.strength ?? initialStrength,
     scope: card?.scopeFeedId ?? '',
   };
 }
@@ -126,6 +126,8 @@ export interface CardEditorProps {
    * titles become its examples; a drafted name and interest fill the fields (D-240).
    */
   fromArticles?: readonly { id: string; title: string }[] | undefined;
+  /** Without a card: the strength the new card starts with (default Like). */
+  initialStrength?: Strength | undefined;
   /** Where the focus goes on closing when the row that opened the editor is gone. */
   returnFocus?: ModalProps['returnFocus'];
   onClose: () => void;
@@ -137,6 +139,7 @@ export function CardEditor({
   review,
   fromArticle,
   fromArticles,
+  initialStrength,
   returnFocus,
   onClose,
 }: CardEditorProps) {
@@ -158,7 +161,9 @@ export function CardEditor({
   const source = sources?.[0];
   const many = (sources?.length ?? 0) > 1;
   // A card saved meanwhile (another tab) fills the fields the person has not changed.
-  const [values, setValues] = useDraft(card, valuesOf);
+  const [values, setValues] = useDraft(card, (source) => valuesOf(source, initialStrength));
+  // A Never card names what to hide: its texts say so.
+  const never = values.strength === 'never';
   // The fields the person typed in: a draft that arrives later never overwrites them.
   const typed = useRef(new Set<TextKey>());
   const sourceIds = useMemo(() => sources?.map((article) => article.id), [sources]);
@@ -286,7 +291,15 @@ export function CardEditor({
       description={
         source === undefined
           ? undefined
-          : t(many ? 'editor.fromArticlesHint' : 'editor.fromArticleHint')
+          : t(
+              many
+                ? never
+                  ? 'editor.fromArticlesHintNever'
+                  : 'editor.fromArticlesHint'
+                : never
+                  ? 'editor.fromArticleHintNever'
+                  : 'editor.fromArticleHint',
+            )
       }
       dismissible={!saving}
       returnFocus={returnFocus}
@@ -319,7 +332,7 @@ export function CardEditor({
           ref={(node) => {
             fields.current.interest = node;
           }}
-          label={t('editor.interest')}
+          label={t(never ? 'editor.interestNever' : 'editor.interest')}
           value={values.interest}
           placeholder={waiting && values.interest === '' ? t('editor.loading') : undefined}
           rows={3}
