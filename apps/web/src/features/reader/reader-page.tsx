@@ -107,14 +107,20 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
   const { preferences } = useMe();
   const { title, subscription } = useViewTitle(view);
   const list = useArticleList(view, preferences);
-  const rows = useVisibleRows(view, list, preferences.showRead);
+  // Counts the loads the reader asked for, which let go of the rows the view kept.
+  const [generation, setGeneration] = useState(0);
+  const rows = useVisibleRows(view, list, preferences.showRead, generation);
   const scoped = useCounts(scopeOf(view), preferences.defaultTier);
   useObserveItems(list.items);
 
   // The article as the list had it when it was opened, for as long as the list no longer has it.
   const [opened, setOpened] = useState<ArticleListItem | null>(null);
   const expanded =
-    opened === null ? null : (list.items.find((candidate) => candidate.id === opened.id) ?? opened);
+    opened === null
+      ? null
+      : (rows.visible.find((candidate) => candidate.id === opened.id) ??
+        list.items.find((candidate) => candidate.id === opened.id) ??
+        opened);
 
   function toggle(item: ArticleListItem) {
     if (expanded?.id === item.id) {
@@ -140,6 +146,10 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
   }
 
   const { reload, poll } = list;
+  const loaded = useCallback((ok: boolean) => {
+    if (ok) setGeneration((current) => current + 1);
+    return ok;
+  }, []);
   const refreshCounts = useCallback(
     () =>
       Promise.all(
@@ -159,11 +169,11 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
     if (refreshingNow.current) return;
     refreshingNow.current = true;
     setRefreshing(true);
-    void Promise.all([reload(), refreshCounts()]).finally(() => {
+    void Promise.all([reload().then(loaded), refreshCounts()]).finally(() => {
       refreshingNow.current = false;
       setRefreshing(false);
     });
-  }, [reload, refreshCounts]);
+  }, [reload, loaded, refreshCounts]);
   const refreshList = useCallback(() => void poll(), [poll]);
 
   const busy =
@@ -203,11 +213,13 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
   const { defaultTier } = preferences;
   useEffect(() => {
     baseline.current = null;
+    reloadedFor.current = null;
     offer(0);
   }, [defaultTier, offer]);
   useEffect(() => {
     if (dataUpdatedAt === 0) return;
     baseline.current = latestCount.current ?? null;
+    reloadedFor.current = null;
     offer(0);
   }, [dataUpdatedAt, offer]);
   useEffect(() => {
@@ -239,8 +251,8 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
   }, [count, reload, offer]);
   const showNew = useCallback(() => {
     window.scrollTo({ top: 0 });
-    void reload();
-  }, [reload]);
+    void reload().then(loaded);
+  }, [reload, loaded]);
 
   return (
     <ReaderShortcuts

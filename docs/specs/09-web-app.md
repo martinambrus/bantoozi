@@ -98,7 +98,12 @@ offline/background polling. The idle 30-second poll refreshes the counts; the vi
 reloaded by the 5-second busy poll, the Refresh control and navigation, and keeps up with new
 articles without moving rows under the reader (D-152, D-243): when the current view's count rises
 above its value at the last list load, the list reloads by itself only while it is scrolled to the
-top and no article is open; otherwise "N new articles · Show" above the list loads them on demand. New items in off/unselected training feeds are not unfinished jobs and
+top and no article is open; otherwise "N new articles · Show" above the list loads them on demand.
+Within one open view, rows the reader acted on keep their place across background reloads (busy poll,
+automatic reload, invalidations; D-245): rated or hidden rows that left stay gone while they are still
+rated or hidden (Undo or a failed rating brings them back), and rows read in this view, the open one
+included, stay where they were even when the server no longer lists them. Only Refresh, "Show N new
+articles" and navigation drop them. The busy poll and the offline copy go by the server's rows alone. New items in off/unselected training feeds are not unfinished jobs and
 must not cause endless polling or "AI is working" messages.
 Cancel obsolete queries on route changes. No SSE infrastructure is required for the first version.
 Refresh from page one on `STALE_CURSOR`; de-duplicate ids and preserve selection/scroll by id.
