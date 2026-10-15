@@ -103,14 +103,15 @@ export const libraryRoutes: FastifyPluginAsyncZod = async (app) => {
       const { id } = request.params;
       const { strength, scopeFeedId, replaceCardId } = request.body;
       const outcome = await request.mutate(async (tx) => {
-        if (replaceCardId !== undefined) {
-          await deleteUserCardForReplacement(tx, { cardId: replaceCardId });
-        }
+        const removal =
+          replaceCardId === undefined
+            ? null
+            : await deleteUserCardForReplacement(tx, { cardId: replaceCardId });
         const mutation = await adoptLibraryCard(tx, {
           cardId: id,
           strength,
           ...(scopeFeedId === undefined ? {} : { scopeFeedId }),
-          ...(replaceCardId === undefined ? {} : { replacing: true }),
+          ...(removal === null ? {} : { replacing: removal.replaced }),
         });
         return { status: 200, body: cardMutationResponse(mutation, locale, null) };
       });

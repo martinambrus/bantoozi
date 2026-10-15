@@ -86,9 +86,15 @@ export interface CreateUserCardInput {
   translation?: CardTranslationPair | null | undefined;
   /**
    * A holding was just deleted in this transaction to make room (`replaceCardId`): the create is
-   * a one-for-one swap, so `maxCards` is checked against the count before that delete.
+   * a one-for-one swap, so `maxCards` is checked against the count before that delete, and
+   * `maxForks` too when the removed holding was a private fork as well.
    */
-  replacing?: boolean | undefined;
+  replacing?: ReplacedHolding | undefined;
+}
+
+/** The holding a replacement deleted: whether it was a private fork. */
+export interface ReplacedHolding {
+  private: boolean;
 }
 
 export interface AdoptLibraryCardInput {
@@ -96,7 +102,7 @@ export interface AdoptLibraryCardInput {
   strength: CardStrength;
   scopeFeedId?: string | null | undefined;
   /** As {@link CreateUserCardInput.replacing}. */
-  replacing?: boolean | undefined;
+  replacing?: ReplacedHolding | undefined;
 }
 
 /** Fields of `POST /cards/from-article`. */
@@ -146,7 +152,7 @@ async function holdCard(
     covered: readonly Subscription[];
     unretired: boolean;
     /** A holding was deleted in this transaction to make room: the hold is not growth. */
-    replacing: boolean;
+    replacing: ReplacedHolding | undefined;
   },
 ): Promise<CardMutation> {
   const { card } = args;
@@ -178,7 +184,9 @@ async function holdCard(
   const before = args.replacing ? counts.cards + 1 : counts.cards;
   checkQuota('maxCards', before, counts.cards + 1, me.limits.maxCards);
   if (card.visibility === 'private') {
-    checkQuota('maxForks', counts.forks, counts.forks + 1, me.limits.maxForks);
+    // A private fork swapped for a private fork is not fork growth either.
+    const forksBefore = args.replacing?.private === true ? counts.forks + 1 : counts.forks;
+    checkQuota('maxForks', forksBefore, counts.forks + 1, me.limits.maxForks);
   }
   const override = args.title !== null && args.title !== card.title ? args.title : null;
   await tx.execute(sql`
@@ -311,7 +319,7 @@ export async function createUserCard(
     title,
     covered,
     unretired,
-    replacing: input.replacing === true,
+    replacing: input.replacing,
   });
 }
 
@@ -353,7 +361,7 @@ export async function adoptLibraryCard(
     title: null,
     covered,
     unretired: false,
-    replacing: input.replacing === true,
+    replacing: input.replacing,
   });
 }
 
@@ -411,7 +419,7 @@ export async function createCardFromArticle(
     title,
     covered,
     unretired: shared.unretired || fork.unretired,
-    replacing: input.replacing === true,
+    replacing: input.replacing,
   });
 }
 
@@ -692,12 +700,13 @@ export async function deleteUserCard(
 export async function deleteUserCardForReplacement(
   tx: TenantTx,
   input: { cardId: string },
-): Promise<CardRemoval> {
+): Promise<CardRemoval & { replaced: ReplacedHolding }> {
   const cardId = validateId(input.cardId, 'cardId');
   const me = await lockTenant(tx);
   const holding = await requireCardHolding(tx, me.userId, cardId);
   const subscriptions = await loadSubscriptions(tx, me.userId);
   await lockFeeds(tx, activeFeedIds(coveredFeeds(subscriptions, null)));
+  const replaced = { private: (await loadCard(tx, cardId))?.visibility === 'private' };
   const refreshFeedIds = activeFeedIds(coveredFeeds(subscriptions, holding.scopeFeedId));
   await tx.execute(sql`
     DELETE FROM user_cards WHERE user_id = ${me.userId}::uuid AND card_id = ${cardId}::bigint`);
@@ -709,5 +718,5 @@ export async function deleteUserCardForReplacement(
     labelIdChange: null,
     reason: 'cards',
   });
-  return { effects };
+  return { effects, replaced };
 }

@@ -457,6 +457,34 @@ describe('maxForks', () => {
     );
   });
 
+  it('an account above maxForks and maxCards can swap a private fork for another, but not a public card for a fork', async () => {
+    const r = await reader();
+    const forks = LIMITS.maxForks + 2;
+    const held = await seedHoldings(r.user.id, forks, 'fork');
+    const publics = await seedHoldings(r.user.id, Math.max(LIMITS.maxCards + 2 - forks, 2), 'card');
+    const total = forks + publics.length;
+    expect(total).toBeGreaterThan(LIMITS.maxCards);
+    const body = () => ({
+      articleId: r.articleId,
+      interest: `Fork swap ${tag()}`,
+      strength: 'like',
+    });
+    expectStatus(
+      await r.api.post('/cards/from-article', { ...body(), replaceCardId: held[0] }),
+      201,
+    );
+    expect((await usage(r.api)).maxForks).toBe(forks);
+    expect((await usage(r.api)).maxCards).toBe(total);
+    expectQuota(
+      await r.api.post('/cards/from-article', { ...body(), replaceCardId: publics[0] }),
+      'maxForks',
+      forks,
+      LIMITS.maxForks,
+    );
+    expect((await usage(r.api)).maxForks).toBe(forks);
+    expect((await usage(r.api)).maxCards).toBe(total);
+  });
+
   it('label forks are not counted in maxForks, and card forks do not block label examples', async () => {
     const r = await reader();
     // Label forks are held labels, never card forks: card forks keep their full room.
