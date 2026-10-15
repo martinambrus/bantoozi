@@ -49,6 +49,24 @@ describe('new articles while the reader is open', () => {
     expect(screen.queryByRole('button', { name: /new articles?/ })).toBeNull();
   });
 
+  it('reloads again when the count rises to the same number after the list was loaded', async () => {
+    const { app, state } = await openReader();
+    const base = state.counts.forYou;
+    state.counts = { ...state.counts, forYou: base + 2 };
+    await advance(31_000);
+    const listed = lists(app);
+    expect(listed).toBeGreaterThan(1);
+
+    state.counts = { ...state.counts, forYou: base };
+    await advance(31_000);
+    await app.user.click(screen.getByRole('button', { name: 'Refresh' }));
+    const refreshed = lists(app);
+    state.counts = { ...state.counts, forYou: base + 2 };
+    await advance(31_000);
+
+    expect(lists(app)).toBe(refreshed + 1);
+  });
+
   it('keeps offering the new articles when the reload by itself fails', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     let broken = false;

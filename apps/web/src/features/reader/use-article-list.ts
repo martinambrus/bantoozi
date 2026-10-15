@@ -1,6 +1,6 @@
 import type { ArticleListItem, ArticleListResponse, UserPreferences } from '@bantoozi/shared';
-import { keepPreviousData, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo } from 'react';
+import { hashKey, keepPreviousData, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import type { ApiClient } from '../../api/client.js';
 import { useApi } from '../../api/context.js';
@@ -97,6 +97,17 @@ export function useArticleList(
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+
+  // A list nobody shows any more goes at once, not when the cache's timer gets to it: the timer can
+  // run late, and going back to a tier or sort would then show the old rows without asking again.
+  const shown = useRef(queryKey);
+  useEffect(() => {
+    const before = shown.current;
+    shown.current = queryKey;
+    if (hashKey(before) !== hashKey(queryKey)) {
+      queryClient.removeQueries({ queryKey: before, exact: true });
+    }
+  }, [queryClient, queryKey]);
 
   const { data, dataUpdatedAt, fetchNextPage, hasNextPage, isFetching, isPlaceholderData } = query;
 

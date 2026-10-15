@@ -20,7 +20,7 @@ import { CloseIcon } from '../../components/icons.js';
 import { useAccountId, useSession } from '../../session/context.js';
 import { articleKeys } from '../article/query-keys.js';
 import { InlineAlert } from '../feeds/inline-alert.js';
-import { useSubscriptionsCache } from '../feeds/subscriptions.js';
+import { subscriptionsKey, useSubscriptionsCache } from '../feeds/subscriptions.js';
 import { MAX_SELECTED_ARTICLES } from './selection.js';
 
 export interface AnalyzePanelProps {
@@ -177,6 +177,10 @@ export function AnalyzePanel({
   // batch would send the old version with `startTraining` and be refused as stale.
   const syncing = useRef(false);
   const [syncingNow, setSyncingNow] = useState(false);
+  // The subscriptions were read again and still show the old state (or could not be read): nothing
+  // is sent until a read shows the new one.
+  const unsynced = useRef(false);
+  const [unsyncedNow, setUnsyncedNow] = useState(false);
   const section = useRef<HTMLElement>(null);
   const removers = useRef(new Map<string, HTMLButtonElement>());
   const refocus = useRef<Refocus | null>(null);
@@ -233,16 +237,41 @@ export function AnalyzePanel({
     );
   }
 
+  // Reads the subscriptions again; false when that read failed or still shows this feed as it was.
+  async function synced(): Promise<boolean> {
+    const key = subscriptionsKey(accountId);
+    const before = queryClient.getQueryState(key);
+    await subscriptions.refresh().catch(() => undefined);
+    const after = queryClient.getQueryState(key);
+    const read =
+      after !== undefined &&
+      (after.dataUpdatedAt !== (before?.dataUpdatedAt ?? 0) ||
+        after.errorUpdatedAt !== (before?.errorUpdatedAt ?? 0));
+    if (!read) return true;
+    const now = subscriptions.known()?.find((item) => item.feed.id === subscription.feed.id);
+    return (
+      after.status !== 'error' &&
+      now !== undefined &&
+      !(now.inferenceMode === 'off' && now.inferenceVersion === subscription.inferenceVersion)
+    );
+  }
+
+  function settle(ok: boolean) {
+    syncing.current = false;
+    setSyncingNow(false);
+    unsynced.current = !ok;
+    setUnsyncedNow(!ok);
+  }
+
   function accepted(sent: readonly ArticleListItem[], requests: AnalyzeResponse['requests']) {
     const sentIds = sent.map(({ id }) => id);
     if (off) {
       syncing.current = true;
       setSyncingNow(true);
+      void synced().then(settle);
+    } else {
+      void subscriptions.refresh();
     }
-    void subscriptions.refresh().finally(() => {
-      syncing.current = false;
-      setSyncingNow(false);
-    });
     recordRequests(requests);
     refreshArticles();
     const panel = section.current;
@@ -277,6 +306,13 @@ export function AnalyzePanel({
   // but not once the sign-in that sent it has ended.
   async function send() {
     if (empty || sending.current || syncing.current) return;
+    if (unsynced.current) {
+      syncing.current = true;
+      setSyncingNow(true);
+      const ok = await synced();
+      settle(ok);
+      if (!ok) return;
+    }
     sending.current = true;
     const signIn = session.currentSignIn();
     const sent = batch;
@@ -324,7 +360,7 @@ export function AnalyzePanel({
     }
   }
 
-  const message = analyze.error === movedOn ? null : problem();
+  const message = unsyncedNow ? t('errors.version') : analyze.error === movedOn ? null : problem();
 
   return (
     <section

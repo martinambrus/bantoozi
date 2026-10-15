@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { FOCUS_RING } from '../../src/components/cx.js';
 import { articleKeys } from '../../src/features/article/query-keys.js';
-import { subscriptionsKey } from '../../src/features/feeds/subscriptions.js';
+import { subscriptionsKey, useSubscriptions } from '../../src/features/feeds/subscriptions.js';
 import { AnalyzePanel, type AnalyzePanelProps } from '../../src/features/training/analyze-panel.js';
 import { useArticleSelection } from '../../src/features/training/selection.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
@@ -365,6 +365,56 @@ describe('when the server refuses', () => {
     await view.user.click(send());
 
     expect(await screen.findByRole('alert')).toHaveTextContent('1 selected article changed');
+  });
+
+  describe('a feed that is off, once its batch is accepted', () => {
+    function Watcher() {
+      useSubscriptions();
+      return null;
+    }
+    const analyzedBy = (view: ReturnType<typeof renderReader>) => view.calls('POST', ANALYZE);
+
+    function renderWatched(list: ApiRouteHandler) {
+      return renderReader(
+        <>
+          <Watcher />
+          <AnalyzePanel subscription={off} items={picked} onSubmitted={vi.fn()} />
+        </>,
+        { routes: { [ROUTE]: accepted, 'GET /subscriptions': list } },
+      );
+    }
+
+    it('sends nothing more while the subscriptions still show it as off, then sends once they do not', async () => {
+      let answer: Subscription[] = [off];
+      const view = renderWatched(() => json(200, answer));
+      await waitFor(() => expect(view.calls('GET', '/subscriptions')).toHaveLength(1));
+
+      await view.user.click(send());
+      await waitFor(() => expect(analyzedBy(view)).toHaveLength(1));
+      expect(await screen.findByRole('alert')).toHaveTextContent('classification setting');
+
+      await view.user.click(send());
+      expect(analyzedBy(view)).toHaveLength(1);
+
+      answer = [training];
+      await view.user.click(send());
+      await waitFor(() => expect(analyzedBy(view)).toHaveLength(2));
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('does not send while the subscriptions cannot be read', async () => {
+      let broken = false;
+      const view = renderWatched(() => (broken ? failure(503, 'UNAVAILABLE') : json(200, [off])));
+      await waitFor(() => expect(view.calls('GET', '/subscriptions')).toHaveLength(1));
+      broken = true;
+
+      await view.user.click(send());
+      await waitFor(() => expect(analyzedBy(view)).toHaveLength(1));
+      expect(await screen.findByRole('alert')).toBeInTheDocument();
+      await view.user.click(send());
+
+      expect(analyzedBy(view)).toHaveLength(1);
+    });
   });
 
   it('refreshes the subscriptions and asks to check and send again when the version moved on', async () => {
