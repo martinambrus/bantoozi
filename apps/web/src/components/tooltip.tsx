@@ -9,6 +9,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 
 import { cx } from './cx.js';
 
@@ -66,6 +67,24 @@ export function Tooltip({
     };
   }, [open, place]);
 
+  // Out of the trigger's stacking context (the sidebar would hold it under the list), into the open
+  // dialog that holds the trigger when there is one: a dialog sits in the top layer above the page.
+  const host =
+    wrapperRef.current?.closest('dialog') ??
+    (typeof document === 'undefined' ? null : document.body);
+  const bubble = (
+    <span
+      ref={bubbleRef}
+      id={id}
+      style={position}
+      role="tooltip"
+      hidden={!open}
+      className="pointer-events-none fixed z-50 w-64 max-w-[18rem] rounded-lg border border-slate-300 bg-white p-2 text-start text-xs font-normal text-slate-900 shadow-md dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+    >
+      {text}
+    </span>
+  );
+
   return (
     <span ref={wrapperRef} className={cx('inline-flex', className)}>
       {children({
@@ -80,16 +99,7 @@ export function Tooltip({
           setOpen(false);
         },
       })}
-      <span
-        ref={bubbleRef}
-        id={id}
-        style={position}
-        role="tooltip"
-        hidden={!open}
-        className="pointer-events-none fixed z-50 w-64 max-w-[18rem] rounded-lg border border-slate-300 bg-white p-2 text-start text-xs font-normal text-slate-900 shadow-md dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-      >
-        {text}
-      </span>
+      {host === null ? bubble : createPortal(bubble, host)}
     </span>
   );
 }
