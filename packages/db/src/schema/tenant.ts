@@ -255,6 +255,8 @@ export const userCards = pgTable(
     titleOverride: text('title_override'),
     createdAt: tstz('created_at').notNull().defaultNow(),
     updatedAt: tstz('updated_at').notNull().defaultNow(),
+    /** When the holding entered its current class (Never or not Never); D-244. */
+    classSince: tstz('class_since').notNull().defaultNow(),
   },
   (t) => [
     primaryKey({ name: 'user_cards_pkey', columns: [t.userId, t.cardId] }),

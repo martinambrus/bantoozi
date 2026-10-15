@@ -71,6 +71,16 @@ export function feedAgreement(
     suggest: boolean;
     items: { articleId: string; at: Date }[];
   };
+  /**
+   * Topical dislikes (reason off-topic or none) that no held Never card scored at Maybe or above,
+   * the "unwanted" articles a new Never card could catch: shaped like `uncovered`.
+   */
+  unwanted: {
+    count: number;
+    articleIds: string[];
+    suggest: boolean;
+    items: { articleId: string; at: Date }[];
+  };
 } {
   const mine = rows.filter((r) => r.s.explicit && sampleFeedIds(r.f).includes(feedId));
   const scores = mine.map((r) => baselineScore(r, cfg));
@@ -90,16 +100,29 @@ export function feedAgreement(
     .filter((r, i) => r.s.y === 1 && (scores[i] ?? 0) < cfg.lanes.maybe)
     .sort((a, b) => b.s.feedbackAt.getTime() - a.s.feedbackAt.getTime());
 
+  const unwanted = mine
+    .filter(
+      (r) =>
+        r.s.y === 0 &&
+        (r.s.reason === undefined || r.s.reason === null || r.s.reason === 'off_topic') &&
+        !(r.f?.cards ?? []).some(
+          (card) => card.strength === 'never' && card.p !== null && card.p >= cfg.lanes.maybe,
+        ),
+    )
+    .sort((a, b) => b.s.feedbackAt.getTime() - a.s.feedbackAt.getTime());
+
   const total = likes + dislikes;
+  const enough = likes >= FEED_AGREEMENT.minEachClass && dislikes >= FEED_AGREEMENT.minEachClass;
+  // Agreement decides once both classes are there: a small minority share only explains a feed
+  // that is not ready yet, it never holds back one whose ratings the cards already separate.
   let status: FeedAgreementStatus;
-  if (
+  if (enough && low95 !== null && low95 >= cfg.model.minCvAuc) status = 'ready';
+  else if (
     total >= FEED_AGREEMENT.oneSidedMinTotal &&
     Math.min(likes, dislikes) / total < FEED_AGREEMENT.oneSidedMaxShare
   ) {
     status = 'one_sided';
-  } else if (likes < FEED_AGREEMENT.minEachClass || dislikes < FEED_AGREEMENT.minEachClass) {
-    status = 'collecting';
-  } else if (low95 !== null && low95 >= cfg.model.minCvAuc) status = 'ready';
+  } else if (!enough) status = 'collecting';
   else status = 'not_yet';
 
   return {
@@ -115,6 +138,12 @@ export function feedAgreement(
       articleIds: uncovered.slice(0, FEED_AGREEMENT.uncoveredArticles).map((r) => r.s.articleId),
       suggest: uncoveredSuggests(uncovered.length, likes),
       items: uncovered.map((r) => ({ articleId: r.s.articleId, at: r.s.feedbackAt })),
+    },
+    unwanted: {
+      count: unwanted.length,
+      articleIds: unwanted.slice(0, FEED_AGREEMENT.uncoveredArticles).map((r) => r.s.articleId),
+      suggest: uncoveredSuggests(unwanted.length, dislikes),
+      items: unwanted.map((r) => ({ articleId: r.s.articleId, at: r.s.feedbackAt })),
     },
   };
 }

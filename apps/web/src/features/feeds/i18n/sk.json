@@ -185,5 +185,13 @@
     "text_other": "Vaše záujmy míňajú veľa z toho, čo sa vám tu páči: každá karta ohodnotila nízko {{count}} článkov, ktoré sa vám páčili.",
     "make": "Vytvoriť záujem z týchto",
     "makeLabel": "Vytvoriť záujem z toho, čo sa vám páči v zdroji {{title}}"
+  },
+  "unwanted": {
+    "text_one": "Často sa vám tu nepáčia články, ktoré žiadna z vašich kariet Nikdy neskrýva: {{count}} z nich.",
+    "text_few": "Často sa vám tu nepáčia články, ktoré žiadna z vašich kariet Nikdy neskrýva: {{count}} z nich.",
+    "text_many": "Často sa vám tu nepáčia články, ktoré žiadna z vašich kariet Nikdy neskrýva: {{count}} z nich.",
+    "text_other": "Často sa vám tu nepáčia články, ktoré žiadna z vašich kariet Nikdy neskrýva: {{count}} z nich.",
+    "make": "Vytvoriť kartu Nikdy z týchto",
+    "makeLabel": "Vytvoriť kartu Nikdy z toho, čo sa vám nepáči v zdroji {{title}}"
   }
 }

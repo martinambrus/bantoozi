@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { PLANS } from '@bantoozi/shared';
 import { cardTextHash } from '@bantoozi/shared/server';
 import { createArticle, createFeed, createSubscription, createUser } from '@bantoozi/testing';
@@ -19,6 +22,8 @@ import {
   updateUserCard,
   type CreateUserCardInput,
 } from '../../src/cards/index.js';
+import { cardsMadeFromFeedArticles } from '../../src/api/articles.js';
+import { MIGRATIONS_FOLDER } from '../../src/migrate/migrate.js';
 import type { TenantTx } from '../../src/tenant.js';
 import { setupDbTest, type DbTestContext } from '../support/test-db.js';
 import {
@@ -1003,6 +1008,83 @@ describe('change strength', () => {
       setCardStrength(tx, { cardId: created.card.id, strength: 'never' }),
     );
     expect(unchanged.effects).toEqual(NO_EFFECTS);
+  });
+});
+
+describe('class_since (D-244)', () => {
+  it('moves only when a holding changes between Never and the other strengths', async () => {
+    const r = await createReader(ctx);
+    const feedId = r.active[0]!;
+    const article = await createArticle(ctx.owner, { feedIds: [feedId] });
+    const made = await asUser(ctx, r.id, (tx) =>
+      createCardFromArticle(tx, {
+        articleId: article.id,
+        interest: uniqueText('Class since'),
+        notFor: null,
+        title: 'Class since',
+        strength: 'like',
+      }),
+    );
+    const t0 = new Date('2026-01-01T00:00:00Z');
+    await ctx.owner.query(
+      'UPDATE user_cards SET created_at = $2, class_since = $2 WHERE user_id = $1',
+      [r.id, t0],
+    );
+    const cutoffs = async () =>
+      (await asUser(ctx, r.id, (tx) => cardsMadeFromFeedArticles(tx, [feedId]))).get(feedId);
+    expect(await cutoffs()).toEqual({ like: t0, never: null });
+
+    await asUser(ctx, r.id, (tx) =>
+      setCardStrength(tx, { cardId: made.card.id, strength: 'love' }),
+    );
+    expect(await cutoffs()).toEqual({ like: t0, never: null });
+
+    await asUser(ctx, r.id, (tx) =>
+      setCardStrength(tx, { cardId: made.card.id, strength: 'never' }),
+    );
+    const toNever = await cutoffs();
+    expect(toNever?.like).toBeNull();
+    expect(toNever?.never?.getTime()).toBeGreaterThan(t0.getTime());
+    const neverSince = toNever!.never!;
+
+    await asUser(ctx, r.id, (tx) =>
+      setCardStrength(tx, { cardId: made.card.id, strength: 'never' }),
+    );
+    expect((await cutoffs())?.never).toEqual(neverSince);
+
+    await asUser(ctx, r.id, (tx) =>
+      setCardStrength(tx, { cardId: made.card.id, strength: 'must' }),
+    );
+    const toLike = await cutoffs();
+    expect(toLike?.never).toBeNull();
+    expect(toLike?.like?.getTime()).toBeGreaterThanOrEqual(neverSince.getTime());
+  });
+
+  it("is backfilled to created_at by the migration's own statement", async () => {
+    const r = await createReader(ctx);
+    const created = await asUser(ctx, r.id, (tx) =>
+      createUserCard(tx, { interest: uniqueText('Backfill'), strength: 'like' }),
+    );
+    const t0 = new Date('2026-02-02T00:00:00Z');
+    await ctx.owner.query(
+      'UPDATE user_cards SET created_at = $2, class_since = now() WHERE user_id = $1',
+      [r.id, t0],
+    );
+    const migration = readFileSync(
+      path.join(MIGRATIONS_FOLDER, '0026_user_cards_class_since.sql'),
+      'utf8',
+    );
+    const backfill = migration
+      .split('--> statement-breakpoint')
+      .map((statement) => statement.replace(/^--.*$/gm, '').trim())
+      .find((statement) => statement.startsWith('UPDATE "user_cards"'));
+    expect(backfill).toBeDefined();
+    await ctx.owner.query(backfill!);
+    const { rows } = await ctx.owner.query<{ class_since: Date }>(
+      'SELECT class_since FROM user_cards WHERE user_id = $1 AND card_id = $2',
+      [r.id, created.card.id],
+    );
+    expect(rows[0]?.class_since).toEqual(t0);
   });
 });
 

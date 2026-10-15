@@ -183,6 +183,13 @@
       "when": 1792222800000,
       "tag": "0025_card_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792309200000,
+      "tag": "0026_user_cards_class_since",
+      "breakpoints": true
     }
   ]
 }

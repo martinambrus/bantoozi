@@ -68,6 +68,7 @@ async function rate(
   rating: 1 | -1,
   p: number,
   at: Date = new Date(Date.now() - 3_600_000),
+  reason: string | null = null,
 ): Promise<string> {
   const article = await createArticle(h.owner, { feedIds: [feedId] });
   await h.owner.query(
@@ -105,7 +106,7 @@ async function rate(
       JSON.stringify({
         v: 1,
         rating,
-        reason: null,
+        reason,
         hide: false,
         contentRevision: '1',
         signalOrigin: 'explicit',
@@ -138,13 +139,14 @@ async function holdCardMadeFrom(
   user: TestUser,
   articleIds: readonly string[],
   madeAt: Date,
-): Promise<void> {
+  strength: 'like' | 'never' = 'like',
+): Promise<string> {
   const titles = await h.owner.query<{ title: string }>(
     `SELECT title FROM articles WHERE id = ANY($1::bigint[])`,
     [articleIds],
   );
   const body = {
-    interest: 'Batteries and how they reach production',
+    interest: `Batteries and how they reach production (${strength} ${madeAt.getTime()})`,
     not_for: null,
     interest_en: null,
     not_for_en: null,
@@ -158,9 +160,11 @@ async function holdCardMadeFrom(
     [JSON.stringify(body), user.id],
   );
   await h.owner.query(
-    `INSERT INTO user_cards (user_id, card_id, strength, created_at) VALUES ($1, $2, 'like', $3)`,
-    [user.id, card.rows[0]!.id, madeAt],
+    `INSERT INTO user_cards (user_id, card_id, strength, created_at, class_since)
+     VALUES ($1, $2, $4, $3, $3)`,
+    [user.id, card.rows[0]!.id, madeAt, strength],
   );
+  return card.rows[0]!.id;
 }
 
 describe('GET /me/learning', () => {
@@ -244,6 +248,85 @@ describe('GET /me/learning', () => {
     expect(counted.uncovered.count).toBe(1);
     expect(counted.uncovered.suggest).toBe(false);
     expect(counted.uncovered.articles.map((a) => a.id)).toEqual([later]);
+  });
+
+  it('suggests a Never card from topical dislikes no Never card caught, retired only by a Never card made from them', async () => {
+    const user = await createTestUser(h);
+    const feedId = await subscribe(user, 'training');
+    const card = await createCard(h.owner, { title: 'Learning card' });
+    const unwanted: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      unwanted.push(await rate(user, feedId, card.id, -1, 0.05, undefined, 'off_topic'));
+    }
+    await rate(user, feedId, card.id, -1, 0.05, undefined, 'clickbait');
+    await rate(user, feedId, card.id, 1, 0.05);
+    const titles = await h.owner.query<{ id: string; title: string }>(
+      `SELECT id::text AS id, title FROM articles WHERE id = ANY($1::bigint[])`,
+      [unwanted],
+    );
+    const body = (await status(user)).feeds[0]!;
+    expect(body.unwanted.count).toBe(3);
+    expect(body.unwanted.suggest).toBe(true);
+    expect([...body.unwanted.articles].sort((a, b) => a.id.localeCompare(b.id))).toEqual(
+      titles.rows.sort((a, b) => a.id.localeCompare(b.id)),
+    );
+
+    await holdCardMadeFrom(user, unwanted, new Date(Date.now() - 1_800_000), 'like');
+    const afterLike = (await status(user)).feeds[0]!;
+    expect(afterLike.unwanted.count).toBe(3);
+    expect(afterLike.unwanted.suggest).toBe(true);
+
+    await holdCardMadeFrom(user, unwanted, new Date(Date.now() - 1_700_000), 'never');
+    const afterNever = (await status(user)).feeds[0]!;
+    expect(afterNever.unwanted).toEqual({ count: 0, suggest: false, articles: [] });
+    expect(afterNever.dislikes).toBe(4);
+  });
+
+  it('counts only dislikes rated after a like card was converted to Never', async () => {
+    const user = await createTestUser(h);
+    const feedId = await subscribe(user, 'training');
+    const card = await createCard(h.owner, { title: 'Learning card' });
+    const unwanted: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      unwanted.push(await rate(user, feedId, card.id, -1, 0.05, undefined, 'off_topic'));
+    }
+    // Made as a like before the dislikes, so it does not cut them off while it stays a like.
+    const cardId = await holdCardMadeFrom(user, unwanted, new Date(Date.now() - 7_200_000), 'like');
+    expect((await status(user)).feeds[0]!.unwanted.count).toBe(3);
+
+    const res = await apiClient(h.server, user).patch(`/cards/${cardId}`, { strength: 'never' });
+    expect(res.statusCode).toBe(200);
+    expect((await status(user)).feeds[0]!.unwanted).toEqual({
+      count: 0,
+      suggest: false,
+      articles: [],
+    });
+
+    const later = await rate(
+      user,
+      feedId,
+      card.id,
+      -1,
+      0.05,
+      new Date(Date.now() + 60_000),
+      'off_topic',
+    );
+    const after = (await status(user)).feeds[0]!;
+    expect(after.unwanted.count).toBe(1);
+    expect(after.unwanted.articles.map((article) => article.id)).toEqual([later]);
+  });
+
+  it('does not count likes as unwanted and lets a Never card not retire uncovered likes', async () => {
+    const user = await createTestUser(h);
+    const feedId = await subscribe(user, 'training');
+    const card = await createCard(h.owner, { title: 'Learning card' });
+    const liked: string[] = [];
+    for (let i = 0; i < 3; i += 1) liked.push(await rate(user, feedId, card.id, 1, 0.05));
+    const before = (await status(user)).feeds[0]!;
+    expect(before.unwanted).toEqual({ count: 0, suggest: false, articles: [] });
+    expect(before.uncovered.suggest).toBe(true);
+    await holdCardMadeFrom(user, liked, new Date(Date.now() - 1_800_000), 'never');
+    expect((await status(user)).feeds[0]!.uncovered.suggest).toBe(true);
   });
 
   it('reports a training feed with two likes as collecting, and lists only training feeds', async () => {

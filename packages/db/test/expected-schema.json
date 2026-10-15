@@ -3067,6 +3067,11 @@
           "type": "timestamp with time zone",
           "nullable": false,
           "default": "now()"
+        },
+        "class_since": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
         }
       },
       "primaryKey": ["user_id", "card_id"],

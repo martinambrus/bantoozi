@@ -68,6 +68,27 @@ describe('the signal table (spec 06 §8.2)', () => {
     });
   });
 
+  it('carries the dislike reason of the rating event, null without one and for other signals', async () => {
+    const s = await Scenario.create(ctx);
+    const off = await s.article();
+    const bait = await s.article();
+    const plain = await s.article();
+    const answered = await s.article();
+    const marked = await s.article();
+    await s.rate(off, -1, 'off_topic');
+    await s.rate(bait, -1, 'clickbait');
+    await s.rate(plain, -1);
+    await s.answer(answered, false);
+    await s.bookmark(marked);
+    const samples = await s.samples();
+    const reasonOf = (id: string) => samples.find((x) => x.articleId === id)?.reason;
+    expect(reasonOf(off)).toBe('off_topic');
+    expect(reasonOf(bait)).toBe('clickbait');
+    expect(reasonOf(plain)).toBeNull();
+    expect(reasonOf(answered)).toBeNull();
+    expect(reasonOf(marked)).toBeNull();
+  });
+
   it('prompt answers count as ratings: liked is y1 and disliked is y0, both weight 1.0 explicit', async () => {
     const s = await Scenario.create(ctx);
     const liked = await s.article();

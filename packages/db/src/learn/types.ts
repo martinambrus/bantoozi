@@ -27,6 +27,8 @@ export interface LearnSample {
   explicit: boolean;
   feedbackAt: Date;
   groupId: string;
+  /** The dislike reason of the effective rating event; null for implicit samples and prompt answers. */
+  reason: string | null;
   features: FeatureSnapshotV1 | null;
 }
 

@@ -781,16 +781,24 @@ export async function accessibleArticleTitles(
 
 /**
  * Per feed of `feedIds`, when the caller last made a card from that feed's articles: the latest
- * `user_cards.created_at` among held cards (any strength) whose `body.examples_yes` holds the example
- * title of an article the feed carries. Feeds without such a card are absent.
+ * `user_cards.class_since` (when the holding entered its current class) among held cards whose
+ * `body.examples_yes` holds the example title of an
+ * article the feed carries, apart for cards that are not Never (`like`) and Never cards (`never`).
+ * Feeds without such a card are absent; a missing kind is `null`.
  */
 export async function cardsMadeFromFeedArticles(
   tx: TenantTx,
   feedIds: readonly string[],
-): Promise<Map<string, Date>> {
+): Promise<Map<string, { like: Date | null; never: Date | null }>> {
   if (feedIds.length === 0) return new Map();
-  const result = await tx.execute<{ feed_id: string; acted_at: Date }>(sql`
-    SELECT fi.feed_id::text AS feed_id, max(uc.created_at) AS acted_at
+  const result = await tx.execute<{
+    feed_id: string;
+    like_at: Date | null;
+    never_at: Date | null;
+  }>(sql`
+    SELECT fi.feed_id::text AS feed_id,
+           max(uc.class_since) FILTER (WHERE uc.strength <> 'never') AS like_at,
+           max(uc.class_since) FILTER (WHERE uc.strength = 'never') AS never_at
       FROM user_cards uc
       JOIN interest_cards ic ON ic.id = uc.card_id
       CROSS JOIN LATERAL jsonb_array_elements_text(
@@ -801,7 +809,15 @@ export async function cardsMadeFromFeedArticles(
      WHERE uc.user_id = ${tenantUserId(tx)}::uuid
        AND ex.example = btrim(left(btrim(regexp_replace(a.title, '[[:space:]]+', ' ', 'g')), 200))
      GROUP BY fi.feed_id`);
-  return new Map(result.rows.map((row) => [row.feed_id, new Date(row.acted_at)]));
+  return new Map(
+    result.rows.map((row) => [
+      row.feed_id,
+      {
+        like: row.like_at === null ? null : new Date(row.like_at),
+        never: row.never_at === null ? null : new Date(row.never_at),
+      },
+    ]),
+  );
 }
 
 /** Whether the caller subscribes to `feedId` (feed-scoped actions, spec 08 §4). */

@@ -83,6 +83,7 @@ export function sample(
     groupId?: string;
     ageDays?: number;
     withSnapshot?: boolean;
+    reason?: string | null;
   } = {},
 ): TrainingSample {
   const feedbackAt = new Date(NOW.getTime() - (o.ageDays ?? 1 + (i % 20)) * DAY);
@@ -96,6 +97,7 @@ export function sample(
     explicit,
     feedbackAt,
     groupId: o.groupId ?? `g-${i}`,
+    reason: o.reason ?? null,
     features: o.withSnapshot === false ? null : snapshot(feedbackAt, o),
   };
 }
