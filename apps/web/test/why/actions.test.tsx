@@ -489,7 +489,10 @@ describe('make a card from this', () => {
     await app.user.click(app.panel.getByRole('button', { name: 'Make a card from this' }));
 
     const editor = await screen.findByRole('dialog', { name: 'New card from this article' });
-    expect(within(editor).getByLabelText('I want to read about…')).toHaveValue(TITLE);
+    // The title fills in only once the draft is known to have failed (D-240 "Loading…" state).
+    await waitFor(() =>
+      expect(within(editor).getByLabelText('I want to read about…')).toHaveValue(TITLE),
+    );
     await app.user.click(within(editor).getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(app.calls('POST', '/cards/from-article')).toHaveLength(1));
