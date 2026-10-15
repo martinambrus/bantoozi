@@ -156,7 +156,8 @@ login without leaking the previous account's UI. Slow classification leaves arti
   per device in browser storage (D-235).
 - **List header:**
   - the tier slider (1–5, FeedIt's) filtering `for_you`/`maybe` by minimum tier; its value is saved to
-    `prefs.defaultTier`
+    `prefs.defaultTier`. In a feed, folder or label view that shows all its lanes it filters every row
+    (never-analysed ones go at tier 2 and up) and is saved to its own `prefs.feedMinTier` (default 1; D-248)
   - sort toggle (score/date): in For you (`prefs.sort`), and in a feed, folder or label view that shows
     all its lanes, with its own preference (`prefs.feedSort`, default date; D-247). A scoped view narrowed
     to For you uses `prefs.sort`; Maybe, Everything else, New, Bookmarks and Hidden have no sort control

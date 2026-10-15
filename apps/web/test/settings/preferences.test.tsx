@@ -68,6 +68,13 @@ const CASES: Case[] = [
     explains: 'The order of a single feed, folder or label',
   },
   {
+    label: 'Minimum tier in feeds, folders and labels',
+    kind: 'choice',
+    pick: '3',
+    patch: { feedMinTier: 3 },
+    explains: 'Hides articles below this tier in a single feed, folder or label',
+  },
+  {
     label: 'Hide the Everything else lane',
     kind: 'switch',
     patch: { hideEverything: true },
@@ -185,7 +192,7 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
       );
       expect(CASES.flatMap((item) => leaves(item.patch)).sort()).toEqual(wanted.sort());
       expect(prefs().getAllByRole('switch')).toHaveLength(9);
-      expect(prefs().getAllByRole('radiogroup')).toHaveLength(10);
+      expect(prefs().getAllByRole('radiogroup')).toHaveLength(11);
       for (const item of CASES) expect(control(item)).toBeVisible();
     });
 
@@ -222,6 +229,10 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
       }
       expect(option('Minimum tier', '1')).toHaveAttribute('aria-checked', 'true');
       expect(option('Order of For you', 'Best match')).toHaveAttribute('aria-checked', 'true');
+      expect(option('Minimum tier in feeds, folders and labels', '1')).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
       expect(option('Feedback prompts', 'Occasionally')).toHaveAttribute('aria-checked', 'true');
       for (const name of ['Clickbait', 'Promotional articles', 'Shallow articles', 'Stale news']) {
         expect(option(name, 'Auto')).toHaveAttribute('aria-checked', 'true');
@@ -233,6 +244,7 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
     it('shows the values the account has saved', async () => {
       const changed: Partial<UserPreferences> = {
         defaultTier: 5,
+        feedMinTier: 4,
         hideEverything: true,
         simpleMode: true,
         sort: 'date',
@@ -249,6 +261,10 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
       };
       await openSettings({ me: makeMe({ email: EMAIL, preferences: changed }) });
 
+      expect(option('Minimum tier in feeds, folders and labels', '4')).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
       expect(toggle('Hide the Everything else lane')).toHaveAttribute('aria-checked', 'true');
       expect(toggle('Simple mode')).toHaveAttribute('aria-checked', 'true');
       expect(toggle('Mark as read when I open an article')).toHaveAttribute(

@@ -37,6 +37,8 @@ export interface MarkAllReadProps {
   count: number | undefined;
   /** The articles of the view that are loaded. */
   items: readonly ArticleListItem[];
+  /** The tier the view is filtered by; the account's own when not given. */
+  minTier?: number | undefined;
   /** Called when the articles of the view have changed, to show how they are now. */
   onChanged: () => void;
 }
@@ -48,7 +50,15 @@ export interface MarkAllReadProps {
  * the same instant; a view that changed meanwhile asks again with the new number. An answer that
  * comes after the sign-in that asked has ended shows nothing and asks for nothing more.
  */
-export function MarkAllRead({ lane, scope, name, count, items, onChanged }: MarkAllReadProps) {
+export function MarkAllRead({
+  lane,
+  scope,
+  name,
+  count,
+  items,
+  minTier: viewTier,
+  onChanged,
+}: MarkAllReadProps) {
   const { t } = useTranslation('reader');
   const api = useApi();
   const queryClient = useQueryClient();
@@ -57,7 +67,8 @@ export function MarkAllRead({ lane, scope, name, count, items, onChanged }: Mark
   const store = useReaderActions();
   const undoAction = useUndoAction();
   const toast = useToast();
-  const { defaultTier: minTier } = useMe().preferences;
+  const { defaultTier } = useMe().preferences;
+  const minTier = viewTier ?? defaultTier;
   const { markAllRead } = useReaderTargets();
   const [ask, setAsk] = useState<Ask | null>(null);
   const [preparing, setPreparing] = useState(false);

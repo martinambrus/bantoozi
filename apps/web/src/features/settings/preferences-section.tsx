@@ -103,12 +103,12 @@ function ChoiceSetting<Id extends ChoiceId>({
   );
 }
 
-function TierSetting() {
+function TierSetting({ id }: { id: 'defaultTier' | 'feedMinTier' }) {
   const { t } = useTranslation('settings');
-  const setting = useSetting('defaultTier', t('preferences.defaultTier.hint'));
+  const setting = useSetting(id, t(`preferences.${id}.hint`));
   return (
     <SegmentedControl
-      label={t('preferences.defaultTier.label')}
+      label={t(`preferences.${id}.label`)}
       options={TIERS.map((tier) => ({ value: String(tier), label: String(tier) }))}
       value={String(setting.value)}
       onValueChange={(value) => {
@@ -177,9 +177,10 @@ export function PreferencesSection() {
         <div className="relative">
           <div ref={controls} inert={inert} className="flex flex-col gap-8">
             <Group title={t('preferences.groups.lists')}>
-              <TierSetting />
+              <TierSetting id="defaultTier" />
               <ChoiceSetting id="sort" text="sort" options={SORTS} />
               <ChoiceSetting id="feedSort" text="feedSort" options={SORTS} />
+              <TierSetting id="feedMinTier" />
               <ToggleSetting id="hideEverything" text="hideEverything" />
               <ToggleSetting id="simpleMode" text="simpleMode" />
               <ToggleSetting id="showRead" text="showRead" />

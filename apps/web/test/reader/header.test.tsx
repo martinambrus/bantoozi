@@ -81,10 +81,10 @@ describe('the title and the count', () => {
     expect(await within(await headerOf('Tech News')).findByText('Unread: 2')).toBeVisible();
   });
 
-  it('counts the articles of a label at the tier of the reader', async () => {
+  it('counts the articles of a label at the feed tier of the reader', async () => {
     const { app } = await open({
       path: '/read/label/12',
-      me: makeMe({ preferences: { defaultTier: 2 } }),
+      me: makeMe({ preferences: { defaultTier: 4, feedMinTier: 2 } }),
       labels: [makeLabel('12', 'Climate')],
       routes: {
         'GET /articles/counts': (request) =>
@@ -370,6 +370,64 @@ describe('the sort toggle of a feed, a folder and a label', () => {
   });
 });
 
+describe('the tier slider of a feed, a folder and a label (D-248)', () => {
+  const FEED = { subscriptions: [makeSubscription({ feed: { id: '7', title: 'Verge' } })] };
+
+  it('is on 1 in a feed, saves feedMinTier and asks the list and the counts with it', async () => {
+    const me = makeMe({ preferences: { defaultTier: 3 } });
+    const { app } = await open({ path: '/read/feed/7', ...FEED, me, items: [item(1)] });
+    const slider = await screen.findByRole('slider', { name: 'Minimum tier' });
+    expect(slider).toHaveValue('1');
+    expect(listQueries(app).at(-1)).toMatchObject({ lane: 'all', feedId: '7', minTier: '1' });
+    expect(countsQueries(app)).toContainEqual({ feedId: '7', minTier: '1' });
+
+    fireEvent.change(slider, { target: { value: '4' } });
+
+    await waitFor(() => expect(app.calls(UPDATE_ME)).toHaveLength(1));
+    expect(bodyOf(app.calls(UPDATE_ME)[0]!)).toEqual({ preferences: { feedMinTier: 4 } });
+    await waitFor(() => {
+      expect(listQueries(app).at(-1)).toMatchObject({ lane: 'all', feedId: '7', minTier: '4' });
+      expect(countsQueries(app)).toContainEqual({ feedId: '7', minTier: '4' });
+      expect(countsQueries(app)).not.toContainEqual({ minTier: '4' });
+    });
+  });
+
+  it.each([
+    ['a folder', '/read/folder/Tech%20News', { folder: 'Tech News' }],
+    ['a label', '/read/label/12', { labelId: '12' }],
+  ])('is bound to feedMinTier in %s', async (_name, path, scope) => {
+    const me = makeMe({ preferences: { defaultTier: 2, feedMinTier: 3 } });
+    const { app } = await open({ path, me, labels: [makeLabel('12', 'Climate')] });
+    expect(await screen.findByRole('slider', { name: 'Minimum tier' })).toHaveValue('3');
+    expect(listQueries(app).at(-1)).toMatchObject({ lane: 'all', ...scope, minTier: '3' });
+  });
+
+  it('leaves the tier of For you alone, and For you leaves the feed alone', async () => {
+    const me = makeMe({ preferences: { defaultTier: 2, feedMinTier: 4 } });
+    const forYou = await open({ path: '/read/for_you', me, items: [item(1)] });
+    const slider = await screen.findByRole('slider', { name: 'Minimum tier' });
+    expect(slider).toHaveValue('2');
+    fireEvent.change(slider, { target: { value: '5' } });
+    await waitFor(() => expect(forYou.app.calls(UPDATE_ME)).toHaveLength(1));
+    expect(bodyOf(forYou.app.calls(UPDATE_ME)[0]!)).toEqual({ preferences: { defaultTier: 5 } });
+  });
+
+  it('keeps the tier of For you in a feed narrowed to For you or Maybe', async () => {
+    const me = makeMe({ preferences: { defaultTier: 2, feedMinTier: 4 } });
+    const { app } = await open({ path: '/read/feed/7?lane=maybe', ...FEED, me });
+    expect(await screen.findByRole('slider', { name: 'Minimum tier' })).toHaveValue('2');
+    expect(listQueries(app).at(-1)).toMatchObject({ lane: 'maybe', feedId: '7', minTier: '2' });
+    expect(countsQueries(app)).toContainEqual({ feedId: '7', minTier: '2' });
+  });
+
+  it('counts a feed narrowed to Everything else without a tier', async () => {
+    const me = makeMe({ preferences: { defaultTier: 3, feedMinTier: 4 } });
+    const { app } = await open({ path: '/read/feed/7?lane=everything', ...FEED, me });
+    await headerOf('Verge');
+    await waitFor(() => expect(countsQueries(app)).toContainEqual({ feedId: '7', minTier: '1' }));
+  });
+});
+
 describe('Simple mode', () => {
   it('hides the excerpts at once and saves the setting', async () => {
     const { app } = await open({ path: '/read/for_you', items: [item(1)] });
@@ -638,6 +696,40 @@ describe('Mark all read', () => {
       datasetVersion: 'd-feed',
     });
     expect(listQueries(app).some((query) => query['limit'] === '1')).toBe(false);
+  });
+
+  it('marks the lane all of a feed at the feed tier, not the tier of For you (D-248)', async () => {
+    const { app } = await open({
+      path: '/read/feed/7',
+      me: makeMe({ preferences: { defaultTier: 2, feedMinTier: 4 } }),
+      items: [item(1)],
+      subscriptions: [makeSubscription({ feed: { id: '7', title: 'Verge' } })],
+      routes: {
+        'GET /articles/counts': (request) =>
+          json(
+            200,
+            request.query.has('feedId')
+              ? { ...COUNTS, total: 3, datasetVersion: 'd-feed' }
+              : COUNTS,
+          ),
+        [MARK_READ]: () => json(200, { count: 3, mutationId: MUTATION_ID }),
+      },
+    });
+    await screen.findByRole('article', { name: 'Article 1' });
+    await within(await headerOf('Verge')).findByText('Unread: 3');
+
+    await app.user.click(screen.getByRole('button', { name: 'Mark all read' }));
+    await app.user.click(
+      within(await screen.findByRole('dialog', { name: 'Mark all as read?' })).getByRole('button', {
+        name: 'Mark as read',
+      }),
+    );
+
+    await waitFor(() => expect(app.calls(MARK_READ)).toHaveLength(1));
+    expect(bodyOf(app.calls(MARK_READ)[0]!)).toEqual({
+      filter: { lane: 'all', feedId: '7', minTier: 4, olderThan: AS_OF },
+      datasetVersion: 'd-feed',
+    });
   });
 
   it.each([

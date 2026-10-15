@@ -41,6 +41,10 @@
       "label": "Minimálna úroveň",
       "hint": "Skryje články pod touto úrovňou v zoznamoch Pre vás a Možno. Úroveň 1 zobrazí všetko, úroveň 5 len najsilnejšie zhody."
     },
+    "feedMinTier": {
+      "label": "Minimálna úroveň v kanáloch, priečinkoch a štítkoch",
+      "hint": "Skryje články pod touto úrovňou v jednom kanáli, priečinku alebo štítku, keď zobrazuje všetky svoje zoznamy, teda aj tie, ktoré ešte neboli analyzované. Úroveň 1 zobrazí všetko. Pre vás a Možno majú minimálnu úroveň uvedenú vyššie."
+    },
     "sort": {
       "label": "Zoradenie zoznamu Pre vás",
       "hint": "Najlepšia zhoda zobrazí ako prvé články, ktoré vás pravdepodobne zaujmú. Najnovšie zoradí články podľa dátumu publikovania.",

@@ -2301,3 +2301,14 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   an order chosen in a feed does not change For you and the other way round; a scoped view narrowed to For you keeps
   using `sort`. Maybe, Everything else, New, Bookmarks and Hidden get no control. Settings → Lists has a "Sort in
   feeds, folders and labels" setting. The API already accepted `sort` on every lane. Specs 08 §3.1 and 09 §3.1 updated.
+- D-248: 2026-10-15 (owner request; amends spec 08 §5.1 step 3 and spec 09 §3.1, next to D-247) — In the view of one
+  feed, folder or label, on lane `all`, a `minTier` above 1 keeps only the rows with `tier >= minTier`: the rows
+  never analysed (lane `new`, no tier) and Everything else go too, where the slider used to change nothing there.
+  `minTier = 1` shows everything, as before. Unscoped views and the scoped For you and Maybe lanes keep the old rule
+  (`minTier` on `for_you`/`maybe` rows only), so the global sidebar counts do not change. The scoped `all` views have
+  their own saved tier, the new preference `feedMinTier` (1–5, default 1; old accounts read it as 1, no migration),
+  separate from `defaultTier` (For you, Maybe and the global views): the header slider of such a view is bound to it,
+  and so are the default `minTier` of a scoped `all` list, of the scoped counts and of `POST
+  /subscriptions/:feedId/mark-read`. The counts have no lane: the web asks them with `feedMinTier` in a scoped `all`
+  view, `defaultTier` in a scoped For you or Maybe view and 1 in a scoped Everything else or New view, so the numbers
+  equal the list. Settings → Reading preferences has a "Minimum tier in feeds, folders and labels" setting.

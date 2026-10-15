@@ -266,6 +266,7 @@ response or `GET /invites`. `POST /admin/waitlist/:id/invite` sends and reports 
   showRead: boolean,                            // default false: unread lanes ask for status=all (D-234)
   sort: 'score' | 'date',                       // default 'score' (For you)
   feedSort: 'score' | 'date',                   // default 'date': feed, folder and label views of all lanes (D-247)
+  feedMinTier: 1|2|3|4|5,                       // default 1: minimum tier of those views (D-248)
   markReadOnExpand: boolean,                    // default true
   markReadOnRate: boolean,                      // default true
   feedbackPrompt: 'often' | 'occasionally' | 'never',   // default 'occasionally'
@@ -296,7 +297,7 @@ response or `GET /invites`. `POST /admin/waitlist/:id/invite` sends and reports 
 | `GET /feed-preferences` | — | Own remembered preferences, including unsubscribed bookmark sources: `[{feedId,imagePolicy,effectiveImagesAllowed}]` |
 | `PUT /feed-preferences/:feedId` | `{imagePolicy:'inherit'\|'allow'\|'block'}` | Upsert durable `user_feed_preferences`; require owned subscription, bookmark source or already-owned preference, return the effective policy. Never changes inference mode |
 | `DELETE /subscriptions/:feedId` | — | Delete, then `refresh_feed_subscribers`, `refresh_feed_cards`, `user.rank {full}`. The user's pending/running `analysis_requests` for the feed lose their demand, and the worker cancels them on their next attempt or `house.reconcile` (the API role has no update grant; the worker owns completion). Completed ones stay for learning (spec 11 §5) |
-| `POST /subscriptions/:feedId/mark-read` | `{olderThan, datasetVersion}` | Same operation as `/articles/mark-read` with `filter: {lane: 'all', feedId}` fixed by the path and the default `minTier` (`prefs.defaultTier`), so `datasetVersion` is the one `GET /articles?lane=all&feedId=<id>` returned for `asOf = olderThan`; same scope, cap, receipt and undo contract. A feed without the caller's subscription is `404` |
+| `POST /subscriptions/:feedId/mark-read` | `{olderThan, datasetVersion}` | Same operation as `/articles/mark-read` with `filter: {lane: 'all', feedId}` fixed by the path and the default `minTier` (`prefs.feedMinTier`, D-248), so `datasetVersion` is the one `GET /articles?lane=all&feedId=<id>` returned for `asOf = olderThan`; same scope, cap, receipt and undo contract. A feed without the caller's subscription is `404` |
 | `POST /subscriptions/import-opml` | multipart `file` (≤ 1 MB) | spec 03 §11. `200 {added, existing, invalid: [...]}`. New subscriptions start off; no inference/card backfill. Existing subscriptions retain mode. Quota `opmlMaxFeeds` and `maxFeeds` |
 | `GET /subscriptions/export-opml` | — | `text/x-opml` attachment |
 | `POST /subscriptions/folders/rename` | `{from, to}` | Rename a folder across the user's subscriptions and in `preferences.folderOrder` → `200 {count}` |
@@ -367,7 +368,8 @@ does not cause the bookmark capture/export path to download or archive them.
 - `lane` ∈ `for_you | maybe | everything | new | all | bookmarks | hidden` (default `for_you`)
 - `feedId?`, `folder?`, `labelId?`
 - `status` ∈ `unread | all` (default `unread`; default `all` for bookmarks/hidden)
-- `minTier?` (1–5, default `prefs.defaultTier`; applies to `for_you` and `maybe`)
+- `minTier?` (1–5, default `prefs.defaultTier`, or `prefs.feedMinTier` for `lane=all` with `feedId`, `folder` or
+  `labelId`; applies to `for_you` and `maybe`, and to every row of `lane=all` in such a scoped view, D-248)
 - `sort` ∈ `score | date` (default: `prefs.sort` for `for_you`; uncertainty order for `maybe`, spec 06 §10;
   `date` otherwise)
 - `cursor`, `limit`
@@ -419,7 +421,9 @@ does not cause the bookmark capture/export path to download or archive them.
      excluded outside the explicit bookmarks/hidden views
    - `status = unread` means `ua.read_at IS NULL AND ua.archived_at IS NULL` in ordinary lanes;
      bookmark/hidden views filter only `read_at` when explicitly requesting unread
-   - `minTier` on `for_you`/`maybe` only (also when those lanes occur in `all`)
+   - `minTier` on `for_you`/`maybe` only (also when those lanes occur in `all`). Exception (D-248): in
+     `lane=all` of a view with `feedId`, `folder` or `labelId`, `minTier > 1` keeps only rows with
+     `tier >= minTier`, so `new` and tierless rows are hidden; `minTier = 1` keeps everything
 4. Sort, then paginate.
 
 `GET /articles/counts` accepts the same scope/status/minTier and `asOf` inputs (no cursor/sort).

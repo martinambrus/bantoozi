@@ -3,6 +3,7 @@ import type {
   ArticleListItem,
   ArticleViewLane,
   MarkReadLane,
+  UserPreferences,
 } from '@bantoozi/shared';
 
 import type { Lane, ScopedLane } from './lanes.js';
@@ -71,6 +72,25 @@ export function usesSort(view: ReaderView): boolean {
 /** The preference that holds the order of a view: For you has its own, the scoped views share one. */
 export function sortSetting(view: ReaderView): 'sort' | 'feedSort' {
   return view.kind === 'lane' || view.lane === 'for_you' ? 'sort' : 'feedSort';
+}
+
+/** The preference that holds the minimum tier of a view: the scoped views of all lanes have their own (D-248). */
+export function tierSetting(view: ReaderView): 'defaultTier' | 'feedMinTier' {
+  return view.kind !== 'lane' && view.lane === 'all' ? 'feedMinTier' : 'defaultTier';
+}
+
+/**
+ * The tier the counts and mark-all-read of a view ask with. A scoped view that is not narrowed to
+ * For you or Maybe has no tier of its own, and the scoped counts would otherwise drop its rows (D-248).
+ */
+export function viewMinTier(
+  view: ReaderView,
+  preferences: Pick<UserPreferences, 'defaultTier' | 'feedMinTier'>,
+): number {
+  if (view.kind === 'lane' || view.lane === 'for_you' || view.lane === 'maybe') {
+    return preferences.defaultTier;
+  }
+  return view.lane === 'all' ? preferences.feedMinTier : 1;
 }
 
 /** Bookmarks and Hidden list every article, read or not; the other views list the unread ones. */
