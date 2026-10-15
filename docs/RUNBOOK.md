@@ -259,6 +259,7 @@ values (for example the previous model, which would also trigger a rebuild). Rea
 | `engine.ollama_max_concurrency` | `OLLAMA_MAX_CONCURRENCY` |
 | `engine.prefilter_min_cards` | `PREFILTER_MIN_CARDS` |
 | `ingest.max_age_days` | `INGEST_MAX_AGE_DAYS` |
+| `engine.auto_analysis_daily_cap` | `AUTO_ANALYSIS_DAILY_CAP` (default 1000) |
 | `fetch.limits` (`timeoutMs`, `maxBytes`) | `FETCH_TIMEOUT_MS`, `FETCH_MAX_BYTES` |
 | `api.rate_limits_enabled` | `RATE_LIMITS_ENABLED` (production refuses `false`: leave it `true`) |
 | `translate.libretranslate_url` | `LIBRETRANSLATE_URL` |

@@ -349,6 +349,7 @@ through `PATCH /admin/settings`.
 | `engine.ollama_max_concurrency` | int 1-64 or `null` | `null` = env `OLLAMA_MAX_CONCURRENCY` | admin |
 | `engine.prefilter_min_cards` | int 1-10000 or `null` | `null` = env `PREFILTER_MIN_CARDS`, else 60 (the worker holds the 60; the key has no default of its own, D-214) | admin |
 | `ingest.max_age_days` | int 1-365 or `null` | `null` = env `INGEST_MAX_AGE_DAYS` | admin |
+| `engine.auto_analysis_daily_cap` | int 0-1000000 or `null` | `null` = env `AUTO_ANALYSIS_DAILY_CAP`, else 1000; automatic analyses per feed per UTC day, paced (D-252) | admin |
 | `fetch.limits` | `{timeoutMs: int 1000-120000, maxBytes: int 65536-52428800}` or `null` | `null` = env `FETCH_TIMEOUT_MS`/`FETCH_MAX_BYTES` | admin |
 | `api.rate_limits_enabled` | boolean or `null` | `null` = env `RATE_LIMITS_ENABLED` | admin |
 | `translate.libretranslate_url` | like `engine.typesafe_base_url`, but http is allowed in production | `null` = env `LIBRETRANSLATE_URL` | admin |
@@ -373,7 +374,7 @@ key it compares with its snapshot (spec 05 §5.5 step 6) with its default before
 so that the key's first write waits for the completion (D-84); of those keys only
 `engine.prefilter_enabled` is not seeded, and its default has no env fallback.
 
-**Runtime keys (M8b).** The thirteen rows above that name an env value (`engine.typesafe_model` through
+**Runtime keys (M8b).** The fourteen rows above that name an env value (`engine.typesafe_model` through
 `translate.libretranslate_url`) override the matching env value; `null` or no row
 means the env value, and a `PATCH` with `null` resets a key. The seed never writes them. A stored row that
 no longer validates (for example after `PROVIDER_HOST_ALLOWLIST` shrank) is ignored: the process keeps the
@@ -490,10 +491,20 @@ CREATE TABLE feed_items (                          -- which feeds carried which 
   article_id     bigint NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
   guid           text NULL,
   first_seen_at  timestamptz NOT NULL DEFAULT now(),
+  over_cap_limit integer NULL,                     -- D-252: NULL = admitted to automatic analysis; else the cap in force
   PRIMARY KEY (feed_id, article_id)
 );
 CREATE INDEX feed_items_article_idx ON feed_items (article_id);
 CREATE INDEX feed_items_feed_time_idx ON feed_items (feed_id, first_seen_at DESC);
+-- D-252: automatic-analysis admissions per feed and UTC day (worker-owned; the API claims through
+-- claim_auto_admission(feed_id, day, allowance), SECURITY DEFINER, which checks the caller's active
+-- subscription). Rows older than 7 days are deleted by house.purge-auth.
+CREATE TABLE feed_auto_admissions (
+  feed_id   bigint NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+  day       date NOT NULL,
+  admitted  integer NOT NULL,
+  PRIMARY KEY (feed_id, day)
+);
 CREATE UNIQUE INDEX feed_items_guid_idx ON feed_items (feed_id, md5(guid)) WHERE guid IS NOT NULL;
 -- md5(guid): GUIDs of up to 4,096 characters exceed a B-tree key; lookups still compare guid (D-15)
 

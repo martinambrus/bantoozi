@@ -31,7 +31,7 @@ separately authorized **per user subscription**, never by the global feed alone:
 |---|---|
 | `off` (default) | None. Do not translate, enrich, match, cluster, suggest or classify automatically on this user's behalf |
 | `training` | Only article ids/revisions explicitly selected through `POST /subscriptions/:feedId/analyze`; process slowly on the bulk queue |
-| `active` | New feed items whose `feed_items.first_seen_at ≥ inference_activated_at`, plus explicitly selected historical articles |
+| `active` | New feed items whose `feed_items.first_seen_at ≥ inference_activated_at` and `feed_items.over_cap_limit IS NULL` (admitted under the per-feed daily cap, D-252), plus explicitly selected historical articles |
 
 `active` is enabled explicitly per feed (PLAN §17 Q11 resolved); a feedback count/model activation
 does **not** graduate a feed automatically. This is the approved v1 behavior. Activation never sweeps
