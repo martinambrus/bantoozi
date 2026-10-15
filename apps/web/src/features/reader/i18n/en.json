@@ -33,7 +33,10 @@
     "saved": "Saved:",
     "everythingToggle": "Everything else lane",
     "collapse": "Collapse the sidebar",
-    "expand": "Expand the sidebar"
+    "expand": "Expand the sidebar",
+    "topicsToAvoidHint_one": "You often dislike articles in this feed that none of your Never cards hides: {{count}} of them. Click to make a Never card from them.",
+    "topicsToAvoidHint_other": "You often dislike articles in this feed that none of your Never cards hides: {{count}} of them. Click to make a Never card from them.",
+    "topicsToAvoidShort": "topics to avoid"
   },
   "topBar": {
     "label": "Lane switcher",

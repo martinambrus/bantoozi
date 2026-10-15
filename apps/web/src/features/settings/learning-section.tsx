@@ -6,7 +6,7 @@ import { formatDate } from '../../i18n/dates.js';
 import { useMe } from '../../session/context.js';
 import { displayTitle } from '../feeds/folders.js';
 import { useSubscriptions } from '../feeds/subscriptions.js';
-import { UncoveredSuggestion } from '../learning/agreement-text.js';
+import { UncoveredSuggestion, UnwantedSuggestion } from '../learning/agreement-text.js';
 import { useLearning } from '../learning/use-learning.js';
 import { Hint, SettingsSection } from './section.js';
 
@@ -92,6 +92,32 @@ function InterestsToAdd({ feeds }: { feeds: readonly LearningFeedAgreement[] }) 
   );
 }
 
+/** The training feeds whose dislikes no Never card hides, each with the offer to make one from them. */
+function TopicsToAvoid({ feeds }: { feeds: readonly LearningFeedAgreement[] }) {
+  const { t } = useTranslation('settings');
+  const subscriptions = useSubscriptions();
+  const items = feeds.flatMap((agreement) => {
+    const subscription = subscriptions.data?.find((item) => item.feed.id === agreement.feedId);
+    return agreement.unwanted.suggest && subscription !== undefined
+      ? [{ agreement, title: displayTitle(subscription) }]
+      : [];
+  });
+  if (items.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="text-sm font-medium">{t('learning.unwantedTitle')}</h3>
+      <ul role="list" aria-label={t('learning.unwantedTitle')} className="flex flex-col gap-3">
+        {items.map(({ agreement, title }) => (
+          <li key={agreement.feedId} className="flex flex-col gap-1">
+            <span className="text-sm font-medium">{title}</span>
+            <UnwantedSuggestion agreement={agreement} feedTitle={title} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function LearningSection() {
   const { t } = useTranslation('settings');
   const learning = useLearning();
@@ -102,6 +128,7 @@ export function LearningSection() {
           <div className="flex flex-col gap-4">
             <LearningStatusLines model={model} />
             <InterestsToAdd feeds={feeds} />
+            <TopicsToAvoid feeds={feeds} />
           </div>
         )}
       </QueryState>

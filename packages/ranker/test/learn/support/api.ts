@@ -18,6 +18,7 @@ export interface TrainingSample {
   explicit: boolean;
   feedbackAt: Date;
   groupId: string;
+  reason?: string | null;
   features: RawFeatureSnapshot | null;
 }
 

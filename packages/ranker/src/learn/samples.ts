@@ -18,6 +18,8 @@ export interface TrainingSample {
   explicit: boolean;
   feedbackAt: Date;
   groupId: string;
+  /** The dislike reason of the effective rating event, null when none. */
+  reason?: string | null;
   features: RawFeatureSnapshot | null;
 }
 

@@ -17,6 +17,7 @@ import {
   BookmarkIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  EyeOffIcon,
   FeedIcon,
   HelpIcon,
   InboxIcon,
@@ -208,6 +209,13 @@ function suggestsInterest(agreement: LearningFeedAgreement | undefined): boolean
   );
 }
 
+/** Whether the analysis of a feed finds dislikes that no Never card hides, with articles to draft from. */
+function suggestsNever(agreement: LearningFeedAgreement | undefined): boolean {
+  return (
+    agreement !== undefined && agreement.unwanted.suggest && agreement.unwanted.articles.length > 0
+  );
+}
+
 /**
  * The analysis of the feeds in training, by feed id. Nothing is asked while no subscription is in
  * training; a settled rating makes the agreement stale.
@@ -321,6 +329,44 @@ function InterestHint({
   );
 }
 
+/** The eye of a feed whose dislikes no Never card hides: opens the card editor on Never, drafted from those articles. */
+function NeverHint({
+  agreement,
+  feedTitle,
+}: {
+  agreement: LearningFeedAgreement;
+  feedTitle: string;
+}) {
+  const { t } = useTranslation('reader');
+  const [making, setMaking] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <Tooltip text={t('sidebar.topicsToAvoidHint', { count: agreement.unwanted.count })}>
+        {(tooltip) => (
+          <IconButton
+            {...tooltip}
+            ref={button}
+            label={t('feeds:unwanted.makeLabel', { title: feedTitle })}
+            onClick={() => setMaking(true)}
+            className="shrink-0 text-rose-700 dark:text-rose-300"
+          >
+            <EyeOffIcon className="size-4" />
+          </IconButton>
+        )}
+      </Tooltip>
+      {making ? (
+        <CardEditor
+          fromArticles={agreement.unwanted.articles}
+          initialStrength="never"
+          returnFocus={() => button.current}
+          onClose={() => setMaking(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
 function FeedLink({
   subscription,
   agreement,
@@ -382,6 +428,7 @@ function FeedLink({
         {suggestsInterest(agreement) ? (
           <InterestHint agreement={agreement!} feedTitle={name} />
         ) : null}
+        {suggestsNever(agreement) ? <NeverHint agreement={agreement!} feedTitle={name} /> : null}
       </div>
       {badgeBelow ? <div className="ps-4">{badge}</div> : null}
       {agreement?.status !== 'ready' ? null : (
@@ -743,6 +790,9 @@ function CompactFeeds() {
             : null,
           suggestsInterest(learning.get(subscription.feed.id))
             ? t('sidebar.interestsToAddShort')
+            : null,
+          suggestsNever(learning.get(subscription.feed.id))
+            ? t('sidebar.topicsToAvoidShort')
             : null,
           unread > 0 ? `${t('sidebar.unread')} ${unread}` : null,
         ]);
