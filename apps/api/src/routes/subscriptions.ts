@@ -334,6 +334,7 @@ export const subscriptionRoutes: FastifyPluginAsyncZod = async (app) => {
         }
         const config = await loadSnapshotConfig(tx, app.services.config, typesafeModel);
         let version = current.version;
+        let mode = current.mode;
         if (transition.enterTraining) {
           // The explicit combined action: CAS off → training with the selection (spec 08 §4.1).
           const plan = planInferenceModeChange(current, 'training', current.version, now);
@@ -341,6 +342,7 @@ export const subscriptionRoutes: FastifyPluginAsyncZod = async (app) => {
             await setInferenceMode(tx, feedId, plan.state);
             await refreshFeedMaterializations(tx, [feedId]);
             version = plan.state.version;
+            mode = plan.state.mode;
           }
         }
         const reusable = await reusableAnalysisRequests(tx, {
@@ -377,7 +379,7 @@ export const subscriptionRoutes: FastifyPluginAsyncZod = async (app) => {
           await recordRankIntents(tx, outbox, [user.id], { reason: 'selection', full: true });
           await recordCardTranslationDemand(tx, outbox, user.id);
         }
-        return { status: 202, body: { requests } };
+        return { status: 202, body: { requests, inference: { mode, version } } };
       });
       await reply.code(202).send(outcome.body);
     },

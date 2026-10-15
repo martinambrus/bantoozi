@@ -149,6 +149,8 @@ export const AnalyzeResponseSchema = z
         .object({ id: UuidStringSchema, articleId: IdSchema, status: AnalysisRequestStatusSchema })
         .strict(),
     ),
+    /** The feed's inference state after the call (an off feed has just become training). */
+    inference: z.object({ mode: InferenceModeSchema, version: RevisionSchema }).strict(),
   })
   .strict();
 export type AnalyzeResponse = z.infer<typeof AnalyzeResponseSchema>;

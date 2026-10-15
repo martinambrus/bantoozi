@@ -2295,6 +2295,14 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   above the list and loads them from page one. A falling count (the reader's own actions) never triggers either.
   Rows still never move under a reader who is scrolled down or reading. An auto-reload may coincide with a reader
   action still being sent; the list shows unsettled actions over whatever it loads, so that is harmless. Spec 09 §1.
+- D-245: 2026-10-15 (owner reports; amends D-243) — Rows the reader acted on keep their place across background reloads. The
+  owner saw bulk-rated (read) rows stick at the top of an unread feed view, and an opened article vanish on a refresh. Cause: the
+  visible rows were whatever the last server page said, and the set of rows that had left was tied to page one's identity, so any
+  background refetch (busy poll, D-243 automatic reload, invalidation) forgot it; a page read before some ratings committed brought
+  them back for good, and a read article dropped out under the reader. Now, per open view: rated or hidden rows that left stay gone
+  while still rated or hidden; rows read in this view are kept at their position when a refetch no longer lists them; only Refresh,
+  "Show N new articles" and navigation reset both. D-243's note that an automatic reload during an unsettled action is harmless held
+  for row content but not for which rows are shown. Spec 09 §1.
 - D-247: 2026-10-15 (owner request; amends spec 09 §3.1) — The Sort control (Score / Date) also shows in the view of one
   feed, folder or label while it shows all its lanes, bound to the new preference `feedSort` (default `date`, which
   keeps today's order; old accounts read it as `date`, no migration) and sent as `sort`. It is separate from `sort`, so

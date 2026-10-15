@@ -1,6 +1,6 @@
 import type { ArticleListItem, ArticleListResponse, UserPreferences } from '@bantoozi/shared';
-import { keepPreviousData, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo } from 'react';
+import { hashKey, keepPreviousData, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ApiClient } from '../../api/client.js';
 import { useApi } from '../../api/context.js';
@@ -98,7 +98,23 @@ export function useArticleList(
     refetchOnReconnect: false,
   });
 
+  // A list nobody shows any more goes at once, not when the cache's timer gets to it: the timer can
+  // run late, and going back to a tier or sort would then show the old rows without asking again.
+  const shown = useRef(queryKey);
+  useEffect(() => {
+    const before = shown.current;
+    shown.current = queryKey;
+    if (hashKey(before) !== hashKey(queryKey)) {
+      queryClient.removeQueries({ queryKey: before, exact: true });
+    }
+  }, [queryClient, queryKey]);
+
   const { data, dataUpdatedAt, fetchNextPage, hasNextPage, isFetching, isPlaceholderData } = query;
+
+  // The list the rows come from: the one asked for once its rows are there, the one before until then.
+  const asked = hashKey(queryKey);
+  const [source, setSource] = useState(asked);
+  if (data !== undefined && !isPlaceholderData && source !== asked) setSource(asked);
 
   const loaded = useMemo(() => {
     const seen = new Set<string>();
@@ -123,11 +139,15 @@ export function useArticleList(
   // Page one alone, in place of every page loaded: those stay, on the screen and in the copy the
   // device keeps, until it is there, and stay with the error when it cannot be had. A load on its
   // way is cancelled first, or the new one would wait for it and take its pages instead.
-  const reload = useCallback(async () => {
+  // Resolves whether the first page loaded; a failure is never thrown.
+  const reload = useCallback(async (): Promise<boolean> => {
     await queryClient.cancelQueries({ queryKey, exact: true });
-    await queryClient
+    return queryClient
       .infiniteQuery({ ...listPages(api, filter, queryKey), pages: 1, staleTime: 0 })
-      .catch(() => undefined);
+      .then(
+        () => true,
+        () => false,
+      );
   }, [api, filter, queryClient, queryKey]);
 
   // Every page that is loaded, one after the other. If a cursor of the chain is refused the rows stay
@@ -153,6 +173,8 @@ export function useArticleList(
   return {
     query,
     items: saved === null ? loaded : saved.items,
+    /** Which list the rows come from; another tier, sort or Show read is another list. */
+    source,
     /** The copy the device kept, while it is what the list shows. */
     saved,
     /** Whether the copy the device kept is still being looked for. */

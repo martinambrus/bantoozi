@@ -16,9 +16,9 @@ import { titleWords } from '../why/title-words.js';
 import { useRuleRemoval } from '../why/use-rule-removal.js';
 
 /** The title's words that no live keyword rule mutes yet, compared the way a keyword mute matches. */
-function useOfferableWords(title: string): string[] {
+function useOfferableWords(title: string): { words: string[]; ready: boolean; loading: boolean } {
   const rules = useRules();
-  return useMemo(() => {
+  const words = useMemo(() => {
     const muted = new Set(
       (rules.data ?? [])
         .filter(
@@ -30,6 +30,8 @@ function useOfferableWords(title: string): string[] {
     );
     return titleWords(title).filter((word) => !muted.has(normalizeText(word)));
   }, [rules.data, title]);
+  // Rules that are not known are not "no rules": no word is offered as mutable until they are.
+  return { words, ready: rules.data !== undefined, loading: rules.isPending };
 }
 
 /** One word of the title, chosen from a menu, becomes a muted keyword (spec 09 §3.5). */
@@ -46,7 +48,7 @@ export function MuteKeyword({
   const session = useSession();
   const removal = useRuleRemoval();
   const refresh = useRefreshAfterRuleChange();
-  const words = useOfferableWords(item.title);
+  const { words, ready, loading } = useOfferableWords(item.title);
 
   const create = useApiMutation(routes.ruleCreate, {
     // Each mute is confirmed here: a callback of one `mutate` call is dropped when a second mute
@@ -74,12 +76,17 @@ export function MuteKeyword({
     },
   });
 
-  if (words.length === 0) return null;
+  if (ready && words.length === 0) return null;
 
   return (
     <Menu
       trigger={(props) => (
-        <Button {...props} variant={variant} loading={create.isPending}>
+        <Button
+          {...props}
+          variant={variant}
+          loading={create.isPending || loading}
+          disabled={!ready}
+        >
           <EyeOffIcon className="size-4" />
           {t('actions.muteKeyword')}
           <ChevronDownIcon className="size-4" />
