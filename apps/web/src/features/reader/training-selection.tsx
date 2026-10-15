@@ -1,5 +1,12 @@
 import type { ArticleListItem } from '@bantoozi/shared';
-import { useEffect, useState, type ReactNode, type RefObject } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ArticleRowProps } from '../article/article-row.js';
@@ -114,6 +121,32 @@ export function useFeedTraining(
   useEffect(() => {
     if (empty) clear();
   }, [empty, clear]);
+
+  // A selected article rated or hidden on its own (not by the bulk buttons, which take their own
+  // articles out) leaves the selection, so a later bulk action cannot re-rate it.
+  const store = useReaderActions();
+  const storeVersion = useSyncExternalStore(store.subscribe, store.getVersion);
+  const seen = useRef(new Map<string, { rating: number | null; hidden: boolean }>());
+  const { remove } = selection;
+  const selectedItems = selection.items;
+  useEffect(() => {
+    const known = seen.current;
+    const ids = new Set(selectedItems.map((chosenItem) => chosenItem.id));
+    for (const id of known.keys()) if (!ids.has(id)) known.delete(id);
+    const changed: string[] = [];
+    for (const chosenItem of selectedItems) {
+      const shown = store.view(current.get(chosenItem.id) ?? chosenItem);
+      const now = { rating: shown.rating, hidden: shown.archivedAt !== null };
+      const before = known.get(chosenItem.id);
+      if (before === undefined) known.set(chosenItem.id, now);
+      else if (before.rating !== now.rating || before.hidden !== now.hidden) {
+        changed.push(chosenItem.id);
+        known.delete(chosenItem.id);
+      }
+    }
+    if (changed.length > 0) remove(changed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- current is rebuilt every render
+  }, [storeVersion, selectedItems, store, remove]);
 
   if (view.kind !== 'feed' || subscription === undefined) {
     return { panel: null, selectAll: null, selectionOf: () => undefined };

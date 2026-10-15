@@ -1,5 +1,5 @@
 import type { ArticleListItem, Subscription } from '@bantoozi/shared';
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { FOCUS_RING } from '../../src/components/cx.js';
@@ -1123,5 +1123,70 @@ describe('the selection bar', () => {
     expect(articles.map(({ id }) => id)).toEqual(['1', '3']);
     await waitFor(() => expect(ticked(titles(3))).toEqual(['Article 2']));
     expect(within(panel()!).getByText('1 selected')).toBeVisible();
+  });
+
+  describe('an article rated or hidden on its own', () => {
+    const selectAll = (app: App) =>
+      app.user.click(screen.getByRole('checkbox', { name: 'Select all articles' }));
+
+    it('leaves the selection, and a bulk Dislike then skips it', async () => {
+      const { app } = await openFeed(numbered(3));
+      await selectAll(app);
+      expect(within(panel()!).getByText('3 selected')).toBeVisible();
+
+      await app.user.click(likeOf('Article 2'));
+
+      await waitFor(() => expect(within(panel()!).getByText('2 selected')).toBeVisible());
+      expect(app.calls(RATE)).toHaveLength(1);
+      await app.user.click(bulk(/^Dislike 2 selected articles$/));
+      await waitFor(() => expect(app.calls(RATE)).toHaveLength(3));
+      expect(ratedBodies(app).map(({ url, body }) => [url, body['rating']])).toEqual([
+        ['/api/v1/articles/2/rating', 1],
+        ['/api/v1/articles/1/rating', -1],
+        ['/api/v1/articles/3/rating', -1],
+      ]);
+      expect(panel()).toBeNull();
+    });
+
+    it('leaves the selection when it is hidden too', async () => {
+      const { app } = await openFeed(numbered(3));
+      await selectAll(app);
+
+      fireEvent.click(likeOf('Article 2'), { shiftKey: true });
+
+      await waitFor(() => expect(within(panel()!).getByText('2 selected')).toBeVisible());
+      await app.user.click(bulk(/^Dislike 2 selected articles$/));
+      await waitFor(() => expect(app.calls(RATE)).toHaveLength(3));
+      expect(
+        ratedBodies(app)
+          .filter(({ body }) => body['rating'] === -1)
+          .map(({ url }) => url),
+      ).toEqual(['/api/v1/articles/1/rating', '/api/v1/articles/3/rating']);
+    });
+
+    it('is unticked in a list that keeps rated rows (Show read)', async () => {
+      const { app } = await openFeed(numbered(3), {
+        me: makeMe({ preferences: { showRead: true } }),
+      });
+      await selectAll(app);
+
+      await app.user.click(likeOf('Article 2'));
+
+      await waitFor(() => expect(ticked(titles(3))).toEqual(['Article 1', 'Article 3']));
+      expect(screen.getByRole('article', { name: 'Article 2' })).toBeVisible();
+      expect(within(panel()!).getByText('2 selected')).toBeVisible();
+      expect(screen.getByRole('checkbox', { name: 'Select all articles' })).toBePartiallyChecked();
+    });
+
+    it('does not touch the bulk buttons: Like rates every selected article and empties it', async () => {
+      const { app } = await openFeed(numbered(3));
+      await selectAll(app);
+
+      await app.user.click(bulk(/^Like 3 selected articles$/));
+
+      await waitFor(() => expect(app.calls(RATE)).toHaveLength(3));
+      expect(ratedBodies(app).map(({ body }) => body['rating'])).toEqual([1, 1, 1]);
+      expect(panel()).toBeNull();
+    });
   });
 });
