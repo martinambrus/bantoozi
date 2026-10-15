@@ -39,6 +39,7 @@ interface KeptRow {
 interface Membership {
   items: readonly ArticleListItem[];
   generation: number;
+  source: string;
   /** The rows the page returns with the kept ones put back where they were. */
   merged: readonly ArticleListItem[];
   kept: ReadonlyMap<string, KeptRow>;
@@ -73,11 +74,12 @@ function mergeKept(
 /**
  * The rows of a list of unread articles: the page's, and those the reader read in this view that a
  * reload no longer returns, which stay where they were until the list is loaded on request
- * (`generation` changes) or the view is left.
+ * (`generation` changes), another list replaces it (`source`) or the view is left.
  */
 function useKeptRows(
   items: readonly ArticleListItem[],
   generation: number,
+  source: string,
   enabled: boolean,
   isMarked: (item: ArticleListItem) => boolean,
 ): readonly ArticleListItem[] {
@@ -85,15 +87,18 @@ function useKeptRows(
   const [state, setState] = useState<Membership>({
     items,
     generation,
+    source,
     merged: items,
     kept: NO_KEPT,
   });
   if (!enabled) return items;
-  if (state.items === items && state.generation === generation) return state.merged;
+  if (state.items === items && state.generation === generation && state.source === source) {
+    return state.merged;
+  }
 
   let next: Membership;
-  if (state.generation !== generation) {
-    next = { items, generation, merged: items, kept: NO_KEPT };
+  if (state.generation !== generation || state.source !== source) {
+    next = { items, generation, source, merged: items, kept: NO_KEPT };
   } else {
     const present = new Set(items.map((row) => row.id));
     const kept = new Map<string, KeptRow>();
@@ -111,7 +116,7 @@ function useKeptRows(
         previous = row.id;
       }
     }
-    next = { items, generation, merged: mergeKept(items, kept), kept };
+    next = { items, generation, source, merged: mergeKept(items, kept), kept };
   }
   setState(next);
   return next.merged;
@@ -125,6 +130,7 @@ function useKeptRows(
 function useExitingRows(
   items: readonly ArticleListItem[],
   generation: number,
+  source: string,
   listRef: React.RefObject<HTMLUListElement | null>,
   enabled: boolean,
   isMarked: (item: ArticleListItem) => boolean,
@@ -138,7 +144,7 @@ function useExitingRows(
   const marked = useRef(new Map<string, boolean>());
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const refocus = useRef<HTMLElement | null>(null);
-  const rows = useKeptRows(items, generation, enabled, isMarked);
+  const rows = useKeptRows(items, generation, source, enabled, isMarked);
 
   useEffect(() => {
     // A list loaded on request starts over: an exit that was under way must not hide a row of it.
@@ -240,6 +246,7 @@ export function useVisibleRows(
   const { visible, leaving } = useExitingRows(
     list.items,
     generation,
+    list.source,
     listRef,
     listsUnread(view.lane),
     showRead ? isHidden : isRatedOrHidden,

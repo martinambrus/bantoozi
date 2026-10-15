@@ -324,6 +324,26 @@ describe('rows the reader read keep their place across background reloads', () =
     await waitFor(() => expect(rowTitles()).toEqual(['Article 1', 'Article 3']));
   });
 
+  it('drops the read rows when the reader turns Show read off', async () => {
+    const rows = [item(1), item(2), item(3)];
+    const server = unreadServer(rows, () => false);
+    const { app } = await open({
+      path: '/read/for_you',
+      me: makeMe({ preferences: { showRead: true } }),
+      items: rows,
+      list: (request) =>
+        request.query.get('status') === 'all' ? json(200, page(rows)) : server.list(),
+      routes: server.readRoute,
+    });
+    await screen.findByRole('article', { name: 'Article 1' });
+    await app.user.click(screen.getByRole('button', { name: 'Article 2' }));
+    await waitFor(() => expect(server.read.has(item(2).id)).toBe(true));
+
+    await app.user.click(screen.getByRole('switch', { name: 'Show read' }));
+
+    await waitFor(() => expect(rowTitles()).toEqual(['Article 1', 'Article 3']));
+  });
+
   it('does not keep polling for a kept row whose analysis was pending', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const rows = [

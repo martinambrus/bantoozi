@@ -1,6 +1,6 @@
 import type { ArticleListItem, ArticleListResponse, UserPreferences } from '@bantoozi/shared';
 import { hashKey, keepPreviousData, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ApiClient } from '../../api/client.js';
 import { useApi } from '../../api/context.js';
@@ -111,6 +111,11 @@ export function useArticleList(
 
   const { data, dataUpdatedAt, fetchNextPage, hasNextPage, isFetching, isPlaceholderData } = query;
 
+  // The list the rows come from: the one asked for once its rows are there, the one before until then.
+  const asked = hashKey(queryKey);
+  const [source, setSource] = useState(asked);
+  if (data !== undefined && !isPlaceholderData && source !== asked) setSource(asked);
+
   const loaded = useMemo(() => {
     const seen = new Set<string>();
     const unique: ArticleListItem[] = [];
@@ -168,6 +173,8 @@ export function useArticleList(
   return {
     query,
     items: saved === null ? loaded : saved.items,
+    /** Which list the rows come from; another tier, sort or Show read is another list. */
+    source,
     /** The copy the device kept, while it is what the list shows. */
     saved,
     /** Whether the copy the device kept is still being looked for. */
