@@ -155,7 +155,8 @@ export function useFeedTraining(
           indeterminate={chosen > 0 && !every}
           onChange={() => {
             setRefused(false);
-            if (every) selection.remove(rows.map(({ id }) => id));
+            // Deselecting all also lets go of chosen articles a reload no longer lists.
+            if (every) selection.clear();
             else selection.addAll(rows);
           }}
         />

@@ -334,6 +334,20 @@ describe('select all', () => {
     expect(screen.queryByRole('checkbox', { name: /all articles/ })).toBeNull();
   });
 
+  it('deselects the articles a reload dropped too, when every row it loaded is selected', async () => {
+    const { app, served } = await openFeed(numbered(3));
+    await app.user.click(all());
+    expect(ticked(titles(3))).toEqual(titles(3));
+
+    served.items = numbered(2);
+    await app.user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'Article 3' })).toBeNull());
+    expect(all()).toHaveAccessibleName('Deselect all articles');
+
+    await app.user.click(all());
+    expect(panel()).toBeNull();
+  });
+
   it('selects every loaded row from none or some, and deselects all when all are selected', async () => {
     const { app } = await openFeed(numbered(3));
 
