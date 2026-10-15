@@ -81,7 +81,7 @@ export interface ArticleViewInput {
   scope: ArticleScope;
   lane: ArticleViewLane;
   status: ArticleStatus;
-  /** `minTier` for `for_you`/`maybe` (also inside `all`). */
+  /** `minTier` for `for_you`/`maybe` (also inside `all`); in `all` of a scoped view, every row. */
   minTier: number;
   asOf: Date;
   /** `scoreVersion()` of the current `ranker.settings_version` (spec 06 §7). */
@@ -226,8 +226,23 @@ function projectionCtes(input: ProjectionInput): SQL {
     )`;
 }
 
-/** The lane rows of a view (`rows`, steps 4–5) after {@link projectionCtes}. */
-function laneRowsCtes(lane: ArticleViewLane, status: ArticleStatus, minTier: number): SQL {
+/** Whether a view is that of one feed, folder or label. */
+export function isScoped(scope: ArticleScope): boolean {
+  return scope.feedId !== undefined || scope.folder !== undefined || scope.labelId !== undefined;
+}
+
+/**
+ * The lane rows of a view (`rows`, steps 4–5) after {@link projectionCtes}. The tier filter keeps
+ * `for_you`/`maybe` rows at or above `minTier`; in the `all` lane of a scoped view a `minTier`
+ * above 1 keeps only rows at or above it, so tierless rows (lane `new`) and Everything else go too
+ * (D-248).
+ */
+function laneRowsCtes(
+  lane: ArticleViewLane,
+  status: ArticleStatus,
+  minTier: number,
+  scope: ArticleScope | 'perFeed',
+): SQL {
   const unread = status === 'unread' ? sql`AND read_at IS NULL` : sql``;
   if (lane === 'bookmarks') {
     return sql`, rows AS (SELECT proj.*, false AS folded FROM proj WHERE true ${unread})`;
@@ -237,6 +252,10 @@ function laneRowsCtes(lane: ArticleViewLane, status: ArticleStatus, minTier: num
                           WHERE (lane = 'hidden' OR archived_at IS NOT NULL) ${unread})`;
   }
   const laneFilter = lane === 'all' ? sql`` : sql`AND lane = ${lane}`;
+  const tierFilter =
+    lane === 'all' && (scope === 'perFeed' || isScoped(scope)) && minTier > 1
+      ? sql`coalesce(tier, 0) >= ${minTier}`
+      : sql`(lane NOT IN ('for_you', 'maybe') OR coalesce(tier, 0) >= ${minTier})`;
   return sql`,
     vis AS (SELECT * FROM proj WHERE lane <> 'hidden' AND archived_at IS NULL ${unread}),
     ranked AS (
@@ -247,7 +266,7 @@ function laneRowsCtes(lane: ArticleViewLane, status: ArticleStatus, minTier: num
         FROM vis),
     rows AS (
       SELECT ranked.*, foldable AS folded FROM ranked
-       WHERE rn = 1 AND (lane NOT IN ('for_you', 'maybe') OR coalesce(tier, 0) >= ${minTier})
+       WHERE rn = 1 AND ${tierFilter}
              ${laneFilter})`;
 }
 
@@ -363,7 +382,7 @@ export async function listArticlePage(
       bookmarks: input.lane === 'bookmarks',
       labelId: input.scope.labelId,
     })}
-    ${laneRowsCtes(input.lane, input.status, input.minTier)},
+    ${laneRowsCtes(input.lane, input.status, input.minTier, input.scope)},
     keyed AS (SELECT rows.*, ${k1} AS k1, ${k2} AS k2 FROM rows),
     page AS (SELECT * FROM keyed ${after} ORDER BY k1 DESC, k2 DESC, article_id DESC
              LIMIT ${input.limit + 1}),
@@ -439,7 +458,7 @@ export async function articleViewIds(
       bookmarks: input.lane === 'bookmarks',
       labelId: input.scope.labelId,
     })}
-    ${laneRowsCtes(input.lane, input.status, input.minTier)}
+    ${laneRowsCtes(input.lane, input.status, input.minTier, input.scope)}
     SELECT ${digestExpr(viewPrefix(input), user)} AS dataset_version, count(*)::int AS total,
            (array_agg(article_id::text ORDER BY article_id))[1:${options.maxIds}] AS ids
       FROM rows`,
@@ -487,7 +506,7 @@ async function laneCounts(
       bookmarks: false,
       labelId: input.scope.labelId,
     })}
-    ${laneRowsCtes('all', input.status, input.minTier)},
+    ${laneRowsCtes('all', input.status, input.minTier, mode.kind === 'perFeed' ? 'perFeed' : input.scope)},
     pending AS (SELECT view_key, bool_or(outdated) AS ranking_pending FROM proj GROUP BY view_key)
     SELECT rows.view_key::text AS view_key,
            count(*) FILTER (WHERE lane = 'for_you')::int AS for_you,
@@ -523,7 +542,7 @@ export async function countArticles(
       bookmarks: false,
       labelId: input.scope.labelId,
     })}
-    ${laneRowsCtes('hidden', input.status, input.minTier)}
+    ${laneRowsCtes('hidden', input.status, input.minTier, input.scope)}
     SELECT count(*)::int AS n FROM rows`);
   const bookmarks = await tx.execute<{ n: number }>(sql`
     ${projectionCtes({
@@ -590,7 +609,7 @@ export async function readerLaneMix(
       bookmarks: false,
       labelId: undefined,
     })}
-    ${laneRowsCtes('all', 'unread', input.minTier)}
+    ${laneRowsCtes('all', 'unread', input.minTier, {})}
     SELECT count(*) FILTER (WHERE lane = 'maybe')::int AS maybe,
            count(*) FILTER (WHERE lane IN ('for_you', 'maybe', 'everything'))::int AS scored,
            count(*) FILTER (WHERE lane IN ('for_you', 'maybe', 'everything') AND score_source = 'cards')::int AS cards,
@@ -639,7 +658,8 @@ async function emptyDigest(tx: TenantTx, input: ArticleViewInput): Promise<strin
 /**
  * Unread lane counts per subscription (spec 08 §4 `GET /subscriptions` `unread`): for each of the
  * caller's subscriptions — hidden ones too — the counts its own feed view (`GET
- * /articles/counts?feedId=<id>&status=unread`) reports for the same `asOf` and `minTier`. Folding,
+ * /articles/counts?feedId=<id>&status=unread`) reports for the same `asOf` and `minTier` (the caller passes `prefs.feedMinTier`: each feed is a scoped
+ * `lane=all` view, so D-248 applies and the badge never depends on `defaultTier`). Folding,
  * demand projection and the window apply per feed. Subscriptions with nothing unread are absent
  * from the map (all four counts zero).
  */

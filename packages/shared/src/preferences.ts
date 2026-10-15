@@ -16,6 +16,8 @@ const fields = {
   simpleMode: z.boolean(),
   showRead: z.boolean(),
   sort: z.enum(['score', 'date']),
+  feedSort: z.enum(['score', 'date']),
+  feedMinTier: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
   markReadOnExpand: z.boolean(),
   markReadOnRate: z.boolean(),
   feedbackPrompt: z.enum(['often', 'occasionally', 'never']),
@@ -45,6 +47,10 @@ export interface UserPreferences {
   /** Unread lanes also list the articles already read or rated (D-234). */
   showRead: boolean;
   sort: 'score' | 'date';
+  /** The order of a feed, folder or label view of all its lanes (D-247). */
+  feedSort: 'score' | 'date';
+  /** The minimum tier of a feed, folder or label view of all its lanes (D-248). */
+  feedMinTier: 1 | 2 | 3 | 4 | 5;
   markReadOnExpand: boolean;
   markReadOnRate: boolean;
   feedbackPrompt: 'often' | 'occasionally' | 'never';
@@ -69,6 +75,8 @@ export const DEFAULT_USER_PREFERENCES: Readonly<UserPreferences> = Object.freeze
   simpleMode: false,
   showRead: false,
   sort: 'score',
+  feedSort: 'date',
+  feedMinTier: 1,
   markReadOnExpand: true,
   markReadOnRate: true,
   feedbackPrompt: 'occasionally',
@@ -90,6 +98,8 @@ export const UserPreferencesSchema: z.ZodType<UserPreferences> = z.object({
   simpleMode: fields.simpleMode.catch(DEFAULT_USER_PREFERENCES.simpleMode),
   showRead: fields.showRead.catch(DEFAULT_USER_PREFERENCES.showRead),
   sort: fields.sort.catch(DEFAULT_USER_PREFERENCES.sort),
+  feedSort: fields.feedSort.catch(DEFAULT_USER_PREFERENCES.feedSort),
+  feedMinTier: fields.feedMinTier.catch(DEFAULT_USER_PREFERENCES.feedMinTier),
   markReadOnExpand: fields.markReadOnExpand.catch(DEFAULT_USER_PREFERENCES.markReadOnExpand),
   markReadOnRate: fields.markReadOnRate.catch(DEFAULT_USER_PREFERENCES.markReadOnRate),
   feedbackPrompt: fields.feedbackPrompt.catch(DEFAULT_USER_PREFERENCES.feedbackPrompt),
@@ -134,6 +144,8 @@ export const UserPreferencesPatchSchema = z
     simpleMode: fields.simpleMode,
     showRead: fields.showRead,
     sort: fields.sort,
+    feedSort: fields.feedSort,
+    feedMinTier: fields.feedMinTier,
     markReadOnExpand: fields.markReadOnExpand,
     markReadOnRate: fields.markReadOnRate,
     feedbackPrompt: fields.feedbackPrompt,

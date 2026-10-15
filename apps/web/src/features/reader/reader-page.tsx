@@ -24,7 +24,7 @@ import { useArticleList } from './use-article-list.js';
 import { useDesktop } from './use-desktop.js';
 import { usePolling } from './use-polling.js';
 import { useViewTitle } from './use-view-title.js';
-import { countOf, detailScope, scopeOf, viewKey, type ReaderView } from './view.js';
+import { countOf, detailScope, scopeOf, viewKey, viewMinTier, type ReaderView } from './view.js';
 
 /** How far down the page the reader may be for the list to still count as being at its top. */
 const TOP_PX = 80;
@@ -110,7 +110,7 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
   // Counts the loads the reader asked for, which let go of the rows the view kept.
   const [generation, setGeneration] = useState(0);
   const rows = useVisibleRows(view, list, preferences.showRead, generation);
-  const scoped = useCounts(scopeOf(view), preferences.defaultTier);
+  const scoped = useCounts(scopeOf(view), viewMinTier(view, preferences));
   useObserveItems(list.items);
 
   // The article as the list had it when it was opened, for as long as the list no longer has it.
@@ -210,12 +210,12 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
     expandedNow.current = expanded !== null;
   });
   const { dataUpdatedAt } = list.query;
-  const { defaultTier } = preferences;
+  const tier = viewMinTier(view, preferences);
   useEffect(() => {
     baseline.current = null;
     reloadedFor.current = null;
     offer(0);
-  }, [defaultTier, offer]);
+  }, [tier, offer]);
   useEffect(() => {
     if (dataUpdatedAt === 0) return;
     baseline.current = latestCount.current ?? null;

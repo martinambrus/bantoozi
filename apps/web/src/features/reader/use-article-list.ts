@@ -74,7 +74,7 @@ function listPages(
  */
 export function useArticleList(
   view: ReaderView,
-  settings: Pick<UserPreferences, 'defaultTier' | 'sort' | 'showRead'>,
+  settings: Pick<UserPreferences, 'defaultTier' | 'feedMinTier' | 'sort' | 'feedSort' | 'showRead'>,
 ) {
   const api = useApi();
   const queryClient = useQueryClient();

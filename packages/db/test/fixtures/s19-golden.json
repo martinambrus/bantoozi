@@ -5220,13 +5220,13 @@
       "counts@feed1:unread:t3": {
         "forYou": 1,
         "maybe": 1,
-        "everything": 2,
-        "new": 7,
+        "everything": 1,
+        "new": 0,
         "bookmarks": 0,
         "hidden": 1,
-        "scored": 4,
-        "total": 11,
-        "datasetVersion": "0afdf1c51cf587815c7aea8d800b3104226db754cd3998bdb8e1a4a11d0e0f44",
+        "scored": 3,
+        "total": 3,
+        "datasetVersion": "d756acbf1edb37858a2cd6ef282e7f2248c7ac0266b0d22317896f282f735baa",
         "rankingPending": true
       },
       "counts@feed1:all:t0": {
@@ -5244,13 +5244,13 @@
       "counts@feed1:all:t3": {
         "forYou": 1,
         "maybe": 3,
-        "everything": 3,
-        "new": 7,
+        "everything": 1,
+        "new": 0,
         "bookmarks": 0,
         "hidden": 1,
-        "scored": 7,
-        "total": 14,
-        "datasetVersion": "d0a050db09fce0596723022644fb2a6ff0a78706dfa2d0d69e8c14eb22618b34",
+        "scored": 5,
+        "total": 5,
+        "datasetVersion": "5c9d95d2f9b586a7b70ebc0aae240b5f4ee3a8fe7f3d27082d93a23c76379a37",
         "rankingPending": true
       },
       "counts@feed2:unread:t0": {
@@ -5269,12 +5269,12 @@
         "forYou": 0,
         "maybe": 1,
         "everything": 2,
-        "new": 12,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 0,
         "scored": 3,
-        "total": 15,
-        "datasetVersion": "bce04ab047826f93749042c0cc05efe7b3128af7a7da63675a21cb7a9118838f",
+        "total": 3,
+        "datasetVersion": "40cba039b1b2524e14efb116e2a78dde29e37c4f8f4fc14558be10421a840c44",
         "rankingPending": true
       },
       "counts@feed2:all:t0": {
@@ -5293,12 +5293,12 @@
         "forYou": 0,
         "maybe": 1,
         "everything": 2,
-        "new": 16,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 0,
         "scored": 3,
-        "total": 19,
-        "datasetVersion": "c79710b9700a2a88de8bd946c5bf69f0a34012a49cc160257d559bcda356ef2b",
+        "total": 3,
+        "datasetVersion": "e77614b5aa6a1fde3eaff8ec821d8adab4056bbec47ba4cf204f1d09eff5775c",
         "rankingPending": true
       },
       "counts@feed3:unread:t0": {
@@ -5316,13 +5316,13 @@
       "counts@feed3:unread:t3": {
         "forYou": 1,
         "maybe": 0,
-        "everything": 1,
-        "new": 17,
+        "everything": 0,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 3,
-        "scored": 2,
-        "total": 19,
-        "datasetVersion": "0337ddc704cdf6bae8dd25bd432aa2b0153bc142cb78c402e6624e7537e3c802",
+        "scored": 1,
+        "total": 1,
+        "datasetVersion": "551ac817dd41c239c9bc3902580c6592aa0a94c34db3f4ab7183da25382db722",
         "rankingPending": true
       },
       "counts@feed3:all:t0": {
@@ -5340,13 +5340,13 @@
       "counts@feed3:all:t3": {
         "forYou": 1,
         "maybe": 0,
-        "everything": 1,
-        "new": 18,
+        "everything": 0,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 3,
-        "scored": 2,
-        "total": 20,
-        "datasetVersion": "f170197428cda4980a8aafa96b85fbcd8c58410bfe4b45e1e13753c4c7edf0dd",
+        "scored": 1,
+        "total": 1,
+        "datasetVersion": "82972bf7073d4563b3d518b0464e012312cb5881cfd3fe443d1472884bd7f0b2",
         "rankingPending": true
       },
       "counts@feed4:unread:t0": {
@@ -5365,12 +5365,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 17,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 0,
         "scored": 0,
-        "total": 17,
-        "datasetVersion": "f20db5002380effa940296af90d396b6df42bf93296e93f802745ccbb77c9bcc",
+        "total": 0,
+        "datasetVersion": "c1d4836fd5025a004283446e72d745827800967afd3f5549662451f3c8fc10a3",
         "rankingPending": false
       },
       "counts@feed4:all:t0": {
@@ -5389,12 +5389,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 21,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 1,
         "scored": 0,
-        "total": 21,
-        "datasetVersion": "5cd54453265c559ee83f5e9b2e91f0b98049e98152945f49a932b327adbe07da",
+        "total": 0,
+        "datasetVersion": "1e0873d9afbce9a7102ab88b90bd238d2f43db4bf46a8121eadfe23c4f00f922",
         "rankingPending": false
       },
       "counts@feed5:unread:t0": {
@@ -5412,13 +5412,13 @@
       "counts@feed5:unread:t3": {
         "forYou": 2,
         "maybe": 0,
-        "everything": 4,
-        "new": 5,
+        "everything": 3,
+        "new": 0,
         "bookmarks": 0,
         "hidden": 1,
-        "scored": 6,
-        "total": 11,
-        "datasetVersion": "90ce76712bae6cc3c0910d8eea68b20fd9f988f11c6ca4c9c15655187d96e6be",
+        "scored": 5,
+        "total": 5,
+        "datasetVersion": "757f0a572584cb1e9e5a9b07d7135032515252769c30512ded0ad74cf333bfa5",
         "rankingPending": true
       },
       "counts@feed5:all:t0": {
@@ -5436,13 +5436,13 @@
       "counts@feed5:all:t3": {
         "forYou": 3,
         "maybe": 1,
-        "everything": 5,
-        "new": 6,
+        "everything": 3,
+        "new": 0,
         "bookmarks": 0,
         "hidden": 1,
-        "scored": 9,
-        "total": 15,
-        "datasetVersion": "6575c5f1b090f630a5205937f788eafe06f51a5993383af7b232e8fb3937dd78",
+        "scored": 7,
+        "total": 7,
+        "datasetVersion": "c0ea39c60860342c10ea167152413e182d90e76a10f09735d5bf3f27aefabafa",
         "rankingPending": true
       },
       "counts@feed6:unread:t0": {
@@ -5461,12 +5461,12 @@
         "forYou": 3,
         "maybe": 0,
         "everything": 0,
-        "new": 6,
+        "new": 0,
         "bookmarks": 0,
         "hidden": 0,
         "scored": 3,
-        "total": 9,
-        "datasetVersion": "c2a7e848e333ac23fbb6d9af9ad3111eff0c78865761f621e0d7b675e1ad1eed",
+        "total": 3,
+        "datasetVersion": "288f4c77ce90b1d4af0e57e6c388635400a56857576a8a2a9b05ae3aa0a0c2ac",
         "rankingPending": true
       },
       "counts@feed6:all:t0": {
@@ -5485,12 +5485,12 @@
         "forYou": 4,
         "maybe": 0,
         "everything": 0,
-        "new": 7,
+        "new": 0,
         "bookmarks": 0,
         "hidden": 1,
         "scored": 4,
-        "total": 11,
-        "datasetVersion": "d24afd6f88a850e2e086f8a7cb7b880935cd928f9a13958b028240d5fe206b48",
+        "total": 4,
+        "datasetVersion": "945977a5d89beb04f2e0912cd01dc93cc74a4b552b1105c1cfe3881632de25d0",
         "rankingPending": true
       },
       "counts@feed7:unread:t0": {
@@ -5509,12 +5509,12 @@
         "forYou": 1,
         "maybe": 0,
         "everything": 1,
-        "new": 7,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 1,
         "scored": 2,
-        "total": 9,
-        "datasetVersion": "2b5f5fa41f1d4ff7b9b44335415a5b25d3123fc4e244e96ab7b3ed2436f9e5d6",
+        "total": 2,
+        "datasetVersion": "9b307ada777976c5fd399395de83d97f362301bc45013bdb049478de2c8abb7e",
         "rankingPending": true
       },
       "counts@feed7:all:t0": {
@@ -5532,13 +5532,13 @@
       "counts@feed7:all:t3": {
         "forYou": 1,
         "maybe": 3,
-        "everything": 3,
-        "new": 6,
+        "everything": 2,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 1,
-        "scored": 7,
-        "total": 13,
-        "datasetVersion": "14f5d66a19c1a075595ee5526de40121d277958202f9745041244b4d887ca32f",
+        "scored": 6,
+        "total": 6,
+        "datasetVersion": "5aff00610c13349cd1542537b7b71bb49a61cf903a59f795bcb27adff5c65105",
         "rankingPending": true
       },
       "counts@feed8:unread:t0": {
@@ -5557,12 +5557,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 16,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 2,
         "scored": 0,
-        "total": 16,
-        "datasetVersion": "ecc0fcdb036ac797ef2b07b798ca1de6e43f39a1cf3fca8c26ff8c37146e6973",
+        "total": 0,
+        "datasetVersion": "f1f9e4d98e4bf76ffee5e11ca57437de817e9d5f04251d5c87d87be08847d5c7",
         "rankingPending": false
       },
       "counts@feed8:all:t0": {
@@ -5581,12 +5581,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 21,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 2,
         "scored": 0,
-        "total": 21,
-        "datasetVersion": "75d7f0e49d318d8677dc391b736947d25b12e71809c58d600805e79df51e813a",
+        "total": 0,
+        "datasetVersion": "44c92bf79e4faf7d21286c482ea3c2f683065a17ab02319868557745961db40a",
         "rankingPending": false
       },
       "counts@feed9:unread:t0": {
@@ -5604,13 +5604,13 @@
       "counts@feed9:unread:t3": {
         "forYou": 1,
         "maybe": 3,
-        "everything": 3,
-        "new": 5,
+        "everything": 2,
+        "new": 0,
         "bookmarks": 0,
         "hidden": 0,
-        "scored": 7,
-        "total": 12,
-        "datasetVersion": "1ae1750e7d1acd493812779963ee1970068b0b850b0b83b526cd7b5fed33b1ee",
+        "scored": 6,
+        "total": 6,
+        "datasetVersion": "83a58e0076f6465d830f487ca3abc29b15e2cbd2ffa2d8f8f4bf03b9e1e54494",
         "rankingPending": true
       },
       "counts@feed9:all:t0": {
@@ -5628,13 +5628,13 @@
       "counts@feed9:all:t3": {
         "forYou": 1,
         "maybe": 3,
-        "everything": 4,
-        "new": 6,
+        "everything": 2,
+        "new": 0,
         "bookmarks": 0,
         "hidden": 0,
-        "scored": 8,
-        "total": 14,
-        "datasetVersion": "3bde335afba392f891bb67fb74bf6dcb819b153641ec383027a3604c33e1d85d",
+        "scored": 6,
+        "total": 6,
+        "datasetVersion": "d7da555999fac6a6f53587296eeddb8f76b9f2592a086286178d0d48080fc6bc",
         "rankingPending": true
       },
       "counts@feed10:unread:t0": {
@@ -5652,13 +5652,13 @@
       "counts@feed10:unread:t3": {
         "forYou": 0,
         "maybe": 0,
-        "everything": 1,
-        "new": 7,
+        "everything": 0,
+        "new": 0,
         "bookmarks": 0,
         "hidden": 0,
-        "scored": 1,
-        "total": 8,
-        "datasetVersion": "cf8e84116abe3e72a9c4324e0d2dba24525acbd1d2f5d616a471ebe8516f646d",
+        "scored": 0,
+        "total": 0,
+        "datasetVersion": "99aae1859391d4baee942087fc8f3783dfdd53e493b04c64b509fd8ae3826790",
         "rankingPending": false
       },
       "counts@feed10:all:t0": {
@@ -5676,13 +5676,13 @@
       "counts@feed10:all:t3": {
         "forYou": 0,
         "maybe": 1,
-        "everything": 1,
-        "new": 9,
+        "everything": 0,
+        "new": 0,
         "bookmarks": 0,
         "hidden": 1,
-        "scored": 2,
-        "total": 11,
-        "datasetVersion": "7c28bc44b2e926429ad50999207a161cb9e7c5e9489598585ffb3c54d855b37c",
+        "scored": 1,
+        "total": 1,
+        "datasetVersion": "0a63d368afeaf108bcd6167dbbe1a12a0be2572274cbca8b9207dae0116e8927",
         "rankingPending": false
       },
       "counts@feed11:unread:t0": {
@@ -5701,12 +5701,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 17,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 0,
         "scored": 0,
-        "total": 17,
-        "datasetVersion": "ea4c551306fa913e25706ab3bc1656bab09472781e34dd00d8a9418faf2fe4d7",
+        "total": 0,
+        "datasetVersion": "9305a6187c517493d32961bc876d8d1f26cc9a39c0cfcf1174fea94493557c7a",
         "rankingPending": false
       },
       "counts@feed11:all:t0": {
@@ -5725,12 +5725,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 18,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 0,
         "scored": 0,
-        "total": 18,
-        "datasetVersion": "6592db317aac3f12a2397d8b9c6b2234b183c9b31c09f7c12f27be5f96bf9f4e",
+        "total": 0,
+        "datasetVersion": "18f1fb791b134b8b5aee4fe49c616c560a477851b664874c2b5e7c67c0709f86",
         "rankingPending": false
       },
       "counts@feed12:unread:t0": {
@@ -5797,12 +5797,12 @@
         "forYou": 1,
         "maybe": 0,
         "everything": 2,
-        "new": 19,
+        "new": 0,
         "bookmarks": 3,
         "hidden": 3,
         "scored": 3,
-        "total": 22,
-        "datasetVersion": "ef39c297a773903a77dcde950397e57295db64613cc51ea70e08815a78e74110",
+        "total": 3,
+        "datasetVersion": "0065112410c05b0c8ef535f8d35be0dac72567cfa80db13e315f1758ae8c92d4",
         "rankingPending": true
       },
       "counts@folder:tech:all:t0": {
@@ -5820,13 +5820,13 @@
       "counts@folder:tech:all:t3": {
         "forYou": 1,
         "maybe": 3,
-        "everything": 4,
-        "new": 23,
+        "everything": 3,
+        "new": 0,
         "bookmarks": 3,
         "hidden": 3,
-        "scored": 8,
-        "total": 31,
-        "datasetVersion": "4ddc11473f356571cc9b3f99d87dedebedd255aba21dfc31174a3005cfddacab",
+        "scored": 7,
+        "total": 7,
+        "datasetVersion": "90b8a346de7a41edeadfc28833d6af415f67ff4ecae4bb8918aa3035c17529b3",
         "rankingPending": true
       },
       "counts@folder:news:unread:t0": {
@@ -5844,13 +5844,13 @@
       "counts@folder:news:unread:t3": {
         "forYou": 1,
         "maybe": 3,
-        "everything": 3,
-        "new": 20,
+        "everything": 2,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 0,
-        "scored": 7,
-        "total": 27,
-        "datasetVersion": "12437ed8d7799c05e667b6a7cb4540df85fc4f687b89fdb6d3d86f6d4f254d1d",
+        "scored": 6,
+        "total": 6,
+        "datasetVersion": "630c0559cc3f9ee35bfcd5704993ba9b16deaee4bca8e0f233b191dee089912e",
         "rankingPending": true
       },
       "counts@folder:news:all:t0": {
@@ -5868,13 +5868,13 @@
       "counts@folder:news:all:t3": {
         "forYou": 1,
         "maybe": 3,
-        "everything": 4,
-        "new": 22,
+        "everything": 2,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 0,
-        "scored": 8,
-        "total": 30,
-        "datasetVersion": "81f306fa1e699122880409c6e57e8cdc12d8e3e766560e3207ad3c39b34947d5",
+        "scored": 6,
+        "total": 6,
+        "datasetVersion": "57006b51ff77b7faaeef3e0db8d504c51380ecc4b7fef31ff8c20a62b9f396fc",
         "rankingPending": true
       },
       "counts@label1:unread:t0": {
@@ -5893,12 +5893,12 @@
         "forYou": 0,
         "maybe": 1,
         "everything": 0,
-        "new": 5,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 1,
         "scored": 1,
-        "total": 6,
-        "datasetVersion": "15c94e5648aac76f8f9e58124deceb3de09e32d9c8e2e79587059b02e1ec4411",
+        "total": 1,
+        "datasetVersion": "1f4061db7b4ecb39289fe234f8da0202b572672bc4a6ea65ab643c165716119d",
         "rankingPending": true
       },
       "counts@label1:all:t0": {
@@ -5916,13 +5916,13 @@
       "counts@label1:all:t3": {
         "forYou": 0,
         "maybe": 1,
-        "everything": 1,
-        "new": 6,
+        "everything": 0,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 2,
-        "scored": 2,
-        "total": 8,
-        "datasetVersion": "4fd8e2b8d68b7694c107fb4e9b2a4684560627c6872ea724933bf48ed15413e9",
+        "scored": 1,
+        "total": 1,
+        "datasetVersion": "169beda4385aa72838f717af4fba919d1c1c77a3e9eca782a01951f82ca31f74",
         "rankingPending": true
       },
       "counts@label2:unread:t0": {
@@ -5941,12 +5941,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 2,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 1,
         "scored": 0,
-        "total": 2,
-        "datasetVersion": "e4aa1afe08e6094163dd8f36fb24b63643688aa9de8f8bd257e0d9179758600e",
+        "total": 0,
+        "datasetVersion": "3d5e8a885dec90d94d0ffef0ff765d1bc99b49c0feb73cf079844798119abc0d",
         "rankingPending": false
       },
       "counts@label2:all:t0": {
@@ -5965,12 +5965,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 2,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 1,
         "scored": 0,
-        "total": 2,
-        "datasetVersion": "3bfda50abc8e28009ce2536157023cdb1f8ad17784fac3522b9e1669c971e081",
+        "total": 0,
+        "datasetVersion": "7305d87d8226de76ee504586bfcf1560f2dc10b9c6bc4223f721d39a6ef167f3",
         "rankingPending": false
       },
       "counts@feed7+folder:tech:unread:t0": {
@@ -5989,12 +5989,12 @@
         "forYou": 1,
         "maybe": 0,
         "everything": 1,
-        "new": 7,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 1,
         "scored": 2,
-        "total": 9,
-        "datasetVersion": "a38fe0c331d4dbf0c8dd2419900f1cdd4c2ae8d547fa15c36d436ad81730a50d",
+        "total": 2,
+        "datasetVersion": "1831ddb5314c26c9499c55a781943af229c2dbd35eef1fb8081eab4552a73823",
         "rankingPending": true
       },
       "counts@feed7+folder:tech:all:t0": {
@@ -6012,13 +6012,13 @@
       "counts@feed7+folder:tech:all:t3": {
         "forYou": 1,
         "maybe": 3,
-        "everything": 3,
-        "new": 6,
+        "everything": 2,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 1,
-        "scored": 7,
-        "total": 13,
-        "datasetVersion": "ab29c7d8bbda1434f655289e6827c4e9bf13182c48b896db41b07bd39c15d416",
+        "scored": 6,
+        "total": 6,
+        "datasetVersion": "ea00c3a3a41f324fb12ddbbc86b95fd2b67c5a9ba94b7d235e900937c5fe7a34",
         "rankingPending": true
       },
       "counts@feed9+folder:tech:unread:t0": {
@@ -6085,12 +6085,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 1,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 1,
         "scored": 0,
-        "total": 1,
-        "datasetVersion": "35dab6f2c72a451825248d927b80ae538cfd07d67e727a2060c1b7020fa048cf",
+        "total": 0,
+        "datasetVersion": "5ae43a56974c5b613b789fbec5f066a707f336a838ba03e48549b99496bbe1af",
         "rankingPending": false
       },
       "counts@folder:tech+label1:all:t0": {
@@ -6108,13 +6108,13 @@
       "counts@folder:tech+label1:all:t3": {
         "forYou": 0,
         "maybe": 0,
-        "everything": 1,
-        "new": 1,
+        "everything": 0,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 1,
-        "scored": 1,
-        "total": 2,
-        "datasetVersion": "d11c2502c27d25d90d28ef0decc4da3705e06fb316239a019776518337abedb1",
+        "scored": 0,
+        "total": 0,
+        "datasetVersion": "5fe1b7f4933e0a23f22f90a6ccc6ac4d01e2ab81e3576ea9d457a27e9c8c91b7",
         "rankingPending": false
       },
       "subscription-unread:t0": [
@@ -6210,78 +6210,50 @@
           "feed": "1",
           "forYou": 1,
           "maybe": 1,
-          "everything": 2,
-          "new": 7
+          "everything": 1,
+          "new": 0
         },
         {
           "feed": "2",
           "forYou": 0,
           "maybe": 1,
           "everything": 2,
-          "new": 12
+          "new": 0
         },
         {
           "feed": "3",
           "forYou": 1,
           "maybe": 0,
-          "everything": 1,
-          "new": 17
-        },
-        {
-          "feed": "4",
-          "forYou": 0,
-          "maybe": 0,
           "everything": 0,
-          "new": 17
+          "new": 0
         },
         {
           "feed": "5",
           "forYou": 2,
           "maybe": 0,
-          "everything": 4,
-          "new": 5
+          "everything": 3,
+          "new": 0
         },
         {
           "feed": "6",
           "forYou": 3,
           "maybe": 0,
           "everything": 0,
-          "new": 6
+          "new": 0
         },
         {
           "feed": "7",
           "forYou": 1,
           "maybe": 0,
           "everything": 1,
-          "new": 7
-        },
-        {
-          "feed": "8",
-          "forYou": 0,
-          "maybe": 0,
-          "everything": 0,
-          "new": 16
+          "new": 0
         },
         {
           "feed": "9",
           "forYou": 1,
           "maybe": 3,
-          "everything": 3,
-          "new": 5
-        },
-        {
-          "feed": "10",
-          "forYou": 0,
-          "maybe": 0,
-          "everything": 1,
-          "new": 7
-        },
-        {
-          "feed": "11",
-          "forYou": 0,
-          "maybe": 0,
-          "everything": 0,
-          "new": 17
+          "everything": 2,
+          "new": 0
         }
       ],
       "lane-mix:t3": {
@@ -12552,12 +12524,12 @@
         "forYou": 0,
         "maybe": 1,
         "everything": 0,
-        "new": 9,
+        "new": 0,
         "bookmarks": 3,
         "hidden": 1,
         "scored": 1,
-        "total": 10,
-        "datasetVersion": "355cca2958ffe12953e48fb60c5b2dc44fa466f12dd784bfd728d471b7cd4269",
+        "total": 1,
+        "datasetVersion": "0ca70be762fddd1d9ec66181f7ca3c576193c4da084f87cad6120f65ca9bea48",
         "rankingPending": true
       },
       "counts@feed1:all:t0": {
@@ -12576,12 +12548,12 @@
         "forYou": 0,
         "maybe": 1,
         "everything": 0,
-        "new": 12,
+        "new": 0,
         "bookmarks": 3,
         "hidden": 2,
         "scored": 1,
-        "total": 13,
-        "datasetVersion": "020d61912e6601b3d0509089303b55ed8edcee10ad36bc3210d6101e0950147f",
+        "total": 1,
+        "datasetVersion": "c253a01d2865bf7ca968f1a9cec106dffd9ef37822502e91ed1db2271f1f8a1e",
         "rankingPending": true
       },
       "counts@feed2:unread:t0": {
@@ -12600,12 +12572,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 14,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 1,
         "scored": 0,
-        "total": 14,
-        "datasetVersion": "1e3dbcfca5e05d21a78db81f575c3e52c33975f3c5b265982b38409e489cfea1",
+        "total": 0,
+        "datasetVersion": "68c2c937e829998c75063d425bb5f49f6e40d1ecb8c3cd71f93bbb547c7c30a3",
         "rankingPending": false
       },
       "counts@feed2:all:t0": {
@@ -12624,12 +12596,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 19,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 1,
         "scored": 0,
-        "total": 19,
-        "datasetVersion": "af6acf3ae7573937e4ebd261fe0855d570088991f250d24d06105e7cc0fe233e",
+        "total": 0,
+        "datasetVersion": "396b5ee3f89cc504fa004090d94e526021cb5b903c931c16f60a464965871563",
         "rankingPending": false
       },
       "counts@feed3:unread:t0": {
@@ -12647,13 +12619,13 @@
       "counts@feed3:unread:t3": {
         "forYou": 0,
         "maybe": 0,
-        "everything": 2,
-        "new": 14,
+        "everything": 1,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 1,
-        "scored": 2,
-        "total": 16,
-        "datasetVersion": "06c91de36643a5eef7ff732bbc7e94b8b63d55fb73066a41197d7a1bd76bf8d4",
+        "scored": 1,
+        "total": 1,
+        "datasetVersion": "e6a4bf933e98d742f79a1f4bd84dc258c4444accd549b68e369a17de25fc5dcb",
         "rankingPending": true
       },
       "counts@feed3:all:t0": {
@@ -12671,13 +12643,13 @@
       "counts@feed3:all:t3": {
         "forYou": 0,
         "maybe": 0,
-        "everything": 2,
-        "new": 20,
+        "everything": 1,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 2,
-        "scored": 2,
-        "total": 22,
-        "datasetVersion": "a1499964c262e8a4d8365b1d37da0a70537b1a56c2585fc4a490dc15d177d9a9",
+        "scored": 1,
+        "total": 1,
+        "datasetVersion": "95ce2297b18597375aa51a19189f2aff126232a41e3afe4376a3786f047fa4f6",
         "rankingPending": true
       },
       "counts@feed5:unread:t0": {
@@ -12696,12 +12668,12 @@
         "forYou": 1,
         "maybe": 2,
         "everything": 4,
-        "new": 5,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 0,
         "scored": 7,
-        "total": 12,
-        "datasetVersion": "e39e963523a8452de623c483671220269e0024fc4e4ba8fd0f12f88d0e1f8cbf",
+        "total": 7,
+        "datasetVersion": "26180ec518afa92108b9685e3baf6eb34a874104c038ba047de52e6060c818a1",
         "rankingPending": true
       },
       "counts@feed5:all:t0": {
@@ -12719,13 +12691,13 @@
       "counts@feed5:all:t3": {
         "forYou": 1,
         "maybe": 2,
-        "everything": 5,
-        "new": 6,
+        "everything": 4,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 0,
-        "scored": 8,
-        "total": 14,
-        "datasetVersion": "ac2ad7704565e6e672697d70be4df65651036dfab329d84e9aa4e3998992e633",
+        "scored": 7,
+        "total": 7,
+        "datasetVersion": "d1774ce1123b9e4cae89ac203985856fc87293b3fe4e5b0def451e745158a49f",
         "rankingPending": true
       },
       "counts@feed6:unread:t0": {
@@ -12743,13 +12715,13 @@
       "counts@feed6:unread:t3": {
         "forYou": 2,
         "maybe": 0,
-        "everything": 2,
-        "new": 3,
+        "everything": 1,
+        "new": 0,
         "bookmarks": 5,
         "hidden": 1,
-        "scored": 4,
-        "total": 7,
-        "datasetVersion": "3bcf93654c60fe13fa456bcc38175e2bac52eff50cf12943d0a6d6ff67085a5e",
+        "scored": 3,
+        "total": 3,
+        "datasetVersion": "34e91d6fe5f8d2a71e08d997fe78cb790ae91cd5e8cf6ebcf7395085da972013",
         "rankingPending": true
       },
       "counts@feed6:all:t0": {
@@ -12767,13 +12739,13 @@
       "counts@feed6:all:t3": {
         "forYou": 2,
         "maybe": 0,
-        "everything": 5,
-        "new": 5,
+        "everything": 3,
+        "new": 0,
         "bookmarks": 5,
         "hidden": 1,
-        "scored": 7,
-        "total": 12,
-        "datasetVersion": "b5b2b850f21f0a6af53b38f1c86c37d0cc60e671511a9f2ae776f40908f5865f",
+        "scored": 5,
+        "total": 5,
+        "datasetVersion": "e5c62920605fc0a5ebfe08f943ae6d958cf058a1fe3036a2e7538dc804a29147",
         "rankingPending": true
       },
       "counts@feed7:unread:t0": {
@@ -12791,13 +12763,13 @@
       "counts@feed7:unread:t3": {
         "forYou": 1,
         "maybe": 1,
-        "everything": 2,
-        "new": 2,
+        "everything": 0,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 3,
-        "scored": 4,
-        "total": 6,
-        "datasetVersion": "24d8b58c4803cefe83c7ddbefd41707e5d3cdc2fad13b74bc5790441e703a60c",
+        "scored": 2,
+        "total": 2,
+        "datasetVersion": "c16f7fc1bf310baba5e2328b3c6b1858b4a741fe6534518fe955ce240a7bbbef",
         "rankingPending": true
       },
       "counts@feed7:all:t0": {
@@ -12815,13 +12787,13 @@
       "counts@feed7:all:t3": {
         "forYou": 1,
         "maybe": 1,
-        "everything": 6,
-        "new": 1,
+        "everything": 3,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 4,
-        "scored": 8,
-        "total": 9,
-        "datasetVersion": "6f52c6fdb2fd6fab288b20b2e84e8134c23ef7986ef5d67eb374aa722e1c838d",
+        "scored": 5,
+        "total": 5,
+        "datasetVersion": "240f7b1ca3dfb393bab2edea89c8ab02a8d6f2dcd55081bce1662d0d487840bd",
         "rankingPending": true
       },
       "counts@feed9:unread:t0": {
@@ -12839,13 +12811,13 @@
       "counts@feed9:unread:t3": {
         "forYou": 0,
         "maybe": 0,
-        "everything": 5,
-        "new": 8,
+        "everything": 4,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 1,
-        "scored": 5,
-        "total": 13,
-        "datasetVersion": "12948227d55e11f48a2bbb33a6a14aa334d633e066c17a672f42bbf70adeba1a",
+        "scored": 4,
+        "total": 4,
+        "datasetVersion": "ef61089e8ed68cf4a5f847747876d513c51675cb3f93ad6b84382e4df2f9cd0e",
         "rankingPending": true
       },
       "counts@feed9:all:t0": {
@@ -12863,13 +12835,13 @@
       "counts@feed9:all:t3": {
         "forYou": 0,
         "maybe": 0,
-        "everything": 6,
-        "new": 8,
+        "everything": 5,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 1,
-        "scored": 6,
-        "total": 14,
-        "datasetVersion": "944d28090a5d52842adf3ca20434b87d9c0d2053e35876a8aa600bbb9a4a5df1",
+        "scored": 5,
+        "total": 5,
+        "datasetVersion": "b58a740b0afeb04f3cefc74259d0e0931593b5074891644be961425045d97a31",
         "rankingPending": true
       },
       "counts@feed12:unread:t0": {
@@ -12888,12 +12860,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 13,
+        "new": 0,
         "bookmarks": 3,
         "hidden": 3,
         "scored": 0,
-        "total": 13,
-        "datasetVersion": "6f63aa8e4872e1dc691bafe220b2abc97370d182e906401214e65b46df7ed3a3",
+        "total": 0,
+        "datasetVersion": "57c155ea7c162183d037dd36f098310bd8a9f1f8ddd3b66e5abf0012ab6d05d6",
         "rankingPending": false
       },
       "counts@feed12:all:t0": {
@@ -12912,12 +12884,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 19,
+        "new": 0,
         "bookmarks": 3,
         "hidden": 3,
         "scored": 0,
-        "total": 19,
-        "datasetVersion": "cccceee3443787a958309b6ff8dc4fe06a3df1ab562b4d1c151813c9c4e961b4",
+        "total": 0,
+        "datasetVersion": "d3cf3a09732e5836dac187938dc228f5c3e7cb36dab282bfd552f3b0f69c7106",
         "rankingPending": false
       },
       "counts@feed4:unread:t0": {
@@ -12983,13 +12955,13 @@
       "counts@folder:tech:unread:t3": {
         "forYou": 1,
         "maybe": 1,
-        "everything": 2,
-        "new": 2,
+        "everything": 0,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 3,
-        "scored": 4,
-        "total": 6,
-        "datasetVersion": "e8f670cfd9a476caeaf7da022822569ceb110be86b34359b53aa9572f4d9a1a0",
+        "scored": 2,
+        "total": 2,
+        "datasetVersion": "e59aa2057998aa1617d134580c3fe1e490ba6c2b3648707e7ed39c7399d79788",
         "rankingPending": true
       },
       "counts@folder:tech:all:t0": {
@@ -13007,13 +12979,13 @@
       "counts@folder:tech:all:t3": {
         "forYou": 1,
         "maybe": 1,
-        "everything": 6,
-        "new": 1,
+        "everything": 3,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 4,
-        "scored": 8,
-        "total": 9,
-        "datasetVersion": "b56a4ef50fb717d5c03ad7520eab14d279019ef66b5e577b584db374962f2e20",
+        "scored": 5,
+        "total": 5,
+        "datasetVersion": "ade554ddf34f9fd28a3f1bd6edae24d8a89cf8a85210c9077716c67738af8b38",
         "rankingPending": true
       },
       "counts@label1:unread:t0": {
@@ -13032,12 +13004,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 1,
-        "new": 4,
+        "new": 0,
         "bookmarks": 0,
         "hidden": 0,
         "scored": 1,
-        "total": 5,
-        "datasetVersion": "5b5ee4b71df8cd68de5a6f11c358e107d9156efa1d20c21607de5ae0d202f6a8",
+        "total": 1,
+        "datasetVersion": "56e494e1348ae1f4b378c2575feb4a621686903dd520931e00ad35e2cfc81b98",
         "rankingPending": false
       },
       "counts@label1:all:t0": {
@@ -13056,12 +13028,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 1,
-        "new": 6,
+        "new": 0,
         "bookmarks": 0,
         "hidden": 0,
         "scored": 1,
-        "total": 7,
-        "datasetVersion": "62f7abbf59f29b1472089ef8b02cb8f7220a49ffb46167ad77dc7882a023c60e",
+        "total": 1,
+        "datasetVersion": "8188cb660f5c507e0d979e12a76d13c1a35fa30000759d9a19b11b5bc10b6194",
         "rankingPending": false
       },
       "counts@label2:unread:t0": {
@@ -13080,12 +13052,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 1,
-        "new": 1,
+        "new": 0,
         "bookmarks": 0,
         "hidden": 0,
         "scored": 1,
-        "total": 2,
-        "datasetVersion": "1e00bdca515315cf4ef1b3b290f04669a4b70ef46d85152645718455be940246",
+        "total": 1,
+        "datasetVersion": "a123093e72c8558f3fa12fafa43710a76644b69e13fe77518f847c1cf2e5e0a4",
         "rankingPending": false
       },
       "counts@label2:all:t0": {
@@ -13104,12 +13076,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 1,
-        "new": 2,
+        "new": 0,
         "bookmarks": 0,
         "hidden": 0,
         "scored": 1,
-        "total": 3,
-        "datasetVersion": "c46a740a938f41ab5b367d1ada99dc13196d19cf1327270034bf1d7907a828fb",
+        "total": 1,
+        "datasetVersion": "2915af56d683f95806e9d51848f686a41f90e744ab74b48a9a2e9427a2ac8455",
         "rankingPending": false
       },
       "counts@feed7+folder:tech:unread:t0": {
@@ -13127,13 +13099,13 @@
       "counts@feed7+folder:tech:unread:t3": {
         "forYou": 1,
         "maybe": 1,
-        "everything": 2,
-        "new": 2,
+        "everything": 0,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 3,
-        "scored": 4,
-        "total": 6,
-        "datasetVersion": "9085b5c2f4ab01beb612c36a1bfbe9bc73f5c0b8ec23a467d24316d494c5c7b1",
+        "scored": 2,
+        "total": 2,
+        "datasetVersion": "b43273ab56ee51e952e3da18a699bdaf18e4a79c2a61f8a39030b1f11ec0e7dd",
         "rankingPending": true
       },
       "counts@feed7+folder:tech:all:t0": {
@@ -13151,13 +13123,13 @@
       "counts@feed7+folder:tech:all:t3": {
         "forYou": 1,
         "maybe": 1,
-        "everything": 6,
-        "new": 1,
+        "everything": 3,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 4,
-        "scored": 8,
-        "total": 9,
-        "datasetVersion": "769e5f85a52ff69231c1df1a249d4e3fe772e3f47f61f2a713ba77e0a0d8517d",
+        "scored": 5,
+        "total": 5,
+        "datasetVersion": "00a7017e535730eacb80440988ddaaba59fabc24d76116efb97801edf9796bc1",
         "rankingPending": true
       },
       "counts@feed9+folder:tech:unread:t0": {
@@ -13329,56 +13301,42 @@
           "forYou": 0,
           "maybe": 1,
           "everything": 0,
-          "new": 9
-        },
-        {
-          "feed": "2",
-          "forYou": 0,
-          "maybe": 0,
-          "everything": 0,
-          "new": 14
+          "new": 0
         },
         {
           "feed": "3",
           "forYou": 0,
           "maybe": 0,
-          "everything": 2,
-          "new": 14
+          "everything": 1,
+          "new": 0
         },
         {
           "feed": "5",
           "forYou": 1,
           "maybe": 2,
           "everything": 4,
-          "new": 5
+          "new": 0
         },
         {
           "feed": "6",
           "forYou": 2,
           "maybe": 0,
-          "everything": 2,
-          "new": 3
+          "everything": 1,
+          "new": 0
         },
         {
           "feed": "7",
           "forYou": 1,
           "maybe": 1,
-          "everything": 2,
-          "new": 2
+          "everything": 0,
+          "new": 0
         },
         {
           "feed": "9",
           "forYou": 0,
           "maybe": 0,
-          "everything": 5,
-          "new": 8
-        },
-        {
-          "feed": "12",
-          "forYou": 0,
-          "maybe": 0,
-          "everything": 0,
-          "new": 13
+          "everything": 4,
+          "new": 0
         }
       ],
       "lane-mix:t3": {
@@ -17326,12 +17284,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 8,
+        "new": 0,
         "bookmarks": 0,
         "hidden": 2,
         "scored": 0,
-        "total": 8,
-        "datasetVersion": "58400b4e3e501dc059b4868d5ba283bea4394783701386a7146948970b17c1ab",
+        "total": 0,
+        "datasetVersion": "833dd8287dcd473a8930cd9002bca8e3282dc2d25fad43a52ca6dbcf43d92a7d",
         "rankingPending": false
       },
       "counts@feed1:all:t0": {
@@ -17350,12 +17308,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 13,
+        "new": 0,
         "bookmarks": 0,
         "hidden": 3,
         "scored": 0,
-        "total": 13,
-        "datasetVersion": "7ee58a91df4da0797bf9407b0791a99077339d6b530cb57d590936506862ece2",
+        "total": 0,
+        "datasetVersion": "1769b9afccea0f5e6a2032846893fcb508ea52ba9ea4ed085bae3e678d168309",
         "rankingPending": false
       },
       "counts@feed4:unread:t0": {
@@ -17374,12 +17332,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 18,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 2,
         "scored": 0,
-        "total": 18,
-        "datasetVersion": "f80ac1acca372851ee2d00c103897adb9f6843f82bf35622ddbac1457e7334c9",
+        "total": 0,
+        "datasetVersion": "87fdbefcfe9af7f34e613b8367848ed2947fdf0b35e3ef718074b99f0c9a909e",
         "rankingPending": false
       },
       "counts@feed4:all:t0": {
@@ -17398,12 +17356,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 20,
+        "new": 0,
         "bookmarks": 2,
         "hidden": 2,
         "scored": 0,
-        "total": 20,
-        "datasetVersion": "6915a719ea3432b01ed3e513187d363f05d0d14a221292720d0bf1d1a70a41a5",
+        "total": 0,
+        "datasetVersion": "cfa384451755e8b20a0ae6f2dabff1d5a9cf5a0afd6f91a7fb66ab6ff7fdef9f",
         "rankingPending": false
       },
       "counts@feed11:unread:t0": {
@@ -17422,12 +17380,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 13,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 1,
         "scored": 0,
-        "total": 13,
-        "datasetVersion": "44feccb58a8875f578a47d20051406beb0d9a607745b7066bf3ba3048733d0d3",
+        "total": 0,
+        "datasetVersion": "be032846e821727f3b059160f6f805ee6b62734f01cf7ebbc610fe5c13674e46",
         "rankingPending": false
       },
       "counts@feed11:all:t0": {
@@ -17446,12 +17404,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 16,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 2,
         "scored": 0,
-        "total": 16,
-        "datasetVersion": "1f92b264e3b1e966c1119496216ea3296b38a835e0ab54280437b92efc6308f4",
+        "total": 0,
+        "datasetVersion": "cb0a10618d56fbfb82139a5c0d8121a44e284db78b8151dfc749c30bd25b2518",
         "rankingPending": false
       },
       "counts@feed12:unread:t0": {
@@ -17518,12 +17476,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 1,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 2,
         "scored": 0,
-        "total": 1,
-        "datasetVersion": "59507bc5024905d830b41b361c5aa7aaa4e571f8d2cfec2627f07260770d4185",
+        "total": 0,
+        "datasetVersion": "0e3a2b95b407e932fc222fc55016cb718310ae2d856163e61600c8f849bf757b",
         "rankingPending": false
       },
       "counts@label1:all:t0": {
@@ -17542,12 +17500,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 4,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 2,
         "scored": 0,
-        "total": 4,
-        "datasetVersion": "7a0a431733bf6c4f4ef1eef9d04e35eacc22835b9cf02b9d038175eb250adf89",
+        "total": 0,
+        "datasetVersion": "d0bee87063ff02419475df34ad5371cddefa7127e542a4d42e712b8f0bab4666",
         "rankingPending": false
       },
       "counts@label2:unread:t0": {
@@ -17590,12 +17548,12 @@
         "forYou": 0,
         "maybe": 0,
         "everything": 0,
-        "new": 2,
+        "new": 0,
         "bookmarks": 1,
         "hidden": 2,
         "scored": 0,
-        "total": 2,
-        "datasetVersion": "a6bf51f3d22bcb4bd6ab05390518d06cc78adabd7ca8dbc67a579e289b70660c",
+        "total": 0,
+        "datasetVersion": "d2f33f477f9865a305bbcbfffab342a939365446951af3a1355bb7d8649c62e1",
         "rankingPending": false
       },
       "counts@feed7+folder:tech:unread:t0": {
@@ -17774,29 +17732,7 @@
           "degraded": 0
         }
       },
-      "subscription-unread:t3": [
-        {
-          "feed": "1",
-          "forYou": 0,
-          "maybe": 0,
-          "everything": 0,
-          "new": 8
-        },
-        {
-          "feed": "4",
-          "forYou": 0,
-          "maybe": 0,
-          "everything": 0,
-          "new": 18
-        },
-        {
-          "feed": "11",
-          "forYou": 0,
-          "maybe": 0,
-          "everything": 0,
-          "new": 13
-        }
-      ],
+      "subscription-unread:t3": [],
       "lane-mix:t3": {
         "maybe": 0,
         "scored": 0,

@@ -41,9 +41,19 @@
       "label": "Minimum tier",
       "hint": "Hides articles below this tier in For you and Maybe. Tier 1 shows everything, tier 5 only the strongest matches."
     },
+    "feedMinTier": {
+      "label": "Minimum tier in feeds, folders and labels",
+      "hint": "Hides articles below this tier in a single feed, folder or label while it shows all its lanes, and so also the ones that have not been analysed yet. Tier 1 shows everything. For you and Maybe keep the minimum tier above."
+    },
     "sort": {
       "label": "Order of For you",
       "hint": "Best match lists the articles most likely to interest you first. Newest first goes by publication date.",
+      "score": "Best match",
+      "date": "Newest first"
+    },
+    "feedSort": {
+      "label": "Sort in feeds, folders and labels",
+      "hint": "The order of a single feed, folder or label when it shows all its lanes. For you keeps its own order.",
       "score": "Best match",
       "date": "Newest first"
     },

@@ -6,6 +6,7 @@ import {
   calibrationArticles,
   countArticles,
   getArticleDetail,
+  isScoped,
   labelArticle,
   listArticlePage,
   loadArticleItems,
@@ -118,10 +119,20 @@ async function requestCatchUp(tx: TenantTx, userId: string): Promise<void> {
   await enqueueRank(tenantOutbox(tx), { userId, reason: CATCH_UP_REASON });
 }
 
+/** The tier a view uses when the query leaves it out: the scoped `all` views have their own (D-248). */
+function defaultMinTier(
+  lane: ArticleViewLane,
+  scope: ArticleScope,
+  prefs: Pick<UserPreferences, 'defaultTier' | 'feedMinTier'>,
+): number {
+  return lane === 'all' && isScoped(scope) ? prefs.feedMinTier : prefs.defaultTier;
+}
+
 /** The status, tier and sort a view uses when the query leaves them out (spec 08 §5.1). */
 function viewDefaults(
   lane: ArticleViewLane,
   prefs: UserPreferences,
+  scope: ArticleScope,
   query: {
     status?: ArticleStatus | undefined;
     minTier?: number | undefined;
@@ -129,7 +140,7 @@ function viewDefaults(
   },
 ): { status: ArticleStatus; minTier: number; sort: ArticleListSort } {
   const status = query.status ?? (lane === 'bookmarks' || lane === 'hidden' ? 'all' : 'unread');
-  const minTier = query.minTier ?? prefs.defaultTier;
+  const minTier = query.minTier ?? defaultMinTier(lane, scope, prefs);
   const sort: ArticleListSort =
     query.sort ?? (lane === 'for_you' ? prefs.sort : lane === 'maybe' ? 'uncertainty' : 'date');
   return { status, minTier, sort };
@@ -230,7 +241,7 @@ export async function markReadByFilter(
       scope: input.scope,
       lane: input.lane,
       status: 'unread',
-      minTier: input.minTier ?? prefs.defaultTier,
+      minTier: input.minTier ?? defaultMinTier(input.lane, input.scope, prefs),
       asOf: new Date(input.olderThan),
       scoreVersion: await currentScoreVersion(tx),
     },
@@ -318,7 +329,7 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
       }
       return request.withTx(async (tx) => {
         const prefs = await readPrefs(tx);
-        const defaults = viewDefaults(query.lane, prefs, query);
+        const defaults = viewDefaults(query.lane, prefs, query, query);
         if (extra !== null && extra.sort !== defaults.sort) {
           throw new AppError('STALE_CURSOR', 'The list order changed; reload from the first page');
         }
@@ -387,7 +398,7 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
         const counts = await countArticles(tx, {
           scope: { feedId: query.feedId, folder: query.folder, labelId: query.labelId },
           status: query.status ?? 'unread',
-          minTier: query.minTier ?? prefs.defaultTier,
+          minTier: query.minTier ?? defaultMinTier('all', query, prefs),
           asOf,
           scoreVersion: await currentScoreVersion(tx),
         });

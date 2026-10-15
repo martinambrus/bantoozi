@@ -8,7 +8,8 @@ import { readMeAfterSave } from '../../session/me.js';
 import { subscriptionsKey } from '../feeds/subscriptions.js';
 
 /** The preferences the reader's header changes. */
-export type Setting = 'defaultTier' | 'sort' | 'simpleMode' | 'showRead';
+export type Setting =
+  'defaultTier' | 'feedMinTier' | 'sort' | 'feedSort' | 'simpleMode' | 'showRead';
 export type Settings = Partial<Pick<UserPreferences, Setting>>;
 
 export interface SettingsWriter {
@@ -107,7 +108,7 @@ export function createSettingsWriter({
           // than the rest of the answer.
           show(me, { ...pick(updated.preferences, keysOf(body)), ...waiting });
           readMeAfterSave(queryClient);
-          if ('defaultTier' in body) {
+          if ('defaultTier' in body || 'feedMinTier' in body) {
             void queryClient.invalidateQueries({ queryKey: subscriptionsKey(updated.id) });
           }
         } catch (error) {

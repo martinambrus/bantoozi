@@ -502,6 +502,118 @@ describe('GET /articles/counts', () => {
   });
 });
 
+describe('D-248: the minimum tier of a feed, folder and label view of all lanes', () => {
+  async function world(preferences: Record<string, unknown>) {
+    const r = await newReader(h, preferences);
+    const feed = await subscribedFeed(h, r.user.id, { folder: 'News' });
+    const top = await carriedArticle(h, [feed]);
+    const maybe = await carriedArticle(h, [feed]);
+    const low = await carriedArticle(h, [feed]);
+    const fresh = await carriedArticle(h, [feed]);
+    const untouched = await carriedArticle(h, [feed]);
+    await rank(h, r.user.id, top, { lane: 'for_you', p: 0.9, tier: 5 });
+    await rank(h, r.user.id, maybe, { lane: 'maybe', p: 0.5, tier: 3 });
+    await rank(h, r.user.id, low, { lane: 'everything', p: 0.2, tier: 1 });
+    await rank(h, r.user.id, fresh, { lane: 'new' });
+    return { r, feed, top, maybe, low, fresh, untouched };
+  }
+
+  it('minTier above 1 keeps only rows of that tier in a feed, folder or label view', async () => {
+    const w = await world({});
+    const scope = { feedId: w.feed };
+    expect(new Set(ids(await list(w.r, { lane: 'all', ...scope, minTier: '3' })))).toEqual(
+      new Set([w.top, w.maybe]),
+    );
+    expect(ids(await list(w.r, { lane: 'all', ...scope, minTier: '4' }))).toEqual([w.top]);
+    expect(ids(await list(w.r, { lane: 'all', folder: 'News', minTier: '4' }))).toEqual([w.top]);
+    expect(new Set(ids(await list(w.r, { lane: 'all', ...scope, minTier: '1' })))).toEqual(
+      new Set([w.top, w.maybe, w.low, w.fresh, w.untouched]),
+    );
+    // The unscoped view and the other scoped lanes keep their rule.
+    expect(new Set(ids(await list(w.r, { lane: 'all', minTier: '4' })))).toEqual(
+      new Set([w.top, w.low, w.fresh, w.untouched]),
+    );
+    expect(ids(await list(w.r, { lane: 'everything', ...scope, minTier: '4' }))).toEqual([w.low]);
+    expect(ids(await list(w.r, { lane: 'maybe', ...scope, minTier: '4' }))).toEqual([]);
+    expect(ids(await list(w.r, { lane: 'maybe', ...scope, minTier: '3' }))).toEqual([w.maybe]);
+  });
+
+  it('defaults to prefs.feedMinTier, apart from prefs.defaultTier', async () => {
+    const w = await world({ defaultTier: 5, feedMinTier: 3 });
+    const scope = { feedId: w.feed };
+    expect(new Set(ids(await list(w.r, { lane: 'all', ...scope })))).toEqual(
+      new Set([w.top, w.maybe]),
+    );
+    // Unscoped, and scoped For you / Maybe, use defaultTier.
+    expect(ids(await list(w.r, { lane: 'maybe', ...scope }))).toEqual([]);
+    expect(new Set(ids(await list(w.r, { lane: 'all' })))).toEqual(
+      new Set([w.top, w.low, w.fresh, w.untouched]),
+    );
+    const plain = await newReader(h, { defaultTier: 4 });
+    const feed = await subscribedFeed(h, plain.user.id);
+    const article = await carriedArticle(h, [feed]);
+    expect(ids(await list(plain, { lane: 'all', feedId: feed }))).toEqual([article]);
+  });
+
+  it('counts and datasetVersion agree with the list; the global counts do not change', async () => {
+    const w = await world({ feedMinTier: 3 });
+    const page = await list(w.r, { lane: 'all', feedId: w.feed });
+    const counts = (
+      await w.r.api.get('/articles/counts', { query: { feedId: w.feed, asOf: page.asOf } })
+    ).json();
+    expect(counts).toMatchObject({ forYou: 1, maybe: 1, everything: 0, new: 0, total: 2 });
+    expect(counts.datasetVersion).toBe(page.datasetVersion);
+    const global = (await w.r.api.get('/articles/counts', { query: { asOf: page.asOf } })).json();
+    expect(global).toMatchObject({ forYou: 1, maybe: 1, everything: 1, new: 2, total: 5 });
+    const again = await list(w.r, { lane: 'all', feedId: w.feed, minTier: '1' });
+    expect(again.items).toHaveLength(5);
+    const all = (
+      await w.r.api.get('/articles/counts', {
+        query: { feedId: w.feed, minTier: '1', asOf: again.asOf },
+      })
+    ).json();
+    expect(all).toMatchObject({ total: 5, datasetVersion: again.datasetVersion });
+  });
+
+  it('GET /subscriptions unread follows the feed view at prefs.feedMinTier, not defaultTier', async () => {
+    const badge = async (r: Reader, feed: string) => {
+      const row = (
+        (await r.api.get('/subscriptions')).json() as {
+          feed: { id: string };
+          unread: { forYou: number; maybe: number; everything: number; new: number };
+        }[]
+      ).find((s) => s.feed.id === feed);
+      const u = row?.unread ?? { forYou: 0, maybe: 0, everything: 0, new: 0 };
+      return u.forYou + u.maybe + u.everything + u.new;
+    };
+    const w = await world({ defaultTier: 1, feedMinTier: 3 });
+    const page = await list(w.r, { lane: 'all', feedId: w.feed });
+    expect(page.items).toHaveLength(2);
+    expect(await badge(w.r, w.feed)).toBe(2);
+    const high = await world({ defaultTier: 5, feedMinTier: 3 });
+    expect(await badge(high.r, high.feed)).toBe(2);
+    const one = await world({ defaultTier: 4, feedMinTier: 1 });
+    expect(await badge(one.r, one.feed)).toBe(5);
+  });
+
+  it('POST /subscriptions/:feedId/mark-read marks the rows of prefs.feedMinTier', async () => {
+    const w = await world({ defaultTier: 1, feedMinTier: 3 });
+    const page = await list(w.r, { lane: 'all', feedId: w.feed });
+    expect(page.items).toHaveLength(2);
+    const res = await w.r.api.post(`/subscriptions/${w.feed}/mark-read`, {
+      olderThan: page.asOf,
+      datasetVersion: page.datasetVersion,
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toMatchObject({ count: 2 });
+    const read = await h.owner.query<{ article_id: string }>(
+      `SELECT article_id::text FROM user_article WHERE user_id = $1 AND read_at IS NOT NULL`,
+      [w.r.user.id],
+    );
+    expect(read.rows.map((row) => row.article_id).sort()).toEqual([w.top, w.maybe].sort());
+  });
+});
+
 describe('GET /articles/:id', () => {
   it('applies the 404 rule', async () => {
     const r = await newReader(h);

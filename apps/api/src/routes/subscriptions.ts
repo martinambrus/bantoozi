@@ -131,7 +131,7 @@ export const subscriptionRoutes: FastifyPluginAsyncZod = async (app) => {
         const rows = await listSubscriptions(tx);
         const unread = await countSubscriptionUnread(tx, {
           asOf: clock.now(),
-          minTier: preferences.defaultTier,
+          minTier: preferences.feedMinTier,
           scoreVersion: await currentScoreVersion(tx),
         });
         return rows.map((row) => subscriptionDto(row, preferences, unread.get(row.feed.id)));
