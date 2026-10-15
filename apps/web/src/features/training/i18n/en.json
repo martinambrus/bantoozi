@@ -6,6 +6,10 @@
     "count": "{{selected}} of {{max}} selected",
     "hint": "Select up to {{max}} articles. Nothing is analyzed until you press the button.",
     "offNote": "This switches the feed to Training: only the articles you select are analyzed.",
+    "total_one": "{{count}} selected",
+    "total_other": "{{count}} selected",
+    "analyzeOf": "Analyze {{max}} of {{total}}",
+    "startOf": "Start training and analyze {{max}} of {{total}}",
     "none": "Select articles to analyze",
     "start_one": "Start training and analyze this article",
     "start_other": "Start training and analyze these {{count}}",
@@ -17,6 +21,10 @@
     "likeAll_other": "Like {{count}} selected articles",
     "dislikeAll_one": "Dislike {{count}} selected article",
     "dislikeAll_other": "Dislike {{count}} selected articles"
+  },
+  "selectAll": {
+    "select": "Select all articles",
+    "deselect": "Deselect all articles"
   },
   "limit": "You can select at most {{max}} articles at a time.",
   "errors": {

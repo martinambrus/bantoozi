@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { ArticleDetail } from '../../src/features/article/article-detail.js';
-import { json } from '../api/fake-fetch.js';
+import { failure, json } from '../api/fake-fetch.js';
 import { TOPICS, cardDraftRoutes } from '../interests/support.js';
 import type { ApiRouteHandler } from '../support/app.js';
 import { bodyOf, detailRoute, findToast, makeItem, makeRule, renderReader } from './harness.js';
@@ -38,6 +38,32 @@ describe('the reading pane card and keyword actions', () => {
     const app = renderPane([]);
     expect(await offered(app)).toEqual(['Batteries', 'and', 'solar', 'power']);
     expect(screen.getByRole('button', { name: 'Make a card from this' })).toBeInTheDocument();
+  });
+
+  it('offers no word while the rules are loading', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const app = renderPane([], { 'GET /rules': () => held.then(() => json(200, [])) });
+    expect(await screen.findByRole('button', { name: 'Mute a keyword' })).toBeDisabled();
+    await app.user.click(screen.getByRole('button', { name: 'Mute a keyword' }));
+    expect(screen.queryByRole('menu')).toBeNull();
+    release();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Mute a keyword' })).toBeEnabled(),
+    );
+  });
+
+  it('keeps the menu unavailable when the rules cannot be read', async () => {
+    const app = renderPane([], { 'GET /rules': () => failure(500, 'INTERNAL') });
+    await waitFor(() => expect(app.calls('GET', '/rules').length).toBeGreaterThan(0));
+    await screen.findByRole('button', { name: 'Make a card from this' });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Mute a keyword' })).toBeDisabled(),
+    );
+    await app.user.click(screen.getByRole('button', { name: 'Mute a keyword' }));
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 
   it('opens the drafted card editor and gives the focus back to its button', async () => {

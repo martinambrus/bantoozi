@@ -179,7 +179,8 @@ describe('POST /subscriptions/:feedId/analyze', () => {
       startTraining: true,
     });
     expect(res.statusCode, res.body).toBe(202);
-    const { requests } = res.json();
+    const { requests, inference } = res.json();
+    expect(inference).toEqual({ mode: 'training', version: '1' });
     expect(requests).toHaveLength(2);
     expect(requests.map((r: { articleId: string }) => r.articleId)).toEqual(
       articles.map((a) => a.id),
@@ -220,6 +221,7 @@ describe('POST /subscriptions/:feedId/analyze', () => {
     });
     expect(again.statusCode, again.body).toBe(202);
     expect(again.json().requests).toEqual(requests);
+    expect(again.json().inference).toEqual({ mode: 'training', version: '1' });
     expect(await requestRows(alice.id)).toHaveLength(2);
   });
 
@@ -451,6 +453,34 @@ describe('a rating asks for the analysis of an unanalysed article (D-238)', () =
     expect((await rate(alice, admitted.article, { rating: 1 })).statusCode).toBe(200);
 
     expect((await requestRows(alice.id)).map((row) => row.id)).toEqual([id]);
+  });
+
+  it('links an article carried by an admitted active feed to its existing training request', async () => {
+    const alice = await createTestUser(h);
+    const { feed, article } = await trainingArticle(alice);
+    const active = await createFeed(h.owner);
+    await createSubscription(h.owner, {
+      userId: alice.id,
+      feedId: active.id,
+      mode: 'active',
+      activatedAt: new Date(Date.now() - 86_400_000),
+    });
+    await h.owner.query(`INSERT INTO feed_items (feed_id, article_id, guid) VALUES ($1, $2, $3)`, [
+      active.id,
+      article.id,
+      `guid-${article.id}`,
+    ]);
+    const selected = await apiClient(h.server, alice).post(`/subscriptions/${feed.id}/analyze`, {
+      articles: selection([article]),
+      expectedInferenceVersion: '1',
+    });
+    expect(selected.statusCode, selected.body).toBe(202);
+    const [{ id }] = selected.json().requests as [{ id: string }];
+
+    const res = await rate(alice, article, { rating: 1 });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(await requestRows(alice.id)).toHaveLength(1);
+    expect((await rateEvents(alice.id, article.id))[0]).toMatchObject({ analysisRequestId: id });
   });
 
   it('asks for an older article of an active feed', async () => {

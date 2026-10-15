@@ -98,7 +98,12 @@ offline/background polling. The idle 30-second poll refreshes the counts; the vi
 reloaded by the 5-second busy poll, the Refresh control and navigation, and keeps up with new
 articles without moving rows under the reader (D-152, D-243): when the current view's count rises
 above its value at the last list load, the list reloads by itself only while it is scrolled to the
-top and no article is open; otherwise "N new articles · Show" above the list loads them on demand. New items in off/unselected training feeds are not unfinished jobs and
+top and no article is open; otherwise "N new articles · Show" above the list loads them on demand.
+Within one open view, rows the reader acted on keep their place across background reloads (busy poll,
+automatic reload, invalidations; D-245): rated or hidden rows that left stay gone while they are still
+rated or hidden (Undo or a failed rating brings them back), and rows read in this view, the open one
+included, stay where they were even when the server no longer lists them. Only Refresh, "Show N new
+articles" and navigation drop them. The busy poll and the offline copy go by the server's rows alone. New items in off/unselected training feeds are not unfinished jobs and
 must not cause endless polling or "AI is working" messages.
 Cancel obsolete queries on route changes. No SSE infrastructure is required for the first version.
 Refresh from page one on `STALE_CURSOR`; de-duplicate ids and preserve selection/scroll by id.
@@ -181,9 +186,12 @@ login without leaking the previous account's UI. Slow classification leaves arti
 - **Translated items:** a subtle "translated" marker. A toggle shows the English translation of the
   title and excerpt when available.
 - **Untrained items:** show "Not analyzed" and retain normal read/rate/bookmark actions. In a feed
-  view, every row has a selection checkbox (analyzed ones too); the panel above the list shows only
-  the count and the buttons "Analyze selected N articles" (at most 20 per submission; only the
-  selected articles not analyzed yet, hidden when there are none), Like and Dislike (one rating per
+  view, every row has a selection checkbox (analyzed ones too), and a tri-state "Select all articles"
+  checkbox above the list ticks or unticks every loaded row (mixed state when some are ticked; the
+  reader's selection has no cap); the panel above the list shows only "N selected" and the buttons
+  "Analyze selected N articles" (at most 20 per submission, in list order, "Analyze 20 of M" when
+  more are analyzable; only the selected articles not analyzed yet, hidden when there are none),
+  Like and Dislike (one rating per
   selected article, each as from its own row, so D-238 applies; the selection clears). The ticked
   rows are the selection: no separate list of titles. Do not auto-select a calibration
   batch, all visible items or future arrivals. Cached answers may satisfy the request immediately;

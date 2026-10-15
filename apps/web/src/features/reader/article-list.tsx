@@ -30,14 +30,107 @@ function without(ids: ReadonlySet<string>, id: string): ReadonlySet<string> {
 const isRatedOrHidden = (item: ArticleListItem) => item.rating !== null || item.archivedAt !== null;
 const isHidden = (item: ArticleListItem) => item.archivedAt !== null;
 
+/** A row the reader read in this view that the list no longer returns, and the row it came after. */
+interface KeptRow {
+  item: ArticleListItem;
+  after: string | null;
+}
+
+interface Membership {
+  items: readonly ArticleListItem[];
+  generation: number;
+  source: string;
+  /** The rows the page returns with the kept ones put back where they were. */
+  merged: readonly ArticleListItem[];
+  kept: ReadonlyMap<string, KeptRow>;
+}
+
+const NO_KEPT: ReadonlyMap<string, KeptRow> = new Map();
+
+function mergeKept(
+  items: readonly ArticleListItem[],
+  kept: ReadonlyMap<string, KeptRow>,
+): readonly ArticleListItem[] {
+  if (kept.size === 0) return items;
+  const after = new Map<string | null, ArticleListItem[]>();
+  for (const row of kept.values()) {
+    after.set(row.after, [...(after.get(row.after) ?? []), row.item]);
+  }
+  const out: ArticleListItem[] = [];
+  const put = (id: string | null) => {
+    for (const row of after.get(id) ?? []) {
+      out.push(row);
+      put(row.id);
+    }
+  };
+  put(null);
+  for (const row of items) {
+    out.push(row);
+    put(row.id);
+  }
+  return out;
+}
+
+/**
+ * The rows of a list of unread articles: the page's, and those the reader read in this view that a
+ * reload no longer returns, which stay where they were until the list is loaded on request
+ * (`generation` changes), another list replaces it (`source`) or the view is left.
+ */
+function useKeptRows(
+  items: readonly ArticleListItem[],
+  generation: number,
+  source: string,
+  enabled: boolean,
+  isMarked: (item: ArticleListItem) => boolean,
+): readonly ArticleListItem[] {
+  const store = useReaderActions();
+  const [state, setState] = useState<Membership>({
+    items,
+    generation,
+    source,
+    merged: items,
+    kept: NO_KEPT,
+  });
+  if (!enabled) return items;
+  if (state.items === items && state.generation === generation && state.source === source) {
+    return state.merged;
+  }
+
+  let next: Membership;
+  if (state.generation !== generation || state.source !== source) {
+    next = { items, generation, source, merged: items, kept: NO_KEPT };
+  } else {
+    const present = new Set(items.map((row) => row.id));
+    const kept = new Map<string, KeptRow>();
+    let previous: string | null = null;
+    for (const row of state.merged) {
+      if (present.has(row.id)) {
+        previous = row.id;
+        continue;
+      }
+      const shown = store.view(row);
+      // A marked row (rated or hidden here) is kept as well, hidden through `gone`, so that Undo
+      // or a failed action shows it again where it was.
+      if (state.kept.has(row.id) || shown.readAt !== null || isMarked(shown)) {
+        kept.set(row.id, { item: row, after: previous });
+        previous = row.id;
+      }
+    }
+    next = { items, generation, source, merged: mergeKept(items, kept), kept };
+  }
+  setState(next);
+  return next.merged;
+}
+
 /**
  * Which rows to show in a list of unread articles: one that is rated or hidden leaves after the exit
- * animation, one that is only read stays until the list is loaded again (spec 09 §3.1, §3.3). With
- * "Show read" only a hidden one leaves (D-234).
+ * animation and stays gone while it is still rated or hidden, one that is only read stays until the
+ * list is loaded on request (spec 09 §3.1, §3.3). With "Show read" only a hidden one leaves (D-234).
  */
 function useExitingRows(
   items: readonly ArticleListItem[],
-  firstPage: unknown,
+  generation: number,
+  source: string,
   listRef: React.RefObject<HTMLUListElement | null>,
   enabled: boolean,
   isMarked: (item: ArticleListItem) => boolean,
@@ -46,18 +139,25 @@ function useExitingRows(
   // Every change of what the rows show comes through the store.
   const version = useSyncExternalStore(store.subscribe, store.getVersion);
   const [leaving, setLeaving] = useState<ReadonlySet<string>>(NONE);
-  // The ids that left, for the page one they left from; loading it again lets them come back.
-  const [left, setLeft] = useState<{ page: unknown; ids: ReadonlySet<string> }>({
-    page: firstPage,
-    ids: NONE,
-  });
+  // The ids that left; loading the list on request lets them come back.
+  const [gone, setGone] = useState<ReadonlySet<string>>(NONE);
   const marked = useRef(new Map<string, boolean>());
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const refocus = useRef<HTMLElement | null>(null);
+  const rows = useKeptRows(items, generation, source, enabled, isMarked);
+
+  useEffect(() => {
+    // A list loaded on request, or another list, starts over: an exit that was under way must not
+    // hide a row of it.
+    for (const timer of timers.current.values()) clearTimeout(timer);
+    timers.current.clear();
+    setLeaving(NONE);
+    setGone(NONE);
+  }, [generation, source]);
 
   useEffect(() => {
     if (!enabled) return;
-    for (const item of items) {
+    for (const item of rows) {
       const now = isMarked(store.view(item));
       const before = marked.current.get(item.id);
       marked.current.set(item.id, now);
@@ -79,10 +179,7 @@ function useExitingRows(
                 document.querySelector<HTMLElement>('main')?.focus({ preventScroll: true });
               }
             }
-            setLeft((current) => ({
-              page: firstPage,
-              ids: new Set(current.page === firstPage ? current.ids : NONE).add(item.id),
-            }));
+            setGone((current) => new Set(current).add(item.id));
             setLeaving((current) => without(current, item.id));
           }, EXIT_MS),
         );
@@ -92,14 +189,16 @@ function useExitingRows(
         setLeaving((current) => without(current, item.id));
       } else if (!now && before === true) {
         // It left and is back (Undo): forgotten as gone, so the next rating makes it leave again.
-        setLeft((current) =>
-          current.ids.has(item.id)
-            ? { page: current.page, ids: without(current.ids, item.id) }
-            : current,
-        );
+        setGone((current) => (current.has(item.id) ? without(current, item.id) : current));
       }
     }
-  }, [enabled, items, store, listRef, firstPage, version, isMarked]);
+    // The ids that no page holds any more need no mark.
+    const present = new Set(rows.map((row) => row.id));
+    setGone((current) => {
+      const rest = new Set(Array.from(current).filter((id) => present.has(id)));
+      return rest.size === current.size ? current : rest;
+    });
+  }, [enabled, rows, store, listRef, version, isMarked]);
 
   useEffect(() => {
     const pending = timers.current;
@@ -108,7 +207,6 @@ function useExitingRows(
     };
   }, []);
 
-  const gone = left.page === firstPage ? left.ids : NONE;
   useLayoutEffect(() => {
     const next = refocus.current;
     if (next === null) return;
@@ -118,8 +216,8 @@ function useExitingRows(
 
   // A row that left comes back if its rating was taken back or did not go through.
   const visible = enabled
-    ? items.filter((item) => !gone.has(item.id) || !isMarked(store.view(item)))
-    : items;
+    ? rows.filter((item) => !gone.has(item.id) || !isMarked(store.view(item)))
+    : rows;
   return { visible, leaving };
 }
 
@@ -135,12 +233,21 @@ export interface VisibleRows {
   listRef: React.RefObject<HTMLUListElement | null>;
 }
 
-/** The rows the view shows, worked out beside the page so that the header counts the same ones. */
-export function useVisibleRows(view: ReaderView, list: ReaderList, showRead: boolean): VisibleRows {
+/**
+ * The rows the view shows, worked out beside the page so that the header counts the same ones.
+ * `generation` changes when the reader asks for the list to be loaded again.
+ */
+export function useVisibleRows(
+  view: ReaderView,
+  list: ReaderList,
+  showRead: boolean,
+  generation: number,
+): VisibleRows {
   const listRef = useRef<HTMLUListElement>(null);
   const { visible, leaving } = useExitingRows(
     list.items,
-    list.query.data?.pages[0],
+    generation,
+    list.source,
     listRef,
     listsUnread(view.lane),
     showRead ? isHidden : isRatedOrHidden,
@@ -208,7 +315,7 @@ export function ArticleList({
 }: ArticleListProps) {
   const { t } = useTranslation('reader');
   const { query, canLoadMore, loadMore, reload, saved, looking } = list;
-  const training = useFeedTraining(view, listRef);
+  const training = useFeedTraining(view, listRef, visible);
   const sentinel = useSentinel(canLoadMore, () => void loadMore());
   const failed = query.isError && query.data !== undefined && !isCursorRefused(query.error);
 
@@ -229,6 +336,7 @@ export function ArticleList({
         <div className="flex flex-col gap-3">
           {saved === null ? null : <SavedNotice savedAt={saved.savedAt} />}
           {training.panel}
+          {training.selectAll}
           <ul ref={listRef} role="list" tabIndex={-1} className="flex flex-col gap-3 outline-none">
             {rows.map((item) => (
               <li

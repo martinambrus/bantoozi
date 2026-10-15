@@ -319,7 +319,7 @@ describe('paging', () => {
     expect(within(pane).getByRole('heading', { level: 2, name: 'Article 2' })).toBeVisible();
   });
 
-  it('keeps showing an article that the reloaded list no longer has while it is open', async () => {
+  it('keeps the row of an article that the reloaded list no longer has while it is open', async () => {
     let fresh = false;
     const { app } = await open({
       path: '/read/for_you',
@@ -339,7 +339,11 @@ describe('paging', () => {
     await app.user.click(screen.getByRole('button', { name: 'Load more' }));
 
     await screen.findByRole('article', { name: 'Article 5' });
-    expect(rowTitles()).toEqual(['Article 1', 'Article 5']);
+    expect(rowTitles()).toEqual(['Article 1', 'Article 2', 'Article 5']);
+    expect(screen.getByRole('button', { name: 'Article 2' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
     const pane = screen.getByRole('complementary', { name: 'Article' });
     expect(within(pane).getByRole('heading', { level: 2, name: 'Article 2' })).toBeVisible();
   });

@@ -81,7 +81,7 @@ test('select training: one article is analyzed, reaches For you, and Why this? f
     await articleRow(page, selected.title)
       .getByRole('checkbox', { name: `Select ${selected.title}` })
       .check();
-    await expect(panel).toContainText('1 of 20 selected');
+    await expect(panel).toContainText('1 selected');
     // The panel only counts: the row's own checkbox is the selection (no list of titles).
     await expect(panel.getByRole('list', { name: 'Selected articles' })).toHaveCount(0);
     await expect(

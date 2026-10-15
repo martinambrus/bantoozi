@@ -4705,10 +4705,32 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "inference": {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "off",
+                            "training",
+                            "active"
+                          ]
+                        },
+                        "version": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "version"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
-                    "requests"
+                    "requests",
+                    "inference"
                   ],
                   "additionalProperties": false
                 }

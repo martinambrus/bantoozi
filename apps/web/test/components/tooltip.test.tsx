@@ -92,3 +92,53 @@ describe('Tooltip', () => {
     });
   });
 });
+
+describe('Tooltip layering', () => {
+  it('renders its bubble at the end of the body, out of the trigger’s stacking context', () => {
+    render(
+      <div style={{ position: 'relative', zIndex: 1, overflow: 'auto' }} data-testid="sidebar">
+        <Tooltip text="Explains it">
+          {(props) => (
+            <button type="button" {...props}>
+              Trigger
+            </button>
+          )}
+        </Tooltip>
+      </div>,
+    );
+    const bubble = screen.getByRole('tooltip', { hidden: true });
+    expect(bubble.parentElement).toBe(document.body);
+    expect(screen.getByTestId('sidebar')).not.toContainElement(bubble);
+    expect(screen.getByRole('button', { name: 'Trigger' })).toHaveAccessibleDescription(
+      'Explains it',
+    );
+  });
+
+  it('stays inside the dialog that holds its trigger, which sits in the top layer', async () => {
+    const { rerender } = render(
+      <dialog open data-testid="sheet">
+        <Tooltip text="Explains it">
+          {(props) => (
+            <button type="button" {...props}>
+              Trigger
+            </button>
+          )}
+        </Tooltip>
+      </dialog>,
+    );
+    // The host is found once the trigger is in the document: the next render places the bubble.
+    rerender(
+      <dialog open data-testid="sheet">
+        <Tooltip text="Explains it">
+          {(props) => (
+            <button type="button" {...props}>
+              Trigger
+            </button>
+          )}
+        </Tooltip>
+      </dialog>,
+    );
+    await userEvent.setup().hover(screen.getByRole('button', { name: 'Trigger' }));
+    expect(screen.getByTestId('sheet')).toContainElement(screen.getByRole('tooltip'));
+  });
+});

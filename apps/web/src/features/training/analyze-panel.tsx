@@ -186,6 +186,8 @@ export function AnalyzePanel({
 
   const off = subscription.inferenceMode === 'off';
   const empty = items.length === 0;
+  const batch = items.slice(0, MAX_SELECTED_ARTICLES);
+  const partial = items.length > batch.length;
   const hint = !showAnalyze
     ? null
     : empty
@@ -227,8 +229,15 @@ export function AnalyzePanel({
     );
   }
 
-  function accepted(sent: readonly ArticleListItem[], requests: AnalyzeResponse['requests']) {
+  function accepted(
+    sent: readonly ArticleListItem[],
+    requests: AnalyzeResponse['requests'],
+    inference: AnalyzeResponse['inference'],
+  ) {
     const sentIds = sent.map(({ id }) => id);
+    // The answer says what the feed is now (an off feed is training); the shared list takes it in at
+    // once, so a later panel never sends the old version.
+    subscriptions.setInference(subscription.feed.id, inference);
     void subscriptions.refresh();
     recordRequests(requests);
     refreshArticles();
@@ -266,17 +275,17 @@ export function AnalyzePanel({
     if (empty || sending.current) return;
     sending.current = true;
     const signIn = session.currentSignIn();
-    const sent = items;
-    let requests: AnalyzeResponse['requests'];
+    const sent = batch;
+    let answer: AnalyzeResponse;
     try {
-      ({ requests } = await analyze.mutateAsync({
+      answer = await analyze.mutateAsync({
         params: { feedId: subscription.feed.id },
         body: {
           articles: sent.map(({ id, contentRevision }) => ({ id, contentRevision })),
           expectedInferenceVersion: subscription.inferenceVersion,
           ...(off ? { startTraining: true } : {}),
         },
-      }));
+      });
     } catch (error) {
       if (session.currentSignIn() !== signIn) return;
       refused(sent, error);
@@ -285,7 +294,7 @@ export function AnalyzePanel({
       sending.current = false;
     }
     if (session.currentSignIn() !== signIn) return;
-    accepted(sent, requests);
+    accepted(sent, answer.requests, answer.inference);
   }
 
   function remove(articleId: string) {
@@ -321,7 +330,9 @@ export function AnalyzePanel({
       className="flex flex-col gap-3 outline-none"
     >
       <p className="text-sm font-medium">
-        {t('panel.count', { selected: selectedCount ?? items.length, max: MAX_SELECTED_ARTICLES })}
+        {selectedCount === undefined
+          ? t('panel.count', { selected: items.length, max: MAX_SELECTED_ARTICLES })
+          : t('panel.total', { count: selectedCount })}
       </p>
       {empty || !listSelected ? null : (
         <ol
@@ -370,7 +381,12 @@ export function AnalyzePanel({
           >
             {empty
               ? t('panel.none')
-              : t(off ? 'panel.start' : 'panel.analyze', { count: items.length })}
+              : partial
+                ? t(off ? 'panel.startOf' : 'panel.analyzeOf', {
+                    max: batch.length,
+                    total: items.length,
+                  })
+                : t(off ? 'panel.start' : 'panel.analyze', { count: items.length })}
           </Button>
         ) : null}
         {actions}

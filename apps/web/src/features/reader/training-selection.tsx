@@ -1,9 +1,10 @@
 import type { ArticleListItem } from '@bantoozi/shared';
-import { useState, type ReactNode, type RefObject } from 'react';
+import { useEffect, useState, type ReactNode, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ArticleRowProps } from '../article/article-row.js';
 import { Button } from '../../components/button.js';
+import { Checkbox } from '../../components/checkbox.js';
 import { useReaderActions } from './actions/provider.js';
 import { AnalyzePanel } from '../training/analyze-panel.js';
 import { useArticleSelection } from '../training/selection.js';
@@ -18,6 +19,8 @@ const SELECTABLE: ReadonlySet<AnalysisStatus> = new Set(['not_requested', 'faile
 export interface FeedTraining {
   /** The chosen titles and the button that sends them, above the rows; null while none is chosen. */
   panel: ReactNode;
+  /** The checkbox that selects or deselects every loaded row; null where rows cannot be chosen. */
+  selectAll: ReactNode;
   /** The checkbox of a row, for the rows that can be chosen. */
   selectionOf: (item: ArticleListItem) => ArticleRowProps['selection'];
 }
@@ -54,8 +57,10 @@ function BulkActions({
   const store = useReaderActions();
   const count = items.length;
 
+  // Like and Dislike set the rating: an article that already has it is left as it is.
   function rateAll(rating: 1 | -1) {
     for (const item of items) {
+      if (store.view(item).rating === rating) continue;
       store.dispatch(item, {
         type: 'rate',
         rating,
@@ -85,15 +90,33 @@ function BulkActions({
 export function useFeedTraining(
   view: ReaderView,
   listRef: RefObject<HTMLElement | null>,
+  rows: readonly ArticleListItem[],
 ): FeedTraining {
+  const { t } = useTranslation('training');
   const { subscription } = useViewTitle(view);
-  const selection = useArticleSelection();
-  const analyzable = selection.items.filter((item) => SELECTABLE.has(item.analysis.status));
+  const selection = useArticleSelection(Infinity);
+  // The first ones sent are the first ones in the list.
+  const position = new Map(rows.map((row, index) => [row.id, index]));
+  // The chosen articles as the list has them now, not as they were when they were ticked: their
+  // analysis may have started since. One the list no longer holds keeps the way it was chosen.
+  const current = new Map(rows.map((row) => [row.id, row]));
+  const chosenNow = selection.items.map((item) => current.get(item.id) ?? item);
+  const analyzable = chosenNow
+    .filter((item) => SELECTABLE.has(item.analysis.status))
+    .sort((a, b) => (position.get(a.id) ?? rows.length) - (position.get(b.id) ?? rows.length));
+  const chosen = rows.filter((row) => selection.has(row.id)).length;
+  const every = rows.length > 0 && chosen === rows.length;
   // A refusal can remove every chosen article; the panel stays to say so.
   const [refused, setRefused] = useState(false);
+  // A list left with no rows shows neither the chosen articles nor a way to let go of them.
+  const empty = rows.length === 0 && selection.items.length > 0;
+  const { clear } = selection;
+  useEffect(() => {
+    if (empty) clear();
+  }, [empty, clear]);
 
   if (view.kind !== 'feed' || subscription === undefined) {
-    return { panel: null, selectionOf: () => undefined };
+    return { panel: null, selectAll: null, selectionOf: () => undefined };
   }
 
   return {
@@ -112,7 +135,7 @@ export function useFeedTraining(
             listSelected={false}
             actions={
               <BulkActions
-                items={selection.items}
+                items={chosenNow}
                 onDone={(articleIds) => {
                   setRefused(false);
                   selection.remove(articleIds);
@@ -130,6 +153,20 @@ export function useFeedTraining(
           />
         </div>
       ) : null,
+    selectAll:
+      rows.length === 0 ? null : (
+        <Checkbox
+          label={t(every ? 'selectAll.deselect' : 'selectAll.select')}
+          checked={every}
+          indeterminate={chosen > 0 && !every}
+          onChange={() => {
+            setRefused(false);
+            // Deselecting all also lets go of chosen articles a reload no longer lists.
+            if (every) selection.clear();
+            else selection.addAll(rows);
+          }}
+        />
+      ),
     selectionOf: (item) => ({
       selected: selection.has(item.id),
       onChange: (selected) => {

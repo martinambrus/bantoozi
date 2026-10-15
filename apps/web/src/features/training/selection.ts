@@ -16,15 +16,17 @@ export interface ArticleSelection {
    * person so and answers false; every other call answers true.
    */
   toggle(item: ArticleListItem, on: boolean): boolean;
+  /** Selects these articles too, in this order; the ones already selected keep their place. */
+  addAll(items: readonly ArticleListItem[]): void;
   remove(articleIds: readonly string[]): void;
   clear(): void;
 }
 
 /**
  * The articles a person has chosen to have analyzed (spec 06 §10): never filled by the app, and at
- * most as many as the API takes at once. Several calls in one event see each other's changes.
+ * most `max` (by default as many as the API takes at once). Several calls in one event see each other's changes.
  */
-export function useArticleSelection(): ArticleSelection {
+export function useArticleSelection(max: number = MAX_SELECTED_ARTICLES): ArticleSelection {
   const { t } = useTranslation('training');
   const toast = useToast();
   const [items, setItems] = useState<readonly ArticleListItem[]>([]);
@@ -44,14 +46,23 @@ export function useArticleSelection(): ArticleSelection {
         return true;
       }
       if (selected) return true;
-      if (held.length >= MAX_SELECTED_ARTICLES) {
-        toast.show({ message: t('limit', { max: MAX_SELECTED_ARTICLES }), tone: 'info' });
+      if (held.length >= max) {
+        toast.show({ message: t('limit', { max }), tone: 'info' });
         return false;
       }
       replace([...held, item]);
       return true;
     },
-    [replace, t, toast],
+    [replace, t, toast, max],
+  );
+
+  const addAll = useCallback(
+    (more: readonly ArticleListItem[]) => {
+      const held = latest.current;
+      const fresh = more.filter((item) => !held.some((candidate) => candidate.id === item.id));
+      if (fresh.length > 0) replace([...held, ...fresh]);
+    },
+    [replace],
   );
 
   const remove = useCallback(
@@ -71,7 +82,7 @@ export function useArticleSelection(): ArticleSelection {
   const has = useCallback((articleId: string) => ids.has(articleId), [ids]);
 
   return useMemo(
-    () => ({ items, has, toggle, remove, clear }),
-    [items, has, toggle, remove, clear],
+    () => ({ items, has, toggle, addAll, remove, clear }),
+    [items, has, toggle, addAll, remove, clear],
   );
 }

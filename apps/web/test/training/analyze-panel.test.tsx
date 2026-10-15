@@ -5,12 +5,13 @@ import type {
   Subscription,
 } from '@bantoozi/shared';
 import type { InfiniteData } from '@tanstack/react-query';
+import { useState } from 'react';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FOCUS_RING } from '../../src/components/cx.js';
 import { articleKeys } from '../../src/features/article/query-keys.js';
-import { subscriptionsKey } from '../../src/features/feeds/subscriptions.js';
+import { subscriptionsKey, useSubscriptions } from '../../src/features/feeds/subscriptions.js';
 import { AnalyzePanel, type AnalyzePanelProps } from '../../src/features/training/analyze-panel.js';
 import { useArticleSelection } from '../../src/features/training/selection.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
@@ -53,14 +54,27 @@ function many(count: number): ArticleListItem[] {
   );
 }
 
-const accepted: ApiRouteHandler = (request) =>
-  json(202, {
-    requests: (bodyOf(request) as { articles: { id: string }[] }).articles.map(({ id }) => ({
+const ANSWERED = { mode: 'training', version: '2' };
+
+/** The API's answer: an off feed that was started is training one version later. */
+const accepted: ApiRouteHandler = (request) => {
+  const body = bodyOf(request) as {
+    articles: { id: string }[];
+    expectedInferenceVersion: string;
+    startTraining?: boolean;
+  };
+  return json(202, {
+    requests: body.articles.map(({ id }) => ({
       id: requestId(Number(id)),
       articleId: id,
       status: 'pending',
     })),
+    inference:
+      body.startTraining === true
+        ? { mode: 'training', version: String(BigInt(body.expectedInferenceVersion) + 1n) }
+        : { mode: 'training', version: body.expectedInferenceVersion },
   });
+};
 
 function renderPanel(props: Partial<AnalyzePanelProps> = {}, options: ReaderHarnessOptions = {}) {
   const onSubmitted = vi.fn();
@@ -236,6 +250,7 @@ describe('sending the selection', () => {
     );
     answer.resolve(
       json(202, {
+        inference: ANSWERED,
         requests: picked.map(({ id }) => ({
           id: requestId(Number(id)),
           articleId: id,
@@ -259,6 +274,7 @@ describe('sending the selection', () => {
     expect(send()).toBeDisabled();
     answer.resolve(
       json(202, {
+        inference: ANSWERED,
         requests: picked.map(({ id }) => ({
           id: requestId(Number(id)),
           articleId: id,
@@ -285,6 +301,7 @@ describe('sending the selection', () => {
     await waitFor(() => expect(analyzed(view)).toHaveLength(1));
     answer.resolve(
       json(202, {
+        inference: ANSWERED,
         requests: picked.map(({ id }) => ({
           id: requestId(Number(id)),
           articleId: id,
@@ -365,6 +382,60 @@ describe('when the server refuses', () => {
     await view.user.click(send());
 
     expect(await screen.findByRole('alert')).toHaveTextContent('1 selected article changed');
+  });
+
+  describe('a feed that is off, once its batch is accepted', () => {
+    function Watcher() {
+      const { data } = useSubscriptions();
+      const found = data?.find((item) => item.feed.id === '1');
+      // A later panel, mounted when another selection is made, reads the feed from the shared list.
+      const [items, setItems] = useState<ArticleListItem[] | null>(null);
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              setItems(picked.slice(0, 1));
+            }}
+          >
+            Select another
+          </button>
+          {found === undefined || items === null ? null : (
+            <AnalyzePanel subscription={found} items={items} onSubmitted={vi.fn()} />
+          )}
+        </>
+      );
+    }
+
+    it('gives a panel mounted afterwards the new mode and version, with no startTraining', async () => {
+      let sent = 0;
+      const view = renderReader(<Watcher />, {
+        routes: {
+          [ROUTE]: (request, params) => {
+            sent += 1;
+            return accepted(request, params);
+          },
+          // The list is read again after the answer, but that read is still on its way.
+          'GET /subscriptions': () =>
+            sent === 0 ? json(200, [off]) : new Promise<Response>(() => undefined),
+        },
+      });
+      await view.user.click(await screen.findByRole('button', { name: 'Select another' }));
+      await view.user.click(send());
+      await waitFor(() => expect(view.calls('POST', ANALYZE)).toHaveLength(1));
+      expect(bodyOf(view.calls('POST', ANALYZE)[0]!)).toMatchObject({
+        expectedInferenceVersion: '1',
+        startTraining: true,
+      });
+      await waitFor(() => expect(send()).toHaveAccessibleName(/^Analyze selected/));
+
+      await view.user.click(send());
+
+      await waitFor(() => expect(view.calls('POST', ANALYZE)).toHaveLength(2));
+      const second = bodyOf(view.calls('POST', ANALYZE)[1]!);
+      expect(second).toMatchObject({ expectedInferenceVersion: '2' });
+      expect(second).not.toHaveProperty('startTraining');
+    });
   });
 
   it('refreshes the subscriptions and asks to check and send again when the version moved on', async () => {
@@ -453,7 +524,11 @@ describe('after the requests are accepted', () => {
       { items: picked.slice(0, 2) },
       {
         routes: {
-          [ROUTE]: () => json(202, { requests: [state('pending', 1), state('complete', 2)] }),
+          [ROUTE]: () =>
+            json(202, {
+              inference: ANSWERED,
+              requests: [state('pending', 1), state('complete', 2)],
+            }),
         },
       },
     );
@@ -511,7 +586,11 @@ describe('after the requests are accepted', () => {
           known.push(view.queryClient.getQueryData<ArticleListResponse>(listed)!);
         },
       },
-      { routes: { [ROUTE]: () => json(202, { requests: [state('running', 1)] }) } },
+      {
+        routes: {
+          [ROUTE]: () => json(202, { inference: ANSWERED, requests: [state('running', 1)] }),
+        },
+      },
     );
     view.queryClient.setQueryData<ArticleListResponse>(listed, page(picked));
 
@@ -721,6 +800,7 @@ describe('where the focus goes', () => {
   const titleList = () => screen.queryByRole('list', { name: 'Selected articles' });
   const answered = (...numbers: number[]) =>
     json(202, {
+      inference: ANSWERED,
       requests: numbers.map((n) => ({ id: requestId(n), articleId: String(n), status: 'pending' })),
     });
   const refusing = (...articleIds: string[]) => ({
@@ -835,6 +915,7 @@ describe('where the focus goes', () => {
 describe('handing the focus on', () => {
   const sentAll = () =>
     json(202, {
+      inference: ANSWERED,
       requests: picked.map(({ id }) => ({
         id: requestId(Number(id)),
         articleId: id,
@@ -957,7 +1038,10 @@ describe('an answer that comes after the panel is gone', () => {
 
     view.unmount();
     answer.resolve(
-      json(202, { requests: [{ id: requestId(1), articleId: '1', status: 'pending' }] }),
+      json(202, {
+        inference: ANSWERED,
+        requests: [{ id: requestId(1), articleId: '1', status: 'pending' }],
+      }),
     );
 
     await waitFor(() => expect(view.onSubmitted).toHaveBeenCalledTimes(1));
@@ -976,6 +1060,31 @@ describe('an answer that comes after the panel is gone', () => {
     ]);
     expect(stale.articlesStale()).toBe(true);
     expect(stale.subscriptionsStale()).toBe(true);
+  });
+});
+
+describe('an answer older than the subscription in the cache', () => {
+  it('leaves the newer mode and version the feed got meanwhile', async () => {
+    const answer = deferred<Response>();
+    const view = renderPanel(
+      { items: picked.slice(0, 1) },
+      { routes: { [ROUTE]: () => answer.promise } },
+    );
+    const subscriptions = subscriptionsKey(USER_A_ID);
+    view.queryClient.setQueryData<Subscription[]>(subscriptions, [off]);
+    await view.user.click(send());
+    await waitFor(() => expect(analyzed(view)).toHaveLength(1));
+
+    view.queryClient.setQueryData<Subscription[]>(subscriptions, [active]);
+    answer.resolve(
+      json(202, {
+        inference: ANSWERED,
+        requests: [{ id: requestId(1), articleId: '1', status: 'pending' }],
+      }),
+    );
+
+    await waitFor(() => expect(view.onSubmitted).toHaveBeenCalledTimes(1));
+    expect(view.queryClient.getQueryData<Subscription[]>(subscriptions)).toEqual([active]);
   });
 });
 
@@ -1020,7 +1129,10 @@ describe('an answer that comes after signing in again', () => {
     const { view, answer, stale } = await sentBeforeSigningInAgain();
 
     answer.resolve(
-      json(202, { requests: [{ id: requestId(1), articleId: '1', status: 'pending' }] }),
+      json(202, {
+        inference: ANSWERED,
+        requests: [{ id: requestId(1), articleId: '1', status: 'pending' }],
+      }),
     );
 
     expect(await afterwards(view, stale)).toEqual(AS_LOADED);

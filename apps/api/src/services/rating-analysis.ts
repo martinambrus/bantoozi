@@ -18,8 +18,9 @@ import { captureSelectionSnapshot, loadSnapshotConfig } from './analysis.js';
  * The analysis request a rating attaches to when the client sent none (D-238): rating an article
  * of a training (or active) feed asks for its analysis, so the rating can teach once it completes.
  * Runs in the rating's transaction before the rating is applied, so the request's frozen input is
- * pre-feedback (spec 06 §8.2). A current request of the article on one of those feeds is reused;
- * otherwise one is created on the first training feed carrying it (then active ones). Returns
+ * pre-feedback (spec 06 §8.2). A current request of the article on one of those feeds is reused,
+ * even when an active feed also admitted it; otherwise one is created on the first training feed
+ * carrying it (then active ones). Returns
  * undefined, and the rating goes on without one, when no such feed carries the article, an active
  * feed analyses it on its own, the article changed since it was shown, or classification is not
  * configured.
@@ -38,7 +39,7 @@ export async function analysisForRating(
   // The user row first, as `POST /subscriptions/:feedId/analyze` does: one lock order.
   const user = await readOwnUser(tx, { lock: true });
   const feeds = await ratingAnalysisFeeds(tx, input.articleId);
-  if (feeds.length === 0 || feeds.some((feed) => feed.admitted)) return undefined;
+  if (feeds.length === 0) return undefined;
   const article = { id: input.articleId, contentRevision: input.contentRevision };
   for (const feed of feeds) {
     const reusable = await reusableAnalysisRequests(tx, {
@@ -50,6 +51,8 @@ export async function analysisForRating(
     if (existing !== undefined) return existing.id;
   }
 
+  // An admitted article is analysed by its active feed on its own: reuse only, never create.
+  if (feeds.some((feed) => feed.admitted)) return undefined;
   const [chosen] = feeds;
   if (chosen === undefined) return undefined;
   await lockFeeds(tx, [chosen.feedId]);
