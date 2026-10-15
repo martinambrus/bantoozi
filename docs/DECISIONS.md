@@ -2321,3 +2321,6 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   view, `defaultTier` in a scoped For you or Maybe view and 1 in a scoped Everything else or New view, so the numbers
   equal the list. The per-feed unread badges of `GET /subscriptions` (and of the sidebar folders, which sum them) are
   the counts of each feed's own `lane=all` view, so they use `feedMinTier` and never `defaultTier`. Settings → Reading preferences has a "Minimum tier in feeds, folders and labels" setting.
+- D-249: 2026-10-15 (follow-up to D-242) — Adding a library card at the card limit offers the same swap as the editor.
+  `POST /library/:id/adopt` accepts `replaceCardId` and removes that holding in the same transaction before adopting
+  (same errors as `POST /cards`); Interests → Library shows "Replace a card to make room" on `QUOTA_EXCEEDED` `maxCards`.

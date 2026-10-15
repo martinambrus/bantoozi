@@ -392,7 +392,8 @@ When the page becomes visible again after `/open`:
   - **Suggestions:** Add / Dismiss.
   - **Card limit (D-242):** when creating a card fails with `QUOTA_EXCEEDED` `maxCards`, the editor offers
     "Replace a card to make room": the held cards ordered by `GET /cards/usage` (fewest recent liked matches
-    first), and "Replace and save" resends the card with `replaceCardId`.
+    first), and "Replace and save" resends the card with `replaceCardId`. Adding a library card at the limit
+    offers the same choice and resends the adopt with `replaceCardId`; Cancel leaves everything as it was (D-249).
   - **Card drafts (D-240):** an editor opened from one or more articles asks `POST /cards/drafts`, says
     "Writing a name and description…" while it waits (polling `GET /cards/drafts/:id` each second, at
     most 30 s; the empty name and interest fields say "Loading…") and fills them with the draft, never
