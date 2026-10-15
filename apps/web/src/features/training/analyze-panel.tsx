@@ -173,6 +173,10 @@ export function AnalyzePanel({
   const analyze = useApiMutation(routes.subscriptionsAnalyze);
   const hintId = useId();
   const sending = useRef(false);
+  // An off feed is training once the request is accepted; until the subscriptions say so, the next
+  // batch would send the old version with `startTraining` and be refused as stale.
+  const syncing = useRef(false);
+  const [syncingNow, setSyncingNow] = useState(false);
   const section = useRef<HTMLElement>(null);
   const removers = useRef(new Map<string, HTMLButtonElement>());
   const refocus = useRef<Refocus | null>(null);
@@ -231,7 +235,14 @@ export function AnalyzePanel({
 
   function accepted(sent: readonly ArticleListItem[], requests: AnalyzeResponse['requests']) {
     const sentIds = sent.map(({ id }) => id);
-    void subscriptions.refresh();
+    if (off) {
+      syncing.current = true;
+      setSyncingNow(true);
+    }
+    void subscriptions.refresh().finally(() => {
+      syncing.current = false;
+      setSyncingNow(false);
+    });
     recordRequests(requests);
     refreshArticles();
     const panel = section.current;
@@ -265,7 +276,7 @@ export function AnalyzePanel({
   // The answer is acted on even when the panel is gone by then, since the cache still has to know,
   // but not once the sign-in that sent it has ended.
   async function send() {
-    if (empty || sending.current) return;
+    if (empty || sending.current || syncing.current) return;
     sending.current = true;
     const signIn = session.currentSignIn();
     const sent = batch;
@@ -366,7 +377,7 @@ export function AnalyzePanel({
         {showAnalyze ? (
           <Button
             disabled={empty}
-            loading={analyze.isPending}
+            loading={analyze.isPending || syncingNow}
             aria-describedby={hint === null ? undefined : hintId}
             onClick={() => {
               void send();

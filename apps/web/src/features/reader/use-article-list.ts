@@ -123,11 +123,15 @@ export function useArticleList(
   // Page one alone, in place of every page loaded: those stay, on the screen and in the copy the
   // device keeps, until it is there, and stay with the error when it cannot be had. A load on its
   // way is cancelled first, or the new one would wait for it and take its pages instead.
-  const reload = useCallback(async () => {
+  // Resolves whether the first page loaded; a failure is never thrown.
+  const reload = useCallback(async (): Promise<boolean> => {
     await queryClient.cancelQueries({ queryKey, exact: true });
-    await queryClient
+    return queryClient
       .infiniteQuery({ ...listPages(api, filter, queryKey), pages: 1, staleTime: 0 })
-      .catch(() => undefined);
+      .then(
+        () => true,
+        () => false,
+      );
   }, [api, filter, queryClient, queryKey]);
 
   // Every page that is loaded, one after the other. If a cursor of the chain is refused the rows stay

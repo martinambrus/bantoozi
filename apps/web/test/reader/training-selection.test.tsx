@@ -372,6 +372,61 @@ describe('select all', () => {
   });
 });
 
+describe('reading the selection as it is now', () => {
+  it('holds the next batch of an off feed until the subscriptions are read again', async () => {
+    const gate: { hold?: Promise<unknown> } = {};
+    const training = { ...verge('training'), inferenceVersion: '6' };
+    const { app } = await openFeed(numbered(25), {
+      subscriptions: [verge('off'), other],
+      routes: {
+        'GET /subscriptions': () =>
+          gate.hold === undefined
+            ? json(200, [verge('off'), other])
+            : gate.hold.then(() => json(200, [training, other])),
+      },
+    });
+    await app.user.click(
+      screen.getByRole('checkbox', { name: /^(Select|Deselect) all articles$/ }),
+    );
+    const hold = deferred<void>();
+    gate.hold = hold.promise;
+
+    await app.user.click(sendButton(/^Start training and analyze 20 of 25$/));
+
+    await waitFor(() => expect(app.calls(ANALYZE)).toHaveLength(1));
+    await waitFor(() => expect(screen.getByText('5 selected')).toBeVisible());
+    const next = within(panel()!).getAllByRole('button')[0]!;
+    await app.user.click(next);
+    expect(next).toBeDisabled();
+    expect(app.calls(ANALYZE)).toHaveLength(1);
+
+    hold.resolve();
+    await app.user.click(
+      await screen.findByRole('button', { name: 'Analyze selected 5 articles' }),
+    );
+
+    await waitFor(() => expect(app.calls(ANALYZE)).toHaveLength(2));
+    expect(bodyOf(app.calls(ANALYZE)[1]!)).toMatchObject({ expectedInferenceVersion: '6' });
+    expect(bodyOf(app.calls(ANALYZE)[1]!)).not.toHaveProperty('startTraining');
+  });
+
+  it('does not send a selected article whose analysis has started since', async () => {
+    const { app, served } = await openFeed(numbered(3));
+    await choose(app, 'Article 1', 'Article 2');
+    expect(sendButton('Analyze selected 2 articles')).toBeEnabled();
+    served.items = served.items.map((row) =>
+      row.id === '1' ? { ...row, analysis: asked('pending', 1) } : row,
+    );
+
+    await reload(app);
+
+    await app.user.click(await screen.findByRole('button', { name: 'Analyze selected 1 article' }));
+    await waitFor(() => expect(app.calls(ANALYZE)).toHaveLength(1));
+    const { articles } = bodyOf(app.calls(ANALYZE)[0]!) as { articles: { id: string }[] };
+    expect(articles.map(({ id }) => id)).toEqual(['2']);
+  });
+});
+
 describe('the selection belongs to the view', () => {
   const MOVES = [
     ['another feed', '/read/feed/$feedId', { feedId: '8' }],
@@ -957,6 +1012,20 @@ describe('the selection bar', () => {
     expect(ratedBodies(app).map(({ url, body }) => [url, body['rating']])).toEqual([
       ['/api/v1/articles/1/rating', -1],
       ['/api/v1/articles/3/rating', -1],
+    ]);
+    expect(panel()).toBeNull();
+  });
+
+  it('sets the pressed rating and never un-rates: articles that already have it are skipped', async () => {
+    const { app } = await openFeed([item(1, { rating: 1 }), item(2, { rating: -1 }), item(3)]);
+    await choose(app, 'Article 1', 'Article 2', 'Article 3');
+
+    await app.user.click(bulk(/^Like 3 selected articles$/));
+
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
+    expect(ratedBodies(app).map(({ url, body }) => [url, body['rating']])).toEqual([
+      ['/api/v1/articles/2/rating', 1],
+      ['/api/v1/articles/3/rating', 1],
     ]);
     expect(panel()).toBeNull();
   });

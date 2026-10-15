@@ -57,8 +57,10 @@ function BulkActions({
   const store = useReaderActions();
   const count = items.length;
 
+  // Like and Dislike set the rating: an article that already has it is left as it is.
   function rateAll(rating: 1 | -1) {
     for (const item of items) {
+      if (store.view(item).rating === rating) continue;
       store.dispatch(item, {
         type: 'rate',
         rating,
@@ -95,7 +97,11 @@ export function useFeedTraining(
   const selection = useArticleSelection(Infinity);
   // The first ones sent are the first ones in the list.
   const position = new Map(rows.map((row, index) => [row.id, index]));
-  const analyzable = selection.items
+  // The chosen articles as the list has them now, not as they were when they were ticked: their
+  // analysis may have started since. One the list no longer holds keeps the way it was chosen.
+  const current = new Map(rows.map((row) => [row.id, row]));
+  const chosenNow = selection.items.map((item) => current.get(item.id) ?? item);
+  const analyzable = chosenNow
     .filter((item) => SELECTABLE.has(item.analysis.status))
     .sort((a, b) => (position.get(a.id) ?? rows.length) - (position.get(b.id) ?? rows.length));
   const chosen = rows.filter((row) => selection.has(row.id)).length;
@@ -123,7 +129,7 @@ export function useFeedTraining(
             listSelected={false}
             actions={
               <BulkActions
-                items={selection.items}
+                items={chosenNow}
                 onDone={(articleIds) => {
                   setRefused(false);
                   selection.remove(articleIds);

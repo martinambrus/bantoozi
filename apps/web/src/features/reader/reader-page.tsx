@@ -183,6 +183,9 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
       ? undefined
       : countOf(scoped.data, view.lane);
   const baseline = useRef<number | null>(null);
+  // The count the list was last asked to load by itself for, so a failed reload is not retried on
+  // every render: the next change of the count, or the person, asks again.
+  const reloadedFor = useRef<number | null>(null);
   const [added, setAdded] = useState(0);
   const addedNow = useRef(0);
   const offer = useCallback((next: number) => {
@@ -219,9 +222,17 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
       return;
     }
     if (window.scrollY <= TOP_PX && !expandedNow.current) {
-      baseline.current = count;
-      offer(0);
-      void reload();
+      // The list being loaded moves the baseline and clears the offer (above); a reload that
+      // fails leaves both, so the new articles are offered instead.
+      if (reloadedFor.current === count) return;
+      reloadedFor.current = count;
+      void reload().then((loaded) => {
+        if (loaded) return;
+        const latest = latestCount.current;
+        if (baseline.current === known && latest !== undefined && latest > known) {
+          offer(latest - known);
+        }
+      });
       return;
     }
     offer(count - known);

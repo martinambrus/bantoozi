@@ -2,7 +2,8 @@ import { act, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { restoreVisibility } from '../article/harness.js';
-import { createReaderHarness, item } from './support.js';
+import { json } from '../api/fake-fetch.js';
+import { createReaderHarness, item, page } from './support.js';
 
 const { open } = createReaderHarness();
 
@@ -46,6 +47,27 @@ describe('new articles while the reader is open', () => {
     expect(lists(app)).toBe(listed + 1);
     expect(app.calls('GET /articles').at(-1)!.query.has('cursor')).toBe(false);
     expect(screen.queryByRole('button', { name: /new articles?/ })).toBeNull();
+  });
+
+  it('keeps offering the new articles when the reload by itself fails', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let broken = false;
+    const { app, state } = await open({
+      path: '/read/for_you',
+      items: [item(1), item(2)],
+      list: () =>
+        broken
+          ? json(503, { error: { code: 'UNAVAILABLE', message: 'down (test)' } })
+          : json(200, page([item(1), item(2)])),
+    });
+    await screen.findByRole('article', { name: 'Article 1' });
+    broken = true;
+    state.counts = { ...state.counts, forYou: state.counts.forYou + 2 };
+
+    await advance(31_000);
+
+    expect(await screen.findByRole('button', { name: 'Show 2 new articles' })).toBeInTheDocument();
+    expect(app.calls('GET /articles').length).toBeGreaterThan(1);
   });
 
   it('offers a banner instead while an article is open, and loads the articles when it is pressed', async () => {
