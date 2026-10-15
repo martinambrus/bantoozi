@@ -2368,3 +2368,7 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   selection is never capped. The reader keeps `not_requested` and adds `analysis.overDailyCap`; the row shows "Not analyzed –
   over daily budget" with a tooltip naming the cap. Merges keep a row admitted if either side was. Counter rows are deleted
   after 7 days (`house.purge-auth`). Spec 02, 05 §1.1, 08, 09, RUNBOOK.
+  PR #42 review: "already analysed" also covers an article whose stored facets the enrich step would reuse (same revision,
+  active enrich set, pinned primary model; `isReusableFacet`, shared with `article.enrich`), since an explicit analysis on
+  another feed leaves the pipeline state behind. Admission cannot compute the enrich input-state hash, so an article whose
+  translation changed after that analysis is admitted without a slot and its enrich re-runs Call A (rare; accepted).
