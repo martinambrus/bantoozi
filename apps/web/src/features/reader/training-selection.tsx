@@ -1,5 +1,5 @@
 import type { ArticleListItem } from '@bantoozi/shared';
-import { useState, type ReactNode, type RefObject } from 'react';
+import { useEffect, useState, type ReactNode, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ArticleRowProps } from '../article/article-row.js';
@@ -108,6 +108,12 @@ export function useFeedTraining(
   const every = rows.length > 0 && chosen === rows.length;
   // A refusal can remove every chosen article; the panel stays to say so.
   const [refused, setRefused] = useState(false);
+  // A list left with no rows shows neither the chosen articles nor a way to let go of them.
+  const empty = rows.length === 0 && selection.items.length > 0;
+  const { clear } = selection;
+  useEffect(() => {
+    if (empty) clear();
+  }, [empty, clear]);
 
   if (view.kind !== 'feed' || subscription === undefined) {
     return { panel: null, selectAll: null, selectionOf: () => undefined };

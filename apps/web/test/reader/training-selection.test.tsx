@@ -348,6 +348,22 @@ describe('select all', () => {
     expect(panel()).toBeNull();
   });
 
+  it('lets go of the selection when a reload leaves the list empty', async () => {
+    const { app, served } = await openFeed(numbered(3));
+    await choose(app, 'Article 2');
+    expect(panel()).not.toBeNull();
+
+    served.items = [];
+    await app.user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'Article 1' })).toBeNull());
+    served.items = numbered(3);
+    await app.user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await screen.findByRole('article', { name: 'Article 1' });
+
+    expect(ticked(titles(3))).toEqual([]);
+    expect(panel()).toBeNull();
+  });
+
   it('selects every loaded row from none or some, and deselects all when all are selected', async () => {
     const { app } = await openFeed(numbered(3));
 
