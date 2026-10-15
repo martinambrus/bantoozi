@@ -10,6 +10,8 @@ import { subscriptionsKey } from '../feeds/subscriptions.js';
 import {
   listsUnread,
   scopeOf,
+  sortSetting,
+  tierSetting,
   usesSort,
   usesTier,
   type ReaderView,
@@ -26,18 +28,22 @@ export interface ListFilter extends ViewScope {
   status?: 'unread' | 'all';
 }
 
-type Settings = Pick<UserPreferences, 'defaultTier' | 'sort' | 'showRead'>;
+type Settings = Pick<
+  UserPreferences,
+  'defaultTier' | 'feedMinTier' | 'sort' | 'feedSort' | 'showRead'
+>;
 
 /**
- * Spec 09 §3.1: the tier filters the lanes that have tiers, the sort only For you; "Show read" asks
- * the unread lanes for the read articles too (D-234).
+ * Spec 09 §3.1: the tier (a scoped view of all lanes has its own, D-248) filters the lanes that
+ * have tiers, the sort For you and the views of one
+ * feed, folder or label (D-247); "Show read" asks the unread lanes for the read articles too (D-234).
  */
 export function listFilter(view: ReaderView, settings: Settings): ListFilter {
   return {
     lane: view.lane,
     ...scopeOf(view),
-    ...(usesTier(view.lane) ? { minTier: settings.defaultTier } : {}),
-    ...(usesSort(view.lane) ? { sort: settings.sort } : {}),
+    ...(usesTier(view.lane) ? { minTier: settings[tierSetting(view)] } : {}),
+    ...(usesSort(view) ? { sort: settings[sortSetting(view)] } : {}),
     ...(listsUnread(view.lane) && settings.showRead ? { status: 'all' as const } : {}),
   };
 }

@@ -369,6 +369,49 @@
                                 "date"
                               ]
                             },
+                            "feedSort": {
+                              "default": "date",
+                              "type": "string",
+                              "enum": [
+                                "score",
+                                "date"
+                              ]
+                            },
+                            "feedMinTier": {
+                              "default": 1,
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    1
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    2
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    3
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    4
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    5
+                                  ]
+                                }
+                              ]
+                            },
                             "markReadOnExpand": {
                               "default": true,
                               "type": "boolean"
@@ -521,6 +564,8 @@
                             "simpleMode",
                             "showRead",
                             "sort",
+                            "feedSort",
+                            "feedMinTier",
                             "markReadOnExpand",
                             "markReadOnRate",
                             "feedbackPrompt",
@@ -961,6 +1006,49 @@
                                 "date"
                               ]
                             },
+                            "feedSort": {
+                              "default": "date",
+                              "type": "string",
+                              "enum": [
+                                "score",
+                                "date"
+                              ]
+                            },
+                            "feedMinTier": {
+                              "default": 1,
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    1
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    2
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    3
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    4
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    5
+                                  ]
+                                }
+                              ]
+                            },
                             "markReadOnExpand": {
                               "default": true,
                               "type": "boolean"
@@ -1113,6 +1201,8 @@
                             "simpleMode",
                             "showRead",
                             "sort",
+                            "feedSort",
+                            "feedMinTier",
                             "markReadOnExpand",
                             "markReadOnRate",
                             "feedbackPrompt",
@@ -1557,6 +1647,49 @@
                             "date"
                           ]
                         },
+                        "feedSort": {
+                          "default": "date",
+                          "type": "string",
+                          "enum": [
+                            "score",
+                            "date"
+                          ]
+                        },
+                        "feedMinTier": {
+                          "default": 1,
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                2
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                3
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                4
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                5
+                              ]
+                            }
+                          ]
+                        },
                         "markReadOnExpand": {
                           "default": true,
                           "type": "boolean"
@@ -1709,6 +1842,8 @@
                         "simpleMode",
                         "showRead",
                         "sort",
+                        "feedSort",
+                        "feedMinTier",
                         "markReadOnExpand",
                         "markReadOnRate",
                         "feedbackPrompt",
@@ -1915,6 +2050,47 @@
                         "enum": [
                           "score",
                           "date"
+                        ]
+                      },
+                      "feedSort": {
+                        "type": "string",
+                        "enum": [
+                          "score",
+                          "date"
+                        ]
+                      },
+                      "feedMinTier": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "enum": [
+                              1
+                            ]
+                          },
+                          {
+                            "type": "number",
+                            "enum": [
+                              2
+                            ]
+                          },
+                          {
+                            "type": "number",
+                            "enum": [
+                              3
+                            ]
+                          },
+                          {
+                            "type": "number",
+                            "enum": [
+                              4
+                            ]
+                          },
+                          {
+                            "type": "number",
+                            "enum": [
+                              5
+                            ]
+                          }
                         ]
                       },
                       "markReadOnExpand": {
@@ -2148,6 +2324,49 @@
                             "date"
                           ]
                         },
+                        "feedSort": {
+                          "default": "date",
+                          "type": "string",
+                          "enum": [
+                            "score",
+                            "date"
+                          ]
+                        },
+                        "feedMinTier": {
+                          "default": 1,
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                2
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                3
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                4
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                5
+                              ]
+                            }
+                          ]
+                        },
                         "markReadOnExpand": {
                           "default": true,
                           "type": "boolean"
@@ -2300,6 +2519,8 @@
                         "simpleMode",
                         "showRead",
                         "sort",
+                        "feedSort",
+                        "feedMinTier",
                         "markReadOnExpand",
                         "markReadOnRate",
                         "feedbackPrompt",
@@ -2882,6 +3103,49 @@
                                 "date"
                               ]
                             },
+                            "feedSort": {
+                              "default": "date",
+                              "type": "string",
+                              "enum": [
+                                "score",
+                                "date"
+                              ]
+                            },
+                            "feedMinTier": {
+                              "default": 1,
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    1
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    2
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    3
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    4
+                                  ]
+                                },
+                                {
+                                  "type": "number",
+                                  "enum": [
+                                    5
+                                  ]
+                                }
+                              ]
+                            },
                             "markReadOnExpand": {
                               "default": true,
                               "type": "boolean"
@@ -3034,6 +3298,8 @@
                             "simpleMode",
                             "showRead",
                             "sort",
+                            "feedSort",
+                            "feedMinTier",
                             "markReadOnExpand",
                             "markReadOnRate",
                             "feedbackPrompt",

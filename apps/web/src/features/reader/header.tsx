@@ -26,8 +26,11 @@ import {
   listsUnread,
   markReadLane,
   scopeOf,
+  sortSetting,
+  tierSetting,
   usesSort,
   usesTier,
+  viewMinTier,
   type ReaderView,
 } from './view.js';
 
@@ -35,6 +38,8 @@ type Tier = 1 | 2 | 3 | 4 | 5;
 
 interface TierSliderProps {
   preferences: UserPreferences;
+  /** The preference the slider is bound to. */
+  setting: 'defaultTier' | 'feedMinTier';
   onChange: (tier: Tier) => void;
 }
 
@@ -43,12 +48,12 @@ interface TierSliderProps {
  * for it jumps back and forth. So it shows where the hand put it until the account has changed,
  * which a refusal does too.
  */
-function TierSlider({ preferences, onChange }: TierSliderProps) {
+function TierSlider({ preferences, setting, onChange }: TierSliderProps) {
   const { t } = useTranslation('reader');
   const id = useId();
   const [moved, setMoved] = useState<{ basis: UserPreferences; tier: Tier } | null>(null);
   if (moved !== null && moved.basis !== preferences) setMoved(null);
-  const tier = moved?.basis === preferences ? moved.tier : preferences.defaultTier;
+  const tier = moved?.basis === preferences ? moved.tier : preferences[setting];
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -170,6 +175,7 @@ export function ReaderHeader({
               name={viewName}
               count={count}
               items={items}
+              minTier={viewMinTier(view, preferences)}
               onChanged={refresh}
             />
           )}
@@ -194,18 +200,19 @@ export function ReaderHeader({
         {usesTier(view.lane) ? (
           <TierSlider
             preferences={preferences}
-            onChange={(defaultTier) => settings.change({ defaultTier })}
+            setting={tierSetting(view)}
+            onChange={(tier) => settings.change({ [tierSetting(view)]: tier })}
           />
         ) : null}
-        {usesSort(view.lane) ? (
+        {usesSort(view) ? (
           <SegmentedControl
             label={t('header.sort')}
             options={[
               { value: 'score', label: t('header.sortScore') },
               { value: 'date', label: t('header.sortDate') },
             ]}
-            value={preferences.sort}
-            onValueChange={(sort) => settings.change({ sort })}
+            value={preferences[sortSetting(view)]}
+            onValueChange={(sort) => settings.change({ [sortSetting(view)]: sort })}
           />
         ) : null}
         <Switch
