@@ -780,6 +780,15 @@ export async function accessibleArticleTitles(
 }
 
 /**
+ * `exampleFromArticleTitle` (cards/validation.ts) in SQL, for `a.title`: drop the control characters
+ * that are not JS whitespace (0x00-0x08, 0x0E-0x1F, 0x7F), collapse runs of JS `\s` (spelled out;
+ * Postgres' `[[:space:]]` depends on the locale) to one space, trim, cut to 200 characters, trim.
+ */
+const ARTICLE_TITLE_EXAMPLE_SQL = sql.raw(
+  String.raw`btrim(left(btrim(regexp_replace(regexp_replace(a.title, '[\x00-\x08\x0E-\x1F\x7F]', '', 'g'), '[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+', ' ', 'g')), 200))`,
+);
+
+/**
  * Per feed of `feedIds`, when the caller last made a card from that feed's articles: the latest
  * `user_cards.class_since` (when the holding entered its current class) among held cards whose
  * `body.examples_yes` holds the example title of an
@@ -807,7 +816,7 @@ export async function cardsMadeFromFeedArticles(
       JOIN feed_items fi ON fi.feed_id = ANY(${sql.param([...feedIds])}::bigint[])
       JOIN articles a ON a.id = fi.article_id
      WHERE uc.user_id = ${tenantUserId(tx)}::uuid
-       AND ex.example = btrim(left(btrim(regexp_replace(a.title, '[[:space:]]+', ' ', 'g')), 200))
+       AND ex.example = ${ARTICLE_TITLE_EXAMPLE_SQL}
      GROUP BY fi.feed_id`);
   return new Map(
     result.rows.map((row) => [
