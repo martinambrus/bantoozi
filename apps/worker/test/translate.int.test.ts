@@ -250,7 +250,9 @@ describe('article.translate tiers (spec 07 §3)', () => {
       },
     ]);
     expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'translated', revision: '1' });
-    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+    expect(await h.payloads('article.enrich', since)).toEqual([
+      { articleId: s.articleId, priority: 'bulk' },
+    ]);
     // Every tier-1 attempt is recorded (free) through the router; nothing was reserved.
     expect(h.router.external.map((e) => e.call.engine)).toEqual(['libretranslate']);
     expect(h.router.reservations).toEqual([]);
@@ -285,7 +287,9 @@ describe('article.translate tiers (spec 07 §3)', () => {
       h.router.reservations[0]?.id,
     );
     expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'translated' });
-    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+    expect(await h.payloads('article.enrich', since)).toEqual([
+      { articleId: s.articleId, priority: 'bulk' },
+    ]);
 
     // Tier 2 runs once per revision: a later escalation does not send it again.
     await h.dispatch('article.translate', { articleId: s.articleId, forceTier2: true });
@@ -310,7 +314,9 @@ describe('article.translate tiers (spec 07 §3)', () => {
     expect(rows[1]?.detail).toMatchObject({ skipped: 'no_key' });
     // Native text is better than blocking the article.
     expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'translated' });
-    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+    expect(await h.payloads('article.enrich', since)).toEqual([
+      { articleId: s.articleId, priority: 'bulk' },
+    ]);
 
     credential = { source: 'db', enabled: true, activeVersion: '3' };
     await h.dispatch('article.translate', { articleId: s.articleId, replaceSkipped: true });
@@ -377,7 +383,9 @@ describe('article.translate tiers (spec 07 §3)', () => {
       ['libretranslate', 'fail'],
     ]);
     expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'translated' });
-    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+    expect(await h.payloads('article.enrich', since)).toEqual([
+      { articleId: s.articleId, priority: 'bulk' },
+    ]);
     expect(
       h.router.external.filter((e) => e.call.engine === 'llm').map((e) => e.call.status),
     ).toEqual(['error', 'error']);
@@ -421,7 +429,9 @@ describe('article.translate tiers (spec 07 §3)', () => {
       ['libretranslate', 'ok'],
     ]);
     expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'translated' });
-    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+    expect(await h.payloads('article.enrich', since)).toEqual([
+      { articleId: s.articleId, priority: 'bulk' },
+    ]);
   });
 
   it('a tier-1 translation made before a rate-limited tier 2 is kept for the retry', async () => {
@@ -495,7 +505,9 @@ describe('article.translate tiers (spec 07 §3)', () => {
       ['libretranslate', 'fail'],
     ]);
     expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'translated' });
-    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+    expect(await h.payloads('article.enrich', since)).toEqual([
+      { articleId: s.articleId, priority: 'bulk' },
+    ]);
     expect(await h.payloads('article.translate', since)).toHaveLength(1);
 
     // A server asking for more than ten minutes is not waited for: the article continues at once.
@@ -510,7 +522,9 @@ describe('article.translate tiers (spec 07 §3)', () => {
     expect(ollamaCalls()).toBe(3);
     expect(await h.payloads('article.translate', later)).toEqual([]);
     expect(await h.articleRow(t.articleId)).toMatchObject({ state: 'translated' });
-    expect(await h.payloads('article.enrich', later)).toEqual([{ articleId: t.articleId }]);
+    expect(await h.payloads('article.enrich', later)).toEqual([
+      { articleId: t.articleId, priority: 'bulk' },
+    ]);
   });
 
   it('a flagged re-translation that changes the effective text resets the article; identical text is a no-op', async () => {
@@ -533,7 +547,9 @@ describe('article.translate tiers (spec 07 §3)', () => {
       ['ollama', 'ok', '2'],
     ]);
     expect(await h.facetRow(s.articleId)).toBeNull();
-    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+    expect(await h.payloads('article.enrich', since)).toEqual([
+      { articleId: s.articleId, priority: 'bulk' },
+    ]);
     await h.run('article.enrich', forArticles(s.articleId));
     const reenriched = h.router.asksFor(s.articleId, 'enrich').at(-1);
     expect(reenriched?.articleRevision).toBe('2');
@@ -583,7 +599,9 @@ describe('article.translate tiers (spec 07 §3)', () => {
       (await translations(s.articleId)).map((row) => [row.engine, row.quality, row.revision]),
     ).toEqual([['libretranslate', 'ok', '2']]);
     expect(await h.facetRow(s.articleId)).toBeNull();
-    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+    expect(await h.payloads('article.enrich', since)).toEqual([
+      { articleId: s.articleId, priority: 'bulk' },
+    ]);
     await h.run('article.enrich', forArticles(s.articleId));
     expect(await h.facetRow(s.articleId)).toMatchObject({ revision: '2', variant: 'translated' });
 
@@ -618,7 +636,9 @@ describe('article.translate tiers (spec 07 §3)', () => {
     // Tier 2's better translation is not what those facets were built from: reset, enrich again.
     expect(await h.articleRow(s.articleId)).toMatchObject({ state: 'translated', revision: '2' });
     expect(await h.facetRow(s.articleId)).toBeNull();
-    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+    expect(await h.payloads('article.enrich', since)).toEqual([
+      { articleId: s.articleId, priority: 'bulk' },
+    ]);
     await h.run('article.enrich', forArticles(s.articleId));
     const reenriched = h.router.asksFor(s.articleId, 'enrich').at(-1);
     expect(reenriched?.articleRevision).toBe('2');
@@ -683,7 +703,9 @@ describe('article.translate tiers (spec 07 §3)', () => {
       (await translations(s.articleId)).map((row) => [row.engine, row.quality, row.revision]),
     ).toEqual([['libretranslate', 'ok', '2']]);
     expect(await h.facetRow(s.articleId)).toBeNull();
-    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+    expect(await h.payloads('article.enrich', since)).toEqual([
+      { articleId: s.articleId, priority: 'bulk' },
+    ]);
     expect(await h.payloads('article.translate', since)).toEqual([
       { articleId: s.articleId, modeChange: true, retried: true },
     ]);
@@ -909,7 +931,9 @@ describe('selected requests in translate mode (spec 03 §2.2, D-72)', () => {
     expect(await h.queueRows(s.articleId)).toMatchObject([
       { cardId: s.readerCard, revision: reset.revision },
     ]);
-    expect(await h.payloads('article.enrich', since)).toEqual([{ articleId: s.articleId }]);
+    expect(await h.payloads('article.enrich', since)).toEqual([
+      { articleId: s.articleId, priority: 'bulk' },
+    ]);
 
     await h.run('article.enrich', forArticles(s.articleId));
     await h.run('article.match', forArticles(s.articleId));

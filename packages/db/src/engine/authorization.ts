@@ -120,7 +120,7 @@ async function articleAuthorized(
                                 AND s.inference_mode = 'active'
                                 AND s.inference_version = w.inference_version
             JOIN feed_items fi ON fi.feed_id = s.feed_id AND fi.article_id = ${articleId}::bigint
-                              AND fi.first_seen_at >= s.inference_activated_at
+                              AND fi.first_seen_at >= s.inference_activated_at AND fi.over_cap_limit IS NULL
             JOIN articles a ON a.id = fi.article_id AND a.pipeline_state <> 'stale'
                            AND a.content_revision = ${articleRevision}::bigint
             JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL) AS ok`,
@@ -185,7 +185,7 @@ async function suggestAuthorized(
                    JOIN articles a ON a.id = fi.article_id AND a.pipeline_state <> 'stale'
                    JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.user_id = ${userId}::uuid
                                        AND s.inference_mode = 'active'
-                                       AND fi.first_seen_at >= s.inference_activated_at
+                                       AND fi.first_seen_at >= s.inference_activated_at AND fi.over_cap_limit IS NULL
                   WHERE fi.article_id = c.article_id)
            AND NOT EXISTS (
                  SELECT 1

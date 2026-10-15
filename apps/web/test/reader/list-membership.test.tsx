@@ -418,6 +418,7 @@ describe('rows the reader read keep their place across background reloads', () =
           mode: 'active',
           status: 'pending',
           requestId: '0192f7a0-0000-7000-8000-0000000000aa',
+          overDailyCap: null,
         },
       }),
       item(3),

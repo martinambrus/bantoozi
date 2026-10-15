@@ -557,7 +557,7 @@ describe('an article that two views show', () => {
     firstSeenAt: '2026-05-31T08:05:00.000Z',
     mediaPolicyFeedId: '7',
     effectiveImagesAllowed: false,
-    analysis: { mode: 'off', status: 'not_requested', requestId: null },
+    analysis: { mode: 'off', status: 'not_requested', requestId: null, overDailyCap: null },
     stateVersion: '5',
     rating: 1,
   });
@@ -567,7 +567,7 @@ describe('an article that two views show', () => {
     firstSeenAt: '2026-05-31T09:00:00.000Z',
     mediaPolicyFeedId: '5',
     effectiveImagesAllowed: true,
-    analysis: { mode: 'training', status: 'complete', requestId: null },
+    analysis: { mode: 'training', status: 'complete', requestId: null, overDailyCap: null },
     stateVersion: '4',
     rating: null,
   });

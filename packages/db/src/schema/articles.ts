@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  date,
   foreignKey,
   index,
   integer,
@@ -203,6 +204,8 @@ export const feedItems = pgTable(
       .references(() => articles.id, { onDelete: 'cascade' }),
     guid: text('guid'),
     firstSeenAt: tstz('first_seen_at').notNull().defaultNow(),
+    /** NULL = admitted to automatic analysis; else the daily cap in force when it was skipped (D-251). */
+    overCapLimit: integer('over_cap_limit'),
   },
   (t) => [
     primaryKey({ name: 'feed_items_pkey', columns: [t.feedId, t.articleId] }),
@@ -213,6 +216,18 @@ export const feedItems = pgTable(
       .on(t.feedId, sql`md5(guid)`)
       .where(sql`guid IS NOT NULL`),
   ],
+);
+
+export const feedAutoAdmissions = pgTable(
+  'feed_auto_admissions',
+  {
+    feedId: int8('feed_id')
+      .notNull()
+      .references(() => feeds.id, { onDelete: 'cascade' }),
+    day: date('day', { mode: 'string' }).notNull(),
+    admitted: integer('admitted').notNull(),
+  },
+  (t) => [primaryKey({ name: 'feed_auto_admissions_pkey', columns: [t.feedId, t.day] })],
 );
 
 export const articleAliases = pgTable(

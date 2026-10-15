@@ -48,6 +48,7 @@ const ENV: RuntimeEnvDefaults = {
   ollamaBaseUrl: 'http://127.0.0.1:2',
   ollamaMaxConcurrency: 1,
   prefilterMinCards: 60,
+  autoAnalysisDailyCap: 1000,
   ingestMaxAgeDays: 14,
   fetchTimeoutMs: 10_000,
   fetchMaxBytes: 5 * 1024 * 1024,

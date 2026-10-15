@@ -57,7 +57,7 @@ export function article(
     topReason: null,
     stateVersion: '0',
     contentRevision: '1',
-    analysis: { mode: 'off', status: 'not_requested', requestId: null },
+    analysis: { mode: 'off', status: 'not_requested', requestId: null, overDailyCap: null },
     ...overrides,
   });
 }
@@ -141,7 +141,7 @@ export function withAnalysis(
   status: ArticleListItem['analysis']['status'],
   request: string | null = null,
 ): ArticleListItem {
-  return makeItem({ ...item, analysis: { mode, status, requestId: request } });
+  return makeItem({ ...item, analysis: { mode, status, requestId: request, overDailyCap: null } });
 }
 
 /** The answer of `GET /articles` with these items on its only page. */

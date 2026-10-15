@@ -6,6 +6,7 @@ import { Badge, type BadgeTone } from '../../components/badge.js';
 import { Checkbox } from '../../components/checkbox.js';
 import { FOCUS_RING, cx } from '../../components/cx.js';
 import { PlusIcon } from '../../components/icons.js';
+import { Tooltip } from '../../components/tooltip.js';
 import { VisuallyHidden } from '../../components/visually-hidden.js';
 import { WaitingToSync } from '../offline/waiting-to-sync.js';
 import { useReaderItem, useWaitingChanges } from '../reader/actions/provider.js';
@@ -78,6 +79,7 @@ export function ArticleRow({
   const otherFeeds = shown.cluster?.otherFeeds ?? [];
   const reason = shown.topReason === null ? null : topReasonText(t, i18n.language, shown.topReason);
   const analysis = ANALYSIS_BADGES[shown.analysis.status];
+  const overCap = shown.analysis.status === 'not_requested' ? shown.analysis.overDailyCap : null;
 
   return (
     <SwipeRow item={shown} actions={actions} labelledBy={titleId}>
@@ -120,7 +122,17 @@ export function ArticleRow({
             {unread ? t('row.unread') : t('row.read')}
           </span>
           {shown.translationAvailable ? <Badge>{t('row.translated')}</Badge> : null}
-          {analysis === null ? null : <Badge tone={analysis.tone}>{t(analysis.label)}</Badge>}
+          {overCap !== null ? (
+            <Tooltip text={t('row.overDailyCapHint', { count: overCap, cap: overCap })}>
+              {(tooltip) => (
+                <Badge {...tooltip} tabIndex={0} className={FOCUS_RING}>
+                  {t('row.notAnalyzedOverCap')}
+                </Badge>
+              )}
+            </Tooltip>
+          ) : analysis === null ? null : (
+            <Badge tone={analysis.tone}>{t(analysis.label)}</Badge>
+          )}
           {waiting ? <WaitingToSync id={waitingId} /> : null}
         </div>
 

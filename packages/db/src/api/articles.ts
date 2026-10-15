@@ -70,6 +70,11 @@ export interface ArticleContext {
   articleId: string;
   /** Whether this view may show inference for the row (spec 06 §6.4). */
   eligible: boolean;
+  /**
+   * The daily cap that made every active carrier in the view skip this arrival's automatic analysis
+   * (D-251), else null; only meaningful while the row is not eligible.
+   */
+  overCapLimit: number | null;
   /** The display feed: the requested feed, else the smallest in-scope subscribed carrier. */
   displayFeedId: string | null;
   /** The view's arrival (latest in-scope carrier arrival; the article's own when none). */
@@ -156,7 +161,10 @@ function carrierCte(source: SQL): SQL {
                min(e.feed_id) FILTER (WHERE e.listable) AS display_feed_id,
                min(e.feed_id) AS any_feed_id,
                bool_or(e.inference_mode = 'active'
-                       AND ef.first_seen_at >= e.inference_activated_at) AS active_carried
+                       AND ef.first_seen_at >= e.inference_activated_at
+                       AND ef.over_cap_limit IS NULL) AS active_carried,
+               max(ef.over_cap_limit) FILTER (WHERE e.inference_mode = 'active'
+                       AND ef.first_seen_at >= e.inference_activated_at) AS over_cap_limit
           FROM ${source} c
           JOIN feed_items ef ON ef.article_id = c.article_id
           JOIN vs e ON e.feed_id = ef.feed_id AND e.view_key = c.view_key
@@ -201,7 +209,7 @@ function projectionCtes(input: ProjectionInput): SQL {
     ${carrierCte(sql`carried`)},
     proj AS (
       SELECT c.view_key, c.article_id, coalesce(c.arrival, a.first_seen_at) AS arrival,
-             cr.display_feed_id,
+             cr.display_feed_id, cr.over_cap_limit,
              el.eligible, a.published_at, a.story_cluster_id,
              ua.read_at, ua.archived_at, ua.label_ids, ua.rating, ua.score_source,
              CASE WHEN el.eligible THEN coalesce(ua.lane, 'new')
@@ -349,6 +357,7 @@ type ListRow = {
   ranking_pending: boolean;
   article_id: string | null;
   eligible: boolean | null;
+  over_cap_limit: number | null;
   display_feed_id: string | null;
   arrival: RawTimestamp | null;
   k1: number | null;
@@ -389,7 +398,8 @@ export async function listArticlePage(
     summary AS (SELECT ${digestExpr(viewPrefix(input), user)} AS dataset_version FROM rows),
     pending AS (SELECT coalesce(bool_or(outdated), false) AS ranking_pending FROM proj)
     SELECT summary.dataset_version, pending.ranking_pending,
-           p.article_id::text AS article_id, p.eligible, p.display_feed_id::text AS display_feed_id,
+           p.article_id::text AS article_id, p.eligible, p.over_cap_limit,
+           p.display_feed_id::text AS display_feed_id,
            p.arrival, p.k1, p.k2::text AS k2,
            CASE WHEN p.folded THEN p.story_cluster_id::text END AS cluster_id,
            CASE WHEN p.folded THEN (
@@ -415,6 +425,7 @@ export async function listArticlePage(
     rows.push({
       articleId: row.article_id,
       eligible: row.eligible === true,
+      overCapLimit: row.over_cap_limit,
       displayFeedId: row.display_feed_id,
       arrival: toDate(row.arrival ?? new Date(0)),
       cluster:
@@ -739,6 +750,7 @@ export async function calibrationArticles(
   return result.rows.map((row) => ({
     articleId: row.article_id,
     eligible: true,
+    overCapLimit: null,
     displayFeedId: row.display_feed_id,
     arrival: toDate(row.arrival),
     cluster: null,
@@ -872,6 +884,7 @@ export async function articleContexts(
   const result = await tx.execute<{
     article_id: string;
     eligible: boolean;
+    over_cap_limit: number | null;
     display_feed_id: string | null;
     arrival: RawTimestamp;
     cluster_id: string | null;
@@ -883,7 +896,7 @@ export async function articleContexts(
             FROM unnest(${sql.param([...ids])}::bigint[]) WITH ORDINALITY AS x(id, ord)),
     ${carrierCte(sql`c`)},
     base AS (
-      SELECT c.article_id, el.eligible, a.story_cluster_id,
+      SELECT c.article_id, el.eligible, cr.over_cap_limit, a.story_cluster_id,
              coalesce(cr.display_feed_id, cr.any_feed_id) AS display_feed_id,
              coalesce(
                (SELECT max(ef.first_seen_at) FROM vs e JOIN feed_items ef ON ef.feed_id = e.feed_id
@@ -896,7 +909,8 @@ export async function articleContexts(
         FROM c JOIN articles a ON a.id = c.article_id
         LEFT JOIN carrier cr ON cr.view_key = c.view_key AND cr.article_id = c.article_id
         CROSS JOIN LATERAL (SELECT ${eligibleExpr(user)} AS eligible OFFSET 0) el)
-    SELECT b.article_id::text AS article_id, b.eligible, b.display_feed_id::text AS display_feed_id,
+    SELECT b.article_id::text AS article_id, b.eligible, b.over_cap_limit,
+           b.display_feed_id::text AS display_feed_id,
            b.arrival,
            CASE WHEN b.foldable THEN b.story_cluster_id::text END AS cluster_id,
            CASE WHEN b.foldable THEN (
@@ -922,6 +936,7 @@ export async function articleContexts(
     contexts.push({
       articleId: row.article_id,
       eligible: row.eligible,
+      overCapLimit: row.over_cap_limit,
       displayFeedId: row.display_feed_id,
       arrival: toDate(row.arrival),
       cluster:
@@ -1076,19 +1091,21 @@ export function topReasonOf(
 const iso = (value: RawTimestamp | null): string | null =>
   toDateOrNull(value)?.toISOString() ?? null;
 
-function analysisOf(row: ItemRow, eligible: boolean): ArticleAnalysis {
+function analysisOf(row: ItemRow, context: ArticleContext): ArticleAnalysis {
   const mode = row.sub_mode ?? 'off';
   if (row.request_id !== null && row.request_status !== null) {
-    return { mode, status: row.request_status, requestId: row.request_id };
+    return { mode, status: row.request_status, requestId: row.request_id, overDailyCap: null };
   }
-  if (!eligible) return { mode, status: 'not_requested', requestId: null };
+  if (!context.eligible) {
+    return { mode, status: 'not_requested', requestId: null, overDailyCap: context.overCapLimit };
+  }
   const status =
     row.pipeline_state === 'failed'
       ? 'failed'
       : row.pipeline_state === 'matched' || row.pipeline_state === 'degraded'
         ? 'complete'
         : 'pending';
-  return { mode, status, requestId: null };
+  return { mode, status, requestId: null, overDailyCap: null };
 }
 
 /** The deciding cards' current display titles for the given explanations. */
@@ -1199,7 +1216,7 @@ async function loadItemRows(
         stateVersion: row.state_version ?? '0',
         contentRevision: row.content_revision,
         translationAvailable: row.translation_available,
-        analysis: analysisOf(row, context.eligible),
+        analysis: analysisOf(row, context),
         mediaPolicyFeedId: row.media_feed_id,
         effectiveImagesAllowed: effectiveImagesAllowed(row.image_policy, loadRemoteImages),
         bookmarkCapture:

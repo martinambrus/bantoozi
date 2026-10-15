@@ -94,6 +94,7 @@ function runtimeContext(config: ApiConfig): RuntimeSettingsContext {
 function apiRuntimeDefaults(config: ApiConfig): Map<string, unknown> {
   return new Map<string, unknown>([
     ['engine.typesafe_model', config.typesafeModel],
+    ['engine.auto_analysis_daily_cap', config.autoAnalysisDailyCap],
     ['api.rate_limits_enabled', config.rateLimitsEnabled],
     ['translate.libretranslate_url', config.libretranslateUrl],
     ['fetch.limits', { timeoutMs: config.fetchTimeoutMs, maxBytes: config.fetchMaxBytes }],

@@ -81,7 +81,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { queryHash } from '../services/cursor.js';
 import { matchFingerprintFor } from '../services/analysis.js';
 import { analysisForRating } from '../services/rating-analysis.js';
-import { liveTypesafeModel } from '../services/runtime.js';
+import { liveRuntime, liveTypesafeModel } from '../services/runtime.js';
 import { currentScoreVersion } from '../services/score-version.js';
 import type { MutationContext, MutationOutcome } from '../types.js';
 import { ruleDto } from './rules.js';
@@ -285,6 +285,9 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
       contentRevision: input.fence.contentRevision,
       config: app.services.config,
       typesafeModel: await liveTypesafeModel(app.services),
+      autoAnalysisDailyCap:
+        (await liveRuntime(app.services))?.autoAnalysisDailyCap ??
+        app.services.config.autoAnalysisDailyCap,
       outbox: ctx.outbox,
       now: ctx.now,
     }));

@@ -634,16 +634,25 @@ export async function reusableAnalysisRequests(
 /**
  * The owned training/active feeds carrying an article, for a rating that asks for its analysis
  * (D-238): training feeds first, then by id. `admitted` marks an active feed that analyses the
- * article on its own (it arrived after the feed became active), so nothing needs requesting.
+ * article on its own (it arrived after the feed became active and its daily cap admitted it), so
+ * nothing needs requesting; `capped` marks an active feed whose cap skipped the arrival (D-251).
  */
 export async function ratingAnalysisFeeds(
   tx: TenantTx,
   articleId: string,
-): Promise<{ feedId: string; version: string; admitted: boolean }[]> {
-  const result = await tx.execute<{ feed_id: string; version: string; admitted: boolean }>(sql`
+): Promise<{ feedId: string; version: string; admitted: boolean; capped: boolean }[]> {
+  const result = await tx.execute<{
+    feed_id: string;
+    version: string;
+    admitted: boolean;
+    capped: boolean;
+  }>(sql`
     SELECT s.feed_id::text AS feed_id, s.inference_version::text AS version,
            (s.inference_mode = 'active' AND s.inference_activated_at IS NOT NULL
-            AND fi.first_seen_at >= s.inference_activated_at) AS admitted
+            AND fi.first_seen_at >= s.inference_activated_at AND fi.over_cap_limit IS NULL) AS admitted,
+           (s.inference_mode = 'active' AND s.inference_activated_at IS NOT NULL
+            AND fi.first_seen_at >= s.inference_activated_at
+            AND fi.over_cap_limit IS NOT NULL) AS capped
       FROM subscriptions s
       JOIN feed_items fi ON fi.feed_id = s.feed_id AND fi.article_id = ${articleId}::bigint
      WHERE s.user_id = ${tenantUserId(tx)}::uuid AND s.inference_mode IN ('training', 'active')
@@ -652,6 +661,7 @@ export async function ratingAnalysisFeeds(
     feedId: row.feed_id,
     version: row.version,
     admitted: row.admitted,
+    capped: row.capped,
   }));
 }
 

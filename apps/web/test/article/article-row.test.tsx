@@ -106,7 +106,7 @@ describe('ArticleRow content', () => {
     ['failed', false],
     ['cancelled', false],
   ] as const)('analysis status %s shows "Not analyzed": %s', (status, shown) => {
-    renderRow(makeItem({ analysis: { mode: 'off', status, requestId: null } }));
+    renderRow(makeItem({ analysis: { mode: 'off', status, requestId: null, overDailyCap: null } }));
     expect(screen.queryByText('Not analyzed') !== null).toBe(shown);
   });
 
@@ -134,7 +134,7 @@ describe('ArticleRow content', () => {
   ] as const)('analysis status in %s', (language, words) => {
     const REQUEST = '3f1c2b64-8a5e-4c63-9f0e-5d7a9b1c2e30';
     const requested = (status: ArticleListItem['analysis']['status']) =>
-      makeItem({ analysis: { mode: 'training', status, requestId: REQUEST } });
+      makeItem({ analysis: { mode: 'training', status, requestId: REQUEST, overDailyCap: null } });
 
     it.each([
       ['pending', 'info'],
@@ -353,7 +353,10 @@ describe.each(['en', 'sk'] as const)('ArticleRow reason chip in %s', (language) 
 
   it.each(REASONS)('renders the reason: %s', (_name, topReason, en, sk) => {
     renderRow(
-      makeItem({ topReason, analysis: { mode: 'active', status: 'complete', requestId: null } }),
+      makeItem({
+        topReason,
+        analysis: { mode: 'active', status: 'complete', requestId: null, overDailyCap: null },
+      }),
       {},
       { language },
     );
@@ -365,7 +368,10 @@ describe.each(['en', 'sk'] as const)('ArticleRow reason chip in %s', (language) 
     (_name, topReason, en, sk) => {
       const reason = language === 'en' ? en : sk;
       renderRow(
-        makeItem({ topReason, analysis: { mode: 'active', status: 'complete', requestId: null } }),
+        makeItem({
+          topReason,
+          analysis: { mode: 'active', status: 'complete', requestId: null, overDailyCap: null },
+        }),
         { onWhyThis: vi.fn() },
         { language },
       );
@@ -629,7 +635,9 @@ describe('ArticleRow rating and bookmark', () => {
 
   it('sends the analysis request of the article with a rating', async () => {
     const requestId = '3f1c2b64-8a5e-4c63-9f0e-5d7a9b1c2e30';
-    const item = makeItem({ analysis: { mode: 'training', status: 'pending', requestId } });
+    const item = makeItem({
+      analysis: { mode: 'training', status: 'pending', requestId, overDailyCap: null },
+    });
     const { user, calls } = renderRow(
       item,
       {},

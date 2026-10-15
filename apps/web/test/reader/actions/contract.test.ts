@@ -151,7 +151,12 @@ describe('bulk size limits', () => {
 describe('rateBulk targets', () => {
   it('carry no analysisRequestId, also for items that have a selected analysis', async () => {
     const { store, transport } = rig();
-    const analysis = { mode: 'training', status: 'pending', requestId: REQUEST_ID } as const;
+    const analysis = {
+      mode: 'training',
+      status: 'pending',
+      requestId: REQUEST_ID,
+      overDailyCap: null,
+    } as const;
     const items = [makeItem({ id: '101', analysis }), makeItem({ id: '102', analysis })];
     void store.bulk({ kind: 'rateBulk', items, rating: 1 });
     await flush();

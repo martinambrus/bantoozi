@@ -258,14 +258,14 @@ describe('pipeline.afterNewCarrier (spec 03 §7, a feed newly carrying an articl
   it('continues an article that stopped at the demand gate only for new eligible demand', async () => {
     expect((await run(carrier({ pipelineState: 'extracted' }))).intents).toEqual([
       ...ranks,
-      ['article.enrich', { articleId: '9' }],
+      ['article.enrich', { articleId: '9', priority: 'bulk' }],
     ]);
     expect(
       (await run(carrier({ pipelineState: 'extracted' }), { translate: true })).intents,
     ).toEqual([...ranks, ['article.translate', { articleId: '9' }]]);
     expect((await run(carrier({ pipelineState: 'translated' }))).intents).toEqual([
       ...ranks,
-      ['article.enrich', { articleId: '9' }],
+      ['article.enrich', { articleId: '9', priority: 'bulk' }],
     ]);
     for (const pipelineState of ['extracted', 'translated', 'degraded']) {
       expect((await run(carrier({ pipelineState, createsDemand: false }))).intents).toEqual(ranks);
@@ -276,7 +276,7 @@ describe('pipeline.afterNewCarrier (spec 03 §7, a feed newly carrying an articl
     const { intents, queued } = await run(
       carrier({ pipelineState: 'degraded', missingCardIds: ['7'] }),
     );
-    expect(intents).toEqual([...ranks, ['article.enrich', { articleId: '9' }]]);
+    expect(intents).toEqual([...ranks, ['article.enrich', { articleId: '9', priority: 'bulk' }]]);
     expect(queued).toEqual([]);
   });
 

@@ -6,6 +6,7 @@
  * the next pipeline stage is always decided by `apps/worker/src/pipeline.ts`.
  */
 export * from './articles.js';
+export * from './auto-cap.js';
 export * from './bodies.js';
 export * from './bookmarks.js';
 export * from './carriers.js';

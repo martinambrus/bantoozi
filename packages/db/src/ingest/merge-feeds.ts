@@ -294,7 +294,9 @@ export async function mergeFeeds(
                            CASE WHEN NOT EXISTS (SELECT 1 FROM feed_items o
                                                   WHERE o.feed_id = ${dst} AND o.guid IS NOT NULL
                                                     AND md5(o.guid) = md5(s.guid))
-                                THEN s.guid END)
+                                THEN s.guid END),
+           over_cap_limit = CASE WHEN t.over_cap_limit IS NULL OR s.over_cap_limit IS NULL
+                                 THEN NULL ELSE t.over_cap_limit END
       FROM feed_items s
      WHERE s.feed_id = ${src} AND t.feed_id = ${dst} AND t.article_id = s.article_id`);
   await tx.execute(sql`

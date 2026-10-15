@@ -466,11 +466,13 @@ async function moveFeedItems(
        USING feed_items t
        WHERE s.article_id = ${sourceId}::bigint AND t.article_id = ${targetId}::bigint
          AND t.feed_id = s.feed_id
-      RETURNING s.feed_id, s.guid, s.first_seen_at)
+      RETURNING s.feed_id, s.guid, s.first_seen_at, s.over_cap_limit)
     UPDATE feed_items t
        SET first_seen_at = least(t.first_seen_at, dup.first_seen_at),
            guid = CASE WHEN dup.first_seen_at < t.first_seen_at THEN coalesce(dup.guid, t.guid)
-                       ELSE coalesce(t.guid, dup.guid) END
+                       ELSE coalesce(t.guid, dup.guid) END,
+           over_cap_limit = CASE WHEN t.over_cap_limit IS NULL OR dup.over_cap_limit IS NULL
+                                 THEN NULL ELSE t.over_cap_limit END
       FROM dup
      WHERE t.article_id = ${targetId}::bigint AND t.feed_id = dup.feed_id`);
   const moved = await tx.execute<{ feed_id: string }>(sql`

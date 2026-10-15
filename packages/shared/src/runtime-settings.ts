@@ -16,6 +16,7 @@ export const RUNTIME_SETTING_KEYS = [
   'engine.ollama_base_url',
   'engine.ollama_max_concurrency',
   'engine.prefilter_min_cards',
+  'engine.auto_analysis_daily_cap',
   'ingest.max_age_days',
   'fetch.limits',
   'api.rate_limits_enabled',
@@ -53,6 +54,7 @@ export interface RuntimeEnvDefaults {
   ollamaBaseUrl: string;
   ollamaMaxConcurrency: number;
   prefilterMinCards: number;
+  autoAnalysisDailyCap: number;
   ingestMaxAgeDays: number;
   fetchTimeoutMs: number;
   fetchMaxBytes: number;
@@ -70,6 +72,7 @@ export interface RuntimeSettingsValues {
   ollamaBaseUrl: string;
   ollamaMaxConcurrency: number;
   prefilterMinCards: number;
+  autoAnalysisDailyCap: number;
   ingestMaxAgeDays: number;
   fetchLimits: { timeoutMs: number; maxBytes: number };
   rateLimitsEnabled: boolean;
@@ -200,6 +203,11 @@ const FIELDS: {
     key: 'engine.prefilter_min_cards',
     field: 'prefilterMinCards',
     fromEnv: (e) => e.prefilterMinCards,
+  },
+  {
+    key: 'engine.auto_analysis_daily_cap',
+    field: 'autoAnalysisDailyCap',
+    fromEnv: (e) => e.autoAnalysisDailyCap,
   },
   { key: 'ingest.max_age_days', field: 'ingestMaxAgeDays', fromEnv: (e) => e.ingestMaxAgeDays },
   {

@@ -373,7 +373,7 @@ describe('O3 acknowledgement', () => {
       tier: 4,
       pLike: 0.82,
       topReason: { kind: 'card', cardId: '31', title: 'EV battery tech', p: 0.82 },
-      analysis: { mode: 'active', status: 'complete', requestId: REQUEST_ID },
+      analysis: { mode: 'active', status: 'complete', requestId: REQUEST_ID, overDailyCap: null },
       cluster: { id: '9', size: 3, otherFeeds: ['Other Daily'] },
       feed: { id: '7', title: 'Row feed', iconUrl: null },
     });
@@ -385,7 +385,7 @@ describe('O3 acknowledgement', () => {
       tier: null,
       pLike: null,
       topReason: null,
-      analysis: { mode: 'off', status: 'not_requested', requestId: null },
+      analysis: { mode: 'off', status: 'not_requested', requestId: null, overDailyCap: null },
       cluster: null,
       feed: null,
       rating: 1,

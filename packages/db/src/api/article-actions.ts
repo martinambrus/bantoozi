@@ -768,7 +768,7 @@ async function captureFeatures(
         JOIN feed_items fi ON fi.feed_id = s.feed_id AND fi.article_id = ${id}::bigint
         JOIN articles a ON a.id = fi.article_id AND a.pipeline_state <> 'stale'
        WHERE s.user_id = ${user}::uuid AND s.inference_mode = 'active'
-         AND fi.first_seen_at >= s.inference_activated_at
+         AND fi.first_seen_at >= s.inference_activated_at AND fi.over_cap_limit IS NULL
       UNION
       SELECT r.feed_id FROM analysis_requests r
         JOIN articles a ON a.id = r.article_id AND a.content_revision = r.article_revision

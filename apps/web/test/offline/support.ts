@@ -125,6 +125,7 @@ export function fullItem(overrides: Partial<ArticleListItem> = {}): ArticleListI
       mode: 'active',
       status: 'complete',
       requestId: '8c1a3f5e-2b7d-4e61-9a0c-5d4e3f2a1b09',
+      overDailyCap: null,
     },
     mediaPolicyFeedId: '7',
     effectiveImagesAllowed: true,

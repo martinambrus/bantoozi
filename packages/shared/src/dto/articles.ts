@@ -135,6 +135,8 @@ export const ArticleAnalysisSchema = z
     mode: z.enum(['off', 'training', 'active']),
     status: z.enum(['not_requested', 'pending', 'running', 'complete', 'failed', 'cancelled']),
     requestId: UuidStringSchema.nullable(),
+    /** The daily cap in force when the feed skipped this arrival's automatic analysis, else null. */
+    overDailyCap: z.number().int().min(0).nullable(),
   })
   .strict();
 export type ArticleAnalysis = z.infer<typeof ArticleAnalysisSchema>;

@@ -20,6 +20,7 @@ export const RUNTIME_GROUPS: readonly {
       'engine.typesafe_price_per_mtok_usd',
       'engine.concurrency',
       'engine.prefilter_min_cards',
+      'engine.auto_analysis_daily_cap',
     ],
   },
   {
@@ -65,6 +66,7 @@ export const FIELDS: Record<RuntimeSettingKey, FieldSpec[]> = {
   'engine.ollama_base_url': plain('text'),
   'engine.ollama_max_concurrency': plain('integer'),
   'engine.prefilter_min_cards': plain('integer'),
+  'engine.auto_analysis_daily_cap': plain('integer'),
   'ingest.max_age_days': plain('integer'),
   'fetch.limits': [
     { part: 'timeoutMs', kind: 'integer' },

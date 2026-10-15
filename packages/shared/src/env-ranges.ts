@@ -8,6 +8,7 @@ export const ENV_RANGES = {
   engineConcurrency: { min: 1, max: 256 },
   ollamaMaxConcurrency: { min: 1, max: 64 },
   prefilterMinCards: { min: 1, max: 1_000_000 },
+  autoAnalysisDailyCap: { min: 0, max: 1_000_000 },
   ingestMaxAgeDays: { min: 1, max: 3650 },
   fetchTimeoutMs: { min: 100, max: 600_000 },
   fetchMaxBytes: { min: 1024, max: 1024 ** 3 },

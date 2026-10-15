@@ -50,7 +50,7 @@ const SELECTED = makeItem({
   title: 'Heat pumps outsell gas boilers',
   url: 'https://example.test/articles/303',
   stateVersion: '2',
-  analysis: { mode: 'training', status: 'complete', requestId: REQUEST_ID },
+  analysis: { mode: 'training', status: 'complete', requestId: REQUEST_ID, overDailyCap: null },
 });
 
 const question = (item: ArticleListItem) => `Did you like “${item.title}”?`;

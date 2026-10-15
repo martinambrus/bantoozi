@@ -53,8 +53,8 @@ const ENRICHED_STATES: readonly string[] = ['enriched', 'matched'];
  * completion also reads the translation rows again under the article lock: a translation stored
  * during Call A changed the input, and the job runs again instead (D-94).
  *
- * Without `priority` the job is interactive, so the LLM fallback may serve new arrivals while Jev
- * is unavailable; recovery and re-enrichment send `bulk` (spec 04 §5).
+ * Without `priority` the job is bulk (D-252): automatic enrichment has no spend headroom above the
+ * limit and no LLM fallback; only an explicit `interactive` payload (card backfill) gets both.
  */
 export function createArticleEnrichHandler(
   deps: WorkerDeps,
@@ -63,7 +63,7 @@ export function createArticleEnrichHandler(
   return async (payload) => {
     await assertWorkerCurrent(deps.db, classification);
     const { articleId } = payload;
-    const priority = payload.priority ?? 'interactive';
+    const priority = payload.priority ?? 'bulk';
     const config = await loadClassificationConfig(deps.db, deps.settingsEnv);
     const enrichSet = requireSet(config.enrich, 'enrich');
 

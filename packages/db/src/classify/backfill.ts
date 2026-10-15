@@ -106,7 +106,7 @@ export async function backfillPage(
       SELECT fi.article_id, fi.feed_id, fi.first_seen_at
         FROM subscriptions s
         JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
-        JOIN feed_items fi ON fi.feed_id = s.feed_id AND fi.first_seen_at >= s.inference_activated_at
+        JOIN feed_items fi ON fi.feed_id = s.feed_id AND fi.first_seen_at >= s.inference_activated_at AND fi.over_cap_limit IS NULL
         JOIN articles a ON a.id = fi.article_id AND a.pipeline_state <> 'stale'
        WHERE s.user_id = ${input.userId}::uuid AND s.inference_mode = 'active' ${feedFilter}
       UNION

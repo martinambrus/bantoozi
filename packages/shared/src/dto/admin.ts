@@ -174,6 +174,7 @@ const settingShape = {
   'engine.ollama_base_url': SETTINGS['engine.ollama_base_url'].schema,
   'engine.ollama_max_concurrency': SETTINGS['engine.ollama_max_concurrency'].schema,
   'engine.prefilter_min_cards': SETTINGS['engine.prefilter_min_cards'].schema,
+  'engine.auto_analysis_daily_cap': SETTINGS['engine.auto_analysis_daily_cap'].schema,
   'ingest.max_age_days': SETTINGS['ingest.max_age_days'].schema,
   'fetch.limits': SETTINGS['fetch.limits'].schema,
   'api.rate_limits_enabled': SETTINGS['api.rate_limits_enabled'].schema,
@@ -209,6 +210,7 @@ const runtimeDisplayShape = {
   'engine.ollama_base_url': displayUrl,
   'engine.ollama_max_concurrency': envInt(ENV_RANGES.ollamaMaxConcurrency),
   'engine.prefilter_min_cards': envInt(ENV_RANGES.prefilterMinCards),
+  'engine.auto_analysis_daily_cap': envInt(ENV_RANGES.autoAnalysisDailyCap),
   'ingest.max_age_days': envInt(ENV_RANGES.ingestMaxAgeDays),
   'fetch.limits': z
     .object({
@@ -280,6 +282,7 @@ const runtimePatchShape = {
   'engine.ollama_base_url': z.unknown(),
   'engine.ollama_max_concurrency': z.unknown(),
   'engine.prefilter_min_cards': z.unknown(),
+  'engine.auto_analysis_daily_cap': z.unknown(),
   'ingest.max_age_days': z.unknown(),
   'fetch.limits': z.unknown(),
   'api.rate_limits_enabled': z.unknown(),

@@ -61,6 +61,11 @@ export const PURGE_AUTH_RULES = {
     keys: 'ctid',
     where: (now) => sql`expires_at <= ${now.toISOString()}::timestamptz`,
   },
+  feedAutoAdmissions: {
+    table: 'feed_auto_admissions',
+    keys: 'ctid',
+    where: (now) => sql`day <= (${at(now, 7)}::timestamptz AT TIME ZONE 'UTC')::date`,
+  },
 } as const satisfies Record<string, PurgeRule>;
 
 export type PurgeAuthRule = keyof typeof PURGE_AUTH_RULES;

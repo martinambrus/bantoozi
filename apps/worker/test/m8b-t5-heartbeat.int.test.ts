@@ -76,6 +76,7 @@ describe('heartbeat runtime field', () => {
         'engine.ollama_base_url': config.ollamaBaseUrl,
         'engine.ollama_max_concurrency': config.ollamaMaxConcurrency,
         'engine.prefilter_min_cards': config.prefilterMinCards,
+        'engine.auto_analysis_daily_cap': config.autoAnalysisDailyCap,
         'ingest.max_age_days': config.ingestMaxAgeDays,
         'fetch.limits': { timeoutMs: config.fetchTimeoutMs, maxBytes: config.fetchMaxBytes },
         'translate.libretranslate_url': config.libretranslateUrl,
@@ -83,7 +84,7 @@ describe('heartbeat runtime field', () => {
     });
   });
 
-  it('defaults hold exactly the twelve worker keys, with env values even when a stored row overrides', async () => {
+  it('defaults hold exactly the thirteen worker keys, with env values even when a stored row overrides', async () => {
     await setSetting(h.owner, 'engine.concurrency', 3);
     await setSetting(h.owner, 'fetch.limits', { timeoutMs: 20_000, maxBytes: 1_048_576 });
     const config = baseConfig('test');

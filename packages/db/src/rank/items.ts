@@ -62,7 +62,7 @@ export async function loadRankArticleFacts(
                        FROM feed_items fi
                        JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.user_id = ${input.userId}::uuid
                                            AND s.inference_mode = 'active'
-                                           AND fi.first_seen_at >= s.inference_activated_at
+                                           AND fi.first_seen_at >= s.inference_activated_at AND fi.over_cap_limit IS NULL
                       WHERE fi.article_id = a.id AND a.pipeline_state <> 'stale'), '{}') AS automatic_ids,
            coalesce((SELECT array_agg(DISTINCT r.feed_id::text)
                        FROM analysis_requests r

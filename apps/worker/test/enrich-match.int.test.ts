@@ -194,7 +194,7 @@ describe('article.enrich outcomes (spec 05 §3, spec 04 §5)', () => {
     expect(asks).toHaveLength(1);
     expect(asks[0]).toMatchObject({
       kind: 'enrich',
-      priority: 'interactive',
+      priority: 'bulk',
       articleRevision: '1',
       authorized: true,
     });
@@ -272,9 +272,7 @@ describe('article.enrich outcomes (spec 05 §3, spec 04 §5)', () => {
       await run;
       expect(await h.facetRow(articleId)).toBeNull();
       expect(await h.articleRow(articleId)).toMatchObject({ state: 'extracted' });
-      expect(await h.payloads('article.enrich', since)).toEqual([
-        { articleId, priority: 'interactive' },
-      ]);
+      expect(await h.payloads('article.enrich', since)).toEqual([{ articleId, priority: 'bulk' }]);
     } finally {
       h.router.respond = undefined;
       (await write)?.close();
@@ -299,9 +297,7 @@ describe('article.enrich outcomes (spec 05 §3, spec 04 §5)', () => {
       await run;
       expect(h.router.asks).toEqual([]);
       expect(await h.articleRow(articleId)).toMatchObject({ state: 'extracted' });
-      expect(await h.payloads('article.enrich', since)).toEqual([
-        { articleId, priority: 'interactive' },
-      ]);
+      expect(await h.payloads('article.enrich', since)).toEqual([{ articleId, priority: 'bulk' }]);
       expect(await h.payloads('article.match', since)).toEqual([]);
     } finally {
       write.close();
@@ -330,9 +326,7 @@ describe('article.enrich outcomes (spec 05 §3, spec 04 §5)', () => {
       await run;
       // The old request's rejection does not fail the article: the job asks again.
       expect(await h.articleRow(articleId)).toMatchObject({ state: 'extracted' });
-      expect(await h.payloads('article.enrich', since)).toEqual([
-        { articleId, priority: 'interactive' },
-      ]);
+      expect(await h.payloads('article.enrich', since)).toEqual([{ articleId, priority: 'bulk' }]);
     } finally {
       h.router.respond = undefined;
       (await write)?.close();
