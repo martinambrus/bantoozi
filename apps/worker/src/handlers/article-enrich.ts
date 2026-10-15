@@ -3,7 +3,7 @@ import {
   PRE_ENRICH_STATES,
   automaticCardDemand,
   eligibleInferenceDemand,
-  isPrimaryAnswer,
+  isReusableFacet,
   listTranslations,
   loadClassificationArticle,
   lockArticleRevision,
@@ -82,9 +82,11 @@ export function createArticleEnrichHandler(
     const stored = await readFacets(deps.db, articleId, enrichSet.id);
     if (
       stored !== null &&
-      stored.articleRevision === article.revision &&
-      stored.stateSha256 === enrichState.sha256 &&
-      isPrimaryAnswer(stored, classification.primaryModel)
+      isReusableFacet(stored, {
+        articleRevision: article.revision,
+        stateSha256: enrichState.sha256,
+        primaryModel: classification.primaryModel,
+      })
     ) {
       await continueFromCache(deps, config, article, stored, priority);
       return;

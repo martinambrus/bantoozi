@@ -284,6 +284,77 @@ describe('paced per-feed admission at ingest (D-251)', () => {
     });
   });
 
+  it('takes no slot for an extracted article whose current analysis is reusable (analysis.process on another feed, D-252)', async () => {
+    await withStableHour(async (hour) => {
+      const cap = 24;
+      const room = allowance(cap, hour);
+      const quiet = await createFeed(ctx.owner);
+      const f = await activeFeed();
+      const kept = await ctx.owner.query<{ key: string; value: unknown }>(
+        `SELECT key, value FROM settings WHERE key IN ('question_sets.active', 'engine.model_pin')`,
+      );
+      const set = await ctx.owner.query<{ id: string }>(
+        `INSERT INTO question_sets (kind, version, sha256, definition)
+         VALUES ('enrich', $1, $2, '{}') RETURNING id::text AS id`,
+        [`enrich-cap-${next()}`, sha(['enrich-cap', next()])],
+      );
+      const setId = set.rows[0]!.id;
+      await ctx.owner.query(
+        `INSERT INTO settings (key, value) VALUES ('question_sets.active', $1::jsonb), ('engine.model_pin', $2::jsonb)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [JSON.stringify({ enrich: setId }), JSON.stringify({ model: 'jev-cap' })],
+      );
+      try {
+        // Exhaust today's allowance on fresh arrivals.
+        for (let i = 0; i < room; i += 1) await ingest(inputFor(f.feedId), cap);
+        const counter = () =>
+          ctx.owner
+            .query<{ n: number }>(
+              `SELECT coalesce(sum(admitted), 0)::int AS n FROM feed_auto_admissions WHERE feed_id = $1`,
+              [f.feedId],
+            )
+            .then((r) => r.rows[0]!.n);
+        expect(await counter()).toBe(room);
+
+        const arrive = async (withFacets: boolean) => {
+          const input = inputFor(quiet.id);
+          const { articleId } = await ingest(input, cap);
+          await ctx.owner.query(`UPDATE articles SET pipeline_state = 'extracted' WHERE id = $1`, [
+            articleId,
+          ]);
+          if (withFacets)
+            await ctx.owner.query(
+              `INSERT INTO article_facets (article_id, question_set_id, article_revision, state_sha256,
+                                           engine, model, state_variant, answers, features)
+               SELECT id, $2, content_revision, 's', 'typesafe', 'jev-cap', 'native', '{}', '{}'
+                 FROM articles WHERE id = $1`,
+              [articleId, setId],
+            );
+          await ingest({ ...inputFor(f.feedId, input.canonicalUrl), guid: null }, cap);
+          return articleId;
+        };
+
+        const reusable = await arrive(true);
+        expect(await overCapLimit(f.feedId, reusable)).toBeNull();
+        expect(await counter()).toBe(room);
+
+        // Negative control: the same state without current facets is over cap.
+        const bare = await arrive(false);
+        expect(await overCapLimit(f.feedId, bare)).toBe(cap);
+        expect(await counter()).toBe(room);
+      } finally {
+        await ctx.owner.query(
+          `DELETE FROM settings WHERE key IN ('question_sets.active', 'engine.model_pin')`,
+        );
+        for (const row of kept.rows)
+          await ctx.owner.query(`INSERT INTO settings (key, value) VALUES ($1, $2::jsonb)`, [
+            row.key,
+            JSON.stringify(row.value),
+          ]);
+      }
+    });
+  });
+
   it('a retried arrival whose transaction rolled back does not consume a slot', async () => {
     await withStableHour(async (hour) => {
       const cap = 24;

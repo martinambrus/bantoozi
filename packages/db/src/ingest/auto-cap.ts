@@ -2,6 +2,7 @@ import { autoAdmissionAllowance } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Executor } from '../client.js';
+import { hasReusableAnalysis } from '../classify/facets.js';
 
 /**
  * The per-feed daily cap on automatic analysis (D-251, spec 05 §1.1). A feed admits at most
@@ -60,6 +61,8 @@ export async function admitArrival(
   const row = head.rows[0];
   if (row === undefined || !row.activated) return;
   if (row.pipeline_state === 'stale' || ANALYSED_STATES.includes(row.pipeline_state)) return;
+  // An explicit analysis on another feed leaves reusable facets without advancing the state (D-252).
+  if (await hasReusableAnalysis(db, articleId)) return;
   if (await claimAutoAdmission(db, feedId, cap, now)) return;
   await db.execute(sql`
     UPDATE feed_items SET over_cap_limit = ${cap}::int
