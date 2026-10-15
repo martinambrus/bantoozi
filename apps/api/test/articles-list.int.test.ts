@@ -575,6 +575,27 @@ describe('D-248: the minimum tier of a feed, folder and label view of all lanes'
     expect(all).toMatchObject({ total: 5, datasetVersion: again.datasetVersion });
   });
 
+  it('GET /subscriptions unread follows the feed view at prefs.feedMinTier, not defaultTier', async () => {
+    const badge = async (r: Reader, feed: string) => {
+      const row = (
+        (await r.api.get('/subscriptions')).json() as {
+          feed: { id: string };
+          unread: { forYou: number; maybe: number; everything: number; new: number };
+        }[]
+      ).find((s) => s.feed.id === feed);
+      const u = row?.unread ?? { forYou: 0, maybe: 0, everything: 0, new: 0 };
+      return u.forYou + u.maybe + u.everything + u.new;
+    };
+    const w = await world({ defaultTier: 1, feedMinTier: 3 });
+    const page = await list(w.r, { lane: 'all', feedId: w.feed });
+    expect(page.items).toHaveLength(2);
+    expect(await badge(w.r, w.feed)).toBe(2);
+    const high = await world({ defaultTier: 5, feedMinTier: 3 });
+    expect(await badge(high.r, high.feed)).toBe(2);
+    const one = await world({ defaultTier: 4, feedMinTier: 1 });
+    expect(await badge(one.r, one.feed)).toBe(5);
+  });
+
   it('POST /subscriptions/:feedId/mark-read marks the rows of prefs.feedMinTier', async () => {
     const w = await world({ defaultTier: 1, feedMinTier: 3 });
     const page = await list(w.r, { lane: 'all', feedId: w.feed });

@@ -241,7 +241,7 @@ function laneRowsCtes(
   lane: ArticleViewLane,
   status: ArticleStatus,
   minTier: number,
-  scope: ArticleScope,
+  scope: ArticleScope | 'perFeed',
 ): SQL {
   const unread = status === 'unread' ? sql`AND read_at IS NULL` : sql``;
   if (lane === 'bookmarks') {
@@ -253,7 +253,7 @@ function laneRowsCtes(
   }
   const laneFilter = lane === 'all' ? sql`` : sql`AND lane = ${lane}`;
   const tierFilter =
-    lane === 'all' && isScoped(scope) && minTier > 1
+    lane === 'all' && (scope === 'perFeed' || isScoped(scope)) && minTier > 1
       ? sql`coalesce(tier, 0) >= ${minTier}`
       : sql`(lane NOT IN ('for_you', 'maybe') OR coalesce(tier, 0) >= ${minTier})`;
   return sql`,
@@ -506,7 +506,7 @@ async function laneCounts(
       bookmarks: false,
       labelId: input.scope.labelId,
     })}
-    ${laneRowsCtes('all', input.status, input.minTier, input.scope)},
+    ${laneRowsCtes('all', input.status, input.minTier, mode.kind === 'perFeed' ? 'perFeed' : input.scope)},
     pending AS (SELECT view_key, bool_or(outdated) AS ranking_pending FROM proj GROUP BY view_key)
     SELECT rows.view_key::text AS view_key,
            count(*) FILTER (WHERE lane = 'for_you')::int AS for_you,
@@ -658,7 +658,8 @@ async function emptyDigest(tx: TenantTx, input: ArticleViewInput): Promise<strin
 /**
  * Unread lane counts per subscription (spec 08 §4 `GET /subscriptions` `unread`): for each of the
  * caller's subscriptions — hidden ones too — the counts its own feed view (`GET
- * /articles/counts?feedId=<id>&status=unread`) reports for the same `asOf` and `minTier`. Folding,
+ * /articles/counts?feedId=<id>&status=unread`) reports for the same `asOf` and `minTier` (the caller passes `prefs.feedMinTier`: each feed is a scoped
+ * `lane=all` view, so D-248 applies and the badge never depends on `defaultTier`). Folding,
  * demand projection and the window apply per feed. Subscriptions with nothing unread are absent
  * from the map (all four counts zero).
  */

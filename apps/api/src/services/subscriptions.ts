@@ -88,7 +88,7 @@ export async function loadSubscriptionDto(
   const preferences = await ownPreferences(tx);
   const unread = await countSubscriptionUnread(tx, {
     asOf,
-    minTier: preferences.defaultTier,
+    minTier: preferences.feedMinTier,
     scoreVersion: await currentScoreVersion(tx),
   });
   return subscriptionDto(row, preferences, unread.get(feedId));

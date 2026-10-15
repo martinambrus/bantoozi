@@ -6210,78 +6210,50 @@
           "feed": "1",
           "forYou": 1,
           "maybe": 1,
-          "everything": 2,
-          "new": 7
+          "everything": 1,
+          "new": 0
         },
         {
           "feed": "2",
           "forYou": 0,
           "maybe": 1,
           "everything": 2,
-          "new": 12
+          "new": 0
         },
         {
           "feed": "3",
           "forYou": 1,
           "maybe": 0,
-          "everything": 1,
-          "new": 17
-        },
-        {
-          "feed": "4",
-          "forYou": 0,
-          "maybe": 0,
           "everything": 0,
-          "new": 17
+          "new": 0
         },
         {
           "feed": "5",
           "forYou": 2,
           "maybe": 0,
-          "everything": 4,
-          "new": 5
+          "everything": 3,
+          "new": 0
         },
         {
           "feed": "6",
           "forYou": 3,
           "maybe": 0,
           "everything": 0,
-          "new": 6
+          "new": 0
         },
         {
           "feed": "7",
           "forYou": 1,
           "maybe": 0,
           "everything": 1,
-          "new": 7
-        },
-        {
-          "feed": "8",
-          "forYou": 0,
-          "maybe": 0,
-          "everything": 0,
-          "new": 16
+          "new": 0
         },
         {
           "feed": "9",
           "forYou": 1,
           "maybe": 3,
-          "everything": 3,
-          "new": 5
-        },
-        {
-          "feed": "10",
-          "forYou": 0,
-          "maybe": 0,
-          "everything": 1,
-          "new": 7
-        },
-        {
-          "feed": "11",
-          "forYou": 0,
-          "maybe": 0,
-          "everything": 0,
-          "new": 17
+          "everything": 2,
+          "new": 0
         }
       ],
       "lane-mix:t3": {
@@ -13329,56 +13301,42 @@
           "forYou": 0,
           "maybe": 1,
           "everything": 0,
-          "new": 9
-        },
-        {
-          "feed": "2",
-          "forYou": 0,
-          "maybe": 0,
-          "everything": 0,
-          "new": 14
+          "new": 0
         },
         {
           "feed": "3",
           "forYou": 0,
           "maybe": 0,
-          "everything": 2,
-          "new": 14
+          "everything": 1,
+          "new": 0
         },
         {
           "feed": "5",
           "forYou": 1,
           "maybe": 2,
           "everything": 4,
-          "new": 5
+          "new": 0
         },
         {
           "feed": "6",
           "forYou": 2,
           "maybe": 0,
-          "everything": 2,
-          "new": 3
+          "everything": 1,
+          "new": 0
         },
         {
           "feed": "7",
           "forYou": 1,
           "maybe": 1,
-          "everything": 2,
-          "new": 2
+          "everything": 0,
+          "new": 0
         },
         {
           "feed": "9",
           "forYou": 0,
           "maybe": 0,
-          "everything": 5,
-          "new": 8
-        },
-        {
-          "feed": "12",
-          "forYou": 0,
-          "maybe": 0,
-          "everything": 0,
-          "new": 13
+          "everything": 4,
+          "new": 0
         }
       ],
       "lane-mix:t3": {
@@ -17774,29 +17732,7 @@
           "degraded": 0
         }
       },
-      "subscription-unread:t3": [
-        {
-          "feed": "1",
-          "forYou": 0,
-          "maybe": 0,
-          "everything": 0,
-          "new": 8
-        },
-        {
-          "feed": "4",
-          "forYou": 0,
-          "maybe": 0,
-          "everything": 0,
-          "new": 18
-        },
-        {
-          "feed": "11",
-          "forYou": 0,
-          "maybe": 0,
-          "everything": 0,
-          "new": 13
-        }
-      ],
+      "subscription-unread:t3": [],
       "lane-mix:t3": {
         "maybe": 0,
         "scored": 0,

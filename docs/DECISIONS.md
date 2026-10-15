@@ -2311,4 +2311,5 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   and so are the default `minTier` of a scoped `all` list, of the scoped counts and of `POST
   /subscriptions/:feedId/mark-read`. The counts have no lane: the web asks them with `feedMinTier` in a scoped `all`
   view, `defaultTier` in a scoped For you or Maybe view and 1 in a scoped Everything else or New view, so the numbers
-  equal the list. Settings → Reading preferences has a "Minimum tier in feeds, folders and labels" setting.
+  equal the list. The per-feed unread badges of `GET /subscriptions` (and of the sidebar folders, which sum them) are
+  the counts of each feed's own `lane=all` view, so they use `feedMinTier` and never `defaultTier`. Settings → Reading preferences has a "Minimum tier in feeds, folders and labels" setting.

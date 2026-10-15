@@ -288,7 +288,7 @@ response or `GET /invites`. `POST /admin/waitlist/:id/invite` sends and reports 
 
 | Endpoint | Body / query | Behaviour |
 |---|---|---|
-| `GET /subscriptions` | — | `[{feed: FeedInfo, titleOverride, folder, allowDuplicates, hidden, inferenceMode, inferenceVersion, inferenceActivatedAt, imagePolicy, effectiveImagesAllowed, unread: {forYou, maybe, everything, new}}]` |
+| `GET /subscriptions` | — | `[{feed: FeedInfo, titleOverride, folder, allowDuplicates, hidden, inferenceMode, inferenceVersion, inferenceActivatedAt, imagePolicy, effectiveImagesAllowed, unread: {forYou, maybe, everything, new}}]` (`unread` is what the feed's own `lane=all` view lists with `status=unread` and `minTier = prefs.feedMinTier`, D-248; it never depends on `defaultTier`) |
 | `POST /subscriptions` | `{url, folder?}` | Discovery (spec 03 §10). One feed → `201 {subscription}` with `inferenceMode:'off'`; local fetch/parse makes articles readable without inference/backfill. Several → `200 {status: 'choose', candidates: [{url, title, type}]}`. Errors `FEED_*` (422). Quota `maxFeeds`. Existing subscriptions keep their mode |
 | `PATCH /subscriptions/:feedId` | `{titleOverride?, folder?, allowDuplicates?, hidden?, imagePolicy?: 'inherit'\|'allow'\|'block'}` | Update metadata/image policy only; inference mode changes use the explicit endpoint below |
 | `POST /subscriptions/:feedId/inference` | `{mode:'off'\|'training'\|'active', expectedVersion}` | CAS `inference_version`, persist the selected mode, refresh demand and rank eligibility → `200 {subscription}`. Active requires explicit enable and applies to new arrivals only (§4.1) |
