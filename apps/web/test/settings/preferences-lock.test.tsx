@@ -112,8 +112,8 @@ describe('the preferences lock across tabs', () => {
     await waitFor(() => expect(grantedPreferences()).toHaveLength(1));
     expect(overlayOf(first)).toBeNull();
     await first.user.click(switchOf(first));
-    await first.user.click(prefsOf(first).getByRole('radio', { name: 'Newest first' }));
-    await first.user.click(prefsOf(first).getByRole('radio', { name: 'Best match' }));
+    await first.user.click(prefsOf(first).getAllByRole('radio', { name: 'Newest first' })[0]!);
+    await first.user.click(prefsOf(first).getAllByRole('radio', { name: 'Best match' })[0]!);
     await waitFor(() => expect(first.calls('PATCH /me')).toHaveLength(2));
 
     const second = await openAnotherWindow();
@@ -128,7 +128,7 @@ describe('the preferences lock across tabs', () => {
       sending.release();
     });
     await waitFor(() => expect(switchOf(second).closest('[inert]')).toBeNull());
-    await first.user.click(prefsOf(first).getByRole('radio', { name: 'Newest first' }));
+    await first.user.click(prefsOf(first).getAllByRole('radio', { name: 'Newest first' })[0]!);
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(first.calls('PATCH /me')).toHaveLength(2);

@@ -161,6 +161,11 @@ describe('UserPreferences (spec 08 §3.1)', () => {
     expect(DEFAULT_USER_PREFERENCES.exampleSuggestions).toBe(true);
     expect(DEFAULT_USER_PREFERENCES.swipe).toEqual({ left: 'dislike', right: 'like' });
     expect(readUserPreferences({ exampleSuggestions: 'no' }).exampleSuggestions).toBe(true);
+    expect(DEFAULT_USER_PREFERENCES.feedSort).toBe('date');
+    expect(readUserPreferences({}).feedSort).toBe('date');
+    expect(readUserPreferences({ feedSort: 'score' }).feedSort).toBe('score');
+    expect(readUserPreferences({ feedSort: 'newest' }).feedSort).toBe('date');
+    expect(UserPreferencesPatchSchema.parse({ feedSort: 'score' })).toEqual({ feedSort: 'score' });
   });
 
   it('merges only supplied leaves and replaces arrays', () => {

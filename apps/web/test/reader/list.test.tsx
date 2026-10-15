@@ -40,7 +40,11 @@ describe('the requests of the list', () => {
     ['New', '/read/new', { lane: 'new', limit: '30' }],
     ['Bookmarks', '/read/bookmarks', { lane: 'bookmarks', limit: '30' }],
     ['Hidden', '/read/hidden', { lane: 'hidden', limit: '30' }],
-    ['a feed', '/read/feed/7', { lane: 'all', feedId: '7', minTier: '1', limit: '30' }],
+    [
+      'a feed',
+      '/read/feed/7',
+      { lane: 'all', feedId: '7', minTier: '1', sort: 'date', limit: '30' },
+    ],
     [
       'a feed in its Maybe lane',
       '/read/feed/7?lane=maybe',
@@ -50,14 +54,18 @@ describe('the requests of the list', () => {
     [
       'a feed with a lane nobody knows',
       '/read/feed/7?lane=bogus',
-      { lane: 'all', feedId: '7', minTier: '1', limit: '30' },
+      { lane: 'all', feedId: '7', minTier: '1', sort: 'date', limit: '30' },
     ],
     [
       'a folder',
       '/read/folder/Tech%20News',
-      { lane: 'all', folder: 'Tech News', minTier: '1', limit: '30' },
+      { lane: 'all', folder: 'Tech News', minTier: '1', sort: 'date', limit: '30' },
     ],
-    ['a label', '/read/label/12', { lane: 'all', labelId: '12', minTier: '1', limit: '30' }],
+    [
+      'a label',
+      '/read/label/12',
+      { lane: 'all', labelId: '12', minTier: '1', sort: 'date', limit: '30' },
+    ],
   ])('asks for %s with exactly its parameters', async (_name, path, expected) => {
     const { app } = await open({ path });
 

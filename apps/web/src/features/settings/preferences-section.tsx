@@ -179,6 +179,7 @@ export function PreferencesSection() {
             <Group title={t('preferences.groups.lists')}>
               <TierSetting />
               <ChoiceSetting id="sort" text="sort" options={SORTS} />
+              <ChoiceSetting id="feedSort" text="feedSort" options={SORTS} />
               <ToggleSetting id="hideEverything" text="hideEverything" />
               <ToggleSetting id="simpleMode" text="simpleMode" />
               <ToggleSetting id="showRead" text="showRead" />

@@ -264,7 +264,8 @@ response or `GET /invites`. `POST /admin/waitlist/:id/invite` sends and reports 
   hideEverything: boolean,                      // default false: collapse the "Everything else" lane
   simpleMode: boolean,                          // default false (FeedIt Simple Mode)
   showRead: boolean,                            // default false: unread lanes ask for status=all (D-234)
-  sort: 'score' | 'date',                       // default 'score'
+  sort: 'score' | 'date',                       // default 'score' (For you)
+  feedSort: 'score' | 'date',                   // default 'date': feed, folder and label views of all lanes (D-247)
   markReadOnExpand: boolean,                    // default true
   markReadOnRate: boolean,                      // default true
   feedbackPrompt: 'often' | 'occasionally' | 'never',   // default 'occasionally'

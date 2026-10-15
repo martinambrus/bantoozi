@@ -369,6 +369,14 @@
                                 "date"
                               ]
                             },
+                            "feedSort": {
+                              "default": "date",
+                              "type": "string",
+                              "enum": [
+                                "score",
+                                "date"
+                              ]
+                            },
                             "markReadOnExpand": {
                               "default": true,
                               "type": "boolean"
@@ -521,6 +529,7 @@
                             "simpleMode",
                             "showRead",
                             "sort",
+                            "feedSort",
                             "markReadOnExpand",
                             "markReadOnRate",
                             "feedbackPrompt",
@@ -961,6 +970,14 @@
                                 "date"
                               ]
                             },
+                            "feedSort": {
+                              "default": "date",
+                              "type": "string",
+                              "enum": [
+                                "score",
+                                "date"
+                              ]
+                            },
                             "markReadOnExpand": {
                               "default": true,
                               "type": "boolean"
@@ -1113,6 +1130,7 @@
                             "simpleMode",
                             "showRead",
                             "sort",
+                            "feedSort",
                             "markReadOnExpand",
                             "markReadOnRate",
                             "feedbackPrompt",
@@ -1557,6 +1575,14 @@
                             "date"
                           ]
                         },
+                        "feedSort": {
+                          "default": "date",
+                          "type": "string",
+                          "enum": [
+                            "score",
+                            "date"
+                          ]
+                        },
                         "markReadOnExpand": {
                           "default": true,
                           "type": "boolean"
@@ -1709,6 +1735,7 @@
                         "simpleMode",
                         "showRead",
                         "sort",
+                        "feedSort",
                         "markReadOnExpand",
                         "markReadOnRate",
                         "feedbackPrompt",
@@ -1911,6 +1938,13 @@
                         "type": "boolean"
                       },
                       "sort": {
+                        "type": "string",
+                        "enum": [
+                          "score",
+                          "date"
+                        ]
+                      },
+                      "feedSort": {
                         "type": "string",
                         "enum": [
                           "score",
@@ -2148,6 +2182,14 @@
                             "date"
                           ]
                         },
+                        "feedSort": {
+                          "default": "date",
+                          "type": "string",
+                          "enum": [
+                            "score",
+                            "date"
+                          ]
+                        },
                         "markReadOnExpand": {
                           "default": true,
                           "type": "boolean"
@@ -2300,6 +2342,7 @@
                         "simpleMode",
                         "showRead",
                         "sort",
+                        "feedSort",
                         "markReadOnExpand",
                         "markReadOnRate",
                         "feedbackPrompt",
@@ -2882,6 +2925,14 @@
                                 "date"
                               ]
                             },
+                            "feedSort": {
+                              "default": "date",
+                              "type": "string",
+                              "enum": [
+                                "score",
+                                "date"
+                              ]
+                            },
                             "markReadOnExpand": {
                               "default": true,
                               "type": "boolean"
@@ -3034,6 +3085,7 @@
                             "simpleMode",
                             "showRead",
                             "sort",
+                            "feedSort",
                             "markReadOnExpand",
                             "markReadOnRate",
                             "feedbackPrompt",

@@ -2295,3 +2295,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   above the list and loads them from page one. A falling count (the reader's own actions) never triggers either.
   Rows still never move under a reader who is scrolled down or reading. An auto-reload may coincide with a reader
   action still being sent; the list shows unsettled actions over whatever it loads, so that is harmless. Spec 09 §1.
+- D-247: 2026-10-15 (owner request; amends spec 09 §3.1) — The Sort control (Score / Date) also shows in the view of one
+  feed, folder or label while it shows all its lanes, bound to the new preference `feedSort` (default `date`, which
+  keeps today's order; old accounts read it as `date`, no migration) and sent as `sort`. It is separate from `sort`, so
+  an order chosen in a feed does not change For you and the other way round; a scoped view narrowed to For you keeps
+  using `sort`. Maybe, Everything else, New, Bookmarks and Hidden get no control. Settings → Lists has a "Sort in
+  feeds, folders and labels" setting. The API already accepted `sort` on every lane. Specs 08 §3.1 and 09 §3.1 updated.

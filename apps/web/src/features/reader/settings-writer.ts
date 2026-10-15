@@ -8,7 +8,7 @@ import { readMeAfterSave } from '../../session/me.js';
 import { subscriptionsKey } from '../feeds/subscriptions.js';
 
 /** The preferences the reader's header changes. */
-export type Setting = 'defaultTier' | 'sort' | 'simpleMode' | 'showRead';
+export type Setting = 'defaultTier' | 'sort' | 'feedSort' | 'simpleMode' | 'showRead';
 export type Settings = Partial<Pick<UserPreferences, Setting>>;
 
 export interface SettingsWriter {

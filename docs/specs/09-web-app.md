@@ -157,7 +157,9 @@ login without leaking the previous account's UI. Slow classification leaves arti
 - **List header:**
   - the tier slider (1–5, FeedIt's) filtering `for_you`/`maybe` by minimum tier; its value is saved to
     `prefs.defaultTier`
-  - sort toggle (score/date)
+  - sort toggle (score/date): in For you (`prefs.sort`), and in a feed, folder or label view that shows
+    all its lanes, with its own preference (`prefs.feedSort`, default date; D-247). A scoped view narrowed
+    to For you uses `prefs.sort`; Maybe, Everything else, New, Bookmarks and Hidden have no sort control
   - "Mark all read" (with confirmation) and the "Simple mode" toggle
   - the "Show read" toggle in the unread views (`prefs.showRead`): the list asks for `status=all`, so
     read and rated articles stay listed; only a hidden one leaves (D-234)

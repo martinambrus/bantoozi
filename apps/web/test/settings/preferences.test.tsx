@@ -61,6 +61,13 @@ const CASES: Case[] = [
     explains: 'Best match lists the articles most likely to interest you first',
   },
   {
+    label: 'Sort in feeds, folders and labels',
+    kind: 'choice',
+    pick: 'Best match',
+    patch: { feedSort: 'score' },
+    explains: 'The order of a single feed, folder or label',
+  },
+  {
     label: 'Hide the Everything else lane',
     kind: 'switch',
     patch: { hideEverything: true },
@@ -178,7 +185,7 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
       );
       expect(CASES.flatMap((item) => leaves(item.patch)).sort()).toEqual(wanted.sort());
       expect(prefs().getAllByRole('switch')).toHaveLength(9);
-      expect(prefs().getAllByRole('radiogroup')).toHaveLength(9);
+      expect(prefs().getAllByRole('radiogroup')).toHaveLength(10);
       for (const item of CASES) expect(control(item)).toBeVisible();
     });
 
@@ -229,6 +236,7 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
         hideEverything: true,
         simpleMode: true,
         sort: 'date',
+        feedSort: 'score',
         markReadOnExpand: false,
         markReadOnRate: false,
         feedbackPrompt: 'never',

@@ -47,6 +47,12 @@
       "score": "Best match",
       "date": "Newest first"
     },
+    "feedSort": {
+      "label": "Sort in feeds, folders and labels",
+      "hint": "The order of a single feed, folder or label when it shows all its lanes. For you keeps its own order.",
+      "score": "Best match",
+      "date": "Newest first"
+    },
     "hideEverything": {
       "label": "Hide the Everything else lane",
       "hint": "Removes the lane of articles that match none of your interests from the sidebar. Nothing is deleted."

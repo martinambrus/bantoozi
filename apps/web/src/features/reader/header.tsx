@@ -26,6 +26,7 @@ import {
   listsUnread,
   markReadLane,
   scopeOf,
+  sortSetting,
   usesSort,
   usesTier,
   type ReaderView,
@@ -197,15 +198,15 @@ export function ReaderHeader({
             onChange={(defaultTier) => settings.change({ defaultTier })}
           />
         ) : null}
-        {usesSort(view.lane) ? (
+        {usesSort(view) ? (
           <SegmentedControl
             label={t('header.sort')}
             options={[
               { value: 'score', label: t('header.sortScore') },
               { value: 'date', label: t('header.sortDate') },
             ]}
-            value={preferences.sort}
-            onValueChange={(sort) => settings.change({ sort })}
+            value={preferences[sortSetting(view)]}
+            onValueChange={(sort) => settings.change({ [sortSetting(view)]: sort })}
           />
         ) : null}
         <Switch

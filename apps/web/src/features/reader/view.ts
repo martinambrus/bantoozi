@@ -63,8 +63,14 @@ export function usesTier(lane: ArticleViewLane): boolean {
   return lane === 'for_you' || lane === 'maybe' || lane === 'all';
 }
 
-export function usesSort(lane: ArticleViewLane): boolean {
-  return lane === 'for_you';
+/** For you, and the views of one feed, folder or label that list all their lanes (D-247). */
+export function usesSort(view: ReaderView): boolean {
+  return view.lane === 'for_you' || (view.kind !== 'lane' && view.lane === 'all');
+}
+
+/** The preference that holds the order of a view: For you has its own, the scoped views share one. */
+export function sortSetting(view: ReaderView): 'sort' | 'feedSort' {
+  return view.kind === 'lane' || view.lane === 'for_you' ? 'sort' : 'feedSort';
 }
 
 /** Bookmarks and Hidden list every article, read or not; the other views list the unread ones. */

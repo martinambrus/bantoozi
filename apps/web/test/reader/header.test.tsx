@@ -313,6 +313,63 @@ describe('the sort toggle', () => {
   });
 });
 
+describe('the sort toggle of a feed, a folder and a label', () => {
+  const FEED = { subscriptions: [makeSubscription({ feed: { id: '7', title: 'Verge' } })] };
+
+  it('is on Date in a feed, saves Score as the feed sort and asks the list with it', async () => {
+    const { app } = await open({ path: '/read/feed/7', ...FEED, items: [item(1)] });
+    expect(await screen.findByRole('radio', { name: 'Date' })).toBeChecked();
+    expect(listQueries(app).at(-1)).toMatchObject({ lane: 'all', feedId: '7', sort: 'date' });
+
+    await app.user.click(screen.getByRole('radio', { name: 'Score' }));
+
+    await waitFor(() => expect(app.calls(UPDATE_ME)).toHaveLength(1));
+    expect(bodyOf(app.calls(UPDATE_ME)[0]!)).toEqual({ preferences: { feedSort: 'score' } });
+    await waitFor(() =>
+      expect(listQueries(app).at(-1)).toMatchObject({ lane: 'all', feedId: '7', sort: 'score' }),
+    );
+  });
+
+  it('leaves the order of For you alone, and For you leaves the feed alone', async () => {
+    const me = makeMe({ preferences: { sort: 'score', feedSort: 'date' } });
+    const feed = await open({ path: '/read/feed/7', ...FEED, me, items: [item(1)] });
+    await feed.app.user.click(await screen.findByRole('radio', { name: 'Score' }));
+    await waitFor(() => expect(feed.app.calls(UPDATE_ME)).toHaveLength(1));
+    expect(bodyOf(feed.app.calls(UPDATE_ME)[0]!)).toEqual({ preferences: { feedSort: 'score' } });
+  });
+
+  it('keeps For you on its own sort', async () => {
+    const me = makeMe({ preferences: { sort: 'score', feedSort: 'date' } });
+    const { app } = await open({ path: '/read/for_you', me, items: [item(1)] });
+    expect(await screen.findByRole('radio', { name: 'Score' })).toBeChecked();
+    await app.user.click(screen.getByRole('radio', { name: 'Date' }));
+    await waitFor(() => expect(app.calls(UPDATE_ME)).toHaveLength(1));
+    expect(bodyOf(app.calls(UPDATE_ME)[0]!)).toEqual({ preferences: { sort: 'date' } });
+  });
+
+  it('uses the sort of For you in a feed narrowed to For you', async () => {
+    const me = makeMe({ preferences: { sort: 'score', feedSort: 'date' } });
+    const { app } = await open({ path: '/read/feed/7?lane=for_you', ...FEED, me });
+    expect(await screen.findByRole('radio', { name: 'Score' })).toBeChecked();
+    expect(listQueries(app).at(-1)).toMatchObject({ lane: 'for_you', sort: 'score' });
+  });
+
+  it('is not in a feed narrowed to Maybe', async () => {
+    await open({ path: '/read/feed/7?lane=maybe', ...FEED });
+    await screen.findByRole('slider', { name: 'Minimum tier' });
+    expect(screen.queryByRole('radiogroup', { name: 'Sort by' })).toBeNull();
+  });
+
+  it.each([
+    ['a folder', '/read/folder/Tech%20News', { lane: 'all', folder: 'Tech News' }],
+    ['a label', '/read/label/12', { lane: 'all', labelId: '12' }],
+  ])('is in %s too', async (_name, path, query) => {
+    const { app } = await open({ path, labels: [makeLabel('12', 'Climate')] });
+    expect(await screen.findByRole('radio', { name: 'Date' })).toBeChecked();
+    expect(listQueries(app).at(-1)).toMatchObject({ ...query, sort: 'date' });
+  });
+});
+
 describe('Simple mode', () => {
   it('hides the excerpts at once and saves the setting', async () => {
     const { app } = await open({ path: '/read/for_you', items: [item(1)] });

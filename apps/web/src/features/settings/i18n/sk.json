@@ -47,6 +47,12 @@
       "score": "Najlepšia zhoda",
       "date": "Najnovšie"
     },
+    "feedSort": {
+      "label": "Zoradenie v kanáloch, priečinkoch a štítkoch",
+      "hint": "Poradie jedného kanála, priečinka alebo štítka, keď zobrazuje všetky svoje zoznamy. Pre vás má vlastné poradie.",
+      "score": "Najlepšia zhoda",
+      "date": "Najnovšie"
+    },
     "hideEverything": {
       "label": "Skryť zoznam Všetko ostatné",
       "hint": "Odstráni z bočného panela zoznam článkov, ktoré nezodpovedajú žiadnemu z vašich záujmov. Nič sa nemaže."
