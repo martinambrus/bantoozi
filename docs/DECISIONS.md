@@ -2348,3 +2348,6 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   skip only articles already at that rating). Now a selected article whose rating or hidden state changes by anything other
   than the panel's own Like/Dislike leaves the selection at once; the count and the "Select all" state follow. A rating that
   arrives from elsewhere (another device, a rolled-back failure) also unticks the article; Undo does not re-select it.
+  PR #41 review: with Show read off a rating made on another device only makes the next load omit the article, so a
+  selected article the rows no longer hold (D-245 kept rows count as held) leaves the selection as well, including
+  later-page articles a page-one refresh does not bring back.

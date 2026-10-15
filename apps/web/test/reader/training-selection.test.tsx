@@ -414,6 +414,47 @@ describe('select all', () => {
   });
 });
 
+describe('an article the list no longer holds', () => {
+  const selectAll = (app: App) =>
+    app.user.click(screen.getByRole('checkbox', { name: 'Select all articles' }));
+
+  it('leaves the selection when the next load omits it (rated elsewhere), and a bulk Dislike sends nothing for it', async () => {
+    const { app, served } = await openFeed(numbered(3), {
+      routes: { [RATE]: () => json(200, { ok: true }) },
+    });
+    await selectAll(app);
+    expect(within(panel()!).getByText('3 selected')).toBeVisible();
+
+    served.items = [item(1), item(3)];
+    await app.user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'Article 2' })).toBeNull());
+
+    await waitFor(() => expect(within(panel()!).getByText('2 selected')).toBeVisible());
+    expect(ticked(['Article 1', 'Article 3'])).toEqual(['Article 1', 'Article 3']);
+    await app.user.click(
+      within(panel()!).getByRole('button', { name: /^Dislike 2 selected articles$/ }),
+    );
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
+    expect(app.calls(RATE).map((request) => request.pathname)).toEqual([
+      '/api/v1/articles/1/rating',
+      '/api/v1/articles/3/rating',
+    ]);
+  });
+
+  it('drops the selected articles of a later page when a refresh returns page one only', async () => {
+    const { app, served } = await openFeed(numbered(25));
+    await selectAll(app);
+    expect(within(panel()!).getByText('25 selected')).toBeVisible();
+
+    served.items = numbered(20);
+    await app.user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'Article 21' })).toBeNull());
+
+    await waitFor(() => expect(within(panel()!).getByText('20 selected')).toBeVisible());
+    expect(ticked(titles(20))).toEqual(titles(20));
+  });
+});
+
 describe('reading the selection as it is now', () => {
   it('sends the next batch of an off feed with the version the answer reported, however the list is read', async () => {
     const sent: { count: () => number } = { count: () => 0 };
