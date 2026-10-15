@@ -7,11 +7,12 @@ import { useApiMutation } from '../../api/mutation.js';
 import { routes } from '../../api/routes.js';
 import { Badge } from '../../components/badge.js';
 import { Button } from '../../components/button.js';
-import { errorMessage } from '../../components/error-message.js';
+import { errorMessage, quotaDetails } from '../../components/error-message.js';
 import { CheckIcon, PlusIcon } from '../../components/icons.js';
 import { Select } from '../../components/select.js';
 import { useSession } from '../../session/context.js';
 import { conflictReason } from './card-errors.js';
+import { CardSwap } from './card-swap.js';
 import { useCardCache } from './queries.js';
 import { DEFAULT_STRENGTH, STRENGTHS, isStrength, type Strength } from './strengths.js';
 
@@ -36,13 +37,16 @@ export function AdoptControl({ card, onMessage }: AdoptControlProps) {
   const adopt = useApiMutation(routes.libraryAdopt);
   const [strength, setStrength] = useState<Strength>(DEFAULT_STRENGTH);
   const [busy, setBusy] = useState(false);
+  const [swapping, setSwapping] = useState(false);
+  const [replaceId, setReplaceId] = useState<string | null>(null);
 
   async function adoptAs(id: string) {
-    cache.apply(await adopt.mutateAsync({ params: { id }, body: { strength } }));
+    const body = replaceId === null ? { strength } : { strength, replaceCardId: replaceId };
+    cache.apply(await adopt.mutateAsync({ params: { id }, body }));
   }
 
   async function add() {
-    if (busy) return;
+    if (busy || (swapping && replaceId === null)) return;
     const signIn = session.currentSignIn();
     setBusy(true);
     onMessage(null);
@@ -50,6 +54,10 @@ export function AdoptControl({ card, onMessage }: AdoptControlProps) {
       try {
         await adoptAs(card.id);
         cache.hold([card.id]);
+        if (replaceId !== null) {
+          cache.remove(replaceId);
+          cache.refreshLibrary();
+        }
       } catch (error) {
         const current = supersededBy(error);
         if (current === undefined) throw error;
@@ -59,10 +67,13 @@ export function AdoptControl({ card, onMessage }: AdoptControlProps) {
         // A newer version took its place: what the person wants is the current one.
         await adoptAs(current);
         cache.hold([card.id, current]);
+        if (replaceId !== null) cache.remove(replaceId);
         cache.refreshLibrary();
       }
     } catch (error) {
-      if (conflictReason(error) === 'already_held') {
+      if (quotaDetails(error)?.limit === 'maxCards') {
+        setSwapping(true);
+      } else if (conflictReason(error) === 'already_held') {
         cache.hold([card.id]);
         cache.refreshCards();
         onMessage(t('library.alreadyHeld'));
@@ -84,26 +95,45 @@ export function AdoptControl({ card, onMessage }: AdoptControlProps) {
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-2">
-      <Select
-        label={t('library.addAs')}
-        value={strength}
-        // The card is added at the strength that was chosen when Add was pressed.
-        disabled={busy}
-        onChange={(event) => {
-          if (isStrength(event.target.value)) setStrength(event.target.value);
-        }}
-      >
-        {STRENGTHS.map((option) => (
-          <option key={option} value={option}>
-            {t(`strength.${option}`)}
-          </option>
-        ))}
-      </Select>
-      <Button loading={busy} onClick={() => void add()}>
-        <PlusIcon className="size-4" />
-        {t('common:actions.add')}
-      </Button>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-end gap-2">
+        <Select
+          label={t('library.addAs')}
+          value={strength}
+          // The card is added at the strength that was chosen when Add was pressed.
+          disabled={busy}
+          onChange={(event) => {
+            if (isStrength(event.target.value)) setStrength(event.target.value);
+          }}
+        >
+          {STRENGTHS.map((option) => (
+            <option key={option} value={option}>
+              {t(`strength.${option}`)}
+            </option>
+          ))}
+        </Select>
+        <Button loading={busy} disabled={swapping && replaceId === null} onClick={() => void add()}>
+          <PlusIcon className="size-4" />
+          {swapping ? t('swap.confirm') : t('common:actions.add')}
+        </Button>
+      </div>
+      {!swapping ? null : (
+        <>
+          <CardSwap value={replaceId} onChange={setReplaceId} disabled={busy} />
+          <div className="flex justify-end">
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => {
+                setSwapping(false);
+                setReplaceId(null);
+              }}
+            >
+              {t('common:actions.cancel')}
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

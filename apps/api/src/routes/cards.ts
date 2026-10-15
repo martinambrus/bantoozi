@@ -412,15 +412,17 @@ export const cardRoutes: FastifyPluginAsyncZod = async (app) => {
       const outcome = await request.holdingKey(async () => {
         const text = await prepareCardText(app, request, body);
         return request.mutate(async (tx) => {
-          if (body.replaceCardId !== undefined) {
-            await deleteUserCardForReplacement(tx, { cardId: body.replaceCardId });
-          }
+          const removal =
+            body.replaceCardId === undefined
+              ? null
+              : await deleteUserCardForReplacement(tx, { cardId: body.replaceCardId });
           const mutation = await createUserCard(tx, {
             interest: body.interest,
             strength: body.strength,
             ...(body.title === undefined ? {} : { title: body.title }),
             ...(body.notFor === undefined ? {} : { notFor: body.notFor }),
             ...(body.scopeFeedId === undefined ? {} : { scopeFeedId: body.scopeFeedId }),
+            ...(removal === null ? {} : { replacing: removal.replaced }),
             ...textFields(text),
           });
           return { status: 201, body: cardMutationResponse(mutation, locale, text.status) };
@@ -448,9 +450,10 @@ export const cardRoutes: FastifyPluginAsyncZod = async (app) => {
       const outcome = await request.holdingKey(async () => {
         const text = await prepareCardText(app, request, body);
         return request.mutate(async (tx) => {
-          if (body.replaceCardId !== undefined) {
-            await deleteUserCardForReplacement(tx, { cardId: body.replaceCardId });
-          }
+          const removal =
+            body.replaceCardId === undefined
+              ? null
+              : await deleteUserCardForReplacement(tx, { cardId: body.replaceCardId });
           const mutation = await createCardFromArticle(tx, {
             articleId: body.articleId,
             ...(body.moreArticleIds === undefined ? {} : { moreArticleIds: body.moreArticleIds }),
@@ -458,6 +461,7 @@ export const cardRoutes: FastifyPluginAsyncZod = async (app) => {
             strength: body.strength,
             ...(body.title === undefined ? {} : { title: body.title }),
             ...(body.notFor === undefined ? {} : { notFor: body.notFor }),
+            ...(removal === null ? {} : { replacing: removal.replaced }),
             ...textFields(text),
           });
           return { status: 201, body: cardMutationResponse(mutation, locale, text.status) };

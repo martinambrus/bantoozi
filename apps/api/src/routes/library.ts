@@ -1,6 +1,7 @@
 import {
   adoptLibraryCard,
   applyLibraryUpdate,
+  deleteUserCardForReplacement,
   listLibraryCards,
   listLibraryUpdates,
   listTopics,
@@ -100,12 +101,17 @@ export const libraryRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       const { locale } = requireAuth(request);
       const { id } = request.params;
-      const { strength, scopeFeedId } = request.body;
+      const { strength, scopeFeedId, replaceCardId } = request.body;
       const outcome = await request.mutate(async (tx) => {
+        const removal =
+          replaceCardId === undefined
+            ? null
+            : await deleteUserCardForReplacement(tx, { cardId: replaceCardId });
         const mutation = await adoptLibraryCard(tx, {
           cardId: id,
           strength,
           ...(scopeFeedId === undefined ? {} : { scopeFeedId }),
+          ...(removal === null ? {} : { replacing: removal.replaced }),
         });
         return { status: 200, body: cardMutationResponse(mutation, locale, null) };
       });

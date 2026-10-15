@@ -17065,6 +17065,9 @@
                   "scopeFeedId": {
                     "nullable": true,
                     "type": "string"
+                  },
+                  "replaceCardId": {
+                    "type": "string"
                   }
                 },
                 "required": [

@@ -311,6 +311,92 @@ describe('maxCards', () => {
     );
   });
 
+  it('POST /library/:id/adopt with replaceCardId at the limit holds the new card and drops the replaced one', async () => {
+    const r = await reader();
+    const [victim] = await seedHoldings(r.user.id, LIMITS.maxCards, 'card');
+    const library = await libraryCard();
+    expectQuota(
+      await r.api.post(`/library/${library.v1}/adopt`, { strength: 'like' }),
+      'maxCards',
+      LIMITS.maxCards,
+      LIMITS.maxCards,
+    );
+    const swapped = await r.api.post(`/library/${library.v1}/adopt`, {
+      strength: 'like',
+      replaceCardId: victim,
+    });
+    expectStatus(swapped, 200);
+    const held = await r.api.get('/cards');
+    const ids = (held.json() as { id: string }[]).map((card) => card.id);
+    expect(ids).toContain(library.v1);
+    expect(ids).not.toContain(victim);
+    expect((await usage(r.api)).maxCards).toBe(LIMITS.maxCards);
+  });
+
+  it('an account above maxCards (plan downgrade) can still swap one card for another, and not grow', async () => {
+    const r = await reader();
+    const over = LIMITS.maxCards + 2;
+    const held = await seedHoldings(r.user.id, over, 'card');
+    const count = async () => ((await r.api.get('/cards')).json() as { id: string }[]).length;
+    expect(await count()).toBe(over);
+    expectQuota(
+      await r.api.post('/cards', { interest: `Grow ${tag()}`, strength: 'like' }),
+      'maxCards',
+      over,
+      LIMITS.maxCards,
+    );
+    expectStatus(
+      await r.api.post('/cards', {
+        interest: `Swap create ${tag()}`,
+        strength: 'like',
+        replaceCardId: held[0],
+      }),
+      201,
+    );
+    expect(await count()).toBe(over);
+    expectStatus(
+      await r.api.post('/cards/from-article', {
+        articleId: r.articleId,
+        interest: `Swap article ${tag()}`,
+        strength: 'like',
+        replaceCardId: held[1],
+      }),
+      201,
+    );
+    expect(await count()).toBe(over);
+    const library = await libraryCard();
+    expectStatus(
+      await r.api.post(`/library/${library.v1}/adopt`, {
+        strength: 'like',
+        replaceCardId: held[2],
+      }),
+      200,
+    );
+    expect(await count()).toBe(over);
+  });
+
+  it('POST /library/:id/adopt with a replaceCardId that is not held fails as the editor path does, and changes nothing', async () => {
+    const r = await reader();
+    await seedHoldings(r.user.id, LIMITS.maxCards, 'card');
+    const library = await libraryCard();
+    const [stranger] = await seedHoldings((await reader()).user.id, 1, 'card');
+    const viaEditor = await r.api.post('/cards', {
+      interest: `Replace stranger ${tag()}`,
+      strength: 'like',
+      replaceCardId: stranger,
+    });
+    const viaAdopt = await r.api.post(`/library/${library.v1}/adopt`, {
+      strength: 'like',
+      replaceCardId: stranger,
+    });
+    expect(viaEditor.statusCode).toBeGreaterThanOrEqual(400);
+    expect(viaAdopt.statusCode).toBe(viaEditor.statusCode);
+    expect(viaAdopt.json().error?.code ?? viaAdopt.json().code).toBe(
+      viaEditor.json().error?.code ?? viaEditor.json().code,
+    );
+    expect((await usage(r.api)).maxCards).toBe(LIMITS.maxCards);
+  });
+
   it('at the limit, changes that do not add a holding still succeed (edit, library update)', async () => {
     const r = await reader();
     const library = await libraryCard();
@@ -369,6 +455,34 @@ describe('maxForks', () => {
       LIMITS.maxForks,
       LIMITS.maxForks,
     );
+  });
+
+  it('an account above maxForks and maxCards can swap a private fork for another, but not a public card for a fork', async () => {
+    const r = await reader();
+    const forks = LIMITS.maxForks + 2;
+    const held = await seedHoldings(r.user.id, forks, 'fork');
+    const publics = await seedHoldings(r.user.id, Math.max(LIMITS.maxCards + 2 - forks, 2), 'card');
+    const total = forks + publics.length;
+    expect(total).toBeGreaterThan(LIMITS.maxCards);
+    const body = () => ({
+      articleId: r.articleId,
+      interest: `Fork swap ${tag()}`,
+      strength: 'like',
+    });
+    expectStatus(
+      await r.api.post('/cards/from-article', { ...body(), replaceCardId: held[0] }),
+      201,
+    );
+    expect((await usage(r.api)).maxForks).toBe(forks);
+    expect((await usage(r.api)).maxCards).toBe(total);
+    expectQuota(
+      await r.api.post('/cards/from-article', { ...body(), replaceCardId: publics[0] }),
+      'maxForks',
+      forks,
+      LIMITS.maxForks,
+    );
+    expect((await usage(r.api)).maxForks).toBe(forks);
+    expect((await usage(r.api)).maxCards).toBe(total);
   });
 
   it('label forks are not counted in maxForks, and card forks do not block label examples', async () => {

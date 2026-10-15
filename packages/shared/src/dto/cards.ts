@@ -268,7 +268,11 @@ export const LibraryPageSchema = pageSchema(LibraryCardSchema);
 
 /** `POST /library/:id/adopt`. */
 export const AdoptLibraryCardBodySchema = z
-  .object({ strength: CardStrengthSchema, scopeFeedId: IdSchema.nullable().optional() })
+  .object({
+    strength: CardStrengthSchema,
+    scopeFeedId: IdSchema.nullable().optional(),
+    replaceCardId: IdSchema.optional(),
+  })
   .strict();
 
 const listChange = z.object({ added: z.array(z.string()), removed: z.array(z.string()) }).strict();
