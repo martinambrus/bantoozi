@@ -110,6 +110,7 @@ export const libraryRoutes: FastifyPluginAsyncZod = async (app) => {
           cardId: id,
           strength,
           ...(scopeFeedId === undefined ? {} : { scopeFeedId }),
+          ...(replaceCardId === undefined ? {} : { replacing: true }),
         });
         return { status: 200, body: cardMutationResponse(mutation, locale, null) };
       });

@@ -246,7 +246,10 @@ export function CardEditor({
                     : {}),
                 },
               });
-        if (replaceId !== null) cache.remove(replaceId);
+        if (replaceId !== null) {
+          cache.remove(replaceId);
+          cache.refreshLibrary();
+        }
         cache.apply(result);
       } else {
         const body = changesOf(card, values);

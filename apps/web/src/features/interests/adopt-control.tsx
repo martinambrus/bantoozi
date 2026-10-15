@@ -54,7 +54,10 @@ export function AdoptControl({ card, onMessage }: AdoptControlProps) {
       try {
         await adoptAs(card.id);
         cache.hold([card.id]);
-        if (replaceId !== null) cache.remove(replaceId);
+        if (replaceId !== null) {
+          cache.remove(replaceId);
+          cache.refreshLibrary();
+        }
       } catch (error) {
         const current = supersededBy(error);
         if (current === undefined) throw error;

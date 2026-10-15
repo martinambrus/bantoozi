@@ -84,12 +84,19 @@ export interface CreateUserCardInput {
   lang?: string | undefined;
   /** The complete English pair for a non-English card (`card_text_mode = 'english'`). */
   translation?: CardTranslationPair | null | undefined;
+  /**
+   * A holding was just deleted in this transaction to make room (`replaceCardId`): the create is
+   * a one-for-one swap, so `maxCards` is checked against the count before that delete.
+   */
+  replacing?: boolean | undefined;
 }
 
 export interface AdoptLibraryCardInput {
   cardId: string;
   strength: CardStrength;
   scopeFeedId?: string | null | undefined;
+  /** As {@link CreateUserCardInput.replacing}. */
+  replacing?: boolean | undefined;
 }
 
 /** Fields of `POST /cards/from-article`. */
@@ -138,6 +145,8 @@ async function holdCard(
     title: string | null;
     covered: readonly Subscription[];
     unretired: boolean;
+    /** A holding was deleted in this transaction to make room: the hold is not growth. */
+    replacing: boolean;
   },
 ): Promise<CardMutation> {
   const { card } = args;
@@ -165,7 +174,9 @@ async function holdCard(
   }
 
   const counts = await countCardHoldings(tx, me.userId);
-  checkQuota('maxCards', counts.cards, counts.cards + 1, me.limits.maxCards);
+  // A swap re-adds the holding its delete removed, so it never counts as growth.
+  const before = args.replacing ? counts.cards + 1 : counts.cards;
+  checkQuota('maxCards', before, counts.cards + 1, me.limits.maxCards);
   if (card.visibility === 'private') {
     checkQuota('maxForks', counts.forks, counts.forks + 1, me.limits.maxForks);
   }
@@ -293,7 +304,15 @@ export async function createUserCard(
     i18n: {},
     translation,
   });
-  return holdCard(tx, me, { card, strength, scopeFeedId, title, covered, unretired });
+  return holdCard(tx, me, {
+    card,
+    strength,
+    scopeFeedId,
+    title,
+    covered,
+    unretired,
+    replacing: input.replacing === true,
+  });
 }
 
 /**
@@ -327,7 +346,15 @@ export async function adoptLibraryCard(
   if (currentVersion !== cardId && (await lockCardHolding(tx, me.userId, cardId)) === null) {
     throw conflict('superseded', { cardId, currentCardId: currentVersion });
   }
-  return holdCard(tx, me, { card, strength, scopeFeedId, title: null, covered, unretired: false });
+  return holdCard(tx, me, {
+    card,
+    strength,
+    scopeFeedId,
+    title: null,
+    covered,
+    unretired: false,
+    replacing: input.replacing === true,
+  });
 }
 
 /**
@@ -384,6 +411,7 @@ export async function createCardFromArticle(
     title,
     covered,
     unretired: shared.unretired || fork.unretired,
+    replacing: input.replacing === true,
   });
 }
 

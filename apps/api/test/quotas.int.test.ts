@@ -333,6 +333,48 @@ describe('maxCards', () => {
     expect((await usage(r.api)).maxCards).toBe(LIMITS.maxCards);
   });
 
+  it('an account above maxCards (plan downgrade) can still swap one card for another, and not grow', async () => {
+    const r = await reader();
+    const over = LIMITS.maxCards + 2;
+    const held = await seedHoldings(r.user.id, over, 'card');
+    const count = async () => ((await r.api.get('/cards')).json() as { id: string }[]).length;
+    expect(await count()).toBe(over);
+    expectQuota(
+      await r.api.post('/cards', { interest: `Grow ${tag()}`, strength: 'like' }),
+      'maxCards',
+      over,
+      LIMITS.maxCards,
+    );
+    expectStatus(
+      await r.api.post('/cards', {
+        interest: `Swap create ${tag()}`,
+        strength: 'like',
+        replaceCardId: held[0],
+      }),
+      201,
+    );
+    expect(await count()).toBe(over);
+    expectStatus(
+      await r.api.post('/cards/from-article', {
+        articleId: r.articleId,
+        interest: `Swap article ${tag()}`,
+        strength: 'like',
+        replaceCardId: held[1],
+      }),
+      201,
+    );
+    expect(await count()).toBe(over);
+    const library = await libraryCard();
+    expectStatus(
+      await r.api.post(`/library/${library.v1}/adopt`, {
+        strength: 'like',
+        replaceCardId: held[2],
+      }),
+      200,
+    );
+    expect(await count()).toBe(over);
+  });
+
   it('POST /library/:id/adopt with a replaceCardId that is not held fails as the editor path does, and changes nothing', async () => {
     const r = await reader();
     await seedHoldings(r.user.id, LIMITS.maxCards, 'card');

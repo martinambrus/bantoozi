@@ -1,6 +1,6 @@
 import { CARD_LIMITS, type CardDto } from '@bantoozi/shared';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { accountKey } from '../../src/api/query-keys.js';
 import { UUID_V4, failure, json } from '../api/fake-fetch.js';
@@ -467,6 +467,31 @@ describe('replacing a card at the card limit', () => {
     ]);
     const cached = app.queryClient.getQueryData<CardDto[]>(accountKey(USER_A_ID, 'cards'));
     expect(cached?.map((card) => card.id)).toEqual(['201', '202', '203', '301']);
+  });
+
+  it('refreshes the library lists after a swap', async () => {
+    const created = makeCard({ id: '301', title: 'Space launches' });
+    const { app, form } = await openCreate(
+      { cards: HELD },
+      {
+        'GET /cards/usage': () => json(200, USAGE),
+        'POST /cards': (request) =>
+          (bodyOf(request) as { replaceCardId?: string }).replaceCardId === undefined
+            ? FULL()
+            : json(201, cardResult(created)),
+      },
+    );
+    const invalidate = vi.spyOn(app.queryClient, 'invalidateQueries');
+    await app.user.type(form.getByLabelText(LABELS.interest), 'Space launches');
+    await app.user.click(form.getByRole('button', { name: 'Save' }));
+    const group = await form.findByRole('group', { name: 'Replace a card to make room' });
+    await app.user.click(within(group).getByRole('radio', { name: /Delta/ }));
+    await app.user.click(form.getByRole('button', { name: 'Replace and save' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: accountKey(USER_A_ID, 'library'),
+    });
   });
 
   it('keeps today’s behaviour on Cancel', async () => {

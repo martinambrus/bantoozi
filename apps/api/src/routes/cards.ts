@@ -421,6 +421,7 @@ export const cardRoutes: FastifyPluginAsyncZod = async (app) => {
             ...(body.title === undefined ? {} : { title: body.title }),
             ...(body.notFor === undefined ? {} : { notFor: body.notFor }),
             ...(body.scopeFeedId === undefined ? {} : { scopeFeedId: body.scopeFeedId }),
+            ...(body.replaceCardId === undefined ? {} : { replacing: true }),
             ...textFields(text),
           });
           return { status: 201, body: cardMutationResponse(mutation, locale, text.status) };
@@ -458,6 +459,7 @@ export const cardRoutes: FastifyPluginAsyncZod = async (app) => {
             strength: body.strength,
             ...(body.title === undefined ? {} : { title: body.title }),
             ...(body.notFor === undefined ? {} : { notFor: body.notFor }),
+            ...(body.replaceCardId === undefined ? {} : { replacing: true }),
             ...textFields(text),
           });
           return { status: 201, body: cardMutationResponse(mutation, locale, text.status) };
