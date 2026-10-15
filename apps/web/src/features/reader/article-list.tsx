@@ -147,12 +147,13 @@ function useExitingRows(
   const rows = useKeptRows(items, generation, source, enabled, isMarked);
 
   useEffect(() => {
-    // A list loaded on request starts over: an exit that was under way must not hide a row of it.
+    // A list loaded on request, or another list, starts over: an exit that was under way must not
+    // hide a row of it.
     for (const timer of timers.current.values()) clearTimeout(timer);
     timers.current.clear();
     setLeaving(NONE);
     setGone(NONE);
-  }, [generation]);
+  }, [generation, source]);
 
   useEffect(() => {
     if (!enabled) return;

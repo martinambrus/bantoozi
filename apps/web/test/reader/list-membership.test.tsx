@@ -278,6 +278,32 @@ describe('rows the reader rated keep their place across background reloads', () 
 
     await waitFor(() => expect(rowTitles()).toEqual(['Article 1', 'Article 2', 'Article 3']));
   });
+  it('brings rated rows that are still unread back when another tier replaces the list', async () => {
+    const rows = [item(1), item(2), item(3)];
+    const { app } = await open({
+      path: '/read/for_you',
+      me: makeMe({ preferences: { markReadOnRate: false } }),
+      list: () => json(200, page(rows)),
+      routes: {
+        'POST /articles/:id/rating': (_request, params) =>
+          ratingResponse(
+            acked(
+              rows.find((row) => row.id === params['id'])!,
+              { rating: 1 },
+            ),
+          ),
+      },
+    });
+    await screen.findByRole('article', { name: 'Article 1' });
+    await app.user.click(likeOf('Article 2'));
+    await waitFor(() => expect(rowTitles()).toEqual(['Article 1', 'Article 3']));
+
+    fireEvent.change(screen.getByRole('slider', { name: 'Minimum tier' }), {
+      target: { value: '3' },
+    });
+
+    await waitFor(() => expect(rowTitles()).toEqual(['Article 1', 'Article 2', 'Article 3']));
+  });
 });
 
 describe('rows the reader read keep their place across background reloads', () => {
