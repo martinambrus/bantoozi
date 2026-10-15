@@ -1,4 +1,4 @@
-import type { Subscription } from '@bantoozi/shared';
+import type { AnalyzeResponse, Subscription } from '@bantoozi/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -118,6 +118,17 @@ export function useSubscriptionsCache() {
                   inferenceVersion: subscription.inferenceVersion,
                   inferenceActivatedAt: subscription.inferenceActivatedAt,
                 }
+              : item,
+          ),
+        );
+      },
+      /** Takes in the mode and version an answer reports for one feed. */
+      setInference: (feedId: string, inference: AnalyzeResponse['inference']) => {
+        if (!lasts()) return undefined;
+        return writeQueryData<Subscription[]>(queryClient, key, (list) =>
+          list?.map((item) =>
+            item.feed.id === feedId
+              ? { ...item, inferenceMode: inference.mode, inferenceVersion: inference.version }
               : item,
           ),
         );

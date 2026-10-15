@@ -61,13 +61,24 @@ function afterHold(served: Served, answer: () => Response) {
 /** `POST /subscriptions/:feedId/analyze` as the API answers it: 202, and the articles are requested. */
 function accepts(served: Served): ApiRouteHandler {
   return (request) => {
-    const { articles } = bodyOf(request) as { articles: { id: string }[] };
+    const { articles, expectedInferenceVersion, startTraining } = bodyOf(request) as {
+      articles: { id: string }[];
+      expectedInferenceVersion: string;
+      startTraining?: boolean;
+    };
     const ids = articles.map(({ id }) => id);
     served.items = served.items.map((row) =>
       ids.includes(row.id) ? { ...row, analysis: asked('pending', Number(row.id)) } : row,
     );
     return json(202, {
       requests: ids.map((id) => ({ id: requestId(Number(id)), articleId: id, status: 'pending' })),
+      inference: {
+        mode: 'training',
+        version:
+          startTraining === true
+            ? String(BigInt(expectedInferenceVersion) + 1n)
+            : expectedInferenceVersion,
+      },
     });
   };
 }
@@ -154,6 +165,7 @@ async function reload(app: App) {
 const accepted = (...ids: number[]) =>
   json(202, {
     requests: ids.map((id) => ({ id: requestId(id), articleId: String(id), status: 'pending' })),
+    inference: { mode: 'training', version: '5' },
   });
 
 async function go(app: App, to: string, params: Record<string, string> = {}) {
@@ -373,34 +385,26 @@ describe('select all', () => {
 });
 
 describe('reading the selection as it is now', () => {
-  it('holds the next batch of an off feed until the subscriptions are read again', async () => {
-    const gate: { hold?: Promise<unknown> } = {};
-    const training = { ...verge('training'), inferenceVersion: '6' };
+  it('sends the next batch of an off feed with the version the answer reported, however the list is read', async () => {
+    const sent: { count: () => number } = { count: () => 0 };
     const { app } = await openFeed(numbered(25), {
       subscriptions: [verge('off'), other],
+      // The list is read again after the answer, but that read is still on its way.
       routes: {
         'GET /subscriptions': () =>
-          gate.hold === undefined
+          sent.count() === 0
             ? json(200, [verge('off'), other])
-            : gate.hold.then(() => json(200, [training, other])),
+            : new Promise<Response>(() => undefined),
       },
     });
+    sent.count = () => app.calls(ANALYZE).length;
     await app.user.click(
       screen.getByRole('checkbox', { name: /^(Select|Deselect) all articles$/ }),
     );
-    const hold = deferred<void>();
-    gate.hold = hold.promise;
 
     await app.user.click(sendButton(/^Start training and analyze 20 of 25$/));
 
     await waitFor(() => expect(app.calls(ANALYZE)).toHaveLength(1));
-    await waitFor(() => expect(screen.getByText('5 selected')).toBeVisible());
-    const next = within(panel()!).getAllByRole('button')[0]!;
-    await app.user.click(next);
-    expect(next).toBeDisabled();
-    expect(app.calls(ANALYZE)).toHaveLength(1);
-
-    hold.resolve();
     await app.user.click(
       await screen.findByRole('button', { name: 'Analyze selected 5 articles' }),
     );

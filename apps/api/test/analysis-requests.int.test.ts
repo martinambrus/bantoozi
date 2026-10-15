@@ -179,7 +179,8 @@ describe('POST /subscriptions/:feedId/analyze', () => {
       startTraining: true,
     });
     expect(res.statusCode, res.body).toBe(202);
-    const { requests } = res.json();
+    const { requests, inference } = res.json();
+    expect(inference).toEqual({ mode: 'training', version: '1' });
     expect(requests).toHaveLength(2);
     expect(requests.map((r: { articleId: string }) => r.articleId)).toEqual(
       articles.map((a) => a.id),
@@ -220,6 +221,7 @@ describe('POST /subscriptions/:feedId/analyze', () => {
     });
     expect(again.statusCode, again.body).toBe(202);
     expect(again.json().requests).toEqual(requests);
+    expect(again.json().inference).toEqual({ mode: 'training', version: '1' });
     expect(await requestRows(alice.id)).toHaveLength(2);
   });
 

@@ -20,7 +20,7 @@ import { CloseIcon } from '../../components/icons.js';
 import { useAccountId, useSession } from '../../session/context.js';
 import { articleKeys } from '../article/query-keys.js';
 import { InlineAlert } from '../feeds/inline-alert.js';
-import { subscriptionsKey, useSubscriptionsCache } from '../feeds/subscriptions.js';
+import { useSubscriptionsCache } from '../feeds/subscriptions.js';
 import { MAX_SELECTED_ARTICLES } from './selection.js';
 
 export interface AnalyzePanelProps {
@@ -173,14 +173,6 @@ export function AnalyzePanel({
   const analyze = useApiMutation(routes.subscriptionsAnalyze);
   const hintId = useId();
   const sending = useRef(false);
-  // An off feed is training once the request is accepted; until the subscriptions say so, the next
-  // batch would send the old version with `startTraining` and be refused as stale.
-  const syncing = useRef(false);
-  const [syncingNow, setSyncingNow] = useState(false);
-  // The subscriptions were read again and still show the old state (or could not be read): nothing
-  // is sent until a read shows the new one.
-  const unsynced = useRef(false);
-  const [unsyncedNow, setUnsyncedNow] = useState(false);
   const section = useRef<HTMLElement>(null);
   const removers = useRef(new Map<string, HTMLButtonElement>());
   const refocus = useRef<Refocus | null>(null);
@@ -237,41 +229,16 @@ export function AnalyzePanel({
     );
   }
 
-  // Reads the subscriptions again; false when that read failed or still shows this feed as it was.
-  async function synced(): Promise<boolean> {
-    const key = subscriptionsKey(accountId);
-    const before = queryClient.getQueryState(key);
-    await subscriptions.refresh().catch(() => undefined);
-    const after = queryClient.getQueryState(key);
-    const read =
-      after !== undefined &&
-      (after.dataUpdatedAt !== (before?.dataUpdatedAt ?? 0) ||
-        after.errorUpdatedAt !== (before?.errorUpdatedAt ?? 0));
-    if (!read) return true;
-    const now = subscriptions.known()?.find((item) => item.feed.id === subscription.feed.id);
-    return (
-      after.status !== 'error' &&
-      now !== undefined &&
-      !(now.inferenceMode === 'off' && now.inferenceVersion === subscription.inferenceVersion)
-    );
-  }
-
-  function settle(ok: boolean) {
-    syncing.current = false;
-    setSyncingNow(false);
-    unsynced.current = !ok;
-    setUnsyncedNow(!ok);
-  }
-
-  function accepted(sent: readonly ArticleListItem[], requests: AnalyzeResponse['requests']) {
+  function accepted(
+    sent: readonly ArticleListItem[],
+    requests: AnalyzeResponse['requests'],
+    inference: AnalyzeResponse['inference'],
+  ) {
     const sentIds = sent.map(({ id }) => id);
-    if (off) {
-      syncing.current = true;
-      setSyncingNow(true);
-      void synced().then(settle);
-    } else {
-      void subscriptions.refresh();
-    }
+    // The answer says what the feed is now (an off feed is training); the shared list takes it in at
+    // once, so a later panel never sends the old version.
+    subscriptions.setInference(subscription.feed.id, inference);
+    void subscriptions.refresh();
     recordRequests(requests);
     refreshArticles();
     const panel = section.current;
@@ -305,27 +272,20 @@ export function AnalyzePanel({
   // The answer is acted on even when the panel is gone by then, since the cache still has to know,
   // but not once the sign-in that sent it has ended.
   async function send() {
-    if (empty || sending.current || syncing.current) return;
-    if (unsynced.current) {
-      syncing.current = true;
-      setSyncingNow(true);
-      const ok = await synced();
-      settle(ok);
-      if (!ok) return;
-    }
+    if (empty || sending.current) return;
     sending.current = true;
     const signIn = session.currentSignIn();
     const sent = batch;
-    let requests: AnalyzeResponse['requests'];
+    let answer: AnalyzeResponse;
     try {
-      ({ requests } = await analyze.mutateAsync({
+      answer = await analyze.mutateAsync({
         params: { feedId: subscription.feed.id },
         body: {
           articles: sent.map(({ id, contentRevision }) => ({ id, contentRevision })),
           expectedInferenceVersion: subscription.inferenceVersion,
           ...(off ? { startTraining: true } : {}),
         },
-      }));
+      });
     } catch (error) {
       if (session.currentSignIn() !== signIn) return;
       refused(sent, error);
@@ -334,7 +294,7 @@ export function AnalyzePanel({
       sending.current = false;
     }
     if (session.currentSignIn() !== signIn) return;
-    accepted(sent, requests);
+    accepted(sent, answer.requests, answer.inference);
   }
 
   function remove(articleId: string) {
@@ -360,7 +320,7 @@ export function AnalyzePanel({
     }
   }
 
-  const message = unsyncedNow ? t('errors.version') : analyze.error === movedOn ? null : problem();
+  const message = analyze.error === movedOn ? null : problem();
 
   return (
     <section
@@ -413,7 +373,7 @@ export function AnalyzePanel({
         {showAnalyze ? (
           <Button
             disabled={empty}
-            loading={analyze.isPending || syncingNow}
+            loading={analyze.isPending}
             aria-describedby={hint === null ? undefined : hintId}
             onClick={() => {
               void send();

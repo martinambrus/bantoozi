@@ -208,12 +208,14 @@ function analyzeRoute(state: WizardState): ApiRouteHandler {
       body.articles.map((selected) => selected.id),
       status,
     );
+    const now = state.subscriptions.find((candidate) => candidate.feed.id === feedId);
     return json(202, {
       requests: body.articles.map((selected) => ({
         id: requestId(Number(selected.id)),
         articleId: selected.id,
         status,
       })),
+      inference: { mode: now?.inferenceMode, version: now?.inferenceVersion },
     });
   };
 }
