@@ -156,7 +156,7 @@ function purgeIdle(origins: Map<string, OriginState>, at: number): void {
       state.blockedUntil <= at &&
       state.nextStartAt <= at &&
       state.feedNextStartAt <= at &&
-      state.learnedS < 1 &&
+      state.learnedS * 0.8 ** Math.floor(Math.max(0, at - state.learnedAt) / 86400000) < 1 &&
       state.crawlDelayS === 0 &&
       state.leases.every((lease) => lease.expiresAt <= at);
     if (idle) origins.delete(origin);

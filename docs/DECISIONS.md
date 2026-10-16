@@ -2457,3 +2457,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   cached decisions do not write shared policy. Migration 0030 also stores `crawl_delay_updated_at`,
   and older refreshes cannot replace newer policies, including clearing a delay. Equal timestamps
   conservatively keep the greater delay. Memory and PostgreSQL limiters share these semantics.
+
+  PR #46 fourth review: housekeeping retains origin rows while a feed budget slot, Crawl-delay or
+  a decayed learned floor of at least one second still applies. Quiet feeds may be ten days apart;
+  the old seven-day idle purge cannot erase their source policy. Fully faded idle rows remain
+  collectible; memory cleanup evaluates quiet-day decay too.
