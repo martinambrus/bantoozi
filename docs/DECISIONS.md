@@ -2395,3 +2395,23 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `feedback_events` (rate, prompt_answer, open, read, dwell, bookmark, label, hide — not mark_read, un-*, undo) with
   `INSERT … ON CONFLICT DO NOTHING`, so a first engagement never needs a stronger lock on the article row (no deadlock with
   readers holding FOR SHARE), and backfilled in migration 0028 from past events and current reader state.
+- D-254: 2026-10-16 (task #11; resolves D-70's open repair) — Selections are frozen. Creating or forking a card ran
+  `card.backfill`, which queued match rows for recently selected articles that `analysis.process` had answered from shared
+  facets without advancing their pipeline state; nothing ever claims rows on an extracted/translated article, D-70's
+  promised `house.reconcile` repair was never built, and the dev DB held ~2.4k such rows (+~1 000 per new card) while the
+  new card showed as pending forever there. Owner decision: a selection is answered for the cards it froze; later cards do
+  not apply to it retroactively and cost nothing. Backfill's selection branch skips extracted/translated articles; the ranker
+  leaves cards without a queue row out of the coverage of a selection-only extracted/translated article (no pending
+  marker; ranking unchanged); `house.reconcile` deletes match rows that can never run (extracted/translated article, no
+  admitted active carrier, unleased, enqueued over 60 minutes ago, no undelivered extract/translate/enrich/match intent),
+  which also clears the backlog. Spec 05 §5.4 step 2, spec 11 §6.
+  PR #43 review: the sweep records a `user.rank` intent (`recordRankIntents`) for every user its deleted rows affected (the
+  row's user, or for a shared row the feed's subscribers and the article's selectors), so a stored pending demotion clears;
+  and the ranker's frozen rule no longer depends on the pipeline state — for an article a user reaches only through a
+  selection, a card with neither an answer nor a queue row is left out of coverage even after another account's Active
+  carrier enriched the shared article. Frozen means "creates no new work", not "ignores free results": a later card whose
+  answer already exists for the shared article (another account's work) counts, as does one another account has queued
+  (its own demand will run it); both cost this user nothing and only improve the ranking.
+  Freezing is decided per card: a card without an answer or a queue row stays out of coverage unless its scope reaches a
+  carrier that admitted the article automatically (an unscoped card: any; a scoped card: its own feed), so a card scoped
+  to the training feed of the selection is not pending just because another Active feed also carries the article.

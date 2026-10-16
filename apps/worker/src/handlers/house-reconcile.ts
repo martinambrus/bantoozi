@@ -2,6 +2,7 @@ import {
   expireReservations,
   recordRankIntents,
   retryTransaction,
+  sweepStalledMatchRows,
   usersDueForRank,
   workerOutbox,
 } from '@bantoozi/db';
@@ -22,6 +23,7 @@ const JOB = 'house.reconcile' as const;
 /** Reservations or users handled per transaction. */
 export const RECONCILE_BATCH = 500;
 const RANK_REASON = 'next_rank_at_due';
+const SWEEP_REASON = 'stalled_match_rows';
 /** The name of the due-user sweep in `house.progress`' saved cursor. */
 const RANK_SWEEP = 'rank';
 
@@ -30,7 +32,10 @@ const RANK_SWEEP = 'rank';
  * into `uncertain` (settlement is a later job) and records one deduplicated `user.rank` intent for
  * every user with an article whose `next_rank_at` is due at the run's `now`. Once the primary
  * engine is available again it enqueues the `house.reenrich` / `house.rematch` runs that found it
- * unavailable and are recorded as pending in `house.progress` (spec 11 §6).
+ * unavailable and are recorded as pending in `house.progress` (spec 11 §6). It also deletes
+ * `match_queue` rows that can never run, on extracted/translated articles with only a frozen
+ * selection or no demand (D-254, the D-70 repair); this needs no provider, so it is here and not in
+ * `house.rescore-degraded`, which skips its whole run while the primary engine is unavailable.
  */
 export function createReconcileHandler(
   deps: WorkerDeps,
@@ -55,6 +60,18 @@ export function createReconcileHandler(
     }
     // The due-user sweep resumes after the position a budget-cut run saved: users stay due until
     // ranked, so starting over each run would revisit the same low-id prefix and starve the rest.
+    let swept = 0;
+    while (complete) {
+      // A deleted row can leave a stored `pending_cards` demotion, which only a re-rank clears.
+      const removed = await retryTransaction(deps.db, async (tx) => {
+        const result = await sweepStalledMatchRows(tx, { limit: RECONCILE_BATCH });
+        await recordRankIntents(tx, workerOutbox(tx), result.userIds, { reason: SWEEP_REASON });
+        return result.deleted;
+      });
+      swept += removed;
+      if (removed < RECONCILE_BATCH) break;
+      if (Date.now() - started > HOUSE_RUN_BUDGET_MS) complete = false;
+    }
     const sweeps = await readSweepCursors(deps, JOB);
     let after: string | null = sweeps[RANK_SWEEP] ?? null;
     while (complete) {
@@ -83,10 +100,11 @@ export function createReconcileHandler(
       {
         job: JOB,
         durationMs: Date.now() - started,
-        affected: reservations + ranked,
+        affected: reservations + ranked + swept,
         reservations,
         rankIntents: ranked,
         resumedRebuilds: resumed,
+        stalledMatchRowsDeleted: swept,
         remaining: complete ? 0 : null,
       },
       'reconciled',

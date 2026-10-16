@@ -192,3 +192,69 @@ export async function recoverMatchQueue(
      LIMIT ${input.limit}`);
   return { resetRows: reset.rowCount ?? 0, articleIds: due.rows.map((row) => row.article_id) };
 }
+
+/** Age after which an unclaimable `match_queue` row is swept (D-254). */
+export const STALLED_MATCH_ROW_AGE_MS = 60 * 60_000;
+
+/**
+ * Deletes up to `limit` `match_queue` rows that can never run (D-254, the D-70 repair). Claims run
+ * after enrichment, so a row on an `extracted`/`translated` article waits for a stage nothing will
+ * start when the article's only demand is a frozen selection (or it has none: unsubscribed, mode
+ * off, a bumped inference version). A row qualifies when it is unleased, was enqueued at least
+ * `olderThanMs` ago, its article is `extracted`/`translated`, no `active` subscription admits an
+ * arrival of the article (such an article is on its way to enrichment), and no undelivered
+ * extract/translate/enrich/match intent exists for the article. Returns the number deleted and the
+ * users whose stored ranking may carry a `pending_cards` demotion from a deleted row, so the caller
+ * can re-rank them: the row's own `user_id`, and for a shared row (`user_id` NULL) every live user
+ * who subscribes to a feed carrying the article or has an analysis request for it.
+ */
+export async function sweepStalledMatchRows(
+  db: Executor,
+  input: { limit: number; olderThanMs?: number },
+): Promise<{ deleted: number; userIds: string[] }> {
+  const olderSeconds = (input.olderThanMs ?? STALLED_MATCH_ROW_AGE_MS) / 1000;
+  const result = await db.execute<{ article_id: string; user_id: string | null }>(sql`
+    DELETE FROM match_queue q
+     USING (SELECT q2.article_id, q2.card_id
+              FROM match_queue q2
+              JOIN articles a ON a.id = q2.article_id
+                             AND a.pipeline_state IN ('extracted', 'translated')
+             WHERE q2.enqueued_at < now() - make_interval(secs => ${olderSeconds}::double precision)
+               AND (q2.lease_until IS NULL OR q2.lease_until < now())
+               AND NOT EXISTS (
+                     SELECT 1 FROM feed_items fi
+                       JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.inference_mode = 'active'
+                                           AND fi.first_seen_at >= s.inference_activated_at
+                                           AND fi.over_cap_limit IS NULL
+                       JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
+                      WHERE fi.article_id = q2.article_id)
+               AND NOT EXISTS (
+                     SELECT 1 FROM job_outbox o
+                      WHERE o.delivered_at IS NULL
+                        AND o.queue IN ('article.extract', 'article.translate', 'article.enrich',
+                                        'article.match')
+                        AND o.payload->>'articleId' = q2.article_id::text)
+             ORDER BY q2.enqueued_at, q2.article_id, q2.card_id
+             LIMIT ${input.limit}
+             FOR UPDATE OF q2 SKIP LOCKED) x
+     WHERE q.article_id = x.article_id AND q.card_id = x.card_id
+    RETURNING q.article_id::text AS article_id, q.user_id::text AS user_id`);
+  const users = new Set<string>();
+  const shared = new Set<string>();
+  for (const row of result.rows) {
+    if (row.user_id === null) shared.add(row.article_id);
+    else users.add(row.user_id);
+  }
+  if (shared.size > 0) {
+    const affected = await db.execute<{ user_id: string }>(sql`
+      SELECT s.user_id::text AS user_id
+        FROM feed_items fi
+        JOIN subscriptions s ON s.feed_id = fi.feed_id
+       WHERE fi.article_id = ANY(${sql.param([...shared])}::bigint[])
+      UNION
+      SELECT r.user_id::text FROM analysis_requests r
+       WHERE r.article_id = ANY(${sql.param([...shared])}::bigint[])`);
+    for (const row of affected.rows) users.add(row.user_id);
+  }
+  return { deleted: result.rowCount ?? 0, userIds: [...users].sort() };
+}

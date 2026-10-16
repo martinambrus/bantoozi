@@ -544,7 +544,11 @@ export function labelQuestion(card: CardRow, mode: CardTextMode): NoulQuestion {
    (default 7 days), not the possibly old globally deduplicated article timestamp. Include usable enriched/
    matched revisions; schedule prerequisite enrichment for degraded articles, while extracted and
    translated ones get queue rows that wait for the stage under way; failed and stale articles get
-   nothing (D-70). A user
+   nothing (D-70). A selection is frozen (D-254): an article that only a selected request demands and
+   that is still extracted or translated gets no rows, because the request answered its own frozen
+   cards and no stage will run for later ones; the ranker leaves a card with neither an answer nor a
+   queue row out of the coverage of any article the user reaches only through a selection, whatever its
+   pipeline state, instead of showing it pending. A user
    subscribing to an old globally known item must not leave it permanently unclassified.
 3. Process newest first in **pages of 500** distinct articles. For each article use the maximum
    eligible carrying feed's `feed_items.first_seen_at` as its page key (not the global article time).

@@ -71,7 +71,9 @@ export interface BackfillArticle {
  * One page of a backfill (spec 05 §5.4 steps 1–3): the user's articles with admitted demand whose
  * eligible carrier arrival lies in `[snapshotAt − windowDays, snapshotAt]`, where admission is an
  * `active` subscription to that carrier with the arrival at/after activation (a non-stale article),
- * or a current selected request of this user for that article and feed (spec 05 §1.1). Off and
+ * or a current selected request of this user for that article and feed (spec 05 §1.1). A
+ * selection is frozen (D-254): one whose article never went through enrichment (`extracted`,
+ * `translated`) is answered only for the cards it froze, so it contributes nothing here. Off and
  * unselected training carriers contribute nothing: a backfill never expands authorization.
  * `feedIds` restricts the carriers. Articles are keyed by their latest eligible carrier arrival
  * (not the global article time), ordered `(key, id)` descending and read strictly below `cursor`.
@@ -121,6 +123,7 @@ export async function backfillPage(
        WHERE r.user_id = ${input.userId}::uuid
          AND r.status IN ('pending', 'running', 'complete')
          AND r.created_at > now() - make_interval(days => ${SELECTION_WINDOW_DAYS})
+         AND a.pipeline_state NOT IN ('extracted', 'translated')
          ${feedFilter}
     )
     SELECT e.article_id::text AS article_id,
