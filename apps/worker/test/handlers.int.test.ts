@@ -1991,6 +1991,54 @@ describe('plan velocity source protection', () => {
     expect((await feedRow(feedId)).fetch_url).toBe(server.url(`${root}/a`));
   });
 
+  it('carries a forced refresh across source deferrals before publisher expiry, even for a paused feed', async () => {
+    const path = '/source-protection/forced-continuation.rss';
+    let requests = 0;
+    server.route(path, () => {
+      requests += 1;
+      return rssRoute(() => rss('Forced', ''))();
+    });
+    const feedId = await addFeed(path, []);
+    let clock = Date.now();
+    const initial = clock;
+    await owner.query(
+      "UPDATE feeds SET status = 'paused', last_success_at = $2, next_fetch_at = $2::timestamptz + interval '2 hours', publish_stats = '{\"cache_min_interval_s\":7200}'::jsonb WHERE id = $1",
+      [feedId, new Date(clock)],
+    );
+    const limiter = createMemoryOriginLimiter({ spacingMs: 0, now: () => clock });
+    await limiter.block(new URL(server.url('/')).origin, new Date(clock + 60000));
+    const input = { ...workerDeps(limiter), now: () => new Date(clock) };
+    await fetchFeed(feedId, createHandlers(input));
+    expect(requests).toBe(0);
+    const pending = await owner.query(
+      'SELECT payload, available_at FROM job_outbox WHERE queue = $1 AND payload ->> $2 = $3 AND delivered_at IS NULL',
+      ['feed.fetch', 'feedId', feedId],
+    );
+    expect(pending.rows).toHaveLength(1);
+    expect(pending.rows[0]?.payload).toEqual({ feedId });
+    expect(pending.rows[0]?.available_at.getTime()).toBeGreaterThanOrEqual(initial + 60000);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      clock += 61000;
+      await dispatch(
+        createHandlers(input),
+        'feed.fetch',
+        { feedId },
+        { queue: 'feed.fetch', jobId: 'forced-normal-continuation' },
+      );
+    }
+    expect(requests).toBe(1);
+    const completed = (await owner.query('SELECT publish_stats FROM feeds WHERE id = $1', [feedId]))
+      .rows[0]!;
+    expect(completed.publish_stats.fetch_force).toBeUndefined();
+    await dispatch(
+      createHandlers(input),
+      'feed.fetch',
+      { feedId },
+      { queue: 'feed.fetch', jobId: 'duplicate-continuation' },
+    );
+    expect(requests).toBe(1);
+  });
+
   it('defers repeated 503 responses without quarantining a healthy feed', async () => {
     const path = '/source-protection/throttled.rss';
     server.route(path, () => ({ status: 503, headers: { 'retry-after': '600' }, body: '' }));

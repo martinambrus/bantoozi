@@ -740,7 +740,10 @@ every hop; a temporary robots failure or source wait defers the job. These defer
 feed error/quarantine counts. If a redirect hop cannot start within the HTTP deadline, completed
 hops persist in `feeds.publish_stats.fetch_redirects`; the next job resumes at the target with the
 same original validator scope, redirect/loop budget and permanent/temporary semantics. Terminal
-outcomes clear progress. No database transaction is held during HTTP.
+outcomes clear progress. A forced refresh's source deferral also persists `fetch_force` and a
+normal delayed outbox retry; the durable flag carries the override until a terminal outcome clears
+it, including on feeds the regular scheduler excludes. Duplicate continuations then become no-ops.
+No database transaction is held during HTTP.
 
 ### 8.3 Language detection (`detectLanguage`, pure, in `packages/shared`)
 

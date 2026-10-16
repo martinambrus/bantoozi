@@ -793,8 +793,22 @@ describe('fast plans and source protection', () => {
   });
   it('honors source and publisher floors even on premium', () => {
     const feed = { minIntervalS: 60, fetchIntervalS: 60, sourceFloorS: 1800 };
-    expect(schedule(feed, success(8)).fetchIntervalS).toBe(1800);
+    expect(schedule(feed, success(8)).fetchIntervalS).toBe(60);
+    expect(delayS(schedule(feed, success(8)))).toBe(1800);
     expect(delayS(schedule(feed, success(8), { ttlMinutes: 60 }))).toBeGreaterThanOrEqual(3600);
+  });
+  it('lets the next poll relax with the source floor without permanently raising the adaptive base', () => {
+    let feed = feedRow({ minIntervalS: 60, fetchIntervalS: 60, sourceFloorS: 1800 });
+    for (const floor of [1800, 1440, 1152]) {
+      feed = { ...feed, sourceFloorS: floor };
+      const result = nextSchedule(feed, success(1), NOW);
+      expect(result.fetchIntervalS).toBe(60);
+      expect(delayS(result)).toBe(floor);
+      feed = { ...feed, ...result };
+    }
+    const recovered = nextSchedule({ ...feed, sourceFloorS: 0 }, success(1), NOW);
+    expect(recovered.fetchIntervalS).toBe(60);
+    expect(delayS(recovered)).toBeLessThan(70);
   });
   it('never quarantines or counts throttling as a feed error', () => {
     const feed = { minIntervalS: 60, fetchIntervalS: 60, consecutiveErrors: 9, totalErrors: 9 };

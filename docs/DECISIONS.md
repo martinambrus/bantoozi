@@ -2473,3 +2473,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   redirect limit, loop checks and permanent/temporary semantics across attempts. Terminal results
   clear progress. This allows long Crawl-delay redirects to finish across process/job boundaries
   without extending an HTTP deadline or weakening source protection.
+
+  PR #46 seventh review: learned source floors bound next_fetch_at without raising the persisted
+  adaptive base, so normal one-new-item polls speed up as the floor decays. A forced refresh that
+  source protection defers persists its intent and a delayed ordinary outbox retry; that retry
+  reads the flag to bypass publisher/due/status gates, even on a paused or unsubscribed feed.
+  Terminal outcomes clear the flag, so duplicate continuation jobs become stale no-ops.

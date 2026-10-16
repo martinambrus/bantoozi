@@ -276,6 +276,7 @@ export interface FeedForFetch {
   publisherIntervalS?: number;
   cacheIntervalS?: number;
   resumeRedirects?: FeedRedirectHop[];
+  forcePending?: boolean;
 }
 
 type Timestamp = Date | string;
@@ -320,6 +321,7 @@ export async function loadFeedForFetch(db: Executor, feedId: string): Promise<Fe
     publisher_interval_s: number | null;
     cache_interval_s: number | null;
     resume_redirects: unknown;
+    force_pending: boolean | null;
   }>(sql`
     SELECT id::text AS id, url, fetch_url, merged_into_id::text AS merged_into_id, status,
            subscriber_count, next_fetch_at, etag, last_modified,
@@ -334,7 +336,8 @@ export async function loadFeedForFetch(db: Executor, feedId: string): Promise<Fe
              THEN (publish_stats ->> 'publisher_min_interval_s')::float8 END AS publisher_interval_s,
            CASE WHEN jsonb_typeof(publish_stats -> 'cache_min_interval_s') = 'number'
              THEN (publish_stats ->> 'cache_min_interval_s')::float8 END AS cache_interval_s,
-           publish_stats -> 'fetch_redirects' AS resume_redirects
+           publish_stats -> 'fetch_redirects' AS resume_redirects,
+           publish_stats -> 'fetch_force' = 'true'::jsonb AS force_pending
       FROM feeds WHERE id = ${feedId}::bigint`);
   const row = result.rows[0];
   if (row === undefined) return null;
@@ -371,6 +374,7 @@ export async function loadFeedForFetch(db: Executor, feedId: string): Promise<Fe
     publisherIntervalS: row.publisher_interval_s ?? 0,
     cacheIntervalS: row.cache_interval_s ?? 0,
     resumeRedirects: readFetchRedirects(row.resume_redirects),
+    forcePending: row.force_pending === true,
     recentGapsS: gaps.filter(
       (gap): gap is number => typeof gap === 'number' && Number.isFinite(gap),
     ),
@@ -485,7 +489,7 @@ export async function recordFeedFetch(
     stats['cache_min_interval_s'] = Math.max(0, Math.ceil(input.cacheMinIntervalS));
   if (input.items7d !== undefined) stats['items_7d'] = Math.max(0, Math.round(input.items7d));
   sets.push(
-    sql`publish_stats = (f.publish_stats - 'fetch_redirects') || ${JSON.stringify(stats)}::jsonb`,
+    sql`publish_stats = (f.publish_stats - 'fetch_redirects' - 'fetch_force') || ${JSON.stringify(stats)}::jsonb`,
   );
   sets.push(sql`updated_at = now()`);
   await tx.execute(
@@ -523,10 +527,14 @@ export async function deferFeedFetch(
   feedId: string,
   until: Date,
   redirects?: readonly FeedRedirectHop[],
+  force?: boolean,
 ): Promise<void> {
+  const progress: Record<string, unknown> = {};
+  if (redirects !== undefined) progress['fetch_redirects'] = redirects;
+  if (force === true) progress['fetch_force'] = true;
   await tx.execute(sql`
     UPDATE feeds SET next_fetch_at = greatest(next_fetch_at, ${until.toISOString()}::timestamptz),
-                     ${redirects === undefined ? sql`` : sql`publish_stats = publish_stats || ${JSON.stringify({ fetch_redirects: redirects })}::jsonb,`}
+                     ${Object.keys(progress).length === 0 ? sql`` : sql`publish_stats = publish_stats || ${JSON.stringify(progress)}::jsonb,`}
                      updated_at = now()
      WHERE id = ${feedId}::bigint`);
 }

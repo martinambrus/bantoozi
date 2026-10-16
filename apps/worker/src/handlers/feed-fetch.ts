@@ -41,6 +41,7 @@ import {
   type SafeFetchResult,
   type ScheduleFeed,
 } from '@bantoozi/feeds';
+import { enqueueFetch } from '@bantoozi/shared';
 
 import { after, afterNewCarrier } from '../pipeline.js';
 import {
@@ -113,19 +114,20 @@ async function fetchFeed(
   const feed = await loadFeedForFetch(deps.db, feedId);
   if (feed === null || feed.mergedIntoId !== null) return;
   const now = nowOf(deps);
+  const forced = force || feed.forcePending === true;
   // A scheduled job whose feed is no longer fetchable or due is a no-op (spec 03 §3).
   const stale =
     feed.status === 'dead' ||
     feed.status === 'paused' ||
     feed.subscriberCount === 0 ||
     feed.nextFetchAt.getTime() > now.getTime();
-  if (stale && !force) return;
+  if (stale && !forced) return;
 
   // A plan edit may pull next_fetch_at forward; it cannot erase the publisher's last hint.
   const publisherEarliest =
     (feed.lastSuccessAt?.getTime() ?? 0) +
     Math.max(feed.publisherIntervalS ?? 0, feed.cacheIntervalS ?? 0) * 1000;
-  if (!force && publisherEarliest > now.getTime()) {
+  if (!forced && publisherEarliest > now.getTime()) {
     lock.assertHeld();
     await deps.db.transaction((tx) => deferFeedFetch(tx, feedId, new Date(publisherEarliest)));
     return;
@@ -141,16 +143,14 @@ async function fetchFeed(
 
   if (!result.ok) {
     if (result.code === 'FEED_ORIGIN_COOLDOWN') {
-      // Our own politeness deferral, not a feed error: fetch again when the origin is free.
+      const until = result.retryAt ?? new Date(now.getTime() + 60_000);
       lock.assertHeld();
-      await deps.db.transaction((tx) =>
-        deferFeedFetch(
-          tx,
-          feedId,
-          result.retryAt ?? new Date(now.getTime() + 60_000),
-          result.redirects ?? [],
-        ),
-      );
+      await deps.db.transaction(async (tx) => {
+        await deferFeedFetch(tx, feedId, until, result.redirects ?? [], forced);
+        // The durable flag carries operator intent. An ordinary retry can fulfil it, and a
+        // duplicate retry becomes a stale no-op once a terminal outcome clears that flag.
+        if (forced) await enqueueFetch(workerOutbox(tx, { availableAt: until }), { feedId });
+      });
       return;
     }
     await recordOutcome(deps, lock, feed, feedId, errorOutcome(result, now), now);

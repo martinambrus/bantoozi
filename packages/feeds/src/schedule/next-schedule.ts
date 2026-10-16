@@ -147,7 +147,8 @@ type ErrorOutcome = Extract<FetchOutcome, { kind: 'error' }>;
  * outcome. Pure and deterministic: time comes only from `now`, and the ±10 % jitter from
  * {@link scheduleJitter}`(feed.id, now)`.
  *
- * - `MIN = max(60, min_interval_s, source floor)`. `MAX` is 24 h while `last_new_item_at` (as updated by this
+ * - `MIN = max(60, min_interval_s)` bounds the stored adaptive base. The source floor
+ *   additionally bounds the next fetch, so quiet-day decay can speed it up. `MAX` is 24 h while `last_new_item_at` (as updated by this
  *   fetch, so a feed that resumes publishing is capped at 24 h at once) is less than 30 days old or
  *   the feed is younger than 30 days, else 10 days: it switches after exactly 30 days of quiet, also
  *   for a feed that never had a new item (spec 03 §9 last paragraph). A `min_interval_s` above
@@ -206,7 +207,7 @@ function afterSuccess(
   hints: ScheduleHints | undefined,
 ): ScheduleUpdate {
   const nowMs = now.getTime();
-  const minS = minIntervalS(feed);
+  const minS = planIntervalS(feed);
   const nNew = outcome.kind === 'success' ? outcome.nNew : 0;
   const hasNew = nNew > 0;
   const lastNewItemAt = hasNew ? now : feed.lastNewItemAt;
@@ -236,7 +237,7 @@ function afterSuccess(
     minS < 300 ? Math.round(Math.max(interval, hint)) : roundTo60(Math.max(interval, hint));
   const fetchIntervalS = clamp(rounded, minS, maxS);
   const jittered = fetchIntervalS * (1 + scheduleJitter(feed.id, now));
-  const delayS = Math.min(maxS, Math.max(minS, hint, jittered));
+  const delayS = Math.min(maxS, Math.max(minIntervalS(feed), hint, jittered));
 
   const validators =
     outcome.kind === 'success'
@@ -339,12 +340,15 @@ function keepsStatus(status: FeedStatus): boolean {
 }
 
 /** `MIN` (spec 03 §9): at least 60 s; a non-finite value falls back to the plan default. */
+function planIntervalS(feed: ScheduleFeed): number {
+  return Math.max(
+    MIN_FLOOR_S,
+    Number.isFinite(feed.minIntervalS) ? Math.ceil(feed.minIntervalS) : DEFAULT_MIN_INTERVAL_S,
+  );
+}
 function minIntervalS(feed: ScheduleFeed): number {
-  const plan = Number.isFinite(feed.minIntervalS)
-    ? Math.ceil(feed.minIntervalS)
-    : DEFAULT_MIN_INTERVAL_S;
   const source = Number.isFinite(feed.sourceFloorS) ? Math.ceil(feed.sourceFloorS!) : 0;
-  return Math.max(MIN_FLOOR_S, plan, source);
+  return Math.max(planIntervalS(feed), source);
 }
 
 /** Throttling is a source deferral, not a broken-feed streak. Keep validators and historical health. */
