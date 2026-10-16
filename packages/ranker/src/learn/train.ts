@@ -56,6 +56,13 @@ export interface TrainResult {
 }
 
 const IDENTITY: PlattParams = { a: 1, b: 0 };
+/**
+ * From this many explicit samples on, each outer fold is reported at the outer λ and Platt instead
+ * of choosing its own with inner folds (D-261): the nested estimate guards small samples against an
+ * optimistic `cv_auc` (+0.023 at 300 on the owner's data), which vanishes as samples accumulate
+ * (+0.005 at 2,000, none at 3,452) while the inner folds cost three quarters of a run.
+ */
+export const NESTED_CV_MAX_EXPLICIT = 1_000;
 const VAR_EPS = 1e-12;
 const CLIP = 1e-6;
 
@@ -163,13 +170,20 @@ function buildDesign(rows: readonly TrainingRow[], ctx: Ctx): Design {
   };
 }
 
+/**
+ * Fits every grid value, in grid order. Each fit starts from the previous converged one, walking
+ * from the largest λ down (D-261): the most penalized fit converges fastest from zero and is the
+ * closest start for the next (15 % fewer Newton steps on the owner's data than walking up).
+ */
 function fitGrid(d: Design, grid: readonly number[]): LogisticFit[] {
   let init: { weights: number[]; intercept: number } | undefined;
-  return grid.map((lambda) => {
+  const fits = new Map<number, LogisticFit>();
+  for (const lambda of [...grid].sort((a, b) => b - a)) {
     const fit = fitLogistic(d.X, d.y, d.w, lambda, init === undefined ? undefined : { init });
     if (fit.ok) init = { weights: fit.weights, intercept: fit.intercept };
-    return fit;
-  });
+    fits.set(lambda, fit);
+  }
+  return grid.map((lambda) => fits.get(lambda) as LogisticFit);
 }
 
 function logitsOf(
@@ -384,8 +398,11 @@ export function trainUserModel(
     const ys: number[] = [];
     const groups: string[] = [];
     const baseScores: number[] = [];
+    const nested = metrics.nExplicit < NESTED_CV_MAX_EXPLICIT;
     for (const [f, fold] of folds.entries()) {
-      const chosen = innerSelect(fold.trainRows, `${seed}|inner|${f}`, ctx);
+      const chosen = nested
+        ? innerSelect(fold.trainRows, `${seed}|inner|${f}`, ctx)
+        : { lambda, platt };
       const fit = fold.fits[ctx.grid.indexOf(chosen.lambda)];
       if (fit === undefined || !fit.ok)
         return reject([fit?.ok === false ? fit.reason : 'nonconverged']);

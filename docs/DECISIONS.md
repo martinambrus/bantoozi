@@ -2662,3 +2662,18 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
      overnight. `retrainFraction` is left out of the model context hash: it only schedules training,
      and including it would have invalidated every stored model on deploy (verified: the owner's
      active model keeps its context sha).
+
+- D-261: 2026-10-17 (owner decision after measuring options D–G of D-260 on the owner's ratings) —
+  Time-ordered holdout (newest 400 explicit ratings held out, variants trained on the other 3,452):
+  skipping nested CV left the model and its holdout AUC (0.8023) and logloss unchanged and the
+  reported cv AUC within 0.0001, at 5.3 s instead of 17.6 s; its optimism grows as samples shrink
+  (+0.023 at 300, +0.008 at 500, +0.005 at 2,000). Capping the training set to the newest N (E)
+  did not improve the holdout and worsened calibration at 2,000, and changed which candidates
+  activate: declined. Seeding fold fits from the full-data fit (F2) doubled the Newton steps.
+  1. Nested CV only below `NESTED_CV_MAX_EXPLICIT` (1,000) explicit samples: from 1,000 on, every
+     outer fold is reported at the outer λ and Platt (spec 06 §8.3). Small users keep the nested
+     guard, where it matters and costs under 2 s.
+  2. Grid fits warm-start from the largest λ down (F1): 15 % fewer Newton steps; results agree
+     within the fit tolerance (Platt differs by 1.7e-9 in probability on the owner's data).
+  On the owner's 3,839 explicit ratings: 22.2 s → 6.3 s, final weights byte-equal, context sha
+  unchanged, activation unchanged. Parallel folds (G) follow as a shared CPU thread pool.

@@ -636,9 +636,11 @@ ranking until enough compatible feedback exists.
 - **Choosing λ** from `model.lambdaGrid`: fit every grid value on the same grouped folds, fit a Platt
   calibrator (below) on each value's out-of-fold explicit logits, and take the value with the lowest
   calibrated out-of-fold logloss, ties to the larger λ. If those folds cannot be formed, take the
-  largest value. Each outer training partition chooses its own λ with inner folds (the same rule
-  with `k = min(4, …)`, D-260); the final model chooses with the outer folds and records its λ in
-  the manifest.
+  largest value. Below 1,000 explicit samples each outer training partition chooses its own λ with
+  inner folds (the same rule with `k = min(4, …)`, D-260); from 1,000 on every outer fold is
+  reported at the outer choice (D-261). The final model chooses with the outer folds and records
+  its λ in the manifest. Grid values are fitted from the largest down, each starting from the
+  previous converged fit (D-261).
 - **Metrics:** out-of-fold `cv_auc` and `cv_logloss` use explicit examples only, one per article.
   `baseline_auc` and `baseline_logloss` use cards-only scores on exactly those snapshots and folds;
   report grouped bootstrap confidence intervals, class counts and skipped-sample reasons. Single-
@@ -646,7 +648,8 @@ ranking until enough compatible feedback exists.
 - **Calibration (Platt):** fit `P = sigmoid(a*z+b)` on out-of-fold explicit logits with a weak prior
   (strength 0.01, i.e. `0.01/2·((a−1)² + b²)` added to the summed loss, D-167) toward a=1,b=0 and constrain a>0. Calibration reporting uses nested folds: each
   outer validation fold uses a calibrator fitted only on inner out-of-fold predictions of its training
-  partition, at that partition's λ. If inner data lacks both classes, use identity calibration for
+  partition, at that partition's λ (below 1,000 explicit samples; from 1,000 on, the outer
+  calibrator at the outer λ, D-261). If inner data lacks both classes, use identity calibration for
   that fold. Fit the final calibrator on all out-of-fold logits at the final λ, and the final
   scaler/weights on all eligible training samples.
 - **Activation** requires `n_explicit ≥ 30`, explicit positives ≥5 and negatives ≥5, valid grouped
