@@ -7,6 +7,7 @@ import {
   feedRecentPublishedAt,
   ingestItem,
   markFeedItemsStillListed,
+  originSourceFloor,
   loadFeedForFetch,
   recordFeedFetch,
   refreshFeedLangHint,
@@ -26,9 +27,11 @@ import {
   decodeBody,
   linklessUrlKey,
   nextSchedule,
+  originOf,
   parseCacheMaxAge,
   parseFeed,
   recentGapsS,
+  scheduleHintS,
   sameRequestUrl,
   urlKey,
   validateFeedUrl,
@@ -38,6 +41,7 @@ import {
   type SafeFetchResult,
   type ScheduleFeed,
 } from '@bantoozi/feeds';
+import { enqueueFetch } from '@bantoozi/shared';
 
 import { after, afterNewCarrier } from '../pipeline.js';
 import {
@@ -110,13 +114,24 @@ async function fetchFeed(
   const feed = await loadFeedForFetch(deps.db, feedId);
   if (feed === null || feed.mergedIntoId !== null) return;
   const now = nowOf(deps);
+  const forced = force || feed.forcePending === true;
   // A scheduled job whose feed is no longer fetchable or due is a no-op (spec 03 §3).
   const stale =
     feed.status === 'dead' ||
     feed.status === 'paused' ||
     feed.subscriberCount === 0 ||
     feed.nextFetchAt.getTime() > now.getTime();
-  if (stale && !force) return;
+  if (stale && !forced) return;
+
+  // A plan edit may pull next_fetch_at forward; it cannot erase the publisher's last hint.
+  const publisherEarliest =
+    (feed.lastSuccessAt?.getTime() ?? 0) +
+    Math.max(feed.publisherIntervalS ?? 0, feed.cacheIntervalS ?? 0) * 1000;
+  if (!forced && publisherEarliest > now.getTime()) {
+    lock.assertHeld();
+    await deps.db.transaction((tx) => deferFeedFetch(tx, feedId, new Date(publisherEarliest)));
+    return;
+  }
 
   const hadValidators = feed.etag !== null || feed.lastModified !== null;
   let result = await fetchFeedBody(deps, feed, hadValidators, lock.signal);
@@ -128,11 +143,14 @@ async function fetchFeed(
 
   if (!result.ok) {
     if (result.code === 'FEED_ORIGIN_COOLDOWN') {
-      // Our own politeness deferral, not a feed error: fetch again when the origin is free.
+      const until = result.retryAt ?? new Date(now.getTime() + 60_000);
       lock.assertHeld();
-      await deps.db.transaction((tx) =>
-        deferFeedFetch(tx, feedId, result.retryAt ?? new Date(now.getTime() + 60_000)),
-      );
+      await deps.db.transaction(async (tx) => {
+        await deferFeedFetch(tx, feedId, until, result.redirects ?? [], forced);
+        // The durable flag carries operator intent. An ordinary retry can fulfil it, and a
+        // duplicate retry becomes a stale no-op once a terminal outcome clears that flag.
+        if (forced) await enqueueFetch(workerOutbox(tx, { availableAt: until }), { feedId });
+      });
       return;
     }
     await recordOutcome(deps, lock, feed, feedId, errorOutcome(result, now), now);
@@ -254,7 +272,11 @@ async function fetchFeed(
   // validators the next poll is unconditional.
   const keepValidators = failed === 0 && sameRequestUrl(result.finalUrl, target.fetchUrl);
   const schedule = nextSchedule(
-    scheduleFeed(target, gaps),
+    scheduleFeed(
+      target,
+      gaps,
+      await originSourceFloor(deps.db, originOf(new URL(result.finalUrl))),
+    ),
     {
       kind: 'success',
       nNew,
@@ -268,6 +290,18 @@ async function fetchFeed(
   await deps.db.transaction(async (tx) => {
     await recordFeedFetch(tx, targetId, {
       schedule,
+      publisherMinIntervalS: scheduleHintS(
+        {
+          ttlMinutes: parsed.feed.ttlMinutes,
+          syUpdatePeriod: parsed.feed.syUpdatePeriod,
+          syUpdateFrequency: parsed.feed.syUpdateFrequency,
+        },
+        Math.max(86400, schedule.fetchIntervalS),
+      ),
+      cacheMinIntervalS: scheduleHintS(
+        { cacheMaxAgeS: parseCacheMaxAge(result.headers['cache-control']) },
+        86400,
+      ),
       meta: {
         title: parsed.feed.title,
         siteUrl: parsed.feed.siteUrl,
@@ -293,18 +327,44 @@ async function fetchFeed(
   }
 }
 
-function fetchFeedBody(
+async function fetchFeedBody(
   deps: WorkerDeps,
   feed: FeedForFetch,
   conditional: boolean,
   signal: AbortSignal,
 ): Promise<SafeFetchResult> {
-  return fetchWith(deps, feed.fetchUrl, {
+  let retryAt: Date | undefined;
+  const previous = feed.resumeRedirects ?? [];
+  const resume =
+    previous.length > 0 && sameRequestUrl(previous[0]!.from, feed.fetchUrl) ? previous : [];
+  const requestUrl = resume.at(-1)?.to ?? feed.fetchUrl;
+  const result = await fetchWith(deps, requestUrl, {
+    ...(resume.length === 0 ? {} : { previousRedirects: resume }),
     purpose: 'feed',
+    sourceIntervalS: feed.fetchIntervalS,
     signal,
+    ...(feed.minIntervalS < 300
+      ? {
+          beforeRequest: async (target: URL) => {
+            const decision = await deps.robots.check(target);
+            if (decision.allowed) return true as const;
+            if (decision.reason === 'cooldown' || decision.reason === 'unreachable') {
+              retryAt = decision.retryAt ?? new Date(nowOf(deps).getTime() + 300000);
+              return { code: 'SOURCE_WAIT', message: 'Waiting for the source robots policy' };
+            }
+            return {
+              code: 'ROBOTS_DISALLOWED',
+              message: 'The source disallows fetching this feed',
+            };
+          },
+        }
+      : {}),
     ...(feed.userAgent === null ? {} : { userAgent: feed.userAgent }),
     ...(conditional ? { conditional: { etag: feed.etag, lastModified: feed.lastModified } } : {}),
   });
+  return retryAt !== undefined && !result.ok
+    ? { ...result, code: 'FEED_ORIGIN_COOLDOWN', retryAt }
+    : result;
 }
 
 /**
@@ -322,12 +382,32 @@ async function recordOutcome(
   now: Date,
   cacheControl?: string,
 ): Promise<void> {
-  const schedule = nextSchedule(scheduleFeed(feed, feed.recentGapsS), outcome, now, {
-    cacheMaxAgeS: parseCacheMaxAge(cacheControl),
-  });
+  const schedule = nextSchedule(
+    scheduleFeed(
+      feed,
+      feed.recentGapsS,
+      await originSourceFloor(deps.db, originOf(new URL(feed.fetchUrl))),
+    ),
+    outcome,
+    now,
+    {
+      ttlMinutes: (feed.publisherIntervalS ?? 0) / 60,
+      cacheMaxAgeS: parseCacheMaxAge(cacheControl),
+    },
+  );
   lock.assertHeld();
   await deps.db.transaction(async (tx) => {
-    await recordFeedFetch(tx, feedId, { schedule });
+    await recordFeedFetch(tx, feedId, {
+      schedule,
+      ...(outcome.kind === 'not_modified'
+        ? {
+            cacheMinIntervalS: scheduleHintS(
+              { cacheMaxAgeS: parseCacheMaxAge(cacheControl) },
+              86400,
+            ),
+          }
+        : {}),
+    });
     // An unchanged feed still lists the items of its last successful fetch (D-253).
     if (outcome.kind === 'not_modified')
       await markFeedItemsStillListed(tx, feedId, feed.lastSuccessAt);
@@ -342,6 +422,8 @@ function errorOutcome(result: Extract<SafeFetchResult, { ok: false }>, now: Date
     result.retryAt === undefined
       ? undefined
       : Math.max(0, Math.ceil((result.retryAt.getTime() - now.getTime()) / 1000));
+  if (result.status === 429 || result.status === 503)
+    return { kind: 'throttled', retryAfterS: retryAfterS ?? 60 };
   return {
     kind: 'error',
     code: result.code,
@@ -465,13 +547,14 @@ function feedBody(item: NormalizedItem, linked: boolean): ArticleBodyInput | nul
   };
 }
 
-function scheduleFeed(feed: FeedForFetch, gaps: readonly number[]): ScheduleFeed {
+function scheduleFeed(feed: FeedForFetch, gaps: readonly number[], sourceFloorS = 0): ScheduleFeed {
   return {
     id: feed.id,
     createdAt: feed.createdAt,
     status: feed.status,
     fetchIntervalS: feed.fetchIntervalS,
     minIntervalS: feed.minIntervalS,
+    sourceFloorS,
     consecutiveErrors: feed.consecutiveErrors,
     consecutiveEmpty: feed.consecutiveEmpty,
     quarantineCount: feed.quarantineCount,

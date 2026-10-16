@@ -574,7 +574,7 @@
     "retired": "Retired",
     "invalid": "Enter a valid value within the allowed range.",
     "stale": "This plan was changed by someone else. Close this dialog and open it again to use the latest values.",
-    "schedulerNote": "Fetch intervals under 300 seconds take effect after the scheduler change.",
+    "schedulerNote": "One-minute polling is supported. Sources and publishers may require longer intervals.",
     "analysisCap": "Global analysis cap: engine.auto_analysis_daily_cap",
     "columns": {
       "plan": "Plan",

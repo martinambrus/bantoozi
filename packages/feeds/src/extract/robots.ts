@@ -1,6 +1,11 @@
 import { createRequire } from 'node:module';
 
-import { DEFAULT_COOLDOWN_MS, parseRetryAfter, type SafeFetchResult } from '../http/index.js';
+import {
+  DEFAULT_COOLDOWN_MS,
+  originOf,
+  parseRetryAfter,
+  type SafeFetchResult,
+} from '../http/index.js';
 
 /** The product token our crawler matches in robots.txt `User-agent` lines (spec 03 §8.1 step 2). */
 export const ROBOTS_PRODUCT_TOKEN = 'BantooziBot';
@@ -24,6 +29,7 @@ export interface RobotsDecision {
    */
   reason: 'allowed' | 'disallowed' | 'unreachable' | 'cooldown';
   retryAt?: Date;
+  crawlDelayS?: number;
 }
 
 export interface RobotsChecker {
@@ -39,6 +45,8 @@ export type RobotsFetch = (url: string, purpose: 'robots') => Promise<SafeFetchR
 
 export interface RobotsCheckerOptions {
   fetch: RobotsFetch;
+  /** Persist only definitive refreshes, identified by request start time, before caching them. */
+  onPolicyRefresh?: (origin: string, crawlDelayS: number, observedAt: Date) => Promise<void>;
   /** Clock in epoch ms; defaults to `Date.now`. */
   now?: () => number;
   /** LRU bound; defaults to {@link ROBOTS_CACHE_MAX_ORIGINS}. */
@@ -57,6 +65,7 @@ export interface RobotsCheckerOptions {
 /** The subset of the `robots-parser` API used here. */
 interface RobotsRules {
   isAllowed(url: string, userAgent?: string): boolean | undefined;
+  getCrawlDelay(userAgent?: string): number | undefined;
 }
 
 type RobotsParser = (url: string, contents: string) => RobotsRules;
@@ -133,6 +142,7 @@ export function createRobotsChecker(options: RobotsCheckerOptions): RobotsChecke
     const robotsUrl = `${origin}/robots.txt`;
     const previous = cache.get(origin) ?? null;
     // A rejection propagates before anything is cached (see above).
+    const observedAt = new Date(now());
     const result = await options.fetch(robotsUrl, 'robots');
     const at = now();
     let outcome: FetchOutcome;
@@ -143,6 +153,15 @@ export function createRobotsChecker(options: RobotsCheckerOptions): RobotsChecke
     }
     let entry: RobotsEntry;
     if (outcome.kind === 'policy') {
+      const delay =
+        outcome.policy.kind === 'rules'
+          ? outcome.policy.rules.getCrawlDelay(ROBOTS_PRODUCT_TOKEN)
+          : 0;
+      await options.onPolicyRefresh?.(
+        originOf(new URL(origin)),
+        delay !== undefined && Number.isFinite(delay) && delay > 0 ? Math.min(86400, delay) : 0,
+        observedAt,
+      );
       entry = {
         policy: {
           value: outcome.policy,
@@ -246,7 +265,14 @@ function applyPolicy(policy: RobotsPolicy, url: URL): RobotsDecision {
   if (policy.kind === 'disallow_all') return { allowed: false, reason: 'disallowed' };
   // `undefined` (URL outside this robots.txt's origin) cannot happen for a same-origin key; it
   // fails closed.
+  const delay = policy.rules.getCrawlDelay(ROBOTS_PRODUCT_TOKEN);
   return policy.rules.isAllowed(url.href, ROBOTS_PRODUCT_TOKEN) === true
-    ? { allowed: true, reason: 'allowed' }
+    ? {
+        allowed: true,
+        reason: 'allowed',
+        ...(delay !== undefined && Number.isFinite(delay) && delay > 0
+          ? { crawlDelayS: Math.min(86400, delay) }
+          : {}),
+      }
     : { allowed: false, reason: 'disallowed' };
 }

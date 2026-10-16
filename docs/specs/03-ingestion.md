@@ -726,6 +726,25 @@ fetching non-HTML media.
   `{token, expires_at}` leases (spec 02). Reserving removes expired leases under a row lock. Release
   the exact token in `finally`; a long publisher cooldown releases the queue consumer promptly.
 
+**Fast-plan protection (D-256, migration 0030).** The origin row also stores `feed_next_start_at`,
+`learned_interval_s`, `learned_updated_at` and `crawl_delay_s`. Feed requests have an additional
+aggregate six-starts-per-minute budget, shared across workers and redirected origins. A logical
+feed fetch charges once per origin; same-origin redirect continuations keep the ordinary request
+spacing/concurrency/cooldown checks. A 429/503
+updates the learned floor to the maximum of twice the current feed interval, twice the prior learned
+floor and Retry-After (24-hour bound), and immediately postpones the next feed start. The floor
+relaxes by ×0.8 per complete quiet day. Robots delays are written only on authoritative refreshes,
+versioned by request start so an older cache/response cannot erase a newer policy. Robots `Crawl-delay` applies to every request purpose and
+accounts for the previous request start. Feeds on a floor below five minutes check robots before
+every hop; a temporary robots failure or source wait defers the job. These deferrals never add to
+feed error/quarantine counts. If a redirect hop cannot start within the HTTP deadline, completed
+hops persist in `feeds.publish_stats.fetch_redirects`; the next job resumes at the target with the
+same original validator scope, redirect/loop budget and permanent/temporary semantics. Terminal
+outcomes clear progress. A forced refresh's source deferral also persists `fetch_force` and a
+normal delayed outbox retry; the durable flag carries the override until a terminal outcome clears
+it, including on feeds the regular scheduler excludes. Duplicate continuations then become no-ops.
+No database transaction is held during HTTP.
+
 ### 8.3 Language detection (`detectLanguage`, pure, in `packages/shared`)
 
 It lives in `packages/shared`, because `translate`, `feeds` and the API (card text) all use it.
@@ -878,7 +897,8 @@ status and `Retry-After`), `now`, and the feed hints (`ttl` in minutes, `sy:upda
 `Cache-Control: max-age`).
 
 ```
-MIN   = feed.min_interval_s                       (≥ 300)
+MIN   = max(60, feed.min_interval_s)
+SOURCE = max(MIN, learned origin floor, robots crawl delay)
 MAX   = 86_400 if last_new_item_at within 30 days or feed age < 30 days, else 864_000     (24 h / 10 days)
 
 on success (a successfully parsed HTTP 200, or a valid conditional 304):
@@ -889,19 +909,24 @@ on success (a successfully parsed HTTP 200, or a valid conditional 304):
       consecutive_empty = 0; last_new_item_at = now
   else:
       consecutive_empty += 1; total_empty += 1
-      interval = interval + max(300, round(interval * 0.2))
+      interval = interval + (round(interval * 0.2) for MIN < 300; otherwise max(300, round(interval * 0.2)))
   hint     = min(MAX, max(ttl_s, sy_period_s, min(cache_max_age_s, 21_600)))   (missing hints count as 0)
   if publish_stats.recent_gaps_s has ≥ 5 entries and last_new_item_at within 7 days:
       G = median(recent_gaps_s)
       interval = min(interval, max(MIN, G / 2))          # a daily feed stays ≤ ~12 h
-  interval = clamp(round_to_60(max(interval, hint)), MIN, MAX)
-  next_fetch_at = now + min(MAX, max(MIN, hint, interval * (1 + jitter)))   # jitter ∈ [-0.1, 0.1], deterministic from hash(feed.id, now_day); clamped after jitter
+  body_hint = max(ttl_s, sy_period_s)
+  interval = clamp(round_to_seconds(max(interval, body_hint)) if MIN < 300 else round_to_60(max(interval, body_hint)), MIN, MAX)
+  next_fetch_at = now + min(MAX, max(SOURCE, hint, interval * (1 + jitter)))   # jitter ∈ [-0.1, 0.1], deterministic from hash(feed.id, now_day); clamped after jitter
+
+on throttled (HTTP 429 or 503):
+  next_fetch_at = now + min(24 h, max(SOURCE, 2 * current interval, Retry-After))
+  keep health counters, quarantine, validators and last_success_at unchanged
 
 on error:
   consecutive_errors += 1; total_errors += 1; first_error_at ??= now
   last_error_code/last_error/last_error_at = …
   if http_status == 410: status = 'dead'; stop (never overwrite dead with quarantined)
-  backoff = min(MIN * 2^min(consecutive_errors - 1, 16), 86_400)
+  backoff = min(SOURCE * 2^min(consecutive_errors - 1, 16), 86_400)
   if Retry-After present: backoff = max(backoff, min(retry_after_s, 86_400))
   if consecutive_errors >= 10:
       quarantine_count += 1
@@ -919,9 +944,15 @@ on valid 304 (only the conditional request to fetch_url can get one, §4): retai
   validators; update any returned ones; do not parse or ingest a body
 ```
 
+Response cache hints and learned source floors bound next_fetch_at without raising the stored
+adaptive base; replacing a cache policy or decaying a learned floor can therefore restore speed.
+
 `sy_period_s` is period duration divided by valid positive frequency; ignore invalid/negative TTL,
 frequency and cache hints. Compute publication gaps from distinct valid dates, excluding zero/negative
-gaps. A 304 without previously established validators is retried once unconditionally. A parse error
+gaps. The last parsed publisher hint is retained in `feeds.publish_stats.publisher_min_interval_s`,
+so a 304 without a body cannot lose RSS TTL/syndication hints. A scheduled fetch rechecks it before
+sending, including after an administrator lowers the plan floor; D-23 forced operator fetches keep
+their due-time override while honoring the shared origin protection. A 304 without previously established validators is retried once unconditionally. A parse error
 never installs its validators (otherwise a broken body can be hidden forever behind 304 responses).
 Validators belong to the request URL that returned them, and the client sends them to `fetch_url`
 only (§4.3). A response from any other URL therefore installs none: a temporary redirect target,

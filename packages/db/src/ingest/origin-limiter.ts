@@ -18,6 +18,8 @@ export interface PgOriginLimiterOptions {
   spacingMs?: number;
   /** Longest `wait` while both leases are held, before the caller polls again (default 250 ms). */
   fullPollMs?: number;
+  /** Aggregate feed-request budget per origin (six/minute by default), in addition to learned floors. */
+  feedSpacingMs?: number;
 }
 
 function assertOrigin(origin: string): void {
@@ -35,7 +37,8 @@ function assertMs(name: string, value: number, { allowZero }: { allowZero: boole
 }
 
 type ReserveRow = {
-  status: 'granted' | 'blocked' | 'full' | 'spacing';
+  status: 'granted' | 'blocked' | 'full' | 'spacing' | 'feed_budget';
+  feed_retry_ms: number;
   blocked_until_ms: number | null;
   next_start_ms: number;
   full_retry_ms: number;
@@ -60,11 +63,13 @@ export function createPgOriginLimiter(
 ): OriginLimiter {
   const maxConcurrent = options.maxConcurrent ?? MAX_LEASES;
   const spacingMs = options.spacingMs ?? 1_000;
+  const feedSpacingMs = options.feedSpacingMs ?? options.spacingMs ?? 10_000;
   const fullPollMs = options.fullPollMs ?? 250;
   if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > MAX_LEASES) {
     throw new TypeError(`maxConcurrent must be an integer from 1 to ${MAX_LEASES}`);
   }
   assertMs('spacingMs', spacingMs, { allowZero: true });
+  assertMs('feedSpacingMs', feedSpacingMs, { allowZero: true });
   assertMs('fullPollMs', fullPollMs, { allowZero: false });
 
   return {
@@ -75,7 +80,7 @@ export function createPgOriginLimiter(
      * with `expires_at = now + leaseMs` and move `next_start_at` to `now + spacingMs`. Returned
      * times are rounded up to the next millisecond, so retrying at them is never early.
      */
-    async reserve(origin, { leaseMs }): Promise<OriginReservation> {
+    async reserve(origin, { leaseMs, purpose }): Promise<OriginReservation> {
       assertOrigin(origin);
       assertMs('leaseMs', leaseMs, { allowZero: false });
       const token = randomUUID();
@@ -92,7 +97,10 @@ export function createPgOriginLimiter(
                    ${spacingMs}::double precision * interval '1 millisecond' AS spacing,
                    ${fullPollMs}::double precision * interval '1 millisecond' AS poll),
           cur AS MATERIALIZED (
-            SELECT s.origin, s.next_start_at, s.blocked_until, c.*,
+            SELECT s.origin, s.next_start_at, s.blocked_until, s.feed_next_start_at,
+                   s.crawl_delay_s, s.learned_updated_at,
+                   s.learned_interval_s * power(0.8, floor(greatest(0, extract(epoch FROM (c.t - s.learned_updated_at))) / 86400)) AS learned_s,
+                   c.*,
                    coalesce((SELECT jsonb_agg(l.value ORDER BY l.ord)
                                FROM jsonb_array_elements(s.leases) WITH ORDINALITY AS l(value, ord)
                               WHERE (l.value ->> 'expires_at')::timestamptz > c.t),
@@ -102,6 +110,7 @@ export function createPgOriginLimiter(
           d AS MATERIALIZED (
             SELECT cur.*,
                    CASE WHEN cur.blocked_until > cur.t THEN 'blocked'
+                        WHEN ${purpose === 'feed'} AND cur.feed_next_start_at > cur.t THEN 'feed_budget'
                         WHEN jsonb_array_length(cur.live) >= ${maxConcurrent}::int THEN 'full'
                         WHEN cur.next_start_at > cur.t THEN 'spacing'
                         ELSE 'granted' END AS status
@@ -112,12 +121,18 @@ export function createPgOriginLimiter(
                                       'token', ${token}::text,
                                       'expires_at', to_char((d.t + d.lease) AT TIME ZONE 'UTC',
                                                             'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))) END,
-                 next_start_at = CASE WHEN d.status = 'granted' THEN d.t + d.spacing
+                 next_start_at = CASE WHEN d.status = 'granted' THEN d.t + greatest(d.spacing, d.crawl_delay_s * interval '1 second')
                                       ELSE s.next_start_at END,
+                 feed_next_start_at = CASE WHEN d.status = 'granted' AND ${purpose === 'feed'}
+                   THEN d.t + greatest(${feedSpacingMs}::double precision * interval '1 millisecond',
+                     d.learned_s * interval '1 second', d.crawl_delay_s * interval '1 second') ELSE s.feed_next_start_at END,
+                 learned_interval_s = d.learned_s,
+                 learned_updated_at = d.learned_updated_at + floor(greatest(0, extract(epoch FROM (d.t - d.learned_updated_at))) / 86400) * interval '1 day',
                  last_used_at = CASE WHEN d.status = 'granted' THEN d.t ELSE s.last_used_at END
             FROM d
            WHERE s.origin = d.origin
           RETURNING d.status,
+                    ceil(extract(epoch FROM d.feed_next_start_at) * 1000)::float8 AS feed_retry_ms,
                     ceil(extract(epoch FROM d.blocked_until) * 1000)::float8 AS blocked_until_ms,
                     ceil(extract(epoch FROM d.next_start_at) * 1000)::float8 AS next_start_ms,
                     ceil(extract(epoch FROM least(
@@ -133,6 +148,8 @@ export function createPgOriginLimiter(
         case 'blocked':
           // `blocked` implies a non-null blocked_until later than the decision time.
           return { status: 'blocked', until: new Date(row.blocked_until_ms ?? Number.NaN) };
+        case 'feed_budget':
+          return { status: 'blocked', until: new Date(row.feed_retry_ms) };
         case 'full':
           return { status: 'wait', retryAt: new Date(row.full_retry_ms) };
         case 'spacing':
@@ -163,16 +180,49 @@ export function createPgOriginLimiter(
      * `blocked_until = greatest(existing, least(until, now + 24 h))`, so it survives restarts,
      * is shared by every process and never shortens a longer existing cooldown.
      */
-    async block(origin, until): Promise<void> {
+    async block(origin, until, throttle): Promise<void> {
       assertOrigin(origin);
       if (!(until instanceof Date) || Number.isNaN(until.getTime())) {
         throw new TypeError('until must be a valid Date');
       }
+      if (throttle !== undefined)
+        assertMs('currentIntervalS', throttle.currentIntervalS, { allowZero: true });
+      const nextFloor = sql`least(86400, greatest(EXCLUDED.learned_interval_s,
+        s.learned_interval_s * power(0.8, floor(greatest(0, extract(epoch FROM (clock_timestamp() - s.learned_updated_at))) / 86400)) * 2))`;
       await db.execute(sql`
-        INSERT INTO origin_fetch_state AS s (origin, blocked_until)
-        VALUES (${origin}, least(${until}::timestamptz, clock_timestamp() + interval '24 hours'))
+        WITH clock AS MATERIALIZED (SELECT clock_timestamp() AS t),
+        policy AS (SELECT t, least(86400, greatest(${throttle?.currentIntervalS ?? 60}::double precision * 2, 60,
+          extract(epoch FROM (${until}::timestamptz - t)))) AS learned_s FROM clock)
+        INSERT INTO origin_fetch_state AS s (origin, blocked_until, learned_interval_s, learned_updated_at, feed_next_start_at)
+        SELECT ${origin}, least(${until}::timestamptz, t + interval '24 hours'), learned_s, t,
+          t + learned_s * interval '1 second' FROM policy
         ON CONFLICT (origin) DO UPDATE
-          SET blocked_until = greatest(s.blocked_until, EXCLUDED.blocked_until)`);
+          SET blocked_until = greatest(s.blocked_until, EXCLUDED.blocked_until),
+              learned_interval_s = ${nextFloor},
+              feed_next_start_at = greatest(s.feed_next_start_at, clock_timestamp() + ${nextFloor} * interval '1 second'),
+              learned_updated_at = clock_timestamp(), last_used_at = clock_timestamp()`);
+    },
+    async setCrawlDelay(origin, seconds, observedAt = new Date()) {
+      assertOrigin(origin);
+      assertMs('crawlDelay', seconds, { allowZero: true });
+      if (!Number.isFinite(observedAt.getTime()))
+        throw new TypeError('observedAt must be a valid Date');
+      await db.execute(sql`INSERT INTO origin_fetch_state AS s (origin, crawl_delay_s, crawl_delay_updated_at)
+        VALUES (${origin}, ${Math.min(86400, seconds)}, ${observedAt})
+        ON CONFLICT (origin) DO UPDATE SET
+          crawl_delay_s = CASE WHEN s.crawl_delay_updated_at = EXCLUDED.crawl_delay_updated_at
+            THEN greatest(s.crawl_delay_s, EXCLUDED.crawl_delay_s) ELSE EXCLUDED.crawl_delay_s END,
+          crawl_delay_updated_at = EXCLUDED.crawl_delay_updated_at,
+          next_start_at = greatest(s.next_start_at, s.last_used_at + EXCLUDED.crawl_delay_s * interval '1 second')
+        WHERE s.crawl_delay_updated_at <= EXCLUDED.crawl_delay_updated_at`);
     },
   };
+}
+
+/** The current source floor, including whole-day decay after the last throttle. */
+export async function originSourceFloor(db: Database, origin: string): Promise<number> {
+  const result = await db.execute<{ floor_s: number }>(sql`SELECT greatest(crawl_delay_s,
+    learned_interval_s * power(0.8, floor(greatest(0, extract(epoch FROM (clock_timestamp() - learned_updated_at))) / 86400)))::float8 AS floor_s
+    FROM origin_fetch_state WHERE origin = ${origin}`);
+  return Math.ceil(result.rows[0]?.floor_s ?? 0);
 }

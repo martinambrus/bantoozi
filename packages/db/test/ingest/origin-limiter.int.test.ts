@@ -307,3 +307,112 @@ describe('createPgOriginLimiter (spec 03 §8.2)', () => {
     expect((await single.reserve(origin, { leaseMs: 10_000 })).status).toBe('wait');
   });
 });
+
+describe('fast-feed source policy across processes', () => {
+  it('grants only one feed start from two processes sharing an origin budget', async () => {
+    const origin = newOrigin();
+    const a = createPgOriginLimiter(ctx.worker, { spacingMs: 0, feedSpacingMs: 10000 });
+    const b = createPgOriginLimiter(otherDb, { spacingMs: 0, feedSpacingMs: 10000 });
+    const results = await Promise.all([
+      a.reserve(origin, { leaseMs: 1000, purpose: 'feed' }),
+      b.reserve(origin, { leaseMs: 1000, purpose: 'feed' }),
+    ]);
+    expect(results.filter((r) => r.status === 'granted')).toHaveLength(1);
+    expect(results.filter((r) => r.status === 'blocked')).toHaveLength(1);
+    for (const r of results) if (r.status === 'granted') await a.release(origin, r.token);
+    expect((await a.reserve(newOrigin(), { leaseMs: 1000, purpose: 'feed' })).status).toBe(
+      'granted',
+    );
+  });
+
+  it('keeps a learned floor across processes and decays only whole quiet days', async () => {
+    const origin = newOrigin();
+    const a = createPgOriginLimiter(ctx.worker, { spacingMs: 0 });
+    await a.block(origin, new Date(Date.now() + 120000), { currentIntervalS: 900 });
+    const row = await ctx.owner.query(
+      'SELECT learned_interval_s FROM origin_fetch_state WHERE origin = $1',
+      [origin],
+    );
+    expect(row.rows[0]?.learned_interval_s).toBe(1800);
+    await ctx.owner.query(
+      "UPDATE origin_fetch_state SET blocked_until = NULL, feed_next_start_at = 'epoch', learned_updated_at = now() - interval '25 hours' WHERE origin = $1",
+      [origin],
+    );
+    const b = createPgOriginLimiter(otherDb, { spacingMs: 0 });
+    const first = await b.reserve(origin, { leaseMs: 1000, purpose: 'feed' });
+    if (first.status === 'granted') await b.release(origin, first.token);
+    const next = await a.reserve(origin, { leaseMs: 1000, purpose: 'feed' });
+    expect(next.status).toBe('blocked');
+    if (next.status === 'blocked')
+      expect(next.until.getTime() - Date.now()).toBeGreaterThan(1430000);
+    const decayed = await ctx.owner.query(
+      'SELECT learned_interval_s FROM origin_fetch_state WHERE origin = $1',
+      [origin],
+    );
+    expect(decayed.rows[0]?.learned_interval_s).toBeCloseTo(1440);
+  });
+
+  it('ignores an older robots refresh from another process and permits a newer policy to clear delay', async () => {
+    const origin = newOrigin();
+    const a = createPgOriginLimiter(ctx.worker, { spacingMs: 0 });
+    const b = createPgOriginLimiter(otherDb, { spacingMs: 0 });
+    const at = Date.now();
+    await a.setCrawlDelay!(origin, 30, new Date(at));
+    await b.setCrawlDelay!(origin, 0, new Date(at - 1000));
+    expect(
+      (
+        await ctx.owner.query('SELECT crawl_delay_s FROM origin_fetch_state WHERE origin = $1', [
+          origin,
+        ])
+      ).rows[0]?.crawl_delay_s,
+    ).toBe(30);
+    await b.setCrawlDelay!(origin, 0, new Date(at + 1000));
+    expect(
+      (
+        await ctx.owner.query('SELECT crawl_delay_s FROM origin_fetch_state WHERE origin = $1', [
+          origin,
+        ])
+      ).rows[0]?.crawl_delay_s,
+    ).toBe(0);
+  });
+
+  it('observes robots delay on another process and on page requests', async () => {
+    const origin = newOrigin();
+    const a = createPgOriginLimiter(ctx.worker, { spacingMs: 0 });
+    const b = createPgOriginLimiter(otherDb, { spacingMs: 0 });
+    const first = await a.reserve(origin, { leaseMs: 1000, purpose: 'robots' });
+    if (first.status === 'granted') await a.release(origin, first.token);
+    await a.setCrawlDelay!(origin, 30);
+    const result = await b.reserve(origin, { leaseMs: 1000, purpose: 'page' });
+    expect(result.status).toBe('wait');
+    if (result.status === 'wait')
+      expect(result.retryAt.getTime() - Date.now()).toBeGreaterThan(29000);
+  });
+});
+
+it('keeps a burst of 100 fast feeds within one shared source start slot', async () => {
+  const origin = newOrigin();
+  const workers = [
+    createPgOriginLimiter(ctx.worker, { spacingMs: 0, feedSpacingMs: 10000 }),
+    createPgOriginLimiter(otherDb, { spacingMs: 0, feedSpacingMs: 10000 }),
+  ];
+  const started = Date.now();
+  const results = await Promise.all(
+    Array.from({ length: 100 }, (_, index) =>
+      workers[index % workers.length]!.reserve(origin, { leaseMs: 25000, purpose: 'feed' }),
+    ),
+  );
+  expect(results.filter((result) => result.status === 'granted')).toHaveLength(1);
+  expect(results.filter((result) => result.status === 'blocked')).toHaveLength(99);
+  const row = await ctx.owner.query(
+    'SELECT jsonb_array_length(leases) AS leases, extract(epoch FROM (feed_next_start_at - last_used_at)) AS gap FROM origin_fetch_state WHERE origin = $1',
+    [origin],
+  );
+  expect(row.rows[0]?.leases).toBe(1);
+  expect(Number(row.rows[0]?.gap)).toBeGreaterThanOrEqual(10);
+  for (const result of results)
+    if (result.status === 'granted') await workers[0]!.release(origin, result.token);
+  console.info(
+    `source-policy burst: 100 feeds, two pools, one HTTP start permitted, ${Date.now() - started} ms`,
+  );
+});

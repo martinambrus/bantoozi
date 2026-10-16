@@ -37,6 +37,10 @@ export const PURGE_AUTH_RULES = {
     keys: 'ctid',
     where: (now) => sql`last_used_at <= ${at(now, 7)}::timestamptz
       AND next_start_at <= ${now.toISOString()}::timestamptz
+      AND feed_next_start_at <= ${now.toISOString()}::timestamptz
+      AND crawl_delay_s = 0
+      AND learned_interval_s * power(0.8, floor(greatest(0, extract(epoch FROM (
+        ${now.toISOString()}::timestamptz - learned_updated_at))) / 86400)) < 1
       AND (blocked_until IS NULL OR blocked_until <= ${now.toISOString()}::timestamptz)
       AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(leases) l
                        WHERE (l ->> 'expires_at')::timestamptz > ${now.toISOString()}::timestamptz)`,

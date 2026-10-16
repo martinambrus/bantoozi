@@ -1939,3 +1939,276 @@ describe('media signals (M1-T7, revision R2)', () => {
     expect(await pendingMediaRanks()).toEqual([]);
   });
 });
+
+describe('plan velocity source protection', () => {
+  it('persists redirect progress across long crawl-delay deferrals and new handler instances', async () => {
+    const root = '/source-protection/slow-redirect';
+    const requests: string[] = [];
+    for (const [path, target, status] of [
+      [`${root}/a`, `${root}/b`, 302],
+      [`${root}/b`, `${root}/c`, 307],
+    ] as const) {
+      server.route(path, () => {
+        requests.push(path);
+        return { status, headers: { location: target }, body: '' };
+      });
+    }
+    server.route(`${root}/c`, (request) => {
+      requests.push(`${root}/c`);
+      expect(request.headers['if-none-match']).toBeUndefined();
+      return rssRoute(() => rss('Resumed', ''))();
+    });
+    const feedId = await addFeed(`${root}/a`, [{ user: reader, mode: 'off' }]);
+    await owner.query('UPDATE feeds SET min_interval_s = 60, etag = $2 WHERE id = $1', [
+      feedId,
+      '"old-original"',
+    ]);
+    let clock = Date.now();
+    const limiter = createMemoryOriginLimiter({ spacingMs: 0, now: () => clock });
+    await limiter.setCrawlDelay!(new URL(server.url('/')).origin, 30);
+    const input = {
+      ...workerDeps(limiter),
+      now: () => new Date(clock),
+      robots: { check: async () => ({ allowed: true, reason: 'allowed' as const }) },
+    };
+    for (let index = 0; index < 3; index += 1) {
+      clock += 31000;
+      await fetchFeed(feedId, createHandlers(input));
+      const state = (
+        await owner.query(
+          'SELECT publish_stats, total_fetches, consecutive_errors FROM feeds WHERE id = $1',
+          [feedId],
+        )
+      ).rows[0]!;
+      expect(state.consecutive_errors).toBe(0);
+      if (index < 2) expect(state.publish_stats.fetch_redirects).toHaveLength(index + 1);
+      else {
+        expect(state.publish_stats.fetch_redirects).toBeUndefined();
+        expect(state.total_fetches).toBe(1);
+      }
+    }
+    expect(requests).toEqual([`${root}/a`, `${root}/b`, `${root}/c`]);
+    expect((await feedRow(feedId)).fetch_url).toBe(server.url(`${root}/a`));
+  });
+
+  it('carries a forced refresh across source deferrals before publisher expiry, even for a paused feed', async () => {
+    const path = '/source-protection/forced-continuation.rss';
+    let requests = 0;
+    server.route(path, () => {
+      requests += 1;
+      return rssRoute(() => rss('Forced', ''))();
+    });
+    const feedId = await addFeed(path, []);
+    let clock = Date.now();
+    const initial = clock;
+    await owner.query(
+      "UPDATE feeds SET status = 'paused', last_success_at = $2, next_fetch_at = $2::timestamptz + interval '2 hours', publish_stats = '{\"cache_min_interval_s\":7200}'::jsonb WHERE id = $1",
+      [feedId, new Date(clock)],
+    );
+    const limiter = createMemoryOriginLimiter({ spacingMs: 0, now: () => clock });
+    await limiter.block(new URL(server.url('/')).origin, new Date(clock + 60000));
+    const input = { ...workerDeps(limiter), now: () => new Date(clock) };
+    await fetchFeed(feedId, createHandlers(input));
+    expect(requests).toBe(0);
+    const pending = await owner.query(
+      'SELECT payload, available_at FROM job_outbox WHERE queue = $1 AND payload ->> $2 = $3 AND delivered_at IS NULL',
+      ['feed.fetch', 'feedId', feedId],
+    );
+    expect(pending.rows).toHaveLength(1);
+    expect(pending.rows[0]?.payload).toEqual({ feedId });
+    expect(pending.rows[0]?.available_at.getTime()).toBeGreaterThanOrEqual(initial + 60000);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      clock += 61000;
+      await dispatch(
+        createHandlers(input),
+        'feed.fetch',
+        { feedId },
+        { queue: 'feed.fetch', jobId: 'forced-normal-continuation' },
+      );
+    }
+    expect(requests).toBe(1);
+    const completed = (await owner.query('SELECT publish_stats FROM feeds WHERE id = $1', [feedId]))
+      .rows[0]!;
+    expect(completed.publish_stats.fetch_force).toBeUndefined();
+    await dispatch(
+      createHandlers(input),
+      'feed.fetch',
+      { feedId },
+      { queue: 'feed.fetch', jobId: 'duplicate-continuation' },
+    );
+    expect(requests).toBe(1);
+  });
+
+  it('defers repeated 503 responses without quarantining a healthy feed', async () => {
+    const path = '/source-protection/throttled.rss';
+    server.route(path, () => ({ status: 503, headers: { 'retry-after': '600' }, body: '' }));
+    const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    let clock = Date.now();
+    const limiter = createMemoryOriginLimiter({ spacingMs: 0, now: () => clock });
+    const map = createHandlers({ ...workerDeps(limiter), now: () => new Date(clock) });
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await fetchFeed(feedId, map);
+      clock += 86401000;
+    }
+    const result = await owner.query(
+      'SELECT status, consecutive_errors, total_errors, quarantine_count, total_fetches FROM feeds WHERE id = $1',
+      [feedId],
+    );
+    expect(result.rows[0]).toEqual({
+      status: 'active',
+      consecutive_errors: 0,
+      total_errors: 0,
+      quarantine_count: 0,
+      total_fetches: 12,
+    });
+  });
+
+  it('remembers a publisher floor across a bodyless 304', async () => {
+    const path = '/source-protection/publisher.rss';
+    let conditional = false;
+    server.route(path, () =>
+      conditional
+        ? { status: 304, body: '' }
+        : {
+            status: 200,
+            headers: { 'content-type': 'application/rss+xml', etag: '"publisher"' },
+            body: rss('Publisher', '').replace('</channel>', '<ttl>120</ttl></channel>'),
+          },
+    );
+    const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    await fetchFeed(feedId);
+    const first = await owner.query('SELECT publish_stats FROM feeds WHERE id = $1', [feedId]);
+    expect(first.rows[0]?.publish_stats.publisher_min_interval_s).toBe(7200);
+    conditional = true;
+    // A live plan edit may pull a poll forward; it must still honor the publisher's stored floor.
+    await owner.query('UPDATE feeds SET fetch_interval_s = 60 WHERE id = $1', [feedId]);
+    await fetchFeed(feedId);
+    const after = await owner.query('SELECT fetch_interval_s FROM feeds WHERE id = $1', [feedId]);
+    expect(after.rows[0]?.fetch_interval_s).toBeGreaterThanOrEqual(7200);
+  });
+
+  it('replaces response cache hints on 304 without promoting them into retained RSS hints', async () => {
+    const path = '/source-protection/cache-policy.rss';
+    let conditional = false;
+    let cache: string | undefined = 'max-age=21600';
+    server.route(path, () =>
+      conditional
+        ? { status: 304, headers: cache === undefined ? {} : { 'cache-control': cache }, body: '' }
+        : {
+            status: 200,
+            headers: {
+              'content-type': 'application/rss+xml',
+              etag: '"cache-policy"',
+              'cache-control': cache!,
+            },
+            body: rss('Cache', ''),
+          },
+    );
+    const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    await owner.query('UPDATE feeds SET fetch_interval_s = 60, min_interval_s = 60 WHERE id = $1', [
+      feedId,
+    ]);
+    await fetchFeed(feedId);
+    const first = await owner.query('SELECT publish_stats FROM feeds WHERE id = $1', [feedId]);
+    expect(first.rows[0]?.publish_stats).toMatchObject({
+      publisher_min_interval_s: 0,
+      cache_min_interval_s: 21600,
+    });
+    conditional = true;
+    for (cache of ['max-age=120', undefined]) {
+      await fetchFeed(feedId);
+      const next = await owner.query(
+        'SELECT fetch_interval_s, publish_stats FROM feeds WHERE id = $1',
+        [feedId],
+      );
+      expect(next.rows[0]?.publish_stats.cache_min_interval_s).toBe(cache === undefined ? 0 : 120);
+      expect(next.rows[0]?.fetch_interval_s).toBe(cache === undefined ? 103 : 86);
+    }
+  });
+
+  it('does not let a faster plan poll before a retained publisher hint', async () => {
+    const path = '/source-protection/publisher-floor.rss';
+    let requests = 0;
+    server.route(path, () => {
+      requests += 1;
+      return {
+        status: 200,
+        headers: { 'content-type': 'application/rss+xml' },
+        body: rss('Publisher', '').replace('</channel>', '<ttl>120</ttl></channel>'),
+      };
+    });
+    const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    await fetchFeed(feedId);
+    await owner.query(
+      "UPDATE feeds SET next_fetch_at = now() - interval '1 second', min_interval_s = 60 WHERE id = $1",
+      [feedId],
+    );
+    await dispatch(
+      handlers,
+      'feed.fetch',
+      { feedId },
+      { queue: 'feed.fetch', jobId: 'publisher-plan-change' },
+    );
+    expect(requests).toBe(1);
+    const next = await owner.query(
+      "SELECT next_fetch_at >= last_fetch_at + interval '2 hours' AS honored FROM feeds WHERE id = $1",
+      [feedId],
+    );
+    expect(next.rows[0]?.honored).toBe(true);
+  });
+
+  it('does not renew a successful publisher/cache hint after a failed fetch', async () => {
+    const path = '/source-protection/hint-expiry.rss';
+    let requests = 0;
+    server.route(path, () => {
+      requests += 1;
+      return { status: 500, body: '' };
+    });
+    const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    const at = Date.now();
+    await owner.query(
+      "UPDATE feeds SET last_success_at = $2::timestamptz - interval '7 hours', last_fetch_at = $2::timestamptz - interval '10 minutes', next_fetch_at = $2::timestamptz - interval '1 minute', publish_stats = '{\"cache_min_interval_s\":21600,\"publisher_min_interval_s\":7200}'::jsonb WHERE id = $1",
+      [feedId, new Date(at)],
+    );
+    await dispatch(
+      handlers,
+      'feed.fetch',
+      { feedId },
+      { queue: 'feed.fetch', jobId: 'expired-hint' },
+    );
+    expect(requests).toBe(1);
+    // The new failed attempt also cannot renew the six-hour cache policy.
+    await owner.query(
+      "UPDATE feeds SET next_fetch_at = now() - interval '1 second' WHERE id = $1",
+      [feedId],
+    );
+    await dispatch(
+      handlers,
+      'feed.fetch',
+      { feedId },
+      { queue: 'feed.fetch', jobId: 'failed-hint-retry' },
+    );
+    expect(requests).toBe(2);
+  });
+
+  it('checks robots before polling a one-minute feed', async () => {
+    const path = '/source-protection/private.rss';
+    let requests = 0;
+    server.route('/robots.txt', () => ({
+      status: 200,
+      body: 'User-agent: BantooziBot\nDisallow: /source-protection/private.rss',
+    }));
+    server.route(path, () => {
+      requests += 1;
+      return rssRoute(() => rss('Private', ''))();
+    });
+    const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    await owner.query('UPDATE feeds SET min_interval_s = 60 WHERE id = $1', [feedId]);
+    const map = createHandlers(workerDeps(createMemoryOriginLimiter({ spacingMs: 0 })));
+    await fetchFeed(feedId, map);
+    expect(requests).toBe(0);
+    const denied = await owner.query('SELECT last_error_code FROM feeds WHERE id = $1', [feedId]);
+    expect(denied.rows[0]?.last_error_code).toBe('FEED_POLICY_DENIED');
+    server.route('/robots.txt', () => ({ status: 404, body: '' }));
+  });
+});

@@ -27,6 +27,15 @@ export const originFetchState = pgTable(
     origin: text('origin').primaryKey(),
     nextStartAt: tstz('next_start_at').notNull().defaultNow(),
     blockedUntil: tstz('blocked_until'),
+    feedNextStartAt: tstz('feed_next_start_at')
+      .notNull()
+      .default(sql`'epoch'::timestamptz`),
+    learnedIntervalS: real('learned_interval_s').notNull().default(0),
+    learnedUpdatedAt: tstz('learned_updated_at').notNull().defaultNow(),
+    crawlDelayS: real('crawl_delay_s').notNull().default(0),
+    crawlDelayUpdatedAt: tstz('crawl_delay_updated_at')
+      .notNull()
+      .default(sql`'epoch'::timestamptz`),
     leases: jsonb('leases')
       .notNull()
       .default(sql`'[]'`),
@@ -36,6 +45,10 @@ export const originFetchState = pgTable(
     check(
       'origin_fetch_state_leases_check',
       sql`jsonb_typeof(leases) = 'array' AND jsonb_array_length(leases) <= 2`,
+    ),
+    check(
+      'origin_fetch_state_source_floor_check',
+      sql`learned_interval_s BETWEEN 0 AND 86400 AND crawl_delay_s BETWEEN 0 AND 86400`,
     ),
   ],
 );

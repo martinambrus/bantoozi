@@ -404,9 +404,15 @@ CREATE TABLE origin_fetch_state (                 -- shared safe-fetch coordinat
   origin        text PRIMARY KEY,                 -- normalized scheme://host:port
   next_start_at timestamptz NOT NULL DEFAULT now(),
   blocked_until timestamptz NULL,
+  feed_next_start_at timestamptz NOT NULL DEFAULT 'epoch', -- aggregate feed-start budget, D-256
+  learned_interval_s real NOT NULL DEFAULT 0,
+  learned_updated_at timestamptz NOT NULL DEFAULT now(),
+  crawl_delay_s real NOT NULL DEFAULT 0,
+  crawl_delay_updated_at timestamptz NOT NULL DEFAULT 'epoch', -- authoritative robots refresh start
   leases        jsonb NOT NULL DEFAULT '[]',       -- [{token: uuid, expires_at: iso}], at most two
   last_used_at  timestamptz NOT NULL DEFAULT now(), -- set by every reservation; idle rows purged (spec 11 §5)
-  CHECK (jsonb_typeof(leases) = 'array' AND jsonb_array_length(leases) <= 2)
+  CHECK (jsonb_typeof(leases) = 'array' AND jsonb_array_length(leases) <= 2),
+  CHECK (learned_interval_s BETWEEN 0 AND 86400 AND crawl_delay_s BETWEEN 0 AND 86400)
 );
 
 CREATE TABLE feeds (
@@ -1765,3 +1771,12 @@ parity. A generated migration is not complete until these pass with actual role 
 Implementation references: PostgreSQL 16 [row security](https://www.postgresql.org/docs/16/ddl-rowsecurity.html),
 [constraints](https://www.postgresql.org/docs/16/ddl-constraints.html),
 [function visibility](https://www.postgresql.org/docs/16/spi-visibility.html).
+
+
+D-256 (migration 0030) extends `origin_fetch_state` with `feed_next_start_at timestamptz NOT NULL
+DEFAULT 'epoch'`, `learned_interval_s real NOT NULL DEFAULT 0`, `learned_updated_at timestamptz NOT
+NULL DEFAULT now()`, `crawl_delay_s real NOT NULL DEFAULT 0`, and `crawl_delay_updated_at
+timestamptz NOT NULL DEFAULT 'epoch'`. Only authoritative robots refreshes advance that version;
+older worker caches cannot clear a newer delay. Learned and robots floors are
+bounded to 0..86400 seconds. The existing table grants and fixed short-transaction lease protocol
+apply; see spec 03 §8.2 for the separate feed budget and decay. No additional tenant data is stored.

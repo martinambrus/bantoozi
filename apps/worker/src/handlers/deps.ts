@@ -12,6 +12,7 @@ import {
   type ExtractDeps,
   type FetchPurpose,
   type Resolver,
+  type RedirectHop,
   type RobotsChecker,
   type SafeFetchResult,
 } from '@bantoozi/feeds';
@@ -149,6 +150,9 @@ export function createWorkerDeps(input: WorkerDepsInput): WorkerDeps {
     createRobotsChecker({
       fetch: (url) => fetchWith(deps, url, { purpose: 'robots' }),
       ...(now === undefined ? {} : { now: () => now().getTime() }),
+      onPolicyRefresh: async (origin, delay, observedAt) => {
+        await deps.limiter.setCrawlDelay?.(origin, delay, observedAt);
+      },
     });
   return deps;
 }
@@ -159,6 +163,7 @@ export async function fetchWith(
   url: string,
   options: {
     purpose: FetchPurpose;
+    sourceIntervalS?: number;
     userAgent?: string;
     conditional?: { etag?: string | null; lastModified?: string | null };
     beforeRequest?: (url: URL, hop: number) => Promise<true | { code: string; message: string }>;
@@ -166,6 +171,7 @@ export async function fetchWith(
     timeoutMs?: number;
     /** Redirect hops left in a caller's request budget (discovery). */
     maxRedirects?: number;
+    previousRedirects?: readonly RedirectHop[];
     signal?: AbortSignal;
   },
 ): Promise<SafeFetchResult> {
@@ -176,6 +182,7 @@ export async function fetchWith(
       : (await deps.runtimeSettings.get()).values.fetchLimits;
   return safeFetch(url, {
     purpose: options.purpose,
+    ...(options.sourceIntervalS === undefined ? {} : { sourceIntervalS: options.sourceIntervalS }),
     userAgent: options.userAgent ?? deps.fetch.userAgent,
     timeoutMs: Math.min(options.timeoutMs ?? limits.timeoutMs, limits.timeoutMs),
     maxBytes: limits.maxBytes,
@@ -184,6 +191,9 @@ export async function fetchWith(
     ...(options.conditional === undefined ? {} : { conditional: options.conditional }),
     ...(options.beforeRequest === undefined ? {} : { beforeRequest: options.beforeRequest }),
     ...(options.maxRedirects === undefined ? {} : { maxRedirects: options.maxRedirects }),
+    ...(options.previousRedirects === undefined
+      ? {}
+      : { previousRedirects: options.previousRedirects }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
     ...(deps.resolver === undefined ? {} : { resolver: deps.resolver }),
     ...(now === undefined ? {} : { now: () => now().getTime() }),

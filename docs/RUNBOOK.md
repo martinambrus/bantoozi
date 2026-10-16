@@ -771,4 +771,9 @@ Retire a plan to prevent new assignments while keeping existing users. A plan in
 the default cannot be deleted. Set each user's plan in Admin → Users; plan and role are separate.
 A faster plan or interval pulls affected feeds forward; a slower interval does not delay an already
 scheduled fetch. The global automatic-analysis cap remains in Admin → Settings and is per feed.
-P0 stores one-minute intervals but the scheduler keeps its five-minute clamp until the next phase.
+One-minute polling is supported (D-256). A source or publisher can require a slower interval.
+429/503 defer polling without quarantining the feed. `origin_fetch_state` shows the learned floor,
+robots delay and next aggregate feed slot; the learned floor relaxes by 20 percent per quiet day.
+Plan changes cannot bypass a retained publisher hint on scheduled fetches. Forced operator polls
+retain their due-time override and always respect shared origin protection. The origin feed budget
+is six starts per minute across workers, separate from the existing page/discovery politeness limit.

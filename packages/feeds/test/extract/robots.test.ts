@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createRobotsChecker, type RobotsCheckerOptions } from '../../src/extract/index.js';
 import type { SafeFetchResult } from '../../src/http/index.js';
@@ -93,6 +93,26 @@ describe('spec 03 §8.1 step 2 robots.txt (RFC 9309)', () => {
     });
     await expect(check('https://example.com/')).resolves.toMatchObject({ allowed: true });
     expect(calls).toEqual([{ url: 'https://example.com/robots.txt', purpose: 'robots' }]);
+  });
+
+  it('persists only authoritative refreshes with their original observation time', async () => {
+    const onPolicyRefresh = vi.fn(async () => {});
+    const { check, clock } = harness(() => robotsTxt('User-agent: *\nCrawl-delay: 30'), {
+      onPolicyRefresh,
+    });
+    await check('https://example.com/a');
+    clock.now = HOUR;
+    await check('https://example.com/b');
+    expect(onPolicyRefresh).toHaveBeenCalledTimes(1);
+    expect(onPolicyRefresh).toHaveBeenLastCalledWith('https://example.com:443', 30, new Date(0));
+    clock.now = 25 * HOUR;
+    await check('https://example.com/c');
+    expect(onPolicyRefresh).toHaveBeenCalledTimes(2);
+    expect(onPolicyRefresh).toHaveBeenLastCalledWith(
+      'https://example.com:443',
+      30,
+      new Date(25 * HOUR),
+    );
   });
 
   it('matches the product token case-insensitively and ignores its version', async () => {
@@ -427,5 +447,17 @@ describe('spec 03 §8.1 step 2 robots.txt (RFC 9309)', () => {
       reason: 'disallowed',
     });
     expect(robots.calls).toHaveLength(3);
+  });
+});
+
+it('returns the matching agent crawl delay, rather than a different agent delay', async () => {
+  const h = harness(() =>
+    robotsTxt(
+      'User-agent: *\nCrawl-delay: 30\n\nUser-agent: BantooziBot\nCrawl-delay: 12\nAllow: /',
+    ),
+  );
+  expect(await h.check('https://example.com/news.rss')).toMatchObject({
+    allowed: true,
+    crawlDelayS: 12,
   });
 });

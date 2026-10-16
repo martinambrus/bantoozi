@@ -21,6 +21,8 @@ export interface ScheduleFeed {
   fetchIntervalS: number;
   /** `MIN`: the lowest plan interval among the subscribers (spec 08 §6; default 900). */
   minIntervalS: number;
+  /** Learned origin and robots floor; source protection may slow every tier. */
+  sourceFloorS?: number;
   consecutiveErrors: number;
   consecutiveEmpty: number;
   quarantineCount: number;
@@ -66,6 +68,7 @@ export type FetchOutcome =
       etag?: string | null | undefined;
       lastModified?: string | null | undefined;
     }
+  | { kind: 'throttled'; retryAfterS: number }
   | {
       /** Any failure, including a 200 whose body does not parse (`FEED_PARSE_ERROR`). */
       kind: 'error';
@@ -106,8 +109,8 @@ export interface ScheduleUpdate {
 const SECOND_MS = 1000;
 const DAY_S = 86_400;
 
-/** `MIN` is never below 5 minutes (spec 03 §9). */
-const MIN_FLOOR_S = 300;
+/** `MIN` is never below one minute (spec 03 §9). */
+const MIN_FLOOR_S = 60;
 /** `MAX` while a new item arrived in the last 30 days or the feed is younger than 30 days. */
 const MAX_ACTIVE_S = DAY_S;
 /** `MAX` once the feed has been quiet for 30 days. */
@@ -117,7 +120,7 @@ const QUIET_AFTER_S = 30 * DAY_S;
 /** New-item speed-up: `n_new ≥ 5` halves the interval, `n_new ≥ 2` takes a quarter off. */
 const MANY_NEW = 5;
 const SOME_NEW = 2;
-/** Each empty fetch (including a 304) adds 20 %, at least 5 minutes. */
+/** Legacy tiers keep a five-minute minimum increase; fast tiers scale the increase to their floor. */
 const EMPTY_GROWTH = 0.2;
 const EMPTY_GROWTH_MIN_S = 300;
 
@@ -136,7 +139,7 @@ const QUARANTINE_CAP_S = 16 * DAY_S;
 /** An error streak this long kills the feed. */
 const DEAD_AFTER_S = 30 * DAY_S;
 
-type SuccessOutcome = Exclude<FetchOutcome, { kind: 'error' }>;
+type SuccessOutcome = Extract<FetchOutcome, { kind: 'success' | 'not_modified' }>;
 type ErrorOutcome = Extract<FetchOutcome, { kind: 'error' }>;
 
 /**
@@ -144,19 +147,22 @@ type ErrorOutcome = Extract<FetchOutcome, { kind: 'error' }>;
  * outcome. Pure and deterministic: time comes only from `now`, and the ±10 % jitter from
  * {@link scheduleJitter}`(feed.id, now)`.
  *
- * - `MIN = max(300, min_interval_s)`. `MAX` is 24 h while `last_new_item_at` (as updated by this
+ * - `MIN = max(60, min_interval_s)` bounds the stored adaptive base. The source floor
+ *   additionally bounds the next fetch, so quiet-day decay can speed it up. `MAX` is 24 h while `last_new_item_at` (as updated by this
  *   fetch, so a feed that resumes publishing is capped at 24 h at once) is less than 30 days old or
  *   the feed is younger than 30 days, else 10 days: it switches after exactly 30 days of quiet, also
  *   for a feed that never had a new item (spec 03 §9 last paragraph). A `min_interval_s` above
  *   `MAX`, which no plan allows (spec 08 §6), is capped by `MAX`.
  * - **Success** (`success` or `not_modified`): resets the error streak and quarantine and sets
  *   `status = 'active'`. New items shrink the interval (×0.5 for ≥ 5, ×0.75 for ≥ 2, ×1 for 1); an
- *   empty fetch, including a 304, grows it by `max(300, round(20 %))`. While ≥ 5 publication gaps
+ *   empty fetch, including a 304, grows it by 20 % on a fast tier; tiers at or above 300 s keep
+ *   the legacy `max(300, round(20 %))` increase. While ≥ 5 publication gaps
  *   are known and the last new item is less than 7 days old, the interval is capped at
  *   `max(MIN, median gap / 2)`, so a daily feed stays at ≤ ~12 h. The publisher hint
  *   ({@link ScheduleHints}) is a floor. The stored interval is `clamp(round_to_60(max(interval,
- *   hint)), MIN, MAX)`; the next fetch is `now + min(MAX, max(MIN, hint, interval × (1 +
- *   jitter)))`, clamped after jitter, so jitter never fetches before `MIN` or the hint, nor later
+ *   body hint)), MIN, MAX)`. Response cache hints and the source floor only bound the next fetch:
+ *   `now + min(MAX, max(MIN, source, hint, interval × (1 + jitter)))`, clamped after jitter, so
+ *   jitter never fetches before the plan/source floor or the hint, nor later
  *   than `MAX` (spec 03 §13).
  * - **Error**: records the error and backs off `min(MIN × 2^min(errors − 1, 16), 24 h)`, never
  *   shorter than `Retry-After` (itself honoured up to 24 h); no jitter is applied. HTTP 410 marks
@@ -189,6 +195,7 @@ export function nextSchedule(
   if (!Number.isFinite(now.getTime())) {
     throw new RangeError('nextSchedule: now must be a valid Date');
   }
+  if (outcome.kind === 'throttled') return afterThrottle(feed, outcome.retryAfterS, now);
   return outcome.kind === 'error'
     ? afterError(feed, outcome, now)
     : afterSuccess(feed, outcome, now, hints);
@@ -201,7 +208,7 @@ function afterSuccess(
   hints: ScheduleHints | undefined,
 ): ScheduleUpdate {
   const nowMs = now.getTime();
-  const minS = minIntervalS(feed);
+  const minS = planIntervalS(feed);
   const nNew = outcome.kind === 'success' ? outcome.nNew : 0;
   const hasNew = nNew > 0;
   const lastNewItemAt = hasNew ? now : feed.lastNewItemAt;
@@ -216,17 +223,23 @@ function afterSuccess(
   if (hasNew) {
     interval *= nNew >= MANY_NEW ? 0.5 : nNew >= SOME_NEW ? 0.75 : 1;
   } else {
-    interval += Math.max(EMPTY_GROWTH_MIN_S, Math.round(interval * EMPTY_GROWTH));
+    interval += Math.max(
+      minS < 300 ? Math.ceil(minS * EMPTY_GROWTH) : EMPTY_GROWTH_MIN_S,
+      Math.round(interval * EMPTY_GROWTH),
+    );
   }
 
   const hint = scheduleHintS(hints, maxS);
+  const bodyHint = scheduleHintS({ ...hints, cacheMaxAgeS: null }, maxS);
   const gaps = feed.recentGapsS.filter((gap) => Number.isFinite(gap) && gap > 0);
   if (gaps.length >= GAP_CAP_MIN_GAPS && youngerThan(lastNewItemAt, GAP_CAP_FRESH_S, nowMs)) {
     interval = Math.min(interval, Math.max(minS, median(gaps) / 2));
   }
-  const fetchIntervalS = clamp(roundTo60(Math.max(interval, hint)), minS, maxS);
+  const rounded =
+    minS < 300 ? Math.round(Math.max(interval, bodyHint)) : roundTo60(Math.max(interval, bodyHint));
+  const fetchIntervalS = clamp(rounded, minS, maxS);
   const jittered = fetchIntervalS * (1 + scheduleJitter(feed.id, now));
-  const delayS = Math.min(maxS, Math.max(minS, hint, jittered));
+  const delayS = Math.min(maxS, Math.max(minIntervalS(feed), hint, jittered));
 
   const validators =
     outcome.kind === 'success'
@@ -328,11 +341,49 @@ function keepsStatus(status: FeedStatus): boolean {
   return status === 'dead' || status === 'paused';
 }
 
-/** `MIN` (spec 03 §9): at least 300 s; a non-finite value falls back to the plan default. */
+/** `MIN` (spec 03 §9): at least 60 s; a non-finite value falls back to the plan default. */
+function planIntervalS(feed: ScheduleFeed): number {
+  return Math.max(
+    MIN_FLOOR_S,
+    Number.isFinite(feed.minIntervalS) ? Math.ceil(feed.minIntervalS) : DEFAULT_MIN_INTERVAL_S,
+  );
+}
 function minIntervalS(feed: ScheduleFeed): number {
-  return Number.isFinite(feed.minIntervalS)
-    ? Math.max(MIN_FLOOR_S, Math.ceil(feed.minIntervalS))
-    : DEFAULT_MIN_INTERVAL_S;
+  const source = Number.isFinite(feed.sourceFloorS) ? Math.ceil(feed.sourceFloorS!) : 0;
+  return Math.max(planIntervalS(feed), source);
+}
+
+/** Throttling is a source deferral, not a broken-feed streak. Keep validators and historical health. */
+function afterThrottle(feed: ScheduleFeed, retryAfterS: number, now: Date): ScheduleUpdate {
+  const delay = Math.min(
+    DAY_S,
+    Math.max(
+      minIntervalS(feed),
+      feed.fetchIntervalS * 2,
+      Number.isFinite(retryAfterS) ? retryAfterS : 60,
+    ),
+  );
+  return {
+    status: feed.status,
+    fetchIntervalS: feed.fetchIntervalS,
+    nextFetchAt: new Date(now.getTime() + delay * SECOND_MS),
+    consecutiveErrors: feed.consecutiveErrors,
+    consecutiveEmpty: feed.consecutiveEmpty,
+    quarantineCount: feed.quarantineCount,
+    quarantinedUntil: feed.quarantinedUntil,
+    totalFetches: feed.totalFetches + 1,
+    totalErrors: feed.totalErrors,
+    totalEmpty: feed.totalEmpty,
+    lastFetchAt: now,
+    lastSuccessAt: feed.lastSuccessAt,
+    lastNewItemAt: feed.lastNewItemAt,
+    firstErrorAt: feed.firstErrorAt,
+    lastErrorCode: feed.lastErrorCode,
+    lastError: feed.lastError,
+    lastErrorAt: feed.lastErrorAt,
+    etag: feed.etag,
+    lastModified: feed.lastModified,
+  };
 }
 
 /** Whether `at` is less than `seconds` before `nowMs` ("within"; a future instant counts). */

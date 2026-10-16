@@ -105,12 +105,10 @@ describe('Admin → Plans', () => {
     expect(names[2]).toMatch(/old/i);
   });
 
-  it('says that intervals under 300 seconds wait for the scheduler change', async () => {
+  it('explains that sources and publishers can limit one-minute polling', async () => {
     await open('/admin/plans');
     await screen.findByRole('table', { name: 'Plans' });
-    expect(
-      screen.getByText(/under 300 seconds.*scheduler|scheduler.*under 300 seconds/i),
-    ).toBeVisible();
+    expect(screen.getByText(/one-minute polling.*sources and publishers/i)).toBeVisible();
   });
 
   it('links to the global analysis cap in Settings', async () => {

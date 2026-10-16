@@ -232,6 +232,12 @@ function assertFeedId(feedId: string): void {
 }
 
 /** The feed row as `feed.fetch` needs it (spec 03 §3–§9); a superset of `nextSchedule`'s input. */
+export interface FeedRedirectHop {
+  status: number;
+  from: string;
+  to: string;
+}
+
 export interface FeedForFetch {
   id: string;
   /** Canonical identity (spec 03 §5). */
@@ -267,6 +273,10 @@ export interface FeedForFetch {
   lastErrorAt: Date | null;
   /** `publish_stats.recent_gaps_s` as stored (finite numbers only), `[]` when absent. */
   recentGapsS: number[];
+  publisherIntervalS?: number;
+  cacheIntervalS?: number;
+  resumeRedirects?: FeedRedirectHop[];
+  forcePending?: boolean;
 }
 
 type Timestamp = Date | string;
@@ -308,6 +318,10 @@ export async function loadFeedForFetch(db: Executor, feedId: string): Promise<Fe
     last_error: string | null;
     last_error_at: Timestamp | null;
     recent_gaps_s: unknown;
+    publisher_interval_s: number | null;
+    cache_interval_s: number | null;
+    resume_redirects: unknown;
+    force_pending: boolean | null;
   }>(sql`
     SELECT id::text AS id, url, fetch_url, merged_into_id::text AS merged_into_id, status,
            subscriber_count, next_fetch_at, etag, last_modified,
@@ -317,7 +331,13 @@ export async function loadFeedForFetch(db: Executor, feedId: string): Promise<Fe
            consecutive_empty, quarantine_count, total_fetches, total_errors, total_empty,
            last_new_item_at, first_error_at, quarantined_until, last_success_at, last_fetch_at,
            last_error_code, last_error, last_error_at,
-           publish_stats -> 'recent_gaps_s' AS recent_gaps_s
+           publish_stats -> 'recent_gaps_s' AS recent_gaps_s,
+           CASE WHEN jsonb_typeof(publish_stats -> 'publisher_min_interval_s') = 'number'
+             THEN (publish_stats ->> 'publisher_min_interval_s')::float8 END AS publisher_interval_s,
+           CASE WHEN jsonb_typeof(publish_stats -> 'cache_min_interval_s') = 'number'
+             THEN (publish_stats ->> 'cache_min_interval_s')::float8 END AS cache_interval_s,
+           publish_stats -> 'fetch_redirects' AS resume_redirects,
+           publish_stats -> 'fetch_force' = 'true'::jsonb AS force_pending
       FROM feeds WHERE id = ${feedId}::bigint`);
   const row = result.rows[0];
   if (row === undefined) return null;
@@ -351,6 +371,10 @@ export async function loadFeedForFetch(db: Executor, feedId: string): Promise<Fe
     lastErrorCode: row.last_error_code,
     lastError: row.last_error,
     lastErrorAt: toDateOrNull(row.last_error_at),
+    publisherIntervalS: row.publisher_interval_s ?? 0,
+    cacheIntervalS: row.cache_interval_s ?? 0,
+    resumeRedirects: readFetchRedirects(row.resume_redirects),
+    forcePending: row.force_pending === true,
     recentGapsS: gaps.filter(
       (gap): gap is number => typeof gap === 'number' && Number.isFinite(gap),
     ),
@@ -402,6 +426,8 @@ export interface RecordFeedFetchInput {
   recentGapsS?: readonly number[] | undefined;
   /** New `publish_stats.items_7d` (see `feedItems7d`); absent keeps the stored one. */
   items7d?: number | undefined;
+  publisherMinIntervalS?: number;
+  cacheMinIntervalS?: number;
 }
 
 /**
@@ -457,10 +483,14 @@ export async function recordFeedFetch(
       .map((gap) => Math.round(gap))
       .slice(0, RECENT_PUBLICATIONS);
   }
+  if (input.publisherMinIntervalS !== undefined)
+    stats['publisher_min_interval_s'] = Math.max(0, Math.ceil(input.publisherMinIntervalS));
+  if (input.cacheMinIntervalS !== undefined)
+    stats['cache_min_interval_s'] = Math.max(0, Math.ceil(input.cacheMinIntervalS));
   if (input.items7d !== undefined) stats['items_7d'] = Math.max(0, Math.round(input.items7d));
-  if (Object.keys(stats).length > 0) {
-    sets.push(sql`publish_stats = f.publish_stats || ${JSON.stringify(stats)}::jsonb`);
-  }
+  sets.push(
+    sql`publish_stats = (f.publish_stats - 'fetch_redirects' - 'fetch_force') || ${JSON.stringify(stats)}::jsonb`,
+  );
   sets.push(sql`updated_at = now()`);
   await tx.execute(
     sql`UPDATE feeds f SET ${sql.join(sets, sql`, `)} WHERE f.id = ${feedId}::bigint`,
@@ -492,11 +522,42 @@ export async function feedRecentPublishedAt(
  * request because the origin is cooling down or busy (`FEED_ORIGIN_COOLDOWN`, spec 03 §8.2, D-12).
  * Never brings a fetch forward.
  */
-export async function deferFeedFetch(tx: Transaction, feedId: string, until: Date): Promise<void> {
+export async function deferFeedFetch(
+  tx: Transaction,
+  feedId: string,
+  until: Date,
+  redirects?: readonly FeedRedirectHop[],
+  force?: boolean,
+): Promise<void> {
+  const progress: Record<string, unknown> = {};
+  if (redirects !== undefined) progress['fetch_redirects'] = redirects;
+  if (force === true) progress['fetch_force'] = true;
   await tx.execute(sql`
     UPDATE feeds SET next_fetch_at = greatest(next_fetch_at, ${until.toISOString()}::timestamptz),
+                     ${Object.keys(progress).length === 0 ? sql`` : sql`publish_stats = publish_stats || ${JSON.stringify(progress)}::jsonb,`}
                      updated_at = now()
      WHERE id = ${feedId}::bigint`);
+}
+
+function readFetchRedirects(value: unknown): FeedRedirectHop[] {
+  if (!Array.isArray(value) || value.length > 5) return [];
+  const result: FeedRedirectHop[] = [];
+  for (const hop of value as unknown[]) {
+    if (
+      typeof hop !== 'object' ||
+      hop === null ||
+      !('status' in hop) ||
+      !('from' in hop) ||
+      !('to' in hop) ||
+      typeof hop.status !== 'number' ||
+      ![301, 302, 303, 307, 308].includes(hop.status) ||
+      typeof hop.from !== 'string' ||
+      typeof hop.to !== 'string'
+    )
+      return [];
+    result.push({ status: hop.status, from: hop.from, to: hop.to });
+  }
+  return result;
 }
 
 /** `publish_stats.items_7d`: the feed's items first seen in the last seven days. */

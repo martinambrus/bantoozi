@@ -2431,3 +2431,55 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   session/CSRF/idempotency/audit path; versioned edits refuse stale state.
   PR #45 review: the restore shell script's throwaway smoke administrator also reads the stored
   default plan and invite allowance; a regression test executes that exact SQL after deleting beta.
+
+- D-256: 2026-10-16 (approved plan-velocity P1/P2) — Fast plans may poll at 60 seconds. Empty
+  polls on floors below 300 seconds grow by 20 percent with second precision; the legacy slower-tier
+  growth stays unchanged. Publisher hints remain binding on scheduled fetches even when a plan edit
+  pulled a poll forward, and the last parsed hint survives a 304 in `feeds.publish_stats`.
+  Forced operator polls retain D-23's due-time override and still obey origin protection.
+  429/503 are throttled outcomes: no feed error, quarantine or validator change. The shared origin
+  limiter learns `max(2 × current interval, 2 × prior learned floor, Retry-After)`, bounded to 24 h,
+  and moves the next origin feed slot forward immediately. After each complete quiet day it relaxes
+  by ×0.8. A separate aggregate budget permits at most six feed starts per origin per minute across
+  processes; page extraction keeps its own existing global politeness limit. Matching robots
+  `Crawl-delay` applies to all request starts; fast feeds check robots at every redirect hop and
+  temporary policy failures defer without consuming feed health. Migration 0030 stores the shared
+  feed slot, learned floor/clock and crawl delay on `origin_fetch_state`. Tests use fixture HTTP and
+  independent worker pools; there are no live provider calls or new dependencies.
+  PR #46 review: retain only body-derived TTL/syndication hints across 304 responses. Store the
+  latest response cache hint separately and replace it on every 200/304, including removing it.
+
+  PR #46 second review: charge the aggregate feed budget once per origin in a redirect chain;
+  subsequent hops keep concurrency, start spacing, Crawl-delay and cooldown enforcement. Retained
+  publisher/cache hints expire from the last successful 200/304, never from a failed attempt.
+
+  PR #46 third review: robots refreshes persist Crawl-delay with the original request timestamp;
+  cached decisions do not write shared policy. Migration 0030 also stores `crawl_delay_updated_at`,
+  and older refreshes cannot replace newer policies, including clearing a delay. Equal timestamps
+  conservatively keep the greater delay. Memory and PostgreSQL limiters share these semantics.
+
+  PR #46 fourth review: housekeeping retains origin rows while a feed budget slot, Crawl-delay or
+  a decayed learned floor of at least one second still applies. Quiet feeds may be ten days apart;
+  the old seven-day idle purge cannot erase their source policy. Fully faded idle rows remain
+  collectible; memory cleanup evaluates quiet-day decay too.
+
+  Source-policy keys use the HTTP client's explicit default port (`https://host:443` or
+  `http://host:80`) for robots refresh persistence and scheduler floor reads too; URL.origin alone
+  omits that port and would split source protection into two rows.
+
+  PR #46 sixth review: a source deferral stores already completed redirect hops in the feed's
+  publish_stats; the next attempt resumes at the pending target instead of spending another
+  Crawl-delay at the original URL. The HTTP client retains the original validator scope, total
+  redirect limit, loop checks and permanent/temporary semantics across attempts. Terminal results
+  clear progress. This allows long Crawl-delay redirects to finish across process/job boundaries
+  without extending an HTTP deadline or weakening source protection.
+
+  PR #46 seventh review: learned source floors bound next_fetch_at without raising the persisted
+  adaptive base, so normal one-new-item polls speed up as the floor decays. A forced refresh that
+  source protection defers persists its intent and a delayed ordinary outbox retry; that retry
+  reads the flag to bypass publisher/due/status gates, even on a paused or unsubscribed feed.
+  Terminal outcomes clear the flag, so duplicate continuation jobs become stale no-ops.
+
+  PR #46 eighth review: response Cache-Control hints also stay out of the adaptive base, so a
+  later 304 that lowers/removes max-age speeds up naturally. The regression follows the real
+  200 → 304 → 304 stored state without resetting fetch_interval_s between responses.

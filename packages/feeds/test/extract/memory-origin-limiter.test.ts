@@ -215,3 +215,87 @@ describe('spec 03 §8.2 in-memory OriginLimiter', () => {
     });
   });
 });
+
+describe('feed source protection', () => {
+  it('shares the feed request budget across callers without delaying another origin', async () => {
+    let now = 0;
+    const limiter = createMemoryOriginLimiter({
+      now: () => now,
+      spacingMs: 0,
+      feedSpacingMs: 10000,
+    });
+    const first = await limiter.reserve('https://one.test', { leaseMs: 1000, purpose: 'feed' });
+    expect(first.status).toBe('granted');
+    if (first.status === 'granted') await limiter.release('https://one.test', first.token);
+    expect(await limiter.reserve('https://one.test', { leaseMs: 1000, purpose: 'feed' })).toEqual({
+      status: 'blocked',
+      until: new Date(10000),
+    });
+    expect(
+      (await limiter.reserve('https://two.test', { leaseMs: 1000, purpose: 'feed' })).status,
+    ).toBe('granted');
+    // Page extraction uses the separate global politeness budget.
+    expect(
+      (await limiter.reserve('https://one.test', { leaseMs: 1000, purpose: 'page' })).status,
+    ).toBe('granted');
+    now = 10000;
+    expect(
+      (await limiter.reserve('https://one.test', { leaseMs: 1000, purpose: 'feed' })).status,
+    ).toBe('granted');
+  });
+
+  it('learns from throttling and relaxes the floor once per whole day', async () => {
+    let now = 0;
+    const limiter = createMemoryOriginLimiter({ now: () => now, spacingMs: 0 });
+    const origin = 'https://throttled.test';
+    await limiter.block(origin, new Date(120000), { currentIntervalS: 300 });
+    now = 120000;
+    expect(await limiter.reserve(origin, { leaseMs: 1000, purpose: 'feed' })).toEqual({
+      status: 'blocked',
+      until: new Date(600000),
+    });
+    now = 600000;
+    const request = await limiter.reserve(origin, { leaseMs: 1000, purpose: 'feed' });
+    if (request.status === 'granted') await limiter.release(origin, request.token);
+    expect(await limiter.reserve(origin, { leaseMs: 1000, purpose: 'feed' })).toEqual({
+      status: 'blocked',
+      until: new Date(1200000),
+    });
+    now = 86400000;
+    const next = await limiter.reserve(origin, { leaseMs: 1000, purpose: 'feed' });
+    if (next.status === 'granted') await limiter.release(origin, next.token);
+    expect(await limiter.reserve(origin, { leaseMs: 1000, purpose: 'feed' })).toEqual({
+      status: 'blocked',
+      until: new Date(now + 480000),
+    });
+  });
+
+  it('keeps a newer crawl policy when an older process reports no delay', async () => {
+    let now = 1000;
+    const limiter = createMemoryOriginLimiter({ now: () => now, spacingMs: 0 });
+    const origin = 'https://versions.test';
+    const first = await limiter.reserve(origin, { leaseMs: 1000 });
+    if (first.status === 'granted') await limiter.release(origin, first.token);
+    await limiter.setCrawlDelay!(origin, 30, new Date(1000));
+    await limiter.setCrawlDelay!(origin, 0, new Date(0));
+    expect(await limiter.reserve(origin, { leaseMs: 1000 })).toEqual({
+      status: 'wait',
+      retryAt: new Date(31000),
+    });
+    now = 32000;
+    await limiter.setCrawlDelay!(origin, 0, new Date(now));
+    expect((await limiter.reserve(origin, { leaseMs: 1000 })).status).toBe('granted');
+  });
+
+  it('applies crawl delay to pages as well as feeds, including the previous start', async () => {
+    const limiter = createMemoryOriginLimiter({ now: () => 0, spacingMs: 0 });
+    const origin = 'https://robots.test';
+    const first = await limiter.reserve(origin, { leaseMs: 1000, purpose: 'robots' });
+    if (first.status === 'granted') await limiter.release(origin, first.token);
+    await limiter.setCrawlDelay!(origin, 45);
+    expect(await limiter.reserve(origin, { leaseMs: 1000, purpose: 'page' })).toEqual({
+      status: 'wait',
+      retryAt: new Date(45000),
+    });
+  });
+});

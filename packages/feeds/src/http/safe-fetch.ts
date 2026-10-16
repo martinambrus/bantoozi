@@ -44,6 +44,8 @@ export interface SafeFetchOptions {
   headersTimeoutMs?: number;
   /** Default 5. */
   maxRedirects?: number;
+  /** Completed hops of a persisted source deferral; URL is the final hop's target. Counts toward the same redirect limit. */
+  previousRedirects?: readonly RedirectHop[];
   /**
    * `FETCH_ALLOW_PRIVATE` escape hatch for local fixture servers: disables BOTH the address checks
    * and the port allow-list. Config validation refuses it in production.
@@ -53,6 +55,8 @@ export interface SafeFetchOptions {
   resolver?: Resolver;
   /** The per-origin politeness throttle (spec 03 §8.2); omitted → no throttling. */
   limiter?: OriginLimiter;
+  /** Current feed interval for learning from 429/503; omitted for other request purposes. */
+  sourceIntervalS?: number;
   /**
    * Policy callback before EVERY request (hop 0 included), after the URL checks and before the
    * limiter; article extraction checks robots here. A denial ends the fetch with
@@ -139,6 +143,8 @@ const ABORTED: unique symbol = Symbol('aborted');
 const noop = (): void => undefined;
 
 interface Settings {
+  purpose: FetchPurpose;
+  sourceIntervalS: number | undefined;
   userAgent: string;
   accept: string;
   timeoutMs: number;
@@ -193,6 +199,8 @@ function resolveSettings(options: SafeFetchOptions): Settings {
     throw new RangeError('safeFetch: maxRedirects must be a non-negative integer');
   }
   return {
+    purpose: options.purpose,
+    sourceIntervalS: options.sourceIntervalS,
     userAgent: options.userAgent,
     accept: options.accept ?? ACCEPT_HEADERS[options.purpose],
     timeoutMs: options.timeoutMs,
@@ -323,13 +331,20 @@ type Slot = { ok: true; token: string | undefined } | { ok: false; result: SafeF
  * outlives the whole deadline. A failing `reserve` rejects the fetch: no request was sent and it is
  * an infrastructure failure, not the feed's.
  */
-async function reserveStart(chain: Chain, origin: string, url: URL): Promise<Slot> {
+async function reserveStart(
+  chain: Chain,
+  origin: string,
+  url: URL,
+  feedBudget = true,
+): Promise<Slot> {
   const { limiter, now } = chain.settings;
   if (limiter === undefined) return { ok: true, token: undefined };
   const leaseMs = Math.ceil(chain.settings.timeoutMs) + LEASE_MARGIN_MS;
   for (;;) {
     if (chain.signal.aborted) return { ok: false, result: timeoutFailure(chain, url) };
-    const pending = limiter.reserve(origin, { leaseMs });
+    const purpose =
+      chain.settings.purpose === 'feed' && !feedBudget ? 'page' : chain.settings.purpose;
+    const pending = limiter.reserve(origin, { leaseMs, purpose });
     const reservation = await untilAborted(pending, chain.signal);
     if (reservation === ABORTED) {
       // A start granted after the deadline is handed straight back.
@@ -533,9 +548,10 @@ async function sendHop(chain: Chain, url: URL): Promise<HopStep> {
 /** Follows the redirect chain hop by hop, re-running every check on every hop (spec 03 §4.3). */
 async function followChain(chain: Chain, start: URL): Promise<SafeFetchResult> {
   const { settings, redirects } = chain;
-  const visited = new Set<string>();
+  const visited = new Set(chain.redirects.map((hop) => requestKey(new URL(hop.from))));
+  const budgetedOrigins = new Set<string>();
   let current = start;
-  for (let hop = 0; ; hop += 1) {
+  for (let hop = redirects.length; ; hop += 1) {
     visited.add(requestKey(current));
     const check = checkRequestUrl(current, settings.allowPrivate);
     if (!check.ok) return failure(chain, current, check.code, check.message);
@@ -553,8 +569,11 @@ async function followChain(chain: Chain, start: URL): Promise<SafeFetchResult> {
     }
 
     const origin = originOf(current);
-    const slot = await reserveStart(chain, origin, current);
+    const slot = await reserveStart(chain, origin, current, !budgetedOrigins.has(origin));
     if (!slot.ok) return slot.result;
+    // A logical feed fetch spends one budget slot per origin; redirect continuations retain the
+    // shared concurrency, Crawl-delay, spacing and cooldown checks without spending it again.
+    budgetedOrigins.add(origin);
     let step: HopStep;
     try {
       step = await sendHop(chain, current);
@@ -564,7 +583,14 @@ async function followChain(chain: Chain, start: URL): Promise<SafeFetchResult> {
         // every other fetch of the origin relies on it, so a failing `block` rejects the fetch like
         // a failing `reserve` (an infrastructure failure, not the origin's). So does a write still
         // pending at the deadline: whether the cooldown was stored is then unknown.
-        const stored = await untilAborted(limiter.block(origin, step.cooldownUntil), chain.signal);
+        const stored = await untilAborted(
+          chain.settings.sourceIntervalS === undefined
+            ? limiter.block(origin, step.cooldownUntil)
+            : limiter.block(origin, step.cooldownUntil, {
+                currentIntervalS: chain.settings.sourceIntervalS,
+              }),
+          chain.signal,
+        );
         if (stored === ABORTED) {
           throw new Error('safeFetch: the origin cooldown was not stored before the deadline');
         }
@@ -635,6 +661,28 @@ export async function safeFetchWithInternals(
   const settings = resolveSettings(options);
   const parsed = parseUrl(url);
   if (!parsed.ok) return { ok: false, code: 'FEED_INVALID_URL', message: parsed.message };
+  const previous = options.previousRedirects?.map((hop) => ({ ...hop })) ?? [];
+  if (previous.length > settings.maxRedirects) throw new RangeError('too many previous redirects');
+  const seen = new Set<string>();
+  for (const [index, hop] of previous.entries()) {
+    const from = new URL(hop.from);
+    const to = new URL(hop.to);
+    if (
+      ![301, 302, 303, 307, 308].includes(hop.status) ||
+      !checkRequestUrl(from, settings.allowPrivate).ok ||
+      !checkRequestUrl(to, settings.allowPrivate).ok ||
+      (index > 0 && requestKey(from) !== requestKey(new URL(previous[index - 1]!.to))) ||
+      seen.has(requestKey(from))
+    )
+      throw new TypeError('invalid previous redirect chain');
+    seen.add(requestKey(from));
+  }
+  if (
+    previous.length > 0 &&
+    (requestKey(new URL(previous.at(-1)!.to)) !== requestKey(parsed.url) ||
+      seen.has(requestKey(parsed.url)))
+  )
+    throw new TypeError('invalid redirect continuation');
 
   const deadline = new AbortController();
   const timer = setTimeout(() => {
@@ -662,8 +710,8 @@ export async function safeFetchWithInternals(
     deadline: deadline.signal,
     external,
     deadlineAt: settings.now() + settings.timeoutMs,
-    originalKey: requestKey(parsed.url),
-    redirects: [],
+    originalKey: requestKey(previous.length === 0 ? parsed.url : new URL(previous[0]!.from)),
+    redirects: previous,
   };
   try {
     return await followChain(chain, parsed.url);

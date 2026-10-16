@@ -72,11 +72,11 @@ describe('nextSchedule after new items (spec 03 §9)', () => {
     );
   });
 
-  it('never goes below 300 s, whatever min_interval_s says', () => {
-    const feed = { id: JITTER_DOWN_ID, minIntervalS: 60, fetchIntervalS: 300 };
+  it('honors a one-minute plan floor without rounding below it', () => {
+    const feed = { id: JITTER_DOWN_ID, minIntervalS: 60, fetchIntervalS: 60 };
     const update = schedule(feed, success(5));
-    expect(update.fetchIntervalS).toBe(300);
-    expect(delayS(update)).toBe(300);
+    expect(update.fetchIntervalS).toBe(60);
+    expect(delayS(update)).toBe(60);
   });
 });
 
@@ -116,21 +116,27 @@ describe('nextSchedule after an empty fetch (spec 03 §9)', () => {
 });
 
 describe('nextSchedule publisher hints (spec 03 §9)', () => {
-  it.each<[string, ScheduleHints, number]>([
-    ['a TTL', { ttlMinutes: 120 }, 7200],
-    ['sy:updatePeriod/Frequency', { syUpdatePeriod: 'daily', syUpdateFrequency: 2 }, 43_200],
-    ['sy:updatePeriod without a frequency', { syUpdatePeriod: 'hourly' }, 3600],
-    ['Cache-Control max-age', { cacheMaxAgeS: 3600 }, 3600],
-    ['max-age capped at 6 hours', { cacheMaxAgeS: 100_000 }, 21_600],
+  it.each<[string, ScheduleHints, number, number]>([
+    ['a TTL', { ttlMinutes: 120 }, 7200, 7200],
+    [
+      'sy:updatePeriod/Frequency',
+      { syUpdatePeriod: 'daily', syUpdateFrequency: 2 },
+      43_200,
+      43_200,
+    ],
+    ['sy:updatePeriod without a frequency', { syUpdatePeriod: 'hourly' }, 3600, 3600],
+    ['Cache-Control max-age', { cacheMaxAgeS: 3600 }, 3600, 1200],
+    ['max-age capped at 6 hours', { cacheMaxAgeS: 100_000 }, 21_600, 1200],
     [
       'the largest hint',
       { ttlMinutes: 90, syUpdatePeriod: 'hourly', cacheMaxAgeS: 30_000 },
       21_600,
+      5400,
     ],
-    ['a TTL above the max-age cap', { ttlMinutes: 600, cacheMaxAgeS: 30_000 }, 36_000],
-  ])('uses %s as a floor', (_label, hints, expected) => {
+    ['a TTL above the max-age cap', { ttlMinutes: 600, cacheMaxAgeS: 30_000 }, 36_000, 36_000],
+  ])('uses %s as a floor', (_label, hints, expected, storedHint) => {
     const update = schedule({}, NOT_MODIFIED, hints);
-    expect(update.fetchIntervalS).toBe(expected);
+    expect(update.fetchIntervalS).toBe(storedHint);
     expect(delayS(update)).toBeGreaterThanOrEqual(expected);
   });
 
@@ -150,6 +156,21 @@ describe('nextSchedule publisher hints (spec 03 §9)', () => {
     ['a NaN max-age', { cacheMaxAgeS: Number.NaN }],
   ])('ignores %s', (_label, hints) => {
     expect(schedule({}, NOT_MODIFIED, hints).fetchIntervalS).toBe(1200);
+  });
+
+  it('recovers from a replaced response cache hint without resetting the adaptive interval', () => {
+    let feed = feedRow({ minIntervalS: 60, fetchIntervalS: 60 });
+    for (const [cacheMaxAgeS, stored, delayFloor] of [
+      [21600, 72, 21600],
+      [120, 86, 120],
+      [undefined, 103, 60],
+    ] as const) {
+      const result = nextSchedule(feed, NOT_MODIFIED, NOW, { cacheMaxAgeS });
+      expect(result.fetchIntervalS).toBe(stored);
+      expect(delayS(result)).toBeGreaterThanOrEqual(delayFloor);
+      if (cacheMaxAgeS === undefined) expect(delayS(result)).toBeLessThan(120);
+      feed = { ...feed, ...result };
+    }
   });
 
   it('is a floor, not a cap', () => {
@@ -331,7 +352,7 @@ describe('nextSchedule jitter (spec 03 §9, §13)', () => {
     expect(delayS(update)).toBe(900);
   });
 
-  it('keeps every delay within [max(MIN, hint), MAX] and ±10 % of the stored interval', () => {
+  it('keeps delays within the floors and MAX, applying jitter to the adaptive base', () => {
     const cases: [Partial<ScheduleFeed>, FetchOutcome, ScheduleHints | undefined][] = [
       [{}, success(10), undefined],
       [{ fetchIntervalS: 5000 }, success(1), undefined],
@@ -354,8 +375,9 @@ describe('nextSchedule jitter (spec 03 §9, §13)', () => {
         const delay = delayS(update);
         expect(delay).toBeGreaterThanOrEqual(min);
         expect(delay).toBeLessThanOrEqual(max);
-        expect(Math.abs(delay - update.fetchIntervalS)).toBeLessThanOrEqual(
-          update.fetchIntervalS * 0.1 + 0.001,
+        expect(delay).toBeCloseTo(
+          Math.min(max, Math.max(min, update.fetchIntervalS * (1 + scheduleJitter(feed.id, NOW)))),
+          2,
         );
       }
     }
@@ -783,4 +805,56 @@ describe('a feed that serves invalid XML with an ETag, then recovers', () => {
     expect(kinds).toEqual(['not_modified', 'error', 'error', 'success', 'not_modified']);
     expect(sent).toEqual(['"items-1"', '"items-1"', '"items-1"', '"items-1"', '"items-2"']);
   });
+});
+
+describe('fast plans and source protection', () => {
+  it('slows a quiet one-minute feed by 20 percent, rather than adding five minutes', () => {
+    const update = schedule({ minIntervalS: 60, fetchIntervalS: 60 }, NOT_MODIFIED);
+    expect(update.fetchIntervalS).toBe(72);
+    expect(delayS(update)).toBeGreaterThanOrEqual(60);
+  });
+  it('honors source and publisher floors even on premium', () => {
+    const feed = { minIntervalS: 60, fetchIntervalS: 60, sourceFloorS: 1800 };
+    expect(schedule(feed, success(8)).fetchIntervalS).toBe(60);
+    expect(delayS(schedule(feed, success(8)))).toBe(1800);
+    expect(delayS(schedule(feed, success(8), { ttlMinutes: 60 }))).toBeGreaterThanOrEqual(3600);
+  });
+  it('lets the next poll relax with the source floor without permanently raising the adaptive base', () => {
+    let feed = feedRow({ minIntervalS: 60, fetchIntervalS: 60, sourceFloorS: 1800 });
+    for (const floor of [1800, 1440, 1152]) {
+      feed = { ...feed, sourceFloorS: floor };
+      const result = nextSchedule(feed, success(1), NOW);
+      expect(result.fetchIntervalS).toBe(60);
+      expect(delayS(result)).toBe(floor);
+      feed = { ...feed, ...result };
+    }
+    const recovered = nextSchedule({ ...feed, sourceFloorS: 0 }, success(1), NOW);
+    expect(recovered.fetchIntervalS).toBe(60);
+    expect(delayS(recovered)).toBeLessThan(70);
+  });
+  it('never quarantines or counts throttling as a feed error', () => {
+    const feed = { minIntervalS: 60, fetchIntervalS: 60, consecutiveErrors: 9, totalErrors: 9 };
+    const update = schedule(feed, { kind: 'throttled', retryAfterS: 600 });
+    expect(update).toMatchObject({
+      status: 'active',
+      consecutiveErrors: 9,
+      totalErrors: 9,
+      quarantineCount: 0,
+    });
+    expect(delayS(update)).toBe(600);
+  });
+});
+
+it('can throttle repeatedly past the quarantine threshold without damaging feed health', () => {
+  let feed = feedRow({ minIntervalS: 60, fetchIntervalS: 60, totalErrors: 0 });
+  for (let i = 0; i < 15; i += 1) {
+    const update = nextSchedule(feed, { kind: 'throttled', retryAfterS: 120 }, NOW);
+    expect(update).toMatchObject({
+      status: 'active',
+      consecutiveErrors: 0,
+      totalErrors: 0,
+      quarantineCount: 0,
+    });
+    feed = { ...feed, ...update };
+  }
 });

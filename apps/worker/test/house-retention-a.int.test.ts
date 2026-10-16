@@ -149,6 +149,33 @@ describe('house.purge-auth', () => {
       expect(await has(recent)).toBe(true);
     });
 
+    it('retains source policy across long quiet-feed intervals and purges only a fully faded floor', async () => {
+      const learned = await origin({ lastUsedAt: before(10 * DAY) });
+      const crawl = await origin({ lastUsedAt: before(30 * DAY) });
+      const faded = await origin({ lastUsedAt: before(30 * DAY) });
+      const budget = await origin({ lastUsedAt: before(30 * DAY) });
+      await h.owner.query(
+        'UPDATE origin_fetch_state SET learned_interval_s = 600, learned_updated_at = $2 WHERE origin = $1',
+        [learned, before(10 * DAY)],
+      );
+      await h.owner.query('UPDATE origin_fetch_state SET crawl_delay_s = 30 WHERE origin = $1', [
+        crawl,
+      ]);
+      await h.owner.query(
+        'UPDATE origin_fetch_state SET learned_interval_s = 1, learned_updated_at = $2 WHERE origin = $1',
+        [faded, before(30 * DAY)],
+      );
+      await h.owner.query(
+        'UPDATE origin_fetch_state SET feed_next_start_at = $2 WHERE origin = $1',
+        [budget, after(MINUTE)],
+      );
+      await w.run('house.purge-auth', NOW);
+      expect(await has(learned)).toBe(true);
+      expect(await has(crawl)).toBe(true);
+      expect(await has(budget)).toBe(true);
+      expect(await has(faded)).toBe(false);
+    });
+
     it('keeps an old origin while its next start, cooldown or a lease is still ahead', async () => {
       const old = before(30 * DAY);
       const pending = await origin({ lastUsedAt: old, nextStartAt: after(MINUTE) });
