@@ -2,7 +2,7 @@ import type { ReadonlyRankerConfig } from '../config.js';
 import { minimumReasons, qualityReasons } from './activation.js';
 import { FEATURE_SPEC_V1_SHA } from './feature-spec.js';
 import { type RawFeatureSnapshot, snapshotCardScore, snapshotFeatures } from './features.js';
-import { planFolds, type FoldPlan } from './folds.js';
+import { INNER_MAX_K, planFolds, type FoldPlan } from './folds.js';
 import { fitLogistic, type LogisticFit } from './logistic.js';
 import { aucScorer, groupedBootstrapCi, logLoss } from './metrics.js';
 import { modelContextSha, type Consent, type HeldCard, type StoredModel } from './model.js';
@@ -247,6 +247,7 @@ function innerSelect(
   const plan = planFolds(
     rows.map((r) => r.s),
     seed,
+    INNER_MAX_K,
   );
   if (plan === null) return { lambda: largest, platt: IDENTITY };
   const folds = cvFolds(rows, plan, ctx);
