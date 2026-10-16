@@ -9,6 +9,7 @@ import { Link } from '@tanstack/react-router';
 import { useCallback, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { invalidateCoalesced } from '../../api/coalesced-invalidate.js';
 import { Badge } from '../../components/badge.js';
 import { Button } from '../../components/button.js';
 import { FOCUS_RING, cx } from '../../components/cx.js';
@@ -229,7 +230,7 @@ function useTrainingFeeds(
   const learning = useLearning(training);
   useSettledActions((handle) => {
     if (handle.action.type !== 'rate' || !training) return;
-    void queryClient.invalidateQueries({ queryKey: learningKey(accountId) });
+    invalidateCoalesced(queryClient, learningKey(accountId));
   });
   return useMemo(() => {
     const trainingIds = new Set(

@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { invalidateCoalesced } from '../../api/coalesced-invalidate.js';
 import type { ApiError } from '../../api/errors.js';
 import { Button } from '../../components/button.js';
 import { Dialog } from '../../components/dialog.js';
@@ -104,8 +105,7 @@ export function RateVisibleDialog({ asked, name, onClose }: RateVisibleDialogPro
               ? undefined
               : { label: t('common:actions.undo'), onAction: () => void undo(entry.id) },
         });
-        for (const queryKey of unreadKeys(accountId))
-          void queryClient.invalidateQueries({ queryKey });
+        for (const queryKey of unreadKeys(accountId)) invalidateCoalesced(queryClient, queryKey);
         onClose();
         return;
       }
