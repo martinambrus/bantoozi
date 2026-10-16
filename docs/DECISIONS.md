@@ -2578,3 +2578,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   migration, keeping its retained grace cutoff older than the longest supported one-day window
   (including DST). A recently edited preference for an unsubscribed feed cannot make waiting
   arrivals visible through migration time. Live subscriptions keep their exact original start.
+
+  PR #47 ninth review: on an explicitly immediate plan, feed timing predictions still use a stable
+  account-local window at its min_fetch_interval_s, rather than passing through a faster shared
+  subscriber's next fetch. Source/publisher constraints can defer it further; initial subscription
+  grace still predicts immediate fetches. Null/zero article visibility remains immediate.

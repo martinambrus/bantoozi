@@ -696,3 +696,33 @@ it.each(['single', 'opml'])(
     expect(feed.nextUpdateAt).toBe(me.json().planInfo.nextUpdateAt);
   },
 );
+
+it.each([null, 0])(
+  'keeps immediate-plan %s predictions on the account cadence instead of a faster shared fetch',
+  async (cadence) => {
+    await h.owner.query("UPDATE plans SET release_interval_s = $1 WHERE key = 'free'", [cadence]);
+    try {
+      const account = await following('free');
+      await h.owner.query(
+        "UPDATE feeds SET last_success_at = $2, next_fetch_at = $3, publish_stats = '{}'::jsonb WHERE id = $1",
+        [feedId, new Date(now.getTime() - 30000), new Date(now.getTime() + 60000)],
+      );
+      const boundary = new Date(now);
+      boundary.setUTCHours(18, 0, 0, 0);
+      for (let check = 0; check < 2; check += 1) {
+        const res = await account.api.get('/subscriptions');
+        expect(res.statusCode, res.body).toBe(200);
+        expect(res.json()[0].feed).toMatchObject({
+          updateIntervalS: 21600,
+          intervalReason: 'plan',
+          nextUpdateAt: boundary.toISOString(),
+        });
+        now = new Date(now.getTime() + 60000);
+      }
+      // The forecast floor is not an article access gate on an explicitly immediate plan.
+      expect((await account.api.get(`/articles/${freshId}`)).statusCode).toBe(200);
+    } finally {
+      await h.owner.query("UPDATE plans SET release_interval_s = 21600 WHERE key = 'free'");
+    }
+  },
+);

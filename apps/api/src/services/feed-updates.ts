@@ -8,7 +8,7 @@ import {
   type SubscriptionRow,
   type TenantTx,
 } from '@bantoozi/db';
-import type { FeedInfo } from '@bantoozi/shared';
+import { releaseWindow, type FeedInfo } from '@bantoozi/shared';
 
 export type FeedUpdateInfo = Pick<
   FeedInfo,
@@ -42,9 +42,16 @@ export async function feedUpdates(
       const graceUntil = row.createdAt.getTime() + 900000;
       const grace = graceUntil > clock.now.getTime();
       const immediate = !clock.intervalS || grace;
+      // Immediate visibility does not make a faster subscriber's fetch schedule our advertised
+      // cadence. Keep predictions on a stable account window, except during initial grace.
+      const accountNext =
+        !clock.intervalS && !grace
+          ? releaseWindow(clock.now, clock.timezone, clock.planIntervalS).nextReleaseAt!.getTime()
+          : 0;
       const candidate = new Date(
         Math.max(
           clock.now.getTime() + (immediate ? 30000 : 1),
+          accountNext,
           policy?.nextStartAt?.getTime() ?? 0,
           (row.feed.lastSuccessAt?.getTime() ?? 0) + publisher * 1000,
           row.feed.nextFetchAt?.getTime() ?? clock.now.getTime() + interval * 1000,
