@@ -1592,3 +1592,38 @@ describe('mergeArticles last_seen_at (D-253)', () => {
     );
   });
 });
+
+describe('mergeArticles article_engagement (D-253)', () => {
+  it('moves the source engagement marker to the survivor', async () => {
+    const { source, target } = await pair();
+    await ctx.owner.query(
+      'INSERT INTO article_engagement (article_id, engaged_at) VALUES ($1, $2)',
+      [source.id, hoursAgo(500)],
+    );
+    await merge(source.id, target.id);
+    const rows = await ctx.owner.query<{ engaged_at: Date }>(
+      'SELECT engaged_at FROM article_engagement WHERE article_id = $1',
+      [target.id],
+    );
+    expect(rows.rows).toHaveLength(1);
+    expect(Math.abs(rows.rows[0]!.engaged_at.getTime() - hoursAgo(500).getTime())).toBeLessThan(
+      10_000,
+    );
+  });
+
+  it('keeps the earlier marker when both articles have one', async () => {
+    const { source, target } = await pair();
+    await ctx.owner.query(
+      'INSERT INTO article_engagement (article_id, engaged_at) VALUES ($1, $2), ($3, $4)',
+      [source.id, hoursAgo(300), target.id, hoursAgo(10)],
+    );
+    await merge(source.id, target.id);
+    const rows = await ctx.owner.query<{ engaged_at: Date }>(
+      'SELECT engaged_at FROM article_engagement WHERE article_id = $1',
+      [target.id],
+    );
+    expect(Math.abs(rows.rows[0]!.engaged_at.getTime() - hoursAgo(300).getTime())).toBeLessThan(
+      10_000,
+    );
+  });
+});
