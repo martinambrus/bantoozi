@@ -49,6 +49,8 @@ export const ENV_VARS: readonly EnvVarSpec[] = [
   { name: 'PG_TEST_PORT', usedBy: ['compose', 'test'], defaultValue: '5433' },
   { name: 'PG_DEV_PORT', usedBy: ['compose'], defaultValue: '5432' },
   { name: 'LT_DEV_PORT', usedBy: ['compose'], defaultValue: '5000' },
+  { name: 'OLLAMA_DEV_PORT', usedBy: ['compose'], defaultValue: '11435' },
+  { name: 'BANTOOZI_GPU', usedBy: ['scripts'], defaultValue: 'auto' },
   { name: 'POSTGRES_PASSWORD', usedBy: ['compose', 'init.sh'], secret: true, bootstrapOnly: true },
   {
     name: 'BANTOOZI_OWNER_PASSWORD',

@@ -194,6 +194,8 @@ notes: `TYPESAFE_MODEL`, `TYPESAFE_BASE_URL`, `TYPESAFE_PRICE_PER_MTOK_USD`, `EN
 | `PG_TEST_PORT` | `5433` | compose.test.yml, test | host port of the test Postgres |
 | `PG_DEV_PORT` | `5432` | compose.dev.yml | host port of the dev Postgres |
 | `LT_DEV_PORT` | `5000` | compose.dev.yml | host port of the dev LibreTranslate (`--profile translate`); dev apps then use `LIBRETRANSLATE_URL=http://localhost:5000` (D-3) |
+| `OLLAMA_DEV_PORT` | `11435` | compose.dev.yml | host port of the dev Ollama (`pnpm ollama:dev:up`, profile `ollama`); dev apps then use `OLLAMA_BASE_URL=http://localhost:11435` (D-263) |
+| `BANTOOZI_GPU` | `auto` | scripts | where the local Ollama runs (`ollama-dev.sh`, `deploy.sh`): `auto` (NVIDIA with the nvidia runtime, else Vulkan render nodes, else CPU), `cpu`, `nvidia` or `vulkan`; a requested GPU that is not usable fails (D-263) |
 | `POSTGRES_PASSWORD`, `BANTOOZI_OWNER_PASSWORD`, `BANTOOZI_APP_PASSWORD`, `BANTOOZI_WORKER_PASSWORD` | — | compose / `init.sh` | database bootstrap only; never read by the apps |
 | `PUBLIC_BASE_URL` | `http://localhost:5173` | api, worker, eval | used in links, the CSRF `Origin` check (spec 08 §1) and the fetcher User-Agent |
 | `API_PORT` | `3000` | api | |
