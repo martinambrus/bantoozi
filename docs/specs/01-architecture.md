@@ -241,6 +241,7 @@ notes: `TYPESAFE_MODEL`, `TYPESAFE_BASE_URL`, `TYPESAFE_PRICE_PER_MTOK_USD`, `EN
 | `DELETION_LEDGER_RECIPIENT` | — | worker | the age public key (`age1…`) entries are encrypted to; the identity is never on the host |
 | `DELETION_HMAC_KEY` | — | worker | ≥ 32 characters, secret; keys the `emailHmac` of ledger entries |
 | `WORKER_SELF_RESTART` | `true` in production, else `false` | worker | when a restart-class runtime setting changes (Jev model, base URLs, fallback, Ollama models or concurrency, LibreTranslate URL), the worker drains and exits so its supervisor (compose `restart: unless-stopped`) starts it with the new values; `false` only logs a warning and reports `pendingRestart` in its heartbeat (spec 11 §8) |
+| `WORKER_CPU_THREADS` | every core but `max(2, ⌈cores/8⌉)` | worker | threads of the CPU pool that trains personal models (D-262); threads start on demand and exit after a minute idle |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | all | tracing is enabled only when set |
 | `ADMIN_EMAILS` | — | api, worker | optional, **bootstrap only**: a listed address may sign up without an invite and becomes admin when its account is created or at a login while no active admin exists; afterwards the stored role rules and a demotion sticks (spec 08 §2.1). Optional in production (D-202 (2) superseded, D-215). Alerts go to the active admins; this list is the fallback while there are none (spec 11 §6.1) |
 

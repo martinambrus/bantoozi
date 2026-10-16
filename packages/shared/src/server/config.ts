@@ -135,6 +135,7 @@ export const ENV_VARS: readonly EnvVarSpec[] = [
   { name: 'WORKER_METRICS_PORT', usedBy: ['worker'], defaultValue: '9101' },
   { name: 'WORKER_METRICS_HOST', usedBy: ['worker'] },
   { name: 'WORKER_SELF_RESTART', usedBy: ['worker'] },
+  { name: 'WORKER_CPU_THREADS', usedBy: ['worker'] },
   { name: 'OTEL_EXPORTER_OTLP_ENDPOINT', usedBy: ['all'] },
   { name: 'ADMIN_EMAILS', usedBy: ['api', 'worker'] },
   // Comma list of hosts the TypeSafe/Ollama/LibreTranslate base URLs may point at in production (M8b-T1).
@@ -203,6 +204,8 @@ export interface Config {
   readonly workerMetricsHost: string;
   /** Whether the worker drains and exits when a restart-class runtime value changed (default: production). */
   readonly workerSelfRestart: boolean;
+  /** Threads of the worker's CPU pool; absent = every core but a reserve (D-262). */
+  readonly workerCpuThreads: number | undefined;
   readonly otelExporterOtlpEndpoint: string | undefined;
   readonly adminEmails: readonly string[];
   /** Lower-cased hosts a provider base URL may use in production (M8b-T1 enforces); empty = none set. */
@@ -417,6 +420,7 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
       '127.0.0.1',
     workerSelfRestart:
       read('WORKER_SELF_RESTART', booleanSchema, production ? 'true' : 'false') ?? production,
+    workerCpuThreads: read('WORKER_CPU_THREADS', intIn(1, 4096), undefined),
     otelExporterOtlpEndpoint: read('OTEL_EXPORTER_OTLP_ENDPOINT', httpUrl, undefined),
     adminEmails: read('ADMIN_EMAILS', emailListSchema, undefined) ?? [],
     providerHostAllowlist: read('PROVIDER_HOST_ALLOWLIST', hostListSchema, undefined) ?? [],

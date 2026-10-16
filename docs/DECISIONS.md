@@ -2677,3 +2677,22 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
      within the fit tolerance (Platt differs by 1.7e-9 in probability on the owner's data).
   On the owner's 3,839 explicit ratings: 22.2 s → 6.3 s, final weights byte-equal, context sha
   unchanged, activation unchanged. Parallel folds (G) follow as a shared CPU thread pool.
+
+- D-262: 2026-10-17 (owner decision: use all cores, "size the pool automatically with no cap", for
+  hosts up to 128+ cores) — The worker runs CPU-bound work on a shared thread pool (`CpuPool`).
+  1. Size: every core but a reserve of `max(2, ⌈cores / 8⌉)` for the OS, PostgreSQL, the API and the
+     worker's event loop (8 → 6 threads, 16 → 14, 128 → 112); `WORKER_CPU_THREADS` overrides it (spec
+     01 §env). Threads start only when tasks wait and exit after 60 s idle, so a quiet worker holds
+     none (each thread is a V8 isolate with the ranker loaded; spec 11 gives the worker 1.5 GB).
+  2. Training splits into independent outer folds, the eligible-set hash and a finish
+     (`trainFold`, `trainingSetSha`, `finishTraining`; `trainUserModel` runs the same phases in
+     sequence). The pool trainer starts every possible fold (`OUTER_MAX_K`; a fold the plan lacks
+     returns null) and the hash at once, then the finish. Folds combine in fold order: the result is
+     byte-equal to inline training (verified on the owner's 3,839 ratings). This replaces the
+     one-thread-per-training of D-259; many users training at once share the pool instead of each run
+     taking its own cores.
+  3. A training's arguments (19 MB for the owner) are serialized once into a `SharedArrayBuffer`
+     (`share`, V8 serializer: dates, -0 and NaN as structured cloning) and shared by its tasks:
+     posting them to each of 7 tasks had cost the event loop ~200 ms per task.
+  On the owner's data (8-core dev host, compiled): 6.6 s inline → 3.4 s with warm threads, ~5 s cold,
+  with the worker's event loop free throughout.

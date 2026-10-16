@@ -23,7 +23,7 @@ import type pg from 'pg';
 import type { ClassificationEnv } from '../classify/config.js';
 import type { TranslationDeps } from '../classify/translation.js';
 import { createPipelineGate } from '../gate.js';
-import type { Trainer } from '../learn/train-thread.js';
+import type { Trainer } from '../learn/trainer.js';
 import type { PipelineContext } from '../pipeline.js';
 import type { ProviderValidateDeps } from './provider-validate.js';
 

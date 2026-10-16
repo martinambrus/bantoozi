@@ -13,6 +13,7 @@ import { createLibreTranslateProbe } from './alerts/probe.js';
 import { createBoss, pgBossBroker, registerHandlers } from './boss.js';
 import { createFileDeletionLedger } from './deletion-ledger.js';
 import { WORKER_POOL_LIMITS, startHealthServer, type HealthServer } from './health-server.js';
+import { CpuPool, cpuPoolSize } from './cpu-pool.js';
 import { createWorkerDeps } from './handlers/deps.js';
 import {
   assertWorkerMode,
@@ -22,7 +23,7 @@ import {
 } from './eval-mode.js';
 import { createHandlers } from './handlers/index.js';
 import { enqueueOverdueHousekeeping } from './housekeeping.js';
-import { threadTrainer } from './learn/train-thread.js';
+import { poolTrainer } from './learn/trainer.js';
 import { startOutboxRelay } from './outbox-relay.js';
 import { assertProductionReady } from './readiness.js';
 import { createWorkerRuntime } from './runtime.js';
@@ -79,6 +80,8 @@ const runtime = await createWorkerRuntime({
 const models = runtime.models;
 const runtimeSettings = runtime.settings;
 let settingsTimer: NodeJS.Timeout | undefined;
+// CPU-bound work (personal-model training) runs on a shared thread pool sized to the machine (D-262).
+const cpuPool = new CpuPool({ size: cpuPoolSize(undefined, config.workerCpuThreads) });
 const settingsEnv = {
   prefilterMinCards: config.prefilterMinCards,
   dailyBudgetUsd: config.dailyBudgetUsd,
@@ -107,7 +110,7 @@ const handlers = createHandlers(
     settingsEnv,
     limiter: createPgOriginLimiter(db),
     logger,
-    trainer: threadTrainer(),
+    trainer: poolTrainer(cpuPool),
     classification: models.classification,
     mailer,
     adminEmails: config.adminEmails,
@@ -157,6 +160,7 @@ async function stop(signal: string): Promise<void> {
     await boss?.stop({ graceful: true, timeout: 20_000, wait: true });
     await heartbeat?.stop();
     await models.close();
+    await cpuPool.close();
     mailer.close();
     await Promise.all([pool.end(), lockPool.end()]);
   } catch (error) {
@@ -235,7 +239,10 @@ if (!stopping) {
   );
   if (overdue.length > 0) logger.info({ overdue }, 'overdue housekeeping enqueued');
   relay = startOutboxRelay(db, pgBossBroker(boss), { handlers, logger });
-  logger.info({ ...registration, evalIngestOnly: config.evalIngestOnly }, 'worker started');
+  logger.info(
+    { ...registration, evalIngestOnly: config.evalIngestOnly, cpuThreads: cpuPool.size },
+    'worker started',
+  );
 }
 
 shutdownGate.wire(shutdown);

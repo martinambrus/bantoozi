@@ -18,7 +18,7 @@ import {
 import { enqueueLearn, enqueueSuggest } from '@bantoozi/shared';
 
 import { currentContextSha, loadLearnInputs, type LearnInputs } from '../learn/inputs.js';
-import { inlineTrainer, type Trainer } from '../learn/train-thread.js';
+import { inlineTrainer, type Trainer } from '../learn/trainer.js';
 import { nowOf, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
 

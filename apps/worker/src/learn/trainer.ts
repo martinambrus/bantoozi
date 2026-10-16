@@ -1,14 +1,14 @@
-import { Worker } from 'node:worker_threads';
+import {
+  OUTER_MAX_K,
+  trainUserModel,
+  type FoldResult,
+  type TrainArgs,
+  type TrainResult,
+} from '@bantoozi/ranker';
 
-import { trainUserModel, type TrainResult } from '@bantoozi/ranker';
+import { share, type CpuPool } from '../cpu-pool.js';
 
-type TrainArgs = Parameters<typeof trainUserModel>[0];
-type TrainMode = Parameters<typeof trainUserModel>[1]['mode'];
-
-export interface TrainWorkerData {
-  args: TrainArgs;
-  mode: TrainMode;
-}
+type TrainMode = 'production' | 'research';
 
 /** Trains one model (spec 06 §8.3); the result is the same wherever it runs. */
 export type Trainer = (args: TrainArgs, mode: TrainMode) => Promise<TrainResult>;
@@ -18,44 +18,28 @@ export const inlineTrainer: Trainer = (args, mode) =>
   Promise.resolve(trainUserModel(args, { mode }));
 
 /**
- * The thread module next to this one: `.ts` when running from sources (the thread inherits the
- * parent's loader and conditions through `execArgv`), `.js` in the compiled app.
+ * A trainer on the worker's CPU pool (D-262): the outer folds and the eligible-set hash run in
+ * parallel on pool threads, then the finish on one, so neither the worker's event loop nor the transactions
+ * other jobs hold open on it wait for a run (D-259). The folds are independent and are combined in
+ * fold order, so the result equals {@link inlineTrainer}'s.
  */
-const WORKER_URL = new URL(
-  `./train-worker.${import.meta.url.endsWith('.ts') ? 'ts' : 'js'}`,
-  import.meta.url,
-);
-
-/**
- * A trainer that runs every training in a thread of its own (D-259): training a few thousand
- * samples is tens of seconds of CPU, during which the worker's event loop would stop every other
- * job, including transactions they hold open on the user's row. Inputs and results are plain data
- * (structured clone keeps their dates).
- */
-export function threadTrainer(options: { execArgv?: string[] } = {}): Trainer {
-  return (args, mode) =>
-    new Promise<TrainResult>((resolve, reject) => {
-      const workerData: TrainWorkerData = { args, mode };
-      const worker = new Worker(WORKER_URL, {
-        workerData,
-        name: 'bantoozi-user-learn',
-        ...(options.execArgv === undefined ? {} : { execArgv: options.execArgv }),
-      });
-      let settled = false;
-      worker.once('message', (result: TrainResult) => {
-        settled = true;
-        resolve(result);
-        void worker.terminate();
-      });
-      worker.once('error', (error: unknown) => {
-        if (settled) return;
-        settled = true;
-        reject(error instanceof Error ? error : new Error(String(error)));
-      });
-      worker.once('exit', (code: number) => {
-        if (settled) return;
-        settled = true;
-        reject(new Error(`The training thread exited with code ${code} without a result`));
-      });
+export function poolTrainer(pool: CpuPool): Trainer {
+  return async (input, mode) => {
+    const args = share(input);
+    // Every possible outer fold starts at once (a fold the plan lacks returns null), next to the
+    // eligible-set hash; only the finish waits for them.
+    const [setSha, ...folds] = await Promise.all([
+      pool.run<string>({ kind: 'trainingSetSha', args }),
+      ...Array.from({ length: OUTER_MAX_K }, (_, f) =>
+        pool.run<FoldResult | null>({ kind: 'trainFold', args, mode, f }),
+      ),
+    ]);
+    return pool.run<TrainResult>({
+      kind: 'finishTraining',
+      args,
+      mode,
+      folds: folds.filter((fold): fold is FoldResult => fold !== null),
+      setSha: setSha as string,
     });
+  };
 }
