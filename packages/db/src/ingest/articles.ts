@@ -421,22 +421,6 @@ async function insertAssociation(
 }
 
 /**
- * Marks the already-known items of a successfully parsed feed as seen now (D-253): one statement.
- * Items new to the feed carry `last_seen_at = first_seen_at` from their insert.
- */
-export async function markFeedItemsSeen(
-  db: Executor,
-  feedId: string,
-  articleIds: readonly string[],
-): Promise<void> {
-  if (articleIds.length === 0) return;
-  await db.execute(sql`
-    UPDATE feed_items SET last_seen_at = statement_timestamp()
-     WHERE feed_id = ${feedId}::bigint
-       AND article_id = ANY(${sql.param([...articleIds])}::bigint[])`);
-}
-
-/**
  * A 304 Not Modified: the feed is unchanged, so the items of its last successful fetch are still
  * listed (D-253). `since` is the start of that fetch (`feeds.last_success_at`): every item it listed
  * was stamped at or after it, an item that had dropped out was last stamped by an earlier fetch.
@@ -482,6 +466,14 @@ async function ingestFound(
       options.autoAnalysisDailyCap ?? null,
       options.now ?? new Date(),
     );
+  }
+  if (!newAssociation) {
+    // A known item the feed lists now is seen now (D-253), inside the transaction that holds the
+    // article lock: the purge locks the article too, so it cannot delete a listed item between
+    // its sighting and this stamp.
+    await tx.execute(sql`
+      UPDATE feed_items SET last_seen_at = statement_timestamp()
+       WHERE feed_id = ${input.feedId}::bigint AND article_id = ${articleId}::bigint`);
   }
   if (!newAssociation && guid !== null) {
     // A pair keeps its first non-null GUID; alternate GUIDs arriving with the same URL are ignored.

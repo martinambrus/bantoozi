@@ -2384,3 +2384,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   already had. Existing rows are backfilled to their feed's last successful fetch (assuming "still listed" delays a purge
   once; the first 200 re-stamps exactly the listed items). The purge logs per-rule counts and `pnpm worker-cli
   purge-report` is a dry run. Spec 02, 11 §5, RUNBOOK.
+  PR #44 review: a fetch stamps `last_seen_at` for a known item inside that item's ingestion transaction (which holds the
+  article lock), so a concurrent purge can never delete an item between its sighting and its stamp; feed and article
+  merges keep the later `last_seen_at`; and the 21-versus-90-day decision also counts past engagement in `feedback_events`
+  (read, open, bookmark, label, rate — not `mark_read`), so an article whose bookmark, label or rating was later cleared
+  keeps the 90-day rule. Indefinite protection and the dislike window still use current state.

@@ -6,7 +6,6 @@ import {
   feedItems7d,
   feedRecentPublishedAt,
   ingestItem,
-  markFeedItemsSeen,
   markFeedItemsStillListed,
   loadFeedForFetch,
   recordFeedFetch,
@@ -202,7 +201,6 @@ async function fetchFeed(
 
   let nNew = 0;
   let failed = 0;
-  const listed: string[] = [];
   for (const item of parsed.items) {
     lock.assertHeld();
     const input = ingestInput(targetId, item);
@@ -222,7 +220,6 @@ async function fetchFeed(
         return r;
       });
       if (outcome.newAssociation) nNew += 1;
-      if (!outcome.newAssociation) listed.push(outcome.articleId);
       if (outcome.outcome === 'identity_conflict') {
         // URL and GUID identity name different articles: the URL owner is kept, nothing merges.
         deps.logger.warn(
@@ -241,11 +238,6 @@ async function fetchFeed(
       );
     }
   }
-
-  // The known items the feed lists now are seen now (D-253): one statement for the whole fetch; the
-  // new ones were stamped by their insert.
-  lock.assertHeld();
-  await markFeedItemsSeen(deps.db, targetId, listed);
 
   // After a permanent redirect, the renamed feed or the survivor as it is now (its `fetch_url`).
   const target = result.permanentRedirect

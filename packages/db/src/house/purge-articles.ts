@@ -81,7 +81,8 @@ async function candidateIds(
  * evaluation reference. A bookmark, label or like keeps the article forever. Then, by what readers did:
  * - a dislike without those (`dislike`): 90 days after arrival and `max(180, historyDays)` days after
  *   the latest dislike;
- * - opened, individually read (a `read` event; a bulk `mark_read` is not engagement) or carried by
+ * - opened, individually read, or once bookmarked, labelled or rated even if later cleared (an event of
+ *   kind `read`, `open`, `bookmark`, `label` or `rate`; a bulk `mark_read` is not engagement) or carried by
  *   an evaluation feed (`normal90`): 90 days after arrival;
  * - nobody engaged (`unopened21`): 21 days after arrival.
  */
@@ -113,7 +114,8 @@ export async function classifyForPurge(
               max(ua.rated_at) FILTER (WHERE ua.rating = -1) AS disliked_at,
               coalesce(bool_or(ua.opened_at IS NOT NULL), false) AS opened,
               EXISTS (SELECT 1 FROM feedback_events fe
-                       WHERE fe.article_id = a.id AND fe.kind = 'read') AS read_event
+                       WHERE fe.article_id = a.id
+                         AND fe.kind IN ('read', 'open', 'bookmark', 'label', 'rate')) AS read_event
          FROM user_article ua WHERE ua.article_id = a.id) u
      CROSS JOIN LATERAL (
        SELECT EXISTS (

@@ -499,3 +499,29 @@ describe('pnpm worker-cli purge-report', () => {
     expect(await gone(...ids)).toEqual([false, false, false, false, false]);
   }, 240_000);
 });
+
+// ── Historical engagement counts for the 21-versus-90-day decision (Codex r1) ──────────────────
+
+describe('historical engagement', () => {
+  it('keeps a 30-day-old article whose bookmark, rating or label was later cleared, but purges one with only a bulk mark-read', async () => {
+    const user = await b.user();
+    const feed = await b.subscribedFeed([user]);
+    const at = before(30 * DAY);
+    const unbookmarked = await b.saved({ arrival: at, userId: user, feedId: feed });
+    await b.unbookmark(user, unbookmarked.articleId, new Date());
+    const unrated = await article([{ feedId: feed, at }]);
+    await w.rate(user, unrated, new Date(), 1);
+    await w.rate(user, unrated, new Date(), null);
+    const bulkOnly = await article([{ feedId: feed, at }]);
+    await bulkRead(user, bulkOnly);
+    // Current state of the first two holds no engagement; only their events remember it.
+    expect(
+      await b.exists(
+        `SELECT 1 FROM user_article WHERE article_id = $1 AND (bookmarked_at IS NOT NULL OR rating IS NOT NULL)`,
+        unbookmarked.articleId,
+      ),
+    ).toBe(false);
+    await purge(NOW);
+    expect(await gone(unbookmarked.articleId, unrated, bulkOnly)).toEqual([false, false, true]);
+  });
+});

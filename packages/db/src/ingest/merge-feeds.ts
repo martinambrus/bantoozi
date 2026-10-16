@@ -290,6 +290,7 @@ export async function mergeFeeds(
   await tx.execute(sql`
     UPDATE feed_items t
        SET first_seen_at = least(t.first_seen_at, s.first_seen_at),
+           last_seen_at = greatest(t.last_seen_at, s.last_seen_at),
            guid = coalesce(t.guid,
                            CASE WHEN NOT EXISTS (SELECT 1 FROM feed_items o
                                                   WHERE o.feed_id = ${dst} AND o.guid IS NOT NULL

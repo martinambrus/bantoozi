@@ -21,6 +21,7 @@ import {
   type ArticleBodyInput,
 } from '../../src/ingest/bodies.js';
 import { loadArticleForExtraction } from '../../src/ingest/extraction.js';
+import { purgeArticlesPage } from '../../src/house/purge-articles.js';
 import { retryTransaction } from '../../src/ingest/retry.js';
 import { workerOutbox } from '../../src/outbox.js';
 import { setupDbTest, type DbTestContext } from '../support/test-db.js';
@@ -1174,5 +1175,33 @@ describe('lockUrlKeys and findUrlKeyOwner (spec 02 §3.3)', () => {
     expect(await urlKeyOwnerRevision(ctx.worker, input.urlKey)).toEqual(revision);
     expect(await urlKeyOwnerRevision(ctx.worker, `${input.urlKey}/amp`)).toEqual(revision);
     expect(await urlKeyOwnerRevision(ctx.worker, `${input.urlKey}/unknown`)).toBeNull();
+  });
+});
+
+describe('sighting a known item (D-253)', () => {
+  it('stamps last_seen_at in the item transaction, so a purge right after cannot delete a listed article', async () => {
+    const feed = await createFeed(ctx.owner);
+    const input = item(feed.id);
+    const first = await ingest(input);
+    // The article and its sighting are 40 days old: past the 21-day cutoff for a purge.
+    await ctx.owner.query('UPDATE articles SET first_seen_at = $2 WHERE id = $1', [
+      first.articleId,
+      daysAgo(40),
+    ]);
+    await ctx.owner.query(
+      'UPDATE feed_items SET first_seen_at = $2, last_seen_at = $2 WHERE article_id = $1',
+      [first.articleId, daysAgo(40)],
+    );
+    const again = await ingest(input);
+    expect(again.newAssociation).toBe(false);
+    // A purge between the item's commit and the end of the fetch.
+    await ctx.worker.transaction((tx) =>
+      purgeArticlesPage(tx, { now: new Date(), after: null, limit: 1000 }),
+    );
+    const rows = await ctx.owner.query<{ fresh: boolean }>(
+      `SELECT last_seen_at > now() - interval '1 hour' AS fresh FROM feed_items WHERE article_id = $1`,
+      [first.articleId],
+    );
+    expect(rows.rows).toEqual([{ fresh: true }]);
   });
 });
