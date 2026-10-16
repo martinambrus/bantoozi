@@ -16,6 +16,7 @@ import { Select } from '../../components/select.js';
 import { Spinner } from '../../components/spinner.js';
 import { Switch } from '../../components/switch.js';
 import { useMe } from '../../session/context.js';
+import { PlanBadge } from '../settings/plan-section.js';
 import { ClassificationBadge } from '../feeds/feed-status.js';
 import { MarkAllRead } from './mark-all-read.js';
 import { MoreMenu } from './more-menu.js';
@@ -146,6 +147,7 @@ export function ReaderHeader({
         <h1 id={titleId} className="min-w-0 break-words text-2xl font-bold">
           {title}
         </h1>
+        <PlanBadge />
         {subscription === undefined ? null : (
           <ClassificationBadge mode={subscription.inferenceMode} />
         )}

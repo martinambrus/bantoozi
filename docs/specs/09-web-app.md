@@ -467,8 +467,8 @@ Plain tables and forms, no polish needed:
 - **Plans** (`/admin/plans`, D-255): list stored plans with user counts, default/retired badges;
   add and edit labels in English/Slovak, every allowance, fetch/release intervals and display order.
   Save only changed fields with the loaded version. A stale version reloads the list and asks to reopen
-  the editor. Retire/restore, make default, delete unused non-default plans. Explain the temporary
-  300-second scheduler floor and link to Settings → `engine.auto_analysis_daily_cap`.
+  the editor. Retire/restore, make default, delete unused non-default plans. Explain the supported
+  one-minute floor and source/publisher limits; link to Settings → `engine.auto_analysis_daily_cap`.
 - **Users:** plan choices come from `GET /admin/plans`; offer active plans and the user's current
   plan even when retired. Quotas and fetch intervals apply live.
 - **Usage:** a spend chart (last 30 days) and top users.
@@ -604,3 +604,17 @@ shell and incognito contexts report `in-incognito` installability errors:
 Browser capability reference (checked 2026-09-25):
 [MDN Background Synchronization API](https://developer.mozilla.org/en-US/docs/Web/API/Background_Synchronization_API)
 documents limited browser support; foreground replay is therefore part of the acceptance gate.
+
+
+### Plan update timing (D-257)
+
+The reader header shows the localized stored plan badge. Settings includes the plan, release cadence
+and next release in the account timezone, with a short explanation that sources may update less often.
+Feed rows and their settings show “Updates every X”, the effective source/publisher limit when one
+applies, and “Next update at hh:mm”. Dead/paused feeds have no predicted next update. Subscription
+metadata refreshes at the next predicted update; account metadata refreshes while the plan is open.
+When a scheduled release raises counts, the existing new-articles banner says “Your feeds updated”
+with the localized count and accessible Show action. The existing top-of-list auto-refresh and
+in-progress-reading behavior remain. English and Slovak use localized duration units/plural forms.
+Offline copies contain only articles the server already released; offline reading creates no release
+or fetch work. Billing, payment controls and user-triggered refresh remain out of scope.

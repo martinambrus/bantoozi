@@ -58,6 +58,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 
+import { feedUpdates } from '../services/feed-updates.js';
 import { captureSelectionSnapshot, loadSnapshotConfig } from '../services/analysis.js';
 import { liveTypesafeModel } from '../services/runtime.js';
 import { importOpml } from '../services/opml.js';
@@ -134,7 +135,10 @@ export const subscriptionRoutes: FastifyPluginAsyncZod = async (app) => {
           minTier: preferences.feedMinTier,
           scoreVersion: await currentScoreVersion(tx),
         });
-        return rows.map((row) => subscriptionDto(row, preferences, unread.get(row.feed.id)));
+        const timing = await feedUpdates(tx, rows, clock.now());
+        return rows.map((row) =>
+          subscriptionDto(row, preferences, unread.get(row.feed.id), timing.get(row.feed.id)),
+        );
       }),
   );
 

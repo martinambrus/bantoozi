@@ -142,7 +142,7 @@ export function PlanDialog({
               type="number"
               step={1}
               min={name === 'sortOrder' ? -1000000 : name === 'minFetchIntervalS' ? 60 : 0}
-              max={name === 'minFetchIntervalS' ? 86400 : 1000000}
+              max={name === 'minFetchIntervalS' || name === 'releaseIntervalS' ? 86400 : 1000000}
               {...field(name)}
             />
           ))}

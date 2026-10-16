@@ -27,7 +27,7 @@ import { readStoredSetting, readStoredSettings, shareLockSettings } from '../set
 import type { Executor } from '../client.js';
 import { tenantUserId, type TenantTx } from '../tenant.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
-import { articleContexts, loadArticleItems } from './articles.js';
+import { accessibleArticleIds, articleContexts, loadArticleItems } from './articles.js';
 import { lockMutationForUndo, updateMutationUndo } from './mutations.js';
 import { loadPlanLimits } from './plans.js';
 import {
@@ -385,16 +385,7 @@ async function lockReaders(tx: TenantTx, ids: readonly string[]): Promise<Reader
       LEFT JOIN article_snapshots s ON s.id = ua.bookmark_snapshot_id
      WHERE ua.user_id = ${user}::uuid AND ua.article_id = ANY(${sql.param(unique)}::bigint[])
      ORDER BY ua.article_id FOR UPDATE OF ua`);
-  const accessible = await tx.execute<{ id: string }>(sql`
-    SELECT a.id::text AS id FROM articles a
-     WHERE a.id = ANY(${sql.param(unique)}::bigint[])
-       AND (EXISTS (SELECT 1 FROM feed_items fi
-                      JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.user_id = ${user}::uuid
-                     WHERE fi.article_id = a.id)
-            OR EXISTS (SELECT 1 FROM user_article ua
-                        WHERE ua.user_id = ${user}::uuid AND ua.article_id = a.id
-                          AND ua.bookmarked_at IS NOT NULL))`);
-  const allowed = new Set(accessible.rows.map((r) => r.id));
+  const allowed = await accessibleArticleIds(tx, unique);
   if (unique.some((id) => !allowed.has(id))) throw new AppError('NOT_FOUND', 'Article not found');
   const rows = new Map(readers.rows.map((r) => [r.article_id, readerRow(r)]));
   return {

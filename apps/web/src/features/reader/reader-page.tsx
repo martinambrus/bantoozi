@@ -104,7 +104,7 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
   const accountId = useAccountId();
   const store = useReaderActions();
   const desktop = useDesktop();
-  const { preferences } = useMe();
+  const { preferences, planInfo } = useMe();
   const { title, subscription } = useViewTitle(view);
   const list = useArticleList(view, preferences);
   // Counts the loads the reader asked for, which let go of the rows the view kept.
@@ -285,7 +285,11 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
         )}
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
           <div className="flex min-w-0 flex-col gap-3">
-            <NewArticlesBanner count={added} onShow={showNew} />
+            <NewArticlesBanner
+              count={added}
+              onShow={showNew}
+              scheduled={(planInfo?.releaseIntervalS ?? 0) > 0}
+            />
             <ArticleList
               view={view}
               list={list}

@@ -265,5 +265,13 @@
       "unsent_other": "{{count}} changes have not been sent yet and will be lost."
     },
     "done": "Your account is deleted. Sign in again within 7 days to restore it."
+  },
+  "plan": {
+    "title": "Your plan",
+    "description": "New articles appear at scheduled times in your time zone. Sources may update more slowly.",
+    "badge": "{{label}} plan",
+    "every": "New articles every {{interval}}",
+    "immediate": "New articles appear as soon as they arrive.",
+    "next": "Next update at {{time}}"
   }
 }

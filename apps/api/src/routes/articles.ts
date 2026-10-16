@@ -20,6 +20,7 @@ import {
   rateArticle,
   rateArticlesBulk,
   readOwnUser,
+  readerReleaseClock,
   recordDwell,
   retryBookmarkCapture,
   rankCovered,
@@ -336,7 +337,9 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
         if (extra !== null && extra.sort !== defaults.sort) {
           throw new AppError('STALE_CURSOR', 'The list order changed; reload from the first page');
         }
-        const asOf = extra === null ? clock.now() : new Date(extra.asOf);
+        const asOf = (
+          await readerReleaseClock(tx, extra === null ? clock.now() : new Date(extra.asOf))
+        ).asOf;
         const page = await listArticlePage(tx, {
           scope: { feedId: query.feedId, folder: query.folder, labelId: query.labelId },
           lane: query.lane,
@@ -397,7 +400,12 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
       const userId = request.auth?.userId ?? '';
       return request.withTx(async (tx) => {
         const prefs = await readPrefs(tx);
-        const asOf = query.asOf === undefined ? clock.now() : new Date(query.asOf);
+        const asOf = (
+          await readerReleaseClock(
+            tx,
+            query.asOf === undefined ? clock.now() : new Date(query.asOf),
+          )
+        ).asOf;
         const counts = await countArticles(tx, {
           scope: { feedId: query.feedId, folder: query.folder, labelId: query.labelId },
           status: query.status ?? 'unread',

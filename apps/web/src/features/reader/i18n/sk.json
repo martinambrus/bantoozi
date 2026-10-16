@@ -158,7 +158,8 @@
     "showNew_one": "Zobraziť {{count}} nový článok",
     "showNew_few": "Zobraziť {{count}} nové články",
     "showNew_many": "Zobraziť {{count}} nového článku",
-    "showNew_other": "Zobraziť {{count}} nových článkov"
+    "showNew_other": "Zobraziť {{count}} nových článkov",
+    "releaseArticles": "Vaše zdroje sa aktualizovali · nové články: {{count}}"
   },
   "pane": {
     "label": "Článok",

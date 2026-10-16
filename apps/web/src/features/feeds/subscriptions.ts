@@ -65,11 +65,21 @@ export function useSubscriptions() {
       forgetMissing(accountId, list);
       return list;
     },
-    refetchInterval: (query) =>
-      query.state.data?.some((subscription) => isFirstFetchPending(subscription, accountId)) ===
-      true
-        ? FIRST_FETCH_POLL_MS
-        : false,
+    refetchInterval: (query) => {
+      const rows = query.state.data ?? [];
+      if (rows.some((subscription) => isFirstFetchPending(subscription, accountId)))
+        return FIRST_FETCH_POLL_MS;
+      const next = Math.min(
+        ...rows.flatMap((subscription) =>
+          subscription.feed.nextUpdateAt == null
+            ? []
+            : [Date.parse(subscription.feed.nextUpdateAt)],
+        ),
+      );
+      if (!Number.isFinite(next)) return false;
+      const remaining = next - Date.now();
+      return remaining > 0 ? Math.min(3600000, Math.max(1000, remaining + 250)) : 30000;
+    },
   });
 }
 

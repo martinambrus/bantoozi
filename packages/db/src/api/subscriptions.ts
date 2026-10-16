@@ -8,6 +8,7 @@ import { sql, type SQL } from 'drizzle-orm';
 
 import { SELECTION_WINDOW_DAYS } from '../ingest/demand.js';
 import { resolveLiveFeedId } from '../ingest/feeds.js';
+import { readerReleaseClock, releasedCarrier } from './releases.js';
 import { tenantUserId, type TenantTx } from '../tenant.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
 
@@ -38,6 +39,9 @@ export interface FeedInfoRow {
   lastSuccessAt: Date | null;
   lastErrorCode: string | null;
   lastErrorAt: Date | null;
+  fetchUrl?: string;
+  nextFetchAt?: Date;
+  publisherIntervalS?: number;
 }
 
 /** One of the user's subscriptions with its feed and remembered image policy. */
@@ -65,6 +69,9 @@ type SubscriptionDbRow = {
   last_success_at: RawTimestamp | null;
   last_error_code: string | null;
   last_error_at: RawTimestamp | null;
+  fetch_url: string;
+  next_fetch_at: RawTimestamp;
+  publisher_interval_s: number | null;
   title_override: string | null;
   folder: string | null;
   allow_duplicates: boolean;
@@ -88,6 +95,9 @@ function subscriptionRow(row: SubscriptionDbRow): SubscriptionRow {
       lastSuccessAt: toDateOrNull(row.last_success_at),
       lastErrorCode: row.last_error_code,
       lastErrorAt: toDateOrNull(row.last_error_at),
+      fetchUrl: row.fetch_url,
+      nextFetchAt: toDate(row.next_fetch_at),
+      publisherIntervalS: row.publisher_interval_s ?? 0,
     },
     titleOverride: row.title_override,
     folder: row.folder,
@@ -103,7 +113,12 @@ function subscriptionRow(row: SubscriptionDbRow): SubscriptionRow {
 
 const selectSubscriptions = (user: string, where: SQL) => sql`
   SELECT s.feed_id::text AS feed_id, f.url, f.site_url, f.title, f.icon_url, f.status,
-         f.last_success_at, f.last_error_code, f.last_error_at, s.title_override, s.folder,
+         f.last_success_at, f.last_error_code, f.last_error_at, f.fetch_url, f.next_fetch_at,
+         greatest(
+           CASE WHEN jsonb_typeof(f.publish_stats -> 'publisher_min_interval_s') = 'number'
+             THEN (f.publish_stats ->> 'publisher_min_interval_s')::float8 ELSE 0 END,
+           CASE WHEN jsonb_typeof(f.publish_stats -> 'cache_min_interval_s') = 'number'
+             THEN (f.publish_stats ->> 'cache_min_interval_s')::float8 ELSE 0 END) AS publisher_interval_s, s.title_override, s.folder,
          s.allow_duplicates, s.hidden, s.inference_mode, s.inference_version::text AS inference_version,
          s.inference_activated_at, p.image_policy, s.created_at
     FROM subscriptions s
@@ -580,10 +595,13 @@ export async function checkAnalysisSelection(
   articles: ReadonlyArray<{ id: string; contentRevision: string }>,
 ): Promise<Map<string, SelectionProblem>> {
   const ids = articles.map((a) => a.id);
+  const clock = await readerReleaseClock(tx);
   const result = await tx.execute<{ id: string; revision: string }>(sql`
     SELECT a.id::text AS id, a.content_revision::text AS revision
       FROM feed_items fi JOIN articles a ON a.id = fi.article_id
+      JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.user_id = ${tenantUserId(tx)}::uuid
      WHERE fi.feed_id = ${feedId}::bigint AND fi.article_id = ANY(${sql.param(ids)}::bigint[])
+       AND ${releasedCarrier(clock)}
      ORDER BY a.id
        FOR SHARE OF a`);
   const current = new Map(result.rows.map((row) => [row.id, row.revision]));

@@ -6,6 +6,7 @@ import { ExportSection } from './export-section.js';
 import { InvitesSection } from './invites-section.js';
 import { LearningSection } from './learning-section.js';
 import { PreferencesSection } from './preferences-section.js';
+import { PlanSection } from './plan-section.js';
 import { ProfileSection } from './profile-section.js';
 import { SessionsSection } from './sessions-section.js';
 
@@ -15,6 +16,7 @@ export function SettingsPage() {
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 py-6">
       <h1 className="text-2xl font-bold">{t('title')}</h1>
       <ProfileSection />
+      <PlanSection />
       <PreferencesSection />
       <LearningSection />
       <OfflineSection />

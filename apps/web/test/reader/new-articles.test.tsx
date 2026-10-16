@@ -2,6 +2,7 @@ import { act, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { restoreVisibility } from '../article/harness.js';
+import { makeMe } from '../session/fixtures.js';
 import { json } from '../api/fake-fetch.js';
 import { createReaderHarness, item, page } from './support.js';
 
@@ -175,6 +176,34 @@ describe('new articles while the reader is open', () => {
 
     expect(lists(app)).toBe(listed);
     expect(screen.queryByRole('button', { name: /new articles?/ })).toBeNull();
+  });
+
+  it('presents a scheduled release as a feed update and retains the localized show action', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { app, state } = await open({
+      path: '/read/for_you',
+      items: [item(1)],
+      me: makeMe({
+        planInfo: {
+          label: 'Beta',
+          labelSk: null,
+          releaseIntervalS: 900,
+          minFetchIntervalS: 900,
+          nextUpdateAt: '2026-10-16T12:15:00.000Z',
+        },
+      }),
+    });
+    await screen.findByRole('article', { name: 'Article 1' });
+    await app.user.click(screen.getByRole('button', { name: 'Article 1' }));
+    state.counts = { ...state.counts, forYou: state.counts.forYou + 2 };
+    await advance(31_000);
+    expect(await screen.findByRole('button', { name: 'Show 2 new articles' })).toHaveTextContent(
+      'Your feeds updated',
+    );
+    await act(() => app.i18n.changeLanguage('sk'));
+    expect(screen.getByRole('button', { name: 'Zobraziť 2 nové články' })).toHaveTextContent(
+      'Vaše zdroje sa aktualizovali',
+    );
   });
 
   it('says it in Slovak with the plural forms', async () => {

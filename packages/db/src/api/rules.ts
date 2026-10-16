@@ -5,6 +5,7 @@ import { recordRankIntents } from '../ingest/rank-intents.js';
 import { tenantOutbox } from '../outbox.js';
 import { tenantUserId, type TenantTx } from '../tenant.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
+import { readerReleaseClock, releasedCarrier } from './releases.js';
 import { loadPlanLimits } from './plans.js';
 
 /**
@@ -41,6 +42,7 @@ const LIVE = sql`(r.expires_at IS NULL OR r.expires_at > now())`;
 
 async function selectRules(tx: TenantTx, filter: SQL): Promise<UserRule[]> {
   const userId = tenantUserId(tx);
+  const clock = await readerReleaseClock(tx);
   // Feed and story names only through the user's own subscription or reading list.
   const result = await tx.execute<RuleSqlRow>(sql`
     SELECT r.id::text AS id, r.kind, r.value, r.created_at, r.expires_at,
@@ -54,9 +56,9 @@ async function selectRules(tx: TenantTx, filter: SQL): Promise<UserRule[]> {
                  WHERE sc.id::text = r.value
                    AND (EXISTS (SELECT 1 FROM feed_items fi JOIN subscriptions s
                                   ON s.feed_id = fi.feed_id AND s.user_id = r.user_id
-                                 WHERE fi.article_id = a.id)
+                                 WHERE fi.article_id = a.id AND ${releasedCarrier(clock)})
                         OR EXISTS (SELECT 1 FROM user_article ua
-                                    WHERE ua.user_id = r.user_id AND ua.article_id = a.id)))
+                                    WHERE ua.user_id = r.user_id AND ua.article_id = a.id AND ua.bookmarked_at IS NOT NULL)))
            END AS display_value
       FROM user_rules r
      WHERE r.user_id = ${userId}::uuid AND ${LIVE} ${filter}
@@ -106,6 +108,7 @@ async function requireReference(
        WHERE user_id = ${userId}::uuid AND feed_id = ${value}::bigint FOR KEY SHARE`);
     if (result.rows.length === 0) throw notFound('feed');
   } else if (kind === 'mute_story') {
+    const clock = await readerReleaseClock(tx);
     const result = await tx.execute(sql`
       SELECT 1 FROM story_clusters sc
        WHERE sc.id = ${value}::bigint
@@ -113,9 +116,9 @@ async function requireReference(
                       WHERE a.story_cluster_id = sc.id
                         AND (EXISTS (SELECT 1 FROM feed_items fi JOIN subscriptions s
                                        ON s.feed_id = fi.feed_id AND s.user_id = ${userId}::uuid
-                                      WHERE fi.article_id = a.id)
+                                      WHERE fi.article_id = a.id AND ${releasedCarrier(clock)})
                              OR EXISTS (SELECT 1 FROM user_article ua
-                                         WHERE ua.user_id = ${userId}::uuid AND ua.article_id = a.id)))
+                                         WHERE ua.user_id = ${userId}::uuid AND ua.article_id = a.id AND ua.bookmarked_at IS NOT NULL)))
        FOR KEY SHARE OF sc`);
     if (result.rows.length === 0) throw notFound('story');
   }

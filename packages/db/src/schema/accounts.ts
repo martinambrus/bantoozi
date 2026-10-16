@@ -18,8 +18,8 @@ import { citext, int8, tstz } from './columns.js';
 // Spec 02 §2 and §2.1: settings and accounts (auth/control-plane tables: no tenant RLS, §1.2).
 
 // D-255: plans and their allowances, edited in Admin → Plans. A plan's key never changes; `users.plan`
-// references it, so a plan in use cannot be deleted. `release_interval_s` is reserved for the
-// plan-tiered release cadence (docs/design/plan-velocity.md §4).
+// references it, so a plan in use cannot be deleted. `release_interval_s` controls timezone-aligned
+// article releases; null/0 is immediate (docs/design/plan-velocity.md §4).
 export const plans = pgTable(
   'plans',
   {
@@ -52,7 +52,7 @@ export const plans = pgTable(
     check('plans_min_fetch_interval_check', sql`min_fetch_interval_s BETWEEN 60 AND 86400`),
     check(
       'plans_release_interval_check',
-      sql`release_interval_s IS NULL OR release_interval_s >= 0`,
+      sql`release_interval_s IS NULL OR release_interval_s = 0 OR release_interval_s BETWEEN 60 AND 86400`,
     ),
     check('plans_default_active_check', sql`NOT (is_default AND retired_at IS NOT NULL)`),
     uniqueIndex('plans_default_idx')

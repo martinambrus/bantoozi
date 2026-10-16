@@ -92,7 +92,7 @@ async function counters(feedId: string) {
 }
 
 describe('plans table and seed', () => {
-  it('seeds beta and admin with the values of the former PLANS constant', async () => {
+  it('seeds beta/admin allowances and their approved release cadences', async () => {
     expect(await plan('beta')).toMatchObject({
       max_feeds: 200,
       max_cards: 150,
@@ -101,7 +101,7 @@ describe('plans table and seed', () => {
       max_rules: 200,
       opml_max_feeds: 300,
       min_fetch_interval_s: 900,
-      release_interval_s: null,
+      release_interval_s: 900,
       backfill_days: 7,
       invites_on_signup: 3,
       is_default: true,
@@ -115,6 +115,7 @@ describe('plans table and seed', () => {
       max_rules: 2000,
       opml_max_feeds: 2000,
       min_fetch_interval_s: 300,
+      release_interval_s: 300,
       backfill_days: 14,
       invites_on_signup: 50,
       is_default: false,
@@ -122,8 +123,12 @@ describe('plans table and seed', () => {
   });
 
   it('seeds the tiers free, basic, plus, pro, max and premium with their fetch intervals', async () => {
-    const result = await ctx.owner.query<{ key: string; min_fetch_interval_s: number }>(
-      `SELECT key, min_fetch_interval_s FROM plans
+    const result = await ctx.owner.query<{
+      key: string;
+      min_fetch_interval_s: number;
+      release_interval_s: number;
+    }>(
+      `SELECT key, min_fetch_interval_s, release_interval_s FROM plans
         WHERE key IN ('free', 'basic', 'plus', 'pro', 'max', 'premium')`,
     );
     expect(Object.fromEntries(result.rows.map((r) => [r.key, r.min_fetch_interval_s]))).toEqual({
@@ -134,6 +139,23 @@ describe('plans table and seed', () => {
       max: 300,
       premium: 60,
     });
+  });
+
+  it('seeds each paid/free release cadence to match its approved fetch interval', async () => {
+    const result = await ctx.owner.query<{ key: string }>(
+      "SELECT key FROM plans WHERE key IN ('free','basic','plus','pro','max','premium') AND release_interval_s IS DISTINCT FROM min_fetch_interval_s",
+    );
+    expect(result.rows).toEqual([]);
+  });
+
+  it('accepts immediate or 60..86400-second releases and rejects invalid boundaries', async () => {
+    for (const release_interval_s of [1, 59, 86401]) {
+      await expect(insertPlan(ctx.owner, { release_interval_s })).rejects.toMatchObject({
+        code: '23514',
+      });
+    }
+    for (const release_interval_s of [null, 0, 60, 86400])
+      await insertPlan(ctx.owner, { release_interval_s });
   });
 
   it('has exactly one default plan, beta, and every plan has a label and a sort order', async () => {

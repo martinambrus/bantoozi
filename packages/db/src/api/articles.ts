@@ -20,6 +20,12 @@ import {
 import { sql, type SQL } from 'drizzle-orm';
 
 import { SELECTION_WINDOW_DAYS } from '../ingest/demand.js';
+import {
+  carrierReleaseAt,
+  readerReleaseClock,
+  releasedCarrier,
+  type ReaderReleaseClock,
+} from './releases.js';
 import { tenantUserId, type TenantTx } from '../tenant.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
 
@@ -101,11 +107,11 @@ const HIDE_RULE = new RegExp(HIDE_RULE_PATTERN);
 /** Microseconds since the epoch of a timestamp expression, as an exact bigint. */
 const micros = (expr: SQL): SQL => sql`(extract(epoch FROM ${expr}) * 1000000)::bigint`;
 
-function viewScope(user: string, mode: ViewMode): SQL {
+function viewScope(user: string, mode: ViewMode, clock: ReaderReleaseClock): SQL {
   if (mode.kind === 'perFeed') {
     return sql`
       SELECT s.feed_id AS view_key, s.feed_id, s.allow_duplicates, s.inference_mode,
-             s.inference_version, s.inference_activated_at, true AS listable
+             s.inference_version, s.inference_activated_at, ${carrierReleaseAt(clock, sql`s.created_at`)} AS visible_until, true AS listable
         FROM subscriptions s WHERE s.user_id = ${user}::uuid`;
   }
   const { scope } = mode;
@@ -115,7 +121,7 @@ function viewScope(user: string, mode: ViewMode): SQL {
   const listable = scope.feedId !== undefined || mode.listHidden ? sql`true` : sql`NOT s.hidden`;
   return sql`
     SELECT 0::bigint AS view_key, s.feed_id, s.allow_duplicates, s.inference_mode,
-           s.inference_version, s.inference_activated_at, ${listable} AS listable
+           s.inference_version, s.inference_activated_at, ${carrierReleaseAt(clock, sql`s.created_at`)} AS visible_until, ${listable} AS listable
       FROM subscriptions s WHERE ${sql.join(filters, sql` AND `)}`;
 }
 
@@ -167,14 +173,15 @@ function carrierCte(source: SQL): SQL {
                        AND ef.first_seen_at >= e.inference_activated_at) AS over_cap_limit
           FROM ${source} c
           JOIN feed_items ef ON ef.article_id = c.article_id
-          JOIN vs e ON e.feed_id = ef.feed_id AND e.view_key = c.view_key
+          JOIN vs e ON e.feed_id = ef.feed_id AND e.view_key = c.view_key AND ef.first_seen_at <= e.visible_until
          GROUP BY c.view_key, c.article_id)`;
 }
 
 /** `WITH vs, carried, proj` (steps 1–3 of the module comment). */
-function projectionCtes(input: ProjectionInput): SQL {
+async function projectionCtes(tx: TenantTx, input: ProjectionInput): Promise<SQL> {
   const { user, asOf } = input;
-  const asOfIso = asOf.toISOString();
+  const clock = await readerReleaseClock(tx, asOf);
+  const asOfIso = clock.asOf.toISOString();
   const scoped =
     input.mode.kind === 'single' &&
     (input.mode.scope.feedId !== undefined || input.mode.scope.folder !== undefined);
@@ -183,7 +190,7 @@ function projectionCtes(input: ProjectionInput): SQL {
         SELECT 0::bigint AS view_key, ua.article_id,
                (SELECT max(ef.first_seen_at) FROM vs e
                   JOIN feed_items ef ON ef.feed_id = e.feed_id
-                 WHERE ef.article_id = ua.article_id) AS arrival
+                 WHERE ef.article_id = ua.article_id AND ef.first_seen_at <= e.visible_until) AS arrival
           FROM user_article ua
          WHERE ua.user_id = ${user}::uuid AND ua.bookmarked_at IS NOT NULL
            ${
@@ -195,7 +202,7 @@ function projectionCtes(input: ProjectionInput): SQL {
     : sql`
         SELECT vs.view_key, fi.article_id, max(fi.first_seen_at) AS arrival
           FROM vs JOIN feed_items fi ON fi.feed_id = vs.feed_id
-         WHERE vs.listable
+         WHERE vs.listable AND fi.first_seen_at <= vs.visible_until
            AND fi.first_seen_at <= ${asOfIso}::timestamptz
            AND fi.first_seen_at >= ${asOfIso}::timestamptz - make_interval(days => ${RANK_WINDOW_DAYS})
          GROUP BY vs.view_key, fi.article_id`;
@@ -204,7 +211,7 @@ function projectionCtes(input: ProjectionInput): SQL {
       ? sql``
       : sql`AND coalesce(ua.label_ids, '{}') @> ARRAY[${input.labelId}::bigint]`;
   return sql`
-    WITH vs AS (${viewScope(user, input.mode)}),
+    WITH vs AS (${viewScope(user, input.mode, clock)}),
     carried AS (${carried}),
     ${carrierCte(sql`carried`)},
     proj AS (
@@ -224,7 +231,7 @@ function projectionCtes(input: ProjectionInput): SQL {
              (el.eligible AND a.story_cluster_id IS NOT NULL AND EXISTS (
                 SELECT 1 FROM feed_items fx
                   JOIN subscriptions sx ON sx.feed_id = fx.feed_id AND sx.user_id = ${user}::uuid
-                 WHERE fx.article_id = c.article_id AND NOT sx.allow_duplicates)) AS foldable
+                 WHERE fx.article_id = c.article_id AND NOT sx.allow_duplicates AND ${releasedCarrier(clock, 'sx', 'fx')})) AS foldable
         FROM carried c
         JOIN articles a ON a.id = c.article_id
         LEFT JOIN carrier cr ON cr.view_key = c.view_key AND cr.article_id = c.article_id
@@ -383,7 +390,7 @@ export async function listArticlePage(
       : sql`WHERE (k1, k2, article_id) <
               (${input.after.k1}::float8, ${input.after.k2}::bigint, ${input.after.id}::bigint)`;
   const result = await tx.execute<ListRow>(sql`
-    ${projectionCtes({
+    ${await projectionCtes(tx, {
       user,
       mode: singleMode(input.scope, input.lane),
       asOf: input.asOf,
@@ -461,7 +468,7 @@ export async function articleViewIds(
   const user = tenantUserId(tx);
   const result = await tx.execute<{ dataset_version: string; total: number; ids: string[] | null }>(
     sql`
-    ${projectionCtes({
+    ${await projectionCtes(tx, {
       user,
       mode: singleMode(input.scope, input.lane),
       asOf: input.asOf,
@@ -509,7 +516,7 @@ async function laneCounts(
 ): Promise<LaneCountRow[]> {
   const user = tenantUserId(tx);
   const result = await tx.execute<LaneCountRow>(sql`
-    ${projectionCtes({
+    ${await projectionCtes(tx, {
       user,
       mode,
       asOf: input.asOf,
@@ -545,7 +552,7 @@ export async function countArticles(
   const lanes = await laneCounts(tx, singleMode(input.scope, 'all'), input);
   const lane = lanes[0];
   const hidden = await tx.execute<{ n: number; pending: boolean }>(sql`
-    ${projectionCtes({
+    ${await projectionCtes(tx, {
       user,
       mode: singleMode(input.scope, 'hidden'),
       asOf: input.asOf,
@@ -556,7 +563,7 @@ export async function countArticles(
     ${laneRowsCtes('hidden', input.status, input.minTier, input.scope)}
     SELECT count(*)::int AS n FROM rows`);
   const bookmarks = await tx.execute<{ n: number }>(sql`
-    ${projectionCtes({
+    ${await projectionCtes(tx, {
       user,
       mode: singleMode(input.scope, 'bookmarks'),
       asOf: input.asOf,
@@ -611,7 +618,7 @@ export async function readerLaneMix(
     model: number;
     degraded: number;
   }>(sql`
-    ${projectionCtes({
+    ${await projectionCtes(tx, {
       user: tenantUserId(tx),
       mode: singleMode({}, 'all'),
       asOf: input.asOf,
@@ -641,7 +648,7 @@ async function viewRankingPending(
   input: Omit<ArticleViewInput, 'lane'>,
 ): Promise<boolean> {
   const result = await tx.execute<{ pending: boolean }>(sql`
-    ${projectionCtes({
+    ${await projectionCtes(tx, {
       user: tenantUserId(tx),
       mode: singleMode(input.scope, 'all'),
       asOf: input.asOf,
@@ -718,7 +725,7 @@ export async function calibrationArticles(
     display_feed_id: string | null;
     arrival: RawTimestamp;
   }>(sql`
-    ${projectionCtes({
+    ${await projectionCtes(tx, {
       user,
       mode: singleMode({}, 'all'),
       asOf: input.now,
@@ -767,12 +774,13 @@ export async function accessibleArticleIds(
 ): Promise<Set<string>> {
   if (ids.length === 0) return new Set();
   const user = tenantUserId(tx);
+  const clock = await readerReleaseClock(tx);
   const result = await tx.execute<{ id: string }>(sql`
     SELECT a.id::text AS id FROM articles a
      WHERE a.id = ANY(${sql.param([...ids])}::bigint[])
        AND (EXISTS (SELECT 1 FROM feed_items fi
                       JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.user_id = ${user}::uuid
-                     WHERE fi.article_id = a.id)
+                     WHERE fi.article_id = a.id AND ${releasedCarrier(clock)})
             OR EXISTS (SELECT 1 FROM user_article ua
                         WHERE ua.user_id = ${user}::uuid AND ua.article_id = a.id
                           AND ua.bookmarked_at IS NOT NULL))`);
@@ -855,11 +863,12 @@ export async function isOwnedCarrier(
   articleId: string,
   feedId: string,
 ): Promise<boolean> {
+  const clock = await readerReleaseClock(tx);
   const result = await tx.execute<{ ok: boolean }>(sql`
     SELECT EXISTS (SELECT 1 FROM feed_items fi
                      JOIN subscriptions s ON s.feed_id = fi.feed_id
                                          AND s.user_id = ${tenantUserId(tx)}::uuid
-                    WHERE fi.article_id = ${articleId}::bigint AND fi.feed_id = ${feedId}::bigint) AS ok`);
+                    WHERE fi.article_id = ${articleId}::bigint AND fi.feed_id = ${feedId}::bigint AND ${releasedCarrier(clock)}) AS ok`);
   return result.rows[0]?.ok === true;
 }
 
@@ -876,6 +885,7 @@ export async function articleContexts(
 ): Promise<ArticleContext[]> {
   if (ids.length === 0) return [];
   const user = tenantUserId(tx);
+  const clock = await readerReleaseClock(tx);
   const mode: ViewMode = {
     kind: 'single',
     scope: scope.sourceFeedId === undefined ? {} : { feedId: scope.sourceFeedId },
@@ -891,7 +901,7 @@ export async function articleContexts(
     cluster_size: number | null;
     other_feeds: string[] | null;
   }>(sql`
-    WITH vs AS (${viewScope(user, mode)}),
+    WITH vs AS (${viewScope(user, mode, clock)}),
     c AS (SELECT 0::bigint AS view_key, x.id AS article_id
             FROM unnest(${sql.param([...ids])}::bigint[]) WITH ORDINALITY AS x(id, ord)),
     ${carrierCte(sql`c`)},
@@ -900,12 +910,12 @@ export async function articleContexts(
              coalesce(cr.display_feed_id, cr.any_feed_id) AS display_feed_id,
              coalesce(
                (SELECT max(ef.first_seen_at) FROM vs e JOIN feed_items ef ON ef.feed_id = e.feed_id
-                 WHERE ef.article_id = c.article_id),
+                 WHERE ef.article_id = c.article_id AND ef.first_seen_at <= e.visible_until),
                a.first_seen_at) AS arrival,
              (el.eligible AND a.story_cluster_id IS NOT NULL AND EXISTS (
                 SELECT 1 FROM feed_items fx
                   JOIN subscriptions sx ON sx.feed_id = fx.feed_id AND sx.user_id = ${user}::uuid
-                 WHERE fx.article_id = c.article_id AND NOT sx.allow_duplicates)) AS foldable
+                 WHERE fx.article_id = c.article_id AND NOT sx.allow_duplicates AND ${releasedCarrier(clock, 'sx', 'fx')})) AS foldable
         FROM c JOIN articles a ON a.id = c.article_id
         LEFT JOIN carrier cr ON cr.view_key = c.view_key AND cr.article_id = c.article_id
         CROSS JOIN LATERAL (SELECT ${eligibleExpr(user)} AS eligible OFFSET 0) el)
@@ -917,12 +927,12 @@ export async function articleContexts(
              SELECT count(DISTINCT m.id)::int FROM articles m
               WHERE m.story_cluster_id = b.story_cluster_id
                 AND EXISTS (SELECT 1 FROM vs e JOIN feed_items ef ON ef.feed_id = e.feed_id
-                             WHERE e.listable AND ef.article_id = m.id)) END AS cluster_size,
+                             WHERE e.listable AND ef.article_id = m.id AND ef.first_seen_at <= e.visible_until)) END AS cluster_size,
            CASE WHEN b.foldable THEN (
              SELECT coalesce(array_agg(DISTINCT coalesce(s.title_override, f.title, f.url)), '{}')
                FROM articles m
                JOIN feed_items ef ON ef.article_id = m.id
-               JOIN vs e ON e.feed_id = ef.feed_id AND e.listable
+               JOIN vs e ON e.feed_id = ef.feed_id AND e.listable AND ef.first_seen_at <= e.visible_until
                JOIN feeds f ON f.id = e.feed_id
                LEFT JOIN subscriptions s ON s.user_id = ${user}::uuid AND s.feed_id = f.id
               WHERE m.story_cluster_id = b.story_cluster_id AND m.id <> b.article_id
@@ -1301,6 +1311,7 @@ export async function getArticleDetail(
      WHERE a.id = ${articleId}::bigint`);
   const row = extra.rows[0];
 
+  const detailClock = await readerReleaseClock(tx);
   // Members of the story the reader can open independently; none for a neutral row (no folding).
   const eligible = contexts[0]?.eligible === true;
   const members = eligible
@@ -1320,7 +1331,7 @@ export async function getArticleDetail(
          WHERE a.id = ${articleId}::bigint
            AND (EXISTS (SELECT 1 FROM feed_items fi
                           JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.user_id = ${user}::uuid
-                         WHERE fi.article_id = m.id)
+                         WHERE fi.article_id = m.id AND ${releasedCarrier(detailClock)})
                 OR EXISTS (SELECT 1 FROM user_article ua
                             WHERE ua.user_id = ${user}::uuid AND ua.article_id = m.id
                               AND ua.bookmarked_at IS NOT NULL))

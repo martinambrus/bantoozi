@@ -4,11 +4,12 @@ import { VisuallyHidden } from '../../components/visually-hidden.js';
 
 export interface NewArticlesBannerProps {
   count: number;
+  scheduled?: boolean;
   onShow: () => void;
 }
 
 /** Says that the view has more articles than the list shows and loads them when it is pressed (D-243). */
-export function NewArticlesBanner({ count, onShow }: NewArticlesBannerProps) {
+export function NewArticlesBanner({ count, onShow, scheduled = false }: NewArticlesBannerProps) {
   const { t } = useTranslation('reader');
   return (
     <>
@@ -24,7 +25,7 @@ export function NewArticlesBanner({ count, onShow }: NewArticlesBannerProps) {
             onClick={onShow}
             className="inline-flex min-h-11 items-center rounded-full bg-indigo-700 px-4 text-sm font-medium text-white hover:bg-indigo-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700 dark:bg-indigo-300 dark:text-slate-900 dark:hover:bg-indigo-200"
           >
-            {t('list.newArticles', { count })}
+            {t(scheduled ? 'list.releaseArticles' : 'list.newArticles', { count })}
           </button>
         </div>
       ) : null}

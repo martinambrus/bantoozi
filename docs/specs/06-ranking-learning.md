@@ -264,6 +264,10 @@ feeds. A direct feed/folder view must not import inference permission from anoth
 that view. Example: the same article belongs to off feed A and active feed B; global/B may show a
 score, while A remains an unclassified chronological reader.
 
+Before this projection, the API filters carriers through the account's plan release boundary
+(spec 08 §5.1, D-257). A not-yet-released carrier cannot grant inference eligibility, folding or
+cluster metadata. Background ranking still uses arrivals immediately so scores are ready at release.
+
 Before folding, lane/tier filters and counts, intersect the row's authorized `inferenceFeedIds` with
 the view's permitted feed set. If none remain, recompute only the explicit local hide/mute rules and
 project `lane='new'`, `pLike/tier=null`, `scoreSource='none'`, no model/never-card/must-card result or

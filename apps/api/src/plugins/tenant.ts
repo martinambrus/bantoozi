@@ -7,6 +7,7 @@ import {
   sqlState,
   tenantOutbox,
   withTenant,
+  bindReaderClock,
   type TenantTx,
 } from '@bantoozi/db';
 import { AppError, canonicalJson, isUuid } from '@bantoozi/shared';
@@ -89,7 +90,10 @@ export function registerTenant(app: FastifyInstance): void {
   >(this: FastifyRequest, fn: (tx: TenantTx) => Promise<T>): Promise<T> {
     const auth = this.auth;
     if (auth === null) return Promise.reject(unauthenticated());
-    return withTenant(app.services.db, auth.userId, fn);
+    return withTenant(app.services.db, auth.userId, (tx) => {
+      bindReaderClock(tx, app.services.clock.now());
+      return fn(tx);
+    });
   });
 
   app.decorateRequest('savedOutcome', async function savedOutcome<
