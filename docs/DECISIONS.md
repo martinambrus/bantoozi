@@ -2389,3 +2389,6 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   carrier enriched the shared article. Frozen means "creates no new work", not "ignores free results": a later card whose
   answer already exists for the shared article (another account's work) counts, as does one another account has queued
   (its own demand will run it); both cost this user nothing and only improve the ranking.
+  Freezing is decided per card: a card without an answer or a queue row stays out of coverage unless its scope reaches a
+  carrier that admitted the article automatically (an unscoped card: any; a scoped card: its own feed), so a card scoped
+  to the training feed of the selection is not pending just because another Active feed also carries the article.

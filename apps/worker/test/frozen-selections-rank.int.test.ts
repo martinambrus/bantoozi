@@ -90,4 +90,40 @@ describe('ranker coverage on frozen selections (D-254)', () => {
     expect(onControl.rules_fired).toContain('pending_cards');
     expect(onShared.rules_fired).not.toContain('pending_cards');
   });
+  /** Selected via training feed A, admitted automatically via active feed B, extracted. */
+  async function mixedWorld() {
+    const userId = await h.user();
+    const first = await h.heldCard(userId);
+    const feedA = await h.feed();
+    const feedB = await h.feed();
+    await h.subscribe(userId, feedA, 'training');
+    await h.subscribe(userId, feedB, 'active');
+    const articleId = await h.article({ feedIds: [feedA, feedB] });
+    await h.enrichDirect(articleId, { state: 'extracted' });
+    await h.answerCard(articleId, first, { engine: 'typesafe', p: 0.05 });
+    await h.select(userId, feedA, articleId);
+    return { userId, feedA, feedB, articleId };
+  }
+
+  it('leaves a card scoped to the selecting feed out of coverage when B admits automatically', async () => {
+    const { userId, feedA, articleId } = await mixedWorld();
+    await h.heldCard(userId, { scopeFeedId: feedA });
+    const row = await rankRow(userId, articleId);
+    expect(row.rules_fired).not.toContain('pending_cards');
+  });
+
+  it('keeps an unscoped later card with a queue row pending in the mixed case', async () => {
+    const { userId, articleId } = await mixedWorld();
+    const later = await h.heldCard(userId);
+    await h.queue(articleId, [later], { userId });
+    const row = await rankRow(userId, articleId);
+    expect(row.rules_fired).toContain('pending_cards');
+  });
+
+  it('keeps a card scoped to the automatically admitting feed pending without a row', async () => {
+    const { userId, feedB, articleId } = await mixedWorld();
+    await h.heldCard(userId, { scopeFeedId: feedB });
+    const row = await rankRow(userId, articleId);
+    expect(row.rules_fired).toContain('pending_cards');
+  });
 });

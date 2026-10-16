@@ -179,11 +179,12 @@ export async function loadRankItems(
     if (modelCurrent) run.modelEligible.add(id);
     else run.modelEligible.delete(id);
     const work: Record<string, CardWorkState> = {};
-    // A selection is frozen (D-254): where this user's demand reaches the article only through a
-    // selection, a card with neither an answer nor a queue row is not applicable to it, whatever
-    // the article's state (another account may have enriched it), so it is neither pending nor
-    // unavailable.
-    const frozen = fact.explicitSelection && !fact.automaticAdmitted;
+    // A selection is frozen (D-254): where this user's demand reaches the article through a
+    // selection, a card with neither an answer nor a queue row is not applicable to it unless its
+    // scope reaches an automatically admitted carrier (an unscoped card: any; a scoped card: its
+    // own feed), whatever the article's state (another account may have enriched it), so it is
+    // neither pending nor unavailable.
+    const automaticFeeds = new Set(fact.automaticFeedIds);
     const queueRows = new Map((queue.get(id) ?? []).map((row) => [row.cardId, row]));
     for (const card of ctx.cards) {
       const state = workState(queueRows.get(card.cardId), article, now);
@@ -221,9 +222,14 @@ export async function loadRankItems(
       clusterSize: fact.clusterSize ?? 1,
       pipelineState: article.pipelineState,
       matchCoverage: matchCoverage(
-        frozen
+        fact.explicitSelection
           ? ctx.cards.filter(
-              (card) => queueRows.has(card.cardId) || cardAnswers[card.cardId] !== undefined,
+              (card) =>
+                queueRows.has(card.cardId) ||
+                cardAnswers[card.cardId] !== undefined ||
+                (card.scopeFeedId === undefined
+                  ? automaticFeeds.size > 0
+                  : automaticFeeds.has(card.scopeFeedId)),
             )
           : ctx.cards,
         evidence,
