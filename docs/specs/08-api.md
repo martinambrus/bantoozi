@@ -250,11 +250,15 @@ response or `GET /invites`. `POST /admin/waitlist/:id/invite` sends and reports 
 
 | Endpoint | Body | Behaviour |
 |---|---|---|
-| `GET /me` | — | `Me` = `{id, email, displayName, locale, timezone, role, plan, invitesLeft, preferences, quotas: {used, limits}}` |
+| `GET /me` | — | `Me` = `{id, email, displayName, locale, timezone, role, plan, planInfo, invitesLeft, preferences, quotas: {used, limits}}` |
 | `PATCH /me` | `{displayName?, locale?, timezone?, preferences?}` | Partial update. `preferences` is deep-merged and validated (§3.1), timezone must be an accepted IANA identifier. Ranking-relevant changes advance `rank_revision` and enqueue `user.rank {full:true}` (spec 06) |
 | `DELETE /me` | — | Sets `deleted_at`, revokes all sessions, and calls `refresh_feed_subscribers` and `refresh_feed_cards` for the user's feeds (soft-deleted users no longer count) → `204`. `house.purge-users` hard-deletes after 7 days |
 | `GET /me/learning` | — | Read-only learning status (spec 06 §8.5, D-236, D-237) → `200 {model: {thresholds: {minExplicit, minEachClass, minCvAuc}, counts: {explicit, likes, dislikes}, active: {version, since} \| null, lastAttempt: {at, status: 'activated'\|'rejected', reasons: string[], cvAuc, baselineAuc} \| null, deactivated: {at, reason: 'incompatible'\|'lost_evidence'} \| null}, feeds: [{feedId, status: 'collecting'\|'ready'\|'not_yet'\|'one_sided', likes, dislikes, auc, aucLow, ratedHigh: {total, liked}, ratedLow: {total, disliked}, uncovered: {count, suggest, articles: [{id, title}]}, unwanted: {count, suggest, articles: [{id, title}]}, articlesPerWeek}]}` (`uncovered`: spec 06 §8.5, D-241; `unwanted`, the same shape for topical dislikes no Never card caught: spec 06 §8.5, D-244; `articles` are the newest ≤ 5 the caller can still see); `feeds` lists the caller's `training` subscriptions only. Computed live; no writes |
 | `GET /me/export` | — | Stream a consistent read-only snapshot as `application/json` attachment: `{schemaVersion: 2, exportedAt, user, subscriptions, feedPreferences, opml, cards, labels, rules, ratings: [{url, title, rating, reason, ratedAt}], bookmarks: [{url, title, bookmarkedAt, capture: BookmarkCapture, snapshot: BookmarkSnapshot \| null}]}`. Include full retained bookmark text/HTML; exclude provider/session/code/token secrets and every other user's data. Cancel on disconnect and rate-limit large exports |
+
+`Me.planInfo` reports `{label, labelSk, releaseIntervalS, minFetchIntervalS, nextUpdateAt}` from the
+stored plan. `nextUpdateAt` is the next account release (null for immediate plans); the key remains
+`Me.plan`. This metadata is also returned after login and profile updates.
 
 ### 3.1 `UserPreferences` (stored in `users.preferences`; zod defaults applied on read)
 
@@ -302,7 +306,14 @@ response or `GET /invites`. `POST /admin/waitlist/:id/invite` sends and reports 
 | `GET /subscriptions/export-opml` | — | `text/x-opml` attachment |
 | `POST /subscriptions/folders/rename` | `{from, to}` | Rename a folder across the user's subscriptions and in `preferences.folderOrder` → `200 {count}` |
 
-`FeedInfo = {id, url, siteUrl, title, iconUrl, status, lastSuccessAt, lastErrorCode, lastErrorAt}`.
+`FeedInfo = {id, url, siteUrl, title, iconUrl, status, lastSuccessAt, lastErrorCode, lastErrorAt,
+updateIntervalS, nextUpdateAt, intervalReason}`. The effective interval is the maximum of the account's
+release cadence (or fetch floor for immediate plans), learned source/robots floor and publisher/cache
+hint. `intervalReason` is `plan | source | publisher`; `nextUpdateAt` estimates the next fetch rounded
+up to an account release boundary (immediate during subscription grace), or uses the next account
+boundary when already fetched articles are waiting. Dead/paused feeds report null.
+Shared last-success/error times are capped at the subscription's visible-through cutoff. No raw shared
+fetch schedule is exposed. The new timing fields are optional in DTOs for older offline records.
 `PATCH` returns `200 {subscription}` and delete returns `204`. Existing subscriptions return the
 current object without changing the user's folder/preferences implicitly. Hidden means excluded
 from aggregate reader/sidebar selection; it does not unsubscribe, stop shared fetches or disable
@@ -373,6 +384,25 @@ does not cause the bookmark capture/export path to download or archive them.
 - `sort` ∈ `score | date` (default: `prefs.sort` for `for_you`; uncertainty order for `maybe`, spec 06 §10;
   `date` otherwise)
 - `cursor`, `limit`
+
+**Plan releases (D-257):** the server reads the user's stored plan and IANA timezone. A positive
+`releaseIntervalS` (60..86400 seconds) sets local wall-clock boundaries, anchored at midnight; the
+last interval ends at the next midnight. Beta uses 900 seconds; Free/Premium use the approved schedule
+in `docs/design/plan-velocity.md`. Null/zero is immediate. Repeated DST boundaries release twice;
+nonexistent boundaries are skipped. A timezone edit preserves the current release cutoff until at least
+one full plan interval has elapsed and a boundary in the new zone occurs. Repeated edits cannot
+advance it early or hide released arrivals. The display timezone changes immediately; next-update
+metadata includes this transition hold. A changed plan cadence applies immediately. A client `asOf` is always capped at server time. Each carrier
+must have `first_seen_at <= least(asOf, greatest(release_at, subscription.created_at + 15 minutes))`.
+The grace cutoff keeps already visible grace articles visible after grace expires. Unsubscribe remembers
+the original subscription start in per-feed preferences; normal and OPML re-subscriptions restore it,
+so re-adding a feed or resetting its image policy does not renew grace. Feed merges keep the earliest
+remembered start. The same predicate
+applies to list/counts/badges/filter actions, calibration, detail/context/cluster members, individual
+mutations, explicit analysis selection and card article inputs. Owned bookmarks remain accessible.
+Automatic ranking alone does not grant article access. Ingestion and background analysis continue
+at the shared arrival time. Client-signed pagination preserves its snapshot while current plan
+rules still apply. No per-user release job or materialized article-copy is created.
 
 **Semantics, in this order:**
 1. **Candidate set:** distinct articles carried by the user's subscriptions (excluding `hidden`
@@ -569,7 +599,8 @@ identity in the feedback event. Never substitute current-article features for an
 text; unavailable matching features remain null and are excluded from training (spec 06).
 When feedback belongs to a selected training request, rating/prompt-answer bodies additionally send
 `analysisRequestId` (and bulk targets each carry their own optional id). Validate ownership, feed,
-article/revision and frozen context; reject an unrelated/obsolete id, never silently choose the
+article/revision, frozen context and a currently released carrier (including after plan changes);
+reject an unrelated/obsolete id, never silently choose the
 "latest" request. Persist the association in the event as `feedback_events.value.analysisRequestId`,
 which the worker's completion reads to record `user.learn` (D-73). Delayed features may attach only via that
 specific request's frozen pre-feedback inputs (specs 05/06); unrelated live future analysis cannot
@@ -669,8 +700,10 @@ Plans have an immutable key, English and optional Slovak labels, `sortOrder`, a 
 optional retirement timestamp. Exactly one active plan is the signup default; signup reads its key
 and invite allowance together. `users.plan` references `plans.key`. A referenced or default plan
 cannot be deleted. Retirement prevents new assignments and preserves current users.
-`releaseIntervalS` is reserved for the release-cadence phase and does not delay visibility yet.
-Intervals under 300 seconds remain clamped by the scheduler until the following phase.
+`releaseIntervalS` controls article visibility (§5.1), independently of the shared fetch floor.
+The seeded beta/admin/Free–Premium release intervals match their fetch floors (900/300/21600/3600/
+1800/600/300/60 seconds). Admin may choose null/zero for immediate visibility, or 60..86400 seconds.
+The scheduler supports a 60-second floor; shared source protection and publisher hints bind every tier.
 
 - Exceeding a limit → `409 QUOTA_EXCEEDED {limit, used, max}`.
 - `feeds.min_interval_s` = the minimum of `minFetchIntervalS` over the feed's subscribers. It is

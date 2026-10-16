@@ -33,6 +33,10 @@ export const FeedInfoSchema = z
     lastSuccessAt: IsoTimestampSchema.nullable(),
     lastErrorCode: z.string().nullable(),
     lastErrorAt: IsoTimestampSchema.nullable(),
+    /** Account-visible cadence; shared fetch timestamps never reveal a faster subscriber's arrivals. */
+    updateIntervalS: z.number().int().min(1).optional(),
+    nextUpdateAt: IsoTimestampSchema.nullable().optional(),
+    intervalReason: z.enum(['plan', 'source', 'publisher']).optional(),
   })
   .strict();
 export type FeedInfo = z.infer<typeof FeedInfoSchema>;

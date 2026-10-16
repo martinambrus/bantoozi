@@ -7,7 +7,7 @@
     "displayNameHint": "Zobrazuje sa v ponuke namiesto vašej e-mailovej adresy. Ak ho necháte prázdne, použije sa adresa.",
     "language": "Jazyk",
     "timezone": "Časové pásmo",
-    "timezoneHint": "Dátumy a časy v Bantoozi sa zobrazujú v tomto časovom pásme.",
+    "timezoneHint": "Dátumy a časy v Bantoozi sa zobrazujú v tomto časovom pásme. Jeho zmena môže predĺžiť interval do ďalšieho sprístupnenia článkov.",
     "theme": "Vzhľad",
     "themes": {
       "system": "Podľa zariadenia",
@@ -269,5 +269,13 @@
       "unsent_other": "{{count}} zmien ešte nebolo odoslaných a bude stratených."
     },
     "done": "Váš účet je odstránený. Ak sa do 7 dní prihlásite znova, obnoví sa."
+  },
+  "plan": {
+    "title": "Váš plán",
+    "description": "Nové články sa zobrazujú v naplánovaných časoch vo vašom časovom pásme. Zdroje sa môžu aktualizovať pomalšie.",
+    "badge": "Plán {{label}}",
+    "every": "Interval nových článkov: {{interval}}",
+    "immediate": "Nové články sa zobrazia hneď po prijatí.",
+    "next": "Ďalšia aktualizácia o {{time}}"
   }
 }

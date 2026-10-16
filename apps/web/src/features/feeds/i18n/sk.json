@@ -193,5 +193,11 @@
     "text_other": "Často sa vám tu nepáčia články, ktoré žiadna z vašich kariet Nikdy neskrýva: {{count}} z nich.",
     "make": "Vytvoriť kartu Nikdy z týchto",
     "makeLabel": "Vytvoriť kartu Nikdy z toho, čo sa vám nepáči v zdroji {{title}}"
+  },
+  "updates": {
+    "every": "Interval aktualizácií: {{interval}}",
+    "source": "obmedzené zdrojom",
+    "publisher": "obmedzené vydavateľom",
+    "next": "Ďalšia aktualizácia o {{time}}"
   }
 }

@@ -17,3 +17,4 @@ export * from './rules.js';
 export * from './sessions.js';
 export * from './setup.js';
 export * from './subscriptions.js';
+export * from './releases.js';

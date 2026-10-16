@@ -1,4 +1,5 @@
 import {
+  bindReaderClock,
   deleteMetricsSnapshotsBefore,
   metricsClassifyingBacklog,
   metricsEngine,
@@ -85,7 +86,10 @@ async function readerMix(deps: WorkerDeps, now: Date) {
       const mixes = await withTenants(
         deps.db,
         batch.map((reader) => reader.userId),
-        (tx, userId) => readerLaneMix(tx, { asOf: now, minTier: tiers.get(userId) ?? 0 }),
+        (tx, userId) => {
+          bindReaderClock(tx, now);
+          return readerLaneMix(tx, { asOf: now, minTier: tiers.get(userId) ?? 0 });
+        },
       );
       for (const mix of mixes) {
         total.maybe += mix.maybe;

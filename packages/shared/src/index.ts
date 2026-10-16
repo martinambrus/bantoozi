@@ -38,3 +38,5 @@ export * from './starter-bundles.js';
 export * from './text/canonical-json.js';
 export * from './text/normalize-text.js';
 export * from './text/tokens.js';
+export * from './release-window.js';
+export * from './feed-icon-url.js';

@@ -1,3 +1,4 @@
+import { readerReleaseClock, releasedCarrier } from '../api/releases.js';
 import { randomUUID } from 'node:crypto';
 
 import { enqueueCardDraft } from '@bantoozi/shared';
@@ -41,14 +42,16 @@ export async function createCardDraft(
   input: { articleIds: readonly string[]; locale: string },
 ): Promise<{ id: string }> {
   const userId = tenantUserId(tx);
+  const clock = await readerReleaseClock(tx);
   const visible = await tx.execute<{ id: string }>(sql`
     SELECT a.id::text AS id FROM articles a
      WHERE a.id = ANY(${sql.param([...input.articleIds])}::bigint[])
        AND (EXISTS (SELECT 1 FROM feed_items fi
                       JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.user_id = ${userId}::uuid
-                     WHERE fi.article_id = a.id)
+                     WHERE fi.article_id = a.id AND ${releasedCarrier(clock)})
             OR EXISTS (SELECT 1 FROM user_article ua
-                        WHERE ua.user_id = ${userId}::uuid AND ua.article_id = a.id))`);
+                        WHERE ua.user_id = ${userId}::uuid AND ua.article_id = a.id
+                          AND (ua.opened_at IS NOT NULL OR ua.read_at IS NOT NULL OR ua.rating IS NOT NULL OR ua.bookmarked_at IS NOT NULL OR cardinality(ua.label_ids) > 0)))`);
   if (visible.rows.length !== new Set(input.articleIds).size) throw notFound('article');
   await tx.execute(sql`
     DELETE FROM card_drafts

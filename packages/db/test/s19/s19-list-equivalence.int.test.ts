@@ -20,6 +20,8 @@ import { setupDbTest, type DbTestContext } from '../support/test-db.js';
  * the projection rewrite (`fixtures/s19-golden.json`, produced by `s19/generate-golden.int.test.ts`
  * from `support/s19-golden-world.ts`). Rows, order, display feeds, eligibility, arrivals, clusters,
  * keyset cursors, `datasetVersion` digests and `rankingPending` must all be identical.
+ * D-257 updates reader A's 44 affected views for the approved release-carrier cutoff: a later
+ * carrier cannot authorize inference before its release. Readers B/C retain the historical baseline.
  */
 
 const golden = JSON.parse(

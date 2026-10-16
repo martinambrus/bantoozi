@@ -29,6 +29,14 @@ export function meQueryOptions(api: ApiClient) {
       }
     },
     staleTime: ME_STALE_MS,
+    // Refresh the displayed next release when it passes, also picking up plan edits while open.
+    refetchInterval: (query) => {
+      const plan = query.state.data?.planInfo;
+      if (plan === undefined) return false;
+      const next = plan.nextUpdateAt;
+      if (next === null) return ME_STALE_MS;
+      return Math.min(ME_STALE_MS, Math.max(1000, Date.parse(next) - Date.now() + 250));
+    },
     // The route guard waits for this answer; offline it has to fail rather than pause until online.
     networkMode: 'always',
   });
@@ -61,7 +69,12 @@ export function withSavedFields(current: Me, patch: MePatch, saved: Me): Me {
     ...current,
     ...(patch.displayName === undefined ? {} : { displayName: saved.displayName }),
     ...(patch.locale === undefined ? {} : { locale: saved.locale }),
-    ...(patch.timezone === undefined ? {} : { timezone: saved.timezone }),
+    ...(patch.timezone === undefined
+      ? {}
+      : {
+          timezone: saved.timezone,
+          ...(saved.planInfo === undefined ? {} : { planInfo: saved.planInfo }),
+        }),
     ...(patch.preferences === undefined
       ? {}
       : {

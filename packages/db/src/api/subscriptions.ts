@@ -8,6 +8,7 @@ import { sql, type SQL } from 'drizzle-orm';
 
 import { SELECTION_WINDOW_DAYS } from '../ingest/demand.js';
 import { resolveLiveFeedId } from '../ingest/feeds.js';
+import { readerReleaseClock, releasedCarrier } from './releases.js';
 import { tenantUserId, type TenantTx } from '../tenant.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
 
@@ -38,6 +39,9 @@ export interface FeedInfoRow {
   lastSuccessAt: Date | null;
   lastErrorCode: string | null;
   lastErrorAt: Date | null;
+  fetchUrl?: string;
+  nextFetchAt?: Date;
+  publisherIntervalS?: number;
 }
 
 /** One of the user's subscriptions with its feed and remembered image policy. */
@@ -65,6 +69,9 @@ type SubscriptionDbRow = {
   last_success_at: RawTimestamp | null;
   last_error_code: string | null;
   last_error_at: RawTimestamp | null;
+  fetch_url: string;
+  next_fetch_at: RawTimestamp;
+  publisher_interval_s: number | null;
   title_override: string | null;
   folder: string | null;
   allow_duplicates: boolean;
@@ -88,6 +95,9 @@ function subscriptionRow(row: SubscriptionDbRow): SubscriptionRow {
       lastSuccessAt: toDateOrNull(row.last_success_at),
       lastErrorCode: row.last_error_code,
       lastErrorAt: toDateOrNull(row.last_error_at),
+      fetchUrl: row.fetch_url,
+      nextFetchAt: toDate(row.next_fetch_at),
+      publisherIntervalS: row.publisher_interval_s ?? 0,
     },
     titleOverride: row.title_override,
     folder: row.folder,
@@ -103,7 +113,12 @@ function subscriptionRow(row: SubscriptionDbRow): SubscriptionRow {
 
 const selectSubscriptions = (user: string, where: SQL) => sql`
   SELECT s.feed_id::text AS feed_id, f.url, f.site_url, f.title, f.icon_url, f.status,
-         f.last_success_at, f.last_error_code, f.last_error_at, s.title_override, s.folder,
+         f.last_success_at, f.last_error_code, f.last_error_at, f.fetch_url, f.next_fetch_at,
+         greatest(
+           CASE WHEN jsonb_typeof(f.publish_stats -> 'publisher_min_interval_s') = 'number'
+             THEN (f.publish_stats ->> 'publisher_min_interval_s')::float8 ELSE 0 END,
+           CASE WHEN jsonb_typeof(f.publish_stats -> 'cache_min_interval_s') = 'number'
+             THEN (f.publish_stats ->> 'cache_min_interval_s')::float8 ELSE 0 END) AS publisher_interval_s, s.title_override, s.folder,
          s.allow_duplicates, s.hidden, s.inference_mode, s.inference_version::text AS inference_version,
          s.inference_activated_at, p.image_policy, s.created_at
     FROM subscriptions s
@@ -307,10 +322,11 @@ export async function insertSubscriptions(
 ): Promise<string[]> {
   if (rows.length === 0) return [];
   const result = await tx.execute<{ feed_id: string }>(sql`
-    INSERT INTO subscriptions (user_id, feed_id, folder)
-    SELECT ${tenantUserId(tx)}::uuid, r.feed_id, r.folder
+    INSERT INTO subscriptions (user_id, feed_id, folder, created_at)
+    SELECT ${tenantUserId(tx)}::uuid, r.feed_id, r.folder, coalesce(p.first_subscribed_at, now())
       FROM unnest(${sql.param(rows.map((r) => r.feedId))}::bigint[],
                   ${sql.param(rows.map((r) => r.folder))}::text[]) AS r(feed_id, folder)
+      LEFT JOIN user_feed_preferences p ON p.user_id = ${tenantUserId(tx)}::uuid AND p.feed_id = r.feed_id
      ORDER BY r.feed_id
     ON CONFLICT (user_id, feed_id) DO NOTHING
     RETURNING feed_id::text AS feed_id`);
@@ -339,8 +355,10 @@ export async function insertSubscription(
   input: { feedId: string; folder: string | null },
 ): Promise<boolean> {
   const result = await tx.execute(sql`
-    INSERT INTO subscriptions (user_id, feed_id, folder)
-    VALUES (${tenantUserId(tx)}::uuid, ${input.feedId}::bigint, ${input.folder})
+    INSERT INTO subscriptions (user_id, feed_id, folder, created_at)
+    VALUES (${tenantUserId(tx)}::uuid, ${input.feedId}::bigint, ${input.folder},
+      coalesce((SELECT first_subscribed_at FROM user_feed_preferences
+        WHERE user_id = ${tenantUserId(tx)}::uuid AND feed_id = ${input.feedId}::bigint), now()))
     ON CONFLICT (user_id, feed_id) DO NOTHING`);
   return (result.rowCount ?? 0) > 0;
 }
@@ -433,6 +451,14 @@ export async function deleteSubscription(
   const scoped = await tx.execute<{ n: number }>(sql`
     SELECT count(*)::int AS n FROM user_cards
      WHERE user_id = ${user}::uuid AND scope_feed_id = ${feedId}::bigint`);
+  // Remember the first introduction window before deleting the row. Image-policy resets leave it
+  // intact, so neither re-subscription nor OPML can buy another immediate-release grace period.
+  await tx.execute(sql`
+    INSERT INTO user_feed_preferences (user_id, feed_id, first_subscribed_at)
+    SELECT user_id, feed_id, created_at FROM subscriptions
+      WHERE user_id = ${user}::uuid AND feed_id = ${feedId}::bigint
+    ON CONFLICT (user_id, feed_id) DO UPDATE
+      SET first_subscribed_at = least(user_feed_preferences.first_subscribed_at, EXCLUDED.first_subscribed_at)`);
   const result = await tx.execute(sql`
     DELETE FROM subscriptions WHERE user_id = ${user}::uuid AND feed_id = ${feedId}::bigint`);
   return { deleted: (result.rowCount ?? 0) > 0, scopedCards: scoped.rows[0]?.n ?? 0 };
@@ -580,10 +606,13 @@ export async function checkAnalysisSelection(
   articles: ReadonlyArray<{ id: string; contentRevision: string }>,
 ): Promise<Map<string, SelectionProblem>> {
   const ids = articles.map((a) => a.id);
+  const clock = await readerReleaseClock(tx);
   const result = await tx.execute<{ id: string; revision: string }>(sql`
     SELECT a.id::text AS id, a.content_revision::text AS revision
       FROM feed_items fi JOIN articles a ON a.id = fi.article_id
+      JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.user_id = ${tenantUserId(tx)}::uuid
      WHERE fi.feed_id = ${feedId}::bigint AND fi.article_id = ANY(${sql.param(ids)}::bigint[])
+       AND ${releasedCarrier(clock)}
      ORDER BY a.id
        FOR SHARE OF a`);
   const current = new Map(result.rows.map((row) => [row.id, row.revision]));
@@ -629,7 +658,7 @@ export async function reusableAnalysisRequests(
 }
 
 /**
- * The owned training/active feeds carrying an article, for a rating that asks for its analysis
+ * The owned, released training/active feeds carrying an article, for a rating that asks for its analysis
  * (D-238): training feeds first, then by id. `admitted` marks an active feed that analyses the
  * article on its own (it arrived after the feed became active and its daily cap admitted it), so
  * nothing needs requesting; `capped` marks an active feed whose cap skipped the arrival (D-251).
@@ -638,6 +667,7 @@ export async function ratingAnalysisFeeds(
   tx: TenantTx,
   articleId: string,
 ): Promise<{ feedId: string; version: string; admitted: boolean; capped: boolean }[]> {
+  const clock = await readerReleaseClock(tx);
   const result = await tx.execute<{
     feed_id: string;
     version: string;
@@ -653,6 +683,7 @@ export async function ratingAnalysisFeeds(
       FROM subscriptions s
       JOIN feed_items fi ON fi.feed_id = s.feed_id AND fi.article_id = ${articleId}::bigint
      WHERE s.user_id = ${tenantUserId(tx)}::uuid AND s.inference_mode IN ('training', 'active')
+       AND ${releasedCarrier(clock)}
      ORDER BY (s.inference_mode = 'training') DESC, s.feed_id`);
   return result.rows.map((row) => ({
     feedId: row.feed_id,

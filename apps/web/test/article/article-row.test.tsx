@@ -1,5 +1,5 @@
 import type { ArticleListItem, TopReason } from '@bantoozi/shared';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -228,6 +228,16 @@ describe('ArticleRow images', () => {
     }
   });
 
+  it('replaces a failed feed favicon with the RSS icon beside its name', () => {
+    renderRow(makeItem(allowed));
+    const name = within(row()).getByText('Example Weekly');
+    const image = name.parentElement!.querySelector('img')!;
+    expect(image).toHaveAttribute('src', allowed.feed.iconUrl);
+    fireEvent.error(image);
+    expect(name.parentElement!.querySelector('img')).toBeNull();
+    expect(name.parentElement!.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+  });
+
   it('shows neither when the article has no image and the feed no icon', () => {
     renderRow(
       makeItem({
@@ -237,7 +247,9 @@ describe('ArticleRow images', () => {
       }),
     );
     expect(document.querySelector('img')).toBeNull();
-    expect(within(row()).getByText('Example Weekly')).toBeInTheDocument();
+    expect(
+      within(row()).getByText('Example Weekly').parentElement!.querySelector('svg'),
+    ).toBeInTheDocument();
   });
 
   it('does not load an http: thumbnail or feed icon (images are HTTPS only)', () => {

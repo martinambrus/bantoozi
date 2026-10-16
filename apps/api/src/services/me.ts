@@ -12,8 +12,11 @@ import {
   listUserLabels,
   lockFeeds,
   loadPlanLimits,
+  invalidateReaderReleaseClock,
+  preserveReleaseOnTimezoneChange,
   quotaUsage,
   readOwnUser,
+  readerReleaseClock,
   recordRankIntents,
   refreshFeedMaterializations,
   revokeUserSessions,
@@ -44,6 +47,7 @@ import {
 export async function loadMe(tx: TenantTx): Promise<Me> {
   const user = await readOwnUser(tx);
   const used = await quotaUsage(tx);
+  const release = await readerReleaseClock(tx);
   const plan = await loadPlanLimits(tx, user.plan);
   const limits = Object.fromEntries(
     QUOTA_LIMIT_NAMES.map((name) => [name, plan[name]]),
@@ -56,6 +60,13 @@ export async function loadMe(tx: TenantTx): Promise<Me> {
     timezone: user.timezone,
     role: user.role,
     plan: user.plan,
+    planInfo: {
+      label: release.label,
+      labelSk: release.labelSk,
+      releaseIntervalS: release.intervalS,
+      minFetchIntervalS: release.planIntervalS,
+      nextUpdateAt: release.nextReleaseAt?.toISOString() ?? null,
+    },
     invitesLeft: user.invitesLeft,
     preferences: readUserPreferences(user.preferences),
     quotas: { used, limits },
@@ -94,12 +105,16 @@ export async function applyMePatch(tx: TenantTx, outbox: JobSender, patch: MePat
     preferences = mergeUserPreferences(before, patch.preferences);
     changed = changedPreferenceKeys(before, preferences);
   }
+  if (patch.timezone !== undefined && patch.timezone !== user.timezone) {
+    await preserveReleaseOnTimezoneChange(tx, patch.timezone);
+  }
   await updateOwnUser(tx, {
     ...(patch.displayName === undefined ? {} : { displayName: patch.displayName }),
     ...(patch.locale === undefined ? {} : { locale: patch.locale }),
     ...(patch.timezone === undefined ? {} : { timezone: patch.timezone }),
     ...(preferences === undefined ? {} : { preferences }),
   });
+  invalidateReaderReleaseClock(tx);
   const ranking = changed.some((key) =>
     (RANKING_RELEVANT_PREFERENCES as readonly string[]).includes(key),
   );

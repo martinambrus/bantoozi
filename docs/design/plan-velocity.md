@@ -86,7 +86,8 @@ X — limited by the source" (or "by the publisher") when the plan's speed is no
 ## 4. Owner decisions (2026-10-16)
 
 1. Tiers: Free 6 h, Basic 1 h, Plus 30 min, Pro 10 min, Max 5 min, Premium 1 min (where the source allows). Current beta users
-   keep 15 minutes during the beta and are mapped to a paid tier when billing exists.
+   use 15-minute local release boundaries during the beta (owner confirmed at handoff), and are
+   mapped to a paid tier when billing exists.
 2. Release times are aligned to each user's time zone; a new subscription has 15 minutes of grace.
 3. Speed is per plan only for now ("N fast feeds" may come later).
 4. Publisher hints (Cache-Control, ttl, `sy:updatePeriod`) bind every tier, including Premium.

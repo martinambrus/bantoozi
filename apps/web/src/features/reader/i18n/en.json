@@ -136,7 +136,8 @@
     "newArticles_one": "{{count}} new article · Show",
     "newArticles_other": "{{count}} new articles · Show",
     "showNew_one": "Show {{count}} new article",
-    "showNew_other": "Show {{count}} new articles"
+    "showNew_other": "Show {{count}} new articles",
+    "releaseArticles": "Your feeds updated · {{count}} new articles"
   },
   "pane": {
     "label": "Article",

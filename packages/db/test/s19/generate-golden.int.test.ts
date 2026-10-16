@@ -16,6 +16,7 @@ import { setupDbTest, type DbTestContext } from '../support/test-db.js';
  *
  * Run it only on the code the fixture is meant to pin (the code BEFORE the S19 projection rewrite).
  * A rewrite must reproduce the committed file; it must never regenerate it.
+ * D-257 separately updates the approved release policy (A's 44 affected views only, B/C unchanged).
  */
 
 const write = process.env['S19_WRITE_GOLDEN'] === '1';

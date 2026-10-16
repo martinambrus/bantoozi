@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import {
+  bindReaderClock,
   bookmarkArticle,
   createDatabase,
   labelArticle,
@@ -151,15 +152,28 @@ export class RetentionWorld {
     fence?: ActionInput['fence'],
   ): Promise<R> {
     const used = fence ?? (await this.fence(userId, articleId));
-    return withTenant(this.appDb, userId, (tx) =>
-      fn(tx, {
+    // These retention fixtures place arrivals relative to a job clock 100 days ahead. A reader
+    // action requested at the machine clock must happen after that future arrival is released.
+    const arrival = await this.owner.query<{ at: Date | null }>(
+      `SELECT max(fi.first_seen_at) AS at FROM feed_items fi JOIN subscriptions s ON s.feed_id = fi.feed_id
+       WHERE s.user_id = $1 AND fi.article_id = $2`,
+      [userId, articleId],
+    );
+    const latest = arrival.rows[0]?.at;
+    const actionNow =
+      latest !== null && latest !== undefined && latest.getTime() >= now.getTime()
+        ? new Date(latest.getTime() + 15 * MINUTE)
+        : now;
+    return withTenant(this.appDb, userId, (tx) => {
+      bindReaderClock(tx, actionNow);
+      return fn(tx, {
         articleId,
         fence: used,
-        now,
+        now: actionNow,
         outbox: tenantOutbox(tx),
         matchFingerprint: this.h.matchFingerprint,
-      }),
-    );
+      });
+    });
   }
 
   read(userId: string, articleId: string, at: Date) {

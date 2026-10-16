@@ -1,3 +1,4 @@
+import { readerReleaseClock, releasedCarrier } from '../api/releases.js';
 import {
   AppError,
   CardTextModeSchema,
@@ -564,7 +565,8 @@ export function checkQuota(
 
 /**
  * The example an article contributes (its title, spec 05 §5.1), for an article the tenant can see:
- * carried by one of the tenant's subscriptions, or already on the tenant's reading list. Anything
+ * released through one of the tenant's subscriptions, or explicitly engaged with on their reading
+ * list. An automatically created ranking row grants no access. Anything
  * else is `404`, like a missing id.
  */
 export async function articleExample(
@@ -572,14 +574,16 @@ export async function articleExample(
   userId: string,
   articleId: string,
 ): Promise<string> {
+  const clock = await readerReleaseClock(tx);
   const result = await tx.execute<{ title: string }>(sql`
     SELECT a.title FROM articles a
      WHERE a.id = ${articleId}::bigint
        AND (EXISTS (SELECT 1 FROM feed_items fi
                       JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.user_id = ${userId}::uuid
-                     WHERE fi.article_id = a.id)
+                     WHERE fi.article_id = a.id AND ${releasedCarrier(clock)})
             OR EXISTS (SELECT 1 FROM user_article ua
-                        WHERE ua.user_id = ${userId}::uuid AND ua.article_id = a.id))`);
+                        WHERE ua.user_id = ${userId}::uuid AND ua.article_id = a.id
+                          AND (ua.opened_at IS NOT NULL OR ua.read_at IS NOT NULL OR ua.rating IS NOT NULL OR ua.bookmarked_at IS NOT NULL OR cardinality(ua.label_ids) > 0)))`);
   const row = result.rows[0];
   if (row === undefined) throw notFound('article');
   const example = exampleFromArticleTitle(row.title);

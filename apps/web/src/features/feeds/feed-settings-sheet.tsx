@@ -27,6 +27,7 @@ import {
   UnwantedSuggestion,
 } from '../learning/agreement-text.js';
 import { useLearning } from '../learning/use-learning.js';
+import { FeedUpdates } from './feed-updates.js';
 import { ClassificationControls } from './classification-controls.js';
 import { displayTitle, feedTitle } from './folders.js';
 import { InlineAlert } from './inline-alert.js';
@@ -155,6 +156,7 @@ export function FeedSettingsSheet({
         description={title}
         dismissible={!save.isPending}
       >
+        <FeedUpdates feed={subscription.feed} />
         <form onSubmit={submit} className="flex flex-col gap-4">
           <TextField
             label={t('settings.titleLabel')}

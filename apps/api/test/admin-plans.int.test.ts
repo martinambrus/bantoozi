@@ -199,6 +199,8 @@ describe('POST /admin/plans', () => {
       body(''),
       body(`k-${tag()}`, { minFetchIntervalS: 59 }),
       body(`k-${tag()}`, { minFetchIntervalS: 86401 }),
+      body(`k-${tag()}`, { releaseIntervalS: 59 }),
+      body(`k-${tag()}`, { releaseIntervalS: 86401 }),
       body(`k-${tag()}`, { maxFeeds: -1 }),
       body(`k-${tag()}`, { maxFeeds: 1.5 }),
       body(`k-${tag()}`, { label: '' }),
@@ -243,6 +245,8 @@ describe('PATCH /admin/plans/:key', () => {
     for (const bad of [
       { minFetchIntervalS: 30 },
       { minFetchIntervalS: 100000 },
+      { releaseIntervalS: 59 },
+      { releaseIntervalS: 86401 },
       { maxCards: -5 },
       { maxRules: 'many' },
       { label: '' },

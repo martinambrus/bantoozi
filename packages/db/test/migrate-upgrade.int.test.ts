@@ -289,4 +289,119 @@ describe('upgrade from the previous release (spec 11 §9 item 12)', () => {
       migrationsApplied: 0,
     });
   });
+
+  it('activates release cadences while preserving explicit edits and normalizing old custom values', async () => {
+    const releasesFolder = path.join(previousFolder, 'before-releases');
+    await mkdir(path.join(releasesFolder, 'meta'), { recursive: true });
+    const kept = journal.entries.slice(
+      0,
+      journal.entries.findIndex((entry) => entry.tag.startsWith('0031_')),
+    );
+    expect(kept.length).toBeGreaterThan(0);
+    for (const entry of kept)
+      await cp(
+        path.join(MIGRATIONS_FOLDER, `${entry.tag}.sql`),
+        path.join(releasesFolder, `${entry.tag}.sql`),
+      );
+    await writeFile(
+      path.join(releasesFolder, 'meta', '_journal.json'),
+      JSON.stringify({ ...journal, entries: kept }),
+    );
+    const old = await setupTestDatabase({
+      pkg: 'dbrelup',
+      migrationsDir: releasesFolder,
+      pgBossVersion: PG_BOSS_VERSION,
+      migrate: async (url) => {
+        await runMigrations({ databaseUrl: url, migrationsFolder: releasesFolder });
+      },
+    });
+    const pool = new pg.Pool({ connectionString: old.urls.owner, max: 1 });
+    try {
+      await pool.query(
+        `UPDATE plans SET release_interval_s = 7200, version = 4 WHERE key = 'free'`,
+      );
+      // An admin set then explicitly cleared a built-in cadence. A separate label-only edit
+      // has the same durable provenance in P0, so preserve its null conservatively too.
+      await pool.query("UPDATE plans SET release_interval_s = 1800, version = 2 WHERE key = 'max'");
+      await pool.query("UPDATE plans SET release_interval_s = NULL, version = 3 WHERE key = 'max'");
+      await pool.query("UPDATE plans SET label = 'Edited Pro', version = 2 WHERE key = 'pro'");
+      await pool.query("UPDATE plans SET release_interval_s = 0, version = 2 WHERE key = 'basic'");
+      await pool.query(`INSERT INTO plans
+        SELECT (jsonb_populate_record(NULL::plans, to_jsonb(p) ||
+          jsonb_build_object('key', x.key, 'is_default', false, 'release_interval_s', x.seconds))).*
+        FROM plans p CROSS JOIN (VALUES ('custom-low', 1), ('custom-high', 90001),
+          ('custom-immediate', 0), ('custom-null', NULL)) AS x(key, seconds)
+        WHERE p.key = 'beta'`);
+      const historyUser = await createUser(pool);
+      const followed = await createFeed(pool);
+      const removed = await createFeed(pool);
+      const recentlyEdited = await createFeed(pool);
+      await pool.query(
+        "INSERT INTO user_feed_preferences (user_id, feed_id, image_policy) VALUES ($1, $2, 'inherit')",
+        [historyUser.id, recentlyEdited.id],
+      );
+      await createSubscription(pool, { userId: historyUser.id, feedId: followed.id });
+      await pool.query(
+        "UPDATE subscriptions SET created_at = '2024-01-01T00:00:00Z' WHERE user_id = $1",
+        [historyUser.id],
+      );
+      await pool.query(
+        `INSERT INTO user_feed_preferences (user_id, feed_id, image_policy, updated_at)
+         VALUES ($1, $2, 'allow', '2025-01-01T00:00:00Z'), ($1, $3, 'block', '2020-01-01T00:00:00Z')`,
+        [historyUser.id, followed.id, removed.id],
+      );
+      await runMigrations({ databaseUrl: old.urls.owner });
+      const history = await pool.query(
+        'SELECT feed_id::text AS feed_id, first_subscribed_at FROM user_feed_preferences WHERE user_id = $1',
+        [historyUser.id],
+      );
+      const recentStart = history.rows.find((row) => row.feed_id === recentlyEdited.id)!
+        .first_subscribed_at as Date;
+      expect(recentStart.getTime() + 15 * 60000).toBeLessThan(Date.now() - 86400000);
+      expect(
+        Object.fromEntries(
+          history.rows
+            .filter((row) => row.feed_id !== recentlyEdited.id)
+            .map((row) => [row.feed_id, row.first_subscribed_at]),
+        ),
+      ).toEqual({
+        [followed.id]: new Date('2024-01-01T00:00:00Z'),
+        [removed.id]: new Date('2020-01-01T00:00:00Z'),
+      });
+      const rows = await pool.query<{
+        key: string;
+        release_interval_s: number | null;
+        version: string;
+      }>(
+        `SELECT key, release_interval_s, version::text FROM plans WHERE key IN
+          ('beta','admin','free','basic','pro','max','premium','custom-low','custom-high','custom-immediate','custom-null')`,
+      );
+      expect(
+        Object.fromEntries(
+          rows.rows.map(({ key, release_interval_s, version }) => [
+            key,
+            [release_interval_s, version],
+          ]),
+        ),
+      ).toEqual({
+        beta: [900, '2'],
+        admin: [300, '2'],
+        free: [7200, '4'],
+        basic: [0, '2'],
+        pro: [null, '2'],
+        max: [null, '3'],
+        premium: [60, '2'],
+        'custom-low': [60, '2'],
+        'custom-high': [86400, '2'],
+        'custom-immediate': [0, '1'],
+        'custom-null': [null, '1'],
+      });
+      await expect(runMigrations({ databaseUrl: old.urls.owner })).resolves.toMatchObject({
+        migrationsApplied: 0,
+      });
+    } finally {
+      await pool.end();
+      await old.drop();
+    }
+  });
 });

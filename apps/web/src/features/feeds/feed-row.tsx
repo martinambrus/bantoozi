@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '../../components/button.js';
 import { Spinner } from '../../components/spinner.js';
 import { formatRelativeTime } from '../../i18n/dates.js';
+import { FeedUpdates } from './feed-updates.js';
 import { DeadFeedBanner } from './dead-feed-banner.js';
 import { feedErrorReason, showsLastError } from './feed-format.js';
 import { ClassificationBadge, HealthBadge, UnreadCounts } from './feed-status.js';
@@ -57,6 +58,7 @@ export function FeedRow({ subscription, onOpenSettings }: FeedRowProps) {
               {t('row.lastError', { reason: feedErrorReason(t, feed.lastErrorCode) })}
             </p>
           ) : null}
+          <FeedUpdates feed={feed} />
           <UnreadCounts unread={subscription.unread} />
         </div>
         <Button

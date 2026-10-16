@@ -8,6 +8,7 @@ import { FOCUS_RING, cx } from '../../components/cx.js';
 import { PlusIcon } from '../../components/icons.js';
 import { Tooltip } from '../../components/tooltip.js';
 import { VisuallyHidden } from '../../components/visually-hidden.js';
+import { FeedFavicon } from '../feeds/feed-favicon.js';
 import { WaitingToSync } from '../offline/waiting-to-sync.js';
 import { useReaderItem, useWaitingChanges } from '../reader/actions/provider.js';
 import { BookmarkButton, RateButtons } from './article-buttons.js';
@@ -73,7 +74,6 @@ export function ArticleRow({
   const when = shown.publishedAt ?? shown.firstSeenAt;
   const relative = formatRelativeTime(when, Date.now(), i18n.language);
   const feed = shown.feed;
-  const feedIcon = shown.effectiveImagesAllowed ? httpsUrl(feed?.iconUrl) : null;
   const thumbnail = shown.effectiveImagesAllowed ? httpsUrl(shown.imageUrl) : null;
   const otherSources = shown.cluster === null ? 0 : shown.cluster.size - 1;
   const otherFeeds = shown.cluster?.otherFeeds ?? [];
@@ -96,15 +96,11 @@ export function ArticleRow({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
           {feed === null ? null : (
             <span className="inline-flex min-w-0 items-center gap-1.5">
-              {feedIcon === null ? null : (
-                <img
-                  src={feedIcon.href}
-                  alt=""
-                  loading="lazy"
-                  referrerPolicy="no-referrer"
-                  className="size-4 shrink-0 rounded-sm"
-                />
-              )}
+              <FeedFavicon
+                iconUrl={feed.iconUrl}
+                imagesAllowed={shown.effectiveImagesAllowed}
+                className="size-4"
+              />
               <span className="truncate font-medium">{feed.title}</span>
             </span>
           )}

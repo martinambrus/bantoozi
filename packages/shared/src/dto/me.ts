@@ -54,6 +54,16 @@ export const MeSchema = z
     role: UserRoleSchema,
     /** The key of the stored plan (Admin → Plans). */
     plan: z.string(),
+    planInfo: z
+      .object({
+        label: z.string(),
+        labelSk: z.string().nullable(),
+        releaseIntervalS: z.number().int().min(0).nullable(),
+        minFetchIntervalS: z.number().int().min(60),
+        nextUpdateAt: IsoTimestampSchema.nullable(),
+      })
+      .strict()
+      .optional(),
     invitesLeft: z.number().int().min(0),
     preferences: UserPreferencesSchema,
     quotas: z.object({ used: QuotaUsageSchema, limits: QuotaLimitsSchema }).strict(),
@@ -143,6 +153,7 @@ export const MeExportSchema = z
         timezone: z.string(),
         role: UserRoleSchema,
         plan: z.string(),
+
         createdAt: IsoTimestampSchema,
         preferences: UserPreferencesSchema,
       })

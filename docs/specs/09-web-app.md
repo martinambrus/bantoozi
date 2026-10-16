@@ -152,11 +152,14 @@ login without leaking the previous account's UI. Slow classification leaves arti
     articles**. Off is the default; subscribing/importing/adding interests does not enable inference.
     Off sits beside the name; Training and Active go below it, with a line under the feed, so the
     name keeps its width. Every feed, folder and label name carries its full text as a tooltip (D-235).
+  - Each feed name has its favicon, with an RSS fallback for missing, blocked or failed images,
+    in both the sidebar and article list. When the feed advertises no icon, try the website's
+    `/favicon.ico`. Image loading follows the feed's remembered preference.
   - Each feed row has a settings (gear) button that opens the same per-feed settings drawer as the
     feeds manager (§5) in place, so hiding or unsubscribing a feed needs no trip to Feeds. Where the
     pointer can hover, the button shows on hover or focus; on touch screens it is always shown.
 - **Collapsed sidebar (desktop):** a button at the top folds the sidebar to a narrow strip: lane
-  icons, feed icons (when the feed's images are allowed) or first letters, and label colours, each
+  icons, feed favicons (when the feed's images are allowed) or an RSS fallback, and label colours, each
   link named and titled in full with its count and state, with a dot for unread. The choice is kept
   per device in browser storage (D-235).
 - **List header:**
@@ -172,7 +175,7 @@ login without leaking the previous account's UI. Slow classification leaves arti
 
 ### 3.2 List item
 
-- **Content:** title, feed icon and title, relative time, excerpt (2 lines; hidden in Simple mode),
+- **Content:** title, feed favicon and title (RSS fallback if missing, blocked or failed), relative time, excerpt (2 lines; hidden in Simple mode),
   thumbnail (lazy).
 - **`topReason` chip**, rendered from the structured `TopReason` (spec 08 §5.1) with localized
   strings: e.g. "EV battery tech · 0.91", "Boosted source", or "Keyword match (model unavailable)".
@@ -467,8 +470,8 @@ Plain tables and forms, no polish needed:
 - **Plans** (`/admin/plans`, D-255): list stored plans with user counts, default/retired badges;
   add and edit labels in English/Slovak, every allowance, fetch/release intervals and display order.
   Save only changed fields with the loaded version. A stale version reloads the list and asks to reopen
-  the editor. Retire/restore, make default, delete unused non-default plans. Explain the temporary
-  300-second scheduler floor and link to Settings → `engine.auto_analysis_daily_cap`.
+  the editor. Retire/restore, make default, delete unused non-default plans. Explain the supported
+  one-minute floor and source/publisher limits; link to Settings → `engine.auto_analysis_daily_cap`.
 - **Users:** plan choices come from `GET /admin/plans`; offer active plans and the user's current
   plan even when retired. Quotas and fetch intervals apply live.
 - **Usage:** a spend chart (last 30 days) and top users.
@@ -604,3 +607,17 @@ shell and incognito contexts report `in-incognito` installability errors:
 Browser capability reference (checked 2026-09-25):
 [MDN Background Synchronization API](https://developer.mozilla.org/en-US/docs/Web/API/Background_Synchronization_API)
 documents limited browser support; foreground replay is therefore part of the acceptance gate.
+
+
+### Plan update timing (D-257)
+
+The reader header shows the localized stored plan badge. Settings includes the plan, release cadence
+and next release in the account timezone, with a short explanation that sources may update less often.
+Feed rows and their settings show “Updates every X”, the effective source/publisher limit when one
+applies, and “Next update at hh:mm”. Dead/paused feeds have no predicted next update. Subscription
+metadata refreshes at the next predicted update; account metadata refreshes while the plan is open.
+When a scheduled release raises counts, the existing new-articles banner says “Your feeds updated”
+with the localized count and accessible Show action. The existing top-of-list auto-refresh and
+in-progress-reading behavior remain. English and Slovak use localized duration units/plural forms.
+Offline copies contain only articles the server already released; offline reading creates no release
+or fetch work. Billing, payment controls and user-triggered refresh remain out of scope.

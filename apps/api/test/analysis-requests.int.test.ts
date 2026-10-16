@@ -389,6 +389,54 @@ describe('unsubscribe keeps completed analysis requests (spec 08 §4.1)', () => 
 });
 
 describe('a rating asks for the analysis of an unanalysed article (D-238)', () => {
+  it.each(['training', 'active'] as const)(
+    'ignores a waiting %s carrier when a released training carrier can handle the rating',
+    async (waitingMode) => {
+      await seedActiveQuestionSets();
+      const now = new Date();
+      now.setUTCHours(12, 7, 0, 0);
+      const server = await h.buildAnother({ clock: { now: () => now } });
+      const user = await createTestUser(h);
+      await h.owner.query("UPDATE users SET timezone = 'UTC' WHERE id = $1", [user.id]);
+      const waiting = await createFeed(h.owner);
+      const released = await createFeed(h.owner);
+      for (const [feedId, mode] of [
+        [waiting.id, waitingMode],
+        [released.id, 'training'],
+      ] as const)
+        await createSubscription(h.owner, {
+          userId: user.id,
+          feedId,
+          mode,
+          activatedAt: new Date(now.getTime() - 2 * 86400000),
+        });
+      await h.owner.query(
+        "UPDATE subscriptions SET created_at = $2::timestamptz - interval '1 day' WHERE user_id = $1",
+        [user.id, now],
+      );
+      const article = await createArticle(h.owner, {
+        feedIds: [released.id],
+        firstSeenAt: new Date(now.getTime() - 3600000),
+      });
+      await h.owner.query(
+        `INSERT INTO feed_items (feed_id, article_id, guid, first_seen_at)
+      VALUES ($1, $2, 'waiting-analysis', $3)`,
+        [waiting.id, article.id, new Date(now.getTime() - 60000)],
+      );
+      const res = await apiClient(server, user).post(`/articles/${article.id}/rating`, {
+        stateVersion: '0',
+        contentRevision: article.contentRevision,
+        rating: 1,
+      });
+      expect(res.statusCode, res.body).toBe(200);
+      const requests = await h.owner.query<{ feed_id: string }>(
+        'SELECT feed_id::text AS feed_id FROM analysis_requests WHERE user_id = $1',
+        [user.id],
+      );
+      expect(requests.rows).toEqual([{ feed_id: released.id }]);
+    },
+  );
+
   it('creates a frozen request in a training feed, links the rating to it and reuses it', async () => {
     const alice = await createTestUser(h);
     const { feed, article } = await trainingArticle(alice);

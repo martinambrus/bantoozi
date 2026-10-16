@@ -182,7 +182,11 @@ Neither a request body nor arbitrary SQL may supply `app.user_id`; derive it fro
 D-255 adds `plans` (migration 0029), a control-plane table without tenant RLS, read by the API and
 worker; only admin routes write it. It stores immutable `key`, `label`, optional `label_sk`, the nine
 integer allowances of spec 08 §6, optional `release_interval_s`, `sort_order`, `is_default`,
-`retired_at`, `version`, and `updated_at`. Limits are nonnegative; fetch interval is 60..86400 seconds;
+`retired_at`, `version`, and `updated_at`. Limits are nonnegative; fetch interval is 60..86400 seconds.
+A monotonic `plans.release_revision` (integer NOT NULL DEFAULT 0, CHECK >= 0) advances only
+when its release cadence changes. Reassigning a user clears the timezone hold; a hold matches only
+the current release revision, so changing a cadence back cannot revive it. Neither trigger updates
+other rows. The release interval is null/zero for immediate visibility or 60..86400 seconds (D-257, migration 0031);
 a partial unique index permits one default and a default cannot be retired. `users.plan` references
 its key. `refresh_plan_feeds(text)` and `refresh_user_feeds(uuid)` are admin-gated SECURITY DEFINER
 functions with fixed search paths; they recompute only affected feeds and pull a dropped floor's
@@ -203,6 +207,9 @@ CREATE TABLE users (
   display_name    text NULL,
   locale          text NOT NULL DEFAULT 'en' CHECK (locale IN ('en','sk')),
   timezone        text NOT NULL DEFAULT 'Europe/Bratislava',
+  release_hold_at timestamptz NULL,             -- cutoff retained during timezone transition
+  release_hold_until timestamptz NULL,          -- first safe boundary in the new timezone
+  release_hold_plan_revision int NULL,             -- plans.release_revision that authorized the hold
   role            text NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')),
   plan            text NOT NULL DEFAULT 'beta' REFERENCES plans(key),   -- key into the plan table in spec 08 §6
   invites_left    int  NOT NULL DEFAULT 3 CHECK (invites_left >= 0),
@@ -214,6 +221,10 @@ CREATE TABLE users (
   created_at      timestamptz NOT NULL DEFAULT now(),
   last_active_at  timestamptz NULL,
   deleted_at      timestamptz NULL,               -- soft delete for 7 days, then hard delete (spec 11)
+  CHECK ((release_hold_at IS NULL AND release_hold_until IS NULL AND release_hold_plan_revision IS NULL)
+    OR (release_hold_at IS NOT NULL AND release_hold_until IS NOT NULL
+      AND release_hold_plan_revision IS NOT NULL AND release_hold_plan_revision >= 0
+      AND release_hold_until >= release_hold_at)),
   CHECK ((suggest_lease_token IS NULL) = (suggest_lease_until IS NULL))
 );
 
@@ -981,7 +992,10 @@ exists. After 30 days set `cold_at` and remove redundant hot body storage only a
 archive binding/checksum. This is a storage lifecycle change, not an expiry or a promise that tiny or
 incompressible strings shrink. Restore testing includes saved text/HTML and checksums.
 
-`user_feed_preferences.image_policy` is tenant data independent of subscription lifetime. Its
+`user_feed_preferences.image_policy` is tenant data independent of subscription lifetime.
+`first_subscribed_at` remembers the original grace start on unsubscribe; resubscription restores
+subscriptions.created_at from it. Image resets preserve this field and feed merges retain the earliest
+start. Existing remembered unsubscribed sources receive an already-expired start in migration 0031. Its
 `inherit|allow|block` value remains available for saved items after unsubscribe, via
 `bookmark_origin_feed_id`; all reader/card/expanded/saved rendering consults spec 08/09's effective
 policy before any image URL is fetched. A feed identity merge remaps these preferences and bookmark
@@ -1080,6 +1094,7 @@ CREATE INDEX subscriptions_feed_idx ON subscriptions (feed_id);
 CREATE TABLE user_feed_preferences (
   user_id      uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   feed_id      bigint NOT NULL REFERENCES feeds(id) ON DELETE RESTRICT,
+  first_subscribed_at timestamptz NULL,  -- original introduction start, retained on unsubscribe
   image_policy text NOT NULL DEFAULT 'inherit' CHECK (image_policy IN ('inherit','allow','block')),
   updated_at   timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, feed_id)

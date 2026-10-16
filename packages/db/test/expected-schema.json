@@ -120,6 +120,21 @@
           "type": "timestamp with time zone",
           "nullable": true,
           "default": null
+        },
+        "release_hold_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "release_hold_until": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "release_hold_plan_revision": {
+          "type": "integer",
+          "nullable": true,
+          "default": null
         }
       },
       "primaryKey": ["id"],
@@ -129,7 +144,8 @@
         "role IN ('user','admin')",
         "invites_left >= 0",
         "rank_revision >= 0",
-        "(suggest_lease_token IS NULL) = (suggest_lease_until IS NULL)"
+        "(suggest_lease_token IS NULL) = (suggest_lease_until IS NULL)",
+        "(release_hold_at IS NULL AND release_hold_until IS NULL AND release_hold_plan_revision IS NULL)\n        OR (release_hold_at IS NOT NULL AND release_hold_until IS NOT NULL\n          AND release_hold_plan_revision IS NOT NULL AND release_hold_plan_revision >= 0\n          AND release_hold_until >= release_hold_at)"
       ],
       "foreignKeys": [
         {
@@ -2731,6 +2747,11 @@
           "type": "timestamp with time zone",
           "nullable": false,
           "default": "now()"
+        },
+        "first_subscribed_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
         }
       },
       "primaryKey": ["user_id", "feed_id"],
@@ -4003,6 +4024,11 @@
           "type": "timestamp with time zone",
           "nullable": false,
           "default": "now()"
+        },
+        "release_revision": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
         }
       },
       "primaryKey": ["key"],
@@ -4012,8 +4038,9 @@
         "length(btrim(label)) > 0",
         "max_feeds >= 0 AND max_cards >= 0 AND max_labels >= 0 AND max_forks >= 0 AND max_rules >= 0 AND opml_max_feeds >= 0 AND backfill_days >= 0 AND invites_on_signup >= 0",
         "min_fetch_interval_s BETWEEN 60 AND 86400",
-        "release_interval_s IS NULL OR release_interval_s >= 0",
-        "NOT (is_default AND retired_at IS NOT NULL)"
+        "release_interval_s IS NULL OR release_interval_s = 0 OR release_interval_s BETWEEN 60 AND 86400",
+        "NOT (is_default AND retired_at IS NOT NULL)",
+        "release_revision >= 0"
       ],
       "foreignKeys": [],
       "indexes": {
@@ -4775,6 +4802,24 @@
       "securityDefiner": false,
       "config": ["search_path=pg_catalog, public, pg_temp"],
       "execute": []
+    },
+    "users_clear_release_hold": {
+      "args": "",
+      "result": "trigger",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": false,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
+    "plans_advance_release_revision": {
+      "args": "",
+      "result": "trigger",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": false,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
     }
   },
   "triggers": {
@@ -4961,6 +5006,26 @@
       "function": "user_labels_removal_check",
       "args": [],
       "constraint": "DEFERRABLE INITIALLY DEFERRED",
+      "when": null
+    },
+    "users_clear_release_hold": {
+      "table": "users",
+      "timing": "BEFORE",
+      "events": ["UPDATE"],
+      "columns": ["plan"],
+      "function": "users_clear_release_hold",
+      "args": [],
+      "constraint": null,
+      "when": null
+    },
+    "plans_advance_release_revision": {
+      "table": "plans",
+      "timing": "BEFORE",
+      "events": ["UPDATE"],
+      "columns": ["release_interval_s"],
+      "function": "plans_advance_release_revision",
+      "args": [],
+      "constraint": null,
       "when": null
     }
   },

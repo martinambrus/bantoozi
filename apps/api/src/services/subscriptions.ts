@@ -23,6 +23,7 @@ import {
 import {
   AppError,
   effectiveImagesAllowed,
+  feedIconUrl,
   isAppErrorCode,
   readUserPreferences,
   type JobSender,
@@ -31,6 +32,7 @@ import {
   type UserPreferences,
 } from '@bantoozi/shared';
 
+import { feedUpdates, type FeedUpdateInfo } from './feed-updates.js';
 import { currentScoreVersion } from './score-version.js';
 
 /**
@@ -46,6 +48,7 @@ export function subscriptionDto(
   row: SubscriptionRow,
   preferences: UserPreferences,
   unread: LaneUnreadCounts | undefined,
+  timing?: FeedUpdateInfo,
 ): Subscription {
   return {
     feed: {
@@ -53,11 +56,12 @@ export function subscriptionDto(
       url: row.feed.url,
       siteUrl: row.feed.siteUrl,
       title: row.feed.title,
-      iconUrl: row.feed.iconUrl,
+      iconUrl: feedIconUrl(row.feed.iconUrl, row.feed.siteUrl),
       status: row.feed.status,
       lastSuccessAt: row.feed.lastSuccessAt?.toISOString() ?? null,
       lastErrorCode: row.feed.lastErrorCode,
       lastErrorAt: row.feed.lastErrorAt?.toISOString() ?? null,
+      ...timing,
     },
     titleOverride: row.titleOverride,
     folder: row.folder,
@@ -91,7 +95,8 @@ export async function loadSubscriptionDto(
     minTier: preferences.feedMinTier,
     scoreVersion: await currentScoreVersion(tx),
   });
-  return subscriptionDto(row, preferences, unread.get(feedId));
+  const timing = await feedUpdates(tx, [row], asOf);
+  return subscriptionDto(row, preferences, unread.get(feedId), timing.get(feedId));
 }
 
 /**

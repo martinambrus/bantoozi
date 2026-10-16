@@ -443,12 +443,14 @@ const PlanFetchInterval = z
   .min(MIN_FETCH_INTERVAL_MIN_S)
   .max(MIN_FETCH_INTERVAL_MAX_S);
 
+const PlanReleaseInterval = z.union([z.literal(0), z.number().int().min(60).max(86400)]).nullable();
+
 export const AdminPlanSchema = PlanLimitsSchema.extend({
   key: PlanKeySchema,
   label: z.string(),
   labelSk: z.string().nullable(),
-  /** Reserved for the plan-tiered release cadence. */
-  releaseIntervalS: z.number().int().min(0).nullable(),
+  /** null/0 is immediate; otherwise releases align to local wall time. */
+  releaseIntervalS: PlanReleaseInterval,
   sortOrder: z.number().int(),
   isDefault: z.boolean(),
   retiredAt: IsoTimestampSchema.nullable(),
@@ -466,7 +468,7 @@ export const AdminPlanCreateSchema = PlanLimitsSchema.extend({
   key: PlanKeySchema,
   label: PlanLabelSchema,
   labelSk: PlanLabelSchema.nullable().optional(),
-  releaseIntervalS: PlanCount.nullable().optional(),
+  releaseIntervalS: PlanReleaseInterval.optional(),
   sortOrder: PlanSortOrder.optional(),
 }).strict();
 export type AdminPlanCreate = z.infer<typeof AdminPlanCreateSchema>;
@@ -484,7 +486,7 @@ export const AdminPlanPatchSchema = z
     maxRules: PlanCount.optional(),
     opmlMaxFeeds: PlanCount.optional(),
     minFetchIntervalS: PlanFetchInterval.optional(),
-    releaseIntervalS: PlanCount.nullable().optional(),
+    releaseIntervalS: PlanReleaseInterval.optional(),
     backfillDays: PlanCount.optional(),
     invitesOnSignup: PlanCount.optional(),
     sortOrder: PlanSortOrder.optional(),

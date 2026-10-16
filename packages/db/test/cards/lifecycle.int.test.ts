@@ -529,7 +529,7 @@ describe('make a card from an article', () => {
     );
   });
 
-  it("uses only articles the reader can see: a subscribed carrier or the reader's own list", async () => {
+  it('uses only articles the reader can see: a released carrier or explicit reading state', async () => {
     const r = await createReader(ctx);
     const elsewhere = await createFeed(ctx.owner);
     const hidden = await createArticle(ctx.owner, {
@@ -550,6 +550,21 @@ describe('make a card from an article', () => {
       r.id,
       hidden.id,
     ]);
+    expect(
+      await appErrorOf(
+        asUser(ctx, r.id, (tx) =>
+          createCardFromArticle(tx, {
+            articleId: hidden.id,
+            interest: uniqueText('Rank only'),
+            strength: 'like',
+          }),
+        ),
+      ),
+    ).toEqual({ code: 'NOT_FOUND', details: { resource: 'article' } });
+    await ctx.owner.query(
+      'UPDATE user_article SET read_at = now() WHERE user_id = $1 AND article_id = $2',
+      [r.id, hidden.id],
+    );
     const listed = await asUser(ctx, r.id, (tx) =>
       createCardFromArticle(tx, {
         articleId: hidden.id,

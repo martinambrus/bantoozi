@@ -179,5 +179,11 @@
     "text_other": "You often dislike articles here that none of your Never cards hides: {{count}} of them.",
     "make": "Make a Never card from these",
     "makeLabel": "Make a Never card from what you dislike in {{title}}"
+  },
+  "updates": {
+    "every": "Updates every {{interval}}",
+    "source": "limited by the source",
+    "publisher": "limited by the publisher",
+    "next": "Next update at {{time}}"
   }
 }

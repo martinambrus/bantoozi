@@ -54,7 +54,7 @@ interface Item {
   firstSeenAt: string;
   topReason: Record<string, unknown> | null;
   analysis: { mode: string; status: string; requestId: string | null };
-  feed: { id: string; title: string } | null;
+  feed: { id: string; title: string; iconUrl: string | null } | null;
   cluster: { id: string; size: number; otherFeeds: string[] } | null;
 }
 
@@ -88,6 +88,32 @@ async function listAll(r: Reader, query: Record<string, string>): Promise<string
 }
 
 describe('GET /articles: lanes, statuses and tiers', () => {
+  it('uses the same website favicon in the feed menu and article rows, preferring an advertised icon', async () => {
+    const r = await newReader(h);
+    const feed = await subscribedFeed(h, r.user.id, { mode: 'off' });
+    const article = await carriedArticle(h, [feed]);
+    await h.owner.query(
+      `UPDATE feeds SET site_url = 'https://publisher.example/news/', icon_url = NULL WHERE id = $1`,
+      [feed],
+    );
+    for (const iconUrl of [
+      'https://publisher.example/favicon.ico',
+      'https://cdn.example/custom.png',
+    ]) {
+      if (iconUrl.includes('cdn.example'))
+        await h.owner.query('UPDATE feeds SET icon_url = $2 WHERE id = $1', [feed, iconUrl]);
+      const page = await list(r, { lane: 'new' });
+      expect(page.items.find((item) => item.id === article)?.feed?.iconUrl).toBe(iconUrl);
+      const subscriptions = await r.api.get('/subscriptions');
+      expect(subscriptions.statusCode).toBe(200);
+      expect(
+        subscriptions
+          .json<{ feed: { id: string; iconUrl: string | null } }[]>()
+          .find((item) => item.feed.id === feed)?.feed.iconUrl,
+      ).toBe(iconUrl);
+    }
+  });
+
   it('filters by lane, status and minTier; hidden never appears in all', async () => {
     const r = await newReader(h);
     const feed = await subscribedFeed(h, r.user.id);

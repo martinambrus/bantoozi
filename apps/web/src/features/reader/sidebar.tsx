@@ -31,10 +31,10 @@ import { Tooltip } from '../../components/tooltip.js';
 import { useOnline } from '../../components/states/use-online.js';
 import { VisuallyHidden } from '../../components/visually-hidden.js';
 import { useAccountId, useMe } from '../../session/context.js';
-import { httpsUrl } from '../article/http-url.js';
 import { LabelDot } from '../article/label-dot.js';
 import { useLabels } from '../article/use-labels.js';
 import { EnableAutomaticDialog } from '../feeds/enable-automatic-dialog.js';
+import { FeedFavicon } from '../feeds/feed-favicon.js';
 import { FeedSettingsSheet } from '../feeds/feed-settings-sheet.js';
 import { ClassificationBadge } from '../feeds/feed-status.js';
 import { displayTitle, groupByFolder, type FolderGroup } from '../feeds/folders.js';
@@ -400,6 +400,7 @@ function FeedLink({
           title={name}
           className={cx(LINK, 'flex-1')}
         >
+          <FeedFavicon iconUrl={feed.iconUrl} imagesAllowed={subscription.effectiveImagesAllowed} />
           <span className="truncate">{name}</span>
           <Count label={t('sidebar.unread')} value={unreadOf(subscription)} />
         </Link>
@@ -695,33 +696,6 @@ function CompactDot({ shown }: { shown: boolean }) {
   ) : null;
 }
 
-/** The feed's icon when its images may load, else the first letter of its name. */
-function FeedAvatar({ subscription, name }: { subscription: Subscription; name: string }) {
-  const [failed, setFailed] = useState(false);
-  const icon = subscription.effectiveImagesAllowed ? httpsUrl(subscription.feed.iconUrl) : null;
-  if (icon !== null && !failed) {
-    return (
-      <img
-        src={icon.href}
-        alt=""
-        loading="lazy"
-        referrerPolicy="no-referrer"
-        onError={() => setFailed(true)}
-        className="size-5 rounded-sm"
-      />
-    );
-  }
-  const letter = Array.from(name.trim())[0]?.toLocaleUpperCase() ?? '?';
-  return (
-    <span
-      aria-hidden="true"
-      className="grid size-7 place-items-center rounded-md bg-slate-200 text-sm font-semibold text-slate-800 dark:bg-slate-700 dark:text-slate-100"
-    >
-      {letter}
-    </span>
-  );
-}
-
 function CompactLanes({ counts }: { counts: ArticleCounts | undefined }) {
   const { t } = useTranslation('reader');
   const { hideEverything } = useMe().preferences;
@@ -806,7 +780,10 @@ function CompactFeeds() {
               title={label}
               className={COMPACT_LINK}
             >
-              <FeedAvatar subscription={subscription} name={name} />
+              <FeedFavicon
+                iconUrl={subscription.feed.iconUrl}
+                imagesAllowed={subscription.effectiveImagesAllowed}
+              />
               <CompactDot shown={unread > 0} />
             </Link>
           </li>

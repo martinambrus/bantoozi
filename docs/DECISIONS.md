@@ -2483,3 +2483,109 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   PR #46 eighth review: response Cache-Control hints also stay out of the adaptive base, so a
   later 304 that lowers/removes max-age speeds up naturally. The regression follows the real
   200 → 304 → 304 stored state without resetting fetch_interval_s between responses.
+
+- D-257: 2026-10-16 (approved plan-velocity P3/P4/P5; owner explicitly chose Beta release
+  boundaries) — Migration 0031 activates beta's 900-second, admin's 300-second and Free–Premium's
+  approved release cadences on untouched seed plans. Any edited seed's null is kept as immediate
+  because P0 did not record per-field provenance. Explicit administrator choices stay; old unsupported
+  custom values normalize into 60..86400 seconds before the CHECK is tightened. Null/zero remains
+  immediate. Every changed plan advances its version. Local wall-clock releases align at midnight;
+  DST repeats release twice and nonexistent boundaries are skipped. A fractional-hour timezone is
+  handled without UTC rounding.
+  The API binds one server clock per tenant transaction, caps client asOf at that clock, and applies
+  the stored plan to each carrying subscription before inference projection/folding. A carrier's
+  cutoff is least(asOf, greatest(release_at, created_at + 15 minutes)): new subscriptions see their
+  first fetch immediately, and grace articles stay visible after grace expires. List, counts,
+  unread badges, calibration, detail/cluster context, reader actions, explicit analysis selections,
+  rule story references and card article inputs share release-aware access. Automatic ranking rows
+  grant no access; personal bookmarks remain retrievable. Background ranking/analysis still runs
+  on arrival. There is no per-user article materialization or release queue.
+  Me reports localized plan metadata and the next account boundary; subscription timing reports
+  the effective max(plan, learned/robots source floor, publisher/cache hint), its reason and an
+  estimated fetch rounded up to the user's release boundary. Source cooldown/budget slots and
+  retained publisher expiry constrain that estimate. Already fetched waiting articles instead
+  use the next account boundary even when the next source fetch is later. Shared fetch timestamps are capped at the
+  subscription cutoff; dead/paused feeds have no next update. One batch reads all origin policies.
+  The web shows the plan badge, localized cadence/next time in Settings and feed settings/rows,
+  refreshes timing at boundaries, and uses the existing new-article interaction with “Your feeds
+  updated” wording (en/sk). Older offline DTOs may omit timing metadata. Billing stays out of scope
+  and Refresh now remains admin-only.
+  Verification includes shared-feed users on different plans, immediate plan changes, forged future
+  asOf, fractional timezones and DST, grace retention, direct/action/analysis/draft/rule/cluster access,
+  localized UI and boundary polling. A fixture load check schedules 100 due one-minute feeds through
+  two worker pools and keeps HTTP starts within the shared budget; deferred feeds stay healthy.
+
+  Owner-requested reader adjustment: sidebar feeds and article feed names use the same favicon
+  with an RSS fallback for missing/blocked/broken images. A feed-advertised icon takes precedence;
+  otherwise try the website's /favicon.ico. Existing remembered image permissions still apply.
+
+  P3 integration: nightly metrics bind the worker clock and cache release configuration per tenant,
+  including when a transaction is rebound across accounts. Retention fixtures perform reader actions
+  at their simulated server clock after release. The S19 cost guard includes the new plan lookup
+  within its unchanged buffer bound. The S19 golden projection changes only for the newly enforced
+  carrier cutoff: a carrier after asOf cannot authorize inference or folding of an earlier off-feed
+  arrival. This is an approved release-policy change, rather than an S19 projection rewrite; the
+  historical baseline remains unchanged for the other readers. Rank-only state grants no card input.
+
+  PR #47 first review: cluster-member feed titles are selected only from released carriers too,
+  including a member with a released copy on one source and an unreleased copy on another.
+  The carrier query fences candidate/article identities before adding subscription scope, preventing
+  one index probe per (article, subscription) pair; list queries remain under the existing 5,000
+  shared-buffer bound, counting both the plan lookup and the projection.
+
+  PR #47 second review: feed/folder bookmark membership is release-aware even when the personal
+  bookmark is globally accessible. Rating feature capture, including selected-request carriers,
+  uses only released sources and their scoped cards. Existing selected requests cannot authorize
+  inference before their carrying feed releases it; sidebar card/example associations follow the
+  same rule. The extended S19 policy fixture still changes only A's 44 affected views; B/C remain
+  byte-identical to the original baseline, and the unchanged cost bound passes.
+
+  PR #47 third review: next-update estimates determine grace at the candidate fetch time, so a
+  fetch after grace ends is rounded to the next regular release. Migration activation is limited
+  to seed version 1: P0 cannot distinguish a saved null from another plan edit, so all edited-null
+  built-ins stay immediate. Non-null edits, explicit zero and custom plans remain preserved.
+
+  PR #47 fourth review: rating-triggered analysis filters waiting carriers before choosing or
+  reusing a feed. A waiting training feed cannot hide the released training candidate, and an
+  unreleased active admission cannot suppress a needed selected request on the released source.
+
+  PR #47 fifth review: a timezone edit saves the current account cutoff and its cadence under the
+  user-row lock. It holds that cutoff until a full interval and a boundary in the new zone have
+  passed, preventing repeated edits from advancing releases or hiding visible articles. The display
+  timezone updates immediately; Me and feed predictions include the hold. Changed plan cadences
+  bypass an old hold. Migration 0031 adds the nullable transition tuple, with no read-path writes.
+
+  PR #47 sixth review: user plan reassignment permanently clears the timezone hold. Each plan's
+  release cadence has a monotonic release_revision, advanced by a BEFORE trigger only on cadence
+  changes, and holds bind to that revision. Returning to an old plan or cadence cannot revive the
+  old hold; unrelated label/quota edits retain it. Both invoker triggers change only NEW, avoiding
+  cross-account updates and plan/user lock-order inversion. No new executable function grants.
+
+  PR #47 seventh review: explicit analysisRequestId validation also requires the selected carrier to
+  be released under the current plan. A retained ID cannot attach a waiting source's frozen snapshot
+  or fingerprint to feedback merely because another off-mode carrier makes the article accessible.
+  The action returns obsolete_request without recording feedback; the same ID works after release.
+
+  PR #47 eighth review: removing and re-adding a feed cannot renew introductory grace. Unsubscribe
+  saves created_at as user_feed_preferences.first_subscribed_at; single, OPML and CLI subscriptions
+  restore it. Image-policy resets preserve history, and feed merges retain the earliest remembered
+  start and cap a live target subscription to it. Migration 0031 backfills current subscriptions'
+  starts into existing preferences; previously unsubscribed remembered sources have grace expired
+  conservatively. Idle feed deletion can discard history only after no articles remain. No extra
+  reads or joins are added to article visibility queries.
+
+  Final migration verification: an unknown legacy introduction starts at least two days before
+  migration, keeping its retained grace cutoff older than the longest supported one-day window
+  (including DST). A recently edited preference for an unsubscribed feed cannot make waiting
+  arrivals visible through migration time. Live subscriptions keep their exact original start.
+
+  PR #47 ninth review: on an explicitly immediate plan, feed timing predictions still use a stable
+  account-local window at its min_fetch_interval_s, rather than passing through a faster shared
+  subscriber's next fetch. Source/publisher constraints can defer it further; initial subscription
+  grace still predicts immediate fetches. Null/zero article visibility remains immediate.
+
+  PR #47 tenth review: forecast cadence uses max(release_interval_s, min_fetch_interval_s) on every
+  plan, preserving independently configured fetch floors. Only a source candidate within the actual
+  grace window bypasses that floor; an in-grace account whose fetch is later does not. Already
+  fetched waiting arrivals still use the next release boundary. Compute the common window once
+  per subscription list, rather than once per feed.
