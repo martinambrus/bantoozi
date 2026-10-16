@@ -108,8 +108,8 @@ describe('GET /articles: lanes, statuses and tiers', () => {
       expect(subscriptions.statusCode).toBe(200);
       expect(
         subscriptions
-          .json<{ subscriptions: { feed: { id: string; iconUrl: string | null } }[] }>()
-          .subscriptions.find((item) => item.feed.id === feed)?.feed.iconUrl,
+          .json<{ feed: { id: string; iconUrl: string | null } }[]>()
+          .find((item) => item.feed.id === feed)?.feed.iconUrl,
       ).toBe(iconUrl);
     }
   });
