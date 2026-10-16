@@ -309,9 +309,13 @@ describe('choosing articles', () => {
 
   it('has no limit: 25 loaded rows can all be selected', async () => {
     const { app } = await openFeed(numbered(25));
-    await choose(app, ...titles(25));
+    // Reuse the row controls: repeatedly resolving each article's accessible name across the
+    // whole list makes these 25 independent clicks exceed the CI timeout under coverage.
+    const checkboxes = screen.getAllByRole('checkbox', { name: /^Select Article \d+$/ });
+    expect(checkboxes).toHaveLength(25);
+    for (const checkbox of checkboxes) await app.user.click(checkbox);
 
-    expect(ticked(titles(25))).toHaveLength(25);
+    for (const checkbox of checkboxes) expect(checkbox).toBeChecked();
     expect(screen.getByText('25 selected')).toBeVisible();
     expect(screen.queryByText(/at most/)).toBeNull();
   });
