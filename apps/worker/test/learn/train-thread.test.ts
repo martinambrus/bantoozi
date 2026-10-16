@@ -23,5 +23,6 @@ describe('threadTrainer (D-259)', () => {
       inlineTrainer(ARGS, 'production'),
     ]);
     expect(threaded).toEqual(inline);
-  });
+    // A fresh thread compiles the ranker sources (and coverage instruments them) before training.
+  }, 60_000);
 });
