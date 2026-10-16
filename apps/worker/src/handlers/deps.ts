@@ -23,6 +23,7 @@ import type pg from 'pg';
 import type { ClassificationEnv } from '../classify/config.js';
 import type { TranslationDeps } from '../classify/translation.js';
 import { createPipelineGate } from '../gate.js';
+import type { Trainer } from '../learn/train-thread.js';
 import type { PipelineContext } from '../pipeline.js';
 import type { ProviderValidateDeps } from './provider-validate.js';
 
@@ -107,6 +108,8 @@ export interface WorkerDeps {
   /** Process-wide robots.txt cache (spec 03 §8.1 step 2). */
   robots: RobotsChecker;
   logger: HandlerLogger;
+  /** Runs `user.learn` training; inline when absent (tests). The process uses a thread (D-259). */
+  trainer?: Trainer;
   /**
    * The classification stages (M2). Without it the translate, enrich, cluster, match, backfill,
    * analysis and recovery stages stay registered stubs (tests of the ingestion stages omit it).

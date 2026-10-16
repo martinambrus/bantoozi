@@ -22,6 +22,7 @@ import {
 } from './eval-mode.js';
 import { createHandlers } from './handlers/index.js';
 import { enqueueOverdueHousekeeping } from './housekeeping.js';
+import { threadTrainer } from './learn/train-thread.js';
 import { startOutboxRelay } from './outbox-relay.js';
 import { assertProductionReady } from './readiness.js';
 import { createWorkerRuntime } from './runtime.js';
@@ -106,6 +107,7 @@ const handlers = createHandlers(
     settingsEnv,
     limiter: createPgOriginLimiter(db),
     logger,
+    trainer: threadTrainer(),
     classification: models.classification,
     mailer,
     adminEmails: config.adminEmails,

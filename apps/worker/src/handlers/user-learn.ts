@@ -12,13 +12,13 @@ import {
 import {
   FEATURE_SPEC_V1_SHA,
   decideActivation,
-  trainUserModel,
   type TrainResult,
   type TrainingSample,
 } from '@bantoozi/ranker';
 import { enqueueLearn, enqueueSuggest } from '@bantoozi/shared';
 
 import { currentContextSha, loadLearnInputs, type LearnInputs } from '../learn/inputs.js';
+import { inlineTrainer, type Trainer } from '../learn/train-thread.js';
 import { nowOf, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
 
@@ -54,8 +54,8 @@ export function modelStaleness(
     : null;
 }
 
-function train(userId: string, inputs: LearnInputs): TrainResult {
-  return trainUserModel(
+function train(trainer: Trainer, userId: string, inputs: LearnInputs): Promise<TrainResult> {
+  return trainer(
     {
       samples: inputs.samples as unknown as TrainingSample[],
       now: inputs.now,
@@ -66,7 +66,7 @@ function train(userId: string, inputs: LearnInputs): TrainResult {
       seedMaterial: `learn:${userId}:${inputs.eligibleSetSha}`,
       feedbackCutoffEventId: inputs.cutoffEventId,
     },
-    { mode: 'production' },
+    'production',
   );
 }
 
@@ -117,7 +117,7 @@ export function createUserLearnHandler(deps: WorkerDeps): QueueHandler<'user.lea
     if (unchanged && (state.active === null || modelStaleness(inputs, state.active) === null)) {
       return;
     }
-    const result = unchanged ? null : train(userId, inputs);
+    const result = unchanged ? null : await train(deps.trainer ?? inlineTrainer, userId, inputs);
 
     const outcome = await retryTransaction(deps.db, async (tx) => {
       if (!(await lockLearnUser(tx, userId, 'update'))) return 'gone';
