@@ -897,7 +897,8 @@ status and `Retry-After`), `now`, and the feed hints (`ttl` in minutes, `sy:upda
 `Cache-Control: max-age`).
 
 ```
-MIN   = max(60, feed.min_interval_s, learned origin floor, robots crawl delay)
+MIN   = max(60, feed.min_interval_s)
+SOURCE = max(MIN, learned origin floor, robots crawl delay)
 MAX   = 86_400 if last_new_item_at within 30 days or feed age < 30 days, else 864_000     (24 h / 10 days)
 
 on success (a successfully parsed HTTP 200, or a valid conditional 304):
@@ -913,18 +914,19 @@ on success (a successfully parsed HTTP 200, or a valid conditional 304):
   if publish_stats.recent_gaps_s has ≥ 5 entries and last_new_item_at within 7 days:
       G = median(recent_gaps_s)
       interval = min(interval, max(MIN, G / 2))          # a daily feed stays ≤ ~12 h
-  interval = clamp(round_to_seconds(max(interval, hint)) if MIN < 300 else round_to_60(max(interval, hint)), MIN, MAX)
-  next_fetch_at = now + min(MAX, max(MIN, hint, interval * (1 + jitter)))   # jitter ∈ [-0.1, 0.1], deterministic from hash(feed.id, now_day); clamped after jitter
+  body_hint = max(ttl_s, sy_period_s)
+  interval = clamp(round_to_seconds(max(interval, body_hint)) if MIN < 300 else round_to_60(max(interval, body_hint)), MIN, MAX)
+  next_fetch_at = now + min(MAX, max(SOURCE, hint, interval * (1 + jitter)))   # jitter ∈ [-0.1, 0.1], deterministic from hash(feed.id, now_day); clamped after jitter
 
 on throttled (HTTP 429 or 503):
-  next_fetch_at = now + min(24 h, max(MIN, 2 * current interval, Retry-After))
+  next_fetch_at = now + min(24 h, max(SOURCE, 2 * current interval, Retry-After))
   keep health counters, quarantine, validators and last_success_at unchanged
 
 on error:
   consecutive_errors += 1; total_errors += 1; first_error_at ??= now
   last_error_code/last_error/last_error_at = …
   if http_status == 410: status = 'dead'; stop (never overwrite dead with quarantined)
-  backoff = min(MIN * 2^min(consecutive_errors - 1, 16), 86_400)
+  backoff = min(SOURCE * 2^min(consecutive_errors - 1, 16), 86_400)
   if Retry-After present: backoff = max(backoff, min(retry_after_s, 86_400))
   if consecutive_errors >= 10:
       quarantine_count += 1
@@ -941,6 +943,9 @@ on parsed 200: replace etag/last_modified with returned values, clearing absent 
 on valid 304 (only the conditional request to fetch_url can get one, §4): retain missing
   validators; update any returned ones; do not parse or ingest a body
 ```
+
+Response cache hints and learned source floors bound next_fetch_at without raising the stored
+adaptive base; replacing a cache policy or decaying a learned floor can therefore restore speed.
 
 `sy_period_s` is period duration divided by valid positive frequency; ignore invalid/negative TTL,
 frequency and cache hints. Compute publication gaps from distinct valid dates, excluding zero/negative

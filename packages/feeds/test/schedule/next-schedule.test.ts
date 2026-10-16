@@ -116,21 +116,27 @@ describe('nextSchedule after an empty fetch (spec 03 §9)', () => {
 });
 
 describe('nextSchedule publisher hints (spec 03 §9)', () => {
-  it.each<[string, ScheduleHints, number]>([
-    ['a TTL', { ttlMinutes: 120 }, 7200],
-    ['sy:updatePeriod/Frequency', { syUpdatePeriod: 'daily', syUpdateFrequency: 2 }, 43_200],
-    ['sy:updatePeriod without a frequency', { syUpdatePeriod: 'hourly' }, 3600],
-    ['Cache-Control max-age', { cacheMaxAgeS: 3600 }, 3600],
-    ['max-age capped at 6 hours', { cacheMaxAgeS: 100_000 }, 21_600],
+  it.each<[string, ScheduleHints, number, number]>([
+    ['a TTL', { ttlMinutes: 120 }, 7200, 7200],
+    [
+      'sy:updatePeriod/Frequency',
+      { syUpdatePeriod: 'daily', syUpdateFrequency: 2 },
+      43_200,
+      43_200,
+    ],
+    ['sy:updatePeriod without a frequency', { syUpdatePeriod: 'hourly' }, 3600, 3600],
+    ['Cache-Control max-age', { cacheMaxAgeS: 3600 }, 3600, 1200],
+    ['max-age capped at 6 hours', { cacheMaxAgeS: 100_000 }, 21_600, 1200],
     [
       'the largest hint',
       { ttlMinutes: 90, syUpdatePeriod: 'hourly', cacheMaxAgeS: 30_000 },
       21_600,
+      5400,
     ],
-    ['a TTL above the max-age cap', { ttlMinutes: 600, cacheMaxAgeS: 30_000 }, 36_000],
-  ])('uses %s as a floor', (_label, hints, expected) => {
+    ['a TTL above the max-age cap', { ttlMinutes: 600, cacheMaxAgeS: 30_000 }, 36_000, 36_000],
+  ])('uses %s as a floor', (_label, hints, expected, storedHint) => {
     const update = schedule({}, NOT_MODIFIED, hints);
-    expect(update.fetchIntervalS).toBe(expected);
+    expect(update.fetchIntervalS).toBe(storedHint);
     expect(delayS(update)).toBeGreaterThanOrEqual(expected);
   });
 
@@ -150,6 +156,21 @@ describe('nextSchedule publisher hints (spec 03 §9)', () => {
     ['a NaN max-age', { cacheMaxAgeS: Number.NaN }],
   ])('ignores %s', (_label, hints) => {
     expect(schedule({}, NOT_MODIFIED, hints).fetchIntervalS).toBe(1200);
+  });
+
+  it('recovers from a replaced response cache hint without resetting the adaptive interval', () => {
+    let feed = feedRow({ minIntervalS: 60, fetchIntervalS: 60 });
+    for (const [cacheMaxAgeS, stored, delayFloor] of [
+      [21600, 72, 21600],
+      [120, 86, 120],
+      [undefined, 103, 60],
+    ] as const) {
+      const result = nextSchedule(feed, NOT_MODIFIED, NOW, { cacheMaxAgeS });
+      expect(result.fetchIntervalS).toBe(stored);
+      expect(delayS(result)).toBeGreaterThanOrEqual(delayFloor);
+      if (cacheMaxAgeS === undefined) expect(delayS(result)).toBeLessThan(120);
+      feed = { ...feed, ...result };
+    }
   });
 
   it('is a floor, not a cap', () => {
@@ -331,7 +352,7 @@ describe('nextSchedule jitter (spec 03 §9, §13)', () => {
     expect(delayS(update)).toBe(900);
   });
 
-  it('keeps every delay within [max(MIN, hint), MAX] and ±10 % of the stored interval', () => {
+  it('keeps delays within the floors and MAX, applying jitter to the adaptive base', () => {
     const cases: [Partial<ScheduleFeed>, FetchOutcome, ScheduleHints | undefined][] = [
       [{}, success(10), undefined],
       [{ fetchIntervalS: 5000 }, success(1), undefined],
@@ -354,8 +375,9 @@ describe('nextSchedule jitter (spec 03 §9, §13)', () => {
         const delay = delayS(update);
         expect(delay).toBeGreaterThanOrEqual(min);
         expect(delay).toBeLessThanOrEqual(max);
-        expect(Math.abs(delay - update.fetchIntervalS)).toBeLessThanOrEqual(
-          update.fetchIntervalS * 0.1 + 0.001,
+        expect(delay).toBeCloseTo(
+          Math.min(max, Math.max(min, update.fetchIntervalS * (1 + scheduleJitter(feed.id, NOW)))),
+          2,
         );
       }
     }

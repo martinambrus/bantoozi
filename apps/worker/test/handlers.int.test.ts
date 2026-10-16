@@ -2105,6 +2105,9 @@ describe('plan velocity source protection', () => {
           },
     );
     const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    await owner.query('UPDATE feeds SET fetch_interval_s = 60, min_interval_s = 60 WHERE id = $1', [
+      feedId,
+    ]);
     await fetchFeed(feedId);
     const first = await owner.query('SELECT publish_stats FROM feeds WHERE id = $1', [feedId]);
     expect(first.rows[0]?.publish_stats).toMatchObject({
@@ -2113,17 +2116,13 @@ describe('plan velocity source protection', () => {
     });
     conditional = true;
     for (cache of ['max-age=120', undefined]) {
-      await owner.query(
-        'UPDATE feeds SET fetch_interval_s = 60, min_interval_s = 60 WHERE id = $1',
-        [feedId],
-      );
       await fetchFeed(feedId);
       const next = await owner.query(
         'SELECT fetch_interval_s, publish_stats FROM feeds WHERE id = $1',
         [feedId],
       );
       expect(next.rows[0]?.publish_stats.cache_min_interval_s).toBe(cache === undefined ? 0 : 120);
-      expect(next.rows[0]?.fetch_interval_s).toBeLessThan(21600);
+      expect(next.rows[0]?.fetch_interval_s).toBe(cache === undefined ? 103 : 86);
     }
   });
 

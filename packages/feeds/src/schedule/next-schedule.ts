@@ -160,8 +160,9 @@ type ErrorOutcome = Extract<FetchOutcome, { kind: 'error' }>;
  *   are known and the last new item is less than 7 days old, the interval is capped at
  *   `max(MIN, median gap / 2)`, so a daily feed stays at ≤ ~12 h. The publisher hint
  *   ({@link ScheduleHints}) is a floor. The stored interval is `clamp(round_to_60(max(interval,
- *   hint)), MIN, MAX)`; the next fetch is `now + min(MAX, max(MIN, hint, interval × (1 +
- *   jitter)))`, clamped after jitter, so jitter never fetches before `MIN` or the hint, nor later
+ *   body hint)), MIN, MAX)`. Response cache hints and the source floor only bound the next fetch:
+ *   `now + min(MAX, max(MIN, source, hint, interval × (1 + jitter)))`, clamped after jitter, so
+ *   jitter never fetches before the plan/source floor or the hint, nor later
  *   than `MAX` (spec 03 §13).
  * - **Error**: records the error and backs off `min(MIN × 2^min(errors − 1, 16), 24 h)`, never
  *   shorter than `Retry-After` (itself honoured up to 24 h); no jitter is applied. HTTP 410 marks
@@ -229,12 +230,13 @@ function afterSuccess(
   }
 
   const hint = scheduleHintS(hints, maxS);
+  const bodyHint = scheduleHintS({ ...hints, cacheMaxAgeS: null }, maxS);
   const gaps = feed.recentGapsS.filter((gap) => Number.isFinite(gap) && gap > 0);
   if (gaps.length >= GAP_CAP_MIN_GAPS && youngerThan(lastNewItemAt, GAP_CAP_FRESH_S, nowMs)) {
     interval = Math.min(interval, Math.max(minS, median(gaps) / 2));
   }
   const rounded =
-    minS < 300 ? Math.round(Math.max(interval, hint)) : roundTo60(Math.max(interval, hint));
+    minS < 300 ? Math.round(Math.max(interval, bodyHint)) : roundTo60(Math.max(interval, bodyHint));
   const fetchIntervalS = clamp(rounded, minS, maxS);
   const jittered = fetchIntervalS * (1 + scheduleJitter(feed.id, now));
   const delayS = Math.min(maxS, Math.max(minIntervalS(feed), hint, jittered));

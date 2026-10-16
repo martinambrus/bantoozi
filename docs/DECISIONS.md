@@ -2479,3 +2479,7 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   source protection defers persists its intent and a delayed ordinary outbox retry; that retry
   reads the flag to bypass publisher/due/status gates, even on a paused or unsubscribed feed.
   Terminal outcomes clear the flag, so duplicate continuation jobs become stale no-ops.
+
+  PR #46 eighth review: response Cache-Control hints also stay out of the adaptive base, so a
+  later 304 that lowers/removes max-age speeds up naturally. The regression follows the real
+  200 → 304 → 304 stored state without resetting fetch_interval_s between responses.
