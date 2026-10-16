@@ -70,6 +70,58 @@ describe('spec 03 §8.2 politeness through the injected OriginLimiter', () => {
     expect(harness.fixture.requests).toHaveLength(4);
   });
 
+  it('resumes a redirect deferred beyond the deadline without replaying its source or leaking validators', async () => {
+    harness.fixture.redirect('/resume-start', '/resume-target', 301);
+    harness.fixture.route('/resume-target', { body: 'feed' });
+    const { limiter } = fakeLimiter((_origin, attempt) =>
+      attempt === 1
+        ? { status: 'granted', token: 'initial' }
+        : { status: 'wait', retryAt: new Date(NOW + 30000) },
+    );
+    const deferred = expectFailure(
+      await harness.fetch('http://public.example/resume-start', {
+        limiter,
+        now,
+        timeoutMs: 4000,
+        conditional: { etag: '"original"' },
+      }),
+    );
+    expect(deferred.code).toBe('FEED_ORIGIN_COOLDOWN');
+    expect(deferred.finalUrl).toBe('http://public.example/resume-target');
+    expect(deferred.redirects).toHaveLength(1);
+    const resumed = expectOk(
+      await harness.fetch(deferred.finalUrl!, {
+        previousRedirects: deferred.redirects!,
+        conditional: { etag: '"original"' },
+      }),
+    );
+    expect(resumed.permanentRedirect).toBe(true);
+    expect(resumed.redirects).toEqual(deferred.redirects);
+    expect(harness.fixture.requests.map((request) => request.path)).toEqual([
+      '/resume-start',
+      '/resume-target',
+    ]);
+    expect(harness.fixture.requests[1]!.headers['if-none-match']).toBeUndefined();
+  });
+
+  it('keeps loop detection and the total redirect limit across resumed attempts', async () => {
+    const previousRedirects = [
+      { status: 302, from: 'http://public.example/start', to: 'http://public.example/target' },
+    ];
+    harness.fixture.redirect('/target', '/start', 302);
+    expect(
+      expectFailure(await harness.fetch('http://public.example/target', { previousRedirects }))
+        .code,
+    ).toBe('FEED_TOO_MANY_REDIRECTS');
+    harness.fixture.redirect('/target', '/another', 302);
+    expect(
+      expectFailure(
+        await harness.fetch('http://public.example/target', { previousRedirects, maxRedirects: 1 }),
+      ).code,
+    ).toBe('FEED_TOO_MANY_REDIRECTS');
+    expect(harness.fixture.requests).toHaveLength(2);
+  });
+
   it('blocked → FEED_ORIGIN_COOLDOWN with retryAt = until, and zero requests', async () => {
     const until = new Date(NOW + 3_600_000);
     const { limiter, calls } = fakeLimiter(() => ({ status: 'blocked', until }));

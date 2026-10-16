@@ -144,7 +144,12 @@ async function fetchFeed(
       // Our own politeness deferral, not a feed error: fetch again when the origin is free.
       lock.assertHeld();
       await deps.db.transaction((tx) =>
-        deferFeedFetch(tx, feedId, result.retryAt ?? new Date(now.getTime() + 60_000)),
+        deferFeedFetch(
+          tx,
+          feedId,
+          result.retryAt ?? new Date(now.getTime() + 60_000),
+          result.redirects ?? [],
+        ),
       );
       return;
     }
@@ -329,7 +334,12 @@ async function fetchFeedBody(
   signal: AbortSignal,
 ): Promise<SafeFetchResult> {
   let retryAt: Date | undefined;
-  const result = await fetchWith(deps, feed.fetchUrl, {
+  const previous = feed.resumeRedirects ?? [];
+  const resume =
+    previous.length > 0 && sameRequestUrl(previous[0]!.from, feed.fetchUrl) ? previous : [];
+  const requestUrl = resume.at(-1)?.to ?? feed.fetchUrl;
+  const result = await fetchWith(deps, requestUrl, {
+    ...(resume.length === 0 ? {} : { previousRedirects: resume }),
     purpose: 'feed',
     sourceIntervalS: feed.fetchIntervalS,
     signal,

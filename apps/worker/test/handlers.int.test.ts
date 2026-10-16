@@ -1941,6 +1941,56 @@ describe('media signals (M1-T7, revision R2)', () => {
 });
 
 describe('plan velocity source protection', () => {
+  it('persists redirect progress across long crawl-delay deferrals and new handler instances', async () => {
+    const root = '/source-protection/slow-redirect';
+    const requests: string[] = [];
+    for (const [path, target, status] of [
+      [`${root}/a`, `${root}/b`, 302],
+      [`${root}/b`, `${root}/c`, 307],
+    ] as const) {
+      server.route(path, () => {
+        requests.push(path);
+        return { status, headers: { location: target }, body: '' };
+      });
+    }
+    server.route(`${root}/c`, (request) => {
+      requests.push(`${root}/c`);
+      expect(request.headers['if-none-match']).toBeUndefined();
+      return rssRoute(() => rss('Resumed', ''))();
+    });
+    const feedId = await addFeed(`${root}/a`, [{ user: reader, mode: 'off' }]);
+    await owner.query('UPDATE feeds SET min_interval_s = 60, etag = $2 WHERE id = $1', [
+      feedId,
+      '"old-original"',
+    ]);
+    let clock = Date.now();
+    const limiter = createMemoryOriginLimiter({ spacingMs: 0, now: () => clock });
+    await limiter.setCrawlDelay!(new URL(server.url('/')).origin, 30);
+    const input = {
+      ...workerDeps(limiter),
+      now: () => new Date(clock),
+      robots: { check: async () => ({ allowed: true, reason: 'allowed' as const }) },
+    };
+    for (let index = 0; index < 3; index += 1) {
+      clock += 31000;
+      await fetchFeed(feedId, createHandlers(input));
+      const state = (
+        await owner.query(
+          'SELECT publish_stats, total_fetches, consecutive_errors FROM feeds WHERE id = $1',
+          [feedId],
+        )
+      ).rows[0]!;
+      expect(state.consecutive_errors).toBe(0);
+      if (index < 2) expect(state.publish_stats.fetch_redirects).toHaveLength(index + 1);
+      else {
+        expect(state.publish_stats.fetch_redirects).toBeUndefined();
+        expect(state.total_fetches).toBe(1);
+      }
+    }
+    expect(requests).toEqual([`${root}/a`, `${root}/b`, `${root}/c`]);
+    expect((await feedRow(feedId)).fetch_url).toBe(server.url(`${root}/a`));
+  });
+
   it('defers repeated 503 responses without quarantining a healthy feed', async () => {
     const path = '/source-protection/throttled.rss';
     server.route(path, () => ({ status: 503, headers: { 'retry-after': '600' }, body: '' }));

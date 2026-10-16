@@ -44,6 +44,8 @@ export interface SafeFetchOptions {
   headersTimeoutMs?: number;
   /** Default 5. */
   maxRedirects?: number;
+  /** Completed hops of a persisted source deferral; URL is the final hop's target. Counts toward the same redirect limit. */
+  previousRedirects?: readonly RedirectHop[];
   /**
    * `FETCH_ALLOW_PRIVATE` escape hatch for local fixture servers: disables BOTH the address checks
    * and the port allow-list. Config validation refuses it in production.
@@ -546,10 +548,10 @@ async function sendHop(chain: Chain, url: URL): Promise<HopStep> {
 /** Follows the redirect chain hop by hop, re-running every check on every hop (spec 03 §4.3). */
 async function followChain(chain: Chain, start: URL): Promise<SafeFetchResult> {
   const { settings, redirects } = chain;
-  const visited = new Set<string>();
+  const visited = new Set(chain.redirects.map((hop) => requestKey(new URL(hop.from))));
   const budgetedOrigins = new Set<string>();
   let current = start;
-  for (let hop = 0; ; hop += 1) {
+  for (let hop = redirects.length; ; hop += 1) {
     visited.add(requestKey(current));
     const check = checkRequestUrl(current, settings.allowPrivate);
     if (!check.ok) return failure(chain, current, check.code, check.message);
@@ -659,6 +661,28 @@ export async function safeFetchWithInternals(
   const settings = resolveSettings(options);
   const parsed = parseUrl(url);
   if (!parsed.ok) return { ok: false, code: 'FEED_INVALID_URL', message: parsed.message };
+  const previous = options.previousRedirects?.map((hop) => ({ ...hop })) ?? [];
+  if (previous.length > settings.maxRedirects) throw new RangeError('too many previous redirects');
+  const seen = new Set<string>();
+  for (const [index, hop] of previous.entries()) {
+    const from = new URL(hop.from);
+    const to = new URL(hop.to);
+    if (
+      ![301, 302, 303, 307, 308].includes(hop.status) ||
+      !checkRequestUrl(from, settings.allowPrivate).ok ||
+      !checkRequestUrl(to, settings.allowPrivate).ok ||
+      (index > 0 && requestKey(from) !== requestKey(new URL(previous[index - 1]!.to))) ||
+      seen.has(requestKey(from))
+    )
+      throw new TypeError('invalid previous redirect chain');
+    seen.add(requestKey(from));
+  }
+  if (
+    previous.length > 0 &&
+    (requestKey(new URL(previous.at(-1)!.to)) !== requestKey(parsed.url) ||
+      seen.has(requestKey(parsed.url)))
+  )
+    throw new TypeError('invalid redirect continuation');
 
   const deadline = new AbortController();
   const timer = setTimeout(() => {
@@ -686,8 +710,8 @@ export async function safeFetchWithInternals(
     deadline: deadline.signal,
     external,
     deadlineAt: settings.now() + settings.timeoutMs,
-    originalKey: requestKey(parsed.url),
-    redirects: [],
+    originalKey: requestKey(previous.length === 0 ? parsed.url : new URL(previous[0]!.from)),
+    redirects: previous,
   };
   try {
     return await followChain(chain, parsed.url);

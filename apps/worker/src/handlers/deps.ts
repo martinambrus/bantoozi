@@ -12,6 +12,7 @@ import {
   type ExtractDeps,
   type FetchPurpose,
   type Resolver,
+  type RedirectHop,
   type RobotsChecker,
   type SafeFetchResult,
 } from '@bantoozi/feeds';
@@ -170,6 +171,7 @@ export async function fetchWith(
     timeoutMs?: number;
     /** Redirect hops left in a caller's request budget (discovery). */
     maxRedirects?: number;
+    previousRedirects?: readonly RedirectHop[];
     signal?: AbortSignal;
   },
 ): Promise<SafeFetchResult> {
@@ -189,6 +191,9 @@ export async function fetchWith(
     ...(options.conditional === undefined ? {} : { conditional: options.conditional }),
     ...(options.beforeRequest === undefined ? {} : { beforeRequest: options.beforeRequest }),
     ...(options.maxRedirects === undefined ? {} : { maxRedirects: options.maxRedirects }),
+    ...(options.previousRedirects === undefined
+      ? {}
+      : { previousRedirects: options.previousRedirects }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
     ...(deps.resolver === undefined ? {} : { resolver: deps.resolver }),
     ...(now === undefined ? {} : { now: () => now().getTime() }),

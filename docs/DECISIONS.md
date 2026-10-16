@@ -2466,3 +2466,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   Source-policy keys use the HTTP client's explicit default port (`https://host:443` or
   `http://host:80`) for robots refresh persistence and scheduler floor reads too; URL.origin alone
   omits that port and would split source protection into two rows.
+
+  PR #46 sixth review: a source deferral stores already completed redirect hops in the feed's
+  publish_stats; the next attempt resumes at the pending target instead of spending another
+  Crawl-delay at the original URL. The HTTP client retains the original validator scope, total
+  redirect limit, loop checks and permanent/temporary semantics across attempts. Terminal results
+  clear progress. This allows long Crawl-delay redirects to finish across process/job boundaries
+  without extending an HTTP deadline or weakening source protection.

@@ -737,7 +737,10 @@ relaxes by ×0.8 per complete quiet day. Robots delays are written only on autho
 versioned by request start so an older cache/response cannot erase a newer policy. Robots `Crawl-delay` applies to every request purpose and
 accounts for the previous request start. Feeds on a floor below five minutes check robots before
 every hop; a temporary robots failure or source wait defers the job. These deferrals never add to
-feed error/quarantine counts. No database transaction is held during HTTP.
+feed error/quarantine counts. If a redirect hop cannot start within the HTTP deadline, completed
+hops persist in `feeds.publish_stats.fetch_redirects`; the next job resumes at the target with the
+same original validator scope, redirect/loop budget and permanent/temporary semantics. Terminal
+outcomes clear progress. No database transaction is held during HTTP.
 
 ### 8.3 Language detection (`detectLanguage`, pure, in `packages/shared`)
 
