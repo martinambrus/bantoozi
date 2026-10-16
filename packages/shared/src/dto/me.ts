@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
 import { UuidStringSchema } from '../ids.js';
-import { PLAN_NAMES } from '../plans.js';
 import { UserPreferencesPatchSchema, UserPreferencesSchema } from '../preferences.js';
 import { IsoTimestampSchema } from './common.js';
 
@@ -53,8 +52,8 @@ export const MeSchema = z
     locale: LocaleSchema,
     timezone: z.string(),
     role: UserRoleSchema,
-    /** A defined plan key; an unknown stored plan reads as its fallback limits. */
-    plan: z.union([z.enum(PLAN_NAMES), z.string()]),
+    /** The key of the stored plan (Admin → Plans). */
+    plan: z.string(),
     invitesLeft: z.number().int().min(0),
     preferences: UserPreferencesSchema,
     quotas: z.object({ used: QuotaUsageSchema, limits: QuotaLimitsSchema }).strict(),

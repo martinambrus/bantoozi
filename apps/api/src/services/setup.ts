@@ -16,7 +16,7 @@ import {
   recordVerifiedLogin,
   replaceSetupState,
 } from '@bantoozi/db';
-import { DEFAULT_PLAN, newUserId, parseSetting, planLimits, type Me } from '@bantoozi/shared';
+import { newUserId, parseSetting, type Me } from '@bantoozi/shared';
 import type { FastifyBaseLogger } from 'fastify';
 
 import type { ApiServices } from '../context.js';
@@ -175,7 +175,6 @@ export async function completeSetup(
         email: input.email,
         locale: input.locale,
         role: 'admin',
-        invitesLeft: planLimits(DEFAULT_PLAN).invitesOnSignup,
       });
       if (!inserted) throw new Error('setup user already exists');
     }

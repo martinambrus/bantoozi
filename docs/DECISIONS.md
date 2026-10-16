@@ -2418,3 +2418,16 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   Freezing is decided per card: a card without an answer or a queue row stays out of coverage unless its scope reaches a
   carrier that admitted the article automatically (an unscoped card: any; a scoped card: its own feed), so a card scoped
   to the training feed of the selection is not pending just because another Active feed also carries the article.
+
+- D-255: 2026-10-16 (owner-approved plan-velocity design §4/§6, P0) — Plans move from a code constant
+  to the database (migration 0029), seeded with beta/admin and free/basic/plus/pro/max/premium.
+  Admin → Plans edits labels (en/sk), all allowances, order and retirement; an active plan can be the
+  signup default, referenced/default plans cannot be deleted, keys never change. User plan choices
+  come from stored active plans plus their retired current plan. Quota checks, `/me`, signup plan and
+  invite allowance read stored data; edits apply live. Plan and user changes recompute only affected
+  feeds, pulling a faster floor forward without delaying a scheduled fetch. The default remains beta;
+  the scheduler's 300-second clamp and immediate article visibility remain until subsequent phases.
+  The release interval is stored now, ready for that implementation. Admin writes use the existing
+  session/CSRF/idempotency/audit path; versioned edits refuse stale state.
+  PR #45 review: the restore shell script's throwaway smoke administrator also reads the stored
+  default plan and invite allowance; a regression test executes that exact SQL after deleting beta.

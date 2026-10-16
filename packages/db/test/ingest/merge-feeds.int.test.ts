@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 
-import { planMinIntervalMap } from '@bantoozi/shared';
 import { createArticle, createCard, createFeed, createUser } from '@bantoozi/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -127,10 +126,7 @@ async function analysisRequest(input: {
 }
 
 async function refreshBoth(feedIds: readonly string[]): Promise<void> {
-  await ctx.workerPool.query('SELECT refresh_feed_subscribers($1::bigint[], $2::jsonb)', [
-    feedIds,
-    JSON.stringify(planMinIntervalMap()),
-  ]);
+  await ctx.workerPool.query('SELECT refresh_feed_subscribers($1::bigint[])', [feedIds]);
   await ctx.workerPool.query('SELECT refresh_feed_cards($1::bigint[])', [feedIds]);
 }
 

@@ -1,6 +1,5 @@
 import {
   enqueueFetch,
-  planMinIntervalMap,
   type ImagePolicy,
   type InferenceMode,
   type JobSender,
@@ -187,9 +186,7 @@ export async function refreshFeedMaterializations(
   const ids = sortIds(feedIds);
   if (ids.length === 0) return;
   const param = sql.param(ids);
-  await tx.execute(
-    sql`SELECT refresh_feed_subscribers(${param}::bigint[], ${JSON.stringify(planMinIntervalMap())}::jsonb)`,
-  );
+  await tx.execute(sql`SELECT refresh_feed_subscribers(${param}::bigint[])`);
   await tx.execute(sql`SELECT refresh_feed_cards(${param}::bigint[])`);
 }
 

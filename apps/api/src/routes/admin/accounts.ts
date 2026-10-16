@@ -72,12 +72,13 @@ export const accountRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request) => {
-      const { q, limit } = request.query;
+      const { q, plan, limit } = request.query;
       const route = 'admin.users';
       const afterId = decodeAdminCursor<string>(request, route, request.query);
       const rows = await request.withTx((tx) =>
         listAdminUsers(tx, {
           ...(q === undefined ? {} : { q }),
+          ...(plan === undefined ? {} : { plan }),
           ...(afterId === undefined ? {} : { afterId }),
           limit: limit + 1,
         }),

@@ -179,6 +179,16 @@ Neither a request body nor arbitrary SQL may supply `app.user_id`; derive it fro
 
 ## 2. Settings and accounts
 
+D-255 adds `plans` (migration 0029), a control-plane table without tenant RLS, read by the API and
+worker; only admin routes write it. It stores immutable `key`, `label`, optional `label_sk`, the nine
+integer allowances of spec 08 §6, optional `release_interval_s`, `sort_order`, `is_default`,
+`retired_at`, `version`, and `updated_at`. Limits are nonnegative; fetch interval is 60..86400 seconds;
+a partial unique index permits one default and a default cannot be retired. `users.plan` references
+its key. `refresh_plan_feeds(text)` and `refresh_user_feeds(uuid)` are admin-gated SECURITY DEFINER
+functions with fixed search paths; they recompute only affected feeds and pull a dropped floor's
+next fetch forward. The old JSON map argument to `refresh_feed_subscribers` is removed.
+
+
 ```sql
 CREATE TABLE settings (
   key         text PRIMARY KEY,               -- see the key registry below
@@ -194,7 +204,7 @@ CREATE TABLE users (
   locale          text NOT NULL DEFAULT 'en' CHECK (locale IN ('en','sk')),
   timezone        text NOT NULL DEFAULT 'Europe/Bratislava',
   role            text NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')),
-  plan            text NOT NULL DEFAULT 'beta',   -- key into the plan table in spec 08 §6
+  plan            text NOT NULL DEFAULT 'beta' REFERENCES plans(key),   -- key into the plan table in spec 08 §6
   invites_left    int  NOT NULL DEFAULT 3 CHECK (invites_left >= 0),
   rank_revision   bigint NOT NULL DEFAULT 0 CHECK (rank_revision >= 0),
   suggest_lease_token uuid NULL,
@@ -1433,8 +1443,7 @@ END;
 $$;
 
 -- Keep feeds.subscriber_count and feeds.min_interval_s in sync.
--- p_plan_min_interval = {"beta": 900, "admin": 300}, built from packages/shared/src/plans.ts.
-CREATE FUNCTION refresh_feed_subscribers(p_feed_ids bigint[], p_plan_min_interval jsonb) RETURNS void
+CREATE FUNCTION refresh_feed_subscribers(p_feed_ids bigint[]) RETURNS void
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   PERFORM f.id FROM feeds f WHERE f.id = ANY(p_feed_ids) ORDER BY f.id FOR NO KEY UPDATE;
@@ -1445,27 +1454,17 @@ BEGIN
          updated_at       = now()
     FROM (SELECT DISTINCT unnest(p_feed_ids) AS feed_id) ids
     LEFT JOIN (
-      SELECT s.feed_id, count(*) AS cnt,
-             min(coalesce((p_plan_min_interval ->> u.plan)::int, 900)) AS min_iv
-      FROM subscriptions s JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
+      SELECT s.feed_id, count(*) AS cnt, min(coalesce(p.min_fetch_interval_s, 900)) AS min_iv
+      FROM subscriptions s
+      JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
+      LEFT JOIN plans p ON p.key = u.plan
       WHERE s.feed_id = ANY(p_feed_ids)
       GROUP BY s.feed_id) x ON x.feed_id = ids.feed_id
    WHERE f.id = ids.feed_id;
 END;
 $$;
 
--- True only for an active administrator session or an operational login.
--- session_user preserves the real login inside SECURITY DEFINER; test role connections separately.
-CREATE FUNCTION admin_context_allowed() RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
-  SELECT session_user IN ('bantoozi_owner','bantoozi_worker') OR EXISTS (
-    SELECT 1 FROM users u WHERE u.id = nullif(current_setting('app.user_id', true), '')::uuid
-      AND u.role = 'admin' AND u.deleted_at IS NULL
-  );
-$$;
-REVOKE EXECUTE ON FUNCTION admin_context_allowed() FROM PUBLIC;
 
--- Admin statistics: how many active users hold each card (as interest or label).
 CREATE FUNCTION admin_card_holders(p_card_ids bigint[]) RETURNS TABLE (card_id bigint, holders int)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
   SELECT c.id,
@@ -1505,9 +1504,9 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
   WHERE admin_context_allowed() AND p_days BETWEEN 1 AND 366;
 $$;
 
-REVOKE EXECUTE ON FUNCTION refresh_feed_cards(bigint[]), refresh_feed_subscribers(bigint[], jsonb),
+REVOKE EXECUTE ON FUNCTION refresh_feed_cards(bigint[]), refresh_feed_subscribers(bigint[]),
   admin_card_holders(bigint[]), admin_usage_attribution(int) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION refresh_feed_cards(bigint[]), refresh_feed_subscribers(bigint[], jsonb),
+GRANT EXECUTE ON FUNCTION refresh_feed_cards(bigint[]), refresh_feed_subscribers(bigint[]),
   admin_card_holders(bigint[]), admin_usage_attribution(int) TO bantoozi_app, bantoozi_worker;
 ```
 

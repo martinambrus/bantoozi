@@ -246,7 +246,9 @@ release_start() {
 # created in the throwaway database first: an existing user always gets a login code. The
 # production database and the restored settings are left as they are.
 docker exec -i "$PG_NAME" psql -U postgres -d bantoozi -X -q -v ON_ERROR_STOP=1 -v email="$SMOKE_EMAIL" >/dev/null 2>>"$ERRLOG" <<'SQL'
-insert into users (id, email, role) values (gen_random_uuid(), :'email', 'admin') on conflict (email) do nothing;
+insert into users (id, email, role, plan, invites_left)
+select gen_random_uuid(), :'email', 'admin', key, invites_on_signup from plans where is_default
+on conflict (email) do nothing;
 SQL
 API_NAME="$(uniq_name restore-api)"
 WORKER_NAME="$(uniq_name restore-worker)"

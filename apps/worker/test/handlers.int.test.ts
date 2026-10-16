@@ -139,10 +139,7 @@ async function addFeed(
       ...(mode === 'active' ? { activatedAt: new Date(Date.now() - 60_000) } : {}),
     });
   }
-  await owner.query('SELECT refresh_feed_subscribers($1::bigint[], $2::jsonb)', [
-    [feedId],
-    JSON.stringify({ beta: 900, admin: 300 }),
-  ]);
+  await owner.query('SELECT refresh_feed_subscribers($1::bigint[])', [[feedId]]);
   await owner.query('SELECT refresh_feed_cards($1::bigint[])', [[feedId]]);
   return feedId;
 }
@@ -1679,10 +1676,7 @@ describe('transient page failures and permanent feed redirects (M1-T7)', () => {
     );
     const feedId = inserted.rows[0]!.id;
     await createSubscription(owner, { userId: reader.id, feedId, mode: 'off' });
-    await owner.query('SELECT refresh_feed_subscribers($1::bigint[], $2::jsonb)', [
-      [feedId],
-      JSON.stringify({ beta: 900, admin: 300 }),
-    ]);
+    await owner.query('SELECT refresh_feed_subscribers($1::bigint[])', [[feedId]]);
 
     await fetchFeed(feedId);
     // The target is the new fetch_url, so its validators are the feed's.
@@ -1857,10 +1851,7 @@ describe('transient page failures and permanent feed redirects (M1-T7)', () => {
     );
     const survivorId = inserted.rows[0]!.id;
     await createSubscription(owner, { userId: reader.id, feedId: survivorId, mode: 'off' });
-    await owner.query('SELECT refresh_feed_subscribers($1::bigint[], $2::jsonb)', [
-      [survivorId],
-      JSON.stringify({ beta: 900, admin: 300 }),
-    ]);
+    await owner.query('SELECT refresh_feed_subscribers($1::bigint[])', [[survivorId]]);
     server.redirect('/joined/old.rss', joined, 301);
     const oldId = await addFeed('/joined/old.rss', [{ user: reader, mode: 'off' }]);
 

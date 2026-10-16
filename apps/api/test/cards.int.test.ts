@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
-import { PLANS } from '@bantoozi/shared';
-import { createArticle, createCard, createFeed, createSubscription } from '@bantoozi/testing';
+import {
+  createArticle,
+  createCard,
+  createFeed,
+  createSubscription,
+  BETA_LIMITS,
+} from '@bantoozi/testing';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -391,14 +396,14 @@ describe('quotas (spec 08 §6)', () => {
 
   it('maxCards: the last card is accepted, one more is QUOTA_EXCEEDED', async () => {
     const { user, api } = await reader();
-    await holdShared(user.id, PLANS.beta.maxCards - 1);
+    await holdShared(user.id, BETA_LIMITS.maxCards - 1);
     const ok = await api.post('/cards', { interest: unique('Fiftieth card'), strength: 'like' });
     expect(ok.statusCode).toBe(201);
     const over = await api.post('/cards', { interest: unique('One too many'), strength: 'like' });
     expect(over.statusCode).toBe(409);
     expect(over.json().error).toMatchObject({
       code: 'QUOTA_EXCEEDED',
-      details: { limit: 'maxCards', used: PLANS.beta.maxCards, max: PLANS.beta.maxCards },
+      details: { limit: 'maxCards', used: BETA_LIMITS.maxCards, max: BETA_LIMITS.maxCards },
     });
     // An idempotent re-create of a held card uses no quota.
     const replay = await api.post('/cards', {

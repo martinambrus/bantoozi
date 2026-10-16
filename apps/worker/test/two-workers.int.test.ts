@@ -450,10 +450,7 @@ beforeAll(async () => {
     }
   }
   const all = Object.values(feedIds);
-  await owner.query('SELECT refresh_feed_subscribers($1::bigint[], $2::jsonb)', [
-    all,
-    JSON.stringify({ beta: 900, admin: 300 }),
-  ]);
+  await owner.query('SELECT refresh_feed_subscribers($1::bigint[])', [all]);
   await owner.query('SELECT refresh_feed_cards($1::bigint[])', [all]);
 
   await startInstance('A');

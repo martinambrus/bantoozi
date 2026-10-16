@@ -10,6 +10,7 @@ const SCREENS = [
   { to: '/admin/providers', name: 'providers' },
   { to: '/admin/feeds', name: 'feeds' },
   { to: '/admin/library', name: 'library' },
+  { to: '/admin/plans', name: 'plans' },
   { to: '/admin/users', name: 'users' },
   { to: '/admin/invites', name: 'invites' },
   { to: '/admin/waitlist', name: 'waitlist' },

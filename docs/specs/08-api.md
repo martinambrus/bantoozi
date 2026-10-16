@@ -647,7 +647,9 @@ needed by still-valid undo receipts, so undo does not refer to content already d
 
 ## 6. Plans and quotas
 
-`packages/shared/src/plans.ts` is the single source:
+The `plans` table is the source of truth (D-255, migration 0029); `packages/shared/src/plans.ts`
+holds only the shape and validation. Quota checks and `GET /me` read it on each request. These are
+the seeded allowances; Admin → Plans can change them without a restart:
 
 | Limit | `beta` | `admin` |
 |---|---|---|
@@ -661,10 +663,22 @@ needed by still-valid undo receipts, so undo does not refer to content already d
 | `backfillDays` | 7 | 14 |
 | `invitesOnSignup` | 3 | 50 |
 
+The seed also includes `free` (21600 s), `basic` (3600 s), `plus` (1800 s), `pro` (600 s), `max`
+(300 s), and `premium` (60 s), with beta's other allowances. `beta` remains the signup default.
+Plans have an immutable key, English and optional Slovak labels, `sortOrder`, a version and an
+optional retirement timestamp. Exactly one active plan is the signup default; signup reads its key
+and invite allowance together. `users.plan` references `plans.key`. A referenced or default plan
+cannot be deleted. Retirement prevents new assignments and preserves current users.
+`releaseIntervalS` is reserved for the release-cadence phase and does not delay visibility yet.
+Intervals under 300 seconds remain clamped by the scheduler until the following phase.
+
 - Exceeding a limit → `409 QUOTA_EXCEEDED {limit, used, max}`.
 - `feeds.min_interval_s` = the minimum of `minFetchIntervalS` over the feed's subscribers. It is
   recomputed on subscribe/unsubscribe, plan changes, account deletion/restoration and purge; deleted
-  users do not contribute. Reducing a plan does not silently delete data: existing over-quota rows
+  users do not contribute. Editing a plan recomputes only feeds with a live subscriber on that
+  plan (`refresh_plan_feeds`); changing a user's plan recomputes only that user's feeds
+  (`refresh_user_feeds`). When the resulting floor drops, the next fetch is pulled forward to at most
+  `coalesce(last_fetch_at, now()) + floor`; no change pushes it later. Reducing a plan does not silently delete data: existing over-quota rows
   remain readable/deletable, while additions exceeding the new limit are blocked.
 
 ---
@@ -766,7 +780,11 @@ nor grants permission to analyze other articles.
 | `GET /admin/library` / `POST /admin/library` / `PATCH /admin/library/:id` | Manage library metadata; semantic text changes create a new immutable library version with predecessor identity (spec 05), never replace existing holders' text/examples. Every returned card carries `publication: {requestId, authorizationKind, promotedAt} \| null`: the authorization basis and audit time of the promotion that published it from a user's shared card (spec 09 §8), `null` for a card created in the library or a new version. Every returned card also carries `latestVersion`: the newest version of its slug (`null` for a card that is no library version), so a client knows an older version on any page, although only the newest version holds the slug |
 | `POST /admin/library/promotion-requests` | `{cardId,title,titleSk?,topicIds,slug?}`. Require shared card and ≥3 holders (checked by the API itself) and known topics; create a versioned exact-payload request addressed to its original creator → `201 {request}`. The proposed `slug` defaults to `<slugified title>-<cardId>` and is part of the disclosed payload |
 | `POST /admin/library/promote` | `{requestId,expectedVersion}`. Require shared card with ≥3 holders and either exact creator approval or audited ≥30-day creator inactivity (§9.2); recheck under lock and publish preserving unchanged text/id/answers; the same transaction records the promoted card as version 1 of its payload slug (`admin_publish_library_card_version`). Decline, recent unapproved activity or missing/deleted provenance → `409 CONFLICT` |
-| `GET /admin/users?q=` / `PATCH /admin/users/:id` | Role, plan, `invites_left` → `200 {user, sessionsRevoked}`. A plan change recomputes feed intervals with `refresh_feed_subscribers` over every feed with subscribers (a superset: the API cannot read the target user's subscriptions under RLS) |
+| `GET /admin/plans` / `POST /admin/plans` | Sorted plans with all allowances and reference counts; create a new key → `201 {plan}` (duplicate → `409`) |
+| `PATCH /admin/plans/:key` | `{expectedVersion, ...changedFields}`: labels, typed limits, sort order, retire/restore. Stale version → `409 STALE_STATE`; default cannot retire. Recomputes affected feed intervals when needed |
+| `POST /admin/plans/:key/default` | Make an active plan the signup default atomically; versions of both affected plans advance |
+| `DELETE /admin/plans/:key` | Delete an unused non-default plan → `204`; default or referenced → `409` |
+| `GET /admin/users?q=&plan=` / `PATCH /admin/users/:id` | Role, plan, `invites_left` → `200 {user, sessionsRevoked}`. A stored plan key is required; retired plans are refused unless already current. A plan change recomputes only that user's feeds via `refresh_user_feeds` and pulls faster fetches forward |
 | `GET /admin/invites?status=unused\|used\|expired` / `POST /admin/invites` | List all invites; create `{count ≤ 50, email?, note?, expiresDays ≤ 90}` → `201 {items: Invite[], emailSent?}`. An `email` binds the invite, requires `count` 1 and sends the §2.2 invite email |
 | `GET /admin/waitlist` / `POST /admin/waitlist/:id/invite` | Create an invite bound to that email, set the row's `invited_at` and `invite_code`, and email it in the entry's locale (§2.2 invite email) → `200 {entry, invite, emailSent?}`. `emailSent` reports this request's delivery; a replayed receipt omits it and never re-sends |
 | `POST /admin/ops-event` | `{kind: 'backup_ok' \| 'backup_failed' \| 'restore_ok' \| 'restore_failed' \| 'host_health', detail?}`. `host_health` uses spec 11's bounded structured disk/inode/heartbeat payload, plus `containers: {<compose service>: {restarts, oomKilled}}` (at most 16 services). Authenticated with the `METRICS_TOKEN` bearer and exempt from the CSRF header (§1); used by the host scripts in spec 11 §4. It appends to `settings['ops.events']` (the last 50 kept), which `house.alerts` reads → `201 {kind, at, stored}`; `host_health` detail is stored as canonical JSON text (≤2000 characters) |

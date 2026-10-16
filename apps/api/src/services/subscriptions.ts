@@ -3,6 +3,7 @@ import {
   ensureFeed,
   getSubscription,
   insertSubscription,
+  loadPlanLimits,
   readOwnUser,
   recordFirstFetch,
   recordRankIntents,
@@ -23,7 +24,6 @@ import {
   AppError,
   effectiveImagesAllowed,
   isAppErrorCode,
-  planLimits,
   readUserPreferences,
   type JobSender,
   type Subscription,
@@ -142,7 +142,8 @@ export async function subscribe(
     title: input.title,
   });
   const existing = (await subscribedFeedIds(tx, [feed.feedId])).has(feed.feedId);
-  if (!existing) await assertQuotaRoom(tx, 'maxFeeds', planLimits(user.plan).maxFeeds);
+  if (!existing)
+    await assertQuotaRoom(tx, 'maxFeeds', (await loadPlanLimits(tx, user.plan)).maxFeeds);
   const revived = feed.status === 'dead' ? await reviveDeadFeed(tx, feed.feedId) : false;
   const created =
     !existing && (await insertSubscription(tx, { feedId: feed.feedId, folder: input.folder }));

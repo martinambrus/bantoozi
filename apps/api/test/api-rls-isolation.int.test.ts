@@ -867,6 +867,12 @@ function crossUserCases(): Record<string, { attempts: Attempt[]; statuses: numbe
     'POST /admin/feeds/:id/reset': forbidden(() =>
       aApi.post(`/admin/feeds/${B.privateFeed}/reset`),
     ),
+    'POST /admin/plans': forbidden(() => aApi.post('/admin/plans', {})),
+    'PATCH /admin/plans/:key': forbidden(() =>
+      aApi.patch('/admin/plans/beta', { expectedVersion: 1, maxFeeds: 999 }),
+    ),
+    'POST /admin/plans/:key/default': forbidden(() => aApi.post('/admin/plans/admin/default')),
+    'DELETE /admin/plans/:key': forbidden(() => aApi.delete('/admin/plans/beta')),
     'PATCH /admin/users/:id': forbidden(() => aApi.patch(`/admin/users/${b.id}`, { role: 'user' })),
     'POST /admin/invites': forbidden(() => aApi.post('/admin/invites', { count: 1 })),
     'POST /admin/waitlist/:id/invite': forbidden(() => aApi.post('/admin/waitlist/1/invite')),

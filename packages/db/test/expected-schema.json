@@ -131,7 +131,14 @@
         "rank_revision >= 0",
         "(suggest_lease_token IS NULL) = (suggest_lease_until IS NULL)"
       ],
-      "foreignKeys": [],
+      "foreignKeys": [
+        {
+          "columns": ["plan"],
+          "references": "plans(key)",
+          "onDelete": "NO ACTION",
+          "deferrable": false
+        }
+      ],
       "indexes": {},
       "rls": false
     },
@@ -3876,6 +3883,118 @@
       "rls": {
         "forced": true
       }
+    },
+    "plans": {
+      "columns": {
+        "key": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "label": {
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        "label_sk": {
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        "max_feeds": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "max_cards": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "max_labels": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "max_forks": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "max_rules": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "opml_max_feeds": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "min_fetch_interval_s": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "release_interval_s": {
+          "type": "integer",
+          "nullable": true,
+          "default": null
+        },
+        "backfill_days": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "invites_on_signup": {
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        "sort_order": {
+          "type": "integer",
+          "nullable": false,
+          "default": "100"
+        },
+        "is_default": {
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        "retired_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "version": {
+          "type": "integer",
+          "nullable": false,
+          "default": "1"
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["key"],
+      "unique": [],
+      "checks": [
+        "key ~ '^[a-z0-9][a-z0-9_-]{0,39}$'",
+        "length(btrim(label)) > 0",
+        "max_feeds >= 0 AND max_cards >= 0 AND max_labels >= 0 AND max_forks >= 0 AND max_rules >= 0 AND opml_max_feeds >= 0 AND backfill_days >= 0 AND invites_on_signup >= 0",
+        "min_fetch_interval_s BETWEEN 60 AND 86400",
+        "release_interval_s IS NULL OR release_interval_s >= 0",
+        "NOT (is_default AND retired_at IS NOT NULL)"
+      ],
+      "foreignKeys": [],
+      "indexes": {
+        "plans_default_idx": {
+          "unique": true,
+          "definition": "(is_default) WHERE is_default"
+        }
+      },
+      "rls": false
     }
   },
   "policies": [
@@ -4077,6 +4196,7 @@
         "login_codes": ["SELECT", "INSERT", "UPDATE", "DELETE"],
         "match_queue": [],
         "origin_fetch_state": ["SELECT", "INSERT", "UPDATE"],
+        "plans": ["SELECT", "INSERT", "UPDATE", "DELETE"],
         "provider_credentials": [],
         "question_sets": ["SELECT"],
         "rate_limit_buckets": [],
@@ -4421,15 +4541,6 @@
       "config": ["search_path=pg_catalog, public, pg_temp"],
       "execute": []
     },
-    "rank_covered": {
-      "args": "",
-      "result": "boolean",
-      "language": "plpgsql",
-      "volatility": "s",
-      "securityDefiner": true,
-      "config": ["search_path=pg_catalog, public, pg_temp"],
-      "execute": ["bantoozi_app"]
-    },
     "interest_cards_content_check": {
       "args": "",
       "result": "trigger",
@@ -4475,6 +4586,15 @@
       "config": ["search_path=pg_catalog, public, pg_temp"],
       "execute": ["bantoozi_app", "bantoozi_worker"]
     },
+    "rank_covered": {
+      "args": "",
+      "result": "boolean",
+      "language": "plpgsql",
+      "volatility": "s",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
     "rate_limit_hit": {
       "args": "p_key text, p_window_s integer, p_max integer",
       "result": "TABLE(allowed boolean, retry_after_s integer)",
@@ -4502,14 +4622,41 @@
       "config": ["search_path=pg_catalog, public, pg_temp"],
       "execute": ["bantoozi_app", "bantoozi_worker"]
     },
+    "refresh_feed_intervals": {
+      "args": "p_feed_ids bigint[]",
+      "result": "void",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
     "refresh_feed_subscribers": {
-      "args": "p_feed_ids bigint[], p_plan_min_interval jsonb",
+      "args": "p_feed_ids bigint[]",
       "result": "void",
       "language": "plpgsql",
       "volatility": "v",
       "securityDefiner": true,
       "config": ["search_path=pg_catalog, public, pg_temp"],
       "execute": ["bantoozi_app", "bantoozi_worker"]
+    },
+    "refresh_plan_feeds": {
+      "args": "p_plan text",
+      "result": "void",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
+    },
+    "refresh_user_feeds": {
+      "args": "p_user_id uuid",
+      "result": "void",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": ["bantoozi_app"]
     },
     "require_admin_session": {
       "args": "",

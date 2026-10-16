@@ -1,4 +1,5 @@
 DELETE /admin/engine/credentials/:provider
+DELETE /admin/plans/:key
 DELETE /articles/:id/bookmark
 DELETE /articles/:id/labels/:labelId
 DELETE /auth/sessions/:id
@@ -13,6 +14,7 @@ GET /admin/invites
 GET /admin/library
 GET /admin/library/candidates
 GET /admin/overview
+GET /admin/plans
 GET /admin/settings
 GET /admin/usage
 GET /admin/users
@@ -47,6 +49,7 @@ GET /subscriptions/export-opml
 GET /topics
 PATCH /admin/feeds/:id
 PATCH /admin/library/:id
+PATCH /admin/plans/:key
 PATCH /admin/settings
 PATCH /admin/users/:id
 PATCH /cards/:id
@@ -62,6 +65,8 @@ POST /admin/library
 POST /admin/library/promote
 POST /admin/library/promotion-requests
 POST /admin/ops-event
+POST /admin/plans
+POST /admin/plans/:key/default
 POST /admin/translations/reprocess
 POST /admin/waitlist/:id/invite
 POST /articles/:id/bookmark

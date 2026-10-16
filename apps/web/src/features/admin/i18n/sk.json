@@ -10,7 +10,8 @@
     "library": "Knižnica",
     "users": "Používatelia",
     "invites": "Pozvánky",
-    "waitlist": "Čakacia listina"
+    "waitlist": "Čakacia listina",
+    "plans": "Plány"
   },
   "common": {
     "loadMore": "Načítať viac",
@@ -573,6 +574,42 @@
       "slugHint": "Nechajte prázdne, ak chcete použiť vygenerovaný slug.",
       "submit": "Vytvoriť žiadosť",
       "created": "Žiadosť je vytvorená. Pôvodný tvorca na ňu môže odpovedať."
+    }
+  },
+  "plans": {
+    "add": "Pridať plán",
+    "edit": "Upraviť {{key}}",
+    "save": "Uložiť plán",
+    "retire": "Vyradiť {{key}}",
+    "restore": "Obnoviť {{key}}",
+    "makeDefault": "Nastaviť {{key}} ako predvolený",
+    "delete": "Odstrániť {{key}}",
+    "default": "Predvolený",
+    "retired": "Vyradený",
+    "invalid": "Zadajte platnú hodnotu v povolenom rozsahu.",
+    "stale": "Tento plán medzičasom zmenil niekto iný. Zatvorte dialóg a znova ho otvorte, aby ste načítali aktuálne hodnoty.",
+    "schedulerNote": "Intervaly načítania kratšie ako 300 sekúnd sa uplatnia po zmene plánovača.",
+    "analysisCap": "Globálny limit analýzy: engine.auto_analysis_daily_cap",
+    "columns": {
+      "plan": "Plán",
+      "users": "Používatelia",
+      "actions": "Akcie"
+    },
+    "fields": {
+      "key": "Kľúč",
+      "label": "Názov (anglicky)",
+      "labelSk": "Názov (slovensky)",
+      "maxFeeds": "Zdroje",
+      "maxCards": "Karty záujmov",
+      "maxLabels": "Štítky",
+      "maxForks": "Súkromné kópie",
+      "maxRules": "Pravidlá",
+      "opmlMaxFeeds": "Zdroje na import OPML",
+      "minFetchIntervalS": "Interval načítania (sekundy)",
+      "releaseIntervalS": "Interval sprístupnenia (sekundy, prázdne pre okamžité)",
+      "backfillDays": "Dni spätnej analýzy",
+      "invitesOnSignup": "Pozvánky pri registrácii",
+      "sortOrder": "Poradie"
     }
   }
 }

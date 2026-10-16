@@ -84,9 +84,7 @@ export class RetentionBWorld {
   async subscribedFeed(userIds: readonly string[]): Promise<string> {
     const feedId = await this.w.h.feed();
     for (const userId of userIds) await this.w.h.subscribe(userId, feedId, 'off');
-    await this.owner.query(`SELECT refresh_feed_subscribers($1::bigint[], '{"beta":900}'::jsonb)`, [
-      [feedId],
-    ]);
+    await this.owner.query(`SELECT refresh_feed_subscribers($1::bigint[])`, [[feedId]]);
     return feedId;
   }
 

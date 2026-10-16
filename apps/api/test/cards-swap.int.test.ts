@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
-import { PLANS } from '@bantoozi/shared';
-import { createArticle, createCard, createFeed, createSubscription } from '@bantoozi/testing';
+import {
+  createArticle,
+  createCard,
+  createFeed,
+  createSubscription,
+  BETA_LIMITS,
+} from '@bantoozi/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { apiClient, createApiHarness, createTestUser, type ApiHarness } from './support/harness.js';
@@ -71,7 +76,7 @@ async function hold(userId: string, count: number): Promise<string[]> {
 describe('replaceCardId (swap at the card limit)', () => {
   it('POST /cards at the limit with a held replaceCardId swaps the holding', async () => {
     const { user, api } = await reader();
-    const held = await hold(user.id, PLANS.beta.maxCards);
+    const held = await hold(user.id, BETA_LIMITS.maxCards);
     const res = await api.post('/cards', {
       interest: unique('Swapped-in interest'),
       strength: 'like',
@@ -80,14 +85,14 @@ describe('replaceCardId (swap at the card limit)', () => {
     expect(res.statusCode).toBe(201);
     const { card } = res.json();
     const after = await heldIds(user.id);
-    expect(after).toHaveLength(PLANS.beta.maxCards);
+    expect(after).toHaveLength(BETA_LIMITS.maxCards);
     expect(after).not.toContain(held[0]);
     expect(after).toContain(card.id);
   });
 
   it('POST /cards/from-article at the limit with a held replaceCardId swaps the holding', async () => {
     const { user, article, api } = await reader();
-    const held = await hold(user.id, PLANS.beta.maxCards);
+    const held = await hold(user.id, BETA_LIMITS.maxCards);
     const res = await api.post('/cards/from-article', {
       articleId: article.id,
       interest: unique('Swapped-in from article'),
@@ -97,7 +102,7 @@ describe('replaceCardId (swap at the card limit)', () => {
     expect(res.statusCode).toBe(201);
     const { card } = res.json();
     const after = await heldIds(user.id);
-    expect(after).toHaveLength(PLANS.beta.maxCards);
+    expect(after).toHaveLength(BETA_LIMITS.maxCards);
     expect(after).not.toContain(held[0]);
     expect(after).toContain(card.id);
   });
@@ -158,12 +163,12 @@ describe('replaceCardId (swap at the card limit)', () => {
 
   it('without replaceCardId at the limit it is still QUOTA_EXCEEDED', async () => {
     const { user, api } = await reader();
-    const held = await hold(user.id, PLANS.beta.maxCards);
+    const held = await hold(user.id, BETA_LIMITS.maxCards);
     const res = await api.post('/cards', { interest: unique('One too many'), strength: 'like' });
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toMatchObject({
       code: 'QUOTA_EXCEEDED',
-      details: { limit: 'maxCards', used: PLANS.beta.maxCards, max: PLANS.beta.maxCards },
+      details: { limit: 'maxCards', used: BETA_LIMITS.maxCards, max: BETA_LIMITS.maxCards },
     });
     expect(await heldIds(user.id)).toEqual(held.slice().sort((x, y) => Number(x) - Number(y)));
   });

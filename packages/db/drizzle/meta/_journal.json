@@ -204,6 +204,13 @@
       "when": 1792482000000,
       "tag": "0028_feed_items_last_seen",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1792568400000,
+      "tag": "0029_plans",
+      "breakpoints": true
     }
   ]
 }

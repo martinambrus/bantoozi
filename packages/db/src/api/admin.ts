@@ -1,7 +1,6 @@
 import {
   AppError,
   CandidateValidationSchema,
-  planMinIntervalMap,
   type CandidateStatus,
   type CandidateValidation,
   type Provider,
@@ -9,6 +8,7 @@ import {
 import { sql, type SQL } from 'drizzle-orm';
 
 import type { Executor, Transaction } from '../client.js';
+import { checkUserPlanChoice } from './plans.js';
 import { librarySeedTextHash } from '../library/library-cards.js';
 import type { TenantTx } from '../tenant.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
@@ -533,7 +533,7 @@ function toUser(row: UserRow): AdminUserRow {
 /** Users ordered by id (UUID v7: signup order) after `afterId`, optionally searched by email/name. */
 export async function listAdminUsers(
   db: Executor,
-  input: { q?: string; afterId?: string; limit: number },
+  input: { q?: string; plan?: string; afterId?: string; limit: number },
 ): Promise<AdminUserRow[]> {
   const filters: SQL[] = [sql`true`];
   if (input.q !== undefined) {
@@ -542,6 +542,7 @@ export async function listAdminUsers(
       sql`(u.email::text ILIKE ${pattern} ESCAPE '\\' OR u.display_name ILIKE ${pattern} ESCAPE '\\')`,
     );
   }
+  if (input.plan !== undefined) filters.push(sql`u.plan = ${input.plan}`);
   if (input.afterId !== undefined) filters.push(sql`u.id > ${input.afterId}::uuid`);
   const result = await db.execute<UserRow>(sql`
     SELECT ${USER_COLUMNS} FROM users u WHERE ${sql.join(filters, sql` AND `)}
@@ -579,7 +580,9 @@ export type AdminUserUpdateResult =
  * every active administrator's row in UUID order (the documented user lock order), so two
  * concurrent demotions cannot remove the last active admin. A role downgrade revokes the user's
  * sessions; a plan change recomputes `feeds.min_interval_s` for the subscribed feeds
- * (`refresh_feed_subscribers`, spec 08 §6). Unchanged fields are not written.
+ * (`refresh_user_feeds`, D-255: only that user's feeds, and the next fetch is pulled forward when
+ * the interval drops). The plan must be a stored one, and a retired plan is refused unless it is
+ * the user's current plan. Unchanged fields are not written.
  */
 export async function updateAdminUser(
   tx: TenantTx,
@@ -609,6 +612,7 @@ export async function updateAdminUser(
     if ((others.rows[0]?.n ?? 0) === 0) return { status: 'last_admin' };
   }
 
+  if (changed.includes('plan')) await checkUserPlanChoice(tx, update.plan!, before.plan);
   if (changed.length > 0) {
     await tx.execute(sql`
       UPDATE users
@@ -626,12 +630,8 @@ export async function updateAdminUser(
     sessionsRevoked = revoked.rowCount ?? 0;
   }
   if (changed.includes('plan')) {
-    // The API cannot read another tenant's subscriptions under RLS; every subscribed feed is
-    // recomputed instead, a superset that includes all of this user's feeds.
-    await tx.execute(sql`
-      SELECT refresh_feed_subscribers(
-        ARRAY(SELECT id FROM feeds WHERE subscriber_count > 0 ORDER BY id),
-        ${JSON.stringify(planMinIntervalMap())}::jsonb)`);
+    // The API cannot read another tenant's subscriptions under RLS: the definer function does.
+    await tx.execute(sql`SELECT refresh_user_feeds(${userId}::uuid)`);
   }
   const user = (await getAdminUser(tx, userId))!;
   return { status: 'updated', before, user, changed, sessionsRevoked };

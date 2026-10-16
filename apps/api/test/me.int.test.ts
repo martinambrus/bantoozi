@@ -189,9 +189,7 @@ describe('DELETE /me', () => {
       `INSERT INTO user_cards (user_id, card_id, strength) VALUES ($1, $2, 'love')`,
       [alice.id, card.id],
     );
-    await h.owner.query(`SELECT refresh_feed_subscribers($1::bigint[], '{"beta":900}'::jsonb)`, [
-      [shared.id, own.id],
-    ]);
+    await h.owner.query(`SELECT refresh_feed_subscribers($1::bigint[])`, [[shared.id, own.id]]);
     await h.owner.query('SELECT refresh_feed_cards($1::bigint[])', [[shared.id, own.id]]);
     const feedState = async () =>
       (

@@ -1,4 +1,3 @@
-import { planMinIntervalMap } from '@bantoozi/shared';
 import {
   createCard,
   createFeed,
@@ -19,8 +18,6 @@ import { asTenant, setupDbTest, withConnection, type DbTestContext } from './sup
  * tenant; never dropping B's rows; and two-connection concurrent mutations leave both caches equal
  * to a fresh aggregation of the source tables.
  */
-
-const PLAN_MAP = JSON.stringify(planMinIntervalMap());
 
 let ctx: DbTestContext;
 
@@ -87,10 +84,7 @@ async function materialized(feedIds: readonly string[]) {
 
 async function refreshAsWorker(feedIds: readonly string[]): Promise<void> {
   await ctx.workerPool.query('SELECT refresh_feed_cards($1::bigint[])', [feedIds]);
-  await ctx.workerPool.query('SELECT refresh_feed_subscribers($1::bigint[], $2::jsonb)', [
-    feedIds,
-    PLAN_MAP,
-  ]);
+  await ctx.workerPool.query('SELECT refresh_feed_subscribers($1::bigint[])', [feedIds]);
 }
 
 /** Two subscribers of one feed with different cards (and a shared label held by both). */
@@ -119,9 +113,7 @@ describe('refresh functions in both calling contexts', () => {
     const { a, feed, cardA, cardB, label } = await twoSubscribers(ctx.owner);
     await withTenant(ctx.app, a.id, async (tx) => {
       await tx.execute(sql`SELECT refresh_feed_cards(${sql.param([feed.id])}::bigint[])`);
-      await tx.execute(
-        sql`SELECT refresh_feed_subscribers(${sql.param([feed.id])}::bigint[], ${PLAN_MAP}::jsonb)`,
-      );
+      await tx.execute(sql`SELECT refresh_feed_subscribers(${sql.param([feed.id])}::bigint[])`);
     });
     expect(await feedCards(feed.id)).toEqual(
       [`${cardA.id}:1`, `${cardB.id}:1`, `${label.id}:2`].sort(),
@@ -145,9 +137,7 @@ describe('refresh functions in both calling contexts', () => {
     await withTenant(ctx.app, a.id, async (tx) => {
       await tx.execute(sql`DELETE FROM subscriptions WHERE feed_id = ${feed.id}`);
       await tx.execute(sql`SELECT refresh_feed_cards(${sql.param([feed.id])}::bigint[])`);
-      await tx.execute(
-        sql`SELECT refresh_feed_subscribers(${sql.param([feed.id])}::bigint[], ${PLAN_MAP}::jsonb)`,
-      );
+      await tx.execute(sql`SELECT refresh_feed_subscribers(${sql.param([feed.id])}::bigint[])`);
     });
     expect(await feedCards(feed.id)).toEqual([`${cardB.id}:1`, `${label.id}:1`].sort());
     expect(await feedCounters(feed.id)).toEqual({ subscriber_count: 1, min_interval_s: 300 });
@@ -229,10 +219,7 @@ describe('concurrent mutations (two connections)', () => {
       // Widen the race window between the change and the refresh.
       await client.query('SELECT pg_sleep(0.02)');
       await client.query('SELECT refresh_feed_cards($1::bigint[])', [feedIds]);
-      await client.query('SELECT refresh_feed_subscribers($1::bigint[], $2::jsonb)', [
-        feedIds,
-        PLAN_MAP,
-      ]);
+      await client.query('SELECT refresh_feed_subscribers($1::bigint[])', [feedIds]);
     });
   }
 
@@ -352,15 +339,9 @@ describe('concurrent mutations (two connections)', () => {
          VALUES ($1, $2, 'active', 1, now())`,
         [b.id, feed.id],
       );
-      await holder.query('SELECT refresh_feed_subscribers($1::bigint[], $2::jsonb)', [
-        [feed.id],
-        PLAN_MAP,
-      ]);
+      await holder.query('SELECT refresh_feed_subscribers($1::bigint[])', [[feed.id]]);
       const waiting = asTenant(ctx.appPool, a.id, async (client) => {
-        await client.query('SELECT refresh_feed_subscribers($1::bigint[], $2::jsonb)', [
-          [feed.id],
-          PLAN_MAP,
-        ]);
+        await client.query('SELECT refresh_feed_subscribers($1::bigint[])', [[feed.id]]);
       });
       await new Promise((resolve) => setTimeout(resolve, 150));
       await holder.query('COMMIT');

@@ -1484,6 +1484,22 @@ test:int && pnpm e2e` passes; the PR is clean on CI and Codex.
 
 ---
 
+### 14.3 Plan-tiered feed update speed (approved 2026-10-16)
+
+Owner decisions and phased implementation: `docs/design/plan-velocity.md` (§4, §6). Billing is out of
+scope; administrators assign plans. Follow the approved sequence, completing CI and Codex review.
+
+| Phase | Work | Status |
+|---|---|---|
+| P0 | Stored editable plans, Admin → Plans, per-user plan assignment, live quota and feed interval changes (D-255, migration 0029) | Implemented; verification and PR review underway |
+| P1 | Scheduler floor 60 s and interval-scaled empty-fetch growth | Pending |
+| P2 | Source throttling protection, learned origin floors, robots delay and fetch budgets | Pending |
+| P3 | Timezone-aligned release boundaries, clamped article access and subscription timing | Pending |
+| P4 | Reader cadence, next-update display, plan badge and localized banner | Pending |
+| P5 | Scheduler/load verification, operational documentation | Pending |
+
+---
+
 ## 15. M9: Optional extensions (after launch; each item can become its own goal)
 
 | Item | Trigger | Where specified |
