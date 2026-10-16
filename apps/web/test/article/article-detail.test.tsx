@@ -457,6 +457,26 @@ describe('ArticleDetail action bar', () => {
     });
   });
 
+  it.each([
+    [{}, 'Mark as read', '/articles/101/read'],
+    [{ readAt: '2026-05-31T10:00:00.000Z' }, 'Mark as unread', '/articles/101/unread'],
+  ])('toggles read from the action bar (%o)', async (state, name, path) => {
+    const item = makeItem(state);
+    const { user, calls } = renderDetail(
+      item,
+      {},
+      {
+        routes: {
+          'POST /articles/:id/read': () =>
+            actionResponse(acked(item, { readAt: '2026-05-31T10:00:00.000Z' })),
+          'POST /articles/:id/unread': () => actionResponse(acked(item, { readAt: null })),
+        },
+      },
+    );
+    await user.click(await screen.findByRole('button', { name }));
+    await waitFor(() => expect(calls('POST', path)).toHaveLength(1));
+  });
+
   it('hides with a Shift+click on the like, as the row does', async () => {
     const item = makeItem();
     const { calls } = renderDetail(
@@ -585,14 +605,26 @@ describe('ArticleDetail rules', () => {
   });
 
   it.each([
-    ['Block this feed', { kind: 'block_feed', value: '7' }, 'Blocked source: Example Weekly'],
     [
-      'Block this website',
+      'Block feed (Example Weekly)',
+      { kind: 'block_feed', value: '7' },
+      'Blocked source: Example Weekly',
+    ],
+    [
+      'Block website (example.test)',
       { kind: 'block_domain', value: 'example.test' },
       'Blocked website: example.test',
     ],
-    ['Block this author', { kind: 'block_author', value: 'Jane Doe' }, 'Blocked author: Jane Doe'],
-    ['Boost this feed', { kind: 'boost_feed', value: '7' }, 'Boosted source: Example Weekly'],
+    [
+      'Block author (Jane Doe)',
+      { kind: 'block_author', value: 'Jane Doe' },
+      'Blocked author: Jane Doe',
+    ],
+    [
+      'Boost feed (Example Weekly)',
+      { kind: 'boost_feed', value: '7' },
+      'Boosted source: Example Weekly',
+    ],
   ])('%s creates a rule and can take it back', async (name, body, message) => {
     const { user, calls } = renderDetail(ITEM, {}, { routes: ruleRoutes(body.kind, body.value) });
     await user.click(await screen.findByRole('button', { name: 'More' }));
@@ -608,10 +640,14 @@ describe('ArticleDetail rules', () => {
   it('leaves out the actions that need data the article does not have', async () => {
     const { user } = renderDetail(makeItem({ url: null, author: null }));
     await user.click(await screen.findByRole('button', { name: 'More' }));
-    expect(screen.getByRole('menuitem', { name: 'Block this feed' })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'Boost this feed' })).toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: 'Block this website' })).toBeNull();
-    expect(screen.queryByRole('menuitem', { name: 'Block this author' })).toBeNull();
+    expect(
+      screen.getByRole('menuitem', { name: 'Block feed (Example Weekly)' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: 'Boost feed (Example Weekly)' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /^Block website/ })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /^Block author/ })).toBeNull();
   });
 
   it('has no "More" menu when none of its actions is possible', async () => {
@@ -632,14 +668,14 @@ describe('ArticleDetail rules', () => {
       },
     );
     await user.click(await screen.findByRole('button', { name: 'More' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Block this feed' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Block feed (Example Weekly)' }));
     expect(
       await findToast("You've reached your plan's limit for rules: 200 of 200."),
     ).toBeInTheDocument();
   });
 
   it.each([
-    ['More', 'Block this feed', 'POST', '/rules', '/rules'],
+    ['More', 'Block feed (Example Weekly)', 'POST', '/rules', '/rules'],
     [
       'Mute story',
       'Mute for 3 days',
@@ -723,7 +759,7 @@ describe('ArticleDetail rules', () => {
       },
     );
     await user.click(await screen.findByRole('button', { name: 'More' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Block this feed' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Block feed (Example Weekly)' }));
     await undoToast(user, 'Blocked source: Example Weekly');
     expect(await findToast("We couldn't find that.")).toBeInTheDocument();
   });
@@ -747,7 +783,9 @@ describe('ArticleDetail rules', () => {
         },
       );
       await user.click(await screen.findByRole('button', { name: 'More' }));
-      await user.click(await screen.findByRole('menuitem', { name: 'Block this feed' }));
+      await user.click(
+        await screen.findByRole('menuitem', { name: 'Block feed (Example Weekly)' }),
+      );
       await waitFor(() => expect(calls('POST', '/rules')).toHaveLength(1));
 
       signInAgain(makeMe({ id: USER_B_ID }));
@@ -798,7 +836,9 @@ describe('ArticleDetail rules', () => {
         },
       );
       await user.click(await screen.findByRole('button', { name: 'More' }));
-      await user.click(await screen.findByRole('menuitem', { name: 'Block this feed' }));
+      await user.click(
+        await screen.findByRole('menuitem', { name: 'Block feed (Example Weekly)' }),
+      );
       await waitFor(() => expect(calls('POST', '/rules')).toHaveLength(1));
 
       signInAgain(makeMe({ id: USER_B_ID }));
@@ -817,7 +857,9 @@ describe('ArticleDetail rules', () => {
         { routes: ruleRoutes('block_feed', '7') },
       );
       await user.click(await screen.findByRole('button', { name: 'More' }));
-      await user.click(await screen.findByRole('menuitem', { name: 'Block this feed' }));
+      await user.click(
+        await screen.findByRole('menuitem', { name: 'Block feed (Example Weekly)' }),
+      );
       const toast = await findToast('Blocked source: Example Weekly');
 
       signInAgain(makeMe({ id: USER_B_ID }));

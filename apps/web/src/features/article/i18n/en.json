@@ -65,13 +65,15 @@
     "labelAdd": "Add label {{name}}",
     "labelRemove": "Remove label {{name}}",
     "whyThis": "Why this?",
+    "markRead": "Mark as read",
+    "markUnread": "Mark as unread",
     "muteStory": "Mute story",
     "muteFor_one": "Mute for {{count}} day",
     "muteFor_other": "Mute for {{count}} days",
-    "blockFeed": "Block this feed",
-    "blockDomain": "Block this website",
-    "blockAuthor": "Block this author",
-    "boostFeed": "Boost this feed"
+    "blockFeed": "Block feed ({{target}})",
+    "blockDomain": "Block website ({{target}})",
+    "blockAuthor": "Block author ({{target}})",
+    "boostFeed": "Boost feed ({{target}})"
   },
   "rules": {
     "mutedStory_one": "Story muted for {{count}} day",

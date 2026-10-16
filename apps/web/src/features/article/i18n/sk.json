@@ -69,15 +69,17 @@
     "labelAdd": "Pridať štítok {{name}}",
     "labelRemove": "Odobrať štítok {{name}}",
     "whyThis": "Prečo toto?",
+    "markRead": "Označiť ako prečítané",
+    "markUnread": "Označiť ako neprečítané",
     "muteStory": "Stlmiť príbeh",
     "muteFor_one": "Stlmiť na {{count}} deň",
     "muteFor_few": "Stlmiť na {{count}} dni",
     "muteFor_many": "Stlmiť na {{count}} dňa",
     "muteFor_other": "Stlmiť na {{count}} dní",
-    "blockFeed": "Blokovať tento zdroj",
-    "blockDomain": "Blokovať tento web",
-    "blockAuthor": "Blokovať tohto autora",
-    "boostFeed": "Uprednostniť tento zdroj"
+    "blockFeed": "Blokovať zdroj ({{target}})",
+    "blockDomain": "Blokovať web ({{target}})",
+    "blockAuthor": "Blokovať autora ({{target}})",
+    "boostFeed": "Uprednostniť zdroj ({{target}})"
   },
   "rules": {
     "mutedStory_one": "Príbeh je stlmený na {{count}} deň",

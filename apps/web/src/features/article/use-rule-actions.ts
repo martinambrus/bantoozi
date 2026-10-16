@@ -20,6 +20,8 @@ export interface RuleActions {
   blockDomain: (() => void) | null;
   blockAuthor: (() => void) | null;
   boostFeed: (() => void) | null;
+  /** What each action acts on, for its label: the feed title, the hostname and the author. */
+  targets: { feed: string | null; domain: string | null; author: string | null };
 }
 
 /**
@@ -118,6 +120,7 @@ export function useRuleActions(item: ArticleListItem): RuleActions {
 
   return {
     pending,
+    targets: { feed: feed?.title ?? null, domain: hostname, author: author === '' ? null : author },
     muteStory: (days) => once(() => muteStory(days)),
     blockFeed:
       feed === null
