@@ -152,11 +152,13 @@ login without leaking the previous account's UI. Slow classification leaves arti
     articles**. Off is the default; subscribing/importing/adding interests does not enable inference.
     Off sits beside the name; Training and Active go below it, with a line under the feed, so the
     name keeps its width. Every feed, folder and label name carries its full text as a tooltip (D-235).
+  - Each feed name has its favicon, with an RSS fallback for missing, blocked or failed images,
+    in both the sidebar and article list. Image loading follows the feed's remembered preference.
   - Each feed row has a settings (gear) button that opens the same per-feed settings drawer as the
     feeds manager (§5) in place, so hiding or unsubscribing a feed needs no trip to Feeds. Where the
     pointer can hover, the button shows on hover or focus; on touch screens it is always shown.
 - **Collapsed sidebar (desktop):** a button at the top folds the sidebar to a narrow strip: lane
-  icons, feed icons (when the feed's images are allowed) or first letters, and label colours, each
+  icons, feed favicons (when the feed's images are allowed) or an RSS fallback, and label colours, each
   link named and titled in full with its count and state, with a dot for unread. The choice is kept
   per device in browser storage (D-235).
 - **List header:**
@@ -172,7 +174,7 @@ login without leaking the previous account's UI. Slow classification leaves arti
 
 ### 3.2 List item
 
-- **Content:** title, feed icon and title, relative time, excerpt (2 lines; hidden in Simple mode),
+- **Content:** title, feed favicon and title (RSS fallback if missing, blocked or failed), relative time, excerpt (2 lines; hidden in Simple mode),
   thumbnail (lazy).
 - **`topReason` chip**, rendered from the structured `TopReason` (spec 08 §5.1) with localized
   strings: e.g. "EV battery tech · 0.91", "Boosted source", or "Keyword match (model unavailable)".

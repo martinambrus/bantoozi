@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { failure, json } from '../api/fake-fetch.js';
@@ -406,6 +406,30 @@ describe('the reader sidebar on a narrow screen', () => {
   });
 });
 
+describe('sidebar feed favicons', () => {
+  it('shows the favicon beside a feed name and falls back to RSS when it fails or is absent', async () => {
+    await open({
+      path: '/read/for_you',
+      subscriptions: [
+        feed('7', 'Verge', null, {
+          effectiveImagesAllowed: true,
+          feed: { iconUrl: 'https://example.com/favicon.ico' },
+        }),
+        feed('8', 'Weekly', null),
+      ],
+    });
+    const verge = await within(sidebar()).findByRole('link', { name: /^Verge/ });
+    const icon = verge.querySelector('img')!;
+    expect(icon).toHaveAttribute('src', 'https://example.com/favicon.ico');
+    fireEvent.error(icon);
+    expect(verge.querySelector('img')).toBeNull();
+    expect(verge.querySelector('svg')).toBeInTheDocument();
+    const weekly = within(sidebar()).getByRole('link', { name: /^Weekly/ });
+    expect(weekly.querySelector('img')).toBeNull();
+    expect(weekly.querySelector('svg')).toBeInTheDocument();
+  });
+});
+
 describe('the unread numbers of the feeds', () => {
   const verge = (unread: number) =>
     feed('7', 'Verge', null, { unread: { forYou: 0, maybe: 0, everything: 0, new: unread } });
@@ -589,7 +613,7 @@ describe('the collapsed sidebar', () => {
     feed('2', 'Flaky', null, { feed: { status: 'quarantined' } }),
   ];
 
-  it('folds to icons and first letters with full names, and stays folded on this device', async () => {
+  it('folds to feed icons with full names, and stays folded on this device', async () => {
     const { app } = await open({
       path: '/read/for_you',
       counts: { forYou: 3, bookmarks: 2 },
@@ -616,7 +640,7 @@ describe('the collapsed sidebar', () => {
       name: 'verge, Training: selected articles, Unread: 2',
     });
     expect(verge).toHaveAttribute('title', 'verge, Training: selected articles, Unread: 2');
-    expect(verge).toHaveTextContent('V');
+    expect(verge.querySelector('svg')).toBeInTheDocument();
     expect(feeds.getByRole('link', { name: 'Flaky, Having problems' })).toBeVisible();
     expect(await screen.findByRole('link', { name: 'Batteries' })).toHaveAttribute(
       'href',
