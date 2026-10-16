@@ -918,6 +918,7 @@ async function requireAnalysisRequest(
   revision: string,
   requestId: string,
 ): Promise<{ id: string; inputSha: string; snapshot: unknown }> {
+  const clock = await readerReleaseClock(tx);
   const result = await tx.execute<{
     input_sha: string;
     input_snapshot: unknown;
@@ -927,8 +928,10 @@ async function requireAnalysisRequest(
            (r.status IN ('pending', 'running', 'complete')
             AND r.created_at > now() - make_interval(days => ${SELECTION_WINDOW_DAYS})
             AND EXISTS (SELECT 1 FROM subscriptions s
+                         JOIN feed_items fi ON fi.feed_id = s.feed_id AND fi.article_id = r.article_id
                          WHERE s.user_id = r.user_id AND s.feed_id = r.feed_id
                            AND s.inference_mode IN ('training', 'active')
+                           AND ${releasedCarrier(clock)}
                            AND s.inference_version = r.inference_version)) AS current
       FROM analysis_requests r
      WHERE r.id = ${requestId}::uuid AND r.user_id = ${user}::uuid

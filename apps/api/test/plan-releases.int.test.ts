@@ -3,8 +3,10 @@ import {
   cardsMadeFromFeedArticles,
   createDatabase,
   readerReleaseClock,
+  seedQuestionSets,
   withTenants,
 } from '@bantoozi/db';
+import { ALL_QUESTION_SETS, LATEST_QUESTION_SETS } from '@bantoozi/questions';
 import { createArticle, createCard, createFeed, createSubscription } from '@bantoozi/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -158,7 +160,7 @@ it('shows a new subscription immediately and keeps grace articles visible after 
   expect(await load()).toContain(item.id);
 });
 
-async function following(plan: string, timezone = 'UTC') {
+async function following(plan: string, timezone = 'UTC', mode: 'active' | 'training' = 'active') {
   const user = await createTestUser(h);
   await h.owner.query('UPDATE users SET plan = $2, timezone = $3 WHERE id = $1', [
     user.id,
@@ -168,7 +170,7 @@ async function following(plan: string, timezone = 'UTC') {
   await createSubscription(h.owner, {
     userId: user.id,
     feedId,
-    mode: 'active',
+    mode,
     activatedAt: new Date(now.getTime() - 2 * 86400000),
   });
   await h.owner.query(
@@ -602,4 +604,58 @@ it('rounds fetches after subscription grace ends while keeping in-grace arrivals
       res.json().find((row: { feed: { id: string } }) => row.feed.id === feedId).feed.nextUpdateAt,
     ).toBe(`${now.toISOString().slice(0, 11)}${expected}`);
   }
+});
+
+it('rejects a retained selected-request ID when its carrier becomes unreleased after a plan change', async () => {
+  await createDatabase(h.owner).transaction((tx) =>
+    seedQuestionSets(
+      tx,
+      ALL_QUESTION_SETS,
+      Object.fromEntries(
+        Object.entries(LATEST_QUESTION_SETS).map(([kind, set]) => [kind, set.version]),
+      ),
+    ),
+  );
+  const account = await following('premium', 'UTC', 'training');
+  const off = await createFeed(h.owner);
+  await createSubscription(h.owner, { userId: account.user.id, feedId: off.id, mode: 'off' });
+  await h.owner.query(
+    "UPDATE subscriptions SET created_at = $2::timestamptz - interval '1 day' WHERE user_id = $1",
+    [account.user.id, now],
+  );
+  const article = await createArticle(h.owner, {
+    feedIds: [off.id],
+    firstSeenAt: new Date(now.getTime() - 3600000),
+  });
+  await h.owner.query(
+    `INSERT INTO feed_items (feed_id, article_id, guid, first_seen_at)
+     VALUES ($1, $2, 'retained-request', $3)`,
+    [feedId, article.id, new Date(now.getTime() - 60000)],
+  );
+  const selection = await account.api.post(`/subscriptions/${feedId}/analyze`, {
+    articles: [{ id: article.id, contentRevision: article.contentRevision }],
+    expectedInferenceVersion: '1',
+  });
+  expect(selection.statusCode, selection.body).toBe(202);
+  const requestId = selection.json().requests[0].id;
+  await h.owner.query("UPDATE users SET plan = 'free' WHERE id = $1", [account.user.id]);
+  expect((await account.api.get(`/articles/${article.id}`)).statusCode).toBe(200);
+  const payload = {
+    stateVersion: '0',
+    contentRevision: article.contentRevision,
+    rating: 1,
+    analysisRequestId: requestId,
+  };
+  const waiting = await account.api.post(`/articles/${article.id}/rating`, payload);
+  expect(waiting.statusCode, waiting.body).toBe(409);
+  expect(waiting.json().error.details.reason).toBe('obsolete_request');
+  const events = await h.owner.query(
+    'SELECT id FROM feedback_events WHERE user_id = $1 AND article_id = $2',
+    [account.user.id, article.id],
+  );
+  expect(events.rowCount).toBe(0);
+  now = new Date(now);
+  now.setUTCHours(18, 0, 0, 0);
+  const released = await account.api.post(`/articles/${article.id}/rating`, payload);
+  expect(released.statusCode, released.body).toBe(200);
 });

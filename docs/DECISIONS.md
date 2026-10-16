@@ -2560,3 +2560,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   changes, and holds bind to that revision. Returning to an old plan or cadence cannot revive the
   old hold; unrelated label/quota edits retain it. Both invoker triggers change only NEW, avoiding
   cross-account updates and plan/user lock-order inversion. No new executable function grants.
+
+  PR #47 seventh review: explicit analysisRequestId validation also requires the selected carrier to
+  be released under the current plan. A retained ID cannot attach a waiting source's frozen snapshot
+  or fingerprint to feedback merely because another off-mode carrier makes the article accessible.
+  The action returns obsolete_request without recording feedback; the same ID works after release.
