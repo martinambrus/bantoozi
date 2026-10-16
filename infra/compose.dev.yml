@@ -58,6 +58,28 @@ services:
       - lt-models:/home/libretranslate/.local
     logging: *logging
 
+  # A local Ollama server (D-263): `pnpm ollama:dev:up` starts it with the GPU override the host
+  # supports (infra/scripts/ollama-dev.sh) and pulls OLLAMA_MODEL_FAST/STRONG. The apps reach it at
+  # http://localhost:${OLLAMA_DEV_PORT:-11435} (not 11434, where another local Ollama may listen):
+  # set OLLAMA_BASE_URL to that and OLLAMA_API_KEY to any value (a local server ignores it).
+  ollama:
+    image: ollama/ollama:0.35.1@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c
+    profiles: [ollama]
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
+    ports:
+      - '127.0.0.1:${OLLAMA_DEV_PORT:-11435}:11434'
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: [CMD, ollama, list]
+      interval: 5s
+      timeout: 10s
+      retries: 24
+    logging: *logging
+
 volumes:
   pgdata:
   lt-models:
+  ollama-models:

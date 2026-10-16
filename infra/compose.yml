@@ -262,6 +262,29 @@ services:
       - lt-models:/home/libretranslate/.local
     logging: *logging
 
+  # Compose profile `ollama`: a local Ollama server (D-263) for the tier-2 translator and the
+  # Ollama tasks, instead of the cloud API. Point OLLAMA_BASE_URL at http://ollama:11434, set
+  # OLLAMA_API_KEY to any value (a local server ignores it) and OLLAMA_MODEL_FAST/STRONG to models
+  # it serves: deploy.sh pulls them. deploy.sh layers compose.gpu.yml (NVIDIA) or
+  # compose.vulkan.yml (Intel/AMD render nodes) when the host has a usable GPU (BANTOOZI_GPU).
+  ollama:
+    image: ollama/ollama:0.35.1@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c
+    profiles: [ollama]
+    restart: unless-stopped
+    mem_limit: ${OLLAMA_MEM_LIMIT:-8g}
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: [CMD, ollama, list]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+    logging: *logging
+
   # TLS, the static web app, /api/* → api:3000 and the security headers.
   caddy:
     build:
@@ -345,3 +368,4 @@ volumes:
   caddy-config:
   lt-models:
   laya-model:
+  ollama-models:

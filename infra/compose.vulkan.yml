@@ -1,0 +1,11 @@
+# Vulkan GPU override for the `ollama` service (D-263, ported from haive). Layered when there is
+# no usable NVIDIA GPU but the host has DRI render nodes (/dev/dri/renderD*): Intel iGPUs (Iris Xe,
+# Arc) and AMD GPUs. Ollama's Vulkan backend (default since 0.12.6) finds the device; it needs the
+# DRI devices and OLLAMA_IGPU_ENABLE=1 so integrated GPUs are not skipped. If Vulkan cannot start,
+# Ollama falls back to the CPU on its own. Touches only `ollama`.
+services:
+  ollama:
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      OLLAMA_IGPU_ENABLE: '1'
