@@ -1494,9 +1494,9 @@ scope; administrators assign plans. Follow the approved sequence, completing CI 
 | P0 | Stored editable plans, Admin → Plans, per-user plan assignment, live quota and feed interval changes (D-255, migration 0029) | Merged via PR #45 (`3da1270`); CI and Codex clean |
 | P1 | Scheduler floor 60 s and interval-scaled empty-fetch growth | Implemented with P2 (D-256); verification/review underway |
 | P2 | Source throttling protection, learned origin floors, robots delay and fetch budgets | Implemented (D-256, migration 0030); verification/review underway |
-| P3 | Timezone-aligned release boundaries, clamped article access and subscription timing | Pending |
-| P4 | Reader cadence, next-update display, plan badge and localized banner | Pending |
-| P5 | Scheduler/load verification, operational documentation | Pending |
+| P3 | Timezone-aligned release boundaries, clamped article access and subscription timing | Implemented (D-257, migration 0031); verification/review underway |
+| P4 | Reader cadence, next-update display, plan badge, localized banner and feed favicons in sidebar/article rows | Implemented (D-257); verification/review underway |
+| P5 | Scheduler/load verification, operational documentation | Implemented (D-257); verification/review underway |
 
 ---
 

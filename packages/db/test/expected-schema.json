@@ -4012,7 +4012,7 @@
         "length(btrim(label)) > 0",
         "max_feeds >= 0 AND max_cards >= 0 AND max_labels >= 0 AND max_forks >= 0 AND max_rules >= 0 AND opml_max_feeds >= 0 AND backfill_days >= 0 AND invites_on_signup >= 0",
         "min_fetch_interval_s BETWEEN 60 AND 86400",
-        "release_interval_s IS NULL OR release_interval_s >= 0",
+        "release_interval_s IS NULL OR release_interval_s = 0 OR release_interval_s BETWEEN 60 AND 86400",
         "NOT (is_default AND retired_at IS NOT NULL)"
       ],
       "foreignKeys": [],

@@ -218,6 +218,13 @@
       "when": 1792568400001,
       "tag": "0030_source_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792568400002,
+      "tag": "0031_plan_releases",
+      "breakpoints": true
     }
   ]
 }

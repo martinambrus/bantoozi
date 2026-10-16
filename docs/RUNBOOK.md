@@ -777,3 +777,41 @@ robots delay and next aggregate feed slot; the learned floor relaxes by 20 perce
 Plan changes cannot bypass a retained publisher hint on scheduled fetches. Forced operator polls
 retain their due-time override and always respect shared origin protection. The origin feed budget
 is six starts per minute across workers, separate from the existing page/discovery politeness limit.
+
+### Article release timing
+
+The approved cadences are Beta 15 minutes, Admin 5 minutes, Free 6 hours, Basic 1 hour, Plus 30
+minutes, Pro 10 minutes, Max 5 minutes and Premium 1 minute. Migration 0031 activates these where
+no release cadence was set, preserving explicit edits. A new custom plan is immediate until an admin
+sets its release interval; blank/zero is immediate, otherwise use 60..86400 seconds. Migration 0031
+normalizes older unsupported custom values into that range and advances changed plans' versions.
+
+Set the account timezone in Settings. Releases follow local wall time; six-hour windows start at
+00:00/06:00/12:00/18:00. Daylight-saving repeats release twice and nonexistent times are skipped.
+A new subscription gets fifteen minutes of immediate arrivals; those arrivals stay visible when
+grace ends. Background ingestion and analysis run before release so results can be ready at it.
+
+Settings shows the current plan and next account release. Feed settings show the effective cadence,
+its limiting source/publisher when applicable, and an estimated next update. Already fetched waiting
+articles use the next account release even if the next source fetch is later. Otherwise the estimate
+rounds the next eligible fetch up to a release boundary, including source cooldown/budget and
+publisher expiry. A dead or paused feed has no predicted update. Counts, lists, detail and actions
+use the same server boundary; client clocks and future asOf values cannot bring a release forward.
+
+A source throttle should not be reset as a broken feed: 429/503 defer without adding to error or
+quarantine streaks. Shared policies survive long quiet periods, and long Crawl-delay redirect chains
+resume from their deferred target. Admin-only Refresh now retains source protection and the account's
+release rules. Billing and payment are not implemented; administrators assign plans.
+
+Reproduce source load protection with local fixture HTTP and isolated test databases:
+
+```sh
+pnpm --filter @bantoozi/worker exec vitest run --config vitest.int.config.ts test/plan-velocity-load.int.test.ts
+pnpm --filter @bantoozi/db exec vitest run --config vitest.int.config.ts test/ingest/origin-limiter.int.test.ts
+pnpm --filter @bantoozi/api exec vitest run --config vitest.int.config.ts test/plan-releases.int.test.ts
+```
+
+The load check schedules 100 due one-minute feeds through two worker pools; the shared origin budget
+admits one feed start during the initial burst and defers the others without changing their health.
+The database burst check independently verifies the exact shared slot across 100 concurrent
+reservations. These checks use no live publisher or provider calls.

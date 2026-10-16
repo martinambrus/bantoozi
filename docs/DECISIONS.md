@@ -2483,3 +2483,37 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   PR #46 eighth review: response Cache-Control hints also stay out of the adaptive base, so a
   later 304 that lowers/removes max-age speeds up naturally. The regression follows the real
   200 → 304 → 304 stored state without resetting fetch_interval_s between responses.
+
+- D-257: 2026-10-16 (approved plan-velocity P3/P4/P5; owner explicitly chose Beta release
+  boundaries) — Migration 0031 activates beta's 900-second, admin's 300-second and Free–Premium's
+  approved release cadences where still unset. Explicit administrator choices stay; old unsupported
+  custom values normalize into 60..86400 seconds before the CHECK is tightened. Null/zero remains
+  immediate. Every changed plan advances its version. Local wall-clock releases align at midnight;
+  DST repeats release twice and nonexistent boundaries are skipped. A fractional-hour timezone is
+  handled without UTC rounding.
+  The API binds one server clock per tenant transaction, caps client asOf at that clock, and applies
+  the stored plan to each carrying subscription before inference projection/folding. A carrier's
+  cutoff is least(asOf, greatest(release_at, created_at + 15 minutes)): new subscriptions see their
+  first fetch immediately, and grace articles stay visible after grace expires. List, counts,
+  unread badges, calibration, detail/cluster context, reader actions, explicit analysis selections,
+  rule story references and card article inputs share release-aware access. Automatic ranking rows
+  grant no access; personal bookmarks remain retrievable. Background ranking/analysis still runs
+  on arrival. There is no per-user article materialization or release queue.
+  Me reports localized plan metadata and the next account boundary; subscription timing reports
+  the effective max(plan, learned/robots source floor, publisher/cache hint), its reason and an
+  estimated fetch rounded up to the user's release boundary. Source cooldown/budget slots and
+  retained publisher expiry constrain that estimate. Already fetched waiting articles instead
+  use the next account boundary even when the next source fetch is later. Shared fetch timestamps are capped at the
+  subscription cutoff; dead/paused feeds have no next update. One batch reads all origin policies.
+  The web shows the plan badge, localized cadence/next time in Settings and feed settings/rows,
+  refreshes timing at boundaries, and uses the existing new-article interaction with “Your feeds
+  updated” wording (en/sk). Older offline DTOs may omit timing metadata. Billing stays out of scope
+  and Refresh now remains admin-only.
+  Verification includes shared-feed users on different plans, immediate plan changes, forged future
+  asOf, fractional timezones and DST, grace retention, direct/action/analysis/draft/rule/cluster access,
+  localized UI and boundary polling. A fixture load check schedules 100 due one-minute feeds through
+  two worker pools and keeps HTTP starts within the shared budget; deferred feeds stay healthy.
+
+  Owner-requested reader adjustment: sidebar feeds and article feed names use the same favicon
+  with an RSS fallback for missing/blocked/broken images. A feed-advertised icon takes precedence;
+  otherwise try the website's /favicon.ico. Existing remembered image permissions still apply.
