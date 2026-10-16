@@ -153,7 +153,8 @@ login without leaking the previous account's UI. Slow classification leaves arti
     Off sits beside the name; Training and Active go below it, with a line under the feed, so the
     name keeps its width. Every feed, folder and label name carries its full text as a tooltip (D-235).
   - Each feed name has its favicon, with an RSS fallback for missing, blocked or failed images,
-    in both the sidebar and article list. Image loading follows the feed's remembered preference.
+    in both the sidebar and article list. When the feed advertises no icon, try the website's
+    `/favicon.ico`. Image loading follows the feed's remembered preference.
   - Each feed row has a settings (gear) button that opens the same per-feed settings drawer as the
     feeds manager (§5) in place, so hiding or unsubscribing a feed needs no trip to Feeds. Where the
     pointer can hover, the button shows on hover or focus; on touch screens it is always shown.

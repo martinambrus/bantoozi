@@ -2,6 +2,7 @@ import {
   ExplainSchema,
   RANK_WINDOW_DAYS,
   effectiveImagesAllowed,
+  feedIconUrl,
   type ArticleAnalysis,
   type ArticleCluster,
   type ArticleDetail,
@@ -978,6 +979,7 @@ type ItemRow = {
   feed_id: string | null;
   feed_title: string | null;
   feed_icon: string | null;
+  feed_site_url: string | null;
   sub_mode: 'off' | 'training' | 'active' | null;
   ua_lane: Lane | null;
   tier: number | null;
@@ -1151,7 +1153,7 @@ async function loadItemRows(
            left(a.excerpt, 300) AS excerpt, a.image_url, a.lang,
            a.content_revision::text AS content_revision, a.pipeline_state,
            f.id::text AS feed_id, coalesce(s.title_override, f.title, f.url) AS feed_title,
-           f.icon_url AS feed_icon, s.inference_mode AS sub_mode,
+           f.icon_url AS feed_icon, f.site_url AS feed_site_url, s.inference_mode AS sub_mode,
            ua.lane AS ua_lane, ua.tier, ua.p_like, ua.rules_fired, ua.explain,
            ua.label_ids::text[] AS label_ids, ua.label_suggestions::text[] AS label_suggestions,
            ua.rating, ua.reason, ua.read_at, ua.bookmarked_at, ua.archived_at,
@@ -1205,7 +1207,11 @@ async function loadItemRows(
         feed:
           row.feed_id === null
             ? null
-            : { id: row.feed_id, title: row.feed_title ?? '', iconUrl: row.feed_icon },
+            : {
+                id: row.feed_id,
+                title: row.feed_title ?? '',
+                iconUrl: feedIconUrl(row.feed_icon, row.feed_site_url),
+              },
         author: row.author,
         publishedAt: iso(row.published_at),
         firstSeenAt: context.arrival.toISOString(),

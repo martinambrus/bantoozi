@@ -23,6 +23,7 @@ import {
 import {
   AppError,
   effectiveImagesAllowed,
+  feedIconUrl,
   isAppErrorCode,
   readUserPreferences,
   type JobSender,
@@ -55,7 +56,7 @@ export function subscriptionDto(
       url: row.feed.url,
       siteUrl: row.feed.siteUrl,
       title: row.feed.title,
-      iconUrl: row.feed.iconUrl,
+      iconUrl: feedIconUrl(row.feed.iconUrl, row.feed.siteUrl),
       status: row.feed.status,
       lastSuccessAt: row.feed.lastSuccessAt?.toISOString() ?? null,
       lastErrorCode: row.feed.lastErrorCode,
