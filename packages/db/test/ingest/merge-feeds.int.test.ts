@@ -935,4 +935,19 @@ describe('mergeFeeds last_seen_at (D-253)', () => {
     );
     expect(rows.rows[0]!.last_seen_at.getTime()).toBeCloseTo(daysAgo(1).getTime(), -4);
   });
+
+  it("drops the survivor's validators, so its next fetch is a full one", async () => {
+    const src = await createFeed(ctx.owner);
+    const dst = await createFeed(ctx.owner);
+    await ctx.owner.query(
+      `UPDATE feeds SET etag = '"v1"', last_modified = 'Wed, 14 Oct 2026 10:00:00 GMT' WHERE id = $1`,
+      [dst.id],
+    );
+    await merge(src.id, dst.id);
+    const rows = await ctx.owner.query<{ etag: string | null; last_modified: string | null }>(
+      'SELECT etag, last_modified FROM feeds WHERE id = $1',
+      [dst.id],
+    );
+    expect(rows.rows[0]).toEqual({ etag: null, last_modified: null });
+  });
 });

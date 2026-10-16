@@ -2396,6 +2396,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   `INSERT … ON CONFLICT DO NOTHING`, so a first engagement never needs a stronger lock on the article row (no deadlock with
   readers holding FOR SHARE), and backfilled in migration 0028 from past events and current reader state.
   An article merge carries the source's marker to the survivor (the earlier time wins) before the source is deleted.
+  A feed merge clears the survivor's validators, so the next fetch is a full one and the merged associations' last
+  sightings never enter the survivor's 304 cohort.
 - D-254: 2026-10-16 (task #11; resolves D-70's open repair) — Selections are frozen. Creating or forking a card ran
   `card.backfill`, which queued match rows for recently selected articles that `analysis.process` had answered from shared
   facets without advancing their pipeline state; nothing ever claims rows on an extracted/translated article, D-70's

@@ -356,6 +356,11 @@ export async function mergeFeeds(
        SET merged_into_id = ${dst}, status = 'dead', etag = NULL, last_modified = NULL,
            updated_at = now()
      WHERE id = ${src}`);
+  // The survivor now carries the source's associations with their last sightings, which its next 304
+  // must not treat as listed by its own last response (D-253): drop its validators so the next fetch is
+  // a full one that re-stamps exactly the items it lists.
+  await tx.execute(sql`
+    UPDATE feeds SET etag = NULL, last_modified = NULL, updated_at = now() WHERE id = ${dst}`);
   const feedIds = sql.param([sourceId, survivorId]);
   await tx.execute(sql`
     SELECT refresh_feed_subscribers(${feedIds}::bigint[],
