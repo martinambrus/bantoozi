@@ -413,10 +413,41 @@ async function insertAssociation(
   guid: string | null,
 ): Promise<boolean> {
   const result = await tx.execute(sql`
-    INSERT INTO feed_items (feed_id, article_id, guid, first_seen_at)
-    VALUES (${feedId}::bigint, ${articleId}::bigint, ${guid}::text, statement_timestamp())
+    INSERT INTO feed_items (feed_id, article_id, guid, first_seen_at, last_seen_at)
+    VALUES (${feedId}::bigint, ${articleId}::bigint, ${guid}::text, statement_timestamp(),
+            statement_timestamp())
     ON CONFLICT (feed_id, article_id) DO NOTHING`);
   return result.rowCount === 1;
+}
+
+/**
+ * A 304 Not Modified: the feed is unchanged, so the items of its last successful fetch are still
+ * listed (D-253). `since` is the start of that fetch (`feeds.last_success_at`): every item it listed
+ * was stamped at or after it, an item that had dropped out was last stamped by an earlier fetch.
+ *
+ * Takes the article row locks `house.purge-articles` takes (`FOR UPDATE`, ascending id, so two
+ * stampers and a purge cannot deadlock) before stamping: a purge that already holds an article
+ * finishes first and the stamp skips what it deleted, and one that comes later skips the locked row.
+ * Needs the caller's transaction, which holds the locks until it commits.
+ */
+export async function markFeedItemsStillListed(
+  tx: Transaction,
+  feedId: string,
+  since: Date | null,
+): Promise<void> {
+  if (since === null) return;
+  const locked = await tx.execute<{ id: string }>(sql`
+    SELECT a.id::text AS id FROM articles a
+     WHERE a.id IN (SELECT fi.article_id FROM feed_items fi
+                     WHERE fi.feed_id = ${feedId}::bigint
+                       AND fi.last_seen_at >= ${since.toISOString()}::timestamptz)
+     ORDER BY a.id
+       FOR UPDATE OF a`);
+  if (locked.rows.length === 0) return;
+  await tx.execute(sql`
+    UPDATE feed_items SET last_seen_at = statement_timestamp()
+     WHERE feed_id = ${feedId}::bigint AND last_seen_at >= ${since.toISOString()}::timestamptz
+       AND article_id = ANY(${sql.param(locked.rows.map((row) => row.id))}::bigint[])`);
 }
 
 /** Continue with a found, locked article (spec 03 §7 steps 2–3, 6). */
@@ -449,6 +480,14 @@ async function ingestFound(
       options.autoAnalysisDailyCap ?? null,
       options.now ?? new Date(),
     );
+  }
+  if (!newAssociation) {
+    // A known item the feed lists now is seen now (D-253), inside the transaction that holds the
+    // article lock: the purge locks the article too, so it cannot delete a listed item between
+    // its sighting and this stamp.
+    await tx.execute(sql`
+      UPDATE feed_items SET last_seen_at = statement_timestamp()
+       WHERE feed_id = ${input.feedId}::bigint AND article_id = ${articleId}::bigint`);
   }
   if (!newAssociation && guid !== null) {
     // A pair keeps its first non-null GUID; alternate GUIDs arriving with the same URL are ignored.

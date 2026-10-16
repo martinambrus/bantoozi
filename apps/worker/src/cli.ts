@@ -5,6 +5,7 @@ import {
   ensureDevUser,
   feedArticlesAwaitingExtraction,
   feedOverview,
+  purgeReport,
   resolveLiveFeedId,
   subscribeToFeed,
   workerOutbox,
@@ -30,6 +31,7 @@ import { createHandlers } from './handlers/index.js';
  * - `feeds:fetch-now <feedId>`: fetch and ingest the feed now (forced, also when it is paused, dead
  *   or unsubscribed; D-23), then run the pending extractions of its articles inline;
  * - `feeds:show <feedId>`: the feed's bookkeeping and newest articles;
+ * - `purge-report`: what `house.purge-articles` would delete now, by rule (D-253); deletes nothing;
  * - `credentials:status|stage|validate|activate|revoke|rewrap`: provider credentials (M2-T3,
  *   spec 04 §1.2; see credentials/commands.ts). Keys are read from stdin only.
  */
@@ -191,6 +193,23 @@ program
         return;
       }
       printOverview(overview);
+    });
+  });
+
+program
+  .command('purge-report')
+  .description('count what house.purge-articles would delete now, by rule (deletes nothing)')
+  .action(async () => {
+    await withRuntime(async ({ db }) => {
+      const counts = await db.transaction((tx) => purgeReport(tx, { now: new Date() }));
+      process.stdout.write(
+        [
+          `unopened21 ${counts.unopened21}`,
+          `dislike ${counts.dislike}`,
+          `normal90 ${counts.normal90}`,
+          '',
+        ].join('\n'),
+      );
     });
   });
 

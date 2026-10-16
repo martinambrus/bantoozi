@@ -6,6 +6,7 @@ import {
   feedItems7d,
   feedRecentPublishedAt,
   ingestItem,
+  markFeedItemsStillListed,
   loadFeedForFetch,
   recordFeedFetch,
   refreshFeedLangHint,
@@ -327,6 +328,9 @@ async function recordOutcome(
   lock.assertHeld();
   await deps.db.transaction(async (tx) => {
     await recordFeedFetch(tx, feedId, { schedule });
+    // An unchanged feed still lists the items of its last successful fetch (D-253).
+    if (outcome.kind === 'not_modified')
+      await markFeedItemsStillListed(tx, feedId, feed.lastSuccessAt);
     if (outcome.kind === 'not_modified' && feed.langHint === null) {
       await refreshFeedLangHint(tx, feedId);
     }

@@ -912,3 +912,42 @@ describe('mergeFeeds chains and guards (spec 03 §9, spec 02 §3.3)', () => {
     ]);
   });
 });
+
+describe('mergeFeeds last_seen_at (D-253)', () => {
+  it('keeps the greatest last_seen_at of a collapsed association', async () => {
+    const src = await createFeed(ctx.owner);
+    const dst = await createFeed(ctx.owner);
+    const article = await createArticle(ctx.owner, { feedIds: [], firstSeenAt: daysAgo(30) });
+    await carry(src.id, article.id, 'ls-src', daysAgo(30));
+    await carry(dst.id, article.id, 'ls-dst', daysAgo(29));
+    await ctx.owner.query(
+      'UPDATE feed_items SET last_seen_at = $3 WHERE feed_id = $1 AND article_id = $2',
+      [src.id, article.id, daysAgo(1)],
+    );
+    await ctx.owner.query(
+      'UPDATE feed_items SET last_seen_at = $3 WHERE feed_id = $1 AND article_id = $2',
+      [dst.id, article.id, daysAgo(20)],
+    );
+    await merge(src.id, dst.id);
+    const rows = await ctx.owner.query<{ last_seen_at: Date }>(
+      'SELECT last_seen_at FROM feed_items WHERE feed_id = $1 AND article_id = $2',
+      [dst.id, article.id],
+    );
+    expect(rows.rows[0]!.last_seen_at.getTime()).toBeCloseTo(daysAgo(1).getTime(), -4);
+  });
+
+  it("drops the survivor's validators, so its next fetch is a full one", async () => {
+    const src = await createFeed(ctx.owner);
+    const dst = await createFeed(ctx.owner);
+    await ctx.owner.query(
+      `UPDATE feeds SET etag = '"v1"', last_modified = 'Wed, 14 Oct 2026 10:00:00 GMT' WHERE id = $1`,
+      [dst.id],
+    );
+    await merge(src.id, dst.id);
+    const rows = await ctx.owner.query<{ etag: string | null; last_modified: string | null }>(
+      'SELECT etag, last_modified FROM feeds WHERE id = $1',
+      [dst.id],
+    );
+    expect(rows.rows[0]).toEqual({ etag: null, last_modified: null });
+  });
+});

@@ -221,6 +221,7 @@ export async function mergeArticles(
     bodyImageCount: survivorBody.bodyImageCount,
   });
 
+  await moveEngagement(tx, sourceId, targetId);
   await deleteSource(tx, sourceId);
   await addSourceKeyAlias(tx, source.urlKey, targetId, options.reason);
   await reconcileClusters(tx, [source.clusterId, target.clusterId]);
@@ -466,9 +467,10 @@ async function moveFeedItems(
        USING feed_items t
        WHERE s.article_id = ${sourceId}::bigint AND t.article_id = ${targetId}::bigint
          AND t.feed_id = s.feed_id
-      RETURNING s.feed_id, s.guid, s.first_seen_at, s.over_cap_limit)
+      RETURNING s.feed_id, s.guid, s.first_seen_at, s.last_seen_at, s.over_cap_limit)
     UPDATE feed_items t
        SET first_seen_at = least(t.first_seen_at, dup.first_seen_at),
+           last_seen_at = greatest(t.last_seen_at, dup.last_seen_at),
            guid = CASE WHEN dup.first_seen_at < t.first_seen_at THEN coalesce(dup.guid, t.guid)
                        ELSE coalesce(t.guid, dup.guid) END,
            over_cap_limit = CASE WHEN t.over_cap_limit IS NULL OR dup.over_cap_limit IS NULL
@@ -866,6 +868,15 @@ function mergedVideo(source: LockedArticle, target: LockedArticle): MediaSignalU
  * Delete the source once nothing that would cascade reader or identity data still references it.
  * The locks keep new references out, so a remaining row means a writer bypassed them: abort.
  */
+/** The survivor keeps the earlier engagement marker of the two (D-253); the source's goes with it. */
+async function moveEngagement(tx: Transaction, sourceId: string, targetId: string): Promise<void> {
+  await tx.execute(sql`
+    INSERT INTO article_engagement (article_id, engaged_at)
+    SELECT ${targetId}::bigint, engaged_at FROM article_engagement WHERE article_id = ${sourceId}::bigint
+    ON CONFLICT (article_id) DO UPDATE
+      SET engaged_at = least(article_engagement.engaged_at, EXCLUDED.engaged_at)`);
+}
+
 async function deleteSource(tx: Transaction, sourceId: string): Promise<void> {
   const left = await tx.execute<{ n: number }>(sql`
     SELECT ((SELECT count(*) FROM feed_items WHERE article_id = ${sourceId}::bigint)

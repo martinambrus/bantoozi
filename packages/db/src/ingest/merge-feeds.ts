@@ -290,6 +290,7 @@ export async function mergeFeeds(
   await tx.execute(sql`
     UPDATE feed_items t
        SET first_seen_at = least(t.first_seen_at, s.first_seen_at),
+           last_seen_at = greatest(t.last_seen_at, s.last_seen_at),
            guid = coalesce(t.guid,
                            CASE WHEN NOT EXISTS (SELECT 1 FROM feed_items o
                                                   WHERE o.feed_id = ${dst} AND o.guid IS NOT NULL
@@ -355,6 +356,11 @@ export async function mergeFeeds(
        SET merged_into_id = ${dst}, status = 'dead', etag = NULL, last_modified = NULL,
            updated_at = now()
      WHERE id = ${src}`);
+  // The survivor now carries the source's associations with their last sightings, which its next 304
+  // must not treat as listed by its own last response (D-253): drop its validators so the next fetch is
+  // a full one that re-stamps exactly the items it lists.
+  await tx.execute(sql`
+    UPDATE feeds SET etag = NULL, last_modified = NULL, updated_at = now() WHERE id = ${dst}`);
   const feedIds = sql.param([sourceId, survivorId]);
   await tx.execute(sql`
     SELECT refresh_feed_subscribers(${feedIds}::bigint[],

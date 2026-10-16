@@ -80,7 +80,8 @@ export class RetentionWorld {
     const id = result.rows[0]!.id;
     for (const arrival of arrivals) {
       await this.owner.query(
-        `INSERT INTO feed_items (feed_id, article_id, guid, first_seen_at) VALUES ($1, $2, $3, $4)`,
+        `INSERT INTO feed_items (feed_id, article_id, guid, first_seen_at, last_seen_at)
+         VALUES ($1, $2, $3, $4, $4)`,
         [arrival.feedId, id, `guid-${n}-${arrival.feedId}`, arrival.at],
       );
     }

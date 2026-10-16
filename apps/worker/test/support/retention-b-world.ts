@@ -137,8 +137,9 @@ export class RetentionBWorld {
   /** Another user's bookmark of an article a subscribed feed of theirs carries. */
   async alsoSave(userId: string, feedId: string, articleId: string): Promise<void> {
     await this.owner.query(
-      `INSERT INTO feed_items (feed_id, article_id, guid, first_seen_at)
-       SELECT $1::bigint, $2::bigint, 'guid-' || $1::text || '-' || $2::text, max(first_seen_at)
+      `INSERT INTO feed_items (feed_id, article_id, guid, first_seen_at, last_seen_at)
+       SELECT $1::bigint, $2::bigint, 'guid-' || $1::text || '-' || $2::text, max(first_seen_at),
+              max(last_seen_at)
          FROM feed_items WHERE article_id = $2::bigint`,
       [feedId, articleId],
     );

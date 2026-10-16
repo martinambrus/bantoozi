@@ -2372,6 +2372,32 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   active enrich set, pinned primary model; `isReusableFacet`, shared with `article.enrich`), since an explicit analysis on
   another feed leaves the pipeline state behind. Admission cannot compute the enrich input-state hash, so an article whose
   translation changed after that analysis is admitted without a slot and its enrich re-runs Call A (rare; accepted).
+- D-253: 2026-10-16 (owner request, volume review) — Shorter retention for never-engaged articles and dislikes, with a
+  last-seen clock. A high-volume feed (Bazos, ~4.5k items/day) held ~400k articles and ~21M `card_answers` at the 90-day rule,
+  and every rated article (bulk dislikes too) was kept forever. Now: articles nobody engaged with (opened, individually read,
+  rated, bookmarked, labelled; a bulk mark-read does not count) are purged 21 days after arrival (rank window 14 + 7);
+  dislike-only articles after `max(180, model.historyDays)` days from the latest dislike (the training window, so the learner
+  and the D-241/D-244 agreement lose nothing); likes, bookmarks and labels still protect while they exist; analysis requests
+  (180 days), eval references and snapshots still hold; feeds used by evaluation keep 90 days. Arrival becomes the latest
+  `feed_items.last_seen_at` (migration 0028; bumped for every known item a fetch lists, and on a 304 for the items the last
+  successful fetch listed), so an item a feed still lists is never purged and re-ingested as new — a flaw the 90-day rule
+  already had. Existing rows are backfilled to their feed's last successful fetch (assuming "still listed" delays a purge
+  once; the first 200 re-stamps exactly the listed items). The purge logs per-rule counts and `pnpm worker-cli
+  purge-report` is a dry run. Spec 02, 11 §5, RUNBOOK.
+  PR #44 review: a fetch stamps `last_seen_at` for a known item inside that item's ingestion transaction (which holds the
+  article lock), so a concurrent purge can never delete an item between its sighting and its stamp; feed and article
+  merges keep the later `last_seen_at`; and the 21-versus-90-day decision also counts past engagement in `feedback_events`
+  (read, open, bookmark, label, rate — not `mark_read`), so an article whose bookmark, label or rating was later cleared
+  keeps the 90-day rule. Indefinite protection and the dislike window still use current state.
+  Second review: a 304 locks the listed articles (ascending id, as the purge does) before stamping them; a `prompt_answer`
+  rating counts as engagement; and because `feedback_events` expire after 365 days, engagement is kept durably in
+  `article_engagement(article_id PK → articles ON DELETE CASCADE, engaged_at)`, filled by a SECURITY DEFINER trigger on
+  `feedback_events` (rate, prompt_answer, open, read, dwell, bookmark, label, hide — not mark_read, un-*, undo) with
+  `INSERT … ON CONFLICT DO NOTHING`, so a first engagement never needs a stronger lock on the article row (no deadlock with
+  readers holding FOR SHARE), and backfilled in migration 0028 from past events and current reader state.
+  An article merge carries the source's marker to the survivor (the earlier time wins) before the source is deleted.
+  A feed merge clears the survivor's validators, so the next fetch is a full one and the merged associations' last
+  sightings never enter the survivor's 304 cohort.
 - D-254: 2026-10-16 (task #11; resolves D-70's open repair) — Selections are frozen. Creating or forking a card ran
   `card.backfill`, which queued match rows for recently selected articles that `analysis.process` had answered from shared
   facets without advancing their pipeline state; nothing ever claims rows on an extracted/translated article, D-70's
