@@ -637,6 +637,27 @@ describe('ArticleDetail rules', () => {
     expect(await screen.findByText('Rule removed')).toBeInTheDocument();
   });
 
+  it('names and blocks the registrable domain of a subdomain, as the API stores it', async () => {
+    const item = makeItem({ url: 'https://news.example.co.uk/a/1', domain: 'example.co.uk' });
+    const { user, calls } = renderDetail(
+      item,
+      {},
+      {
+        routes: ruleRoutes('block_domain', 'example.co.uk'),
+      },
+    );
+    await user.click(await screen.findByRole('button', { name: 'More' }));
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Block website (example.co.uk)' }),
+    );
+
+    expect(bodyOf(calls('POST', '/rules')[0]!)).toEqual({
+      kind: 'block_domain',
+      value: 'example.co.uk',
+    });
+    expect(await screen.findByText('Blocked website: example.co.uk')).toBeInTheDocument();
+  });
+
   it('leaves out the actions that need data the article does not have', async () => {
     const { user } = renderDetail(makeItem({ url: null, author: null }));
     await user.click(await screen.findByRole('button', { name: 'More' }));

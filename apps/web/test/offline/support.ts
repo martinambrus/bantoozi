@@ -100,6 +100,7 @@ export function fullItem(overrides: Partial<ArticleListItem> = {}): ArticleListI
     id: '101',
     title: 'Solid-state batteries reach the pilot line',
     url: 'https://example.test/articles/101',
+    domain: 'example.test',
     feed: { id: '7', title: 'Example Weekly', iconUrl: 'https://example.test/icon.png' },
     author: 'Ada Lovelace',
     publishedAt: '2026-05-31T08:00:00.000Z',

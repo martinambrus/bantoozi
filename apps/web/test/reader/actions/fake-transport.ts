@@ -182,6 +182,7 @@ export function makeItem(overrides: Partial<ArticleListItem> = {}): ArticleListI
     id: '101',
     title: 'Solid-state batteries reach the pilot line',
     url: 'https://example.test/articles/101',
+    domain: 'example.test',
     feed: { id: '7', title: 'Example Weekly', iconUrl: null },
     author: null,
     publishedAt: '2026-05-31T08:00:00.000Z',

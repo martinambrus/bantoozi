@@ -5800,6 +5800,11 @@
                             "nullable": true,
                             "type": "string"
                           },
+                          "domain": {
+                            "default": null,
+                            "nullable": true,
+                            "type": "string"
+                          },
                           "feed": {
                             "nullable": true,
                             "type": "object",
@@ -6160,6 +6165,7 @@
                           "id",
                           "title",
                           "url",
+                          "domain",
                           "feed",
                           "author",
                           "publishedAt",
@@ -6397,6 +6403,11 @@
                             "nullable": true,
                             "type": "string"
                           },
+                          "domain": {
+                            "default": null,
+                            "nullable": true,
+                            "type": "string"
+                          },
                           "feed": {
                             "nullable": true,
                             "type": "object",
@@ -6757,6 +6768,7 @@
                           "id",
                           "title",
                           "url",
+                          "domain",
                           "feed",
                           "author",
                           "publishedAt",
@@ -6849,6 +6861,11 @@
                       "type": "string"
                     },
                     "url": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "domain": {
+                      "default": null,
                       "nullable": true,
                       "type": "string"
                     },
@@ -7657,6 +7674,7 @@
                     "id",
                     "title",
                     "url",
+                    "domain",
                     "feed",
                     "author",
                     "publishedAt",
@@ -7767,6 +7785,11 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "domain": {
+                          "default": null,
+                          "nullable": true,
+                          "type": "string"
+                        },
                         "feed": {
                           "nullable": true,
                           "type": "object",
@@ -8127,6 +8150,7 @@
                         "id",
                         "title",
                         "url",
+                        "domain",
                         "feed",
                         "author",
                         "publishedAt",
@@ -8236,6 +8260,11 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "domain": {
+                          "default": null,
+                          "nullable": true,
+                          "type": "string"
+                        },
                         "feed": {
                           "nullable": true,
                           "type": "object",
@@ -8596,6 +8625,7 @@
                         "id",
                         "title",
                         "url",
+                        "domain",
                         "feed",
                         "author",
                         "publishedAt",
@@ -8705,6 +8735,11 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "domain": {
+                          "default": null,
+                          "nullable": true,
+                          "type": "string"
+                        },
                         "feed": {
                           "nullable": true,
                           "type": "object",
@@ -9065,6 +9100,7 @@
                         "id",
                         "title",
                         "url",
+                        "domain",
                         "feed",
                         "author",
                         "publishedAt",
@@ -9174,6 +9210,11 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "domain": {
+                          "default": null,
+                          "nullable": true,
+                          "type": "string"
+                        },
                         "feed": {
                           "nullable": true,
                           "type": "object",
@@ -9534,6 +9575,7 @@
                         "id",
                         "title",
                         "url",
+                        "domain",
                         "feed",
                         "author",
                         "publishedAt",
@@ -9649,6 +9691,11 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "domain": {
+                          "default": null,
+                          "nullable": true,
+                          "type": "string"
+                        },
                         "feed": {
                           "nullable": true,
                           "type": "object",
@@ -10009,6 +10056,7 @@
                         "id",
                         "title",
                         "url",
+                        "domain",
                         "feed",
                         "author",
                         "publishedAt",
@@ -10164,6 +10212,11 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "domain": {
+                          "default": null,
+                          "nullable": true,
+                          "type": "string"
+                        },
                         "feed": {
                           "nullable": true,
                           "type": "object",
@@ -10524,6 +10577,7 @@
                         "id",
                         "title",
                         "url",
+                        "domain",
                         "feed",
                         "author",
                         "publishedAt",
@@ -10663,6 +10717,11 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "domain": {
+                          "default": null,
+                          "nullable": true,
+                          "type": "string"
+                        },
                         "feed": {
                           "nullable": true,
                           "type": "object",
@@ -11023,6 +11082,7 @@
                         "id",
                         "title",
                         "url",
+                        "domain",
                         "feed",
                         "author",
                         "publishedAt",
@@ -11135,6 +11195,11 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "domain": {
+                          "default": null,
+                          "nullable": true,
+                          "type": "string"
+                        },
                         "feed": {
                           "nullable": true,
                           "type": "object",
@@ -11495,6 +11560,7 @@
                         "id",
                         "title",
                         "url",
+                        "domain",
                         "feed",
                         "author",
                         "publishedAt",
@@ -11600,6 +11666,11 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "domain": {
+                          "default": null,
+                          "nullable": true,
+                          "type": "string"
+                        },
                         "feed": {
                           "nullable": true,
                           "type": "object",
@@ -11960,6 +12031,7 @@
                         "id",
                         "title",
                         "url",
+                        "domain",
                         "feed",
                         "author",
                         "publishedAt",
@@ -12073,6 +12145,11 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "domain": {
+                          "default": null,
+                          "nullable": true,
+                          "type": "string"
+                        },
                         "feed": {
                           "nullable": true,
                           "type": "object",
@@ -12433,6 +12510,7 @@
                         "id",
                         "title",
                         "url",
+                        "domain",
                         "feed",
                         "author",
                         "publishedAt",
@@ -12546,6 +12624,11 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "domain": {
+                          "default": null,
+                          "nullable": true,
+                          "type": "string"
+                        },
                         "feed": {
                           "nullable": true,
                           "type": "object",
@@ -12906,6 +12989,7 @@
                         "id",
                         "title",
                         "url",
+                        "domain",
                         "feed",
                         "author",
                         "publishedAt",
@@ -13021,6 +13105,11 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "domain": {
+                          "default": null,
+                          "nullable": true,
+                          "type": "string"
+                        },
                         "feed": {
                           "nullable": true,
                           "type": "object",
@@ -13381,6 +13470,7 @@
                         "id",
                         "title",
                         "url",
+                        "domain",
                         "feed",
                         "author",
                         "publishedAt",
@@ -13791,6 +13881,11 @@
                             "nullable": true,
                             "type": "string"
                           },
+                          "domain": {
+                            "default": null,
+                            "nullable": true,
+                            "type": "string"
+                          },
                           "feed": {
                             "nullable": true,
                             "type": "object",
@@ -14151,6 +14246,7 @@
                           "id",
                           "title",
                           "url",
+                          "domain",
                           "feed",
                           "author",
                           "publishedAt",
@@ -14253,6 +14349,11 @@
                             "nullable": true,
                             "type": "string"
                           },
+                          "domain": {
+                            "default": null,
+                            "nullable": true,
+                            "type": "string"
+                          },
                           "feed": {
                             "nullable": true,
                             "type": "object",
@@ -14613,6 +14714,7 @@
                           "id",
                           "title",
                           "url",
+                          "domain",
                           "feed",
                           "author",
                           "publishedAt",
