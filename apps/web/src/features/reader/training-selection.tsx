@@ -71,7 +71,14 @@ function BulkActions({
     const dislikes: PendingDislike[] = [];
     const ratingBatchId = crypto.randomUUID();
     for (const item of items) {
-      const before = store.view(item).rating;
+      let before = store.view(item).rating;
+      if (rating === 1) {
+        const held = reasonBar.heldFor(item.id);
+        if (held !== null) {
+          reasonBar.undo(item.id);
+          before = held.before;
+        }
+      }
       if (before === rating) continue;
       const handle = store.dispatch(
         item,

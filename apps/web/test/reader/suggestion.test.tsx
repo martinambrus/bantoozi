@@ -471,6 +471,113 @@ describe('when there is no offer', () => {
     expect(app.toasts.getSnapshot()).toHaveLength(1);
   });
 
+  it.each([undefined, 'another-batch'])(
+    'drops a delayed batch offer after an unrelated rating from %s',
+    async (nextBatchId) => {
+      const first = makeItem();
+      const second = makeItem({ id: '102', title: 'Another article' });
+      const list = deferred<Response>();
+      function Ratings() {
+        const store = useReaderActions();
+        return (
+          <>
+            <button
+              onClick={() =>
+                store.dispatch(first, { type: 'rate', rating: 1 }, { ratingBatchId: 'first-batch' })
+              }
+            >
+              First rating
+            </button>
+            <button
+              onClick={() =>
+                store.dispatch(
+                  second,
+                  { type: 'rate', rating: 1 },
+                  nextBatchId === undefined ? {} : { ratingBatchId: nextBatchId },
+                )
+              }
+            >
+              Next rating
+            </button>
+          </>
+        );
+      }
+      const app = renderReader(<Ratings />, {
+        routes: {
+          'POST /articles/101/rating': rates(first, YES),
+          'POST /articles/102/rating': rates(second, null),
+          'GET /cards': () => list.promise,
+        },
+      });
+      apps.push(app);
+      await app.user.click(screen.getByRole('button', { name: 'First rating' }));
+      await waitFor(() => expect(app.calls('GET', '/cards')).toHaveLength(1));
+      await app.user.click(screen.getByRole('button', { name: 'Next rating' }));
+      await findToast('Marked as liked');
+
+      list.resolve(json(200, CARDS));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+
+      expect(screen.queryByRole('button', { name: TEACH_YES })).toBeNull();
+      expect(app.toasts.getSnapshot()).toHaveLength(1);
+    },
+  );
+
+  it('drops a delayed batch teaching offer when the same article has been rated again', async () => {
+    const item = makeItem();
+    const list = deferred<Response>();
+    function BatchRating() {
+      const store = useReaderActions();
+      return (
+        <button
+          onClick={() =>
+            store.dispatch(item, { type: 'rate', rating: 1 }, { ratingBatchId: 'batch' })
+          }
+        >
+          Batch like
+        </button>
+      );
+    }
+    const app = renderReader(
+      <>
+        <BatchRating />
+        <Row item={item} />
+      </>,
+      {
+        routes: {
+          'POST /articles/101/rating': (request) => {
+            const { rating } = bodyOf(request) as { rating: 1 | -1 };
+            return actionResponse(
+              acked(item, {
+                rating,
+                stateVersion: String(BigInt(item.stateVersion) + (rating === 1 ? 1n : 2n)),
+                reason: rating === -1 ? 'off_topic' : null,
+              }),
+              { exampleSuggestion: rating === 1 ? YES : null },
+            );
+          },
+          'GET /cards': () => list.promise,
+        },
+      },
+    );
+    apps.push(app);
+    await app.user.click(screen.getByRole('button', { name: 'Batch like' }));
+    await waitFor(() => expect(app.calls('GET', '/cards')).toHaveLength(1));
+    await app.user.click(screen.getByRole('button', { name: 'Dislike' }));
+    await app.user.click(screen.getByRole('button', { name: 'Off-topic' }));
+    await findToast('Marked as disliked');
+
+    list.resolve(json(200, CARDS));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    expect(screen.queryByRole('button', { name: TEACH_YES })).toBeNull();
+    expect(app.toasts.getSnapshot()).toHaveLength(1);
+  });
+
   it('shows no offer that arrives after the account was reset', async () => {
     const item = makeItem();
     const list = deferred<Response>();

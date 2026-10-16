@@ -1171,6 +1171,27 @@ describe('the selection bar', () => {
     ]);
   });
 
+  it('bulk Like cancels selected pending dislikes and leaves unselected ones for their reason', async () => {
+    const { app } = await openFeed([item(1), item(2, { rating: 1 }), item(3)], {
+      me: makeMe({ preferences: { markReadOnRate: false } }),
+    });
+    await choose(app, ...titles(3));
+    await app.user.click(bulk(/^Dislike 3 selected articles$/));
+    expect(app.calls(RATE)).toHaveLength(0);
+
+    await choose(app, 'Article 1', 'Article 2');
+    await app.user.click(bulk(/^Like 2 selected articles$/));
+    const reasons = screen.getByRole('group', { name: 'Reason for the dislike' });
+    expect(within(reasons).getByText('Disliked: Article 3')).toBeVisible();
+    await app.user.click(within(reasons).getByRole('button', { name: 'Off-topic' }));
+
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
+    expect(ratedBodies(app).map(({ url, body }) => [url, body['rating'], body['reason']])).toEqual([
+      ['/api/v1/articles/1/rating', 1, undefined],
+      ['/api/v1/articles/3/rating', -1, 'off_topic'],
+    ]);
+  });
+
   it('sets the pressed rating and never un-rates: articles that already have it are skipped', async () => {
     const { app } = await openFeed([item(1, { rating: 1 }), item(2, { rating: -1 }), item(3)]);
     await choose(app, 'Article 1', 'Article 2', 'Article 3');
