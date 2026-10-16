@@ -1,5 +1,11 @@
-import { bindReaderClock, createDatabase, readerReleaseClock, withTenants } from '@bantoozi/db';
-import { createArticle, createFeed, createSubscription } from '@bantoozi/testing';
+import {
+  bindReaderClock,
+  cardsMadeFromFeedArticles,
+  createDatabase,
+  readerReleaseClock,
+  withTenants,
+} from '@bantoozi/db';
+import { createArticle, createCard, createFeed, createSubscription } from '@bantoozi/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   apiClient,
@@ -324,6 +330,25 @@ it('keeps plan metadata separate when a worker transaction visits multiple tenan
   expect(clocks.every((clock) => clock.now.getTime() === now.getTime())).toBe(true);
 });
 
+async function selectForFixture(userId: string, articleId: string) {
+  const client = await h.owner.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SELECT set_config('app.user_id', $1, true)", [userId]);
+    await client.query(
+      `INSERT INTO analysis_requests (id, user_id, feed_id, article_id, article_revision,
+      inference_version, input_snapshot, input_sha) VALUES (gen_random_uuid(), $1, $2, $3, 1, 1, '{}'::jsonb, encode(sha256(convert_to('{}', 'UTF8')), 'hex'))`,
+      [userId, feedId, articleId],
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 it('does not let a waiting active carrier authorize inference for an earlier off-feed arrival', async () => {
   const account = await following('beta');
   const off = await createFeed(h.owner, { title: 'Released off source' });
@@ -353,7 +378,111 @@ it('does not let a waiting active carrier authorize inference for an earlier off
     expect(res.statusCode, res.body).toBe(200);
     return res.json().items.find((item: { id: string }) => item.id === article.id);
   };
+  // A still-live selected request made while this carrier was visible must respect the new plan too.
+  await selectForFixture(account.user.id, article.id);
   expect(await load()).toMatchObject({ lane: 'new', pLike: null, feed: { id: off.id } });
   now = new Date(now.getTime() + 8 * 60000);
   expect(await load()).toMatchObject({ lane: 'for_you', pLike: 0.9, feed: { id: feedId } });
+});
+
+it('keeps saved articles globally available without exposing a waiting feed or folder association', async () => {
+  const account = await following('beta');
+  const source = await createFeed(h.owner);
+  await createSubscription(h.owner, { userId: account.user.id, feedId: source.id, mode: 'off' });
+  await h.owner.query(
+    "UPDATE subscriptions SET folder = 'Waiting copies' WHERE user_id = $1 AND feed_id = $2",
+    [account.user.id, feedId],
+  );
+  const article = await createArticle(h.owner, {
+    feedIds: [source.id],
+    firstSeenAt: new Date(now.getTime() - 3600000),
+  });
+  await h.owner.query(
+    `INSERT INTO feed_items (feed_id, article_id, guid, first_seen_at)
+    VALUES ($1, $2, 'waiting-bookmark', $3)`,
+    [feedId, article.id, new Date(now.getTime() - 60000)],
+  );
+  await h.owner.query(
+    "INSERT INTO user_article (user_id, article_id, bookmarked_at, bookmark_capture_status) VALUES ($1, $2, $3, 'pending')",
+    [account.user.id, article.id, now],
+  );
+  const saved = async (scope: Record<string, string>) => {
+    const res = await account.api.get('/articles', {
+      query: { lane: 'bookmarks', status: 'all', ...scope },
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    return res.json().items.map((item: { id: string }) => item.id);
+  };
+  expect(await saved({})).toContain(article.id);
+  for (const scope of [{ feedId }, { folder: 'Waiting copies' }]) {
+    expect(await saved(scope)).not.toContain(article.id);
+    const counts = await account.api.get('/articles/counts', { query: scope });
+    expect(counts.statusCode, counts.body).toBe(200);
+    expect(counts.json().bookmarks).toBe(0);
+  }
+  now = new Date(now.getTime() + 8 * 60000);
+  expect(await saved({ feedId })).toContain(article.id);
+  expect(await saved({ folder: 'Waiting copies' })).toContain(article.id);
+});
+
+it('captures rating features only from released active and selected carriers', async () => {
+  const account = await following('beta');
+  const visible = await createFeed(h.owner);
+  await createSubscription(h.owner, {
+    userId: account.user.id,
+    feedId: visible.id,
+    mode: 'active',
+    activatedAt: new Date(now.getTime() - 86400000),
+  });
+  const card = await createCard(h.owner);
+  await h.owner.query(
+    "INSERT INTO user_cards (user_id, card_id, strength, scope_feed_id) VALUES ($1, $2, 'like', $3)",
+    [account.user.id, card.id, feedId],
+  );
+  const articleTitle = 'Visible learning example';
+  const article = await createArticle(h.owner, {
+    title: articleTitle,
+    feedIds: [visible.id],
+    firstSeenAt: new Date(now.getTime() - 3600000),
+  });
+  await h.owner.query(
+    `INSERT INTO feed_items (feed_id, article_id, guid, first_seen_at)
+    VALUES ($1, $2, 'waiting-rating', $3)`,
+    [feedId, article.id, new Date(now.getTime() - 60000)],
+  );
+  await selectForFixture(account.user.id, article.id);
+  const rated = await account.api.post(`/articles/${article.id}/rating`, {
+    stateVersion: '0',
+    contentRevision: '1',
+    rating: 1,
+  });
+  expect(rated.statusCode, rated.body).toBe(200);
+  const event = await h.owner.query<{
+    value: {
+      features: { sourceManifest: { inferenceFeedIds: string[] }; cards: { id: string }[] };
+    };
+  }>("SELECT value FROM feedback_events WHERE user_id = $1 AND article_id = $2 AND kind = 'rate'", [
+    account.user.id,
+    article.id,
+  ]);
+  expect(event.rows[0]!.value.features.sourceManifest.inferenceFeedIds).toEqual([visible.id]);
+  expect(event.rows[0]!.value.features.cards.map((item) => item.id)).not.toContain(card.id);
+  // The sidebar's card/example agreement must not reveal the later carrier either.
+  const exampleCard = await account.api.post('/cards/from-article', {
+    articleId: article.id,
+    interest: 'Card from a released learning example',
+    strength: 'like',
+  });
+  expect(exampleCard.statusCode, exampleCard.body).toBe(201);
+  const made = async () =>
+    (
+      await withTenants(createDatabase(h.owner), [account.user.id], async (tx) => {
+        bindReaderClock(tx, now);
+        return cardsMadeFromFeedArticles(tx, [visible.id, feedId]);
+      })
+    )[0]!;
+  expect((await made()).has(visible.id)).toBe(true);
+  expect((await made()).has(feedId)).toBe(false);
+  now = new Date(now.getTime() + 8 * 60000);
+  expect((await made()).has(feedId)).toBe(true);
 });

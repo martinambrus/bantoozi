@@ -30,6 +30,7 @@ import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
 import { accessibleArticleIds, articleContexts, loadArticleItems } from './articles.js';
 import { lockMutationForUndo, updateMutationUndo } from './mutations.js';
 import { loadPlanLimits } from './plans.js';
+import { readerReleaseClock, releasedCarrier } from './releases.js';
 import {
   probeDemotion,
   rankChangeOf,
@@ -731,6 +732,7 @@ async function captureFeatures(
   options: { live: boolean; matchFingerprint?: MatchFingerprint | undefined },
 ): Promise<FeatureCapture> {
   if (!options.live) return { features: null, staleAtFeedback: null };
+  const clock = await readerReleaseClock(tx);
   const id = article.articleId;
   const stored = await readRatingSettingsLocked(tx, options.matchFingerprint?.defaults);
   const sets = stored.get('question_sets.active');
@@ -759,14 +761,16 @@ async function captureFeatures(
         JOIN feed_items fi ON fi.feed_id = s.feed_id AND fi.article_id = ${id}::bigint
         JOIN articles a ON a.id = fi.article_id AND a.pipeline_state <> 'stale'
        WHERE s.user_id = ${user}::uuid AND s.inference_mode = 'active'
-         AND fi.first_seen_at >= s.inference_activated_at AND fi.over_cap_limit IS NULL
+         AND ${releasedCarrier(clock)} AND fi.first_seen_at >= s.inference_activated_at AND fi.over_cap_limit IS NULL
       UNION
       SELECT r.feed_id FROM analysis_requests r
         JOIN articles a ON a.id = r.article_id AND a.content_revision = r.article_revision
         JOIN subscriptions s ON s.user_id = r.user_id AND s.feed_id = r.feed_id
                             AND s.inference_mode IN ('training', 'active')
                             AND s.inference_version = r.inference_version
+        JOIN feed_items fi ON fi.feed_id = r.feed_id AND fi.article_id = r.article_id
        WHERE r.user_id = ${user}::uuid AND r.article_id = ${id}::bigint
+         AND ${releasedCarrier(clock)}
          AND r.status IN ('pending', 'running', 'complete')
          AND r.created_at > now() - make_interval(days => ${SELECTION_WINDOW_DAYS}))
     SELECT coalesce((SELECT array_agg(feed_id::text ORDER BY feed_id) FROM inf), '{}') AS inference_feed_ids,

@@ -2531,3 +2531,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   The carrier query fences candidate/article identities before adding subscription scope, preventing
   one index probe per (article, subscription) pair; list queries remain under the existing 5,000
   shared-buffer bound, counting both the plan lookup and the projection.
+
+  PR #47 second review: feed/folder bookmark membership is release-aware even when the personal
+  bookmark is globally accessible. Rating feature capture, including selected-request carriers,
+  uses only released sources and their scoped cards. Existing selected requests cannot authorize
+  inference before their carrying feed releases it; sidebar card/example associations follow the
+  same rule. The extended S19 policy fixture still changes only A's 44 affected views; B/C remain
+  byte-identical to the original baseline, and the unchanged cost bound passes.

@@ -138,6 +138,8 @@ function eligibleExpr(user: string): SQL {
     OR EXISTS (
        SELECT 1 FROM analysis_requests r
          JOIN vs e ON e.feed_id = r.feed_id AND e.view_key = c.view_key
+         JOIN feed_items fi ON fi.feed_id = r.feed_id AND fi.article_id = r.article_id
+                           AND fi.first_seen_at <= e.visible_until
         WHERE r.user_id = ${user}::uuid AND r.article_id = a.id
           AND r.article_revision = a.content_revision
           AND r.status IN ('pending', 'running', 'complete')
@@ -201,7 +203,7 @@ async function projectionCtes(tx: TenantTx, input: ProjectionInput): Promise<SQL
            ${
              scoped
                ? sql`AND EXISTS (SELECT 1 FROM vs e JOIN feed_items ef ON ef.feed_id = e.feed_id
-                                  WHERE ef.article_id = ua.article_id)`
+                                  WHERE ef.article_id = ua.article_id AND ef.first_seen_at <= e.visible_until)`
                : sql``
            }`
     : sql`
@@ -825,6 +827,7 @@ export async function cardsMadeFromFeedArticles(
   feedIds: readonly string[],
 ): Promise<Map<string, { like: Date | null; never: Date | null }>> {
   if (feedIds.length === 0) return new Map();
+  const clock = await readerReleaseClock(tx);
   const result = await tx.execute<{
     feed_id: string;
     like_at: Date | null;
@@ -840,7 +843,8 @@ export async function cardsMadeFromFeedArticles(
                   THEN ic.body -> 'examples_yes' ELSE '[]'::jsonb END) AS ex(example)
       JOIN feed_items fi ON fi.feed_id = ANY(${sql.param([...feedIds])}::bigint[])
       JOIN articles a ON a.id = fi.article_id
-     WHERE uc.user_id = ${tenantUserId(tx)}::uuid
+      JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.user_id = uc.user_id
+     WHERE uc.user_id = ${tenantUserId(tx)}::uuid AND ${releasedCarrier(clock)}
        AND ex.example = ${ARTICLE_TITLE_EXAMPLE_SQL}
      GROUP BY fi.feed_id`);
   return new Map(
