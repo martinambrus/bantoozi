@@ -159,6 +159,16 @@ interface ProjectionInput {
   labelId: string | undefined;
 }
 
+/** The carrier facts over in-scope carrier items `ef` of subscriptions `e` (see `carrierCte`). */
+const CARRIER_FACTS = sql`
+  min(e.feed_id) FILTER (WHERE e.listable) AS display_feed_id,
+  min(e.feed_id) AS any_feed_id,
+  bool_or(e.inference_mode = 'active'
+          AND ef.first_seen_at >= e.inference_activated_at
+          AND ef.over_cap_limit IS NULL) AS active_carried,
+  max(ef.over_cap_limit) FILTER (WHERE e.inference_mode = 'active'
+          AND ef.first_seen_at >= e.inference_activated_at) AS over_cap_limit`;
+
 /**
  * `carrier`: the facts of an article's in-scope carriers, computed once per (view, article): the
  * smallest listable carrier feed, the smallest in-scope carrier feed (display fallback), and whether
@@ -172,17 +182,10 @@ function carrierCte(source: SQL): SQL {
         SELECT c.view_key, c.article_id, ef.feed_id, ef.first_seen_at, ef.over_cap_limit
           FROM ${source} c JOIN feed_items ef ON ef.article_id = c.article_id),
       carrier AS (
-        SELECT ci.view_key, ci.article_id,
-               min(e.feed_id) FILTER (WHERE e.listable) AS display_feed_id,
-               min(e.feed_id) AS any_feed_id,
-               bool_or(e.inference_mode = 'active'
-                       AND ci.first_seen_at >= e.inference_activated_at
-                       AND ci.over_cap_limit IS NULL) AS active_carried,
-               max(ci.over_cap_limit) FILTER (WHERE e.inference_mode = 'active'
-                       AND ci.first_seen_at >= e.inference_activated_at) AS over_cap_limit
-          FROM carrier_items ci JOIN vs e ON e.feed_id = ci.feed_id AND e.view_key = ci.view_key
-         WHERE ci.first_seen_at <= e.visible_until
-         GROUP BY ci.view_key, ci.article_id)`;
+        SELECT ef.view_key, ef.article_id, ${CARRIER_FACTS}
+          FROM carrier_items ef JOIN vs e ON e.feed_id = ef.feed_id AND e.view_key = ef.view_key
+         WHERE ef.first_seen_at <= e.visible_until
+         GROUP BY ef.view_key, ef.article_id)`;
 }
 
 /** `WITH vs, carried, proj` (steps 1–3 of the module comment). */
@@ -193,7 +196,7 @@ async function projectionCtes(tx: TenantTx, input: ProjectionInput): Promise<SQL
   const scoped =
     input.mode.kind === 'single' &&
     (input.mode.scope.feedId !== undefined || input.mode.scope.folder !== undefined);
-  const carried = input.bookmarks
+  const bookmarked = input.bookmarks
     ? sql`
         SELECT 0::bigint AS view_key, ua.article_id,
                (SELECT max(ef.first_seen_at) FROM vs e
@@ -207,21 +210,42 @@ async function projectionCtes(tx: TenantTx, input: ProjectionInput): Promise<SQL
                                   WHERE ef.article_id = ua.article_id AND ef.first_seen_at <= e.visible_until)`
                : sql``
            }`
-    : sql`
-        SELECT vs.view_key, fi.article_id, max(fi.first_seen_at) AS arrival
-          FROM vs JOIN feed_items fi ON fi.feed_id = vs.feed_id
-         WHERE vs.listable AND fi.first_seen_at <= vs.visible_until
-           AND fi.first_seen_at <= ${asOfIso}::timestamptz
-           AND fi.first_seen_at >= ${asOfIso}::timestamptz - make_interval(days => ${RANK_WINDOW_DAYS})
-         GROUP BY vs.view_key, fi.article_id`;
+    : null;
+  // A window view reads the candidates and their carrier facts in one aggregation over the
+  // (view, carrier item) pairs (D-259): a candidate is a group with a listable carrier item in the
+  // window, and its arrival the latest of those. Joining a separate `carrier` CTE let the planner
+  // size both sides by an average feed, and for a feed holding most of the items (a classifieds
+  // feed) it chose a nested loop comparing every candidate with every carrier row.
+  const candidates =
+    bookmarked === null
+      ? sql`
+    carried AS (
+      SELECT * FROM (
+        SELECT e.view_key, ef.article_id,
+               max(ef.first_seen_at) FILTER (
+                 WHERE e.listable AND ef.first_seen_at <= ${asOfIso}::timestamptz
+                   AND ef.first_seen_at >= ${asOfIso}::timestamptz - make_interval(days => ${RANK_WINDOW_DAYS})
+               ) AS arrival,
+               ${CARRIER_FACTS}
+          FROM vs e JOIN feed_items ef ON ef.feed_id = e.feed_id
+         WHERE ef.first_seen_at <= e.visible_until
+         GROUP BY e.view_key, ef.article_id) g
+       WHERE g.arrival IS NOT NULL)`
+      : sql`
+    carried AS (${bookmarked}),
+    ${carrierCte(sql`carried`)}`;
+  const carrierJoin =
+    bookmarked === null
+      ? sql`CROSS JOIN LATERAL (SELECT c.display_feed_id, c.any_feed_id, c.active_carried,
+                                       c.over_cap_limit) cr`
+      : sql`LEFT JOIN carrier cr ON cr.view_key = c.view_key AND cr.article_id = c.article_id`;
   const label =
     input.labelId === undefined
       ? sql``
       : sql`AND coalesce(ua.label_ids, '{}') @> ARRAY[${input.labelId}::bigint]`;
   return sql`
     WITH vs AS (${viewScope(user, input.mode, clock)}),
-    carried AS (${carried}),
-    ${carrierCte(sql`carried`)},
+    ${candidates},
     proj AS (
       SELECT c.view_key, c.article_id, coalesce(c.arrival, a.first_seen_at) AS arrival,
              cr.display_feed_id, cr.over_cap_limit,
@@ -232,7 +256,9 @@ async function projectionCtes(tx: TenantTx, input: ProjectionInput): Promise<SQL
                   ELSE 'new' END AS lane,
              CASE WHEN el.eligible THEN ua.p_like END AS p_like,
              CASE WHEN el.eligible THEN ua.tier END AS tier,
-             (el.eligible AND (ua.article_id IS NULL
+             -- An archived row is outside the rank window (spec 06 §7 step 2): no run re-ranks it,
+             -- so it never waits for one.
+             (el.eligible AND ua.archived_at IS NULL AND (ua.article_id IS NULL
                 OR ua.score_version <> ${input.scoreVersion}
                 OR ua.rank_revision <> (SELECT u.rank_revision FROM users u WHERE u.id = ${user}::uuid)
                 OR ua.next_rank_at <= now())) AS outdated,
@@ -242,7 +268,7 @@ async function projectionCtes(tx: TenantTx, input: ProjectionInput): Promise<SQL
                  WHERE NOT sx.allow_duplicates AND ${releasedCarrier(clock, 'sx', 'fx')})) AS foldable
         FROM carried c
         JOIN articles a ON a.id = c.article_id
-        LEFT JOIN carrier cr ON cr.view_key = c.view_key AND cr.article_id = c.article_id
+        ${carrierJoin}
         LEFT JOIN user_article ua ON ua.user_id = ${user}::uuid AND ua.article_id = c.article_id
         CROSS JOIN LATERAL (SELECT ${eligibleExpr(user)} AS eligible OFFSET 0) el
        WHERE true ${label}

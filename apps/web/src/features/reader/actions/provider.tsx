@@ -14,6 +14,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import type { ApiClient } from '../../../api/client.js';
+import { invalidateCoalesced } from '../../../api/coalesced-invalidate.js';
 import { useApi } from '../../../api/context.js';
 import { isApiError } from '../../../api/errors.js';
 import { meKey } from '../../../api/query-keys.js';
@@ -263,8 +264,7 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
   function showOutcome(handle: ActionHandle, result: ActionResult): void {
     switch (result.status) {
       case 'done':
-        for (const queryKey of unreadKeys(accountId))
-          void queryClient.invalidateQueries({ queryKey });
+        for (const queryKey of unreadKeys(accountId)) invalidateCoalesced(queryClient, queryKey);
         offerUndo(handle, result.exampleSuggestion, result.item);
         return;
       case 'failed':

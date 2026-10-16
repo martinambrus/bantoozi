@@ -9,6 +9,7 @@ import {
   ago,
   carriedArticle,
   carry,
+  clearOutbox,
   clusterOf,
   explainJson,
   fence,
@@ -523,6 +524,15 @@ describe('GET /articles/counts', () => {
     await h.owner.query(`UPDATE user_article SET read_at = now() WHERE user_id = $1`, [r.user.id]);
     const unread = (await r.api.get('/articles/counts')).json();
     expect(unread).toMatchObject({ total: 0, rankingPending: true });
+
+    // An archived row is outside the rank window, which no run re-ranks: it never waits for one.
+    await clearOutbox(h, r.user.id);
+    await h.owner.query(`UPDATE user_article SET archived_at = now() WHERE user_id = $1`, [
+      r.user.id,
+    ]);
+    expect((await list(r, { lane: 'all' })).rankingPending).toBe(false);
+    expect((await r.api.get('/articles/counts')).json().rankingPending).toBe(false);
+    expect(await outbox(h, r.user.id, 'user.rank')).toEqual([]);
 
     // A plain untrained article of an off feed is not pending.
     const quiet = await newReader(h);

@@ -2603,3 +2603,43 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   it, so existing imports keep working). The field defaults to null when parsed, and the offline
   projection keeps it; a row saved on the device before the field existed offers no domain rule
   until it is reloaded. No migration.
+
+- D-259: 2026-10-16 (owner report: switching the minimum tier and opening another feed stalled
+  until a burst of ratings was processed, with the CPU at 100 %, on one user with a 8,500-item
+  classifieds feed) — Measured with `apps/worker/src/bench.ts` (runs the real handlers and reader
+  queries against a database) and a lock/transaction sampler during a reproduction: API
+  transactions holding the user row stayed open for 8–10 s while the API thread computed
+  `GET /me/learning` several times at once, and the tier change and other reader requests queued
+  behind them. No behaviour changes; no migration.
+  1. Learning samples (`loadLearnSamples`, used by `GET /me/learning` and `user.learn`) project only
+     the snapshot fields they read in SQL (each `input_snapshot` freezes every card's question
+     text, about 40 kB), detoast each snapshot once, and validate the projection with
+     `AnalysisLearnInputSchema` (the fields read, card id uniqueness and the kind/strength pairing;
+     the remaining fields of the full schema are not read). Derived results of completed requests,
+     which never change, are cached per process (8,000 entries, LRU); only the rows' existence is
+     re-read, so a deleted request is never served. 2.9 s → 0.2 s per call (1.5 s on a cold process).
+  2. The web app invalidates counts, badges and learning after a reader action with at most one
+     refetch running per key (`invalidateCoalesced`): later invalidations fold into one trailing
+     refetch instead of cancelling a request the server still finishes.
+  3. Every pool session runs with `jit = off`: the rank window and view queries crossed the JIT
+     cost thresholds and spent 1.2 s of 1.45 s compiling (rank window query 1.45 s → 0.21 s).
+  4. A window view reads its candidates and their carrier facts in one aggregation over the
+     (view, carrier item) pairs instead of joining a separate `carrier` CTE: through `vs` the planner
+     sized the classifieds feed as an average feed (98 rows for 8,500) and chose a nested loop of
+     25 M comparisons. Feed counts 1.2 s → 0.1 s; the other counts and lists ~30 % faster; the S19
+     buffer guard holds (a per-candidate lateral probe of the carriers did not: 8,500 buffers).
+     Bookmark views keep the `carrier` CTE.
+  5. `user.learn` trains in a worker thread (`threadTrainer`; tests keep the inline trainer): a run
+     is about 30 s of CPU for 3,800 samples, during which the worker's event loop, and transactions
+     other jobs held on the user row, stood still. Results are identical (deep-equal on the owner's
+     data). The training cost itself (nested CV over the λ grid) is unchanged. Running from the
+     TypeScript sources (dev, tests), the thread registers tsx itself: Node 22.22 does not pass the
+     parent's `--import` hooks to worker threads (CI caught it; verified on 22.22.2 and 22.23.3, and
+     the compiled thread under plain `node`).
+  6. Keyword mutes normalize an item's fields once per item and each keyword once (26 keywords ×
+     4 fields were normalized per article). Full rank 7.7 s → 3.6 s, incremental 3.2 s → 0.6 s
+     (with item 3).
+  7. Fix: an archived row is never `outdated` in the reader views. The rank window leaves archived
+     rows out (spec 06 §7 step 2), so after any rank revision bump they stayed outdated for good:
+     "Ranking new articles…" never cleared, and every list or counts request enqueued another
+     catch-up rank (about 1,900 runs on the owner's instance).

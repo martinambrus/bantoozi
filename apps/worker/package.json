@@ -13,7 +13,8 @@
     "dev": "tsx watch --conditions=bantoozi-source --env-file-if-exists=../../.env src/main.ts",
     "start": "node dist/main.js",
     "seed": "tsx --conditions=bantoozi-source --env-file-if-exists=../../.env src/seed.ts",
-    "cli": "tsx --conditions=bantoozi-source --env-file-if-exists=../../.env src/cli.ts"
+    "cli": "tsx --conditions=bantoozi-source --env-file-if-exists=../../.env src/cli.ts",
+    "bench": "tsx --conditions=bantoozi-source --env-file-if-exists=../../.env src/bench.ts"
   },
   "dependencies": {
     "@bantoozi/db": "workspace:*",

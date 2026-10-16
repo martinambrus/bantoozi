@@ -169,17 +169,43 @@ export function matchBoostRules(rules: readonly RankRule[], item: RuleItem): Boo
  * space between words), so the keyword must start and end at word boundaries.
  */
 export function keywordMatches(value: string, item: RuleItem): boolean {
-  const needle = normalizeText(value);
+  const needle = normalizedKeyword(value);
   if (needle === '') return false;
-  const fields = [
-    item.titleNorm,
-    item.excerptNorm,
-    item.translatedTitleNorm,
-    item.translatedExcerptNorm,
-  ];
-  return fields.some(
-    (field) => field !== undefined && ` ${normalizeText(field)} `.includes(` ${needle} `),
-  );
+  return paddedFields(item).some((field) => field.includes(` ${needle} `));
+}
+
+/**
+ * An item's normalized text fields, space-padded, computed once per item object: a ranking run
+ * checks every muted keyword against every window article (D-259).
+ */
+const itemFields = new WeakMap<RuleItem, string[]>();
+
+function paddedFields(item: RuleItem): string[] {
+  let fields = itemFields.get(item);
+  if (fields === undefined) {
+    fields = [
+      item.titleNorm,
+      item.excerptNorm,
+      item.translatedTitleNorm,
+      item.translatedExcerptNorm,
+    ].flatMap((field) => (field === undefined ? [] : [` ${normalizeText(field)} `]));
+    itemFields.set(item, fields);
+  }
+  return fields;
+}
+
+/** Normalized keywords by rule value; bounded, since rule values are few per user. */
+const KEYWORD_CACHE_MAX = 10_000;
+const keywords = new Map<string, string>();
+
+function normalizedKeyword(value: string): string {
+  let needle = keywords.get(value);
+  if (needle === undefined) {
+    needle = normalizeText(value);
+    if (keywords.size >= KEYWORD_CACHE_MAX) keywords.clear();
+    keywords.set(value, needle);
+  }
+  return needle;
 }
 
 function domainMatches(value: string, domain: string): boolean {
