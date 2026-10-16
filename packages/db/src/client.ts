@@ -19,9 +19,17 @@ export interface CreatePoolOptions {
   idleTimeoutMillis?: number;
 }
 
+/**
+ * JIT compilation is off for every session (D-259): the planner's cost estimates for the window
+ * and view queries (correlated subqueries per row) cross the JIT thresholds, and compiling them
+ * took over a second per execution, several times the query itself.
+ */
+const SESSION_OPTIONS = '-c jit=off';
+
 export function createPool(options: CreatePoolOptions): pg.Pool {
   return new pg.Pool({
     connectionString: options.connectionString,
+    options: SESSION_OPTIONS,
     max: options.max ?? 10,
     idleTimeoutMillis: options.idleTimeoutMillis ?? 30_000,
     ...(options.applicationName === undefined ? {} : { application_name: options.applicationName }),
