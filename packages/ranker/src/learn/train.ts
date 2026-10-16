@@ -236,9 +236,12 @@ function oof(folds: readonly FoldFit[], li: number): { z: number[]; y: number[] 
   return { z, y };
 }
 
-function lambdaLosses(folds: readonly FoldFit[], ctx: Ctx): { lambda: number; loss: number }[] {
+function lambdaLosses(
+  oofAt: (li: number) => { z: number[]; y: number[] } | null,
+  ctx: Ctx,
+): { lambda: number; loss: number }[] {
   return ctx.grid.map((lambda, li) => {
-    const o = oof(folds, li);
+    const o = oofAt(li);
     if (o === null) return { lambda, loss: Number.POSITIVE_INFINITY };
     const platt = fitPlatt(o.z, o.y);
     return {
@@ -265,7 +268,7 @@ function innerSelect(
   );
   if (plan === null) return { lambda: largest, platt: IDENTITY };
   const folds = cvFolds(rows, plan, ctx);
-  const losses = lambdaLosses(folds, ctx);
+  const losses = lambdaLosses((li) => oof(folds, li), ctx);
   if (!losses.some((e) => Number.isFinite(e.loss))) return { lambda: largest, platt: IDENTITY };
   const lambda = chooseLambda(losses);
   const o = oof(folds, ctx.grid.indexOf(lambda));
@@ -317,14 +320,34 @@ function baselineOf(
 }
 
 /**
- * The pure personal-model trainer (spec 06 §8.1-8.3): eligibility, grouped CV with per-partition
- * own inputs and scaling, λ and Platt by nested folds, the cards-only baseline and the activation
- * reasons. `research` mode skips the minimums, flags the metrics and is never eligible.
+ * One outer fold of a training run (D-262), as plain data a thread can return: per grid value the
+ * fit status and the out-of-fold explicit logits, the validation labels, groups and cards-only
+ * scores, and, for a nested run, the partition's own λ and Platt.
  */
-export function trainUserModel(
+export interface FoldResult {
+  fits: ({ ok: true } | { ok: false; reason: 'singular' | 'nonfinite' | 'nonconverged' })[];
+  valLogits: (number[] | null)[];
+  valY: number[];
+  valGroups: string[];
+  valBaseline: number[];
+  inner: { lambda: number; platt: PlattParams } | null;
+}
+
+interface Setup {
+  rows: TrainingRow[];
+  metrics: TrainMetrics;
+  research: boolean;
+  ctx: Ctx;
+  plan: FoldPlan | null;
+  /** A rejection decided before any fold runs. */
+  rejected: string[] | null;
+}
+
+function setup(
   args: TrainArgs,
   opts: { mode: 'production' | 'research' },
-): TrainResult {
+  withSha: boolean,
+): Setup {
   const cfg = args.config;
   const mc = cfg.model;
   const research = opts.mode === 'research';
@@ -349,29 +372,105 @@ export function trainUserModel(
     contextSha: null,
     ratingSha: args.ratingSha,
     featureSpecSha: FEATURE_SPEC_V1_SHA,
-    eligibleSetSha: eligibleSetSha(args.samples, elig),
+    eligibleSetSha: withSha ? eligibleSetSha(args.samples, elig) : '',
     feedbackCutoffEventId: args.feedbackCutoffEventId,
   };
+  const ctx: Ctx = { cfg, held: args.heldCards, grid: mc.lambdaGrid };
+  const minimums = minimumReasons(metrics, mc);
+  if (rows.length === 0 || (!research && minimums.length > 0)) {
+    return {
+      rows,
+      metrics,
+      research,
+      ctx,
+      plan: null,
+      rejected: minimums.length > 0 ? minimums : ['insufficient_explicit'],
+    };
+  }
+  const plan = planFolds(
+    rows.map((r) => r.s),
+    `${args.seedMaterial}|outer`,
+  );
+  const rejected = plan === null && !research ? ['insufficient_validation'] : null;
+  return { rows, metrics, research, ctx, plan, rejected };
+}
+
+/** How many outer folds {@link trainFold} must run for these arguments (0: none). */
+export function trainingFolds(args: TrainArgs, opts: { mode: 'production' | 'research' }): number {
+  const { plan, rejected } = setup(args, opts, false);
+  return rejected === null && plan !== null ? plan.k : 0;
+}
+
+/** Outer fold `f` of {@link trainUserModel} (D-262): independent of the other folds. */
+export function trainFold(
+  args: TrainArgs,
+  opts: { mode: 'production' | 'research' },
+  f: number,
+): FoldResult {
+  const { rows, metrics, ctx, plan } = setup(args, opts, false);
+  if (plan === null || f < 0 || f >= plan.k) throw new RangeError(`no outer fold ${f}`);
+  const trainRows = rows.filter((_, i) => plan.folds[i] !== f);
+  const valRows = rows.filter((r, i) => plan.folds[i] === f && r.s.explicit);
+  const design = buildDesign(trainRows, ctx);
+  const fits = fitGrid(design, ctx.grid);
+  const valX = design.std(valRows);
+  return {
+    fits: fits.map((fit) =>
+      fit.ok ? { ok: true as const } : { ok: false as const, reason: fit.reason },
+    ),
+    valLogits: fits.map((fit) => (fit.ok ? logitsOf(fit, valX) : null)),
+    valY: valRows.map((r) => r.s.y),
+    valGroups: valRows.map((r) => r.s.groupId),
+    valBaseline: valRows.map((r) => baselineScore(r, ctx.cfg)),
+    inner:
+      metrics.nExplicit < NESTED_CV_MAX_EXPLICIT
+        ? innerSelect(trainRows, `${args.seedMaterial}|inner|${f}`, ctx)
+        : null,
+  };
+}
+
+/**
+ * The pure personal-model trainer (spec 06 §8.1-8.3): eligibility, grouped CV with per-partition
+ * own inputs and scaling, λ and Platt by nested folds, the cards-only baseline and the activation
+ * reasons. `research` mode skips the minimums, flags the metrics and is never eligible.
+ */
+export function trainUserModel(
+  args: TrainArgs,
+  opts: { mode: 'production' | 'research' },
+): TrainResult {
+  const k = trainingFolds(args, opts);
+  return finishTraining(
+    args,
+    opts,
+    Array.from({ length: k }, (_, f) => trainFold(args, opts, f)),
+  );
+}
+
+/**
+ * {@link trainUserModel} from the results of its outer folds, in fold order (D-262): the λ and
+ * Platt choice, the metrics with their intervals, and the final fit. Running the folds anywhere
+ * (threads) gives the same result as running them here.
+ */
+export function finishTraining(
+  args: TrainArgs,
+  opts: { mode: 'production' | 'research' },
+  folds: readonly FoldResult[],
+): TrainResult {
+  const { rows, metrics, research, ctx, plan, rejected } = setup(args, opts, true);
+  const cfg = args.config;
+  const mc = cfg.model;
   const reject = (reasons: string[]): TrainResult => ({
     model: null,
     metrics,
     activation: { eligible: false, reasons },
   });
-
-  const minimums = minimumReasons(metrics, mc);
-  if (rows.length === 0 || (!research && minimums.length > 0)) {
-    return reject(minimums.length > 0 ? minimums : ['insufficient_explicit']);
+  if (rejected !== null) return reject(rejected);
+  if ((plan?.k ?? 0) !== folds.length) {
+    throw new RangeError(`expected ${plan?.k ?? 0} fold results, got ${folds.length}`);
   }
 
-  const ctx: Ctx = { cfg, held: args.heldCards, grid: mc.lambdaGrid };
   const largest = Math.max(...ctx.grid);
   const seed = args.seedMaterial;
-  const plan = planFolds(
-    rows.map((r) => r.s),
-    `${seed}|outer`,
-  );
-  if (plan === null && !research) return reject(['insufficient_validation']);
-
   const base = baselineOf(rows, cfg);
   const baselineAucOf = aucScorer(base.scores, base.y);
   metrics.baselineAuc = baselineAucOf();
@@ -386,11 +485,21 @@ export function trainUserModel(
   let platt = IDENTITY;
   if (plan !== null) {
     metrics.k = plan.k;
-    const folds = cvFolds(rows, plan, ctx);
-    const losses = lambdaLosses(folds, ctx);
+    const oofAt = (li: number): { z: number[]; y: number[] } | null => {
+      const z: number[] = [];
+      const y: number[] = [];
+      for (const fold of folds) {
+        const logits = fold.valLogits[li];
+        if (logits === undefined || logits === null) return null;
+        z.push(...logits);
+        y.push(...fold.valY);
+      }
+      return { z, y };
+    };
+    const losses = lambdaLosses(oofAt, ctx);
     if (losses.some((e) => Number.isFinite(e.loss))) {
       lambda = chooseLambda(losses);
-      const o = oof(folds, ctx.grid.indexOf(lambda));
+      const o = oofAt(ctx.grid.indexOf(lambda));
       if (o !== null) platt = fitPlatt(o.z, o.y);
     }
 
@@ -398,20 +507,17 @@ export function trainUserModel(
     const ys: number[] = [];
     const groups: string[] = [];
     const baseScores: number[] = [];
-    const nested = metrics.nExplicit < NESTED_CV_MAX_EXPLICIT;
-    for (const [f, fold] of folds.entries()) {
-      const chosen = nested
-        ? innerSelect(fold.trainRows, `${seed}|inner|${f}`, ctx)
-        : { lambda, platt };
-      const fit = fold.fits[ctx.grid.indexOf(chosen.lambda)];
-      if (fit === undefined || !fit.ok)
+    for (const fold of folds) {
+      const chosen = fold.inner ?? { lambda, platt };
+      const li = ctx.grid.indexOf(chosen.lambda);
+      const fit = fold.fits[li];
+      const logits = fold.valLogits[li];
+      if (fit === undefined || !fit.ok || logits === undefined || logits === null)
         return reject([fit?.ok === false ? fit.reason : 'nonconverged']);
-      for (const z of logitsOf(fit, fold.valX)) probs.push(applyPlatt(chosen.platt, z));
+      for (const z of logits) probs.push(applyPlatt(chosen.platt, z));
       ys.push(...fold.valY);
-      for (const row of fold.valRows) {
-        groups.push(row.s.groupId);
-        baseScores.push(baselineScore(row, cfg));
-      }
+      groups.push(...fold.valGroups);
+      baseScores.push(...fold.valBaseline);
     }
     const cvAucOf = aucScorer(probs, ys);
     const foldBaselineAucOf = aucScorer(baseScores, ys);
