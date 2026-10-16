@@ -346,7 +346,7 @@ interface Setup {
 function setup(
   args: TrainArgs,
   opts: { mode: 'production' | 'research' },
-  withSha: boolean,
+  sha: 'none' | 'compute' | string,
 ): Setup {
   const cfg = args.config;
   const mc = cfg.model;
@@ -372,7 +372,8 @@ function setup(
     contextSha: null,
     ratingSha: args.ratingSha,
     featureSpecSha: FEATURE_SPEC_V1_SHA,
-    eligibleSetSha: withSha ? eligibleSetSha(args.samples, elig) : '',
+    eligibleSetSha:
+      sha === 'none' ? '' : sha === 'compute' ? eligibleSetSha(args.samples, elig) : sha,
     feedbackCutoffEventId: args.feedbackCutoffEventId,
   };
   const ctx: Ctx = { cfg, held: args.heldCards, grid: mc.lambdaGrid };
@@ -397,18 +398,32 @@ function setup(
 
 /** How many outer folds {@link trainFold} must run for these arguments (0: none). */
 export function trainingFolds(args: TrainArgs, opts: { mode: 'production' | 'research' }): number {
-  const { plan, rejected } = setup(args, opts, false);
+  const { plan, rejected } = setup(args, opts, 'none');
   return rejected === null && plan !== null ? plan.k : 0;
 }
 
-/** Outer fold `f` of {@link trainUserModel} (D-262): independent of the other folds. */
+/** The `eligibleSetSha` of the training's samples (spec 06 §8.3), for {@link finishTraining}. */
+export function trainingSetSha(args: TrainArgs): string {
+  return eligibleSetSha(args.samples, {
+    now: args.now,
+    historyDays: args.config.model.historyDays,
+    ratingSha: args.ratingSha,
+  });
+}
+
+/**
+ * Outer fold `f` of {@link trainUserModel} (D-262): independent of the other folds. `null` when
+ * the run has no fold `f` (it rejects before validation, or plans fewer folds), so a caller can
+ * start every possible fold (`OUTER_MAX_K`) before the plan is known.
+ */
 export function trainFold(
   args: TrainArgs,
   opts: { mode: 'production' | 'research' },
   f: number,
-): FoldResult {
-  const { rows, metrics, ctx, plan } = setup(args, opts, false);
-  if (plan === null || f < 0 || f >= plan.k) throw new RangeError(`no outer fold ${f}`);
+): FoldResult | null {
+  if (!Number.isInteger(f) || f < 0) throw new RangeError(`no outer fold ${f}`);
+  const { rows, metrics, ctx, plan, rejected } = setup(args, opts, 'none');
+  if (rejected !== null || plan === null || f >= plan.k) return null;
   const trainRows = rows.filter((_, i) => plan.folds[i] !== f);
   const valRows = rows.filter((r, i) => plan.folds[i] === f && r.s.explicit);
   const design = buildDesign(trainRows, ctx);
@@ -442,7 +457,7 @@ export function trainUserModel(
   return finishTraining(
     args,
     opts,
-    Array.from({ length: k }, (_, f) => trainFold(args, opts, f)),
+    Array.from({ length: k }, (_, f) => trainFold(args, opts, f) as FoldResult),
   );
 }
 
@@ -455,8 +470,10 @@ export function finishTraining(
   args: TrainArgs,
   opts: { mode: 'production' | 'research' },
   folds: readonly FoldResult[],
+  /** {@link trainingSetSha} of `args` when already computed (in parallel with the folds). */
+  setSha?: string,
 ): TrainResult {
-  const { rows, metrics, research, ctx, plan, rejected } = setup(args, opts, true);
+  const { rows, metrics, research, ctx, plan, rejected } = setup(args, opts, setSha ?? 'compute');
   const cfg = args.config;
   const mc = cfg.model;
   const reject = (reasons: string[]): TrainResult => ({
