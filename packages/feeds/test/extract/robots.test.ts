@@ -104,12 +104,12 @@ describe('spec 03 §8.1 step 2 robots.txt (RFC 9309)', () => {
     clock.now = HOUR;
     await check('https://example.com/b');
     expect(onPolicyRefresh).toHaveBeenCalledTimes(1);
-    expect(onPolicyRefresh).toHaveBeenLastCalledWith('https://example.com', 30, new Date(0));
+    expect(onPolicyRefresh).toHaveBeenLastCalledWith('https://example.com:443', 30, new Date(0));
     clock.now = 25 * HOUR;
     await check('https://example.com/c');
     expect(onPolicyRefresh).toHaveBeenCalledTimes(2);
     expect(onPolicyRefresh).toHaveBeenLastCalledWith(
-      'https://example.com',
+      'https://example.com:443',
       30,
       new Date(25 * HOUR),
     );

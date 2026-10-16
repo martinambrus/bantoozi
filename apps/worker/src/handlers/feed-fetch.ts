@@ -27,6 +27,7 @@ import {
   decodeBody,
   linklessUrlKey,
   nextSchedule,
+  originOf,
   parseCacheMaxAge,
   parseFeed,
   recentGapsS,
@@ -266,7 +267,11 @@ async function fetchFeed(
   // validators the next poll is unconditional.
   const keepValidators = failed === 0 && sameRequestUrl(result.finalUrl, target.fetchUrl);
   const schedule = nextSchedule(
-    scheduleFeed(target, gaps, await originSourceFloor(deps.db, new URL(result.finalUrl).origin)),
+    scheduleFeed(
+      target,
+      gaps,
+      await originSourceFloor(deps.db, originOf(new URL(result.finalUrl))),
+    ),
     {
       kind: 'success',
       nNew,
@@ -371,7 +376,7 @@ async function recordOutcome(
     scheduleFeed(
       feed,
       feed.recentGapsS,
-      await originSourceFloor(deps.db, new URL(feed.fetchUrl).origin),
+      await originSourceFloor(deps.db, originOf(new URL(feed.fetchUrl))),
     ),
     outcome,
     now,

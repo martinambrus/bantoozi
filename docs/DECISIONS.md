@@ -2462,3 +2462,7 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   a decayed learned floor of at least one second still applies. Quiet feeds may be ten days apart;
   the old seven-day idle purge cannot erase their source policy. Fully faded idle rows remain
   collectible; memory cleanup evaluates quiet-day decay too.
+
+  Source-policy keys use the HTTP client's explicit default port (`https://host:443` or
+  `http://host:80`) for robots refresh persistence and scheduler floor reads too; URL.origin alone
+  omits that port and would split source protection into two rows.

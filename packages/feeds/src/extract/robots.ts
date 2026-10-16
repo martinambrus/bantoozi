@@ -1,6 +1,11 @@
 import { createRequire } from 'node:module';
 
-import { DEFAULT_COOLDOWN_MS, parseRetryAfter, type SafeFetchResult } from '../http/index.js';
+import {
+  DEFAULT_COOLDOWN_MS,
+  originOf,
+  parseRetryAfter,
+  type SafeFetchResult,
+} from '../http/index.js';
 
 /** The product token our crawler matches in robots.txt `User-agent` lines (spec 03 §8.1 step 2). */
 export const ROBOTS_PRODUCT_TOKEN = 'BantooziBot';
@@ -153,7 +158,7 @@ export function createRobotsChecker(options: RobotsCheckerOptions): RobotsChecke
           ? outcome.policy.rules.getCrawlDelay(ROBOTS_PRODUCT_TOKEN)
           : 0;
       await options.onPolicyRefresh?.(
-        origin,
+        originOf(new URL(origin)),
         delay !== undefined && Number.isFinite(delay) && delay > 0 ? Math.min(86400, delay) : 0,
         observedAt,
       );
