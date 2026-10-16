@@ -9,6 +9,7 @@
  * `ratebulk` rates 200 unread articles of feed 29 and rolls back; `api` / `api-nojit` time the
  * reader's counts, badges and lists.
  */
+import { writeFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 
 import {
@@ -191,6 +192,14 @@ for (const mode of modes.length === 0 ? ['rank'] : modes) {
     };
     const result = trainUserModel(args, { mode: 'production' });
     const inline = performance.now();
+    // BENCH_DUMP=<file>: the training result, to compare two code versions.
+    const dump = process.env['BENCH_DUMP'];
+    if (dump !== undefined) {
+      writeFileSync(dump, JSON.stringify(result));
+      console.log(`  train inline: ${(inline - loaded).toFixed(0)} ms (dumped)`);
+      report(mode, performance.now() - t0);
+      continue;
+    }
     console.log(
       `  train inline: ${(inline - loaded).toFixed(0)} ms, features ${result.model?.features.length ?? 0}`,
     );
