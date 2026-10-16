@@ -322,10 +322,11 @@ export async function insertSubscriptions(
 ): Promise<string[]> {
   if (rows.length === 0) return [];
   const result = await tx.execute<{ feed_id: string }>(sql`
-    INSERT INTO subscriptions (user_id, feed_id, folder)
-    SELECT ${tenantUserId(tx)}::uuid, r.feed_id, r.folder
+    INSERT INTO subscriptions (user_id, feed_id, folder, created_at)
+    SELECT ${tenantUserId(tx)}::uuid, r.feed_id, r.folder, coalesce(p.first_subscribed_at, now())
       FROM unnest(${sql.param(rows.map((r) => r.feedId))}::bigint[],
                   ${sql.param(rows.map((r) => r.folder))}::text[]) AS r(feed_id, folder)
+      LEFT JOIN user_feed_preferences p ON p.user_id = ${tenantUserId(tx)}::uuid AND p.feed_id = r.feed_id
      ORDER BY r.feed_id
     ON CONFLICT (user_id, feed_id) DO NOTHING
     RETURNING feed_id::text AS feed_id`);
@@ -354,8 +355,10 @@ export async function insertSubscription(
   input: { feedId: string; folder: string | null },
 ): Promise<boolean> {
   const result = await tx.execute(sql`
-    INSERT INTO subscriptions (user_id, feed_id, folder)
-    VALUES (${tenantUserId(tx)}::uuid, ${input.feedId}::bigint, ${input.folder})
+    INSERT INTO subscriptions (user_id, feed_id, folder, created_at)
+    VALUES (${tenantUserId(tx)}::uuid, ${input.feedId}::bigint, ${input.folder},
+      coalesce((SELECT first_subscribed_at FROM user_feed_preferences
+        WHERE user_id = ${tenantUserId(tx)}::uuid AND feed_id = ${input.feedId}::bigint), now()))
     ON CONFLICT (user_id, feed_id) DO NOTHING`);
   return (result.rowCount ?? 0) > 0;
 }
@@ -448,6 +451,14 @@ export async function deleteSubscription(
   const scoped = await tx.execute<{ n: number }>(sql`
     SELECT count(*)::int AS n FROM user_cards
      WHERE user_id = ${user}::uuid AND scope_feed_id = ${feedId}::bigint`);
+  // Remember the first introduction window before deleting the row. Image-policy resets leave it
+  // intact, so neither re-subscription nor OPML can buy another immediate-release grace period.
+  await tx.execute(sql`
+    INSERT INTO user_feed_preferences (user_id, feed_id, first_subscribed_at)
+    SELECT user_id, feed_id, created_at FROM subscriptions
+      WHERE user_id = ${user}::uuid AND feed_id = ${feedId}::bigint
+    ON CONFLICT (user_id, feed_id) DO UPDATE
+      SET first_subscribed_at = least(user_feed_preferences.first_subscribed_at, EXCLUDED.first_subscribed_at)`);
   const result = await tx.execute(sql`
     DELETE FROM subscriptions WHERE user_id = ${user}::uuid AND feed_id = ${feedId}::bigint`);
   return { deleted: (result.rowCount ?? 0) > 0, scopedCards: scoped.rows[0]?.n ?? 0 };

@@ -910,6 +910,43 @@ describe('mergeFeeds chains and guards (spec 03 §9, spec 02 §3.3)', () => {
 });
 
 describe('mergeFeeds last_seen_at (D-253)', () => {
+  it.each([false, true])(
+    'keeps original grace history when aliases merge (preference conflict %s)',
+    async (conflict) => {
+      const source = await createFeed(ctx.owner);
+      const target = await createFeed(ctx.owner);
+      const user = await createUser(ctx.owner);
+      const original = new Date('2020-01-01T00:00:00Z');
+      await subscribe(user.id, target.id, { createdAt: new Date('2025-01-01T00:00:00Z') });
+      await ctx.owner.query(
+        `INSERT INTO user_feed_preferences (user_id, feed_id, image_policy, first_subscribed_at)
+       VALUES ($1, $2, 'allow', $3)`,
+        [user.id, source.id, original],
+      );
+      if (conflict) {
+        await ctx.owner.query(
+          `INSERT INTO user_feed_preferences (user_id, feed_id, image_policy, first_subscribed_at)
+         VALUES ($1, $2, 'block', '2021-01-01T00:00:00Z')`,
+          [user.id, target.id],
+        );
+      }
+      await merge(source.id, target.id);
+      const rows = await ctx.owner.query(
+        `SELECT p.first_subscribed_at, p.image_policy, s.created_at
+       FROM user_feed_preferences p JOIN subscriptions s USING (user_id, feed_id)
+       WHERE p.user_id = $1 AND p.feed_id = $2`,
+        [user.id, target.id],
+      );
+      expect(rows.rows).toEqual([
+        {
+          first_subscribed_at: original,
+          image_policy: conflict ? 'block' : 'allow',
+          created_at: original,
+        },
+      ]);
+    },
+  );
+
   it('keeps the greatest last_seen_at of a collapsed association', async () => {
     const src = await createFeed(ctx.owner);
     const dst = await createFeed(ctx.owner);

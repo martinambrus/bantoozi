@@ -1,5 +1,5 @@
 {
-  "id": "48e779f1-ce3c-444d-a140-2365d69687ec",
+  "id": "b64744c1-e24e-48ab-8acb-e8d1711a9705",
   "prevId": "a436d76d-ecec-4965-90de-9d91d6ce64f0",
   "version": "7",
   "dialect": "postgresql",
@@ -7752,6 +7752,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'inherit'"
+        },
+        "first_subscribed_at": {
+          "name": "first_subscribed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",

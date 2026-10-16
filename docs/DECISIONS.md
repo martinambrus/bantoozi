@@ -2565,3 +2565,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   be released under the current plan. A retained ID cannot attach a waiting source's frozen snapshot
   or fingerprint to feedback merely because another off-mode carrier makes the article accessible.
   The action returns obsolete_request without recording feedback; the same ID works after release.
+
+  PR #47 eighth review: removing and re-adding a feed cannot renew introductory grace. Unsubscribe
+  saves created_at as user_feed_preferences.first_subscribed_at; single, OPML and CLI subscriptions
+  restore it. Image-policy resets preserve history, and feed merges retain the earliest remembered
+  start and cap a live target subscription to it. Migration 0031 backfills current subscriptions'
+  starts into existing preferences; previously unsubscribed remembered sources have grace expired
+  conservatively. Idle feed deletion can discard history only after no articles remain. No extra
+  reads or joins are added to article visibility queries.

@@ -337,16 +337,25 @@ export async function mergeFeeds(
   // A conflict keeps the stricter explicit choice: the survivor's row takes the source's policy
   // only when that one is stricter (block > allow > inherit).
   await tx.execute(sql`
-    UPDATE user_feed_preferences t SET image_policy = s.image_policy, updated_at = now()
+    UPDATE user_feed_preferences t
+       SET first_subscribed_at = least(t.first_subscribed_at, s.first_subscribed_at),
+           image_policy = CASE WHEN array_position(ARRAY['inherit', 'allow', 'block'], s.image_policy)
+             > array_position(ARRAY['inherit', 'allow', 'block'], t.image_policy)
+             THEN s.image_policy ELSE t.image_policy END,
+           updated_at = now()
       FROM user_feed_preferences s
-     WHERE s.feed_id = ${src} AND t.feed_id = ${dst} AND t.user_id = s.user_id
-       AND array_position(ARRAY['inherit', 'allow', 'block'], s.image_policy)
-           > array_position(ARRAY['inherit', 'allow', 'block'], t.image_policy)`);
+     WHERE s.feed_id = ${src} AND t.feed_id = ${dst} AND t.user_id = s.user_id`);
   await tx.execute(sql`
     DELETE FROM user_feed_preferences s
      WHERE s.feed_id = ${src}
        AND EXISTS (SELECT 1 FROM user_feed_preferences t WHERE t.feed_id = ${dst} AND t.user_id = s.user_id)`);
   await tx.execute(sql`UPDATE user_feed_preferences SET feed_id = ${dst} WHERE feed_id = ${src}`);
+  // An unsubscribed alias can carry older introduction history than the live target subscription.
+  await tx.execute(sql`
+    UPDATE subscriptions s SET created_at = least(s.created_at, p.first_subscribed_at)
+      FROM user_feed_preferences p
+     WHERE s.feed_id = ${dst} AND p.feed_id = s.feed_id AND p.user_id = s.user_id
+       AND p.first_subscribed_at < s.created_at`);
   await tx.execute(sql`
     UPDATE user_article SET bookmark_origin_feed_id = ${dst} WHERE bookmark_origin_feed_id = ${src}`);
 

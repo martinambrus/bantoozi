@@ -394,7 +394,10 @@ one full plan interval has elapsed and a boundary in the new zone occurs. Repeat
 advance it early or hide released arrivals. The display timezone changes immediately; next-update
 metadata includes this transition hold. A changed plan cadence applies immediately. A client `asOf` is always capped at server time. Each carrier
 must have `first_seen_at <= least(asOf, greatest(release_at, subscription.created_at + 15 minutes))`.
-The grace cutoff keeps already visible grace articles visible after grace expires. The same predicate
+The grace cutoff keeps already visible grace articles visible after grace expires. Unsubscribe remembers
+the original subscription start in per-feed preferences; normal and OPML re-subscriptions restore it,
+so re-adding a feed or resetting its image policy does not renew grace. Feed merges keep the earliest
+remembered start. The same predicate
 applies to list/counts/badges/filter actions, calibration, detail/context/cluster members, individual
 mutations, explicit analysis selection and card article inputs. Owned bookmarks remain accessible.
 Automatic ranking alone does not grant article access. Ingestion and background analysis continue

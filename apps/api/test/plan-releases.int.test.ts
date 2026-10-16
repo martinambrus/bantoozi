@@ -2,6 +2,8 @@ import {
   bindReaderClock,
   cardsMadeFromFeedArticles,
   createDatabase,
+  insertSubscription,
+  insertSubscriptions,
   readerReleaseClock,
   seedQuestionSets,
   withTenants,
@@ -659,3 +661,38 @@ it('rejects a retained selected-request ID when its carrier becomes unreleased a
   const released = await account.api.post(`/articles/${article.id}/rating`, payload);
   expect(released.statusCode, released.body).toBe(200);
 });
+
+it.each(['single', 'opml'])(
+  'does not renew release grace on re-subscription through %s, including after resetting image policy',
+  async (method) => {
+    const account = await following('free');
+    const original = await h.owner.query(
+      'SELECT created_at FROM subscriptions WHERE user_id = $1 AND feed_id = $2',
+      [account.user.id, feedId],
+    );
+    const removed = await account.api.delete(`/subscriptions/${feedId}`);
+    expect(removed.statusCode, removed.body).toBe(204);
+    const preference = await account.api.put(`/feed-preferences/${feedId}`, {
+      imagePolicy: 'inherit',
+    });
+    expect(preference.statusCode, preference.body).toBe(200);
+    await withTenants(createDatabase(h.owner), [account.user.id], async (tx) => {
+      if (method === 'single') {
+        expect(await insertSubscription(tx, { feedId, folder: null })).toBe(true);
+      } else {
+        expect(await insertSubscriptions(tx, [{ feedId, folder: null }])).toEqual([feedId]);
+      }
+    });
+    const restored = await h.owner.query(
+      'SELECT created_at FROM subscriptions WHERE user_id = $1 AND feed_id = $2',
+      [account.user.id, feedId],
+    );
+    expect(restored.rows[0].created_at).toEqual(original.rows[0].created_at);
+    expect((await account.api.get(`/articles/${freshId}`)).statusCode).toBe(404);
+    const me = await account.api.get('/me');
+    const feed = (await account.api.get('/subscriptions'))
+      .json()
+      .find((s: { feed: { id: string } }) => s.feed.id === feedId).feed;
+    expect(feed.nextUpdateAt).toBe(me.json().planInfo.nextUpdateAt);
+  },
+);

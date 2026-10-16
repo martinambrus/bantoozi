@@ -2747,6 +2747,11 @@
           "type": "timestamp with time zone",
           "nullable": false,
           "default": "now()"
+        },
+        "first_subscribed_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
         }
       },
       "primaryKey": ["user_id", "feed_id"],

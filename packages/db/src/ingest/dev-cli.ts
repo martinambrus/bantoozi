@@ -86,7 +86,10 @@ export async function subscribeToFeed(
     feedId = survivor;
   }
   const subscribed = await tx.execute(sql`
-    INSERT INTO subscriptions (user_id, feed_id) VALUES (${input.userId}::uuid, ${feedId}::bigint)
+    INSERT INTO subscriptions (user_id, feed_id, created_at)
+    VALUES (${input.userId}::uuid, ${feedId}::bigint,
+      coalesce((SELECT first_subscribed_at FROM user_feed_preferences
+        WHERE user_id = ${input.userId}::uuid AND feed_id = ${feedId}::bigint), now()))
     ON CONFLICT (user_id, feed_id) DO NOTHING`);
   // A dead feed is never fetched, so the fetch recorded below would do nothing. The row lock
   // above keeps its status until this update; a merged tombstone was resolved to its live root.

@@ -992,7 +992,10 @@ exists. After 30 days set `cold_at` and remove redundant hot body storage only a
 archive binding/checksum. This is a storage lifecycle change, not an expiry or a promise that tiny or
 incompressible strings shrink. Restore testing includes saved text/HTML and checksums.
 
-`user_feed_preferences.image_policy` is tenant data independent of subscription lifetime. Its
+`user_feed_preferences.image_policy` is tenant data independent of subscription lifetime.
+`first_subscribed_at` remembers the original grace start on unsubscribe; resubscription restores
+subscriptions.created_at from it. Image resets preserve this field and feed merges retain the earliest
+start. Existing remembered unsubscribed sources receive an already-expired start in migration 0031. Its
 `inherit|allow|block` value remains available for saved items after unsubscribe, via
 `bookmark_origin_feed_id`; all reader/card/expanded/saved rendering consults spec 08/09's effective
 policy before any image URL is fetched. A feed identity merge remaps these preferences and bookmark
@@ -1091,6 +1094,7 @@ CREATE INDEX subscriptions_feed_idx ON subscriptions (feed_id);
 CREATE TABLE user_feed_preferences (
   user_id      uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   feed_id      bigint NOT NULL REFERENCES feeds(id) ON DELETE RESTRICT,
+  first_subscribed_at timestamptz NULL,  -- original introduction start, retained on unsubscribe
   image_policy text NOT NULL DEFAULT 'inherit' CHECK (image_policy IN ('inherit','allow','block')),
   updated_at   timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, feed_id)

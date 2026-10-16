@@ -1,9 +1,10 @@
--- D-257: reader releases and timezone transition guard.
+-- D-257: reader releases, timezone transitions and durable subscription grace.
 ALTER TABLE "plans" DROP CONSTRAINT "plans_release_interval_check";--> statement-breakpoint
 ALTER TABLE "plans" ADD COLUMN "release_revision" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
 ALTER TABLE "users" ADD COLUMN "release_hold_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "users" ADD COLUMN "release_hold_until" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "users" ADD COLUMN "release_hold_plan_revision" integer;--> statement-breakpoint
+ALTER TABLE "user_feed_preferences" ADD COLUMN "first_subscribed_at" timestamp with time zone;--> statement-breakpoint
 -- Activate untouched seeds only. An edited null may be an explicit immediate setting;
 -- P0 did not store per-field edit provenance, so preserve all such edited plans conservatively.
 UPDATE plans p SET release_interval_s = cadence.seconds, version = version + 1, updated_at = now()
@@ -57,3 +58,10 @@ REVOKE EXECUTE ON FUNCTION plans_advance_release_revision() FROM PUBLIC;
 --> statement-breakpoint
 CREATE TRIGGER plans_advance_release_revision BEFORE UPDATE OF release_interval_s ON plans
 FOR EACH ROW EXECUTE FUNCTION plans_advance_release_revision();
+
+--> statement-breakpoint
+-- Existing live subscriptions keep their introduction start. A remembered unsubscribed source has
+-- no recoverable creation timestamp; conservatively expire its grace rather than renew it.
+UPDATE user_feed_preferences p SET first_subscribed_at = coalesce(
+  (SELECT s.created_at FROM subscriptions s WHERE s.user_id = p.user_id AND s.feed_id = p.feed_id),
+  least(p.updated_at, now() - interval '15 minutes'));

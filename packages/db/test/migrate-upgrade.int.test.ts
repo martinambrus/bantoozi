@@ -332,7 +332,30 @@ describe('upgrade from the previous release (spec 11 §9 item 12)', () => {
         FROM plans p CROSS JOIN (VALUES ('custom-low', 1), ('custom-high', 90001),
           ('custom-immediate', 0), ('custom-null', NULL)) AS x(key, seconds)
         WHERE p.key = 'beta'`);
+      const historyUser = await createUser(pool);
+      const followed = await createFeed(pool);
+      const removed = await createFeed(pool);
+      await createSubscription(pool, { userId: historyUser.id, feedId: followed.id });
+      await pool.query(
+        "UPDATE subscriptions SET created_at = '2024-01-01T00:00:00Z' WHERE user_id = $1",
+        [historyUser.id],
+      );
+      await pool.query(
+        `INSERT INTO user_feed_preferences (user_id, feed_id, image_policy, updated_at)
+         VALUES ($1, $2, 'allow', '2025-01-01T00:00:00Z'), ($1, $3, 'block', '2020-01-01T00:00:00Z')`,
+        [historyUser.id, followed.id, removed.id],
+      );
       await runMigrations({ databaseUrl: old.urls.owner });
+      const history = await pool.query(
+        'SELECT feed_id::text AS feed_id, first_subscribed_at FROM user_feed_preferences WHERE user_id = $1',
+        [historyUser.id],
+      );
+      expect(
+        Object.fromEntries(history.rows.map((row) => [row.feed_id, row.first_subscribed_at])),
+      ).toEqual({
+        [followed.id]: new Date('2024-01-01T00:00:00Z'),
+        [removed.id]: new Date('2020-01-01T00:00:00Z'),
+      });
       const rows = await pool.query<{
         key: string;
         release_interval_s: number | null;

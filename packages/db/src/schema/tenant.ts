@@ -67,6 +67,7 @@ export const userFeedPreferences = pgTable(
       .notNull()
       .references(() => feeds.id, { onDelete: 'restrict' }),
     imagePolicy: text('image_policy').notNull().default('inherit'),
+    firstSubscribedAt: tstz('first_subscribed_at'),
     updatedAt: tstz('updated_at').notNull().defaultNow(),
   },
   (t) => [
