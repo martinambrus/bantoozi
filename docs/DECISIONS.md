@@ -2544,3 +2544,7 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   fetch after grace ends is rounded to the next regular release. Migration activation is limited
   to seed version 1: P0 cannot distinguish a saved null from another plan edit, so all edited-null
   built-ins stay immediate. Non-null edits, explicit zero and custom plans remain preserved.
+
+  PR #47 fourth review: rating-triggered analysis filters waiting carriers before choosing or
+  reusing a feed. A waiting training feed cannot hide the released training candidate, and an
+  unreleased active admission cannot suppress a needed selected request on the released source.

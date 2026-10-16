@@ -647,7 +647,7 @@ export async function reusableAnalysisRequests(
 }
 
 /**
- * The owned training/active feeds carrying an article, for a rating that asks for its analysis
+ * The owned, released training/active feeds carrying an article, for a rating that asks for its analysis
  * (D-238): training feeds first, then by id. `admitted` marks an active feed that analyses the
  * article on its own (it arrived after the feed became active and its daily cap admitted it), so
  * nothing needs requesting; `capped` marks an active feed whose cap skipped the arrival (D-251).
@@ -656,6 +656,7 @@ export async function ratingAnalysisFeeds(
   tx: TenantTx,
   articleId: string,
 ): Promise<{ feedId: string; version: string; admitted: boolean; capped: boolean }[]> {
+  const clock = await readerReleaseClock(tx);
   const result = await tx.execute<{
     feed_id: string;
     version: string;
@@ -671,6 +672,7 @@ export async function ratingAnalysisFeeds(
       FROM subscriptions s
       JOIN feed_items fi ON fi.feed_id = s.feed_id AND fi.article_id = ${articleId}::bigint
      WHERE s.user_id = ${tenantUserId(tx)}::uuid AND s.inference_mode IN ('training', 'active')
+       AND ${releasedCarrier(clock)}
      ORDER BY (s.inference_mode = 'training') DESC, s.feed_id`);
   return result.rows.map((row) => ({
     feedId: row.feed_id,
