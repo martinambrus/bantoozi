@@ -98,6 +98,23 @@ export function subscriptionReleasedThrough(clock: ReaderReleaseClock, createdAt
   );
 }
 
+/** Feed arrivals already waiting for this account's next release; one bounded batch for all feeds. */
+export async function pendingFeedReleases(
+  tx: TenantTx,
+  feedIds: readonly string[],
+  clock: ReaderReleaseClock,
+): Promise<Set<string>> {
+  if (feedIds.length === 0 || clock.nextReleaseAt === null) return new Set();
+  const result = await tx.execute<{ feed_id: string }>(sql`
+    SELECT s.feed_id::text AS feed_id FROM subscriptions s
+    WHERE s.user_id = ${tenantUserId(tx)}::uuid
+      AND s.feed_id = ANY(${sql.param([...feedIds])}::bigint[])
+      AND EXISTS (SELECT 1 FROM feed_items fi WHERE fi.feed_id = s.feed_id
+        AND fi.first_seen_at > ${carrierReleaseAt(clock, sql`s.created_at`)}
+        AND fi.first_seen_at <= ${clock.now.toISOString()}::timestamptz)`);
+  return new Set(result.rows.map((row) => row.feed_id));
+}
+
 /** Current per-origin limits for reader metadata, read in one batch for the subscription list. */
 export async function readerSourcePolicies(
   tx: TenantTx,

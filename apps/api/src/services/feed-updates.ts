@@ -1,4 +1,6 @@
+import { originOf } from '@bantoozi/feeds';
 import {
+  pendingFeedReleases,
   readerReleaseClock,
   readerSourcePolicies,
   subscriptionReleasedThrough,
@@ -19,8 +21,13 @@ export async function feedUpdates(
   now: Date,
 ): Promise<Map<string, FeedUpdateInfo>> {
   const clock = await readerReleaseClock(tx, now);
-  const origins = rows.map((row) => new URL(row.feed.fetchUrl ?? row.feed.url).origin);
+  const origins = rows.map((row) => originOf(new URL(row.feed.fetchUrl ?? row.feed.url)));
   const sources = await readerSourcePolicies(tx, origins);
+  const pending = await pendingFeedReleases(
+    tx,
+    rows.map((row) => row.feed.id),
+    clock,
+  );
   return new Map(
     rows.map((row, index) => {
       const floor = clock.intervalS || clock.planIntervalS;
@@ -31,20 +38,25 @@ export async function feedUpdates(
       const visibleUntil = subscriptionReleasedThrough(clock, row.createdAt).getTime();
       const bound = (value: Date | null) =>
         value === null ? null : new Date(Math.min(value.getTime(), visibleUntil)).toISOString();
+      const grace = row.createdAt.getTime() + 900000 > clock.now.getTime();
+      const immediate = !clock.intervalS || grace;
       const candidate = new Date(
         Math.max(
-          clock.now.getTime() + 1,
+          clock.now.getTime() + (immediate ? 30000 : 1),
           policy?.nextStartAt?.getTime() ?? 0,
           (row.feed.lastSuccessAt?.getTime() ?? 0) + publisher * 1000,
           row.feed.nextFetchAt?.getTime() ?? clock.now.getTime() + interval * 1000,
         ),
       );
-      const grace = row.createdAt.getTime() + 900000 > clock.now.getTime();
       const next = releaseWindow(candidate, clock.timezone, grace ? null : clock.intervalS);
-      const nextAt =
+      const fetchedAt =
         next.nextReleaseAt === null || next.releasedAt.getTime() === candidate.getTime()
           ? candidate
           : next.nextReleaseAt;
+      const nextAt =
+        pending.has(row.feed.id) && clock.nextReleaseAt !== null
+          ? new Date(Math.min(clock.nextReleaseAt.getTime(), fetchedAt.getTime()))
+          : fetchedAt;
       return [
         row.feed.id,
         {

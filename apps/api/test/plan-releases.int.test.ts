@@ -216,8 +216,9 @@ it('bounds shared fetch metadata and reports account cadence, publisher limits a
   boundary.setUTCMinutes(0, 0, 0);
   expect(feed.lastSuccessAt).toBe(boundary.toISOString());
   expect(feed).toMatchObject({ updateIntervalS: 1800, intervalReason: 'publisher' });
-  expect(Date.parse(feed.nextUpdateAt)).toBeGreaterThanOrEqual(nextFetch.getTime());
-  expect(new Date(feed.nextUpdateAt).getUTCMinutes()).toBe(45);
+  // The shared feed already has a waiting article. Release it at 12:15 even if the next source
+  // fetch is at 12:37 (whose arrivals would wait until 12:45).
+  expect(new Date(feed.nextUpdateAt).getUTCMinutes()).toBe(15);
   const me = await account.api.get('/me');
   expect(me.json().planInfo).toMatchObject({ label: 'Beta', releaseIntervalS: 900 });
   expect(new Date(me.json().planInfo.nextUpdateAt).getUTCMinutes()).toBe(15);
@@ -271,4 +272,24 @@ it('refuses a story rule when its only carrier has not been released, even with 
     expiresInDays: 1,
   });
   expect(result.statusCode, result.body).toBe(404);
+});
+
+it('estimates a future fetch boundary when the source has no waiting articles', async () => {
+  const account = await following('beta');
+  const empty = await createFeed(h.owner);
+  await createSubscription(h.owner, { userId: account.user.id, feedId: empty.id });
+  await h.owner.query(
+    "UPDATE subscriptions SET created_at = $2::timestamptz - interval '1 day' WHERE user_id = $1",
+    [account.user.id, now],
+  );
+  const nextFetch = new Date(now.getTime() + 30 * 60000);
+  await h.owner.query(
+    "UPDATE feeds SET last_success_at = $2, next_fetch_at = $3, publish_stats = jsonb_build_object('publisher_min_interval_s', 1800) WHERE id = $1",
+    [empty.id, now, nextFetch],
+  );
+  const result = await account.api.get('/subscriptions');
+  expect(result.statusCode, result.body).toBe(200);
+  const feed = result.json().find((row: { feed: { id: string } }) => row.feed.id === empty.id).feed;
+  expect(new Date(feed.nextUpdateAt).getUTCMinutes()).toBe(45);
+  expect(feed.intervalReason).toBe('publisher');
 });

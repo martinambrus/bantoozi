@@ -31,8 +31,10 @@ export function meQueryOptions(api: ApiClient) {
     staleTime: ME_STALE_MS,
     // Refresh the displayed next release when it passes, also picking up plan edits while open.
     refetchInterval: (query) => {
-      const next = query.state.data?.planInfo?.nextUpdateAt;
-      if (next == null) return false;
+      const plan = query.state.data?.planInfo;
+      if (plan === undefined) return false;
+      const next = plan.nextUpdateAt;
+      if (next === null) return ME_STALE_MS;
       return Math.min(ME_STALE_MS, Math.max(1000, Date.parse(next) - Date.now() + 250));
     },
     // The route guard waits for this answer; offline it has to fail rather than pause until online.
