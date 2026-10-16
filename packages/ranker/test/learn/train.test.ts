@@ -632,3 +632,18 @@ it('plans k = 3 when a mixed story group sits beside single-class groups', () =>
   }
   expect(ranker.planFolds(samples, 'seed')).toEqual(plan);
 });
+
+describe('nested CV only below NESTED_CV_MAX_EXPLICIT (D-261)', () => {
+  it('reports each outer fold at the outer λ and Platt from that many explicit samples on', () => {
+    expect(ranker.NESTED_CV_MAX_EXPLICIT).toBe(1_000);
+    // About a fifth of the synthetic samples are implicit.
+    const samples = drivenSamples(1_300, 'large');
+    const run = () => api.trainUserModel(trainArgs(samples), { mode: 'production' });
+    const result = run();
+    expect(result.metrics.nExplicit).toBeGreaterThanOrEqual(ranker.NESTED_CV_MAX_EXPLICIT);
+    expect(result.metrics.cvAuc).toBeGreaterThan(0.8);
+    expect(Number.isFinite(result.metrics.cvLogloss)).toBe(true);
+    expect(result.activation).toEqual({ eligible: true, reasons: [] });
+    expect(run()).toEqual(result);
+  });
+});
