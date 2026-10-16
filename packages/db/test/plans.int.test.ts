@@ -2,9 +2,12 @@ import { readFileSync } from 'node:fs';
 import { createFeed, createSubscription, createUser, type Queryable } from '@bantoozi/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { readOwnUser } from '../src/api/me.js';
+import { insertSubscription, refreshFeedMaterializations } from '../src/api/subscriptions.js';
 import { createDatabase } from '../src/client.js';
 import { ensureDevUser } from '../src/ingest/dev-cli.js';
 import { ensureEvalUser } from '../src/eval/system-user.js';
+import { withTenant } from '../src/tenant.js';
 
 import { setupDbTest, type DbTestContext } from './support/test-db.js';
 
@@ -325,4 +328,39 @@ it('restores the smoke administrator when beta was deleted and another plan is t
     await client.query('ROLLBACK');
     client.release();
   }
+});
+
+describe('a plan interval edit and a concurrent first subscription (D-255, PR #45 review)', () => {
+  it('leaves the new feed at the edited interval, whichever transaction commits first', async () => {
+    const plan = await insertPlan(ctx.owner, { min_fetch_interval_s: 7200 });
+    const user = await createUser(ctx.owner, { plan });
+    const feed = await createFeed(ctx.owner);
+    await ctx.owner.query('UPDATE feeds SET min_interval_s = 900 WHERE id = $1', [feed.id]);
+
+    // The admin edit, in flight: the plan row is locked and its feeds refreshed, not yet committed.
+    const edit = await ctx.owner.connect();
+    try {
+      await edit.query('BEGIN');
+      await edit.query('SELECT key FROM plans WHERE key = $1 FOR UPDATE', [plan]);
+      await edit.query(
+        'UPDATE plans SET min_fetch_interval_s = 600, version = version + 1 WHERE key = $1',
+        [plan],
+      );
+      await edit.query('SELECT refresh_plan_feeds($1)', [plan]);
+
+      // The user's first subscription on that plan, as the subscribe transaction runs it.
+      const subscribing = withTenant(ctx.app, user.id, async (tx) => {
+        await readOwnUser(tx, { lock: true });
+        await insertSubscription(tx, { feedId: feed.id, folder: null });
+        await refreshFeedMaterializations(tx, [feed.id]);
+      });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await edit.query('COMMIT');
+      await subscribing;
+    } finally {
+      edit.release();
+    }
+
+    expect((await counters(feed.id))?.min_interval_s).toBe(600);
+  });
 });

@@ -274,6 +274,11 @@ export async function restoreSoftDeletedUser(tx: TenantTx): Promise<string[]> {
      WHERE id = ${userId}::uuid AND deleted_at IS NOT NULL
        AND deleted_at > now() - make_interval(days => ${RESTORE_WINDOW_DAYS})`);
   if (restored.rowCount !== 1) throw new Error('account is not restorable');
+  // As `readOwnUser({ lock: true })`: the plan before the feeds, so a concurrent plan edit either
+  // waits for the restore or is waited for and then counts the restored user's feeds (D-255).
+  await tx.execute(sql`
+    SELECT p.key FROM plans p JOIN users u ON u.plan = p.key
+     WHERE u.id = ${userId}::uuid FOR SHARE OF p`);
   const feeds = await tx.execute<{ feed_id: string }>(sql`
     SELECT feed_id::text AS feed_id FROM subscriptions
      WHERE user_id = ${userId}::uuid ORDER BY feed_id`);

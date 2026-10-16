@@ -41,7 +41,13 @@ type Row = {
   deleted_at: RawTimestamp | null;
 };
 
-/** The tenant's users row; `lock` takes `FOR NO KEY UPDATE` (preference merges, quota writes). */
+/**
+ * The tenant's users row; `lock` takes `FOR NO KEY UPDATE` (preference merges, quota writes) and a
+ * share lock on the user's plan row. Every write that refreshes feed intervals starts here, before
+ * any feed lock, so it serializes with a plan edit (which locks the plan, then its feeds): it either
+ * waits for the edit and reads the new interval, or the edit waits for it and then sees its new
+ * subscription (D-255, PR #45 review). The order user → plan → feeds never inverts an edit's.
+ */
 export async function readOwnUser(
   tx: TenantTx,
   options: { lock?: boolean } = {},
@@ -54,6 +60,9 @@ export async function readOwnUser(
       ${options.lock === true ? sql`FOR NO KEY UPDATE` : sql``}`);
   const row = result.rows[0];
   if (row === undefined) throw new Error('tenant user row is missing');
+  if (options.lock === true) {
+    await tx.execute(sql`SELECT key FROM plans WHERE key = ${row.plan} FOR SHARE`);
+  }
   return {
     id: row.id,
     email: row.email,
