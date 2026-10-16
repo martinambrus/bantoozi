@@ -39,6 +39,7 @@ const ITEM_KEYS = [
   'topReason',
   'translationAvailable',
   'url',
+  'domain',
 ].sort();
 
 /** The opened article adds its text, its translation and the saved snapshot. */

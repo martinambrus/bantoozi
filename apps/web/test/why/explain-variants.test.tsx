@@ -64,7 +64,7 @@ describe('the Why-this drawer renders every Explain variant', () => {
       - Story already seen
       - Judged by AI
       ## What you can do
-      [Make a card from this] [Boost this feed] [Block this feed] [Block this author]
+      [Make a card from this] [Boost feed ( Example Weekly )] [Block feed ( Example Weekly )] [Block website ( example.test )] [Block author ( Jane Doe )]
       [Mute a keyword]
       [Close]"
     `);
@@ -82,7 +82,7 @@ describe('the Why-this drawer renders every Explain variant', () => {
       - EV battery tech Strength: Love <meter "Match for EV battery tech" 91 % match> [Not really about this] [Yes, exactly this] [Edit card]
       - Solar power Strength: Like <meter "Match for Solar power" 42 % match> [Not really about this] [Yes, exactly this] [Edit card]
       ## What you can do
-      [Make a card from this] [Boost this feed] [Block this feed] [Block this author]
+      [Make a card from this] [Boost feed ( Example Weekly )] [Block feed ( Example Weekly )] [Block website ( example.test )] [Block author ( Jane Doe )]
       [Mute a keyword]
       [Close]"
     `);
@@ -121,7 +121,7 @@ describe('the Why-this drawer renders every Explain variant', () => {
       - Demoted: clickbait [Reset]
       - Demoted: outdated [Reset]
       ## What you can do
-      [Make a card from this] [Boost this feed] [Block this feed] [Block this author]
+      [Make a card from this] [Boost feed ( Example Weekly )] [Block feed ( Example Weekly )] [Block website ( example.test )] [Block author ( Jane Doe )]
       [Mute a keyword]
       [Close]"
     `);
@@ -162,7 +162,7 @@ describe('the Why-this drawer renders every Explain variant', () => {
       - Matches for your Love interests: raised the score
       These are associations the model has learned, not reasons.
       ## What you can do
-      [Make a card from this] [Boost this feed] [Block this feed] [Block this author]
+      [Make a card from this] [Boost feed ( Example Weekly )] [Block feed ( Example Weekly )] [Block website ( example.test )] [Block author ( Jane Doe )]
       [Mute a keyword]
       [Close]"
     `);
@@ -190,7 +190,7 @@ describe('the Why-this drawer renders every Explain variant', () => {
       ## Rules applied
       - Keyword match (model unavailable)
       ## What you can do
-      [Make a card from this] [Boost this feed] [Block this feed] [Block this author]
+      [Make a card from this] [Boost feed ( Example Weekly )] [Block feed ( Example Weekly )] [Block website ( example.test )] [Block author ( Jane Doe )]
       [Mute a keyword]
       [Close]"
     `);
@@ -211,7 +211,7 @@ describe('the Why-this drawer renders every Explain variant', () => {
       ## Rules applied
       - Interests still being matched
       ## What you can do
-      [Make a card from this] [Boost this feed] [Block this feed] [Block this author]
+      [Make a card from this] [Boost feed ( Example Weekly )] [Block feed ( Example Weekly )] [Block website ( example.test )] [Block author ( Jane Doe )]
       [Mute a keyword]
       [Close]"
     `);
@@ -228,7 +228,7 @@ describe('the Why-this drawer renders every Explain variant', () => {
       ## Your interests
       No interest card has judged this article yet.
       ## What you can do
-      [Make a card from this] [Boost this feed] [Block this feed] [Block this author]
+      [Make a card from this] [Boost feed ( Example Weekly )] [Block feed ( Example Weekly )] [Block website ( example.test )] [Block author ( Jane Doe )]
       [Mute a keyword]
       [Close]"
     `);
@@ -249,7 +249,7 @@ describe('the Why-this drawer renders every Explain variant', () => {
       ## Rules applied
       - Blocked source [Undo]
       ## What you can do
-      [Make a card from this] [Boost this feed] [Block this feed] [Block this author]
+      [Make a card from this] [Boost feed ( Example Weekly )] [Block feed ( Example Weekly )] [Block website ( example.test )] [Block author ( Jane Doe )]
       [Mute a keyword]
       [Close]"
     `);
@@ -274,7 +274,7 @@ describe('the Why-this drawer renders every Explain variant', () => {
       ## Rules applied
       - Hidden by a never-show interest: Football
       ## What you can do
-      [Make a card from this] [Boost this feed] [Block this feed] [Block this author]
+      [Make a card from this] [Boost feed ( Example Weekly )] [Block feed ( Example Weekly )] [Block website ( example.test )] [Block author ( Jane Doe )]
       [Mute a keyword]
       [Close]"
     `);
@@ -295,7 +295,7 @@ describe('the Why-this drawer renders every Explain variant', () => {
       ## Rules applied
       - Not analyzed
       ## What you can do
-      [Make a card from this] [Boost this feed] [Block this feed] [Block this author]
+      [Make a card from this] [Boost feed ( Example Weekly )] [Block feed ( Example Weekly )] [Block website ( example.test )] [Block author ( Jane Doe )]
       [Mute a keyword]
       [Close]"
     `);
@@ -310,7 +310,7 @@ describe('the Why-this drawer renders every Explain variant', () => {
       Not analyzed yet
       Bantoozi hasn't scored this article, so there is nothing to explain yet.
       ## What you can do
-      [Make a card from this] [Boost this feed] [Block this feed] [Block this author]
+      [Make a card from this] [Boost feed ( Example Weekly )] [Block feed ( Example Weekly )] [Block website ( example.test )] [Block author ( Jane Doe )]
       [Mute a keyword]
       [Close]"
     `);
@@ -353,7 +353,7 @@ describe('the Why-this drawer renders every Explain variant', () => {
       - Uprednostnený zdroj [Vrátiť späť]
       - Zhoduje sa so záujmom „musím vidieť“: EV battery tech
       ## Čo môžete urobiť
-      [Vytvoriť kartu z tohto] [Uprednostniť tento zdroj] [Blokovať tento zdroj] [Blokovať tohto autora]
+      [Vytvoriť kartu z tohto] [Uprednostniť zdroj ( Example Weekly )] [Blokovať zdroj ( Example Weekly )] [Blokovať web ( example.test )] [Blokovať autora ( Jane Doe )]
       [Stlmiť kľúčové slovo]
       [Zavrieť]"
     `);

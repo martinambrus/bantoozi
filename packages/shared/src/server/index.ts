@@ -12,3 +12,4 @@ export * from './language.js';
 export * from './logger.js';
 export * from './mail/mailer.js';
 export * from './mail/templates.js';
+export * from './registrable-domain.js';

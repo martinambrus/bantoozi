@@ -9,6 +9,7 @@ const ITEM_KEYS = [
   'id',
   'title',
   'url',
+  'domain',
   'feed',
   'author',
   'publishedAt',

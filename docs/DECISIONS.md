@@ -2593,3 +2593,13 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   grace window bypasses that floor; an in-grace account whose fetch is later does not. Already
   fetched waiting arrivals still use the next release boundary. Compute the common window once
   per subscription list, rather than once per feed.
+
+- D-258: 2026-10-16 (owner request: block/boost actions name their target; PR #50 Codex review) —
+  `ArticleListItem` (and so `ArticleDetail`) gains `domain: string | null`, the registrable domain
+  of `url` that `POST /rules` stores for `block_domain`, so "Block website (example.co.uk)" names
+  the real scope of the rule for `news.example.co.uk`. The API computes it rather than the web app,
+  because `tldts` with the public suffix list would add about 113 kB gzipped to the reader chunk.
+  `registrableDomain` moves to `@bantoozi/shared/server` (server-only; `@bantoozi/feeds` re-exports
+  it, so existing imports keep working). The field defaults to null when parsed, and the offline
+  projection keeps it; a row saved on the device before the field existed offers no domain rule
+  until it is reloaded. No migration.

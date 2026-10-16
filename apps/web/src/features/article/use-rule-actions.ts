@@ -20,6 +20,8 @@ export interface RuleActions {
   blockDomain: (() => void) | null;
   blockAuthor: (() => void) | null;
   boostFeed: (() => void) | null;
+  /** What each action acts on, for its label: the feed title, the registrable domain and the author. */
+  targets: { feed: string | null; domain: string | null; author: string | null };
 }
 
 /**
@@ -113,11 +115,14 @@ export function useRuleActions(item: ArticleListItem): RuleActions {
   }
 
   const { feed } = item;
-  const hostname = httpUrl(item.url)?.hostname ?? null;
+  // What a domain rule stores (D-258): `news.example.co.uk` blocks all of `example.co.uk`. A row
+  // saved on the device before the field existed has none.
+  const domain = httpUrl(item.url) === null ? null : (item.domain ?? null);
   const author = item.author?.trim() ?? '';
 
   return {
     pending,
+    targets: { feed: feed?.title ?? null, domain, author: author === '' ? null : author },
     muteStory: (days) => once(() => muteStory(days)),
     blockFeed:
       feed === null
@@ -140,13 +145,13 @@ export function useRuleActions(item: ArticleListItem): RuleActions {
               ),
             ),
     blockDomain:
-      hostname === null
+      domain === null
         ? null
         : () =>
             once(() =>
               create(
-                { kind: 'block_domain', value: hostname },
-                i18n.t('article:rules.blockedDomain', { target: hostname }),
+                { kind: 'block_domain', value: domain },
+                i18n.t('article:rules.blockedDomain', { target: domain }),
               ),
             ),
     blockAuthor:

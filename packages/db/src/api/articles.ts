@@ -18,6 +18,7 @@ import {
   type RatingReason,
   type TopReason,
 } from '@bantoozi/shared';
+import { registrableDomain } from '@bantoozi/shared/server';
 import { sql, type SQL } from 'drizzle-orm';
 
 import { SELECTION_WINDOW_DAYS } from '../ingest/demand.js';
@@ -1212,6 +1213,7 @@ async function loadItemRows(
         id: row.id,
         title: row.title,
         url: row.url,
+        domain: registrableDomain(row.url),
         feed:
           row.feed_id === null
             ? null

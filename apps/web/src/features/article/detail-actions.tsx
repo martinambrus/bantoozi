@@ -22,6 +22,7 @@ import {
 import { BookmarkButton, RateButtons } from './article-buttons.js';
 import { MakeCard } from './make-card.js';
 import { MuteKeyword } from './mute-keyword.js';
+import { RuleLabel } from './rule-label.js';
 import { LabelDot } from './label-dot.js';
 import type { ArticleActions } from './use-article-actions.js';
 import { useLabels } from './use-labels.js';
@@ -103,12 +104,15 @@ export interface DetailActionsProps {
 export function DetailActions({ item, actions, onWhyThis }: DetailActionsProps) {
   const { t } = useTranslation('article');
   const rules = useRuleActions(item);
+  const { targets } = rules;
   const more = [
-    { label: 'detail.blockFeed', run: rules.blockFeed },
-    { label: 'detail.blockDomain', run: rules.blockDomain },
-    { label: 'detail.blockAuthor', run: rules.blockAuthor },
-    { label: 'detail.boostFeed', run: rules.boostFeed },
-  ].flatMap(({ label, run }) => (run === null ? [] : [{ label, run }]));
+    { label: 'detail.blockFeed', run: rules.blockFeed, target: targets.feed },
+    { label: 'detail.blockDomain', run: rules.blockDomain, target: targets.domain },
+    { label: 'detail.blockAuthor', run: rules.blockAuthor, target: targets.author },
+    { label: 'detail.boostFeed', run: rules.boostFeed, target: targets.feed },
+  ].flatMap(({ label, run, target }) =>
+    run === null || target === null ? [] : [{ label, run, target }],
+  );
 
   return (
     <div
@@ -118,6 +122,10 @@ export function DetailActions({ item, actions, onWhyThis }: DetailActionsProps) 
     >
       <RateButtons rating={item.rating} onRate={actions.rate} />
       <BookmarkButton bookmarked={item.bookmarkedAt !== null} onToggle={actions.toggleBookmark} />
+      <Button variant="ghost" onClick={actions.toggleRead}>
+        <CheckIcon className="size-4" />
+        {t(item.readAt === null ? 'detail.markRead' : 'detail.markUnread')}
+      </Button>
       <LabelMenu item={item} actions={actions} />
       {onWhyThis === undefined ? null : (
         <Button variant="ghost" onClick={onWhyThis}>
@@ -152,9 +160,9 @@ export function DetailActions({ item, actions, onWhyThis }: DetailActionsProps) 
             </Button>
           )}
         >
-          {more.map(({ label, run }) => (
+          {more.map(({ label, run, target }) => (
             <MenuItem key={label} onSelect={run}>
-              {t(label)}
+              <RuleLabel text={(values) => t(label, values)} target={target} />
             </MenuItem>
           ))}
         </Menu>

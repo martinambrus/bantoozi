@@ -490,6 +490,7 @@ at 15 minutes; new articles after `asOf` appear on refresh.
 
 ```ts
 ArticleListItem = { id, title, url /* string | null: linkless feeds are valid */,
+  domain /* string | null: registrable domain of url, the block_domain value (D-258) */,
   feed: {id, title, iconUrl} | null, author, publishedAt, firstSeenAt,
   excerpt /* ≤ 300 chars */, imageUrl, lang, lane, tier, pLike, topReason: TopReason | null,
   labelIds, labelSuggestions, rating, reason, readAt, bookmarkedAt, archivedAt,

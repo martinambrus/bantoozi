@@ -156,6 +156,11 @@ export const ArticleListItemSchema = z
     title: z.string(),
     /** Linkless feeds are valid. */
     url: z.string().nullable(),
+    /**
+     * The registrable domain of `url`, the value a `block_domain` rule stores (D-258); null without
+     * a usable address. Defaults to null for items stored before it existed (offline queue).
+     */
+    domain: z.string().nullable().default(null),
     feed: z.object({ id: IdSchema, title: z.string(), iconUrl: z.string().nullable() }).nullable(),
     author: z.string().nullable(),
     publishedAt: IsoTimestampSchema.nullable(),

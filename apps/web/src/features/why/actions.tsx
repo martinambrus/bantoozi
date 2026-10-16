@@ -5,28 +5,33 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '../../components/button.js';
 import { MakeCard } from '../article/make-card.js';
 import { MuteKeyword } from '../article/mute-keyword.js';
+import { RuleLabel } from '../article/rule-label.js';
 import { useRuleActions } from '../article/use-rule-actions.js';
 import { Section } from './section.js';
 import { usePressed } from './use-pressed.js';
 
-/** What the person can do about the article from here: a card, a source, an author, a keyword. */
+/** What the person can do about the article from here: a card, a source, a website, an author, a keyword. */
 export function Actions({ item }: { item: ArticleListItem }) {
   const { t } = useTranslation('why');
   const { t: tArticle } = useTranslation('article');
   const rules = useRuleActions(item);
   const { pressed, press } = usePressed<string>(rules.pending);
   const actionsRef = useRef<HTMLDivElement>(null);
+  const { targets } = rules;
   const sourceActions = [
-    { label: tArticle('detail.boostFeed'), run: rules.boostFeed },
-    { label: tArticle('detail.blockFeed'), run: rules.blockFeed },
-    { label: tArticle('detail.blockAuthor'), run: rules.blockAuthor },
-  ].flatMap(({ label, run }) => (run === null ? [] : [{ label, run }]));
+    { label: 'detail.boostFeed', run: rules.boostFeed, target: targets.feed },
+    { label: 'detail.blockFeed', run: rules.blockFeed, target: targets.feed },
+    { label: 'detail.blockDomain', run: rules.blockDomain, target: targets.domain },
+    { label: 'detail.blockAuthor', run: rules.blockAuthor, target: targets.author },
+  ].flatMap(({ label, run, target }) =>
+    run === null || target === null ? [] : [{ label, run, target }],
+  );
 
   return (
     <Section title={t('actions.heading')}>
       <div ref={actionsRef} tabIndex={-1} className="flex flex-wrap gap-2 outline-none">
         <MakeCard item={item} returnTo={() => actionsRef.current} />
-        {sourceActions.map(({ label, run }) => (
+        {sourceActions.map(({ label, run, target }) => (
           <Button
             key={label}
             variant="secondary"
@@ -37,7 +42,7 @@ export function Actions({ item }: { item: ArticleListItem }) {
               run();
             }}
           >
-            {label}
+            <RuleLabel text={(values) => tArticle(label, values)} target={target} />
           </Button>
         ))}
         <MuteKeyword item={item} />

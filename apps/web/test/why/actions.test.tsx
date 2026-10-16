@@ -600,8 +600,8 @@ describe('mute a keyword', () => {
         },
       },
     });
-    const boost = app.panel.getByRole('button', { name: 'Boost this feed' });
-    const block = app.panel.getByRole('button', { name: 'Block this feed' });
+    const boost = app.panel.getByRole('button', { name: 'Boost feed (Example Weekly)' });
+    const block = app.panel.getByRole('button', { name: 'Block feed (Example Weekly)' });
 
     await app.user.click(boost);
 
@@ -728,9 +728,26 @@ describe('mute a keyword', () => {
 
 describe('boost and block', () => {
   it.each([
-    ['Boost this feed', { kind: 'boost_feed', value: '7' }, 'Boosted source: Example Weekly'],
-    ['Block this feed', { kind: 'block_feed', value: '7' }, 'Blocked source: Example Weekly'],
-    ['Block this author', { kind: 'block_author', value: 'Jane Doe' }, 'Blocked author: Jane Doe'],
+    [
+      'Boost feed (Example Weekly)',
+      { kind: 'boost_feed', value: '7' },
+      'Boosted source: Example Weekly',
+    ],
+    [
+      'Block feed (Example Weekly)',
+      { kind: 'block_feed', value: '7' },
+      'Blocked source: Example Weekly',
+    ],
+    [
+      'Block website (example.test)',
+      { kind: 'block_domain', value: 'example.test' },
+      'Blocked website: example.test',
+    ],
+    [
+      'Block author (Jane Doe)',
+      { kind: 'block_author', value: 'Jane Doe' },
+      'Blocked author: Jane Doe',
+    ],
   ])('%s creates the rule and can take it back', async (name, body, message) => {
     const app = await renderDrawer({
       routes: {
@@ -748,9 +765,9 @@ describe('boost and block', () => {
   });
 
   it('offers neither without a feed or an author to base a rule on', async () => {
-    const app = await renderDrawer({ item: makeItem({ feed: null, author: null }) });
+    const app = await renderDrawer({ item: makeItem({ feed: null, url: null, author: null }) });
 
-    for (const name of ['Boost this feed', 'Block this feed', 'Block this author']) {
+    for (const name of [/^Boost feed/, /^Block feed/, /^Block website/, /^Block author/]) {
       expect(app.panel.queryByRole('button', { name })).toBeNull();
     }
     expect(app.panel.getByRole('button', { name: 'Make a card from this' })).toBeInTheDocument();

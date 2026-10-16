@@ -489,6 +489,9 @@ importers:
       pino:
         specifier: 10.3.1
         version: 10.3.1
+      tldts:
+        specifier: 7.4.15
+        version: 7.4.15
       uuidv7:
         specifier: 1.2.1
         version: 1.2.1
