@@ -2486,7 +2486,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
 
 - D-257: 2026-10-16 (approved plan-velocity P3/P4/P5; owner explicitly chose Beta release
   boundaries) — Migration 0031 activates beta's 900-second, admin's 300-second and Free–Premium's
-  approved release cadences where still unset. Explicit administrator choices stay; old unsupported
+  approved release cadences on untouched seed plans. Any edited seed's null is kept as immediate
+  because P0 did not record per-field provenance. Explicit administrator choices stay; old unsupported
   custom values normalize into 60..86400 seconds before the CHECK is tightened. Null/zero remains
   immediate. Every changed plan advances its version. Local wall-clock releases align at midnight;
   DST repeats release twice and nonexistent boundaries are skipped. A fractional-hour timezone is
@@ -2538,3 +2539,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   inference before their carrying feed releases it; sidebar card/example associations follow the
   same rule. The extended S19 policy fixture still changes only A's 44 affected views; B/C remain
   byte-identical to the original baseline, and the unchanged cost bound passes.
+
+  PR #47 third review: next-update estimates determine grace at the candidate fetch time, so a
+  fetch after grace ends is rounded to the next regular release. Migration activation is limited
+  to seed version 1: P0 cannot distinguish a saved null from another plan edit, so all edited-null
+  built-ins stay immediate. Non-null edits, explicit zero and custom plans remain preserved.

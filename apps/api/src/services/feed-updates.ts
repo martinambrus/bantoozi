@@ -38,7 +38,8 @@ export async function feedUpdates(
       const visibleUntil = subscriptionReleasedThrough(clock, row.createdAt).getTime();
       const bound = (value: Date | null) =>
         value === null ? null : new Date(Math.min(value.getTime(), visibleUntil)).toISOString();
-      const grace = row.createdAt.getTime() + 900000 > clock.now.getTime();
+      const graceUntil = row.createdAt.getTime() + 900000;
+      const grace = graceUntil > clock.now.getTime();
       const immediate = !clock.intervalS || grace;
       const candidate = new Date(
         Math.max(
@@ -48,7 +49,11 @@ export async function feedUpdates(
           row.feed.nextFetchAt?.getTime() ?? clock.now.getTime() + interval * 1000,
         ),
       );
-      const next = releaseWindow(candidate, clock.timezone, grace ? null : clock.intervalS);
+      const next = releaseWindow(
+        candidate,
+        clock.timezone,
+        candidate.getTime() <= graceUntil ? null : clock.intervalS,
+      );
       const fetchedAt =
         next.nextReleaseAt === null || next.releasedAt.getTime() === candidate.getTime()
           ? candidate

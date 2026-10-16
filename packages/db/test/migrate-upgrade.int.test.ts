@@ -320,6 +320,12 @@ describe('upgrade from the previous release (spec 11 §9 item 12)', () => {
       await pool.query(
         `UPDATE plans SET release_interval_s = 7200, version = 4 WHERE key = 'free'`,
       );
+      // An admin set then explicitly cleared a built-in cadence. A separate label-only edit
+      // has the same durable provenance in P0, so preserve its null conservatively too.
+      await pool.query("UPDATE plans SET release_interval_s = 1800, version = 2 WHERE key = 'max'");
+      await pool.query("UPDATE plans SET release_interval_s = NULL, version = 3 WHERE key = 'max'");
+      await pool.query("UPDATE plans SET label = 'Edited Pro', version = 2 WHERE key = 'pro'");
+      await pool.query("UPDATE plans SET release_interval_s = 0, version = 2 WHERE key = 'basic'");
       await pool.query(`INSERT INTO plans
         SELECT (jsonb_populate_record(NULL::plans, to_jsonb(p) ||
           jsonb_build_object('key', x.key, 'is_default', false, 'release_interval_s', x.seconds))).*
@@ -333,7 +339,7 @@ describe('upgrade from the previous release (spec 11 §9 item 12)', () => {
         version: string;
       }>(
         `SELECT key, release_interval_s, version::text FROM plans WHERE key IN
-          ('beta','admin','free','premium','custom-low','custom-high','custom-immediate','custom-null')`,
+          ('beta','admin','free','basic','pro','max','premium','custom-low','custom-high','custom-immediate','custom-null')`,
       );
       expect(
         Object.fromEntries(
@@ -346,6 +352,9 @@ describe('upgrade from the previous release (spec 11 §9 item 12)', () => {
         beta: [900, '2'],
         admin: [300, '2'],
         free: [7200, '4'],
+        basic: [0, '2'],
+        pro: [null, '2'],
+        max: [null, '3'],
         premium: [60, '2'],
         'custom-low': [60, '2'],
         'custom-high': [86400, '2'],

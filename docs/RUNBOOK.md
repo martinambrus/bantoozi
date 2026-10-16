@@ -781,8 +781,9 @@ is six starts per minute across workers, separate from the existing page/discove
 ### Article release timing
 
 The approved cadences are Beta 15 minutes, Admin 5 minutes, Free 6 hours, Basic 1 hour, Plus 30
-minutes, Pro 10 minutes, Max 5 minutes and Premium 1 minute. Migration 0031 activates these where
-no release cadence was set, preserving explicit edits. A new custom plan is immediate until an admin
+minutes, Pro 10 minutes, Max 5 minutes and Premium 1 minute. Migration 0031 activates these on untouched seed plans. Edited built-ins with a null cadence stay
+immediate because P0 cannot distinguish a saved blank from another edit; set their cadence explicitly
+in Admin → Plans. Explicit non-null edits are preserved. A new custom plan is immediate until an admin
 sets its release interval; blank/zero is immediate, otherwise use 60..86400 seconds. Migration 0031
 normalizes older unsupported custom values into that range and advances changed plans' versions.
 

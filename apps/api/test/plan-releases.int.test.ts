@@ -486,3 +486,26 @@ it('captures rating features only from released active and selected carriers', a
   now = new Date(now.getTime() + 8 * 60000);
   expect((await made()).has(feedId)).toBe(true);
 });
+
+it('rounds fetches after subscription grace ends while keeping in-grace arrivals immediate', async () => {
+  const account = await following('free');
+  await h.owner.query(
+    "UPDATE subscriptions SET created_at = $2::timestamptz - interval '5 minutes' WHERE user_id = $1",
+    [account.user.id, now],
+  );
+  for (const [minutes, expected] of [
+    [30, '18:00:00.000Z'],
+    [2, '12:09:00.000Z'],
+    [10, '12:17:00.000Z'],
+  ] as const) {
+    await h.owner.query(
+      "UPDATE feeds SET next_fetch_at = $2, publish_stats = '{}'::jsonb WHERE id = $1",
+      [feedId, new Date(now.getTime() + minutes * 60000)],
+    );
+    const res = await account.api.get('/subscriptions');
+    expect(res.statusCode, res.body).toBe(200);
+    expect(
+      res.json().find((row: { feed: { id: string } }) => row.feed.id === feedId).feed.nextUpdateAt,
+    ).toBe(`${now.toISOString().slice(0, 11)}${expected}`);
+  }
+});
