@@ -2632,7 +2632,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   5. `user.learn` trains in a worker thread (`threadTrainer`; tests keep the inline trainer): a run
      is about 30 s of CPU for 3,800 samples, during which the worker's event loop, and transactions
      other jobs held on the user row, stood still. Results are identical (deep-equal on the owner's
-     data). The training cost itself (nested CV over the λ grid) is unchanged.
+     data). The training cost itself (nested CV over the λ grid) is unchanged. Running from the
+     TypeScript sources (dev, tests), the thread registers tsx itself: Node 22.22 does not pass the
+     parent's `--import` hooks to worker threads (CI caught it; verified on 22.22.2 and 22.23.3, and
+     the compiled thread under plain `node`).
   6. Keyword mutes normalize an item's fields once per item and each keyword once (26 keywords ×
      4 fields were normalized per article). Full rank 7.7 s → 3.6 s, incremental 3.2 s → 0.6 s
      (with item 3).

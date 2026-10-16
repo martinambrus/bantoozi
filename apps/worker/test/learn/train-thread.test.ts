@@ -16,10 +16,8 @@ const ARGS = {
 
 describe('threadTrainer (D-259)', () => {
   it('returns what training on the calling thread returns', async () => {
-    // Under Vitest the thread loads the TypeScript sources through tsx.
-    const trainer = threadTrainer({
-      execArgv: ['--import', 'tsx', '--conditions=bantoozi-source'],
-    });
+    // Under Vitest the thread runs from the TypeScript sources and registers tsx itself.
+    const trainer = threadTrainer({ execArgv: ['--conditions=bantoozi-source'] });
     const [threaded, inline] = await Promise.all([
       trainer(ARGS, 'production'),
       inlineTrainer(ARGS, 'production'),
