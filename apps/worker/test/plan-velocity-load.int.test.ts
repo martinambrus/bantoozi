@@ -122,8 +122,8 @@ it('schedules 100 one-minute feeds and drains two workers without exceeding the 
   for (let index = 1; index < starts.length; index += 1)
     expect(starts[index]! - starts[index - 1]!).toBeGreaterThanOrEqual(9990);
   const result = await owner.query<{ healthy: number; deferred: number; fetched: number }>(
-    `SELECT count(*) FILTER (WHERE status = 'active' AND consecutive_errors = 0 AND next_fetch_at > now())::int AS healthy, count(*) FILTER (WHERE total_fetches = 0)::int AS deferred, sum(total_fetches)::int AS fetched FROM feeds WHERE id = ANY($1::bigint[])`,
-    [feedIds],
+    `SELECT count(*) FILTER (WHERE status = 'active' AND consecutive_errors = 0 AND next_fetch_at > $2::timestamptz)::int AS healthy, count(*) FILTER (WHERE total_fetches = 0)::int AS deferred, sum(total_fetches)::int AS fetched FROM feeds WHERE id = ANY($1::bigint[])`,
+    [feedIds, new Date(started)],
   );
   expect(result.rows[0]).toEqual({
     healthy: 100,

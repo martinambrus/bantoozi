@@ -289,4 +289,75 @@ describe('upgrade from the previous release (spec 11 §9 item 12)', () => {
       migrationsApplied: 0,
     });
   });
+
+  it('activates release cadences while preserving explicit edits and normalizing old custom values', async () => {
+    const releasesFolder = path.join(previousFolder, 'before-releases');
+    await mkdir(path.join(releasesFolder, 'meta'), { recursive: true });
+    const kept = journal.entries.slice(
+      0,
+      journal.entries.findIndex((entry) => entry.tag.startsWith('0031_')),
+    );
+    expect(kept.length).toBeGreaterThan(0);
+    for (const entry of kept)
+      await cp(
+        path.join(MIGRATIONS_FOLDER, `${entry.tag}.sql`),
+        path.join(releasesFolder, `${entry.tag}.sql`),
+      );
+    await writeFile(
+      path.join(releasesFolder, 'meta', '_journal.json'),
+      JSON.stringify({ ...journal, entries: kept }),
+    );
+    const old = await setupTestDatabase({
+      pkg: 'dbrelup',
+      migrationsDir: releasesFolder,
+      pgBossVersion: PG_BOSS_VERSION,
+      migrate: async (url) => {
+        await runMigrations({ databaseUrl: url, migrationsFolder: releasesFolder });
+      },
+    });
+    const pool = new pg.Pool({ connectionString: old.urls.owner, max: 1 });
+    try {
+      await pool.query(
+        `UPDATE plans SET release_interval_s = 7200, version = 4 WHERE key = 'free'`,
+      );
+      await pool.query(`INSERT INTO plans
+        SELECT (jsonb_populate_record(NULL::plans, to_jsonb(p) ||
+          jsonb_build_object('key', x.key, 'is_default', false, 'release_interval_s', x.seconds))).*
+        FROM plans p CROSS JOIN (VALUES ('custom-low', 1), ('custom-high', 90001),
+          ('custom-immediate', 0), ('custom-null', NULL)) AS x(key, seconds)
+        WHERE p.key = 'beta'`);
+      await runMigrations({ databaseUrl: old.urls.owner });
+      const rows = await pool.query<{
+        key: string;
+        release_interval_s: number | null;
+        version: string;
+      }>(
+        `SELECT key, release_interval_s, version::text FROM plans WHERE key IN
+          ('beta','admin','free','premium','custom-low','custom-high','custom-immediate','custom-null')`,
+      );
+      expect(
+        Object.fromEntries(
+          rows.rows.map(({ key, release_interval_s, version }) => [
+            key,
+            [release_interval_s, version],
+          ]),
+        ),
+      ).toEqual({
+        beta: [900, '2'],
+        admin: [300, '2'],
+        free: [7200, '4'],
+        premium: [60, '2'],
+        'custom-low': [60, '2'],
+        'custom-high': [86400, '2'],
+        'custom-immediate': [0, '1'],
+        'custom-null': [null, '1'],
+      });
+      await expect(runMigrations({ databaseUrl: old.urls.owner })).resolves.toMatchObject({
+        migrationsApplied: 0,
+      });
+    } finally {
+      await pool.end();
+      await old.drop();
+    }
+  });
 });
