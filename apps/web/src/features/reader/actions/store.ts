@@ -817,6 +817,9 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
         mutationId: null,
         createdAt,
         replayed: dispatchOptions.replayed === true,
+        ...(dispatchOptions.ratingBatchId === undefined
+          ? {}
+          : { ratingBatchId: dispatchOptions.ratingBatchId }),
         result,
       },
       stamp: new Date(createdAt).toISOString(),

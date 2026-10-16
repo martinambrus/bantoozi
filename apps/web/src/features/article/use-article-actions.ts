@@ -45,7 +45,7 @@ export function useArticleActions(
     rate: (pressed, { hide = false }: RateOptions = {}) => {
       const held = reasonBar.heldFor(item.id);
       if (held !== null) {
-        reasonBar.undo();
+        reasonBar.undo(item.id);
         if (pressed === -1) return;
       }
       const rating = nextRating(held === null ? item.rating : held.before, pressed);

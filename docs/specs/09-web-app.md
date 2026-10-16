@@ -200,7 +200,13 @@ login without leaking the previous account's UI. Slow classification leaves arti
   "Analyze selected N articles" (at most 20 per submission, in list order, "Analyze 20 of M" when
   more are analyzable; only the selected articles not analyzed yet, hidden when there are none),
   Like and Dislike (one rating per
-  selected article, each as from its own row, so D-238 applies; the selection clears). A selected
+  selected article, each as from its own row, so D-238 applies; the selection clears). Dislike opens
+  one reason bar for the new dislikes in the selection: a reason applies to all of them, Undo
+  cancels all pending dislikes, and expiry submits them without a reason. Articles already disliked
+  are left unchanged. The bar outlives the selection panel and keeps the normal five-second timer
+  and pause behavior (§3.3); each rating keeps its selected analysis request and normal card-example
+  suggestion eligibility. A teaching offer from a selected batch stays beside the shared undo
+  toast when later ratings in that batch return no suggestion. A selected
   article rated, un-rated or hidden on its own leaves the selection at once, so a later bulk action
   never re-rates it, and a selected article the list no longer holds (rated or hidden elsewhere, dropped
   by a reload, or on a page a refresh did not bring back) leaves it too (D-250). The ticked rows are the

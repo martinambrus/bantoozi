@@ -4,8 +4,9 @@ import { describe, expect, it } from 'vitest';
 
 import { FOCUS_RING } from '../../src/components/cx.js';
 import { failure, json } from '../api/fake-fetch.js';
-import { deferred, makeDetail } from '../article/harness.js';
+import { actionResponse, deferred, makeDetail } from '../article/harness.js';
 import { makeSubscription } from '../feeds/support.js';
+import { makeCard } from '../interests/support.js';
 import { requestId } from '../onboarding/support.js';
 import { makeMe } from '../session/fixtures.js';
 import { bodyOf, type ApiRouteHandler } from '../support/app.js';
@@ -18,6 +19,7 @@ import {
   type ReaderOptions,
 } from './support.js';
 import { likeOf } from './surfaces.js';
+import { acked } from './actions/fake-transport.js';
 
 const { open } = createReaderHarness();
 
@@ -307,9 +309,13 @@ describe('choosing articles', () => {
 
   it('has no limit: 25 loaded rows can all be selected', async () => {
     const { app } = await openFeed(numbered(25));
-    await choose(app, ...titles(25));
+    // Reuse the row controls: repeatedly resolving each article's accessible name across the
+    // whole list makes these 25 independent clicks exceed the CI timeout under coverage.
+    const checkboxes = screen.getAllByRole('checkbox', { name: /^Select Article \d+$/ });
+    expect(checkboxes).toHaveLength(25);
+    for (const checkbox of checkboxes) await app.user.click(checkbox);
 
-    expect(ticked(titles(25))).toHaveLength(25);
+    for (const checkbox of checkboxes) expect(checkbox).toBeChecked();
     expect(screen.getByText('25 selected')).toBeVisible();
     expect(screen.queryByText(/at most/)).toBeNull();
   });
@@ -435,6 +441,7 @@ describe('an article the list no longer holds', () => {
     await app.user.click(
       within(panel()!).getByRole('button', { name: /^Dislike 2 selected articles$/ }),
     );
+    await app.user.click(screen.getByRole('button', { name: 'Off-topic' }));
     await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
     expect(app.calls(RATE).map((request) => request.pathname)).toEqual([
       '/api/v1/articles/1/rating',
@@ -1078,18 +1085,115 @@ describe('the selection bar', () => {
     expect(app.calls('POST /articles/rate-bulk')).toHaveLength(0);
   });
 
-  it('dislikes every selected article once and clears the selection', async () => {
-    const { app } = await openFeed([item(1), item(2), item(3)]);
+  it('offers one reason for the selected dislikes, preserves their analysis requests and clears the selection', async () => {
+    const { app } = await openFeed([item(1, { analysis: asked('complete', 1) }), item(2), item(3)]);
     await choose(app, 'Article 1', 'Article 3');
 
     await app.user.click(bulk(/^Dislike 2 selected articles$/));
 
-    await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
-    expect(ratedBodies(app).map(({ url, body }) => [url, body['rating']])).toEqual([
-      ['/api/v1/articles/1/rating', -1],
-      ['/api/v1/articles/3/rating', -1],
-    ]);
+    expect(app.calls(RATE)).toHaveLength(0);
     expect(panel()).toBeNull();
+    const reasons = screen.getByRole('group', { name: 'Reason for the dislike' });
+    expect(
+      within(reasons).getByText('Disliked 2 articles. Choose a reason for the selection.'),
+    ).toBeVisible();
+    await app.user.click(within(reasons).getByRole('button', { name: 'Off-topic' }));
+
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
+    expect(ratedBodies(app).map(({ url, body }) => [url, body['rating'], body['reason']])).toEqual([
+      ['/api/v1/articles/1/rating', -1, 'off_topic'],
+      ['/api/v1/articles/3/rating', -1, 'off_topic'],
+    ]);
+    expect(ratedBodies(app)[0]?.body).toHaveProperty('analysisRequestId', requestId(1));
+    expect(panel()).toBeNull();
+  });
+
+  it('can undo the selected dislikes before sending any ratings', async () => {
+    const { app } = await openFeed(numbered(2));
+    await choose(app, ...titles(2));
+    await app.user.click(bulk(/^Dislike 2 selected articles$/));
+    const reasons = screen.getByRole('group', { name: 'Reason for the dislike' });
+    await app.user.click(within(reasons).getByRole('button', { name: 'Undo' }));
+
+    expect(screen.queryByRole('group', { name: 'Reason for the dislike' })).toBeNull();
+    expect(app.calls(RATE)).toHaveLength(0);
+    for (const title of titles(2)) {
+      expect(within(rowOf(title)).getByRole('button', { name: 'Dislike' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+    }
+  });
+
+  it('keeps an off-topic teaching offer when later ratings in the selection have no offer', async () => {
+    const rows = numbered(2);
+    const cards = deferred<Response>();
+    const { app } = await openFeed(rows, {
+      routes: {
+        [RATE]: (_request, params) =>
+          actionResponse(
+            acked(
+              rows.find((row) => row.id === params['id'])!,
+              { rating: -1 },
+            ),
+            {
+              exampleSuggestion: params['id'] === '1' ? { cardId: '31', side: 'no' } : null,
+            },
+          ),
+        'GET /cards': () => cards.promise,
+      },
+    });
+    await choose(app, ...titles(2));
+    await app.user.click(bulk(/^Dislike 2 selected articles$/));
+    await app.user.click(screen.getByRole('button', { name: 'Off-topic' }));
+    await waitFor(() => expect(app.calls('GET /cards')).toHaveLength(1));
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
+    await screen.findByText('Marked as disliked');
+
+    cards.resolve(json(200, [makeCard({ id: '31', title: 'Škoda Vehicles' })]));
+
+    expect(
+      await screen.findByRole('button', { name: 'Teach Škoda Vehicles: not this' }),
+    ).toBeVisible();
+    expect(app.calls('POST /cards/:id/examples')).toHaveLength(0);
+  });
+
+  it('uses the shared reason for new dislikes and leaves already disliked articles alone', async () => {
+    const { app } = await openFeed([
+      item(1, { rating: -1, reason: 'off_topic' }),
+      item(2),
+      item(3),
+    ]);
+    await choose(app, ...titles(3));
+    await app.user.click(bulk(/^Dislike 3 selected articles$/));
+    await app.user.click(screen.getByRole('button', { name: 'Clickbait' }));
+
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
+    expect(ratedBodies(app).map(({ url, body }) => [url, body['reason']])).toEqual([
+      ['/api/v1/articles/2/rating', 'clickbait'],
+      ['/api/v1/articles/3/rating', 'clickbait'],
+    ]);
+  });
+
+  it('bulk Like cancels selected pending dislikes and leaves unselected ones for their reason', async () => {
+    const { app } = await openFeed([item(1), item(2, { rating: 1 }), item(3)], {
+      me: makeMe({ preferences: { markReadOnRate: false } }),
+    });
+    await choose(app, ...titles(3));
+    await app.user.click(bulk(/^Dislike 3 selected articles$/));
+    expect(app.calls(RATE)).toHaveLength(0);
+
+    await choose(app, 'Article 1', 'Article 2');
+    await app.user.click(bulk(/^Like 2 selected articles$/));
+    const reasons = screen.getByRole('group', { name: 'Reason for the dislike' });
+    expect(within(reasons).getByText('Disliked: Article 3')).toBeVisible();
+    await app.user.click(within(reasons).getByRole('button', { name: 'Off-topic' }));
+
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
+    expect(ratedBodies(app).map(({ url, body }) => [url, body['rating'], body['reason']])).toEqual([
+      ['/api/v1/articles/1/rating', 1, undefined],
+      ['/api/v1/articles/3/rating', -1, 'off_topic'],
+    ]);
   });
 
   it('sets the pressed rating and never un-rates: articles that already have it are skipped', async () => {
@@ -1114,6 +1218,16 @@ describe('the selection bar', () => {
     expect(within(region).queryByRole('list')).toBeNull();
     expect(within(region).getAllByRole('button')).toHaveLength(3);
     expect(within(region).getByRole('button', { name: /^Páči sa mi, vybrané: 2$/ })).toBeVisible();
+    await app.user.click(
+      within(region).getByRole('button', { name: /^Nepáči sa mi, vybrané: 2$/ }),
+    );
+    const reasons = screen.getByRole('group', { name: 'Dôvod nepáčenia' });
+    expect(
+      within(reasons).getByText('Nepáčia sa vám 2 články. Vyberte dôvod pre celý výber.'),
+    ).toBeVisible();
+    await app.user.click(within(reasons).getByRole('button', { name: 'Mimo témy' }));
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
+    expect(ratedBodies(app).every(({ body }) => body['reason'] === 'off_topic')).toBe(true);
   });
 
   it('has a checkbox on every row, and Like rates an analyzed article too', async () => {
@@ -1181,6 +1295,7 @@ describe('the selection bar', () => {
       await waitFor(() => expect(within(panel()!).getByText('2 selected')).toBeVisible());
       expect(app.calls(RATE)).toHaveLength(1);
       await app.user.click(bulk(/^Dislike 2 selected articles$/));
+      await app.user.click(screen.getByRole('button', { name: 'Off-topic' }));
       await waitFor(() => expect(app.calls(RATE)).toHaveLength(3));
       expect(ratedBodies(app).map(({ url, body }) => [url, body['rating']])).toEqual([
         ['/api/v1/articles/2/rating', 1],
@@ -1198,6 +1313,7 @@ describe('the selection bar', () => {
 
       await waitFor(() => expect(within(panel()!).getByText('2 selected')).toBeVisible());
       await app.user.click(bulk(/^Dislike 2 selected articles$/));
+      await app.user.click(screen.getByRole('button', { name: 'Off-topic' }));
       await waitFor(() => expect(app.calls(RATE)).toHaveLength(3));
       expect(
         ratedBodies(app)

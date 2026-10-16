@@ -148,8 +148,9 @@ function ratingMessage(i18n: I18n, rating: 1 | -1 | null): string {
 function createScope({ api, queryClient, toast, i18n, accountId }: Environment): Scope {
   const toastIds = new Set<string>();
   const listeners = new Set<SettledListener>();
-  /** Counts the rating toasts asked for: an offer that comes after a newer toast is dropped. */
+  /** A newer rating context invalidates delayed offers; one selected batch shares a context. */
   let latestOffer = 0;
+  let latestRatingBatchId: string | undefined;
 
   /** Shows the toast and remembers it, so that an account reset takes it away. */
   const tracked: Pick<ToastApi, 'show'> = {
@@ -202,11 +203,18 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
 
   const isRecent = (handle: ActionHandle) => store.recent().some((entry) => entry.id === handle.id);
 
-  function offerUndo(handle: ActionHandle, suggestion: ExampleSuggestion | null): void {
+  function offerUndo(
+    handle: ActionHandle,
+    suggestion: ExampleSuggestion | null,
+    item: ArticleListItem,
+  ): void {
     const { action } = handle;
     if (action.type !== 'rate') return;
     if (!isRecent(handle)) return;
-    latestOffer += 1;
+    if (handle.ratingBatchId === undefined || handle.ratingBatchId !== latestRatingBatchId) {
+      latestOffer += 1;
+    }
+    latestRatingBatchId = handle.ratingBatchId;
     const turn = latestOffer;
     const message = ratingMessage(i18n, action.rating);
     const undoAction: ToastAction = {
@@ -229,13 +237,20 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
       return;
     }
     void offers.actionsFor(suggestion, handle.articleId).then((offered) => {
+      // A later acknowledgement in the same selection must not swallow its teaching offer.
+      // Batch offers have their own toast, so they never replace a newer rating's undo toast.
       if (turn !== latestOffer || !isRecent(handle)) return;
+      const current = store.view(item);
+      if (current.rating !== item.rating || current.reason !== item.reason) return;
       if (offered === null) {
-        showPlain();
+        if (turn === latestOffer) showPlain();
         return;
       }
       show({
-        id: UNDO_TOAST_ID,
+        id:
+          handle.ratingBatchId === undefined
+            ? UNDO_TOAST_ID
+            : `rating-offer:${handle.ratingBatchId}:${suggestion.cardId}`,
         message,
         tone: 'success',
         durationMs: OFFER_TOAST_MS,
@@ -250,7 +265,7 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
       case 'done':
         for (const queryKey of unreadKeys(accountId))
           void queryClient.invalidateQueries({ queryKey });
-        offerUndo(handle, result.exampleSuggestion);
+        offerUndo(handle, result.exampleSuggestion, result.item);
         return;
       case 'failed':
         if (IMPLICIT_ACTIONS.has(handle.action.type)) return;

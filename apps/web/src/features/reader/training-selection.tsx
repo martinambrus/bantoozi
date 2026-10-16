@@ -12,7 +12,8 @@ import { useTranslation } from 'react-i18next';
 import type { ArticleRowProps } from '../article/article-row.js';
 import { Button } from '../../components/button.js';
 import { Checkbox } from '../../components/checkbox.js';
-import { useReaderActions } from './actions/provider.js';
+import { useReaderActions, useReasonBar } from './actions/provider.js';
+import type { PendingDislike } from '../article/reason-bar-store.js';
 import { AnalyzePanel } from '../training/analyze-panel.js';
 import { useArticleSelection } from '../training/selection.js';
 import { useViewTitle } from './use-view-title.js';
@@ -62,18 +63,40 @@ function BulkActions({
 }) {
   const { t } = useTranslation('training');
   const store = useReaderActions();
+  const reasonBar = useReasonBar();
   const count = items.length;
 
   // Like and Dislike set the rating: an article that already has it is left as it is.
   function rateAll(rating: 1 | -1) {
+    const dislikes: PendingDislike[] = [];
+    const ratingBatchId = crypto.randomUUID();
     for (const item of items) {
-      if (store.view(item).rating === rating) continue;
-      store.dispatch(item, {
-        type: 'rate',
-        rating,
-        ...(item.analysis.requestId === null ? {} : { analysisRequestId: item.analysis.requestId }),
-      });
+      let before = store.view(item).rating;
+      if (rating === 1) {
+        const held = reasonBar.heldFor(item.id);
+        if (held !== null) {
+          reasonBar.undo(item.id);
+          before = held.before;
+        }
+      }
+      if (before === rating) continue;
+      const handle = store.dispatch(
+        item,
+        {
+          type: 'rate',
+          rating,
+          ...(item.analysis.requestId === null
+            ? {}
+            : { analysisRequestId: item.analysis.requestId }),
+        },
+        { hold: rating === -1, ratingBatchId },
+      );
+      if (rating === -1) {
+        dislikes.push({ actionId: handle.id, articleId: item.id, title: item.title, before });
+      }
     }
+    const [first, ...additional] = dislikes;
+    if (first !== undefined) reasonBar.open({ ...first, additional });
     onDone(items.map(({ id }) => id));
   }
 

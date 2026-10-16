@@ -16,19 +16,27 @@ export interface PendingDislike {
   before: 1 | -1 | null;
 }
 
+/** One reason can apply to a whole selection of held dislikes. */
+export interface PendingReasons extends PendingDislike {
+  additional?: readonly PendingDislike[];
+}
+
+const dislikesOf = (pending: PendingReasons | null): readonly PendingDislike[] =>
+  pending === null ? [] : [pending, ...(pending.additional ?? [])];
+
 export interface ReasonBar {
-  getSnapshot(): PendingDislike | null;
+  getSnapshot(): PendingReasons | null;
   subscribe(listener: () => void): () => void;
   /** The open dislike, when it is the one held for `articleId`. */
   heldFor(articleId: string): PendingDislike | null;
-  /** Opens the bar for a held dislike; the one that was open is sent without a reason. */
-  open(pending: PendingDislike): void;
-  /** Sends the open dislike with `reason`. */
+  /** Opens the bar for held dislikes; previous ones are sent without a reason. */
+  open(pending: PendingReasons): void;
+  /** Sends every open dislike with `reason`. */
   pick(reason: RatingReason): void;
-  /** Sends the open dislike without a reason, as when the time is up. */
+  /** Sends every open dislike without a reason, as when the time is up. */
   expire(): void;
-  /** Takes the open dislike back: nothing is sent. */
-  undo(): void;
+  /** Takes all open dislikes back, or just `articleId`: nothing is sent for them. */
+  undo(articleId?: string): void;
   /** Stops the countdown while the pointer or the focus is in the bar, and goes on after it. */
   pause(paused: boolean): void;
   /** Closes the bar and leaves the held action as it is. */
@@ -41,7 +49,7 @@ export interface ReasonBar {
  */
 export function createReasonBar(store: ReaderActions): ReasonBar {
   const listeners = new Set<() => void>();
-  let pending: PendingDislike | null = null;
+  let pending: PendingReasons | null = null;
   let paused = false;
   let remaining = REASON_BAR_MS;
   let startedAt = 0;
@@ -68,7 +76,7 @@ export function createReasonBar(store: ReaderActions): ReasonBar {
   }
 
   /** Closes the bar and returns the dislike it was open for. */
-  function finish(): PendingDislike | null {
+  function finish(): PendingReasons | null {
     const closing = pending;
     stopClock();
     pending = null;
@@ -80,11 +88,30 @@ export function createReasonBar(store: ReaderActions): ReasonBar {
 
   function expire(): void {
     const closing = finish();
-    if (closing !== null) store.release(closing.actionId);
+    for (const dislike of dislikesOf(closing)) store.release(dislike.actionId);
+  }
+
+  /** Keep the remaining articles without restarting their countdown. */
+  function retain(dislikes: readonly PendingDislike[]): void {
+    const [first, ...additional] = dislikes;
+    if (first === undefined) {
+      finish();
+      return;
+    }
+    pending = {
+      actionId: first.actionId,
+      articleId: first.articleId,
+      title: first.title,
+      before: first.before,
+      ...(additional.length === 0 ? {} : { additional }),
+    };
+    notify();
   }
 
   store.subscribe(() => {
-    if (pending !== null && store.get(pending.actionId)?.status !== 'held') finish();
+    const dislikes = dislikesOf(pending);
+    const held = dislikes.filter((dislike) => store.get(dislike.actionId)?.status === 'held');
+    if (held.length !== dislikes.length) retain(held);
   });
 
   return {
@@ -95,7 +122,7 @@ export function createReasonBar(store: ReaderActions): ReasonBar {
         listeners.delete(listener);
       };
     },
-    heldFor: (articleId) => (pending?.articleId === articleId ? pending : null),
+    heldFor: (articleId) => dislikesOf(pending).find((d) => d.articleId === articleId) ?? null,
     open(next) {
       const previous = pending;
       stopClock();
@@ -103,18 +130,27 @@ export function createReasonBar(store: ReaderActions): ReasonBar {
       remaining = REASON_BAR_MS;
       startClock();
       notify();
-      if (previous !== null && previous.actionId !== next.actionId) {
-        store.release(previous.actionId);
+      const kept = new Set(dislikesOf(next).map((d) => d.actionId));
+      for (const dislike of dislikesOf(previous)) {
+        if (!kept.has(dislike.actionId)) store.release(dislike.actionId);
       }
     },
     pick(reason) {
       const closing = finish();
-      if (closing !== null) store.release(closing.actionId, { reason });
+      for (const dislike of dislikesOf(closing)) store.release(dislike.actionId, { reason });
     },
     expire,
-    undo() {
+    undo(articleId) {
+      if (articleId !== undefined) {
+        const dislikes = dislikesOf(pending);
+        const target = dislikes.find((d) => d.articleId === articleId);
+        if (target === undefined) return;
+        retain(dislikes.filter((d) => d !== target));
+        store.cancel(target.actionId);
+        return;
+      }
       const closing = finish();
-      if (closing !== null) store.cancel(closing.actionId);
+      for (const dislike of dislikesOf(closing)) store.cancel(dislike.actionId);
     },
     pause(next) {
       if (paused === next) return;

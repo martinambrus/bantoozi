@@ -108,6 +108,10 @@
     "label": "Reason for the dislike",
     "disliked": "Disliked: {{title}}",
     "announce": "Disliked: {{title}}. Choose a reason with the keys 1 to 6, or undo.",
+    "dislikedBatch_one": "Disliked {{count}} article. Choose a reason for the selection.",
+    "dislikedBatch_other": "Disliked {{count}} articles. Choose a reason for the selection.",
+    "announceBatch_one": "Disliked {{count}} article. Choose a reason for the selection with the keys 1 to 6, or undo.",
+    "announceBatch_other": "Disliked {{count}} articles. Choose a reason for the selection with the keys 1 to 6, or undo.",
     "reasons": {
       "off_topic": "Off-topic",
       "clickbait": "Clickbait",
