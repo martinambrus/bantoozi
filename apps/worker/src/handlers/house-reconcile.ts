@@ -23,6 +23,7 @@ const JOB = 'house.reconcile' as const;
 /** Reservations or users handled per transaction. */
 export const RECONCILE_BATCH = 500;
 const RANK_REASON = 'next_rank_at_due';
+const SWEEP_REASON = 'stalled_match_rows';
 /** The name of the due-user sweep in `house.progress`' saved cursor. */
 const RANK_SWEEP = 'rank';
 
@@ -61,9 +62,12 @@ export function createReconcileHandler(
     // ranked, so starting over each run would revisit the same low-id prefix and starve the rest.
     let swept = 0;
     while (complete) {
-      const removed = await retryTransaction(deps.db, (tx) =>
-        sweepStalledMatchRows(tx, { limit: RECONCILE_BATCH }),
-      );
+      // A deleted row can leave a stored `pending_cards` demotion, which only a re-rank clears.
+      const removed = await retryTransaction(deps.db, async (tx) => {
+        const result = await sweepStalledMatchRows(tx, { limit: RECONCILE_BATCH });
+        await recordRankIntents(tx, workerOutbox(tx), result.userIds, { reason: SWEEP_REASON });
+        return result.deleted;
+      });
       swept += removed;
       if (removed < RECONCILE_BATCH) break;
       if (Date.now() - started > HOUSE_RUN_BUDGET_MS) complete = false;

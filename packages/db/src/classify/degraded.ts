@@ -203,14 +203,17 @@ export const STALLED_MATCH_ROW_AGE_MS = 60 * 60_000;
  * off, a bumped inference version). A row qualifies when it is unleased, was enqueued at least
  * `olderThanMs` ago, its article is `extracted`/`translated`, no `active` subscription admits an
  * arrival of the article (such an article is on its way to enrichment), and no undelivered
- * extract/translate/enrich/match intent exists for the article. Returns the number deleted.
+ * extract/translate/enrich/match intent exists for the article. Returns the number deleted and the
+ * users whose stored ranking may carry a `pending_cards` demotion from a deleted row, so the caller
+ * can re-rank them: the row's own `user_id`, and for a shared row (`user_id` NULL) every live user
+ * who subscribes to a feed carrying the article or has an analysis request for it.
  */
 export async function sweepStalledMatchRows(
   db: Executor,
   input: { limit: number; olderThanMs?: number },
-): Promise<number> {
+): Promise<{ deleted: number; userIds: string[] }> {
   const olderSeconds = (input.olderThanMs ?? STALLED_MATCH_ROW_AGE_MS) / 1000;
-  const result = await db.execute(sql`
+  const result = await db.execute<{ article_id: string; user_id: string | null }>(sql`
     DELETE FROM match_queue q
      USING (SELECT q2.article_id, q2.card_id
               FROM match_queue q2
@@ -234,6 +237,24 @@ export async function sweepStalledMatchRows(
              ORDER BY q2.enqueued_at, q2.article_id, q2.card_id
              LIMIT ${input.limit}
              FOR UPDATE OF q2 SKIP LOCKED) x
-     WHERE q.article_id = x.article_id AND q.card_id = x.card_id`);
-  return result.rowCount ?? 0;
+     WHERE q.article_id = x.article_id AND q.card_id = x.card_id
+    RETURNING q.article_id::text AS article_id, q.user_id::text AS user_id`);
+  const users = new Set<string>();
+  const shared = new Set<string>();
+  for (const row of result.rows) {
+    if (row.user_id === null) shared.add(row.article_id);
+    else users.add(row.user_id);
+  }
+  if (shared.size > 0) {
+    const affected = await db.execute<{ user_id: string }>(sql`
+      SELECT s.user_id::text AS user_id
+        FROM feed_items fi
+        JOIN subscriptions s ON s.feed_id = fi.feed_id
+       WHERE fi.article_id = ANY(${sql.param([...shared])}::bigint[])
+      UNION
+      SELECT r.user_id::text FROM analysis_requests r
+       WHERE r.article_id = ANY(${sql.param([...shared])}::bigint[])`);
+    for (const row of affected.rows) users.add(row.user_id);
+  }
+  return { deleted: result.rowCount ?? 0, userIds: [...users].sort() };
 }

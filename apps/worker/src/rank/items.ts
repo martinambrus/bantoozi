@@ -179,12 +179,11 @@ export async function loadRankItems(
     if (modelCurrent) run.modelEligible.add(id);
     else run.modelEligible.delete(id);
     const work: Record<string, CardWorkState> = {};
-    // A selection is frozen (D-254): on an article it never enriched, a card without a queue row
-    // is not applicable to it, so it is neither pending nor unavailable.
-    const frozen =
-      fact.explicitSelection &&
-      !fact.automaticAdmitted &&
-      (article.pipelineState === 'extracted' || article.pipelineState === 'translated');
+    // A selection is frozen (D-254): where this user's demand reaches the article only through a
+    // selection, a card with neither an answer nor a queue row is not applicable to it, whatever
+    // the article's state (another account may have enriched it), so it is neither pending nor
+    // unavailable.
+    const frozen = fact.explicitSelection && !fact.automaticAdmitted;
     const queueRows = new Map((queue.get(id) ?? []).map((row) => [row.cardId, row]));
     for (const card of ctx.cards) {
       const state = workState(queueRows.get(card.cardId), article, now);
@@ -222,7 +221,11 @@ export async function loadRankItems(
       clusterSize: fact.clusterSize ?? 1,
       pipelineState: article.pipelineState,
       matchCoverage: matchCoverage(
-        frozen ? ctx.cards.filter((card) => queueRows.has(card.cardId)) : ctx.cards,
+        frozen
+          ? ctx.cards.filter(
+              (card) => queueRows.has(card.cardId) || cardAnswers[card.cardId] !== undefined,
+            )
+          : ctx.cards,
         evidence,
         work,
       ).coverage,

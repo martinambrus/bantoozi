@@ -1,5 +1,7 @@
+import { createUserRankHandler } from '../src/handlers/user-rank.js';
 import { enqueueEnrich, enqueueMatch } from '@bantoozi/shared';
 import { workerOutbox } from '@bantoozi/db';
+import { parseJobPayload } from '@bantoozi/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { ClassifyHarness, DAY, HOUR, MINUTE, ago } from './support/classify.js';
@@ -100,5 +102,43 @@ describe('house.reconcile sweeps rows that can never run (D-254)', () => {
       [young, leased, intent, matchIntent, enriched, arrival].sort(),
     );
     expect(h.router.asks).toEqual([]);
+  });
+
+  it('re-ranks the users whose stalled row it deleted, so the pending demotion clears', async () => {
+    const userId = await h.user();
+    const first = await h.heldCard(userId);
+    const feedId = await h.feed();
+    await h.subscribe(userId, feedId, 'training');
+    const id = await h.article({ feedIds: [feedId] });
+    await h.enrichDirect(id, { state: 'extracted' });
+    await h.answerCard(id, first, { engine: 'typesafe', p: 0.05 });
+    const card = await h.heldCard(userId);
+    await h.select(userId, feedId, id);
+    await h.queue(id, [card], { userId });
+    await age(id, 2 * HOUR);
+    const rank = async () => {
+      await createUserRankHandler(h.deps)(
+        parseJobPayload('user.rank', { userId, reason: 'test', full: true }),
+        { queue: 'user.rank', jobId: 'test' },
+      );
+      const result = await h.owner.query<{ rules_fired: string[] }>(
+        `SELECT rules_fired FROM user_article WHERE user_id = $1 AND article_id = $2`,
+        [userId, id],
+      );
+      return result.rows[0]?.rules_fired ?? [];
+    };
+    expect(await rank()).toContain('pending_cards');
+    await h.clearOutbox();
+
+    await h.dispatch('house.reconcile', {});
+
+    expect(await rowArticles([id])).toEqual([]);
+    const intents = await h.owner.query(
+      `SELECT 1 FROM job_outbox
+        WHERE queue = 'user.rank' AND delivered_at IS NULL AND payload ->> 'userId' = $1`,
+      [userId],
+    );
+    expect(intents.rowCount).toBeGreaterThan(0);
+    expect(await rank()).not.toContain('pending_cards');
   });
 });

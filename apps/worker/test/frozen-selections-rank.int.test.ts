@@ -7,7 +7,7 @@ import { ClassifyHarness } from './support/classify.js';
 /**
  * D-254 ranker: a card created after a selection froze its cards, with no row on a selection-only
  * `extracted` article, is not applicable there: no `pending_cards` demotion, and the request's own
- * card keeps its answer. The same card stays pending on an enriched selected article.
+ * card keeps its answer. The same card stays pending where it has a queue row (an enriched selection).
  */
 
 let h: ClassifyHarness;
@@ -53,7 +53,9 @@ describe('ranker coverage on frozen selections (D-254)', () => {
     await h.enrichDirect(enriched);
     await h.answerCard(enriched, first, { engine: 'typesafe', p: 0.05 });
     await h.select(userId, feedId, enriched);
-    await h.heldCard(userId);
+    const later = await h.heldCard(userId);
+    // Backfill queued the card on the enriched selection only.
+    await h.queue(enriched, [later], { userId });
 
     const onFrozen = await rankRow(userId, frozen);
     const onEnriched = await rankRow(userId, enriched);
@@ -62,5 +64,30 @@ describe('ranker coverage on frozen selections (D-254)', () => {
     expect(onFrozen.rules_fired).not.toContain('pending_cards');
     expect(onFrozen.p_like).toBeCloseTo(onEnriched.p_like, 6);
     expect(h.router.asks).toEqual([]);
+  });
+
+  it('keeps a skipped card out of coverage after another account enriches the article', async () => {
+    const userId = await h.user();
+    const first = await h.heldCard(userId);
+    const feedId = await h.feed();
+    await h.subscribe(userId, feedId, 'training');
+    const shared = await h.article({ feedIds: [feedId] });
+    await h.enrichDirect(shared, { state: 'extracted' });
+    await h.answerCard(shared, first, { engine: 'typesafe', p: 0.05 });
+    await h.select(userId, feedId, shared);
+    const control = await h.article({ feedIds: [feedId] });
+    await h.enrichDirect(control, { state: 'extracted' });
+    await h.answerCard(control, first, { engine: 'typesafe', p: 0.05 });
+    await h.select(userId, feedId, control);
+    const later = await h.heldCard(userId);
+    await h.queue(control, [later], { userId });
+    // Another account's Active carrier enriches the shared article.
+    await h.owner.query(`UPDATE articles SET pipeline_state = 'enriched' WHERE id = $1`, [shared]);
+
+    const onShared = await rankRow(userId, shared);
+    const onControl = await rankRow(userId, control);
+
+    expect(onControl.rules_fired).toContain('pending_cards');
+    expect(onShared.rules_fired).not.toContain('pending_cards');
   });
 });
