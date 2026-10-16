@@ -192,3 +192,48 @@ export async function recoverMatchQueue(
      LIMIT ${input.limit}`);
   return { resetRows: reset.rowCount ?? 0, articleIds: due.rows.map((row) => row.article_id) };
 }
+
+/** Age after which an unclaimable `match_queue` row is swept (D-254). */
+export const STALLED_MATCH_ROW_AGE_MS = 60 * 60_000;
+
+/**
+ * Deletes up to `limit` `match_queue` rows that can never run (D-254, the D-70 repair). Claims run
+ * after enrichment, so a row on an `extracted`/`translated` article waits for a stage nothing will
+ * start when the article's only demand is a frozen selection (or it has none: unsubscribed, mode
+ * off, a bumped inference version). A row qualifies when it is unleased, was enqueued at least
+ * `olderThanMs` ago, its article is `extracted`/`translated`, no `active` subscription admits an
+ * arrival of the article (such an article is on its way to enrichment), and no undelivered
+ * extract/translate/enrich/match intent exists for the article. Returns the number deleted.
+ */
+export async function sweepStalledMatchRows(
+  db: Executor,
+  input: { limit: number; olderThanMs?: number },
+): Promise<number> {
+  const olderSeconds = (input.olderThanMs ?? STALLED_MATCH_ROW_AGE_MS) / 1000;
+  const result = await db.execute(sql`
+    DELETE FROM match_queue q
+     USING (SELECT q2.article_id, q2.card_id
+              FROM match_queue q2
+              JOIN articles a ON a.id = q2.article_id
+                             AND a.pipeline_state IN ('extracted', 'translated')
+             WHERE q2.enqueued_at < now() - make_interval(secs => ${olderSeconds}::double precision)
+               AND (q2.lease_until IS NULL OR q2.lease_until < now())
+               AND NOT EXISTS (
+                     SELECT 1 FROM feed_items fi
+                       JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.inference_mode = 'active'
+                                           AND fi.first_seen_at >= s.inference_activated_at
+                                           AND fi.over_cap_limit IS NULL
+                       JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
+                      WHERE fi.article_id = q2.article_id)
+               AND NOT EXISTS (
+                     SELECT 1 FROM job_outbox o
+                      WHERE o.delivered_at IS NULL
+                        AND o.queue IN ('article.extract', 'article.translate', 'article.enrich',
+                                        'article.match')
+                        AND o.payload->>'articleId' = q2.article_id::text)
+             ORDER BY q2.enqueued_at, q2.article_id, q2.card_id
+             LIMIT ${input.limit}
+             FOR UPDATE OF q2 SKIP LOCKED) x
+     WHERE q.article_id = x.article_id AND q.card_id = x.card_id`);
+  return result.rowCount ?? 0;
+}

@@ -25,6 +25,8 @@ export interface RankArticleFacts {
   feedIds: string[];
   /** The carriers admitted for inference for this user and revision (spec 05 §1.1). */
   inferenceFeedIds: string[];
+  /** An `active` subscription's carrier admits this revision automatically (not only a selection). */
+  automaticAdmitted: boolean;
   /** A current selected request (pending, running or complete) authorizes this revision. */
   explicitSelection: boolean;
 }
@@ -95,6 +97,7 @@ export async function loadRankArticleFacts(
           clusterSize: row.cluster_size,
           feedIds: row.feed_ids,
           inferenceFeedIds: inference,
+          automaticAdmitted: row.automatic_ids.length > 0,
           explicitSelection: row.selected_ids.length > 0,
         },
       ];

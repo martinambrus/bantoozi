@@ -179,6 +179,12 @@ export async function loadRankItems(
     if (modelCurrent) run.modelEligible.add(id);
     else run.modelEligible.delete(id);
     const work: Record<string, CardWorkState> = {};
+    // A selection is frozen (D-254): on an article it never enriched, a card without a queue row
+    // is not applicable to it, so it is neither pending nor unavailable.
+    const frozen =
+      fact.explicitSelection &&
+      !fact.automaticAdmitted &&
+      (article.pipelineState === 'extracted' || article.pipelineState === 'translated');
     const queueRows = new Map((queue.get(id) ?? []).map((row) => [row.cardId, row]));
     for (const card of ctx.cards) {
       const state = workState(queueRows.get(card.cardId), article, now);
@@ -215,7 +221,11 @@ export async function loadRankItems(
       ...(article.storyClusterId === null ? {} : { clusterId: article.storyClusterId }),
       clusterSize: fact.clusterSize ?? 1,
       pipelineState: article.pipelineState,
-      matchCoverage: matchCoverage(ctx.cards, evidence, work).coverage,
+      matchCoverage: matchCoverage(
+        frozen ? ctx.cards.filter((card) => queueRows.has(card.cardId)) : ctx.cards,
+        evidence,
+        work,
+      ).coverage,
       ...(featureSet === undefined ? {} : { facets: featureSet }),
       ...(facetState !== undefined && MODEL_ENGINES.has(facetState.engine)
         ? { facetsEngine: facetState.engine as ModelEngine }
