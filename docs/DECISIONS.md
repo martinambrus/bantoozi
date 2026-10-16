@@ -2382,3 +2382,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   marker; ranking unchanged); `house.reconcile` deletes match rows that can never run (extracted/translated article, no
   admitted active carrier, unleased, enqueued over 60 minutes ago, no undelivered extract/translate/enrich/match intent),
   which also clears the backlog. Spec 05 §5.4 step 2, spec 11 §6.
+  PR #43 review: the sweep records a `user.rank` intent (`recordRankIntents`) for every user its deleted rows affected (the
+  row's user, or for a shared row the feed's subscribers and the article's selectors), so a stored pending demotion clears;
+  and the ranker's frozen rule no longer depends on the pipeline state — for an article a user reaches only through a
+  selection, a card with neither an answer nor a queue row is left out of coverage even after another account's Active
+  carrier enriched the shared article.
