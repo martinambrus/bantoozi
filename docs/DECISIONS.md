@@ -2548,3 +2548,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   PR #47 fourth review: rating-triggered analysis filters waiting carriers before choosing or
   reusing a feed. A waiting training feed cannot hide the released training candidate, and an
   unreleased active admission cannot suppress a needed selected request on the released source.
+
+  PR #47 fifth review: a timezone edit saves the current account cutoff and its cadence under the
+  user-row lock. It holds that cutoff until a full interval and a boundary in the new zone have
+  passed, preventing repeated edits from advancing releases or hiding visible articles. The display
+  timezone updates immediately; Me and feed predictions include the hold. Changed plan cadences
+  bypass an old hold. Migration 0031 adds the nullable transition tuple, with no read-path writes.

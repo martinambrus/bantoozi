@@ -816,3 +816,7 @@ The load check schedules 100 due one-minute feeds through two worker pools; the 
 admits one feed start during the initial burst and defers the others without changing their health.
 The database burst check independently verifies the exact shared slot across 100 concurrent
 reservations. These checks use no live publisher or provider calls.
+
+Timezone changes take effect for displayed dates immediately. Article release timing preserves the
+current cutoff until a full interval and a boundary in the new timezone have passed; the reader
+shows that next update. Repeated edits cannot bypass the interval. Plan cadence changes apply live.

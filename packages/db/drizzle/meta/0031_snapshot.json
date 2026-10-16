@@ -1,5 +1,5 @@
 {
-  "id": "fb34a28b-14a8-4969-b8d6-a82477c919d9",
+  "id": "06859996-fb2b-4fb8-aa8e-cfd5090f11f0",
   "prevId": "a436d76d-ecec-4965-90de-9d91d6ce64f0",
   "version": "7",
   "dialect": "postgresql",
@@ -863,6 +863,24 @@
           "notNull": true,
           "default": "'Europe/Bratislava'"
         },
+        "release_hold_at": {
+          "name": "release_hold_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "release_hold_until": {
+          "name": "release_hold_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "release_hold_interval_s": {
+          "name": "release_hold_interval_s",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "role": {
           "name": "role",
           "type": "text",
@@ -979,6 +997,10 @@
         "users_rank_revision_check": {
           "name": "users_rank_revision_check",
           "value": "rank_revision >= 0"
+        },
+        "users_release_hold_check": {
+          "name": "users_release_hold_check",
+          "value": "(release_hold_at IS NULL AND release_hold_until IS NULL AND release_hold_interval_s IS NULL)\n        OR (release_hold_at IS NOT NULL AND release_hold_until IS NOT NULL\n          AND release_hold_interval_s IS NOT NULL AND release_hold_interval_s BETWEEN 60 AND 86400\n          AND release_hold_until >= release_hold_at)"
         },
         "users_suggest_lease_check": {
           "name": "users_suggest_lease_check",

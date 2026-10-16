@@ -55,8 +55,9 @@ beforeAll(async () => {
   ).id;
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   now = new Date(initialNow);
+  await h.owner.query("UPDATE plans SET release_interval_s = 60 WHERE key = 'premium'");
 });
 
 afterAll(async () => {
@@ -207,6 +208,72 @@ it('uses the account time zone for a six-hour release, including fractional offs
   expect(await ids()).toContain(oldId);
   expect(await ids()).toContain(freshId);
 });
+
+it('keeps a monotonic release cutoff across repeated timezone edits and reports the held boundary', async () => {
+  await h.owner.query("UPDATE plans SET release_interval_s = 21600 WHERE key = 'free'");
+  const account = await following('free');
+  now = new Date(initialNow.getTime() + 30 * 60000); // 12:37 UTC, after Kathmandu's 12:15 boundary
+  const unfetched = await createFeed(h.owner);
+  await createSubscription(h.owner, { userId: account.user.id, feedId: unfetched.id });
+  await h.owner.query(
+    "UPDATE subscriptions SET created_at = $2::timestamptz - interval '1 day' WHERE user_id = $1",
+    [account.user.id, now],
+  );
+  await h.owner.query('UPDATE feeds SET next_fetch_at = $2 WHERE id = $1', [
+    unfetched.id,
+    new Date(now.getTime() + 60000),
+  ]);
+  const patch = await account.api.patch('/me', { timezone: 'Asia/Kathmandu' });
+  expect(patch.statusCode, patch.body).toBe(200);
+  const held = new Date(now);
+  held.setUTCHours(18, 15, 0, 0);
+  expect(patch.json().timezone).toBe('Asia/Kathmandu');
+  expect(patch.json().planInfo.nextUpdateAt).toBe(held.toISOString());
+  expect((await account.api.get(`/articles/${oldId}`)).statusCode).toBe(200);
+  expect((await account.api.get(`/articles/${freshId}`)).statusCode).toBe(404);
+  const feeds = await account.api.get('/subscriptions');
+  expect(
+    feeds.json().map((row: { feed: { nextUpdateAt: string } }) => row.feed.nextUpdateAt),
+  ).toEqual([held.toISOString(), held.toISOString()]);
+  // Switching to an aligned zone and back cannot consume the pending interval early.
+  const back = await account.api.patch('/me', { timezone: 'UTC' });
+  const aligned = new Date(held);
+  aligned.setUTCMinutes(0);
+  expect(back.json().planInfo.nextUpdateAt).toBe(aligned.toISOString());
+  await account.api.patch('/me', { timezone: 'Asia/Kathmandu' });
+  expect((await account.api.get(`/articles/${freshId}`)).statusCode).toBe(404);
+  now = new Date(held.getTime() - 1);
+  expect((await account.api.get(`/articles/${freshId}`)).statusCode).toBe(404);
+  now = held;
+  expect((await account.api.get(`/articles/${freshId}`)).statusCode).toBe(200);
+  const newlyReleased = await createArticle(h.owner, {
+    feedIds: [feedId],
+    firstSeenAt: new Date(held.getTime() - 60000),
+  });
+  expect((await account.api.get(`/articles/${newlyReleased.id}`)).statusCode).toBe(200);
+  // Moving to an earlier wall-clock window must not hide anything already released.
+  const earlier = await account.api.patch('/me', { timezone: 'UTC' });
+  expect(earlier.statusCode, earlier.body).toBe(200);
+  expect((await account.api.get(`/articles/${newlyReleased.id}`)).statusCode).toBe(200);
+});
+
+it.each([60, null])(
+  'applies a changed plan cadence %s immediately despite a timezone hold',
+  async (cadence) => {
+    await h.owner.query("UPDATE plans SET release_interval_s = 21600 WHERE key = 'free'");
+    const account = await following('free');
+    await account.api.patch('/me', { timezone: 'Asia/Kathmandu' });
+    expect((await account.api.get(`/articles/${freshId}`)).statusCode).toBe(404);
+    await h.owner.query("UPDATE plans SET release_interval_s = $1 WHERE key = 'premium'", [
+      cadence,
+    ]);
+    await h.owner.query("UPDATE users SET plan = 'premium' WHERE id = $1", [account.user.id]);
+    expect((await account.api.get(`/articles/${freshId}`)).statusCode).toBe(200);
+    const patched = await account.api.patch('/me', { timezone: 'UTC' });
+    expect(patched.statusCode, patched.body).toBe(200);
+    expect((await account.api.get(`/articles/${freshId}`)).statusCode).toBe(200);
+  },
+);
 
 it('bounds shared fetch metadata and reports account cadence, publisher limits and next update', async () => {
   const account = await following('beta');

@@ -389,7 +389,10 @@ does not cause the bookmark capture/export path to download or archive them.
 `releaseIntervalS` (60..86400 seconds) sets local wall-clock boundaries, anchored at midnight; the
 last interval ends at the next midnight. Beta uses 900 seconds; Free/Premium use the approved schedule
 in `docs/design/plan-velocity.md`. Null/zero is immediate. Repeated DST boundaries release twice;
-nonexistent boundaries are skipped. A client `asOf` is always capped at server time. Each carrier
+nonexistent boundaries are skipped. A timezone edit preserves the current release cutoff until at least
+one full plan interval has elapsed and a boundary in the new zone occurs. Repeated edits cannot
+advance it early or hide released arrivals. The display timezone changes immediately; next-update
+metadata includes this transition hold. A changed plan cadence applies immediately. A client `asOf` is always capped at server time. Each carrier
 must have `first_seen_at <= least(asOf, greatest(release_at, subscription.created_at + 15 minutes))`.
 The grace cutoff keeps already visible grace articles visible after grace expires. The same predicate
 applies to list/counts/badges/filter actions, calibration, detail/context/cluster members, individual

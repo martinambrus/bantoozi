@@ -69,6 +69,9 @@ export const users = pgTable(
     displayName: text('display_name'),
     locale: text('locale').notNull().default('en'),
     timezone: text('timezone').notNull().default('Europe/Bratislava'),
+    releaseHoldAt: tstz('release_hold_at'),
+    releaseHoldUntil: tstz('release_hold_until'),
+    releaseHoldIntervalS: integer('release_hold_interval_s'),
     role: text('role').notNull().default('user'),
     plan: text('plan')
       .notNull()
@@ -93,6 +96,13 @@ export const users = pgTable(
     check('users_role_check', sql`role IN ('user','admin')`),
     check('users_invites_left_check', sql`invites_left >= 0`),
     check('users_rank_revision_check', sql`rank_revision >= 0`),
+    check(
+      'users_release_hold_check',
+      sql`(release_hold_at IS NULL AND release_hold_until IS NULL AND release_hold_interval_s IS NULL)
+        OR (release_hold_at IS NOT NULL AND release_hold_until IS NOT NULL
+          AND release_hold_interval_s IS NOT NULL AND release_hold_interval_s BETWEEN 60 AND 86400
+          AND release_hold_until >= release_hold_at)`,
+    ),
     check(
       'users_suggest_lease_check',
       sql`(suggest_lease_token IS NULL) = (suggest_lease_until IS NULL)`,

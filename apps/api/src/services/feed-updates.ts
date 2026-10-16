@@ -2,12 +2,13 @@ import { originOf } from '@bantoozi/feeds';
 import {
   pendingFeedReleases,
   readerReleaseClock,
+  readerReleaseWindow,
   readerSourcePolicies,
   subscriptionReleasedThrough,
   type SubscriptionRow,
   type TenantTx,
 } from '@bantoozi/db';
-import { releaseWindow, type FeedInfo } from '@bantoozi/shared';
+import type { FeedInfo } from '@bantoozi/shared';
 
 export type FeedUpdateInfo = Pick<
   FeedInfo,
@@ -49,11 +50,10 @@ export async function feedUpdates(
           row.feed.nextFetchAt?.getTime() ?? clock.now.getTime() + interval * 1000,
         ),
       );
-      const next = releaseWindow(
-        candidate,
-        clock.timezone,
-        candidate.getTime() <= graceUntil ? null : clock.intervalS,
-      );
+      const next =
+        candidate.getTime() <= graceUntil
+          ? { releasedAt: candidate, nextReleaseAt: null }
+          : readerReleaseWindow(clock, candidate);
       const fetchedAt =
         next.nextReleaseAt === null || next.releasedAt.getTime() === candidate.getTime()
           ? candidate

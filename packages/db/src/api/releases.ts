@@ -12,6 +12,9 @@ type ReleaseConfig = {
   min_fetch_interval_s: number;
   label: string;
   label_sk: string | null;
+  release_hold_at: RawTimestamp | null;
+  release_hold_until: RawTimestamp | null;
+  release_hold_interval_s: number | null;
 };
 const configs = new WeakMap<object, Map<string, Promise<ReleaseConfig>>>();
 
@@ -30,6 +33,49 @@ export interface ReaderReleaseClock {
   timezone: string;
   label: string;
   labelSk: string | null;
+  holdAt: Date | null;
+  holdUntil: Date | null;
+}
+
+/** A timezone edit preserves the old cutoff until a full interval and a new-zone boundary pass. */
+export function readerReleaseWindow(
+  policy: Pick<ReaderReleaseClock, 'timezone' | 'intervalS' | 'holdAt' | 'holdUntil'>,
+  at: Date,
+): ReturnType<typeof releaseWindow> {
+  if (policy.holdAt !== null && policy.holdUntil !== null && at < policy.holdUntil) {
+    return {
+      releasedAt: new Date(Math.min(at.getTime(), policy.holdAt.getTime())),
+      nextReleaseAt: policy.holdUntil,
+    };
+  }
+  return releaseWindow(at, policy.timezone, policy.intervalS);
+}
+
+/** Called under the user-row lock, before changing the timezone. No read-path writes are needed. */
+export async function preserveReleaseOnTimezoneChange(
+  tx: TenantTx,
+  timezone: string,
+): Promise<void> {
+  const clock = await readerReleaseClock(tx);
+  let holdUntil: Date | null = null;
+  if (clock.intervalS) {
+    const earliest = new Date(clock.releasedAt.getTime() + clock.intervalS * 1000);
+    const current = releaseWindow(clock.now, timezone, clock.intervalS);
+    if (current.releasedAt < earliest) {
+      const target = releaseWindow(earliest, timezone, clock.intervalS);
+      holdUntil =
+        target.releasedAt.getTime() === earliest.getTime() ? earliest : target.nextReleaseAt;
+    }
+  }
+  await tx.execute(sql`UPDATE users SET
+    release_hold_at = ${holdUntil === null ? null : clock.releasedAt.toISOString()}::timestamptz,
+    release_hold_until = ${holdUntil?.toISOString() ?? null}::timestamptz,
+    release_hold_interval_s = ${holdUntil === null ? null : clock.intervalS}
+    WHERE id = ${tenantUserId(tx)}::uuid`);
+}
+
+export function invalidateReaderReleaseClock(tx: TenantTx): void {
+  configs.get(tx)?.delete(tenantUserId(tx));
 }
 
 /** The authoritative stored plan and time zone; future client cutoffs cannot advance this clock. */
@@ -49,7 +95,8 @@ export async function readerReleaseClock(
   if (config === undefined) {
     config = tx
       .execute<ReleaseConfig>(
-        sql`SELECT u.timezone, p.release_interval_s, p.min_fetch_interval_s, p.label, p.label_sk
+        sql`SELECT u.timezone, p.release_interval_s, p.min_fetch_interval_s, p.label, p.label_sk,
+          u.release_hold_at, u.release_hold_until, u.release_hold_interval_s
       FROM users u JOIN plans p ON p.key = u.plan WHERE u.id = ${tenantUserId(tx)}::uuid`,
       )
       .then((result) => {
@@ -60,12 +107,23 @@ export async function readerReleaseClock(
     transactionConfigs.set(userId, config);
   }
   const row = await config;
+  const policy = {
+    timezone: row.timezone,
+    intervalS: row.release_interval_s,
+    holdAt:
+      row.release_interval_s === row.release_hold_interval_s
+        ? toDateOrNull(row.release_hold_at)
+        : null,
+    holdUntil:
+      row.release_interval_s === row.release_hold_interval_s
+        ? toDateOrNull(row.release_hold_until)
+        : null,
+  };
   return {
     now,
     asOf,
-    ...releaseWindow(asOf, row.timezone, row.release_interval_s),
-    timezone: row.timezone,
-    intervalS: row.release_interval_s,
+    ...readerReleaseWindow(policy, asOf),
+    ...policy,
     planIntervalS: row.min_fetch_interval_s,
     label: row.label,
     labelSk: row.label_sk,

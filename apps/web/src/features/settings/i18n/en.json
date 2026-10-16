@@ -7,7 +7,7 @@
     "displayNameHint": "Shown in the menu instead of your email address. Leave it empty to use the address.",
     "language": "Language",
     "timezone": "Time zone",
-    "timezoneHint": "Dates and times in Bantoozi are shown in this time zone.",
+    "timezoneHint": "Dates and times in Bantoozi are shown in this time zone. Changing it may extend the next article release interval.",
     "theme": "Theme",
     "themes": {
       "system": "Match my device",

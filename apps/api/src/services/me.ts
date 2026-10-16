@@ -12,6 +12,8 @@ import {
   listUserLabels,
   lockFeeds,
   loadPlanLimits,
+  invalidateReaderReleaseClock,
+  preserveReleaseOnTimezoneChange,
   quotaUsage,
   readOwnUser,
   readerReleaseClock,
@@ -103,12 +105,16 @@ export async function applyMePatch(tx: TenantTx, outbox: JobSender, patch: MePat
     preferences = mergeUserPreferences(before, patch.preferences);
     changed = changedPreferenceKeys(before, preferences);
   }
+  if (patch.timezone !== undefined && patch.timezone !== user.timezone) {
+    await preserveReleaseOnTimezoneChange(tx, patch.timezone);
+  }
   await updateOwnUser(tx, {
     ...(patch.displayName === undefined ? {} : { displayName: patch.displayName }),
     ...(patch.locale === undefined ? {} : { locale: patch.locale }),
     ...(patch.timezone === undefined ? {} : { timezone: patch.timezone }),
     ...(preferences === undefined ? {} : { preferences }),
   });
+  invalidateReaderReleaseClock(tx);
   const ranking = changed.some((key) =>
     (RANKING_RELEVANT_PREFERENCES as readonly string[]).includes(key),
   );

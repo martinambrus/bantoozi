@@ -204,6 +204,9 @@ CREATE TABLE users (
   display_name    text NULL,
   locale          text NOT NULL DEFAULT 'en' CHECK (locale IN ('en','sk')),
   timezone        text NOT NULL DEFAULT 'Europe/Bratislava',
+  release_hold_at timestamptz NULL,             -- cutoff retained during timezone transition
+  release_hold_until timestamptz NULL,          -- first safe boundary in the new timezone
+  release_hold_interval_s int NULL,             -- hold applies only to this plan cadence
   role            text NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')),
   plan            text NOT NULL DEFAULT 'beta' REFERENCES plans(key),   -- key into the plan table in spec 08 §6
   invites_left    int  NOT NULL DEFAULT 3 CHECK (invites_left >= 0),
@@ -215,6 +218,10 @@ CREATE TABLE users (
   created_at      timestamptz NOT NULL DEFAULT now(),
   last_active_at  timestamptz NULL,
   deleted_at      timestamptz NULL,               -- soft delete for 7 days, then hard delete (spec 11)
+  CHECK ((release_hold_at IS NULL AND release_hold_until IS NULL AND release_hold_interval_s IS NULL)
+    OR (release_hold_at IS NOT NULL AND release_hold_until IS NOT NULL
+      AND release_hold_interval_s IS NOT NULL AND release_hold_interval_s BETWEEN 60 AND 86400
+      AND release_hold_until >= release_hold_at)),
   CHECK ((suggest_lease_token IS NULL) = (suggest_lease_until IS NULL))
 );
 
