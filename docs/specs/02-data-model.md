@@ -492,6 +492,7 @@ CREATE TABLE feed_items (                          -- which feeds carried which 
   guid           text NULL,
   first_seen_at  timestamptz NOT NULL DEFAULT now(),
   over_cap_limit integer NULL,                     -- D-252: NULL = admitted to automatic analysis; else the cap in force
+  last_seen_at   timestamptz NOT NULL DEFAULT now(), -- D-253: last fetch whose feed listed the item (purge clock)
   PRIMARY KEY (feed_id, article_id)
 );
 CREATE INDEX feed_items_article_idx ON feed_items (article_id);

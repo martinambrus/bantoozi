@@ -754,3 +754,10 @@ Statuses as of 2026-10-11, end of M8 (local production-like rehearsal; no host a
 | 13 | User-selected training infers only selected articles, active feeds infer new arrivals, and all-off feeds run ingestion/reading/bookmark capture with zero article-provider calls. | Done: all-off feeds make zero provider calls end to end (`all-off-zero-calls.int.test.ts`, `9d916de`); training and active demand tests (`foundation.int.test.ts`, `backfill.int.test.ts`, `ingestion.e2e.test.ts`); the load run's all-off phase made 0 inference calls. |
 | 14 | A bookmarked article's full available text/HTML survives source deletion, cold maintenance, unsubscribe and backup restore; export checksum matches, and failed/partial capture is honest. | Done: retention, cold maintenance and unsubscribe tests (`house-retention-b.int.test.ts`, `articles-actions.int.test.ts`), export checksum (`export-checksum.int.test.ts`), restore of a cold bookmark in the backup drill, honest failed/partial capture (`bookmarks.int.test.ts`). |
 | 15 | Per-user-feed image opt-in survives reload/unsubscribe without changing another user's policy; archived content never fetches remote media automatically just because it was previously saved. | Done: the remembered choice survives unsubscribe and re-subscribe without touching another user (`image-policy-unsubscribe.int.test.ts`); capture fetches only the feed, page and robots.txt (`capture-no-media-fetch.int.test.ts`); render gating in the web tests. |
+
+## 16. Article retention dry run (D-253)
+
+Before the first production run of the D-253 rules, and whenever a retention change ships, see what `house.purge-articles`
+would delete without deleting anything: `pnpm worker-cli purge-report` (in Compose: `dc exec worker node dist/cli.js
+purge-report`). It prints `unopened21`, `dislike` and `normal90` counts. The nightly job logs the same per-rule counts. Deletes
+are irreversible except by restoring a backup (§4).

@@ -2372,3 +2372,15 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   active enrich set, pinned primary model; `isReusableFacet`, shared with `article.enrich`), since an explicit analysis on
   another feed leaves the pipeline state behind. Admission cannot compute the enrich input-state hash, so an article whose
   translation changed after that analysis is admitted without a slot and its enrich re-runs Call A (rare; accepted).
+- D-253: 2026-10-16 (owner request, volume review) — Shorter retention for never-engaged articles and dislikes, with a
+  last-seen clock. A high-volume feed (Bazos, ~4.5k items/day) held ~400k articles and ~21M `card_answers` at the 90-day rule,
+  and every rated article (bulk dislikes too) was kept forever. Now: articles nobody engaged with (opened, individually read,
+  rated, bookmarked, labelled; a bulk mark-read does not count) are purged 21 days after arrival (rank window 14 + 7);
+  dislike-only articles after `max(180, model.historyDays)` days from the latest dislike (the training window, so the learner
+  and the D-241/D-244 agreement lose nothing); likes, bookmarks and labels still protect while they exist; analysis requests
+  (180 days), eval references and snapshots still hold; feeds used by evaluation keep 90 days. Arrival becomes the latest
+  `feed_items.last_seen_at` (migration 0028; bumped for every known item a fetch lists, and on a 304 for the items the last
+  successful fetch listed), so an item a feed still lists is never purged and re-ingested as new — a flaw the 90-day rule
+  already had. Existing rows are backfilled to their feed's last successful fetch (assuming "still listed" delays a purge
+  once; the first 200 re-stamps exactly the listed items). The purge logs per-rule counts and `pnpm worker-cli
+  purge-report` is a dry run. Spec 02, 11 §5, RUNBOOK.
