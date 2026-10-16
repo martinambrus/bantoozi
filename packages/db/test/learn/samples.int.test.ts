@@ -1100,6 +1100,24 @@ describe('derived snapshots from a frozen request (spec 06 §8.2)', () => {
     );
     expect(only(await other.s.samples()).features).toBeNull();
   });
+
+  it('a request deleted after a load is not served from the derived-result cache (D-259)', async () => {
+    const { s, a, at, request } = await setup();
+    await s.insertRating(
+      a,
+      {
+        analysisRequestId: request.requestId,
+        inputSha: request.inputSha,
+        ratingSha: RATING_SHA,
+        features: null,
+      },
+      { at },
+    );
+    expect(only(await s.samples()).features).not.toBeNull();
+    expect(only(await s.samples()).features).not.toBeNull();
+    await ctx.owner.query(`DELETE FROM analysis_requests WHERE id = $1`, [request.requestId]);
+    expect(only(await s.samples()).features).toBeNull();
+  });
 });
 
 describe('analysis completion is bound to the rating fingerprint (PR #25 round 12)', () => {

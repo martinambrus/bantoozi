@@ -65,6 +65,30 @@ export const AnalysisCardSchema = z
   });
 export type AnalysisCard = z.infer<typeof AnalysisCardSchema>;
 
+/** `input_snapshot.article`: the frozen revision's model-state source fields. */
+const AnalysisSnapshotArticleSchema = z
+  .object({
+    id: IdSchema,
+    revision: IdSchema,
+    title: text(2000),
+    author: text(1000).nullable(),
+    categories: z.array(text(500)).max(64),
+    excerpt: text(8000).nullable(),
+    bodyLead: text(8000).nullable(),
+    wordCount: z.number().int().min(0).nullable(),
+    lang: text(16).nullable(),
+    feed: z.object({ title: text(2000).nullable(), site: text(500).nullable() }).strict(),
+    /** The request feed's arrival of this article (`feed_items.first_seen_at`). */
+    firstSeenAt: IsoTimestampSchema,
+    publishedAt: IsoTimestampSchema.nullable(),
+    hasImage: z.boolean(),
+    hasVideo: z.boolean().nullable(),
+    bodyImageCount: z.number().int().min(0).nullable(),
+    storyClusterId: IdSchema.nullable(),
+    clusterSize: z.number().int().min(1),
+  })
+  .strict();
+
 /**
  * `analysis_requests.input_snapshot`, version 1: the pre-feedback article, card, question, state
  * and translation manifests and the feature context the result needs (spec 06 §8.1: source
@@ -76,28 +100,7 @@ export const AnalysisInputSnapshotSchema = z
   .object({
     v: z.literal(ANALYSIS_SNAPSHOT_VERSION),
     capturedAt: IsoTimestampSchema,
-    article: z
-      .object({
-        id: IdSchema,
-        revision: IdSchema,
-        title: text(2000),
-        author: text(1000).nullable(),
-        categories: z.array(text(500)).max(64),
-        excerpt: text(8000).nullable(),
-        bodyLead: text(8000).nullable(),
-        wordCount: z.number().int().min(0).nullable(),
-        lang: text(16).nullable(),
-        feed: z.object({ title: text(2000).nullable(), site: text(500).nullable() }).strict(),
-        /** The request feed's arrival of this article (`feed_items.first_seen_at`). */
-        firstSeenAt: IsoTimestampSchema,
-        publishedAt: IsoTimestampSchema.nullable(),
-        hasImage: z.boolean(),
-        hasVideo: z.boolean().nullable(),
-        bodyImageCount: z.number().int().min(0).nullable(),
-        storyClusterId: IdSchema.nullable(),
-        clusterSize: z.number().int().min(1),
-      })
-      .strict(),
+    article: AnalysisSnapshotArticleSchema,
     languageMode: LanguageModeSchema,
     translation: AnalysisTranslationSchema.nullable(),
     questionSets: z.object({ enrich: AnalysisSetRefSchema, match: AnalysisSetRefSchema }).strict(),
@@ -142,6 +145,48 @@ export const AnalysisInputSnapshotSchema = z
     }
   });
 export type AnalysisInputSnapshot = z.infer<typeof AnalysisInputSnapshotSchema>;
+
+/**
+ * The part of an input snapshot the learning loaders read (spec 06 §8.2), projected in SQL so a
+ * sample load does not transfer the frozen card texts (D-259): the version, each card's id, kind
+ * and strength, and the article's feature fields.
+ */
+export const AnalysisLearnInputSchema = z
+  .object({
+    v: z.literal(ANALYSIS_SNAPSHOT_VERSION),
+    article: AnalysisSnapshotArticleSchema.pick({
+      wordCount: true,
+      lang: true,
+      author: true,
+      firstSeenAt: true,
+      publishedAt: true,
+      hasImage: true,
+      hasVideo: true,
+      bodyImageCount: true,
+      storyClusterId: true,
+      clusterSize: true,
+    }),
+    cards: z
+      .array(
+        z
+          .object({
+            cardId: IdSchema,
+            kind: z.enum(['interest', 'label']),
+            strength: StrengthSchema.nullable(),
+          })
+          .strict()
+          .refine((card) => (card.kind === 'label') === (card.strength === null), {
+            message: 'an interest card has a strength and a label has none',
+            path: ['strength'],
+          }),
+      )
+      .max(ANALYSIS_MAX_CARDS)
+      .refine((cards) => new Set(cards.map((card) => card.cardId)).size === cards.length, {
+        message: 'duplicate card',
+      }),
+  })
+  .strict();
+export type AnalysisLearnInput = z.infer<typeof AnalysisLearnInputSchema>;
 
 const StateVariantSchema = z.enum(['native', 'translated']);
 

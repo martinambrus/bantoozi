@@ -1,4 +1,4 @@
-import { AnalysisInputSnapshotSchema } from '@bantoozi/shared';
+import { AnalysisLearnInputSchema } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Executor } from '../client.js';
@@ -115,6 +115,24 @@ export async function loadLearnSamples(
   return { samples, cutoffEventId };
 }
 
+/**
+ * Derived results of completed requests by request id, process-wide and bounded (least recently
+ * used first out). A completed request's snapshots and `input_sha` never change, so only the rows
+ * themselves are re-read: one that was deleted is no longer returned (D-259). `null`: the row
+ * yields no result.
+ */
+const ANALYSIS_CACHE_MAX = 8_000;
+const analysisCache = new Map<string, LearnAnalysisResult | null>();
+
+function cacheAnalysis(id: string, result: LearnAnalysisResult | null): void {
+  analysisCache.delete(id);
+  analysisCache.set(id, result);
+  if (analysisCache.size > ANALYSIS_CACHE_MAX) {
+    const oldest = analysisCache.keys().next();
+    if (oldest.done !== true) analysisCache.delete(oldest.value);
+  }
+}
+
 async function loadAnalysis(
   db: Executor,
   userId: string,
@@ -122,6 +140,25 @@ async function loadAnalysis(
 ): Promise<Map<string, LearnAnalysisResult>> {
   const out = new Map<string, LearnAnalysisResult>();
   if (ids.length === 0) return out;
+  const present = await db.execute<{ id: string }>(sql`
+    SELECT id::text AS id FROM analysis_requests
+     WHERE user_id = ${userId}::uuid AND status = 'complete' AND result_snapshot IS NOT NULL
+       AND id = ANY(${sql.param(ids)}::uuid[])`);
+  const missing = present.rows.map((row) => row.id).filter((id) => !analysisCache.has(id));
+  if (missing.length > 0) await deriveAnalysis(db, userId, missing);
+  for (const { id } of present.rows) {
+    const result = analysisCache.get(id);
+    if (result === undefined) continue;
+    cacheAnalysis(id, result);
+    if (result !== null) out.set(id, result);
+  }
+  return out;
+}
+
+/** Reads and derives the given completed requests into the cache. */
+async function deriveAnalysis(db: Executor, userId: string, ids: string[]): Promise<void> {
+  // Only the fields read below leave the database: a snapshot freezes every card's question text
+  // (tens of kilobytes per request), which a sample load never needs (D-259).
   const rows = await db.execute<{
     id: string;
     input_sha: string;
@@ -129,15 +166,60 @@ async function loadAnalysis(
     input_snapshot: unknown;
     feed_id: string;
   }>(sql`
-    SELECT id::text AS id, input_sha, result_snapshot, input_snapshot, feed_id::text AS feed_id
-      FROM analysis_requests
-     WHERE user_id = ${userId}::uuid AND status = 'complete' AND result_snapshot IS NOT NULL
-       AND id = ANY(${sql.param(ids)}::uuid[])`);
+    SELECT r.id::text AS id, r.input_sha, r.feed_id::text AS feed_id,
+           CASE WHEN jsonb_typeof(rs) = 'object' THEN jsonb_build_object(
+             'inputSha', rs -> 'inputSha',
+             'model', rs -> 'model',
+             'enrich', jsonb_build_object('features', rs -> 'enrich' -> 'features'),
+             'match', CASE WHEN jsonb_typeof(rs -> 'match' -> 'cards') = 'array'
+               THEN jsonb_build_object('cards', (
+                 SELECT coalesce(jsonb_agg(jsonb_build_object('cardId', c -> 'cardId', 'p', c -> 'p')
+                                           ORDER BY o), '[]'::jsonb)
+                   FROM jsonb_array_elements(rs -> 'match' -> 'cards')
+                        WITH ORDINALITY AS m(c, o)
+                  WHERE jsonb_typeof(c) = 'object')) END)
+           END AS result_snapshot,
+           CASE WHEN jsonb_typeof(ins) = 'object' THEN jsonb_build_object(
+             'v', ins -> 'v',
+             'article', CASE WHEN jsonb_typeof(ins -> 'article') = 'object' THEN
+               jsonb_build_object(
+                 'wordCount', ins -> 'article' -> 'wordCount',
+                 'lang', ins -> 'article' -> 'lang',
+                 'author', ins -> 'article' -> 'author',
+                 'firstSeenAt', ins -> 'article' -> 'firstSeenAt',
+                 'publishedAt', ins -> 'article' -> 'publishedAt',
+                 'hasImage', ins -> 'article' -> 'hasImage',
+                 'hasVideo', ins -> 'article' -> 'hasVideo',
+                 'bodyImageCount', ins -> 'article' -> 'bodyImageCount',
+                 'storyClusterId', ins -> 'article' -> 'storyClusterId',
+                 'clusterSize', ins -> 'article' -> 'clusterSize') END,
+             'cards', CASE WHEN jsonb_typeof(ins -> 'cards') = 'array' THEN (
+               SELECT coalesce(jsonb_agg(jsonb_build_object('cardId', c -> 'cardId',
+                                                            'kind', c -> 'kind',
+                                                            'strength', c -> 'strength')
+                                         ORDER BY o), '[]'::jsonb)
+                 FROM jsonb_array_elements(ins -> 'cards') WITH ORDINALITY AS k(c, o)
+                WHERE jsonb_typeof(c) = 'object') END)
+           END AS input_snapshot
+      FROM analysis_requests r
+      -- Each snapshot is detoasted once here; every '->' on the stored column would decompress it
+      -- again (the concatenation copies the value, OFFSET 0 keeps the subquery from being inlined).
+      CROSS JOIN LATERAL (SELECT r.result_snapshot || '{}'::jsonb AS rs,
+                                 r.input_snapshot || '{}'::jsonb AS ins OFFSET 0) d
+     WHERE r.user_id = ${userId}::uuid AND r.status = 'complete' AND r.result_snapshot IS NOT NULL
+       AND r.id = ANY(${sql.param(ids)}::uuid[])`);
   for (const row of rows.rows) {
     const result = row.result_snapshot;
-    if (!isRecord(result) || result.inputSha !== row.input_sha) continue;
-    const model = result.model;
-    if (!isRecord(model) || model.engine !== 'typesafe') continue;
+    const model = isRecord(result) ? result.model : undefined;
+    if (
+      !isRecord(result) ||
+      result.inputSha !== row.input_sha ||
+      !isRecord(model) ||
+      model.engine !== 'typesafe'
+    ) {
+      cacheAnalysis(row.id, null);
+      continue;
+    }
     const enrich = result.enrich;
     const match = result.match;
     const features = isRecord(enrich) && isRecord(enrich.features) ? enrich.features : null;
@@ -149,7 +231,7 @@ async function loadAnalysis(
         }
       }
     }
-    const input = AnalysisInputSnapshotSchema.safeParse(row.input_snapshot);
+    const input = AnalysisLearnInputSchema.safeParse(row.input_snapshot);
     const frozen = input.success
       ? {
           feedId: row.feed_id,
@@ -175,12 +257,11 @@ async function loadAnalysis(
           },
         }
       : undefined;
-    out.set(row.id, {
+    cacheAnalysis(row.id, {
       inputSha: row.input_sha,
       facets: features as Record<string, number> | null,
       cardP,
       ...(frozen === undefined ? {} : { frozen }),
     });
   }
-  return out;
 }
