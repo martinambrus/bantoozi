@@ -565,7 +565,8 @@ export function checkQuota(
 
 /**
  * The example an article contributes (its title, spec 05 §5.1), for an article the tenant can see:
- * carried by one of the tenant's subscriptions, or already on the tenant's reading list. Anything
+ * released through one of the tenant's subscriptions, or explicitly engaged with on their reading
+ * list. An automatically created ranking row grants no access. Anything
  * else is `404`, like a missing id.
  */
 export async function articleExample(

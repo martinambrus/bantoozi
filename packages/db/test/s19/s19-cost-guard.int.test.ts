@@ -66,17 +66,17 @@ describe('listArticlePage cost on a 64-feed, 2,400-article reader', () => {
     const statements = await captureStatements(ctx.app, world.userId, (tx) =>
       listArticlePage(tx, input(lane, sort)),
     );
-    expect(statements).toHaveLength(1);
-    const statement = statements[0]!;
-    // Warm once, then measure: buffers are hit + read, so cache state does not change the total.
-    await explainBuffers(ctx.appPool, world.userId, statement.text, statement.params);
-    const report = await explainBuffers(
-      ctx.appPool,
-      world.userId,
-      statement.text,
-      statement.params,
-    );
-    console.info(`S19 buffers ${lane}: ${JSON.stringify(report)}`);
-    expect(report.total).toBeLessThan(BUFFER_BOUND);
+    // One stored-plan lookup and the list projection. The bound covers both statements.
+    expect(statements).toHaveLength(2);
+    const reports = [];
+    for (const statement of statements) {
+      // Warm once; hit + read buffers are independent of cache state.
+      await explainBuffers(ctx.appPool, world.userId, statement.text, statement.params);
+      reports.push(
+        await explainBuffers(ctx.appPool, world.userId, statement.text, statement.params),
+      );
+    }
+    console.info(`S19 buffers ${lane}: ${JSON.stringify(reports)}`);
+    expect(reports.reduce((sum, report) => sum + report.total, 0)).toBeLessThan(BUFFER_BOUND);
   });
 });

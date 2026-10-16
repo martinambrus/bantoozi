@@ -3,7 +3,13 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
-import { answerPrompt, markArticlesRead, tenantOutbox, withTenant } from '@bantoozi/db';
+import {
+  bindReaderClock,
+  answerPrompt,
+  markArticlesRead,
+  tenantOutbox,
+  withTenant,
+} from '@bantoozi/db';
 import { parseJobPayload } from '@bantoozi/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -111,13 +117,14 @@ async function opened(userId: string, articleId: string): Promise<void> {
 /** `/articles/mark-read` (bulk): sets `read_at`, records `mark_read`, never a `read` event. */
 async function bulkRead(userId: string, articleId: string): Promise<void> {
   await untouched(userId, articleId);
-  await withTenant(w.appDb, userId, (tx) =>
-    markArticlesRead(tx, {
+  await withTenant(w.appDb, userId, (tx) => {
+    bindReaderClock(tx, NOW);
+    return markArticlesRead(tx, {
       targets: [{ articleId, fence: null }],
-      now: new Date(),
+      now: NOW,
       outbox: tenantOutbox(tx),
-    }),
-  );
+    });
+  });
 }
 
 interface LogLine {
@@ -285,6 +292,13 @@ describe('dislike-only articles', () => {
   ): Promise<string> {
     const id = await article([{ feedId, at: arrival }]);
     await w.rate(userId, id, ratedAt, -1);
+    // A historic dislike can predate a later arrival/re-sighting; backdate that fixture state
+    // after the real action, which now requires a released carrier.
+    if (ratedAt < arrival)
+      await b.owner.query(
+        'UPDATE user_article SET rated_at = $3 WHERE user_id = $1 AND article_id = $2',
+        [userId, id, ratedAt],
+      );
     const row = await b.rows<{ rated_at: Date }>(
       `SELECT rated_at FROM user_article WHERE user_id = $1 AND article_id = $2`,
       [userId, id],

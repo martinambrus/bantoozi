@@ -2517,3 +2517,17 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   Owner-requested reader adjustment: sidebar feeds and article feed names use the same favicon
   with an RSS fallback for missing/blocked/broken images. A feed-advertised icon takes precedence;
   otherwise try the website's /favicon.ico. Existing remembered image permissions still apply.
+
+  P3 integration: nightly metrics bind the worker clock and cache release configuration per tenant,
+  including when a transaction is rebound across accounts. Retention fixtures perform reader actions
+  at their simulated server clock after release. The S19 cost guard includes the new plan lookup
+  within its unchanged buffer bound. The S19 golden projection changes only for the newly enforced
+  carrier cutoff: a carrier after asOf cannot authorize inference or folding of an earlier off-feed
+  arrival. This is an approved release-policy change, rather than an S19 projection rewrite; the
+  historical baseline remains unchanged for the other readers. Rank-only state grants no card input.
+
+  PR #47 first review: cluster-member feed titles are selected only from released carriers too,
+  including a member with a released copy on one source and an unreleased copy on another.
+  The carrier query fences candidate/article identities before adding subscription scope, preventing
+  one index probe per (article, subscription) pair; list queries remain under the existing 5,000
+  shared-buffer bound, counting both the plan lookup and the projection.

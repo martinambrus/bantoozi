@@ -13,7 +13,7 @@ type ReleaseConfig = {
   label: string;
   label_sk: string | null;
 };
-const configs = new WeakMap<object, Promise<ReleaseConfig>>();
+const configs = new WeakMap<object, Map<string, Promise<ReleaseConfig>>>();
 
 /** Bind the request's server clock, never client input. All access checks in its transaction agree. */
 export function bindReaderClock(tx: TenantTx, now: Date): void {
@@ -39,7 +39,13 @@ export async function readerReleaseClock(
 ): Promise<ReaderReleaseClock> {
   const now = clocks.get(tx) ?? new Date();
   const asOf = new Date(Math.min(now.getTime(), requestedAsOf?.getTime() ?? now.getTime()));
-  let config = configs.get(tx);
+  const userId = tenantUserId(tx);
+  let transactionConfigs = configs.get(tx);
+  if (transactionConfigs === undefined) {
+    transactionConfigs = new Map();
+    configs.set(tx, transactionConfigs);
+  }
+  let config = transactionConfigs.get(userId);
   if (config === undefined) {
     config = tx
       .execute<ReleaseConfig>(
@@ -51,7 +57,7 @@ export async function readerReleaseClock(
         if (row === undefined) throw new Error('reader plan is missing');
         return row;
       });
-    configs.set(tx, config);
+    transactionConfigs.set(userId, config);
   }
   const row = await config;
   return {

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import {
+  bindReaderClock,
   pinUnbookmark,
   saveMutation,
   tenantOutbox,
@@ -188,9 +189,10 @@ export class RetentionBWorld {
 
   /** `POST /articles/undo` of a receipt. */
   undo(userId: string, mutationId: string, at: Date): Promise<unknown> {
-    return withTenant(this.w.appDb, userId, (tx) =>
-      undoArticleMutation(tx, { mutationId, now: at, outbox: tenantOutbox(tx) }),
-    );
+    return withTenant(this.w.appDb, userId, (tx) => {
+      bindReaderClock(tx, at);
+      return undoArticleMutation(tx, { mutationId, now: at, outbox: tenantOutbox(tx) });
+    });
   }
 
   /** A mark of the unreferenced grace, set directly (the only column besides `cold_at` that moves). */

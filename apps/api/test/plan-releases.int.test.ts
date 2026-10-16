@@ -1,3 +1,4 @@
+import { bindReaderClock, createDatabase, readerReleaseClock, withTenants } from '@bantoozi/db';
 import { createArticle, createFeed, createSubscription } from '@bantoozi/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -235,14 +236,28 @@ it('does not reveal an unreleased story sibling in a released article detail', a
     firstSeenAt: new Date(now.getTime() - 60000),
     title: 'Secret sibling',
   });
-  const clusterId = await clusterOf(h, [released.id, hidden.id]);
+  const source = await createFeed(h.owner, { title: 'Released sibling source' });
+  await createSubscription(h.owner, { userId: account.user.id, feedId: source.id, mode: 'off' });
+  const visible = await createArticle(h.owner, {
+    feedIds: [source.id],
+    firstSeenAt: new Date(now.getTime() - 3600000),
+  });
+  // The lower-id feed carries this member too, but its copy is not yet released.
+  await h.owner.query(
+    `INSERT INTO feed_items (feed_id, article_id, guid, first_seen_at)
+    VALUES ($1, $2, 'waiting-copy', $3)`,
+    [feedId, visible.id, new Date(now.getTime() - 60000)],
+  );
+  const clusterId = await clusterOf(h, [released.id, hidden.id, visible.id]);
   await h.owner.query('UPDATE story_clusters SET representative_article_id = $2 WHERE id = $1', [
     clusterId,
     hidden.id,
   ]);
   const res = await account.api.get(`/articles/${released.id}`);
   expect(res.statusCode, res.body).toBe(200);
-  expect(res.json().clusterMembers).toEqual([]);
+  expect(res.json().clusterMembers).toMatchObject([
+    { id: visible.id, feedTitle: 'Released sibling source' },
+  ]);
   expect(res.body).not.toContain('Secret sibling');
   const rule = await account.api.post('/rules', {
     kind: 'mute_story',
@@ -292,4 +307,53 @@ it('estimates a future fetch boundary when the source has no waiting articles', 
   const feed = result.json().find((row: { feed: { id: string } }) => row.feed.id === empty.id).feed;
   expect(new Date(feed.nextUpdateAt).getUTCMinutes()).toBe(45);
   expect(feed.intervalReason).toBe('publisher');
+});
+
+it('keeps plan metadata separate when a worker transaction visits multiple tenants', async () => {
+  const free = await following('free');
+  const premium = await following('premium');
+  const clocks = await withTenants(
+    createDatabase(h.owner),
+    [free.user.id, premium.user.id, free.user.id],
+    async (tx) => {
+      bindReaderClock(tx, now);
+      return readerReleaseClock(tx);
+    },
+  );
+  expect(clocks.map((clock) => clock.intervalS)).toEqual([21600, 60, 21600]);
+  expect(clocks.every((clock) => clock.now.getTime() === now.getTime())).toBe(true);
+});
+
+it('does not let a waiting active carrier authorize inference for an earlier off-feed arrival', async () => {
+  const account = await following('beta');
+  const off = await createFeed(h.owner, { title: 'Released off source' });
+  await createSubscription(h.owner, { userId: account.user.id, feedId: off.id, mode: 'off' });
+  await h.owner.query(
+    "UPDATE subscriptions SET created_at = $2::timestamptz - interval '1 day' WHERE user_id = $1",
+    [account.user.id, now],
+  );
+  const article = await createArticle(h.owner, {
+    feedIds: [off.id],
+    firstSeenAt: new Date(now.getTime() - 3600000),
+  });
+  await h.owner.query(
+    `INSERT INTO feed_items (feed_id, article_id, guid, first_seen_at)
+    VALUES ($1, $2, 'waiting-active', $3)`,
+    [feedId, article.id, new Date(now.getTime() - 120000)],
+  );
+  await h.owner.query(
+    `INSERT INTO user_article (user_id, article_id, lane, tier, p_like, score_version)
+    VALUES ($1, $2, 'for_you', 5, 0.9, '2:0')`,
+    [account.user.id, article.id],
+  );
+  const load = async () => {
+    const res = await account.api.get('/articles', {
+      query: { lane: 'all', status: 'all', minTier: '1' },
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    return res.json().items.find((item: { id: string }) => item.id === article.id);
+  };
+  expect(await load()).toMatchObject({ lane: 'new', pLike: null, feed: { id: off.id } });
+  now = new Date(now.getTime() + 8 * 60000);
+  expect(await load()).toMatchObject({ lane: 'for_you', pLike: 0.9, feed: { id: feedId } });
 });

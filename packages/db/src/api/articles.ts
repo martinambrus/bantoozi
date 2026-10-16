@@ -163,19 +163,23 @@ interface ProjectionInput {
  * correlated subqueries keeps the planner from inlining them into every use (S18/S19).
  */
 function carrierCte(source: SQL): SQL {
-  return sql`carrier AS (
-        SELECT c.view_key, c.article_id,
+  // Fence the candidate/article join before adding subscription scope and release predicates;
+  // otherwise the planner can probe feed_items once per (candidate, subscription) pair.
+  return sql`carrier_items AS MATERIALIZED (
+        SELECT c.view_key, c.article_id, ef.feed_id, ef.first_seen_at, ef.over_cap_limit
+          FROM ${source} c JOIN feed_items ef ON ef.article_id = c.article_id),
+      carrier AS (
+        SELECT ci.view_key, ci.article_id,
                min(e.feed_id) FILTER (WHERE e.listable) AS display_feed_id,
                min(e.feed_id) AS any_feed_id,
                bool_or(e.inference_mode = 'active'
-                       AND ef.first_seen_at >= e.inference_activated_at
-                       AND ef.over_cap_limit IS NULL) AS active_carried,
-               max(ef.over_cap_limit) FILTER (WHERE e.inference_mode = 'active'
-                       AND ef.first_seen_at >= e.inference_activated_at) AS over_cap_limit
-          FROM ${source} c
-          JOIN feed_items ef ON ef.article_id = c.article_id
-          JOIN vs e ON e.feed_id = ef.feed_id AND e.view_key = c.view_key AND ef.first_seen_at <= e.visible_until
-         GROUP BY c.view_key, c.article_id)`;
+                       AND ci.first_seen_at >= e.inference_activated_at
+                       AND ci.over_cap_limit IS NULL) AS active_carried,
+               max(ci.over_cap_limit) FILTER (WHERE e.inference_mode = 'active'
+                       AND ci.first_seen_at >= e.inference_activated_at) AS over_cap_limit
+          FROM carrier_items ci JOIN vs e ON e.feed_id = ci.feed_id AND e.view_key = ci.view_key
+         WHERE ci.first_seen_at <= e.visible_until
+         GROUP BY ci.view_key, ci.article_id)`;
 }
 
 /** `WITH vs, carried, proj` (steps 1–3 of the module comment). */
@@ -229,10 +233,10 @@ async function projectionCtes(tx: TenantTx, input: ProjectionInput): Promise<SQL
                 OR ua.score_version <> ${input.scoreVersion}
                 OR ua.rank_revision <> (SELECT u.rank_revision FROM users u WHERE u.id = ${user}::uuid)
                 OR ua.next_rank_at <= now())) AS outdated,
-             (el.eligible AND a.story_cluster_id IS NOT NULL AND EXISTS (
-                SELECT 1 FROM feed_items fx
+             (el.eligible AND a.story_cluster_id IS NOT NULL AND c.article_id IN (
+                SELECT fx.article_id FROM feed_items fx
                   JOIN subscriptions sx ON sx.feed_id = fx.feed_id AND sx.user_id = ${user}::uuid
-                 WHERE fx.article_id = c.article_id AND NOT sx.allow_duplicates AND ${releasedCarrier(clock, 'sx', 'fx')})) AS foldable
+                 WHERE NOT sx.allow_duplicates AND ${releasedCarrier(clock, 'sx', 'fx')})) AS foldable
         FROM carried c
         JOIN articles a ON a.id = c.article_id
         LEFT JOIN carrier cr ON cr.view_key = c.view_key AND cr.article_id = c.article_id
@@ -913,10 +917,10 @@ export async function articleContexts(
                (SELECT max(ef.first_seen_at) FROM vs e JOIN feed_items ef ON ef.feed_id = e.feed_id
                  WHERE ef.article_id = c.article_id AND ef.first_seen_at <= e.visible_until),
                a.first_seen_at) AS arrival,
-             (el.eligible AND a.story_cluster_id IS NOT NULL AND EXISTS (
-                SELECT 1 FROM feed_items fx
+             (el.eligible AND a.story_cluster_id IS NOT NULL AND c.article_id IN (
+                SELECT fx.article_id FROM feed_items fx
                   JOIN subscriptions sx ON sx.feed_id = fx.feed_id AND sx.user_id = ${user}::uuid
-                 WHERE fx.article_id = c.article_id AND NOT sx.allow_duplicates AND ${releasedCarrier(clock, 'sx', 'fx')})) AS foldable
+                 WHERE NOT sx.allow_duplicates AND ${releasedCarrier(clock, 'sx', 'fx')})) AS foldable
         FROM c JOIN articles a ON a.id = c.article_id
         LEFT JOIN carrier cr ON cr.view_key = c.view_key AND cr.article_id = c.article_id
         CROSS JOIN LATERAL (SELECT ${eligibleExpr(user)} AS eligible OFFSET 0) el)
@@ -1332,7 +1336,8 @@ export async function getArticleDetail(
                   FROM feed_items fi
                   JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.user_id = ${user}::uuid
                   JOIN feeds f ON f.id = fi.feed_id
-                 WHERE fi.article_id = m.id ORDER BY s.hidden, fi.feed_id LIMIT 1) AS feed_title
+                 WHERE fi.article_id = m.id AND ${releasedCarrier(detailClock)}
+                 ORDER BY s.hidden, fi.feed_id LIMIT 1) AS feed_title
           FROM articles a JOIN articles m ON m.story_cluster_id = a.story_cluster_id AND m.id <> a.id
          WHERE a.id = ${articleId}::bigint
            AND (EXISTS (SELECT 1 FROM feed_items fi
