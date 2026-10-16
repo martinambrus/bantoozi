@@ -310,7 +310,8 @@ stored plan. `nextUpdateAt` is the next account release (null for immediate plan
 updateIntervalS, nextUpdateAt, intervalReason}`. The effective interval is the maximum of the account's
 release cadence (or fetch floor for immediate plans), learned source/robots floor and publisher/cache
 hint. `intervalReason` is `plan | source | publisher`; `nextUpdateAt` estimates the next fetch rounded
-up to an account release boundary (immediate during subscription grace), or null for dead/paused feeds.
+up to an account release boundary (immediate during subscription grace), or uses the next account
+boundary when already fetched articles are waiting. Dead/paused feeds report null.
 Shared last-success/error times are capped at the subscription's visible-through cutoff. No raw shared
 fetch schedule is exposed. The new timing fields are optional in DTOs for older offline records.
 `PATCH` returns `200 {subscription}` and delete returns `204`. Existing subscriptions return the

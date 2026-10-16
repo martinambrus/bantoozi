@@ -126,11 +126,10 @@ export async function readerSourcePolicies(
     floor_s: number;
     next_start_at: RawTimestamp | null;
   }>(sql`SELECT o.origin,
-    greatest(coalesce((to_jsonb(o) ->> 'crawl_delay_s')::float8, 0),
-      coalesce((to_jsonb(o) ->> 'learned_interval_s')::float8, 0) * power(0.8,
-        floor(greatest(0, extract(epoch FROM (clock_timestamp() - coalesce(
-          (to_jsonb(o) ->> 'learned_updated_at')::timestamptz, clock_timestamp())))) / 86400))) AS floor_s,
-    greatest(o.next_start_at, o.blocked_until, (to_jsonb(o) ->> 'feed_next_start_at')::timestamptz) AS next_start_at
+    greatest(o.crawl_delay_s,
+      o.learned_interval_s * power(0.8,
+        floor(greatest(0, extract(epoch FROM (clock_timestamp() - o.learned_updated_at))) / 86400))) AS floor_s,
+    greatest(o.next_start_at, o.blocked_until, o.feed_next_start_at) AS next_start_at
     FROM origin_fetch_state o WHERE o.origin = ANY(${sql.param([...new Set(origins)])}::text[])`);
   return new Map(
     result.rows.map((row) => [

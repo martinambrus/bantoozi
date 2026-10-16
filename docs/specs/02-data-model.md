@@ -183,6 +183,7 @@ D-255 adds `plans` (migration 0029), a control-plane table without tenant RLS, r
 worker; only admin routes write it. It stores immutable `key`, `label`, optional `label_sk`, the nine
 integer allowances of spec 08 §6, optional `release_interval_s`, `sort_order`, `is_default`,
 `retired_at`, `version`, and `updated_at`. Limits are nonnegative; fetch interval is 60..86400 seconds;
+release interval is null/zero for immediate visibility or 60..86400 seconds (D-257, migration 0031);
 a partial unique index permits one default and a default cannot be retired. `users.plan` references
 its key. `refresh_plan_feeds(text)` and `refresh_user_feeds(uuid)` are admin-gated SECURITY DEFINER
 functions with fixed search paths; they recompute only affected feeds and pull a dropped floor's
