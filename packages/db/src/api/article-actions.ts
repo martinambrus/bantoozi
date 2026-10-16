@@ -8,6 +8,7 @@ import {
   enqueueLearn,
   mergeRankerConfig,
   readUserPreferences,
+  retrainThreshold,
   type ArticleListItem,
   type CardTextMode,
   type Explain,
@@ -883,8 +884,9 @@ async function captureFeatures(
 }
 
 /**
- * Record `user.learn` after explicit feedback (spec 06 §8.4): once at least `model.retrainEvery`
- * articles have effective explicit rating changes since the last processed cutoff (a bulk change
+ * Record `user.learn` after explicit feedback (spec 06 §8.4): once at least `retrainThreshold`
+ * (`model.retrainEvery`, or `model.retrainFraction` of the latest attempt's explicit ratings when
+ * that is more; D-260) articles have effective explicit rating changes since the last processed cutoff (a bulk change
  * crossing the boundary included; never `n % 10`), or at once with `force` (undo, un-rate,
  * unbookmark). The cutoff is the newest `metrics.feedbackCutoffEventId` of the user's models (M7);
  * without one every explicit rating event counts. The intent is debounced and the handler retrains
@@ -898,14 +900,17 @@ async function recordLearnIntent(
   force: boolean,
 ): Promise<void> {
   if (!force) {
-    const result = await tx.execute<{ n: number }>(sql`
-      SELECT count(DISTINCT e.article_id)::int AS n FROM feedback_events e
-       WHERE e.user_id = ${user}::uuid AND e.kind IN ('rate', 'unrate', 'prompt_answer')
-         AND e.id > coalesce((
-           SELECT max(CASE WHEN m.metrics ->> 'feedbackCutoffEventId' ~ '^[0-9]{1,18}$'
-                           THEN (m.metrics ->> 'feedbackCutoffEventId')::bigint END)
-             FROM user_models m WHERE m.user_id = ${user}::uuid), 0)`);
-    if ((result.rows[0]?.n ?? 0) < config.model.retrainEvery) return;
+    const result = await tx.execute<{ n: number; last_explicit: number }>(sql`
+      SELECT (SELECT count(DISTINCT e.article_id) FROM feedback_events e
+               WHERE e.user_id = ${user}::uuid AND e.kind IN ('rate', 'unrate', 'prompt_answer')
+                 AND e.id > coalesce((
+                   SELECT max(CASE WHEN m.metrics ->> 'feedbackCutoffEventId' ~ '^[0-9]{1,18}$'
+                                   THEN (m.metrics ->> 'feedbackCutoffEventId')::bigint END)
+                     FROM user_models m WHERE m.user_id = ${user}::uuid), 0))::int AS n,
+             coalesce((SELECT m.n_labels FROM user_models m WHERE m.user_id = ${user}::uuid
+                        ORDER BY m.version DESC LIMIT 1), 0)::int AS last_explicit`);
+    const row = result.rows[0];
+    if ((row?.n ?? 0) < retrainThreshold(config.model, row?.last_explicit ?? 0)) return;
   }
   await enqueueLearn(outbox, { userId: user });
 }

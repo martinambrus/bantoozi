@@ -575,6 +575,30 @@ describe('/rating and /prompt-answer', () => {
     ]);
   });
 
+  it('waits for retrainFraction of the last attempt’s explicit ratings when that is more (D-260)', async () => {
+    const r = await newReader(h);
+    const feed = await subscribedFeed(h, r.user.id);
+    // The latest attempt trained on 400 explicit ratings: 5 % of them is 20 > retrainEvery (10).
+    await h.owner.query(
+      `INSERT INTO user_models (user_id, version, feature_spec_sha, n_labels, n_pos, n_neg, weights,
+                                intercept, scaler, calibration, metrics)
+       VALUES ($1, 1, $2, 400, 200, 200, '{}', 0, '{}', '{}', '{"feedbackCutoffEventId": "0"}')`,
+      [r.user.id, 'a'.repeat(64)],
+    );
+    const articles: string[] = [];
+    for (let i = 0; i < 20; i += 1) articles.push(await carriedArticle(h, [feed]));
+    const bulk = await r.api.post('/articles/rate-bulk', {
+      targets: articles.slice(0, 19).map((id) => ({ id, ...freshFence })),
+      rating: 1,
+    });
+    expect(bulk.statusCode, bulk.body).toBe(200);
+    expect(await queues(r.user.id)).not.toContain('user.learn');
+    await ok(r.api.post(`/articles/${articles[19]!}/rating`, { ...freshFence, rating: -1 }));
+    expect((await outbox(h, r.user.id, 'user.learn')).map((j) => j.payload)).toEqual([
+      { userId: r.user.id },
+    ]);
+  });
+
   it.each([
     ['rating', 1],
     ['rating', -1],

@@ -51,11 +51,14 @@ export interface StoredModel {
  * model config, both consent flags and each own input's id, strength, scope and card hash.
  */
 export function modelContextSha(input: ContextInput): string {
+  // `retrainFraction` only schedules training (D-260): leaving it out keeps the stored models'
+  // context hashes, which predate it, valid.
+  const { retrainFraction: _schedule, ...modelConfig } = input.modelConfig;
   return canonicalSha256({
     ratingSha: input.ratingSha,
     featureSpecSha: input.featureSpecSha,
     strengthWeights: input.strengthWeights,
-    model: input.modelConfig,
+    model: modelConfig,
     consent: {
       implicitFeedback: input.consent.implicitFeedback,
       implicitNegative: input.consent.implicitNegative,

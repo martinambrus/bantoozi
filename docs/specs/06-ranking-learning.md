@@ -636,8 +636,9 @@ ranking until enough compatible feedback exists.
 - **Choosing λ** from `model.lambdaGrid`: fit every grid value on the same grouped folds, fit a Platt
   calibrator (below) on each value's out-of-fold explicit logits, and take the value with the lowest
   calibrated out-of-fold logloss, ties to the larger λ. If those folds cannot be formed, take the
-  largest value. Each outer training partition chooses its own λ with inner folds; the final model
-  chooses with the outer folds and records its λ in the manifest.
+  largest value. Each outer training partition chooses its own λ with inner folds (the same rule
+  with `k = min(4, …)`, D-260); the final model chooses with the outer folds and records its λ in
+  the manifest.
 - **Metrics:** out-of-fold `cv_auc` and `cv_logloss` use explicit examples only, one per article.
   `baseline_auc` and `baseline_logloss` use cards-only scores on exactly those snapshots and folds;
   report grouped bootstrap confidence intervals, class counts and skipped-sample reasons. Single-
@@ -666,8 +667,9 @@ ranking until enough compatible feedback exists.
 
 ### 8.4 When to train (`user.learn {userId}`)
 
-- The API enqueues after **at least** `model.retrainEvery` (default 10) newly effective explicit
-  feedback changes since the last processed cutoff, including a bulk operation that crosses the
+- The API enqueues after **at least** `max(model.retrainEvery, ⌈model.retrainFraction × n⌉)`
+  (defaults 10 and 0.05; `n` is the explicit sample count of the user's newest attempt, D-260) newly
+  effective explicit feedback changes since the last processed cutoff, including a bulk operation that crosses the
   boundary. The processed cutoff is the largest `user_models.metrics.feedbackCutoffEventId` (the
   newest `feedback_events.id` a stored model or attempt consumed, a decimal string) of the user;
   the API counts the distinct articles with `rate`, `unrate` or `prompt_answer` events after it (all
@@ -850,7 +852,8 @@ export const DEFAULT_RANKER_CONFIG = {
               staleTimeSensitive: 0.7, staleAgeHours: 72, autoMinDislikes: 3, autoWindowDays: 90 },
   labelSuggest: 0.8,
   model: { lambdaGrid: [1, 3, 10, 30, 100], minExplicit: 30, minEachClass: 5, minCvAuc: 0.60,
-           maxBaselineDrop: 0.02, retrainEvery: 10, historyDays: 180, keepVersions: 3,
+           maxBaselineDrop: 0.02, retrainEvery: 10, retrainFraction: 0.05, historyDays: 180,
+           keepVersions: 3,
            cardMatchP: 0.5, cardMinMatched: 8 },
   bm25: { k1: 1.2, b: 0.75, scale: 3 },
 } as const;
