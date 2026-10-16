@@ -329,13 +329,20 @@ type Slot = { ok: true; token: string | undefined } | { ok: false; result: SafeF
  * outlives the whole deadline. A failing `reserve` rejects the fetch: no request was sent and it is
  * an infrastructure failure, not the feed's.
  */
-async function reserveStart(chain: Chain, origin: string, url: URL): Promise<Slot> {
+async function reserveStart(
+  chain: Chain,
+  origin: string,
+  url: URL,
+  feedBudget = true,
+): Promise<Slot> {
   const { limiter, now } = chain.settings;
   if (limiter === undefined) return { ok: true, token: undefined };
   const leaseMs = Math.ceil(chain.settings.timeoutMs) + LEASE_MARGIN_MS;
   for (;;) {
     if (chain.signal.aborted) return { ok: false, result: timeoutFailure(chain, url) };
-    const pending = limiter.reserve(origin, { leaseMs, purpose: chain.settings.purpose });
+    const purpose =
+      chain.settings.purpose === 'feed' && !feedBudget ? 'page' : chain.settings.purpose;
+    const pending = limiter.reserve(origin, { leaseMs, purpose });
     const reservation = await untilAborted(pending, chain.signal);
     if (reservation === ABORTED) {
       // A start granted after the deadline is handed straight back.
@@ -540,6 +547,7 @@ async function sendHop(chain: Chain, url: URL): Promise<HopStep> {
 async function followChain(chain: Chain, start: URL): Promise<SafeFetchResult> {
   const { settings, redirects } = chain;
   const visited = new Set<string>();
+  const budgetedOrigins = new Set<string>();
   let current = start;
   for (let hop = 0; ; hop += 1) {
     visited.add(requestKey(current));
@@ -559,8 +567,11 @@ async function followChain(chain: Chain, start: URL): Promise<SafeFetchResult> {
     }
 
     const origin = originOf(current);
-    const slot = await reserveStart(chain, origin, current);
+    const slot = await reserveStart(chain, origin, current, !budgetedOrigins.has(origin));
     if (!slot.ok) return slot.result;
+    // A logical feed fetch spends one budget slot per origin; redirect continuations retain the
+    // shared concurrency, Crawl-delay, spacing and cooldown checks without spending it again.
+    budgetedOrigins.add(origin);
     let step: HopStep;
     try {
       step = await sendHop(chain, current);

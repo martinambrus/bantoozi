@@ -1,6 +1,7 @@
 import type { OriginLimiter, OriginReservation } from '@bantoozi/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createMemoryOriginLimiter } from '../../src/extract/memory-origin-limiter.js';
 import { DEFAULT_COOLDOWN_MS, LEASE_MARGIN_MS } from '../../src/http/safe-fetch.js';
 import {
   expectFailure,
@@ -47,6 +48,26 @@ describe('spec 03 §8.2 politeness through the injected OriginLimiter', () => {
       { origin: 'http://other.example:8080', token: 't2' },
     ]);
     expect(calls.block).toEqual([]);
+  });
+
+  it('spends the feed budget once per origin through same-origin and returning redirects', async () => {
+    const limiter = createMemoryOriginLimiter({ spacingMs: 0, feedSpacingMs: 10000 });
+    harness.fixture.redirect('/start', '/same-origin', 302);
+    harness.fixture.redirect('/same-origin', 'http://other.example/other-origin', 302);
+    harness.fixture.redirect('/other-origin', 'http://public.example/final', 302);
+    harness.fixture.route('/final', { body: 'feed' });
+    expectOk(await harness.fetch('http://public.example/start', { purpose: 'feed', limiter }));
+    expect(harness.fixture.requests).toHaveLength(4);
+    expect(
+      expectFailure(
+        await harness.fetch('http://public.example/final', { purpose: 'feed', limiter }),
+      ).code,
+    ).toBe('FEED_ORIGIN_COOLDOWN');
+    expect(
+      expectFailure(await harness.fetch('http://other.example/final', { purpose: 'feed', limiter }))
+        .code,
+    ).toBe('FEED_ORIGIN_COOLDOWN');
+    expect(harness.fixture.requests).toHaveLength(4);
   });
 
   it('blocked → FEED_ORIGIN_COOLDOWN with retryAt = until, and zero requests', async () => {

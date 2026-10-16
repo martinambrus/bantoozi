@@ -2448,3 +2448,7 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   independent worker pools; there are no live provider calls or new dependencies.
   PR #46 review: retain only body-derived TTL/syndication hints across 304 responses. Store the
   latest response cache hint separately and replace it on every 200/304, including removing it.
+
+  PR #46 second review: charge the aggregate feed budget once per origin in a redirect chain;
+  subsequent hops keep concurrency, start spacing, Crawl-delay and cooldown enforcement. Retained
+  publisher/cache hints expire from the last successful 200/304, never from a failed attempt.

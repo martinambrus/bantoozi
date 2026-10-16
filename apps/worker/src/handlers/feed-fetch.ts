@@ -122,7 +122,7 @@ async function fetchFeed(
 
   // A plan edit may pull next_fetch_at forward; it cannot erase the publisher's last hint.
   const publisherEarliest =
-    (feed.lastFetchAt?.getTime() ?? 0) +
+    (feed.lastSuccessAt?.getTime() ?? 0) +
     Math.max(feed.publisherIntervalS ?? 0, feed.cacheIntervalS ?? 0) * 1000;
   if (!force && publisherEarliest > now.getTime()) {
     lock.assertHeld();

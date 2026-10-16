@@ -2060,6 +2060,40 @@ describe('plan velocity source protection', () => {
     expect(next.rows[0]?.honored).toBe(true);
   });
 
+  it('does not renew a successful publisher/cache hint after a failed fetch', async () => {
+    const path = '/source-protection/hint-expiry.rss';
+    let requests = 0;
+    server.route(path, () => {
+      requests += 1;
+      return { status: 500, body: '' };
+    });
+    const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    const at = Date.now();
+    await owner.query(
+      "UPDATE feeds SET last_success_at = $2::timestamptz - interval '7 hours', last_fetch_at = $2::timestamptz - interval '10 minutes', next_fetch_at = $2::timestamptz - interval '1 minute', publish_stats = '{\"cache_min_interval_s\":21600,\"publisher_min_interval_s\":7200}'::jsonb WHERE id = $1",
+      [feedId, new Date(at)],
+    );
+    await dispatch(
+      handlers,
+      'feed.fetch',
+      { feedId },
+      { queue: 'feed.fetch', jobId: 'expired-hint' },
+    );
+    expect(requests).toBe(1);
+    // The new failed attempt also cannot renew the six-hour cache policy.
+    await owner.query(
+      "UPDATE feeds SET next_fetch_at = now() - interval '1 second' WHERE id = $1",
+      [feedId],
+    );
+    await dispatch(
+      handlers,
+      'feed.fetch',
+      { feedId },
+      { queue: 'feed.fetch', jobId: 'failed-hint-retry' },
+    );
+    expect(requests).toBe(2);
+  });
+
   it('checks robots before polling a one-minute feed', async () => {
     const path = '/source-protection/private.rss';
     let requests = 0;
