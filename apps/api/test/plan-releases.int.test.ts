@@ -275,6 +275,33 @@ it.each([60, null])(
   },
 );
 
+it.each(['assignment', 'cadence'])(
+  'does not reactivate a timezone hold after a plan %s round trip',
+  async (change) => {
+    await h.owner.query("UPDATE plans SET release_interval_s = 21600 WHERE key = 'free'");
+    const account = await following('free');
+    now = new Date(initialNow.getTime() + 30 * 60000);
+    await account.api.patch('/me', { timezone: 'Asia/Kathmandu' });
+    expect((await account.api.get(`/articles/${freshId}`)).statusCode).toBe(404);
+    // A cosmetic edit must preserve the active hold.
+    await h.owner.query("UPDATE plans SET label = label, version = version + 1 WHERE key = 'free'");
+    expect((await account.api.get(`/articles/${freshId}`)).statusCode).toBe(404);
+    if (change === 'assignment') {
+      await h.owner.query("UPDATE users SET plan = 'premium' WHERE id = $1", [account.user.id]);
+    } else {
+      await h.owner.query("UPDATE plans SET release_interval_s = 60 WHERE key = 'free'");
+    }
+    expect((await account.api.get(`/articles/${freshId}`)).statusCode).toBe(200);
+    if (change === 'assignment') {
+      await h.owner.query("UPDATE users SET plan = 'free' WHERE id = $1", [account.user.id]);
+    } else {
+      await h.owner.query("UPDATE plans SET release_interval_s = 21600 WHERE key = 'free'");
+    }
+    // The normal 12:15 boundary applies; the old 18:15 hold must stay invalid.
+    expect((await account.api.get(`/articles/${freshId}`)).statusCode).toBe(200);
+  },
+);
+
 it('bounds shared fetch metadata and reports account cadence, publisher limits and next update', async () => {
   const account = await following('beta');
   const success = new Date(now.getTime() - 60000);

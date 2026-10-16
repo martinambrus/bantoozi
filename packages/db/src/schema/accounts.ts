@@ -34,6 +34,7 @@ export const plans = pgTable(
     opmlMaxFeeds: integer('opml_max_feeds').notNull(),
     minFetchIntervalS: integer('min_fetch_interval_s').notNull(),
     releaseIntervalS: integer('release_interval_s'),
+    releaseRevision: integer('release_revision').notNull().default(0),
     backfillDays: integer('backfill_days').notNull(),
     invitesOnSignup: integer('invites_on_signup').notNull(),
     sortOrder: integer('sort_order').notNull().default(100),
@@ -54,6 +55,7 @@ export const plans = pgTable(
       'plans_release_interval_check',
       sql`release_interval_s IS NULL OR release_interval_s = 0 OR release_interval_s BETWEEN 60 AND 86400`,
     ),
+    check('plans_release_revision_check', sql`release_revision >= 0`),
     check('plans_default_active_check', sql`NOT (is_default AND retired_at IS NOT NULL)`),
     uniqueIndex('plans_default_idx')
       .on(t.isDefault)
@@ -71,7 +73,7 @@ export const users = pgTable(
     timezone: text('timezone').notNull().default('Europe/Bratislava'),
     releaseHoldAt: tstz('release_hold_at'),
     releaseHoldUntil: tstz('release_hold_until'),
-    releaseHoldIntervalS: integer('release_hold_interval_s'),
+    releaseHoldPlanRevision: integer('release_hold_plan_revision'),
     role: text('role').notNull().default('user'),
     plan: text('plan')
       .notNull()
@@ -98,9 +100,9 @@ export const users = pgTable(
     check('users_rank_revision_check', sql`rank_revision >= 0`),
     check(
       'users_release_hold_check',
-      sql`(release_hold_at IS NULL AND release_hold_until IS NULL AND release_hold_interval_s IS NULL)
+      sql`(release_hold_at IS NULL AND release_hold_until IS NULL AND release_hold_plan_revision IS NULL)
         OR (release_hold_at IS NOT NULL AND release_hold_until IS NOT NULL
-          AND release_hold_interval_s IS NOT NULL AND release_hold_interval_s BETWEEN 60 AND 86400
+          AND release_hold_plan_revision IS NOT NULL AND release_hold_plan_revision >= 0
           AND release_hold_until >= release_hold_at)`,
     ),
     check(

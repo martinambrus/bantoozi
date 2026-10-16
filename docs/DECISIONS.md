@@ -2554,3 +2554,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   passed, preventing repeated edits from advancing releases or hiding visible articles. The display
   timezone updates immediately; Me and feed predictions include the hold. Changed plan cadences
   bypass an old hold. Migration 0031 adds the nullable transition tuple, with no read-path writes.
+
+  PR #47 sixth review: user plan reassignment permanently clears the timezone hold. Each plan's
+  release cadence has a monotonic release_revision, advanced by a BEFORE trigger only on cadence
+  changes, and holds bind to that revision. Returning to an old plan or cadence cannot revive the
+  old hold; unrelated label/quota edits retain it. Both invoker triggers change only NEW, avoiding
+  cross-account updates and plan/user lock-order inversion. No new executable function grants.

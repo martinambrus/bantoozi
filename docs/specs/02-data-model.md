@@ -182,8 +182,11 @@ Neither a request body nor arbitrary SQL may supply `app.user_id`; derive it fro
 D-255 adds `plans` (migration 0029), a control-plane table without tenant RLS, read by the API and
 worker; only admin routes write it. It stores immutable `key`, `label`, optional `label_sk`, the nine
 integer allowances of spec 08 §6, optional `release_interval_s`, `sort_order`, `is_default`,
-`retired_at`, `version`, and `updated_at`. Limits are nonnegative; fetch interval is 60..86400 seconds;
-release interval is null/zero for immediate visibility or 60..86400 seconds (D-257, migration 0031);
+`retired_at`, `version`, and `updated_at`. Limits are nonnegative; fetch interval is 60..86400 seconds.
+A monotonic `plans.release_revision` (integer NOT NULL DEFAULT 0, CHECK >= 0) advances only
+when its release cadence changes. Reassigning a user clears the timezone hold; a hold matches only
+the current release revision, so changing a cadence back cannot revive it. Neither trigger updates
+other rows. The release interval is null/zero for immediate visibility or 60..86400 seconds (D-257, migration 0031);
 a partial unique index permits one default and a default cannot be retired. `users.plan` references
 its key. `refresh_plan_feeds(text)` and `refresh_user_feeds(uuid)` are admin-gated SECURITY DEFINER
 functions with fixed search paths; they recompute only affected feeds and pull a dropped floor's
@@ -206,7 +209,7 @@ CREATE TABLE users (
   timezone        text NOT NULL DEFAULT 'Europe/Bratislava',
   release_hold_at timestamptz NULL,             -- cutoff retained during timezone transition
   release_hold_until timestamptz NULL,          -- first safe boundary in the new timezone
-  release_hold_interval_s int NULL,             -- hold applies only to this plan cadence
+  release_hold_plan_revision int NULL,             -- plans.release_revision that authorized the hold
   role            text NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')),
   plan            text NOT NULL DEFAULT 'beta' REFERENCES plans(key),   -- key into the plan table in spec 08 §6
   invites_left    int  NOT NULL DEFAULT 3 CHECK (invites_left >= 0),
@@ -218,9 +221,9 @@ CREATE TABLE users (
   created_at      timestamptz NOT NULL DEFAULT now(),
   last_active_at  timestamptz NULL,
   deleted_at      timestamptz NULL,               -- soft delete for 7 days, then hard delete (spec 11)
-  CHECK ((release_hold_at IS NULL AND release_hold_until IS NULL AND release_hold_interval_s IS NULL)
+  CHECK ((release_hold_at IS NULL AND release_hold_until IS NULL AND release_hold_plan_revision IS NULL)
     OR (release_hold_at IS NOT NULL AND release_hold_until IS NOT NULL
-      AND release_hold_interval_s IS NOT NULL AND release_hold_interval_s BETWEEN 60 AND 86400
+      AND release_hold_plan_revision IS NOT NULL AND release_hold_plan_revision >= 0
       AND release_hold_until >= release_hold_at)),
   CHECK ((suggest_lease_token IS NULL) = (suggest_lease_until IS NULL))
 );

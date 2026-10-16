@@ -1,5 +1,5 @@
 {
-  "id": "06859996-fb2b-4fb8-aa8e-cfd5090f11f0",
+  "id": "48e779f1-ce3c-444d-a140-2365d69687ec",
   "prevId": "a436d76d-ecec-4965-90de-9d91d6ce64f0",
   "version": "7",
   "dialect": "postgresql",
@@ -344,6 +344,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "release_revision": {
+          "name": "release_revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "backfill_days": {
           "name": "backfill_days",
           "type": "integer",
@@ -433,6 +440,10 @@
         "plans_release_interval_check": {
           "name": "plans_release_interval_check",
           "value": "release_interval_s IS NULL OR release_interval_s = 0 OR release_interval_s BETWEEN 60 AND 86400"
+        },
+        "plans_release_revision_check": {
+          "name": "plans_release_revision_check",
+          "value": "release_revision >= 0"
         },
         "plans_default_active_check": {
           "name": "plans_default_active_check",
@@ -875,8 +886,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "release_hold_interval_s": {
-          "name": "release_hold_interval_s",
+        "release_hold_plan_revision": {
+          "name": "release_hold_plan_revision",
           "type": "integer",
           "primaryKey": false,
           "notNull": false
@@ -1000,7 +1011,7 @@
         },
         "users_release_hold_check": {
           "name": "users_release_hold_check",
-          "value": "(release_hold_at IS NULL AND release_hold_until IS NULL AND release_hold_interval_s IS NULL)\n        OR (release_hold_at IS NOT NULL AND release_hold_until IS NOT NULL\n          AND release_hold_interval_s IS NOT NULL AND release_hold_interval_s BETWEEN 60 AND 86400\n          AND release_hold_until >= release_hold_at)"
+          "value": "(release_hold_at IS NULL AND release_hold_until IS NULL AND release_hold_plan_revision IS NULL)\n        OR (release_hold_at IS NOT NULL AND release_hold_until IS NOT NULL\n          AND release_hold_plan_revision IS NOT NULL AND release_hold_plan_revision >= 0\n          AND release_hold_until >= release_hold_at)"
         },
         "users_suggest_lease_check": {
           "name": "users_suggest_lease_check",

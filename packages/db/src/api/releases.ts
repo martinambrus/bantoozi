@@ -9,12 +9,13 @@ const clocks = new WeakMap<object, Date>();
 type ReleaseConfig = {
   timezone: string;
   release_interval_s: number | null;
+  release_revision: number;
   min_fetch_interval_s: number;
   label: string;
   label_sk: string | null;
   release_hold_at: RawTimestamp | null;
   release_hold_until: RawTimestamp | null;
-  release_hold_interval_s: number | null;
+  release_hold_plan_revision: number | null;
 };
 const configs = new WeakMap<object, Map<string, Promise<ReleaseConfig>>>();
 
@@ -30,6 +31,7 @@ export interface ReaderReleaseClock {
   nextReleaseAt: Date | null;
   intervalS: number | null;
   planIntervalS: number;
+  planReleaseRevision: number;
   timezone: string;
   label: string;
   labelSk: string | null;
@@ -70,7 +72,7 @@ export async function preserveReleaseOnTimezoneChange(
   await tx.execute(sql`UPDATE users SET
     release_hold_at = ${holdUntil === null ? null : clock.releasedAt.toISOString()}::timestamptz,
     release_hold_until = ${holdUntil?.toISOString() ?? null}::timestamptz,
-    release_hold_interval_s = ${holdUntil === null ? null : clock.intervalS}
+    release_hold_plan_revision = ${holdUntil === null ? null : clock.planReleaseRevision}
     WHERE id = ${tenantUserId(tx)}::uuid`);
 }
 
@@ -95,8 +97,8 @@ export async function readerReleaseClock(
   if (config === undefined) {
     config = tx
       .execute<ReleaseConfig>(
-        sql`SELECT u.timezone, p.release_interval_s, p.min_fetch_interval_s, p.label, p.label_sk,
-          u.release_hold_at, u.release_hold_until, u.release_hold_interval_s
+        sql`SELECT u.timezone, p.release_interval_s, p.min_fetch_interval_s, p.label, p.label_sk, p.release_revision,
+          u.release_hold_at, u.release_hold_until, u.release_hold_plan_revision
       FROM users u JOIN plans p ON p.key = u.plan WHERE u.id = ${tenantUserId(tx)}::uuid`,
       )
       .then((result) => {
@@ -111,11 +113,11 @@ export async function readerReleaseClock(
     timezone: row.timezone,
     intervalS: row.release_interval_s,
     holdAt:
-      row.release_interval_s === row.release_hold_interval_s
+      row.release_revision === row.release_hold_plan_revision
         ? toDateOrNull(row.release_hold_at)
         : null,
     holdUntil:
-      row.release_interval_s === row.release_hold_interval_s
+      row.release_revision === row.release_hold_plan_revision
         ? toDateOrNull(row.release_hold_until)
         : null,
   };
@@ -125,6 +127,7 @@ export async function readerReleaseClock(
     ...readerReleaseWindow(policy, asOf),
     ...policy,
     planIntervalS: row.min_fetch_interval_s,
+    planReleaseRevision: row.release_revision,
     label: row.label,
     labelSk: row.label_sk,
   };
