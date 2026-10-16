@@ -413,10 +413,43 @@ async function insertAssociation(
   guid: string | null,
 ): Promise<boolean> {
   const result = await tx.execute(sql`
-    INSERT INTO feed_items (feed_id, article_id, guid, first_seen_at)
-    VALUES (${feedId}::bigint, ${articleId}::bigint, ${guid}::text, statement_timestamp())
+    INSERT INTO feed_items (feed_id, article_id, guid, first_seen_at, last_seen_at)
+    VALUES (${feedId}::bigint, ${articleId}::bigint, ${guid}::text, statement_timestamp(),
+            statement_timestamp())
     ON CONFLICT (feed_id, article_id) DO NOTHING`);
   return result.rowCount === 1;
+}
+
+/**
+ * Marks the already-known items of a successfully parsed feed as seen now (D-253): one statement.
+ * Items new to the feed carry `last_seen_at = first_seen_at` from their insert.
+ */
+export async function markFeedItemsSeen(
+  db: Executor,
+  feedId: string,
+  articleIds: readonly string[],
+): Promise<void> {
+  if (articleIds.length === 0) return;
+  await db.execute(sql`
+    UPDATE feed_items SET last_seen_at = statement_timestamp()
+     WHERE feed_id = ${feedId}::bigint
+       AND article_id = ANY(${sql.param([...articleIds])}::bigint[])`);
+}
+
+/**
+ * A 304 Not Modified: the feed is unchanged, so the items of its last successful fetch are still
+ * listed (D-253). `since` is the start of that fetch (`feeds.last_success_at`): every item it listed
+ * was stamped at or after it, an item that had dropped out was last stamped by an earlier fetch.
+ */
+export async function markFeedItemsStillListed(
+  db: Executor,
+  feedId: string,
+  since: Date | null,
+): Promise<void> {
+  if (since === null) return;
+  await db.execute(sql`
+    UPDATE feed_items SET last_seen_at = statement_timestamp()
+     WHERE feed_id = ${feedId}::bigint AND last_seen_at >= ${since.toISOString()}::timestamptz`);
 }
 
 /** Continue with a found, locked article (spec 03 §7 steps 2–3, 6). */

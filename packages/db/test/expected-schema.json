@@ -1056,6 +1056,11 @@
           "type": "integer",
           "nullable": true,
           "default": null
+        },
+        "last_seen_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
         }
       },
       "primaryKey": ["feed_id", "article_id"],

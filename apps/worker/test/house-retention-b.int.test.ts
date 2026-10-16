@@ -55,8 +55,9 @@ async function stamp(snapshotId: string): Promise<Date> {
 
 describe('house.purge-articles', () => {
   it('deletes an article 90 days after its latest carrier arrival, not one minute earlier', async () => {
-    const feed = await b.feed();
-    const other = await b.feed();
+    const reader = await b.user();
+    const feed = await b.subscribedFeed([reader]);
+    const other = await b.subscribedFeed([reader]);
     const stale = await w.article([{ feedId: feed, at: before(90 * DAY + MINUTE) }]);
     const fresh = await w.article([{ feedId: feed, at: before(90 * DAY - MINUTE) }]);
     // The latest carrier decides, whatever the earlier sighting or `articles.first_seen_at` say.
@@ -78,6 +79,10 @@ describe('house.purge-articles', () => {
       [{ feedId: feed, at: before(90 * DAY + MINUTE) }],
       before(DAY),
     );
+    // D-253: the 90-day rule is the one for articles somebody read; nobody-engaged ones go at 21 days.
+    for (const id of [stale, fresh, reCarried, bothOld, clockSkew]) {
+      await w.read(reader, id, new Date());
+    }
     await b.run(PURGE_ARTICLES, NOW);
     expect(await b.articleExists(stale)).toBe(false);
     expect(await b.articleExists(fresh)).toBe(true);

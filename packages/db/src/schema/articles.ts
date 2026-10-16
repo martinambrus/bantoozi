@@ -204,6 +204,8 @@ export const feedItems = pgTable(
       .references(() => articles.id, { onDelete: 'cascade' }),
     guid: text('guid'),
     firstSeenAt: tstz('first_seen_at').notNull().defaultNow(),
+    /** The last fetch whose feed listed the item (D-253); the clock of the purge rules, not a new arrival. */
+    lastSeenAt: tstz('last_seen_at').notNull().defaultNow(),
     /** NULL = admitted to automatic analysis; else the daily cap in force when it was skipped (D-251). */
     overCapLimit: integer('over_cap_limit'),
   },

@@ -197,6 +197,13 @@
       "when": 1792395600000,
       "tag": "0027_feed_cap",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1792482000000,
+      "tag": "0028_feed_items_last_seen",
+      "breakpoints": true
     }
   ]
 }
