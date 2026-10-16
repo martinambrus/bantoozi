@@ -726,3 +726,60 @@ it.each([null, 0])(
     }
   },
 );
+
+it.each([null, 900])(
+  'honors both fetch and release floors %s, applying grace only to in-grace fetches',
+  async (cadence) => {
+    await h.owner.query("UPDATE plans SET release_interval_s = $1 WHERE key = 'free'", [cadence]);
+    try {
+      const account = await following('free');
+      const empty = await createFeed(h.owner);
+      await createSubscription(h.owner, { userId: account.user.id, feedId: empty.id });
+      await h.owner.query(
+        "UPDATE subscriptions SET created_at = $2::timestamptz - interval '1 day' WHERE user_id = $1",
+        [account.user.id, now],
+      );
+      const load = async () => {
+        const res = await account.api.get('/subscriptions');
+        expect(res.statusCode, res.body).toBe(200);
+        return res.json();
+      };
+      const boundary = new Date(now);
+      boundary.setUTCHours(18, 0, 0, 0);
+      await h.owner.query(
+        "UPDATE feeds SET last_success_at = $2, next_fetch_at = $3, publish_stats = '{}'::jsonb WHERE id = $1",
+        [empty.id, new Date(now.getTime() - 30000), new Date(now.getTime() + 60000)],
+      );
+      const rows = await load();
+      expect(rows.find((s: { feed: { id: string } }) => s.feed.id === empty.id).feed).toMatchObject(
+        {
+          updateIntervalS: 21600,
+          intervalReason: 'plan',
+          nextUpdateAt: boundary.toISOString(),
+        },
+      );
+      if (cadence !== null) {
+        // Already fetched articles still release at 12:15; the fetch forecast cannot delay them.
+        const release = new Date(now);
+        release.setUTCMinutes(15, 0, 0);
+        expect(
+          rows.find((s: { feed: { id: string } }) => s.feed.id === feedId).feed.nextUpdateAt,
+        ).toBe(release.toISOString());
+      }
+      await h.owner.query(
+        "UPDATE subscriptions SET created_at = $2::timestamptz - interval '5 minutes' WHERE user_id = $1 AND feed_id = $3",
+        [account.user.id, now, empty.id],
+      );
+      for (const minutes of [2, 30]) {
+        const fetch = new Date(now.getTime() + minutes * 60000);
+        await h.owner.query('UPDATE feeds SET next_fetch_at = $2 WHERE id = $1', [empty.id, fetch]);
+        expect(
+          (await load()).find((s: { feed: { id: string } }) => s.feed.id === empty.id).feed
+            .nextUpdateAt,
+        ).toBe((minutes === 2 ? fetch : boundary).toISOString());
+      }
+    } finally {
+      await h.owner.query("UPDATE plans SET release_interval_s = 21600 WHERE key = 'free'");
+    }
+  },
+);

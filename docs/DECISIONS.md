@@ -2583,3 +2583,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   account-local window at its min_fetch_interval_s, rather than passing through a faster shared
   subscriber's next fetch. Source/publisher constraints can defer it further; initial subscription
   grace still predicts immediate fetches. Null/zero article visibility remains immediate.
+
+  PR #47 tenth review: forecast cadence uses max(release_interval_s, min_fetch_interval_s) on every
+  plan, preserving independently configured fetch floors. Only a source candidate within the actual
+  grace window bypasses that floor; an in-grace account whose fetch is later does not. Already
+  fetched waiting arrivals still use the next release boundary. Compute the common window once
+  per subscription list, rather than once per feed.

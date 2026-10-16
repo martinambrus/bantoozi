@@ -29,9 +29,10 @@ export async function feedUpdates(
     rows.map((row) => row.feed.id),
     clock,
   );
+  const floor = Math.max(clock.intervalS ?? 0, clock.planIntervalS);
+  const accountNext = releaseWindow(clock.now, clock.timezone, floor).nextReleaseAt!.getTime();
   return new Map(
     rows.map((row, index) => {
-      const floor = clock.intervalS || clock.planIntervalS;
       const policy = sources.get(origins[index]!);
       const source = policy?.intervalS ?? 0;
       const publisher = row.feed.publisherIntervalS ?? 0;
@@ -42,20 +43,16 @@ export async function feedUpdates(
       const graceUntil = row.createdAt.getTime() + 900000;
       const grace = graceUntil > clock.now.getTime();
       const immediate = !clock.intervalS || grace;
-      // Immediate visibility does not make a faster subscriber's fetch schedule our advertised
-      // cadence. Keep predictions on a stable account window, except during initial grace.
-      const accountNext =
-        !clock.intervalS && !grace
-          ? releaseWindow(clock.now, clock.timezone, clock.planIntervalS).nextReleaseAt!.getTime()
-          : 0;
+      const sourceCandidate = Math.max(
+        clock.now.getTime() + (immediate ? 30000 : 1),
+        policy?.nextStartAt?.getTime() ?? 0,
+        (row.feed.lastSuccessAt?.getTime() ?? 0) + publisher * 1000,
+        row.feed.nextFetchAt?.getTime() ?? clock.now.getTime() + interval * 1000,
+      );
+      // Forecast this account's cadence, even when a faster subscriber shares the source. Only
+      // arrivals inside the original introduction window bypass its floor.
       const candidate = new Date(
-        Math.max(
-          clock.now.getTime() + (immediate ? 30000 : 1),
-          accountNext,
-          policy?.nextStartAt?.getTime() ?? 0,
-          (row.feed.lastSuccessAt?.getTime() ?? 0) + publisher * 1000,
-          row.feed.nextFetchAt?.getTime() ?? clock.now.getTime() + interval * 1000,
-        ),
+        sourceCandidate <= graceUntil ? sourceCandidate : Math.max(sourceCandidate, accountNext),
       );
       const next =
         candidate.getTime() <= graceUntil
