@@ -1751,6 +1751,33 @@
       },
       "rls": false
     },
+    "article_engagement": {
+      "columns": {
+        "article_id": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "engaged_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      },
+      "primaryKey": ["article_id"],
+      "unique": [],
+      "checks": [],
+      "foreignKeys": [
+        {
+          "columns": ["article_id"],
+          "references": "articles(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": false
+    },
     "article_facets": {
       "columns": {
         "article_id": {
@@ -4025,6 +4052,7 @@
         "api_mutations": ["SELECT", "INSERT", "UPDATE", "DELETE"],
         "article_aliases": ["SELECT"],
         "article_bodies": ["SELECT"],
+        "article_engagement": [],
         "article_facets": ["SELECT"],
         "article_snapshots": ["SELECT"],
         "article_topics_l2": ["SELECT"],
@@ -4384,6 +4412,15 @@
       "config": ["search_path=pg_catalog, public, pg_temp"],
       "execute": ["bantoozi_app"]
     },
+    "feedback_events_mark_engaged": {
+      "args": "",
+      "result": "trigger",
+      "language": "plpgsql",
+      "volatility": "v",
+      "securityDefiner": true,
+      "config": ["search_path=pg_catalog, public, pg_temp"],
+      "execute": []
+    },
     "rank_covered": {
       "args": "",
       "result": "boolean",
@@ -4638,6 +4675,16 @@
       "columns": ["user_id", "card_id"],
       "function": "card_holding_check",
       "args": ["interest"],
+      "constraint": null,
+      "when": null
+    },
+    "feedback_events_mark_engaged": {
+      "table": "feedback_events",
+      "timing": "AFTER",
+      "events": ["INSERT"],
+      "columns": [],
+      "function": "feedback_events_mark_engaged",
+      "args": [],
       "constraint": null,
       "when": null
     },

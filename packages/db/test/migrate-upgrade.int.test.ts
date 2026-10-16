@@ -183,6 +183,18 @@ describe('upgrade from the previous release (spec 11 §9 item 12)', () => {
        VALUES ('user.rank', '{"userId":"${user.id}","full":true}'::jsonb, 'upgrade-intent', $1)`,
       [user.id],
     );
+    // Engagement written before the newest migration: only an event, only reader state, a bulk read.
+    const eventOnly = await createArticle(ownerPool, { feedIds: [feed.id], title: 'Event only' });
+    const stateOnly = await createArticle(ownerPool, { feedIds: [feed.id], title: 'State only' });
+    const bulkOnly = await createArticle(ownerPool, { feedIds: [feed.id], title: 'Bulk only' });
+    await ownerPool.query(
+      `INSERT INTO feedback_events (user_id, article_id, kind) VALUES ($1, $2, 'read'), ($1, $3, 'mark_read'), ($1, $3, 'unread')`,
+      [user.id, eventOnly.id, bulkOnly.id],
+    );
+    await ownerPool.query(
+      `INSERT INTO user_article (user_id, article_id, opened_at) VALUES ($1, $2, now())`,
+      [user.id, stateOnly.id],
+    );
     const counts = async () => {
       const result = await ownerPool.query<Record<string, string>>(
         `SELECT (SELECT count(*) FROM users WHERE id IN ($1, $2))::text AS users,
@@ -216,6 +228,21 @@ describe('upgrade from the previous release (spec 11 §9 item 12)', () => {
 
     // Data intact.
     expect(await counts()).toEqual(expectedCounts);
+
+    // The migration marks the already-engaged articles (events, reader state), not a bulk read alone.
+    const marked = await ownerPool.query<{ id: string; engaged: boolean }>(
+      `SELECT a.id::text AS id, EXISTS (SELECT 1 FROM article_engagement e WHERE e.article_id = a.id) AS engaged
+         FROM articles a WHERE a.id = ANY($1::bigint[]) ORDER BY a.id`,
+      [[article.id, eventOnly.id, stateOnly.id, bulkOnly.id]],
+    );
+    expect(new Map(marked.rows.map((row) => [row.id, row.engaged]))).toEqual(
+      new Map([
+        [article.id, true],
+        [eventOnly.id, true],
+        [stateOnly.id, true],
+        [bulkOnly.id, false],
+      ]),
+    );
 
     // Schema parity: the upgraded catalog equals a fresh database and expected-schema.json.
     const upgraded = await catalog(previous.urls.owner);

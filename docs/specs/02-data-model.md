@@ -497,6 +497,12 @@ CREATE TABLE feed_items (                          -- which feeds carried which 
 );
 CREATE INDEX feed_items_article_idx ON feed_items (article_id);
 CREATE INDEX feed_items_feed_time_idx ON feed_items (feed_id, first_seen_at DESC);
+-- D-253: articles anyone ever engaged with (purge 21-vs-90-day rule); filled only by a SECURITY DEFINER
+-- trigger on feedback_events (engagement kinds), deleted with the article.
+CREATE TABLE article_engagement (
+  article_id  bigint PRIMARY KEY REFERENCES articles(id) ON DELETE CASCADE,
+  engaged_at  timestamptz NOT NULL DEFAULT now()
+);
 -- D-252: automatic-analysis admissions per feed and UTC day (worker-owned; the API claims through
 -- claim_auto_admission(feed_id, day, allowance), SECURITY DEFINER, which checks the caller's active
 -- subscription). Rows older than 7 days are deleted by house.purge-auth.

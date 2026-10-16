@@ -14,6 +14,7 @@ import {
   lockUrlKeys,
   type IngestItemInput,
   type IngestItemResult,
+  markFeedItemsStillListed,
 } from '../../src/ingest/articles.js';
 import {
   FEED_BODY_EXTRACTOR,
@@ -1203,5 +1204,81 @@ describe('sighting a known item (D-253)', () => {
       [first.articleId],
     );
     expect(rows.rows).toEqual([{ fresh: true }]);
+  });
+});
+
+describe('a 304 stamp racing the purge (D-253, Codex r2)', () => {
+  it('locks the articles it stamps, so a purge cannot delete a listed article around the stamp', async () => {
+    const feed = await createFeed(ctx.owner);
+    const first = await ingest(item(feed.id));
+    const second = await ingest(item(feed.id));
+    const ids = [first.articleId, second.articleId];
+    await ctx.owner.query('UPDATE articles SET first_seen_at = $2 WHERE id = ANY($1::bigint[])', [
+      ids,
+      daysAgo(40),
+    ]);
+    await ctx.owner.query(
+      'UPDATE feed_items SET first_seen_at = $2, last_seen_at = $2 WHERE article_id = ANY($1::bigint[])',
+      [ids, daysAgo(40)],
+    );
+    let stamped!: () => void;
+    const stampedPromise = new Promise<void>((resolve) => (stamped = resolve));
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    // The 304 stamp, still open (uncommitted) ...
+    const stamp = ctx.worker.transaction(async (tx) => {
+      await markFeedItemsStillListed(tx, feed.id, daysAgo(41));
+      stamped();
+      await released;
+    });
+    await stampedPromise;
+    // ... while a purge pass looks at the same, still stale-looking, articles.
+    const purge = ctx.worker.transaction((tx) =>
+      purgeArticlesPage(tx, { now: new Date(), after: null, limit: 1000 }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    release();
+    await Promise.all([stamp, purge]);
+    const rows = await ctx.owner.query<{ id: string; fresh: boolean }>(
+      `SELECT a.id::text AS id, fi.last_seen_at > now() - interval '1 hour' AS fresh
+         FROM articles a JOIN feed_items fi ON fi.article_id = a.id
+        WHERE a.id = ANY($1::bigint[]) ORDER BY a.id`,
+      [ids],
+    );
+    expect(rows.rows).toEqual(
+      [...ids].sort((x, y) => Number(x) - Number(y)).map((id) => ({ id, fresh: true })),
+    );
+  });
+
+  it('skips articles a purge deleted first, and concurrent stamps over shared articles do not deadlock', async () => {
+    const a = await createFeed(ctx.owner);
+    const b = await createFeed(ctx.owner);
+    const ids: string[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      const input = item(a.id);
+      const created = await ingest(input);
+      await ingest({ ...input, feedId: b.id, guid: `${input.guid}-b` });
+      ids.push(created.articleId);
+    }
+    await ctx.owner.query(
+      'UPDATE feed_items SET first_seen_at = $2, last_seen_at = $2 WHERE article_id = ANY($1::bigint[])',
+      [ids, daysAgo(2)],
+    );
+    // One article disappears (a purge that committed first): the stamp skips it.
+    await ctx.owner.query('DELETE FROM articles WHERE id = $1', [ids[0]]);
+    await Promise.all([
+      ...[0, 1, 2].map(() =>
+        ctx.worker.transaction((tx) => markFeedItemsStillListed(tx, a.id, daysAgo(3))),
+      ),
+      ...[0, 1, 2].map(() =>
+        ctx.worker.transaction((tx) => markFeedItemsStillListed(tx, b.id, daysAgo(3))),
+      ),
+    ]);
+    const fresh = await ctx.owner.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM feed_items
+        WHERE article_id = ANY($1::bigint[]) AND last_seen_at > now() - interval '1 hour'`,
+      [ids],
+    );
+    expect(fresh.rows[0]?.n).toBe('10');
   });
 });

@@ -2389,3 +2389,9 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   merges keep the later `last_seen_at`; and the 21-versus-90-day decision also counts past engagement in `feedback_events`
   (read, open, bookmark, label, rate — not `mark_read`), so an article whose bookmark, label or rating was later cleared
   keeps the 90-day rule. Indefinite protection and the dislike window still use current state.
+  Second review: a 304 locks the listed articles (ascending id, as the purge does) before stamping them; a `prompt_answer`
+  rating counts as engagement; and because `feedback_events` expire after 365 days, engagement is kept durably in
+  `article_engagement(article_id PK → articles ON DELETE CASCADE, engaged_at)`, filled by a SECURITY DEFINER trigger on
+  `feedback_events` (rate, prompt_answer, open, read, dwell, bookmark, label, hide — not mark_read, un-*, undo) with
+  `INSERT … ON CONFLICT DO NOTHING`, so a first engagement never needs a stronger lock on the article row (no deadlock with
+  readers holding FOR SHARE), and backfilled in migration 0028 from past events and current reader state.

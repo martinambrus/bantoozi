@@ -1782,6 +1782,53 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.article_engagement": {
+      "name": "article_engagement",
+      "schema": "",
+      "columns": {
+        "article_id": {
+          "name": "article_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "engaged_at": {
+          "name": "engaged_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "article_engagement_article_id_articles_id_fk": {
+          "name": "article_engagement_article_id_articles_id_fk",
+          "tableFrom": "article_engagement",
+          "tableTo": "articles",
+          "columnsFrom": [
+            "article_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "article_engagement_pkey": {
+          "name": "article_engagement_pkey",
+          "columns": [
+            "article_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.feed_items": {
       "name": "feed_items",
       "schema": "",

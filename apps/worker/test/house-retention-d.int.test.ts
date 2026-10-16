@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
-import { markArticlesRead, tenantOutbox, withTenant } from '@bantoozi/db';
+import { answerPrompt, markArticlesRead, tenantOutbox, withTenant } from '@bantoozi/db';
 import { parseJobPayload } from '@bantoozi/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -523,5 +523,58 @@ describe('historical engagement', () => {
     ).toBe(false);
     await purge(NOW);
     expect(await gone(unbookmarked.articleId, unrated, bulkOnly)).toEqual([false, false, true]);
+  });
+});
+
+// ── Codex r2: prompt answers, and engagement that outlives its feedback events ─────────────────
+
+describe('durable engagement (Codex r2)', () => {
+  it('counts a rating given through /prompt-answer, even when later cleared, as engagement', async () => {
+    const user = await b.user();
+    const feed = await b.subscribedFeed([user]);
+    const at = before(30 * DAY);
+    const answered = await article([{ feedId: feed, at }]);
+    await w.act(user, answered, new Date(), (tx, base) =>
+      answerPrompt(tx, { ...base, liked: true }),
+    );
+    await w.rate(user, answered, new Date(), null);
+    const bulkOnly = await article([{ feedId: feed, at }]);
+    await bulkRead(user, bulkOnly);
+    expect(
+      await b.exists(
+        `SELECT 1 FROM feedback_events WHERE article_id = $1 AND kind = 'prompt_answer'`,
+        answered,
+      ),
+    ).toBe(true);
+    expect(
+      await b.exists(
+        `SELECT 1 FROM user_article WHERE article_id = $1 AND (rating IS NOT NULL OR opened_at IS NOT NULL)`,
+        answered,
+      ),
+    ).toBe(false);
+    await purge(NOW);
+    expect(await gone(answered, bulkOnly)).toEqual([false, true]);
+  });
+
+  it('keeps the 90-day rule after the feedback purge deleted the engagement events (365 days)', async () => {
+    const user = await b.user();
+    const feed = await b.subscribedFeed([user]);
+    const at = before(30 * DAY);
+    const engaged = await article([{ feedId: feed, at }]);
+    await w.rate(user, engaged, new Date(), 1);
+    await w.rate(user, engaged, new Date(), null);
+    const never = await article([{ feedId: feed, at }]);
+    await untouched(user, never);
+    // The events are a year old by now; the feedback purge deletes them.
+    await b.owner.query(`UPDATE feedback_events SET created_at = $2 WHERE article_id = $1`, [
+      engaged,
+      before(366 * DAY),
+    ]);
+    await w.run('house.purge-engine-calls', NOW);
+    expect(await b.exists(`SELECT 1 FROM feedback_events WHERE article_id = $1`, engaged)).toBe(
+      false,
+    );
+    await purge(NOW);
+    expect(await gone(engaged, never)).toEqual([false, true]);
   });
 });

@@ -81,9 +81,10 @@ async function candidateIds(
  * evaluation reference. A bookmark, label or like keeps the article forever. Then, by what readers did:
  * - a dislike without those (`dislike`): 90 days after arrival and `max(180, historyDays)` days after
  *   the latest dislike;
- * - opened, individually read, or once bookmarked, labelled or rated even if later cleared (an event of
- *   kind `read`, `open`, `bookmark`, `label` or `rate`; a bulk `mark_read` is not engagement) or carried by
- *   an evaluation feed (`normal90`): 90 days after arrival;
+ * - opened, individually read, or once bookmarked, labelled or rated even if later cleared
+ *   (`article_engagement`, written by a trigger on the engagement events and so durable past the 365-day
+ *   retention of those events; a bulk `mark_read` is not engagement) or carried by an evaluation feed
+ *   (`normal90`): 90 days after arrival;
  * - nobody engaged (`unopened21`): 21 days after arrival.
  */
 export async function classifyForPurge(
@@ -98,7 +99,7 @@ export async function classifyForPurge(
              WHEN u.disliked THEN CASE WHEN arr.at <= ${daysBefore(input.now, ARTICLE_RETENTION_DAYS)}::timestamptz
                                         AND u.disliked_at <= ${daysBefore(input.now, input.dislikeDays)}::timestamptz
                                        THEN 'dislike' END
-             WHEN u.opened OR u.read_event OR ev.carried
+             WHEN u.opened OR EXISTS (SELECT 1 FROM article_engagement e WHERE e.article_id = a.id) OR ev.carried
                THEN CASE WHEN arr.at <= ${daysBefore(input.now, ARTICLE_RETENTION_DAYS)}::timestamptz
                          THEN 'normal90' END
              WHEN arr.at <= ${daysBefore(input.now, UNOPENED_RETENTION_DAYS)}::timestamptz THEN 'unopened21'
@@ -112,10 +113,7 @@ export async function classifyForPurge(
                                OR ua.rating = 1), false) AS strong,
               coalesce(bool_or(ua.rating = -1), false) AS disliked,
               max(ua.rated_at) FILTER (WHERE ua.rating = -1) AS disliked_at,
-              coalesce(bool_or(ua.opened_at IS NOT NULL), false) AS opened,
-              EXISTS (SELECT 1 FROM feedback_events fe
-                       WHERE fe.article_id = a.id
-                         AND fe.kind IN ('read', 'open', 'bookmark', 'label', 'rate')) AS read_event
+              coalesce(bool_or(ua.opened_at IS NOT NULL), false) AS opened
          FROM user_article ua WHERE ua.article_id = a.id) u
      CROSS JOIN LATERAL (
        SELECT EXISTS (
