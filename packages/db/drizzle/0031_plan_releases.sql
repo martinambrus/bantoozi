@@ -61,7 +61,8 @@ FOR EACH ROW EXECUTE FUNCTION plans_advance_release_revision();
 
 --> statement-breakpoint
 -- Existing live subscriptions keep their introduction start. A remembered unsubscribed source has
--- no recoverable creation timestamp; conservatively expire its grace rather than renew it.
+-- no recoverable creation timestamp. Keep its grace cutoff older than the longest supported
+-- window (one day, including DST), rather than preserving waiting arrivals through migration time.
 UPDATE user_feed_preferences p SET first_subscribed_at = coalesce(
   (SELECT s.created_at FROM subscriptions s WHERE s.user_id = p.user_id AND s.feed_id = p.feed_id),
-  least(p.updated_at, now() - interval '15 minutes'));
+  least(p.updated_at, now() - interval '2 days'));

@@ -335,6 +335,11 @@ describe('upgrade from the previous release (spec 11 §9 item 12)', () => {
       const historyUser = await createUser(pool);
       const followed = await createFeed(pool);
       const removed = await createFeed(pool);
+      const recentlyEdited = await createFeed(pool);
+      await pool.query(
+        "INSERT INTO user_feed_preferences (user_id, feed_id, image_policy) VALUES ($1, $2, 'inherit')",
+        [historyUser.id, recentlyEdited.id],
+      );
       await createSubscription(pool, { userId: historyUser.id, feedId: followed.id });
       await pool.query(
         "UPDATE subscriptions SET created_at = '2024-01-01T00:00:00Z' WHERE user_id = $1",
@@ -350,8 +355,15 @@ describe('upgrade from the previous release (spec 11 §9 item 12)', () => {
         'SELECT feed_id::text AS feed_id, first_subscribed_at FROM user_feed_preferences WHERE user_id = $1',
         [historyUser.id],
       );
+      const recentStart = history.rows.find((row) => row.feed_id === recentlyEdited.id)!
+        .first_subscribed_at as Date;
+      expect(recentStart.getTime() + 15 * 60000).toBeLessThan(Date.now() - 86400000);
       expect(
-        Object.fromEntries(history.rows.map((row) => [row.feed_id, row.first_subscribed_at])),
+        Object.fromEntries(
+          history.rows
+            .filter((row) => row.feed_id !== recentlyEdited.id)
+            .map((row) => [row.feed_id, row.first_subscribed_at]),
+        ),
       ).toEqual({
         [followed.id]: new Date('2024-01-01T00:00:00Z'),
         [removed.id]: new Date('2020-01-01T00:00:00Z'),

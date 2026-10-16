@@ -2573,3 +2573,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   starts into existing preferences; previously unsubscribed remembered sources have grace expired
   conservatively. Idle feed deletion can discard history only after no articles remain. No extra
   reads or joins are added to article visibility queries.
+
+  Final migration verification: an unknown legacy introduction starts at least two days before
+  migration, keeping its retained grace cutoff older than the longest supported one-day window
+  (including DST). A recently edited preference for an unsubscribed feed cannot make waiting
+  arrivals visible through migration time. Live subscriptions keep their exact original start.
