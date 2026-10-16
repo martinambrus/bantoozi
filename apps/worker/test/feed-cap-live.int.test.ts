@@ -155,10 +155,7 @@ async function arrivalMark(path: string): Promise<{ mark: number | null; automat
     mode: 'active',
     activatedAt: new Date(Date.now() - 60_000),
   });
-  await owner.query('SELECT refresh_feed_subscribers($1::bigint[], $2::jsonb)', [
-    [feedId],
-    JSON.stringify({ beta: 900, admin: 300 }),
-  ]);
+  await owner.query('SELECT refresh_feed_subscribers($1::bigint[])', [[feedId]]);
   await dispatch(
     createHandlers(deps),
     'feed.fetch',

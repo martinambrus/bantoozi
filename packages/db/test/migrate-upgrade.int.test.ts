@@ -21,8 +21,7 @@ import { MIGRATIONS_FOLDER, PG_BOSS_VERSION, runMigrations } from '../src/migrat
 import { setupDbTest, type DbTestContext } from './support/test-db.js';
 
 /**
- * Launch checklist item 12 (spec 11 §9): the upgrade path. A database at the previous release (every
- * bundled migration except the newest) holds representative data written through the real schema;
+ * Launch checklist item 12 (spec 11 §9): the upgrade path. A database at the previous release (the migrations before retention and editable plans) holds representative data written through the real schema;
  * the real migrate job then applies the remaining migration(s). The data survives, the catalog
  * equals a freshly migrated database (and expected-schema.json), and readiness is green.
  */
@@ -97,6 +96,7 @@ let folder: string;
 let journal: { entries: JournalEntry[] };
 let previousFolder: string;
 let ownerPool: pg.Pool;
+let previousMigrationCount: number;
 
 beforeAll(async () => {
   fresh = await setupDbTest();
@@ -105,11 +105,15 @@ beforeAll(async () => {
   ) as {
     entries: JournalEntry[];
   };
-  // The folder of every migration but the newest, derived from the bundled journal.
+  // Start before retention so its engagement backfill stays covered alongside the new plans migration.
   folder = await mkdtemp(path.join(tmpdir(), 'bantoozi-upgrade-'));
   previousFolder = folder;
   await mkdir(path.join(folder, 'meta'));
-  const kept = journal.entries.slice(0, -1);
+  const kept = journal.entries.slice(
+    0,
+    journal.entries.findIndex((entry) => entry.tag === '0028_feed_items_last_seen'),
+  );
+  previousMigrationCount = kept.length;
   for (const entry of kept) {
     await cp(
       path.join(MIGRATIONS_FOLDER, `${entry.tag}.sql`),
@@ -139,20 +143,20 @@ afterAll(async () => {
 });
 
 describe('upgrade from the previous release (spec 11 §9 item 12)', () => {
-  it('keeps representative data intact and matches a fresh schema after the newest migration', async () => {
+  it('keeps representative data intact and matches a fresh schema after the remaining migrations', async () => {
     const newest = journal.entries[journal.entries.length - 1]!;
     expect(journal.entries.length).toBeGreaterThan(1);
 
-    // Before: the database is exactly one migration behind.
+    // Before: the database is before the retention and plan migrations.
     const before = await ownerPool.query<{ n: number; latest: string }>(
       'SELECT count(*)::int AS n, max(created_at)::text AS latest FROM drizzle.__drizzle_migrations',
     );
-    expect(before.rows[0]?.n).toBe(journal.entries.length - 1);
+    expect(before.rows[0]?.n).toBe(previousMigrationCount);
     expect(Number(before.rows[0]?.latest)).toBeLessThan(newest.when);
 
     // Representative data through the real schema of the previous release.
     const user = await createUser(ownerPool);
-    const other = await createUser(ownerPool);
+    const other = await createUser(ownerPool, { plan: 'legacy-unknown' });
     const feed = await createFeed(ownerPool, { title: 'Upgrade feed' });
     await createSubscription(ownerPool, { userId: user.id, feedId: feed.id, mode: 'active' });
     const article = await createArticle(ownerPool, {
@@ -221,10 +225,17 @@ describe('upgrade from the previous release (spec 11 §9 item 12)', () => {
     };
     expect(await counts()).toEqual(expectedCounts);
 
-    // The real migrate entry applies exactly the remaining migration.
+    // The real migrate entry applies every remaining migration.
     const result = await runMigrations({ databaseUrl: previous.urls.owner });
-    expect(result.migrationsApplied).toBe(1);
+    expect(result.migrationsApplied).toBe(journal.entries.length - previousMigrationCount);
     expect(result.pgBoss).toBe('current');
+
+    // Legacy unknown keys used beta's allowances before stored plans; the FK migration keeps that behavior.
+    const migratedPlan = await ownerPool.query('SELECT plan FROM users WHERE id = $1', [other.id]);
+    expect(migratedPlan.rows[0]?.plan).toBe('beta');
+    expect((await ownerPool.query('SELECT key FROM plans WHERE is_default')).rows).toEqual([
+      { key: 'beta' },
+    ]);
 
     // Data intact.
     expect(await counts()).toEqual(expectedCounts);

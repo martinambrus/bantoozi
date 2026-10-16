@@ -11,6 +11,7 @@ import {
   listUserCards,
   listUserLabels,
   lockFeeds,
+  loadPlanLimits,
   quotaUsage,
   readOwnUser,
   recordRankIntents,
@@ -30,7 +31,6 @@ import {
   effectiveImagesAllowed,
   enqueueLearn,
   mergeUserPreferences,
-  planLimits,
   readUserPreferences,
   type JobSender,
   type Me,
@@ -44,7 +44,7 @@ import {
 export async function loadMe(tx: TenantTx): Promise<Me> {
   const user = await readOwnUser(tx);
   const used = await quotaUsage(tx);
-  const plan = planLimits(user.plan);
+  const plan = await loadPlanLimits(tx, user.plan);
   const limits = Object.fromEntries(
     QUOTA_LIMIT_NAMES.map((name) => [name, plan[name]]),
   ) as QuotaLimits;

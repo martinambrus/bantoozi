@@ -7,7 +7,6 @@ import {
   canonicalJson,
   enqueueLearn,
   mergeRankerConfig,
-  planLimits,
   readUserPreferences,
   type ArticleListItem,
   type CardTextMode,
@@ -30,6 +29,7 @@ import { tenantUserId, type TenantTx } from '../tenant.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
 import { articleContexts, loadArticleItems } from './articles.js';
 import { lockMutationForUndo, updateMutationUndo } from './mutations.js';
+import { loadPlanLimits } from './plans.js';
 import {
   probeDemotion,
   rankChangeOf,
@@ -1345,7 +1345,7 @@ async function suggestionContext(
     exampleText: exampleFromArticleTitle(article.title),
     enabled: lock.prefs.exampleSuggestions,
     forkCount: cards.rows.filter((card) => card.visibility === 'private').length,
-    maxForks: planLimits(lock.plan).maxForks,
+    maxForks: (await loadPlanLimits(tx, lock.plan)).maxForks,
     recent: recent.rows
       .filter((r) => typeof r.card_id === 'string')
       .map((r) => ({ cardId: r.card_id, at: toDate(r.created_at) })),

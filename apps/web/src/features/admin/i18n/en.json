@@ -10,7 +10,8 @@
     "library": "Library",
     "users": "Users",
     "invites": "Invites",
-    "waitlist": "Waitlist"
+    "waitlist": "Waitlist",
+    "plans": "Plans"
   },
   "common": {
     "loadMore": "Load more",
@@ -559,6 +560,42 @@
       "slugHint": "Leave empty to use a generated slug.",
       "submit": "Create request",
       "created": "Request created. The original creator can now answer it."
+    }
+  },
+  "plans": {
+    "add": "Add plan",
+    "edit": "Edit {{key}}",
+    "save": "Save plan",
+    "retire": "Retire {{key}}",
+    "restore": "Restore {{key}}",
+    "makeDefault": "Make {{key}} the default",
+    "delete": "Delete {{key}}",
+    "default": "Default",
+    "retired": "Retired",
+    "invalid": "Enter a valid value within the allowed range.",
+    "stale": "This plan was changed by someone else. Close this dialog and open it again to use the latest values.",
+    "schedulerNote": "Fetch intervals under 300 seconds take effect after the scheduler change.",
+    "analysisCap": "Global analysis cap: engine.auto_analysis_daily_cap",
+    "columns": {
+      "plan": "Plan",
+      "users": "Users",
+      "actions": "Actions"
+    },
+    "fields": {
+      "key": "Key",
+      "label": "Name (English)",
+      "labelSk": "Name (Slovak)",
+      "maxFeeds": "Feeds",
+      "maxCards": "Interest cards",
+      "maxLabels": "Labels",
+      "maxForks": "Private forks",
+      "maxRules": "Rules",
+      "opmlMaxFeeds": "Feeds per OPML import",
+      "minFetchIntervalS": "Fetch interval (seconds)",
+      "releaseIntervalS": "Release interval (seconds, blank for immediate)",
+      "backfillDays": "Backfill days",
+      "invitesOnSignup": "Invites on signup",
+      "sortOrder": "Sort order"
     }
   }
 }

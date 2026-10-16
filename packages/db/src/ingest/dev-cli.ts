@@ -1,4 +1,4 @@
-import { enqueueFetch, newUserId, planMinIntervalMap, type JobSender } from '@bantoozi/shared';
+import { enqueueFetch, newUserId, type JobSender } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Executor, Transaction } from '../client.js';
@@ -15,7 +15,8 @@ export async function ensureDevUser(
   email: string,
 ): Promise<{ id: string; created: boolean }> {
   const inserted = await tx.execute<{ id: string }>(sql`
-    INSERT INTO users (id, email) VALUES (${newUserId()}::uuid, ${email})
+    INSERT INTO users (id, email, plan, invites_left)
+    SELECT ${newUserId()}::uuid, ${email}, key, invites_on_signup FROM plans WHERE is_default
     ON CONFLICT (email) DO NOTHING RETURNING id::text AS id`);
   const created = inserted.rows[0];
   if (created !== undefined) return { id: created.id, created: true };
@@ -99,9 +100,7 @@ export async function subscribeToFeed(
        WHERE id = ${feedId}::bigint`);
   }
   const ids = sql.param([feedId]);
-  await tx.execute(
-    sql`SELECT refresh_feed_subscribers(${ids}::bigint[], ${JSON.stringify(planMinIntervalMap())}::jsonb)`,
-  );
+  await tx.execute(sql`SELECT refresh_feed_subscribers(${ids}::bigint[])`);
   await tx.execute(sql`SELECT refresh_feed_cards(${ids}::bigint[])`);
   await enqueueFetch(sender, { feedId });
   return {

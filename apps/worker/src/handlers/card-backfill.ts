@@ -8,6 +8,7 @@ import {
   isPrimaryAnswer,
   listTranslations,
   loadCardInputs,
+  loadPlanLimits,
   loadClassificationArticles,
   readCardAnswers,
   retryTransaction,
@@ -18,13 +19,7 @@ import {
   type ClassificationArticle,
   type HeldBackfillCard,
 } from '@bantoozi/db';
-import {
-  enqueueBackfill,
-  enqueueEnrich,
-  enqueueMatch,
-  planLimits,
-  type JobPayload,
-} from '@bantoozi/shared';
+import { enqueueBackfill, enqueueEnrich, enqueueMatch, type JobPayload } from '@bantoozi/shared';
 
 import { builtCardQuestion, isCurrentCardAnswer } from '../classify/card-questions.js';
 import {
@@ -76,7 +71,7 @@ export function createCardBackfillHandler(
       userId: payload.userId,
       ...(payload.feedIds === undefined ? {} : { feedIds: payload.feedIds }),
       snapshotAt,
-      windowDays: planLimits(user.plan).backfillDays,
+      windowDays: (await loadPlanLimits(deps.db, user.plan)).backfillDays,
       ...(payload.cursor === undefined ? {} : { cursor: payload.cursor }),
     });
     if (page.length === 0) return;

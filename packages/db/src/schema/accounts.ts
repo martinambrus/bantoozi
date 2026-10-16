@@ -17,6 +17,50 @@ import { citext, int8, tstz } from './columns.js';
 
 // Spec 02 §2 and §2.1: settings and accounts (auth/control-plane tables: no tenant RLS, §1.2).
 
+// D-255: plans and their allowances, edited in Admin → Plans. A plan's key never changes; `users.plan`
+// references it, so a plan in use cannot be deleted. `release_interval_s` is reserved for the
+// plan-tiered release cadence (docs/design/plan-velocity.md §4).
+export const plans = pgTable(
+  'plans',
+  {
+    key: text('key').primaryKey(),
+    label: text('label').notNull(),
+    labelSk: text('label_sk'),
+    maxFeeds: integer('max_feeds').notNull(),
+    maxCards: integer('max_cards').notNull(),
+    maxLabels: integer('max_labels').notNull(),
+    maxForks: integer('max_forks').notNull(),
+    maxRules: integer('max_rules').notNull(),
+    opmlMaxFeeds: integer('opml_max_feeds').notNull(),
+    minFetchIntervalS: integer('min_fetch_interval_s').notNull(),
+    releaseIntervalS: integer('release_interval_s'),
+    backfillDays: integer('backfill_days').notNull(),
+    invitesOnSignup: integer('invites_on_signup').notNull(),
+    sortOrder: integer('sort_order').notNull().default(100),
+    isDefault: boolean('is_default').notNull().default(false),
+    retiredAt: tstz('retired_at'),
+    version: integer('version').notNull().default(1),
+    updatedAt: tstz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    check('plans_key_check', sql`key ~ '^[a-z0-9][a-z0-9_-]{0,39}$'`),
+    check('plans_label_check', sql`length(btrim(label)) > 0`),
+    check(
+      'plans_limits_check',
+      sql`max_feeds >= 0 AND max_cards >= 0 AND max_labels >= 0 AND max_forks >= 0 AND max_rules >= 0 AND opml_max_feeds >= 0 AND backfill_days >= 0 AND invites_on_signup >= 0`,
+    ),
+    check('plans_min_fetch_interval_check', sql`min_fetch_interval_s BETWEEN 60 AND 86400`),
+    check(
+      'plans_release_interval_check',
+      sql`release_interval_s IS NULL OR release_interval_s >= 0`,
+    ),
+    check('plans_default_active_check', sql`NOT (is_default AND retired_at IS NOT NULL)`),
+    uniqueIndex('plans_default_idx')
+      .on(t.isDefault)
+      .where(sql`is_default`),
+  ],
+);
+
 export const users = pgTable(
   'users',
   {
@@ -26,7 +70,10 @@ export const users = pgTable(
     locale: text('locale').notNull().default('en'),
     timezone: text('timezone').notNull().default('Europe/Bratislava'),
     role: text('role').notNull().default('user'),
-    plan: text('plan').notNull().default('beta'),
+    plan: text('plan')
+      .notNull()
+      .default('beta')
+      .references(() => plans.key),
     invitesLeft: integer('invites_left').notNull().default(3),
     rankRevision: int8('rank_revision')
       .notNull()

@@ -25,10 +25,8 @@ import {
   type Executor,
 } from '@bantoozi/db';
 import {
-  DEFAULT_PLAN,
   newUserId,
   normalizeInviteCode,
-  planLimits,
   readSetting,
   supportedLocale,
   type Locale,
@@ -402,7 +400,6 @@ export async function verifyLoginCode(
           email,
           locale: challenge.locale ?? preferredLocale(input.acceptLanguage),
           role: admin ? 'admin' : 'user',
-          invitesLeft: planLimits(DEFAULT_PLAN).invitesOnSignup,
         });
         // Both are impossible under the email lock and the invite row lock; never commit half a signup.
         if (!inserted) throw new Error('signup user already exists');

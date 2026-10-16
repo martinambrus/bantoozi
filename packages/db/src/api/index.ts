@@ -10,6 +10,7 @@ export * from './auth.js';
 export * from './library.js';
 export * from './me.js';
 export * from './mutations.js';
+export * from './plans.js';
 export * from './quotas.js';
 export * from './rate-limit.js';
 export * from './rules.js';

@@ -668,10 +668,7 @@ describe('users, invites and waitlist (spec 08 §9)', () => {
     const user = await createUser(h.owner, { email: 'plan-change@example.test' });
     const feed = await createFeed(h.owner);
     await createSubscription(h.owner, { userId: user.id, feedId: feed.id });
-    await h.owner.query(
-      `SELECT refresh_feed_subscribers(ARRAY[$1::bigint], '{"beta":900,"admin":300}'::jsonb)`,
-      [feed.id],
-    );
+    await h.owner.query(`SELECT refresh_feed_subscribers(ARRAY[$1::bigint])`, [feed.id]);
     const interval = async () =>
       (
         await h.owner.query<{ min_interval_s: number }>(

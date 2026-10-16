@@ -761,3 +761,14 @@ Before the first production run of the D-253 rules, and whenever a retention cha
 would delete without deleting anything: `pnpm worker-cli purge-report` (in Compose: `dc exec worker node dist/cli.js
 purge-report`). It prints `unopened21`, `dislike` and `normal90` counts. The nightly job logs the same per-rule counts. Deletes
 are irreversible except by restoring a backup (§4).
+
+
+## Editable plans
+
+Admin → Plans controls account allowances and the default for new signups. Changes apply on the
+next request. Existing data stays when an allowance is reduced; further additions above it fail.
+Retire a plan to prevent new assignments while keeping existing users. A plan in use or selected as
+the default cannot be deleted. Set each user's plan in Admin → Users; plan and role are separate.
+A faster plan or interval pulls affected feeds forward; a slower interval does not delay an already
+scheduled fetch. The global automatic-analysis cap remains in Admin → Settings and is per feed.
+P0 stores one-minute intervals but the scheduler keeps its five-minute clamp until the next phase.

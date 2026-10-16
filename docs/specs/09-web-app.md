@@ -129,7 +129,7 @@ login without leaking the previous account's UI. Slow classification leaves arti
 | `/feeds` | subscriptions manager: add, OPML import/export, folders, per-feed settings, health |
 | `/rules` | mutes, blocks, boosts |
 | `/settings` | profile, language, preferences (spec 08 §3.1), sessions, invites, export, delete account |
-| `/admin/*` | overview, usage, settings, feeds, library, users, invites and waitlist (admins only) |
+| `/admin/*` | overview, usage, settings, feeds, library, plans, users, invites and waitlist (admins only) |
 
 ---
 
@@ -464,6 +464,13 @@ reports capture failures/partial snapshots and includes retained bookmark bodies
 
 Plain tables and forms, no polish needed:
 - **Overview:** tiles and queue depths; a breaker status badge with a Reset button.
+- **Plans** (`/admin/plans`, D-255): list stored plans with user counts, default/retired badges;
+  add and edit labels in English/Slovak, every allowance, fetch/release intervals and display order.
+  Save only changed fields with the loaded version. A stale version reloads the list and asks to reopen
+  the editor. Retire/restore, make default, delete unused non-default plans. Explain the temporary
+  300-second scheduler floor and link to Settings → `engine.auto_analysis_daily_cap`.
+- **Users:** plan choices come from `GET /admin/plans`; offer active plans and the user's current
+  plan even when retired. Quotas and fetch intervals apply live.
 - **Usage:** a spend chart (last 30 days) and top users.
 - **Settings:** JSON editors with validation per key for the older keys. The thirteen runtime keys
   (spec 02 §2) have typed editors in groups (Decision engine, LLM fallback, Ingestion and fetching, API,

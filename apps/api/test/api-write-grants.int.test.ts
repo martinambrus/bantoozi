@@ -57,6 +57,20 @@ let doc: OpenAPIV3.Document;
 let seq = 0;
 const unique = (text: string) => `${text} ${(seq += 1)}-${randomUUID().slice(0, 6)}`;
 
+const planBody = () => ({
+  key: `grants-${randomUUID().slice(0, 8)}`,
+  label: 'Grant plan',
+  maxFeeds: 20,
+  maxCards: 20,
+  maxLabels: 20,
+  maxForks: 20,
+  maxRules: 20,
+  opmlMaxFeeds: 20,
+  minFetchIntervalS: 900,
+  backfillDays: 7,
+  invitesOnSignup: 3,
+});
+
 const freshFence = { stateVersion: '0', contentRevision: '1' };
 const fence = (item: { stateVersion: string; contentRevision: string }) => ({
   stateVersion: item.stateVersion,
@@ -661,6 +675,22 @@ const CASES: Record<string, Case> = {
   'POST /admin/feeds/:id/reset': async () => {
     const feed = await createFeed(h.owner, { status: 'dead' });
     return adminApi.post(`/admin/feeds/${feed.id}/reset`);
+  },
+  'POST /admin/plans': async () => adminApi.post('/admin/plans', planBody()),
+  'PATCH /admin/plans/:key': async () => {
+    const { plan } = await json(adminApi.post('/admin/plans', planBody()), 201);
+    return adminApi.patch(`/admin/plans/${plan.key}`, {
+      expectedVersion: plan.version,
+      maxFeeds: 27,
+    });
+  },
+  'POST /admin/plans/:key/default': async () => {
+    const { plan } = await json(adminApi.post('/admin/plans', planBody()), 201);
+    return adminApi.post(`/admin/plans/${plan.key}/default`);
+  },
+  'DELETE /admin/plans/:key': async () => {
+    const { plan } = await json(adminApi.post('/admin/plans', planBody()), 201);
+    return adminApi.delete(`/admin/plans/${plan.key}`);
   },
   'PATCH /admin/users/:id': async () => {
     const user = await createUser(h.owner);

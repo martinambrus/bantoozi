@@ -18,8 +18,9 @@ export const EVAL_USER_EMAIL = 'eval@bantoozi.local';
 /** Create the evaluation user when missing (idempotent); its id either way. */
 export async function ensureEvalUser(tx: Transaction): Promise<{ id: string; created: boolean }> {
   const inserted = await tx.execute<{ id: string }>(sql`
-    INSERT INTO users (id, email, display_name, role, invites_left)
-    VALUES (${newUserId()}::uuid, ${EVAL_USER_EMAIL}, 'Evaluation (system)', 'user', 0)
+    INSERT INTO users (id, email, display_name, role, invites_left, plan)
+    SELECT ${newUserId()}::uuid, ${EVAL_USER_EMAIL}, 'Evaluation (system)', 'user', 0, key
+      FROM plans WHERE is_default
     ON CONFLICT (email) DO NOTHING RETURNING id::text AS id`);
   const created = inserted.rows[0];
   if (created !== undefined) return { id: created.id, created: true };

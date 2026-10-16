@@ -793,7 +793,7 @@ describe('users (spec 09 §8)', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Edit reader@example.com' });
     expect(within(dialog).getByRole('button', { name: 'Save user' })).toBeDisabled();
     expect(within(dialog).getByLabelText('Role')).toHaveDisplayValue('User');
-    expect(within(dialog).getByLabelText('Plan')).toHaveDisplayValue('beta');
+    expect(within(dialog).getByLabelText('Plan')).toHaveDisplayValue('Beta');
     expect(within(dialog).getByLabelText('Invites left')).toHaveValue(3);
     await app.user.selectOptions(within(dialog).getByLabelText('Role'), 'Admin');
     await app.user.clear(within(dialog).getByLabelText('Invites left'));

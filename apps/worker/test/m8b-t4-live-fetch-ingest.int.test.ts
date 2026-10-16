@@ -209,10 +209,7 @@ describe('stored ingest.max_age_days applies to the next feed.fetch', () => {
       mode: 'active',
       activatedAt: new Date(Date.now() - 60_000),
     });
-    await owner.query('SELECT refresh_feed_subscribers($1::bigint[], $2::jsonb)', [
-      [feedId],
-      JSON.stringify({ beta: 900, admin: 300 }),
-    ]);
+    await owner.query('SELECT refresh_feed_subscribers($1::bigint[])', [[feedId]]);
     await dispatch(
       createHandlers(deps),
       'feed.fetch',

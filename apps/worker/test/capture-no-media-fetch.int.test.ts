@@ -177,10 +177,7 @@ ${paragraphs}
     ).rows[0]!.id;
     const user = await createUser(owner);
     await createSubscription(owner, { userId: user.id, feedId, mode: 'off' });
-    await owner.query('SELECT refresh_feed_subscribers($1::bigint[], $2::jsonb)', [
-      [feedId],
-      JSON.stringify({ beta: 900, admin: 300 }),
-    ]);
+    await owner.query('SELECT refresh_feed_subscribers($1::bigint[])', [[feedId]]);
 
     await dispatch(
       handlers,

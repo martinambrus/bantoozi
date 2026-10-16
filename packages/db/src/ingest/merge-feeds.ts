@@ -1,4 +1,4 @@
-import { planMinIntervalMap, type JobSender } from '@bantoozi/shared';
+import type { JobSender } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Executor, Transaction } from '../client.js';
@@ -363,8 +363,7 @@ export async function mergeFeeds(
     UPDATE feeds SET etag = NULL, last_modified = NULL, updated_at = now() WHERE id = ${dst}`);
   const feedIds = sql.param([sourceId, survivorId]);
   await tx.execute(sql`
-    SELECT refresh_feed_subscribers(${feedIds}::bigint[],
-                                    ${JSON.stringify(planMinIntervalMap())}::jsonb)`);
+    SELECT refresh_feed_subscribers(${feedIds}::bigint[])`);
   await tx.execute(sql`SELECT refresh_feed_cards(${feedIds}::bigint[])`);
   await recordRankIntents(tx, sender, affectedUserIds, {
     reason: FEED_MERGE_RANK_REASON,

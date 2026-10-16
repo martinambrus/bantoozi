@@ -4,7 +4,6 @@ import {
   ERASURE_BACKUP_LOCK_KEY,
   PLATFORM_USER_ID,
   USER_ERASURE_LOCK_PREFIX,
-  planMinIntervalMap,
 } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
@@ -264,8 +263,7 @@ async function purgeUserHoldingLock(
     const feedIds = feeds.rows.map((row) => row.feed_id);
     if (feedIds.length > 0) {
       await tx.execute(sql`
-        SELECT refresh_feed_subscribers(${sql.param(feedIds)}::bigint[],
-                                        ${JSON.stringify(planMinIntervalMap())}::jsonb)`);
+        SELECT refresh_feed_subscribers(${sql.param(feedIds)}::bigint[])`);
       await tx.execute(sql`SELECT refresh_feed_cards(${sql.param(feedIds)}::bigint[])`);
     }
     for (const id of prepared.snapshotIds) {

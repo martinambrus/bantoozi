@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   AppError,
+  DEFAULT_MIN_INTERVAL_S,
   DEFAULT_USER_PREFERENCES,
   ExplainSchema,
   IdSchema,
-  PLANS,
   QuotaExceededError,
   UserPreferencesPatchSchema,
   admitsAutomaticInference,
@@ -22,8 +22,7 @@ import {
   newUserId,
   nextRevision,
   planInferenceModeChange,
-  planLimits,
-  planMinIntervalMap,
+  PlanLimitsSchema,
   readUserPreferences,
   RevisionSchema,
   utcDay,
@@ -108,32 +107,34 @@ describe('clock', () => {
   });
 });
 
-describe('plans (spec 08 §6)', () => {
-  it('matches the plan table', () => {
-    expect(PLANS.beta).toEqual({
-      maxFeeds: 200,
-      maxCards: 150,
-      maxLabels: 20,
-      maxForks: 20,
-      maxRules: 200,
-      opmlMaxFeeds: 300,
-      minFetchIntervalS: 900,
-      backfillDays: 7,
-      invitesOnSignup: 3,
-    });
-    expect(PLANS.admin).toEqual({
-      maxFeeds: 2000,
-      maxCards: 500,
-      maxLabels: 200,
-      maxForks: 200,
-      maxRules: 2000,
-      opmlMaxFeeds: 2000,
-      minFetchIntervalS: 300,
-      backfillDays: 14,
-      invitesOnSignup: 50,
-    });
-    expect(planMinIntervalMap()).toEqual({ beta: 900, admin: 300 });
-    expect(planLimits('unknown')).toBe(PLANS.beta);
+describe('plans (spec 08 §6, D-255)', () => {
+  const beta = {
+    maxFeeds: 200,
+    maxCards: 150,
+    maxLabels: 20,
+    maxForks: 20,
+    maxRules: 200,
+    opmlMaxFeeds: 300,
+    minFetchIntervalS: 900,
+    backfillDays: 7,
+    invitesOnSignup: 3,
+  };
+
+  it('validates the limits of a stored plan (the values themselves live in the plans table)', () => {
+    expect(PlanLimitsSchema.parse(beta)).toEqual(beta);
+    expect(PlanLimitsSchema.safeParse({ ...beta, minFetchIntervalS: 60 }).success).toBe(true);
+    expect(PlanLimitsSchema.safeParse({ ...beta, minFetchIntervalS: 86_400 }).success).toBe(true);
+  });
+
+  it('refuses a fetch interval outside 60..86400 seconds, a negative or fractional limit', () => {
+    expect(PlanLimitsSchema.safeParse({ ...beta, minFetchIntervalS: 59 }).success).toBe(false);
+    expect(PlanLimitsSchema.safeParse({ ...beta, minFetchIntervalS: 86_401 }).success).toBe(false);
+    expect(PlanLimitsSchema.safeParse({ ...beta, maxFeeds: -1 }).success).toBe(false);
+    expect(PlanLimitsSchema.safeParse({ ...beta, maxCards: 1.5 }).success).toBe(false);
+  });
+
+  it('keeps the fallback fetch interval of a feed without subscribers at 900 seconds', () => {
+    expect(DEFAULT_MIN_INTERVAL_S).toBe(900);
   });
 });
 

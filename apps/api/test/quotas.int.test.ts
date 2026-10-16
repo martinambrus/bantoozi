@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
-import { planLimits } from '@bantoozi/shared';
-import { createArticle, createCard, createFeed, createSubscription } from '@bantoozi/testing';
+import {
+  createArticle,
+  createCard,
+  createFeed,
+  createSubscription,
+  BETA_LIMITS,
+} from '@bantoozi/testing';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -27,7 +32,7 @@ import { opmlOf, opmlUpload } from './support/opml.js';
  * seeded through the owner pool; only the boundary goes through the API (as `bantoozi_app`).
  */
 
-const LIMITS = planLimits('beta');
+const LIMITS = BETA_LIMITS;
 
 let h: ApiHarness;
 const web = new FixtureWeb();
@@ -594,5 +599,74 @@ describe('maxRules', () => {
     );
     expect(results.map((res) => res.statusCode).sort()).toEqual([201, 409]);
     expect((await usage(r.api)).maxRules).toBe(LIMITS.maxRules);
+  });
+});
+
+/** Insert a stored plan with `beta`'s limits except for the given columns (D-255). */
+async function storedPlan(over: Record<string, number> = {}): Promise<string> {
+  const key = `q-${tag()}`;
+  const row: Record<string, string | number | boolean | null> = {
+    key,
+    label: 'Quota plan',
+    label_sk: 'Kvótový plán',
+    max_feeds: 200,
+    max_cards: 150,
+    max_labels: 20,
+    max_forks: 20,
+    max_rules: 200,
+    opml_max_feeds: 300,
+    min_fetch_interval_s: 900,
+    release_interval_s: null,
+    backfill_days: 7,
+    invites_on_signup: 3,
+    sort_order: 500,
+    is_default: false,
+    ...over,
+  };
+  const columns = Object.keys(row);
+  await h.owner.query(
+    `INSERT INTO plans (${columns.join(', ')}) VALUES (${columns.map((_, i) => `$${i + 1}`).join(', ')})`,
+    Object.values(row),
+  );
+  return key;
+}
+
+describe('quotas read the stored plan (D-255)', () => {
+  it('lowering max_feeds below the count blocks the next subscription with the new max and keeps the rows', async () => {
+    const key = await storedPlan({ max_feeds: 5 });
+    const user = await createTestUser(h, { plan: key });
+    const api = apiClient(h.server, user);
+    await seedFeeds(user.id, 4);
+    const first = `https://plan-edit-${tag()}.example.test/feed.xml`;
+    serveFeed(first);
+    expectStatus(await api.post('/subscriptions', { url: first }), 201);
+
+    await h.owner.query('UPDATE plans SET max_feeds = 3 WHERE key = $1', [key]);
+    const next = `https://plan-edit-${tag()}.example.test/feed.xml`;
+    serveFeed(next);
+    expectQuota(await api.post('/subscriptions', { url: next }), 'maxFeeds', 5, 3);
+    expect((await usage(api)).maxFeeds).toBe(5);
+  });
+
+  it('raising max_feeds allows more, without a restart', async () => {
+    const key = await storedPlan({ max_feeds: 2 });
+    const user = await createTestUser(h, { plan: key });
+    const api = apiClient(h.server, user);
+    await seedFeeds(user.id, 2);
+    const url = `https://plan-raise-${tag()}.example.test/feed.xml`;
+    serveFeed(url);
+    expectQuota(await api.post('/subscriptions', { url }), 'maxFeeds', 2, 2);
+
+    await h.owner.query('UPDATE plans SET max_feeds = 3 WHERE key = $1', [key]);
+    expectStatus(await api.post('/subscriptions', { url }), 201);
+  });
+
+  it('OPML import follows the stored opml_max_feeds', async () => {
+    const key = await storedPlan({ opml_max_feeds: 2 });
+    const user = await createTestUser(h, { plan: key });
+    const api = apiClient(h.server, user);
+    const urls = [1, 2, 3].map((i) => `https://plan-opml.example.test/${tag()}/${i}.xml`);
+    const res = await importOpml(api, urls);
+    expectQuota(res, 'opmlMaxFeeds', 3, 2);
   });
 });

@@ -194,7 +194,10 @@ export async function checkRowLevelSecurity(pool: pg.Pool): Promise<string[]> {
     const a = randomUUID();
     const b = randomUUID();
     await client.query(
-      `INSERT INTO users (id, email, display_name) VALUES ($1, $2, 'fixture a'), ($3, $4, 'fixture b')`,
+      `INSERT INTO users (id, email, display_name, plan)
+       SELECT v.id::uuid, v.email::citext, v.name, p.key FROM
+         (VALUES ($1::text, $2::text, 'fixture a'), ($3::text, $4::text, 'fixture b')) v(id, email, name)
+         CROSS JOIN plans p WHERE p.is_default`,
       [a, `fixture-a-${a}@restore-fixture.invalid`, b, `fixture-b-${b}@restore-fixture.invalid`],
     );
     const feed = await client.query<{ id: string }>(

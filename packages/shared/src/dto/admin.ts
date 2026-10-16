@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { IdSchema, RevisionSchema, UuidSchema, UuidStringSchema } from '../ids.js';
 import { ENV_RANGES } from '../env-ranges.js';
 import { TRANSLATE_SKIP_REASONS } from '../jobs.js';
-import { PLAN_NAMES } from '../plans.js';
+import { MIN_FETCH_INTERVAL_MAX_S, MIN_FETCH_INTERVAL_MIN_S, PlanLimitsSchema } from '../plans.js';
 import { RUNTIME_SETTING_KEYS } from '../runtime-settings.js';
 import { RankerThresholdsSchema } from '../ranker-config.js';
 import {
@@ -430,6 +430,70 @@ export const AdminIdParamsSchema = z.object({ id: IdSchema }).strict();
 export const AdminFeedPatchSchema = z.object({ fetchOptions: AdminFetchOptionsSchema }).strict();
 export const AdminFeedResultSchema = z.object({ feed: AdminFeedSchema }).strict();
 
+// ── Plans (D-255) ────────────────────────────────────────────────────────────────────────────────
+
+/** A plan key: lowercase letters, digits, `-` and `_`, never changed after creation. */
+export const PlanKeySchema = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,39}$/, 'invalid plan key');
+const PlanLabelSchema = z.string().trim().min(1).max(80);
+const PlanCount = z.number().int().min(0).max(1_000_000);
+const PlanSortOrder = z.number().int().min(-1_000_000).max(1_000_000);
+const PlanFetchInterval = z
+  .number()
+  .int()
+  .min(MIN_FETCH_INTERVAL_MIN_S)
+  .max(MIN_FETCH_INTERVAL_MAX_S);
+
+export const AdminPlanSchema = PlanLimitsSchema.extend({
+  key: PlanKeySchema,
+  label: z.string(),
+  labelSk: z.string().nullable(),
+  /** Reserved for the plan-tiered release cadence. */
+  releaseIntervalS: z.number().int().min(0).nullable(),
+  sortOrder: z.number().int(),
+  isDefault: z.boolean(),
+  retiredAt: IsoTimestampSchema.nullable(),
+  /** Passed back unchanged as `expectedVersion` when editing. */
+  version: z.number().int().min(1),
+  /** Live users on the plan. */
+  userCount: Count,
+}).strict();
+export type AdminPlan = z.infer<typeof AdminPlanSchema>;
+export const AdminPlanListSchema = z.object({ items: z.array(AdminPlanSchema) }).strict();
+export const AdminPlanResultSchema = z.object({ plan: AdminPlanSchema }).strict();
+export const AdminPlanParamsSchema = z.object({ key: PlanKeySchema }).strict();
+
+export const AdminPlanCreateSchema = PlanLimitsSchema.extend({
+  key: PlanKeySchema,
+  label: PlanLabelSchema,
+  labelSk: PlanLabelSchema.nullable().optional(),
+  releaseIntervalS: PlanCount.nullable().optional(),
+  sortOrder: PlanSortOrder.optional(),
+}).strict();
+export type AdminPlanCreate = z.infer<typeof AdminPlanCreateSchema>;
+
+/** Only the changed fields; `expectedVersion` is the version the editor loaded. The key is not editable. */
+export const AdminPlanPatchSchema = z
+  .object({
+    expectedVersion: z.number().int().min(1),
+    label: PlanLabelSchema.optional(),
+    labelSk: PlanLabelSchema.nullable().optional(),
+    maxFeeds: PlanCount.optional(),
+    maxCards: PlanCount.optional(),
+    maxLabels: PlanCount.optional(),
+    maxForks: PlanCount.optional(),
+    maxRules: PlanCount.optional(),
+    opmlMaxFeeds: PlanCount.optional(),
+    minFetchIntervalS: PlanFetchInterval.optional(),
+    releaseIntervalS: PlanCount.nullable().optional(),
+    backfillDays: PlanCount.optional(),
+    invitesOnSignup: PlanCount.optional(),
+    sortOrder: PlanSortOrder.optional(),
+    retired: z.boolean().optional(),
+  })
+  .strict()
+  .refine((patch) => Object.keys(patch).length > 1, 'empty patch');
+export type AdminPlanPatch = z.infer<typeof AdminPlanPatchSchema>;
+
 // ── Users, invites, waitlist ─────────────────────────────────────────────────────────────────────
 
 export const AdminUserSchema = z
@@ -451,13 +515,16 @@ export type AdminUser = z.infer<typeof AdminUserSchema>;
 
 export const AdminUsersQuerySchema = PageQuerySchema.extend({
   q: SearchSchema.optional(),
+  /** Only the users on this stored plan. */
+  plan: PlanKeySchema.optional(),
 }).strict();
 export const AdminUserPageSchema = pageSchema(AdminUserSchema);
 export const AdminUserParamsSchema = z.object({ id: UuidSchema }).strict();
 export const AdminUserPatchSchema = z
   .object({
     role: z.enum(['user', 'admin']).optional(),
-    plan: z.enum(PLAN_NAMES).optional(),
+    /** A stored plan key; a retired plan is refused unless it is the user's current one. */
+    plan: PlanKeySchema.optional(),
     invitesLeft: z.number().int().min(0).max(10_000).optional(),
   })
   .strict()

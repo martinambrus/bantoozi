@@ -293,18 +293,7 @@
                           ]
                         },
                         "plan": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "enum": [
-                                "beta",
-                                "admin"
-                              ]
-                            },
-                            {
-                              "type": "string"
-                            }
-                          ]
+                          "type": "string"
                         },
                         "invitesLeft": {
                           "type": "integer",
@@ -930,18 +919,7 @@
                           ]
                         },
                         "plan": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "enum": [
-                                "beta",
-                                "admin"
-                              ]
-                            },
-                            {
-                              "type": "string"
-                            }
-                          ]
+                          "type": "string"
                         },
                         "invitesLeft": {
                           "type": "integer",
@@ -1571,18 +1549,7 @@
                       ]
                     },
                     "plan": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "beta",
-                            "admin"
-                          ]
-                        },
-                        {
-                          "type": "string"
-                        }
-                      ]
+                      "type": "string"
                     },
                     "invitesLeft": {
                       "type": "integer",
@@ -2248,18 +2215,7 @@
                       ]
                     },
                     "plan": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "beta",
-                            "admin"
-                          ]
-                        },
-                        {
-                          "type": "string"
-                        }
-                      ]
+                      "type": "string"
                     },
                     "invitesLeft": {
                       "type": "integer",
@@ -21557,6 +21513,15 @@
             "in": "query",
             "name": "q",
             "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+            },
+            "in": "query",
+            "name": "plan",
+            "required": false
           }
         ],
         "responses": {
@@ -21673,10 +21638,7 @@
                   },
                   "plan": {
                     "type": "string",
-                    "enum": [
-                      "beta",
-                      "admin"
-                    ]
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
                   },
                   "invitesLeft": {
                     "type": "integer",
@@ -22244,6 +22206,802 @@
                   "required": [
                     "entry",
                     "invite"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/plans": {
+      "get": {
+        "summary": "Plans",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "maxFeeds": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1000000
+                          },
+                          "maxCards": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1000000
+                          },
+                          "maxLabels": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1000000
+                          },
+                          "maxForks": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1000000
+                          },
+                          "maxRules": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1000000
+                          },
+                          "opmlMaxFeeds": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1000000
+                          },
+                          "minFetchIntervalS": {
+                            "type": "integer",
+                            "minimum": 60,
+                            "maximum": 86400
+                          },
+                          "backfillDays": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1000000
+                          },
+                          "invitesOnSignup": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1000000
+                          },
+                          "key": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "labelSk": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "releaseIntervalS": {
+                            "nullable": true,
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "sortOrder": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "isDefault": {
+                            "type": "boolean"
+                          },
+                          "retiredAt": {
+                            "nullable": true,
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          },
+                          "version": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "userCount": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "maxFeeds",
+                          "maxCards",
+                          "maxLabels",
+                          "maxForks",
+                          "maxRules",
+                          "opmlMaxFeeds",
+                          "minFetchIntervalS",
+                          "backfillDays",
+                          "invitesOnSignup",
+                          "key",
+                          "label",
+                          "labelSk",
+                          "releaseIntervalS",
+                          "sortOrder",
+                          "isDefault",
+                          "retiredAt",
+                          "version",
+                          "userCount"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add a plan",
+        "tags": [
+          "admin"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "maxFeeds": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "maxCards": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "maxLabels": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "maxForks": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "maxRules": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "opmlMaxFeeds": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "minFetchIntervalS": {
+                    "type": "integer",
+                    "minimum": 60,
+                    "maximum": 86400
+                  },
+                  "backfillDays": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "invitesOnSignup": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "labelSk": {
+                    "nullable": true,
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "releaseIntervalS": {
+                    "nullable": true,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "sortOrder": {
+                    "type": "integer",
+                    "minimum": -1000000,
+                    "maximum": 1000000
+                  }
+                },
+                "required": [
+                  "maxFeeds",
+                  "maxCards",
+                  "maxLabels",
+                  "maxForks",
+                  "maxRules",
+                  "opmlMaxFeeds",
+                  "minFetchIntervalS",
+                  "backfillDays",
+                  "invitesOnSignup",
+                  "key",
+                  "label"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "plan": {
+                      "type": "object",
+                      "properties": {
+                        "maxFeeds": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "maxCards": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "maxLabels": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "maxForks": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "maxRules": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "opmlMaxFeeds": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "minFetchIntervalS": {
+                          "type": "integer",
+                          "minimum": 60,
+                          "maximum": 86400
+                        },
+                        "backfillDays": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "invitesOnSignup": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "key": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "labelSk": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "releaseIntervalS": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "sortOrder": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "isDefault": {
+                          "type": "boolean"
+                        },
+                        "retiredAt": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                        },
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "userCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "maxFeeds",
+                        "maxCards",
+                        "maxLabels",
+                        "maxForks",
+                        "maxRules",
+                        "opmlMaxFeeds",
+                        "minFetchIntervalS",
+                        "backfillDays",
+                        "invitesOnSignup",
+                        "key",
+                        "label",
+                        "labelSk",
+                        "releaseIntervalS",
+                        "sortOrder",
+                        "isDefault",
+                        "retiredAt",
+                        "version",
+                        "userCount"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "plan"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/plans/{key}": {
+      "patch": {
+        "summary": "Edit a plan's names, limits, order or retirement",
+        "tags": [
+          "admin"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "labelSk": {
+                    "nullable": true,
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "maxFeeds": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "maxCards": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "maxLabels": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "maxForks": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "maxRules": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "opmlMaxFeeds": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "minFetchIntervalS": {
+                    "type": "integer",
+                    "minimum": 60,
+                    "maximum": 86400
+                  },
+                  "releaseIntervalS": {
+                    "nullable": true,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "backfillDays": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "invitesOnSignup": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "sortOrder": {
+                    "type": "integer",
+                    "minimum": -1000000,
+                    "maximum": 1000000
+                  },
+                  "retired": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "expectedVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+            },
+            "in": "path",
+            "name": "key",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "plan": {
+                      "type": "object",
+                      "properties": {
+                        "maxFeeds": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "maxCards": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "maxLabels": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "maxForks": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "maxRules": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "opmlMaxFeeds": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "minFetchIntervalS": {
+                          "type": "integer",
+                          "minimum": 60,
+                          "maximum": 86400
+                        },
+                        "backfillDays": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "invitesOnSignup": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "key": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "labelSk": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "releaseIntervalS": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "sortOrder": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "isDefault": {
+                          "type": "boolean"
+                        },
+                        "retiredAt": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                        },
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "userCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "maxFeeds",
+                        "maxCards",
+                        "maxLabels",
+                        "maxForks",
+                        "maxRules",
+                        "opmlMaxFeeds",
+                        "minFetchIntervalS",
+                        "backfillDays",
+                        "invitesOnSignup",
+                        "key",
+                        "label",
+                        "labelSk",
+                        "releaseIntervalS",
+                        "sortOrder",
+                        "isDefault",
+                        "retiredAt",
+                        "version",
+                        "userCount"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "plan"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an unused plan",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+            },
+            "in": "path",
+            "name": "key",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "nullable": true,
+                  "enum": [
+                    null
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/plans/{key}/default": {
+      "post": {
+        "summary": "Make a plan the default for new users",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+            },
+            "in": "path",
+            "name": "key",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "plan": {
+                      "type": "object",
+                      "properties": {
+                        "maxFeeds": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "maxCards": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "maxLabels": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "maxForks": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "maxRules": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "opmlMaxFeeds": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "minFetchIntervalS": {
+                          "type": "integer",
+                          "minimum": 60,
+                          "maximum": 86400
+                        },
+                        "backfillDays": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "invitesOnSignup": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "key": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "labelSk": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "releaseIntervalS": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "sortOrder": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "isDefault": {
+                          "type": "boolean"
+                        },
+                        "retiredAt": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                        },
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "userCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "maxFeeds",
+                        "maxCards",
+                        "maxLabels",
+                        "maxForks",
+                        "maxRules",
+                        "opmlMaxFeeds",
+                        "minFetchIntervalS",
+                        "backfillDays",
+                        "invitesOnSignup",
+                        "key",
+                        "label",
+                        "labelSk",
+                        "releaseIntervalS",
+                        "sortOrder",
+                        "isDefault",
+                        "retiredAt",
+                        "version",
+                        "userCount"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "plan"
                   ],
                   "additionalProperties": false
                 }

@@ -1,4 +1,4 @@
-import { newUserId } from '@bantoozi/shared';
+import { newUserId, type PlanLimits } from '@bantoozi/shared';
 import { cardTextHash, sha256Hex } from '@bantoozi/shared/server';
 
 /**
@@ -14,6 +14,22 @@ export interface Queryable {
     values?: unknown[],
   ): Promise<{ rows: R[]; rowCount: number | null }>;
 }
+
+/**
+ * The limits the `beta` plan is seeded with (migration 0029, D-255; the former `PLANS.beta`). Tests
+ * that fill a quota to its edge read them here; the `plans` table is the source of truth at runtime.
+ */
+export const BETA_LIMITS: Readonly<PlanLimits> = {
+  maxFeeds: 200,
+  maxCards: 150,
+  maxLabels: 20,
+  maxForks: 20,
+  maxRules: 200,
+  opmlMaxFeeds: 300,
+  minFetchIntervalS: 900,
+  backfillDays: 7,
+  invitesOnSignup: 3,
+};
 
 let sequence = 0;
 const nextSeq = (): number => {

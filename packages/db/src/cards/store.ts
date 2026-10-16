@@ -5,14 +5,15 @@ import {
   enqueueBackfill,
   enqueueLearn,
   enqueueTranslateCards,
-  planLimits,
   QuotaExceededError,
   type PlanLimits,
 } from '@bantoozi/shared';
 import { cardTextHash, normCardText } from '@bantoozi/shared/server';
 import { sql } from 'drizzle-orm';
 
+import { loadPlanLimits } from '../api/plans.js';
 import { SELECTION_WINDOW_DAYS } from '../ingest/demand.js';
+
 import { recordRankIntents } from '../ingest/rank-intents.js';
 import { tenantOutbox } from '../outbox.js';
 import { readStoredSetting } from '../settings.js';
@@ -90,7 +91,7 @@ export async function lockTenant(tx: TenantTx): Promise<Tenant> {
     SELECT plan FROM users WHERE id = ${userId}::uuid AND deleted_at IS NULL FOR NO KEY UPDATE`);
   const row = result.rows[0];
   if (row === undefined) throw new AppError('UNAUTHENTICATED', 'No active account');
-  return { userId, limits: planLimits(row.plan) };
+  return { userId, limits: await loadPlanLimits(tx, row.plan) };
 }
 
 // ── Card rows ─────────────────────────────────────────────────────────────────────────────────────

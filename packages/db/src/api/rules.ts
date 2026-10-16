@@ -1,10 +1,11 @@
-import { AppError, planLimits, QuotaExceededError, type RuleKind } from '@bantoozi/shared';
+import { AppError, QuotaExceededError, type RuleKind } from '@bantoozi/shared';
 import { sql, type SQL } from 'drizzle-orm';
 
 import { recordRankIntents } from '../ingest/rank-intents.js';
 import { tenantOutbox } from '../outbox.js';
 import { tenantUserId, type TenantTx } from '../tenant.js';
 import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
+import { loadPlanLimits } from './plans.js';
 
 /**
  * Ranking rules (spec 08 §8, spec 06 §3) in the caller's tenant transaction. Writes lock the user's
@@ -85,7 +86,7 @@ async function lockRuleOwner(tx: TenantTx): Promise<{ userId: string; maxRules: 
     SELECT plan FROM users WHERE id = ${userId}::uuid AND deleted_at IS NULL FOR NO KEY UPDATE`);
   const row = result.rows[0];
   if (row === undefined) throw new AppError('UNAUTHENTICATED', 'No active account');
-  return { userId, maxRules: planLimits(row.plan).maxRules };
+  return { userId, maxRules: (await loadPlanLimits(tx, row.plan)).maxRules };
 }
 
 /**

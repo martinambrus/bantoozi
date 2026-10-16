@@ -1,6 +1,7 @@
 import {
   ensureFeeds,
   insertSubscriptions,
+  loadPlanLimits,
   quotaUsage,
   readOwnUser,
   recordRankIntents,
@@ -13,7 +14,6 @@ import type { OpmlEntry, OpmlImport } from '@bantoozi/feeds';
 import {
   MAX_FOLDER_NAME_LENGTH,
   QuotaExceededError,
-  planLimits,
   type JobSender,
   type OpmlImportReport,
 } from '@bantoozi/shared';
@@ -46,7 +46,7 @@ export async function importOpml(
   parsed: ParsedOpml,
 ): Promise<OpmlImportReport> {
   const user = await readOwnUser(tx, { lock: true });
-  const limits = planLimits(user.plan);
+  const limits = await loadPlanLimits(tx, user.plan);
   if (parsed.entries.length > limits.opmlMaxFeeds) {
     throw new QuotaExceededError('opmlMaxFeeds', parsed.entries.length, limits.opmlMaxFeeds);
   }

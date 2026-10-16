@@ -168,10 +168,7 @@ async function addFeed(path: string): Promise<string> {
 }
 
 async function refreshFeeds(ids: string[]): Promise<void> {
-  await owner.query('SELECT refresh_feed_subscribers($1::bigint[], $2::jsonb)', [
-    ids,
-    JSON.stringify({ beta: 900, admin: 300 }),
-  ]);
+  await owner.query('SELECT refresh_feed_subscribers($1::bigint[])', [ids]);
   await owner.query('SELECT refresh_feed_cards($1::bigint[])', [ids]);
 }
 

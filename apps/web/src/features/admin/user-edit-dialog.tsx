@@ -1,7 +1,10 @@
-import { PLAN_NAMES, type AdminUser, type AdminUserPatch } from '@bantoozi/shared';
+import { type AdminUser, type AdminUserPatch } from '@bantoozi/shared';
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useQuery } from '@tanstack/react-query';
+
+import { useApi } from '../../api/context.js';
 import { useApiMutation } from '../../api/mutation.js';
 import { routes } from '../../api/routes.js';
 import { Button } from '../../components/button.js';
@@ -12,6 +15,8 @@ import { TextField } from '../../components/text-field.js';
 import { useToast } from '../../components/toast/toast-provider.js';
 import { useSession } from '../../session/context.js';
 import { Alert } from './admin-ui.js';
+import { QueryState } from '../../components/states/query-state.js';
+import { useAdminKey } from './use-admin.js';
 import { conflictReason } from './use-admin.js';
 
 const MAX_INVITES = 10_000;
@@ -31,7 +36,13 @@ export interface UserEditDialogProps {
 
 /** An answer that comes after the sign-in that asked has ended shows nothing. */
 export function UserEditDialog({ user, onClose, onSaved }: UserEditDialogProps) {
-  const { t } = useTranslation('admin');
+  const { t, i18n } = useTranslation('admin');
+  const api = useApi();
+  const adminKey = useAdminKey();
+  const plans = useQuery({
+    queryKey: adminKey('plans'),
+    queryFn: ({ signal }) => api.call(routes.adminPlanList, undefined, { signal }),
+  });
   const toast = useToast();
   const session = useSession();
   const update = useApiMutation(routes.adminUserUpdate);
@@ -102,17 +113,23 @@ export function UserEditDialog({ user, onClose, onSaved }: UserEditDialogProps) 
           <option value="user">{t('users.roles.user')}</option>
           <option value="admin">{t('users.roles.admin')}</option>
         </Select>
-        <Select
-          label={t('users.edit.plan')}
-          value={plan}
-          onChange={(event) => setPlan(event.target.value)}
-        >
-          {PLAN_NAMES.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-        </Select>
+        <QueryState query={plans}>
+          {({ items }) => (
+            <Select
+              label={t('users.edit.plan')}
+              value={plan}
+              onChange={(event) => setPlan(event.target.value)}
+            >
+              {items
+                .filter((item) => item.retiredAt === null || item.key === user.plan)
+                .map((item) => (
+                  <option key={item.key} value={item.key}>
+                    {i18n.language.startsWith('sk') ? (item.labelSk ?? item.label) : item.label}
+                  </option>
+                ))}
+            </Select>
+          )}
+        </QueryState>
         <TextField
           type="number"
           inputMode="numeric"
@@ -128,7 +145,11 @@ export function UserEditDialog({ user, onClose, onSaved }: UserEditDialogProps) 
           <Button variant="secondary" disabled={update.isPending} onClick={onClose}>
             {t('common:actions.cancel')}
           </Button>
-          <Button type="submit" loading={update.isPending} disabled={!dirty}>
+          <Button
+            type="submit"
+            loading={update.isPending}
+            disabled={!dirty || plans.data === undefined}
+          >
             {t('users.edit.save')}
           </Button>
         </div>

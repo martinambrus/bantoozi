@@ -1048,10 +1048,7 @@ ${LIBRARY.paragraphs.map((text) => `<p>${text}</p>`).join('\n')}
       firstSeenAt: ago(2 * HOUR),
     });
     await h.enrichDirect(wire);
-    await h.owner.query('SELECT refresh_feed_subscribers($1::bigint[], $2::jsonb)', [
-      [feedId, wireFeed],
-      JSON.stringify({ beta: 900, admin: 300 }),
-    ]);
+    await h.owner.query('SELECT refresh_feed_subscribers($1::bigint[])', [[feedId, wireFeed]]);
     await h.owner.query('SELECT refresh_feed_cards($1::bigint[])', [[feedId, wireFeed]]);
     h.router.clusterChoice = 'c1';
 

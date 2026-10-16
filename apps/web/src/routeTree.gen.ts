@@ -28,6 +28,7 @@ import { Route as AuthedAppAdminIndexRouteImport } from './routes/_authed/_app/a
 import { Route as AuthedAppAdminFeedsRouteImport } from './routes/_authed/_app/admin/feeds'
 import { Route as AuthedAppAdminInvitesRouteImport } from './routes/_authed/_app/admin/invites'
 import { Route as AuthedAppAdminLibraryRouteImport } from './routes/_authed/_app/admin/library'
+import { Route as AuthedAppAdminPlansRouteImport } from './routes/_authed/_app/admin/plans'
 import { Route as AuthedAppAdminProvidersRouteImport } from './routes/_authed/_app/admin/providers'
 import { Route as AuthedAppAdminSettingsRouteImport } from './routes/_authed/_app/admin/settings'
 import { Route as AuthedAppAdminUsageRouteImport } from './routes/_authed/_app/admin/usage'
@@ -132,6 +133,11 @@ const AuthedAppAdminLibraryRoute = AuthedAppAdminLibraryRouteImport.update({
   path: '/library',
   getParentRoute: () => AuthedAppAdminRouteRoute,
 } as any)
+const AuthedAppAdminPlansRoute = AuthedAppAdminPlansRouteImport.update({
+  id: '/plans',
+  path: '/plans',
+  getParentRoute: () => AuthedAppAdminRouteRoute,
+} as any)
 const AuthedAppAdminProvidersRoute = AuthedAppAdminProvidersRouteImport.update({
   id: '/providers',
   path: '/providers',
@@ -201,6 +207,7 @@ export interface FileRoutesByFullPath {
   '/admin/feeds': typeof AuthedAppAdminFeedsRoute
   '/admin/invites': typeof AuthedAppAdminInvitesRoute
   '/admin/library': typeof AuthedAppAdminLibraryRoute
+  '/admin/plans': typeof AuthedAppAdminPlansRoute
   '/admin/providers': typeof AuthedAppAdminProvidersRoute
   '/admin/settings': typeof AuthedAppAdminSettingsRoute
   '/admin/usage': typeof AuthedAppAdminUsageRoute
@@ -228,6 +235,7 @@ export interface FileRoutesByTo {
   '/admin/feeds': typeof AuthedAppAdminFeedsRoute
   '/admin/invites': typeof AuthedAppAdminInvitesRoute
   '/admin/library': typeof AuthedAppAdminLibraryRoute
+  '/admin/plans': typeof AuthedAppAdminPlansRoute
   '/admin/providers': typeof AuthedAppAdminProvidersRoute
   '/admin/settings': typeof AuthedAppAdminSettingsRoute
   '/admin/usage': typeof AuthedAppAdminUsageRoute
@@ -260,6 +268,7 @@ export interface FileRoutesById {
   '/_authed/_app/admin/feeds': typeof AuthedAppAdminFeedsRoute
   '/_authed/_app/admin/invites': typeof AuthedAppAdminInvitesRoute
   '/_authed/_app/admin/library': typeof AuthedAppAdminLibraryRoute
+  '/_authed/_app/admin/plans': typeof AuthedAppAdminPlansRoute
   '/_authed/_app/admin/providers': typeof AuthedAppAdminProvidersRoute
   '/_authed/_app/admin/settings': typeof AuthedAppAdminSettingsRoute
   '/_authed/_app/admin/usage': typeof AuthedAppAdminUsageRoute
@@ -291,6 +300,7 @@ export interface FileRouteTypes {
     | '/admin/feeds'
     | '/admin/invites'
     | '/admin/library'
+    | '/admin/plans'
     | '/admin/providers'
     | '/admin/settings'
     | '/admin/usage'
@@ -318,6 +328,7 @@ export interface FileRouteTypes {
     | '/admin/feeds'
     | '/admin/invites'
     | '/admin/library'
+    | '/admin/plans'
     | '/admin/providers'
     | '/admin/settings'
     | '/admin/usage'
@@ -349,6 +360,7 @@ export interface FileRouteTypes {
     | '/_authed/_app/admin/feeds'
     | '/_authed/_app/admin/invites'
     | '/_authed/_app/admin/library'
+    | '/_authed/_app/admin/plans'
     | '/_authed/_app/admin/providers'
     | '/_authed/_app/admin/settings'
     | '/_authed/_app/admin/usage'
@@ -506,6 +518,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAppAdminLibraryRouteImport
       parentRoute: typeof AuthedAppAdminRouteRoute
     }
+    '/_authed/_app/admin/plans': {
+      id: '/_authed/_app/admin/plans'
+      path: '/plans'
+      fullPath: '/admin/plans'
+      preLoaderRoute: typeof AuthedAppAdminPlansRouteImport
+      parentRoute: typeof AuthedAppAdminRouteRoute
+    }
     '/_authed/_app/admin/providers': {
       id: '/_authed/_app/admin/providers'
       path: '/providers'
@@ -583,6 +602,7 @@ interface AuthedAppAdminRouteRouteChildren {
   AuthedAppAdminFeedsRoute: typeof AuthedAppAdminFeedsRoute
   AuthedAppAdminInvitesRoute: typeof AuthedAppAdminInvitesRoute
   AuthedAppAdminLibraryRoute: typeof AuthedAppAdminLibraryRoute
+  AuthedAppAdminPlansRoute: typeof AuthedAppAdminPlansRoute
   AuthedAppAdminProvidersRoute: typeof AuthedAppAdminProvidersRoute
   AuthedAppAdminSettingsRoute: typeof AuthedAppAdminSettingsRoute
   AuthedAppAdminUsageRoute: typeof AuthedAppAdminUsageRoute
@@ -595,6 +615,7 @@ const AuthedAppAdminRouteRouteChildren: AuthedAppAdminRouteRouteChildren = {
   AuthedAppAdminFeedsRoute: AuthedAppAdminFeedsRoute,
   AuthedAppAdminInvitesRoute: AuthedAppAdminInvitesRoute,
   AuthedAppAdminLibraryRoute: AuthedAppAdminLibraryRoute,
+  AuthedAppAdminPlansRoute: AuthedAppAdminPlansRoute,
   AuthedAppAdminProvidersRoute: AuthedAppAdminProvidersRoute,
   AuthedAppAdminSettingsRoute: AuthedAppAdminSettingsRoute,
   AuthedAppAdminUsageRoute: AuthedAppAdminUsageRoute,

@@ -13,6 +13,7 @@ import { accountRoutes } from './accounts.js';
 import { engineRoutes } from './engine.js';
 import { feedRoutes } from './feeds.js';
 import { libraryAdminRoutes } from './library.js';
+import { planRoutes } from './plans.js';
 import { settingsRoutes } from './settings.js';
 
 /** Host scripts may send at most this many ops events per minute and IP (spec 11 §4). */
@@ -28,6 +29,7 @@ export const adminRoutes: FastifyPluginAsyncZod = async (app) => {
   await app.register(settingsRoutes);
   await app.register(feedRoutes);
   await app.register(accountRoutes);
+  await app.register(planRoutes);
   await app.register(libraryAdminRoutes);
 
   app.post(

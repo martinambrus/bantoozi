@@ -226,10 +226,7 @@ beforeAll(async () => {
   ).rows[0]!.id;
   userId = (await createUser(owner)).id;
   await createSubscription(owner, { userId, feedId, mode: 'off' });
-  await owner.query('SELECT refresh_feed_subscribers($1::bigint[], $2::jsonb)', [
-    [feedId],
-    JSON.stringify({ beta: 900, admin: 300 }),
-  ]);
+  await owner.query('SELECT refresh_feed_subscribers($1::bigint[])', [[feedId]]);
   await owner.query('SELECT refresh_feed_cards($1::bigint[])', [[feedId]]);
 }, 120_000);
 

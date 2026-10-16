@@ -1,11 +1,6 @@
 import { randomInt } from 'node:crypto';
 
-import {
-  CROCKFORD_ALPHABET,
-  INVITE_CODE_LENGTH,
-  USER_ERASURE_LOCK_PREFIX,
-  planMinIntervalMap,
-} from '@bantoozi/shared';
+import { CROCKFORD_ALPHABET, INVITE_CODE_LENGTH, USER_ERASURE_LOCK_PREFIX } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Database, Executor, Transaction } from '../client.js';
@@ -215,19 +210,19 @@ export interface NewSignupUser {
   email: string;
   locale: 'en' | 'sk';
   role: 'user' | 'admin';
-  /** The plan's `invitesOnSignup`. */
-  invitesLeft: number;
 }
 
 /**
- * Insert the users row of a signup (spec 08 §2.1). `false` when the email already has a row
- * (`ON CONFLICT DO NOTHING`): the caller treats it as an ineligible code.
+ * Insert the users row of a signup (spec 08 §2.1) on the default plan, with that plan's
+ * `invites_on_signup` (D-255). `false` when the email already has a row (`ON CONFLICT DO NOTHING`):
+ * the caller treats it as an ineligible code.
  */
 export async function insertSignupUser(tx: Transaction, input: NewSignupUser): Promise<boolean> {
   const result = await tx.execute(sql`
-    INSERT INTO users (id, email, locale, role, invites_left)
-    VALUES (${input.id}::uuid, ${input.email}::citext, ${input.locale}, ${input.role},
-            ${input.invitesLeft})
+    INSERT INTO users (id, email, locale, role, plan, invites_left)
+    SELECT ${input.id}::uuid, ${input.email}::citext, ${input.locale}, ${input.role},
+           p.key, p.invites_on_signup
+      FROM plans p WHERE p.is_default
     ON CONFLICT (email) DO NOTHING`);
   return result.rowCount === 1;
 }
@@ -285,8 +280,7 @@ export async function restoreSoftDeletedUser(tx: TenantTx): Promise<string[]> {
   const feedIds = feeds.rows.map((row) => row.feed_id);
   if (feedIds.length > 0) {
     await tx.execute(sql`
-      SELECT refresh_feed_subscribers(${sql.param(feedIds)}::bigint[],
-                                      ${JSON.stringify(planMinIntervalMap())}::jsonb)`);
+      SELECT refresh_feed_subscribers(${sql.param(feedIds)}::bigint[])`);
     await tx.execute(sql`SELECT refresh_feed_cards(${sql.param(feedIds)}::bigint[])`);
   }
   await recordRankIntents(tx, tenantOutbox(tx), [userId], {
