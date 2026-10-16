@@ -64,18 +64,27 @@ function bothClasses(
   return pos && neg;
 }
 
+/** Outer folds (spec 06 §8.3). */
+export const OUTER_MAX_K = 5;
+/** Inner folds of each outer training partition: fewer, since they only choose its λ and Platt (D-260). */
+export const INNER_MAX_K = 4;
+
 /**
- * The grouped k-fold plan of spec 06 §8.3: `k = min(5, minority explicit-class group count)`, reduced
- * to 3 while a validation fold or its training partition lacks an explicit class; `null` when
- * impossible (`insufficient_validation`).
+ * The grouped k-fold plan of spec 06 §8.3: `k = min(maxK, minority explicit-class group count)`,
+ * reduced to 3 while a validation fold or its training partition lacks an explicit class; `null`
+ * when impossible (`insufficient_validation`).
  */
-export function planFolds(samples: readonly TrainingSample[], seed: string): FoldPlan | null {
+export function planFolds(
+  samples: readonly TrainingSample[],
+  seed: string,
+  maxK: number = OUTER_MAX_K,
+): FoldPlan | null {
   const pos = new Set<string>();
   const neg = new Set<string>();
   for (const s of samples) {
     if (s.explicit) (s.y === 1 ? pos : neg).add(s.groupId);
   }
-  for (let k = Math.min(5, pos.size, neg.size); k >= 3; k -= 1) {
+  for (let k = Math.min(maxK, pos.size, neg.size); k >= 3; k -= 1) {
     const folds = groupFolds(samples, k, seed);
     let valid = true;
     for (let f = 0; valid && f < k; f += 1) {

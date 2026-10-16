@@ -29,6 +29,7 @@ export const DEFAULT_RANKER_CONFIG = {
     minCvAuc: 0.6,
     maxBaselineDrop: 0.02,
     retrainEvery: 10,
+    retrainFraction: 0.05,
     historyDays: 180,
     keepVersions: 3,
     cardMatchP: 0.5,
@@ -92,6 +93,7 @@ const shape = {
       minCvAuc: unit,
       maxBaselineDrop: unit,
       retrainEvery: positiveInt(1_000_000),
+      retrainFraction: unit,
       historyDays: positiveInt(3650),
       keepVersions: positiveInt(100),
       cardMatchP: z.number().finite().gt(0).max(1),
@@ -119,6 +121,18 @@ export const RankerConfigSchema = z
   });
 
 export type RankerConfig = z.infer<typeof RankerConfigSchema>;
+
+/**
+ * New explicit feedback that triggers retraining (spec 06 §8.4, D-260): `retrainEvery`, or the
+ * `retrainFraction` share of the explicit ratings the latest attempt trained on when that is more.
+ * Ten more ratings barely move a model of thousands, while a run costs seconds of CPU per thousand.
+ */
+export function retrainThreshold(
+  model: Pick<RankerConfig['model'], 'retrainEvery' | 'retrainFraction'>,
+  lastExplicit: number,
+): number {
+  return Math.max(model.retrainEvery, Math.ceil(model.retrainFraction * lastExplicit));
+}
 
 /**
  * `settings['ranker.thresholds']`: a strict deep partial; arrays (`tiers`, `model.lambdaGrid`) are

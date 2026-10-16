@@ -1,6 +1,6 @@
 import type { ReadonlyRankerConfig } from '../config.js';
 import type { RawFeatureSnapshot } from './features.js';
-import { auc, groupedBootstrapCi } from './metrics.js';
+import { aucScorer, groupedBootstrapCi } from './metrics.js';
 import { baselineScore, type TrainingRow } from './train.js';
 
 /** Thresholds of the per-feed agreement hint. */
@@ -88,11 +88,12 @@ export function feedAgreement(
   const { likes, dislikes } = learningCounts(mine);
   const high = mine.filter((_, i) => (scores[i] ?? 0) >= cfg.lanes.forYou);
   const low = mine.filter((_, i) => (scores[i] ?? 0) < cfg.lanes.forYou);
-  const point = auc(scores, y);
+  const aucOf = aucScorer(scores, y);
+  const point = aucOf();
   const low95 =
     groupedBootstrapCi(
       mine.map((r) => r.s.groupId),
-      (m) => auc(scores, y, m),
+      (m) => aucOf(m),
       seed,
     )?.[0] ?? null;
 

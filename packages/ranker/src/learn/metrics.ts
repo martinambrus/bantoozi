@@ -28,9 +28,29 @@ export function auc(
   labels: readonly number[],
   weights?: readonly number[],
 ): number | null {
+  return aucScorer(scores, labels)(weights);
+}
+
+/**
+ * {@link auc} of fixed scores and labels under any sample weights: the scores are sorted once, so a
+ * bootstrap evaluates each resample in linear time (D-260). Same order, same sums.
+ */
+export function aucScorer(
+  scores: readonly number[],
+  labels: readonly number[],
+): (weights?: readonly number[]) => number | null {
   const idx = Array.from({ length: scores.length }, (_, i) => i).sort(
     (a, b) => (scores[a] ?? 0) - (scores[b] ?? 0),
   );
+  return (weights) => sortedAuc(scores, labels, idx, weights);
+}
+
+function sortedAuc(
+  scores: readonly number[],
+  labels: readonly number[],
+  idx: readonly number[],
+  weights: readonly number[] | undefined,
+): number | null {
   let negBelow = 0;
   let negTotal = 0;
   let posTotal = 0;

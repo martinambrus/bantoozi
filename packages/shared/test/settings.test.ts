@@ -12,6 +12,7 @@ import {
   metricsDailyKey,
   parseSetting,
   readSetting,
+  retrainThreshold,
   settingDefault,
   settingSchema,
   type SettingEnvDefaults,
@@ -231,5 +232,14 @@ describe('RankerConfig (spec 06 §11)', () => {
     expect(() => mergeRankerConfig({ model: { cardMatchP: 0 } })).toThrow();
     expect(() => mergeRankerConfig({ model: { cardMatchP: 1.2 } })).toThrow();
     expect(() => mergeRankerConfig({ model: { cardMinMatched: 0 } })).toThrow();
+  });
+
+  it('retrains after retrainEvery, or retrainFraction of the last attempt when more (D-260)', () => {
+    const model = DEFAULT_RANKER_CONFIG.model;
+    expect(retrainThreshold(model, 0)).toBe(10);
+    expect(retrainThreshold(model, 200)).toBe(10);
+    expect(retrainThreshold(model, 201)).toBe(11);
+    expect(retrainThreshold(model, 3839)).toBe(192);
+    expect(retrainThreshold({ retrainEvery: 10, retrainFraction: 0 }, 5000)).toBe(10);
   });
 });

@@ -2,9 +2,9 @@ import type { ReadonlyRankerConfig } from '../config.js';
 import { minimumReasons, qualityReasons } from './activation.js';
 import { FEATURE_SPEC_V1_SHA } from './feature-spec.js';
 import { type RawFeatureSnapshot, snapshotCardScore, snapshotFeatures } from './features.js';
-import { planFolds, type FoldPlan } from './folds.js';
+import { INNER_MAX_K, planFolds, type FoldPlan } from './folds.js';
 import { fitLogistic, type LogisticFit } from './logistic.js';
-import { auc, groupedBootstrapCi, logLoss } from './metrics.js';
+import { aucScorer, groupedBootstrapCi, logLoss } from './metrics.js';
 import { modelContextSha, type Consent, type HeldCard, type StoredModel } from './model.js';
 import { ownInputs } from './own-inputs.js';
 import { applyPlatt, fitPlatt, type PlattParams } from './platt.js';
@@ -247,6 +247,7 @@ function innerSelect(
   const plan = planFolds(
     rows.map((r) => r.s),
     seed,
+    INNER_MAX_K,
   );
   if (plan === null) return { lambda: largest, platt: IDENTITY };
   const folds = cvFolds(rows, plan, ctx);
@@ -358,11 +359,12 @@ export function trainUserModel(
   if (plan === null && !research) return reject(['insufficient_validation']);
 
   const base = baselineOf(rows, cfg);
-  metrics.baselineAuc = auc(base.scores, base.y);
+  const baselineAucOf = aucScorer(base.scores, base.y);
+  metrics.baselineAuc = baselineAucOf();
   metrics.baselineLogloss = base.y.length > 0 ? logLoss(base.scores, base.y) : null;
   metrics.ci.baselineAuc = groupedBootstrapCi(
     base.groups,
-    (m) => auc(base.scores, base.y, m),
+    (m) => baselineAucOf(m),
     `${seed}|baseline`,
   );
 
@@ -394,17 +396,19 @@ export function trainUserModel(
         baseScores.push(baselineScore(row, cfg));
       }
     }
-    metrics.ci.cvAuc = groupedBootstrapCi(groups, (m) => auc(probs, ys, m), `${seed}|cv`);
+    const cvAucOf = aucScorer(probs, ys);
+    const foldBaselineAucOf = aucScorer(baseScores, ys);
+    metrics.ci.cvAuc = groupedBootstrapCi(groups, (m) => cvAucOf(m), `${seed}|cv`);
     metrics.ci.deltaAuc = groupedBootstrapCi(
       groups,
       (m) => {
-        const model = auc(probs, ys, m);
-        const baseline = auc(baseScores, ys, m);
+        const model = cvAucOf(m);
+        const baseline = foldBaselineAucOf(m);
         return model === null || baseline === null ? null : model - baseline;
       },
       `${seed}|delta`,
     );
-    metrics.cvAuc = auc(probs, ys);
+    metrics.cvAuc = cvAucOf();
     metrics.cvLogloss = ys.length > 0 ? logLoss(probs, ys) : null;
   }
   metrics.lambda = lambda;

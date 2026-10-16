@@ -19977,6 +19977,11 @@
                                   "minimum": 1,
                                   "maximum": 1000000
                                 },
+                                "retrainFraction": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 1
+                                },
                                 "historyDays": {
                                   "type": "integer",
                                   "minimum": 1,
@@ -20565,6 +20570,11 @@
                             "minimum": 1,
                             "maximum": 1000000
                           },
+                          "retrainFraction": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
                           "historyDays": {
                             "type": "integer",
                             "minimum": 1,
@@ -20905,6 +20915,11 @@
                                   "type": "integer",
                                   "minimum": 1,
                                   "maximum": 1000000
+                                },
+                                "retrainFraction": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 1
                                 },
                                 "historyDays": {
                                   "type": "integer",

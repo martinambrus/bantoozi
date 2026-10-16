@@ -2643,3 +2643,22 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
      rows out (spec 06 §7 step 2), so after any rank revision bump they stayed outdated for good:
      "Ranking new articles…" never cleared, and every list or counts request enqueued another
      catch-up rank (about 1,900 runs on the owner's instance).
+
+- D-260: 2026-10-17 (owner decision: training cost for users with thousands of ratings, after
+  D-259 moved training off the worker's event loop) — A run on the owner's 3,839 explicit ratings
+  took 31.9 s of CPU and started after every 10 new ratings. The owner chose three changes (of five
+  options; dropping nested CV and capping the training set were declined):
+  1. The bootstrap intervals sort the scores once per interval (`aucScorer`) instead of once per
+     resample. Results are bit-identical (training result byte-equal on the owner's data).
+  2. Inner folds use `k = min(4, …)` instead of 5 (spec 06 §8.3, owner chose 4 over 3): they only
+     choose each outer partition's λ and Platt for the reported out-of-fold metrics. The final model,
+     its λ and Platt come from the outer folds and are unchanged (byte-equal weights on the owner's
+     data); cv AUC moved 0.9606 → 0.9611, activation unchanged. 29.7 s → 22.2 s.
+  3. Retraining starts after `max(model.retrainEvery, ⌈model.retrainFraction × n⌉)` newly effective
+     explicit feedback changes, `n` being the newest attempt's explicit sample count
+     (`retrainFraction` 0.05, a `ranker.thresholds` setting; spec 06 §8.4): every ~192 ratings at
+     3,839 instead of every 10. Forced retraining (flips, undo, card and consent changes) and the
+     nightly trigger are unchanged, so feedback below the threshold is learned at the latest
+     overnight. `retrainFraction` is left out of the model context hash: it only schedules training,
+     and including it would have invalidated every stored model on deploy (verified: the owner's
+     active model keeps its context sha).
