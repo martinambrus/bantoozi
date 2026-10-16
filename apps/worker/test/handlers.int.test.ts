@@ -1989,6 +1989,46 @@ describe('plan velocity source protection', () => {
     expect(after.rows[0]?.fetch_interval_s).toBeGreaterThanOrEqual(7200);
   });
 
+  it('replaces response cache hints on 304 without promoting them into retained RSS hints', async () => {
+    const path = '/source-protection/cache-policy.rss';
+    let conditional = false;
+    let cache: string | undefined = 'max-age=21600';
+    server.route(path, () =>
+      conditional
+        ? { status: 304, headers: cache === undefined ? {} : { 'cache-control': cache }, body: '' }
+        : {
+            status: 200,
+            headers: {
+              'content-type': 'application/rss+xml',
+              etag: '"cache-policy"',
+              'cache-control': cache!,
+            },
+            body: rss('Cache', ''),
+          },
+    );
+    const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    await fetchFeed(feedId);
+    const first = await owner.query('SELECT publish_stats FROM feeds WHERE id = $1', [feedId]);
+    expect(first.rows[0]?.publish_stats).toMatchObject({
+      publisher_min_interval_s: 0,
+      cache_min_interval_s: 21600,
+    });
+    conditional = true;
+    for (cache of ['max-age=120', undefined]) {
+      await owner.query(
+        'UPDATE feeds SET fetch_interval_s = 60, min_interval_s = 60 WHERE id = $1',
+        [feedId],
+      );
+      await fetchFeed(feedId);
+      const next = await owner.query(
+        'SELECT fetch_interval_s, publish_stats FROM feeds WHERE id = $1',
+        [feedId],
+      );
+      expect(next.rows[0]?.publish_stats.cache_min_interval_s).toBe(cache === undefined ? 0 : 120);
+      expect(next.rows[0]?.fetch_interval_s).toBeLessThan(21600);
+    }
+  });
+
   it('does not let a faster plan poll before a retained publisher hint', async () => {
     const path = '/source-protection/publisher-floor.rss';
     let requests = 0;

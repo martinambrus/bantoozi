@@ -122,7 +122,8 @@ async function fetchFeed(
 
   // A plan edit may pull next_fetch_at forward; it cannot erase the publisher's last hint.
   const publisherEarliest =
-    (feed.lastFetchAt?.getTime() ?? 0) + (feed.publisherIntervalS ?? 0) * 1000;
+    (feed.lastFetchAt?.getTime() ?? 0) +
+    Math.max(feed.publisherIntervalS ?? 0, feed.cacheIntervalS ?? 0) * 1000;
   if (!force && publisherEarliest > now.getTime()) {
     lock.assertHeld();
     await deps.db.transaction((tx) => deferFeedFetch(tx, feedId, new Date(publisherEarliest)));
@@ -280,8 +281,16 @@ async function fetchFeed(
     await recordFeedFetch(tx, targetId, {
       schedule,
       publisherMinIntervalS: scheduleHintS(
-        scheduleHints(parsed, result),
+        {
+          ttlMinutes: parsed.feed.ttlMinutes,
+          syUpdatePeriod: parsed.feed.syUpdatePeriod,
+          syUpdateFrequency: parsed.feed.syUpdateFrequency,
+        },
         Math.max(86400, schedule.fetchIntervalS),
+      ),
+      cacheMinIntervalS: scheduleHintS(
+        { cacheMaxAgeS: parseCacheMaxAge(result.headers['cache-control']) },
+        86400,
       ),
       meta: {
         title: parsed.feed.title,
@@ -373,7 +382,17 @@ async function recordOutcome(
   );
   lock.assertHeld();
   await deps.db.transaction(async (tx) => {
-    await recordFeedFetch(tx, feedId, { schedule });
+    await recordFeedFetch(tx, feedId, {
+      schedule,
+      ...(outcome.kind === 'not_modified'
+        ? {
+            cacheMinIntervalS: scheduleHintS(
+              { cacheMaxAgeS: parseCacheMaxAge(cacheControl) },
+              86400,
+            ),
+          }
+        : {}),
+    });
     // An unchanged feed still lists the items of its last successful fetch (D-253).
     if (outcome.kind === 'not_modified')
       await markFeedItemsStillListed(tx, feedId, feed.lastSuccessAt);

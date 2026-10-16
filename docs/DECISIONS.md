@@ -2446,3 +2446,5 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   temporary policy failures defer without consuming feed health. Migration 0030 stores the shared
   feed slot, learned floor/clock and crawl delay on `origin_fetch_state`. Tests use fixture HTTP and
   independent worker pools; there are no live provider calls or new dependencies.
+  PR #46 review: retain only body-derived TTL/syndication hints across 304 responses. Store the
+  latest response cache hint separately and replace it on every 200/304, including removing it.
