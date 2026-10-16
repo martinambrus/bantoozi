@@ -2372,3 +2372,13 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   active enrich set, pinned primary model; `isReusableFacet`, shared with `article.enrich`), since an explicit analysis on
   another feed leaves the pipeline state behind. Admission cannot compute the enrich input-state hash, so an article whose
   translation changed after that analysis is admitted without a slot and its enrich re-runs Call A (rare; accepted).
+- D-254: 2026-10-16 (task #11; resolves D-70's open repair) — Selections are frozen. Creating or forking a card ran
+  `card.backfill`, which queued match rows for recently selected articles that `analysis.process` had answered from shared
+  facets without advancing their pipeline state; nothing ever claims rows on an extracted/translated article, D-70's
+  promised `house.reconcile` repair was never built, and the dev DB held ~2.4k such rows (+~1 000 per new card) while the
+  new card showed as pending forever there. Owner decision: a selection is answered for the cards it froze; later cards do
+  not apply to it retroactively and cost nothing. Backfill's selection branch skips extracted/translated articles; the ranker
+  leaves cards without a queue row out of the coverage of a selection-only extracted/translated article (no pending
+  marker; ranking unchanged); `house.reconcile` deletes match rows that can never run (extracted/translated article, no
+  admitted active carrier, unleased, enqueued over 60 minutes ago, no undelivered extract/translate/enrich/match intent),
+  which also clears the backlog. Spec 05 §5.4 step 2, spec 11 §6.
