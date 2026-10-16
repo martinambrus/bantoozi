@@ -352,6 +352,30 @@ describe('fast-feed source policy across processes', () => {
     expect(decayed.rows[0]?.learned_interval_s).toBeCloseTo(1440);
   });
 
+  it('ignores an older robots refresh from another process and permits a newer policy to clear delay', async () => {
+    const origin = newOrigin();
+    const a = createPgOriginLimiter(ctx.worker, { spacingMs: 0 });
+    const b = createPgOriginLimiter(otherDb, { spacingMs: 0 });
+    const at = Date.now();
+    await a.setCrawlDelay!(origin, 30, new Date(at));
+    await b.setCrawlDelay!(origin, 0, new Date(at - 1000));
+    expect(
+      (
+        await ctx.owner.query('SELECT crawl_delay_s FROM origin_fetch_state WHERE origin = $1', [
+          origin,
+        ])
+      ).rows[0]?.crawl_delay_s,
+    ).toBe(30);
+    await b.setCrawlDelay!(origin, 0, new Date(at + 1000));
+    expect(
+      (
+        await ctx.owner.query('SELECT crawl_delay_s FROM origin_fetch_state WHERE origin = $1', [
+          origin,
+        ])
+      ).rows[0]?.crawl_delay_s,
+    ).toBe(0);
+  });
+
   it('observes robots delay on another process and on page requests', async () => {
     const origin = newOrigin();
     const a = createPgOriginLimiter(ctx.worker, { spacingMs: 0 });

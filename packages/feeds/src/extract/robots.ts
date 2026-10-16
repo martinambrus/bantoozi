@@ -40,6 +40,8 @@ export type RobotsFetch = (url: string, purpose: 'robots') => Promise<SafeFetchR
 
 export interface RobotsCheckerOptions {
   fetch: RobotsFetch;
+  /** Persist only definitive refreshes, identified by request start time, before caching them. */
+  onPolicyRefresh?: (origin: string, crawlDelayS: number, observedAt: Date) => Promise<void>;
   /** Clock in epoch ms; defaults to `Date.now`. */
   now?: () => number;
   /** LRU bound; defaults to {@link ROBOTS_CACHE_MAX_ORIGINS}. */
@@ -135,6 +137,7 @@ export function createRobotsChecker(options: RobotsCheckerOptions): RobotsChecke
     const robotsUrl = `${origin}/robots.txt`;
     const previous = cache.get(origin) ?? null;
     // A rejection propagates before anything is cached (see above).
+    const observedAt = new Date(now());
     const result = await options.fetch(robotsUrl, 'robots');
     const at = now();
     let outcome: FetchOutcome;
@@ -145,6 +148,15 @@ export function createRobotsChecker(options: RobotsCheckerOptions): RobotsChecke
     }
     let entry: RobotsEntry;
     if (outcome.kind === 'policy') {
+      const delay =
+        outcome.policy.kind === 'rules'
+          ? outcome.policy.rules.getCrawlDelay(ROBOTS_PRODUCT_TOKEN)
+          : 0;
+      await options.onPolicyRefresh?.(
+        origin,
+        delay !== undefined && Number.isFinite(delay) && delay > 0 ? Math.min(86400, delay) : 0,
+        observedAt,
+      );
       entry = {
         policy: {
           value: outcome.policy,

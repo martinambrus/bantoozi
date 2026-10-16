@@ -22,6 +22,7 @@ interface OriginState {
   feedNextStartAt: number;
   lastUsedAt: number;
   crawlDelayS: number;
+  crawlDelayAt: number;
   learnedS: number;
   learnedAt: number;
   blockedUntil: number;
@@ -73,6 +74,7 @@ export function createMemoryOriginLimiter(options: MemoryOriginLimiterOptions = 
         feedNextStartAt: at,
         lastUsedAt: at,
         crawlDelayS: 0,
+        crawlDelayAt: -Infinity,
         learnedS: 0,
         learnedAt: at,
       };
@@ -132,9 +134,15 @@ export function createMemoryOriginLimiter(options: MemoryOriginLimiterOptions = 
       state.learnedAt = at;
       return Promise.resolve();
     },
-    setCrawlDelay(origin, seconds) {
+    setCrawlDelay(origin, seconds, observedAt = new Date(now())) {
       const state = stateOf(origin, now());
-      state.crawlDelayS = Math.min(86400, Math.max(0, seconds));
+      const policyAt = observedAt.getTime();
+      if (policyAt < state.crawlDelayAt) return Promise.resolve();
+      state.crawlDelayS =
+        policyAt === state.crawlDelayAt
+          ? Math.max(state.crawlDelayS, Math.min(86400, Math.max(0, seconds)))
+          : Math.min(86400, Math.max(0, seconds));
+      state.crawlDelayAt = policyAt;
       state.nextStartAt = Math.max(state.nextStartAt, state.lastUsedAt + state.crawlDelayS * 1000);
       return Promise.resolve();
     },

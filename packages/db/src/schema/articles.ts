@@ -33,6 +33,9 @@ export const originFetchState = pgTable(
     learnedIntervalS: real('learned_interval_s').notNull().default(0),
     learnedUpdatedAt: tstz('learned_updated_at').notNull().defaultNow(),
     crawlDelayS: real('crawl_delay_s').notNull().default(0),
+    crawlDelayUpdatedAt: tstz('crawl_delay_updated_at')
+      .notNull()
+      .default(sql`'epoch'::timestamptz`),
     leases: jsonb('leases')
       .notNull()
       .default(sql`'[]'`),

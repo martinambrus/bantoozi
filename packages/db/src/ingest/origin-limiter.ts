@@ -202,13 +202,19 @@ export function createPgOriginLimiter(
               feed_next_start_at = greatest(s.feed_next_start_at, clock_timestamp() + ${nextFloor} * interval '1 second'),
               learned_updated_at = clock_timestamp(), last_used_at = clock_timestamp()`);
     },
-    async setCrawlDelay(origin, seconds) {
+    async setCrawlDelay(origin, seconds, observedAt = new Date()) {
       assertOrigin(origin);
       assertMs('crawlDelay', seconds, { allowZero: true });
-      await db.execute(sql`INSERT INTO origin_fetch_state AS s (origin, crawl_delay_s)
-        VALUES (${origin}, ${Math.min(86400, seconds)})
-        ON CONFLICT (origin) DO UPDATE SET crawl_delay_s = EXCLUDED.crawl_delay_s,
-          next_start_at = greatest(s.next_start_at, s.last_used_at + EXCLUDED.crawl_delay_s * interval '1 second')`);
+      if (!Number.isFinite(observedAt.getTime()))
+        throw new TypeError('observedAt must be a valid Date');
+      await db.execute(sql`INSERT INTO origin_fetch_state AS s (origin, crawl_delay_s, crawl_delay_updated_at)
+        VALUES (${origin}, ${Math.min(86400, seconds)}, ${observedAt})
+        ON CONFLICT (origin) DO UPDATE SET
+          crawl_delay_s = CASE WHEN s.crawl_delay_updated_at = EXCLUDED.crawl_delay_updated_at
+            THEN greatest(s.crawl_delay_s, EXCLUDED.crawl_delay_s) ELSE EXCLUDED.crawl_delay_s END,
+          crawl_delay_updated_at = EXCLUDED.crawl_delay_updated_at,
+          next_start_at = greatest(s.next_start_at, s.last_used_at + EXCLUDED.crawl_delay_s * interval '1 second')
+        WHERE s.crawl_delay_updated_at <= EXCLUDED.crawl_delay_updated_at`);
     },
   };
 }

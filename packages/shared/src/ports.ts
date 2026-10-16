@@ -205,8 +205,8 @@ export interface OriginLimiter {
   release(origin: string, token: string): Promise<void>;
   /** Persist a cooldown until `until` (clamped to 24 h); never shortens a longer existing one. */
   block(origin: string, until: Date, options?: { currentIntervalS: number }): Promise<void>;
-  /** Apply the cached robots delay to every request to this origin (including redirected pages). */
-  setCrawlDelay?(origin: string, seconds: number): Promise<void>;
+  /** Apply an authoritative robots refresh; older cached policies cannot replace a newer one. */
+  setCrawlDelay?(origin: string, seconds: number, observedAt?: Date): Promise<void>;
 }
 
 /**

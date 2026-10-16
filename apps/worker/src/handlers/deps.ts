@@ -144,20 +144,15 @@ export type WorkerDepsInput = Omit<WorkerDeps, 'robots'> & { robots?: RobotsChec
 export function createWorkerDeps(input: WorkerDepsInput): WorkerDeps {
   const deps = { ...input } as WorkerDeps;
   const now = input.now;
-  const checker =
+  deps.robots =
     input.robots ??
     createRobotsChecker({
       fetch: (url) => fetchWith(deps, url, { purpose: 'robots' }),
       ...(now === undefined ? {} : { now: () => now().getTime() }),
+      onPolicyRefresh: async (origin, delay, observedAt) => {
+        await deps.limiter.setCrawlDelay?.(origin, delay, observedAt);
+      },
     });
-  deps.robots = {
-    async check(url) {
-      const decision = await checker.check(url);
-      if (decision.allowed && deps.limiter.setCrawlDelay !== undefined)
-        await deps.limiter.setCrawlDelay(url.origin, decision.crawlDelayS ?? 0);
-      return decision;
-    },
-  };
   return deps;
 }
 

@@ -408,6 +408,7 @@ CREATE TABLE origin_fetch_state (                 -- shared safe-fetch coordinat
   learned_interval_s real NOT NULL DEFAULT 0,
   learned_updated_at timestamptz NOT NULL DEFAULT now(),
   crawl_delay_s real NOT NULL DEFAULT 0,
+  crawl_delay_updated_at timestamptz NOT NULL DEFAULT 'epoch', -- authoritative robots refresh start
   leases        jsonb NOT NULL DEFAULT '[]',       -- [{token: uuid, expires_at: iso}], at most two
   last_used_at  timestamptz NOT NULL DEFAULT now(), -- set by every reservation; idle rows purged (spec 11 §5)
   CHECK (jsonb_typeof(leases) = 'array' AND jsonb_array_length(leases) <= 2),
@@ -1774,6 +1775,8 @@ Implementation references: PostgreSQL 16 [row security](https://www.postgresql.o
 
 D-256 (migration 0030) extends `origin_fetch_state` with `feed_next_start_at timestamptz NOT NULL
 DEFAULT 'epoch'`, `learned_interval_s real NOT NULL DEFAULT 0`, `learned_updated_at timestamptz NOT
-NULL DEFAULT now()`, and `crawl_delay_s real NOT NULL DEFAULT 0`. Learned and robots floors are
+NULL DEFAULT now()`, `crawl_delay_s real NOT NULL DEFAULT 0`, and `crawl_delay_updated_at
+timestamptz NOT NULL DEFAULT 'epoch'`. Only authoritative robots refreshes advance that version;
+older worker caches cannot clear a newer delay. Learned and robots floors are
 bounded to 0..86400 seconds. The existing table grants and fixed short-transaction lease protocol
 apply; see spec 03 §8.2 for the separate feed budget and decay. No additional tenant data is stored.

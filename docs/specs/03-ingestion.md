@@ -728,10 +728,13 @@ fetching non-HTML media.
 
 **Fast-plan protection (D-256, migration 0030).** The origin row also stores `feed_next_start_at`,
 `learned_interval_s`, `learned_updated_at` and `crawl_delay_s`. Feed requests have an additional
-aggregate six-starts-per-minute budget, shared across workers and redirected origins. A 429/503
+aggregate six-starts-per-minute budget, shared across workers and redirected origins. A logical
+feed fetch charges once per origin; same-origin redirect continuations keep the ordinary request
+spacing/concurrency/cooldown checks. A 429/503
 updates the learned floor to the maximum of twice the current feed interval, twice the prior learned
 floor and Retry-After (24-hour bound), and immediately postpones the next feed start. The floor
-relaxes by ×0.8 per complete quiet day. Robots `Crawl-delay` applies to every request purpose and
+relaxes by ×0.8 per complete quiet day. Robots delays are written only on authoritative refreshes,
+versioned by request start so an older cache/response cannot erase a newer policy. Robots `Crawl-delay` applies to every request purpose and
 accounts for the previous request start. Feeds on a floor below five minutes check robots before
 every hop; a temporary robots failure or source wait defers the job. These deferrals never add to
 feed error/quarantine counts. No database transaction is held during HTTP.

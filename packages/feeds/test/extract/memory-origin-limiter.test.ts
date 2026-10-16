@@ -270,6 +270,23 @@ describe('feed source protection', () => {
     });
   });
 
+  it('keeps a newer crawl policy when an older process reports no delay', async () => {
+    let now = 1000;
+    const limiter = createMemoryOriginLimiter({ now: () => now, spacingMs: 0 });
+    const origin = 'https://versions.test';
+    const first = await limiter.reserve(origin, { leaseMs: 1000 });
+    if (first.status === 'granted') await limiter.release(origin, first.token);
+    await limiter.setCrawlDelay!(origin, 30, new Date(1000));
+    await limiter.setCrawlDelay!(origin, 0, new Date(0));
+    expect(await limiter.reserve(origin, { leaseMs: 1000 })).toEqual({
+      status: 'wait',
+      retryAt: new Date(31000),
+    });
+    now = 32000;
+    await limiter.setCrawlDelay!(origin, 0, new Date(now));
+    expect((await limiter.reserve(origin, { leaseMs: 1000 })).status).toBe('granted');
+  });
+
   it('applies crawl delay to pages as well as feeds, including the previous start', async () => {
     const limiter = createMemoryOriginLimiter({ now: () => 0, spacingMs: 0 });
     const origin = 'https://robots.test';

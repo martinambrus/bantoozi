@@ -2452,3 +2452,8 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   PR #46 second review: charge the aggregate feed budget once per origin in a redirect chain;
   subsequent hops keep concurrency, start spacing, Crawl-delay and cooldown enforcement. Retained
   publisher/cache hints expire from the last successful 200/304, never from a failed attempt.
+
+  PR #46 third review: robots refreshes persist Crawl-delay with the original request timestamp;
+  cached decisions do not write shared policy. Migration 0030 also stores `crawl_delay_updated_at`,
+  and older refreshes cannot replace newer policies, including clearing a delay. Equal timestamps
+  conservatively keep the greater delay. Memory and PostgreSQL limiters share these semantics.

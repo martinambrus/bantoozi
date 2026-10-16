@@ -2545,6 +2545,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "crawl_delay_updated_at": {
+          "name": "crawl_delay_updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'epoch'::timestamptz"
         }
       },
       "indexes": {},
