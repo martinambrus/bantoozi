@@ -2431,7 +2431,11 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   session/CSRF/idempotency/audit path; versioned edits refuse stale state.
   PR #45 review: the restore shell script's throwaway smoke administrator also reads the stored
   default plan and invite allowance; a regression test executes that exact SQL after deleting beta.
-
+  Follow-up (PR #45 review finding, fixed after merge): a plan interval edit locks the plan row and then its feeds, but a
+  user's first subscription on that plan read the plan's interval without a lock, so an edit committing in between left
+  the new feed at the old interval. `readOwnUser({ lock: true })` — the first step of every write that refreshes feed
+  intervals — now also takes `FOR SHARE` on the user's plan row, and an account restore does the same before refreshing;
+  the order user → plan → feeds never inverts an edit's plan → feeds.
 - D-256: 2026-10-16 (approved plan-velocity P1/P2) — Fast plans may poll at 60 seconds. Empty
   polls on floors below 300 seconds grow by 20 percent with second precision; the legacy slower-tier
   growth stays unchanged. Publisher hints remain binding on scheduled fetches even when a plan edit
