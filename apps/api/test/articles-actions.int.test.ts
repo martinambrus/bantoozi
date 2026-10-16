@@ -1169,7 +1169,12 @@ describe('selected training requests', () => {
       )
     ).rows[0]!.input_sha;
     const item = (await r.api.get(`/articles/${article}`)).json();
-    expect(item.analysis).toEqual({ mode: 'training', status: 'pending', requestId });
+    expect(item.analysis).toEqual({
+      mode: 'training',
+      status: 'pending',
+      requestId,
+      overDailyCap: null,
+    });
 
     await errorOf(
       r.api.post(`/articles/${article}/rating`, {

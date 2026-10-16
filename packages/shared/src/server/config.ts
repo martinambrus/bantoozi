@@ -123,6 +123,7 @@ export const ENV_VARS: readonly EnvVarSpec[] = [
   { name: 'FETCH_MAX_BYTES', usedBy: ['api', 'worker', 'eval'], defaultValue: '5242880' },
   { name: 'FETCH_TIMEOUT_MS', usedBy: ['api', 'worker', 'eval'], defaultValue: '20000' },
   { name: 'FETCH_ALLOW_PRIVATE', usedBy: ['api', 'worker', 'eval'], defaultValue: 'false' },
+  { name: 'AUTO_ANALYSIS_DAILY_CAP', usedBy: ['api', 'worker'], defaultValue: '1000' },
   { name: 'INGEST_MAX_AGE_DAYS', usedBy: ['worker'], defaultValue: '14' },
   { name: 'PREFILTER_MIN_CARDS', usedBy: ['worker'], defaultValue: '60' },
   { name: 'EVAL_INGEST_ONLY', usedBy: ['worker'], defaultValue: 'false' },
@@ -189,6 +190,7 @@ export interface Config {
   readonly fetchMaxBytes: number;
   readonly fetchTimeoutMs: number;
   readonly fetchAllowPrivate: boolean;
+  readonly autoAnalysisDailyCap: number;
   readonly ingestMaxAgeDays: number;
   readonly prefilterMinCards: number;
   readonly evalIngestOnly: boolean;
@@ -378,6 +380,12 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
         '20000',
       ) ?? 20000,
     fetchAllowPrivate: read('FETCH_ALLOW_PRIVATE', booleanSchema, 'false') ?? false,
+    autoAnalysisDailyCap:
+      read(
+        'AUTO_ANALYSIS_DAILY_CAP',
+        intIn(ENV_RANGES.autoAnalysisDailyCap.min, ENV_RANGES.autoAnalysisDailyCap.max),
+        '1000',
+      ) ?? 1000,
     ingestMaxAgeDays:
       read(
         'INGEST_MAX_AGE_DAYS',

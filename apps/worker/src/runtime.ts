@@ -35,6 +35,7 @@ export type WorkerRuntimeConfig = WorkerModelConfig &
     Config,
     | 'providerHostAllowlist'
     | 'prefilterMinCards'
+    | 'autoAnalysisDailyCap'
     | 'ingestMaxAgeDays'
     | 'fetchTimeoutMs'
     | 'fetchMaxBytes'
@@ -129,6 +130,7 @@ function envDefaults(config: WorkerRuntimeConfig): Record<string, unknown> {
     'engine.ollama_base_url': config.ollamaBaseUrl,
     'engine.ollama_max_concurrency': config.ollamaMaxConcurrency,
     'engine.prefilter_min_cards': config.prefilterMinCards,
+    'engine.auto_analysis_daily_cap': config.autoAnalysisDailyCap,
     'ingest.max_age_days': config.ingestMaxAgeDays,
     'fetch.limits': { timeoutMs: config.fetchTimeoutMs, maxBytes: config.fetchMaxBytes },
     'translate.libretranslate_url': config.libretranslateUrl,
@@ -153,6 +155,7 @@ export function createWorkerSettingsCache(
       ollamaBaseUrl: config.ollamaBaseUrl,
       ollamaMaxConcurrency: config.ollamaMaxConcurrency,
       prefilterMinCards: config.prefilterMinCards,
+      autoAnalysisDailyCap: config.autoAnalysisDailyCap,
       ingestMaxAgeDays: config.ingestMaxAgeDays,
       fetchTimeoutMs: config.fetchTimeoutMs,
       fetchMaxBytes: config.fetchMaxBytes,

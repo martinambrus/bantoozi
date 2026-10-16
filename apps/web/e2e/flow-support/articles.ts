@@ -20,6 +20,7 @@ export interface ArticleState {
     mode: 'off' | 'training' | 'active';
     status: 'not_requested' | 'pending' | 'running' | 'complete' | 'failed' | 'cancelled';
     requestId: string | null;
+    overDailyCap: number | null;
   };
 }
 

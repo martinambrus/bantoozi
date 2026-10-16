@@ -1,6 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 
 import type { Executor, Transaction } from '../client.js';
+import { readStoredSetting } from '../settings.js';
 import { toDate, type RawTimestamp } from '../timestamps.js';
 
 /**
@@ -85,6 +86,49 @@ export async function readFacets(
         features: row.features,
         updatedAt: toDate(row.updated_at),
       };
+}
+
+/**
+ * Whether stored facets answer the enrich request for an article as it now stands, so `article.enrich`
+ * makes no Call A (spec 05 §5.5 step 2): same content revision, a primary answer, and, when the
+ * caller can compute it, the same input state (`stateSha256`). Admission (ingest) cannot build the
+ * state, so it leaves `stateSha256` out; the revision, enrich set and primary model still hold.
+ */
+export function isReusableFacet(
+  stored: Pick<FacetRow, 'articleRevision' | 'stateSha256' | 'engine' | 'model'>,
+  current: { articleRevision: string; primaryModel: string; stateSha256?: string },
+): boolean {
+  return (
+    stored.articleRevision === current.articleRevision &&
+    (current.stateSha256 === undefined || stored.stateSha256 === current.stateSha256) &&
+    isPrimaryAnswer(stored, current.primaryModel)
+  );
+}
+
+/**
+ * Whether the article already carries a reusable current analysis under the active enrich set and
+ * the model pin (an explicit analysis on another feed leaves facets without advancing the pipeline
+ * state, D-252). Without an active enrich set or a pin it is false.
+ */
+export async function hasReusableAnalysis(db: Executor, articleId: string): Promise<boolean> {
+  const active = (await readStoredSetting(db, 'question_sets.active')) as
+    { enrich?: unknown } | null | undefined;
+  const enrichId = active?.enrich;
+  const pin = ((await readStoredSetting(db, 'engine.model_pin')) as { model?: unknown } | undefined)
+    ?.model;
+  if ((typeof enrichId !== 'string' && typeof enrichId !== 'number') || typeof pin !== 'string') {
+    return false;
+  }
+  const revision = await db.execute<{ revision: string }>(
+    sql`SELECT content_revision::text AS revision FROM articles WHERE id = ${articleId}::bigint`,
+  );
+  const current = revision.rows[0];
+  if (current === undefined || pin === '') return false;
+  const stored = await readFacets(db, articleId, String(enrichId));
+  return (
+    stored !== null &&
+    isReusableFacet(stored, { articleRevision: current.revision, primaryModel: pin })
+  );
 }
 
 export type FacetInput = Omit<FacetRow, 'updatedAt'>;

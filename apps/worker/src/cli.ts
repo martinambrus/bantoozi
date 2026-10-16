@@ -58,6 +58,7 @@ function runtime(): Runtime {
       allowPrivate: config.fetchAllowPrivate,
     },
     ingestMaxAgeDays: config.ingestMaxAgeDays,
+    autoAnalysisDailyCap: config.autoAnalysisDailyCap,
     settingsEnv: {
       dailyBudgetUsd: config.dailyBudgetUsd,
       languageModes: config.languageModes,

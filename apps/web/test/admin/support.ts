@@ -133,6 +133,7 @@ export const SETTINGS_VALUES: AdminSettings['values'] = {
   'engine.ollama_base_url': null,
   'engine.ollama_max_concurrency': null,
   'engine.prefilter_min_cards': null,
+  'engine.auto_analysis_daily_cap': null,
   'ingest.max_age_days': null,
   'fetch.limits': null,
   'api.rate_limits_enabled': null,

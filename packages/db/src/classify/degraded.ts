@@ -29,7 +29,7 @@ const eligibleArrivals = sql`
     FROM feed_items fi
     JOIN articles a ON a.id = fi.article_id AND a.pipeline_state <> 'stale'
     JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.inference_mode = 'active'
-                        AND fi.first_seen_at >= s.inference_activated_at
+                        AND fi.first_seen_at >= s.inference_activated_at AND fi.over_cap_limit IS NULL
     JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
   UNION
   SELECT fi.article_id, fi.first_seen_at

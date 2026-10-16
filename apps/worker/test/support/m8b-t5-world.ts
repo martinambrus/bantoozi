@@ -55,7 +55,7 @@ export const OLD_MODEL = 'jev-1.13.0';
 export const NEW_MODEL = 'jev-1.14.0';
 export const LLM = { fast: 'glm-5.3-flash', strong: 'glm-5.3' } as const;
 
-/** The twelve worker-side runtime setting keys of `runtime.defaults`. */
+/** The thirteen worker-side runtime setting keys of `runtime.defaults`. */
 export const WORKER_DEFAULT_KEYS = [
   'engine.typesafe_model',
   'engine.typesafe_base_url',
@@ -66,6 +66,7 @@ export const WORKER_DEFAULT_KEYS = [
   'engine.ollama_base_url',
   'engine.ollama_max_concurrency',
   'engine.prefilter_min_cards',
+  'engine.auto_analysis_daily_cap',
   'ingest.max_age_days',
   'fetch.limits',
   'translate.libretranslate_url',
@@ -93,6 +94,7 @@ export interface WorkerRuntimeConfigLike {
   ollamaApiKey: string | undefined;
   providerHostAllowlist: readonly string[];
   prefilterMinCards: number;
+  autoAnalysisDailyCap: number;
   ingestMaxAgeDays: number;
   fetchTimeoutMs: number;
   fetchMaxBytes: number;
@@ -128,6 +130,7 @@ export function baseConfig(
     ollamaApiKey: undefined,
     providerHostAllowlist: ['api.typesafe.ai', 'ollama.com'],
     prefilterMinCards: 60,
+    autoAnalysisDailyCap: 1000,
     ingestMaxAgeDays: 14,
     fetchTimeoutMs: 10_000,
     fetchMaxBytes: 5 * 1024 * 1024,

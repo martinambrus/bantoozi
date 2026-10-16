@@ -70,7 +70,12 @@ describe('polling while the server works', () => {
         path: '/read/for_you',
         items: [
           item(1, {
-            analysis: { mode: 'active', status, requestId: '0192f7a0-0000-7000-8000-0000000000aa' },
+            analysis: {
+              mode: 'active',
+              status,
+              requestId: '0192f7a0-0000-7000-8000-0000000000aa',
+              overDailyCap: null,
+            },
           }),
         ],
       });
@@ -209,7 +214,11 @@ describe('polling while the server works', () => {
   it('does not count an article that nobody asked to analyse as work in progress', async () => {
     const { app } = await openReader({
       path: '/read/for_you',
-      items: [item(1, { analysis: { mode: 'off', status: 'not_requested', requestId: null } })],
+      items: [
+        item(1, {
+          analysis: { mode: 'off', status: 'not_requested', requestId: null, overDailyCap: null },
+        }),
+      ],
     });
     const listed = lists(app);
 

@@ -555,8 +555,8 @@ describe('after the requests are accepted', () => {
     await view.user.click(send());
 
     await waitFor(() => expect(view.onSubmitted).toHaveBeenCalledTimes(1));
-    const asked = { mode: 'off', status: 'pending', requestId: requestId(1) };
-    const done = { mode: 'off', status: 'complete', requestId: requestId(2) };
+    const asked = { mode: 'off', status: 'pending', requestId: requestId(1), overDailyCap: null };
+    const done = { mode: 'off', status: 'complete', requestId: requestId(2), overDailyCap: null };
     const pages = cache.getQueryData<InfiniteData<ArticleListResponse>>(listed)!.pages;
     expect(pages[0]!.items.map(({ id, analysis }) => [id, analysis])).toEqual([
       ['1', asked],
@@ -1054,7 +1054,7 @@ describe('an answer that comes after the panel is gone', () => {
         .getQueryData<ArticleListResponse>(listed)!
         .items.map(({ analysis }) => analysis),
     ).toEqual([
-      { mode: 'off', status: 'pending', requestId: requestId(1) },
+      { mode: 'off', status: 'pending', requestId: requestId(1), overDailyCap: null },
       picked[1]!.analysis,
       picked[2]!.analysis,
     ]);

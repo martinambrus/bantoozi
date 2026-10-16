@@ -58,7 +58,7 @@ export async function newCarrierDemand(
                      FROM subscriptions s
                      JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
                     WHERE s.feed_id = fi.feed_id AND s.inference_mode = 'active'
-                      AND s.inference_activated_at <= fi.first_seen_at) AS activated
+                      AND s.inference_activated_at <= fi.first_seen_at AND fi.over_cap_limit IS NULL) AS activated
       FROM feed_items fi
       JOIN articles a ON a.id = fi.article_id
      WHERE fi.feed_id = ${feedId}::bigint AND fi.article_id = ${articleId}::bigint

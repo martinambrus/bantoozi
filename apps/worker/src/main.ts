@@ -101,6 +101,7 @@ const handlers = createHandlers(
       allowPrivate: config.fetchAllowPrivate,
     },
     ingestMaxAgeDays: config.ingestMaxAgeDays,
+    autoAnalysisDailyCap: config.autoAnalysisDailyCap,
     runtimeSettings,
     settingsEnv,
     limiter: createPgOriginLimiter(db),

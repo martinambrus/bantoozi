@@ -172,7 +172,12 @@ describe('GET /articles: lanes, statuses and tiers', () => {
     expect(new Set(ids(page))).toEqual(new Set([article, neverCard]));
     for (const item of page.items) {
       expect(item).toMatchObject({ lane: 'new', pLike: null, tier: null, topReason: null });
-      expect(item.analysis).toEqual({ mode: 'off', status: 'not_requested', requestId: null });
+      expect(item.analysis).toEqual({
+        mode: 'off',
+        status: 'not_requested',
+        requestId: null,
+        overDailyCap: null,
+      });
     }
     expect(ids(await list(r, { lane: 'hidden' }))).toEqual([muted]);
     expect((await list(r, { lane: 'for_you' })).items).toEqual([]);
@@ -217,11 +222,11 @@ describe('GET /articles: analysis status per view', () => {
     }
     const offView = await list(r, { lane: 'new', feedId: off });
     expect(offView.items.map((i) => i.analysis)).toEqual([
-      { mode: 'off', status: 'not_requested', requestId: null },
+      { mode: 'off', status: 'not_requested', requestId: null, overDailyCap: null },
     ]);
     const trainingView = await list(r, { lane: 'new', feedId: training });
     expect(trainingView.items.map((i) => i.analysis)).toEqual([
-      { mode: 'training', status: 'pending', requestId },
+      { mode: 'training', status: 'pending', requestId, overDailyCap: null },
     ]);
   });
 });

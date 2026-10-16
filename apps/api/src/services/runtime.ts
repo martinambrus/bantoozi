@@ -26,6 +26,7 @@ export function createApiRuntimeSettings(
       ollamaBaseUrl: config.ollamaBaseUrl,
       ollamaMaxConcurrency: config.ollamaMaxConcurrency,
       prefilterMinCards: config.prefilterMinCards,
+      autoAnalysisDailyCap: config.autoAnalysisDailyCap,
       ingestMaxAgeDays: config.ingestMaxAgeDays,
       fetchTimeoutMs: config.fetchTimeoutMs,
       fetchMaxBytes: config.fetchMaxBytes,

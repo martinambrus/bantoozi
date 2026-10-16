@@ -91,9 +91,12 @@ export interface WorkerDeps {
   fetch: FetchSettings;
   /** INGEST_MAX_AGE_DAYS: older publications are stored as `stale`. */
   ingestMaxAgeDays: number;
+  /** AUTO_ANALYSIS_DAILY_CAP: arrivals per feed and UTC day that start automatic analysis; absent = unlimited. */
+  autoAnalysisDailyCap?: number | null;
   /**
-   * The live runtime settings (M8b-T4): `fetch.limits` is read per fetch and `ingest.max_age_days`
-   * once per feed.fetch job. Without a cache the static `fetch` and `ingestMaxAgeDays` values apply.
+   * The live runtime settings (M8b-T4): `fetch.limits` is read per fetch, `ingest.max_age_days` and
+   * `engine.auto_analysis_daily_cap` once per feed.fetch job. Without a cache the static `fetch`,
+   * `ingestMaxAgeDays` and `autoAnalysisDailyCap` values apply.
    */
   runtimeSettings?: RuntimeSettingsCache;
   /** Env fallbacks of settings (language modes, …). */
@@ -192,6 +195,13 @@ export async function ingestMaxAgeDaysOf(deps: WorkerDeps): Promise<number> {
   return deps.runtimeSettings === undefined
     ? deps.ingestMaxAgeDays
     : (await deps.runtimeSettings.get()).values.ingestMaxAgeDays;
+}
+
+/** The per-feed daily cap on automatic analysis: the live setting, else the static value (null = unlimited). */
+export async function autoAnalysisCapOf(deps: WorkerDeps): Promise<number | null> {
+  return deps.runtimeSettings === undefined
+    ? (deps.autoAnalysisDailyCap ?? null)
+    : (await deps.runtimeSettings.get()).values.autoAnalysisDailyCap;
 }
 
 /** The page fetch and robots policy extraction uses (spec 03 §8.1). */

@@ -288,7 +288,14 @@ describe('Like all and Dislike all', () => {
     const writes = writeRoutes();
     const rows = [
       item(1),
-      item(2, { analysis: { mode: 'training', status: 'complete', requestId: REQUEST_ID } }),
+      item(2, {
+        analysis: {
+          mode: 'training',
+          status: 'complete',
+          requestId: REQUEST_ID,
+          overDailyCap: null,
+        },
+      }),
       item(3, { stateVersion: '9', contentRevision: '5' }),
     ];
     const { app } = await feed(rows, { routes: writes.routes });

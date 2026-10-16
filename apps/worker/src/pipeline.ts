@@ -135,23 +135,14 @@ export async function after(
       if (await gate.needsTranslation(articleId)) {
         await enqueueTranslate(sender, { articleId }, revision);
       } else {
-        await enqueueEnrich(sender, { articleId }, revision);
+        await enqueueEnrich(sender, { articleId, priority: 'bulk' }, revision);
       }
       return;
     case 'translate':
       // Both tiers failing still enriches, with the native text.
       if (!(await gate.hasInferenceDemand(articleId))) return;
-      // A rebuild's translation (bulk) is followed by a bulk enrichment: never the LLM fallback.
-      await enqueueEnrich(
-        sender,
-        {
-          articleId,
-          ...(outcome.status === 'ok' && outcome.priority !== undefined
-            ? { priority: outcome.priority }
-            : {}),
-        },
-        revision,
-      );
+      // Automatic enrichment is bulk (D-252): no spend headroom, never the LLM fallback.
+      await enqueueEnrich(sender, { articleId, priority: 'bulk' }, revision);
       return;
     case 'enrich':
       if (outcome.status === 'ok') {
@@ -224,7 +215,7 @@ export async function afterNewCarrier(
       return;
     case 'degraded':
       if (demand.createsDemand) {
-        await enqueueEnrich(sender, { articleId }, { revision: demand.revision });
+        await enqueueEnrich(sender, { articleId, priority: 'bulk' }, { revision: demand.revision });
       }
       return;
     default:

@@ -32,6 +32,7 @@ const asked = (status: Analysis['status'], n: number): Analysis => ({
   mode: 'training',
   status,
   requestId: requestId(n),
+  overDailyCap: null,
 });
 
 const verge = (inferenceMode: Mode = 'training') =>

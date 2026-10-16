@@ -190,6 +190,13 @@
       "when": 1792309200000,
       "tag": "0026_user_cards_class_since",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1792395600000,
+      "tag": "0027_feed_cap",
+      "breakpoints": true
     }
   ]
 }

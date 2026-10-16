@@ -39,7 +39,7 @@ const beta = () => feed('2', 'Beta', { inferenceMode: 'training', inferenceVersi
 const betaArticle = (n: number) =>
   article(String(n), `Article ${n}`, {
     feed: { id: '2', title: 'Beta', iconUrl: null },
-    analysis: { mode: 'training', status: 'not_requested', requestId: null },
+    analysis: { mode: 'training', status: 'not_requested', requestId: null, overDailyCap: null },
   });
 
 async function openStep(options: WizardOptions = {}) {
@@ -641,10 +641,15 @@ describe('the calibration round (spec 06 §10)', () => {
     const requested = round(1, {
       stateVersion: '2',
       contentRevision: '3',
-      analysis: { mode: 'training', status: 'complete', requestId: requestId(101) },
+      analysis: {
+        mode: 'training',
+        status: 'complete',
+        requestId: requestId(101),
+        overDailyCap: null,
+      },
     });
     const arrival = round(2, {
-      analysis: { mode: 'active', status: 'not_requested', requestId: null },
+      analysis: { mode: 'active', status: 'not_requested', requestId: null, overDailyCap: null },
     });
     const opened = await openStep({ calibration: [requested, arrival], requestStatus: 'complete' });
     await submit(opened, 1);

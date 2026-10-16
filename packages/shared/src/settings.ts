@@ -267,6 +267,11 @@ export const SETTINGS = {
     defaultValue: noDefault,
     writers: runtimeWriters,
   }),
+  'engine.auto_analysis_daily_cap': def({
+    schema: runtimeInt(0, 1_000_000),
+    defaultValue: noDefault,
+    writers: runtimeWriters,
+  }),
   'ingest.max_age_days': def({
     schema: runtimeInt(1, 365),
     defaultValue: noDefault,

@@ -5866,12 +5866,19 @@
                                 "nullable": true,
                                 "type": "string",
                                 "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                              },
+                              "overDailyCap": {
+                                "nullable": true,
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
                               }
                             },
                             "required": [
                               "mode",
                               "status",
-                              "requestId"
+                              "requestId",
+                              "overDailyCap"
                             ],
                             "additionalProperties": false
                           },
@@ -6456,12 +6463,19 @@
                                 "nullable": true,
                                 "type": "string",
                                 "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                              },
+                              "overDailyCap": {
+                                "nullable": true,
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
                               }
                             },
                             "required": [
                               "mode",
                               "status",
-                              "requestId"
+                              "requestId",
+                              "overDailyCap"
                             ],
                             "additionalProperties": false
                           },
@@ -6904,12 +6918,19 @@
                           "nullable": true,
                           "type": "string",
                           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                        },
+                        "overDailyCap": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
                         }
                       },
                       "required": [
                         "mode",
                         "status",
-                        "requestId"
+                        "requestId",
+                        "overDailyCap"
                       ],
                       "additionalProperties": false
                     },
@@ -7812,12 +7833,19 @@
                               "nullable": true,
                               "type": "string",
                               "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            },
+                            "overDailyCap": {
+                              "nullable": true,
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
                             "mode",
                             "status",
-                            "requestId"
+                            "requestId",
+                            "overDailyCap"
                           ],
                           "additionalProperties": false
                         },
@@ -8274,12 +8302,19 @@
                               "nullable": true,
                               "type": "string",
                               "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            },
+                            "overDailyCap": {
+                              "nullable": true,
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
                             "mode",
                             "status",
-                            "requestId"
+                            "requestId",
+                            "overDailyCap"
                           ],
                           "additionalProperties": false
                         },
@@ -8736,12 +8771,19 @@
                               "nullable": true,
                               "type": "string",
                               "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            },
+                            "overDailyCap": {
+                              "nullable": true,
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
                             "mode",
                             "status",
-                            "requestId"
+                            "requestId",
+                            "overDailyCap"
                           ],
                           "additionalProperties": false
                         },
@@ -9198,12 +9240,19 @@
                               "nullable": true,
                               "type": "string",
                               "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            },
+                            "overDailyCap": {
+                              "nullable": true,
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
                             "mode",
                             "status",
-                            "requestId"
+                            "requestId",
+                            "overDailyCap"
                           ],
                           "additionalProperties": false
                         },
@@ -9666,12 +9715,19 @@
                               "nullable": true,
                               "type": "string",
                               "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            },
+                            "overDailyCap": {
+                              "nullable": true,
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
                             "mode",
                             "status",
-                            "requestId"
+                            "requestId",
+                            "overDailyCap"
                           ],
                           "additionalProperties": false
                         },
@@ -10174,12 +10230,19 @@
                               "nullable": true,
                               "type": "string",
                               "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            },
+                            "overDailyCap": {
+                              "nullable": true,
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
                             "mode",
                             "status",
-                            "requestId"
+                            "requestId",
+                            "overDailyCap"
                           ],
                           "additionalProperties": false
                         },
@@ -10666,12 +10729,19 @@
                               "nullable": true,
                               "type": "string",
                               "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            },
+                            "overDailyCap": {
+                              "nullable": true,
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
                             "mode",
                             "status",
-                            "requestId"
+                            "requestId",
+                            "overDailyCap"
                           ],
                           "additionalProperties": false
                         },
@@ -11131,12 +11201,19 @@
                               "nullable": true,
                               "type": "string",
                               "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            },
+                            "overDailyCap": {
+                              "nullable": true,
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
                             "mode",
                             "status",
-                            "requestId"
+                            "requestId",
+                            "overDailyCap"
                           ],
                           "additionalProperties": false
                         },
@@ -11589,12 +11666,19 @@
                               "nullable": true,
                               "type": "string",
                               "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            },
+                            "overDailyCap": {
+                              "nullable": true,
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
                             "mode",
                             "status",
-                            "requestId"
+                            "requestId",
+                            "overDailyCap"
                           ],
                           "additionalProperties": false
                         },
@@ -12055,12 +12139,19 @@
                               "nullable": true,
                               "type": "string",
                               "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            },
+                            "overDailyCap": {
+                              "nullable": true,
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
                             "mode",
                             "status",
-                            "requestId"
+                            "requestId",
+                            "overDailyCap"
                           ],
                           "additionalProperties": false
                         },
@@ -12521,12 +12612,19 @@
                               "nullable": true,
                               "type": "string",
                               "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            },
+                            "overDailyCap": {
+                              "nullable": true,
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
                             "mode",
                             "status",
-                            "requestId"
+                            "requestId",
+                            "overDailyCap"
                           ],
                           "additionalProperties": false
                         },
@@ -12989,12 +13087,19 @@
                               "nullable": true,
                               "type": "string",
                               "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                            },
+                            "overDailyCap": {
+                              "nullable": true,
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
                             "mode",
                             "status",
-                            "requestId"
+                            "requestId",
+                            "overDailyCap"
                           ],
                           "additionalProperties": false
                         },
@@ -13752,12 +13857,19 @@
                                 "nullable": true,
                                 "type": "string",
                                 "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                              },
+                              "overDailyCap": {
+                                "nullable": true,
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
                               }
                             },
                             "required": [
                               "mode",
                               "status",
-                              "requestId"
+                              "requestId",
+                              "overDailyCap"
                             ],
                             "additionalProperties": false
                           },
@@ -14207,12 +14319,19 @@
                                 "nullable": true,
                                 "type": "string",
                                 "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                              },
+                              "overDailyCap": {
+                                "nullable": true,
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
                               }
                             },
                             "required": [
                               "mode",
                               "status",
-                              "requestId"
+                              "requestId",
+                              "overDailyCap"
                             ],
                             "additionalProperties": false
                           },
@@ -19702,6 +19821,12 @@
                           "minimum": 1,
                           "maximum": 1000000
                         },
+                        "engine.auto_analysis_daily_cap": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
                         "ingest.max_age_days": {
                           "nullable": true,
                           "type": "integer",
@@ -19760,6 +19885,7 @@
                         "engine.ollama_base_url",
                         "engine.ollama_max_concurrency",
                         "engine.prefilter_min_cards",
+                        "engine.auto_analysis_daily_cap",
                         "ingest.max_age_days",
                         "fetch.limits",
                         "api.rate_limits_enabled",
@@ -19794,6 +19920,7 @@
                               "engine.ollama_base_url",
                               "engine.ollama_max_concurrency",
                               "engine.prefilter_min_cards",
+                              "engine.auto_analysis_daily_cap",
                               "ingest.max_age_days",
                               "fetch.limits",
                               "api.rate_limits_enabled",
@@ -20225,6 +20352,7 @@
                   "engine.ollama_base_url": {},
                   "engine.ollama_max_concurrency": {},
                   "engine.prefilter_min_cards": {},
+                  "engine.auto_analysis_daily_cap": {},
                   "ingest.max_age_days": {},
                   "fetch.limits": {},
                   "api.rate_limits_enabled": {},
@@ -20622,6 +20750,12 @@
                           "minimum": 1,
                           "maximum": 1000000
                         },
+                        "engine.auto_analysis_daily_cap": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
                         "ingest.max_age_days": {
                           "nullable": true,
                           "type": "integer",
@@ -20680,6 +20814,7 @@
                         "engine.ollama_base_url",
                         "engine.ollama_max_concurrency",
                         "engine.prefilter_min_cards",
+                        "engine.auto_analysis_daily_cap",
                         "ingest.max_age_days",
                         "fetch.limits",
                         "api.rate_limits_enabled",
@@ -20714,6 +20849,7 @@
                               "engine.ollama_base_url",
                               "engine.ollama_max_concurrency",
                               "engine.prefilter_min_cards",
+                              "engine.auto_analysis_daily_cap",
                               "ingest.max_age_days",
                               "fetch.limits",
                               "api.rate_limits_enabled",
@@ -20825,6 +20961,7 @@
                           "engine.ollama_base_url",
                           "engine.ollama_max_concurrency",
                           "engine.prefilter_min_cards",
+                          "engine.auto_analysis_daily_cap",
                           "ingest.max_age_days",
                           "fetch.limits",
                           "api.rate_limits_enabled",

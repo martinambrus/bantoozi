@@ -188,7 +188,9 @@ login without leaking the previous account's UI. Slow classification leaves arti
   actions when no usable URL exists. Show missing-image/author/date fallbacks without broken controls.
 - **Translated items:** a subtle "translated" marker. A toggle shows the English translation of the
   title and excerpt when available.
-- **Untrained items:** show "Not analyzed" and retain normal read/rate/bookmark actions. In a feed
+- **Untrained items:** show "Not analyzed" and retain normal read/rate/bookmark actions. An Active
+  feed's arrival kept out by the daily cap (`analysis.overDailyCap`, D-252) shows "Not analyzed – over
+  daily budget" with a tooltip naming the cap and "Select it to analyze it anyway"; it stays selectable. In a feed
   view, every row has a selection checkbox (analyzed ones too), and a tri-state "Select all articles"
   checkbox above the list ticks or unticks every loaded row (mixed state when some are ticked; the
   reader's selection has no cap); the panel above the list shows only "N selected" and the buttons

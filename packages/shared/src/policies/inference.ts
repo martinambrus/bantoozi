@@ -56,15 +56,18 @@ export function isValidInferenceState(state: SubscriptionInferenceState): boolea
 
 /**
  * Automatic demand for one carrier: the witness subscription is still active at the witnessed
- * version and this carrier's `feed_items.first_seen_at` is at/after `inference_activated_at`.
+ * version, this carrier's `feed_items.first_seen_at` is at/after `inference_activated_at` and the
+ * carrier was not skipped by the feed's daily cap (`feed_items.over_cap_limit IS NULL`).
  * Activation is prospective; it never authorizes a historical backfill.
  */
 export function admitsAutomaticInference(
   subscription: SubscriptionInferenceState,
   carrierFirstSeenAt: Date,
   witnessVersion?: string,
+  overCapLimit: number | null = null,
 ): boolean {
   if (subscription.mode !== 'active' || subscription.activatedAt === null) return false;
+  if (overCapLimit !== null) return false;
   if (
     witnessVersion !== undefined &&
     compareBigIntStrings(subscription.version, witnessVersion) !== 0
@@ -72,6 +75,16 @@ export function admitsAutomaticInference(
     return false;
   }
   return carrierFirstSeenAt.getTime() >= subscription.activatedAt.getTime();
+}
+
+/**
+ * The cumulative number of arrivals a feed may have admitted to automatic analysis by the end of
+ * UTC hour `utcHour` (0..23) of a day: the daily cap paced evenly, so an unused allowance carries
+ * forward. `null` is unlimited.
+ */
+export function autoAdmissionAllowance(cap: number | null, utcHour: number): number {
+  if (cap === null) return Number.POSITIVE_INFINITY;
+  return Math.floor((cap * (utcHour + 1)) / 24);
 }
 
 /**

@@ -203,7 +203,7 @@ export function makeItem(overrides: Partial<ArticleListItem> = {}): ArticleListI
     stateVersion: '4',
     contentRevision: '2',
     translationAvailable: false,
-    analysis: { mode: 'off', status: 'not_requested', requestId: null },
+    analysis: { mode: 'off', status: 'not_requested', requestId: null, overDailyCap: null },
     mediaPolicyFeedId: null,
     effectiveImagesAllowed: false,
     bookmarkCapture: null,

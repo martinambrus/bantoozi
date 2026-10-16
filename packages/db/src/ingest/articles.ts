@@ -2,6 +2,7 @@ import type { JobSender } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Executor, Transaction } from '../client.js';
+import { admitArrival } from './auto-cap.js';
 import { upsertArticleBody, type ArticleBodyInput } from './bodies.js';
 import { applyMediaSignals, assertImageCount, type MediaSignalUpdate } from './media.js';
 import { resetArticleAnswers } from './reset.js';
@@ -153,6 +154,14 @@ export interface IngestItemOptions {
    * publisher that rotates only tracking parameters still names the same link (§8.1 step 1).
    */
   linkKey: (url: string) => string | null;
+  /**
+   * `engine.auto_analysis_daily_cap` (D-251): the most arrivals per feed and UTC day that start
+   * automatic analysis, paced through the day (`autoAdmissionAllowance`); an arrival over it stays
+   * unanalysed (`feed_items.over_cap_limit`). `null` or absent is unlimited.
+   */
+  autoAnalysisDailyCap?: number | null;
+  /** The clock of the cap's UTC day and hour (default: now). */
+  now?: Date;
 }
 
 /**
@@ -369,6 +378,13 @@ async function insertArticle(
   const article = inserted.rows[0];
   if (article === undefined) throw new Error('ingestItem: the article insert returned no row');
   await insertAssociation(tx, input.feedId, article.id, input.guid);
+  await admitArrival(
+    tx,
+    input.feedId,
+    article.id,
+    options.autoAnalysisDailyCap ?? null,
+    options.now ?? new Date(),
+  );
   if (input.feedBody !== null) {
     await upsertArticleBody(tx, article.id, article.revision, input.feedBody);
   }
@@ -425,6 +441,15 @@ async function ingestFound(
   // association with a NULL GUID and keep the owner's mapping.
   const guid = outcome === 'identity_conflict' ? null : input.guid;
   const newAssociation = await insertAssociation(tx, input.feedId, articleId, guid);
+  if (newAssociation) {
+    await admitArrival(
+      tx,
+      input.feedId,
+      articleId,
+      options.autoAnalysisDailyCap ?? null,
+      options.now ?? new Date(),
+    );
+  }
   if (!newAssociation && guid !== null) {
     // A pair keeps its first non-null GUID; alternate GUIDs arriving with the same URL are ignored.
     await tx.execute(sql`

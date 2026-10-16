@@ -341,7 +341,8 @@ export async function metricsEngine(
                        JOIN subscriptions s ON s.feed_id = fi.feed_id
                       WHERE fi.article_id = c.article_id AND s.inference_mode = 'active'
                         AND (s.inference_activated_at IS NULL
-                             OR fi.first_seen_at >= s.inference_activated_at)) END AS by_active,
+                             OR (fi.first_seen_at >= s.inference_activated_at
+                                 AND fi.over_cap_limit IS NULL))) END AS by_active,
              CASE WHEN c.demand_basis IS NOT NULL THEN c.demand_basis = 'training'
                   ELSE EXISTS (SELECT 1 FROM analysis_requests r
                       WHERE r.article_id = c.article_id

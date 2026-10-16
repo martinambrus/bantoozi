@@ -1,5 +1,6 @@
 import {
   checkAnalysisSelection,
+  claimAutoAdmission,
   createAnalysisRequest,
   lockFeeds,
   lockSubscription,
@@ -22,8 +23,8 @@ import { captureSelectionSnapshot, loadSnapshotConfig } from './analysis.js';
  * even when an active feed also admitted it; otherwise one is created on the first training feed
  * carrying it (then active ones). Returns
  * undefined, and the rating goes on without one, when no such feed carries the article, an active
- * feed analyses it on its own, the article changed since it was shown, or classification is not
- * configured.
+ * feed analyses it on its own, the article changed since it was shown, classification is not
+ * configured, or an active feed skipped the arrival over its daily cap and has no slot left (D-251).
  */
 export async function analysisForRating(
   tx: TenantTx,
@@ -32,6 +33,8 @@ export async function analysisForRating(
     contentRevision: string;
     config: ApiConfig;
     typesafeModel: string;
+    /** `engine.auto_analysis_daily_cap`: a capped arrival's rating needs a slot of its feed's day. */
+    autoAnalysisDailyCap: number | null;
     outbox: JobSender;
     now: Date;
   },
@@ -75,6 +78,13 @@ export async function analysisForRating(
     config,
     capturedAt: input.now,
   });
+  // A capped arrival of an active feed takes a slot of the feed's day, like an admitted one.
+  if (
+    chosen.capped &&
+    !(await claimAutoAdmission(tx, chosen.feedId, input.autoAnalysisDailyCap, input.now))
+  ) {
+    return undefined;
+  }
   const request = await createAnalysisRequest(tx, {
     feedId: chosen.feedId,
     articleId: input.articleId,

@@ -13,7 +13,7 @@ import {
  * M8b-T1 ruler (scope §B2, §B4; owner change 2026-10-13: production base URLs must be on
  * PROVIDER_HOST_ALLOWLIST). New in `packages/shared/src/runtime-settings.ts`, exported from the index:
  *
- *   RUNTIME_SETTING_KEYS: readonly SettingKey[]  (the 13 live keys of scope §B2)
+ *   RUNTIME_SETTING_KEYS: readonly SettingKey[]  (the 13 live keys of scope §B2, and the 14th, D-251)
  *   validateRuntimeSetting(key, value, ctx) -> {ok:true,value} | {ok:false,message}
  *       null is always valid (reset to the env default); URLs are returned without a trailing "/".
  *   effectiveRuntimeSettings(stored: ReadonlyMap<string, unknown>, env, ctx, previous?)
@@ -39,6 +39,7 @@ const ENV: RuntimeEnvDefaults = {
   ollamaBaseUrl: 'https://ollama.com',
   ollamaMaxConcurrency: 1,
   prefilterMinCards: 60,
+  autoAnalysisDailyCap: 1000,
   ingestMaxAgeDays: 14,
   fetchTimeoutMs: 20_000,
   fetchMaxBytes: 5_242_880,
@@ -50,10 +51,11 @@ const ok = (key: string, value: unknown, ctx = PROD) =>
   validateRuntimeSetting(key as never, value, ctx);
 
 describe('M8b-T1 registry schemas (context-free ranges)', () => {
-  it('registers the 13 live keys', () => {
+  it('registers the 14 live keys', () => {
     expect([...RUNTIME_SETTING_KEYS].sort()).toEqual(
       [
         'api.rate_limits_enabled',
+        'engine.auto_analysis_daily_cap',
         'engine.concurrency',
         'engine.llm_fallback_enabled',
         'engine.ollama_base_url',
@@ -74,6 +76,7 @@ describe('M8b-T1 registry schemas (context-free ranges)', () => {
     ['engine.concurrency', [1, 64], [0, 65, 1.5]],
     ['engine.ollama_max_concurrency', [1, 64], [0, 65]],
     ['engine.prefilter_min_cards', [1, 10_000], [0, 10_001]],
+    ['engine.auto_analysis_daily_cap', [0, 1_000_000], [-1, 1_000_001]],
     ['ingest.max_age_days', [1, 365], [0, 366]],
   ] as const)('%s accepts %j and rejects %j; null resets', (key, good, bad) => {
     for (const v of good) expect(() => parseSetting(key, v)).not.toThrow();

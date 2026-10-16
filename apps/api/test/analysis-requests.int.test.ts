@@ -405,6 +405,7 @@ describe('a rating asks for the analysis of an unanalysed article (D-238)', () =
       mode: 'training',
       status: 'pending',
       requestId: request!.id,
+      overDailyCap: null,
     });
     const [event] = await rateEvents(alice.id, article.id);
     expect(event).toMatchObject({

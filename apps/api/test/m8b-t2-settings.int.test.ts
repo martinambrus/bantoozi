@@ -46,6 +46,7 @@ const RUNTIME_KEYS = [
   'engine.ollama_base_url',
   'engine.ollama_max_concurrency',
   'engine.prefilter_min_cards',
+  'engine.auto_analysis_daily_cap',
   'ingest.max_age_days',
   'fetch.limits',
   'api.rate_limits_enabled',

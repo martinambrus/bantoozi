@@ -66,7 +66,7 @@ export async function clusterCandidates(
          AND (EXISTS (SELECT 1 FROM subscriptions s
                         JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
                        WHERE s.feed_id = fi.feed_id AND s.inference_mode = 'active'
-                         AND s.inference_activated_at <= fi.first_seen_at)
+                         AND s.inference_activated_at <= fi.first_seen_at AND fi.over_cap_limit IS NULL)
               OR EXISTS (SELECT 1 FROM analysis_requests r
                            JOIN subscriptions s ON s.user_id = r.user_id AND s.feed_id = r.feed_id
                                                AND s.inference_mode IN ('training','active')
@@ -113,7 +113,7 @@ export async function authorizedCarrierFeed(
              AND EXISTS (SELECT 1 FROM subscriptions s
                            JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
                           WHERE s.feed_id = fi.feed_id AND s.inference_mode = 'active'
-                            AND s.inference_activated_at <= fi.first_seen_at))
+                            AND s.inference_activated_at <= fi.first_seen_at AND fi.over_cap_limit IS NULL))
             OR EXISTS (SELECT 1 FROM analysis_requests r
                          JOIN subscriptions s ON s.user_id = r.user_id AND s.feed_id = r.feed_id
                                              AND s.inference_mode IN ('training','active')

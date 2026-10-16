@@ -40,6 +40,7 @@ export interface ArticleView {
     mode: 'off' | 'training' | 'active';
     status: 'not_requested' | 'pending' | 'running' | 'complete' | 'failed' | 'cancelled';
     requestId: string | null;
+    overDailyCap: number | null;
   };
   bookmarkCapture: BookmarkCaptureView | null;
 }

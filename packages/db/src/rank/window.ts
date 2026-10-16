@@ -84,7 +84,7 @@ function admitted(userId: string, now: Date): SQL {
        SELECT 1 FROM feed_items fi
          JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.user_id = ${userId}::uuid
                              AND s.inference_mode = 'active'
-                             AND fi.first_seen_at >= s.inference_activated_at
+                             AND fi.first_seen_at >= s.inference_activated_at AND fi.over_cap_limit IS NULL
         WHERE fi.article_id = a.id))
     OR EXISTS (
        SELECT 1 FROM analysis_requests r

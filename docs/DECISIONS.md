@@ -2351,3 +2351,24 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   PR #41 review: with Show read off a rating made on another device only makes the next load omit the article, so a
   selected article the rows no longer hold (D-245 kept rows count as held) leaves the selection as well, including
   later-page articles a page-one refresh does not bring back.
+- D-251: 2026-10-15 (owner request, volume review; supersedes part of D-67) — Automatic enrichment of an Active feed's
+  arrivals runs at `bulk` priority (`article-enrich.ts` default; `pipeline.ts` sends it explicitly after extract, after
+  translate and for a degraded article on a new carrier), so it stops at 100 % of the daily budget instead of using the
+  interactive 110 % allowance and the LLM fallback. User-triggered work keeps its priority (card backfill's first 50).
+- D-252: 2026-10-15 (owner request) — A per-feed daily cap on automatic analysis. A high-volume Active feed (Auto | Bazos.sk:
+  ~2.6–4.8k arrivals a day at ~$0.00058 each) otherwise took 40–70 % of the $4 daily budget. Runtime setting
+  `engine.auto_analysis_daily_cap` (int 0–1 000 000, env `AUTO_ANALYSIS_DAILY_CAP`, default 1000 ≈ $0.58 a day; 0 = no
+  automatic analysis). Admission is per feed (shared by its subscribers) per UTC day of `first_seen_at`, paced: by hour h the
+  feed may have admitted floor(cap·(h+1)/24), unused allowance carries forward. The slot is claimed atomically when a new
+  `feed_items` row is inserted (`feed_auto_admissions` counter, migration 0027); an arrival over the allowance records the cap
+  in `feed_items.over_cap_limit` and gets no automatic stage anywhere (every `inference_activated_at` predicate also requires
+  `over_cap_limit IS NULL`; a guard test enforces it). An article already analysed through another feed takes no slot. A
+  D-238 rating of a capped article consumes a slot of the same allowance (through `claim_auto_admission`, SECURITY DEFINER,
+  checking the caller's active subscription); with none left the rating is saved without an analysis request. Explicit
+  selection is never capped. The reader keeps `not_requested` and adds `analysis.overDailyCap`; the row shows "Not analyzed –
+  over daily budget" with a tooltip naming the cap. Merges keep a row admitted if either side was. Counter rows are deleted
+  after 7 days (`house.purge-auth`). Spec 02, 05 §1.1, 08, 09, RUNBOOK.
+  PR #42 review: "already analysed" also covers an article whose stored facets the enrich step would reuse (same revision,
+  active enrich set, pinned primary model; `isReusableFacet`, shared with `article.enrich`), since an explicit analysis on
+  another feed leaves the pipeline state behind. Admission cannot compute the enrich input-state hash, so an article whose
+  translation changed after that analysis is admitted without a slot and its enrich re-runs Call A (rare; accepted).
