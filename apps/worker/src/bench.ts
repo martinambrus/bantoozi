@@ -33,7 +33,8 @@ import { trainUserModel, type TrainingSample } from '@bantoozi/ranker';
 import { createLogger, loadConfig } from '@bantoozi/shared/server';
 
 import { loadLearnInputs } from './learn/inputs.js';
-import { threadTrainer } from './learn/train-thread.js';
+import { CpuPool, cpuPoolSize } from './cpu-pool.js';
+import { poolTrainer } from './learn/trainer.js';
 import { isDeepStrictEqual } from 'node:util';
 import { createUserRankHandler } from './handlers/user-rank.js';
 import { createWorkerRuntime } from './runtime.js';
@@ -190,6 +191,9 @@ for (const mode of modes.length === 0 ? ['rank'] : modes) {
       seedMaterial: `learn:${userId}:${inputs.eligibleSetSha}`,
       feedbackCutoffEventId: inputs.cutoffEventId,
     };
+    // BENCH_ARGS=<file>: the training arguments, to replay one training elsewhere.
+    const argsFile = process.env['BENCH_ARGS'];
+    if (argsFile !== undefined) writeFileSync(argsFile, JSON.stringify(args));
     const result = trainUserModel(args, { mode: 'production' });
     const inline = performance.now();
     // BENCH_DUMP=<file>: the training result, to compare two code versions.
@@ -205,10 +209,18 @@ for (const mode of modes.length === 0 ? ['rank'] : modes) {
     );
     let ticks = 0;
     const ticker = setInterval(() => (ticks += 1), 100);
-    const threaded = await threadTrainer()(args, 'production');
+    const pool = new CpuPool({ size: cpuPoolSize() });
+    const threaded = await poolTrainer(pool)(args, 'production');
+    // Warm threads: a second run.
+    if (process.env['BENCH_PHASES'] === '1') {
+      const w0 = performance.now();
+      await poolTrainer(pool)(args, 'production');
+      console.log(`  warm pool: ${(performance.now() - w0).toFixed(0)} ms`);
+    }
+    await pool.close();
     clearInterval(ticker);
     console.log(
-      `  train thread: ${(performance.now() - inline).toFixed(0)} ms, event-loop ticks ${ticks}, identical ${isDeepStrictEqual(result, threaded)}`,
+      `  train pool (${cpuPoolSize()} threads): ${(performance.now() - inline).toFixed(0)} ms, event-loop ticks ${ticks}, identical ${isDeepStrictEqual(result, threaded)}`,
     );
   } else if (mode === 'samples') {
     await withTenant(appDb, userId, async (tx) => {
