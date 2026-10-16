@@ -144,12 +144,20 @@ export type WorkerDepsInput = Omit<WorkerDeps, 'robots'> & { robots?: RobotsChec
 export function createWorkerDeps(input: WorkerDepsInput): WorkerDeps {
   const deps = { ...input } as WorkerDeps;
   const now = input.now;
-  deps.robots =
+  const checker =
     input.robots ??
     createRobotsChecker({
       fetch: (url) => fetchWith(deps, url, { purpose: 'robots' }),
       ...(now === undefined ? {} : { now: () => now().getTime() }),
     });
+  deps.robots = {
+    async check(url) {
+      const decision = await checker.check(url);
+      if (decision.allowed && deps.limiter.setCrawlDelay !== undefined)
+        await deps.limiter.setCrawlDelay(url.origin, decision.crawlDelayS ?? 0);
+      return decision;
+    },
+  };
   return deps;
 }
 
@@ -159,6 +167,7 @@ export async function fetchWith(
   url: string,
   options: {
     purpose: FetchPurpose;
+    sourceIntervalS?: number;
     userAgent?: string;
     conditional?: { etag?: string | null; lastModified?: string | null };
     beforeRequest?: (url: URL, hop: number) => Promise<true | { code: string; message: string }>;
@@ -176,6 +185,7 @@ export async function fetchWith(
       : (await deps.runtimeSettings.get()).values.fetchLimits;
   return safeFetch(url, {
     purpose: options.purpose,
+    ...(options.sourceIntervalS === undefined ? {} : { sourceIntervalS: options.sourceIntervalS }),
     userAgent: options.userAgent ?? deps.fetch.userAgent,
     timeoutMs: Math.min(options.timeoutMs ?? limits.timeoutMs, limits.timeoutMs),
     maxBytes: limits.maxBytes,

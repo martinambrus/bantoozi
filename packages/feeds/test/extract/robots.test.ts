@@ -429,3 +429,15 @@ describe('spec 03 §8.1 step 2 robots.txt (RFC 9309)', () => {
     expect(robots.calls).toHaveLength(3);
   });
 });
+
+it('returns the matching agent crawl delay, rather than a different agent delay', async () => {
+  const h = harness(() =>
+    robotsTxt(
+      'User-agent: *\nCrawl-delay: 30\n\nUser-agent: BantooziBot\nCrawl-delay: 12\nAllow: /',
+    ),
+  );
+  expect(await h.check('https://example.com/news.rss')).toMatchObject({
+    allowed: true,
+    crawlDelayS: 12,
+  });
+});

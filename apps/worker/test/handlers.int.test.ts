@@ -1939,3 +1939,105 @@ describe('media signals (M1-T7, revision R2)', () => {
     expect(await pendingMediaRanks()).toEqual([]);
   });
 });
+
+describe('plan velocity source protection', () => {
+  it('defers repeated 503 responses without quarantining a healthy feed', async () => {
+    const path = '/source-protection/throttled.rss';
+    server.route(path, () => ({ status: 503, headers: { 'retry-after': '600' }, body: '' }));
+    const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    let clock = Date.now();
+    const limiter = createMemoryOriginLimiter({ spacingMs: 0, now: () => clock });
+    const map = createHandlers({ ...workerDeps(limiter), now: () => new Date(clock) });
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await fetchFeed(feedId, map);
+      clock += 86401000;
+    }
+    const result = await owner.query(
+      'SELECT status, consecutive_errors, total_errors, quarantine_count, total_fetches FROM feeds WHERE id = $1',
+      [feedId],
+    );
+    expect(result.rows[0]).toEqual({
+      status: 'active',
+      consecutive_errors: 0,
+      total_errors: 0,
+      quarantine_count: 0,
+      total_fetches: 12,
+    });
+  });
+
+  it('remembers a publisher floor across a bodyless 304', async () => {
+    const path = '/source-protection/publisher.rss';
+    let conditional = false;
+    server.route(path, () =>
+      conditional
+        ? { status: 304, body: '' }
+        : {
+            status: 200,
+            headers: { 'content-type': 'application/rss+xml', etag: '"publisher"' },
+            body: rss('Publisher', '').replace('</channel>', '<ttl>120</ttl></channel>'),
+          },
+    );
+    const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    await fetchFeed(feedId);
+    const first = await owner.query('SELECT publish_stats FROM feeds WHERE id = $1', [feedId]);
+    expect(first.rows[0]?.publish_stats.publisher_min_interval_s).toBe(7200);
+    conditional = true;
+    // A live plan edit may pull a poll forward; it must still honor the publisher's stored floor.
+    await owner.query('UPDATE feeds SET fetch_interval_s = 60 WHERE id = $1', [feedId]);
+    await fetchFeed(feedId);
+    const after = await owner.query('SELECT fetch_interval_s FROM feeds WHERE id = $1', [feedId]);
+    expect(after.rows[0]?.fetch_interval_s).toBeGreaterThanOrEqual(7200);
+  });
+
+  it('does not let a faster plan poll before a retained publisher hint', async () => {
+    const path = '/source-protection/publisher-floor.rss';
+    let requests = 0;
+    server.route(path, () => {
+      requests += 1;
+      return {
+        status: 200,
+        headers: { 'content-type': 'application/rss+xml' },
+        body: rss('Publisher', '').replace('</channel>', '<ttl>120</ttl></channel>'),
+      };
+    });
+    const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    await fetchFeed(feedId);
+    await owner.query(
+      "UPDATE feeds SET next_fetch_at = now() - interval '1 second', min_interval_s = 60 WHERE id = $1",
+      [feedId],
+    );
+    await dispatch(
+      handlers,
+      'feed.fetch',
+      { feedId },
+      { queue: 'feed.fetch', jobId: 'publisher-plan-change' },
+    );
+    expect(requests).toBe(1);
+    const next = await owner.query(
+      "SELECT next_fetch_at >= last_fetch_at + interval '2 hours' AS honored FROM feeds WHERE id = $1",
+      [feedId],
+    );
+    expect(next.rows[0]?.honored).toBe(true);
+  });
+
+  it('checks robots before polling a one-minute feed', async () => {
+    const path = '/source-protection/private.rss';
+    let requests = 0;
+    server.route('/robots.txt', () => ({
+      status: 200,
+      body: 'User-agent: BantooziBot\nDisallow: /source-protection/private.rss',
+    }));
+    server.route(path, () => {
+      requests += 1;
+      return rssRoute(() => rss('Private', ''))();
+    });
+    const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    await owner.query('UPDATE feeds SET min_interval_s = 60 WHERE id = $1', [feedId]);
+    const map = createHandlers(workerDeps(createMemoryOriginLimiter({ spacingMs: 0 })));
+    await fetchFeed(feedId, map);
+    expect(requests).toBe(0);
+    const denied = await owner.query('SELECT last_error_code FROM feeds WHERE id = $1', [feedId]);
+    expect(denied.rows[0]?.last_error_code).toBe('FEED_POLICY_DENIED');
+    server.route('/robots.txt', () => ({ status: 404, body: '' }));
+  });
+});

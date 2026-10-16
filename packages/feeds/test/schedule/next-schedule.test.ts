@@ -72,11 +72,11 @@ describe('nextSchedule after new items (spec 03 §9)', () => {
     );
   });
 
-  it('never goes below 300 s, whatever min_interval_s says', () => {
-    const feed = { id: JITTER_DOWN_ID, minIntervalS: 60, fetchIntervalS: 300 };
+  it('honors a one-minute plan floor without rounding below it', () => {
+    const feed = { id: JITTER_DOWN_ID, minIntervalS: 60, fetchIntervalS: 60 };
     const update = schedule(feed, success(5));
-    expect(update.fetchIntervalS).toBe(300);
-    expect(delayS(update)).toBe(300);
+    expect(update.fetchIntervalS).toBe(60);
+    expect(delayS(update)).toBe(60);
   });
 });
 
@@ -783,4 +783,42 @@ describe('a feed that serves invalid XML with an ETag, then recovers', () => {
     expect(kinds).toEqual(['not_modified', 'error', 'error', 'success', 'not_modified']);
     expect(sent).toEqual(['"items-1"', '"items-1"', '"items-1"', '"items-1"', '"items-2"']);
   });
+});
+
+describe('fast plans and source protection', () => {
+  it('slows a quiet one-minute feed by 20 percent, rather than adding five minutes', () => {
+    const update = schedule({ minIntervalS: 60, fetchIntervalS: 60 }, NOT_MODIFIED);
+    expect(update.fetchIntervalS).toBe(72);
+    expect(delayS(update)).toBeGreaterThanOrEqual(60);
+  });
+  it('honors source and publisher floors even on premium', () => {
+    const feed = { minIntervalS: 60, fetchIntervalS: 60, sourceFloorS: 1800 };
+    expect(schedule(feed, success(8)).fetchIntervalS).toBe(1800);
+    expect(delayS(schedule(feed, success(8), { ttlMinutes: 60 }))).toBeGreaterThanOrEqual(3600);
+  });
+  it('never quarantines or counts throttling as a feed error', () => {
+    const feed = { minIntervalS: 60, fetchIntervalS: 60, consecutiveErrors: 9, totalErrors: 9 };
+    const update = schedule(feed, { kind: 'throttled', retryAfterS: 600 });
+    expect(update).toMatchObject({
+      status: 'active',
+      consecutiveErrors: 9,
+      totalErrors: 9,
+      quarantineCount: 0,
+    });
+    expect(delayS(update)).toBe(600);
+  });
+});
+
+it('can throttle repeatedly past the quarantine threshold without damaging feed health', () => {
+  let feed = feedRow({ minIntervalS: 60, fetchIntervalS: 60, totalErrors: 0 });
+  for (let i = 0; i < 15; i += 1) {
+    const update = nextSchedule(feed, { kind: 'throttled', retryAfterS: 120 }, NOW);
+    expect(update).toMatchObject({
+      status: 'active',
+      consecutiveErrors: 0,
+      totalErrors: 0,
+      quarantineCount: 0,
+    });
+    feed = { ...feed, ...update };
+  }
 });

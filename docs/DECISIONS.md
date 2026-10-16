@@ -2431,3 +2431,18 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   session/CSRF/idempotency/audit path; versioned edits refuse stale state.
   PR #45 review: the restore shell script's throwaway smoke administrator also reads the stored
   default plan and invite allowance; a regression test executes that exact SQL after deleting beta.
+
+- D-256: 2026-10-16 (approved plan-velocity P1/P2) — Fast plans may poll at 60 seconds. Empty
+  polls on floors below 300 seconds grow by 20 percent with second precision; the legacy slower-tier
+  growth stays unchanged. Publisher hints remain binding on scheduled fetches even when a plan edit
+  pulled a poll forward, and the last parsed hint survives a 304 in `feeds.publish_stats`.
+  Forced operator polls retain D-23's due-time override and still obey origin protection.
+  429/503 are throttled outcomes: no feed error, quarantine or validator change. The shared origin
+  limiter learns `max(2 × current interval, 2 × prior learned floor, Retry-After)`, bounded to 24 h,
+  and moves the next origin feed slot forward immediately. After each complete quiet day it relaxes
+  by ×0.8. A separate aggregate budget permits at most six feed starts per origin per minute across
+  processes; page extraction keeps its own existing global politeness limit. Matching robots
+  `Crawl-delay` applies to all request starts; fast feeds check robots at every redirect hop and
+  temporary policy failures defer without consuming feed health. Migration 0030 stores the shared
+  feed slot, learned floor/clock and crawl delay on `origin_fetch_state`. Tests use fixture HTTP and
+  independent worker pools; there are no live provider calls or new dependencies.

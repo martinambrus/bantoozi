@@ -19,6 +19,11 @@ const PURGE_THRESHOLD = 10_000;
 
 interface OriginState {
   nextStartAt: number;
+  feedNextStartAt: number;
+  lastUsedAt: number;
+  crawlDelayS: number;
+  learnedS: number;
+  learnedAt: number;
   blockedUntil: number;
   leases: Array<{ token: string; expiresAt: number }>;
 }
@@ -32,6 +37,7 @@ export interface MemoryOriginLimiterOptions {
   spacingMs?: number;
   /** Retry delay suggested while every lease is held; defaults to {@link ORIGIN_FULL_POLL_MS}. */
   fullPollMs?: number;
+  feedSpacingMs?: number;
 }
 
 /**
@@ -52,6 +58,7 @@ export function createMemoryOriginLimiter(options: MemoryOriginLimiterOptions = 
   const now = options.now ?? Date.now;
   const maxConcurrent = options.maxConcurrent ?? ORIGIN_MAX_CONCURRENT;
   const spacingMs = options.spacingMs ?? ORIGIN_START_SPACING_MS;
+  const feedSpacingMs = options.feedSpacingMs ?? options.spacingMs ?? 10000;
   const fullPollMs = options.fullPollMs ?? ORIGIN_FULL_POLL_MS;
   const origins = new Map<string, OriginState>();
 
@@ -59,20 +66,34 @@ export function createMemoryOriginLimiter(options: MemoryOriginLimiterOptions = 
     let state = origins.get(origin);
     if (state === undefined) {
       if (origins.size >= PURGE_THRESHOLD) purgeIdle(origins, at);
-      state = { nextStartAt: at, blockedUntil: 0, leases: [] };
+      state = {
+        nextStartAt: at,
+        blockedUntil: 0,
+        leases: [],
+        feedNextStartAt: at,
+        lastUsedAt: at,
+        crawlDelayS: 0,
+        learnedS: 0,
+        learnedAt: at,
+      };
       origins.set(origin, state);
     }
+    const days = Math.floor(Math.max(0, at - state.learnedAt) / 86400000);
+    state.learnedS *= 0.8 ** days;
+    state.learnedAt += days * 86400000;
     state.leases = state.leases.filter((lease) => lease.expiresAt > at);
     return state;
   };
 
   return {
-    reserve(origin, { leaseMs }): Promise<OriginReservation> {
+    reserve(origin, { leaseMs, purpose }): Promise<OriginReservation> {
       const at = now();
       const state = stateOf(origin, at);
       if (state.blockedUntil > at) {
         return Promise.resolve({ status: 'blocked', until: new Date(state.blockedUntil) });
       }
+      if (purpose === 'feed' && state.feedNextStartAt > at)
+        return Promise.resolve({ status: 'blocked', until: new Date(state.feedNextStartAt) });
       if (state.leases.length >= maxConcurrent) {
         const earliestExpiry = Math.min(...state.leases.map((lease) => lease.expiresAt));
         const retryAt = Math.max(Math.min(at + fullPollMs, earliestExpiry), state.nextStartAt);
@@ -83,7 +104,11 @@ export function createMemoryOriginLimiter(options: MemoryOriginLimiterOptions = 
       }
       const token = randomUUID();
       state.leases.push({ token, expiresAt: at + Math.max(0, leaseMs) });
-      state.nextStartAt = at + spacingMs;
+      state.nextStartAt = at + Math.max(spacingMs, state.crawlDelayS * 1000);
+      state.lastUsedAt = at;
+      if (purpose === 'feed')
+        state.feedNextStartAt =
+          at + Math.max(feedSpacingMs, state.learnedS * 1000, state.crawlDelayS * 1000);
       return Promise.resolve({ status: 'granted', token });
     },
 
@@ -93,11 +118,24 @@ export function createMemoryOriginLimiter(options: MemoryOriginLimiterOptions = 
       return Promise.resolve();
     },
 
-    block(origin, until): Promise<void> {
+    block(origin, until, throttle): Promise<void> {
       const at = now();
       const state = stateOf(origin, at);
       const clamped = Math.min(until.getTime(), at + ORIGIN_MAX_COOLDOWN_MS);
-      if (Number.isFinite(clamped)) state.blockedUntil = Math.max(state.blockedUntil, clamped);
+      if (!Number.isFinite(clamped)) return Promise.resolve();
+      state.blockedUntil = Math.max(state.blockedUntil, clamped);
+      state.learnedS = Math.min(
+        86400,
+        Math.max(state.learnedS * 2, (throttle?.currentIntervalS ?? 60) * 2, (clamped - at) / 1000),
+      );
+      state.feedNextStartAt = Math.max(state.feedNextStartAt, at + state.learnedS * 1000);
+      state.learnedAt = at;
+      return Promise.resolve();
+    },
+    setCrawlDelay(origin, seconds) {
+      const state = stateOf(origin, now());
+      state.crawlDelayS = Math.min(86400, Math.max(0, seconds));
+      state.nextStartAt = Math.max(state.nextStartAt, state.lastUsedAt + state.crawlDelayS * 1000);
       return Promise.resolve();
     },
   };
@@ -109,6 +147,9 @@ function purgeIdle(origins: Map<string, OriginState>, at: number): void {
     const idle =
       state.blockedUntil <= at &&
       state.nextStartAt <= at &&
+      state.feedNextStartAt <= at &&
+      state.learnedS < 1 &&
+      state.crawlDelayS === 0 &&
       state.leases.every((lease) => lease.expiresAt <= at);
     if (idle) origins.delete(origin);
   }

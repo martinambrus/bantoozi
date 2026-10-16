@@ -588,7 +588,7 @@
     "retired": "Vyradený",
     "invalid": "Zadajte platnú hodnotu v povolenom rozsahu.",
     "stale": "Tento plán medzičasom zmenil niekto iný. Zatvorte dialóg a znova ho otvorte, aby ste načítali aktuálne hodnoty.",
-    "schedulerNote": "Intervaly načítania kratšie ako 300 sekúnd sa uplatnia po zmene plánovača.",
+    "schedulerNote": "Podporované sú aj minútové intervaly. Zdroj alebo vydavateľ môže vyžadovať dlhší interval.",
     "analysisCap": "Globálny limit analýzy: engine.auto_analysis_daily_cap",
     "columns": {
       "plan": "Plán",

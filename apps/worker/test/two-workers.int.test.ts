@@ -216,7 +216,9 @@ async function startInstance(label: Label): Promise<Instance> {
         signupMode: 'invite',
       },
       // The production limiter: one row per origin in the database, shared by both instances.
-      limiter: createPgOriginLimiter(db, { spacingMs: SPACING_MS }),
+      // This fixture drains explicit jobs without a scheduler; origin feed-budget deferrals are
+      // tested separately. Keep real shared start spacing here so every queued job reaches HTTP.
+      limiter: createPgOriginLimiter(db, { spacingMs: SPACING_MS, feedSpacingMs: 0 }),
       logger: silent,
     }),
   );

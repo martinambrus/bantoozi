@@ -585,11 +585,34 @@
           "type": "timestamp with time zone",
           "nullable": false,
           "default": "now()"
+        },
+        "feed_next_start_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "'epoch'::timestamp with time zone"
+        },
+        "learned_interval_s": {
+          "type": "real",
+          "nullable": false,
+          "default": "0"
+        },
+        "learned_updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        "crawl_delay_s": {
+          "type": "real",
+          "nullable": false,
+          "default": "0"
         }
       },
       "primaryKey": ["origin"],
       "unique": [],
-      "checks": ["jsonb_typeof(leases) = 'array' AND jsonb_array_length(leases) <= 2"],
+      "checks": [
+        "jsonb_typeof(leases) = 'array' AND jsonb_array_length(leases) <= 2",
+        "learned_interval_s BETWEEN 0 AND 86400 AND crawl_delay_s BETWEEN 0 AND 86400"
+      ],
       "foreignKeys": [],
       "indexes": {},
       "rls": false

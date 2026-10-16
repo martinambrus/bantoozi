@@ -24,6 +24,7 @@ export interface RobotsDecision {
    */
   reason: 'allowed' | 'disallowed' | 'unreachable' | 'cooldown';
   retryAt?: Date;
+  crawlDelayS?: number;
 }
 
 export interface RobotsChecker {
@@ -57,6 +58,7 @@ export interface RobotsCheckerOptions {
 /** The subset of the `robots-parser` API used here. */
 interface RobotsRules {
   isAllowed(url: string, userAgent?: string): boolean | undefined;
+  getCrawlDelay(userAgent?: string): number | undefined;
 }
 
 type RobotsParser = (url: string, contents: string) => RobotsRules;
@@ -246,7 +248,14 @@ function applyPolicy(policy: RobotsPolicy, url: URL): RobotsDecision {
   if (policy.kind === 'disallow_all') return { allowed: false, reason: 'disallowed' };
   // `undefined` (URL outside this robots.txt's origin) cannot happen for a same-origin key; it
   // fails closed.
+  const delay = policy.rules.getCrawlDelay(ROBOTS_PRODUCT_TOKEN);
   return policy.rules.isAllowed(url.href, ROBOTS_PRODUCT_TOKEN) === true
-    ? { allowed: true, reason: 'allowed' }
+    ? {
+        allowed: true,
+        reason: 'allowed',
+        ...(delay !== undefined && Number.isFinite(delay) && delay > 0
+          ? { crawlDelayS: Math.min(86400, delay) }
+          : {}),
+      }
     : { allowed: false, reason: 'disallowed' };
 }

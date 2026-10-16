@@ -267,6 +267,7 @@ export interface FeedForFetch {
   lastErrorAt: Date | null;
   /** `publish_stats.recent_gaps_s` as stored (finite numbers only), `[]` when absent. */
   recentGapsS: number[];
+  publisherIntervalS?: number;
 }
 
 type Timestamp = Date | string;
@@ -308,6 +309,7 @@ export async function loadFeedForFetch(db: Executor, feedId: string): Promise<Fe
     last_error: string | null;
     last_error_at: Timestamp | null;
     recent_gaps_s: unknown;
+    publisher_interval_s: number | null;
   }>(sql`
     SELECT id::text AS id, url, fetch_url, merged_into_id::text AS merged_into_id, status,
            subscriber_count, next_fetch_at, etag, last_modified,
@@ -317,7 +319,9 @@ export async function loadFeedForFetch(db: Executor, feedId: string): Promise<Fe
            consecutive_empty, quarantine_count, total_fetches, total_errors, total_empty,
            last_new_item_at, first_error_at, quarantined_until, last_success_at, last_fetch_at,
            last_error_code, last_error, last_error_at,
-           publish_stats -> 'recent_gaps_s' AS recent_gaps_s
+           publish_stats -> 'recent_gaps_s' AS recent_gaps_s,
+           CASE WHEN jsonb_typeof(publish_stats -> 'publisher_min_interval_s') = 'number'
+             THEN (publish_stats ->> 'publisher_min_interval_s')::float8 END AS publisher_interval_s
       FROM feeds WHERE id = ${feedId}::bigint`);
   const row = result.rows[0];
   if (row === undefined) return null;
@@ -351,6 +355,7 @@ export async function loadFeedForFetch(db: Executor, feedId: string): Promise<Fe
     lastErrorCode: row.last_error_code,
     lastError: row.last_error,
     lastErrorAt: toDateOrNull(row.last_error_at),
+    publisherIntervalS: row.publisher_interval_s ?? 0,
     recentGapsS: gaps.filter(
       (gap): gap is number => typeof gap === 'number' && Number.isFinite(gap),
     ),
@@ -402,6 +407,7 @@ export interface RecordFeedFetchInput {
   recentGapsS?: readonly number[] | undefined;
   /** New `publish_stats.items_7d` (see `feedItems7d`); absent keeps the stored one. */
   items7d?: number | undefined;
+  publisherMinIntervalS?: number;
 }
 
 /**
@@ -457,6 +463,8 @@ export async function recordFeedFetch(
       .map((gap) => Math.round(gap))
       .slice(0, RECENT_PUBLICATIONS);
   }
+  if (input.publisherMinIntervalS !== undefined)
+    stats['publisher_min_interval_s'] = Math.max(0, Math.ceil(input.publisherMinIntervalS));
   if (input.items7d !== undefined) stats['items_7d'] = Math.max(0, Math.round(input.items7d));
   if (Object.keys(stats).length > 0) {
     sets.push(sql`publish_stats = f.publish_stats || ${JSON.stringify(stats)}::jsonb`);

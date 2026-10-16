@@ -53,6 +53,8 @@ export interface SafeFetchOptions {
   resolver?: Resolver;
   /** The per-origin politeness throttle (spec 03 §8.2); omitted → no throttling. */
   limiter?: OriginLimiter;
+  /** Current feed interval for learning from 429/503; omitted for other request purposes. */
+  sourceIntervalS?: number;
   /**
    * Policy callback before EVERY request (hop 0 included), after the URL checks and before the
    * limiter; article extraction checks robots here. A denial ends the fetch with
@@ -139,6 +141,8 @@ const ABORTED: unique symbol = Symbol('aborted');
 const noop = (): void => undefined;
 
 interface Settings {
+  purpose: FetchPurpose;
+  sourceIntervalS: number | undefined;
   userAgent: string;
   accept: string;
   timeoutMs: number;
@@ -193,6 +197,8 @@ function resolveSettings(options: SafeFetchOptions): Settings {
     throw new RangeError('safeFetch: maxRedirects must be a non-negative integer');
   }
   return {
+    purpose: options.purpose,
+    sourceIntervalS: options.sourceIntervalS,
     userAgent: options.userAgent,
     accept: options.accept ?? ACCEPT_HEADERS[options.purpose],
     timeoutMs: options.timeoutMs,
@@ -329,7 +335,7 @@ async function reserveStart(chain: Chain, origin: string, url: URL): Promise<Slo
   const leaseMs = Math.ceil(chain.settings.timeoutMs) + LEASE_MARGIN_MS;
   for (;;) {
     if (chain.signal.aborted) return { ok: false, result: timeoutFailure(chain, url) };
-    const pending = limiter.reserve(origin, { leaseMs });
+    const pending = limiter.reserve(origin, { leaseMs, purpose: chain.settings.purpose });
     const reservation = await untilAborted(pending, chain.signal);
     if (reservation === ABORTED) {
       // A start granted after the deadline is handed straight back.
@@ -564,7 +570,14 @@ async function followChain(chain: Chain, start: URL): Promise<SafeFetchResult> {
         // every other fetch of the origin relies on it, so a failing `block` rejects the fetch like
         // a failing `reserve` (an infrastructure failure, not the origin's). So does a write still
         // pending at the deadline: whether the cooldown was stored is then unknown.
-        const stored = await untilAborted(limiter.block(origin, step.cooldownUntil), chain.signal);
+        const stored = await untilAborted(
+          chain.settings.sourceIntervalS === undefined
+            ? limiter.block(origin, step.cooldownUntil)
+            : limiter.block(origin, step.cooldownUntil, {
+                currentIntervalS: chain.settings.sourceIntervalS,
+              }),
+          chain.signal,
+        );
         if (stored === ABORTED) {
           throw new Error('safeFetch: the origin cooldown was not stored before the deadline');
         }

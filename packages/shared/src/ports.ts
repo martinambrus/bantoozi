@@ -197,11 +197,16 @@ export type OriginReservation =
  */
 export interface OriginLimiter {
   /** Try to reserve a request start under a lease of `leaseMs`; never waits itself. */
-  reserve(origin: string, options: { leaseMs: number }): Promise<OriginReservation>;
+  reserve(
+    origin: string,
+    options: { leaseMs: number; purpose?: 'feed' | 'page' | 'robots' | 'discovery' },
+  ): Promise<OriginReservation>;
   /** Release exactly this lease; releasing an unknown or expired token is a no-op. */
   release(origin: string, token: string): Promise<void>;
   /** Persist a cooldown until `until` (clamped to 24 h); never shortens a longer existing one. */
-  block(origin: string, until: Date): Promise<void>;
+  block(origin: string, until: Date, options?: { currentIntervalS: number }): Promise<void>;
+  /** Apply the cached robots delay to every request to this origin (including redirected pages). */
+  setCrawlDelay?(origin: string, seconds: number): Promise<void>;
 }
 
 /**
