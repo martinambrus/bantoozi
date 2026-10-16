@@ -7,7 +7,7 @@ import { Button } from '../../components/button.js';
 import { UndoIcon } from '../../components/icons.js';
 import { useToastOutlets } from '../../components/toast/toast-provider.js';
 import { focusRestoredRow, rowOf, rowTitleOf, useReasonBar } from '../reader/actions/provider.js';
-import type { PendingDislike } from './reason-bar-store.js';
+import type { PendingReasons } from './reason-bar-store.js';
 import { shortcutBlocked } from './shortcut-guard.js';
 
 /** Spec 09 §3.3, in the order of the bar; the key picks the reason while the bar is open. */
@@ -73,7 +73,7 @@ function Bar({
   pending,
   handoff,
 }: {
-  pending: PendingDislike;
+  pending: PendingReasons;
   /** What a modal that opened took from the bar's focus, to give back to the bar it moved to. */
   handoff: RefObject<Handoff | null>;
 }) {
@@ -82,6 +82,7 @@ function Bar({
   const ref = useRef<HTMLDivElement>(null);
   const inside = useRef({ pointer: false, focus: false });
   const nearby = useRef<Nearby>({ next: null, previous: null, list: null });
+  const count = 1 + (pending.additional?.length ?? 0);
 
   function enter(change: Partial<typeof inside.current>): void {
     Object.assign(inside.current, change);
@@ -162,7 +163,9 @@ function Bar({
         className="pointer-events-auto flex w-full max-w-md flex-col gap-2 rounded-lg border-2 border-slate-500 bg-white p-3 text-slate-900 shadow-lg motion-safe:animate-toast-in dark:border-slate-400 dark:bg-slate-800 dark:text-slate-100"
       >
         <p className="line-clamp-2 text-sm font-medium">
-          {t('reasonBar.disliked', { title: pending.title })}
+          {count > 1
+            ? t('reasonBar.dislikedBatch', { count })
+            : t('reasonBar.disliked', { title: pending.title })}
         </p>
         <div className="flex flex-wrap gap-2">
           {REASONS.map(({ reason, key }) => (
@@ -211,6 +214,7 @@ export function ReasonBar() {
   const outlet = useSyncExternalStore(outlets.subscribe, outlets.getSnapshot, outlets.getSnapshot);
   const handoff = useRef<Handoff | null>(null);
   const open = pending !== null;
+  const count = pending === null ? 0 : 1 + (pending.additional?.length ?? 0);
 
   // A page that is hidden may never come back, so its dislike does not wait for the reason.
   useEffect(() => {
@@ -232,7 +236,11 @@ export function ReasonBar() {
   const content = (
     <>
       <div aria-live="polite" className="sr-only">
-        {pending === null ? '' : t('reasonBar.announce', { title: pending.title })}
+        {pending === null
+          ? ''
+          : count > 1
+            ? t('reasonBar.announceBatch', { count })
+            : t('reasonBar.announce', { title: pending.title })}
       </div>
       {pending === null ? null : <Bar pending={pending} handoff={handoff} />}
     </>

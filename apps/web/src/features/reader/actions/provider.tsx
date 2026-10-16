@@ -229,13 +229,18 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
       return;
     }
     void offers.actionsFor(suggestion, handle.articleId).then((offered) => {
-      if (turn !== latestOffer || !isRecent(handle)) return;
+      // A later acknowledgement in the same selection must not swallow its teaching offer.
+      // Batch offers have their own toast, so they never replace a newer rating's undo toast.
+      if ((handle.ratingBatchId === undefined && turn !== latestOffer) || !isRecent(handle)) return;
       if (offered === null) {
-        showPlain();
+        if (turn === latestOffer) showPlain();
         return;
       }
       show({
-        id: UNDO_TOAST_ID,
+        id:
+          handle.ratingBatchId === undefined
+            ? UNDO_TOAST_ID
+            : `rating-offer:${handle.ratingBatchId}:${suggestion.cardId}`,
         message,
         tone: 'success',
         durationMs: OFFER_TOAST_MS,

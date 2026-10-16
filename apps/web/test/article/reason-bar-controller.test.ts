@@ -49,6 +49,100 @@ function dislike(
 
 const flush = () => vi.advanceTimersByTimeAsync(0);
 
+function dislikeBatch(state: ReturnType<typeof rig>) {
+  const dislikes = ['101', '102', '103'].map((articleId): PendingDislike => {
+    const handle = state.store.dispatch(
+      makeItem({ id: articleId }),
+      { type: 'rate', rating: -1 },
+      { hold: true },
+    );
+    return { actionId: handle.id, articleId, title: `Article ${articleId}`, before: null };
+  });
+  const [first, ...additional] = dislikes;
+  state.bar.open({ ...first!, additional });
+  return dislikes;
+}
+
+describe('a reason for selected articles', () => {
+  it('sends the chosen reason for every held dislike, exactly once', async () => {
+    const state = rig();
+    const dislikes = dislikeBatch(state);
+    expect(state.bar.heldFor('102')).toEqual(dislikes[1]);
+    expect(state.transport.sends).toHaveLength(0);
+
+    state.bar.pick('off_topic');
+    await vi.advanceTimersByTimeAsync(REASON_BAR_MS);
+
+    expect(state.transport.sends).toHaveLength(3);
+    for (const sent of state.transport.sends) {
+      expect(sent.action).toEqual({ type: 'rate', rating: -1, reason: 'off_topic' });
+    }
+  });
+
+  it('expires the whole selection without inventing a reason', async () => {
+    const state = rig();
+    dislikeBatch(state);
+    await vi.advanceTimersByTimeAsync(REASON_BAR_MS);
+
+    expect(state.transport.sends).toHaveLength(3);
+    for (const sent of state.transport.sends) {
+      expect(sent.action).toEqual({ type: 'rate', rating: -1 });
+    }
+    expect(state.bar.getSnapshot()).toBeNull();
+  });
+
+  it('undoes the whole pending selection without sending ratings', async () => {
+    const state = rig();
+    const dislikes = dislikeBatch(state);
+    state.bar.undo();
+    await vi.advanceTimersByTimeAsync(REASON_BAR_MS);
+
+    expect(state.transport.sends).toHaveLength(0);
+    for (const dislike of dislikes) {
+      expect(state.store.get(dislike.actionId)?.status).toBe('cancelled');
+    }
+  });
+
+  it('can undo one row while keeping the other dislikes and their original countdown', async () => {
+    const state = rig();
+    const dislikes = dislikeBatch(state);
+    await vi.advanceTimersByTimeAsync(4000);
+    state.bar.undo('101');
+
+    expect(state.bar.heldFor('101')).toBeNull();
+    expect(state.bar.heldFor('102')).not.toBeNull();
+    expect(state.store.get(dislikes[0]!.actionId)?.status).toBe('cancelled');
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(state.transport.sends.map((sent) => sent.articleId)).toEqual(['102', '103']);
+  });
+
+  it('keeps the other dislikes when the store drops a held action', async () => {
+    const state = rig();
+    const dislikes = dislikeBatch(state);
+    state.store.cancel(dislikes[1]!.actionId);
+    state.bar.pick('clickbait');
+    await flush();
+
+    expect(state.transport.sends.map((sent) => sent.articleId)).toEqual(['101', '103']);
+    expect(
+      state.transport.sends.every(
+        (sent) => sent.action.type === 'rate' && sent.action.reason === 'clickbait',
+      ),
+    ).toBe(true);
+  });
+
+  it('sends the previous selection when a different dislike opens the bar', async () => {
+    const state = rig();
+    dislikeBatch(state);
+    dislike(state, '104');
+    await flush();
+
+    expect(state.transport.sends.map((sent) => sent.articleId)).toEqual(['101', '102', '103']);
+    expect(state.bar.heldFor('104')).not.toBeNull();
+  });
+});
+
 describe('the reason bar controller', () => {
   it('waits 5 seconds', () => {
     expect(REASON_BAR_MS).toBe(5000);

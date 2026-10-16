@@ -152,6 +152,8 @@ export interface ActionHandle {
   readonly mutationId: string | null;
   readonly createdAt: number;
   readonly replayed: boolean;
+  /** Ratings from one selected batch keep card-teaching offers beside the shared undo toast. */
+  readonly ratingBatchId?: string;
   readonly result: Promise<ActionResult>;
 }
 
@@ -162,6 +164,8 @@ export interface DispatchOptions {
   snapshot?: { id: string; contentRevision: string };
   /** Offline replay: never surface an example suggestion (spec 09 §3.3). */
   replayed?: boolean;
+  /** Selected articles rated together; presentation only, never sent to the API. */
+  ratingBatchId?: string;
 }
 
 /**
