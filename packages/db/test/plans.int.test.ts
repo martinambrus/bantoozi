@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { createFeed, createSubscription, createUser, type Queryable } from '@bantoozi/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -276,4 +277,30 @@ describe('non-HTTP account creation uses the stored default', () => {
       await ctx.owner.query("UPDATE plans SET is_default = true WHERE key = 'beta'");
     }
   });
+});
+
+it('restores the smoke administrator when beta was deleted and another plan is the default', async () => {
+  const client = await ctx.owner.connect();
+  try {
+    await client.query('BEGIN');
+    const key = await insertPlan(client);
+    await client.query('UPDATE plans SET is_default = false WHERE is_default');
+    await client.query('UPDATE plans SET is_default = true WHERE key = $1', [key]);
+    await client.query("UPDATE users SET plan = $1 WHERE plan = 'beta'", [key]);
+    await client.query("DELETE FROM plans WHERE key = 'beta'");
+    const script = readFileSync(
+      new URL('../../../infra/scripts/restore-test.sh', import.meta.url),
+      'utf8',
+    );
+    const smokeInsert = script.match(/^insert into users[\s\S]*?;/im)?.[0];
+    expect(smokeInsert).toBeDefined();
+    await client.query(smokeInsert!.replace(":'email'", '$1'), ['smoke-plan@example.test']);
+    const restored = await client.query(
+      "SELECT role, plan FROM users WHERE email = 'smoke-plan@example.test'",
+    );
+    expect(restored.rows).toEqual([{ role: 'admin', plan: key }]);
+  } finally {
+    await client.query('ROLLBACK');
+    client.release();
+  }
 });

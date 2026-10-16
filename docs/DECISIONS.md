@@ -2429,3 +2429,5 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   the scheduler's 300-second clamp and immediate article visibility remain until subsequent phases.
   The release interval is stored now, ready for that implementation. Admin writes use the existing
   session/CSRF/idempotency/audit path; versioned edits refuse stale state.
+  PR #45 review: the restore shell script's throwaway smoke administrator also reads the stored
+  default plan and invite allowance; a regression test executes that exact SQL after deleting beta.
