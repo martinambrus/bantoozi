@@ -1,0 +1,13 @@
+# NVIDIA GPU override for the `ollama` service (D-263, ported from haive). deploy.sh and
+# infra/scripts/ollama-dev.sh layer it only when `nvidia-smi -L` sees a GPU AND Docker exposes the
+# `nvidia` runtime (NVIDIA Container Toolkit): a failed device reservation would fail the service,
+# so compose cannot gate it on its own. It touches only `ollama`, so it layers onto infra/compose.yml
+# and infra/compose.dev.yml alike.
+#
+# Ollama uses every NVIDIA GPU by default; pin it to one card by index or UUID with
+# OLLAMA_GPU_DEVICE (e.g. 1 or GPU-<uuid>).
+services:
+  ollama:
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${OLLAMA_GPU_DEVICE:-all}

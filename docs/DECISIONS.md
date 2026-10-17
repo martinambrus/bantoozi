@@ -2696,3 +2696,20 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
      posting them to each of 7 tasks had cost the event loop ~200 ms per task.
   On the owner's data (8-core dev host, compiled): 6.6 s inline → 3.4 s with warm threads, ~5 s cold,
   with the worker's event loop free throughout.
+
+- D-263: 2026-10-17 (owner request: run Ollama locally and on the GPU when the host has one,
+  porting haive's detection) — Optional compose profile `ollama` (infra/compose.yml and
+  compose.dev.yml, `ollama/ollama:0.35.1` by digest, volume `ollama-models`, no published production
+  port; dev on 127.0.0.1:11435 because another local Ollama may hold 11434). Two overrides that touch
+  only the `ollama` service, so they layer onto either stack: `compose.gpu.yml` (`runtime: nvidia`,
+  `OLLAMA_GPU_DEVICE`) and `compose.vulkan.yml` (`/dev/dri`, `OLLAMA_IGPU_ENABLE=1`).
+  `infra/scripts/gpu-lib.sh` (from haive's dev.sh) picks them: NVIDIA when `nvidia-smi -L` sees a
+  GPU and Docker exposes the `nvidia` runtime, else Vulkan when DRI render nodes exist, else the
+  CPU; an NVIDIA GPU without the runtime is reported, not silently ignored. `BANTOOZI_GPU`
+  (`auto`/`cpu`/`nvidia`/`vulkan`) overrides; a forced GPU that is unusable fails. `deploy.sh`
+  accepts the profile, requires `OLLAMA_BASE_URL=http://ollama:11434`, a key and local model names,
+  refuses a local URL (env or stored) without the profile, pulls the models and warns when the fast
+  model loads on the CPU despite a GPU (`ollama ps`). `pnpm ollama:dev:up` does the same for
+  development. No application change: the client already sends the configured key, which a local
+  server ignores (verified: `/api/chat` 200 with a placeholder key). Verified on the owner's Intel
+  Iris Xe (TigerLake): Vulkan, qwen2.5:0.5b 25/25 layers on the GPU, `100% GPU`.

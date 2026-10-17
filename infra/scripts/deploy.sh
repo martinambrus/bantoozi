@@ -71,7 +71,8 @@ envfile_get() {
   printf '%s' "$line"
 }
 
-dc() { docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" "${PROFILE_ARGS[@]}" "$@"; }
+GPU_FILES=()
+dc() { docker compose -f "$COMPOSE_FILE" "${GPU_FILES[@]}" --env-file "$ENV_FILE" "${PROFILE_ARGS[@]}" "$@"; }
 
 echo "deploy: $(date -u +%FT%TZ) ref=$REF env=$(basename "$ENV_FILE")"
 
@@ -82,7 +83,7 @@ IFS=',' read -r -a _requested <<<"$(envfile_get COMPOSE_PROFILES)"
 for p in "${_requested[@]:-}"; do
   p="${p// /}"
   [ -n "$p" ] || continue
-  case "$p" in translate | laya) PROFILES+=("$p") ;; rehearsal) ;; *) die "unknown compose profile in COMPOSE_PROFILES: $p" ;; esac
+  case "$p" in translate | laya | ollama) PROFILES+=("$p") ;; rehearsal) ;; *) die "unknown compose profile in COMPOSE_PROFILES: $p" ;; esac
 done
 if [ "$REHEARSAL" = 1 ]; then PROFILES+=(rehearsal); fi
 for p in "${PROFILES[@]:-}"; do [ -n "$p" ] && PROFILE_ARGS+=(--profile "$p"); done
@@ -90,6 +91,14 @@ has_profile() { local p; for p in "${PROFILES[@]:-}"; do [ "$p" = "$1" ] && retu
 # The worker-laya queues (article.enrich.laya, analysis.process.laya) have no handlers before M9, so a
 # worker-laya would refuse production startup; keep the profile unavailable until then (D-197).
 has_profile laya && die "the laya profile is not available before M9: its worker has no handlers yet; remove laya from COMPOSE_PROFILES"
+# The local Ollama server runs on the GPU the host supports (D-263; BANTOOZI_GPU auto|cpu|nvidia|vulkan).
+GPU_MODE=none
+if has_profile ollama; then
+  # shellcheck source=gpu-lib.sh
+  . "$ROOT/infra/scripts/gpu-lib.sh"
+  gpu_detect "$(envfile_get BANTOOZI_GPU)" "$ROOT/infra" || die "$GPU_NOTE"
+  echo "deploy: ollama: $GPU_NOTE"
+fi
 
 # ── 1. Lock, release and clean checkout ──────────────────────────────────────────────────────
 PROJECT="$(envfile_get COMPOSE_PROJECT_NAME)"
@@ -145,6 +154,14 @@ modes="$(envfile_get LANGUAGE_MODES)"
 if { [[ "$modes" == *translate* ]] || [ "$(envfile_get CARD_TEXT_MODE)" = english ]; } && ! has_profile translate; then
   die "LANGUAGE_MODES asks for translation: enable the translate profile (COMPOSE_PROFILES=translate)"
 fi
+OLLAMA_LOCAL_URL=http://ollama:11434
+if has_profile ollama; then
+  [ "$(envfile_get OLLAMA_BASE_URL)" = "$OLLAMA_LOCAL_URL" ] || die "the ollama profile serves $OLLAMA_LOCAL_URL: set OLLAMA_BASE_URL to it"
+  [ -n "$(envfile_get OLLAMA_API_KEY)" ] || die "OLLAMA_API_KEY is empty: a local Ollama ignores the key, but the client sends one; set any value (e.g. local)"
+  [ -n "$(envfile_get OLLAMA_MODEL_FAST)" ] && [ -n "$(envfile_get OLLAMA_MODEL_STRONG)" ] || die "set OLLAMA_MODEL_FAST and OLLAMA_MODEL_STRONG to models the local Ollama should serve (deploy pulls them)"
+elif [[ "$(envfile_get OLLAMA_BASE_URL)" == http://ollama:* ]]; then
+  die "OLLAMA_BASE_URL points at the local Ollama: enable the ollama profile (COMPOSE_PROFILES=ollama)"
+fi
 
 # Stored state against the enabled profiles (spec 11 §3 step 4). A fresh instance has no database to
 # read; otherwise the stored settings and the outstanding queue work are checked before anything is
@@ -169,6 +186,10 @@ if [ "$FRESH" = 0 ] && [ "$(dbq "select to_regclass('public.settings') is not nu
     [ -z "$stored_translate" ] || die "stored language_modes set translate for: $stored_translate; enable the translate profile (COMPOSE_PROFILES=translate) or change the language mode first"
     stored_card_mode="$(dbq "select coalesce(value #>> '{}', '') from settings where key = 'card_text_mode'")"
     [ "$stored_card_mode" != english ] || die "stored card_text_mode is english: enable the translate profile (COMPOSE_PROFILES=translate) or change card_text_mode first"
+  fi
+  if ! has_profile ollama; then
+    stored_ollama="$(dbq "select coalesce(value #>> '{}', '') from settings where key = 'engine.ollama_base_url'")"
+    [[ "$stored_ollama" != http://ollama:* ]] || die "stored engine.ollama_base_url points at the local Ollama: enable the ollama profile (COMPOSE_PROFILES=ollama) or change the setting first"
   fi
   if ! has_profile laya; then
     stored_laya="$(dbq "select coalesce(string_agg(l, ', '), '') from (select jsonb_array_elements_text(value -> 'enrich') l from settings where key = 'engine.laya' and jsonb_typeof(value -> 'enrich') = 'array') x")"
@@ -288,6 +309,24 @@ dc stop worker >/dev/null 2>&1 || true
 has_profile laya && { dc stop worker-laya >/dev/null 2>&1 || true; }
 dc stop api >/dev/null 2>&1 || true
 has_profile translate && { dc up -d --no-deps --no-build libretranslate >/dev/null || die "libretranslate did not start"; }
+if has_profile ollama; then
+  dc up -d --no-deps --no-build --wait --wait-timeout 180 ollama >/dev/null || die "ollama did not become healthy"
+  for model in $(printf '%s\n' "$(envfile_get OLLAMA_MODEL_FAST)" "$(envfile_get OLLAMA_MODEL_STRONG)" | awk 'NF && !seen[$0]++'); do
+    dc exec -T ollama ollama pull "$model" >/dev/null || die "ollama could not pull $model (a cloud-only model name?)"
+  done
+  echo "deploy: ollama: models ready ($(envfile_get OLLAMA_MODEL_FAST), $(envfile_get OLLAMA_MODEL_STRONG))"
+  if [ "$GPU_MODE" = nvidia ] || [ "$GPU_MODE" = vulkan ]; then
+    # A GPU the container cannot use makes Ollama fall back to the CPU silently: load the fast model
+    # once and ask where it runs (warning only; the CPU still serves).
+    timeout 300 docker compose -f "$COMPOSE_FILE" "${GPU_FILES[@]}" --env-file "$ENV_FILE" "${PROFILE_ARGS[@]}" \
+      exec -T ollama ollama run "$(envfile_get OLLAMA_MODEL_FAST)" "Reply with OK." >/dev/null 2>&1 || true
+    where="$(gpu_processor dc)"
+    case "$where" in
+      *GPU*) echo "deploy: ollama: $(envfile_get OLLAMA_MODEL_FAST) runs on $where" ;;
+      *) echo "deploy: WARNING: ollama: a GPU was detected ($GPU_MODE) but $(envfile_get OLLAMA_MODEL_FAST) runs on ${where:-an unknown processor}" ;;
+    esac
+  fi
+fi
 [ "$REHEARSAL" = 1 ] && { dc up -d --no-deps --no-build mailpit >/dev/null || die "the mail catcher did not start"; }
 # The S3-compatible stand-in for the off-site bucket (backup.sh / restore-test.sh rehearsal).
 if [ "$REHEARSAL" = 1 ]; then

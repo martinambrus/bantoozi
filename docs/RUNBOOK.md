@@ -86,7 +86,7 @@ bucket and the `age` recipient/identity (section 4); provider keys (section 10).
    | `TYPESAFE_MODEL` | the pinned model, for example the value G1 was measured with (section 8) |
    | `PROVIDER_MASTER_KEY_ID`, `PROVIDER_MASTER_KEYS` | the keyring: id of the active key and a JSON map of id to base64 32-byte key; back up offline (**owner**) |
    | `DAILY_BUDGET_USD` | initial value; the live value is the admin setting (section 6, 9) |
-   | `COMPOSE_PROFILES` | `translate` if any language mode is `translate` or `card_text_mode` is `english`; `laya` only with `engine.laya` |
+   | `COMPOSE_PROFILES` | `translate` if any language mode is `translate` or `card_text_mode` is `english`; `laya` only with `engine.laya`; `ollama` for a local Ollama server (§17) |
    | `DELETION_LEDGER_PATH`, `DELETION_LEDGER_RECIPIENT`, `DELETION_HMAC_KEY` | see section 4.4; the ledger is mandatory for account purges |
 
    Keep a copy of the finished env file, encrypted, with the offline keys (**owner**; spec 11 §4).
@@ -820,3 +820,26 @@ reservations. These checks use no live publisher or provider calls.
 Timezone changes take effect for displayed dates immediately. Article release timing preserves the
 current cutoff until a full interval and a boundary in the new timezone have passed; the reader
 shows that next update. Repeated edits cannot bypass the interval. Plan cadence changes apply live.
+
+## 17. Local Ollama on the GPU (D-263)
+
+The tier-2 translator and the Ollama tasks use the cloud API by default. To serve them from this host:
+
+1. In the env file: `COMPOSE_PROFILES=…,ollama`, `OLLAMA_BASE_URL=http://ollama:11434`, any
+   `OLLAMA_API_KEY` (e.g. `local`; a local server ignores it), and `OLLAMA_MODEL_FAST` /
+   `OLLAMA_MODEL_STRONG` set to models a local Ollama serves (the cloud names do not exist locally).
+   An admin-stored `engine.ollama_base_url` overrides the env; in production it must stay https, so
+   reset it to the env default in Admin → Settings.
+2. `BANTOOZI_GPU` (default `auto`): `deploy.sh` uses an NVIDIA GPU when `nvidia-smi -L` sees one and
+   Docker has the `nvidia` runtime (install the NVIDIA Container Toolkit), else Vulkan when the host
+   has `/dev/dri/renderD*` (Intel/AMD), else the CPU. `cpu`, `nvidia` or `vulkan` force a mode; a
+   forced GPU that is not usable fails the deploy. `OLLAMA_GPU_DEVICE` pins one NVIDIA card.
+3. Deploy. The log names the mode, pulls both models and reports where the fast model runs
+   (`ollama: … runs on 100% GPU`). A `WARNING … runs on CPU` with a GPU detected usually means a
+   driver upgraded without a reboot or a runtime mismatch: the service still works, slowly.
+4. Size `OLLAMA_MEM_LIMIT` to the models (the default 8g fits an 8B model at 4-bit with room for its
+   context) and count it in the host's memory budget (spec 11 §2).
+
+Development: `pnpm ollama:dev:up [model…]` starts the same server from `infra/compose.dev.yml` on the
+GPU the machine supports, pulls the models (arguments, else `OLLAMA_MODEL_FAST`/`STRONG` from `.env`)
+and prints where they run. Point the dev apps at `OLLAMA_BASE_URL=http://localhost:11435`.

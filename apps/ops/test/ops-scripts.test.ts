@@ -384,3 +384,53 @@ describe('deploy connection budget', () => {
     expect(value).toBeLessThan(80);
   });
 });
+
+describe('local Ollama profile with GPU detection (D-263)', () => {
+  const deploy = read('infra/scripts/deploy.sh');
+  const lib = read('infra/scripts/gpu-lib.sh');
+  const dev = read('infra/compose.dev.yml');
+
+  it('runs a digest-pinned ollama in its own profile, with no published production port', () => {
+    const service = compose.slice(
+      compose.indexOf('\n  ollama:\n'),
+      compose.indexOf('\n  caddy:\n'),
+    );
+    expect(service).toMatch(/image: ollama\/ollama:[0-9.]+@sha256:[0-9a-f]{64}/u);
+    expect(service).toContain('profiles: [ollama]');
+    expect(service).toContain('mem_limit:');
+    expect(service).toContain('healthcheck:');
+    expect(service).not.toContain('ports:');
+    expect(dev).toMatch(/'127\.0\.0\.1:\$\{OLLAMA_DEV_PORT:-11435\}:11434'/u);
+  });
+
+  it('keeps the GPU overrides to the ollama service, layerable on both stacks', () => {
+    for (const file of ['infra/compose.gpu.yml', 'infra/compose.vulkan.yml']) {
+      const services = read(file)
+        .split('\n')
+        .filter((line) => /^ {2}[a-z-]+:$/u.test(line));
+      expect(services).toEqual(['  ollama:']);
+    }
+    expect(read('infra/compose.gpu.yml')).toContain('runtime: nvidia');
+    expect(read('infra/compose.vulkan.yml')).toContain('/dev/dri:/dev/dri');
+  });
+
+  it('prefers NVIDIA with its Docker runtime, then Vulkan render nodes, and honours BANTOOZI_GPU', () => {
+    const auto = lib.slice(lib.indexOf("auto | '') ;;"));
+    expect(auto.indexOf('gpu_has_nvidia_device')).toBeLessThan(auto.indexOf('gpu_has_render_node'));
+    expect(lib).toContain('grep -qx nvidia');
+    expect(lib).toContain('/dev/dri/renderD*');
+    for (const mode of ['cpu)', 'nvidia)', 'vulkan)']) expect(lib).toContain(mode);
+  });
+
+  it('accepts the profile, validates its env and stored settings, pulls the models and checks the GPU', () => {
+    expect(deploy).toContain('translate | laya | ollama)');
+    expect(deploy).toContain('gpu_detect "$(envfile_get BANTOOZI_GPU)"');
+    expect(deploy).toContain('OLLAMA_LOCAL_URL=http://ollama:11434');
+    expect(deploy).toContain("key = 'engine.ollama_base_url'");
+    expect(deploy).toContain('ollama pull "$model"');
+    expect(deploy).toMatch(/WARNING: ollama: a GPU was detected/u);
+    const start = deploy.indexOf('dc up -d --no-deps --no-build --wait --wait-timeout 180 ollama');
+    expect(start).toBeGreaterThan(-1);
+    expect(start).toBeLessThan(deploy.indexOf('START=(api worker)'));
+  });
+});
