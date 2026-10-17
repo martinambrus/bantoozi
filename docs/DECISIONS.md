@@ -2803,3 +2803,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   new `pattern` key until it reloads (the D-163 new-version bar). Calibration (owner ratings, one
   card, online replay): 63/275 dislikes and 14/569 likes lowered. Parked: words in the personal
   model (`FEATURE_SPEC_V2`), PLAN §15.
+- D-269: 2026-10-17 (owner request: the Select all checkbox, the per-article checkboxes and the bulk
+  Like/Dislike buttons were offered only in a feed view; they are wanted in the lanes too) — Spec 09
+  §3.2 extended: every lane except Hidden gets the row checkboxes, the tri-state "Select all
+  articles" and the "N selected" panel with Like and Dislike, the same as in a feed. Analysis stays
+  feed-only: a lane mixes feeds and `analyze` takes one feed's id, so the lane panel has no
+  "Analyze" button. Hidden, folder and label views stay without selection. The selection is cleared
+  on every view change already (the list is keyed by view).

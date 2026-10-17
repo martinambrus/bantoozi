@@ -185,7 +185,11 @@ export function useFeedTraining(
     // eslint-disable-next-line react-hooks/exhaustive-deps -- current is rebuilt every render
   }, [storeVersion, selectedItems, store, remove]);
 
-  if (view.kind !== 'feed' || subscription === undefined) {
+  // A feed view offers analysis too; a lane offers the bulk ratings but not analysis, since its
+  // articles come from many feeds. The hidden lane is left out: its rows are ones the person hid.
+  const feedView = view.kind === 'feed' ? subscription : undefined;
+  const laneView = view.kind === 'lane' && view.lane !== 'hidden';
+  if (feedView === undefined && !laneView) {
     return { panel: null, selectAll: null, selectionOf: () => undefined };
   }
 
@@ -193,41 +197,57 @@ export function useFeedTraining(
     panel:
       selection.items.length > 0 || refused ? (
         <div className="rounded-xl border border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-          <AnalyzePanel
-            subscription={subscription}
-            items={analyzable}
-            selectedCount={selection.items.length}
-            showAnalyze={analyzable.length > 0 || selection.items.length === 0}
-            onDrop={(articleIds) => {
-              setRefused(true);
-              selection.remove(articleIds);
-            }}
-            listSelected={false}
-            actions={
-              <BulkActions
-                items={chosenNow}
-                onDone={(articleIds) => {
-                  setRefused(false);
-                  selection.remove(articleIds);
-                }}
-              />
-            }
-            returnFocus={(articleIds) => {
-              focusFirstListed(listRef.current, articleIds);
-            }}
-            onSubmitted={(_requests, sentIds) => {
-              setRefused(false);
-              // The panel went while the request was on its way (the list dropped every article
-              // sent): the focus it had fell to the page, so it returns to the list as well.
-              const active = document.activeElement;
-              const nothingElse = latestItems.current.every(({ id }) => sentIds.includes(id));
-              if (nothingElse && (active === null || active === document.body)) {
-                focusFirstListed(listRef.current, sentIds);
+          {feedView === undefined ? (
+            <div className="flex flex-col gap-3">
+              <p className="text-sm font-medium">
+                {t('panel.total', { count: selection.items.length })}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <BulkActions
+                  items={chosenNow}
+                  onDone={(articleIds) => {
+                    selection.remove(articleIds);
+                  }}
+                />
+              </div>
+            </div>
+          ) : (
+            <AnalyzePanel
+              subscription={feedView}
+              items={analyzable}
+              selectedCount={selection.items.length}
+              showAnalyze={analyzable.length > 0 || selection.items.length === 0}
+              onDrop={(articleIds) => {
+                setRefused(true);
+                selection.remove(articleIds);
+              }}
+              listSelected={false}
+              actions={
+                <BulkActions
+                  items={chosenNow}
+                  onDone={(articleIds) => {
+                    setRefused(false);
+                    selection.remove(articleIds);
+                  }}
+                />
               }
-              // An article chosen while the request was on its way stays chosen.
-              selection.remove(sentIds);
-            }}
-          />
+              returnFocus={(articleIds) => {
+                focusFirstListed(listRef.current, articleIds);
+              }}
+              onSubmitted={(_requests, sentIds) => {
+                setRefused(false);
+                // The panel went while the request was on its way (the list dropped every article
+                // sent): the focus it had fell to the page, so it returns to the list as well.
+                const active = document.activeElement;
+                const nothingElse = latestItems.current.every(({ id }) => sentIds.includes(id));
+                if (nothingElse && (active === null || active === document.body)) {
+                  focusFirstListed(listRef.current, sentIds);
+                }
+                // An article chosen while the request was on its way stays chosen.
+                selection.remove(sentIds);
+              }}
+            />
+          )}
         </div>
       ) : null,
     selectAll:
