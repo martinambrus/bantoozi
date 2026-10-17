@@ -206,13 +206,13 @@ const FAMILY = sql`CASE WHEN c.visibility = 'private' THEN coalesce(c.parent_car
  * For every positive interest card the user holds, its newest ratings of the last `windowDays` days
  * (likes, and dislikes without a quality reason) on articles that any card of the held card's family
  * answered with `p >= minP`, at most `poolSize` per held card (the input of the similar-dislikes
- * demotion). Keyed by the held card id.
+ * demotion). Keyed by the held card id; `cardIds` limits it to those held cards.
  */
 export async function loadSimilarFeedback(
   db: Executor,
   userId: string,
   now: Date,
-  limits: { minP: number; windowDays: number; poolSize: number },
+  limits: { minP: number; windowDays: number; poolSize: number; cardIds?: readonly string[] },
 ): Promise<Map<string, SimilarFeedbackRow[]>> {
   const since = new Date(now.getTime() - limits.windowDays * 86_400_000);
   const result = await db.execute<{
@@ -227,7 +227,8 @@ export async function loadSimilarFeedback(
         FROM user_cards uc
         JOIN interest_cards c ON c.id = uc.card_id AND c.kind = 'interest' AND c.retired_at IS NULL
                              AND (c.visibility <> 'private' OR c.owner_user_id = uc.user_id)
-       WHERE uc.user_id = ${userId}::uuid AND uc.strength <> 'never'),
+       WHERE uc.user_id = ${userId}::uuid AND uc.strength <> 'never'
+         ${limits.cardIds === undefined ? sql`` : sql`AND uc.card_id = ANY(${sql.param([...limits.cardIds])}::bigint[])`}),
     rated AS (
       SELECT ua.article_id, ua.rating, ua.rated_at
         FROM user_article ua

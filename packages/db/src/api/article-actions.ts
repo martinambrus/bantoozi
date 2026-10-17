@@ -1443,6 +1443,7 @@ async function dislikePattern(
     minP: config.lanes.maybe,
     windowDays: check.windowDays,
     poolSize: check.poolSize,
+    cardIds: [card.cardId],
   });
   const judged = check.judge({
     cardId: card.cardId,
