@@ -250,6 +250,43 @@ describe('GET /me/learning', () => {
     expect(counted.uncovered.articles.map((a) => a.id)).toEqual([later]);
   });
 
+  it('"Not now" puts each card hint aside until newer ratings, the other hint unaffected (D-265)', async () => {
+    const user = await createTestUser(h);
+    const feedId = await subscribe(user, 'training');
+    const card = await createCard(h.owner, { title: 'Learning card' });
+    for (let i = 0; i < 3; i += 1) await rate(user, feedId, card.id, 1, 0.05);
+    for (let i = 0; i < 3; i += 1) {
+      await rate(user, feedId, card.id, -1, 0.05, undefined, 'off_topic');
+    }
+    const before = (await status(user)).feeds[0]!;
+    expect([before.uncovered.suggest, before.unwanted.suggest]).toEqual([true, true]);
+
+    const api = apiClient(h.server, user);
+    const res = await api.post(`/subscriptions/${feedId}/card-hint/dismiss`, { kind: 'interest' });
+    expect(res.statusCode, res.body).toBe(204);
+    // The dismissal is in the past of the next rating.
+    await h.owner.query(
+      `UPDATE user_feed_preferences SET interest_hint_dismissed_at = now() - interval '20 minutes'
+        WHERE user_id = $1 AND feed_id = $2`,
+      [user.id, feedId],
+    );
+    const after = (await status(user)).feeds[0]!;
+    expect(after.uncovered).toEqual({ count: 0, suggest: false, articles: [] });
+    expect(after.unwanted).toMatchObject({ count: 3, suggest: true });
+
+    const later = await rate(user, feedId, card.id, 1, 0.05, new Date(Date.now() - 600_000));
+    const counted = (await status(user)).feeds[0]!;
+    expect(counted.uncovered.count).toBe(1);
+    expect(counted.uncovered.articles.map((a) => a.id)).toEqual([later]);
+
+    await api.post(`/subscriptions/${feedId}/card-hint/dismiss`, { kind: 'never' });
+    expect((await status(user)).feeds[0]!.unwanted).toEqual({
+      count: 0,
+      suggest: false,
+      articles: [],
+    });
+  });
+
   it('suggests a Never card from topical dislikes no Never card caught, retired only by a Never card made from them', async () => {
     const user = await createTestUser(h);
     const feedId = await subscribe(user, 'training');

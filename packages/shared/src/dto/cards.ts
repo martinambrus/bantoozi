@@ -151,6 +151,8 @@ export const CardDraftBodySchema = z
       .min(1)
       .max(CARD_DRAFT_MAX_ARTICLES)
       .refine((ids) => new Set(ids).size === ids.length, 'duplicate article ids'),
+    /** The kind of card to propose (D-265): an interest (default) or a Never card. */
+    kind: z.enum(['interest', 'never']).optional(),
   })
   .strict();
 export type CardDraftBody = z.infer<typeof CardDraftBodySchema>;
@@ -170,6 +172,11 @@ export const CardDraftSchema = z
     title: z.string().max(CARD_LIMITS.titleMax).nullable(),
     interest: z.string().max(CARD_LIMITS.interestMax).nullable(),
     source: z.enum(['llm', 'fallback']).nullable(),
+    /**
+     * A card the user holds that the proposal restates (D-265); null when none, or not complete.
+     * Absent from an older server, so it defaults to null when parsed.
+     */
+    similar: z.object({ cardId: IdSchema, title: z.string() }).strict().nullable().default(null),
   })
   .strict();
 export type CardDraft = z.infer<typeof CardDraftSchema>;

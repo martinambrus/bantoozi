@@ -45,6 +45,7 @@ describe('POST /cards/drafts', () => {
       title: null,
       interest: null,
       source: null,
+      similar: null,
     });
     expect(await outbox(h, r.user.id, 'card.draft')).toEqual([
       { queue: 'card.draft', payload: { draftId: draft.id } },
@@ -69,6 +70,7 @@ describe('POST /cards/drafts', () => {
       title: 'Space',
       interest: 'Space news.',
       source: 'llm',
+      similar: null,
     });
 
     const other = await newReader(h);
@@ -158,5 +160,120 @@ describe('POST /cards/from-article with more articles', () => {
       strength: 'like',
     });
     expect(tooMany.statusCode).toBe(400);
+  });
+});
+
+describe('D-265: reused drafts, the kind of card and held look-alikes', () => {
+  const complete = (id: string, title: string, interest: string) =>
+    h.owner.query(
+      `UPDATE card_drafts SET status = 'complete', title = $2, interest = $3, source = 'llm',
+                              completed_at = now() WHERE id = $1`,
+      [id, title, interest],
+    );
+
+  it('reuses the latest complete or awaited draft of the same articles, kind and language', async () => {
+    const { r, articles } = await setup();
+    const first = (await r.api.post('/cards/drafts', { articleIds: articles })).json() as {
+      id: string;
+    };
+    // Pending and awaited: the same draft, and no second provider call.
+    const again = (await r.api.post('/cards/drafts', { articleIds: articles })).json() as {
+      id: string;
+    };
+    expect(again.id).toBe(first.id);
+    await complete(first.id, 'Batteries', 'New battery chemistries and how they reach production.');
+    const reused = await r.api.post('/cards/drafts', { articleIds: articles });
+    expect(reused.json().id).toBe(first.id);
+    expect((await r.api.get(`/cards/drafts/${first.id}`)).json()).toMatchObject({
+      status: 'complete',
+      title: 'Batteries',
+    });
+    expect(await outbox(h, r.user.id, 'card.draft')).toHaveLength(1);
+
+    // Another kind, another order of the articles, or a failed draft: a new one.
+    const never = await r.api.post('/cards/drafts', { articleIds: articles, kind: 'never' });
+    const reordered = await r.api.post('/cards/drafts', { articleIds: [...articles].reverse() });
+    expect(new Set([first.id, never.json().id, reordered.json().id]).size).toBe(3);
+    const kinds = await h.owner.query<{ kind: string }>(
+      `SELECT kind FROM card_drafts WHERE id = $1`,
+      [never.json().id],
+    );
+    expect(kinds.rows[0]?.kind).toBe('never');
+    await h.owner.query(
+      `UPDATE card_drafts SET status = 'failed', error_code = 'x', completed_at = now(),
+                              title = NULL, interest = NULL, source = NULL
+        WHERE user_id = $1`,
+      [r.user.id],
+    );
+    const fresh = await r.api.post('/cards/drafts', { articleIds: articles });
+    expect([first.id, never.json().id, reordered.json().id]).not.toContain(fresh.json().id);
+  });
+
+  it('does not reuse a pending draft nobody waits for any more', async () => {
+    const { r, articles } = await setup();
+    const first = (await r.api.post('/cards/drafts', { articleIds: articles })).json() as {
+      id: string;
+    };
+    await h.owner.query(
+      `UPDATE card_drafts SET created_at = now() - interval '2 hours' WHERE id = $1`,
+      [first.id],
+    );
+    const second = await r.api.post('/cards/drafts', { articleIds: articles });
+    expect(second.json().id).not.toBe(first.id);
+  });
+
+  it('names the held card of its kind a complete draft restates', async () => {
+    const { r, articles } = await setup();
+    const held = await r.api.post('/cards', {
+      title: 'Battery chemistry',
+      interest: 'New battery chemistries and how they reach production.',
+      strength: 'like',
+    });
+    expect(held.statusCode, held.body).toBe(201);
+    const cardId = held.json().card.id as string;
+    const like = (await r.api.post('/cards/drafts', { articleIds: articles })).json().id as string;
+    const never = (
+      await r.api.post('/cards/drafts', { articleIds: articles, kind: 'never' })
+    ).json().id as string;
+    for (const id of [like, never]) {
+      await complete(id, 'Battery chemistries', 'New battery chemistries reaching production.');
+    }
+    expect((await r.api.get(`/cards/drafts/${like}`)).json().similar).toEqual({
+      cardId,
+      title: 'Battery chemistry',
+    });
+    // A Never draft is compared with Never cards only.
+    expect((await r.api.get(`/cards/drafts/${never}`)).json().similar).toBeNull();
+    const other = (await r.api.post('/cards/drafts', { articleIds: [articles[0]!] })).json()
+      .id as string;
+    await complete(other, 'Garden birds', 'Which birds visit gardens in winter and why.');
+    expect((await r.api.get(`/cards/drafts/${other}`)).json().similar).toBeNull();
+  });
+});
+
+describe('D-265: POST /subscriptions/:feedId/card-hint/dismiss', () => {
+  it('records "Not now" per feed and kind, only for a subscribed feed', async () => {
+    const r = await newReader(h);
+    const feed = await subscribedFeed(h, r.user.id);
+    const res = await r.api.post(`/subscriptions/${feed}/card-hint/dismiss`, { kind: 'interest' });
+    expect(res.statusCode, res.body).toBe(204);
+    const stored = await h.owner.query<{ interest: boolean; never: boolean }>(
+      `SELECT interest_hint_dismissed_at IS NOT NULL AS interest,
+              never_hint_dismissed_at IS NOT NULL AS never
+         FROM user_feed_preferences WHERE user_id = $1 AND feed_id = $2`,
+      [r.user.id, feed],
+    );
+    expect(stored.rows[0]).toEqual({ interest: true, never: false });
+    expect(
+      (await r.api.post(`/subscriptions/${feed}/card-hint/dismiss`, { kind: 'never' })).statusCode,
+    ).toBe(204);
+    const other = await newReader(h);
+    expect(
+      (await other.api.post(`/subscriptions/${feed}/card-hint/dismiss`, { kind: 'never' }))
+        .statusCode,
+    ).toBe(404);
+    expect(
+      (await r.api.post(`/subscriptions/${feed}/card-hint/dismiss`, { kind: 'maybe' })).statusCode,
+    ).toBe(400);
   });
 });

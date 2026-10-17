@@ -1444,3 +1444,51 @@ export async function getArticleDetail(
     bookmarkSnapshot: snapshot,
   };
 }
+
+/** The two card hints of a feed (D-265): the interest lightbulb and the Never eye. */
+export type CardHintKind = 'interest' | 'never';
+
+/**
+ * "Not now" on a feed's card hint (D-265): ratings up to now no longer count toward that hint, so
+ * it shows again only once enough newer ratings call for it, as after making a card. False when the
+ * caller does not subscribe to the feed.
+ */
+export async function dismissCardHint(
+  tx: TenantTx,
+  feedId: string,
+  kind: CardHintKind,
+): Promise<boolean> {
+  if (!(await ownsSubscription(tx, feedId))) return false;
+  const column =
+    kind === 'never' ? sql.raw('never_hint_dismissed_at') : sql.raw('interest_hint_dismissed_at');
+  await tx.execute(sql`
+    INSERT INTO user_feed_preferences (user_id, feed_id, ${column})
+    VALUES (${tenantUserId(tx)}::uuid, ${feedId}::bigint, now())
+    ON CONFLICT (user_id, feed_id) DO UPDATE SET ${column} = now(), updated_at = now()`);
+  return true;
+}
+
+/** Per feed of `feedIds`, when the caller last dismissed its card hints (absent: never). */
+export async function cardHintDismissals(
+  tx: TenantTx,
+  feedIds: readonly string[],
+): Promise<Map<string, { interest: Date | null; never: Date | null }>> {
+  if (feedIds.length === 0) return new Map();
+  const result = await tx.execute<{
+    feed_id: string;
+    interest_at: RawTimestamp | null;
+    never_at: RawTimestamp | null;
+  }>(sql`
+    SELECT feed_id::text AS feed_id, interest_hint_dismissed_at AS interest_at,
+           never_hint_dismissed_at AS never_at
+      FROM user_feed_preferences
+     WHERE user_id = ${tenantUserId(tx)}::uuid
+       AND feed_id = ANY(${sql.param([...feedIds])}::bigint[])
+       AND (interest_hint_dismissed_at IS NOT NULL OR never_hint_dismissed_at IS NOT NULL)`);
+  return new Map(
+    result.rows.map((row) => [
+      row.feed_id,
+      { interest: toDateOrNull(row.interest_at), never: toDateOrNull(row.never_at) },
+    ]),
+  );
+}

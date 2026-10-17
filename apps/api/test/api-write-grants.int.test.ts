@@ -292,6 +292,14 @@ const CASES: Record<string, Case> = {
       expectedVersion: '0',
     });
   },
+  'POST /subscriptions/:feedId/card-hint/dismiss': async () => {
+    const user = await createTestUser(h);
+    const feed = await createFeed(h.owner);
+    await createSubscription(h.owner, { userId: user.id, feedId: feed.id });
+    return apiClient(h.server, user).post(`/subscriptions/${feed.id}/card-hint/dismiss`, {
+      kind: 'interest',
+    });
+  },
   'POST /subscriptions/:feedId/analyze': async () => {
     const user = await createTestUser(h);
     const feed = await createFeed(h.owner);

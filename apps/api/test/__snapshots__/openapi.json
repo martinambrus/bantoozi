@@ -5111,6 +5111,64 @@
         }
       }
     },
+    "/api/v1/subscriptions/{feedId}/card-hint/dismiss": {
+      "post": {
+        "summary": "Not now: hide the feed’s card hint until newer ratings call for it again",
+        "tags": [
+          "subscriptions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "interest",
+                      "never"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "feedId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Dismissed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "nullable": true,
+                  "enum": [
+                    null
+                  ],
+                  "description": "Dismissed"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/subscriptions/{feedId}/analyze": {
       "post": {
         "summary": "Request analysis of exactly these article revisions",
@@ -15143,6 +15201,13 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "interest",
+                      "never"
+                    ]
                   }
                 },
                 "required": [
@@ -15191,6 +15256,24 @@
                         "llm",
                         "fallback"
                       ]
+                    },
+                    "similar": {
+                      "default": null,
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "cardId": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "cardId",
+                        "title"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -15198,7 +15281,8 @@
                     "status",
                     "title",
                     "interest",
-                    "source"
+                    "source",
+                    "similar"
                   ],
                   "additionalProperties": false
                 }
@@ -15263,6 +15347,24 @@
                         "llm",
                         "fallback"
                       ]
+                    },
+                    "similar": {
+                      "default": null,
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "cardId": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "cardId",
+                        "title"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -15270,7 +15372,8 @@
                     "status",
                     "title",
                     "interest",
-                    "source"
+                    "source",
+                    "similar"
                   ],
                   "additionalProperties": false
                 }

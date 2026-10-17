@@ -122,6 +122,13 @@ export const InferenceChangeSchema = z
   .strict();
 export type InferenceChange = z.infer<typeof InferenceChangeSchema>;
 
+/**
+ * `POST /subscriptions/:feedId/card-hint/dismiss` (D-265): "Not now" on the feed's interest
+ * (lightbulb) or Never (eye) card hint; ratings up to now stop counting toward it.
+ */
+export const CardHintDismissSchema = z.object({ kind: z.enum(['interest', 'never']) }).strict();
+export type CardHintDismiss = z.infer<typeof CardHintDismissSchema>;
+
 /** `POST /subscriptions/:feedId/analyze`: exact article revisions (spec 08 §4.1). */
 export const AnalyzeBodySchema = z
   .object({

@@ -366,10 +366,19 @@ export const cardRoutes: FastifyPluginAsyncZod = async (app) => {
         const { id } = await createCardDraft(tx, {
           articleIds: request.body.articleIds,
           locale,
+          kind: request.body.kind ?? 'interest',
         });
+        // A reused draft may be complete already: the editor reads it on its first poll.
         return {
           status: 202,
-          body: { id, status: 'pending' as const, title: null, interest: null, source: null },
+          body: {
+            id,
+            status: 'pending' as const,
+            title: null,
+            interest: null,
+            source: null,
+            similar: null,
+          },
         };
       });
       await reply.code(202).send(outcome.body);
