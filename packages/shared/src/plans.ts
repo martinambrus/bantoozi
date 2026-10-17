@@ -44,3 +44,9 @@ export const PlanLimitsSchema = z
 
 /** Fetch interval used when a feed has no subscribers (spec 02 §6). */
 export const DEFAULT_MIN_INTERVAL_S = 900;
+
+/**
+ * Feeds polled faster than this check robots.txt before every request (spec 03 §8.2). A fast feed
+ * that robots.txt disallows is polled at this floor instead, like any slower feed (D-267).
+ */
+export const ROBOTS_FAST_FEED_FLOOR_S = 300;

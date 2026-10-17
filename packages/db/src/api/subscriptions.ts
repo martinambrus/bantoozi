@@ -42,6 +42,8 @@ export interface FeedInfoRow {
   fetchUrl?: string;
   nextFetchAt?: Date;
   publisherIntervalS?: number;
+  /** robots.txt slowed this fast feed to `ROBOTS_FAST_FEED_FLOOR_S` (D-267). */
+  robotsSlow?: boolean;
 }
 
 /** One of the user's subscriptions with its feed and remembered image policy. */
@@ -72,6 +74,7 @@ type SubscriptionDbRow = {
   fetch_url: string;
   next_fetch_at: RawTimestamp;
   publisher_interval_s: number | null;
+  robots_slow: boolean;
   title_override: string | null;
   folder: string | null;
   allow_duplicates: boolean;
@@ -98,6 +101,7 @@ function subscriptionRow(row: SubscriptionDbRow): SubscriptionRow {
       fetchUrl: row.fetch_url,
       nextFetchAt: toDate(row.next_fetch_at),
       publisherIntervalS: row.publisher_interval_s ?? 0,
+      robotsSlow: row.robots_slow,
     },
     titleOverride: row.title_override,
     folder: row.folder,
@@ -118,7 +122,8 @@ const selectSubscriptions = (user: string, where: SQL) => sql`
            CASE WHEN jsonb_typeof(f.publish_stats -> 'publisher_min_interval_s') = 'number'
              THEN (f.publish_stats ->> 'publisher_min_interval_s')::float8 ELSE 0 END,
            CASE WHEN jsonb_typeof(f.publish_stats -> 'cache_min_interval_s') = 'number'
-             THEN (f.publish_stats ->> 'cache_min_interval_s')::float8 ELSE 0 END) AS publisher_interval_s, s.title_override, s.folder,
+             THEN (f.publish_stats ->> 'cache_min_interval_s')::float8 ELSE 0 END) AS publisher_interval_s,
+         f.publish_stats ? 'robots_slow_since' AS robots_slow, s.title_override, s.folder,
          s.allow_duplicates, s.hidden, s.inference_mode, s.inference_version::text AS inference_version,
          s.inference_activated_at, p.image_policy, s.created_at
     FROM subscriptions s
