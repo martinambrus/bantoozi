@@ -160,8 +160,9 @@ export interface RankDislike {
 /**
  * The user's current disliked articles rated after `since` (spec 06 §5): one per article from the
  * reader state, so an edited reason moves its count and an undo or unrate removes it. The stale
- * status is the feedback-time snapshot of the latest rating event (`staleAtFeedback`), never
- * recomputed from the article's current facets.
+ * status is the feedback-time snapshot (`staleAtFeedback`) of the rating in effect, whose event has
+ * `created_at = rated_at` (an undone re-rate's later event does not count), never recomputed from
+ * the article's current facets.
  */
 export async function loadRecentDislikes(
   db: Executor,
@@ -178,8 +179,8 @@ export async function loadRecentDislikes(
                      WHEN 'boolean' THEN (fe.value->>'staleAtFeedback')::boolean END
               FROM feedback_events fe
              WHERE fe.user_id = ua.user_id AND fe.article_id = ua.article_id
-               AND fe.kind IN ('rate', 'prompt_answer')
-             ORDER BY fe.created_at DESC, fe.id DESC LIMIT 1) AS stale
+               AND fe.kind IN ('rate', 'prompt_answer') AND fe.created_at = ua.rated_at
+             ORDER BY fe.id DESC LIMIT 1) AS stale
       FROM user_article ua
      WHERE ua.user_id = ${userId}::uuid AND ua.rating = -1
        AND ua.rated_at > ${since.toISOString()}::timestamptz
