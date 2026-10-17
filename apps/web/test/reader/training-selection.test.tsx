@@ -229,16 +229,25 @@ describe('which rows have a checkbox', () => {
     expect(withBox(['Elsewhere 21'])).toEqual(['Elsewhere 21']);
   });
 
-  it('are in a feed and in no other view', async () => {
+  it('are in a feed and in the lanes but the hidden one, and in no other view', async () => {
     const { app } = await openFeed([item(1), item(2)]);
     expect(withBox(titles(2))).toEqual(['Article 1', 'Article 2']);
 
-    const views = [
+    const lanes = [
       ['/read/$lane', { lane: 'for_you' }],
       ['/read/$lane', { lane: 'maybe' }],
       ['/read/$lane', { lane: 'everything' }],
       ['/read/$lane', { lane: 'new' }],
       ['/read/$lane', { lane: 'bookmarks' }],
+    ] as const;
+    for (const [to, params] of lanes) {
+      await go(app, to, params);
+      await screen.findByRole('article', { name: 'Elsewhere 21' });
+      expect(withBox(['Elsewhere 21']), JSON.stringify(params)).toEqual(['Elsewhere 21']);
+      expect(screen.getByRole('checkbox', { name: /^Select all articles$/ })).toBeInTheDocument();
+    }
+
+    const views = [
       ['/read/$lane', { lane: 'hidden' }],
       ['/read/folder/$name', { name: 'News' }],
       ['/read/label/$labelId', { labelId: '12' }],
@@ -324,7 +333,7 @@ describe('choosing articles', () => {
 describe('select all', () => {
   const all = () => screen.getByRole('checkbox', { name: /^(Select|Deselect) all articles$/ });
 
-  it('is a tri-state checkbox above the rows of a feed, and in no other view', async () => {
+  it('is a tri-state checkbox above the rows of a feed or a lane, and in no other view', async () => {
     const { app } = await openFeed(numbered(3));
     const box = all();
     expect(box).toHaveAccessibleName('Select all articles');
@@ -336,7 +345,7 @@ describe('select all', () => {
     expect(all()).toBePartiallyChecked();
     expect(all()).toHaveAccessibleName('Select all articles');
 
-    await go(app, '/read/$lane', { lane: 'new' });
+    await go(app, '/read/$lane', { lane: 'hidden' });
     await screen.findByRole('article', { name: 'Elsewhere 21' });
     expect(screen.queryByRole('checkbox', { name: /all articles/ })).toBeNull();
   });

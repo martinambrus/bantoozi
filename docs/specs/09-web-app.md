@@ -194,7 +194,7 @@ login without leaking the previous account's UI. Slow classification leaves arti
 - **Untrained items:** show "Not analyzed" and retain normal read/rate/bookmark actions. An Active
   feed's arrival kept out by the daily cap (`analysis.overDailyCap`, D-252) shows "Not analyzed – over
   daily budget" with a tooltip naming the cap and "Select it to analyze it anyway"; it stays selectable. In a feed
-  view, every row has a selection checkbox (analyzed ones too), and a tri-state "Select all articles"
+  view or in a lane other than Hidden (D-269), every row has a selection checkbox (analyzed ones too), and a tri-state "Select all articles"
   checkbox above the list ticks or unticks every loaded row (mixed state when some are ticked; the
   reader's selection has no cap); the panel above the list shows only "N selected" and the buttons
   "Analyze selected N articles" (at most 20 per submission, in list order, "Analyze 20 of M" when
