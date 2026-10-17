@@ -36,6 +36,7 @@ async function renderShell({
   signingOut,
   onLogout = vi.fn(),
   language = 'en',
+  plan,
 }: {
   path?: (typeof PATHS)[number];
   user?: AppShellUser;
@@ -43,10 +44,17 @@ async function renderShell({
   signingOut?: boolean | undefined;
   onLogout?: () => void;
   language?: Language;
+  plan?: string | undefined;
 } = {}) {
   const rootRoute = createRootRoute({
     component: () => (
-      <AppShellLayout user={user} onLogout={onLogout} offline={offline} signingOut={signingOut}>
+      <AppShellLayout
+        user={user}
+        plan={plan}
+        onLogout={onLogout}
+        offline={offline}
+        signingOut={signingOut}
+      >
         <Outlet />
       </AppShellLayout>
     ),
@@ -170,6 +178,22 @@ describe('AppShellLayout', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Sign out' }));
     expect(onLogout).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('shows the plan under the email in the account menu, not in the top bar', async () => {
+    const user = userEvent.setup();
+    await renderShell({ plan: 'Premium' });
+    expect(screen.queryByText('Premium plan')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Account menu: Ada Lovelace' }));
+    expect(screen.getByText('Premium plan')).toBeVisible();
+  });
+
+  it('names the plan in Slovak', async () => {
+    const user = userEvent.setup();
+    await renderShell({ plan: 'Prémium', language: 'sk' });
+    await user.click(screen.getByRole('button', { name: 'Ponuka účtu: Ada Lovelace' }));
+    expect(screen.getByText('Plán Prémium')).toBeVisible();
   });
 
   it('shows the account menu busy while signing out and offers no second Sign out', async () => {

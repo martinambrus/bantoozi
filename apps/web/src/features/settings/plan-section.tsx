@@ -4,13 +4,20 @@ import { formatInterval } from '../../i18n/duration.js';
 import { useMe } from '../../session/context.js';
 import { SettingsSection } from './section.js';
 
+/** The plan's name in the interface language (the Slovak label when there is one). */
+export function planLabel(
+  plan: { label: string; labelSk?: string | null },
+  language: string,
+): string {
+  return language.startsWith('sk') ? (plan.labelSk ?? plan.label) : plan.label;
+}
+
 export function PlanBadge() {
   const { t, i18n } = useTranslation('settings');
   const me = useMe();
   const plan = me.planInfo;
   if (plan === undefined) return null;
-  const label = i18n.language.startsWith('sk') ? (plan.labelSk ?? plan.label) : plan.label;
-  return <Badge>{t('plan.badge', { label })}</Badge>;
+  return <Badge>{t('plan.badge', { label: planLabel(plan, i18n.language) })}</Badge>;
 }
 
 export function PlanSection() {

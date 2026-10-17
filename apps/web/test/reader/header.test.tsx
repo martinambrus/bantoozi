@@ -97,6 +97,28 @@ describe('the title and the count', () => {
   });
 });
 
+describe('the plan', () => {
+  it('is named in the account menu, not beside the title', async () => {
+    const { app } = await open({
+      path: '/read/for_you',
+      me: makeMe({
+        planInfo: {
+          label: 'Premium',
+          labelSk: null,
+          releaseIntervalS: 60,
+          minFetchIntervalS: 60,
+          nextUpdateAt: '2026-10-16T12:15:00.000Z',
+        },
+      }),
+    });
+
+    const header = await headerOf('For you');
+    expect(within(header).queryByText('Premium plan')).toBeNull();
+    await app.user.click(screen.getByRole('button', { name: /^Account menu/ }));
+    expect(await screen.findByText('Premium plan')).toBeVisible();
+  });
+});
+
 describe('the controls of the header', () => {
   it('has an accessible name on every control', async () => {
     await open({ path: '/read/for_you', items: [item(1)] });

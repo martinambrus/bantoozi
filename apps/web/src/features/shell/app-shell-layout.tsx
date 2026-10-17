@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Badge } from '../../components/badge.js';
 import { Button } from '../../components/button.js';
 import { FOCUS_RING, cx } from '../../components/cx.js';
 import { IconButton } from '../../components/icon-button.js';
@@ -18,6 +19,8 @@ export interface AppShellUser {
 
 export interface AppShellLayoutProps {
   user: AppShellUser;
+  /** The account's plan, named in the account menu. */
+  plan?: string | undefined;
   onLogout: () => void;
   /** The sign-out is on its way: the account menu shows it and takes no second one. */
   signingOut?: boolean | undefined;
@@ -69,9 +72,10 @@ function NavLinks({
 
 function UserMenu({
   user,
+  plan,
   onLogout,
   signingOut = false,
-}: Pick<AppShellLayoutProps, 'user' | 'onLogout' | 'signingOut'>) {
+}: Pick<AppShellLayoutProps, 'user' | 'plan' | 'onLogout' | 'signingOut'>) {
   const { t } = useTranslation('shell');
   const displayName = user.displayName?.trim();
   const name = displayName === undefined || displayName === '' ? user.email : displayName;
@@ -83,6 +87,11 @@ function UserMenu({
           <p className="break-all font-semibold">{name}</p>
           {name === user.email ? null : (
             <p className="break-all text-slate-600 dark:text-slate-300">{user.email}</p>
+          )}
+          {plan === undefined ? null : (
+            <p className="mt-1">
+              <Badge>{t('userMenu.plan', { label: plan })}</Badge>
+            </p>
           )}
         </>
       }
@@ -115,6 +124,7 @@ function UserMenu({
 /** The signed-in frame (spec 09 §1): landmarks, a skip link, the section navigation and the account menu. */
 export function AppShellLayout({
   user,
+  plan,
   onLogout,
   signingOut,
   offline,
@@ -172,7 +182,7 @@ export function AppShellLayout({
             <NavLinks admin={admin} />
           </nav>
           <div className="ml-auto">
-            <UserMenu user={user} onLogout={onLogout} signingOut={signingOut} />
+            <UserMenu user={user} plan={plan} onLogout={onLogout} signingOut={signingOut} />
           </div>
         </div>
       </header>

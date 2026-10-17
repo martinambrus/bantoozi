@@ -617,7 +617,7 @@ documents limited browser support; foreground replay is therefore part of the ac
 
 ### Plan update timing (D-257)
 
-The reader header shows the localized stored plan badge. Settings includes the plan, release cadence
+The account menu shows the localized stored plan badge under the email (it left the reader header, whose row wrapped). Settings includes the plan, release cadence
 and next release in the account timezone, with a short explanation that sources may update less often.
 Feed rows and their settings show “Updates every X”, the effective source/publisher limit when one
 applies, and “Next update at hh:mm”. Dead/paused feeds have no predicted next update. Subscription
