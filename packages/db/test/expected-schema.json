@@ -1,5 +1,5 @@
 {
-  "$comment": "Hand-written schema parity snapshot of spec 02 \u00a71.2\u2013\u00a77 for M0 (tables transcribed from the spec text; policies from \u00a75/\u00a75.1; grants from \u00a71.2; functions from \u00a76 and the \u00a75.2 integrity triggers). schema-parity.int.test.ts compares the migrated catalog with it.",
+  "$comment": "Hand-written schema parity snapshot of spec 02 §1.2–§7 for M0 (tables transcribed from the spec text; policies from §5/§5.1; grants from §1.2; functions from §6 and the §5.2 integrity triggers). schema-parity.int.test.ts compares the migrated catalog with it.",
   "extensions": ["citext", "pg_trgm", "pgcrypto", "plpgsql"],
   "tables": {
     "settings": {
@@ -2752,6 +2752,16 @@
           "type": "timestamp with time zone",
           "nullable": true,
           "default": null
+        },
+        "interest_hint_dismissed_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        "never_hint_dismissed_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
         }
       },
       "primaryKey": ["user_id", "feed_id"],
@@ -2990,6 +3000,11 @@
           "type": "timestamp with time zone",
           "nullable": true,
           "default": null
+        },
+        "kind": {
+          "type": "text",
+          "nullable": false,
+          "default": "'interest'"
         }
       },
       "primaryKey": ["id"],
@@ -2999,7 +3014,8 @@
         "source IN ('llm','fallback')",
         "cardinality(article_ids) BETWEEN 1 AND 5",
         "(status IN ('complete','failed')) = (completed_at IS NOT NULL)",
-        "status <> 'complete' OR (interest IS NOT NULL AND source IS NOT NULL)"
+        "status <> 'complete' OR (interest IS NOT NULL AND source IS NOT NULL)",
+        "kind IN ('interest','never')"
       ],
       "foreignKeys": [
         {
@@ -4287,7 +4303,7 @@
           "UPDATE": ["story_cluster_id"]
         },
         "card_drafts": {
-          "INSERT": ["id", "user_id", "article_ids", "locale"]
+          "INSERT": ["id", "user_id", "article_ids", "locale", "kind"]
         },
         "card_suggestions": {
           "UPDATE": ["dismissed_at"]

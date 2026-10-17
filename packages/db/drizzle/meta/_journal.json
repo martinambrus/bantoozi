@@ -225,6 +225,13 @@
       "when": 1792568400002,
       "tag": "0031_plan_releases",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792568400003,
+      "tag": "0032_card_suggestions",
+      "breakpoints": true
     }
   ]
 }
