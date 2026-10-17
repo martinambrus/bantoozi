@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { Button } from '../../components/button.js';
 import { CardEditor } from '../interests/card-editor.js';
+import { useDismissCardHint } from './use-dismiss-card-hint.js';
 
 /** How many likes and dislikes a feed needs before its agreement is judged (the ranker's `FEED_AGREEMENT.minEachClass`). */
 export const AGREEMENT_MIN_EACH_CLASS = 3;
@@ -45,6 +46,7 @@ export function UncoveredSuggestion({
   const { t } = useTranslation('feeds');
   const [making, setMaking] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const dismiss = useDismissCardHint();
   const { suggest, count, articles } = agreement.uncovered;
   if (!suggest || articles.length === 0) return null;
   return (
@@ -60,6 +62,7 @@ export function UncoveredSuggestion({
       {making ? (
         <CardEditor
           fromArticles={articles}
+          onNotNow={() => dismiss(agreement.feedId, 'interest')}
           returnFocus={() => box.current?.querySelector('button') ?? null}
           onClose={() => setMaking(false)}
         />
@@ -79,6 +82,7 @@ export function UnwantedSuggestion({
   const { t } = useTranslation('feeds');
   const [making, setMaking] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const dismiss = useDismissCardHint();
   const { suggest, count, articles } = agreement.unwanted;
   if (!suggest || articles.length === 0) return null;
   return (
@@ -95,6 +99,7 @@ export function UnwantedSuggestion({
         <CardEditor
           fromArticles={articles}
           initialStrength="never"
+          onNotNow={() => dismiss(agreement.feedId, 'never')}
           returnFocus={() => box.current?.querySelector('button') ?? null}
           onClose={() => setMaking(false)}
         />

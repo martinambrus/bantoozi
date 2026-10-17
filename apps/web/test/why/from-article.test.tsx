@@ -246,7 +246,9 @@ describe('the drafted name and interest (D-240)', () => {
         'Name and description drafted from the article. Check them and change anything before saving.',
       ),
     ).toHaveAttribute('role', 'status');
-    expect(app.calls('POST', '/cards/drafts').map(bodyOf)).toEqual([{ articleIds: ['101'] }]);
+    expect(app.calls('POST', '/cards/drafts').map(bodyOf)).toEqual([
+      { articleIds: ['101'], kind: 'interest' },
+    ]);
   });
 
   it('fills the fields under StrictMode, whose second effect run must not lose the draft', async () => {
@@ -308,7 +310,7 @@ describe('the drafted name and interest (D-240)', () => {
     const form = within(dialog);
     await waitFor(() => expect(form.getByLabelText(LABELS.interest)).toHaveValue(DRAFTED.interest));
     expect(app.calls('POST', '/cards/drafts').map(bodyOf)).toEqual([
-      { articleIds: ['101', '102'] },
+      { articleIds: ['101', '102'], kind: 'interest' },
     ]);
 
     await app.user.click(form.getByRole('button', { name: 'Save' }));

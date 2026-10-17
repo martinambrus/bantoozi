@@ -103,6 +103,7 @@ POST /rules
 POST /setup/complete
 POST /subscriptions
 POST /subscriptions/:feedId/analyze
+POST /subscriptions/:feedId/card-hint/dismiss
 POST /subscriptions/:feedId/inference
 POST /subscriptions/:feedId/mark-read
 POST /subscriptions/folders/rename

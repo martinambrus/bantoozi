@@ -1,5 +1,6 @@
 import {
   accessibleArticleTitles,
+  cardHintDismissals,
   cardsMadeFromFeedArticles,
   listTrainingFeeds,
   loadLearnSamples,
@@ -81,8 +82,16 @@ export async function loadLearningStatus(
     tx,
     trainingFeeds.map((feed) => feed.feedId),
   );
+  const dismissed = await cardHintDismissals(
+    tx,
+    trainingFeeds.map((feed) => feed.feedId),
+  );
+  /** The later of two cutoffs (either may be absent). */
+  const later = (a: Date | null | undefined, b: Date | null | undefined): Date | null =>
+    a == null ? (b ?? null) : b == null || a > b ? a : b;
   // Likes rated before the user made a card from the feed's articles no longer count as uncovered,
-  // nor dislikes rated before a Never card made from them as unwanted.
+  // nor dislikes rated before a Never card made from them as unwanted; "Not now" on a hint moves
+  // its cutoff the same way (D-265).
   const agreements = trainingFeeds.map((feed) => {
     const { uncovered, unwanted, ...agreement } = feedAgreement(
       rows,
@@ -101,8 +110,8 @@ export async function loadLearningStatus(
     return {
       feed,
       agreement,
-      uncovered: since(uncovered.items, actedAt?.like),
-      unwanted: since(unwanted.items, actedAt?.never),
+      uncovered: since(uncovered.items, later(actedAt?.like, dismissed.get(feed.feedId)?.interest)),
+      unwanted: since(unwanted.items, later(actedAt?.never, dismissed.get(feed.feedId)?.never)),
     };
   });
   const titles = await accessibleArticleTitles(

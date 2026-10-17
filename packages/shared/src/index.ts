@@ -36,6 +36,7 @@ export * from './runtime-settings.js';
 export * from './settings.js';
 export * from './starter-bundles.js';
 export * from './text/canonical-json.js';
+export * from './text/card-similarity.js';
 export * from './text/normalize-text.js';
 export * from './text/tokens.js';
 export * from './release-window.js';

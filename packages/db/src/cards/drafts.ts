@@ -1,7 +1,7 @@
 import { readerReleaseClock, releasedCarrier } from '../api/releases.js';
 import { randomUUID } from 'node:crypto';
 
-import { enqueueCardDraft } from '@bantoozi/shared';
+import { enqueueCardDraft, mostSimilarCard } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Executor } from '../client.js';
@@ -23,6 +23,8 @@ export const CARD_DRAFT_DEMAND_MINUTES = 30;
 
 export type CardDraftStatus = 'pending' | 'complete' | 'failed';
 export type CardDraftSource = 'llm' | 'fallback';
+/** The kind of card a draft proposes (D-265). */
+export type CardDraftKind = 'interest' | 'never';
 
 export interface CardDraftView {
   id: string;
@@ -30,17 +32,55 @@ export interface CardDraftView {
   title: string | null;
   interest: string | null;
   source: CardDraftSource | null;
+  /** A held card of the same kind the proposal restates (D-265), when there is one. */
+  similar: { cardId: string; title: string } | null;
+}
+
+/** A held card's own text, as a draft compares or mentions it. */
+export interface HeldCardText {
+  cardId: string;
+  title: string;
+  interest: string;
+}
+
+/** At most this many of the user's cards go into a draft's prompt, newest classification first. */
+export const CARD_DRAFT_CONTEXT_CARDS = 30;
+
+/** The user's held cards of `kind` (Never cards, or every other strength), newest first. */
+export async function heldCardTexts(
+  db: Executor,
+  userId: string,
+  kind: CardDraftKind,
+  limit?: number,
+): Promise<HeldCardText[]> {
+  const result = await db.execute<{ card_id: string; title: string; interest: string }>(sql`
+    SELECT uc.card_id::text AS card_id, coalesce(uc.title_override, ic.title) AS title,
+           coalesce(ic.body ->> 'interest', '') AS interest
+      FROM user_cards uc JOIN interest_cards ic ON ic.id = uc.card_id
+     WHERE uc.user_id = ${userId}::uuid
+       AND ${kind === 'never' ? sql`uc.strength = 'never'` : sql`uc.strength <> 'never'`}
+     ORDER BY uc.class_since DESC, uc.card_id DESC
+     ${limit === undefined ? sql`` : sql`LIMIT ${limit}`}`);
+  return result.rows.map((row) => ({
+    cardId: row.card_id,
+    title: row.title,
+    interest: row.interest,
+  }));
 }
 
 /**
  * Record a draft of the tenant's articles and its `card.draft` intent. Every article must be one the
  * user can see (a subscribed feed carries it, or the user has reader state on it), as for "make a
  * card from this"; otherwise `404`. Drafts older than {@link CARD_DRAFT_TTL_HOURS} go first.
+ *
+ * The same articles, kind and language asked again reuse the user's latest draft of them while it
+ * is complete, or pending and still awaited (D-265): the suggestion stays the same instead of a new
+ * wording, and costs one provider call.
  */
 export async function createCardDraft(
   tx: TenantTx,
-  input: { articleIds: readonly string[]; locale: string },
-): Promise<{ id: string }> {
+  input: { articleIds: readonly string[]; locale: string; kind: CardDraftKind },
+): Promise<{ id: string; reused: boolean }> {
   const userId = tenantUserId(tx);
   const clock = await readerReleaseClock(tx);
   const visible = await tx.execute<{ id: string }>(sql`
@@ -57,27 +97,54 @@ export async function createCardDraft(
     DELETE FROM card_drafts
      WHERE user_id = ${userId}::uuid
        AND created_at < now() - make_interval(hours => ${CARD_DRAFT_TTL_HOURS})`);
+  const reuse = await tx.execute<{ id: string }>(sql`
+    SELECT id::text AS id FROM card_drafts
+     WHERE user_id = ${userId}::uuid AND kind = ${input.kind} AND locale = ${input.locale}
+       AND article_ids = ${sql.param([...input.articleIds])}::bigint[]
+       AND (status = 'complete'
+            OR (status = 'pending'
+                AND created_at > now() - make_interval(mins => ${CARD_DRAFT_DEMAND_MINUTES})))
+     ORDER BY created_at DESC
+     LIMIT 1`);
+  const reused = reuse.rows[0]?.id;
+  if (reused !== undefined) return { id: reused, reused: true };
   const id = randomUUID();
   await tx.execute(sql`
-    INSERT INTO card_drafts (id, user_id, article_ids, locale)
+    INSERT INTO card_drafts (id, user_id, article_ids, locale, kind)
     VALUES (${id}::uuid, ${userId}::uuid, ${sql.param([...input.articleIds])}::bigint[],
-            ${input.locale})`);
+            ${input.locale}, ${input.kind})`);
   await enqueueCardDraft(tenantOutbox(tx), { draftId: id });
-  return { id };
+  return { id, reused: false };
 }
 
-/** One of the tenant's drafts (RLS: another user's id reads as missing). */
+/**
+ * One of the tenant's drafts (RLS: another user's id reads as missing). A complete one names the
+ * held card of its kind it restates, if any (D-265), against the cards held now.
+ */
 export async function getCardDraft(tx: TenantTx, id: string): Promise<CardDraftView | null> {
+  const userId = tenantUserId(tx);
   const result = await tx.execute<{
     id: string;
     status: CardDraftStatus;
     title: string | null;
     interest: string | null;
     source: CardDraftSource | null;
+    kind: CardDraftKind;
   }>(sql`
-    SELECT id::text AS id, status, title, interest, source FROM card_drafts
-     WHERE id = ${id}::uuid AND user_id = ${tenantUserId(tx)}::uuid`);
-  return result.rows[0] ?? null;
+    SELECT id::text AS id, status, title, interest, source, kind FROM card_drafts
+     WHERE id = ${id}::uuid AND user_id = ${userId}::uuid`);
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  const { kind, ...draft } = row;
+  if (draft.status !== 'complete' || draft.interest === null) return { ...draft, similar: null };
+  const match = mostSimilarCard(
+    { title: draft.title, interest: draft.interest },
+    await heldCardTexts(tx, userId, kind),
+  );
+  return {
+    ...draft,
+    similar: match === null ? null : { cardId: match.card.cardId, title: match.card.title },
+  };
 }
 
 /** What the worker needs to write a pending draft; null when it is gone or already answered. */
@@ -85,6 +152,7 @@ export interface CardDraftWork {
   id: string;
   userId: string;
   locale: string;
+  kind: CardDraftKind;
   articleIds: string[];
   createdAt: Date;
 }
@@ -94,10 +162,11 @@ export async function loadCardDraftWork(db: Executor, id: string): Promise<CardD
     id: string;
     user_id: string;
     locale: string;
+    kind: CardDraftKind;
     article_ids: string[];
     created_at: RawTimestamp;
   }>(sql`
-    SELECT id::text AS id, user_id::text AS user_id, locale,
+    SELECT id::text AS id, user_id::text AS user_id, locale, kind,
            article_ids::text[] AS article_ids, created_at
       FROM card_drafts WHERE id = ${id}::uuid AND status = 'pending'`);
   const row = result.rows[0];
@@ -107,6 +176,7 @@ export async function loadCardDraftWork(db: Executor, id: string): Promise<CardD
         id: row.id,
         userId: row.user_id,
         locale: row.locale,
+        kind: row.kind,
         articleIds: row.article_ids,
         createdAt: toDate(row.created_at),
       };

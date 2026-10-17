@@ -634,6 +634,9 @@ function crossUserCases(): Record<string, { attempts: Attempt[]; statuses: numbe
     'POST /subscriptions/:feedId/inference': notFound(() =>
       aApi.post(`/subscriptions/${B.privateFeed}/inference`, { mode: 'off', expectedVersion: '1' }),
     ),
+    'POST /subscriptions/:feedId/card-hint/dismiss': notFound(() =>
+      aApi.post(`/subscriptions/${B.privateFeed}/card-hint/dismiss`, { kind: 'never' }),
+    ),
     'POST /subscriptions/:feedId/analyze': notFound(() =>
       aApi.post(`/subscriptions/${B.privateFeed}/analyze`, {
         articles: [{ id: p1, contentRevision: '1' }],

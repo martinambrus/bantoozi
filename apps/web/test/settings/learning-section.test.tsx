@@ -115,7 +115,9 @@ describe('the interests to add in the personal learning section', () => {
       await screen.findByRole('dialog', { name: 'New card from these articles' }),
     ).toBeVisible();
     await waitFor(() =>
-      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([{ articleIds: ['10', '11'] }]),
+      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([
+        { articleIds: ['10', '11'], kind: 'interest' },
+      ]),
     );
   });
 
@@ -182,7 +184,9 @@ describe('the topics to avoid in the personal learning section', () => {
     const editor = await screen.findByRole('dialog', { name: 'New card from these articles' });
     expect(within(editor).getByRole('radio', { name: 'Never' })).toBeChecked();
     await waitFor(() =>
-      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([{ articleIds: ['10', '11'] }]),
+      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([
+        { articleIds: ['10', '11'], kind: 'never' },
+      ]),
     );
   });
 

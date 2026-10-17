@@ -77,7 +77,11 @@
       "alreadyHeld": "You already have a card with this text, with a different strength, scope or name. Find it in My interests to change it.",
       "contention": "This card changed while you were saving it. Try saving again.",
       "targetHeld": "You already have a card with this text, but with a different strength, scope or name. Edit that card instead, or make its settings match first."
-    }
+    },
+    "similar": "This looks like your card “{{title}}”. Edit it instead, or describe a different topic here.",
+    "similarNever": "This looks like your Never card “{{title}}”. Edit it instead, or describe a different topic here.",
+    "notNow": "Not now",
+    "notNowFailed": "The suggestion could not be put aside. Try again."
   },
   "swap": {
     "legend": "Replace a card to make room",

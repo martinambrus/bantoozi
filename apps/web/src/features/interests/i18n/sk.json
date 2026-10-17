@@ -77,7 +77,11 @@
       "alreadyHeld": "Kartu s týmto textom už máte, ale s inou silou, rozsahom alebo názvom. Nájdete ju v sekcii Moje záujmy a môžete ju zmeniť.",
       "contention": "Táto karta sa zmenila počas ukladania. Skúste ju uložiť znova.",
       "targetHeld": "Kartu s týmto textom už máte, ale s inou silou, rozsahom alebo názvom. Upravte radšej tú kartu alebo najprv zosúlaďte jej nastavenia."
-    }
+    },
+    "similar": "Toto sa podobá na vašu kartu „{{title}}“. Upravte radšej ju alebo tu opíšte inú tému.",
+    "similarNever": "Toto sa podobá na vašu kartu Nikdy „{{title}}“. Upravte radšej ju alebo tu opíšte inú tému.",
+    "notNow": "Teraz nie",
+    "notNowFailed": "Návrh sa nepodarilo odložiť. Skúste to znova."
   },
   "swap": {
     "legend": "Nahraďte kartu, aby sa uvoľnilo miesto",

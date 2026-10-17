@@ -10,6 +10,7 @@ import {
   listFeedPreferences,
   listOpmlRows,
   listSubscriptions,
+  dismissCardHint,
   lockFeeds,
   lockSubscription,
   readOwnUser,
@@ -37,6 +38,7 @@ import {
   FeedPreferenceSchema,
   FolderRenameResultSchema,
   FolderRenameSchema,
+  CardHintDismissSchema,
   InferenceChangeSchema,
   OpmlImportReportSchema,
   SubscribeBodySchema,
@@ -291,6 +293,27 @@ export const subscriptionRoutes: FastifyPluginAsyncZod = async (app) => {
         };
       });
       await reply.code(200).send(outcome.body);
+    },
+  );
+
+  app.post(
+    '/subscriptions/:feedId/card-hint/dismiss',
+    {
+      schema: {
+        tags: ['subscriptions'],
+        summary: 'Not now: hide the feed’s card hint until newer ratings call for it again',
+        params: FeedIdParamsSchema,
+        body: CardHintDismissSchema,
+        response: { 204: z.null().describe('Dismissed') },
+      },
+    },
+    async (request, reply) => {
+      const { feedId } = request.params;
+      await request.mutate(async (tx) => {
+        if (!(await dismissCardHint(tx, feedId, request.body.kind))) throw notFound();
+        return { status: 204, body: null };
+      });
+      await reply.code(204).send(null);
     },
   );
 

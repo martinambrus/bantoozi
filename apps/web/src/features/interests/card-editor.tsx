@@ -130,6 +130,11 @@ export interface CardEditorProps {
   initialStrength?: Strength | undefined;
   /** Where the focus goes on closing when the row that opened the editor is gone. */
   returnFocus?: ModalProps['returnFocus'];
+  /**
+   * Opened from a feed's card hint: "Not now" dismisses the hint (D-265) and closes the editor.
+   * Resolves once the hint is dismissed.
+   */
+  onNotNow?: (() => Promise<void>) | undefined;
   onClose: () => void;
 }
 
@@ -141,6 +146,7 @@ export function CardEditor({
   fromArticles,
   initialStrength,
   returnFocus,
+  onNotNow,
   onClose,
 }: CardEditorProps) {
   const { t } = useTranslation('interests');
@@ -167,7 +173,8 @@ export function CardEditor({
   // The fields the person typed in: a draft that arrives later never overwrites them.
   const typed = useRef(new Set<TextKey>());
   const sourceIds = useMemo(() => sources?.map((article) => article.id), [sources]);
-  const drafting = useCardDraft(sourceIds);
+  const drafting = useCardDraft(sourceIds, initialStrength === 'never' ? 'never' : 'interest');
+  const [dismissing, setDismissing] = useState(false);
   const draft = drafting.status === 'ready' ? drafting.draft : undefined;
   const waiting = source !== undefined && drafting.status === 'drafting';
   // Without a usable draft the interest starts from the first article's title.
@@ -319,6 +326,11 @@ export function CardEditor({
             {draftNote}
           </p>
         )}
+        {draft?.similar == null ? null : (
+          <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
+            {t(never ? 'editor.similarNever' : 'editor.similar', { title: draft.similar.title })}
+          </p>
+        )}
         <TextField
           ref={(node) => {
             fields.current.title = node;
@@ -413,7 +425,24 @@ export function CardEditor({
         )}
         {failure === null ? null : <FormAlert>{failure}</FormAlert>}
         <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="secondary" disabled={saving} onClick={onClose}>
+          {onNotNow === undefined ? null : (
+            <Button
+              variant="secondary"
+              className="me-auto"
+              loading={dismissing}
+              disabled={saving}
+              onClick={() => {
+                setDismissing(true);
+                void onNotNow().then(onClose, () => {
+                  setDismissing(false);
+                  setFailure(t('editor.notNowFailed'));
+                });
+              }}
+            >
+              {t('editor.notNow')}
+            </Button>
+          )}
+          <Button variant="secondary" disabled={saving || dismissing} onClick={onClose}>
             {t('common:actions.cancel')}
           </Button>
           <Button type="submit" loading={saving} disabled={swapping && replaceId === null}>

@@ -82,6 +82,7 @@ import {
   FeedPreferenceSchema,
   FolderRenameResultSchema,
   FolderRenameSchema,
+  CardHintDismissSchema,
   InferenceChangeSchema,
   InviteListSchema,
   LabelBodySchema,
@@ -325,6 +326,15 @@ export const routes = {
     params: FeedIdParamsSchema,
     body: InferenceChangeSchema,
     response: SubscriptionEnvelopeSchema,
+  }),
+  subscriptionCardHintDismiss: defineRoute({
+    method: 'POST',
+    path: '/subscriptions/:feedId/card-hint/dismiss',
+    auth: 'user',
+    idempotent: true,
+    params: FeedIdParamsSchema,
+    body: CardHintDismissSchema,
+    response: null,
   }),
   subscriptionsAnalyze: defineRoute({
     method: 'POST',

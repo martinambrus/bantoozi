@@ -206,7 +206,9 @@ describe('the suggestion to make an interest in the feed settings', () => {
     const editor = await screen.findByRole('dialog', { name: 'New card from these articles' });
     expect(editor).toBeVisible();
     await waitFor(() =>
-      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([{ articleIds: ['41', '40'] }]),
+      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([
+        { articleIds: ['41', '40'], kind: 'interest' },
+      ]),
     );
   });
 
@@ -268,7 +270,9 @@ describe('the suggestion to make a Never card in the feed settings', () => {
     const editor = await screen.findByRole('dialog', { name: 'New card from these articles' });
     expect(within(editor).getByRole('radio', { name: 'Never' })).toBeChecked();
     await waitFor(() =>
-      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([{ articleIds: ['51', '50'] }]),
+      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([
+        { articleIds: ['51', '50'], kind: 'never' },
+      ]),
     );
   });
 

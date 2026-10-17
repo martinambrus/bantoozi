@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { CredentialResolver } from '@bantoozi/shared/server';
-import { startFakeOllama, type FakeOllamaServer } from '@bantoozi/testing';
+import { createCard, startFakeOllama, type FakeOllamaServer } from '@bantoozi/testing';
 import { createOllamaTranslator, type OllamaTranslator } from '@bantoozi/translate';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -72,6 +72,15 @@ async function draftOf(articleIds: string[], locale = 'en') {
   return { id, userId };
 }
 
+async function hold(userId: string, title: string, interest: string, strength: string) {
+  const card = await createCard(h.owner, { title, interest });
+  await h.owner.query(
+    `INSERT INTO user_cards (user_id, card_id, strength, created_at, class_since)
+     VALUES ($1, $2, $3, now(), now())`,
+    [userId, card.id, strength],
+  );
+}
+
 async function runDraft(draftId: string): Promise<void> {
   const entry = h.handlers['card.draft'];
   if (entry.status !== 'implemented') throw new Error('card.draft is not implemented');
@@ -131,6 +140,25 @@ describe('card.draft', () => {
     // An answered draft is left alone.
     await runDraft(id);
     expect(ollama.requestCount() - before).toBe(1);
+  });
+
+  it('asks for a Never card next to the held Never cards only (D-265)', async () => {
+    const ids = await articles('Celebrity gossip of the week', 'Who wore what on the red carpet');
+    const { id, userId } = await draftOf(ids);
+    await h.owner.query(`UPDATE card_drafts SET kind = 'never' WHERE id = $1`, [id]);
+    await hold(userId, 'Space launches', 'Rocket launches and the missions they carry.', 'love');
+    await hold(userId, 'Sports results', 'Scores and results of football matches.', 'never');
+
+    await runDraft(id);
+
+    const sent = ollama.requests.at(-1)?.body as { messages: { content: string }[] };
+    expect(sent.messages[0]?.content).toContain('wants to stop seeing');
+    const data = JSON.parse(sent.messages[1]?.content ?? '{}') as {
+      existing_cards: { name: string; interest: string }[];
+    };
+    expect(data.existing_cards).toEqual([
+      { name: 'Sports results', interest: 'Scores and results of football matches.' },
+    ]);
   });
 
   it('repairs invalid output once, then falls back to the first title', async () => {

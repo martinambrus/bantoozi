@@ -68,6 +68,12 @@ export const userFeedPreferences = pgTable(
       .references(() => feeds.id, { onDelete: 'restrict' }),
     imagePolicy: text('image_policy').notNull().default('inherit'),
     firstSubscribedAt: tstz('first_subscribed_at'),
+    /**
+     * "Not now" on the feed's card hints (D-265): ratings up to these times no longer count toward
+     * the interest (uncovered likes) or Never (unwanted dislikes) suggestion.
+     */
+    interestHintDismissedAt: tstz('interest_hint_dismissed_at'),
+    neverHintDismissedAt: tstz('never_hint_dismissed_at'),
     updatedAt: tstz('updated_at').notNull().defaultNow(),
   },
   (t) => [
@@ -94,6 +100,8 @@ export const cardDrafts = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     articleIds: int8('article_ids').array().notNull(),
     locale: text('locale').notNull(),
+    /** The kind of card the draft proposes (D-265): an interest, or a Never card. */
+    kind: text('kind').notNull().default('interest'),
     status: text('status').notNull().default('pending'),
     title: text('title'),
     interest: text('interest'),
@@ -104,6 +112,7 @@ export const cardDrafts = pgTable(
   },
   (t) => [
     check('card_drafts_status_check', sql`status IN ('pending','complete','failed')`),
+    check('card_drafts_kind_check', sql`kind IN ('interest','never')`),
     check('card_drafts_source_check', sql`source IN ('llm','fallback')`),
     check('card_drafts_articles_check', sql`cardinality(article_ids) BETWEEN 1 AND 5`),
     check(
