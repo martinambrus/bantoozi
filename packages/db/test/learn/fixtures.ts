@@ -8,6 +8,7 @@ import {
   createUser,
 } from '@bantoozi/testing';
 
+import type { RatingReason } from '@bantoozi/shared';
 import * as dbModule from '../../src/index.js';
 import {
   answerPrompt,
@@ -218,8 +219,8 @@ export class Scenario {
     );
   }
 
-  answer(articleId: string, liked: boolean) {
-    return this.run(articleId, (tx, base) => answerPrompt(tx, { ...base, liked }));
+  answer(articleId: string, liked: boolean, reason?: RatingReason) {
+    return this.run(articleId, (tx, base) => answerPrompt(tx, { ...base, liked, reason }));
   }
 
   bookmark(articleId: string) {

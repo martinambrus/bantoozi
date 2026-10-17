@@ -682,6 +682,7 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
           articleId: id,
           fence: fenceOf(body),
           liked: body.liked,
+          reason: body.reason,
           analysisRequestId: await ratingAnalysis(tx, ctx, {
             articleId: id,
             fence: body,
