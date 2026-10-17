@@ -22,6 +22,7 @@ export * from './rank.js';
 export * from './rule-codes.js';
 export * from './rules.js';
 export * from './settings.js';
+export * from './similar-dislikes.js';
 export * from './suggest-example.js';
 export * from './types.js';
 export * from './version.js';
