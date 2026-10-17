@@ -24,7 +24,10 @@ export type CardDraftState =
  * Asks once for a draft of a card describing `articleIds` (D-240) and follows it until it is
  * answered. Without articles nothing is asked and the state stays `unavailable`.
  */
-export function useCardDraft(articleIds: readonly string[] | undefined): CardDraftState {
+export function useCardDraft(
+  articleIds: readonly string[] | undefined,
+  kind: 'interest' | 'never' = 'interest',
+): CardDraftState {
   const api = useApi();
   const accountId = useAccountId();
   const [id, setId] = useState<string | null>(null);
@@ -34,12 +37,16 @@ export function useCardDraft(articleIds: readonly string[] | undefined): CardDra
   const request = useRef<Promise<CardDraft> | null>(null);
   // The articles of one editor do not change while it is open: the first list is the one asked for.
   const ids = useRef(articleIds);
+  // Asked once per editor: the kind it opened with (a Never hint asks for a Never card, D-265).
+  const kindAsked = useRef(kind);
   const wanted = articleIds !== undefined && articleIds.length > 0;
 
   useEffect(() => {
     const first = ids.current;
     if (first === undefined || first.length === 0) return undefined;
-    request.current ??= api.call(routes.cardDraftCreate, { body: { articleIds: [...first] } });
+    request.current ??= api.call(routes.cardDraftCreate, {
+      body: { articleIds: [...first], kind: kindAsked.current },
+    });
     let live = true;
     request.current.then(
       (draft) => {

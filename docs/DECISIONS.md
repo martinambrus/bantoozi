@@ -2728,3 +2728,26 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   runs. `setTrainingKernel('js' | 'wasm' | 'auto')` selects it (tests, `BENCH_KERNEL`).
   On the owner's 3,839 ratings: inline 7.2 s → 3.3 s, the CPU pool (warm) 3.4 s → 2.1 s; training
   results byte-equal under both kernels.
+
+- D-265: 2026-10-17 (owner report: the feed's lightbulb/eye kept offering the same card) — The owner
+  had opened the editor three times on the same five uncovered Hacker News likes without saving; each
+  click asked the LLM again (three wordings of one topic), the hint could not be put aside, and the
+  draft prompt knew nothing of the cards already held. Migration 0032.
+  1. Draft reuse: `POST /cards/drafts` returns the user's latest draft of the same articles (in order),
+     kind and locale while it is complete, or pending within the 30-minute demand window, with no new
+     `card.draft` intent: one suggestion, one provider call.
+  2. "Not now": `POST /subscriptions/:feedId/card-hint/dismiss {kind}` stores
+     `user_feed_preferences.{interest,never}_hint_dismissed_at`; `GET /me/learning` counts uncovered
+     likes / unwanted dislikes only after the later of that and the made-a-card cutoff, so the hint
+     returns once newer ratings call for it, as after making a card. The card editor opened from a
+     hint (sidebar, feed drawer) has a "Not now" button.
+  3. Existing cards: drafts record their `kind` (`interest` | `never`); the prompt says what the
+     articles were to the reader (liked / wants to stop seeing) and lists up to 30 held cards of that
+     kind (`existing_cards`, data only) with the instruction to propose a clearly different topic.
+     `GET /cards/drafts/:id` names a held card of the same kind the proposal restates (`similar`):
+     Jaccard ≥ 0.4 over normalized topic words (generic card wording in English and Slovak left out),
+     calibrated on the owner's data (saved drafts 1.0, unrelated cards ≤ 0.13); the editor warns.
+     `similar` defaults to null when parsed (older servers).
+  Also: drizzle-kit stamps a new journal entry with the real time, earlier than this repo's synthetic
+  `when` values, so existing databases skipped 0032 silently (fresh test databases did not); 0032
+  takes the previous `when` + 1 and a test now requires strictly increasing journal timestamps.

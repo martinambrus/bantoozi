@@ -257,6 +257,7 @@ export function cardDraftRoutes(
     title: null,
     interest: null,
     source: null,
+    similar: null,
     ...overrides,
   });
   return {

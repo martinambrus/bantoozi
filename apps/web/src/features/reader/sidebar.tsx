@@ -41,6 +41,7 @@ import { ClassificationBadge } from '../feeds/feed-status.js';
 import { displayTitle, groupByFolder, type FolderGroup } from '../feeds/folders.js';
 import { useSubscriptions } from '../feeds/subscriptions.js';
 import { CardEditor } from '../interests/card-editor.js';
+import { useDismissCardHint } from '../learning/use-dismiss-card-hint.js';
 import { learningKey, useLearning } from '../learning/use-learning.js';
 import { useReconnect } from '../offline/use-connection.js';
 import { useSettledActions } from './actions/provider.js';
@@ -304,6 +305,7 @@ function InterestHint({
   const { t } = useTranslation('reader');
   const [making, setMaking] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
+  const dismiss = useDismissCardHint();
   return (
     <>
       <Tooltip text={t('sidebar.interestsToAddHint', { count: agreement.uncovered.count })}>
@@ -322,6 +324,7 @@ function InterestHint({
       {making ? (
         <CardEditor
           fromArticles={agreement.uncovered.articles}
+          onNotNow={() => dismiss(agreement.feedId, 'interest')}
           returnFocus={() => button.current}
           onClose={() => setMaking(false)}
         />
@@ -341,6 +344,7 @@ function NeverHint({
   const { t } = useTranslation('reader');
   const [making, setMaking] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
+  const dismiss = useDismissCardHint();
   return (
     <>
       <Tooltip text={t('sidebar.topicsToAvoidHint', { count: agreement.unwanted.count })}>
@@ -360,6 +364,7 @@ function NeverHint({
         <CardEditor
           fromArticles={agreement.unwanted.articles}
           initialStrength="never"
+          onNotNow={() => dismiss(agreement.feedId, 'never')}
           returnFocus={() => button.current}
           onClose={() => setMaking(false)}
         />

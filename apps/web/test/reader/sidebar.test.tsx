@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { failure, json } from '../api/fake-fetch.js';
+import { failure, json, noContent } from '../api/fake-fetch.js';
 import {
   LEARNING,
   learningRoute,
@@ -924,9 +924,62 @@ describe('the hint to add interests', () => {
 
     expect(await screen.findByRole('dialog', { name: 'New card from this article' })).toBeVisible();
     await waitFor(() =>
-      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([{ articleIds: ['a1'] }]),
+      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([
+        { articleIds: ['a1'], kind: 'interest' },
+      ]),
     );
     expect(screen.queryByRole('dialog', { name: 'Feed settings' })).toBeNull();
+  });
+
+  it('puts the hint aside with "Not now" and reads the learning status again (D-265)', async () => {
+    const { app } = await open({
+      path: '/read/for_you',
+      subscriptions: [training('1', 'Verge')],
+      routes: {
+        [LEARNING]: learningRoute(() =>
+          makeLearning({}, [makeAgreement('1', 'collecting', { uncovered: uncovered(true) })]),
+        ),
+        ...cardDraftRoutes(),
+        'POST /subscriptions/:feedId/card-hint/dismiss': () => noContent(),
+      },
+    });
+    await app.user.click(await screen.findByRole('button', { name: HINT }));
+    const editor = await screen.findByRole('dialog', { name: 'New card from this article' });
+    const learningReads = app.calls(LEARNING).length;
+
+    await app.user.click(within(editor).getByRole('button', { name: 'Not now' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const dismissals = app.calls('POST /subscriptions/:feedId/card-hint/dismiss');
+    expect(dismissals.map(bodyOf)).toEqual([{ kind: 'interest' }]);
+    expect(dismissals[0]?.url).toContain('/subscriptions/1/card-hint/dismiss');
+    await waitFor(() => expect(app.calls(LEARNING).length).toBeGreaterThan(learningReads));
+  });
+
+  it('says when the drafted card looks like one the reader holds (D-265)', async () => {
+    const { app } = await open({
+      path: '/read/for_you',
+      subscriptions: [training('1', 'Verge')],
+      routes: {
+        [LEARNING]: learningRoute(() =>
+          makeLearning({}, [makeAgreement('1', 'collecting', { uncovered: uncovered(true) })]),
+        ),
+        ...cardDraftRoutes({
+          status: 'complete',
+          title: 'Consumer tech',
+          interest: 'Updates to consumer electronics.',
+          source: 'llm',
+          similar: { cardId: '180', title: 'Consumer Technology' },
+        }),
+      },
+    });
+    await app.user.click(await screen.findByRole('button', { name: HINT }));
+    const editor = await screen.findByRole('dialog', { name: 'New card from this article' });
+    expect(
+      await within(editor).findByText(
+        'This looks like your card “Consumer Technology”. Edit it instead, or describe a different topic here.',
+      ),
+    ).toBeVisible();
   });
 
   it('names the feed in the collapsed strip', async () => {
@@ -1030,7 +1083,9 @@ describe('the hint to avoid topics', () => {
     // A Never card names what to hide, and its texts say so.
     expect(within(editor).getByLabelText("I don't want to read about…")).toBeInTheDocument();
     await waitFor(() =>
-      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([{ articleIds: ['d1'] }]),
+      expect(app.calls('POST /cards/drafts').map(bodyOf)).toEqual([
+        { articleIds: ['d1'], kind: 'never' },
+      ]),
     );
   });
 
