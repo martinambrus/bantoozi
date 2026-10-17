@@ -61,7 +61,10 @@ function Row({ item }: { item: ArticleListItem }) {
 /** The answer of the rating route: the item rated as `rating`, with `suggestion` if the server offers one. */
 function rates(item: ArticleListItem, suggestion: Suggestion | null, rating: 1 | -1 = 1) {
   return () =>
-    actionResponse(acked(item, { rating, readAt: READ_AT }), { exampleSuggestion: suggestion });
+    actionResponse(acked(item, { rating, readAt: READ_AT }), {
+      exampleSuggestion: suggestion,
+      pattern: null,
+    });
 }
 
 const cards = (list: readonly CardDto[] = CARDS) => ({ 'GET /cards': () => json(200, list) });
@@ -555,7 +558,7 @@ describe('when there is no offer', () => {
                 stateVersion: String(BigInt(item.stateVersion) + (rating === 1 ? 1n : 2n)),
                 reason: rating === -1 ? 'off_topic' : null,
               }),
-              { exampleSuggestion: rating === 1 ? YES : null },
+              { exampleSuggestion: rating === 1 ? YES : null, pattern: null },
             );
           },
           'GET /cards': () => list.promise,

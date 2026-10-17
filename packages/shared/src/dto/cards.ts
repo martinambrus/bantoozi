@@ -117,6 +117,11 @@ export const AddExampleBodySchema = z
   .object({ articleId: IdSchema, side: ExampleSideSchema })
   .strict();
 
+/** `POST /cards/:id/examples/batch`. */
+export const AddExamplesBodySchema = z
+  .object({ articleIds: z.array(IdSchema).min(1).max(3), side: ExampleSideSchema })
+  .strict();
+
 /** `POST /cards/:id/examples/remove` and `POST /labels/:id/examples/remove`. */
 export const RemoveExampleBodySchema = z
   .object({ side: ExampleSideSchema, text: example })

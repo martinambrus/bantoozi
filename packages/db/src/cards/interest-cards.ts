@@ -1,4 +1,4 @@
-import { CARD_LIMITS } from '@bantoozi/shared';
+import { AppError, CARD_LIMITS } from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { TenantTx } from '../tenant.js';
@@ -481,6 +481,41 @@ export async function addCardExample(
   return changeExamples(tx, cardId, async (userId, examples) =>
     withAddedExample(examples, side, await articleExample(tx, userId, articleId)),
   );
+}
+
+/** An article that is not visible (`404`) or has no usable title is left out of a batch. */
+function isSkippableExample(error: unknown): boolean {
+  if (!(error instanceof AppError)) return false;
+  if (error.code === 'NOT_FOUND') return true;
+  const details = error.details as { reason?: unknown } | undefined;
+  return error.code === 'VALIDATION_FAILED' && details?.reason === 'no_title';
+}
+
+/**
+ * `POST /cards/:id/examples/batch {articleIds, side}`: the visible, titled articles' titles as
+ * examples in ONE re-point (one fork, one backfill); unusable articles are skipped.
+ */
+export async function addCardExamples(
+  tx: TenantTx,
+  input: { cardId: string; articleIds: string[]; side: ExampleSide },
+): Promise<CardMutation> {
+  const cardId = validateId(input.cardId, 'cardId');
+  const articleIds = input.articleIds.map((id) => validateId(id, 'articleId'));
+  const side = validateExampleSide(input.side);
+  return changeExamples(tx, cardId, async (userId, examples) => {
+    let next: CardExamples | null = null;
+    for (const articleId of articleIds) {
+      let text: string;
+      try {
+        text = await articleExample(tx, userId, articleId);
+      } catch (error) {
+        if (isSkippableExample(error)) continue;
+        throw error;
+      }
+      next = withAddedExample(next ?? examples, side, text) ?? next;
+    }
+    return next;
+  });
 }
 
 /** `POST /cards/:id/examples/remove {side, text}`; an unknown example is `404`. */

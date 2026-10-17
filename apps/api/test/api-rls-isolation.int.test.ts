@@ -791,6 +791,9 @@ function crossUserCases(): Record<string, { attempts: Attempt[]; statuses: numbe
       () => aApi.post(`/cards/${B.fork}/examples`, { articleId: shared, side: 'yes' }),
       () => aApi.post(`/cards/${B.sharedCard}/examples`, { articleId: p1, side: 'yes' }),
     ),
+    'POST /cards/:id/examples/batch': notFound(() =>
+      aApi.post(`/cards/${B.fork}/examples/batch`, { articleIds: [shared], side: 'yes' }),
+    ),
     'POST /cards/:id/examples/remove': notFound(() =>
       aApi.post(`/cards/${B.fork}/examples/remove`, {
         side: 'yes',

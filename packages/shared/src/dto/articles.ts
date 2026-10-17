@@ -411,8 +411,18 @@ export const ArticleItemResponseSchema = z
   .strict();
 export type ArticleItemResponse = z.infer<typeof ArticleItemResponseSchema>;
 
+/** How a dislike relates to the card's recent dislikes (DPF-3): lowered, and what to offer. */
+export const DislikePatternSchema = z
+  .object({
+    cardId: IdSchema,
+    lowered: z.boolean(),
+    offer: z.array(IdSchema).min(1).max(3).nullable(),
+  })
+  .strict();
+
 export const RatingResponseSchema = ArticleItemResponseSchema.extend({
   exampleSuggestion: ExampleSuggestionSchema.nullable(),
+  pattern: DislikePatternSchema.nullable(),
 }).strict();
 
 export const DwellResponseSchema = ArticleItemResponseSchema.extend({

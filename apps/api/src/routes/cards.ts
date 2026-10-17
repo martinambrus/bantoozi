@@ -1,5 +1,6 @@
 import {
   addCardExample,
+  addCardExamples,
   createCardDraft,
   createCardFromArticle,
   createUserCard,
@@ -27,6 +28,7 @@ import {
 } from '@bantoozi/db';
 import {
   AddExampleBodySchema,
+  AddExamplesBodySchema,
   AppError,
   CardDraftBodySchema,
   CardDraftParamsSchema,
@@ -569,6 +571,29 @@ export const cardRoutes: FastifyPluginAsyncZod = async (app) => {
       const { id } = request.params;
       const outcome = await request.mutate(async (tx) => {
         const mutation = await addCardExample(tx, { cardId: id, ...request.body });
+        return { status: 200, body: cardMutationResponse(mutation, locale, null) };
+      });
+      await reply.code(200).send(outcome.body);
+    },
+  );
+
+  app.post(
+    '/cards/:id/examples/batch',
+    {
+      config: CARD_WRITE,
+      schema: {
+        tags,
+        summary: 'Add up to three article titles as examples in one change',
+        params: CardIdParamsSchema,
+        body: AddExamplesBodySchema,
+        response: { 200: CardMutationResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      const { locale } = requireAuth(request);
+      const { id } = request.params;
+      const outcome = await request.mutate(async (tx) => {
+        const mutation = await addCardExamples(tx, { cardId: id, ...request.body });
         return { status: 200, body: cardMutationResponse(mutation, locale, null) };
       });
       await reply.code(200).send(outcome.body);

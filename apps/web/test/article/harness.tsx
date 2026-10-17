@@ -155,7 +155,7 @@ export function actionResponse(item: ArticleListItem, extra: Record<string, unkn
 
 /** The answer of `POST /articles/:id/rating`. */
 export function ratingResponse(item: ArticleListItem) {
-  return actionResponse(item, { exampleSuggestion: null });
+  return actionResponse(item, { exampleSuggestion: null, pattern: null });
 }
 
 /** The answer of `POST /articles/undo`. */

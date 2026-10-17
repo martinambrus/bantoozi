@@ -27,6 +27,7 @@ export {
 } from './drafts.js';
 export {
   addCardExample,
+  addCardExamples,
   adoptLibraryCard,
   createCardFromArticle,
   createUserCard,

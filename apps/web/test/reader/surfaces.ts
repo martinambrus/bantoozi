@@ -38,6 +38,7 @@ export function writeRoutes() {
         item: acked(item(idOf(params)), { rating, readAt: AS_OF }),
         mutationId: next(),
         exampleSuggestion: null,
+        pattern: null,
       });
     },
     'POST /articles/:id/bookmark': (_request, params) =>

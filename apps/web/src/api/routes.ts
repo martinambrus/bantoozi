@@ -1,5 +1,6 @@
 import {
   AddExampleBodySchema,
+  AddExamplesBodySchema,
   AdminCreateInvitesBodySchema,
   AdminCreateInvitesResultSchema,
   AdminFeedPageSchema,
@@ -651,6 +652,15 @@ export const routes = {
     idempotent: true,
     params: CardIdParamsSchema,
     body: AddExampleBodySchema,
+    response: CardMutationResponseSchema,
+  }),
+  cardExamplesAdd: defineRoute({
+    method: 'POST',
+    path: '/cards/:id/examples/batch',
+    auth: 'user',
+    idempotent: true,
+    params: CardIdParamsSchema,
+    body: AddExamplesBodySchema,
     response: CardMutationResponseSchema,
   }),
   cardExampleRemove: defineRoute({

@@ -36,7 +36,13 @@ import {
   type ReaderFence,
   type TenantTx,
 } from '@bantoozi/db';
-import { suggestExample } from '@bantoozi/ranker';
+import {
+  SIMILAR_DISLIKES,
+  dislikePatternOffer,
+  similarDislikes,
+  similarityTokens,
+  suggestExample,
+} from '@bantoozi/ranker';
 import {
   AppError,
   ArticleCountsQuerySchema,
@@ -654,8 +660,31 @@ export const articleRoutes: FastifyPluginAsyncZod = async (app) => {
           now: ctx.now,
           outbox: ctx.outbox,
           suggest: (context) => suggestExample({ ...context, trigger: 'rating' }),
+          pattern: {
+            windowDays: SIMILAR_DISLIKES.windowDays,
+            poolSize: SIMILAR_DISLIKES.poolSize,
+            judge: (context) => {
+              const target = {
+                articleId: context.target.articleId,
+                tokens: similarityTokens(context.target.title),
+              };
+              const labelled = context.labelled.map((row) => ({
+                articleId: row.articleId,
+                rating: row.rating,
+                ratedAt: row.ratedAt,
+                tokens: similarityTokens(row.title),
+              }));
+              return {
+                lowered: similarDislikes(target, labelled, context.now).lowered,
+                offer: dislikePatternOffer(target, labelled, context.now),
+              };
+            },
+          },
         });
-        return itemOutcome(tx, ctx, id, result, { exampleSuggestion: result.exampleSuggestion });
+        return itemOutcome(tx, ctx, id, result, {
+          exampleSuggestion: result.exampleSuggestion,
+          pattern: result.pattern,
+        });
       });
       return reply.code(200).send(outcome.body);
     },

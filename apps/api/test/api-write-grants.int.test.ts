@@ -511,6 +511,17 @@ const CASES: Record<string, Case> = {
       side: 'yes',
     });
   },
+  'POST /cards/:id/examples/batch': async () => {
+    const r = await reader();
+    const card = await json(
+      r.api.post('/cards', { interest: unique('Card with batch examples'), strength: 'like' }),
+      201,
+    );
+    return r.api.post(`/cards/${card.card.id}/examples/batch`, {
+      articleIds: [await article(r.feedId)],
+      side: 'yes',
+    });
+  },
   'POST /cards/:id/examples/remove': async () => {
     const r = await reader();
     const card = await json(
