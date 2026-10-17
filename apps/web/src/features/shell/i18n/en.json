@@ -11,7 +11,8 @@
     "admin": "Admin"
   },
   "userMenu": {
-    "label": "Account menu: {{name}}"
+    "label": "Account menu: {{name}}",
+    "plan": "{{label}} plan"
   },
   "offlineBanner": "You're offline. Some features need a connection.",
   "connectivity": {

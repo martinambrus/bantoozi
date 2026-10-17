@@ -11,7 +11,8 @@
     "admin": "Správa"
   },
   "userMenu": {
-    "label": "Ponuka účtu: {{name}}"
+    "label": "Ponuka účtu: {{name}}",
+    "plan": "Plán {{label}}"
   },
   "offlineBanner": "Ste offline. Niektoré funkcie vyžadujú pripojenie.",
   "connectivity": {
