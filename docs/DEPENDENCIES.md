@@ -55,6 +55,7 @@ pin exact versions (`save-exact`). Update this file in the same commit as any ve
 | HTTP load generator | autocannon (+ @types/autocannon 7.12.7, dev) | 8.0.0 | ops (M8-T8 load sanity test, spec 11 §9) |
 | YAML parser | yaml (dev) | 2.9.1 | ops (static compose credential test, spec 11 §9 launch item 12) |
 | Property tests | fast-check (dev) | 4.10.2 | ranker, worker (S22 targeted re-rank property test) |
+| WASM kernels | wabt (dev) | 1.0.39 | root: `packages/ranker/scripts/gen-kernel.mjs` assembles `accumulate.wat` (SIMD) into the embedded bytes; never loaded at runtime (D-264) |
 
 ## Web client (spec 01 §1, spec 09)
 

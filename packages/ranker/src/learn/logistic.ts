@@ -1,3 +1,4 @@
+import { newtonBuffers } from './kernel/index.js';
 import { choleskySolve } from './linalg.js';
 
 export type LogisticFit =
@@ -27,7 +28,9 @@ export function fitLogistic(
   const n = X.length;
   const d = n > 0 ? (X[0]?.length ?? 0) : 0;
   const m = d + 1;
-  const A = new Float64Array(n * m);
+  // The design and the Newton buffers live where the accumulation kernel runs (D-264).
+  const buffers = newtonBuffers(n, m);
+  const A = buffers.A;
   for (let i = 0; i < n; i += 1) {
     const row = X[i] ?? [];
     for (let j = 0; j < d; j += 1) {
@@ -65,23 +68,20 @@ export function fitLogistic(
   if (!Number.isFinite(cur)) return { ok: false, reason: 'nonconverged' };
 
   for (let it = 1; it <= MAX_ITER; it += 1) {
-    const grad = new Float64Array(m);
-    const H = new Float64Array(m * m);
+    const { r, h, grad, H } = buffers;
+    grad.fill(0);
+    H.fill(0);
     for (let i = 0; i < n; i += 1) {
       let z = 0;
       for (let j = 0; j < m; j += 1) z += (A[i * m + j] ?? 0) * (theta[j] ?? 0);
       const p = sigmoidStable(z);
       const wi = w[i] ?? 1;
-      const r = wi * (p - (y[i] ?? 0));
-      const h = wi * p * (1 - p);
-      for (let j = 0; j < m; j += 1) {
-        const aj = A[i * m + j] ?? 0;
-        grad[j] = (grad[j] ?? 0) + r * aj;
-        for (let k = 0; k <= j; k += 1) {
-          H[j * m + k] = (H[j * m + k] ?? 0) + h * aj * (A[i * m + k] ?? 0);
-        }
-      }
+      r[i] = wi * (p - (y[i] ?? 0));
+      h[i] = wi * p * (1 - p);
     }
+    // grad[j] += r_i·a_ij and H[j][k] += (h_i·a_ij)·a_ik for k ≤ j, rows in order (WASM SIMD when
+    // available, bit-identical to the JS loop; D-264).
+    buffers.accumulate();
     for (let j = 0; j < m; j += 1) {
       for (let k = j + 1; k < m; k += 1) H[j * m + k] = H[k * m + j] ?? 0;
     }

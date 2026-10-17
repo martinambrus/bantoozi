@@ -13,3 +13,4 @@ export * from './model.js';
 export * from './own-inputs.js';
 export * from './samples.js';
 export * from './train.js';
+export * from './kernel/index.js';

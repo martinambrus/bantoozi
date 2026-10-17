@@ -9,6 +9,8 @@ pnpm-lock.yaml
 packages/testing/fixtures/
 # Generated files
 apps/web/src/routeTree.gen.ts
+# The WASM training kernel, assembled from accumulate.wat by scripts/gen-kernel.mjs (D-264).
+packages/ranker/src/learn/kernel/accumulate.wasm.ts
 packages/db/drizzle/meta/
 # Verbatim from spec 01 §10; must not be reformatted.
 CLAUDE.md

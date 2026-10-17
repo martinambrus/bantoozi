@@ -27,7 +27,7 @@ import {
   retryTransaction,
   withTenant,
 } from '@bantoozi/db';
-import { scoreVersion } from '@bantoozi/ranker';
+import { activeTrainingKernel, scoreVersion, setTrainingKernel } from '@bantoozi/ranker';
 import { parseSetting } from '@bantoozi/shared';
 import { trainUserModel, type TrainingSample } from '@bantoozi/ranker';
 import { createLogger, loadConfig } from '@bantoozi/shared/server';
@@ -173,6 +173,10 @@ for (const mode of modes.length === 0 ? ['rank'] : modes) {
       {} as never,
     );
   } else if (mode === 'learn') {
+    // BENCH_KERNEL=js|wasm: the Newton accumulation kernel of this process (D-264).
+    const kernel = process.env['BENCH_KERNEL'];
+    if (kernel === 'js' || kernel === 'wasm') setTrainingKernel(kernel);
+    console.log(`  training kernel: ${activeTrainingKernel()}`);
     const inputs = await retryTransaction(db, async (tx) => {
       await lockLearnUser(tx, userId, 'share');
       return loadLearnInputs(tx, deps, userId, new Date());
