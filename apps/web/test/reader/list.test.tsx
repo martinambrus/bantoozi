@@ -786,6 +786,35 @@ describe('the states of the list', () => {
     expect(screen.queryByRole('article')).toBeNull();
   });
 
+  it('says why an empty feed has no articles when its fetch fails (D-267)', async () => {
+    const failing = makeSubscription({
+      feed: {
+        id: '7',
+        title: 'Blocked Blog',
+        lastSuccessAt: null,
+        lastErrorCode: 'FEED_HTTP_403',
+        lastErrorAt: new Date().toISOString(),
+      },
+    });
+    await open({ path: '/read/feed/7', items: [], subscriptions: [failing] });
+
+    expect(await screen.findByText("This feed couldn't be fetched")).toBeVisible();
+    expect(
+      screen.getByText(
+        "The website answered with an error (403). We'll keep trying and show its articles as soon as it works.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText('No unread articles')).toBeNull();
+  });
+
+  it('says that a feed not fetched yet has no articles yet', async () => {
+    const pending = makeSubscription({ feed: { id: '7', title: 'New Blog', lastSuccessAt: null } });
+    await open({ path: '/read/feed/7', items: [], subscriptions: [pending] });
+
+    expect(await screen.findByText('No articles yet')).toBeVisible();
+    expect(screen.getByText(/hasn't been fetched yet/)).toBeVisible();
+  });
+
   it('shows a loading state before the first page', async () => {
     const never = deferred<Response>();
     await open({ path: '/read/for_you', list: () => never.promise });
