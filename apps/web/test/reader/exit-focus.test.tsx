@@ -30,6 +30,7 @@ function newerEachTime(): Record<string, ApiRouteHandler> {
         item: written,
         mutationId: receipt((issued += 1)),
         exampleSuggestion: null,
+        pattern: null,
       });
     },
     'POST /articles/undo': () =>

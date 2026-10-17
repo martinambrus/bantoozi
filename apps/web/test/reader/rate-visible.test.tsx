@@ -127,6 +127,7 @@ describe('the menu item', () => {
               }),
               mutationId: receipt(1),
               exampleSuggestion: null,
+              pattern: null,
             });
           },
         },

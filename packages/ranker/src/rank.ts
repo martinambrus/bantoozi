@@ -4,11 +4,13 @@ import {
   type Explain,
   type Lane,
   type ScoreSource,
+  type Tri,
 } from '@bantoozi/shared';
 
 import type { Bm25Corpus } from './bm25/corpus.js';
 import { degradedScore } from './bm25/score.js';
 import {
+  type CardScore,
   cardScore,
   evaluateNeverCards,
   isCardApplicable,
@@ -31,6 +33,7 @@ import { isValidFeatureFacets } from './learn/samples.js';
 import { applyLanePolicy, type FiredRule, type FloorTrigger } from './policy.js';
 import { RULE_CODES } from './rule-codes.js';
 import { matchBoostRules, matchHideRule, type RankRule, type RuleMatch } from './rules.js';
+import { type LabelledArticle, similarDislikes, similarityTokens } from './similar-dislikes.js';
 import type { ModelEngine, RankCard, RankItem, Tier } from './types.js';
 
 /** One of the user's labels (`user_labels`): a label card with the holder's name (§1). */
@@ -82,6 +85,13 @@ export interface UserRankContext extends DemotionUserState {
   demotionDeadlines?: Readonly<Partial<Record<DemotionFlag, Date>>> | undefined;
   /** The compatible active model, if any (§8.1). */
   model?: ActiveModel | undefined;
+  /** `prefs.demote.similar`; absent means `auto`, which acts like `on`. */
+  demoteSimilar?: Tri | undefined;
+  /**
+   * Each held positive card's recent ratings with their title tokens, for the similar-dislikes
+   * demotion. Absent: the demotion never fires.
+   */
+  similar?: ReadonlyMap<string, readonly LabelledArticle[]> | undefined;
   /**
    * Clusters with a member the user read in the window (§2 step 6i), each with the time of the
    * latest such read: the seen state ends `RANK_WINDOW_DAYS` after it.
@@ -227,28 +237,38 @@ interface BaseProbability {
 /** §2 step 4: the model, else the cards (with demotions), else BM25; `null` for no score (4d). */
 function baseProbability(ctx: UserRankContext, item: RankItem, now: Date): BaseProbability | null {
   const config = ctx.config;
+  const cards = cardScore(ctx.cards, item, config);
+  const similar = cards === null ? null : similarDemotion(ctx, item, now, cards);
+  const lowered = (p: number): number => (similar === null ? p : p * config.demotion.factor);
+  const similarDeadlines = similar?.nextChangeAt == null ? [] : [similar.nextChangeAt];
   if (ctx.model !== undefined && isModelEligible(ctx.cards, item)) {
     const scored = ctx.model.score(item, now);
     if (scored !== null && isUnit(scored.p)) {
       return {
-        p: scored.p,
+        p: lowered(scored.p),
         source: 'model',
-        rules: [],
+        rules: similar === null ? [] : [similar.rule],
+        ...(cards === null ? {} : { decidingCardId: cards.decidingCardId }),
         model: { version: ctx.model.version, top: topContributions(scored.top) },
-        deadlines: [nextAgeBin(item, now)].filter((d): d is Date => d !== undefined),
+        deadlines: [
+          ...[nextAgeBin(item, now)].filter((d): d is Date => d !== undefined),
+          ...similarDeadlines,
+        ],
       };
     }
   }
-  const cards = cardScore(ctx.cards, item, config);
   if (cards !== null) {
     const demotion = applyDemotions(cards.score, item, ctx, now, config);
     return {
-      p: demotion.p,
+      p: lowered(demotion.p),
       source: 'cards',
-      rules: demotion.codes.map((code) => ({ code })),
+      rules: [
+        ...demotion.codes.map((code) => ({ code })),
+        ...(similar === null ? [] : [similar.rule]),
+      ],
       decidingCardId: cards.decidingCardId,
       decidingEngine: cards.decidingAnswer.engine,
-      deadlines: demotionDeadlines(ctx, item, now),
+      deadlines: [...demotionDeadlines(ctx, item, now), ...similarDeadlines],
     };
   }
   if (item.matchCoverage === 'unavailable') {
@@ -273,6 +293,36 @@ function isModelEligible(cards: readonly RankCard[], item: RankItem): boolean {
       const answer = usableAnswer(item.cardAnswers, card.cardId);
       return answer === undefined || answer.engine === 'typesafe';
     });
+}
+
+/**
+ * The similar-dislikes demotion: the deciding card's answer is at least `lanes.maybe`, the
+ * preference is not `off`, and the item looks like that card's recent dislikes and unlike its likes.
+ */
+function similarDemotion(
+  ctx: UserRankContext,
+  item: RankItem,
+  now: Date,
+  deciding: CardScore,
+): { rule: FiredRule; nextChangeAt: Date | null } | null {
+  if (ctx.demoteSimilar === 'off') return null;
+  if (!(deciding.decidingAnswer.p >= ctx.config.lanes.maybe)) return null;
+  const labelled = ctx.similar?.get(deciding.decidingCardId);
+  if (labelled === undefined || labelled.length === 0) return null;
+  const check = similarDislikes(
+    { articleId: item.articleId, tokens: similarityTokens(item.title ?? null) },
+    labelled,
+    now,
+  );
+  if (!check.lowered) return null;
+  return {
+    rule: {
+      code: `demote:similar:${deciding.decidingCardId}`,
+      cardId: deciding.decidingCardId,
+      detail: String(check.similar.length),
+    },
+    nextChangeAt: check.nextChangeAt,
+  };
 }
 
 /** The demotion-related times at which a card score can change by itself (§5, §7). */
@@ -475,6 +525,7 @@ function explainRule(rule: FiredRule): Explain['rules'][number] {
     code: rule.code,
     ...(rule.ruleId === undefined ? {} : { ruleId: rule.ruleId }),
     ...(rule.cardId === undefined ? {} : { cardId: rule.cardId }),
+    ...(rule.detail === undefined ? {} : { detail: rule.detail }),
   };
 }
 

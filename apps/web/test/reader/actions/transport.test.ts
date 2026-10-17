@@ -95,7 +95,7 @@ const sendCases: readonly SendCase[] = [
     method: 'POST',
     path: '/api/v1/articles/101/rating',
     body: { ...fenceFields, rating: 1 },
-    reply: { ...plain, exampleSuggestion: null },
+    reply: { ...plain, exampleSuggestion: null, pattern: null },
   },
   {
     name: 'un-rate',
@@ -103,7 +103,7 @@ const sendCases: readonly SendCase[] = [
     method: 'POST',
     path: '/api/v1/articles/101/rating',
     body: { ...fenceFields, rating: null },
-    reply: { ...plain, exampleSuggestion: null },
+    reply: { ...plain, exampleSuggestion: null, pattern: null },
   },
   {
     name: 'dislike with a reason and hide',
@@ -111,7 +111,7 @@ const sendCases: readonly SendCase[] = [
     method: 'POST',
     path: '/api/v1/articles/101/rating',
     body: { ...fenceFields, rating: -1, reason: 'clickbait', hide: true },
-    reply: { ...plain, exampleSuggestion: null },
+    reply: { ...plain, exampleSuggestion: null, pattern: null },
   },
   {
     name: 'rate with every option',
@@ -133,7 +133,7 @@ const sendCases: readonly SendCase[] = [
       analysisRequestId: REQUEST_ID,
       selection: 'calibration',
     },
-    reply: { ...plain, exampleSuggestion: null },
+    reply: { ...plain, exampleSuggestion: null, pattern: null },
   },
   {
     name: 'promptAnswer',
@@ -310,15 +310,27 @@ describe('send responses', () => {
 
   it('adds the example suggestion of a rating', async () => {
     const exampleSuggestion = { cardId: '31', side: 'no' };
-    const { transport } = setup(() => json(200, { ...plain, exampleSuggestion }));
+    const { transport } = setup(() => json(200, { ...plain, exampleSuggestion, pattern: null }));
     const response = await transport.send('101', { type: 'rate', rating: 1 }, FENCE, KEY, signal());
-    expect(response).toStrictEqual({ item, mutationId: MUTATION, exampleSuggestion });
+    expect(response).toStrictEqual({
+      item,
+      mutationId: MUTATION,
+      exampleSuggestion,
+      pattern: null,
+    });
   });
 
   it('keeps a null example suggestion of a rating', async () => {
-    const { transport } = setup(() => json(200, { ...plain, exampleSuggestion: null }));
+    const { transport } = setup(() =>
+      json(200, { ...plain, exampleSuggestion: null, pattern: null }),
+    );
     const response = await transport.send('101', { type: 'rate', rating: 1 }, FENCE, KEY, signal());
-    expect(response).toStrictEqual({ item, mutationId: MUTATION, exampleSuggestion: null });
+    expect(response).toStrictEqual({
+      item,
+      mutationId: MUTATION,
+      exampleSuggestion: null,
+      pattern: null,
+    });
   });
 
   it.each([true, false])('adds the prompt flag %s of a dwell', async (prompt) => {

@@ -21,7 +21,9 @@ function Findings({ articleId, explain }: { articleId: string; explain: Explain 
       {explain.facets === undefined ? null : (
         <AboutArticle facets={explain.facets} demotions={demotions} />
       )}
-      {explain.rules.length === 0 ? null : <RulesApplied explain={explain} demotions={demotions} />}
+      {explain.rules.length === 0 ? null : (
+        <RulesApplied articleId={articleId} explain={explain} demotions={demotions} />
+      )}
       {explain.model === undefined ? null : <PersonalModel model={explain.model} />}
     </>
   );

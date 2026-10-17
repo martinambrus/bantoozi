@@ -5,7 +5,7 @@ import { isBigIntString } from '@bantoozi/shared';
  * explain an unchanged input differently. It is a positive decimal string, never `'0'`:
  * `user_article.score_version` defaults to `'0:0'`, so a row that was never ranked is never current.
  */
-export const RANKER_VERSION = '2';
+export const RANKER_VERSION = '3';
 
 /** `ranker.settings_version` (a JSON int in `settings`), as a number, bigint or decimal string. */
 export type SettingsVersion = number | bigint | string;

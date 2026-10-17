@@ -28,6 +28,7 @@ function ruleText(t: TFunction, code: string): string {
   const name = colon === -1 ? code : code.slice(0, colon);
   const suffix = colon === -1 ? '' : code.slice(colon + 1);
   if (PLAIN_RULES.has(name)) return t(`reason.rule.${name}`);
+  if (name === 'demote' && suffix.startsWith('similar:')) return t('reason.rule.demote_similar');
   if (name === 'demote' && DEMOTIONS.has(suffix)) return t(`reason.rule.demote_${suffix}`);
   if (name === 'mute_keyword' && suffix !== '') {
     return t('reason.rule.mute_keyword', { keyword: suffix });

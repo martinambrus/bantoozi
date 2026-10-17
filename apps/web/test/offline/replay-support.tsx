@@ -197,7 +197,7 @@ export function createArticleServer(
       body = {
         item: next,
         mutationId: crypto.randomUUID(),
-        ...(kind === 'rating' ? { exampleSuggestion: state.suggestion } : {}),
+        ...(kind === 'rating' ? { exampleSuggestion: state.suggestion, pattern: null } : {}),
         ...(kind === 'dwell' ? { prompt: false } : {}),
       };
       receipts.set(key, body);

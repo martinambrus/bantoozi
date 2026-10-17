@@ -464,7 +464,8 @@
                                 "clickbait": "auto",
                                 "promotional": "auto",
                                 "shallow": "auto",
-                                "stale": "auto"
+                                "stale": "auto",
+                                "similar": "auto"
                               },
                               "type": "object",
                               "properties": {
@@ -503,13 +504,23 @@
                                     "on",
                                     "off"
                                   ]
+                                },
+                                "similar": {
+                                  "default": "auto",
+                                  "type": "string",
+                                  "enum": [
+                                    "auto",
+                                    "on",
+                                    "off"
+                                  ]
                                 }
                               },
                               "required": [
                                 "clickbait",
                                 "promotional",
                                 "shallow",
-                                "stale"
+                                "stale",
+                                "similar"
                               ],
                               "additionalProperties": false
                             },
@@ -1127,7 +1138,8 @@
                                 "clickbait": "auto",
                                 "promotional": "auto",
                                 "shallow": "auto",
-                                "stale": "auto"
+                                "stale": "auto",
+                                "similar": "auto"
                               },
                               "type": "object",
                               "properties": {
@@ -1166,13 +1178,23 @@
                                     "on",
                                     "off"
                                   ]
+                                },
+                                "similar": {
+                                  "default": "auto",
+                                  "type": "string",
+                                  "enum": [
+                                    "auto",
+                                    "on",
+                                    "off"
+                                  ]
                                 }
                               },
                               "required": [
                                 "clickbait",
                                 "promotional",
                                 "shallow",
-                                "stale"
+                                "stale",
+                                "similar"
                               ],
                               "additionalProperties": false
                             },
@@ -1794,7 +1816,8 @@
                             "clickbait": "auto",
                             "promotional": "auto",
                             "shallow": "auto",
-                            "stale": "auto"
+                            "stale": "auto",
+                            "similar": "auto"
                           },
                           "type": "object",
                           "properties": {
@@ -1833,13 +1856,23 @@
                                 "on",
                                 "off"
                               ]
+                            },
+                            "similar": {
+                              "default": "auto",
+                              "type": "string",
+                              "enum": [
+                                "auto",
+                                "on",
+                                "off"
+                              ]
                             }
                           },
                           "required": [
                             "clickbait",
                             "promotional",
                             "shallow",
-                            "stale"
+                            "stale",
+                            "similar"
                           ],
                           "additionalProperties": false
                         },
@@ -2222,6 +2255,14 @@
                               "on",
                               "off"
                             ]
+                          },
+                          "similar": {
+                            "type": "string",
+                            "enum": [
+                              "auto",
+                              "on",
+                              "off"
+                            ]
                           }
                         },
                         "additionalProperties": false
@@ -2497,7 +2538,8 @@
                             "clickbait": "auto",
                             "promotional": "auto",
                             "shallow": "auto",
-                            "stale": "auto"
+                            "stale": "auto",
+                            "similar": "auto"
                           },
                           "type": "object",
                           "properties": {
@@ -2536,13 +2578,23 @@
                                 "on",
                                 "off"
                               ]
+                            },
+                            "similar": {
+                              "default": "auto",
+                              "type": "string",
+                              "enum": [
+                                "auto",
+                                "on",
+                                "off"
+                              ]
                             }
                           },
                           "required": [
                             "clickbait",
                             "promotional",
                             "shallow",
-                            "stale"
+                            "stale",
+                            "similar"
                           ],
                           "additionalProperties": false
                         },
@@ -3315,7 +3367,8 @@
                                 "clickbait": "auto",
                                 "promotional": "auto",
                                 "shallow": "auto",
-                                "stale": "auto"
+                                "stale": "auto",
+                                "similar": "auto"
                               },
                               "type": "object",
                               "properties": {
@@ -3354,13 +3407,23 @@
                                     "on",
                                     "off"
                                   ]
+                                },
+                                "similar": {
+                                  "default": "auto",
+                                  "type": "string",
+                                  "enum": [
+                                    "auto",
+                                    "on",
+                                    "off"
+                                  ]
                                 }
                               },
                               "required": [
                                 "clickbait",
                                 "promotional",
                                 "shallow",
-                                "stale"
+                                "stale",
+                                "similar"
                               ],
                               "additionalProperties": false
                             },
@@ -10689,12 +10752,40 @@
                         "side"
                       ],
                       "additionalProperties": false
+                    },
+                    "pattern": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "cardId": {
+                          "type": "string"
+                        },
+                        "lowered": {
+                          "type": "boolean"
+                        },
+                        "offer": {
+                          "nullable": true,
+                          "minItems": 1,
+                          "maxItems": 3,
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "cardId",
+                        "lowered",
+                        "offer"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
                     "item",
                     "mutationId",
-                    "exampleSuggestion"
+                    "exampleSuggestion",
+                    "pattern"
                   ],
                   "additionalProperties": false
                 }
@@ -15877,6 +15968,207 @@
                 },
                 "required": [
                   "articleId",
+                  "side"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "card": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "interest"
+                          ]
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "titleOverride": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "interest": {
+                          "type": "string"
+                        },
+                        "notFor": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "strength": {
+                          "type": "string",
+                          "enum": [
+                            "must",
+                            "love",
+                            "like",
+                            "never"
+                          ]
+                        },
+                        "scopeFeedId": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "origin": {
+                          "type": "string",
+                          "enum": [
+                            "library",
+                            "user",
+                            "fork"
+                          ]
+                        },
+                        "isPrivateFork": {
+                          "type": "boolean"
+                        },
+                        "examplesYes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "examplesNo": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "topicIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "lang": {
+                          "type": "string"
+                        },
+                        "librarySlug": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "title",
+                        "titleOverride",
+                        "interest",
+                        "notFor",
+                        "strength",
+                        "scopeFeedId",
+                        "origin",
+                        "isPrivateFork",
+                        "examplesYes",
+                        "examplesNo",
+                        "topicIds",
+                        "lang",
+                        "librarySlug",
+                        "createdAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "idChange": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "from": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "from",
+                        "to"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "translation": {
+                      "nullable": true,
+                      "type": "string",
+                      "enum": [
+                        "translated",
+                        "english",
+                        "undetermined",
+                        "unconfirmed",
+                        "unsupported",
+                        "weak",
+                        "failed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "card",
+                    "idChange",
+                    "translation"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/cards/{id}/examples/batch": {
+      "post": {
+        "summary": "Add up to three article titles as examples in one change",
+        "tags": [
+          "cards"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "articleIds": {
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "side": {
+                    "type": "string",
+                    "enum": [
+                      "yes",
+                      "no"
+                    ]
+                  }
+                },
+                "required": [
+                  "articleIds",
                   "side"
                 ],
                 "additionalProperties": false

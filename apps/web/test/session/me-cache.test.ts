@@ -6,7 +6,13 @@ import { meKey } from '../../src/api/query-keys.js';
 import { storeSavedMe, withSavedFields } from '../../src/session/me.js';
 import { USER_B_ID, makeMe } from './fixtures.js';
 
-const DEMOTE = { clickbait: 'on', promotional: 'auto', shallow: 'auto', stale: 'auto' } as const;
+const DEMOTE = {
+  clickbait: 'on',
+  promotional: 'auto',
+  shallow: 'auto',
+  stale: 'auto',
+  similar: 'auto',
+} as const;
 
 describe('withSavedFields', () => {
   const shown = makeMe({
@@ -46,7 +52,13 @@ describe('withSavedFields', () => {
   it('takes only the named leaves of a nested preference', () => {
     const saved = makeMe({
       preferences: {
-        demote: { clickbait: 'auto', promotional: 'off', shallow: 'on', stale: 'off' },
+        demote: {
+          clickbait: 'auto',
+          promotional: 'off',
+          shallow: 'on',
+          stale: 'off',
+          similar: 'auto',
+        },
       },
     });
 

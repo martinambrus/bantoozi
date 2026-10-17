@@ -602,6 +602,7 @@ describe('OpenAPI', () => {
         'PATCH /api/v1/cards/{id}',
         'DELETE /api/v1/cards/{id}',
         'POST /api/v1/cards/{id}/examples',
+        'POST /api/v1/cards/{id}/examples/batch',
         'POST /api/v1/cards/{id}/examples/remove',
         'POST /api/v1/cards/from-article',
         'POST /api/v1/cards/drafts',

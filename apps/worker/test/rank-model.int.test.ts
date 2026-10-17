@@ -92,7 +92,7 @@ describe('model scoring in user.rank (spec 06 §2 step 4a, §6.2, §8.1)', () =>
     expect(row.source).toBe('model');
     expect(row.p).toBeCloseTo(sigmoid(-3 + 2.7 + 0.5 + 0.9), 4);
     expect(row.explain?.source).toBe('model');
-    expect(row.explain?.decidingCardId).toBeUndefined();
+    expect(row.explain?.decidingCardId).toBe(r.cardId);
     const top = row.explain?.model?.top ?? [];
     expect(row.explain?.model?.version).toBe(model.version);
     expect(top).toHaveLength(3);

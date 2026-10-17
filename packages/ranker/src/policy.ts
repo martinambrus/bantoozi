@@ -16,6 +16,7 @@ export interface FiredRule {
   code: string;
   cardId?: string;
   ruleId?: string;
+  detail?: string;
 }
 
 /** The inputs of the lane modifiers, all computed by the caller. */

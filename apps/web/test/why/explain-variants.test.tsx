@@ -91,7 +91,13 @@ describe('the Why-this drawer renders every Explain variant', () => {
   it('cards with preferences that are already on: no offer to switch them on, a reset to undo', async () => {
     const me = makeMe({
       preferences: {
-        demote: { clickbait: 'on', promotional: 'auto', shallow: 'auto', stale: 'on' },
+        demote: {
+          clickbait: 'on',
+          promotional: 'auto',
+          shallow: 'auto',
+          stale: 'on',
+          similar: 'auto',
+        },
       },
     });
     const { dialog } = await renderDrawer({

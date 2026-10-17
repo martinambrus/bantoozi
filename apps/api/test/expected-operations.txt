@@ -88,6 +88,7 @@ POST /auth/request-code
 POST /auth/verify
 POST /cards
 POST /cards/:id/examples
+POST /cards/:id/examples/batch
 POST /cards/:id/examples/remove
 POST /cards/drafts
 POST /cards/from-article

@@ -5,6 +5,7 @@ import {
   loadRankTranslations,
   loadReadClusterIds,
   loadRecentDislikes,
+  loadSimilarFeedback,
   rankCorpusPage,
   type Executor,
   type RankDislike,
@@ -14,6 +15,8 @@ import {
 import {
   buildBm25Corpus,
   type Bm25Text,
+  SIMILAR_DISLIKES,
+  similarityTokens,
   type RankerSettings,
   type UserRankContext,
 } from '@bantoozi/ranker';
@@ -154,7 +157,8 @@ export async function loadRankContext(
 ): Promise<UserRankContext> {
   const { user, settings, now } = input;
   const config = settings.config;
-  const [cards, labels, rules, dislikes, readClusterIds, corpus] = [
+  const preferences = readUserPreferences(user.preferences);
+  const [cards, labels, rules, dislikes, similarFeedback, readClusterIds, corpus] = [
     await loadRankCards(db, user.userId),
     await loadRankLabels(db, user.userId),
     await loadActiveRules(db, user.userId, now),
@@ -163,6 +167,11 @@ export async function loadRankContext(
       user.userId,
       new Date(now.getTime() - config.demotion.autoWindowDays * DAY_MS),
     ),
+    await loadSimilarFeedback(db, user.userId, now, {
+      minP: config.lanes.maybe,
+      windowDays: SIMILAR_DISLIKES.windowDays,
+      poolSize: SIMILAR_DISLIKES.poolSize,
+    }),
     await loadReadClusterIds(db, user.userId, new Date(now.getTime() - RANK_WINDOW_DAYS * DAY_MS)),
     await loadRankCorpus(db, { userId: user.userId, now }),
   ];
@@ -197,7 +206,19 @@ export async function loadRankContext(
       value: rule.value,
       ...(rule.expiresAt === null ? {} : { expiresAt: rule.expiresAt }),
     })),
-    demote: readUserPreferences(user.preferences).demote,
+    demote: preferences.demote,
+    demoteSimilar: preferences.demote.similar,
+    similar: new Map(
+      [...similarFeedback].map(([cardId, rows]) => [
+        cardId,
+        rows.map((row) => ({
+          articleId: row.articleId,
+          rating: row.rating,
+          ratedAt: row.ratedAt,
+          tokens: similarityTokens(row.title),
+        })),
+      ]),
+    ),
     ...demotionState(dislikes, settings),
     readClusterIds,
     bm25: corpus.corpus,

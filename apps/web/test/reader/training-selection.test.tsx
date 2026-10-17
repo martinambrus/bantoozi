@@ -1138,6 +1138,7 @@ describe('the selection bar', () => {
             ),
             {
               exampleSuggestion: params['id'] === '1' ? { cardId: '31', side: 'no' } : null,
+              pattern: null,
             },
           ),
         'GET /cards': () => cards.promise,

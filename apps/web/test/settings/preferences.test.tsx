@@ -158,6 +158,13 @@ const CASES: Case[] = [
     explains: 'older than three days',
   },
   {
+    label: 'Like articles you disliked',
+    kind: 'choice',
+    pick: 'Off',
+    patch: { demote: { similar: 'off' } },
+    explains: 'look like several articles you disliked',
+  },
+  {
     label: 'Swipe left',
     kind: 'choice',
     pick: 'Mark as read',
@@ -192,7 +199,7 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
       );
       expect(CASES.flatMap((item) => leaves(item.patch)).sort()).toEqual(wanted.sort());
       expect(prefs().getAllByRole('switch')).toHaveLength(9);
-      expect(prefs().getAllByRole('radiogroup')).toHaveLength(11);
+      expect(prefs().getAllByRole('radiogroup')).toHaveLength(12);
       for (const item of CASES) expect(control(item)).toBeVisible();
     });
 
@@ -205,7 +212,7 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
       }
       expect(
         within(prefs().getByRole('group', { name: 'Quality filters' })).getAllByRole('radiogroup'),
-      ).toHaveLength(4);
+      ).toHaveLength(5);
     });
 
     it('shows the defaults of an account that never changed a preference', async () => {
@@ -253,7 +260,13 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
         markReadOnRate: false,
         feedbackPrompt: 'never',
         exampleSuggestions: false,
-        demote: { clickbait: 'on', promotional: 'off', shallow: 'on', stale: 'off' },
+        demote: {
+          clickbait: 'on',
+          promotional: 'off',
+          shallow: 'on',
+          stale: 'off',
+          similar: 'auto',
+        },
         implicitNegative: true,
         swipe: { left: 'none', right: 'bookmark' },
         loadRemoteImages: true,

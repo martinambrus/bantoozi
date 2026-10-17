@@ -58,7 +58,7 @@ async function sendAction(
       return { item, mutationId, prompt };
     }
     case 'rate': {
-      const { item, mutationId, exampleSuggestion } = await client.call(
+      const { item, mutationId, exampleSuggestion, pattern } = await client.call(
         routes.articleRate,
         {
           params,
@@ -75,7 +75,7 @@ async function sendAction(
         },
         options,
       );
-      return { item, mutationId, exampleSuggestion };
+      return { item, mutationId, exampleSuggestion, pattern };
     }
     case 'promptAnswer':
       return plain(

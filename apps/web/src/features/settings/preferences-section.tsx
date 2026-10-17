@@ -220,6 +220,12 @@ export function PreferencesSection() {
                 optionsText="quality"
                 options={TRI}
               />
+              <ChoiceSetting
+                id="demote.similar"
+                text="quality.similar"
+                optionsText="quality"
+                options={TRI}
+              />
             </Group>
             <Group title={t('preferences.groups.swipe')}>
               <ChoiceSetting id="swipe.left" text="swipe.left" options={SWIPE_LEFT} />

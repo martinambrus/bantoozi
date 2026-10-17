@@ -577,6 +577,7 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
           item: note.item,
           mutationId: note.mutationId,
           exampleSuggestion: null,
+          pattern: null,
           prompt: false,
           droppedAnalysisRequestId: null,
         });
@@ -635,6 +636,7 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
       item: response.item,
       mutationId: response.mutationId,
       exampleSuggestion: handle.replayed ? null : (response.exampleSuggestion ?? null),
+      pattern: handle.replayed ? null : (response.pattern ?? null),
       prompt: handle.replayed ? false : (response.prompt ?? false),
       droppedAnalysisRequestId: entry.droppedRequestId,
     });
