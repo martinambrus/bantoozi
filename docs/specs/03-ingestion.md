@@ -736,7 +736,10 @@ floor and Retry-After (24-hour bound), and immediately postpones the next feed s
 relaxes by ×0.8 per complete quiet day. Robots delays are written only on authoritative refreshes,
 versioned by request start so an older cache/response cannot erase a newer policy. Robots `Crawl-delay` applies to every request purpose and
 accounts for the previous request start. Feeds on a floor below five minutes check robots before
-every hop; a temporary robots failure or source wait defers the job. These deferrals never add to
+every hop; a temporary robots failure or source wait defers the job. A disallowed hop does not fail
+such a fetch: the feed is fetched as a slower feed would be and polled at the five-minute floor while
+robots disallows it (`publish_stats.robots_slow_since`), and a fetch whose hops are all allowed
+restores its plan floor (D-267). These deferrals never add to
 feed error/quarantine counts. If a redirect hop cannot start within the HTTP deadline, completed
 hops persist in `feeds.publish_stats.fetch_redirects`; the next job resumes at the target with the
 same original validator scope, redirect/loop budget and permanent/temporary semantics. Terminal

@@ -193,6 +193,15 @@
     "scoped": {
       "title": "Žiadne neprečítané články",
       "body": "Všetko v tomto zozname je prečítané. Vyberte iný zoznam a uvidíte viac."
+    },
+    "feedError": {
+      "title": "Tento zdroj sa nepodarilo načítať",
+      "body": "{{reason}} Budeme to skúšať ďalej a jeho články zobrazíme hneď, ako to pôjde.",
+      "bodyDead": "{{reason}} Prestali sme ho kontrolovať."
+    },
+    "feedPending": {
+      "title": "Zatiaľ žiadne články",
+      "body": "Tento zdroj sa ešte nenačítal. Jeho články sa tu zobrazia po prvej aktualizácii."
     }
   },
   "shortcuts": {

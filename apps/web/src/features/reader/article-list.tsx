@@ -1,4 +1,4 @@
-import type { ArticleListItem } from '@bantoozi/shared';
+import type { ArticleListItem, FeedInfo } from '@bantoozi/shared';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -9,6 +9,7 @@ import { WarningIcon } from '../../components/icons.js';
 import { EmptyState } from '../../components/states/empty-state.js';
 import { QueryState } from '../../components/states/query-state.js';
 import { ArticleRow } from '../article/article-row.js';
+import { feedErrorReason, showsLastError } from '../feeds/feed-format.js';
 import { SavedNotice } from '../offline/saved-notice.js';
 import { useReaderActions } from './actions/provider.js';
 import { HiddenCauses } from './hidden-causes.js';
@@ -286,14 +287,32 @@ const EMPTY_STATES = {
   hidden: 'hidden',
 } as const;
 
-function EmptyView({ view }: { view: ReaderView }) {
-  const { t } = useTranslation('reader');
+function EmptyView({ view, feed }: { view: ReaderView; feed?: FeedInfo | undefined }) {
+  const { t } = useTranslation(['reader', 'feeds']);
+  // An empty feed view says why when the feed is failing or has never been fetched (D-267).
+  if (view.kind === 'feed' && feed !== undefined) {
+    if (showsLastError(feed)) {
+      return (
+        <EmptyState
+          title={t('empty.feedError.title')}
+          body={t(feed.status === 'dead' ? 'empty.feedError.bodyDead' : 'empty.feedError.body', {
+            reason: feedErrorReason(t, feed.lastErrorCode),
+          })}
+        />
+      );
+    }
+    if (feed.lastSuccessAt === null) {
+      return <EmptyState title={t('empty.feedPending.title')} body={t('empty.feedPending.body')} />;
+    }
+  }
   const key = view.kind === 'lane' ? EMPTY_STATES[view.lane] : 'scoped';
   return <EmptyState title={t(`empty.${key}.title`)} body={t(`empty.${key}.body`)} />;
 }
 
 export interface ArticleListProps {
   view: ReaderView;
+  /** The viewed feed's fetch health, for the empty state of a feed view. */
+  feed?: FeedInfo | undefined;
   list: ReaderList;
   rows: VisibleRows;
   expandedId: string | null;
@@ -306,6 +325,7 @@ export interface ArticleListProps {
 /** The rows of the view with the means to load more of them (spec 09 §3.1). */
 export function ArticleList({
   view,
+  feed,
   list,
   rows: { visible, leaving, listRef },
   expandedId,
@@ -330,7 +350,7 @@ export function ArticleList({
         refetch: () => void reload(),
       }}
       isEmpty={(rows) => rows.length === 0 && !canLoadMore}
-      empty={<EmptyView view={view} />}
+      empty={<EmptyView view={view} feed={feed} />}
     >
       {(rows) => (
         <div className="flex flex-col gap-3">

@@ -8,7 +8,7 @@ import {
   type SubscriptionRow,
   type TenantTx,
 } from '@bantoozi/db';
-import { releaseWindow, type FeedInfo } from '@bantoozi/shared';
+import { ROBOTS_FAST_FEED_FLOOR_S, releaseWindow, type FeedInfo } from '@bantoozi/shared';
 
 export type FeedUpdateInfo = Pick<
   FeedInfo,
@@ -34,7 +34,11 @@ export async function feedUpdates(
   return new Map(
     rows.map((row, index) => {
       const policy = sources.get(origins[index]!);
-      const source = policy?.intervalS ?? 0;
+      // A fast feed that robots.txt disallows is polled at the slower floor (D-267).
+      const source = Math.max(
+        policy?.intervalS ?? 0,
+        row.feed.robotsSlow === true ? ROBOTS_FAST_FEED_FLOOR_S : 0,
+      );
       const publisher = row.feed.publisherIntervalS ?? 0;
       const interval = Math.max(floor, source, publisher);
       const visibleUntil = subscriptionReleasedThrough(clock, row.createdAt).getTime();

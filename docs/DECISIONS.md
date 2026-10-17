@@ -2760,3 +2760,17 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   sent without a reason when it times out). The learning samples read the reason of `prompt_answer`
   events too (it feeds only the Never-card hint of D-241, not training); earlier answers have none.
   No migration.
+- D-267: 2026-10-17 (owner report: a feed added on a 60-second plan showed "No unread articles" and
+  never fetched) — Spec 03 §8.2 has feeds on a floor below five minutes check robots before every hop,
+  while slower feeds check none, so a fast plan made a feed that robots.txt disallows (here
+  `Disallow: */feed/`) fail every fetch with `FEED_POLICY_DENIED`, which the same feed on a slower
+  plan fetches. Now a disallowed hop lets the fetch proceed and slows the feed to
+  `ROBOTS_FAST_FEED_FLOOR_S` (300 s): `publish_stats.robots_slow_since` records it, the schedule's
+  source floor is raised to 300 s for every outcome, and a later fetch whose hops are all allowed
+  removes it (a hop that is disallowed again slows it once more without an extra request). A slowed
+  feed fetches through a temporary robots failure, as a slower feed would; a fast feed that is not
+  slowed still defers. Subscription timing reports the slowed feed as `updateIntervalS: 300`,
+  `intervalReason: 'source'`, the notice a learned origin floor already gives ("limited by the
+  source"). The reader's empty feed view now says why when the feed's last error is current ("This
+  feed couldn't be fetched" with the localized reason) or when it was never fetched ("No articles
+  yet"), instead of "No unread articles". No migration.

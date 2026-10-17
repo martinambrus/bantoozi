@@ -41,7 +41,7 @@ import {
   type SafeFetchResult,
   type ScheduleFeed,
 } from '@bantoozi/feeds';
-import { enqueueFetch } from '@bantoozi/shared';
+import { ROBOTS_FAST_FEED_FLOOR_S, enqueueFetch } from '@bantoozi/shared';
 
 import { after, afterNewCarrier } from '../pipeline.js';
 import {
@@ -141,6 +141,11 @@ async function fetchFeed(
     result = await fetchFeedBody(deps, feed, false, lock.signal);
   }
 
+  // The robots state this fetch leaves (D-267); it bounds the schedule of every outcome below.
+  const robotsSlowSince =
+    result.robotsSlowSince === undefined ? (feed.robotsSlowSince ?? null) : result.robotsSlowSince;
+  const robots = { robotsSlowSince, changed: result.robotsSlowSince !== undefined };
+
   if (!result.ok) {
     if (result.code === 'FEED_ORIGIN_COOLDOWN') {
       const until = result.retryAt ?? new Date(now.getTime() + 60_000);
@@ -153,7 +158,7 @@ async function fetchFeed(
       });
       return;
     }
-    await recordOutcome(deps, lock, feed, feedId, errorOutcome(result, now), now);
+    await recordOutcome(deps, lock, feed, feedId, errorOutcome(result, now), now, robots);
     return;
   }
   if (result.status === 304) {
@@ -172,6 +177,7 @@ async function fetchFeed(
           : { lastModified: result.headers['last-modified'] }),
       },
       now,
+      robots,
       result.headers['cache-control'],
     );
     return;
@@ -187,6 +193,7 @@ async function fetchFeed(
       feedId,
       { kind: 'error', code: decoded.code, message: decoded.message },
       now,
+      robots,
     );
     return;
   }
@@ -204,6 +211,7 @@ async function fetchFeed(
       feedId,
       { kind: 'error', code: parsed.code, message: parsed.message },
       now,
+      robots,
     );
     return;
   }
@@ -275,7 +283,10 @@ async function fetchFeed(
     scheduleFeed(
       target,
       gaps,
-      await originSourceFloor(deps.db, originOf(new URL(result.finalUrl))),
+      sourceFloorOf(
+        await originSourceFloor(deps.db, originOf(new URL(result.finalUrl))),
+        robotsSlowSince,
+      ),
     ),
     {
       kind: 'success',
@@ -311,6 +322,7 @@ async function fetchFeed(
       },
       recentGapsS: gaps,
       items7d,
+      ...(robots.changed ? { robotsSlowSince } : {}),
     });
     if (parsed.feed.langHint === null) await refreshFeedLangHint(tx, targetId);
   });
@@ -327,44 +339,82 @@ async function fetchFeed(
   }
 }
 
+/**
+ * A fast feed (plan floor below `ROBOTS_FAST_FEED_FLOOR_S`) checks robots before every hop (spec
+ * 03 §8.2). A disallowed hop does not fail the fetch: the feed is polled like a slower feed, which
+ * checks no robots, at that floor (D-267). `robotsSlowSince` is the state this fetch leaves:
+ * kept or set by a disallowed hop, cleared when every hop was allowed, and `undefined` (unchanged)
+ * when no verdict was reached. A temporary robots failure defers a fast feed; a feed already
+ * slowed by robots fetches anyway, as a slower feed would.
+ */
 async function fetchFeedBody(
   deps: WorkerDeps,
   feed: FeedForFetch,
   conditional: boolean,
   signal: AbortSignal,
-): Promise<SafeFetchResult> {
+): Promise<SafeFetchResult & { robotsSlowSince?: Date | null }> {
   let retryAt: Date | undefined;
+  const slowSince = feed.robotsSlowSince ?? null;
+  let checked = false;
+  let disallowed = false;
+  let unknown = false;
   const previous = feed.resumeRedirects ?? [];
   const resume =
     previous.length > 0 && sameRequestUrl(previous[0]!.from, feed.fetchUrl) ? previous : [];
   const requestUrl = resume.at(-1)?.to ?? feed.fetchUrl;
+  const checksRobots = feed.minIntervalS < ROBOTS_FAST_FEED_FLOOR_S;
   const result = await fetchWith(deps, requestUrl, {
     ...(resume.length === 0 ? {} : { previousRedirects: resume }),
     purpose: 'feed',
     sourceIntervalS: feed.fetchIntervalS,
     signal,
-    ...(feed.minIntervalS < 300
+    ...(checksRobots
       ? {
           beforeRequest: async (target: URL) => {
             const decision = await deps.robots.check(target);
+            checked = true;
             if (decision.allowed) return true as const;
             if (decision.reason === 'cooldown' || decision.reason === 'unreachable') {
+              unknown = true;
+              if (slowSince !== null) return true as const;
               retryAt = decision.retryAt ?? new Date(nowOf(deps).getTime() + 300000);
               return { code: 'SOURCE_WAIT', message: 'Waiting for the source robots policy' };
             }
-            return {
-              code: 'ROBOTS_DISALLOWED',
-              message: 'The source disallows fetching this feed',
-            };
+            disallowed = true;
+            return true as const;
           },
         }
       : {}),
     ...(feed.userAgent === null ? {} : { userAgent: feed.userAgent }),
     ...(conditional ? { conditional: { etag: feed.etag, lastModified: feed.lastModified } } : {}),
   });
-  return retryAt !== undefined && !result.ok
-    ? { ...result, code: 'FEED_ORIGIN_COOLDOWN', retryAt }
-    : result;
+  if (retryAt !== undefined && !result.ok) {
+    return { ...result, code: 'FEED_ORIGIN_COOLDOWN', retryAt };
+  }
+  if (!checksRobots) return result;
+  if (disallowed) {
+    const since = slowSince ?? nowOf(deps);
+    if (slowSince === null) {
+      deps.logger.info(
+        { feedId: feed.id, floorS: ROBOTS_FAST_FEED_FLOOR_S },
+        'robots.txt disallows the fast feed; polling it at the slower floor',
+      );
+    }
+    return { ...result, robotsSlowSince: since };
+  }
+  // Every hop the fetch reached was allowed; a later disallowed hop slows the feed again then.
+  if (slowSince !== null && checked && !unknown) {
+    deps.logger.info({ feedId: feed.id }, 'robots.txt allows the fast feed again');
+    return { ...result, robotsSlowSince: null };
+  }
+  return result;
+}
+
+/** The source floor of a fetch: the origin's, raised for a fast feed that robots slowed. */
+function sourceFloorOf(originFloorS: number, robotsSlowSince: Date | null | undefined): number {
+  return robotsSlowSince instanceof Date
+    ? Math.max(originFloorS, ROBOTS_FAST_FEED_FLOOR_S)
+    : originFloorS;
 }
 
 /**
@@ -380,13 +430,17 @@ async function recordOutcome(
   feedId: string,
   outcome: FetchOutcome,
   now: Date,
+  robots: { robotsSlowSince: Date | null; changed: boolean },
   cacheControl?: string,
 ): Promise<void> {
   const schedule = nextSchedule(
     scheduleFeed(
       feed,
       feed.recentGapsS,
-      await originSourceFloor(deps.db, originOf(new URL(feed.fetchUrl))),
+      sourceFloorOf(
+        await originSourceFloor(deps.db, originOf(new URL(feed.fetchUrl))),
+        robots.robotsSlowSince,
+      ),
     ),
     outcome,
     now,
@@ -399,6 +453,7 @@ async function recordOutcome(
   await deps.db.transaction(async (tx) => {
     await recordFeedFetch(tx, feedId, {
       schedule,
+      ...(robots.changed ? { robotsSlowSince: robots.robotsSlowSince } : {}),
       ...(outcome.kind === 'not_modified'
         ? {
             cacheMinIntervalS: scheduleHintS(

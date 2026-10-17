@@ -2191,24 +2191,97 @@ describe('plan velocity source protection', () => {
     expect(requests).toBe(2);
   });
 
-  it('checks robots before polling a one-minute feed', async () => {
+  it('polls a one-minute feed that robots disallows at the five-minute floor (D-267)', async () => {
     const path = '/source-protection/private.rss';
     let requests = 0;
+    let feedStatus = 200;
     server.route('/robots.txt', () => ({
       status: 200,
       body: 'User-agent: BantooziBot\nDisallow: /source-protection/private.rss',
     }));
     server.route(path, () => {
       requests += 1;
-      return rssRoute(() => rss('Private', ''))();
+      if (feedStatus !== 200) return { status: feedStatus, body: '' };
+      return rssRoute(() =>
+        rss('Private', rssItem('robots-1', 'Robots first', server.url('/robots-1'))),
+      )();
+    });
+    const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
+    await owner.query('UPDATE feeds SET min_interval_s = 60, fetch_interval_s = 60 WHERE id = $1', [
+      feedId,
+    ]);
+    const state = async () =>
+      (
+        await owner.query<{
+          slow: boolean;
+          error: string | null;
+          delay_s: number;
+          items: number;
+        }>(
+          `SELECT publish_stats ? 'robots_slow_since' AS slow, last_error_code AS error,
+                  extract(epoch FROM next_fetch_at - last_fetch_at)::float8 AS delay_s,
+                  (SELECT count(*)::int FROM feed_items WHERE feed_id = f.id) AS items
+             FROM feeds f WHERE id = $1`,
+          [feedId],
+        )
+      ).rows[0]!;
+    const fresh = () => createHandlers(workerDeps(createMemoryOriginLimiter({ spacingMs: 0 })));
+
+    // Disallowed: fetched anyway, as a slower feed would be, and slowed to the floor.
+    await fetchFeed(feedId, fresh());
+    expect(requests).toBe(1);
+    let row = await state();
+    expect(row).toMatchObject({ slow: true, error: null, items: 1 });
+    expect(row.delay_s).toBeGreaterThanOrEqual(300);
+
+    // A slowed feed fetches through a temporary robots failure and stays slowed.
+    server.route('/robots.txt', () => ({ status: 500, body: '' }));
+    await fetchFeed(feedId, fresh());
+    expect(requests).toBe(2);
+    expect((await state()).slow).toBe(true);
+
+    // A later failure is the feed's own error, so the reader can show why it has no articles.
+    server.route('/robots.txt', () => ({
+      status: 200,
+      body: 'User-agent: *\nDisallow: */private.rss',
+    }));
+    feedStatus = 403;
+    await fetchFeed(feedId, fresh());
+    expect(requests).toBe(3);
+    row = await state();
+    expect(row).toMatchObject({ slow: true, error: 'FEED_HTTP_403' });
+    expect(row.delay_s).toBeGreaterThanOrEqual(300);
+
+    // Allowed again: the one-minute floor returns.
+    server.route('/robots.txt', () => ({ status: 404, body: '' }));
+    feedStatus = 200;
+    await fetchFeed(feedId, fresh());
+    expect(requests).toBe(4);
+    row = await state();
+    expect(row.slow).toBe(false);
+    expect(row.delay_s).toBeLessThan(300);
+  });
+
+  it('defers a one-minute feed while its robots policy is unreachable', async () => {
+    const path = '/source-protection/robots-down.rss';
+    let requests = 0;
+    server.route('/robots.txt', () => ({ status: 500, body: '' }));
+    server.route(path, () => {
+      requests += 1;
+      return rssRoute(() => rss('Down', ''))();
     });
     const feedId = await addFeed(path, [{ user: reader, mode: 'off' }]);
     await owner.query('UPDATE feeds SET min_interval_s = 60 WHERE id = $1', [feedId]);
-    const map = createHandlers(workerDeps(createMemoryOriginLimiter({ spacingMs: 0 })));
-    await fetchFeed(feedId, map);
+    await fetchFeed(
+      feedId,
+      createHandlers(workerDeps(createMemoryOriginLimiter({ spacingMs: 0 }))),
+    );
     expect(requests).toBe(0);
-    const denied = await owner.query('SELECT last_error_code FROM feeds WHERE id = $1', [feedId]);
-    expect(denied.rows[0]?.last_error_code).toBe('FEED_POLICY_DENIED');
+    const row = await owner.query(
+      "SELECT total_errors, publish_stats ? 'robots_slow_since' AS slow FROM feeds WHERE id = $1",
+      [feedId],
+    );
+    expect(row.rows[0]).toMatchObject({ total_errors: 0, slow: false });
     server.route('/robots.txt', () => ({ status: 404, body: '' }));
   });
 });

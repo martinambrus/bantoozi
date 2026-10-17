@@ -292,6 +292,7 @@ function ReaderBody({ view, onLaneChange, everything }: ReaderBodyProps) {
             />
             <ArticleList
               view={view}
+              feed={subscription?.feed}
               list={list}
               rows={rows}
               expandedId={expanded?.id ?? null}

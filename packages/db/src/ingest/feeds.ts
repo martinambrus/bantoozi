@@ -277,6 +277,11 @@ export interface FeedForFetch {
   cacheIntervalS?: number;
   resumeRedirects?: FeedRedirectHop[];
   forcePending?: boolean;
+  /**
+   * `publish_stats.robots_slow_since`: when robots.txt first disallowed this fast feed, which is
+   * then polled at `ROBOTS_FAST_FEED_FLOOR_S` (D-267); `null` while it is allowed.
+   */
+  robotsSlowSince?: Date | null;
 }
 
 type Timestamp = Date | string;
@@ -322,6 +327,7 @@ export async function loadFeedForFetch(db: Executor, feedId: string): Promise<Fe
     cache_interval_s: number | null;
     resume_redirects: unknown;
     force_pending: boolean | null;
+    robots_slow_since: string | null;
   }>(sql`
     SELECT id::text AS id, url, fetch_url, merged_into_id::text AS merged_into_id, status,
            subscriber_count, next_fetch_at, etag, last_modified,
@@ -337,7 +343,9 @@ export async function loadFeedForFetch(db: Executor, feedId: string): Promise<Fe
            CASE WHEN jsonb_typeof(publish_stats -> 'cache_min_interval_s') = 'number'
              THEN (publish_stats ->> 'cache_min_interval_s')::float8 END AS cache_interval_s,
            publish_stats -> 'fetch_redirects' AS resume_redirects,
-           publish_stats -> 'fetch_force' = 'true'::jsonb AS force_pending
+           publish_stats -> 'fetch_force' = 'true'::jsonb AS force_pending,
+           CASE WHEN jsonb_typeof(publish_stats -> 'robots_slow_since') = 'string'
+             THEN publish_stats ->> 'robots_slow_since' END AS robots_slow_since
       FROM feeds WHERE id = ${feedId}::bigint`);
   const row = result.rows[0];
   if (row === undefined) return null;
@@ -375,6 +383,7 @@ export async function loadFeedForFetch(db: Executor, feedId: string): Promise<Fe
     cacheIntervalS: row.cache_interval_s ?? 0,
     resumeRedirects: readFetchRedirects(row.resume_redirects),
     forcePending: row.force_pending === true,
+    robotsSlowSince: readTimestamp(row.robots_slow_since),
     recentGapsS: gaps.filter(
       (gap): gap is number => typeof gap === 'number' && Number.isFinite(gap),
     ),
@@ -428,12 +437,14 @@ export interface RecordFeedFetchInput {
   items7d?: number | undefined;
   publisherMinIntervalS?: number;
   cacheMinIntervalS?: number;
+  /** New `publish_stats.robots_slow_since` (D-267): `null` removes it, absent keeps the stored one. */
+  robotsSlowSince?: Date | null | undefined;
 }
 
 /**
  * The "after all items" feed update (spec 03 §7, §9), in the caller's transaction: the schedule
  * columns and validators computed by `nextSchedule`, feed metadata and `publish_stats`
- * (`recent_gaps_s`, `items_7d`; other keys are kept). It never touches `subscriber_count`,
+ * (`recent_gaps_s`, `items_7d`, `robots_slow_since`; other keys are kept). It never touches `subscriber_count`,
  * `min_interval_s` or `unsubscribed_at` (the refresh functions own them) nor the feed's identity.
  *
  * Status guard: `dead` and `paused` change only through explicit resets (subscribe, admin reset),
@@ -488,8 +499,11 @@ export async function recordFeedFetch(
   if (input.cacheMinIntervalS !== undefined)
     stats['cache_min_interval_s'] = Math.max(0, Math.ceil(input.cacheMinIntervalS));
   if (input.items7d !== undefined) stats['items_7d'] = Math.max(0, Math.round(input.items7d));
+  if (input.robotsSlowSince instanceof Date)
+    stats['robots_slow_since'] = input.robotsSlowSince.toISOString();
+  const dropped = input.robotsSlowSince === null ? sql` - 'robots_slow_since'` : sql``;
   sets.push(
-    sql`publish_stats = (f.publish_stats - 'fetch_redirects' - 'fetch_force') || ${JSON.stringify(stats)}::jsonb`,
+    sql`publish_stats = (f.publish_stats - 'fetch_redirects' - 'fetch_force'${dropped}) || ${JSON.stringify(stats)}::jsonb`,
   );
   sets.push(sql`updated_at = now()`);
   await tx.execute(
@@ -537,6 +551,11 @@ export async function deferFeedFetch(
                      ${Object.keys(progress).length === 0 ? sql`` : sql`publish_stats = publish_stats || ${JSON.stringify(progress)}::jsonb,`}
                      updated_at = now()
      WHERE id = ${feedId}::bigint`);
+}
+
+function readTimestamp(value: string | null): Date | null {
+  const date = value === null ? null : new Date(value);
+  return date === null || Number.isNaN(date.getTime()) ? null : date;
 }
 
 function readFetchRedirects(value: unknown): FeedRedirectHop[] {

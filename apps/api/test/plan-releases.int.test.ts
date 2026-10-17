@@ -413,6 +413,23 @@ it('estimates a future fetch boundary when the source has no waiting articles', 
   expect(feed.intervalReason).toBe('publisher');
 });
 
+it('reports a fast feed that robots slowed as limited by the source (D-267)', async () => {
+  const account = await following('premium');
+  const slowed = await createFeed(h.owner);
+  await createSubscription(h.owner, { userId: account.user.id, feedId: slowed.id });
+  const subscriptions = async () => {
+    const result = await account.api.get('/subscriptions');
+    expect(result.statusCode, result.body).toBe(200);
+    return result.json().find((row: { feed: { id: string } }) => row.feed.id === slowed.id).feed;
+  };
+  expect(await subscriptions()).toMatchObject({ updateIntervalS: 60, intervalReason: 'plan' });
+  await h.owner.query(
+    "UPDATE feeds SET publish_stats = jsonb_build_object('robots_slow_since', $2::text) WHERE id = $1",
+    [slowed.id, now.toISOString()],
+  );
+  expect(await subscriptions()).toMatchObject({ updateIntervalS: 300, intervalReason: 'source' });
+});
+
 it('keeps plan metadata separate when a worker transaction visits multiple tenants', async () => {
   const free = await following('free');
   const premium = await following('premium');

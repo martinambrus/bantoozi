@@ -171,6 +171,15 @@
     "scoped": {
       "title": "No unread articles",
       "body": "Everything in this view has been read. Pick another lane to see more."
+    },
+    "feedError": {
+      "title": "This feed couldn't be fetched",
+      "body": "{{reason}} We'll keep trying and show its articles as soon as it works.",
+      "bodyDead": "{{reason}} We stopped checking it."
+    },
+    "feedPending": {
+      "title": "No articles yet",
+      "body": "This feed hasn't been fetched yet. Its articles will show up here after its first update."
     }
   },
   "shortcuts": {
