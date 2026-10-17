@@ -116,6 +116,10 @@
       "stale": {
         "label": "Stale news",
         "hint": "Ranks time-sensitive stories older than three days lower."
+      },
+      "similar": {
+        "label": "Like articles you disliked",
+        "hint": "Ranks articles lower that look like several articles you disliked for the same interest."
       }
     },
     "swipe": {

@@ -16,8 +16,8 @@ export type DemotionFlag = keyof Demote;
 
 type Setting = Demote[DemotionFlag];
 
-/** The demotions the drawer offers to switch on; depth has no meter of its own. */
-export type NeverShowFlag = Exclude<DemotionFlag, 'shallow'>;
+/** The demotions the drawer offers to switch on; depth and similarity have no meter of their own. */
+export type NeverShowFlag = Exclude<DemotionFlag, 'shallow' | 'similar'>;
 
 /** The demotion change last asked for in each app, which the next one waits for. */
 const queues = new WeakMap<QueryClient, Promise<void>>();

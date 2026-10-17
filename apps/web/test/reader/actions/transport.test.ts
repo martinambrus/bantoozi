@@ -312,7 +312,12 @@ describe('send responses', () => {
     const exampleSuggestion = { cardId: '31', side: 'no' };
     const { transport } = setup(() => json(200, { ...plain, exampleSuggestion, pattern: null }));
     const response = await transport.send('101', { type: 'rate', rating: 1 }, FENCE, KEY, signal());
-    expect(response).toStrictEqual({ item, mutationId: MUTATION, exampleSuggestion });
+    expect(response).toStrictEqual({
+      item,
+      mutationId: MUTATION,
+      exampleSuggestion,
+      pattern: null,
+    });
   });
 
   it('keeps a null example suggestion of a rating', async () => {
@@ -320,7 +325,12 @@ describe('send responses', () => {
       json(200, { ...plain, exampleSuggestion: null, pattern: null }),
     );
     const response = await transport.send('101', { type: 'rate', rating: 1 }, FENCE, KEY, signal());
-    expect(response).toStrictEqual({ item, mutationId: MUTATION, exampleSuggestion: null });
+    expect(response).toStrictEqual({
+      item,
+      mutationId: MUTATION,
+      exampleSuggestion: null,
+      pattern: null,
+    });
   });
 
   it.each([true, false])('adds the prompt flag %s of a dwell', async (prompt) => {

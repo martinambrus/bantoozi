@@ -124,6 +124,14 @@ export interface ExampleSuggestion {
   side: 'yes' | 'no';
 }
 
+/** What a dislike says about the card's recent dislikes (DPF-3). */
+export interface DislikePattern {
+  cardId: string;
+  lowered: boolean;
+  /** Up to three articles to offer as "no" examples of the card, or null when there is no offer. */
+  offer: string[] | null;
+}
+
 export type ActionResult =
   | {
       status: 'done';
@@ -131,6 +139,8 @@ export type ActionResult =
       mutationId: string;
       /** Rating responses only; always null for replayed actions (spec 09 §3.3). */
       exampleSuggestion: ExampleSuggestion | null;
+      /** Rating responses only; always null for replayed actions. */
+      pattern: DislikePattern | null;
       /** Dwell responses only (spec 09 §3.6). */
       prompt: boolean;
       /** Set when the server refused the request id as obsolete and the rating was resent without it. */
@@ -221,6 +231,7 @@ export interface ActionResponse {
   item: ArticleListItem;
   mutationId: string;
   exampleSuggestion?: ExampleSuggestion | null;
+  pattern?: DislikePattern | null;
   prompt?: boolean;
 }
 

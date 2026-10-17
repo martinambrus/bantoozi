@@ -45,6 +45,7 @@
       "demote_promotional": "Demoted: promotional",
       "demote_shallow": "Demoted: shallow",
       "demote_stale": "Demoted: outdated",
+      "demote_similar": "Ranked lower: like articles you disliked",
       "degraded": "Keyword match (model unavailable)",
       "llm_answer": "Judged by AI",
       "seen_story": "Story already seen",
@@ -136,6 +137,7 @@
   "toast": {
     "ratedUp": "Marked as liked",
     "ratedDown": "Marked as disliked",
+    "similarLowered": "Similar articles will be ranked lower.",
     "ratingRemoved": "Rating removed",
     "stale": "This changed on another device, so your change wasn't applied.",
     "undoConflict": "Newer changes were kept.",
@@ -143,6 +145,9 @@
     "teachYes": "Teach {{title}}: this is it",
     "teachNo": "Teach {{title}}: not this",
     "stopSuggesting": "Stop suggesting",
+    "fewerLikeThese": "Show fewer like these",
+    "notNow": "Not now",
+    "fewerTaught": "{{title}} will show fewer like these.",
     "suggestionsOff": "Teaching suggestions are off. You can turn them back on in Settings.",
     "offlineOptIn": "This change needs a connection. You can turn on offline reading in Settings.",
     "offlineNeedsConnection": "This change needs a connection."

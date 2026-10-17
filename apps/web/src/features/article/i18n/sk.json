@@ -49,6 +49,7 @@
       "demote_promotional": "Znížená priorita: reklama",
       "demote_shallow": "Znížená priorita: povrchné",
       "demote_stale": "Znížená priorita: zastarané",
+      "demote_similar": "Nižšie: podobné článkom, ktoré sa vám nepáčili",
       "degraded": "Zhoda s kľúčovými slovami (model nie je dostupný)",
       "llm_answer": "Posúdené umelou inteligenciou",
       "seen_story": "Príbeh ste už videli",
@@ -148,6 +149,7 @@
   "toast": {
     "ratedUp": "Označené ako „páči sa mi“",
     "ratedDown": "Označené ako „nepáči sa mi“",
+    "similarLowered": "Podobné články budú zoradené nižšie.",
     "ratingRemoved": "Hodnotenie bolo odstránené",
     "stale": "Tento článok sa zmenil na inom zariadení, preto sa vaša zmena nepoužila.",
     "undoConflict": "Novšie zmeny sa zachovali.",
@@ -155,6 +157,9 @@
     "teachYes": "Naučiť „{{title}}“: presne toto",
     "teachNo": "Naučiť „{{title}}“: nie toto",
     "stopSuggesting": "Prestať navrhovať",
+    "fewerLikeThese": "Menej takýchto",
+    "notNow": "Teraz nie",
+    "fewerTaught": "{{title}} bude ukazovať menej takýchto.",
     "suggestionsOff": "Navrhovanie učenia je vypnuté. Znova ho zapnete v Nastaveniach.",
     "offlineOptIn": "Táto zmena vyžaduje pripojenie. Čítanie offline si môžete zapnúť v Nastaveniach.",
     "offlineNeedsConnection": "Táto zmena vyžaduje pripojenie."

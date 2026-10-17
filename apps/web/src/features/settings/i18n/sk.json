@@ -116,6 +116,10 @@
       "stale": {
         "label": "Zastarané správy",
         "hint": "Aktuálne správy staršie ako tri dni zaradí nižšie."
+      },
+      "similar": {
+        "label": "Podobné článkom, ktoré sa vám nepáčili",
+        "hint": "Zoradí nižšie články, ktoré sa podobajú viacerým článkom, ktoré sa vám pri tom istom záujme nepáčili."
       }
     },
     "swipe": {

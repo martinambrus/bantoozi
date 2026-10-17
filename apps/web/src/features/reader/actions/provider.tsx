@@ -44,6 +44,7 @@ import {
   OFFLINE_ERROR_CODE,
   type ActionHandle,
   type ActionResult,
+  type DislikePattern,
   type ExampleSuggestion,
   type ReaderAction,
   type ReaderActions,
@@ -207,6 +208,7 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
   function offerUndo(
     handle: ActionHandle,
     suggestion: ExampleSuggestion | null,
+    pattern: DislikePattern | null,
     item: ArticleListItem,
   ): void {
     const { action } = handle;
@@ -217,7 +219,9 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
     }
     latestRatingBatchId = handle.ratingBatchId;
     const turn = latestOffer;
-    const message = ratingMessage(i18n, action.rating);
+    const rated = ratingMessage(i18n, action.rating);
+    const lowered = pattern !== null && pattern.lowered;
+    const message = lowered ? `${rated} ${i18n.t('article:toast.similarLowered')}` : rated;
     const undoAction: ToastAction = {
       label: i18n.t('common:actions.undo'),
       onAction: () => {
@@ -233,6 +237,29 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
         action: undoAction,
       });
     };
+    if (lowered && pattern.offer !== null) {
+      void offers.patternActions(pattern).then((offered) => {
+        if (turn !== latestOffer || !isRecent(handle)) return;
+        const current = store.view(item);
+        if (current.rating !== item.rating || current.reason !== item.reason) return;
+        if (offered === null) {
+          showPlain();
+          return;
+        }
+        show({
+          id:
+            handle.ratingBatchId === undefined
+              ? UNDO_TOAST_ID
+              : `rating-offer:${handle.ratingBatchId}:${pattern.cardId}`,
+          message,
+          tone: 'success',
+          durationMs: OFFER_TOAST_MS,
+          action: undoAction,
+          actions: offered,
+        });
+      });
+      return;
+    }
     if (suggestion === null || !preferences().exampleSuggestions) {
       showPlain();
       return;
@@ -265,7 +292,7 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
     switch (result.status) {
       case 'done':
         for (const queryKey of unreadKeys(accountId)) invalidateCoalesced(queryClient, queryKey);
-        offerUndo(handle, result.exampleSuggestion, result.item);
+        offerUndo(handle, result.exampleSuggestion, result.pattern, result.item);
         return;
       case 'failed':
         if (IMPLICIT_ACTIONS.has(handle.action.type)) return;

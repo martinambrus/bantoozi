@@ -11,7 +11,7 @@ import type { ToastAction } from '../../components/toast/toast-store.js';
 import { storeSavedMe } from '../../session/me.js';
 import { currentCardId } from '../interests/card-moves.js';
 import { cardCache, ensureCards } from '../interests/queries.js';
-import type { ExampleSuggestion } from '../reader/actions/types.js';
+import type { DislikePattern, ExampleSuggestion } from '../reader/actions/types.js';
 import { announceTaught, announceTeachFailure } from '../why/use-card-teacher.js';
 
 export interface ExampleOffersEnvironment {
@@ -32,6 +32,12 @@ export interface ExampleOffers {
     suggestion: ExampleSuggestion,
     articleId: string,
   ): Promise<readonly ToastAction[] | null>;
+  /**
+   * The actions that offer to teach the offered articles of a dislike pattern as "no" examples of
+   * its card, or null when the pattern has no offer, the card is not among the ones the person
+   * holds or the cards cannot be read.
+   */
+  patternActions(pattern: DislikePattern): Promise<readonly ToastAction[] | null>;
   /** Aborts the requests of the offers taken up and forgets them: nothing more is shown for them. */
   release(): void;
 }
@@ -64,6 +70,27 @@ export function createExampleOffers({
     if (signal.aborted) return;
     cache.apply(answer);
     announceTaught(toast, why, answer.card, side);
+  }
+
+  async function teachFewer(cardId: string, articleIds: string[]): Promise<void> {
+    const { signal } = controller;
+    let answer: RouteOutput<typeof routes.cardExamplesAdd>;
+    try {
+      answer = await api.call(
+        routes.cardExamplesAdd,
+        { params: { id: currentCardId(accountId, cardId) }, body: { articleIds, side: 'no' } },
+        { signal },
+      );
+    } catch (error) {
+      if (!signal.aborted) announceTeachFailure(toast, why, cache, error);
+      return;
+    }
+    if (signal.aborted) return;
+    cache.apply(answer);
+    toast.show({
+      message: i18n.t('article:toast.fewerTaught', { title: answer.card.title }),
+      tone: 'success',
+    });
   }
 
   async function stopSuggesting(): Promise<void> {
@@ -110,6 +137,27 @@ export function createExampleOffers({
             void stopSuggesting();
           },
         },
+      ];
+    },
+    async patternActions(pattern) {
+      const { offer } = pattern;
+      if (offer === null) return null;
+      let cards: CardDto[];
+      try {
+        cards = await ensureCards(queryClient, api, accountId);
+      } catch {
+        return null;
+      }
+      const id = currentCardId(accountId, pattern.cardId);
+      if (!cards.some((candidate) => candidate.id === id)) return null;
+      return [
+        {
+          label: i18n.t('article:toast.fewerLikeThese'),
+          onAction: () => {
+            void teachFewer(pattern.cardId, offer);
+          },
+        },
+        { label: i18n.t('article:toast.notNow'), onAction: () => {} },
       ];
     },
     release() {

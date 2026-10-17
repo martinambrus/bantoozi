@@ -79,7 +79,8 @@
       "clickbait": "Clickbait won't be ranked lower any more",
       "promotional": "Promotional content won't be ranked lower any more",
       "shallow": "Shallow articles won't be ranked lower any more",
-      "stale": "Outdated news won't be ranked lower any more"
+      "stale": "Outdated news won't be ranked lower any more",
+      "similar": "Similar articles won't be ranked lower any more"
     },
     "reset": "Back to automatic"
   },
@@ -87,7 +88,10 @@
     "heading": "Rules applied",
     "forCard": "{{rule}}: {{card}}",
     "reset": "Reset",
-    "turnOff": "Turn off"
+    "turnOff": "Turn off",
+    "similar": "Ranked lower: like {{count}} articles you disliked",
+    "similarOff": "Don't lower these",
+    "teachNot": "Teach {{card}}: not this"
   },
   "model": {
     "heading": "Your personal model",
