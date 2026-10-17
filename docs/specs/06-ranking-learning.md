@@ -186,7 +186,7 @@ These apply even when the personal model is active.
 
 ---
 
-## 5. Quality demotions (only when `scoreSource = 'cards'`)
+## 5. Quality demotions (only when `scoreSource = 'cards'`, except `similar`)
 
 | Flag | Triggered when | Driven by dislike reason |
 |---|---|---|
@@ -211,6 +211,21 @@ The cutoffs are the `demotion` values of `RankerConfig` (§11). Gate G1 checks e
 facet labels and selects it on development data when the labels support it (spec 10 §5); a fixed
 bar that holds for one question type need not hold for another (`depth` is a Score, the rest are
 Nouls).
+
+**Like articles you disliked (`demote:similar:<cardId>`, D-268).** For the item's deciding positive
+card (its answer p ≥ `lanes.maybe`), the labelled set is the user's ratings of the last 30 days
+(newest 200; dislikes only with reason none, `off_topic` or `other`) of articles that any card of
+the deciding card's family answered with p ≥ `lanes.maybe` (family: a private fork's
+`parent_card_id`, else the card). `similarDislikes` (pure, `packages/ranker`) compares title tokens
+(a trailing price segment such as ": 1 550" or ": Dohodou" stripped; tokens of ≥ 6 characters cut
+to 5) by TF-IDF cosine over that set plus the item. It fires when ≥ 2 dislikes have cosine ≥ 0.20
+and the mean of the top-2 dislike cosines beats the top-2 like mean by 0.10; the item's own rating
+never counts. It multiplies `P` by the demotion factor on the cards **and** the model path (the
+model sees no words), records the deciding card in Explain on both, and its re-rank deadline is
+the earliest moment a contributing rating leaves the 30-day window. `prefs.demote.similar` is
+`auto` (default, behaves as `on`) / `on` / `off`. A rating change marks the window rows answered
+by the same card family due (§7). Calibrated on the owner's ratings: about 22 % of dislikes and
+2.5 % of likes of a card would be lowered.
 
 ---
 
@@ -834,6 +849,15 @@ baseline (spec 10).
     counted from earlier rating events that carried one (spec 08 §5.3)
   - a suggestion is only an offer: nothing changes until the user accepts it through
     `POST /cards/:id/examples`
+- **Dislike pattern** (D-268; the rating endpoint, spec 08 §5.3). A plain dislike (reason none,
+  `off_topic` or `other`) of an article that a held positive card answered with p ≥ `lanes.maybe`
+  reports `pattern {cardId, lowered, offer}` for the card with the highest such answer:
+  `lowered` = the §5 similar check of the rated article against the card's other recent ratings
+  (false when `prefs.demote.similar` is off); `offer` = the article and its two most similar
+  dislikes when lowered, at most once per card family in 14 days and only with
+  `prefs.exampleSuggestions`. An offer replaces the single example suggestion and is stored in the
+  `rate` event as `dislikePattern`; accepting it calls `POST /cards/:id/examples/batch`, one fork
+  and one backfill for all three examples.
 
 ---
 

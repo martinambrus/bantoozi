@@ -1509,6 +1509,8 @@ scope; administrators assign plans. Follow the approved sequence, completing CI 
 | **Opted-in anonymized feedback** to grow the golden set | after launch, with a privacy-policy update | spec 10 §8 |
 | **Search over my archive** (Postgres FTS; later hybrid search as in DreamCatcher) | user demand | background §2.2 |
 | **Open signup and plans** | when costs and moderation are understood | spec 08 §2, §6 |
+| **Words in the personal model** (hashed title/lead word and word-pair features, a `FEATURE_SPEC_V2`), so plain votes can teach it a specific pattern such as "Škoda 100 / Felicia" without cards | the dislike-pattern feedback of D-268 (similar-dislike lowering plus "Show fewer like these?") still does not filter look-alike articles well enough in use | owner idea 2026-10-17 (D-268); needs a feature-spec change (models invalidated), a G1 replay and many ratings for sparse features |
+| **Embeddings for article similarity** (a multilingual model through Ollama, e.g. bge-m3) in place of D-268's title TF-IDF | same trigger; or when articles are mostly long news, where title words separate patterns less well than on classified-ad titles | owner choice 2026-10-17 (D-268 took weighted words first); needs Ollama in production (`ollama` profile, spec 11 §2) or a confirmed cloud embedding endpoint, a new call kind and vector storage |
 | **UUIDv7 time-range partitioning with tablespaces on other drives** | list p95 or vacuum/retention can't keep up after the S19 query/relay fixes (D-185) | owner idea 2026-10-11 (single host, Postgres 16; no multi-host); not yet specified |
 
 ---

@@ -264,6 +264,13 @@ login without leaking the previous account's UI. Slow classification leaves arti
   `exampleSuggestions=false`. The action calls `POST /cards/:id/examples {articleId, side}`, swaps
   the cached card id and shows the same confirmation as the Why-this drawer. Ignoring it changes
   nothing. Responses to replayed offline actions never show a suggestion.
+- **Dislike pattern** (D-268): when a dislike's response carries `pattern.offer`, the toast reads
+  "Marked as disliked Similar articles will be ranked lower." for 8 s with Undo, "Show fewer like
+  these" (`POST /cards/:id/examples/batch {articleIds: offer, side: 'no'}`, then "*Card* will show
+  fewer like these.") and "Not now"; with `lowered` alone it only adds the sentence. In Why this?,
+  `demote:similar` reads "Ranked lower: like N articles you disliked" with "Don't lower these"
+  (`prefs.demote.similar = 'off'`) and "Teach *card*: not this". Settings → quality filters has
+  "Like articles you disliked" (Auto / On / Off).
 
 ### 3.4 Keyboard shortcuts (desktop; `?` shows the overlay)
 

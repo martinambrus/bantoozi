@@ -2774,3 +2774,32 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   source"). The reader's empty feed view now says why when the feed's last error is current ("This
   feed couldn't be fetched" with the localized reason) or when it was never fetched ("No articles
   yet"), instead of "No unread articles". No migration.
+- D-268: 2026-10-17 (owner request: downvoting several look-alike articles of one interest, e.g. old
+  Škoda 100/Felicia ads under a Škoda card, should show fewer of them without the user having to
+  learn Never cards or edit examples) — Every dislike already trains the personal model, but its
+  `FEATURE_SPEC_V1` features hold no words, so it cannot learn a pattern inside one card's topic,
+  and the only text-aware teaching was the per-rating Off-topic offer (7 days per card). Three
+  parts, no migration:
+  1. **Similar-dislike lowering** (spec 06 §5): `demote:similar:<card>` multiplies P by the
+     demotion factor when the article's title is like ≥ 2 of its deciding card family's recent
+     dislikes and less like its likes. It applies on the model path too (a deviation from §5's
+     cards-only rule: the model cannot see this), and the model path now records the deciding card.
+     Owner choices: weighted words over embeddings (embeddings parked in PLAN §15), "balanced"
+     thresholds (cosine 0.20, margin 0.10). The labelled set is selected through `card_answers`
+     (calibration: `explain.decidingCardId` was missing on 43 % of the owner's ratings); titles
+     only, price suffix stripped (excerpts and price tokens hurt in the calibration). A rating
+     change marks the family's window rows due (15 ms on the owner's 897-row family);
+     `RANKER_VERSION` 3. `prefs.demote.similar` (auto/on/off) is outside `DEMOTION_FLAGS`, which
+     stay facet-driven.
+  2. **"Show fewer like these?"** (spec 06 §10, 08 §5.3): the rating response's `pattern` offers
+     the article and its two most similar dislikes once per card family per 14 days; Yes calls
+     the new `POST /cards/:id/examples/batch`, one fork and one backfill for all of them. It
+     replaces the single Off-topic suggestion when both apply, and reasons none/off_topic/other
+     all count, since users rarely give one (owner data: 2,927 of 3,131 dislikes had none).
+  3. **Visible effect** (spec 09): the toast says "Similar articles will be ranked lower.", Why
+     this? explains the rule with "Don't lower these" and "Teach *card*: not this", Settings has
+     the "Like articles you disliked" filter.
+  `RatingResponseSchema` is strict on the web, so a tab opened before this release rejects the
+  new `pattern` key until it reloads (the D-163 new-version bar). Calibration (owner ratings, one
+  card, online replay): 63/275 dislikes and 14/569 likes lowered. Parked: words in the personal
+  model (`FEATURE_SPEC_V2`), PLAN §15.
