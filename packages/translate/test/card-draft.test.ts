@@ -3,6 +3,7 @@ import { MockAgent } from 'undici';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  CARD_DRAFT_MAX_EXISTING,
   CARD_DRAFT_EXCERPT_CHARS,
   CARD_DRAFT_OPTIONS,
   OLLAMA_PRICES,
@@ -83,6 +84,28 @@ describe('the card draft request (D-240)', () => {
     const data = JSON.parse(user.content) as { articles: { title: string; excerpt: string }[] };
     expect(data.articles[0]?.excerpt).toHaveLength(CARD_DRAFT_EXCERPT_CHARS);
     expect(() => cardDraftMessages({ ...INPUT, articles: [] })).toThrow(RangeError);
+  });
+
+  it('says what the articles were to the reader and lists the held cards to stay clear of (D-265)', () => {
+    expect(cardDraftSystemPrompt('en')).toContain('articles the reader liked');
+    expect(cardDraftSystemPrompt('en', 'never')).toContain(
+      'articles the reader wants to stop seeing',
+    );
+    expect(cardDraftSystemPrompt('en')).toContain('`existing_cards`');
+    const existing = Array.from({ length: 35 }, (_, i) => ({
+      name: `Card ${i}`,
+      interest: `Interest ${i} ${'y'.repeat(400)}`,
+    }));
+    const [system, user] = cardDraftMessages({ ...INPUT, kind: 'never', existing });
+    expect(system.content).toContain('wants to stop seeing');
+    const data = JSON.parse(user.content) as {
+      existing_cards: { name: string; interest: string }[];
+    };
+    expect(data.existing_cards).toHaveLength(CARD_DRAFT_MAX_EXISTING);
+    expect(data.existing_cards[0]?.name).toBe('Card 0');
+    expect(data.existing_cards[0]?.interest.length).toBeLessThanOrEqual(200);
+    const [, bare] = cardDraftMessages(INPUT);
+    expect((JSON.parse(bare.content) as { existing_cards: unknown[] }).existing_cards).toEqual([]);
   });
 
   it('posts one chat call with the draft options and returns the parsed draft', async () => {

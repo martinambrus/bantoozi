@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
 import {
+  CARD_DRAFT_CONTEXT_CARDS,
   finishCardDraft,
+  heldCardTexts,
   loadCardDraftArticles,
   loadCardDraftWork,
   type CardDraftArticle,
@@ -171,6 +173,8 @@ export function createCardDraftHandler(
     const work = await loadCardDraftWork(deps.db, draftId);
     if (work === null) return;
     const articles = await loadCardDraftArticles(deps.db, work.articleIds);
+    // The held cards of the same kind, so the proposal is a topic the reader has no card for (D-265).
+    const existing = await heldCardTexts(deps.db, work.userId, work.kind, CARD_DRAFT_CONTEXT_CARDS);
     const llm =
       translation === undefined || articles.length === 0
         ? null
@@ -181,6 +185,8 @@ export function createCardDraftHandler(
             {
               model: translation.modelFast,
               locale: work.locale,
+              kind: work.kind,
+              existing: existing.map((card) => ({ name: card.title, interest: card.interest })),
               articles: articles.map((article) => ({
                 title: article.title,
                 excerpt: article.excerpt,
