@@ -74,11 +74,13 @@ describe('the signal table (spec 06 §8.2)', () => {
     const bait = await s.article();
     const plain = await s.article();
     const answered = await s.article();
+    const answeredWhy = await s.article();
     const marked = await s.article();
     await s.rate(off, -1, 'off_topic');
     await s.rate(bait, -1, 'clickbait');
     await s.rate(plain, -1);
     await s.answer(answered, false);
+    await s.answer(answeredWhy, false, 'promo');
     await s.bookmark(marked);
     const samples = await s.samples();
     const reasonOf = (id: string) => samples.find((x) => x.articleId === id)?.reason;
@@ -86,6 +88,8 @@ describe('the signal table (spec 06 §8.2)', () => {
     expect(reasonOf(bait)).toBe('clickbait');
     expect(reasonOf(plain)).toBeNull();
     expect(reasonOf(answered)).toBeNull();
+    // A "no" to "Did you like it?" carries its reason like a dislike (D-266).
+    expect(reasonOf(answeredWhy)).toBe('promo');
     expect(reasonOf(marked)).toBeNull();
   });
 

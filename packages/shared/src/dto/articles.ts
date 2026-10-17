@@ -315,8 +315,18 @@ export const RatingBodySchema = z
 export type RatingBody = z.infer<typeof RatingBodySchema>;
 
 export const PromptAnswerBodySchema = z
-  .object({ ...fence, liked: z.boolean(), analysisRequestId: UuidSchema.optional() })
-  .strict();
+  .object({
+    ...fence,
+    liked: z.boolean(),
+    /** Why the article was not liked, as with a dislike (D-266); only with `liked: false`. */
+    reason: RatingReasonSchema.optional(),
+    analysisRequestId: UuidSchema.optional(),
+  })
+  .strict()
+  .refine((body) => body.reason === undefined || !body.liked, {
+    message: 'reason is allowed only with liked false',
+    path: ['reason'],
+  });
 
 export const BookmarkBodySchema = z
   .object({ ...fence, mediaPolicyFeedId: IdSchema.optional() })

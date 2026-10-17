@@ -1567,10 +1567,17 @@ export async function rateArticle(
   };
 }
 
-/** `/prompt-answer`: stored as a rating (`liked ? 1 : -1`), recorded as `prompt_answer`. */
+/**
+ * `/prompt-answer`: stored as a rating (`liked ? 1 : -1`) with the dislike's reason, if any
+ * (D-266), recorded as `prompt_answer`.
+ */
 export async function answerPrompt(
   tx: TenantTx,
-  input: ActionInput & { liked: boolean; analysisRequestId?: string | undefined },
+  input: ActionInput & {
+    liked: boolean;
+    reason?: RatingReason | undefined;
+    analysisRequestId?: string | undefined;
+  },
 ): Promise<ActionResult> {
   const lock = await lockFenced(tx, [input], true);
   const config = await readRankerConfig(tx);
@@ -1583,7 +1590,7 @@ export async function answerPrompt(
       articleId: input.articleId,
       fence: input.fence,
       rating: input.liked ? 1 : -1,
-      reason: null,
+      reason: input.liked ? null : (input.reason ?? null),
       hide: false,
       analysisRequestId: input.analysisRequestId,
     },

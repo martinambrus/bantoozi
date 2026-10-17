@@ -2751,3 +2751,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   Also: drizzle-kit stamps a new journal entry with the real time, earlier than this repo's synthetic
   `when` values, so existing databases skipped 0032 silently (fresh test databases did not); 0032
   takes the previous `when` + 1 and a test now requires strictly increasing journal timestamps.
+
+- D-266: 2026-10-17 (owner report: a "no" to "Did you like it?" could not say why) — The prompt's
+  "no" is a dislike, but `POST /articles/:id/prompt-answer` took only `{liked}` and the prompt sent it
+  at once. Now the body takes an optional `reason` (only with `liked: false`, as `/rating` allows it
+  only with `-1`), stored on the reader row and in the `prompt_answer` event; the web dispatches the
+  "no" held and opens the reason bar, exactly as a thumb's dislike (the same keys, 5 s countdown, undo,
+  sent without a reason when it times out). The learning samples read the reason of `prompt_answer`
+  events too (it feeds only the Never-card hint of D-241, not training); earlier answers have none.
+  No migration.

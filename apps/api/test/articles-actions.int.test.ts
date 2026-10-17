@@ -497,6 +497,29 @@ describe('/rating and /prompt-answer', () => {
     });
   });
 
+  it('stores the reason of a "no" answer as a dislike does, never with a "yes" (D-266)', async () => {
+    const { r, article } = await setup();
+    const yes = await r.api.post(`/articles/${article}/prompt-answer`, {
+      ...freshFence,
+      liked: true,
+      reason: 'clickbait',
+    });
+    expect(yes.statusCode).toBe(400);
+    const res = await ok(
+      r.api.post(`/articles/${article}/prompt-answer`, {
+        ...freshFence,
+        liked: false,
+        reason: 'clickbait',
+      }),
+    );
+    expect(res.item).toMatchObject({ rating: -1, reason: 'clickbait' });
+    const [event] = await events(h, r.user.id, article);
+    expect(event).toMatchObject({
+      kind: 'prompt_answer',
+      value: { rating: -1, reason: 'clickbait' },
+    });
+  });
+
   it('freezes the feature snapshot with every applicable card and its snapshot-time strength', async () => {
     const { r, feed, article } = await setup();
     const love = await holdCard(r.user.id, 'love', 'Batteries');

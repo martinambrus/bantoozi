@@ -61,7 +61,7 @@ export type ReaderAction =
       analysisRequestId?: string;
       selection?: 'calibration';
     }
-  | { type: 'promptAnswer'; liked: boolean; analysisRequestId?: string }
+  | { type: 'promptAnswer'; liked: boolean; reason?: RatingReason; analysisRequestId?: string }
   /** Spec 09 §1: always the feed the reader is looking at (`item.feed.id`). */
   | { type: 'bookmark'; mediaPolicyFeedId?: string }
   | { type: 'unbookmark' }

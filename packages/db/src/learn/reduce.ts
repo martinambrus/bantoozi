@@ -106,7 +106,9 @@ export function reduceArticle(input: ReduceInput): LearnSample | null {
     feedbackAt: event.createdAt,
     groupId: features?.values.clusterId ?? articleId,
     reason:
-      signal === 'rating' && event.kind === 'rate' && typeof event.value.reason === 'string'
+      signal === 'rating' &&
+      (event.kind === 'rate' || event.kind === 'prompt_answer') &&
+      typeof event.value.reason === 'string'
         ? event.value.reason
         : null,
     features,
