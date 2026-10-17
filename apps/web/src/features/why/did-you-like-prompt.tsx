@@ -12,7 +12,7 @@ import { Sheet } from '../../components/sheet.js';
 import { useToast } from '../../components/toast/toast-provider.js';
 import { useMe, useSession } from '../../session/context.js';
 import { storeSavedMe } from '../../session/me.js';
-import { useReaderActions, useSettledActions } from '../reader/actions/provider.js';
+import { useReaderActions, useReasonBar, useSettledActions } from '../reader/actions/provider.js';
 
 type FeedbackPrompt = Me['preferences']['feedbackPrompt'];
 
@@ -34,6 +34,7 @@ export function DidYouLikePrompt() {
   const toast = useToast();
   const me = useMe();
   const actions = useReaderActions();
+  const reasonBar = useReasonBar();
   const [asked, setAsked] = useState<ArticleListItem | null>(null);
 
   const setting = useApiMutation(routes.meUpdate, {
@@ -55,12 +56,24 @@ export function DidYouLikePrompt() {
   function answer(liked: boolean) {
     if (asked === null) return;
     const { requestId } = asked.analysis;
-    actions.dispatch(asked, {
-      type: 'promptAnswer',
+    const action = {
+      type: 'promptAnswer' as const,
       liked,
       ...(requestId === null ? {} : { analysisRequestId: requestId }),
-    });
+    };
     setAsked(null);
+    if (liked) {
+      actions.dispatch(asked, action);
+      return;
+    }
+    // A "no" is a dislike: it waits for its reason in the reason bar, as the thumb's does (D-266).
+    const handle = actions.dispatch(asked, action, { hold: true });
+    reasonBar.open({
+      actionId: handle.id,
+      articleId: asked.id,
+      title: asked.title,
+      before: asked.rating,
+    });
   }
 
   function askLessOften() {

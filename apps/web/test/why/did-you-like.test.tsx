@@ -286,30 +286,65 @@ describe('the prompt after a dwell', () => {
 });
 
 describe('the answer', () => {
-  it.each([
-    ['Yes', true],
-    ['No', false],
-  ])(
-    '"%s" sends liked: %s with the fence of the dwell, and closes at once',
-    async (name, liked) => {
-      const answer = deferred<Response>();
-      const app = renderPrompt({
-        routes: { 'POST /articles/:id/prompt-answer': () => answer.promise },
-      });
-      const sheet = await ask(app, FIRST);
+  it('"Yes" sends liked: true with the fence of the dwell, and closes at once', async () => {
+    const answer = deferred<Response>();
+    const app = renderPrompt({
+      routes: { 'POST /articles/:id/prompt-answer': () => answer.promise },
+    });
+    const sheet = await ask(app, FIRST);
 
-      await app.user.click(within(sheet).getByRole('button', { name }));
+    await app.user.click(within(sheet).getByRole('button', { name: 'Yes' }));
 
-      expect(screen.queryByRole('dialog')).toBeNull();
-      await waitFor(() => expect(app.calls('POST', '/articles/101/prompt-answer')).toHaveLength(1));
-      const [request] = app.calls('POST', '/articles/101/prompt-answer');
-      expect(bodyOf(request!)).toEqual({ stateVersion: '5', contentRevision: '2', liked });
-      expect(request!.headers.get('Idempotency-Key')).toMatch(UUID_V4);
-      answer.resolve(actionResponse(acked(acked(FIRST))));
-      await waitFor(() => expect(app.log).toContain('promptAnswer:101:done'));
-      expect(app.calls('PATCH', '/me')).toHaveLength(0);
-    },
-  );
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(app.calls('POST', '/articles/101/prompt-answer')).toHaveLength(1));
+    const [request] = app.calls('POST', '/articles/101/prompt-answer');
+    expect(bodyOf(request!)).toEqual({ stateVersion: '5', contentRevision: '2', liked: true });
+    expect(request!.headers.get('Idempotency-Key')).toMatch(UUID_V4);
+    answer.resolve(actionResponse(acked(acked(FIRST))));
+    await waitFor(() => expect(app.log).toContain('promptAnswer:101:done'));
+    expect(app.calls('PATCH', '/me')).toHaveLength(0);
+  });
+
+  it('"No" asks for the reason as a dislike does, and sends it with liked: false (D-266)', async () => {
+    const app = renderPrompt({
+      routes: { 'POST /articles/:id/prompt-answer': promptAnswerAccepted },
+    });
+    const sheet = await ask(app, FIRST);
+
+    await app.user.click(within(sheet).getByRole('button', { name: 'No' }));
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const bar = await screen.findByRole('group', { name: 'Reason for the dislike' });
+    // Held for its reason: nothing is sent yet.
+    expect(app.calls('POST', '/articles/101/prompt-answer')).toHaveLength(0);
+    await app.user.click(within(bar).getByRole('button', { name: 'Clickbait' }));
+
+    await waitFor(() => expect(app.calls('POST', '/articles/101/prompt-answer')).toHaveLength(1));
+    expect(bodyOf(app.calls('POST', '/articles/101/prompt-answer')[0]!)).toEqual({
+      stateVersion: '5',
+      contentRevision: '2',
+      liked: false,
+      reason: 'clickbait',
+    });
+    await waitFor(() => expect(app.log).toContain('promptAnswer:101:done'));
+  });
+
+  it('"No" without a reason is sent once the reason bar times out', async () => {
+    const app = renderPrompt({
+      routes: { 'POST /articles/:id/prompt-answer': promptAnswerAccepted },
+    });
+    await app.user.click(within(await ask(app, FIRST)).getByRole('button', { name: 'No' }));
+    await screen.findByRole('group', { name: 'Reason for the dislike' });
+
+    await waitFor(() => expect(app.calls('POST', '/articles/101/prompt-answer')).toHaveLength(1), {
+      timeout: 7_000,
+    });
+    expect(bodyOf(app.calls('POST', '/articles/101/prompt-answer')[0]!)).toEqual({
+      stateVersion: '5',
+      contentRevision: '2',
+      liked: false,
+    });
+  }, 10_000);
 
   it('names the analysis the article was selected for, and only then', async () => {
     const app = renderPrompt({

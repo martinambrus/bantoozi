@@ -132,7 +132,11 @@ function applyAction(
         archivedAt: action.hide === true ? (state.archivedAt ?? stamp) : state.archivedAt,
       };
     case 'promptAnswer':
-      return { ...state, rating: action.liked ? 1 : -1, reason: null };
+      return {
+        ...state,
+        rating: action.liked ? 1 : -1,
+        reason: action.liked ? null : (action.reason ?? null),
+      };
     case 'bookmark':
       return { ...state, bookmarkedAt: state.bookmarkedAt ?? stamp };
     case 'unbookmark':
@@ -865,6 +869,10 @@ export function createReaderActions(options: ReaderActionsOptions): ReaderAction
         ...(patch.reason !== undefined && action.rating === -1 ? { reason: patch.reason } : {}),
         ...(patch.hide !== undefined ? { hide: patch.hide } : {}),
       };
+    }
+    // A "no" to "Did you like it?" takes the reason picked in the bar, as a dislike does (D-266).
+    if (action.type === 'promptAnswer' && !action.liked && patch?.reason !== undefined) {
+      entry.handle.action = { ...action, reason: patch.reason };
     }
     entry.handle.status = 'queued';
     const slot = slotOf(entry.handle.articleId);

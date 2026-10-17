@@ -86,7 +86,7 @@ async function sendAction(
             body: {
               ...fields,
               liked: action.liked,
-              ...present({ analysisRequestId: action.analysisRequestId }),
+              ...present({ reason: action.reason, analysisRequestId: action.analysisRequestId }),
             },
           },
           options,
