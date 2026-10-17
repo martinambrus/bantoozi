@@ -27,6 +27,7 @@ const fields = {
     promotional: TriSchema,
     shallow: TriSchema,
     stale: TriSchema,
+    similar: TriSchema,
   },
   implicitNegative: z.boolean(),
   swipe: {
@@ -56,7 +57,7 @@ export interface UserPreferences {
   feedbackPrompt: 'often' | 'occasionally' | 'never';
   /** Offer to add a rated article as a card example (spec 06 §10). */
   exampleSuggestions: boolean;
-  demote: { clickbait: Tri; promotional: Tri; shallow: Tri; stale: Tri };
+  demote: { clickbait: Tri; promotional: Tri; shallow: Tri; stale: Tri; similar: Tri };
   implicitNegative: boolean;
   swipe: { left: 'dislike' | 'read' | 'none'; right: 'like' | 'bookmark' | 'none' };
   theme: 'system' | 'light' | 'dark';
@@ -81,7 +82,13 @@ export const DEFAULT_USER_PREFERENCES: Readonly<UserPreferences> = Object.freeze
   markReadOnRate: true,
   feedbackPrompt: 'occasionally',
   exampleSuggestions: true,
-  demote: { clickbait: 'auto', promotional: 'auto', shallow: 'auto', stale: 'auto' },
+  demote: {
+    clickbait: 'auto',
+    promotional: 'auto',
+    shallow: 'auto',
+    stale: 'auto',
+    similar: 'auto',
+  },
   implicitNegative: false,
   swipe: { left: 'dislike', right: 'like' },
   theme: 'system',
@@ -110,6 +117,7 @@ export const UserPreferencesSchema: z.ZodType<UserPreferences> = z.object({
       promotional: fields.demote.promotional.catch('auto'),
       shallow: fields.demote.shallow.catch('auto'),
       stale: fields.demote.stale.catch('auto'),
+      similar: fields.demote.similar.catch('auto'),
     })
     .catch({ ...DEFAULT_USER_PREFERENCES.demote }),
   implicitNegative: fields.implicitNegative.catch(DEFAULT_USER_PREFERENCES.implicitNegative),
@@ -156,6 +164,7 @@ export const UserPreferencesPatchSchema = z
         promotional: fields.demote.promotional,
         shallow: fields.demote.shallow,
         stale: fields.demote.stale,
+        similar: fields.demote.similar,
       })
       .partial()
       .strict()

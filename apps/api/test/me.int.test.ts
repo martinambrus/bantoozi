@@ -103,6 +103,7 @@ describe('PATCH /me', () => {
       clickbait: 'on',
       promotional: 'auto',
       shallow: 'off',
+      similar: 'auto',
       stale: 'auto',
     });
     expect(me.preferences.folderOrder).toEqual(['Tech']);

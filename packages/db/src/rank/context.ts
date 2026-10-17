@@ -191,6 +191,79 @@ export async function loadRecentDislikes(
   }));
 }
 
+/** One rated article of an interest card's family, with its raw title. */
+export interface SimilarFeedbackRow {
+  articleId: string;
+  rating: 1 | -1;
+  ratedAt: Date;
+  title: string | null;
+}
+
+/** The held card's family key (a private fork shares its parent's), as in library updates. */
+const FAMILY = sql`CASE WHEN c.visibility = 'private' THEN coalesce(c.parent_card_id, c.id) ELSE c.id END`;
+
+/**
+ * For every positive interest card the user holds, its newest ratings of the last `windowDays` days
+ * (likes, and dislikes without a quality reason) on articles that any card of the held card's family
+ * answered with `p >= minP`, at most `poolSize` per held card (the input of the similar-dislikes
+ * demotion). Keyed by the held card id.
+ */
+export async function loadSimilarFeedback(
+  db: Executor,
+  userId: string,
+  now: Date,
+  limits: { minP: number; windowDays: number; poolSize: number },
+): Promise<Map<string, SimilarFeedbackRow[]>> {
+  const since = new Date(now.getTime() - limits.windowDays * 86_400_000);
+  const result = await db.execute<{
+    held_id: string;
+    article_id: string;
+    rating: number;
+    rated_at: RawTimestamp;
+    title: string | null;
+  }>(sql`
+    WITH held AS (
+      SELECT uc.card_id AS id, ${FAMILY} AS family
+        FROM user_cards uc
+        JOIN interest_cards c ON c.id = uc.card_id AND c.kind = 'interest' AND c.retired_at IS NULL
+                             AND (c.visibility <> 'private' OR c.owner_user_id = uc.user_id)
+       WHERE uc.user_id = ${userId}::uuid AND uc.strength <> 'never'),
+    rated AS (
+      SELECT ua.article_id, ua.rating, ua.rated_at
+        FROM user_article ua
+       WHERE ua.user_id = ${userId}::uuid AND ua.rating IN (1, -1)
+         AND ua.rated_at > ${since.toISOString()}::timestamptz
+         AND (ua.rating = 1 OR ua.reason IS NULL OR ua.reason IN ('off_topic', 'other'))),
+    answered AS (
+      SELECT DISTINCT r.article_id, ${FAMILY} AS family
+        FROM rated r
+        JOIN card_answers ca ON ca.article_id = r.article_id AND ca.p >= ${limits.minP}
+        JOIN interest_cards c ON c.id = ca.card_id AND c.kind = 'interest'),
+    pooled AS (
+      SELECT h.id AS held_id, r.article_id, r.rating, r.rated_at,
+             row_number() OVER (PARTITION BY h.id ORDER BY r.rated_at DESC, r.article_id DESC) AS n
+        FROM held h
+        JOIN answered an ON an.family = h.family
+        JOIN rated r ON r.article_id = an.article_id)
+    SELECT p.held_id::text AS held_id, p.article_id::text AS article_id, p.rating, p.rated_at,
+           a.title
+      FROM pooled p JOIN articles a ON a.id = p.article_id
+     WHERE p.n <= ${limits.poolSize}
+     ORDER BY p.held_id, p.n`);
+  const map = new Map<string, SimilarFeedbackRow[]>();
+  for (const row of result.rows) {
+    const rows = map.get(row.held_id) ?? [];
+    rows.push({
+      articleId: row.article_id,
+      rating: row.rating === 1 ? 1 : -1,
+      ratedAt: toDate(row.rated_at),
+      title: row.title,
+    });
+    map.set(row.held_id, rows);
+  }
+  return map;
+}
+
 /**
  * Clusters with a member the user read in the window (spec 06 §7 step 1, §2 step 6i), each with the
  * time of its latest such read: the reader state, so an unread or undo removes the evidence again,

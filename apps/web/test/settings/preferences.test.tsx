@@ -188,7 +188,8 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
       await openSettings();
 
       const wanted = leaves(DEFAULT_USER_PREFERENCES).filter(
-        (path) => !['theme', 'folderOrder', 'onboardingCompletedAt'].includes(path),
+        (path) =>
+          !['theme', 'folderOrder', 'onboardingCompletedAt', 'demote.similar'].includes(path),
       );
       expect(CASES.flatMap((item) => leaves(item.patch)).sort()).toEqual(wanted.sort());
       expect(prefs().getAllByRole('switch')).toHaveLength(9);
@@ -253,7 +254,13 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
         markReadOnRate: false,
         feedbackPrompt: 'never',
         exampleSuggestions: false,
-        demote: { clickbait: 'on', promotional: 'off', shallow: 'on', stale: 'off' },
+        demote: {
+          clickbait: 'on',
+          promotional: 'off',
+          shallow: 'on',
+          stale: 'off',
+          similar: 'auto',
+        },
         implicitNegative: true,
         swipe: { left: 'none', right: 'bookmark' },
         loadRemoteImages: true,

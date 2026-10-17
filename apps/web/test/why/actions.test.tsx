@@ -19,7 +19,14 @@ type Demote = Me['preferences']['demote'];
 function meWith(demote: Partial<Demote>): Me {
   return makeMe({
     preferences: {
-      demote: { clickbait: 'auto', promotional: 'auto', shallow: 'auto', stale: 'auto', ...demote },
+      demote: {
+        clickbait: 'auto',
+        promotional: 'auto',
+        shallow: 'auto',
+        stale: 'auto',
+        similar: 'auto',
+        ...demote,
+      },
     },
   });
 }

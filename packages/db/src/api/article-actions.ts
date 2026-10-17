@@ -974,6 +974,9 @@ async function recordEffects(
     now: input.now,
     changes,
     demotion,
+    lanesMaybe: changes.some((c) => c.ratingChanged === true)
+      ? (await readRankerConfig(tx)).lanes.maybe
+      : undefined,
   });
 }
 

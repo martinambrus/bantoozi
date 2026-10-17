@@ -464,7 +464,8 @@
                                 "clickbait": "auto",
                                 "promotional": "auto",
                                 "shallow": "auto",
-                                "stale": "auto"
+                                "stale": "auto",
+                                "similar": "auto"
                               },
                               "type": "object",
                               "properties": {
@@ -503,13 +504,23 @@
                                     "on",
                                     "off"
                                   ]
+                                },
+                                "similar": {
+                                  "default": "auto",
+                                  "type": "string",
+                                  "enum": [
+                                    "auto",
+                                    "on",
+                                    "off"
+                                  ]
                                 }
                               },
                               "required": [
                                 "clickbait",
                                 "promotional",
                                 "shallow",
-                                "stale"
+                                "stale",
+                                "similar"
                               ],
                               "additionalProperties": false
                             },
@@ -1127,7 +1138,8 @@
                                 "clickbait": "auto",
                                 "promotional": "auto",
                                 "shallow": "auto",
-                                "stale": "auto"
+                                "stale": "auto",
+                                "similar": "auto"
                               },
                               "type": "object",
                               "properties": {
@@ -1166,13 +1178,23 @@
                                     "on",
                                     "off"
                                   ]
+                                },
+                                "similar": {
+                                  "default": "auto",
+                                  "type": "string",
+                                  "enum": [
+                                    "auto",
+                                    "on",
+                                    "off"
+                                  ]
                                 }
                               },
                               "required": [
                                 "clickbait",
                                 "promotional",
                                 "shallow",
-                                "stale"
+                                "stale",
+                                "similar"
                               ],
                               "additionalProperties": false
                             },
@@ -1794,7 +1816,8 @@
                             "clickbait": "auto",
                             "promotional": "auto",
                             "shallow": "auto",
-                            "stale": "auto"
+                            "stale": "auto",
+                            "similar": "auto"
                           },
                           "type": "object",
                           "properties": {
@@ -1833,13 +1856,23 @@
                                 "on",
                                 "off"
                               ]
+                            },
+                            "similar": {
+                              "default": "auto",
+                              "type": "string",
+                              "enum": [
+                                "auto",
+                                "on",
+                                "off"
+                              ]
                             }
                           },
                           "required": [
                             "clickbait",
                             "promotional",
                             "shallow",
-                            "stale"
+                            "stale",
+                            "similar"
                           ],
                           "additionalProperties": false
                         },
@@ -2222,6 +2255,14 @@
                               "on",
                               "off"
                             ]
+                          },
+                          "similar": {
+                            "type": "string",
+                            "enum": [
+                              "auto",
+                              "on",
+                              "off"
+                            ]
                           }
                         },
                         "additionalProperties": false
@@ -2497,7 +2538,8 @@
                             "clickbait": "auto",
                             "promotional": "auto",
                             "shallow": "auto",
-                            "stale": "auto"
+                            "stale": "auto",
+                            "similar": "auto"
                           },
                           "type": "object",
                           "properties": {
@@ -2536,13 +2578,23 @@
                                 "on",
                                 "off"
                               ]
+                            },
+                            "similar": {
+                              "default": "auto",
+                              "type": "string",
+                              "enum": [
+                                "auto",
+                                "on",
+                                "off"
+                              ]
                             }
                           },
                           "required": [
                             "clickbait",
                             "promotional",
                             "shallow",
-                            "stale"
+                            "stale",
+                            "similar"
                           ],
                           "additionalProperties": false
                         },
@@ -3315,7 +3367,8 @@
                                 "clickbait": "auto",
                                 "promotional": "auto",
                                 "shallow": "auto",
-                                "stale": "auto"
+                                "stale": "auto",
+                                "similar": "auto"
                               },
                               "type": "object",
                               "properties": {
@@ -3354,13 +3407,23 @@
                                     "on",
                                     "off"
                                   ]
+                                },
+                                "similar": {
+                                  "default": "auto",
+                                  "type": "string",
+                                  "enum": [
+                                    "auto",
+                                    "on",
+                                    "off"
+                                  ]
                                 }
                               },
                               "required": [
                                 "clickbait",
                                 "promotional",
                                 "shallow",
-                                "stale"
+                                "stale",
+                                "similar"
                               ],
                               "additionalProperties": false
                             },

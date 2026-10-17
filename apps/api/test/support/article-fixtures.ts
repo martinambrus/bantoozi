@@ -19,7 +19,7 @@ export const DAY = 24 * HOUR;
 export const ago = (ms: number): Date => new Date(Date.now() - ms);
 
 /** `scoreVersion(0)`: no `ranker.settings_version` row is stored in the test database. */
-export const CURRENT_SCORE_VERSION = '2:0';
+export const CURRENT_SCORE_VERSION = '3:0';
 
 export interface Reader {
   user: TestUser;

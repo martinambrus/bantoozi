@@ -209,6 +209,7 @@ export async function loadRankItems(
       domain: registrableDomain(fact.url) ?? '',
       author: article.author,
       ...texts,
+      title: article.title,
       firstSeenAt: article.firstSeenAt,
       ...(article.publishedAt === null ? {} : { publishedAt: article.publishedAt }),
       contentRevision: article.revision,

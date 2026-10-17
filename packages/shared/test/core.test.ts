@@ -153,6 +153,7 @@ describe('UserPreferences (spec 08 §3.1)', () => {
       clickbait: 'on',
       promotional: 'auto',
       shallow: 'auto',
+      similar: 'auto',
       stale: 'auto',
     });
     expect(read.theme).toBe('system');
@@ -186,6 +187,7 @@ describe('UserPreferences (spec 08 §3.1)', () => {
       clickbait: 'auto',
       promotional: 'auto',
       shallow: 'auto',
+      similar: 'auto',
       stale: 'off',
     });
     expect(next.folderOrder).toEqual(['c']);

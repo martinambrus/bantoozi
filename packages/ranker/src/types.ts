@@ -70,6 +70,8 @@ export interface RankItem {
   domain: string;
   author: string | null;
   titleNorm: string;
+  /** The raw `articles.title`, the similar-dislikes check's token source. */
+  title?: string | null | undefined;
   excerptNorm: string;
   /** The selected translation (always English, spec 07), when one exists. */
   translatedTitleNorm?: string | undefined;

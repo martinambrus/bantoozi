@@ -53,6 +53,8 @@ export interface ReaderRankChange {
   unarchived: boolean;
   /** At least one `label_ids` entry was removed. */
   labelRemoved: boolean;
+  /** `rating`, `reason` or `rated_at` was written (a rate, an answer, an unrate or an undo). */
+  ratingChanged?: boolean;
 }
 
 interface RowBefore {
@@ -65,6 +67,9 @@ interface PatchLike {
   readAt?: Date | null | undefined;
   archivedAt?: Date | null | undefined;
   labelIds?: readonly string[] | undefined;
+  rating?: 1 | -1 | null | undefined;
+  reason?: string | null | undefined;
+  ratedAt?: Date | null | undefined;
 }
 
 /** The rank-relevant change of applying `patch` to a row (`null`: the article had no row yet). */
@@ -87,6 +92,8 @@ export function rankChangeOf(
     readChanged,
     unarchived,
     labelRemoved,
+    ratingChanged:
+      patch.rating !== undefined || patch.reason !== undefined || patch.ratedAt !== undefined,
   };
 }
 
@@ -146,6 +153,8 @@ export interface ReaderRankEffects {
   changes: readonly ReaderRankChange[];
   /** The demotion state before and after the action, for the actions that change ratings. */
   demotion?: { before: DemotionProbe; after: DemotionProbe } | undefined;
+  /** `lanes.maybe`: the answer level that ties an article to a card family (rating changes). */
+  lanesMaybe?: number | undefined;
 }
 
 /**
@@ -174,9 +183,22 @@ export async function recordReaderRankEffects(
     .filter((c) => c.unarchived || c.labelRemoved)
     .map((c) => c.articleId);
   const codes = diff.earlier.map(demoteCode);
-  if (clusters.length === 0 && selves.length === 0 && codes.length === 0) return 'none';
+  // A rating change can move the similar-dislikes check of every article of the card's family.
+  const rated =
+    input.lanesMaybe === undefined
+      ? []
+      : input.changes.filter((c) => c.ratingChanged === true).map((c) => c.articleId);
+  if (clusters.length === 0 && selves.length === 0 && codes.length === 0 && rated.length === 0) {
+    return 'none';
+  }
 
-  const marked = await markRowsDue(tx, input.user, input.now, { clusters, selves, codes });
+  const marked = await markRowsDue(tx, input.user, input.now, {
+    clusters,
+    selves,
+    codes,
+    rated,
+    maybeMin: input.lanesMaybe ?? 0,
+  });
   const created =
     clusters.length === 0
       ? 0
@@ -194,14 +216,41 @@ async function markRowsDue(
   tx: TenantTx,
   user: string,
   now: Date,
-  targets: { clusters: string[]; selves: string[]; codes: string[] },
+  targets: {
+    clusters: string[];
+    selves: string[];
+    codes: string[];
+    rated: string[];
+    maybeMin: number;
+  },
 ): Promise<number> {
+  const family = (card: string) =>
+    sql.raw(
+      `CASE WHEN ${card}.visibility = 'private' THEN coalesce(${card}.parent_card_id, ${card}.id) ELSE ${card}.id END`,
+    );
+  // Rows answered by a card of a family that the user holds and an answer of a rated article reaches.
+  const families =
+    targets.rated.length === 0
+      ? sql``
+      : sql`
+    UNION SELECT s.article_id FROM user_article s
+           WHERE s.user_id = ${user}::uuid AND EXISTS (
+             SELECT 1 FROM card_answers sa JOIN interest_cards sc ON sc.id = sa.card_id
+              WHERE sa.article_id = s.article_id AND sa.p >= ${targets.maybeMin}
+                AND ${family('sc')} IN (
+                  SELECT ${family('hc')} FROM user_cards uc JOIN interest_cards hc ON hc.id = uc.card_id
+                   WHERE uc.user_id = ${user}::uuid AND uc.strength <> 'never'
+                  INTERSECT
+                  SELECT ${family('rc')} FROM card_answers ra JOIN interest_cards rc ON rc.id = ra.card_id
+                   WHERE ra.article_id = ANY(${sql.param(targets.rated)}::bigint[])
+                     AND ra.p >= ${targets.maybeMin}))`;
   const candidates = sql`
     SELECT x FROM unnest(${sql.param(targets.selves)}::bigint[]) AS x
     UNION SELECT a.id FROM articles a
            WHERE a.story_cluster_id = ANY(${sql.param(targets.clusters)}::bigint[])
     UNION SELECT c.article_id FROM user_article c
-           WHERE c.user_id = ${user}::uuid AND c.rules_fired && ${sql.param(targets.codes)}::text[]`;
+           WHERE c.user_id = ${user}::uuid AND c.rules_fired && ${sql.param(targets.codes)}::text[]
+    ${families}`;
   const members = rankWindowMembers(
     { userId: user, now, windowDays: RANK_WINDOW_DAYS },
     sql`WITH cand(id) AS (${candidates}) SELECT id FROM cand`,
