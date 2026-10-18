@@ -144,7 +144,7 @@ function useExitingRows(
   const [gone, setGone] = useState<ReadonlySet<string>>(NONE);
   const marked = useRef(new Map<string, boolean>());
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  const refocus = useRef<HTMLElement | null>(null);
+  const refocus = useRef<readonly Element[] | null>(null);
   const rows = useKeptRows(items, generation, source, enabled, isMarked);
 
   useEffect(() => {
@@ -169,16 +169,18 @@ function useExitingRows(
           item.id,
           setTimeout(() => {
             timers.current.delete(item.id);
-            const row = Array.from(listRef.current?.children ?? []).find(
+            const siblings = Array.from(listRef.current?.children ?? []);
+            const row = siblings.find(
               (child) => child instanceof HTMLElement && child.dataset['articleId'] === item.id,
             );
-            // The focus would fall to the page with its row: it goes to the next row, else to main.
+            // Several exits can commit together: choose the nearest surviving row after removal,
+            // not a sibling that another timer is about to remove in the same batch.
             if (row?.contains(document.activeElement)) {
-              const next = row.nextElementSibling ?? row.previousElementSibling;
-              refocus.current = next instanceof HTMLElement ? next : null;
-              if (refocus.current === null) {
-                document.querySelector<HTMLElement>('main')?.focus({ preventScroll: true });
-              }
+              const index = siblings.indexOf(row);
+              refocus.current = [
+                ...siblings.slice(index + 1),
+                ...siblings.slice(0, index).reverse(),
+              ];
             }
             setGone((current) => new Set(current).add(item.id));
             setLeaving((current) => without(current, item.id));
@@ -209,10 +211,15 @@ function useExitingRows(
   }, []);
 
   useLayoutEffect(() => {
-    const next = refocus.current;
-    if (next === null) return;
+    const candidates = refocus.current;
+    if (candidates === null) return;
     refocus.current = null;
-    next.querySelector<HTMLElement>('h3 button')?.focus();
+    const next = candidates.find((row) => row.isConnected);
+    if (next === undefined) {
+      document.querySelector<HTMLElement>('main')?.focus({ preventScroll: true });
+    } else {
+      next.querySelector<HTMLElement>('h3 button')?.focus();
+    }
   }, [gone]);
 
   // A row that left comes back if its rating was taken back or did not go through.
