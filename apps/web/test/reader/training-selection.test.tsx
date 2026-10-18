@@ -842,6 +842,83 @@ describe('where the focus goes when the selection is sent', () => {
   });
 });
 
+describe('where the focus goes after a lane bulk rating', () => {
+  const LANES = ['for_you', 'maybe', 'everything', 'new', 'bookmarks'] as const;
+
+  describe.each(LANES)('in %s', (lane) => {
+    it.each(['Like', 'Dislike'])('returns to a selected row after keyboard %s', async (rating) => {
+      const rows = numbered(3);
+      const { app } = await open({
+        path: `/read/${lane}`,
+        items: rows,
+        me: makeMe({ preferences: { showRead: true } }),
+        routes: {
+          [RATE]: (_request, params) =>
+            actionResponse(
+              acked(
+                rows.find((row) => row.id === params['id'])!,
+                {
+                  rating: rating === 'Like' ? 1 : -1,
+                },
+              ),
+            ),
+        },
+      });
+      await screen.findByRole('article', { name: 'Article 1' });
+      await choose(app, 'Article 2', 'Article 3');
+      const button = sendButton(`${rating} 2 selected articles`);
+      act(() => {
+        button.focus();
+      });
+
+      await app.user.keyboard('{Enter}');
+
+      expect(button).not.toBeInTheDocument();
+      expect(ticked(titles(3))).toEqual([]);
+      expect(titleOf('Article 2')).toHaveFocus();
+      expect(app.calls(ANALYZE)).toHaveLength(0);
+    });
+  });
+
+  describe.each(['Like', 'Dislike'])('after keyboard %s', (rating) => {
+    it('moves to a remaining row when the selected rows leave', async () => {
+      const { app } = await open({ path: '/read/for_you', items: numbered(3) });
+      await screen.findByRole('article', { name: 'Article 1' });
+      await choose(app, 'Article 2', 'Article 3');
+      act(() => {
+        sendButton(`${rating} 2 selected articles`).focus();
+      });
+
+      await app.user.keyboard('{Enter}');
+
+      expect(titleOf('Article 2')).toHaveFocus();
+      await waitFor(() => {
+        expect(screen.queryByRole('article', { name: 'Article 2' })).toBeNull();
+        expect(screen.queryByRole('article', { name: 'Article 3' })).toBeNull();
+      });
+      expect(titleOf('Article 1')).toHaveFocus();
+    });
+
+    it('moves to main when every selected row leaves an empty list', async () => {
+      const { app } = await open({ path: '/read/for_you', items: numbered(2) });
+      await screen.findByRole('article', { name: 'Article 1' });
+      await choose(app, 'Article 1', 'Article 2');
+      act(() => {
+        sendButton(`${rating} 2 selected articles`).focus();
+      });
+
+      await app.user.keyboard('{Enter}');
+
+      expect(titleOf('Article 1')).toHaveFocus();
+      await waitFor(() => {
+        expect(screen.queryByRole('article', { name: 'Article 1' })).toBeNull();
+        expect(screen.queryByRole('article', { name: 'Article 2' })).toBeNull();
+      });
+      expect(screen.getByRole('main')).toHaveFocus();
+    });
+  });
+});
+
 describe('taking a chosen article out', () => {
   it('is the checkbox of its row, which takes that article out and nothing else', async () => {
     const { app } = await openFeed([item(1), item(2), item(3)]);

@@ -206,6 +206,7 @@ export function useFeedTraining(
                 <BulkActions
                   items={chosenNow}
                   onDone={(articleIds) => {
+                    focusFirstListed(listRef.current, articleIds);
                     selection.remove(articleIds);
                   }}
                 />
