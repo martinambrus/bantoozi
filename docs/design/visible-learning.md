@@ -197,12 +197,16 @@ not to hide articles with confidence. The owner accepts that (§3 decision 5).
 ### 4.3 Outage guardrails (JEV-6)
 
 - **Alerts** (spec 11 §6.1, `apps/worker/src/alerts/rules.ts`):
-  - `engine.typesafe_down`, "Classification engine failing". Fires when the TypeSafe breaker has been open or
-    half-open for 30 minutes, or when no TypeSafe call has succeeded for 30 minutes while classification work waits
-    (pending or running analysis requests, queued enrich or match jobs). The mail names the last error status and
-    detail, the configured value, the resolved model and the start time.
-  - `engine.model_mismatch`, "Jev answered with another model". Fires on any `invalid_response` with detail
-    `model_mismatch:*` in the last 15 minutes; the mail names the requested and answered ids.
+  - The existing `engine.breaker` rule, retitled "Classification engine failing" (the key stays, so open incidents
+    continue). It fires when the TypeSafe breaker has been open or half-open for a failing streak of 30 minutes,
+    measured from `failingSince` (kept across re-opens; the old rule measured `openedAt`, which every failed probe
+    resets, so it could never fire), or, with the breaker closed, when at least 3 classification requests failed and
+    none succeeded in 30 minutes (the breaker trips only at 20 requests in 5 minutes). The mail names the streak or
+    the failure count, the last failure, and the configured and pinned model (D-272).
+  - `engine.model_mismatch`, "Jev answered with another model". Fires on any classification call with
+    `invalid_response` `model_mismatch:*` in the last 45 minutes (15 minutes cleared and re-fired the incident at
+    every probe of a flapping breaker); the mail names the requested and answered ids.
+  - Only classification calls count: credential checks, evaluations and model probes never feed these alerts.
   - Both close through the existing recovery mail.
 - **Paused status.** `GET /me/learning` adds
   `classification: {state: 'ok'|'paused', since, reason: 'engine_unavailable'|'model_upgrade'|null}`, derived

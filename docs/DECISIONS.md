@@ -2828,3 +2828,24 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   "per-feed AUC within ±0.05 of the prototype" compared with one shuffle order, which the prototype itself passes
   in 1 of 8 orders; it was replaced by an 8-order equivalence check (largest deviation 0.023). The owner's 4,946
   ratings train in 0.28–0.37 s. No migration; storage, the job and ranking follow in EST-2…EST-4.
+- D-272: 2026-10-21 (JEV-6 of docs/design/visible-learning.md; the 2026-10-17 outage, three days of failed
+  TypeSafe calls, raised no alert) — Outage alerts and the paused learning status. No migration.
+  1. **Failing streak.** The "Engine breaker open" rule measured `now - openedAt`, but every failed half-open probe
+     re-opens the breaker with a fresh `openedAt` and an open period is capped at 30 min, so a flapping breaker
+     (68 re-opens in three days) never exceeded 30 min; `half_open` was ignored too. `BreakerState` carries an
+     optional `failingSince` (first trip since the breaker last closed or was reset, kept across probes, re-opens
+     and into `auth`; states stored before fall back to `openedAt`). The rule, retitled "Classification engine
+     failing" under the unchanged key `engine.breaker`, fires when the streak is older than 30 min, or, with the
+     breaker closed, when at least 3 distinct TypeSafe classification requests failed and none succeeded in 30 min
+     (the breaker trips only at 20 requests in 5 min in one process, so a quiet outage never trips it).
+  2. **Model mismatch.** New alert `engine.model_mismatch` ("Jev answered with another model") on any
+     classification call answered `invalid_response` `model_mismatch:*` in the last 45 min; the design's 15 min
+     cleared and re-fired the incident at every probe of a flapping breaker (probes up to 30 min apart).
+  Both alerts count only `enrich`, `match`, `cluster` and `suggest` calls: credential checks, evaluations and
+  model probes fail on purpose and never feed them.
+  3. **Paused status.** `GET /me/learning.classification {state, since, reason}` is global and read from settings
+     only (the API role cannot read `engine_calls`): breaker not closed → `engine_unavailable` since
+     `failingSince ?? openedAt`; a `house.reenrich`/`house.rematch` run updated since the model pin changed and not
+     completed → `model_upgrade`. Settings → Personal learning shows "Analysis paused since …". The shared schema
+     defaults the field to `ok`; a web bundle older than this release rejects the key until it reloads (D-163 bar).
+  Rollback hazard: older code rejects `failingSince` while the breaker is not closed; reset it first (RUNBOOK §3).

@@ -443,6 +443,10 @@ bounded by the job deadline, cancellation works while queued, and aging prevents
   `invalid_response` count as failures; budget/cancellation/invalid-request do not.
 - **Open duration:** 2 min, doubling per consecutive re-open, capped at 30 min. A 401/403 instead
   sets `auth` until explicit admin reset; restarting a process must not clear a bad-key incident.
+- **Failing streak:** `failingSince` records the first trip since the breaker last closed. A failed
+  half-open probe re-opens with a fresh `openedAt` but keeps `failingSince`; `auth` keeps the streak
+  start of the state it replaced. Alerts and `GET /me/learning` measure an outage from
+  `failingSince ?? openedAt`, never from `openedAt` alone (D-272).
 - `settings['engine.circuit']` is authoritative. Update an engine entry atomically under a row lock,
   preserving the other engine and reset fields. Routers poll at most every 10s, check shared state
   before paid attempts, and admin/house jobs read the same state. Do not overwrite the object from

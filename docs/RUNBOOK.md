@@ -198,6 +198,10 @@ cd "$BANTOOZI_ROOT" && git checkout <previous vYYYY.MM.DD-N>
 infra/scripts/deploy.sh --env-file "$BANTOOZI_ENV" <previous vYYYY.MM.DD-N>
 ```
 
+Before rolling back to a release older than D-272 while the decision engine breaker is not closed, reset it
+(section 5): the older code's strict schema rejects an `engine.circuit` value that carries `failingSince`; the reset
+writes a plain closed state.
+
 It takes a pre-deploy backup, runs the same gates and smoke (readyz, login page, asset, worker heartbeat,
 outbox dispatch, queue traversal) and keeps reader state, sessions and the schema. If that smoke fails too, it
 turns maintenance mode on (section 15).
@@ -399,7 +403,7 @@ at `deletion-ledger.age` there; keep it that way, since a path outside a mounted
 
 ## 5. Breaker reset
 
-**When:** the "Engine breaker open" alert, or the decision engine breaker (`settings['engine.circuit']`) stays
+**When:** the "Classification engine failing" alert, or the decision engine breaker (`settings['engine.circuit']`) stays
 `open` or `auth` after the cause is fixed (provider outage ended, key replaced). **Preconditions:** the
 provider answers (check the provider status page) and, for `auth`, a valid key is active (section 10). A reset
 only requests a probe: the worker closes the breaker after a successful call.
@@ -598,7 +602,8 @@ sends one recovery mail. Rules are in `apps/worker/src/alerts/rules.ts`. A first
 
 | Alert (title) | Meaning | First response |
 |---|---|---|
-| Engine breaker open / Engine credentials rejected | `engine.circuit.typesafe` open > 30 min, or state `auth` (key rejected) | Check the provider status; for `auth` replace the key (section 10); then reset the breaker (section 5) |
+| Classification engine failing / Engine credentials rejected | `engine.circuit.typesafe` open or half-open for a failing streak of more than 30 min (the mail says since when and names the last failure); or, with the breaker closed, 3 or more failed classification requests and none succeeded in 30 min; or state `auth` (key rejected) | Check the provider status; for `auth` replace the key (section 10); then reset the breaker (section 5) |
+| Jev answered with another model | a classification call was answered by another model than the one requested (e.g. `jev-latest` answered `jev-1.13.0`) | Set `engine.typesafe_model` to the answered id in Admin → Settings (restart-class value) or fix the alias; the mail lists both ids; the recovery mail follows about 45 min after the last such call |
 | Daily engine budget at 80 % / exhausted | `engine.budget_alerts` crossed p80 or p100 today | Inspect `/admin/usage`; raise the budget (section 6, **owner**) or wait for 00:00 UTC |
 | Backlog in `<queue>` / Stuck jobs in `<queue>` / Outbox backlog | > 5000 due jobs, oldest due job > 30 min, oldest pending outbox intent > 5 min | Is the worker up and healthy? Provider outage or spend guard? Do not restart in a loop; check `dc logs worker` |
 | No worker heartbeat | newest worker heartbeat >= 30 min old (or none) | `dc ps`, `dc logs --tail 200 worker`, `dc up -d worker`; OOM kills show in `docker inspect` |
