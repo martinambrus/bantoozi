@@ -44,12 +44,17 @@ function stripPrice(title: string): string {
   return title;
 }
 
+/** A token as the similarity check and the word estimate compare it: long tokens cut to a stem. */
+export function stemToken(token: string): string {
+  return token.length >= SIMILAR_DISLIKES.stemFrom
+    ? token.slice(0, SIMILAR_DISLIKES.stemLength)
+    : token;
+}
+
 /** Title tokens for the similarity check: price segment stripped, tokenized, long tokens stemmed. */
 export function similarityTokens(title: string | null): string[] {
   if (title === null) return [];
-  return tokenize(stripPrice(title)).map((token) =>
-    token.length >= SIMILAR_DISLIKES.stemFrom ? token.slice(0, SIMILAR_DISLIKES.stemLength) : token,
-  );
+  return tokenize(stripPrice(title)).map(stemToken);
 }
 
 /** One rated article of the card, with its similarity tokens. */

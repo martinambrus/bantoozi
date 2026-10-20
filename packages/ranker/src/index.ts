@@ -14,6 +14,7 @@ export * from './cards.js';
 export * from './config.js';
 export * from './coverage.js';
 export * from './demotions.js';
+export * from './estimate/index.js';
 export * from './lanes.js';
 export * from './learn/index.js';
 export * from './policy.js';
