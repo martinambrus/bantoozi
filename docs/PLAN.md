@@ -1509,10 +1509,10 @@ D-271 on, migrations 0033 on, in phase order.
 
 | Phase | Work | Status |
 |---|---|---|
-| 1 | JEV-1…7: model probe, `jev-latest` resolve-and-pin, fingerprint families with an upgrade guard, `house.model-watch`, admin model editor, outage alerts and paused status (migration 0033) | Planned |
-| 2 | EST-1…6: per-user word estimates for rows without a card or model score; sort and tier filter (migration 0034) | Planned |
-| 3 | PRG-1…5: learning history, feed header chip, "moved up/down" notice, learning curve (migration 0035) | Planned |
-| 4 | DPF-6…9: seen-based cooldown, own offer toast, feed-scoped "Make a Never card from these" (migration 0036) | Planned |
+| 1 | JEV-1…7: model probe, `jev-latest` resolve-and-pin, fingerprint families with an upgrade guard, `house.model-watch`, admin model editor, outage alerts and paused status (migrations 0033, 0034) | Planned |
+| 2 | EST-1…6: per-user word estimates for rows without a card or model score; sort and tier filter (migration 0035) | EST-1 in review (D-271) |
+| 3 | PRG-1…5: learning history, feed header chip, "moved up/down" notice, learning curve (migration 0036) | Planned |
+| 4 | DPF-6…9: seen-based cooldown, own offer toast, feed-scoped "Make a Never card from these" (migration 0037) | Planned |
 | Ops | OPS-1 interim pin `jev-1.13.0` (✓ 2026-10-20 13:15 UTC); OPS-2 switch to `jev-latest` after JEV-2; OPS-3 re-rate the outage ratings | In progress |
 
 ---
