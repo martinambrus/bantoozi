@@ -18,6 +18,8 @@ import type { EngineLogger } from './types.js';
  *   (final `error`/`timeout`/`rate_limited`/`invalid_response`; budget, cancellation and invalid
  *   requests are not failures).
  * - `open` for 2 minutes, doubling per consecutive re-open (`reopenCount`), capped at 30 minutes.
+ *   `openedAt` is the latest open or re-open; `failingSince` keeps the first trip of the streak until
+ *   the breaker closes or is reset.
  * - after `openUntil` one router acquires the single half-open probe lease (`probeToken`,
  *   `probeUntil`) in the same transaction as the state change, and renews it before every wire
  *   attempt of its logical request, so retries that outlast one lease keep it; only that lease
@@ -101,6 +103,7 @@ export function tripBreaker(
   return {
     state: 'open',
     openedAt: iso(at),
+    failingSince: iso(at),
     openUntil: iso(at + openDurationMs(current.reopenCount, params)),
     reopenCount: current.reopenCount,
   };
@@ -125,6 +128,7 @@ export function acquireProbe(
   return {
     state: 'half_open',
     ...(current.openedAt === undefined ? {} : { openedAt: current.openedAt }),
+    ...(current.failingSince === undefined ? {} : { failingSince: current.failingSince }),
     ...(current.openUntil === undefined ? {} : { openUntil: current.openUntil }),
     reopenCount: current.reopenCount,
     probeToken: token,
@@ -147,9 +151,11 @@ export function completeProbe(
   if (success) return closed();
   const at = now.getTime();
   const reopenCount = current.reopenCount + 1;
+  const failingSince = current.failingSince ?? current.openedAt;
   return {
     state: 'open',
     openedAt: iso(at),
+    ...(failingSince === undefined ? {} : { failingSince }),
     openUntil: iso(at + openDurationMs(reopenCount, params)),
     reopenCount,
   };
@@ -175,6 +181,7 @@ export function releaseProbe(current: BreakerState, token: string): BreakerState
   return {
     state: 'half_open',
     ...(current.openedAt === undefined ? {} : { openedAt: current.openedAt }),
+    ...(current.failingSince === undefined ? {} : { failingSince: current.failingSince }),
     ...(current.openUntil === undefined ? {} : { openUntil: current.openUntil }),
     reopenCount: current.reopenCount,
   };
@@ -183,7 +190,16 @@ export function releaseProbe(current: BreakerState, token: string): BreakerState
 /** 401/403 of the active credential: `auth` until an explicit reset (any other state is replaced). */
 export function enterAuthMode(current: BreakerState, now: Date): BreakerState | null {
   if (current.state === 'auth') return null;
-  return { state: 'auth', openedAt: now.toISOString(), reopenCount: current.reopenCount };
+  const failingSince =
+    current.failingSince ??
+    (current.state === 'open' || current.state === 'half_open' ? current.openedAt : undefined) ??
+    now.toISOString();
+  return {
+    state: 'auth',
+    openedAt: now.toISOString(),
+    failingSince,
+    reopenCount: current.reopenCount,
+  };
 }
 
 /**

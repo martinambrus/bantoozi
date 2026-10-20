@@ -35,6 +35,8 @@ export const BreakerStateSchema = z
   .object({
     state: z.enum(['closed', 'open', 'half_open', 'auth']),
     openedAt: iso.optional(),
+    /** Start of the current failing streak: the first trip since the breaker was last closed or reset. */
+    failingSince: iso.optional(),
     openUntil: iso.optional(),
     reopenCount: z.number().int().min(0),
     probeToken: UuidSchema.optional(),
