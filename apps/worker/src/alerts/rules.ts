@@ -3,9 +3,11 @@ import {
   dueJobBacklog,
   feedErrorShare24h,
   latestMetricsSnapshots,
+  latestTypesafeFailure,
   oldestPendingOutboxAgeSeconds,
   readStoredSetting,
   terminalFailureCounts,
+  typesafeModelMismatches,
 } from '@bantoozi/db';
 import {
   HOUSE_CRON_SCHEDULES,
@@ -29,6 +31,8 @@ const HOUR = 60 * MINUTE;
 /** Alert thresholds (spec 11 §6.1, spec 10 §7). */
 export const ALERT_THRESHOLDS = {
   breakerOpenMs: 30 * MINUTE,
+  /** Must exceed the longest probe gap of a flapping breaker (30 min), or the incident clears and re-fires between probes. */
+  mismatchWindowMs: 45 * MINUTE,
   backlogDue: 5_000,
   backlogOldestSeconds: 30 * 60,
   outboxSeconds: 5 * 60,
@@ -55,7 +59,16 @@ export const ALERT_THRESHOLDS = {
 const read = async <K extends SettingKey>(context: RuleContext, key: K) =>
   readSetting(key, await readStoredSetting(context.deps.db, key), context.deps.settingsEnv);
 
-/** `engine.circuit.typesafe` open for more than 30 minutes, or `auth` (spec 11 §6.1 "Engine breaker open"). */
+const duration = (ms: number): string => {
+  if (ms < 2 * HOUR) return `${Math.round(ms / MINUTE)} minutes`;
+  if (ms < 48 * HOUR) return `${Math.round(ms / HOUR)} hours`;
+  return `${Math.round(ms / (24 * HOUR))} days`;
+};
+
+/**
+ * `engine.circuit.typesafe` failing (`open` or `half_open`) for more than 30 minutes, measured from the
+ * start of the failing streak (`failingSince`, else `openedAt`), or `auth` (spec 11 §6.1 "Engine breaker open").
+ */
 const breakerRule: AlertRule = {
   id: 'engine.breaker',
   async evaluate(context) {
@@ -71,14 +84,61 @@ const breakerRule: AlertRule = {
         },
       ];
     }
-    if (breaker.state !== 'open' || breaker.openedAt === undefined) return [];
-    const openedMs = context.now.getTime() - Date.parse(breaker.openedAt);
-    if (openedMs <= ALERT_THRESHOLDS.breakerOpenMs) return [];
+    if (breaker.state !== 'open' && breaker.state !== 'half_open') return [];
+    const start = breaker.failingSince ?? breaker.openedAt;
+    if (start === undefined) return [];
+    const startMs = Date.parse(start);
+    const failingMs = context.now.getTime() - startMs;
+    if (Number.isNaN(startMs) || failingMs <= ALERT_THRESHOLDS.breakerOpenMs) return [];
+    const failure = await latestTypesafeFailure(
+      context.deps.db,
+      context.now,
+      new Date(startMs - 10 * MINUTE),
+    );
+    const configured =
+      (await read(context, 'engine.typesafe_model')) ?? context.deps.classification?.primaryModel;
+    const pinned = (await read(context, 'engine.model_pin'))?.model;
+    const parts = [
+      `The decision engine has been failing for ${duration(failingMs)} (since ${start}; breaker ${breaker.state}, ${breaker.reopenCount} re-opens).`,
+    ];
+    if (failure !== null) {
+      parts.push(
+        `Last TypeSafe failure: ${failure.status}${failure.detail === null ? '' : ` ${failure.detail}`}${failure.model === null ? '' : ` on ${failure.model}`} at ${failure.at.toISOString()}.`,
+      );
+    }
+    if (configured !== undefined) parts.push(`Configured model: ${configured}.`);
+    if (pinned !== undefined) parts.push(`Pinned model: ${pinned}.`);
     return [
       {
         key: 'engine.breaker',
-        title: 'Engine breaker open',
-        detail: `The decision engine breaker has been open for ${Math.round(openedMs / MINUTE)} minutes (since ${safeText(breaker.openedAt)}).`,
+        title: 'Classification engine failing',
+        detail: safeText(parts.join(' '), 600),
+      },
+    ];
+  },
+};
+
+/** TypeSafe answered with another model than requested within the last 45 minutes (the 2026-10-17 outage). */
+const mismatchRule: AlertRule = {
+  id: 'engine.model_mismatch',
+  async evaluate(context) {
+    const groups = await typesafeModelMismatches(
+      context.deps.db,
+      context.now,
+      ALERT_THRESHOLDS.mismatchWindowMs,
+    );
+    if (groups.length === 0) return [];
+    const pairs = groups
+      .slice(0, 3)
+      .map(
+        (g) =>
+          `requested ${g.requested ?? 'unknown'}, answered ${g.answered} (${g.calls} calls, latest ${g.latestAt.toISOString()})`,
+      );
+    return [
+      {
+        key: 'engine.model_mismatch',
+        title: 'Jev answered with another model',
+        detail: safeText(`Jev named another model than requested: ${pairs.join('; ')}.`, 600),
       },
     ];
   },
@@ -600,6 +660,7 @@ const containersRule: AlertRule = {
 /** Every rule of `house.alerts` in evaluation order (spec 11 §6.1). */
 export const ALERT_RULES: readonly AlertRule[] = [
   breakerRule,
+  mismatchRule,
   budgetRule,
   backlogRule,
   serviceRule,

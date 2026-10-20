@@ -91,3 +91,69 @@ export async function latestMetricsSnapshots(
      ORDER BY key DESC LIMIT ${limit}`);
   return result.rows.map((row) => [row.key.slice('metrics.daily.'.length), row.value]);
 }
+
+/** A Jev answer that named another model than the one requested, grouped by the pair. */
+export interface ModelMismatchGroup {
+  requested: string | null;
+  answered: string;
+  calls: number;
+  latestAt: Date;
+}
+
+/**
+ * Failed TypeSafe attempts whose answer named another model (`model_mismatch:<id>`) in the window
+ * `(now - windowMs, now]`: up to 5 (requested, answered) groups, newest first.
+ */
+export async function typesafeModelMismatches(
+  db: Executor,
+  now: Date,
+  windowMs: number,
+): Promise<ModelMismatchGroup[]> {
+  const result = await db.execute<{
+    requested: string | null;
+    answered: string;
+    calls: number;
+    latest: Date | string;
+  }>(sql`
+    SELECT model AS requested, substr(error, length('model_mismatch:') + 1) AS answered,
+           count(*)::int AS calls, max(created_at) AS latest
+      FROM engine_calls
+     WHERE engine = 'typesafe' AND status = 'invalid_response'
+       AND left(error, length('model_mismatch:')) = 'model_mismatch:'
+       AND created_at > ${new Date(now.getTime() - windowMs).toISOString()}::timestamptz
+       AND created_at <= ${now.toISOString()}::timestamptz
+     GROUP BY model, substr(error, length('model_mismatch:') + 1)
+     ORDER BY max(created_at) DESC
+     LIMIT 5`);
+  return result.rows.map((row) => ({
+    requested: row.requested,
+    answered: row.answered,
+    calls: row.calls,
+    latestAt: new Date(row.latest),
+  }));
+}
+
+/** The newest failed TypeSafe attempt created in `[notBefore, now]`, or null. */
+export async function latestTypesafeFailure(
+  db: Executor,
+  now: Date,
+  notBefore: Date,
+): Promise<{ status: string; detail: string | null; model: string | null; at: Date } | null> {
+  const result = await db.execute<{
+    status: string;
+    detail: string | null;
+    model: string | null;
+    at: Date | string;
+  }>(sql`
+    SELECT status, error AS detail, model, created_at AS at
+      FROM engine_calls
+     WHERE engine = 'typesafe'
+       AND status IN ('error', 'timeout', 'rate_limited', 'invalid_response', 'auth_error')
+       AND created_at >= ${notBefore.toISOString()}::timestamptz
+       AND created_at <= ${now.toISOString()}::timestamptz
+     ORDER BY created_at DESC
+     LIMIT 1`);
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  return { status: row.status, detail: row.detail, model: row.model, at: new Date(row.at) };
+}
