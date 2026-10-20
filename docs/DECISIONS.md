@@ -2810,3 +2810,10 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   feed-only: a lane mixes feeds and `analyze` takes one feed's id, so the lane panel has no
   "Analyze" button. Hidden, folder and label views stay without selection. The selection is cleared
   on every view change already (the list is keyed by view).
+- D-270: 2026-10-20 (owner report: "Marked as disliked Similar articles will be ranked lower." and
+  "Marked as liked" kept replacing each other, and a toast with several buttons disappeared before it
+  could be read) — Spec 09 §3.3: every single rating's undo toast has its own id
+  (`reader-undo:<action id>`; the rows of one bulk rating share `reader-undo:<batch id>`), so quick
+  ratings stack, at most three on screen, the oldest timed one leaving first. The undo toast that
+  carries an example suggestion or a dislike-pattern offer stays until it is closed (its buttons or
+  Dismiss) instead of 8 s; plain undo toasts keep 5 s. No API change.

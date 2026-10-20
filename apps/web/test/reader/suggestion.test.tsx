@@ -114,7 +114,7 @@ describe('the offer in the undo toast', () => {
     expect(app.toasts.getSnapshot()).toHaveLength(1);
     expect(app.toasts.getSnapshot()[0]).toMatchObject({
       message: 'Marked as liked',
-      durationMs: 8000,
+      durationMs: null,
     });
     expect(app.calls('GET', '/cards')).toHaveLength(1);
   });
@@ -141,7 +141,7 @@ describe('the offer in the undo toast', () => {
     });
   });
 
-  it('leaves the screen after 8 seconds', async () => {
+  it('stays on screen until it is closed', async () => {
     vi.useFakeTimers();
     const item = makeItem();
     const app = renderRow(item, server(item, YES));
@@ -153,12 +153,11 @@ describe('the offer in the undo toast', () => {
     });
     expect(screen.getByText('Marked as liked')).toBeInTheDocument();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(7990);
+      await vi.advanceTimersByTimeAsync(60_000);
     });
     expect(screen.getByText('Marked as liked')).toBeInTheDocument();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(20);
-    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
 
     expect(screen.queryByText('Marked as liked')).toBeNull();
     expect(app.calls('GET', '/cards')).toHaveLength(0);

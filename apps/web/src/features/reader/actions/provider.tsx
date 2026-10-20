@@ -51,11 +51,20 @@ import {
   type UndoResult,
 } from './types.js';
 
-const UNDO_TOAST_ID = 'reader-undo';
+/**
+ * The undo toast of a rating. A single rating has its own toast, so the next rating stacks under it
+ * instead of replacing it; the rows of one bulk rating share one toast.
+ */
+function undoToastId(handle: ActionHandle): string {
+  return `reader-undo:${handle.ratingBatchId ?? handle.id}`;
+}
 /** Spec 09 §3.3: the undo toast after a rating stays for 5 seconds. */
 const UNDO_TOAST_MS = 5000;
-/** Spec 09 §3.3: the undo toast that carries an example suggestion stays for 8 seconds. */
-const OFFER_TOAST_MS = 8000;
+/**
+ * Spec 09 §3.3: the undo toast that carries an example suggestion or a pattern offer stays until the
+ * person closes it, so its actions can be read and chosen.
+ */
+const OFFER_TOAST_MS = null;
 const FAILED_TOAST_MS = 8000;
 const OFFLINE_TOAST_ID = 'offline-needs-connection';
 const EXPIRED_TOAST_ID = 'offline-expired';
@@ -230,7 +239,7 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
     };
     const showPlain = () => {
       show({
-        id: UNDO_TOAST_ID,
+        id: undoToastId(handle),
         message,
         tone: 'success',
         durationMs: UNDO_TOAST_MS,
@@ -249,7 +258,7 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
         show({
           id:
             handle.ratingBatchId === undefined
-              ? UNDO_TOAST_ID
+              ? undoToastId(handle)
               : `rating-offer:${handle.ratingBatchId}:${pattern.cardId}`,
           message,
           tone: 'success',
@@ -277,7 +286,7 @@ function createScope({ api, queryClient, toast, i18n, accountId }: Environment):
       show({
         id:
           handle.ratingBatchId === undefined
-            ? UNDO_TOAST_ID
+            ? undoToastId(handle)
             : `rating-offer:${handle.ratingBatchId}:${suggestion.cardId}`,
         message,
         tone: 'success',

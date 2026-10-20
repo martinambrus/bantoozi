@@ -90,7 +90,7 @@ describe('the dislike pattern in the undo toast', () => {
 
     expect(buttons(toast)).toEqual(['Undo', SHOW_FEWER, NOT_NOW]);
     expect(app.toasts.getSnapshot()).toHaveLength(1);
-    expect(app.toasts.getSnapshot()[0]).toMatchObject({ durationMs: 8000 });
+    expect(app.toasts.getSnapshot()[0]).toMatchObject({ durationMs: null });
 
     await app.user.click(within(toast).getByRole('button', { name: SHOW_FEWER }));
 
