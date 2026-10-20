@@ -1273,7 +1273,7 @@ describe('the selection bar', () => {
     await choose(app, 'Article 1', 'Article 2');
     await app.user.click(bulk(/^Like 2 selected articles$/));
     const reasons = screen.getByRole('group', { name: 'Reason for the dislike' });
-    expect(within(reasons).getByText('Disliked: Article 3')).toBeVisible();
+    expect(await within(reasons).findByText('Disliked: Article 3')).toBeVisible();
     await app.user.click(within(reasons).getByRole('button', { name: 'Off-topic' }));
 
     await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));

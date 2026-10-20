@@ -344,6 +344,7 @@ describe('+ = and - with Shift', () => {
     await app.user.keyboard('j');
     await app.user.keyboard('+');
     await waitFor(() => expect(app.calls(RATE)).toHaveLength(1));
+    await waitFor(() => expect(likeOf('Article 1')).toHaveAttribute('aria-pressed', 'true'));
 
     await app.user.keyboard('+');
 
@@ -950,6 +951,9 @@ describe('where the keys do not work', () => {
     await app.user.keyboard('j');
     await app.user.keyboard('=');
     await waitFor(() => expect(app.calls(RATE)).toHaveLength(1));
+    // The liked row leaves For you and the focus moves to the next row: let that settle first.
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Article 1' })).toBeNull());
+    await waitFor(() => expect(title(2)).toHaveFocus());
     const before = app.requests.length;
 
     for (const modifier of ['ctrlKey', 'metaKey', 'altKey'] as const) {
@@ -959,7 +963,7 @@ describe('where the keys do not work', () => {
     }
 
     expect(app.requests.length).toBe(before);
-    expect(title(1)).toHaveFocus();
+    expect(title(2)).toHaveFocus();
     expect(bar()).toBeNull();
   });
 
