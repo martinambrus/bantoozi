@@ -117,7 +117,8 @@ export async function expectPressed(button: Locator, pressed: boolean): Promise<
 
 /** The toast that carries this text. */
 export function toastWith(page: Page, text: string): Locator {
-  return page.locator('[data-toast-id]').filter({ hasText: text });
+  // Quick ratings stack their toasts, the newest last (D-270): the newest is the latest action's.
+  return page.locator('[data-toast-id]').filter({ hasText: text }).last();
 }
 
 /** The reason bar a dislike opens. */
