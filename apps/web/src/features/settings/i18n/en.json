@@ -151,6 +151,12 @@
   "learning": {
     "title": "Personal learning",
     "description": "Your own model switches on by itself once it has enough ratings and predicts them better than your interests alone.",
+    "paused": {
+      "engine_unavailable": "Analysis paused since {{date}}. Your ratings are kept and analysed when it resumes.",
+      "engine_unavailable_nodate": "Analysis is paused. Your ratings are kept and analysed when it resumes.",
+      "model_upgrade": "Analysis is catching up after an update (since {{date}}). Your ratings are kept and analysed when it finishes.",
+      "model_upgrade_nodate": "Analysis is catching up after an update. Your ratings are kept and analysed when it finishes."
+    },
     "explicit": "{{explicit}} of {{min}} ratings",
     "likes": "{{likes}} of {{min}} likes",
     "dislikes": "{{dislikes}} of {{min}} dislikes",
