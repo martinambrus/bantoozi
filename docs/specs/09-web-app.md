@@ -254,18 +254,20 @@ login without leaking the previous account's UI. Slow classification leaves arti
   This is a rating convenience only: it does not submit an analysis request, activate inference or
   authorize the unselected remainder of a feed. The UI never labels rating alone as turning AI on.
 - **Undo toast** after every rating or bulk action (5 s), also available in the recent-action menu
-  for the API's 10-minute undo window. Call `POST /articles/undo {mutationId}`; never approximate a
+  for the API's 10-minute undo window. Each single rating has its own toast, so quick ratings stack
+  (at most three on screen) instead of replacing each other; the rows of one bulk rating share one
+  toast (D-270). Call `POST /articles/undo {mutationId}`; never approximate a
   previous rating/read/archive state with `rating:null`. If a newer device action prevents undo,
   refresh and show that conflict. A failed optimistic update restores only that action's changes,
   not an old whole-query snapshot that could overwrite subsequent successful actions.
 - **Example suggestion:** when a rating response carries `exampleSuggestion` (spec 06 §10), the undo
-  toast stays 8 s and adds one action, "Teach *EV battery tech*: this is it" (side `yes`) or "Teach
+  toast stays until closed and adds one action, "Teach *EV battery tech*: this is it" (side `yes`) or "Teach
   *EV battery tech*: not this" (side `no`), plus "Stop suggesting", which sets
   `exampleSuggestions=false`. The action calls `POST /cards/:id/examples {articleId, side}`, swaps
   the cached card id and shows the same confirmation as the Why-this drawer. Ignoring it changes
   nothing. Responses to replayed offline actions never show a suggestion.
 - **Dislike pattern** (D-268): when a dislike's response carries `pattern.offer`, the toast reads
-  "Marked as disliked Similar articles will be ranked lower." for 8 s with Undo, "Show fewer like
+  "Marked as disliked Similar articles will be ranked lower." until closed with Undo, "Show fewer like
   these" (`POST /cards/:id/examples/batch {articleIds: offer, side: 'no'}`, then "*Card* will show
   fewer like these.") and "Not now"; with `lowered` alone it only adds the sentence. In Why this?,
   `demote:similar` reads "Ranked lower: like N articles you disliked" with "Don't lower these"

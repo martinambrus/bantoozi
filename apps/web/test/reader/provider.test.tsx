@@ -475,7 +475,7 @@ describe('reader action toasts', () => {
     expect(await findToast(message)).toBeInTheDocument();
   });
 
-  it('offers the undo of the latest rating only', async () => {
+  it('keeps the undo of each rating on screen, stacked', async () => {
     const first = makeItem();
     const second = makeItem({ id: '102', title: 'Another article' });
     const { user, toasts } = renderReader(
@@ -497,7 +497,10 @@ describe('reader action toasts', () => {
     await user.click(screen.getByRole('button', { name: 'Other' }));
     await findToast('Marked as disliked');
 
-    expect(toasts.getSnapshot().map((toast) => toast.message)).toEqual(['Marked as disliked']);
+    expect(toasts.getSnapshot().map((toast) => toast.message)).toEqual([
+      'Marked as liked',
+      'Marked as disliked',
+    ]);
   });
 
   it('offers no undo for an action that changed nothing', async () => {

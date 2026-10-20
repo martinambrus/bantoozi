@@ -662,6 +662,12 @@ test('reduced motion, browser zoom keys and input-method typing leave the reader
 
   await test.step('browser zoom keys are not prevented and change nothing', async () => {
     await rowTitle(page, robotics).focus();
+    // Toasts of the earlier steps may still be on screen (quick ratings stack, D-270): none may be new.
+    const toastIds = () =>
+      page
+        .locator('[data-toast-id]')
+        .evaluateAll((toasts) => toasts.map((toast) => toast.getAttribute('data-toast-id')));
+    const earlier = new Set(await toastIds());
     await recordKeys(page);
     const zoom = [
       ['Control+=', '='],
@@ -684,7 +690,7 @@ test('reduced motion, browser zoom keys and input-method typing leave the reader
         rating: null,
         bookmarkedAt: null,
       });
-      await expect(toastWith(page, 'Marked as')).toHaveCount(0);
+      expect((await toastIds()).filter((toastId) => !earlier.has(toastId))).toEqual([]);
     });
     await expect(rowTitle(page, robotics)).toBeFocused();
 
