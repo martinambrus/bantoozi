@@ -7,6 +7,7 @@ import {
   oldestPendingOutboxAgeSeconds,
   readStoredSetting,
   terminalFailureCounts,
+  typesafeClassificationOutage,
   typesafeModelMismatches,
 } from '@bantoozi/db';
 import {
@@ -74,6 +75,30 @@ const duration = (ms: number): string => {
   return `${Math.round(ms / (24 * HOUR))} days`;
 };
 
+/** A TypeSafe outage the breaker never sees: at least 3 failed classification requests and no ok call in 30 minutes. */
+async function outageWithoutBreaker(context: RuleContext): Promise<Condition[]> {
+  const outage = await bestEffort(() =>
+    typesafeClassificationOutage(context.deps.db, context.now, ALERT_THRESHOLDS.breakerOpenMs),
+  );
+  if (outage === undefined || outage.okCalls > 0 || outage.failedRequests < 3) return [];
+  const configured =
+    (await bestEffort(() => read(context, 'engine.typesafe_model'))) ??
+    context.deps.classification?.primaryModel;
+  const pinned = (await bestEffort(() => read(context, 'engine.model_pin')))?.model;
+  const parts = [
+    `No TypeSafe classification call succeeded in the last 30 minutes (${outage.failedRequests} failed requests${outage.lastFailureAt === null ? '' : `; last failure ${outage.lastFailureAt.toISOString()}`}).`,
+  ];
+  if (configured !== undefined) parts.push(`Configured model: ${configured}.`);
+  if (pinned !== undefined) parts.push(`Pinned model: ${pinned}.`);
+  return [
+    {
+      key: 'engine.breaker',
+      title: 'Classification engine failing',
+      detail: safeText(parts.join(' '), 600),
+    },
+  ];
+}
+
 /**
  * `engine.circuit.typesafe` failing (`open` or `half_open`) for more than 30 minutes, measured from the
  * start of the failing streak (`failingSince`, else `openedAt`), or `auth` (spec 11 §6.1 "Engine breaker open").
@@ -83,7 +108,7 @@ const breakerRule: AlertRule = {
   async evaluate(context) {
     const circuit = await read(context, 'engine.circuit');
     const breaker = circuit?.typesafe;
-    if (breaker === undefined) return [];
+    if (breaker === undefined || breaker.state === 'closed') return outageWithoutBreaker(context);
     if (breaker.state === 'auth') {
       return [
         {
@@ -93,7 +118,8 @@ const breakerRule: AlertRule = {
         },
       ];
     }
-    if (breaker.state !== 'open' && breaker.state !== 'half_open') return [];
+    if (breaker.state !== 'open' && breaker.state !== 'half_open')
+      return outageWithoutBreaker(context);
     const start = breaker.failingSince ?? breaker.openedAt;
     if (start === undefined) return [];
     const startMs = Date.parse(start);

@@ -165,3 +165,34 @@ export async function latestTypesafeFailure(
   if (row === undefined) return null;
   return { status: row.status, detail: row.detail, model: row.model, at: new Date(row.at) };
 }
+
+/** Distinct failed logical requests of TypeSafe classification work in `(now - windowMs, now]`, the newest failure, and whether any call of it was ok. */
+export async function typesafeClassificationOutage(
+  db: Executor,
+  now: Date,
+  windowMs: number,
+): Promise<{ failedRequests: number; okCalls: number; lastFailureAt: Date | null }> {
+  const result = await db.execute<{
+    failed: number;
+    ok: number;
+    last_failure: Date | string | null;
+  }>(sql`
+    SELECT count(DISTINCT logical_request_id) FILTER (
+             WHERE status IN ('error', 'timeout', 'rate_limited', 'invalid_response', 'auth_error')
+           )::int AS failed,
+           count(*) FILTER (WHERE status = 'ok')::int AS ok,
+           max(created_at) FILTER (
+             WHERE status IN ('error', 'timeout', 'rate_limited', 'invalid_response', 'auth_error')
+           ) AS last_failure
+      FROM engine_calls
+     WHERE engine = 'typesafe'
+       AND kind = ANY(${sql.param([...CLASSIFICATION_KINDS])}::text[])
+       AND created_at > ${new Date(now.getTime() - windowMs).toISOString()}::timestamptz
+       AND created_at <= ${now.toISOString()}::timestamptz`);
+  const row = result.rows[0];
+  return {
+    failedRequests: row?.failed ?? 0,
+    okCalls: row?.ok ?? 0,
+    lastFailureAt: row?.last_failure == null ? null : new Date(row.last_failure),
+  };
+}

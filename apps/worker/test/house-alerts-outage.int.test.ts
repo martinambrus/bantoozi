@@ -64,20 +64,23 @@ interface CallRow {
   model?: string | null;
   engine?: string;
   kind?: string;
+  logicalRequestId?: string;
+  attempts?: number;
 }
 
 async function engineCall(row: CallRow): Promise<void> {
   await h.owner.query(
-    `INSERT INTO engine_calls (engine, kind, model, logical_request_id, status, error, created_at)
-     VALUES ($1, $7, $2, $3, $4, $5, $6)`,
+    `INSERT INTO engine_calls (engine, kind, model, logical_request_id, status, error, created_at, attempts)
+     VALUES ($1, $7, $2, $3, $4, $5, $6, $8)`,
     [
       row.engine ?? 'typesafe',
       row.model === undefined ? 'jev-latest' : row.model,
-      randomUUID(),
+      row.logicalRequestId ?? randomUUID(),
       row.status ?? 'invalid_response',
       row.error === undefined ? 'model_mismatch:jev-1.13.0' : row.error,
       row.createdAt,
       row.kind ?? 'enrich',
+      row.attempts ?? 1,
     ],
   );
 }
@@ -337,5 +340,99 @@ describe('house.alerts rule engine.model_mismatch (JEV-6)', () => {
     expect(recovery.subject).toContain('RECOVERED');
     expect(recovery.text).toContain(FAILING_TITLE);
     expect(await w.activeEntries()).toHaveLength(0);
+  });
+});
+
+describe('house.alerts rule engine.breaker without an open breaker (JEV-6)', () => {
+  const fail = (ageMs: number, overrides: Partial<CallRow> = {}) =>
+    engineCall({
+      createdAt: before(ageMs),
+      status: 'timeout',
+      error: 'timeout',
+      ...overrides,
+    });
+  const failures = async (count: number, overrides: Partial<CallRow> = {}) => {
+    for (let i = 0; i < count; i += 1) await fail((i + 1) * MINUTE, overrides);
+  };
+
+  it('3 failing requests and no ok call in 30 minutes fire the failing alert', async () => {
+    const mailer = await scenario(() => failures(3));
+    expect(mailer.to(ADMIN)).toHaveLength(1);
+    const text = mailText(mailer);
+    expect(text).toContain(FAILING_TITLE);
+    expect(text).toContain('No TypeSafe classification call succeeded in the last 30 minutes');
+    expect(text).toContain('3 failed requests');
+  });
+
+  it('NEG: no calls stay silent', async () => {
+    expect(await emails()).toBe(0);
+  });
+
+  it('NEG: 3 failures and 1 ok call stay silent', async () => {
+    expect(
+      await emails(async () => {
+        await failures(3);
+        await engineCall({ createdAt: before(10 * MINUTE), status: 'ok', error: null });
+      }),
+    ).toBe(0);
+  });
+
+  it('NEG: 2 failing requests with retries as extra attempts stay silent', async () => {
+    expect(
+      await emails(async () => {
+        const a = randomUUID();
+        const b = randomUUID();
+        for (const [id, attempts] of [
+          [a, 1],
+          [a, 2],
+          [a, 3],
+          [b, 1],
+          [b, 2],
+        ] as const)
+          await fail(5 * MINUTE, { logicalRequestId: id, attempts });
+      }),
+    ).toBe(0);
+  });
+
+  it.each(['translate', 'credential_probe', 'eval'])(
+    'NEG: 3 failing %s requests stay silent',
+    async (kind) => {
+      expect(await emails(() => failures(3, { kind }))).toBe(0);
+    },
+  );
+
+  it('NEG: an ok call of kind translate does not silence the outage', async () => {
+    expect(
+      await emails(async () => {
+        await failures(3);
+        await engineCall({
+          createdAt: before(MINUTE),
+          kind: 'translate',
+          status: 'ok',
+          error: null,
+        });
+      }),
+    ).toBe(1);
+  });
+
+  it('NEG: failures older than 30 minutes stay silent', async () => {
+    expect(
+      await emails(async () => {
+        for (let i = 0; i < 3; i += 1) await fail(31 * MINUTE + i * MINUTE);
+      }),
+    ).toBe(0);
+  });
+
+  it('an open breaker keeps precedence: one mail, one incident', async () => {
+    const mailer = await scenario(async () => {
+      await failures(3);
+      await typesafeBreaker('open', {
+        openedAt: before(MINUTE),
+        failingSince: before(31 * MINUTE),
+      });
+    });
+    expect(mailer.to(ADMIN)).toHaveLength(1);
+    expect(mailText(mailer)).toContain('The decision engine has been failing for');
+    expect(mailText(mailer)).not.toContain('No TypeSafe classification call succeeded');
   });
 });
