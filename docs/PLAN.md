@@ -1498,6 +1498,23 @@ scope; administrators assign plans. Follow the approved sequence, completing CI 
 | P4 | Reader cadence, next-update display, plan badge, localized banner and feed favicons in sidebar/article rows | Implemented in PR #47 (D-257) |
 | P5 | Scheduler/load verification, operational documentation | Implemented in PR #47 (D-257) |
 
+### 14.4 Jev upgrades, word estimates and visible learning (approved 2026-10-20)
+
+Owner decisions, design and the full task list with "Done when": `docs/design/visible-learning.md` (§3–§5). The
+dev classification was down from 2026-10-17 to 2026-10-20 (`jev-latest` refused as `model_mismatch`). The design
+follows `jev-latest` by resolving and pinning the concrete version, keeps ratings across Jev 1.x releases
+(fingerprint families), alerts on engine outages, and gives every unanalysed article a free word estimate that the
+tier slider can filter. It amends locked decision 8 and clarifies decision 9 (in JEV-7 and EST-6). Decisions take
+D-271 on, migrations 0033 on, in phase order.
+
+| Phase | Work | Status |
+|---|---|---|
+| 1 | JEV-1…7: model probe, `jev-latest` resolve-and-pin, fingerprint families with an upgrade guard, `house.model-watch`, admin model editor, outage alerts and paused status (migration 0033) | Planned |
+| 2 | EST-1…6: per-user word estimates for rows without a card or model score; sort and tier filter (migration 0034) | Planned |
+| 3 | PRG-1…5: learning history, feed header chip, "moved up/down" notice, learning curve (migration 0035) | Planned |
+| 4 | DPF-6…9: seen-based cooldown, own offer toast, feed-scoped "Make a Never card from these" (migration 0036) | Planned |
+| Ops | OPS-1 interim pin `jev-1.13.0` (✓ 2026-10-20 13:15 UTC); OPS-2 switch to `jev-latest` after JEV-2; OPS-3 re-rate the outage ratings | In progress |
+
 ---
 
 ## 15. M9: Optional extensions (after launch; each item can become its own goal)
@@ -1532,6 +1549,7 @@ scope; administrators assign plans. Follow the approved sequence, completing CI 
 | 2026-09-26 | Personal-model revision R1 (§17.4): card inputs grouped by strength, plus own card inputs once a card has enough rated matches, instead of one input for each of the first 30 cards; ratings survive card edits (rating fingerprint and model context); ridge on the summed loss with λ chosen by cross-validation; card example suggestions after ratings; informational G1 experiment E6. Specs 05–10 and `RankerConfig`/preferences in `packages/shared` updated |
 | 2026-09-26 | Media signals R2 (§17.4): the personal model gains `has_video` and a bucketed in-body image density per 500 words, both detected at ingestion and extraction before sanitizing removes the media. Specs 02, 03 and 06 and `ExplainSchema` in `packages/shared` updated; plan: M1-T3, T5, T7, M5-T4 and M7-T1 |
 | 2026-09-29 | Evaluation revision R3 (§17.4) after independent Jev tests: gate G1 checks the demotion cutoffs against the facet labels and selects them on development data, reports where liked and disliked articles land by lane, and adds the informational steering-text experiment E7; card authoring keeps dates, ages and other numeric limits out of interests; `background.md` corrects the calibration claim and records the access changes. Specs 05, 06, 09 and 10 updated; plan: §2, M3a-T5, T6, T7 and M3b-T2 |
+| 2026-10-20 | §14.4 added: Jev upgrades through `jev-latest`, fingerprint families, outage alerts, word estimates and visible learning (`docs/design/visible-learning.md`); owner decisions amend locked decision 8 and clarify decision 9 |
 
 ## 17. Owner decisions and implementation gates
 
