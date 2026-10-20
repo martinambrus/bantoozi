@@ -63,12 +63,13 @@ interface CallRow {
   error?: string | null;
   model?: string | null;
   engine?: string;
+  kind?: string;
 }
 
 async function engineCall(row: CallRow): Promise<void> {
   await h.owner.query(
     `INSERT INTO engine_calls (engine, kind, model, logical_request_id, status, error, created_at)
-     VALUES ($1, 'enrich', $2, $3, $4, $5, $6)`,
+     VALUES ($1, $7, $2, $3, $4, $5, $6)`,
     [
       row.engine ?? 'typesafe',
       row.model === undefined ? 'jev-latest' : row.model,
@@ -76,6 +77,7 @@ async function engineCall(row: CallRow): Promise<void> {
       row.status ?? 'invalid_response',
       row.error === undefined ? 'model_mismatch:jev-1.13.0' : row.error,
       row.createdAt,
+      row.kind ?? 'enrich',
     ],
   );
 }
@@ -187,6 +189,28 @@ describe('house.alerts engine breaker streak (JEV-6)', () => {
   });
 });
 
+describe('house.alerts last failure of the engine breaker mail (JEV-6)', () => {
+  it('names the last classification failure, not a newer failed credential check', async () => {
+    const mailer = await scenario(async () => {
+      await typesafeBreaker('open', {
+        openedAt: before(MINUTE),
+        failingSince: before(31 * MINUTE),
+      });
+      await engineCall({ createdAt: before(5 * MINUTE), error: 'model_mismatch:jev-1.13.0' });
+      await engineCall({
+        createdAt: before(MINUTE),
+        kind: 'credential_probe',
+        status: 'error',
+        error: 'probe_marker_zzz',
+      });
+    });
+    expect(mailer.to(ADMIN)).toHaveLength(1);
+    const text = mailText(mailer);
+    expect(text).toContain('model_mismatch:jev-1.13.0');
+    expect(text).not.toContain('probe_marker_zzz');
+  });
+});
+
 describe('house.alerts rule engine.model_mismatch (JEV-6)', () => {
   const row = (overrides: Partial<CallRow> & { ageMs: number }) => () =>
     engineCall({ createdAt: before(overrides.ageMs), ...overrides });
@@ -221,6 +245,20 @@ describe('house.alerts rule engine.model_mismatch (JEV-6)', () => {
   it('NEG: a mismatch row of engine llm stays silent', async () => {
     expect(await emails(row({ ageMs: 5 * MINUTE, engine: 'llm' }))).toBe(0);
   });
+
+  it.each(['match', 'cluster', 'suggest'])(
+    'a mismatch row of a %s call fires like an enrich call',
+    async (kind) => {
+      expect(await emails(row({ ageMs: 5 * MINUTE, kind }))).toBe(1);
+    },
+  );
+
+  it.each(['credential_probe', 'eval'])(
+    'NEG: a mismatch row of a %s call is not classification work and stays silent',
+    async (kind) => {
+      expect(await emails(row({ ageMs: 5 * MINUTE, kind }))).toBe(0);
+    },
+  );
 
   it('NEG: no engine_calls rows stay silent', async () => {
     expect(await emails()).toBe(0);

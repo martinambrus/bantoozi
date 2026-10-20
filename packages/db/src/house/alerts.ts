@@ -92,6 +92,12 @@ export async function latestMetricsSnapshots(
   return result.rows.map((row) => [row.key.slice('metrics.daily.'.length), row.value]);
 }
 
+/**
+ * The `engine_calls.kind` values of classification work. Other TypeSafe calls (credential checks,
+ * evaluations, model probes) fail on purpose or for their own reasons and are not an outage of it.
+ */
+const CLASSIFICATION_KINDS = ['enrich', 'match', 'cluster', 'suggest'] as const;
+
 /** A Jev answer that named another model than the one requested, grouped by the pair. */
 export interface ModelMismatchGroup {
   requested: string | null;
@@ -101,7 +107,7 @@ export interface ModelMismatchGroup {
 }
 
 /**
- * Failed TypeSafe attempts whose answer named another model (`model_mismatch:<id>`) in the window
+ * Failed TypeSafe attempts of classification work whose answer named another model (`model_mismatch:<id>`) in the window
  * `(now - windowMs, now]`: up to 5 (requested, answered) groups, newest first.
  */
 export async function typesafeModelMismatches(
@@ -119,6 +125,7 @@ export async function typesafeModelMismatches(
            count(*)::int AS calls, max(created_at) AS latest
       FROM engine_calls
      WHERE engine = 'typesafe' AND status = 'invalid_response'
+       AND kind = ANY(${sql.param([...CLASSIFICATION_KINDS])}::text[])
        AND left(error, length('model_mismatch:')) = 'model_mismatch:'
        AND created_at > ${new Date(now.getTime() - windowMs).toISOString()}::timestamptz
        AND created_at <= ${now.toISOString()}::timestamptz
@@ -133,7 +140,7 @@ export async function typesafeModelMismatches(
   }));
 }
 
-/** The newest failed TypeSafe attempt created in `[notBefore, now]`, or null. */
+/** The newest failed TypeSafe attempt of classification work created in `[notBefore, now]`, or null. */
 export async function latestTypesafeFailure(
   db: Executor,
   now: Date,
@@ -148,6 +155,7 @@ export async function latestTypesafeFailure(
     SELECT status, error AS detail, model, created_at AS at
       FROM engine_calls
      WHERE engine = 'typesafe'
+       AND kind = ANY(${sql.param([...CLASSIFICATION_KINDS])}::text[])
        AND status IN ('error', 'timeout', 'rate_limited', 'invalid_response', 'auth_error')
        AND created_at >= ${notBefore.toISOString()}::timestamptz
        AND created_at <= ${now.toISOString()}::timestamptz
