@@ -38,7 +38,15 @@ export interface ModelFixture {
 
 export interface CallFixture {
   engine?: 'typesafe' | 'llm' | 'laya' | 'libretranslate';
-  kind: 'enrich' | 'match' | 'cluster' | 'suggest' | 'translate' | 'credential_probe' | 'eval';
+  kind:
+    | 'enrich'
+    | 'match'
+    | 'cluster'
+    | 'suggest'
+    | 'translate'
+    | 'credential_probe'
+    | 'model_probe'
+    | 'eval';
   status?: 'ok' | 'error' | 'timeout' | 'rate_limited' | 'invalid_response';
   latencyMs?: number | null;
   costUsd?: number;

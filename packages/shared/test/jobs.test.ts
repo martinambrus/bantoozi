@@ -58,6 +58,7 @@ const SPEC_03_QUEUES: Record<string, number> = {
   'house.metrics': 1,
   'house.alerts': 1,
   'provider.validate': 1,
+  'engine.model-probe': 1,
   'house.reenrich': 1,
   'house.translate-cards': 1,
   'house.retranslate-skipped': 1,

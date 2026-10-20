@@ -14,7 +14,8 @@ export type CallKind =
   | 'translate'
   | 'eval'
   | 'credential_probe'
-  | 'card_draft';
+  | 'card_draft'
+  | 'model_probe';
 
 /** The authorization basis recorded on `engine_calls.demand_basis` (`other` is written only by metrics fallbacks). */
 export type DemandBasis = 'active' | 'training' | 'other';
@@ -39,7 +40,10 @@ export type InferenceAuthorization =
     }
   | { type: 'eval'; runId: string } // separately authorized eval; never inferred from a feed fetch
   // A pending card draft the user asked for (D-240): its row is the demand.
-  | { type: 'card_draft'; userId: string; draftId: string };
+  | { type: 'card_draft'; userId: string; draftId: string }
+  // One synthetic request asking Jev which model an id maps to (visible-learning §4.1): the probe
+  // job is the demand; its attempts and spend are bounded by the prober, the budget by the guard.
+  | { type: 'model_probe'; model: string };
 
 export type CallStatus =
   | 'ok'
@@ -105,7 +109,7 @@ export const PLATFORM_USER_ID = '00000000-0000-0000-0000-000000000000';
 /** Non-engine calls logged through the router (translation, spec 07 §2). */
 export interface ExternalCall {
   engine: 'libretranslate' | 'llm' | 'typesafe';
-  kind: 'translate' | 'eval' | 'credential_probe' | 'card_draft';
+  kind: 'translate' | 'eval' | 'credential_probe' | 'card_draft' | 'model_probe';
   model?: string;
   articleId?: string;
   inputTokens: number;
@@ -212,8 +216,9 @@ export interface OriginLimiter {
 /**
  * The demand basis of the authorization an engine call is made under: `active` when any witness is
  * automatic, `training` when only manual (selected request) witnesses carry it, none for suggest,
- * credential-probe and eval authorizations. The same server-produced authorization the live recheck
- * (`authorizeInference`) accepted; nothing is recomputed from current subscriptions.
+ * credential-probe, model-probe, card-draft and eval authorizations. The same server-produced
+ * authorization the live recheck (`authorizeInference`) accepted; nothing is recomputed from
+ * current subscriptions.
  */
 export function demandBasisOf(authorization: InferenceAuthorization): DemandBasis | undefined {
   if (authorization.type !== 'article') return undefined;

@@ -290,7 +290,7 @@ export async function metricsModels(
 
 /** Engine aggregates of a window (spec 10 §7 "Engine"). */
 export interface MetricsEngine {
-  /** Live calls: everything but evaluation, credential probes and LibreTranslate. */
+  /** Live calls: everything but evaluation, credential and model probes and LibreTranslate. */
   calls: number;
   errors: number;
   coverage: number | null;
@@ -304,7 +304,7 @@ export interface MetricsEngine {
   cache: { requests: number; hits: number; savedUsd: number };
 }
 
-const LIVE = sql`c.kind NOT IN ('eval', 'credential_probe') AND c.engine <> 'libretranslate'`;
+const LIVE = sql`c.kind NOT IN ('eval', 'credential_probe', 'model_probe') AND c.engine <> 'libretranslate'`;
 
 /**
  * Engine calls, cost and the shared-cache effect of the window `from <= created_at < to`, over `days`

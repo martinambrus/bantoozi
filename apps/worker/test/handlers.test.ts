@@ -142,7 +142,7 @@ describe('handler map', () => {
         },
       }),
     );
-    expect(PROVIDER_QUEUES).toEqual(['provider.validate']);
+    expect(PROVIDER_QUEUES).toEqual(['provider.validate', 'engine.model-probe']);
     expect(available(handlers)).toEqual([...IMPLEMENTED_QUEUES].sort());
     expect(unavailableQueues(handlers, QUEUE_NAMES)).not.toContain('provider.validate');
   });

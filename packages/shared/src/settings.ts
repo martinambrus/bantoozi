@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { IdSchema, UuidSchema } from './ids.js';
 import { HOUSE_PROGRESS_JOBS, isQueueName } from './jobs.js';
 import { JsonObjectSchema, JsonValueSchema } from './json.js';
+import { MODEL_ID_PATTERN } from './model-id.js';
 import { RankerThresholdsSchema } from './ranker-config.js';
 
 /**
@@ -72,6 +73,31 @@ export const EngineModelPinSchema = z
   })
   .strict();
 export type EngineModelPin = z.infer<typeof EngineModelPinSchema>;
+
+const modelId = z.string().regex(MODEL_ID_PATTERN, 'invalid model id');
+
+/**
+ * What a model probe learned about one requested id (visible-learning §4.1): `ok` when an alias
+ * resolved to a concrete id, or a concrete id was answered as itself. `answered` is the id the
+ * provider named, when it named one; `error` is a short code, set whenever `ok` is false.
+ */
+export const EngineModelProbeSchema = z
+  .object({
+    requested: modelId,
+    answered: modelId.optional(),
+    ok: z.boolean(),
+    at: iso,
+    error: z.string().min(1).max(200).optional(),
+  })
+  .strict();
+export type EngineModelProbe = z.infer<typeof EngineModelProbeSchema>;
+
+/** `settings['engine.model_probe']` keeps the newest results, one per requested id. */
+export const ENGINE_MODEL_PROBES_MAX = 10;
+export const EngineModelProbesSchema = z
+  .record(modelId, EngineModelProbeSchema)
+  .refine((probes) => Object.keys(probes).length <= ENGINE_MODEL_PROBES_MAX, 'too many probes');
+export type EngineModelProbes = z.infer<typeof EngineModelProbesSchema>;
 
 const houseProgressEntry = z
   .object({
@@ -223,6 +249,11 @@ export const SETTINGS = {
     schema: EngineModelPinSchema,
     defaultValue: () => undefined,
     writers: ['seed', 'worker'],
+  }),
+  'engine.model_probe': def({
+    schema: EngineModelProbesSchema,
+    defaultValue: () => undefined,
+    writers: ['worker'],
   }),
   'engine.typesafe_model': def({
     schema: runtimeModel,

@@ -106,7 +106,7 @@ export const engineCalls = pgTable(
     check('engine_calls_engine_check', sql`engine IN ('typesafe','llm','laya','libretranslate')`),
     check(
       'engine_calls_kind_check',
-      sql`kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft')`,
+      sql`kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')`,
     ),
     check('engine_calls_credential_version_check', sql`credential_version > 0`),
     check('engine_calls_article_revision_check', sql`article_revision > 0`),

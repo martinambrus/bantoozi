@@ -1,4 +1,11 @@
-import { systemClock, type Clock } from '@bantoozi/shared';
+import {
+  isConcreteJevModel,
+  isModelAlias,
+  isPinnedModel,
+  MODEL_UNAVAILABLE_DETAIL,
+  systemClock,
+  type Clock,
+} from '@bantoozi/shared';
 import type { Dispatcher } from 'undici';
 
 import { normalizeAnswers, validateRequest, type RequestLimits } from './normalize.js';
@@ -31,8 +38,13 @@ export const TYPESAFE_PATH = '/v1/systemone';
 export const TYPESAFE_TIMEOUT_MS = 30_000;
 /** The model id the deterministic fake server answers with (spec 04 §10); never valid in production. */
 export const JEV_FAKE_MODEL = 'jev-fake';
-/** Mirrors the production pin check of `loadConfig` (spec 01 §3). */
-const PINNED_MODEL = /^[a-z][a-z0-9.-]*-\d+\.\d+\.\d+$/;
+const RETIRED_MODEL_CODES = new Set([
+  'model_not_found',
+  'model_unavailable',
+  'model_retired',
+  'unknown_model',
+  'invalid_model',
+]);
 
 export interface TypeSafeEngineOptions {
   /** TYPESAFE_BASE_URL; `https:` in production. */
@@ -52,6 +64,11 @@ export interface TypeSafeEngineOptions {
    * server (and allow `model: 'jev-fake'`). Refused in production.
    */
   allowFakeModel?: boolean;
+  /**
+   * Probe use only (the router never sets it): `model` is the alias `jev-latest`, sent as is, and a
+   * response is accepted when it names a concrete Jev release.
+   */
+  resolveAlias?: boolean;
   /** Cap on the response body. Default 1 MiB. */
   maxResponseBytes?: number;
   /** Outbound request limits (spec 04 §2). */
@@ -87,6 +104,36 @@ function shownModel(model: string): string {
   return /^[A-Za-z0-9._:-]{1,64}$/.test(model) ? model : 'unrecognized';
 }
 
+function parseJson(body: Uint8Array): unknown {
+  try {
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(body));
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether a 404/410/400/422 response says the provider no longer serves the requested model. */
+function isRetiredModelResponse(status: number, body: Uint8Array): boolean {
+  if (status === 410) return true;
+  if (status !== 404 && status !== 400 && status !== 422) return false;
+  const parsed = parseJson(body);
+  const error = field(parsed, 'error');
+  for (const holder of [error, parsed]) {
+    for (const key of ['code', 'type']) {
+      const value = field(holder, key);
+      if (typeof value === 'string' && RETIRED_MODEL_CODES.has(value)) return true;
+    }
+  }
+  const detail = field(parsed, 'detail');
+  return (
+    Array.isArray(detail) &&
+    detail.some((entry) => {
+      const loc = field(entry, 'loc');
+      return Array.isArray(loc) && loc.includes('model');
+    })
+  );
+}
+
 /**
  * The TypeSafe (Jev) engine (spec 04 §3): exactly ONE wire attempt per `ask`; the router owns
  * retries, the rate limiter, the breaker and spend. `POST {baseUrl}/v1/systemone` with the resolved
@@ -106,7 +153,18 @@ export function createTypeSafeEngine(options: TypeSafeEngineOptions): DecisionEn
   if (typeof model !== 'string' || model === '') {
     throw new TypeError(`${engine}: model is required`);
   }
-  if (production && !PINNED_MODEL.test(model)) {
+  const resolveAlias = options.resolveAlias === true;
+  if (resolveAlias && !isModelAlias(model)) {
+    throw new TypeError(`${engine}: resolveAlias requires the model ${model} to be the alias`);
+  }
+  if (isModelAlias(model) && !resolveAlias) {
+    throw new TypeError(
+      production
+        ? `${engine}: model must be a pinned version in production`
+        : `${engine}: the alias ${model} is accepted only with resolveAlias`,
+    );
+  }
+  if (production && !resolveAlias && !isPinnedModel(model)) {
     throw new TypeError(`${engine}: model must be a pinned version in production`);
   }
   if (production && options.allowFakeModel === true) {
@@ -168,6 +226,15 @@ export function createTypeSafeEngine(options: TypeSafeEngineOptions): DecisionEn
       if (outcome.kind === 'failed') return outcome.failure;
       const nowMs = clock.now().getTime();
       if (outcome.status < 200 || outcome.status > 299) {
+        if (isRetiredModelResponse(outcome.status, outcome.body)) {
+          return {
+            ok: false,
+            status: 'error',
+            retryable: false,
+            billing: 'known',
+            detail: `${MODEL_UNAVAILABLE_DETAIL}:http_${outcome.status}`,
+          };
+        }
         return httpStatusFailure(outcome.status, outcome.headers, outcome.body, nowMs);
       }
       if (outcome.tooLarge) return invalidResponse('response_too_large', undefined);
@@ -179,7 +246,12 @@ export function createTypeSafeEngine(options: TypeSafeEngineOptions): DecisionEn
       const answeredBy = field(json.value, 'model');
       if (typeof answeredBy !== 'string') return invalidResponse('model_missing', usage);
       // `jev-fake` answers only an explicit test configuration, whatever model was requested.
-      const pinned = answeredBy === JEV_FAKE_MODEL ? acceptFake : answeredBy === model;
+      const pinned =
+        answeredBy === JEV_FAKE_MODEL
+          ? acceptFake
+          : resolveAlias
+            ? isConcreteJevModel(answeredBy)
+            : answeredBy === model;
       if (!pinned) return invalidResponse(`model_mismatch:${shownModel(answeredBy)}`, usage);
       const normalized = normalizeAnswers(field(json.value, 'answers'), req.questions, {
         format: 'jev',

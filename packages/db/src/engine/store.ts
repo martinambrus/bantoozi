@@ -87,6 +87,7 @@ const CALL_KINDS: readonly CallKind[] = [
   'eval',
   'credential_probe',
   'card_draft',
+  'model_probe',
 ];
 const CALL_ENGINES = ['typesafe', 'llm', 'laya', 'libretranslate'] as const;
 const CALL_STATUSES = [
@@ -412,6 +413,10 @@ export function createPgEngineStore(db: Database, options: PgEngineStoreOptions)
       // A card draft's demand is its pending draft row, and nothing else (D-240).
       if ((input.kind === 'card_draft') !== (input.authorization.type === 'card_draft'))
         return null;
+      // A model probe is synthetic and has no demand; only its own authorization type admits it.
+      if ((input.kind === 'model_probe') !== (input.authorization.type === 'model_probe')) {
+        return null;
+      }
       const id = newUuid();
       const reserved = reserveUsd(input.estimateUsd);
       return db.transaction(async (tx) => {
