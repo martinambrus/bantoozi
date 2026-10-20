@@ -151,6 +151,12 @@
   "learning": {
     "title": "Osobné učenie",
     "description": "Váš vlastný model sa zapne sám, keď bude mať dosť hodnotení a bude ich predpovedať lepšie než samotné vaše záujmy.",
+    "paused": {
+      "engine_unavailable": "Analýza je pozastavená od {{date}}. Vaše hodnotenia sa uchovajú a analyzujú sa po obnovení.",
+      "engine_unavailable_nodate": "Analýza je pozastavená. Vaše hodnotenia sa uchovajú a analyzujú sa po obnovení.",
+      "model_upgrade": "Analýza po aktualizácii dobieha (od {{date}}). Vaše hodnotenia sa uchovajú a analyzujú sa po dokončení.",
+      "model_upgrade_nodate": "Analýza po aktualizácii dobieha. Vaše hodnotenia sa uchovajú a analyzujú sa po dokončení."
+    },
     "explicit": "{{explicit}} z {{min}} hodnotení",
     "likes": "{{likes}} z {{min}} „páči sa mi“",
     "dislikes": "{{dislikes}} z {{min}} „nepáči sa mi“",

@@ -91,3 +91,108 @@ export async function latestMetricsSnapshots(
      ORDER BY key DESC LIMIT ${limit}`);
   return result.rows.map((row) => [row.key.slice('metrics.daily.'.length), row.value]);
 }
+
+/**
+ * The `engine_calls.kind` values of classification work. Other TypeSafe calls (credential checks,
+ * evaluations, model probes) fail on purpose or for their own reasons and are not an outage of it.
+ */
+const CLASSIFICATION_KINDS = ['enrich', 'match', 'cluster', 'suggest'] as const;
+
+/** A Jev answer that named another model than the one requested, grouped by the pair. */
+export interface ModelMismatchGroup {
+  requested: string | null;
+  answered: string;
+  calls: number;
+  latestAt: Date;
+}
+
+/**
+ * Failed TypeSafe attempts of classification work whose answer named another model (`model_mismatch:<id>`) in the window
+ * `(now - windowMs, now]`: up to 5 (requested, answered) groups, newest first.
+ */
+export async function typesafeModelMismatches(
+  db: Executor,
+  now: Date,
+  windowMs: number,
+): Promise<ModelMismatchGroup[]> {
+  const result = await db.execute<{
+    requested: string | null;
+    answered: string;
+    calls: number;
+    latest: Date | string;
+  }>(sql`
+    SELECT model AS requested, substr(error, length('model_mismatch:') + 1) AS answered,
+           count(*)::int AS calls, max(created_at) AS latest
+      FROM engine_calls
+     WHERE engine = 'typesafe' AND status = 'invalid_response'
+       AND kind = ANY(${sql.param([...CLASSIFICATION_KINDS])}::text[])
+       AND left(error, length('model_mismatch:')) = 'model_mismatch:'
+       AND created_at > ${new Date(now.getTime() - windowMs).toISOString()}::timestamptz
+       AND created_at <= ${now.toISOString()}::timestamptz
+     GROUP BY model, substr(error, length('model_mismatch:') + 1)
+     ORDER BY max(created_at) DESC
+     LIMIT 5`);
+  return result.rows.map((row) => ({
+    requested: row.requested,
+    answered: row.answered,
+    calls: row.calls,
+    latestAt: new Date(row.latest),
+  }));
+}
+
+/** The newest failed TypeSafe attempt of classification work created in `[notBefore, now]`, or null. */
+export async function latestTypesafeFailure(
+  db: Executor,
+  now: Date,
+  notBefore: Date,
+): Promise<{ status: string; detail: string | null; model: string | null; at: Date } | null> {
+  const result = await db.execute<{
+    status: string;
+    detail: string | null;
+    model: string | null;
+    at: Date | string;
+  }>(sql`
+    SELECT status, error AS detail, model, created_at AS at
+      FROM engine_calls
+     WHERE engine = 'typesafe'
+       AND kind = ANY(${sql.param([...CLASSIFICATION_KINDS])}::text[])
+       AND status IN ('error', 'timeout', 'rate_limited', 'invalid_response', 'auth_error')
+       AND created_at >= ${notBefore.toISOString()}::timestamptz
+       AND created_at <= ${now.toISOString()}::timestamptz
+     ORDER BY created_at DESC
+     LIMIT 1`);
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  return { status: row.status, detail: row.detail, model: row.model, at: new Date(row.at) };
+}
+
+/** Distinct failed logical requests of TypeSafe classification work in `(now - windowMs, now]`, the newest failure, and whether any call of it was ok. */
+export async function typesafeClassificationOutage(
+  db: Executor,
+  now: Date,
+  windowMs: number,
+): Promise<{ failedRequests: number; okCalls: number; lastFailureAt: Date | null }> {
+  const result = await db.execute<{
+    failed: number;
+    ok: number;
+    last_failure: Date | string | null;
+  }>(sql`
+    SELECT count(DISTINCT logical_request_id) FILTER (
+             WHERE status IN ('error', 'timeout', 'rate_limited', 'invalid_response', 'auth_error')
+           )::int AS failed,
+           count(*) FILTER (WHERE status = 'ok')::int AS ok,
+           max(created_at) FILTER (
+             WHERE status IN ('error', 'timeout', 'rate_limited', 'invalid_response', 'auth_error')
+           ) AS last_failure
+      FROM engine_calls
+     WHERE engine = 'typesafe'
+       AND kind = ANY(${sql.param([...CLASSIFICATION_KINDS])}::text[])
+       AND created_at > ${new Date(now.getTime() - windowMs).toISOString()}::timestamptz
+       AND created_at <= ${now.toISOString()}::timestamptz`);
+  const row = result.rows[0];
+  return {
+    failedRequests: row?.failed ?? 0,
+    okCalls: row?.ok ?? 0,
+    lastFailureAt: row?.last_failure == null ? null : new Date(row.last_failure),
+  };
+}

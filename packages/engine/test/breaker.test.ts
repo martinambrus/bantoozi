@@ -39,6 +39,7 @@ describe('breaker transitions (pure, spec 04 §5)', () => {
     expect(open).toEqual({
       state: 'open',
       openedAt: iso(0),
+      failingSince: iso(0),
       openUntil: iso(2 * MIN),
       reopenCount: 0,
     });
@@ -83,6 +84,7 @@ describe('breaker transitions (pure, spec 04 §5)', () => {
     expect(completeProbe(half, 'a', false, at(3 * MIN), P)).toEqual({
       state: 'open',
       openedAt: iso(3 * MIN),
+      failingSince: iso(0),
       openUntil: iso(3 * MIN + 8 * MIN),
       reopenCount: 2,
     });
@@ -117,6 +119,7 @@ describe('breaker transitions (pure, spec 04 §5)', () => {
     expect(enterAuthMode({ state: 'closed', reopenCount: 2 }, at(0))).toEqual({
       state: 'auth',
       openedAt: iso(0),
+      failingSince: iso(0),
       reopenCount: 2,
     });
     expect(enterAuthMode({ state: 'auth', openedAt: iso(0), reopenCount: 0 }, at(1))).toBeNull();
@@ -219,6 +222,7 @@ describe('createBreakerCoordinator (shared state, spec 04 §5)', () => {
     expect((await store.readCircuit()).typesafe).toEqual({
       state: 'open',
       openedAt: iso(0),
+      failingSince: iso(0),
       openUntil: iso(2 * MIN),
       reopenCount: 0,
     });

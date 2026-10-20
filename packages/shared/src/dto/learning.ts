@@ -43,6 +43,16 @@ export const LearningFeedAgreementSchema = z
   .strict();
 export type LearningFeedAgreement = z.infer<typeof LearningFeedAgreementSchema>;
 
+/** Whether analysis of new articles is paused for everyone, and why (global, not per user). */
+export const ClassificationStatusSchema = z
+  .object({
+    state: z.enum(['ok', 'paused']),
+    since: IsoTimestampSchema.nullable(),
+    reason: z.enum(['engine_unavailable', 'model_upgrade']).nullable(),
+  })
+  .strict();
+export type ClassificationStatus = z.infer<typeof ClassificationStatusSchema>;
+
 export const LearningStatusSchema = z
   .object({
     model: z
@@ -69,6 +79,7 @@ export const LearningStatusSchema = z
       })
       .strict(),
     feeds: z.array(LearningFeedAgreementSchema),
+    classification: ClassificationStatusSchema.default({ state: 'ok', since: null, reason: null }),
   })
   .strict();
 export type LearningStatus = z.infer<typeof LearningStatusSchema>;

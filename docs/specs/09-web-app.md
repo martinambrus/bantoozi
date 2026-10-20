@@ -460,7 +460,7 @@ When the page becomes visible again after `/open`:
 
 Profile (name, language, timezone, theme → `preferences.theme`) · Reading preferences (all fields of spec 08 §3.1 with
 explanations) · Personal learning (`GET /me/learning`: ratings, likes and dislikes against the
-activation thresholds, "Active since", or the last attempt's reasons in words; D-237; and "Interests to add": the training feeds whose `uncovered.suggest` holds, each with "Make an interest from these", D-241; and "Topics to avoid": the same for `unwanted.suggest`, each with "Make a Never card from these", D-244) · Sessions (devices, revoke) · Invites (left, create, list, copy link) · Export data ·
+activation thresholds, "Active since", or the last attempt's reasons in words; D-237; and "Interests to add": the training feeds whose `uncovered.suggest` holds, each with "Make an interest from these", D-241; and "Topics to avoid": the same for `unwanted.suggest`, each with "Make a Never card from these", D-244; and, while `classification.state` is `paused`, one status line above the counts: "Analysis paused since <date and time>. Your ratings are kept and analysed when it resumes." or, for `model_upgrade`, "Analysis is catching up after an update (since <date and time>)…", D-272) · Sessions (devices, revoke) · Invites (left, create, list, copy link) · Export data ·
 Delete account (typed confirmation).
 Only one tab or window of an account edits the reading preferences at a time (a per-account Web
 Lock held while the section is on screen): another one shows that they are being adjusted

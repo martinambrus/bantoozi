@@ -410,6 +410,8 @@ separate local queue and remains available when all inference modes are off.
 
 Recipients are the emails of all active admin users (`role='admin'`, not soft-deleted), ordered; `ADMIN_EMAILS` is the fallback only while there is none or the lookup fails, and with neither the run logs that alerts cannot be sent (M8b, D-215).
 
+The engine alerts count only classification calls (`enrich`, `match`, `cluster`, `suggest`); credential checks, evaluations and model probes never feed them (D-272).
+
 `house.alerts` also records resolved transitions and sends one recovery notification per active
 incident. Mail transport failure leaves the notification pending; mark `lastSentAt` only after SMTP
 acceptance. Bound and redact details, retry with backoff, and keep reporting failures measurable.
@@ -421,7 +423,8 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
 
 | Alert | Condition |
 |---|---|
-| Engine breaker open | `settings['engine.circuit'].typesafe` is `open` with `openedAt` more than 30 min ago, or it is `auth` (immediately) |
+| Classification engine failing (key `engine.breaker`) | `settings['engine.circuit'].typesafe` is `open` or `half_open` and its failing streak (`failingSince`, else `openedAt`) is more than 30 min old; or it is `auth` (immediately, titled "Engine credentials rejected"); or, with the breaker closed or absent, at least 3 distinct TypeSafe classification requests failed and none succeeded in the last 30 min (the breaker trips only at 20 requests in 5 min in one process). The mail names the streak or the failure count, the last failure, the configured and the pinned model (D-272) |
+| Jev answered with another model (key `engine.model_mismatch`) | a TypeSafe classification call failed `invalid_response` with detail `model_mismatch:<answered id>` in the last 45 min (longer than the 30 min between probes of a flapping breaker, so the incident does not clear and re-fire at each probe); the mail names up to 3 requested/answered pairs with counts (D-272) |
 | Budget | `settings['engine.budget_alerts']` has `p80At` or `p100At` for today (spec 04 §6) |
 | Pipeline backlog | any queue > 5,000 due waiting jobs, oldest due job > 30 min, pending outbox > 5 min, or rising terminal failures (≥ 20 pg-boss jobs failed for good in the last hour and ≥ 3× the hourly mean of the 24 h before); intentional future cooldown jobs are excluded |
 | Service health | no worker heartbeat for 30 min, a housekeeping job whose `house.progress.updatedAt` is older than 2 of its cron periods (or that has no entry once a worker consuming it has been up longer than 2 periods, D-191), or LibreTranslate unreachable while a language mode is `translate` or `card_text_mode` is `english`. Also: clients waiting for a worker database connection (`pool.waiting > 0` in the heartbeat) on 3 consecutive `house.alerts` runs; a container with ≥ 3 restarts within 60 min or an OOM kill, from the `containers` field of the `host_health` report; and (from M9) `worker-laya` while `engine.laya` lists a language or Laya work is outstanding (§2). External readiness failure and full-host failure are the owner's external monitor's (D-177) |

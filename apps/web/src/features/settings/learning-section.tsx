@@ -1,8 +1,9 @@
 import type { LearningFeedAgreement, LearningStatus } from '@bantoozi/shared';
 import { useTranslation } from 'react-i18next';
 
+import { InfoIcon } from '../../components/icons.js';
 import { QueryState } from '../../components/states/query-state.js';
-import { formatDate } from '../../i18n/dates.js';
+import { formatDate, formatDateTime } from '../../i18n/dates.js';
 import { useMe } from '../../session/context.js';
 import { displayTitle } from '../feeds/folders.js';
 import { useSubscriptions } from '../feeds/subscriptions.js';
@@ -19,6 +20,23 @@ const REASONS = [
   'rating_fingerprint_changed',
   'context_changed',
 ] as const;
+
+function LearningPaused({ classification }: { classification: LearningStatus['classification'] }) {
+  const { t, i18n } = useTranslation('settings');
+  const me = useMe();
+  if (classification.state !== 'paused' || classification.reason === null) return null;
+  const date =
+    classification.since === null
+      ? ''
+      : formatDateTime(classification.since, i18n.language, me.timezone);
+  const key = `learning.paused.${classification.reason}${date === '' ? '_nodate' : ''}`;
+  return (
+    <p role="status" className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+      <InfoIcon className="mt-0.5 size-4 shrink-0 text-slate-600 dark:text-slate-300" />
+      <span>{t(key, { date })}</span>
+    </p>
+  );
+}
 
 function LearningStatusLines({ model }: { model: LearningStatus['model'] }) {
   const { t, i18n } = useTranslation('settings');
@@ -124,8 +142,9 @@ export function LearningSection() {
   return (
     <SettingsSection title={t('learning.title')} description={t('learning.description')}>
       <QueryState query={learning}>
-        {({ model, feeds }) => (
+        {({ model, feeds, classification }) => (
           <div className="flex flex-col gap-4">
+            <LearningPaused classification={classification} />
             <LearningStatusLines model={model} />
             <InterestsToAdd feeds={feeds} />
             <TopicsToAvoid feeds={feeds} />
