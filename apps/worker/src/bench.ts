@@ -2,12 +2,14 @@
  * Dev benchmark (not a test, D-259): runs the real handlers and reader queries in-process against
  * the dev database and reports their wall time. Statement times: `log_min_duration_statement`.
  *
- *   pnpm --filter @bantoozi/worker bench <userId> [rank-full|rank|learn|samples|ratebulk|api|api-nojit]...
+ *   pnpm --filter @bantoozi/worker bench <userId> [rank-full|rank|learn|estimate|samples|ratebulk|api|api-nojit]...
  *
  * `rank-full` rewrites every window row (what a model activation triggers); `learn` trains inline and
- * in a thread and stores nothing; `samples` loads the learning samples as `GET /me/learning` does;
- * `ratebulk` rates 200 unread articles of feed 29 and rolls back; `api` / `api-nojit` time the
- * reader's counts, badges and lists.
+ * in a thread and stores nothing; `estimate` loads the explicit ratings with their text in a
+ * read-only transaction, trains the word model inline and prints timing and metrics (stores
+ * nothing); `samples` loads the learning samples as `GET /me/learning` does; `ratebulk` rates 200
+ * unread articles of feed 29 and rolls back; `api` / `api-nojit` time the reader's counts, badges and
+ * lists.
  */
 import { writeFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
@@ -18,6 +20,7 @@ import {
   createDatabase,
   createPool,
   listArticlePage,
+  loadEstimateRatings,
   loadLearnSamples,
   rateArticlesBulk,
   tenantOutbox,
@@ -27,7 +30,12 @@ import {
   retryTransaction,
   withTenant,
 } from '@bantoozi/db';
-import { activeTrainingKernel, scoreVersion, setTrainingKernel } from '@bantoozi/ranker';
+import {
+  activeTrainingKernel,
+  scoreVersion,
+  setTrainingKernel,
+  trainEstimateModel,
+} from '@bantoozi/ranker';
 import { parseSetting } from '@bantoozi/shared';
 import { trainUserModel, type TrainingSample } from '@bantoozi/ranker';
 import { createLogger, loadConfig } from '@bantoozi/shared/server';
@@ -37,11 +45,16 @@ import { CpuPool, cpuPoolSize } from './cpu-pool.js';
 import { poolTrainer } from './learn/trainer.js';
 import { isDeepStrictEqual } from 'node:util';
 import { createUserRankHandler } from './handlers/user-rank.js';
+import { loadRankerSettings } from './rank/settings.js';
 import { createWorkerRuntime } from './runtime.js';
 import type { WorkerDeps } from './handlers/deps.js';
 
 const [userId, ...modes] = process.argv.slice(2);
-if (userId === undefined) throw new Error('usage: bench.ts <userId> [rank-full|rank|learn]...');
+if (userId === undefined) {
+  throw new Error(
+    'usage: bench.ts <userId> [rank-full|rank|learn|estimate|samples|ratebulk|api]...',
+  );
+}
 
 const config = loadConfig({ process: 'worker' });
 const logger = createLogger({ name: 'bench', level: 'warn', pretty: true });
@@ -226,6 +239,38 @@ for (const mode of modes.length === 0 ? ['rank'] : modes) {
     console.log(
       `  train pool (${cpuPoolSize()} threads): ${(performance.now() - inline).toFixed(0)} ms, event-loop ticks ${ticks}, identical ${isDeepStrictEqual(result, threaded)}`,
     );
+  } else if (mode === 'estimate') {
+    const { config: ranker } = await loadRankerSettings(db);
+    const since = new Date(Date.now() - ranker.model.historyDays * 86_400_000);
+    // The database itself refuses any write of this mode.
+    const ratings = await db.transaction((tx) => loadEstimateRatings(tx, userId, since), {
+      accessMode: 'read only',
+    });
+    const loaded = performance.now();
+    console.log(
+      `  estimate ratings: ${ratings.length} in ${(loaded - t0).toFixed(0)} ms (read-only transaction)`,
+    );
+    const cpu0 = process.cpuUsage();
+    const result = trainEstimateModel(ratings);
+    const trained = performance.now();
+    const cpu = process.cpuUsage(cpu0);
+    if (!result.ok) {
+      console.log(`  no model (${result.reason}); nothing stored`);
+    } else {
+      const { metrics, platt, weights } = result.model;
+      console.log(
+        `  train inline: ${(trained - loaded).toFixed(0)} ms (cpu ${((cpu.user + cpu.system) / 1000).toFixed(0)} ms), ${Object.keys(weights).length} weights`,
+      );
+      console.log(
+        `  ratings ${metrics.n} (${metrics.nPos} liked, ${metrics.nNeg} disliked), folds ${metrics.folds}, out-of-fold AUC ${metrics.auc?.toFixed(3) ?? '-'}, platt a ${platt.a.toFixed(3)} b ${platt.b.toFixed(3)}`,
+      );
+      const byRatings = Object.entries(metrics.feeds).sort((a, b) => b[1].n - a[1].n);
+      for (const [feed, m] of byRatings.slice(0, 12)) {
+        console.log(
+          `    feed ${feed.padStart(4)}  ratings ${String(m.n).padStart(5)}  liked ${String(m.nPos).padStart(5)}  AUC ${m.auc?.toFixed(3) ?? '-'}`,
+        );
+      }
+    }
   } else if (mode === 'samples') {
     await withTenant(appDb, userId, async (tx) => {
       const { samples } = await loadLearnSamples(tx, { userId, now: new Date() });

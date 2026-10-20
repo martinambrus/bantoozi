@@ -200,6 +200,59 @@ export interface SimilarFeedbackRow {
   title: string | null;
 }
 
+/** One explicit rating of a reader, with the article text and carrier feed the word-estimate trainer uses. */
+export interface EstimateRating {
+  articleId: string;
+  rating: 1 | -1;
+  ratedAt: Date;
+  title: string;
+  excerpt: string | null;
+  feedId: string | null;
+}
+
+/**
+ * The reader's current explicit ratings with `rated_at >= since`, in rating order, with the
+ * article's current title and excerpt and its lowest-id carrier feed the reader subscribes to
+ * (null when none). Read-only.
+ */
+export async function loadEstimateRatings(
+  db: Executor,
+  userId: string,
+  since: Date,
+): Promise<EstimateRating[]> {
+  const result = await db.execute<{
+    article_id: string;
+    rating: number;
+    rated_at: RawTimestamp;
+    title: string;
+    excerpt: string | null;
+    feed_id: string | null;
+  }>(sql`
+    SELECT ua.article_id::text AS article_id, ua.rating, ua.rated_at, a.title, a.excerpt,
+           (SELECT min(fi.feed_id)::text
+              FROM feed_items fi
+              JOIN subscriptions s ON s.feed_id = fi.feed_id AND s.user_id = ua.user_id
+             WHERE fi.article_id = ua.article_id) AS feed_id
+      FROM user_article ua
+      JOIN articles a ON a.id = ua.article_id
+     WHERE ua.user_id = ${userId}::uuid AND ua.rating IN (1, -1)
+       AND ua.rated_at >= ${since.toISOString()}::timestamptz
+     ORDER BY ua.rated_at, ua.article_id`);
+  return result.rows.map((row) => {
+    if (row.rating !== 1 && row.rating !== -1) {
+      throw new Error(`unexpected rating ${String(row.rating)} on article ${row.article_id}`);
+    }
+    return {
+      articleId: row.article_id,
+      rating: row.rating,
+      ratedAt: toDate(row.rated_at),
+      title: row.title,
+      excerpt: row.excerpt,
+      feedId: row.feed_id,
+    };
+  });
+}
+
 /** The held card's family key (a private fork shares its parent's), as in library updates. */
 const FAMILY = sql`CASE WHEN c.visibility = 'private' THEN coalesce(c.parent_card_id, c.id) ELSE c.id END`;
 

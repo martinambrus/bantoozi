@@ -2817,3 +2817,14 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   ratings stack, at most three on screen, the oldest timed one leaving first. The undo toast that
   carries an example suggestion or a dislike-pattern offer stays until it is closed (its buttons or
   Dismiss) instead of 8 s; plain undo toasts keep 5 s. No API change.
+- D-271: 2026-10-20 (EST-1 of docs/design/visible-learning.md, owner-approved 2026-10-20) — Per-user word
+  estimates, the pure part, in `packages/ranker/src/estimate/`. Features: D-268's `similarityTokens(title)` (price-only
+  strip, tokens of 6 or more characters cut to 5), adjacent title pairs, the first 80 excerpt tokens cut the same way,
+  and `f:<feedId>` (the lowest-id subscribed carrier feed); binary. Class-balanced L2 logistic regression by Adagrad
+  (8 epochs, seeded order), the 20,000 largest weights kept, Platt fitted on out-of-fold logits of 5 contiguous time
+  blocks (blocked k-fold: out-of-fold AUC 0.907 on the owner's ratings, 0.888 with forward chaining). Equal inputs
+  give byte-equal models; `ESTIMATE_SPEC` hashes the feature definition and a stored model of another spec is never
+  scored. The loader `loadEstimateRatings` lives in `packages/db` (raw SQL stays there). Acceptance: the planned check
+  "per-feed AUC within ±0.05 of the prototype" compared with one shuffle order, which the prototype itself passes
+  in 1 of 8 orders; it was replaced by an 8-order equivalence check (largest deviation 0.023). The owner's 4,946
+  ratings train in 0.28–0.37 s. No migration; storage, the job and ranking follow in EST-2…EST-4.

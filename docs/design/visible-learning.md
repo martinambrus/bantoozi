@@ -74,19 +74,24 @@ Prequential test: each block of 25 ratings of a feed was predicted by an L2 logi
 excerpt words plus the feed, trained on every earlier rating (all feeds). AUC 0.5 is a random order and 1.0 a
 perfect one. The cards column uses the current cards on the analysed rated articles, with their count in brackets.
 
+The first measurement was one shuffle order of the training. The "ratings 11–60" cells pool only about 50 predictions
+from models trained on 60–200 ratings, so another order moves them by a standard deviation of 0.02–0.08 (EST-1,
+D-271). The table below gives the mean over 8 orders of the implemented trainer, which uses D-268's title tokens, with
+the first single-order value in brackets. Read it as ±0.05 for the large feeds and ±0.10 for the small ones.
+
 | Feed | Ratings | Words, ratings 11–60 | Words, all later | Cards |
 |---|---|---|---|---|
-| Auto · Bazos.sk | 3,926 | 0.61 | 0.93 | 0.96 (3,524) |
-| Hacker News | 322 | 0.37 | 0.58 | 0.71 (81) |
-| ScienceDaily | 112 | 0.78 | 0.65 | 0.49 (14) |
-| Space.com | 105 | 0.70 | 0.73 | 0.55 (22) |
-| BBC News | 82 | 0.61 | 0.53 | 0.52 (64) |
-| Ars Technica | 72 | 0.52 | 0.48 | 0.70 (53) |
-| NASA | 52 | 0.73 | 0.73 | – |
-| The Verge | 50 | 0.73 | 0.73 | 0.66 (47) |
+| Auto · Bazos.sk | 3,926 | 0.58 (0.61) | 0.93 (0.93) | 0.96 (3,524) |
+| Hacker News | 322 | 0.50 (0.37) | 0.60 (0.58) | 0.71 (81) |
+| ScienceDaily | 112 | 0.81 (0.78) | 0.67 (0.65) | 0.49 (14) |
+| Space.com | 105 | 0.71 (0.70) | 0.73 (0.73) | 0.55 (22) |
+| BBC News | 82 | 0.56 (0.61) | 0.58 (0.53) | 0.52 (64) |
+| Ars Technica | 72 | 0.51 (0.52) | 0.45 (0.48) | 0.70 (53) |
+| NASA | 52 | 0.76 (0.73) | 0.76 (0.73) | – |
+| The Verge | 50 | 0.67 (0.73) | 0.67 (0.73) | 0.66 (47) |
 
-Most news feeds sort usefully after a few dozen ratings, sometimes better than the cards. Hacker News and Ars stay
-near random. Classified ads become strong with enough ratings. This is good enough to sort and to show progress,
+Most news feeds sort usefully after a few dozen ratings (ScienceDaily, Space.com, NASA, The Verge: 0.67–0.81),
+sometimes better than the cards. BBC, Hacker News and Ars stay near random. Classified ads become strong with enough ratings. This is good enough to sort and to show progress,
 not to hide articles with confidence. The owner accepts that (§3 decision 5).
 
 ## 3. Owner decisions (2026-10-20)
@@ -218,9 +223,15 @@ not to hide articles with confidence. The owner accepts that (§3 decision 5).
 - **Training data.** Explicit ratings within `model.historyDays`, read from `user_article` (current truth), with
   each article's title and excerpt and its lowest-id subscribed carrier feed.
 - **Fitting.** Class-balanced weights; Adagrad, 8 epochs in a seeded order; L2 1e-4. Platt scaling is fitted on
-  out-of-fold scores from 5 folds in time order. The 20,000 largest weights by absolute value are kept. Equal
-  inputs give equal models.
+  out-of-fold scores from 5 folds in time order: 5 contiguous blocks of the ratings ordered by (rated time, article
+  id), each scored by a model trained on the other four. The 20,000 largest weights by absolute value are kept.
+  Equal inputs give byte-equal models. `ESTIMATE_SPEC` hashes the feature definition; a stored model of another spec
+  is never scored (EST-1, D-271).
 - **Metrics.** Out-of-fold AUC overall and per feed (feeds with at least 10 ratings and both classes), plus counts.
+  A block's model also sees later ratings, so these are not the prequential numbers of §2.5; small feeds move by up
+  to 0.2 with a few hundred new ratings (dev data: overall 0.905).
+- **Cost.** Training the owner's 4,946 ratings takes 0.28–0.37 s (about 60 ms per 1k); the stored model is about
+  630 KB of JSON. Scoring costs 60–80 µs per article.
 - **Gate.** At least `estimate.minRatings` (10) explicit ratings, with at least `estimate.minEachClass` (3) of
   each class. These live in a new `RankerConfig.estimate` block with defaults; no G1 is needed.
 - **Storage** (migration):
@@ -322,7 +333,7 @@ migrations at a time (CLAUDE.md). Commits: `<task-id>: <summary>`.
 adopt a new version before JEV-4 is merged, or an upgrade resets training again. The other phases follow and can
 overlap where they add no migration.
 
-### Phase 1: Jev alias, families and guardrails (migration 0033: `engine_calls.kind` `model_probe`, `rating_fingerprints`)
+### Phase 1: Jev alias, families and guardrails (migrations 0033: `engine_calls.kind` `model_probe`; 0034: `rating_fingerprints`)
 
 | ID | Task | Needs | Lane | Done when |
 |---|---|---|---|---|
@@ -334,7 +345,7 @@ overlap where they add no migration.
 | JEV-5 | Admin: alias option, resolution display, Check now, save-time probe, impact text in the confirmation | JEV-1, JEV-2 | C | Saving an id the probe answers with another id is refused with the answered id; `jev-latest` shows its resolution; the editor is covered by an e2e test |
 | JEV-7 | Docs: specs 04 §1.2/§3/§5, 05 §2, 06 §8.1–§8.5, 08 §3/§9, 11 §6.1/§8; PLAN §2 decision 8; DECISIONS; RUNBOOK (alias upgrades, rollback) | all | lead | — |
 
-### Phase 2: Word estimates (migration 0034: `user_estimate_models`, `score_source` `estimate`)
+### Phase 2: Word estimates (migration 0035: `user_estimate_models`, `score_source` `estimate`)
 
 | ID | Task | Needs | Lane | Done when |
 |---|---|---|---|---|
@@ -345,7 +356,7 @@ overlap where they add no migration.
 | EST-5 | Web: outlined estimated tiers, Why this? estimate section, Settings toggle, en/sk strings; optional New-lane sort | EST-4 | C | Component tests; an e2e smoke: after 10 ratings in a Training feed, tier 2 shows estimated rows |
 | EST-6 | Docs: spec 06 §2/§8.6 (new)/§11, 02, 08, 09; PLAN §2 decision 9; DECISIONS | all | lead | — |
 
-### Phase 3: Visible progress (migration 0035: `user_learning_history`)
+### Phase 3: Visible progress (migration 0036: `user_learning_history`)
 
 | ID | Task | Needs | Lane | Done when |
 |---|---|---|---|---|
@@ -355,7 +366,7 @@ overlap where they add no migration.
 | PRG-4 | Learning curve and milestones in Settings → Personal learning | PRG-1 | C | Renders from history fixtures in both themes; accessible table fallback |
 | PRG-5 | Docs: specs 08 §3, 09 §5/§7, 02; DECISIONS | all | lead | — |
 
-### Phase 4: "Show fewer like these?" (migration 0036: `dislike_pattern_offers`)
+### Phase 4: "Show fewer like these?" (migration 0037: `dislike_pattern_offers`)
 
 | ID | Task | Needs | Lane | Done when |
 |---|---|---|---|---|
