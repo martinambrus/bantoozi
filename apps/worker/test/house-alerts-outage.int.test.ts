@@ -189,6 +189,21 @@ describe('house.alerts engine breaker streak (JEV-6)', () => {
   });
 });
 
+describe('house.alerts detail lookups of the engine breaker mail (JEV-6)', () => {
+  it('still fires, without the models, when the stored pin and model setting do not parse', async () => {
+    const failingSince = before(31 * MINUTE);
+    const mailer = await scenario(async () => {
+      await typesafeBreaker('open', { openedAt: before(MINUTE), failingSince });
+      await w.setting('engine.typesafe_model', { not: 'a model name' });
+      await w.setting('engine.model_pin', { model: 5 });
+    });
+    expect(mailer.to(ADMIN)).toHaveLength(1);
+    const text = mailText(mailer);
+    expect(text).toContain(FAILING_TITLE);
+    expect(text).toContain(iso(failingSince));
+  });
+});
+
 describe('house.alerts last failure of the engine breaker mail (JEV-6)', () => {
   it('names the last classification failure, not a newer failed credential check', async () => {
     const mailer = await scenario(async () => {
