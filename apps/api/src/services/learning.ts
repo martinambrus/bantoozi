@@ -20,7 +20,14 @@ import {
   uncoveredSuggests,
   type TrainingSample,
 } from '@bantoozi/ranker';
-import type { LearningStatus } from '@bantoozi/shared';
+import {
+  EngineCircuitSchema,
+  EngineModelPinSchema,
+  HouseProgressSchema,
+  type LearningStatus,
+} from '@bantoozi/shared';
+
+import { classificationStatus } from './classification-status.js';
 
 const text = (value: unknown): string | null => (typeof value === 'string' ? value : null);
 const num = (value: unknown): number | null =>
@@ -37,7 +44,13 @@ export async function loadLearningStatus(
   defaults: RatingDefaults,
 ): Promise<LearningStatus> {
   const userId = tenantUserId(tx);
-  const stored = await readStoredSettings(tx, ['ranker.thresholds', 'ranker.settings_version']);
+  const stored = await readStoredSettings(tx, [
+    'ranker.thresholds',
+    'ranker.settings_version',
+    'engine.circuit',
+    'engine.model_pin',
+    'house.progress',
+  ]);
   const { config } = resolveRankerSettings({
     thresholds: stored.get('ranker.thresholds'),
     settingsVersion: stored.get('ranker.settings_version'),
@@ -162,5 +175,10 @@ export async function loadLearningStatus(
       deactivated,
     },
     feeds,
+    classification: classificationStatus({
+      circuit: EngineCircuitSchema.safeParse(stored.get('engine.circuit')).data,
+      pin: EngineModelPinSchema.safeParse(stored.get('engine.model_pin')).data,
+      progress: HouseProgressSchema.safeParse(stored.get('house.progress')).data,
+    }),
   };
 }

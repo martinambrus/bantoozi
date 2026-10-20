@@ -20,6 +20,7 @@ export function makeLearning(
       ...model,
     },
     feeds,
+    classification: { state: 'ok', since: null, reason: null },
   };
 }
 
