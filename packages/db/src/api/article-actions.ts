@@ -1520,7 +1520,7 @@ async function requestRatingSha(
   const lang = textOrNull(objectField(objectField(snapshot, 'article'), 'lang'));
   const mode =
     lang === null
-      ? null
+      ? 'native'
       : (textOrNull(
           objectField(effectiveRatingSettings(stored, defaults)['language_modes'], lang),
         ) ?? 'native');
@@ -1536,10 +1536,14 @@ async function requestRatingSha(
     ],
   ];
   for (const [frozen, current, family] of checks) {
-    if (frozen === undefined || current === null) continue;
+    if (frozen === undefined) continue;
     const frozenText = textOrNull(frozen);
     if (frozenText === current) continue;
-    if (family && frozenText !== null && sameModelFamily(frozenText, current)) continue;
+    if (
+      family &&
+      (current === null || (frozenText !== null && sameModelFamily(frozenText, current)))
+    )
+      continue;
     return null;
   }
   return ratingShaOf(stored, defaults);
