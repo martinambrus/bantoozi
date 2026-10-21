@@ -23,6 +23,7 @@ import type pg from 'pg';
 import type { ClassificationEnv } from '../classify/config.js';
 import type { TranslationDeps } from '../classify/translation.js';
 import { createPipelineGate } from '../gate.js';
+import type { EstimateTrainer } from '../estimate/trainer.js';
 import type { Trainer } from '../learn/trainer.js';
 import type { PipelineContext } from '../pipeline.js';
 import type { ProviderValidateDeps } from './provider-validate.js';
@@ -110,6 +111,8 @@ export interface WorkerDeps {
   logger: HandlerLogger;
   /** Runs `user.learn` training; inline when absent (tests). The process uses a thread (D-259). */
   trainer?: Trainer;
+  /** Runs `user.estimate` training; inline when absent (tests). The process uses the CPU pool. */
+  estimateTrainer?: EstimateTrainer;
   /**
    * The classification stages (M2). Without it the translate, enrich, cluster, match, backfill,
    * analysis and recovery stages stay registered stubs (tests of the ingestion stages omit it).

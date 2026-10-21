@@ -42,6 +42,7 @@ const SPEC_03_QUEUES: Record<string, number> = {
   'card.backfill': 2,
   'user.rank': 4,
   'user.learn': 2,
+  'user.estimate': 2,
   'user.suggest': 1,
   'card.draft': 2,
   'house.rescore-degraded': 1,

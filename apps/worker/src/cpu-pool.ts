@@ -2,7 +2,7 @@ import { availableParallelism } from 'node:os';
 import { deserialize, serialize } from 'node:v8';
 import { Worker } from 'node:worker_threads';
 
-import type { FoldResult, TrainArgs } from '@bantoozi/ranker';
+import type { EstimateOptions, EstimateSample, FoldResult, TrainArgs } from '@bantoozi/ranker';
 
 type TrainMode = 'production' | 'research';
 
@@ -33,6 +33,10 @@ export function unshare<T>(shared: Shared<T>): T {
 export type CpuTask =
   | { kind: 'trainFold'; args: Shared<TrainArgs>; mode: TrainMode; f: number }
   | { kind: 'trainingSetSha'; args: Shared<TrainArgs> }
+  | {
+      kind: 'trainEstimate';
+      args: Shared<{ samples: EstimateSample[]; options: Partial<EstimateOptions> }>;
+    }
   | {
       kind: 'finishTraining';
       args: Shared<TrainArgs>;

@@ -36,6 +36,8 @@ export const DEFAULT_RANKER_CONFIG = {
     cardMinMatched: 8,
   },
   bm25: { k1: 1.2, b: 0.75, scale: 3 },
+  // The per-user word estimate (visible-learning §4.4): the gate that opens it. No G1 is needed.
+  estimate: { minRatings: 10, minEachClass: 3 },
 } as const;
 
 /**
@@ -101,6 +103,9 @@ const shape = {
     })
     .strict(),
   bm25: z.object({ k1: positive, b: unit, scale: positive }).strict(),
+  estimate: z
+    .object({ minRatings: positiveInt(1_000_000), minEachClass: positiveInt(1_000_000) })
+    .strict(),
 };
 
 /** The fully merged config, validated (spec 06 §11). Unknown keys (e.g. `windowDays`) fail. */
@@ -150,6 +155,7 @@ export const RankerThresholdsSchema = z
     labelSuggest: unit,
     model: shape.model.partial(),
     bm25: shape.bm25.partial(),
+    estimate: shape.estimate.partial(),
   })
   .partial()
   .strict();

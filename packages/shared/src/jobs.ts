@@ -61,6 +61,12 @@ const rematchPayload = z
 
 export const TRANSLATE_SKIP_REASONS = ['no_key', 'cap', 'budget'] as const;
 
+/**
+ * `user.estimate` is debounced per user by this many seconds: pg-boss starts the first job of a slot
+ * at once and one trailing job at the slot's end, and the handler trains only when its inputs changed.
+ */
+export const ESTIMATE_DEBOUNCE_SECONDS = 20;
+
 /** Housekeeping cron queues (spec 11 §6): empty payload, `singleton` policy. */
 export const HOUSE_CRON_QUEUES = [
   'house.rescore-degraded',
@@ -213,8 +219,23 @@ export const QUEUES = {
         // Set only on a continuation: the last window position the previous run visited; the run
         // resumes strictly below it.
         cursor: z.object({ arrival: iso, articleId: IdSchema }).strict().optional(),
+        // Present only on the refresh of a reader's word estimates (visible-learning §4.4, spec 06
+        // §8.6): the run re-ranks the rows whose source is none or estimate and writes only those
+        // whose tier or P moved. `{}` starts it; a continuation carries the estimate model version it
+        // scored with and the unread rows whose tier rose (`up`) or fell (`down`) so far.
+        estimate: z
+          .object({
+            version: z.number().int().min(1).optional(),
+            up: z.number().int().min(0).optional(),
+            down: z.number().int().min(0).optional(),
+          })
+          .strict()
+          .optional(),
       })
-      .strict(),
+      .strict()
+      .refine((p) => !(p.full === true && p.estimate !== undefined), {
+        message: 'a full rank and an estimate refresh are exclusive',
+      }),
     concurrency: 4,
     options: { policy: 'stately', retryLimit: 2 },
   }),
@@ -222,6 +243,13 @@ export const QUEUES = {
     payload: userOnly,
     concurrency: 2,
     options: { policy: 'standard', retryLimit: 1 },
+  }),
+  // The per-user word estimate (visible-learning §4.4): trains and stores the model, then records the
+  // refresh rank. `stately`: one created job per user, later sends fold into it.
+  'user.estimate': spec({
+    payload: userOnly,
+    concurrency: 2,
+    options: { policy: 'stately', retryLimit: 1 },
   }),
   'user.suggest': spec({
     payload: userOnly,
@@ -388,18 +416,29 @@ export function sendSpecFor<Q extends QueueName>(queue: Q, payload: JobPayload<Q
     case 'user.rank':
       if (p['cursor'] !== undefined) {
         // A continuation has a key of its own per position: it never swallows, and is never
-        // swallowed by, an event's incremental or full rank.
+        // swallowed by, an event's incremental or full rank. The estimate refresh walks the same
+        // positions, so its continuations have a prefix of their own.
         const cursor = p['cursor'] as { arrival: string; articleId: string };
+        const prefix = p['estimate'] === undefined ? 'rank-cont' : 'rank-est-cont';
         return {
           kind: 'send',
-          singletonKey: `rank-cont:${id('userId')}:${cursor.arrival}:${cursor.articleId}`,
+          singletonKey: `${prefix}:${id('userId')}:${cursor.arrival}:${cursor.articleId}`,
         };
+      }
+      if (p['estimate'] !== undefined) {
+        return { kind: 'send', singletonKey: `rank-est:${id('userId')}` };
       }
       return p['full'] === true
         ? { kind: 'send', singletonKey: `rank-full:${id('userId')}` }
         : { kind: 'debounced', key: `rank:${id('userId')}`, seconds: 3 };
     case 'user.learn':
       return { kind: 'debounced', key: `learn:${id('userId')}`, seconds: 60 };
+    case 'user.estimate':
+      return {
+        kind: 'debounced',
+        key: `estimate:${id('userId')}`,
+        seconds: ESTIMATE_DEBOUNCE_SECONDS,
+      };
     case 'user.suggest':
       return { kind: 'send', singletonKey: `suggest:${id('userId')}` };
     case 'card.draft':
@@ -512,6 +551,8 @@ export const enqueueRank = (s: JobSender, p: JobPayloadInput<'user.rank'>, o?: E
   enqueue(s, 'user.rank', p, o);
 export const enqueueLearn = (s: JobSender, p: JobPayloadInput<'user.learn'>) =>
   enqueue(s, 'user.learn', p);
+export const enqueueEstimate = (s: JobSender, p: JobPayloadInput<'user.estimate'>) =>
+  enqueue(s, 'user.estimate', p);
 export const enqueueSuggest = (s: JobSender, p: JobPayloadInput<'user.suggest'>) =>
   enqueue(s, 'user.suggest', p);
 export const enqueueCardDraft = (s: JobSender, p: JobPayloadInput<'card.draft'>) =>

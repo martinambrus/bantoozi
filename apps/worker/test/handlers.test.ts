@@ -69,7 +69,7 @@ describe('handler map', () => {
     expect(available(handlers)).toEqual(
       [...INGESTION_QUEUES, ...RANKING_QUEUES, ...LEARNING_QUEUES, ...RETENTION_QUEUES].sort(),
     );
-    expect(LEARNING_QUEUES).toEqual(['user.learn', 'house.nightly-learn']);
+    expect(LEARNING_QUEUES).toEqual(['user.learn', 'user.estimate', 'house.nightly-learn']);
     expect(RANKING_QUEUES).toEqual(['user.rank', 'house.expire-rules']);
     expect(INGESTION_QUEUES).toEqual([
       'feed.schedule',

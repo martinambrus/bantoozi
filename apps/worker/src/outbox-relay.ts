@@ -58,6 +58,8 @@ const CONFLICT_RETRY_SECONDS = 5;
 type Outcome = 'delivered' | 'retained' | 'failed' | 'lost';
 
 const FULL_RANK_KEY_PREFIX = 'rank-full:';
+/** The estimate refresh (not its `rank-est-cont:` continuations) re-reads the newest model when it starts. */
+const ESTIMATE_RANK_KEY_PREFIX = 'rank-est:';
 
 export async function relayOnce(
   db: Database,
@@ -125,8 +127,12 @@ async function relayIntent(
           singletonKey,
           payload,
           // A pending full rank re-reads durable state: it covers a full-rank intent whatever its
-          // reason (S19). Continuations and incremental ranks have keys of their own.
-          anyPayload: spec.kind === 'debounced' || singletonKey.startsWith(FULL_RANK_KEY_PREFIX),
+          // reason (S19), and a pending estimate refresh covers another one the same way.
+          // Continuations and incremental ranks have keys of their own.
+          anyPayload:
+            spec.kind === 'debounced' ||
+            singletonKey.startsWith(FULL_RANK_KEY_PREFIX) ||
+            singletonKey.startsWith(ESTIMATE_RANK_KEY_PREFIX),
         }));
       if (!equivalent) return await keep('retained', 'singleton_conflict', CONFLICT_RETRY_SECONDS);
     }

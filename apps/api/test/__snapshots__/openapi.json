@@ -569,6 +569,14 @@
                                 "dark"
                               ]
                             },
+                            "estimates": {
+                              "default": "on",
+                              "type": "string",
+                              "enum": [
+                                "on",
+                                "off"
+                              ]
+                            },
                             "loadRemoteImages": {
                               "default": false,
                               "type": "boolean"
@@ -611,6 +619,7 @@
                             "implicitNegative",
                             "swipe",
                             "theme",
+                            "estimates",
                             "loadRemoteImages",
                             "implicitFeedback",
                             "folderOrder",
@@ -1243,6 +1252,14 @@
                                 "dark"
                               ]
                             },
+                            "estimates": {
+                              "default": "on",
+                              "type": "string",
+                              "enum": [
+                                "on",
+                                "off"
+                              ]
+                            },
                             "loadRemoteImages": {
                               "default": false,
                               "type": "boolean"
@@ -1285,6 +1302,7 @@
                             "implicitNegative",
                             "swipe",
                             "theme",
+                            "estimates",
                             "loadRemoteImages",
                             "implicitFeedback",
                             "folderOrder",
@@ -1921,6 +1939,14 @@
                             "dark"
                           ]
                         },
+                        "estimates": {
+                          "default": "on",
+                          "type": "string",
+                          "enum": [
+                            "on",
+                            "off"
+                          ]
+                        },
                         "loadRemoteImages": {
                           "default": false,
                           "type": "boolean"
@@ -1963,6 +1989,7 @@
                         "implicitNegative",
                         "swipe",
                         "theme",
+                        "estimates",
                         "loadRemoteImages",
                         "implicitFeedback",
                         "folderOrder",
@@ -2298,6 +2325,13 @@
                           "system",
                           "light",
                           "dark"
+                        ]
+                      },
+                      "estimates": {
+                        "type": "string",
+                        "enum": [
+                          "on",
+                          "off"
                         ]
                       },
                       "loadRemoteImages": {
@@ -2643,6 +2677,14 @@
                             "dark"
                           ]
                         },
+                        "estimates": {
+                          "default": "on",
+                          "type": "string",
+                          "enum": [
+                            "on",
+                            "off"
+                          ]
+                        },
                         "loadRemoteImages": {
                           "default": false,
                           "type": "boolean"
@@ -2685,6 +2727,7 @@
                         "implicitNegative",
                         "swipe",
                         "theme",
+                        "estimates",
                         "loadRemoteImages",
                         "implicitFeedback",
                         "folderOrder",
@@ -3510,6 +3553,14 @@
                                 "dark"
                               ]
                             },
+                            "estimates": {
+                              "default": "on",
+                              "type": "string",
+                              "enum": [
+                                "on",
+                                "off"
+                              ]
+                            },
                             "loadRemoteImages": {
                               "default": false,
                               "type": "boolean"
@@ -3552,6 +3603,7 @@
                             "implicitNegative",
                             "swipe",
                             "theme",
+                            "estimates",
                             "loadRemoteImages",
                             "implicitFeedback",
                             "folderOrder",
@@ -20470,6 +20522,22 @@
                                 }
                               },
                               "additionalProperties": false
+                            },
+                            "estimate": {
+                              "type": "object",
+                              "properties": {
+                                "minRatings": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 1000000
+                                },
+                                "minEachClass": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 1000000
+                                }
+                              },
+                              "additionalProperties": false
                             }
                           },
                           "additionalProperties": false
@@ -21063,6 +21131,22 @@
                           }
                         },
                         "additionalProperties": false
+                      },
+                      "estimate": {
+                        "type": "object",
+                        "properties": {
+                          "minRatings": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 1000000
+                          },
+                          "minEachClass": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 1000000
+                          }
+                        },
+                        "additionalProperties": false
                       }
                     },
                     "additionalProperties": false
@@ -21406,6 +21490,22 @@
                                   "type": "number",
                                   "minimum": 0,
                                   "exclusiveMinimum": true
+                                }
+                              },
+                              "additionalProperties": false
+                            },
+                            "estimate": {
+                              "type": "object",
+                              "properties": {
+                                "minRatings": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 1000000
+                                },
+                                "minEachClass": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 1000000
                                 }
                               },
                               "additionalProperties": false

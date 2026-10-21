@@ -14,7 +14,8 @@ if (import.meta.url.endsWith('.ts')) {
   const { register } = await import('tsx/esm/api');
   register();
 }
-const { finishTraining, trainFold, trainingSetSha } = await import('@bantoozi/ranker');
+const { finishTraining, trainEstimateModel, trainFold, trainingSetSha } =
+  await import('@bantoozi/ranker');
 const { unshare } = await import('./cpu-pool.js');
 
 function run(task: CpuTask): unknown {
@@ -23,6 +24,10 @@ function run(task: CpuTask): unknown {
       return trainFold(unshare(task.args), { mode: task.mode }, task.f);
     case 'trainingSetSha':
       return trainingSetSha(unshare(task.args));
+    case 'trainEstimate': {
+      const args = unshare(task.args);
+      return trainEstimateModel(args.samples, args.options);
+    }
     case 'finishTraining':
       return finishTraining(unshare(task.args), { mode: task.mode }, task.folds, task.setSha);
   }

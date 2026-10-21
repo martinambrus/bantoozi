@@ -32,6 +32,7 @@ import {
   QUOTA_LIMIT_NAMES,
   RANKING_RELEVANT_PREFERENCES,
   effectiveImagesAllowed,
+  enqueueEstimate,
   enqueueLearn,
   mergeUserPreferences,
   readUserPreferences,
@@ -123,6 +124,9 @@ export async function applyMePatch(tx: TenantTx, outbox: JobSender, patch: MePat
   }
   if (changed.some((key) => (CONSENT_PREFERENCES as readonly string[]).includes(key))) {
     await enqueueLearn(outbox, { userId: user.id });
+  }
+  if (changed.some((key) => key === 'estimates')) {
+    await enqueueEstimate(outbox, { userId: user.id });
   }
   return loadMe(tx);
 }

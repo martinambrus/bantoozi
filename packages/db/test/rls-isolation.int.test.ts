@@ -224,6 +224,16 @@ const PER_USER_TABLES: PerUserTable[] = [
     update: (u) => ['UPDATE user_models SET active = NOT active WHERE user_id = $1', [u]],
   },
   {
+    table: 'user_estimate_models',
+    may: { insert: false, update: false, delete: false },
+    insert: (u) => [
+      `INSERT INTO user_estimate_models (user_id, version, spec, n, n_pos, n_neg, intercept, weights, platt, metrics)
+       VALUES ($1, 2, 'probe', 0, 0, 0, 0, '{}', '{}', '{}')`,
+      [u],
+    ],
+    update: (u) => ['UPDATE user_estimate_models SET n = n WHERE user_id = $1', [u]],
+  },
+  {
     table: 'api_mutations',
     may: { insert: true, update: true, delete: true },
     insert: (u) => [
@@ -469,6 +479,13 @@ async function seed(owner: pg.Pool): Promise<Fixtures> {
                               intercept, scaler, calibration, metrics, active)
      VALUES ($1, 1, 'features-v1', 20, 12, 8, '{"bias": 0.1}', 0.5, '{}', '{"a": 1, "b": 0}', '{"cv_auc": 0.7}', true),
             ($2, 1, 'features-v1', 30, 10, 20, '{"bias": -0.2}', 0.1, '{}', '{"a": 2, "b": 1}', '{"cv_auc": 0.8}', true)`,
+    [a, b],
+  );
+
+  await owner.query(
+    `INSERT INTO user_estimate_models (user_id, version, spec, n, n_pos, n_neg, intercept, weights, platt, metrics)
+     VALUES ($1, 1, 'estimate-v1', 12, 7, 5, 0.25, '{"alpha": 0.5}', '{"a": 1, "b": 0}', '{"inputSha": "a"}'),
+            ($2, 1, 'estimate-v1', 14, 8, 6, -0.25, '{"beta": -0.5}', '{"a": 2, "b": 1}', '{"inputSha": "b"}')`,
     [a, b],
   );
 

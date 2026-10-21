@@ -1,6 +1,11 @@
 import { randomInt } from 'node:crypto';
 
-import { CROCKFORD_ALPHABET, INVITE_CODE_LENGTH, USER_ERASURE_LOCK_PREFIX } from '@bantoozi/shared';
+import {
+  CROCKFORD_ALPHABET,
+  INVITE_CODE_LENGTH,
+  USER_ERASURE_LOCK_PREFIX,
+  enqueueEstimate,
+} from '@bantoozi/shared';
 import { sql } from 'drizzle-orm';
 
 import type { Database, Executor, Transaction } from '../client.js';
@@ -292,6 +297,7 @@ export async function restoreSoftDeletedUser(tx: TenantTx): Promise<string[]> {
     reason: 'account.restore',
     full: true,
   });
+  await enqueueEstimate(tenantOutbox(tx), { userId });
   return feedIds;
 }
 

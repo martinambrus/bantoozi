@@ -10,6 +10,7 @@ export * from './classify/index.js';
 export * from './client.js';
 export * from './engine/index.js';
 export * from './errors.js';
+export * from './estimate/index.js';
 export * from './eval/index.js';
 export * from './heartbeat.js';
 export * from './house/index.js';

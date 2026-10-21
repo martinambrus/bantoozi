@@ -3515,7 +3515,7 @@
         "lane IN ('new','for_you','maybe','everything','hidden')",
         "tier BETWEEN 1 AND 5",
         "p_like BETWEEN 0 AND 1",
-        "score_source IN ('none','cards','model','degraded')",
+        "score_source IN ('none','cards','model','degraded','estimate')",
         "rank_revision >= 0",
         "state_version >= 0",
         "rating IN (-1, 1)",
@@ -3659,6 +3659,34 @@
       "rls": {
         "forced": true
       }
+    },
+    "user_estimate_models": {
+      "columns": {
+        "user_id": { "type": "uuid", "nullable": false, "default": null },
+        "version": { "type": "integer", "nullable": false, "default": null },
+        "spec": { "type": "text", "nullable": false, "default": null },
+        "trained_at": { "type": "timestamp with time zone", "nullable": false, "default": "now()" },
+        "n": { "type": "integer", "nullable": false, "default": null },
+        "n_pos": { "type": "integer", "nullable": false, "default": null },
+        "n_neg": { "type": "integer", "nullable": false, "default": null },
+        "intercept": { "type": "double precision", "nullable": false, "default": null },
+        "weights": { "type": "jsonb", "nullable": false, "default": null },
+        "platt": { "type": "jsonb", "nullable": false, "default": null },
+        "metrics": { "type": "jsonb", "nullable": false, "default": null }
+      },
+      "primaryKey": ["user_id", "version"],
+      "unique": [],
+      "checks": ["version >= 1", "n >= 0 AND n_pos >= 0 AND n_neg >= 0 AND n = n_pos + n_neg"],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {},
+      "rls": { "forced": true }
     },
     "user_models": {
       "columns": {
@@ -4158,6 +4186,14 @@
       "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
     },
     {
+      "table": "user_estimate_models",
+      "name": "user_estimate_models_tenant",
+      "command": "ALL",
+      "roles": ["public"],
+      "using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
       "table": "api_mutations",
       "name": "api_mutations_tenant",
       "command": "ALL",
@@ -4279,6 +4315,7 @@
         "usage_daily": ["SELECT"],
         "user_article": ["SELECT"],
         "user_cards": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+        "user_estimate_models": ["SELECT"],
         "user_feed_preferences": ["SELECT", "INSERT", "UPDATE", "DELETE"],
         "user_labels": ["SELECT", "INSERT", "UPDATE", "DELETE"],
         "user_models": ["SELECT"],
