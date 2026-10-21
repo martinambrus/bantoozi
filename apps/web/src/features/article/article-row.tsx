@@ -13,6 +13,7 @@ import { WaitingToSync } from '../offline/waiting-to-sync.js';
 import { useReaderItem, useWaitingChanges } from '../reader/actions/provider.js';
 import { BookmarkButton, RateButtons } from './article-buttons.js';
 import { Chip, ChipButton } from './chip-button.js';
+import { EstimatedMarker } from './estimated-marker.js';
 import { formatRelativeTime } from './format.js';
 import { httpsUrl } from './http-url.js';
 import { LabelDot } from './label-dot.js';
@@ -78,6 +79,7 @@ export function ArticleRow({
   const otherSources = shown.cluster === null ? 0 : shown.cluster.size - 1;
   const otherFeeds = shown.cluster?.otherFeeds ?? [];
   const reason = shown.topReason === null ? null : topReasonText(t, i18n.language, shown.topReason);
+  const estimatedTier = shown.lane === 'new' ? shown.tier : null;
   const analysis = ANALYSIS_BADGES[shown.analysis.status];
   const overCap = shown.analysis.status === 'not_requested' ? shown.analysis.overDailyCap : null;
 
@@ -161,7 +163,7 @@ export function ArticleRow({
           </p>
         )}
 
-        {reason === null && otherSources <= 0 ? null : (
+        {reason === null && otherSources <= 0 && estimatedTier === null ? null : (
           <div className="flex flex-wrap items-center gap-x-2">
             {reason === null ? null : onWhyThis === undefined ? (
               <Chip>{reason}</Chip>
@@ -172,6 +174,9 @@ export function ArticleRow({
               >
                 {reason}
               </ChipButton>
+            )}
+            {estimatedTier === null ? null : (
+              <EstimatedMarker tier={estimatedTier} onWhyThis={onWhyThis} />
             )}
             {otherSources <= 0 ? null : otherFeeds.length === 0 ? (
               <Chip>{t('row.cluster', { count: otherSources })}</Chip>

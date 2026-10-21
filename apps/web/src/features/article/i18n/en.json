@@ -7,6 +7,10 @@
     "notAnalyzedOverCap": "Not analyzed – over daily budget",
     "overDailyCapHint_one": "Automatic analysis of this feed stops after {{cap}} new article a day. Select it to analyze it anyway.",
     "overDailyCapHint_other": "Automatic analysis of this feed stops after {{cap}} new articles a day. Select it to analyze it anyway.",
+    "estimated": {
+      "label": "Estimated",
+      "name": "Estimated, tier {{tier}} of 5"
+    },
     "analysis": {
       "pending": "Queued for analysis",
       "running": "Analyzing",
