@@ -11,6 +11,7 @@ import {
   modelFamily,
   readUserPreferences,
   retrainThreshold,
+  sameModelFamily,
   type ArticleListItem,
   type CardTextMode,
   type Explain,
@@ -1500,7 +1501,7 @@ interface RatingTarget {
 /**
  * The rating fingerprint to record for a rating that carries a selected-analysis request but no
  * live features, or null when the request was frozen under another manifest than the locked
- * settings now stamping it (active enrich/match sets, pinned model, the article language's mode,
+ * settings now stamping it (active enrich/match sets, a pinned model of another family, the article language's mode,
  * card text mode): its result must not stand in for the rater's snapshot. Settings without a stored
  * value (model pin, language mode) keep their environment default, which the fingerprint cannot
  * have changed; a manifest field the snapshot lacks is not a disagreement.
@@ -1522,18 +1523,22 @@ async function requestRatingSha(
           objectField(effectiveRatingSettings(stored, defaults)['language_modes'], lang),
         ) ?? 'native');
   const model = effectiveModel(stored, defaults) || null;
-  const checks: [unknown, string | null][] = [
+  const checks: [unknown, string | null, boolean?][] = [
     [objectField(objectField(frozenSets, 'enrich'), 'id'), textOrNull(objectField(sets, 'enrich'))],
     [objectField(objectField(frozenSets, 'match'), 'id'), textOrNull(objectField(sets, 'match'))],
     [objectField(snapshot, 'languageMode'), mode],
-    [objectField(objectField(snapshot, 'model'), 'model'), model],
+    [objectField(objectField(snapshot, 'model'), 'model'), model, true],
     [
       objectField(snapshot, 'cardTextMode'),
       textOrNull(effectiveRatingSettings(stored, defaults)['card_text_mode']) ?? 'as_written',
     ],
   ];
-  for (const [frozen, current] of checks) {
-    if (frozen !== undefined && current !== null && textOrNull(frozen) !== current) return null;
+  for (const [frozen, current, family] of checks) {
+    if (frozen === undefined || current === null) continue;
+    const frozenText = textOrNull(frozen);
+    if (frozenText === current) continue;
+    if (family && frozenText !== null && sameModelFamily(frozenText, current)) continue;
+    return null;
   }
   return ratingShaOf(stored, defaults);
 }

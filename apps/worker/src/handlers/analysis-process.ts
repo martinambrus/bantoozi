@@ -55,6 +55,7 @@ import {
   enqueueAnalysis,
   enqueueLearn,
   enqueueRank,
+  sameModelFamily,
   type AnalysisInputSnapshot,
   type AnalysisResultSnapshot,
   type AnalysisTranslation,
@@ -97,6 +98,8 @@ interface StageResults {
    * runs: a resumed request reuses it and runs only tier 2.
    */
   tier1?: TranslationInput;
+  /** The model whose answers `enrich`, `cards` and `l2` hold; absent on a legacy set (the frozen model). */
+  model?: string;
   enrich?: { stateSha256: string; answers: Record<string, unknown> };
   cards?: Record<
     string,
@@ -213,6 +216,12 @@ class AnalysisRun {
     this.snapshot = parsed.data;
     const problem = this.frozenContextProblem();
     if (problem !== null) return this.terminal('fail', problem);
+    if ((this.stages.model ?? this.snapshot.model.model) !== this.classification.primaryModel) {
+      delete this.stages.enrich;
+      delete this.stages.cards;
+      delete this.stages.l2;
+      delete this.stages.model;
+    }
     if (!(await analysisRequestAuthorized(this.deps.db, this.request.id))) {
       return this.terminal('cancel', 'revoked');
     }
@@ -298,7 +307,7 @@ class AnalysisRun {
       enrich.sha256 !== snapshot.questionSets.enrich.sha256 ||
       match?.kind !== 'match' ||
       match.sha256 !== snapshot.questionSets.match.sha256 ||
-      snapshot.model.model !== this.classification.primaryModel
+      !sameModelFamily(snapshot.model.model, this.classification.primaryModel)
     ) {
       return 'context_unavailable';
     }
@@ -399,7 +408,7 @@ class AnalysisRun {
       cached !== null &&
       cached.articleRevision === this.request.articleRevision &&
       cached.stateSha256 === states.enrich.sha256 &&
-      isPrimaryAnswer(cached, this.snapshot.model.model)
+      isPrimaryAnswer(cached, this.classification.primaryModel)
     ) {
       this.stages.enrich = { stateSha256: states.enrich.sha256, answers: cached.answers };
       await this.saveStages();
@@ -466,7 +475,7 @@ class AnalysisRun {
           row.questionSetSha === current.questionSetSha &&
           row.stateSha256 === current.stateSha256 &&
           row.cardInputSha256 === frozen.cardInputSha256 &&
-          isPrimaryAnswer(row, snapshot.model.model)
+          isPrimaryAnswer(row, this.classification.primaryModel)
         ) {
           cards.set(row.cardId, { p: row.p, answer: { type: 'noul', p: row.p } });
         }
@@ -481,7 +490,7 @@ class AnalysisRun {
           row.articleRevision === current.articleRevision &&
           row.questionSetSha === current.questionSetSha &&
           row.stateSha256 === current.stateSha256 &&
-          isPrimaryAnswer(row, snapshot.model.model)
+          isPrimaryAnswer(row, this.classification.primaryModel)
         ) {
           l2.set(row.l1Id, row.answer as JsonObject);
         }
@@ -611,7 +620,7 @@ class AnalysisRun {
     if (outcome.ok) {
       // Bulk work is served by the pinned primary engine only (spec 04 §5); anything else is not
       // the frozen model context and is never recorded as its answer.
-      if (outcome.engine !== 'typesafe' || outcome.model !== this.snapshot.model.model) {
+      if (outcome.engine !== 'typesafe' || outcome.model !== this.classification.primaryModel) {
         return this.retry('model_mismatch');
       }
       return outcome;
@@ -653,7 +662,7 @@ class AnalysisRun {
       inputSha: request.inputSha,
       processedAt: nowOf(deps).toISOString(),
       article: { id: request.articleId, revision: request.articleRevision },
-      model: snapshot.model,
+      model: { engine: 'typesafe', model: this.classification.primaryModel },
       translation: states.translation,
       enrich: {
         questionSetSha: snapshot.questionSets.enrich.sha256,
@@ -743,7 +752,7 @@ class AnalysisRun {
   ): Promise<boolean> {
     const { snapshot, request, deps, classification } = this;
     const config = await loadClassificationConfig(tx, deps.settingsEnv, { lock: true });
-    if (!sameFrozenConfig(snapshot, config, classification.primaryModel)) return false;
+    if (!sameFrozenConfig(snapshot, config)) return false;
     const article = await loadClassificationArticle(tx, request.articleId);
     if (article === null || article.revision !== request.articleRevision) return false;
 
@@ -858,6 +867,13 @@ class AnalysisRun {
   }
 
   private async saveStages(): Promise<void> {
+    if (
+      this.stages.enrich !== undefined ||
+      this.stages.cards !== undefined ||
+      this.stages.l2 !== undefined
+    ) {
+      this.stages.model = this.classification.primaryModel;
+    }
     const saved = await saveAnalysisStages(
       this.deps.db,
       this.request.id,
@@ -970,12 +986,8 @@ function frozenStates(
   return { translation, variant, enrich: build('enrich'), match: build('match') };
 }
 
-/** Whether the live configuration still is the frozen one (sets, modes and the pinned model). */
-function sameFrozenConfig(
-  snapshot: AnalysisInputSnapshot,
-  config: ClassificationConfig,
-  primaryModel: string,
-): boolean {
+/** Whether the live configuration still is the frozen one (sets and modes; the pinned model only has to be of the frozen model's family). */
+function sameFrozenConfig(snapshot: AnalysisInputSnapshot, config: ClassificationConfig): boolean {
   const { enrich, match } = snapshot.questionSets;
   return (
     config.enrich?.id === enrich.id &&
@@ -983,8 +995,7 @@ function sameFrozenConfig(
     config.match?.id === match.id &&
     config.match.sha256 === match.sha256 &&
     config.cardTextMode === snapshot.cardTextMode &&
-    languageModeOf(config, snapshot.article.lang) === snapshot.languageMode &&
-    primaryModel === snapshot.model.model
+    languageModeOf(config, snapshot.article.lang) === snapshot.languageMode
   );
 }
 
