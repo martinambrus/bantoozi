@@ -13,12 +13,41 @@ import {
 } from '@bantoozi/shared';
 
 export const MODEL_WATCH_KEY = 'engine.model_watch';
+export const MODEL_WATCH_TRIGGER_GAP_MS = 10 * 60_000;
 
 type Notice = NonNullable<EngineModelWatch['notice']>;
 
 /** Queues one `house.model-watch` check; a check already waiting absorbs it. */
 export async function enqueueModelWatchNow(db: Database): Promise<void> {
   await retryTransaction(db, (tx) => enqueueModelWatch(workerOutbox(tx)));
+}
+
+/**
+ * Claims the shared right to queue a check for an unavailable model: at most one claim per gap
+ * across all processes. The claim and its outbox intent commit together.
+ */
+export async function requestModelWatch(
+  db: Database,
+  now: Date,
+  options: { minGapMs?: number } = {},
+): Promise<boolean> {
+  const gap = options.minGapMs ?? MODEL_WATCH_TRIGGER_GAP_MS;
+  return retryTransaction(db, async (tx) => {
+    let claimed = false;
+    await updateSettingLocked<EngineModelWatch>(tx, MODEL_WATCH_KEY, {}, (current) => {
+      const state = watchStateOf(current);
+      if (state.triggeredAt !== undefined) {
+        const last = Date.parse(state.triggeredAt);
+        if (!(now.getTime() - last >= gap)) return state;
+      }
+      claimed = true;
+      return { ...state, triggeredAt: now.toISOString() };
+    });
+    if (claimed) {
+      await enqueueModelWatch(workerOutbox(tx), { revision: `unavailable:${now.toISOString()}` });
+    }
+    return claimed;
+  });
 }
 
 /** The stored watch state; a malformed row reads as empty. */

@@ -9,7 +9,12 @@ import {
   type EngineName,
   type EngineRouter,
 } from '@bantoozi/engine';
-import { systemClock, type Clock } from '@bantoozi/shared';
+import {
+  isModelUnavailableDetail,
+  systemClock,
+  type Clock,
+  type EngineStore,
+} from '@bantoozi/shared';
 import type { Config, CredentialResolver } from '@bantoozi/shared/server';
 
 /**
@@ -93,11 +98,50 @@ export interface WorkerEngineRouterOptions extends EngineConfigOptions {
   random?: () => number;
   /** Breaker parameters (tests); the defaults are spec 04 §5's. */
   breakerParams?: Partial<BreakerParams>;
+  /** Awaited after a classification call failed because Jev no longer serves the model. */
+  onModelUnavailable?: () => Promise<void>;
+}
+
+const MODEL_UNAVAILABLE_KINDS: ReadonlySet<string> = new Set([
+  'enrich',
+  'match',
+  'cluster',
+  'suggest',
+]);
+
+/** Runs `hook` after a TypeSafe classification attempt settled as model-unavailable. */
+export function withModelUnavailableHook<S extends Pick<EngineStore, 'settleReservation'>>(
+  store: S,
+  hook: () => Promise<void>,
+): S {
+  return {
+    ...store,
+    async settleReservation(id, call, usage, billing) {
+      await store.settleReservation(id, call, usage, billing);
+      if (
+        call.engine === 'typesafe' &&
+        MODEL_UNAVAILABLE_KINDS.has(call.kind) &&
+        isModelUnavailableDetail(call.error)
+      ) {
+        try {
+          await hook();
+        } catch {
+          // the call result must not change
+        }
+      }
+    },
+  };
 }
 
 /** Compose the production router of a worker process. */
 export function createWorkerEngineRouter(options: WorkerEngineRouterOptions): EngineRouter {
-  const store = createPgEngineStore(options.db, { dailyBudgetUsd: options.config.dailyBudgetUsd });
+  const pgStore = createPgEngineStore(options.db, {
+    dailyBudgetUsd: options.config.dailyBudgetUsd,
+  });
+  const store =
+    options.onModelUnavailable === undefined
+      ? pgStore
+      : withModelUnavailableHook(pgStore, options.onModelUnavailable);
   return createEngineRouter({
     config: engineConfigFromWorker(options.config, options),
     store,
