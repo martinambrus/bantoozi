@@ -50,7 +50,8 @@ describe('poolEstimateTrainer', () => {
     expect(inline.ok).toBe(true);
     const pooled = await poolEstimateTrainer(pool)(input, {});
     expect(pooled).toEqual(inline);
-  });
+    // A fresh thread compiles the ranker sources (and coverage instruments them) before training.
+  }, 60_000);
 
   it('returns the same model for other options', async () => {
     const input = samples(30);
@@ -58,12 +59,12 @@ describe('poolEstimateTrainer', () => {
     expect(await poolEstimateTrainer(pool)(input, options)).toEqual(
       await inlineEstimateTrainer(input, options),
     );
-  });
+  }, 60_000);
 
   it('returns the below-gate result below the gate', async () => {
     const input = samples(6);
     const pooled = await poolEstimateTrainer(pool)(input, {});
     expect(pooled).toEqual({ ok: false, reason: 'below_gate' });
     expect(pooled).toEqual(await inlineEstimateTrainer(input, {}));
-  });
+  }, 60_000);
 });
