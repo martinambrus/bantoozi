@@ -504,8 +504,9 @@ subscription additions are excluded (source hash vocabulary is fixed). Store the
 (fingerprint, context, own inputs and chosen λ), scaler and dropped columns with the model. Inputs
 are named, never positional, so a weight can never silently bind to a different card.
 
-Only validated current-revision answers from the **same pinned engine family/version and question
-manifest** are used. `prefilter` is unknown, not a probability. `FEATURE_SPEC_V1`'s engine family is
+Only validated current-revision answers from the **pinned model or another release of its Jev major and the
+question manifest** are used (`isCurrentAnswerModel`, D-289; reuse and re-ask decisions stay exact). A rating on an
+article not yet re-analysed after an upgrade therefore carries the new exact fingerprint with older-release answers. `prefilter` is unknown, not a probability. `FEATURE_SPEC_V1`'s engine family is
 `typesafe` (Jev). If any applicable interest-card answer or facet came from another engine (`llm` or
 `laya`), the item is left out of training and scoring and follows the cards path until compatible
 answers exist. In M9 this covers a Laya-enriched article, whose facets come from Laya while its card

@@ -251,6 +251,14 @@ strictly (the API answers 500 on ratings and Analyze, the worker cannot start). 
 `UPDATE settings SET value = value - 'alias' WHERE key = 'engine.model_pin'`. A release older than JEV-2 also refuses
 `TYPESAFE_MODEL=jev-latest` and ignores a stored one.
 
+**Jev upgrades while following `jev-latest` (D-286).** After the mail "Jev X → Y" the workers restart on their own in
+production; in development restart the worker (Admin → Workers shows `pendingRestart`). No evaluation replay ran:
+replay the golden set by hand if you want one. A major change resets personal-model training.
+`pnpm worker-cli model-watch:check` asks a running worker to probe now. `service.house:house.model-watch is overdue`
+means no run recorded progress for 12 h. Rolling back past JEV-3: older workers do not consume `house.model-watch`;
+`DELETE FROM pgboss.schedule WHERE name = 'house.model-watch'` (or let queued jobs expire); `engine.model_watch` is
+ignored by older code.
+
 **Rolling back past EST-2…EST-4 (D-281…D-285).** Migration 0034 is expand-only, but an older release rejects rows with
 `score_source = 'estimate'` and a stored `ranker.thresholds.estimate` (ranking stops with `RankerSettingsError`).
 Before starting it: `UPDATE settings SET value = value - 'estimate' WHERE key = 'ranker.thresholds'` (when set) and
