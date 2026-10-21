@@ -26,8 +26,9 @@ export function isModelAlias(model: string): boolean {
   return model === JEV_LATEST_ALIAS;
 }
 
-// A lowercase vendor prefix, `<major>.<minor>.<patch>` and an optional suffix (`-rc1`).
-const PINNED_MODEL = /^[a-z][a-z0-9.-]*-\d+\.\d+\.\d+(?:[-+.][\w.-]+)?$/;
+// A lowercase vendor prefix whose `-` segments start with a letter (so it ends exactly where the version
+// starts, without backtracking), `<major>.<minor>.<patch>` and an optional suffix (`-rc1`).
+const PINNED_MODEL = /^[a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)*-\d+\.\d+\.\d+(?:[-+.][\w.-]+)?$/;
 const CONCRETE_JEV_MODEL = /^jev-\d+\.\d+\.\d+(?:[-+.][\w.-]+)?$/;
 
 /** A pinned release id of any vendor prefix: what `TYPESAFE_MODEL` and the engine accept in production. */

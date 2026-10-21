@@ -28,11 +28,20 @@ describe('Jev model ids', () => {
     expect(isPinnedModel('jev-1.13.0')).toBe(true);
     expect(isPinnedModel('jev-1.14.0-rc1')).toBe(true);
     expect(isPinnedModel('foo-1.2.3')).toBe(true);
+    expect(isPinnedModel('gpt-oss-1.2.3')).toBe(true);
     expect(isPinnedModel('jev-latest')).toBe(false);
     expect(isPinnedModel('jev-beta')).toBe(false);
     expect(isPinnedModel('latest')).toBe(false);
     expect(isPinnedModel('jev-1.13')).toBe(false);
     expect(isPinnedModel('Jev-1.13.0')).toBe(false);
+  });
+
+  it('M1c2 isPinnedModel answers a long crafted id in linear time (CodeQL js/polynomial-redos)', () => {
+    // Quadratic under the former prefix `[a-z0-9.-]*` (8,000 repeats took 286 ms, 20,000 about 1.8 s).
+    const crafted = `a${'-0.0.0'.repeat(20_000)}!`;
+    const started = performance.now();
+    expect(isPinnedModel(crafted)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(200);
   });
 
   it('M1d isConcreteJevModel accepts only jev- releases', () => {
