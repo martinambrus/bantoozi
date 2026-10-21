@@ -231,7 +231,8 @@ invalid input becomes terminal and does not loop through reconciliation. A reque
 attempts with 1, 2, 4 and 8 minute backoff; deferrals (budget, no key, open breaker, a retry time,
 `continued` at the job budget) count none; a busy, not-yet-due or released request re-sends itself
 through a delayed intent; `invalid_request`, `invalid_snapshot` and `context_unavailable` (the worker
-lacks the frozen sets or model pin) are terminal (D-73). An opt-out marks cancelled
+lacks the frozen sets, or its pinned model is not of the frozen model's family: equal ids or two Jev releases of
+one major, D-279) are terminal (D-73). An opt-out marks cancelled
 and cannot be changed to complete by a late worker; still-account for any upstream spend. Duplicate
 jobs after completion are no-ops. `house.reconcile` resumes due pending/expired running requests from
 their immutable snapshots without applying the automatic feed-arrival age cutoff, but never past

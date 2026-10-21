@@ -512,7 +512,8 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
    the engine or a translator and stores a result classification reads: `article.enrich`, `article.match`,
    `article.cluster` (the fold decision), `article.translate` (tier-1/tier-2 rows), `house.translate-cards` (the English
    card pair), `house.reenrich`, `house.rematch` and `card.backfill`. Deliberately unguarded: `analysis.process`
-   (user-requested, records its own model snapshot), `user.suggest` (checks the pin itself and leases per user),
+   (user-requested, records its own model snapshot; it processes a request frozen under another release of the
+   primary model's major and records the model that answered in `result_snapshot.model`, D-279), `user.suggest` (checks the pin itself and leases per user),
    `provider.validate` (probes a candidate key; stores no classification result), and the dispatch-only recovery
    jobs `house.rescore-degraded`, `house.reconcile` and `house.retranslate-skipped` (they enqueue work that is
    itself guarded).
