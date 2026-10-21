@@ -849,7 +849,10 @@ environment accepts (spec 02 §2 lists the wider env ranges), while a `PATCH` ke
 and an optional `acknowledge: boolean`. Rules:
 
 - A runtime value is validated by the shared rules (spec 02 §2; in production https URLs on
-  `PROVIDER_HOST_ALLOWLIST`, a pinned `engine.typesafe_model`, a price above 0, Ollama models with a price).
+  `PROVIDER_HOST_ALLOWLIST`, a pinned `engine.typesafe_model` or exactly `jev-latest`, a price above 0, Ollama models with a
+  price). `engine.model_resolution` and `engine.model_probe` are written by the worker only. While `jev-latest` is unresolved
+  and no model pin exists, explicit analysis (`analyze`, a rating's analysis) answers `409 CONFLICT` (classification is not
+  configured) and freezes nothing (D-274).
   A failure answers `400 VALIDATION_FAILED` with `details {key, message}`.
 - Changing `engine.typesafe_model`, `engine.llm_fallback_enabled`, or `engine.ollama_models` while the fallback
   is on re-enriches and re-matches the corpus (spec 11 §8), so without `acknowledge: true` the PATCH answers

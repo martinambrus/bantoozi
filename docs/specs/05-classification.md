@@ -130,7 +130,7 @@ in the same outbox transaction. This makes an inaugural rating learnable when sl
   the last 7 days (others catch up lazily, spec 06 §7). Switching to `english` rematches cards whose
   translation already exists; `house.translate-cards` translates the missing ones and rematches
   them as they publish (spec 07 §5). A model-pin change is detected by the first worker that starts
-  with a new effective Jev model (`engine.typesafe_model` or `TYPESAFE_MODEL`) or a different LLM fallback state (switched on or off, or new Ollama
+  with a new effective Jev model (`engine.typesafe_model` or `TYPESAFE_MODEL`; for `jev-latest` the model it resolves to, so switching between a concrete id and the alias that resolves to it changes only the pin's `alias`, with no rebuild, D-274) or a different LLM fallback state (switched on or off, or new Ollama
   fallback models while on; their answers are cache entries too): under a row lock it records
   `settings['engine.model_pin']` and enqueues both `house.reenrich` and `house.rematch` once
   (spec 11 §8); that rebuild runs in bulk priority and never through the LLM fallback (D-171). A

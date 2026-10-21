@@ -83,7 +83,7 @@ bucket and the `age` recipient/identity (section 4); provider keys (section 10).
    | `ADMIN_EMAILS` | **optional**, bootstrap only: addresses that become admin when their account is created or while no admin exists. Leave it empty (an `example.com` or `change-me` value is refused by `deploy.sh`); the first admin is created through `/setup` (step 4). Alerts go to the active admins |
 | `PROVIDER_HOST_ALLOWLIST` | comma list of hosts the provider base URLs may use when set in Admin → Settings, for example `api.typesafe.ai,ollama.com`. Empty means Settings accepts no custom base URL; the env URLs are unaffected |
    | `MAIL_TRANSPORT=smtp`, `SMTP_URL`, `MAIL_FROM` | from the mail provider (**owner**, section 12) |
-   | `TYPESAFE_MODEL` | the pinned model, for example the value G1 was measured with (section 8) |
+   | `TYPESAFE_MODEL` | the pinned model, for example the value G1 was measured with, or `jev-latest` to follow the newest Jev release (section 8) |
    | `PROVIDER_MASTER_KEY_ID`, `PROVIDER_MASTER_KEYS` | the keyring: id of the active key and a JSON map of id to base64 32-byte key; back up offline (**owner**) |
    | `DAILY_BUDGET_USD` | initial value; the live value is the admin setting (section 6, 9) |
    | `COMPOSE_PROFILES` | `translate` if any language mode is `translate` or `card_text_mode` is `english`; `laya` only with `engine.laya`; `ollama` for a local Ollama server (§17) |
@@ -244,6 +244,12 @@ the previous images crash on the current schema, or `readyz` stays failing after
 the schema by hand and do not restore a backup over live writes. Put the site in maintenance mode (section 15),
 fix forward with a patch release (deploy it as in section 2), and only if the data itself is damaged go to the
 recovery runbook (section 4.4). Record the incident.
+
+**Rolling back past JEV-2 (D-274).** A stored `engine.model_pin` may carry `alias`, which an older release parses
+strictly (the API answers 500 on ratings and Analyze, the worker cannot start). Before rolling back, set a concrete
+`engine.typesafe_model` (the model the alias resolves to), let one worker record the pin, and remove the key:
+`UPDATE settings SET value = value - 'alias' WHERE key = 'engine.model_pin'`. A release older than JEV-2 also refuses
+`TYPESAFE_MODEL=jev-latest` and ignores a stored one.
 
 **Rolling back past M8b.** A release older than M8b ignores the runtime settings that Admin → Settings stores
 (it reads only the env file), and it requires `ADMIN_EMAILS`. **Before rolling back to such a release, copy every
@@ -519,6 +525,13 @@ back in Settings (with the acknowledgement) or reset the key to the env value; t
 again.
 
 ---
+
+**Following `jev-latest` (D-274).** Set `engine.typesafe_model` to `jev-latest` in Admin → Settings: each worker
+resolves the alias to a concrete Jev release at start and pins that; switching from the release it resolves to
+rebuilds nothing. While no resolution exists, Admin → Settings shows an `engine.typesafe_model` problem
+("not resolved to a model yet; classification is paused"): check the Jev credential (Admin → Providers) and the
+`engine_calls` rows of kind `model_probe` (error column), then restart the worker. An eval replay needs a concrete
+id (the alias fails closed).
 
 ## 9. Applying the G1 settings in production (**owner**)
 

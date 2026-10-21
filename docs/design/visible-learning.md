@@ -112,6 +112,11 @@ not to hide articles with confidence. The owner accepts that (§3 decision 5).
 
 ### 4.1 `jev-latest`: resolve, then pin (JEV-1, JEV-2, JEV-3, JEV-5)
 
+As built (JEV-1, JEV-2; D-273, D-274): `settings['engine.model_probe']` keeps the newest 10 results keyed by
+requested id (not one slot); while the alias is unresolved the router has no Jev lane and `RouterStatus.typesafeLane`
+makes recovery jobs wait; the worker heartbeat shows an `engine.typesafe_model` problem; the retired-model mapping is
+an assumption until one real Jev answer is recorded.
+
 - **Accepted values.** `engine.typesafe_model` and `TYPESAFE_MODEL` take a concrete id (`PINNED_MODEL`) or
   exactly `jev-latest`, in production too. Other aliases stay refused.
 - **Model probe.** It runs in the worker only, because provider keys are decrypted only there (spec 11).

@@ -352,7 +352,9 @@ through `PATCH /admin/settings`.
 | `engine.circuit` | `{typesafe: Breaker, llm: Breaker, resetRequested: {typesafe?: iso, llm?: iso}}` with `Breaker = {state: 'closed'\|'open'\|'half_open'\|'auth', openedAt?, openUntil?, reopenCount, probeToken?: uuid, probeUntil?: iso, failingSince?: iso}`; `failingSince` is the start of the current failing streak: the first trip since the breaker last closed or was reset, kept across half-open probes and re-opens (which reset `openedAt`) and into `auth`; a state stored before D-272 falls back to `openedAt` | all closed | worker routers (state); admin (reset request only) |
 | `engine.budget_alerts` | `{day: 'YYYY-MM-DD', p80At?: iso, p100At?: iso}` | — | worker router (records crossings only; spec 04 §6) |
 | `engine.laya` | `{enrich?: string[]}` (language codes) | `{}` | admin (M9) |
-| `engine.model_pin` | `{model: string, llm?: {fast: string, strong: string}, laya?: {checkpointSha: string, calibrationVersion: string}, since: iso}` (`llm` only while `LLM_FALLBACK_ENABLED`; `laya` only in M9) | — (the seed inserts it when missing, without a rebuild) | the first worker that starts with a different `TYPESAFE_MODEL` or LLM fallback state (`LLM_FALLBACK_ENABLED` switched either way, or a different `OLLAMA_MODEL_FAST`/`OLLAMA_MODEL_STRONG` while it is on), which also enqueues the rebuild; for `laya`, the Laya worker when its checkpoint or calibration differs (spec 11 §8) |
+| `engine.model_pin` | `{model: string, alias?: 'jev-latest', llm?: {fast: string, strong: string}, laya?: {checkpointSha: string, calibrationVersion: string}, since: iso}` (`model` is always a concrete id; `alias` only while `engine.typesafe_model` is that alias, D-274; `llm` only while `LLM_FALLBACK_ENABLED`; `laya` only in M9) | — (the seed inserts it when missing, without a rebuild) | the first worker that starts with a different `TYPESAFE_MODEL` (for `jev-latest`: a different resolved model; adding or dropping `alias` alone updates the row in place, without a new `since` or a rebuild) or LLM fallback state (`LLM_FALLBACK_ENABLED` switched either way, or a different `OLLAMA_MODEL_FAST`/`OLLAMA_MODEL_STRONG` while it is on), which also enqueues the rebuild; for `laya`, the Laya worker when its checkpoint or calibration differs (spec 11 §8) |
+| `engine.model_probe` | `{[requestedModelId]: {requested, answered?, ok, at: iso, error?}}`: the newest 10 model-probe results, one per requested id (D-273) | — | worker (`engine.model-probe` job, spec 04 §1.3) |
+| `engine.model_resolution` | `{alias: 'jev-latest', model: <concrete Jev id>, resolvedAt: iso, checkedAt: iso, previous?: {model, until: iso}}` (D-274) | — | worker (the start-up probe and its 5-minute retry; `house.model-watch`) |
 | `language_modes` | `{[lang]: 'native'\|'translate'}` | env `LANGUAGE_MODES` (only before the seed stores it) | seed (only when missing), admin, `apply-g1` |
 | `card_text_mode` | `'as_written'\|'english'` | `'as_written'` | admin, `apply-g1` |
 | `translate.tier2_daily_cap` | int | 300 | admin, `apply-g1` |
@@ -360,7 +362,7 @@ through `PATCH /admin/settings`.
 | `ranker.settings_version` | int | 0 | bumped by the API on ranking-relevant settings changes, and by `eval apply-g1` (spec 06 §7) |
 | `question_sets.active` | `{enrich?: stringId, match?: stringId, cluster?: stringId, suggest?: stringId}` | `{}` | seed (only when a kind is absent), admin |
 | `signup_mode` | `'invite'\|'open'\|'closed'` | env `SIGNUP_MODE` | admin |
-| `engine.typesafe_model` | string 1-200 or `null`; in production a pinned version (`jev-1.13.0`, no `latest`) | `null` = env `TYPESAFE_MODEL` | admin |
+| `engine.typesafe_model` | string 1-200 or `null`; in production a pinned version (`jev-1.13.0`) or exactly `jev-latest`, which the worker resolves and pins (any other alias is refused, D-274) | `null` = env `TYPESAFE_MODEL` | admin |
 | `engine.typesafe_base_url` | http(s) URL without credentials, ≤ 500, or `null`; production: https and a host on `PROVIDER_HOST_ALLOWLIST`; trailing slashes are stripped | `null` = env `TYPESAFE_BASE_URL` | admin |
 | `engine.typesafe_price_per_mtok_usd` | number 0-10 or `null`; production: > 0 | `null` = env `TYPESAFE_PRICE_PER_MTOK_USD` | admin |
 | `engine.concurrency` | int 1-64 or `null` | `null` = env `ENGINE_CONCURRENCY` | admin |
@@ -404,7 +406,9 @@ model, both base URLs, fallback switch, Ollama models and concurrency, LibreTran
 worker only when it restarts; live-class keys (price, concurrency of the Jev engine, prefilter minimum, ingest
 age, fetch limits, rate limits) are read through a per-process cache with a short TTL (D-221). Workers
 build their clients from the values in force when they start; the effective `engine.model_pin` is derived
-from them (spec 11 §8).
+from them (spec 11 §8). With `engine.typesafe_model = jev-latest` the worker uses the concrete model of
+`engine.model_resolution` instead (spec 04 §3); the loader reads that row with the runtime keys, and no admin can
+write it (D-274).
 
 ---
 
@@ -645,7 +649,7 @@ CREATE INDEX engine_reservations_day_idx ON engine_reservations (day, status);
 CREATE TABLE engine_calls (
   id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   engine          text NOT NULL CHECK (engine IN ('typesafe','llm','laya','libretranslate')),
-  kind            text NOT NULL CHECK (kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft')),
+  kind            text NOT NULL CHECK (kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')),
   model           text NULL,
   article_id      bigint NULL REFERENCES articles(id) ON DELETE SET NULL,
   question_set_id bigint NULL REFERENCES question_sets(id) ON DELETE RESTRICT,

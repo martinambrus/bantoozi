@@ -171,8 +171,8 @@ Bootstrap and host-secret configuration comes from environment variables, parsed
 `packages/shared/src/config.ts` with zod. "Required" in the table means required **for the processes
 listed under "Used by"**. An invalid config makes the process exit with a readable error.
 With `NODE_ENV=production`, `loadConfig` also refuses `MAIL_TRANSPORT=log` (it would print login
-codes), non-`https` `PUBLIC_BASE_URL`/`TYPESAFE_BASE_URL`/`OLLAMA_BASE_URL`, an unpinned
-`TYPESAFE_MODEL`, and a `SESSION_PEPPER` or `METRICS_TOKEN` shorter than 32 characters (D-2).
+codes), non-`https` `PUBLIC_BASE_URL`/`TYPESAFE_BASE_URL`/`OLLAMA_BASE_URL`, a `TYPESAFE_MODEL`
+that is neither a pinned version nor exactly `jev-latest`, and a `SESSION_PEPPER` or `METRICS_TOKEN` shorter than 32 characters (D-2).
 `.env.example` lists every variable with a comment and placeholder values only. Validation errors
 identify secret variable names/paths, never their supplied contents or a serialized config object.
 
@@ -209,7 +209,7 @@ notes: `TYPESAFE_MODEL`, `TYPESAFE_BASE_URL`, `TYPESAFE_PRICE_PER_MTOK_USD`, `EN
 | `SIGNUP_MODE` | `invite` | api | `invite` / `open` / `closed`; `settings['signup_mode']` overrides it |
 | `RATE_LIMITS_ENABLED` | `true` | api | runtime default (`api.rate_limits_enabled`). `false` is allowed with `NODE_ENV=test`; in production it is accepted only through the setting and then turns off the general limits only (spec 08 §11) |
 | `TYPESAFE_API_KEY` | — | worker, eval | optional bootstrap Jev key, used only if no DB credential row exists; DB configuration/revocation takes precedence (spec 04 §1.2). Workers report only its presence in `worker.heartbeat`, so the admin status can show `source: 'env'` |
-| `TYPESAFE_MODEL` | `jev-1.13.0` | api, worker, eval | runtime default (`engine.typesafe_model`); always a pinned version in production, also as a stored value; the API freezes it into explicit analysis requests until a worker has recorded `settings['engine.model_pin']` (D-150) |
+| `TYPESAFE_MODEL` | `jev-1.13.0` | api, worker, eval | runtime default (`engine.typesafe_model`); a pinned version or exactly `jev-latest` in production, also as a stored value (the worker resolves the alias, spec 04 §3, D-274); the API freezes it into explicit analysis requests until a worker has recorded `settings['engine.model_pin']` (D-150) |
 | `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` | api, worker, eval | runtime default (`engine.typesafe_base_url`); in production a stored URL must be https and on `PROVIDER_HOST_ALLOWLIST` |
 | `TYPESAFE_PRICE_PER_MTOK_USD` | `0.042` | worker, eval | runtime default (`engine.typesafe_price_per_mtok_usd`); cost accounting (without it, eval's `--max-usd` could never trigger) |
 | `ENGINE_CONCURRENCY` | `8` | worker, eval | runtime default (`engine.concurrency`); max in-flight Jev calls per process |
