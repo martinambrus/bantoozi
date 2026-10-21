@@ -21,6 +21,7 @@ export function makeLearning(
     },
     feeds,
     classification: { state: 'ok', since: null, reason: null },
+    estimates: null,
   };
 }
 

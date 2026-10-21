@@ -31,6 +31,7 @@ import { createReconcileHandler } from './house-reconcile.js';
 import { createReenrichHandler } from './house-reenrich.js';
 import { createRematchHandler } from './house-rematch.js';
 import { createRescoreDegradedHandler } from './house-rescore-degraded.js';
+import { createUserEstimateHandler } from './user-estimate.js';
 import { createUserLearnHandler } from './user-learn.js';
 import { createUserRankHandler } from './user-rank.js';
 import { createUserSuggestHandler } from './user-suggest.js';
@@ -128,9 +129,13 @@ export const RANKING_QUEUES = [
   'house.expire-rules',
 ] as const satisfies readonly QueueName[];
 
-/** M7 personal-model training (spec 06 §8.4) and its nightly trigger (spec 11 §6): stored data only. */
+/**
+ * M7 personal-model training (spec 06 §8.4) and its nightly trigger (spec 11 §6), and the per-user word
+ * estimate (spec 06 §8.6): stored data only.
+ */
 export const LEARNING_QUEUES = [
   'user.learn',
+  'user.estimate',
   'house.nightly-learn',
 ] as const satisfies readonly QueueName[];
 
@@ -182,6 +187,7 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
     'user.rank': implemented(createUserRankHandler(deps)),
     'house.expire-rules': implemented(createExpireRulesHandler(deps)),
     'user.learn': implemented(createUserLearnHandler(deps)),
+    'user.estimate': implemented(createUserEstimateHandler(deps)),
     'house.nightly-learn': implemented(createNightlyLearnHandler(deps)),
     'house.purge-auth': implemented(createPurgeAuthHandler(deps)),
     'house.reconcile': implemented(createReconcileHandler(deps, classification)),

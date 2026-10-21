@@ -51,6 +51,7 @@
       "seen_story": "Story already seen",
       "pending_cards": "Interests still being matched",
       "inference_not_requested": "Not analyzed",
+      "estimate": "Estimated from words",
       "unknown": "Ranking rule"
     }
   },

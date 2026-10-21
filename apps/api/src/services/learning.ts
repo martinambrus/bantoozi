@@ -3,6 +3,7 @@ import {
   cardHintDismissals,
   cardsMadeFromFeedArticles,
   listTrainingFeeds,
+  loadEstimateState,
   loadLearnSamples,
   loadModelState,
   RATING_FINGERPRINT_STATE_KEYS,
@@ -14,6 +15,7 @@ import {
 } from '@bantoozi/db';
 import {
   eligibleRows,
+  ESTIMATE_SPEC,
   FEED_AGREEMENT,
   feedAgreement,
   learningCounts,
@@ -28,9 +30,18 @@ import {
   type LearningStatus,
 } from '@bantoozi/shared';
 
+import { z } from 'zod';
+
 import { classificationStatus } from './classification-status.js';
 
 const text = (value: unknown): string | null => (typeof value === 'string' ? value : null);
+const LastRunSchema = z
+  .object({
+    at: z.iso.datetime({ offset: true }),
+    movedUp: z.number().int().min(0),
+    movedDown: z.number().int().min(0),
+  })
+  .strict();
 const num = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
 
@@ -68,6 +79,7 @@ export async function loadLearningStatus(
     familySha: fingerprint.familySha,
     families: strict ? {} : fingerprint.families,
   });
+  const estimate = await loadEstimateState(tx, userId);
 
   const attempt = state.latestTerminal;
   const attemptStatus = attempt?.metrics['status'];
@@ -185,5 +197,14 @@ export async function loadLearningStatus(
       pin: EngineModelPinSchema.safeParse(stored.get('engine.model_pin')).data,
       progress: HouseProgressSchema.safeParse(stored.get('house.progress')).data,
     }),
+    estimates:
+      estimate === null || estimate.spec !== ESTIMATE_SPEC
+        ? null
+        : {
+            n: estimate.n,
+            auc: num(estimate.metrics['auc']),
+            trainedAt: estimate.trainedAt.toISOString(),
+            lastRun: LastRunSchema.safeParse(estimate.metrics['lastRun']).data ?? null,
+          },
   };
 }

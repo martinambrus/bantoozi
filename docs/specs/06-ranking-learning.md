@@ -791,6 +791,38 @@ the unwanted suggestion and a like card only the uncovered one. Evidence is per 
 
 ---
 
+### 8.6 Word estimates (EST-1…EST-4, D-271, D-281…D-285)
+
+A free per-user word model scores the rows that would otherwise have no P (design `visible-learning.md` §4.4).
+
+- **Pure part** (`packages/ranker/src/estimate/`, D-271): `estimateFeatures(article)` gives distinct binary features
+  `t:<tok>` (title tokens of `similarityTokens`, D-268), `b:<a>_<b>` (adjacent title pairs), `e:<stem>` (the first 80
+  excerpt tokens, stemmed) and `f:<feedId>`. `ESTIMATE_SPEC` hashes the feature definition; a model of another spec is
+  never scored. `trainEstimateModel` (class-balanced Adagrad, 8 epochs, L2 1e-4, 5 time-ordered folds, Platt on the
+  out-of-fold scores, the 20,000 largest weights) is pure and byte-deterministic; `scoreEstimate` gives a P that never
+  decreases with the logit. Metrics: counts, pooled out-of-fold AUC, per-feed AUC for feeds with ≥ 10 ratings of both
+  classes. Ratings: `loadEstimateRatings` (current explicit ratings within `model.historyDays`, title, excerpt, the
+  lowest-id subscribed carrier feed); scoring derives the feed with the same rule.
+- **Gate:** `RankerConfig.estimate` `{minRatings: 10, minEachClass: 3}` (§11).
+- **Storage:** `user_estimate_models` (spec 02), the newest 2 versions per user; worker writes, API reads.
+- **Job `user.estimate {userId}`** (spec 03 §2): trains on the CPU pool when the input hash changed, stores the model
+  or, below the gate, deletes the stored ones, then records an estimate refresh. Triggers: a reader action that
+  changed a rating's value or time, its undo, an account restore, a change of `prefs.estimates`, and the rank
+  handler's self-heal (no model while the gate is open, or a model of another spec). It trains whatever
+  `prefs.estimates` says; the preference gates scoring only.
+- **Ranking (§2):** at exits 1b, 2 and 4d, with a current model and `prefs.estimates = 'on'`: lane `new`, source
+  `estimate`, P the calibrated estimate, tier `tierFromP(P)`, rules `[inference_not_requested, estimate]` at 1b and
+  `[estimate]` at 2 and 4d, `explain.estimate = {version, top}` (≤ 5 positive then ≤ 5 negative words, shown as the
+  article's own words, no `f:` feature). Floors, caps, boosts and must cards never lift it; hidden exits never get it.
+  The estimate model is not part of `contextSha`. `RANKER_VERSION` 4.
+- **Refresh (§7):** `user.rank {estimate: {version?, up?, down?}}` re-ranks the window rows with lane `new` and source
+  `none` or `estimate` in one page (≤ 20,000), without the BM25 corpus; it writes a row only when its result stays
+  `none`/`estimate` in lane `new` and its tier, rules or labels differ or P moves ≥ 0.01, and stores
+  `metrics.lastRun = {at, movedUp, movedDown}` (written unread rows; a null tier counts as 1) on the model version it
+  scored with. `rank_covered()` ignores a pending estimate refresh.
+- **Reading (§6.4, spec 08 §5.1):** the neutral projection keeps a stored estimate's lane `new`, tier and P; story
+  folding ignores an estimate's P; `GET /me/learning.estimates`.
+
 ## 9. Degraded ranking (BM25)
 
 Used when the article has no facets or answers because the engine was unavailable, and by the eval as a

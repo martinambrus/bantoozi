@@ -55,12 +55,19 @@ export interface ReaderRankChange {
   labelRemoved: boolean;
   /** `rating`, `reason` or `rated_at` was written (a rate, an answer, an unrate or an undo). */
   ratingChanged?: boolean;
+  /**
+   * The rating or its time differs from the row before: a rating of null on an unrated article (a
+   * hide) writes the columns but changes nothing, which is what the word estimate trains on.
+   */
+  ratingValueChanged?: boolean;
 }
 
 interface RowBefore {
   readAt: Date | null;
   archivedAt: Date | null;
   labelIds: readonly string[];
+  rating?: 1 | -1 | null | undefined;
+  ratedAt?: Date | null | undefined;
 }
 
 interface PatchLike {
@@ -94,6 +101,10 @@ export function rankChangeOf(
     labelRemoved,
     ratingChanged:
       patch.rating !== undefined || patch.reason !== undefined || patch.ratedAt !== undefined,
+    ratingValueChanged:
+      (patch.rating !== undefined && patch.rating !== (row?.rating ?? null)) ||
+      (patch.ratedAt !== undefined &&
+        (patch.ratedAt?.getTime() ?? null) !== (row?.ratedAt?.getTime() ?? null)),
   };
 }
 

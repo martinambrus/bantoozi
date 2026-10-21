@@ -28,6 +28,7 @@ import {
   isDemotionTriggered,
   staleAgeReachedAt,
 } from './demotions.js';
+import type { EstimateWord } from './estimate/explain.js';
 import { tierFromP } from './lanes.js';
 import { isValidFeatureFacets } from './learn/samples.js';
 import { applyLanePolicy, type FiredRule, type FloorTrigger } from './policy.js';
@@ -59,6 +60,17 @@ export interface ActiveModel {
   score(item: RankItem, now: Date): { p: number; top: ModelContribution[] } | null;
 }
 
+/**
+ * The user's word-estimate model (visible-learning §4.4, spec 06 §8.6), already checked against
+ * `ESTIMATE_SPEC` by the caller; `prefs.estimates = 'off'` or no model means the context has none.
+ * `score` is pure: P and the strongest words for an item, or `null` when it cannot score it.
+ */
+export interface ActiveEstimate {
+  /** `user_estimate_models.version` the model was stored as. */
+  version: number;
+  score(item: RankItem): { p: number; top: EstimateWord[] } | null;
+}
+
 /** Everything `rankArticle` needs about the user (`UserRankContext`, spec 06 §1). */
 export interface UserRankContext extends DemotionUserState {
   userId: string;
@@ -85,6 +97,8 @@ export interface UserRankContext extends DemotionUserState {
   demotionDeadlines?: Readonly<Partial<Record<DemotionFlag, Date>>> | undefined;
   /** The compatible active model, if any (§8.1). */
   model?: ActiveModel | undefined;
+  /** The reader's word-estimate model; scores the items that would otherwise have no P. */
+  estimate?: ActiveEstimate | undefined;
   /** `prefs.demote.similar`; absent means `auto`, which acts like `on`. */
   demoteSimilar?: Tri | undefined;
   /**
@@ -128,6 +142,8 @@ const AGE_BIN_HOURS = [6, 24, 72] as const;
  *
  * 1. a hide/mute rule → `hidden` (its code); 1b. no authorized carrier → `new`,
  *    `inference_not_requested`; 2. a stale article without a current explicit selection → `new`;
+ *    exits 1b, 2 and 4d give the item the word estimate's P instead (source `estimate`, lane `new`)
+ *    when `ctx.estimate` can score it;
  *    3. a never-card with `p ≥ never.hide` → `hidden` (`never:<id>`);
  * 4. the base P: a compatible model (complete coverage, facets, not degraded/failed, Jev answers
  *    only), else the card score with quality demotions, else BM25 when coverage is unavailable,
@@ -157,6 +173,28 @@ export function rankArticle(ctx: UserRankContext, item: RankItem, now: Date): Ra
       labelSuggestions,
       deadlines,
     });
+  const estimated = (rules: FiredRule[], explainEligible: boolean): RankResult | null => {
+    const scored = ctx.estimate?.score(item) ?? null;
+    if (ctx.estimate === undefined || scored === null || !isUnit(scored.p)) return null;
+    const top = scored.top
+      .filter((word) => Number.isFinite(word.contribution))
+      .slice(0, 10)
+      .map((word) => ({
+        feature: word.feature.slice(0, TITLE_MAX),
+        label: word.label.slice(0, TITLE_MAX),
+        contribution: word.contribution,
+      }));
+    return result(ctx, item, now, {
+      lane: 'new',
+      p: scored.p,
+      source: 'estimate',
+      rules: [...rules, { code: RULE_CODES.estimate }],
+      eligible: explainEligible,
+      labelSuggestions,
+      deadlines: [],
+      estimate: { version: ctx.estimate.version, top },
+    });
+  };
 
   // 1. Explicit hide and mute rules apply whatever the inference mode.
   const hide = matchHideRule(ctx.rules, item);
@@ -164,11 +202,16 @@ export function rankArticle(ctx: UserRankContext, item: RankItem, now: Date): Ra
 
   // 1b. No authorized carrier: plain chronological reading.
   if (!eligible) {
-    return exit('new', [{ code: RULE_CODES.inferenceNotRequested }], [], false);
+    return (
+      estimated([{ code: RULE_CODES.inferenceNotRequested }], false) ??
+      exit('new', [{ code: RULE_CODES.inferenceNotRequested }], [], false)
+    );
   }
 
   // 2. Stale articles are never processed automatically; a current explicit selection ranks them.
-  if (item.pipelineState === 'stale' && !item.explicitSelection) return exit('new', []);
+  if (item.pipelineState === 'stale' && !item.explicitSelection) {
+    return estimated([], eligible) ?? exit('new', []);
+  }
 
   // 3. A confident never-card hides.
   const never = evaluateNeverCards(ctx.cards, item, config);
@@ -178,7 +221,7 @@ export function rankArticle(ctx: UserRankContext, item: RankItem, now: Date): Ra
 
   // 4. The base probability.
   const base = baseProbability(ctx, item, now);
-  if (base === null) return exit('new', []);
+  if (base === null) return estimated([], eligible) ?? exit('new', []);
 
   // 5–8. Lane, modifiers, pending cards and tier.
   const boosts = matchBoostRules(ctx.rules, item);
@@ -225,7 +268,7 @@ export function rankArticle(ctx: UserRankContext, item: RankItem, now: Date): Ra
 
 interface BaseProbability {
   p: number;
-  source: Exclude<ScoreSource, 'none'>;
+  source: Exclude<ScoreSource, 'none' | 'estimate'>;
   rules: FiredRule[];
   decidingCardId?: string;
   decidingEngine?: ModelEngine;
@@ -382,6 +425,7 @@ interface Outcome {
   deadlines: readonly (Date | undefined)[];
   decidingCardId?: string;
   model?: NonNullable<Explain['model']>;
+  estimate?: NonNullable<Explain['estimate']>;
 }
 
 function result(ctx: UserRankContext, item: RankItem, now: Date, outcome: Outcome): RankResult {
@@ -405,6 +449,7 @@ function result(ctx: UserRankContext, item: RankItem, now: Date, outcome: Outcom
     ...(facets === undefined ? {} : { facets }),
     rules,
     ...(outcome.model === undefined ? {} : { model: outcome.model }),
+    ...(outcome.estimate === undefined ? {} : { estimate: outcome.estimate }),
     ...(item.translation === undefined
       ? {}
       : { translation: { engine: item.translation.engine, quality: item.translation.quality } }),

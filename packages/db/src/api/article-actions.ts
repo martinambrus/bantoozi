@@ -26,6 +26,7 @@ import { sql, type SQL } from 'drizzle-orm';
 
 import { parseCardBody } from '../cards/body.js';
 import { exampleFromArticleTitle } from '../cards/validation.js';
+import { recordEstimateIntent } from '../estimate/intents.js';
 import { SELECTION_WINDOW_DAYS } from '../ingest/demand.js';
 import { loadSimilarFeedback, type SimilarFeedbackRow } from '../rank/context.js';
 import { readStoredSetting, readStoredSettings, shareLockSettings } from '../settings.js';
@@ -1008,6 +1009,7 @@ async function recordEffects(
       ? (await readRankerConfig(tx)).lanes.maybe
       : undefined,
   });
+  await recordEstimateIntent(input.outbox, lock.user, changes);
 }
 
 /** The auto-demotion state now (rating actions take it before and after their change). */

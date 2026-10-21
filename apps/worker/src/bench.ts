@@ -2,9 +2,11 @@
  * Dev benchmark (not a test, D-259): runs the real handlers and reader queries in-process against
  * the dev database and reports their wall time. Statement times: `log_min_duration_statement`.
  *
- *   pnpm --filter @bantoozi/worker bench <userId> [rank-full|rank|learn|estimate|samples|ratebulk|api|api-nojit]...
+ *   pnpm --filter @bantoozi/worker bench <userId> [rank-full|rank|estimate-run|learn|estimate|samples|ratebulk|api|api-nojit]...
  *
- * `rank-full` rewrites every window row (what a model activation triggers); `learn` trains inline and
+ * `rank-full` rewrites every window row (what a model activation triggers); `estimate-run` runs the
+ * estimate refresh of `user.rank` and WRITES like `rank`, so it refuses unless the database name of
+ * `DATABASE_URL_WORKER` contains `test` or `BENCH_ALLOW_WRITE=1`; `learn` trains inline and
  * in a thread and stores nothing; `estimate` loads the explicit ratings with their text in a
  * read-only transaction, trains the word model inline and prints timing and metrics (stores
  * nothing); `samples` loads the learning samples as `GET /me/learning` does; `ratebulk` rates 200
@@ -183,6 +185,17 @@ for (const mode of modes.length === 0 ? ['rank'] : modes) {
     const handler = createUserRankHandler(deps);
     await handler(
       { userId, reason: 'bench', ...(mode === 'rank-full' ? { full: true } : {}) } as never,
+      {} as never,
+    );
+  } else if (mode === 'estimate-run') {
+    const database = new URL(config.databaseUrlWorker).pathname.slice(1);
+    if (!database.includes('test') && process.env['BENCH_ALLOW_WRITE'] !== '1') {
+      throw new Error(
+        `estimate-run writes: database "${database}" has no "test" in its name; set BENCH_ALLOW_WRITE=1 to allow it`,
+      );
+    }
+    await createUserRankHandler(deps)(
+      { userId, reason: 'bench', estimate: {} } as never,
       {} as never,
     );
   } else if (mode === 'learn') {

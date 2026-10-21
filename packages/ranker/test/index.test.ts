@@ -54,6 +54,7 @@ describe('@bantoozi/ranker public entry', () => {
         'seen_story',
         'pending_cards',
         'inference_not_requested',
+        'estimate',
       ]),
     );
   });

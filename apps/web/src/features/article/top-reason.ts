@@ -20,6 +20,7 @@ const PLAIN_RULES: ReadonlySet<string> = new Set([
   'seen_story',
   'pending_cards',
   'inference_not_requested',
+  'estimate',
 ]);
 const DEMOTIONS: ReadonlySet<string> = new Set(['clickbait', 'promotional', 'shallow', 'stale']);
 

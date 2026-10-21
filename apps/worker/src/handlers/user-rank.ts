@@ -17,10 +17,12 @@ import { currentTier2Row, selectBestTranslation } from '@bantoozi/translate';
 import {
   canonicalJson,
   compareBigIntStrings,
+  enqueueEstimate,
   enqueueLearn,
   enqueueRank,
   enqueueTranslate,
   RANK_WINDOW_DAYS,
+  readUserPreferences,
   type JobPayload,
 } from '@bantoozi/shared';
 
@@ -28,9 +30,11 @@ import { loadClassificationConfig, ratingDefaults } from '../classify/config.js'
 import { loadRankContext } from '../rank/context.js';
 import { cardInputHashes, loadRankItems, type RankItemsRun } from '../rank/items.js';
 import { buildActiveModel, loadRankModelState } from '../rank/model.js';
+import { buildActiveEstimate, loadRankEstimateState } from '../rank/estimate.js';
 import { loadRankerSettings } from '../rank/settings.js';
 import { nowOf, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
+import { rankEstimateRun } from './user-rank-estimate.js';
 
 /** Window articles per dirty-set page (spec 06 §7 step 2: a batch size, not an eligibility cap). */
 export const RANK_PAGE = 5_000;
@@ -44,8 +48,13 @@ export const RANK_RECHECK_MARGIN_MS = 15 * 60_000;
 /** Wall time after which a run commits a continuation instead of its next page (spec 03 §2.1). */
 export const RANK_JOB_BUDGET_MS = 5 * 60_000;
 
+/** Window rows per page of the estimate refresh (visible-learning §4.4): one page covers 12.7k rows. */
+export const ESTIMATE_RANK_PAGE = 20_000;
+
 export interface UserRankOptions {
   pageSize?: number;
+  /** Rows per page of an estimate refresh; default {@link ESTIMATE_RANK_PAGE}. */
+  estimatePageSize?: number;
   batchSize?: number;
   budgetMs?: number;
   /** Test seam: runs before each batch's write transaction. */
@@ -127,6 +136,20 @@ export function createUserRankHandler(
         await enqueueLearn(workerOutbox(tx), { userId: user.userId });
       });
     }
+    const estimateState = await loadRankEstimateState(deps.db, {
+      userId: user.userId,
+      preferences: readUserPreferences(user.preferences),
+      since: new Date(now.getTime() - settings.config.model.historyDays * 86_400_000),
+      gate: settings.config.estimate,
+    });
+    if (
+      estimateState.status === 'stale' ||
+      (estimateState.status === 'none' && estimateState.backfill)
+    ) {
+      await retryTransaction(deps.db, async (tx) => {
+        await enqueueEstimate(workerOutbox(tx), { userId: user.userId });
+      });
+    }
     const loaded = await loadRankContext(deps.db, {
       user,
       settings,
@@ -142,6 +165,8 @@ export function createUserRankHandler(
         modelState.status === 'current'
           ? { version: modelState.row.version, contextSha: modelState.contextSha }
           : null,
+      estimate: buildActiveEstimate(estimateState),
+      corpus: payload.estimate === undefined,
     });
     const modelEligible = new Set<string>();
     const ctx =
@@ -171,6 +196,24 @@ export function createUserRankHandler(
       scoredAt: now,
       ctxAt: user.ctxAt,
     };
+    if (payload.estimate !== undefined) {
+      await rankEstimateRun({
+        deps,
+        payload,
+        userId: user.userId,
+        now,
+        started,
+        ctx,
+        run,
+        hashes,
+        fence,
+        pageSize: options.estimatePageSize ?? ESTIMATE_RANK_PAGE,
+        batchSize,
+        budgetMs,
+        beforeWrite: options.beforeWrite,
+      });
+      return;
+    }
     const moved = new Set<string>();
     let written = 0;
     let ranked = 0;

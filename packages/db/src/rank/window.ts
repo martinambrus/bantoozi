@@ -181,7 +181,7 @@ export async function rankWindowPage(
                      ELSE ${input.contextSha} END)
             OR ua.scored_at < date_trunc('milliseconds', i.input_at) ${force}) IS TRUE AS dirty,
            (ua.scored_at < i.input_at + make_interval(secs => ${marginSeconds}::double precision)
-            OR (ua.lane = 'new' AND ua.score_source = 'none'
+            OR (ua.lane = 'new' AND ua.score_source IN ('none', 'estimate')
                 AND NOT ('inference_not_requested' = ANY(ua.rules_fired))
                 AND EXISTS (SELECT 1 FROM match_queue q
                              WHERE q.article_id = a.id AND q.article_revision = a.content_revision
@@ -248,5 +248,54 @@ export async function rankCorpusPage(
     lang: row.lang,
     titleNorm: row.title_norm,
     excerpt: row.excerpt,
+  }));
+}
+
+/** The input of one page of the estimate refresh (visible-learning §4.4): the window and a keyset position. */
+export interface RankEstimateInput extends RankWindowInput {
+  /** Stored sources whose `new`-lane rows are visited: both with a model, `estimate` alone without one. */
+  sources: readonly ('none' | 'estimate')[];
+  cursor?: RankCursor | undefined;
+  limit: number;
+}
+
+/** One window row of the estimate refresh. */
+export interface RankEstimateRow {
+  articleId: string;
+  /** ISO timestamp with microseconds (the exact database value). */
+  arrival: string;
+  /** `user_article.read_at IS NULL`. */
+  unread: boolean;
+}
+
+/**
+ * One keyset page of the user's window rows whose stored ranking is lane `new` with a source in
+ * `input.sources`, newest first, strictly below `cursor`, archived rows left out. The membership is
+ * exactly that of {@link rankWindowPage}; no dirty or recheck flags are computed.
+ */
+export async function rankEstimatePage(
+  db: Executor,
+  input: RankEstimateInput,
+): Promise<RankEstimateRow[]> {
+  if (input.sources.length === 0) return [];
+  const below =
+    input.cursor === undefined
+      ? sql``
+      : sql`AND (w.arrival, w.article_id) < (${input.cursor.arrival}::timestamptz, ${input.cursor.articleId}::bigint)`;
+  const result = await db.execute<{ article_id: string; arrival: string; unread: boolean }>(sql`
+    WITH ${windowCte(input)}
+    SELECT w.article_id::text AS article_id,
+           to_char(w.arrival AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS arrival,
+           (ua.read_at IS NULL) AS unread
+      FROM rank_window w
+      JOIN user_article ua ON ua.user_id = ${input.userId}::uuid AND ua.article_id = w.article_id
+     WHERE ua.archived_at IS NULL AND ua.lane = 'new'
+       AND ua.score_source = ANY(${`{${input.sources.join(',')}}`}::text[]) ${below}
+     ORDER BY w.arrival DESC, w.article_id DESC
+     LIMIT ${input.limit}`);
+  return result.rows.map((row) => ({
+    articleId: row.article_id,
+    arrival: row.arrival,
+    unread: row.unread,
   }));
 }

@@ -1,3 +1,4 @@
+import { scoreVersion } from '@bantoozi/ranker';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { DAY, ClassifyHarness } from './support/classify.js';
@@ -185,7 +186,7 @@ describe('similar-dislike demotion (DPF-2)', () => {
     expect(c.rules).not.toContain(ruleOf(w.cardId));
   });
 
-  it("W7 version: ranked rows carry score_version '3:...'", async () => {
+  it('W7 version: ranked rows carry the current ranker version', async () => {
     const w = await world();
     const rows = await h.owner.query<{ score_version: string }>(
       `SELECT score_version FROM user_article
@@ -193,6 +194,7 @@ describe('similar-dislike demotion (DPF-2)', () => {
       [w.userId, [w.target, w.control]],
     );
     expect(rows.rows).toHaveLength(2);
-    for (const row of rows.rows) expect(row.score_version.startsWith('3:')).toBe(true);
+    for (const row of rows.rows)
+      expect(row.score_version.startsWith(`${scoreVersion(0).split(':')[0]}:`)).toBe(true);
   });
 });

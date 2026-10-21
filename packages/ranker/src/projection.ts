@@ -82,13 +82,54 @@ export function isInferenceVisibleInView(
  * The neutral explanation keeps the cached `explain.inputs` (the same input snapshot) and drops
  * every inferred part; a row without a stored explanation gets none. Callers also skip semantic
  * story folding for neutral rows and keep the reader state (read, rating, bookmark, manual labels).
- * The projection needs no provider work and never changes the stored global result.
+ * The exception is a cached word estimate (source `estimate`, tier and P set, no hide rule): it
+ * keeps its lane `new`, tier and P, with the rules `inference_not_requested` and `estimate` and an
+ * explanation without cards. The projection needs no provider work and never changes the stored global result.
  */
 export function projectRankForView(input: ViewProjectionInput): ViewProjection {
   if (isInferenceVisibleInView(input.inferenceFeedIds, input.viewFeedIds)) {
     return { inference: 'shown', rank: input.cached ?? UNRANKED };
   }
   const { hideRule } = input;
+  const cached = input.cached;
+  if (
+    hideRule === null &&
+    cached !== null &&
+    cached.scoreSource === 'estimate' &&
+    cached.tier !== null &&
+    cached.pLike !== null
+  ) {
+    const stored = cached.explain;
+    const rules: Explain['rules'] = [
+      { code: RULE_CODES.inferenceNotRequested },
+      { code: RULE_CODES.estimate },
+    ];
+    return {
+      inference: 'not_requested',
+      rank: {
+        lane: 'new',
+        tier: cached.tier,
+        pLike: cached.pLike,
+        scoreSource: 'estimate',
+        rulesFired: rules.map((rule) => rule.code),
+        explain:
+          stored === null || stored.source !== 'estimate'
+            ? null
+            : {
+                v: 1,
+                inputs: { ...stored.inputs },
+                source: 'estimate',
+                p: stored.p,
+                lane: 'new',
+                tier: stored.tier,
+                cards: [],
+                rules,
+                ...(stored.estimate === undefined ? {} : { estimate: stored.estimate }),
+              },
+        labelSuggestions: [],
+      },
+    };
+  }
   const lane: Lane = hideRule === null ? 'new' : 'hidden';
   const rules: Explain['rules'] =
     hideRule === null ? [{ code: RULE_CODES.inferenceNotRequested }] : [explainRule(hideRule)];

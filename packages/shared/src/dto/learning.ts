@@ -53,6 +53,26 @@ export const ClassificationStatusSchema = z
   .strict();
 export type ClassificationStatus = z.infer<typeof ClassificationStatusSchema>;
 
+/**
+ * The reader's word estimates (visible-learning §4.4): the stored model's size and quality and what
+ * its latest refresh moved. Independent of `prefs.estimates`; null while no usable model is stored.
+ */
+export const EstimatesStatusSchema = z
+  .object({
+    /** Ratings the stored model was trained on. */
+    n: count,
+    /** Pooled out-of-fold AUC; null when undefined. */
+    auc: z.number().nullable(),
+    trainedAt: IsoTimestampSchema,
+    /** The latest refresh: the unread rows whose tier rose or fell. */
+    lastRun: z
+      .object({ at: IsoTimestampSchema, movedUp: count, movedDown: count })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+export type EstimatesStatus = z.infer<typeof EstimatesStatusSchema>;
+
 export const LearningStatusSchema = z
   .object({
     model: z
@@ -80,6 +100,7 @@ export const LearningStatusSchema = z
       .strict(),
     feeds: z.array(LearningFeedAgreementSchema),
     classification: ClassificationStatusSchema.default({ state: 'ok', since: null, reason: null }),
+    estimates: EstimatesStatusSchema.nullable().default(null),
   })
   .strict();
 export type LearningStatus = z.infer<typeof LearningStatusSchema>;

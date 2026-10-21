@@ -55,6 +55,7 @@
       "seen_story": "Príbeh ste už videli",
       "pending_cards": "Záujmy sa ešte vyhodnocujú",
       "inference_not_requested": "Neanalyzované",
+      "estimate": "Odhad podľa slov",
       "unknown": "Pravidlo zoradenia"
     }
   },

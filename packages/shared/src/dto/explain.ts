@@ -10,7 +10,7 @@ export type Lane = z.infer<typeof LaneSchema>;
 export const StrengthSchema = z.enum(['must', 'love', 'like', 'never']);
 export type Strength = z.infer<typeof StrengthSchema>;
 
-export const ScoreSourceSchema = z.enum(['cards', 'model', 'degraded', 'none']);
+export const ScoreSourceSchema = z.enum(['cards', 'model', 'degraded', 'estimate', 'none']);
 export type ScoreSource = z.infer<typeof ScoreSourceSchema>;
 
 const probability = z.number().finite().min(0).max(1);
@@ -93,6 +93,28 @@ export const ExplainSchema = z
               .strict(),
           )
           .max(3),
+      })
+      .strict()
+      .optional(),
+    /**
+     * Source `estimate`: the word model's strongest words, at most 5 that raise P and 5 that lower it
+     * (visible-learning §4.4). `feature` is the model's key (`t:`, `b:`, `e:` prefix), `label` the
+     * article's own word, `contribution` the weight in logit units.
+     */
+    estimate: z
+      .object({
+        version: z.number().int().min(1),
+        top: z
+          .array(
+            z
+              .object({
+                feature: z.string().max(200),
+                label: z.string().max(200),
+                contribution: z.number().finite(),
+              })
+              .strict(),
+          )
+          .max(10),
       })
       .strict()
       .optional(),

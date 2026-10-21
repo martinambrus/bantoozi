@@ -17,6 +17,7 @@ import {
   type Bm25Text,
   SIMILAR_DISLIKES,
   similarityTokens,
+  type ActiveEstimate,
   type RankerSettings,
   type UserRankContext,
 } from '@bantoozi/ranker';
@@ -153,6 +154,10 @@ export async function loadRankContext(
     classification: Record<string, unknown>;
     /** The compatible active model (spec 06 §8.1), or null. */
     model?: { version: number; contextSha: string } | null;
+    /** The word-estimate model; not part of `contextSha`. */
+    estimate?: ActiveEstimate | undefined;
+    /** False skips the BM25 corpus (the estimate refresh ranks no degraded item); default true. */
+    corpus?: boolean;
   },
 ): Promise<UserRankContext> {
   const { user, settings, now } = input;
@@ -173,7 +178,9 @@ export async function loadRankContext(
       poolSize: SIMILAR_DISLIKES.poolSize,
     }),
     await loadReadClusterIds(db, user.userId, new Date(now.getTime() - RANK_WINDOW_DAYS * DAY_MS)),
-    await loadRankCorpus(db, { userId: user.userId, now }),
+    input.corpus === false
+      ? { corpus: buildBm25Corpus([]), documents: 0, sha: '' }
+      : await loadRankCorpus(db, { userId: user.userId, now }),
   ];
   const context = {
     scoreVersion: settings.scoreVersion,
@@ -185,10 +192,13 @@ export async function loadRankContext(
     userId: user.userId,
     rankRevision: user.rankRevision,
     contextSha: contextHash(context),
-    degradedContextSha: contextHash({
-      ...context,
-      corpus: { documents: corpus.documents, sha: corpus.sha },
-    }),
+    degradedContextSha:
+      input.corpus === false
+        ? contextHash(context)
+        : contextHash({
+            ...context,
+            corpus: { documents: corpus.documents, sha: corpus.sha },
+          }),
     config,
     cards: cards.map((card) => ({
       cardId: card.cardId,
@@ -222,5 +232,6 @@ export async function loadRankContext(
     ...demotionState(dislikes, settings),
     readClusterIds,
     bm25: corpus.corpus,
+    ...(input.estimate === undefined ? {} : { estimate: input.estimate }),
   };
 }

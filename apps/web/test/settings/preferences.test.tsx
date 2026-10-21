@@ -194,8 +194,9 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
     it('has one control for each preference that is not the theme, the folder order or onboarding', async () => {
       await openSettings();
 
+      // `estimates` has no control yet: it arrives with the Settings task EST-5.
       const wanted = leaves(DEFAULT_USER_PREFERENCES).filter(
-        (path) => !['theme', 'folderOrder', 'onboardingCompletedAt'].includes(path),
+        (path) => !['theme', 'folderOrder', 'onboardingCompletedAt', 'estimates'].includes(path),
       );
       expect(CASES.flatMap((item) => leaves(item.patch)).sort()).toEqual(wanted.sort());
       expect(prefs().getAllByRole('switch')).toHaveLength(9);

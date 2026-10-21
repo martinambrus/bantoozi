@@ -24,6 +24,7 @@ import {
 import { createHandlers } from './handlers/index.js';
 import { enqueueOverdueHousekeeping } from './housekeeping.js';
 import { ensureFingerprintRegistered } from './learn/fingerprints.js';
+import { poolEstimateTrainer } from './estimate/trainer.js';
 import { poolTrainer } from './learn/trainer.js';
 import { startOutboxRelay } from './outbox-relay.js';
 import { assertProductionReady } from './readiness.js';
@@ -127,6 +128,7 @@ const handlers = createHandlers(
     limiter: createPgOriginLimiter(db),
     logger,
     trainer: poolTrainer(cpuPool),
+    estimateTrainer: poolEstimateTrainer(cpuPool),
     classification: models.classification,
     mailer,
     adminEmails: config.adminEmails,

@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  doublePrecision,
   foreignKey,
   index,
   integer,
@@ -384,7 +385,7 @@ export const userArticle = pgTable(
     check('user_article_p_like_check', sql`p_like BETWEEN 0 AND 1`),
     check(
       'user_article_score_source_check',
-      sql`score_source IN ('none','cards','model','degraded')`,
+      sql`score_source IN ('none','cards','model','degraded','estimate')`,
     ),
     check('user_article_rank_revision_check', sql`rank_revision >= 0`),
     check('user_article_state_version_check', sql`state_version >= 0`),
@@ -491,6 +492,33 @@ export const userModels = pgTable(
     uniqueIndex('user_models_active_idx')
       .on(t.userId)
       .where(sql`active`),
+  ],
+);
+
+export const userEstimateModels = pgTable(
+  'user_estimate_models',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    spec: text('spec').notNull(),
+    trainedAt: tstz('trained_at').notNull().defaultNow(),
+    n: integer('n').notNull(),
+    nPos: integer('n_pos').notNull(),
+    nNeg: integer('n_neg').notNull(),
+    intercept: doublePrecision('intercept').notNull(),
+    weights: jsonb('weights').notNull(),
+    platt: jsonb('platt').notNull(),
+    metrics: jsonb('metrics').notNull(),
+  },
+  (t) => [
+    primaryKey({ name: 'user_estimate_models_pkey', columns: [t.userId, t.version] }),
+    check('user_estimate_models_version_check', sql`version >= 1`),
+    check(
+      'user_estimate_models_counts_check',
+      sql`n >= 0 AND n_pos >= 0 AND n_neg >= 0 AND n = n_pos + n_neg`,
+    ),
   ],
 );
 

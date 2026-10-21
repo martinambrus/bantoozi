@@ -35,6 +35,7 @@ const fields = {
     right: z.enum(['like', 'bookmark', 'none']),
   },
   theme: z.enum(['system', 'light', 'dark']),
+  estimates: z.enum(['on', 'off']),
   loadRemoteImages: z.boolean(),
   implicitFeedback: z.boolean(),
   folderOrder: z.array(FolderNameSchema).max(MAX_FOLDERS),
@@ -61,6 +62,11 @@ export interface UserPreferences {
   implicitNegative: boolean;
   swipe: { left: 'dislike' | 'read' | 'none'; right: 'like' | 'bookmark' | 'none' };
   theme: 'system' | 'light' | 'dark';
+  /**
+   * Estimate the articles that have no card or model score from the words of the ones rated
+   * (visible-learning §4.4); accounts that never set it read `on`.
+   */
+  estimates: 'on' | 'off';
   /** Publisher images/icons require opt-in (spec 08 §4.2). */
   loadRemoteImages: boolean;
   /** Opt in to dwell/read-derived learning. */
@@ -92,6 +98,7 @@ export const DEFAULT_USER_PREFERENCES: Readonly<UserPreferences> = Object.freeze
   implicitNegative: false,
   swipe: { left: 'dislike', right: 'like' },
   theme: 'system',
+  estimates: 'on',
   loadRemoteImages: false,
   implicitFeedback: false,
   folderOrder: [],
@@ -128,6 +135,7 @@ export const UserPreferencesSchema: z.ZodType<UserPreferences> = z.object({
     })
     .catch({ ...DEFAULT_USER_PREFERENCES.swipe }),
   theme: fields.theme.catch(DEFAULT_USER_PREFERENCES.theme),
+  estimates: fields.estimates.catch(DEFAULT_USER_PREFERENCES.estimates),
   loadRemoteImages: fields.loadRemoteImages.catch(DEFAULT_USER_PREFERENCES.loadRemoteImages),
   implicitFeedback: fields.implicitFeedback.catch(DEFAULT_USER_PREFERENCES.implicitFeedback),
   folderOrder: fields.folderOrder.catch(() => []),
@@ -176,6 +184,7 @@ export const UserPreferencesPatchSchema = z
       .strict()
       .refine((o) => Object.keys(o).length > 0, 'empty object'),
     theme: fields.theme,
+    estimates: fields.estimates,
     loadRemoteImages: fields.loadRemoteImages,
     implicitFeedback: fields.implicitFeedback,
     folderOrder: fields.folderOrder,
@@ -218,4 +227,5 @@ export const RANKING_RELEVANT_PREFERENCES = [
   'demote',
   'implicitFeedback',
   'implicitNegative',
+  'estimates',
 ] as const;
