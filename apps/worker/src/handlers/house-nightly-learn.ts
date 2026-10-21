@@ -6,7 +6,7 @@ import {
 } from '@bantoozi/db';
 import { buildJobIntent, parseSetting } from '@bantoozi/shared';
 
-import { ensureFingerprintRegistered } from '../learn/fingerprints.js';
+import { ensureFingerprintRegistered, guardedRegistration } from '../learn/fingerprints.js';
 import { loadLearnInputs } from '../learn/inputs.js';
 import { loadRankerSettings } from '../rank/settings.js';
 import { nowOf, type WorkerDeps } from './deps.js';
@@ -32,10 +32,14 @@ export function createNightlyLearnHandler(deps: WorkerDeps): QueueHandler<'house
   return async () => {
     const now = nowOf(deps);
     const day = now.toISOString().slice(0, 10);
-    await ensureFingerprintRegistered(
-      deps.db,
-      { settingsEnv: deps.settingsEnv, primaryModel: deps.classification?.primaryModel ?? '' },
-      now,
+    await guardedRegistration(
+      () =>
+        ensureFingerprintRegistered(
+          deps.db,
+          { settingsEnv: deps.settingsEnv, primaryModel: deps.classification?.primaryModel ?? '' },
+          now,
+        ),
+      deps.logger,
     );
     const { config } = await loadRankerSettings(deps.db);
     // Paged by the wider of the learn history and the suggestion like window, so an active user with
