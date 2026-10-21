@@ -22,6 +22,7 @@ import { loadEffectiveValues } from './runtime.js';
 import { openCredentialSession, registerCredentialCommands } from './credentials/index.js';
 import { createWorkerDeps, fetchWith, type WorkerDeps } from './handlers/deps.js';
 import { createHandlers } from './handlers/index.js';
+import { enqueueModelWatchNow } from './model-watch.js';
 
 /**
  * Development CLI (M1-T9, spec 03 §10), run as `pnpm worker-cli <command>` against the dev
@@ -33,7 +34,8 @@ import { createHandlers } from './handlers/index.js';
  * - `feeds:show <feedId>`: the feed's bookkeeping and newest articles;
  * - `purge-report`: what `house.purge-articles` would delete now, by rule (D-253); deletes nothing;
  * - `credentials:status|stage|validate|activate|revoke|rewrap`: provider credentials (M2-T3,
- *   spec 04 §1.2; see credentials/commands.ts). Keys are read from stdin only.
+ *   spec 04 §1.2; see credentials/commands.ts). Keys are read from stdin only;
+ * - `model-watch:check`: queue a check of jev-latest now; a running worker probes it.
  */
 
 interface Runtime {
@@ -210,6 +212,16 @@ program
           '',
         ].join('\n'),
       );
+    });
+  });
+
+program
+  .command('model-watch:check')
+  .description('queue a check of jev-latest now; a running worker probes it')
+  .action(async () => {
+    await withRuntime(async ({ db }) => {
+      await enqueueModelWatchNow(db);
+      process.stdout.write('model watch queued\n');
     });
   });
 

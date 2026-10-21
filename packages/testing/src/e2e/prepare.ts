@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
+import { queueRegistryKey } from '../test-db/queue-registry.js';
 import { computeTemplateHash } from '../test-db/template-hash.js';
 import { defaultWorktreeRoot, ensureTemplate, roleUrl, testDbEnv } from '../test-db/test-db.js';
 import { createE2eDatabase, dropE2eDatabase, sweepStaleE2eDatabases } from './database.js';
@@ -62,6 +63,7 @@ async function main(): Promise<void> {
   const hash = await computeTemplateHash({
     migrationsDir: path.join(root, 'packages/db/drizzle'),
     pgBossVersion: await pinnedPgBossVersion(root),
+    extra: queueRegistryKey(),
   });
   const template = await ensureTemplate({
     hash,

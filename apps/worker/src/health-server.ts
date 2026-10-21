@@ -1,6 +1,8 @@
 import { timingSafeEqual } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 
+import { fingerprintCounters } from './learn/fingerprints.js';
+
 /** A heartbeat older than this makes `/healthz` answer 503 (spec 11 §2). */
 export const HEALTH_MAX_HEARTBEAT_AGE_MS = 2 * 60 * 1000;
 
@@ -81,6 +83,10 @@ export async function startHealthServer(options: HealthServerOptions): Promise<H
             : [`bantoozi_worker_heartbeat_age_seconds ${Math.floor(age / 1000)}`]),
           '# TYPE bantoozi_worker_queue_consumed gauge',
           ...options.queues.map((q) => `bantoozi_worker_queue_consumed{queue="${q}"} 1`),
+          '# TYPE bantoozi_worker_rating_fingerprint_evicted_total counter',
+          `bantoozi_worker_rating_fingerprint_evicted_total ${fingerprintCounters.evicted}`,
+          '# TYPE bantoozi_worker_rating_fingerprint_registration_failed_total counter',
+          `bantoozi_worker_rating_fingerprint_registration_failed_total ${fingerprintCounters.failed}`,
         ];
         send(200, 'text/plain; version=0.0.4', `${lines.join('\n')}\n`);
       },

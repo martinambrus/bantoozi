@@ -30,6 +30,11 @@ import { createWorkerEngineRouter } from './engine-router.js';
 import { createModelProber } from './model-probe.js';
 import { recordModelPin } from './model-pin.js';
 import {
+  MODEL_WATCH_TRIGGER_GAP_MS,
+  enqueueModelWatchNow,
+  requestModelWatch,
+} from './model-watch.js';
+import {
   MODEL_RESOLVE_RETRY_MS,
   MODEL_RESOLVE_TIMEOUT_MS,
   recordModelResolution,
@@ -311,7 +316,24 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
     const stored = EngineModelPinSchema.safeParse(await readStoredSetting(db, 'engine.model_pin'));
     processModel = stored.success ? stored.data.model : modelState.alias;
   }
-  const models = createWorkerModels(db, liveConfig, logger, { primaryModel: processModel });
+  let lastClaimMs: number | undefined;
+  const onModelUnavailable =
+    modelState.kind === 'resolved' && options.recordPin !== false
+      ? async (): Promise<void> => {
+          const at = now();
+          if (
+            lastClaimMs !== undefined &&
+            at.getTime() - lastClaimMs < MODEL_WATCH_TRIGGER_GAP_MS
+          ) {
+            return;
+          }
+          if (await requestModelWatch(db, at)) lastClaimMs = at.getTime();
+        }
+      : undefined;
+  const models = createWorkerModels(db, liveConfig, logger, {
+    primaryModel: processModel,
+    ...(onModelUnavailable === undefined ? {} : { onModelUnavailable }),
+  });
   const fingerprint = restartFingerprint(values);
 
   let latest: RuntimeSettingsSnapshot = boot;
@@ -361,6 +383,9 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
     const pin = await recordModelPin(db, processPin, now());
     if (pin.changed)
       logger.info({}, 'engine model pin changed: re-enrichment and re-matching enqueued');
+    if (modelState.kind === 'resolved' && modelState.source === 'stored') {
+      await enqueueModelWatchNow(db);
+    }
   }
 
   let pendingRestart = false;

@@ -25,6 +25,7 @@ import {
   type RankItem,
   type UserRankContext,
 } from '@bantoozi/ranker';
+import { isCurrentAnswerModel } from '@bantoozi/shared';
 
 import { builtCardQuestion, isCurrentCardAnswer } from '../classify/card-questions.js';
 import type { ClassificationConfig } from '../classify/config.js';
@@ -39,11 +40,15 @@ export interface RankItemsRun {
   config: ClassificationConfig;
   /** The user's interest and label cards (their question inputs), by id. */
   cardInputs: ReadonlyMap<string, CardInput>;
-  /** The current model pin (setting `engine.model_pin.model`, else the primary model). */
+  /**
+   * The current model pin (setting `engine.model_pin.model`, else the primary model). Answers of
+   * this model or of another release of its Jev major count as current for the personal model.
+   */
   modelPin: string;
   /**
    * Articles of the loaded pages whose facets and card answers come from the current state and the
-   * pin: the only ones the personal model may score (spec 06 §8.1). Filled by `loadRankItems`.
+   * pin's Jev major (an answer of another release of the same major counts): the only ones the
+   * personal model may score (spec 06 §8.1). Filled by `loadRankItems`.
    */
   modelEligible: Set<string>;
 }
@@ -161,7 +166,7 @@ export async function loadRankItems(
             card !== undefined &&
             isCardApplicable(card, fact.inferenceFeedIds) &&
             answer.engine !== 'prefilter' &&
-            answer.model !== run.modelPin
+            !isCurrentAnswerModel(answer.model, run.modelPin)
           ) {
             modelCurrent = false;
           }
@@ -171,7 +176,7 @@ export async function loadRankItems(
     const facetState = facetStates.get(id);
     if (
       facetState !== undefined &&
-      (facetState.model !== run.modelPin ||
+      (!isCurrentAnswerModel(facetState.model, run.modelPin) ||
         facetState.stateSha256 !== buildState(modelInput(article, rows, config), 'enrich').sha256)
     ) {
       modelCurrent = false;

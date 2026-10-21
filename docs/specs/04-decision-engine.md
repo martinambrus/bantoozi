@@ -387,7 +387,7 @@ The normalized answers are what is stored in `article_facets.answers`, `card_ans
 |---|---|---|
 | 200 | ok | normalize (§2); `invalid_response` counts as a retryable error once |
 | 401 / 403 | bad key | no retry. Outcome `error` with `auth_error`. Opens the breaker in **auth** mode (§5) and alerts admins |
-| 410, or 404 / 400 / 422 with a model error code | retired or unknown model (an assumption: Jev documents no such error; D-273) | no retry. Permanent `error`, detail `model_unavailable:http_<status>`; counts as a failure for the breaker, never `invalid_request` |
+| 410, or 404 / 400 / 422 with a model error code | retired or unknown model (an assumption: Jev documents no such error; D-273) | no retry. Permanent `error`, detail `model_unavailable:http_<status>`; counts as a failure for the breaker, never `invalid_request`. While the worker follows `jev-latest` it also queues one `house.model-watch` (at most one per 10 minutes across all workers, D-288) |
 | 400 / 413 / 422 | invalid request or size | no blind retry/fallback. Outcome `invalid_request`; log set sha, request hash and a redacted, length-capped error code (provider errors can echo private inputs) |
 | 429 | rate limited | retry (§4). Feeds the client-side limiter |
 | 5xx (including 529), network error, timeout | transient | retry (§4) |

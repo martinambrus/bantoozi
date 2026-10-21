@@ -23,7 +23,7 @@ import {
 } from './eval-mode.js';
 import { createHandlers } from './handlers/index.js';
 import { enqueueOverdueHousekeeping } from './housekeeping.js';
-import { ensureFingerprintRegistered } from './learn/fingerprints.js';
+import { ensureFingerprintRegistered, guardedRegistration } from './learn/fingerprints.js';
 import { poolEstimateTrainer } from './estimate/trainer.js';
 import { poolTrainer } from './learn/trainer.js';
 import { startOutboxRelay } from './outbox-relay.js';
@@ -91,19 +91,16 @@ const settingsEnv = {
   signupMode: config.signupMode,
 };
 if (!config.evalIngestOnly) {
-  await ensureFingerprintRegistered(
-    db,
-    { settingsEnv, primaryModel: runtime.processModel },
-    new Date(),
-  )
-    .then((result) => {
-      if (result.registered) logger.info('rating fingerprint registered');
-      if (result.evicted > 0)
-        logger.warn({ evicted: result.evicted }, 'rating fingerprint registry evicted entries');
-    })
-    .catch((err: unknown) => {
-      logger.warn({ err }, 'rating fingerprint registration failed');
-    });
+  const registration = await guardedRegistration(
+    () =>
+      ensureFingerprintRegistered(
+        db,
+        { settingsEnv, primaryModel: runtime.processModel },
+        new Date(),
+      ),
+    logger,
+  );
+  if (registration?.registered === true) logger.info('rating fingerprint registered');
 }
 const mailer = createMailer({
   transport: config.mailTransport,

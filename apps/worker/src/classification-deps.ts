@@ -55,10 +55,18 @@ export function createWorkerModels(
   db: Database,
   config: WorkerModelConfig,
   logger: EngineLogger,
-  options: { primaryModel?: string } = {},
+  options: { primaryModel?: string; onModelUnavailable?: () => Promise<void> } = {},
 ): WorkerModels {
   const credentials = credentialResolverFromConfig(db, config, logger);
-  const router = createWorkerEngineRouter({ db, config, credentials, logger });
+  const router = createWorkerEngineRouter({
+    db,
+    config,
+    credentials,
+    logger,
+    ...(options.onModelUnavailable === undefined
+      ? {}
+      : { onModelUnavailable: options.onModelUnavailable }),
+  });
   const libretranslate = createLibreTranslateClient({ baseUrl: config.libretranslateUrl });
   const ollama = createOllamaTranslator({
     baseUrl: config.ollamaBaseUrl,

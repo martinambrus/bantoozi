@@ -2938,3 +2938,36 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   unchanged (S19 overlay test); refreshes change dataset digests (more `STALE_CURSOR`, accepted);
   `GET /me/learning.estimates`. Version skew as in D-272: a web bundle older than this release rejects
   `source: 'estimate'` until the D-163 reload bar, so EST-2…EST-4 are released with EST-5.
+- D-286: 2026-10-21 (JEV-3 of docs/design/visible-learning.md) — `house.model-watch` adopts a new Jev release
+  automatically: cron `35 */6 * * *`, also at worker start when the process resolved `jev-latest` from a stored
+  resolution, by `pnpm worker-cli model-watch:check`, by `enqueueModelWatch` (Admin "Check now", JEV-5) and after a
+  retired-model failure. While the effective setting is `jev-latest` it probes the alias with the model prober (never
+  `router.ask`); a failed or non-concrete answer keeps `engine.model_resolution` byte-identical and records
+  `engine.model_watch.lastCheck`; a different concrete answer first registers the outgoing rating fingerprint (fails
+  closed: nothing is adopted if that throws), then writes the resolution (`previous`) and the notice in one
+  transaction. It never writes the pin: the restart fingerprint drains and restarts the workers and the first one
+  records the pin and the single rebuild. Mail to the active admins: same major "ratings and personal models kept",
+  otherwise "major change: personal models restart from new ratings". Deviations from design §4.1: a failed watch
+  probe is not a trigger of the `engine.breaker` alert (D-272 excludes probes) but is named in its details; no
+  confirmation probe, so an alias that flaps is adopted at each flip and a late older probe can move it back.
+- D-287: 2026-10-21 (JEV-3) — The upgrade notice is durable (`engine.model_watch.notice`): delivered at least once,
+  retried on every run, merged when the alias moves again before delivery (earliest `from`, latest `to`, `major`
+  sticky), dropped with a warning without mailer or recipients, given up after 8 failed rounds. A duplicate mail is
+  possible only after a crash between send and clear.
+- D-288: 2026-10-21 (JEV-3) — The retired-model trigger: the worker's classification store decorator, after a TypeSafe
+  enrich/match/cluster/suggest attempt settled with `model_unavailable`, claims `engine.model_watch.triggeredAt` under
+  the row lock and writes the outbox intent in the same transaction: at most one check per 10 minutes across all
+  processes; only while following `jev-latest`.
+- D-289: 2026-10-21 (JEV-3; supersedes D-280's first item) — Answers of the same Jev major count as current for
+  READING: feature snapshots (`captureFeatures`) and personal-model scoring (`loadRankItems`) use
+  `isCurrentAnswerModel`; reuse, re-ask and write precedence stay exact. Consequence for the JEV-4 guard: a rating on a
+  not yet re-analysed article carries the new exact sha with older-release answers, so "new-version samples" include
+  such rows. Measured with the repo trainer: no false trip (0/30 per healthy cell); a real trip is delayed by about two
+  genuine ratings per such rating. Accepted under owner decision 3; a `staleAnswers` marker for the guard is a follow-up.
+- D-290: 2026-10-21 (JEV-3) — `requestRatingSha`: a frozen manifest value against an unknown current value is a
+  disagreement (it used to be skipped); an unknown article language reads as `native`.
+- D-291: 2026-10-21 (JEV-3) — Rating-fingerprint registration is guarded and counted at every call site
+  (`bantoozi_worker_rating_fingerprint_registration_failed_total`, `…_evicted_total`); `house.nightly-learn` no longer
+  aborts when registration throws.
+- D-292: 2026-10-21 (JEV-3) — The test template database hash also covers the pg-boss queue registry, so a queue added
+  without a migration never meets a template another worktree built without it.

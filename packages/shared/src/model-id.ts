@@ -52,3 +52,14 @@ export function sameModelFamily(a: string, b: string): boolean {
     a === b || (isConcreteJevModel(a) && isConcreteJevModel(b) && modelFamily(a) === modelFamily(b))
   );
 }
+
+/**
+ * Whether an answer stored with `answerModel` still counts as evidence for a reader pinned to
+ * `pin`: the same model, or another release of the same Jev major. It is for READING answers
+ * (feature snapshots, personal-model scoring). Deciding whether to reuse an answer or ask again
+ * stays an exact comparison, or a pin change would rebuild nothing. A row without a model is never
+ * current.
+ */
+export function isCurrentAnswerModel(answerModel: string | null | undefined, pin: string): boolean {
+  return typeof answerModel === 'string' && sameModelFamily(answerModel, pin);
+}

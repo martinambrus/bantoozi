@@ -2,10 +2,12 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { QUEUE_NAMES } from '@bantoozi/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   computeTemplateHash,
+  queueRegistryKey,
   roleUrl,
   templateDatabaseName,
   testDatabaseName,
@@ -63,6 +65,17 @@ describe('template hash (spec 02 §1.1)', () => {
     expect(await hashOf()).toBe(before);
   });
 
+  it('changes with the extra input, and an empty extra leaves the hash as it was', async () => {
+    const before = await hashOf();
+    const withExtra = (extra: string) =>
+      computeTemplateHash({ migrationsDir: dir, pgBossVersion: '10.4.2', extra });
+    expect(await withExtra('')).toBe(before);
+    const a = await withExtra('queues:a');
+    expect(a).not.toBe(before);
+    expect(await withExtra('queues:b')).not.toBe(a);
+    expect(await withExtra('queues:a')).toBe(a);
+  });
+
   it('works before any migration exists', async () => {
     expect(
       await computeTemplateHash({
@@ -70,6 +83,35 @@ describe('template hash (spec 02 §1.1)', () => {
         pgBossVersion: '10.4.2',
       }),
     ).toMatch(/^[0-9a-f]{12}$/);
+  });
+});
+
+describe('queue registry key (the migrate job creates the pg-boss queues from the registry)', () => {
+  it('names every queue with its create options, in a stable order', () => {
+    const key = queueRegistryKey();
+    for (const name of QUEUE_NAMES) expect(key).toContain(`"${name}"`);
+    expect(key).toContain('house.model-watch');
+    expect(queueRegistryKey()).toBe(key);
+  });
+
+  it('moves with the registry: a queue added without a migration, or other options, is another key', () => {
+    const registry = {
+      'a.queue': { options: { policy: 'standard', retryLimit: 0 } },
+      'b.queue': { options: { policy: 'singleton', retryLimit: 1 } },
+    };
+    const key = queueRegistryKey(registry);
+    expect(
+      queueRegistryKey({ 'b.queue': registry['b.queue'], 'a.queue': registry['a.queue'] }),
+    ).toBe(key);
+    expect(
+      queueRegistryKey({ ...registry, 'c.queue': { options: { policy: 'standard' } } }),
+    ).not.toBe(key);
+    expect(
+      queueRegistryKey({
+        ...registry,
+        'a.queue': { options: { policy: 'standard', retryLimit: 2 } },
+      }),
+    ).not.toBe(key);
   });
 });
 

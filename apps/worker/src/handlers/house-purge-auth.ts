@@ -29,7 +29,7 @@ export const HOUSE_RUN_BUDGET_MS = 5 * 60_000;
  * cursor is replaced by `cursor`, or dropped when none is given.
  */
 export async function recordHouseProgress(
-  deps: WorkerDeps,
+  deps: Pick<WorkerDeps, 'db'>,
   job: HouseProgressJob,
   now: Date,
   complete: boolean,

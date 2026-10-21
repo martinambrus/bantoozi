@@ -17,6 +17,7 @@ import {
 } from '@bantoozi/ranker';
 import { enqueueLearn, enqueueSuggest } from '@bantoozi/shared';
 
+import { guardedRegistration } from '../learn/fingerprints.js';
 import { currentContextSha, loadLearnInputs, type LearnInputs } from '../learn/inputs.js';
 import { inlineTrainer, type Trainer } from '../learn/trainer.js';
 import { nowOf, type WorkerDeps } from './deps.js';
@@ -119,7 +120,11 @@ export function createUserLearnHandler(deps: WorkerDeps): QueueHandler<'user.lea
     const inputs = prepared;
     const state = inputs.modelState;
     if (!inputs.registered) {
-      await registerRatingFingerprint(deps.db, inputs.fingerprint, nowOf(deps));
+      await guardedRegistration(
+        () => registerRatingFingerprint(deps.db, inputs.fingerprint, nowOf(deps)),
+        deps.logger,
+        { rethrow: true },
+      );
     }
     const unchanged = state.latestTerminal?.metrics['inputSha'] === inputs.inputSha;
     if (unchanged && (state.active === null || modelStaleness(inputs, state.active) === null)) {

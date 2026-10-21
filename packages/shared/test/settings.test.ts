@@ -54,6 +54,7 @@ const SPEC_KEYS = [
   'engine.model_pin',
   'engine.model_probe',
   'engine.model_resolution',
+  'engine.model_watch',
   'engine.rating_fingerprints',
   'language_modes',
   'card_text_mode',

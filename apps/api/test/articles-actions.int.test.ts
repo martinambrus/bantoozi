@@ -1611,7 +1611,7 @@ describe('snapshot capture after a translation fallback and frozen request prove
   it('records no ratingSha for a request frozen under another match set', async () => {
     const matchA = await matchSet('e2'.repeat(32));
     const matchB = await matchSet('e3'.repeat(32));
-    await setSetting('question_sets.active', { match: matchA });
+    await setSetting('question_sets.active', { enrich: matchA, match: matchA });
     const manifest = (match: string) =>
       JSON.stringify({
         questionSets: { enrich: { id: matchA }, match: { id: match } },

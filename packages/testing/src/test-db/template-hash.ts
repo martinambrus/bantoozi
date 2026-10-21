@@ -10,11 +10,16 @@ export interface TemplateHashInput {
   migrationsDir: string;
   /** The pinned pg-boss version: its schema is part of the migrate job (spec 02 §1.2). */
   pgBossVersion: string;
+  /**
+   * Anything else the migrate job builds that no SQL file holds, such as the pg-boss queues it
+   * creates from the registry ({@link queueRegistryKey}). Empty or absent leaves the hash as it was.
+   */
+  extra?: string;
 }
 
 /**
  * `h` of `bantoozi_template_<h>` (spec 02 §1.1): the first 12 hex digits of
- * `sha256(sorted migration paths + their bytes + journal bytes + pinned pg-boss version)`.
+ * `sha256(sorted migration paths + their bytes + journal bytes + pinned pg-boss version + extra)`.
  * A changed migration yields a new template even when the journal filename is unchanged.
  */
 export async function computeTemplateHash(input: TemplateHashInput): Promise<string> {
@@ -28,6 +33,7 @@ export async function computeTemplateHash(input: TemplateHashInput): Promise<str
   hash.update('journal:');
   hash.update(await readOptional(path.join(input.migrationsDir, JOURNAL_PATH)));
   hash.update(`\0pg-boss:${input.pgBossVersion}`);
+  if (input.extra !== undefined && input.extra !== '') hash.update(`\0extra:${input.extra}`);
   return hash.digest('hex').slice(0, 12);
 }
 

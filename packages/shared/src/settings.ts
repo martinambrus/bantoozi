@@ -116,6 +116,36 @@ export const EngineModelProbesSchema = z
   .refine((probes) => Object.keys(probes).length <= ENGINE_MODEL_PROBES_MAX, 'too many probes');
 export type EngineModelProbes = z.infer<typeof EngineModelProbesSchema>;
 
+/** Undelivered upgrade mails are given up after this many delivery attempts. */
+export const MODEL_NOTICE_MAX_ATTEMPTS = 8;
+
+/**
+ * `settings['engine.model_watch']`, written only by the worker's `house.model-watch`
+ * (visible-learning §4.1): when the retired-model trigger last queued a check (its 10-minute rate
+ * limit), how the newest check ended, and the adoption whose mail is still to be delivered
+ * (`major`: the new release is of another major, so personal models restart).
+ */
+export const EngineModelWatchSchema = z
+  .object({
+    triggeredAt: iso.optional(),
+    lastCheck: z
+      .object({ at: iso, ok: z.boolean(), error: z.string().min(1).max(200).optional() })
+      .strict()
+      .optional(),
+    notice: z
+      .object({
+        from: concreteJevModel,
+        to: concreteJevModel,
+        at: iso,
+        major: z.boolean(),
+        attempts: z.number().int().min(0).max(MODEL_NOTICE_MAX_ATTEMPTS),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type EngineModelWatch = z.infer<typeof EngineModelWatchSchema>;
+
 /** Key of the worker-written registry of rating fingerprints (JEV-4). */
 export const RATING_FINGERPRINTS_KEY = 'engine.rating_fingerprints';
 /** The registry keeps at most this many fingerprints. */
@@ -288,6 +318,11 @@ export const SETTINGS = {
   }),
   'engine.model_probe': def({
     schema: EngineModelProbesSchema,
+    defaultValue: () => undefined,
+    writers: ['worker'],
+  }),
+  'engine.model_watch': def({
+    schema: EngineModelWatchSchema,
     defaultValue: () => undefined,
     writers: ['worker'],
   }),
