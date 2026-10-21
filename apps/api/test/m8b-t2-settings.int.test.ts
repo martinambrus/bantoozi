@@ -309,7 +309,8 @@ describe('production validation', () => {
       ['engine.typesafe_base_url', 'https://evil.example.com'],
       ['engine.ollama_base_url', 'https://evil.example.com'],
       ['engine.ollama_base_url', 'http://ollama.com'],
-      ['engine.typesafe_model', 'jev-latest'],
+      ['engine.typesafe_model', 'jev-beta'],
+      ['engine.typesafe_model', 'Jev-Latest'],
       ['engine.typesafe_model', 'jev-fake'],
       ['engine.typesafe_price_per_mtok_usd', 0],
     ];
@@ -332,6 +333,32 @@ describe('production validation', () => {
     );
     expect(ok.statusCode, ok.body).toBe(200);
     expect(await stored('engine.typesafe_base_url')).toBe('https://api.typesafe.ai');
+    // JEV-2: the alias is accepted in production (stored, no pin write, no intent), like a model change.
+    await setRow('engine.model_pin', {
+      model: 'jev-1.13.0',
+      llm: null,
+      since: '2026-10-01T00:00:00Z',
+    });
+    await h.owner.query('DELETE FROM job_outbox');
+    const needsAck = await patch({ 'engine.typesafe_model': 'jev-latest' }, prod);
+    expect(needsAck.statusCode, needsAck.body).toBe(409);
+    expect(needsAck.json().error.details.reason).toBe('confirmation_required');
+    expect(await stored('engine.typesafe_model')).toBe('jev-1.14.0');
+    const alias = await patch({ 'engine.typesafe_model': 'jev-latest', acknowledge: true }, prod);
+    expect(alias.statusCode, alias.body).toBe(200);
+    expect(alias.json().changed).toEqual(['engine.typesafe_model']);
+    expect(await stored('engine.typesafe_model')).toBe('jev-latest');
+    expect(await stored('engine.model_pin')).toEqual({
+      model: 'jev-1.13.0',
+      llm: null,
+      since: '2026-10-01T00:00:00Z',
+    });
+    expect(await outbox()).toEqual([]);
+    // Control: near misses of the alias stay refused in production and leave the stored alias alone.
+    const near = await patch({ 'engine.typesafe_model': 'jev-latest ', acknowledge: true }, prod);
+    expect(near.statusCode, near.body).toBe(400);
+    expect(near.json().error.details.key).toBe('engine.typesafe_model');
+    expect(await stored('engine.typesafe_model')).toBe('jev-latest');
     // The same invalid values are accepted outside production (http, jev-fake): control for the env split.
     expect((await patch({ 'engine.ollama_base_url': 'http://localhost:11434' })).statusCode).toBe(
       200,

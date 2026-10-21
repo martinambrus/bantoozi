@@ -26,6 +26,7 @@ import {
   canonicalJson,
   conservativeRequestTokens,
   isAppError,
+  isModelAlias,
   newUuid,
   type CandidateValidation,
 } from '@bantoozi/shared';
@@ -185,6 +186,7 @@ export function createProviderValidateHandler(
         model: config.typesafeModel,
         pricePerMTokUsd: price,
         production,
+        ...(isModelAlias(config.typesafeModel) ? { resolveAlias: true } : {}),
         // The fake server's model is the explicit test configuration (spec 04 §3).
         ...(!production && config.typesafeModel === JEV_FAKE_MODEL ? { allowFakeModel: true } : {}),
       });

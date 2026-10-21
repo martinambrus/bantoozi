@@ -48,8 +48,8 @@ export type { CredentialResolver, ProviderAuth } from '@bantoozi/shared/server';
 export type Priority = 'interactive' | 'bulk';
 
 export interface EngineRequest {
-  /** Translation, credential probes and card drafts use ExternalCall instead. */
-  kind: Exclude<CallKind, 'translate' | 'credential_probe' | 'card_draft'>;
+  /** Translation, credential and model probes and card drafts use ExternalCall instead. */
+  kind: Exclude<CallKind, 'translate' | 'credential_probe' | 'card_draft' | 'model_probe'>;
   state: JsonValue;
   /** Keys: `[a-zA-Z0-9_.-]{1,64}`. */
   questions: Record<string, Question>;
@@ -119,6 +119,8 @@ export interface RouterStatus {
   spendTodayUsd: number;
   budgetUsd: number;
   llmCallsToday: number;
+  /** Whether the Jev lane exists; `unconfigured` when the model is an alias with no release. */
+  typesafeLane?: 'ready' | 'unconfigured';
 }
 
 /** The ONLY thing handlers use (spec 04 §1). */

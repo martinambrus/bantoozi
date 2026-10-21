@@ -474,7 +474,8 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
 
 ## 8. Model and question-set upgrades
 
-1. Run `eval replay` with the new `TYPESAFE_MODEL`, question set, Laya checkpoint or calibration
+1. Run `eval replay` with the new `TYPESAFE_MODEL` (a concrete id: following `jev-latest` needs no replay, owner
+   decision of 2026-10-20, D-274), question set, Laya checkpoint or calibration
    or, while `LLM_FALLBACK_ENABLED`, Ollama fallback models (spec 10 §6). It must pass.
 2. Set the value in **Admin → Settings** (`engine.typesafe_model`, `engine.llm_fallback_enabled`,
    `engine.ollama_models`; spec 08 §9 requires the acknowledgement that step 1 passed) or in the env
@@ -482,6 +483,13 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
    (it re-reads the settings every 10 s), drains and exits, and compose restarts it (`WORKER_SELF_RESTART`,
    default true in production, spec 01 §3); with `false` the worker only warns and reports
    `pendingRestart`, and the operator restarts it. An env change still needs `up -d --force-recreate`.
+   `engine.typesafe_model` may be `jev-latest` (D-274): each worker resolves it at start (the stored
+   `engine.model_resolution`, else one model probe with a 30 s deadline) and the restart fingerprint includes the
+   resolved model, so a new resolution drains and restarts the workers. Without a resolution the worker starts
+   anyway, defers classification (no Jev lane), reports an `engine.typesafe_model` problem in Admin → Settings and
+   retries the probe every 5 minutes; a successful retry only writes the resolution, and the changed fingerprint
+   restarts the worker (in development: `pendingRestart`). The pin records the concrete model plus `alias`;
+   switching between a concrete id and the alias it resolves to does not rebuild.
 3. New answers carry the new model id. Old answers no longer satisfy current cache lookups (spec 02
    §3.3). The first worker that starts with a new `TYPESAFE_MODEL` or a different LLM fallback
    state (`LLM_FALLBACK_ENABLED` switched either way, or a new `OLLAMA_MODEL_FAST`/
@@ -527,7 +535,7 @@ It sends through the shared mailer (`packages/shared/src/mail/`, which uses `SMT
 - [ ] G1 has an `owner_pilot` or `multi_person_beta` PASS under spec 10 (accepted Q13). A passing
       owner-only pilot is sufficient for this initial beta; additional raters are not a prerequisite. All existing
       quality, cost, security, operational and recovery gates still pass.
-- [ ] `TYPESAFE_MODEL` is pinned. The daily budget is set from the G1 recommendation.
+- [ ] `TYPESAFE_MODEL` is pinned, or `jev-latest` with a stored resolution. The daily budget is set from the G1 recommendation.
 - [ ] Off-site encrypted backups and offline keys restore successfully, including roles/RLS,
       deletion-ledger replay and queue recovery; measured RPO/RTO accepted. Every alert and recovery
       transition fired in a drill, including a stopped worker and an unreachable host.

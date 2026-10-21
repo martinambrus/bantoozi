@@ -480,7 +480,9 @@ evidence rules. Compatibility is checked at two levels:
 - **Rating fingerprint** (`rating_sha`): the feature spec, the model engine/version and the active
   question/state/translation manifests, including language modes and the card text mode, that is,
   whatever changes the meaning of every answer. A feedback snapshot is used for training only while
-  its fingerprint equals the current one (§8.2). Card ids, strengths and scopes are not part of it.
+  its fingerprint equals the current one (§8.2). Card ids, strengths and scopes are not part of it. The model that counts
+  is `engine.model_pin.model`, always a concrete id; the pin's `alias` is not hashed, so following `jev-latest` while it
+  resolves to the same version leaves the fingerprint unchanged (D-274).
 - **Model context** (`metrics.context_sha`): the rating fingerprint, the `strengthWeights` and
   `model` config the model was trained with, both behavioral-consent flags, and for each own card
   input its card id, strength, scope and current question hash (`card_input_sha256`, spec 05 §2). The

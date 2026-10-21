@@ -20,6 +20,8 @@ export const DEFAULT_MAX_RESPONSE_BYTES = 1024 * 1024;
 const ERROR_BODY_BYTES = 8 * 1024;
 /** Statuses of a request the provider refused as invalid (spec 04 §3: no blind retry/fallback). */
 const INVALID_REQUEST_STATUSES = new Set([400, 413, 422]);
+/** Statuses whose bounded body is read, though {@link httpStatusFailure} ignores it for 404 and 410. */
+const BODY_READ_STATUSES = new Set([...INVALID_REQUEST_STATUSES, 404, 410]);
 const API_KEY = /^[\x21-\x7e]{1,4096}$/;
 const ERROR_CODE = /^[A-Za-z][A-Za-z0-9_.-]{0,47}$/;
 const TRANSPORT_CODE = /^[A-Z][A-Z0-9_]{0,47}$/;
@@ -221,7 +223,7 @@ export type PostJsonOutcome =
       kind: 'response';
       status: number;
       headers: Record<string, string>;
-      /** A 2xx body (bounded), the start of a 400/413/422 body, otherwise empty. */
+      /** A 2xx body (bounded), the start of a 400/404/410/413/422 body, otherwise empty. */
       body: Uint8Array;
       tooLarge: boolean;
     }
@@ -289,7 +291,7 @@ export async function postJson(input: PostJsonInput): Promise<PostJsonOutcome> {
     const success = statusCode >= 200 && statusCode < 300;
     const limit = success
       ? input.maxResponseBytes
-      : INVALID_REQUEST_STATUSES.has(statusCode)
+      : BODY_READ_STATUSES.has(statusCode)
         ? ERROR_BODY_BYTES
         : 0;
     try {

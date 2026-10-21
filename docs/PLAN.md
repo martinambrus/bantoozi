@@ -195,7 +195,7 @@ Background and rationale: [`background.md`](./background.md).
 | 5 | Hosting | **Self-hosted on one box, minimal spend, no GPU** |
 | 6 | Signup | **Invite-only** at launch, with a waitlist |
 | 7 | Translation / LLM provider | Tier 1 = **free CPU machine translation** (LibreTranslate/Argos). Tier 2 and the LLM fallback = **Ollama Cloud GLM** (default `glm-5.3-flash`, `glm-5.3`; an admin may change the models in the UI after confirming an `eval replay` passed, owner 2026-10-13, M8b). **No Claude** (too expensive for the quality needed) |
-| 8 | Decision model | **Jev** (TypeSafe) through its HTTP API, pinned version (default `jev-1.13.0`; an admin may change the pinned model in the UI after confirming an `eval replay` passed, which triggers the model-pin rebuild of spec 11 §8, owner 2026-10-13, M8b). Laya is an optional later engine |
+| 8 | Decision model | **Jev** (TypeSafe) through its HTTP API, pinned version (default `jev-1.13.0`; an admin may change the pinned model in the UI after confirming an `eval replay` passed, which triggers the model-pin rebuild of spec 11 §8, owner 2026-10-13, M8b). **Amended 2026-10-20 (owner, design visible-learning §3):** `jev-latest` may be configured; the worker resolves it to the concrete release and pins that, alias upgrades are adopted automatically with an admin notice and need no eval replay (D-274). Laya is an optional later engine |
 | 9 | Inference eligibility | **No inference for untrained/off subscriptions.** Training is per selected article; trained/active subscriptions admit automatic new-article inference. The state is per reader/feed, not global |
 | 10 | Bookmarks | Preserve captured full readable text and sanitized HTML indefinitely while bookmarked; exclude images/media/attachments. Cold compression must be lossless and transparent |
 | 11 | Sharing and updates | Text-only cards may be shared. Public promotion needs exact-version creator approval while active within 30 days; after 30 consecutive days of inactivity an eligible candidate may be promoted under the audited inactivity policy. Explicit declines remain a veto. Semantic library updates are opt-in |
@@ -1509,7 +1509,7 @@ D-271 on, migrations 0033 on, in phase order.
 
 | Phase | Work | Status |
 |---|---|---|
-| 1 | JEV-1…7: model probe, `jev-latest` resolve-and-pin, fingerprint families with an upgrade guard, `house.model-watch`, admin model editor, outage alerts and paused status (migrations 0033, 0034) | JEV-6 in review (D-272) |
+| 1 | JEV-1…7: model probe, `jev-latest` resolve-and-pin, fingerprint families with an upgrade guard, `house.model-watch`, admin model editor, outage alerts and paused status (migration 0033) | JEV-6 merged (D-272); JEV-1, JEV-2 in review (D-273, D-274) |
 | 2 | EST-1…6: per-user word estimates for rows without a card or model score; sort and tier filter (migration 0035) | EST-1 in review (D-271) |
 | 3 | PRG-1…5: learning history, feed header chip, "moved up/down" notice, learning curve (migration 0036) | Planned |
 | 4 | DPF-6…9: seen-based cooldown, own offer toast, feed-scoped "Make a Never card from these" (migration 0037) | Planned |

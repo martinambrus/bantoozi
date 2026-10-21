@@ -259,7 +259,7 @@ describe('the stale-worker guard', () => {
 
 describe('an invalid stored value', () => {
   it.each([
-    ['an unpinned model id in production', 'jev-latest'],
+    ['an unpinned model id in production', 'jev-beta'],
     ['a value of the wrong type', { model: NEW_MODEL }],
     ['an empty string', ''],
   ])('%s is ignored, reported in runtime.problems, and causes no restart', async (_name, value) => {
@@ -285,12 +285,35 @@ describe('an invalid stored value', () => {
 
   it('control: once the row is valid again the problem clears', async () => {
     const { runtime } = await boot('production');
-    await setSetting(h.owner, 'engine.typesafe_model', 'jev-latest');
+    await setSetting(h.owner, 'engine.typesafe_model', 'jev-beta');
     await runtime.check();
     expect(runtime.heartbeatRuntime().problems).not.toEqual([]);
     await setSetting(h.owner, 'engine.typesafe_model', null);
     await runtime.check();
     expect(runtime.heartbeatRuntime().problems).toEqual([]);
+  });
+});
+
+describe('the jev-latest alias as a stored value (JEV-2)', () => {
+  it('is accepted in production: no validation problem, and the changed configured model asks for one restart', async () => {
+    const { runtime, rec } = await boot('production');
+    await setSetting(h.owner, 'engine.typesafe_model', 'jev-latest');
+    expect(await runtime.check()).toMatchObject({ pendingRestart: true, exiting: true });
+    expect(rec.exits).toEqual([0]);
+    expect(rec.drains).toBe(1);
+    expect(runtime.heartbeatRuntime().problems.map((p) => p.key)).not.toContain(
+      'engine.typesafe_model',
+    );
+  });
+
+  it('control: another non-concrete id is still refused in production, with no restart', async () => {
+    const { runtime, rec } = await boot('production');
+    await setSetting(h.owner, 'engine.typesafe_model', 'jev-beta');
+    expect(await runtime.check()).toMatchObject({ pendingRestart: false, exiting: false });
+    expect(rec.exits).toEqual([]);
+    expect(runtime.heartbeatRuntime().problems.map((p) => p.key)).toContain(
+      'engine.typesafe_model',
+    );
   });
 });
 

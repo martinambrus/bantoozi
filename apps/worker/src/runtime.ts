@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import {
   createRuntimeSettingsCache,
+  readStoredSetting,
   runtimeSettingsLoader,
   type Database,
   type Executor,
@@ -10,6 +11,10 @@ import {
 import { OLLAMA_PRICE_TABLE } from '@bantoozi/engine';
 import {
   canonicalJson,
+  isConcreteJevModel,
+  isModelAlias,
+  EngineModelPinSchema,
+  type EngineModelProbe,
   type RuntimeSettingsSnapshot,
   type RuntimeSettingsValues,
 } from '@bantoozi/shared';
@@ -20,7 +25,16 @@ import {
   type WorkerModelConfig,
   type WorkerModels,
 } from './classification-deps.js';
+import { credentialResolverFromConfig } from './credentials/resolver.js';
+import { createWorkerEngineRouter } from './engine-router.js';
+import { createModelProber } from './model-probe.js';
 import { recordModelPin } from './model-pin.js';
+import {
+  MODEL_RESOLVE_RETRY_MS,
+  MODEL_RESOLVE_TIMEOUT_MS,
+  recordModelResolution,
+  type ModelState,
+} from './model-resolution.js';
 
 /**
  * The worker's runtime values (M8b-T5, PLAN §14.2). Live-class values (price, concurrency, fetch
@@ -74,6 +88,9 @@ export function restartFingerprint(values: RuntimeSettingsValues): string {
         ollamaBaseUrl: values.ollamaBaseUrl,
         ollamaMaxConcurrency: values.ollamaMaxConcurrency,
         libretranslateUrl: values.libretranslateUrl,
+        ...(isModelAlias(values.typesafeModel)
+          ? { typesafeResolvedModel: values.typesafeResolvedModel }
+          : {}),
       }),
     )
     .digest('hex');
@@ -93,6 +110,12 @@ export type WorkerRuntimeOptions = {
   /** Default true; false leaves the pin and the outbox alone (eval ingest-only). */
   recordPin?: boolean;
   now?: () => Date;
+  /** Replaces the real model prober at start and in retries (tests). */
+  modelProbe?: (requested: string, signal: AbortSignal) => Promise<EngineModelProbe>;
+  /** One deadline for the whole start probe. */
+  resolveTimeoutMs?: number;
+  /** The wait between probes while `jev-latest` is unresolved. */
+  resolveRetryMs?: number;
 };
 
 export interface HeartbeatRuntime {
@@ -112,6 +135,7 @@ export interface WorkerRuntime {
   /** The values the process was built from. */
   values: RuntimeSettingsValues;
   processModel: string;
+  modelState: ModelState;
   fingerprint: string;
   check(): Promise<{ pendingRestart: boolean; exiting: boolean }>;
   heartbeatRuntime(): HeartbeatRuntime;
@@ -178,6 +202,7 @@ export function withEffectiveValues<T extends EffectiveFields>(
   return {
     ...config,
     typesafeModel: values.typesafeModel,
+    typesafeResolvedModel: values.typesafeResolvedModel,
     typesafeBaseUrl: values.typesafeBaseUrl,
     typesafePricePerMtokUsd: values.typesafePricePerMtokUsd,
     engineConcurrency: values.engineConcurrency,
@@ -198,17 +223,96 @@ export async function loadEffectiveValues(
   return (await createWorkerSettingsCache(db, config).get()).values;
 }
 
+const SILENT_LOGGER = { info() {}, warn() {}, error() {} };
+
 export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promise<WorkerRuntime> {
   const { db, config, logger } = options;
+  const now = options.now ?? (() => new Date());
   const inner = createWorkerSettingsCache(db, config);
   const boot = await inner.get();
-  const values = boot.values;
+  const configured = boot.values.typesafeModel;
+  const alias = isModelAlias(configured) ? configured : undefined;
   const liveConfig: { -readonly [K in keyof WorkerRuntimeConfig]: WorkerRuntimeConfig[K] } = {
-    ...withEffectiveValues(config, values),
+    ...withEffectiveValues(config, boot.values),
+    typesafeResolvedModel: null,
   };
-  const models = createWorkerModels(db, liveConfig, logger);
+  const resolveTimeoutMs = options.resolveTimeoutMs ?? MODEL_RESOLVE_TIMEOUT_MS;
+  const resolveRetryMs = options.resolveRetryMs ?? MODEL_RESOLVE_RETRY_MS;
+
+  /** One bounded probe of the alias; the concrete id it answered, or the reason it did not. */
+  async function probeAlias(requested: string): Promise<{ model: string } | { reason: string }> {
+    const signal = AbortSignal.timeout(resolveTimeoutMs);
+    const deadline = new Promise<never>((_, reject) => {
+      signal.addEventListener('abort', () => reject(new Error('timeout')), { once: true });
+    });
+    try {
+      const probe =
+        options.modelProbe ??
+        ((model: string, probeSignal: AbortSignal) => {
+          const credentials = credentialResolverFromConfig(db, liveConfig, SILENT_LOGGER);
+          const ledger = createWorkerEngineRouter({
+            db,
+            config: liveConfig,
+            credentials,
+            logger: SILENT_LOGGER,
+          });
+          return createModelProber({
+            ledger,
+            credentials,
+            config: liveConfig,
+            logger,
+            now,
+          }).probe(model, { signal: probeSignal });
+        });
+      const result = await Promise.race([probe(requested, signal), deadline]);
+      if (result.ok && result.answered !== undefined && isConcreteJevModel(result.answered)) {
+        return { model: result.answered };
+      }
+      return { reason: result.error ?? 'not_concrete' };
+    } catch (error) {
+      return { reason: error instanceof Error ? error.message : 'probe_failed' };
+    }
+  }
+
+  let modelState: ModelState;
+  let lastAttempt = now().getTime();
+  let values = boot.values;
+  if (alias === undefined) {
+    modelState = { kind: 'concrete', model: configured };
+  } else if (boot.values.typesafeResolvedModel !== null) {
+    modelState = {
+      kind: 'resolved',
+      alias,
+      model: boot.values.typesafeResolvedModel,
+      source: 'stored',
+    };
+  } else if (options.recordPin === false) {
+    modelState = { kind: 'unresolved', alias, reason: 'not_resolved' };
+  } else {
+    const probed = await probeAlias(alias);
+    lastAttempt = now().getTime();
+    if ('model' in probed) {
+      await recordModelResolution(db, { alias, model: probed.model, now: now() });
+      modelState = { kind: 'resolved', alias, model: probed.model, source: 'probed' };
+    } else {
+      logger.warn({ alias, code: probed.reason }, 'the model alias could not be resolved');
+      modelState = { kind: 'unresolved', alias, reason: probed.reason };
+    }
+  }
+  if (modelState.kind === 'resolved') {
+    values = { ...values, typesafeResolvedModel: modelState.model };
+    liveConfig.typesafeResolvedModel = modelState.model;
+  }
+
+  let processModel: string;
+  if (modelState.kind === 'concrete' || modelState.kind === 'resolved') {
+    processModel = modelState.model;
+  } else {
+    const stored = EngineModelPinSchema.safeParse(await readStoredSetting(db, 'engine.model_pin'));
+    processModel = stored.success ? stored.data.model : modelState.alias;
+  }
+  const models = createWorkerModels(db, liveConfig, logger, { primaryModel: processModel });
   const fingerprint = restartFingerprint(values);
-  const processModel = values.typesafeModel;
 
   let latest: RuntimeSettingsSnapshot = boot;
   let applied: RuntimeSettingsSnapshot | undefined;
@@ -235,6 +339,7 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
 
   const processPin = {
     model: processModel,
+    ...(modelState.kind === 'resolved' ? { alias: modelState.alias } : {}),
     ...(values.llmFallbackEnabled ? { llm: { ...values.ollamaModels } } : {}),
   };
   // The stale-worker guard re-reads the settings on every classification job (one query, never the
@@ -252,8 +357,8 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
     },
   };
 
-  if (options.recordPin !== false) {
-    const pin = await recordModelPin(db, processPin, (options.now ?? (() => new Date()))());
+  if (options.recordPin !== false && modelState.kind !== 'unresolved') {
+    const pin = await recordModelPin(db, processPin, now());
     if (pin.changed)
       logger.info({}, 'engine model pin changed: re-enrichment and re-matching enqueued');
   }
@@ -261,9 +366,41 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
   let pendingRestart = false;
   let exiting = false;
   let warnedFor: string | undefined;
+  let retrying = false;
+  let closed = false;
   const selfRestart = config.nodeEnv === 'production' && options.selfRestart !== false;
 
+  async function retryResolution(): Promise<void> {
+    if (
+      modelState.kind !== 'unresolved' ||
+      options.recordPin === false ||
+      retrying ||
+      exiting ||
+      closed ||
+      now().getTime() - lastAttempt < resolveRetryMs
+    ) {
+      return;
+    }
+    retrying = true;
+    try {
+      lastAttempt = now().getTime();
+      const probed = await probeAlias(modelState.alias);
+      if ('model' in probed && !closed) {
+        await recordModelResolution(db, {
+          alias: modelState.alias,
+          model: probed.model,
+          now: now(),
+        });
+      }
+    } catch (error) {
+      logger.warn({ err: error }, 'the model alias retry failed');
+    } finally {
+      retrying = false;
+    }
+  }
+
   async function check(): Promise<{ pendingRestart: boolean; exiting: boolean }> {
+    await retryResolution();
     inner.invalidate();
     const snapshot = await settings.get();
     const effective = restartFingerprint(snapshot.values);
@@ -302,6 +439,7 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
     models,
     values,
     processModel,
+    modelState,
     fingerprint,
     check,
     heartbeatRuntime: () => ({
@@ -309,10 +447,23 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
       model: processModel,
       llm: values.llmFallbackEnabled ? { ...values.ollamaModels } : null,
       pendingRestart,
-      problems: latest.problems.map((p) => ({ key: p.key, message: p.message })),
+      problems: [
+        ...latest.problems.map((p) => ({ key: p.key, message: p.message })),
+        ...(modelState.kind === 'unresolved'
+          ? [
+              {
+                key: 'engine.typesafe_model',
+                message: `${modelState.alias} is not resolved to a model yet; classification is paused`,
+              },
+            ]
+          : []),
+      ],
       keyring: keyringReport(),
       defaults: envDefaults(config),
     }),
-    close: () => models.close(),
+    close: () => {
+      closed = true;
+      return models.close();
+    },
   };
 }

@@ -2849,3 +2849,29 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
      completed → `model_upgrade`. Settings → Personal learning shows "Analysis paused since …". The shared schema
      defaults the field to `ok`; a web bundle older than this release rejects the key until it reloads (D-163 bar).
   Rollback hazard: older code rejects `failingSince` while the breaker is not closed; reset it first (RUNBOOK §3).
+- D-273: 2026-10-21 (JEV-1 of docs/design/visible-learning.md) — The Jev model probe. One synthetic request (no
+  reader data) asks which concrete model an id maps to: new call kind `model_probe` (migration 0033), a stateless
+  authorization `{type: 'model_probe', model}` (the id must match `[A-Za-z0-9._:-]{1,64}`; the store admits the kind
+  only with it and it only for the kind), at most 2 attempts and $0.002 reserved, recorded through the router's
+  external-call ledger and never `router.ask` (the breaker is untouched); live metrics exclude it. The engine takes
+  the alias only with `resolveAlias` (probes) and refuses it otherwise; the production pin check accepts an optional
+  release suffix (`jev-1.14.0-rc1`). The model id grammar lives in `packages/shared/src/model-id.ts`. Deviation: the
+  results are a record keyed by requested id (the newest 10), so a save-time probe of a concrete id is not erased by
+  a later probe of the alias. Unverified assumption: Jev documents no answer for an unknown or retired model; the
+  engine maps 410, or 404/400/422 with a model error code (`model_not_found`, `model_unavailable`, `model_retired`,
+  `unknown_model`, `invalid_model`, or a FastAPI `detail[].loc` naming `model`) to `model_unavailable:http_<status>`;
+  record one real answer as a fixture when convenient. An answer that echoes the alias is `alias_unresolved`. The fake
+  TypeSafe server has an opt-in `models` table.
+- D-274: 2026-10-21 (JEV-2; owner decisions 1 and 2 of 2026-10-20 amend locked decision 8) — `jev-latest` is resolved
+  and pinned. It is accepted as a stored setting and as `TYPESAFE_MODEL` in production (exactly that alias; other
+  aliases stay refused). The worker resolves it at start from `settings['engine.model_resolution']` or one probe with
+  a 30 s deadline and uses only the concrete id for the Jev lane, `primaryModel`, the pin (which also records `alias`)
+  and every request; the restart fingerprint includes the resolved model only when the configured value is the alias.
+  Switching between a concrete id and the alias it resolves to changes only the pin's `alias`: no rebuild and the
+  same rating fingerprint (`22190257…` for 1.13.0 on the owner's data). Unresolved: no Jev lane (`no_key`, handlers
+  defer, recovery jobs wait), the pin is not written, an `engine.typesafe_model` problem shows in Admin → Settings,
+  and the probe retries every 5 minutes. `provider.validate` probes with the alias when it is configured. The API
+  freezes the pinned concrete model and answers 409 on analysis while the alias is unresolved with no pin. Rollback
+  hazard: the pin's `alias` (RUNBOOK §3). Known limitations: a fresh install that follows the alias before its first
+  resolution stamps ratings with the alias fingerprint (they have no facets anyway); `jev-1.13.0` ↔ `jev-latest`
+  still asks for the rebuild acknowledgement (JEV-5); an eval replay with the alias fails closed.

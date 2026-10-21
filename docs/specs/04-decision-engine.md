@@ -206,6 +206,8 @@ any retry/fallback, the caller and router verify server-produced `InferenceAutho
   logical request's first reservation (spec 05 §7), so a worker that lost its lease sends nothing.
 - **Eval and credential probes:** explicit, separate admin/evaluation actions with their own bounded
   request purpose. Their synthetic/evaluation inputs are not a way to bypass production feed gates.
+- **Model probes** likewise: the `engine.model-probe` job or the worker's start-up resolution is the demand;
+  they carry no reader data (§1.3).
 
 Paid admission verifies the witness and reserves spend in one transaction. Free/local inference
 (including LibreTranslate article translation and optional Laya) acquires the equivalent validated
@@ -317,6 +319,19 @@ Crypto implementation reference: [Node 22 crypto](https://nodejs.org/docs/latest
 
 ---
 
+### 1.3 Model probe (D-273)
+
+One synthetic TypeSafe request (one `noul` question about a fixed sentence, no reader data) asks which concrete
+model an id maps to. It uses the active TypeSafe credential (`useActive`), never `router.ask`, so the breaker is
+untouched; at most 2 attempts and $0.002 reserved per probe, each attempt reserved and recorded with
+`kind = 'model_probe'` and the stateless authorization `{type: 'model_probe', model}` (the store admits the kind
+only with that authorization, and the authorization only for the kind). Only a probe may send `jev-latest`
+(`resolveAlias`); the result `{requested, answered?, ok, at, error?}` is kept per requested id in
+`settings['engine.model_probe']` (the newest 10). `ok` means an alias answered with a concrete Jev id, or a
+concrete id answered as itself. An answer that echoes the alias is `alias_unresolved`, never a resolution. Only
+transient failures retry (5xx, timeout, a rate limit with a wait of at most 5 s, a malformed body); live metrics
+exclude model probes like credential probes.
+
 ## 2. Answer normalization (all engines)
 
 Every engine converts its raw output into the `Answer` union above and validates it:
@@ -372,6 +387,7 @@ The normalized answers are what is stored in `article_facets.answers`, `card_ans
 |---|---|---|
 | 200 | ok | normalize (§2); `invalid_response` counts as a retryable error once |
 | 401 / 403 | bad key | no retry. Outcome `error` with `auth_error`. Opens the breaker in **auth** mode (§5) and alerts admins |
+| 410, or 404 / 400 / 422 with a model error code | retired or unknown model (an assumption: Jev documents no such error; D-273) | no retry. Permanent `error`, detail `model_unavailable:http_<status>`; counts as a failure for the breaker, never `invalid_request` |
 | 400 / 413 / 422 | invalid request or size | no blind retry/fallback. Outcome `invalid_request`; log set sha, request hash and a redacted, length-capped error code (provider errors can echo private inputs) |
 | 429 | rate limited | retry (§4). Feeds the client-side limiter |
 | 5xx (including 529), network error, timeout | transient | retry (§4) |
@@ -379,11 +395,15 @@ The normalized answers are what is stored in `article_facets.answers`, `card_ans
 | 3xx | redirect | never followed (Authorization must not follow it); permanent `error` `http_3xx`, no retry (D-56) |
 
 - Per-attempt timeout: 30 s.
-- **Model pinning:** the `model` field is always the effective Jev model (`engine.typesafe_model`, else
-  `TYPESAFE_MODEL`, default `jev-1.13.0`; spec 02 §2), never an alias; production additionally requires a
-  pinned version, for the stored value too. The router is built when the worker starts, so a changed model
-  applies after the worker's drained restart (spec 11 §8). The base URL (`engine.typesafe_base_url`) follows
-  the same rule.
+- **Model pinning:** the `model` field of every production request is a concrete Jev version:
+  `engine.typesafe_model` (else `TYPESAFE_MODEL`, default `jev-1.13.0`; spec 02 §2), or, when that is
+  `jev-latest`, the model the worker resolved it to (`settings['engine.model_resolution']`, found by a model probe
+  at worker start, §1.3; D-274). Only a probe ever sends the alias. Production accepts a pinned version or exactly
+  `jev-latest`, for the stored value too. The router is built when the worker starts, so a changed model or
+  resolution applies after the worker's drained restart (spec 11 §8). While the alias is unresolved the router has
+  no Jev lane: every ask answers `no_key` (`typesafe:not_configured`), handlers defer, and
+  `RouterStatus.typesafeLane = 'unconfigured'` makes the recovery jobs wait as under an open breaker. The base URL
+  (`engine.typesafe_base_url`) follows the same restart rule.
 - The response's `model` is stored with every answer. A different model from the requested pin is
   an `invalid_response` in every environment; `jev-fake` is allowed only with the explicit test flag
   `allowFakeModel`, which production refuses (D-55).

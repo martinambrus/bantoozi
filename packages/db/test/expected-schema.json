@@ -1743,7 +1743,7 @@
       "unique": [["reservation_id"]],
       "checks": [
         "engine IN ('typesafe','llm','laya','libretranslate')",
-        "kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft')",
+        "kind IN ('enrich','match','cluster','suggest','translate','credential_probe','eval','card_draft','model_probe')",
         "credential_version > 0",
         "article_revision > 0",
         "n_questions >= 0",

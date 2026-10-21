@@ -47,6 +47,15 @@ import { ClassifyHarness, ScriptedRouter } from './classify.js';
  *     (article.enrich, house.reenrich, ...) when `engine.model_pin.model` differs from the process's
  *     `classification.primaryModel`. No pin row: not stale.
  *
+ * JEV-2 seams (the `jev-latest` alias): `createWorkerRuntime` also takes
+ *   `modelProbe?: (requested: string, signal: AbortSignal) => Promise<EngineModelProbe>` (replaces the
+ *   real prober at start and in retries; production tests inject it because the production engine
+ *   needs https), `resolveTimeoutMs?` (default 30_000, one deadline for the start probe) and
+ *   `resolveRetryMs?` (default 300_000). The runtime gains `modelState` (`concrete` | `resolved` with
+ *   source `stored`|`probed` | `unresolved`) and `values` (with `typesafeResolvedModel`). The worker
+ *   writes `engine.model_resolution`; `restartFingerprint` also hashes `typesafeResolvedModel` when
+ *   the configured model is the alias. `router.status()` has `typesafeLane`.
+ *
  * `src/eval-mode.ts`: `HeartbeatOptions.runtime?: () => Record<string, unknown>`; the beat writes its
  * result to the entry's `runtime` field.
  */
@@ -72,8 +81,13 @@ export const WORKER_DEFAULT_KEYS = [
   'translate.libretranslate_url',
 ] as const;
 
-/** All runtime keys, cleared between tests. */
-export const RUNTIME_KEYS = [...WORKER_DEFAULT_KEYS, 'api.rate_limits_enabled'] as const;
+/** All runtime keys (and the stored alias resolution), cleared between tests. */
+export const RUNTIME_KEYS = [
+  ...WORKER_DEFAULT_KEYS,
+  'api.rate_limits_enabled',
+  // JEV-2: the worker-written resolution of the `jev-latest` alias (not an editable runtime key).
+  'engine.model_resolution',
+] as const;
 
 export interface WorkerRuntimeConfigLike {
   nodeEnv: 'test' | 'production' | 'development';
@@ -193,7 +207,27 @@ export interface HeartbeatRuntime {
   defaults: Record<string, unknown>;
 }
 
+export type ModelStateLike =
+  | { kind: 'concrete'; model: string }
+  | { kind: 'resolved'; alias: string; model: string; source: 'stored' | 'probed' }
+  | { kind: 'unresolved'; alias: string; reason: string };
+
+export interface ModelProbeResultLike {
+  requested: string;
+  answered?: string;
+  ok: boolean;
+  at: string;
+  error?: string;
+}
+
+export type ModelProbeSeam = (
+  requested: string,
+  signal: AbortSignal,
+) => Promise<ModelProbeResultLike>;
+
 export interface WorkerRuntimeLike {
+  modelState: ModelStateLike;
+  values: { typesafeModel: string; typesafeResolvedModel?: string | null };
   settings: { get(): Promise<unknown>; invalidate(): void };
   models: {
     classification: ClassificationDeps;
@@ -213,6 +247,9 @@ export interface StartOptions {
   selfRestart?: boolean;
   recordPin?: boolean;
   now?: () => Date;
+  modelProbe?: ModelProbeSeam;
+  resolveTimeoutMs?: number;
+  resolveRetryMs?: number;
 }
 
 /** `createWorkerRuntime`, imported lazily so a missing module fails each test, not the file. */
@@ -229,6 +266,11 @@ export async function startRuntime(options: StartOptions): Promise<WorkerRuntime
     ...(options.selfRestart === undefined ? {} : { selfRestart: options.selfRestart }),
     ...(options.recordPin === undefined ? {} : { recordPin: options.recordPin }),
     ...(options.now === undefined ? {} : { now: options.now }),
+    ...(options.modelProbe === undefined ? {} : { modelProbe: options.modelProbe }),
+    ...(options.resolveTimeoutMs === undefined
+      ? {}
+      : { resolveTimeoutMs: options.resolveTimeoutMs }),
+    ...(options.resolveRetryMs === undefined ? {} : { resolveRetryMs: options.resolveRetryMs }),
   });
 }
 
@@ -278,6 +320,32 @@ export async function setSetting(owner: pg.Pool, key: string, value: unknown): P
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
     [key, JSON.stringify(value)],
   );
+}
+
+export interface ResolutionRow {
+  alias: string;
+  model: string;
+  resolvedAt: string;
+  checkedAt: string;
+  previous?: { model: string; until: string };
+}
+
+export async function resolutionRow(owner: pg.Pool): Promise<ResolutionRow | undefined> {
+  const result = await owner.query<{ value: ResolutionRow }>(
+    `SELECT value FROM settings WHERE key = 'engine.model_resolution'`,
+  );
+  return result.rows[0]?.value;
+}
+
+/** A stored resolution of `jev-latest` (what a previous start probe wrote). */
+export async function storeResolution(
+  owner: pg.Pool,
+  model: string,
+  at = '2026-10-10T08:00:00.000Z',
+): Promise<ResolutionRow> {
+  const row: ResolutionRow = { alias: 'jev-latest', model, resolvedAt: at, checkedAt: at };
+  await setSetting(owner, 'engine.model_resolution', row);
+  return row;
 }
 
 export async function pinRow(owner: pg.Pool): Promise<EngineModelPin | undefined> {

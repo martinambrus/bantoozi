@@ -20,6 +20,7 @@ import {
 } from '@bantoozi/questions';
 import {
   AppError,
+  isModelAlias,
   readSetting,
   type AnalysisInputSnapshot,
   type AnalysisSetRef,
@@ -78,6 +79,8 @@ export async function loadSnapshotConfig(
     return { id: row.id, version: row.version, sha256: row.sha256 };
   };
   const pin = readSetting('engine.model_pin', await readStoredSetting(tx, 'engine.model_pin'), env);
+  const primaryModel = pin !== undefined && !isModelAlias(pin.model) ? pin.model : typesafeModel;
+  if (isModelAlias(primaryModel)) throw notConfigured();
   return {
     questionSets: { enrich: ref('enrich'), match: ref('match') },
     languageModes:
@@ -85,7 +88,7 @@ export async function loadSnapshotConfig(
     cardTextMode:
       readSetting('card_text_mode', await readStoredSetting(tx, 'card_text_mode'), env) ??
       'as_written',
-    primaryModel: pin?.model ?? typesafeModel,
+    primaryModel,
   };
 }
 

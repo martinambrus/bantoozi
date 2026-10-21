@@ -1,3 +1,4 @@
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
 
 import type { RuntimeEnvDefaults, RuntimeSettingsContext } from '@bantoozi/shared';
@@ -195,5 +196,65 @@ describe('M8b-T1 runtimeSettingsLoader', () => {
     const map = await runtimeSettingsLoader(db as never)();
     expect(seen).toHaveLength(1);
     expect(map.get('engine.concurrency')).toBe(3);
+  });
+
+  it('JEV-2: that one statement also reads engine.model_resolution', async () => {
+    const seen: unknown[] = [];
+    const db = {
+      execute: async (q: unknown) => {
+        seen.push(q);
+        return {
+          rows: [
+            { key: 'engine.concurrency', value: 3 },
+            { key: 'engine.model_resolution', value: { model: 'jev-1.13.0' } },
+          ],
+          rowCount: 2,
+        };
+      },
+    };
+    const map = await runtimeSettingsLoader(db as never)();
+    expect(seen).toHaveLength(1);
+    const { params } = new PgDialect().sqlToQuery(seen[0] as never);
+    const keys = (params as unknown[]).flatMap((p) => (Array.isArray(p) ? p : [p]));
+    expect(keys).toContain('engine.model_resolution');
+    expect(keys).toContain('engine.concurrency');
+    expect(keys).toContain('translate.libretranslate_url');
+    expect(map.get('engine.model_resolution')).toEqual({ model: 'jev-1.13.0' });
+  });
+});
+
+describe('JEV-2 the cache snapshot carries the resolved model', () => {
+  const resolution = (model: string) => ({
+    alias: 'jev-latest',
+    model,
+    resolvedAt: '2026-10-01T10:00:00.000Z',
+    checkedAt: '2026-10-02T10:00:00.000Z',
+  });
+
+  it('an alias with a stored valid row exposes the row model; another row, another model', async () => {
+    const h = harness({
+      'engine.typesafe_model': 'jev-latest',
+      'engine.model_resolution': resolution('jev-1.13.0'),
+    });
+    const s = await h.cache.get();
+    expect(s.problems).toEqual([]);
+    expect(s.values.typesafeModel).toBe('jev-latest');
+    expect(s.values.typesafeResolvedModel).toBe('jev-1.13.0');
+    h.set({
+      'engine.typesafe_model': 'jev-latest',
+      'engine.model_resolution': resolution('jev-1.14.0'),
+    });
+    h.cache.invalidate();
+    expect((await h.cache.get()).values.typesafeResolvedModel).toBe('jev-1.14.0');
+  });
+
+  it('is null without a row and for a concrete model (controls)', async () => {
+    const noRow = harness({ 'engine.typesafe_model': 'jev-latest' });
+    expect((await noRow.cache.get()).values.typesafeResolvedModel).toBeNull();
+    const concrete = harness({
+      'engine.typesafe_model': 'jev-1.14.0',
+      'engine.model_resolution': resolution('jev-1.13.0'),
+    });
+    expect((await concrete.cache.get()).values.typesafeResolvedModel).toBeNull();
   });
 });

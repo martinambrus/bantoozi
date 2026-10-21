@@ -1,4 +1,9 @@
-import { isBigIntString, isUuid, type InferenceAuthorization } from '@bantoozi/shared';
+import {
+  isBigIntString,
+  isUuid,
+  MODEL_ID_PATTERN,
+  type InferenceAuthorization,
+} from '@bantoozi/shared';
 import { sql, type SQL } from 'drizzle-orm';
 
 import type { Executor } from '../client.js';
@@ -25,6 +30,7 @@ import { SELECTION_WINDOW_DAYS } from '../ingest/demand.js';
  * must be live, and every candidate article must still be authorized for that user. Credential
  * probes need the candidate under their own live validation lease, whose token they carry (D-90);
  * eval runs are separately authorized.
+ * Model probes send a synthetic request with no user data: they need only a well-formed model id.
  * Malformed ids never reach SQL: they simply do not authorize.
  */
 
@@ -71,6 +77,8 @@ export async function isInferenceAuthorized(
         uuid(authorization.draftId) &&
         cardDraftAuthorized(db, authorization)
       );
+    case 'model_probe':
+      return typeof authorization.model === 'string' && MODEL_ID_PATTERN.test(authorization.model);
     case 'eval':
       return (
         typeof authorization.runId === 'string' &&

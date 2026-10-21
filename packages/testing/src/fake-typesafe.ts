@@ -34,7 +34,8 @@ import {
  *   distribution; confidence `1 − H(p)/ln(k)` (spec 04 §2)
  * - **score:** probability 1.0 on the middle level `floor(levels / 2)`
  *
- * `usage.input_tokens` is the spec 04 §6.1 estimate and `model` is always `jev-fake`. Article text
+ * `usage.input_tokens` is the spec 04 §6.1 estimate and `model` is `jev-fake` unless the `models` option
+ * maps the requested model to another answer. Article text
  * is only data here: nothing in the state changes how the rules are applied.
  */
 
@@ -64,6 +65,11 @@ export interface FakeTypeSafeOptions {
   recordRequests?: boolean | undefined;
   /** When set, a request without `Authorization: Bearer <apiKey>` gets 401. */
   apiKey?: string | undefined;
+  /**
+   * Requested model id to answering model id. Unset: every request is answered as `jev-fake`. Set: a
+   * requested id that is a key is answered with its value, any other id gets 404 `model_not_found`.
+   */
+  models?: Readonly<Record<string, string>> | undefined;
 }
 
 export interface FakeTypeSafeStartOptions extends FakeTypeSafeOptions {
@@ -284,7 +290,10 @@ function jevAnswer(decision: FakeDecision): unknown {
  * The fake's 200 response JSON for a `systemone` request body (pure; a TypeError for an invalid
  * request, which the server answers with 422 instead).
  */
-export function fakeTypeSafeAnswer(requestBody: unknown): unknown {
+export function fakeTypeSafeAnswer(
+  requestBody: unknown,
+  answeredModel: string = FAKE_TYPESAFE_MODEL,
+): unknown {
   const problem = requestProblem(requestBody);
   if (problem !== undefined || !isRecord(requestBody)) {
     throw new TypeError(`fake TypeSafe: invalid request (${problem ?? 'body_not_object'})`);
@@ -298,7 +307,7 @@ export function fakeTypeSafeAnswer(requestBody: unknown): unknown {
     ]),
   );
   return {
-    model: FAKE_TYPESAFE_MODEL,
+    model: answeredModel,
     answers,
     usage: {
       input_tokens: estimateTokens(state, questions),
@@ -376,6 +385,23 @@ export async function startFakeTypeSafe(
       return {
         status: 422,
         body: { error: { type: 'invalid_request_error', code: problem, message: 'fake' } },
+      };
+    }
+    const { models } = current;
+    if (models !== undefined) {
+      const requested = isRecord(body) ? own(body, 'model') : undefined;
+      if (typeof requested === 'string' && Object.hasOwn(models, requested)) {
+        return { status: 200, body: fakeTypeSafeAnswer(body, models[requested]) };
+      }
+      return {
+        status: 404,
+        body: {
+          error: {
+            type: 'not_found_error',
+            code: 'model_not_found',
+            message: 'fake TypeSafe: unknown or retired model',
+          },
+        },
       };
     }
     return { status: 200, body: fakeTypeSafeAnswer(body) };

@@ -4,6 +4,7 @@ import { buildJobIntent, parseSetting } from '@bantoozi/shared';
 /** The pin a worker derives from its config: `llm` exists only while the fallback is on. */
 export interface WorkerModelPin {
   model: string;
+  alias?: string | undefined;
   llm?: { fast: string; strong: string } | undefined;
 }
 
@@ -26,6 +27,7 @@ export async function recordModelPin(
   const since = now.toISOString();
   const fresh = parseSetting('engine.model_pin', {
     model: pin.model,
+    ...(pin.alias ? { alias: pin.alias } : {}),
     ...(pin.llm ? { llm: pin.llm } : {}),
     since,
   });
@@ -35,10 +37,19 @@ export async function recordModelPin(
       if (current === undefined || current === null) return fresh;
       const stored = parseSetting('engine.model_pin', current);
       if (stored === undefined) return fresh;
-      if (stored.model === pin.model && llmKey(stored.llm) === llmKey(pin.llm)) return stored;
+      const { alias: _storedAlias, ...withoutAlias } = stored;
+      if (stored.model === pin.model && llmKey(stored.llm) === llmKey(pin.llm)) {
+        return { ...withoutAlias, ...(pin.alias ? { alias: pin.alias } : {}) } as typeof stored;
+      }
       changed = true;
-      const { llm: _llm, ...kept } = stored;
-      return { ...kept, model: pin.model, ...(pin.llm ? { llm: pin.llm } : {}), since };
+      const { llm: _llm, ...kept } = withoutAlias;
+      return {
+        ...kept,
+        model: pin.model,
+        ...(pin.alias ? { alias: pin.alias } : {}),
+        ...(pin.llm ? { llm: pin.llm } : {}),
+        since,
+      };
     });
     if (changed) {
       const outbox = workerOutbox(tx);

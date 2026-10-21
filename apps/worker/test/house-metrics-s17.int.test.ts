@@ -607,9 +607,10 @@ describe('S17 A5: engine latency, errors, coverage and billed cost', () => {
       articleId: article.id,
       at: onDay(0, 8),
     });
-    // Not live: evaluation, credential probes, translation by LibreTranslate. Their latency is huge.
+    // Not live: evaluation, credential and model probes, translation by LibreTranslate. Their latency is huge.
     await w.call({ kind: 'eval', latencyMs: 99_999, articleId: article.id, at: onDay(0, 9) });
     await w.call({ kind: 'credential_probe', latencyMs: 99_999, at: onDay(0, 9) });
+    await w.call({ kind: 'model_probe', latencyMs: 99_999, at: onDay(0, 9) });
     await w.call({
       engine: 'libretranslate',
       kind: 'translate',

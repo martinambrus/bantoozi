@@ -103,5 +103,6 @@ export async function lockWorkerCurrent(
     RESTART_SETTING_KEYS.map((key) => ({ key, initial: null })),
   );
   await shareLockStoredSetting(tx, 'engine.model_pin');
+  await shareLockStoredSetting(tx, 'engine.model_resolution');
   return staleness(tx, classification);
 }

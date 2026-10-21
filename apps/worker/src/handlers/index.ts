@@ -11,6 +11,8 @@ import { createCardBackfillHandler } from './card-backfill.js';
 import type { WorkerDeps } from './deps.js';
 import { createFeedFetchHandler } from './feed-fetch.js';
 import { createFeedScheduleHandler } from './feed-schedule.js';
+import { createModelProbeHandler } from './model-probe.js';
+import { createModelProber } from '../model-probe.js';
 import { createProviderValidateHandler } from './provider-validate.js';
 import { createAlertsHandler } from './house-alerts.js';
 import { createMetricsHandler } from './house-metrics.js';
@@ -112,7 +114,10 @@ export const SUGGEST_QUEUES = ['user.suggest'] as const satisfies readonly Queue
 export const DRAFT_QUEUES = ['card.draft'] as const satisfies readonly QueueName[];
 
 /** M2 provider key validation (spec 04 §1.2): implemented when the worker has the probe dependencies. */
-export const PROVIDER_QUEUES = ['provider.validate'] as const satisfies readonly QueueName[];
+export const PROVIDER_QUEUES = [
+  'provider.validate',
+  'engine.model-probe',
+] as const satisfies readonly QueueName[];
 
 /**
  * M5 ranking (spec 06 §7) and rule expiry (spec 11 §6): they read stored results only, so they need
@@ -232,6 +237,19 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
               logger: deps.logger,
               ...(deps.now === undefined ? {} : { now: deps.now }),
               ...providerValidation,
+            }),
+          ),
+          'engine.model-probe': implemented(
+            createModelProbeHandler({
+              db: deps.db,
+              logger: deps.logger,
+              prober: createModelProber({
+                ledger: providerValidation.router,
+                credentials: providerValidation.credentials,
+                config: providerValidation.config,
+                logger: deps.logger,
+                ...(deps.now === undefined ? {} : { now: deps.now }),
+              }),
             }),
           ),
         }),

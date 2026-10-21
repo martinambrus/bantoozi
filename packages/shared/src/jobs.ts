@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { IdSchema, UuidSchema } from './ids.js';
+import { MODEL_ID_PATTERN } from './model-id.js';
 import { canonicalJson } from './text/canonical-json.js';
 
 /**
@@ -241,6 +242,13 @@ export const QUEUES = {
     concurrency: 1,
     options: { policy: 'stately', retryLimit: 0 },
   }),
+  // One synthetic request asking Jev which model an id maps to (visible-learning §4.1). The result
+  // lands in settings['engine.model_probe']; a failed probe is a result, never a retry.
+  'engine.model-probe': spec({
+    payload: z.object({ model: z.string().regex(MODEL_ID_PATTERN) }).strict(),
+    concurrency: 1,
+    options: { policy: 'stately', retryLimit: 0 },
+  }),
   'house.reenrich': spec({
     payload: reenrichPayload,
     concurrency: 1,
@@ -401,6 +409,8 @@ export function sendSpecFor<Q extends QueueName>(queue: Q, payload: JobPayload<Q
         kind: 'send',
         singletonKey: `provider-validate:${id('provider')}:${id('candidateVersion')}`,
       };
+    case 'engine.model-probe':
+      return { kind: 'send', singletonKey: `model-probe:${id('model')}` };
     case 'house.translate-cards':
       return {
         kind: 'send',
@@ -509,6 +519,8 @@ export const enqueueCardDraft = (s: JobSender, p: JobPayloadInput<'card.draft'>)
 export const enqueueHouse = (s: JobSender, queue: HouseCronQueue) => enqueue(s, queue, {});
 export const enqueueProviderValidate = (s: JobSender, p: JobPayloadInput<'provider.validate'>) =>
   enqueue(s, 'provider.validate', p);
+export const enqueueModelProbe = (s: JobSender, p: JobPayloadInput<'engine.model-probe'>) =>
+  enqueue(s, 'engine.model-probe', p);
 export const enqueueReenrich = (s: JobSender, p: JobPayloadInput<'house.reenrich'>) =>
   enqueue(s, 'house.reenrich', p);
 export const enqueueTranslateCards = (s: JobSender, p: JobPayloadInput<'house.translate-cards'>) =>
