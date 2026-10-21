@@ -1,4 +1,5 @@
 import {
+  RUNTIME_SETTINGS_EXTRA_KEYS,
   RUNTIME_SETTING_KEYS,
   effectiveRuntimeSettings,
   type RuntimeEnvDefaults,
@@ -11,7 +12,7 @@ import { readStoredSettings } from './settings.js';
 
 /** The stored rows of the live runtime settings, read in one statement. */
 export function runtimeSettingsLoader(db: Executor): () => Promise<Map<string, unknown>> {
-  return () => readStoredSettings(db, RUNTIME_SETTING_KEYS);
+  return () => readStoredSettings(db, [...RUNTIME_SETTING_KEYS, ...RUNTIME_SETTINGS_EXTRA_KEYS]);
 }
 
 export interface RuntimeSettingsCache {

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { IdSchema, UuidSchema } from './ids.js';
 import { HOUSE_PROGRESS_JOBS, isQueueName } from './jobs.js';
 import { JsonObjectSchema, JsonValueSchema } from './json.js';
-import { MODEL_ID_PATTERN } from './model-id.js';
+import { JEV_LATEST_ALIAS, MODEL_ID_PATTERN, isConcreteJevModel } from './model-id.js';
 import { RankerThresholdsSchema } from './ranker-config.js';
 
 /**
@@ -58,6 +58,7 @@ export type EngineCircuit = z.infer<typeof EngineCircuitSchema>;
 export const EngineModelPinSchema = z
   .object({
     model: z.string().min(1).max(200),
+    alias: z.literal(JEV_LATEST_ALIAS).optional(),
     llm: z
       .object({ fast: z.string().min(1).max(200), strong: z.string().min(1).max(200) })
       .strict()
@@ -75,6 +76,22 @@ export const EngineModelPinSchema = z
 export type EngineModelPin = z.infer<typeof EngineModelPinSchema>;
 
 const modelId = z.string().regex(MODEL_ID_PATTERN, 'invalid model id');
+const concreteJevModel = z.string().refine(isConcreteJevModel, 'not a concrete Jev release');
+
+/**
+ * Where the alias `jev-latest` currently points (visible-learning §4.1): the concrete release, when
+ * it changed and when it was last confirmed, and the release it replaced.
+ */
+export const EngineModelResolutionSchema = z
+  .object({
+    alias: z.literal(JEV_LATEST_ALIAS),
+    model: concreteJevModel,
+    resolvedAt: iso,
+    checkedAt: iso,
+    previous: z.object({ model: concreteJevModel, until: iso }).strict().optional(),
+  })
+  .strict();
+export type EngineModelResolution = z.infer<typeof EngineModelResolutionSchema>;
 
 /**
  * What a model probe learned about one requested id (visible-learning §4.1): `ok` when an alias
@@ -249,6 +266,11 @@ export const SETTINGS = {
     schema: EngineModelPinSchema,
     defaultValue: () => undefined,
     writers: ['seed', 'worker'],
+  }),
+  'engine.model_resolution': def({
+    schema: EngineModelResolutionSchema,
+    defaultValue: () => undefined,
+    writers: ['worker'],
   }),
   'engine.model_probe': def({
     schema: EngineModelProbesSchema,

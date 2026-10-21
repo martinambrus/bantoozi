@@ -32,7 +32,10 @@ export type WorkerEngineConfig = Pick<
   | 'ollamaModelStrong'
   | 'ollamaMaxConcurrency'
   | 'llmFallbackEnabled'
->;
+> & {
+  /** The concrete id a `jev-latest` configuration resolved to; null while unresolved. */
+  typesafeResolvedModel?: string | null;
+};
 
 export interface EngineConfigOptions {
   /**
@@ -52,16 +55,17 @@ export function engineConfigFromWorker(
   options: EngineConfigOptions = {},
 ): EngineConfig {
   const production = config.nodeEnv === 'production';
+  const laneModel = config.typesafeResolvedModel ?? config.typesafeModel;
   return {
     typesafe: {
       baseUrl: config.typesafeBaseUrl,
-      model: config.typesafeModel,
+      model: laneModel,
       // Read lazily at each estimate: the live runtime setting changes it without a restart.
       get pricePerMTokUsd(): number {
         return config.typesafePricePerMtokUsd;
       },
       ...(options.rateLimitShare === undefined ? {} : { rateLimitShare: options.rateLimitShare }),
-      ...(!production && config.typesafeModel === JEV_FAKE_MODEL ? { allowFakeModel: true } : {}),
+      ...(!production && laneModel === JEV_FAKE_MODEL ? { allowFakeModel: true } : {}),
     },
     ollama: {
       baseUrl: config.ollamaBaseUrl,

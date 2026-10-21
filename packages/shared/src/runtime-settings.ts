@@ -1,4 +1,5 @@
-import { parseSetting, type SettingKey } from './settings.js';
+import { JEV_LATEST_ALIAS, isConcreteJevModel, isModelAlias } from './model-id.js';
+import { EngineModelResolutionSchema, parseSetting, type SettingKey } from './settings.js';
 
 /**
  * Live runtime settings (M8b-T1, spec 01 §3, spec 02 §2). The stored `settings` row of each key
@@ -23,6 +24,11 @@ export const RUNTIME_SETTING_KEYS = [
   'translate.libretranslate_url',
 ] as const satisfies readonly SettingKey[];
 export type RuntimeSettingKey = (typeof RUNTIME_SETTING_KEYS)[number];
+
+/** Stored rows the effective values derive from but that are not live settings themselves. */
+export const RUNTIME_SETTINGS_EXTRA_KEYS = [
+  'engine.model_resolution',
+] as const satisfies readonly SettingKey[];
 
 /**
  * A local Ollama app names a cloud model `<model>-cloud` (`gemma4:31b-cloud`); the Ollama Cloud API
@@ -64,6 +70,8 @@ export interface RuntimeEnvDefaults {
 
 export interface RuntimeSettingsValues {
   typesafeModel: string;
+  /** The concrete release `jev-latest` resolved to; null for a concrete setting or an unresolved alias. */
+  typesafeResolvedModel: string | null;
   typesafeBaseUrl: string;
   typesafePricePerMtokUsd: number;
   engineConcurrency: number;
@@ -92,8 +100,6 @@ export interface RuntimeSettingsSnapshot {
 
 export type RuntimeSettingValidation =
   { ok: true; value: unknown } | { ok: false; message: string };
-
-const PINNED_MODEL = /^jev-\d+\.\d+\.\d+(?:[-+.][\w.-]+)?$/;
 
 function hostAllowed(url: URL, allowlist: readonly string[]): boolean {
   const host = url.host.toLowerCase();
@@ -138,8 +144,15 @@ export function validateRuntimeSetting(
   if (parsed === null) return { ok: true, value: null };
   switch (key) {
     case 'engine.typesafe_model':
-      if (ctx.production && !PINNED_MODEL.test(parsed as string)) {
-        return { ok: false, message: 'production needs a pinned model version such as jev-1.13.0' };
+      if (
+        ctx.production &&
+        !isConcreteJevModel(parsed as string) &&
+        !isModelAlias(parsed as string)
+      ) {
+        return {
+          ok: false,
+          message: `production needs a pinned model version such as jev-1.13.0, or ${JEV_LATEST_ALIAS}`,
+        };
       }
       return { ok: true, value: parsed };
     case 'engine.typesafe_base_url':
@@ -265,5 +278,30 @@ export function effectiveRuntimeSettings(
       }
     }
   }
+  values.typesafeResolvedModel = null;
+  const resolutionRow = stored.get('engine.model_resolution');
+  if (
+    typeof values.typesafeModel === 'string' &&
+    isModelAlias(values.typesafeModel) &&
+    resolutionRow !== undefined &&
+    resolutionRow !== null
+  ) {
+    const parsed = EngineModelResolutionSchema.safeParse(resolutionRow);
+    if (parsed.success && parsed.data.alias === values.typesafeModel) {
+      values.typesafeResolvedModel = parsed.data.model;
+    } else {
+      problems.push({
+        key: 'engine.model_resolution',
+        message: parsed.success
+          ? 'the stored resolution is for another alias'
+          : (parsed.error.issues[0]?.message ?? 'invalid value'),
+      });
+    }
+  }
   return { values: values as unknown as RuntimeSettingsValues, sources, problems };
+}
+
+/** The concrete model id this process may call: the configured one, or an alias's resolution (null when unresolved). */
+export function effectiveTypesafeModel(values: RuntimeSettingsValues): string | null {
+  return isModelAlias(values.typesafeModel) ? values.typesafeResolvedModel : values.typesafeModel;
 }

@@ -160,11 +160,25 @@ describe('loadConfig (spec 01 §3)', () => {
       SESSION_PEPPER: 'p'.repeat(32),
       SMTP_URL: 'smtp://mail.example.com:587',
       PUBLIC_BASE_URL: 'https://bantoozi.example',
-      TYPESAFE_MODEL: 'jev-latest',
+      TYPESAFE_MODEL: 'jev-beta',
     };
     expect(problemsOf(() => loadConfig({ process: 'api', env: prod }))).toEqual([
-      'TYPESAFE_MODEL: must be a pinned version (e.g. jev-1.13.0) in production',
+      'TYPESAFE_MODEL: must be a pinned version (e.g. jev-1.13.0) or jev-latest in production',
     ]);
+    // JEV-2: the alias and a pre-release id load in production; near misses do not
+    for (const model of ['jev-latest', 'jev-1.14.0-rc1']) {
+      expect(
+        loadConfig({ process: 'api', env: { ...prod, TYPESAFE_MODEL: model } }).typesafeModel,
+      ).toBe(model);
+    }
+    for (const model of ['latest', 'Jev-Latest', 'jev-latest ', 'jev-fake']) {
+      expect(
+        problemsOf(() => loadConfig({ process: 'api', env: { ...prod, TYPESAFE_MODEL: model } })),
+        model,
+      ).toEqual([
+        'TYPESAFE_MODEL: must be a pinned version (e.g. jev-1.13.0) or jev-latest in production',
+      ]);
+    }
   });
 
   it('refuses RATE_LIMITS_ENABLED=false in production and allows it only with NODE_ENV=test', () => {
@@ -416,9 +430,17 @@ describe('loadConfig (spec 01 §3)', () => {
     ).toEqual(['MAIL_TRANSPORT: "log" would print login codes; not allowed in production']);
     expect(
       problemsOf(() =>
-        loadConfig({ process: 'worker', env: { ...prodWorker, TYPESAFE_MODEL: 'jev-latest' } }),
+        loadConfig({ process: 'worker', env: { ...prodWorker, TYPESAFE_MODEL: 'jev-beta' } }),
       ),
-    ).toEqual(['TYPESAFE_MODEL: must be a pinned version (e.g. jev-1.13.0) in production']);
+    ).toEqual([
+      'TYPESAFE_MODEL: must be a pinned version (e.g. jev-1.13.0) or jev-latest in production',
+    ]);
+    for (const model of ['jev-latest', 'jev-1.14.0-rc1']) {
+      expect(
+        loadConfig({ process: 'worker', env: { ...prodWorker, TYPESAFE_MODEL: model } })
+          .typesafeModel,
+      ).toBe(model);
+    }
     expect(
       problemsOf(() =>
         loadConfig({

@@ -29,8 +29,10 @@ import {
 } from '@bantoozi/questions';
 import {
   SEEDED_SETTING_KEYS,
+  effectiveTypesafeModel,
   parseSetting,
   settingDefault,
+  type RuntimeSettingsValues,
   type SettingEnvDefaults,
 } from '@bantoozi/shared';
 import { createLogger, loadConfig } from '@bantoozi/shared/server';
@@ -72,6 +74,16 @@ export interface SeedModelPin {
   model: string;
   llm?: { fast: string; strong: string } | undefined;
 }
+
+/** The pin the effective values imply; undefined while `jev-latest` is unresolved. */
+export function seedModelPinOf(values: RuntimeSettingsValues): SeedModelPin | undefined {
+  const model = effectiveTypesafeModel(values);
+  if (model === null) return undefined;
+  return { model, ...(values.llmFallbackEnabled ? { llm: { ...values.ollamaModels } } : {}) };
+}
+
+const modelPinOption = (modelPin: SeedModelPin | undefined): { modelPin?: SeedModelPin } =>
+  modelPin === undefined ? {} : { modelPin };
 
 /** Seeds the `engine.model_pin` row when `modelPin` is given and the row is missing. */
 export async function runSeed(
@@ -207,10 +219,7 @@ async function main(): Promise<void> {
         dailyBudgetUsd: config.dailyBudgetUsd,
         languageModes: config.languageModes,
         signupMode: config.signupMode,
-        modelPin: {
-          model: effective.typesafeModel,
-          llm: effective.llmFallbackEnabled ? { ...effective.ollamaModels } : undefined,
-        },
+        ...modelPinOption(seedModelPinOf(effective)),
       },
       defaultSeedHooks(),
     );

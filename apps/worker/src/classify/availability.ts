@@ -9,7 +9,8 @@ import { readSetting, type SettingEnvDefaults } from '@bantoozi/shared';
  * bulk budget still admits spend. Advisory only: every call still reserves and rechecks demand.
  */
 export type PrimaryAvailability =
-  { available: true } | { available: false; reason: 'auth' | 'circuit_open' | 'no_key' | 'budget' };
+  | { available: true }
+  | { available: false; reason: 'auth' | 'circuit_open' | 'no_key' | 'budget' | 'unconfigured' };
 
 export async function primaryAvailability(
   db: Executor,
@@ -27,6 +28,7 @@ export async function primaryAvailability(
     return { available: false, reason: 'circuit_open' };
   }
   const status = await router.status();
+  if (status.typesafeLane === 'unconfigured') return { available: false, reason: 'unconfigured' };
   const credential = status.credentials.typesafe;
   if (credential.source === 'none' || !credential.enabled) {
     return { available: false, reason: 'no_key' };

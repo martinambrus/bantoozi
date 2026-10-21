@@ -5,6 +5,7 @@ import { inspect } from 'node:util';
 import { z } from 'zod';
 
 import { ENV_RANGES } from '../env-ranges.js';
+import { isModelAlias, isPinnedModel } from '../model-id.js';
 import { normalizeOllamaModel } from '../runtime-settings.js';
 import { resolveWorkerQueues, type QueueName } from '../jobs.js';
 import {
@@ -478,8 +479,15 @@ export function loadConfig<P extends ProcessKind>(options: LoadConfigOptions<P>)
       }
     }
   }
-  if (production && relevant('TYPESAFE_MODEL') && !PINNED_MODEL.test(config.typesafeModel)) {
-    problems.push('TYPESAFE_MODEL: must be a pinned version (e.g. jev-1.13.0) in production');
+  if (
+    production &&
+    relevant('TYPESAFE_MODEL') &&
+    !isPinnedModel(config.typesafeModel) &&
+    !(isModelAlias(config.typesafeModel) && isModelAlias(env['TYPESAFE_MODEL'] ?? ''))
+  ) {
+    problems.push(
+      'TYPESAFE_MODEL: must be a pinned version (e.g. jev-1.13.0) or jev-latest in production',
+    );
   }
   if (production) {
     for (const [name, url] of [
@@ -518,8 +526,6 @@ function redactable(config: Config): Config {
 }
 
 // ── field schemas ────────────────────────────────────────────────────────────────────────────
-
-const PINNED_MODEL = /^[a-z][a-z0-9.-]*-\d+\.\d+\.\d+$/;
 
 const intIn = (min: number, max: number) =>
   z

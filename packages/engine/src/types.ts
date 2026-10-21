@@ -119,6 +119,8 @@ export interface RouterStatus {
   spendTodayUsd: number;
   budgetUsd: number;
   llmCallsToday: number;
+  /** Whether the Jev lane exists; `unconfigured` when the model is an alias with no release. */
+  typesafeLane?: 'ready' | 'unconfigured';
 }
 
 /** The ONLY thing handlers use (spec 04 §1). */

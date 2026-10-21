@@ -55,6 +55,7 @@ export function createWorkerModels(
   db: Database,
   config: WorkerModelConfig,
   logger: EngineLogger,
+  options: { primaryModel?: string } = {},
 ): WorkerModels {
   const credentials = credentialResolverFromConfig(db, config, logger);
   const router = createWorkerEngineRouter({ db, config, credentials, logger });
@@ -67,7 +68,7 @@ export function createWorkerModels(
     credentials,
     classification: {
       router,
-      primaryModel: config.typesafeModel,
+      primaryModel: options.primaryModel ?? config.typesafeModel,
       leaseMs: CLASSIFICATION_LEASE_MS,
       callDeadlineMs: CLASSIFICATION_CALL_DEADLINE_MS,
       jobBudgetMs: CLASSIFICATION_JOB_BUDGET_MS,

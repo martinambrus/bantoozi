@@ -126,8 +126,32 @@ describe('M8b-T1 validateRuntimeSetting: production rules', () => {
   it('typesafe model: production needs a pinned version, jev-fake is dev only', () => {
     expect(ok('engine.typesafe_model', 'jev-1.14.0')).toEqual({ ok: true, value: 'jev-1.14.0' });
     expect(ok('engine.typesafe_model', 'jev-fake').ok).toBe(false);
-    expect(ok('engine.typesafe_model', 'jev-latest').ok).toBe(false);
     expect(ok('engine.typesafe_model', 'jev-fake', DEV)).toEqual({ ok: true, value: 'jev-fake' });
+  });
+
+  it('typesafe model: production accepts exactly the alias jev-latest (JEV-2)', () => {
+    expect(ok('engine.typesafe_model', 'jev-latest')).toEqual({ ok: true, value: 'jev-latest' });
+    expect(ok('engine.typesafe_model', 'jev-1.14.0-rc1').ok).toBe(true);
+    // negative controls: near misses stay refused, and the refusal names the alias
+    for (const bad of [
+      'latest',
+      'jev-beta',
+      'Jev-Latest',
+      'jev-latest ',
+      'jev-fake',
+      'jev-preview',
+    ]) {
+      const r = ok('engine.typesafe_model', bad);
+      expect(r.ok, bad).toBe(false);
+      if (!r.ok) {
+        expect(r.message, bad).toContain('jev-latest');
+        expect(r.message, bad).toContain('jev-1.13.0');
+      }
+    }
+    // outside production nothing changes
+    for (const v of ['jev-latest', 'jev-fake', 'jev-beta', 'jev-1.13.0']) {
+      expect(ok('engine.typesafe_model', v, DEV)).toEqual({ ok: true, value: v });
+    }
   });
 
   it.each([

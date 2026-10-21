@@ -1,6 +1,6 @@
 import { runtimeSettingsLoader, type Database, createRuntimeSettingsCache } from '@bantoozi/db';
 import { OLLAMA_PRICES } from '@bantoozi/translate';
-import type { RuntimeSettingsSnapshot } from '@bantoozi/shared';
+import { effectiveTypesafeModel, type RuntimeSettingsSnapshot } from '@bantoozi/shared';
 
 import type { ApiConfig } from '../context.js';
 
@@ -59,5 +59,7 @@ export async function liveTypesafeModel(services: {
   runtime: { get(): Promise<RuntimeSettingsSnapshot> };
   config: { typesafeModel: string };
 }): Promise<string> {
-  return (await liveRuntime(services))?.typesafeModel ?? services.config.typesafeModel;
+  const values = await liveRuntime(services);
+  if (values === null) return services.config.typesafeModel;
+  return effectiveTypesafeModel(values) ?? values.typesafeModel;
 }

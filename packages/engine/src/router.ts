@@ -4,6 +4,7 @@ import {
   isAppError,
   isBigIntString,
   isUuid,
+  isModelAlias,
   newUuid,
   parseSetting,
   settingDefault,
@@ -335,6 +336,13 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
     const injected = deps.engines?.typesafe;
     let engine = injected;
     if (engine === undefined) {
+      if (isModelAlias(config.typesafe.model)) {
+        logger.warn(
+          { model: config.typesafe.model },
+          'the Jev model is an alias that is not resolved to a release; the Jev lane is not built',
+        );
+        return undefined;
+      }
       try {
         engine = createTypeSafeEngine({
           baseUrl: config.typesafe.baseUrl,
@@ -1203,6 +1211,7 @@ export function createEngineRouter(deps: CreateEngineRouterDeps): EngineRouter {
         spendTodayUsd: committedSpendUsd(snapshot),
         budgetUsd: budget,
         llmCallsToday: capGroupCalls(snapshot.callsByEngineKind, 'llm', 'enrich'),
+        typesafeLane: typesafeLane === undefined ? 'unconfigured' : 'ready',
       };
     },
 
