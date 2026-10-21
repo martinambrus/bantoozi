@@ -8,6 +8,7 @@ export interface ActivationInput {
   cvLogloss: number | null;
   baselineAuc: number | null;
   baselineLogloss: number | null;
+  upgrade?: { regressed: boolean } | null;
 }
 
 /** The minimum-evidence reasons of spec 06 §8.3 (explicit count, then class counts). */
@@ -28,6 +29,7 @@ export function qualityReasons(m: ActivationInput, cfg: ReadonlyRankerConfig['mo
   if (m.cvLogloss === null || (m.baselineLogloss !== null && m.cvLogloss > m.baselineLogloss)) {
     reasons.push('worse_logloss');
   }
+  if (m.upgrade?.regressed === true) reasons.push('upgrade_regression');
   return reasons;
 }
 
@@ -37,15 +39,15 @@ export function qualityReasons(m: ActivationInput, cfg: ReadonlyRankerConfig['mo
  */
 export function decideActivation(
   candidate: {
-    model: { ratingSha?: string | null } | null;
-    metrics: { ratingSha?: string | null; contextSha: string | null };
+    model: object | null;
+    metrics: { familySha?: string | null; contextSha: string | null };
     activation: { eligible: boolean; reasons: string[] };
   },
-  current: { currentRatingSha: string; currentContextSha: string },
+  current: { currentFamilySha: string; currentContextSha: string },
 ): { activate: boolean; reasons: string[] } {
   const reasons = [...candidate.activation.reasons];
-  const ratingSha = candidate.metrics.ratingSha ?? candidate.model?.ratingSha ?? null;
-  if (ratingSha !== current.currentRatingSha) reasons.push('rating_fingerprint_changed');
+  if ((candidate.metrics.familySha ?? null) !== current.currentFamilySha)
+    reasons.push('rating_fingerprint_changed');
   if (candidate.metrics.contextSha !== current.currentContextSha) reasons.push('context_changed');
   return {
     activate: candidate.activation.eligible && candidate.model !== null && reasons.length === 0,

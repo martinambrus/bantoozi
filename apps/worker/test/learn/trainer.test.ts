@@ -18,6 +18,9 @@ afterAll(async () => {
 
 const NOW = new Date('2026-10-16T12:00:00Z');
 const CARD = '101';
+const SHA_A = 'a'.repeat(64);
+const SHA_B = 'b'.repeat(64);
+const FAMILY = 'f'.repeat(64);
 
 /** Explicit ratings whose label follows one interest card's match probability. */
 function samples(n: number) {
@@ -38,7 +41,7 @@ function samples(n: number) {
       feedbackAt: new Date(at),
       features: {
         specSha: RAW_SNAPSHOT_SPEC_SHA,
-        ratingSha: 'a'.repeat(64),
+        ratingSha: i % 3 === 0 ? SHA_B : SHA_A,
         snapshotAt: at,
         cards: [{ id: CARD, strength: 'love', p, engine: 'typesafe' }],
         values: {
@@ -66,7 +69,9 @@ function args(n: number) {
     now: NOW,
     config: DEFAULT_RANKER_CONFIG,
     heldCards: [{ cardId: CARD, strength: 'love', scopeFeedId: null, cardInputSha256: 'h' }],
-    ratingSha: 'a'.repeat(64),
+    ratingSha: SHA_A,
+    familySha: FAMILY,
+    families: { [SHA_A]: FAMILY, [SHA_B]: FAMILY },
     consent: { implicitFeedback: false, implicitNegative: false },
     seedMaterial: 'user-1|ctx|cutoff-1',
     feedbackCutoffEventId: '6000',
@@ -83,6 +88,11 @@ describe('poolTrainer (D-262)', () => {
     expect(pooled.metrics.k).toBeGreaterThan(1);
     expect(pooled.model).not.toBeNull();
     expect(pooled).toEqual(inline);
+    // The samples of the second exact sha are eligible only through the family map, which crossed the thread.
+    expect(inline.metrics.nExplicit).toBe(200);
+    expect(pooled.metrics.nExplicit).toBe(200);
+    expect(inline.metrics.skipped).toEqual({});
+    expect(pooled.metrics.skipped).toEqual({});
     // A fresh thread compiles the ranker sources (and coverage instruments them) before training.
   }, 60_000);
 

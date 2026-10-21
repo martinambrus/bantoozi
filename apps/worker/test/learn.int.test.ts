@@ -1,8 +1,16 @@
-import { loadLearnSamples, mergeArticles, rateArticle, workerOutbox } from '@bantoozi/db';
-import { DEFAULT_RANKER_CONFIG, FEATURE_SPEC_V1_SHA, modelContextSha } from '@bantoozi/ranker';
+import {
+  loadLearnSamples,
+  mergeArticles,
+  rateArticle,
+  readCurrentRatingFingerprint,
+  workerOutbox,
+} from '@bantoozi/db';
+import { DEFAULT_RANKER_CONFIG, FEATURE_SPEC_V1_SHA } from '@bantoozi/ranker';
 import { HOUSE_CRON_SCHEDULES } from '@bantoozi/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { loadClassificationConfig, ratingDefaults } from '../src/classify/config.js';
+import { currentContextSha } from '../src/learn/inputs.js';
 import { ClassifyHarness, DAY } from './support/classify.js';
 import { LearnWorld, RATED, answerOf, likeOf, type ModelRow } from './support/learn-world.js';
 
@@ -51,16 +59,16 @@ async function decorrelate(userId: string): Promise<void> {
 async function contextFor(
   userId: string,
   ownIds: readonly string[],
-  model: ModelRow,
+  _model: ModelRow,
 ): Promise<string> {
-  // The rating fingerprint is the model's own (it only changes with settings this file never edits).
-  const stored = model.metrics['ratingSha'];
-  const { samples } = await loadLearnSamples(h.db, { userId, now: new Date() });
-  const ratingSha =
-    typeof stored === 'string'
-      ? stored
-      : samples.find((s) => s.features !== null)?.features?.ratingSha;
-  if (ratingSha === undefined) throw new Error('fixture: no rating sha to recompute the context');
+  // The family fingerprint of the settings as they read now (this file never edits them).
+  const { familySha } = await readCurrentRatingFingerprint(
+    h.db,
+    ratingDefaults(
+      await loadClassificationConfig(h.db, h.settingsEnv),
+      h.deps.classification?.primaryModel ?? '',
+    ),
+  );
   const prefs = await h.owner.query<{ preferences: Record<string, unknown> }>(
     'SELECT preferences FROM users WHERE id = $1',
     [userId],
@@ -77,22 +85,24 @@ async function contextFor(
        FROM user_cards uc WHERE uc.user_id = $1 AND uc.card_id::text = ANY($2::text[])`,
     [userId, [...ownIds]],
   );
-  return modelContextSha({
-    ratingSha,
-    featureSpecSha: FEATURE_SPEC_V1_SHA,
-    strengthWeights: DEFAULT_RANKER_CONFIG.strengthWeights,
-    modelConfig: DEFAULT_RANKER_CONFIG.model,
-    consent: {
-      implicitFeedback: consent['implicitFeedback'] === true,
-      implicitNegative: consent['implicitNegative'] === true,
+  return currentContextSha(
+    {
+      familySha,
+      config: DEFAULT_RANKER_CONFIG,
+      consent: {
+        implicitFeedback: consent['implicitFeedback'] === true,
+        implicitNegative: consent['implicitNegative'] === true,
+      },
+      held: held.rows.map((r) => ({
+        cardId: r.card_id,
+        strength: r.strength as 'must' | 'love' | 'like' | 'never',
+        scopeFeedId: r.scope_feed_id,
+        cardInputSha256: r.sha,
+      })),
     },
-    ownInputs: held.rows.map((r) => ({
-      cardId: r.card_id,
-      strength: r.strength,
-      scopeFeedId: r.scope_feed_id,
-      cardInputSha256: r.sha,
-    })),
-  });
+    FEATURE_SPEC_V1_SHA,
+    ownIds,
+  );
 }
 
 const ownOf = (model: ModelRow): string[] => w.ownCardIds(model);

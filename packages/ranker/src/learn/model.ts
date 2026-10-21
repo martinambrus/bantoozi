@@ -17,7 +17,7 @@ export interface HeldCard {
 }
 
 export interface ContextInput {
-  ratingSha: string;
+  familySha: string;
   featureSpecSha: string;
   strengthWeights: ReadonlyRankerConfig['strengthWeights'];
   modelConfig: ReadonlyRankerConfig['model'];
@@ -47,7 +47,7 @@ export interface StoredModel {
 }
 
 /**
- * The model context sha (spec 06 §8.1): the rating fingerprint, feature spec, strength weights and
+ * The model context sha (spec 06 §8.1): the rating fingerprint family, feature spec, strength weights and
  * model config, both consent flags and each own input's id, strength, scope and card hash.
  */
 export function modelContextSha(input: ContextInput): string {
@@ -55,7 +55,7 @@ export function modelContextSha(input: ContextInput): string {
   // context hashes, which predate it, valid.
   const { retrainFraction: _schedule, ...modelConfig } = input.modelConfig;
   return canonicalSha256({
-    ratingSha: input.ratingSha,
+    familySha: input.familySha,
     featureSpecSha: input.featureSpecSha,
     strengthWeights: input.strengthWeights,
     model: modelConfig,

@@ -1,14 +1,16 @@
 import {
   loadCardInputs,
   loadLearnConsent,
+  readCurrentRatingFingerprint,
   readRatingFingerprint,
   type Database,
 } from '@bantoozi/db';
-import { FEATURE_SPEC_V1_SHA, modelContextSha } from '@bantoozi/ranker';
+import { FEATURE_SPEC_V1_SHA } from '@bantoozi/ranker';
 import { parseJobPayload, type Explain } from '@bantoozi/shared';
 
 import { loadClassificationConfig, ratingDefaults } from '../../src/classify/config.js';
 import { createUserRankHandler } from '../../src/handlers/user-rank.js';
+import { currentContextSha } from '../../src/learn/inputs.js';
 import { cardInputHashes } from '../../src/rank/items.js';
 import { loadRankerSettings } from '../../src/rank/settings.js';
 import { ago, DAY, HOUR, type ClassifyHarness } from './classify.js';
@@ -17,8 +19,8 @@ import { ago, DAY, HOUR, type ClassifyHarness } from './classify.js';
  * M7-T5a fixtures: `user_models` rows in the stored layout of `user.learn` (weights
  * `{features, weights}`, intercept, scaler, calibration, metrics with the model context), whose
  * context is computed exactly like the trainer: `modelContextSha` over the current rating
- * fingerprint, the feature spec, the ranker config, the consent flags and the own inputs'
- * current strength, scope and question hash. No trainer runs: the model is a hand-written
+ * family fingerprint, the feature spec, the ranker config, the consent flags and the own inputs'
+ * current strength, scope and question hash, through the production `currentContextSha`. No trainer runs: the model is a hand-written
  * logistic one, so a test knows the exact P it must produce.
  */
 
@@ -109,15 +111,19 @@ export async function currentModelContext(
   h: ClassifyHarness,
   userId: string,
   ownCards: readonly string[],
-): Promise<{ contextSha: string; ratingSha: string; ownInputs: Record<string, unknown>[] }> {
+): Promise<{
+  contextSha: string;
+  ratingSha: string;
+  familySha: string;
+  ownInputs: Record<string, unknown>[];
+}> {
   const db: Database = h.db;
   const config = (await loadRankerSettings(db)).config;
   const consent = await loadLearnConsent(db, userId);
   const classification = await loadClassificationConfig(db, h.deps.settingsEnv);
-  const ratingSha = await readRatingFingerprint(
-    db,
-    ratingDefaults(classification, h.deps.classification?.primaryModel ?? ''),
-  );
+  const defaults = ratingDefaults(classification, h.deps.classification?.primaryModel ?? '');
+  const ratingSha = await readRatingFingerprint(db, defaults);
+  const { familySha } = await readCurrentRatingFingerprint(db, defaults);
   const hashes = cardInputHashes(await loadCardInputs(db, [...ownCards]), classification);
   const held = await h.owner.query<{ card_id: string; strength: string; scope: string | null }>(
     `SELECT card_id::text AS card_id, strength, scope_feed_id::text AS scope
@@ -131,15 +137,18 @@ export async function currentModelContext(
     cardInputSha256: hashes.get(row.card_id) ?? '',
   }));
   return {
-    contextSha: modelContextSha({
-      ratingSha,
-      featureSpecSha: FEATURE_SPEC_V1_SHA,
-      strengthWeights: config.strengthWeights,
-      modelConfig: config.model,
-      consent,
-      ownInputs: ownInputs as Parameters<typeof modelContextSha>[0]['ownInputs'],
-    }),
+    contextSha: currentContextSha(
+      {
+        familySha,
+        config,
+        consent,
+        held: ownInputs as Parameters<typeof currentContextSha>[0]['held'],
+      },
+      FEATURE_SPEC_V1_SHA,
+      [...ownCards],
+    ),
     ratingSha,
+    familySha,
     ownInputs,
   };
 }
@@ -183,6 +192,7 @@ export async function installModel(
         status: active ? 'activated' : 'rejected',
         contextSha,
         ratingSha: context.ratingSha,
+        familySha: context.familySha,
         featureSpecSha: FEATURE_SPEC_V1_SHA,
         ownInputs: context.ownInputs,
       }),

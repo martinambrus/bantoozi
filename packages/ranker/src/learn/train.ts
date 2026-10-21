@@ -12,21 +12,48 @@ import {
   compareSamples,
   eligibleSetSha,
   sampleEligibility,
+  type EligibilityOpts,
   type TrainingSample,
 } from './samples.js';
 
-export interface TrainArgs {
+/** The rating scope of a training: no rating checks, or the exact sha with its family map. */
+export type RatingScope =
+  | { ratingSha: null }
+  | { ratingSha: string; familySha: string; families: Readonly<Record<string, string>> };
+
+export type TrainArgs = {
   samples: TrainingSample[];
   now: Date;
   config: ReadonlyRankerConfig;
   heldCards: HeldCard[];
-  ratingSha: string | null;
   consent: Consent;
   seedMaterial: string;
   feedbackCutoffEventId: string | null;
+} & RatingScope;
+
+/** The eligibility scope of a training's arguments; the one place that builds it. */
+export function eligibilityOf(
+  args: { now: Date; config: { model: { historyDays: number } } } & RatingScope,
+): EligibilityOpts {
+  const base = { now: args.now, historyDays: args.config.model.historyDays };
+  return args.ratingSha === null
+    ? { ...base, ratingSha: null }
+    : { ...base, ratingSha: args.ratingSha, familySha: args.familySha, families: args.families };
 }
 
 export type ConfidenceInterval = [number, number] | null;
+
+/** The post-upgrade comparison of the model against the interest cards on the current-fingerprint ratings. */
+export interface UpgradeMetrics {
+  ratingSha: string;
+  n: number;
+  nPos: number;
+  nNeg: number;
+  cvAuc: number | null;
+  baselineAuc: number | null;
+  deltaCi: [number, number] | null;
+  regressed: boolean;
+}
 
 export interface TrainMetrics {
   skipped: Record<string, number>;
@@ -44,9 +71,11 @@ export interface TrainMetrics {
   research: boolean;
   contextSha: string | null;
   ratingSha: string | null;
+  familySha: string | null;
   featureSpecSha: string;
   eligibleSetSha: string;
   feedbackCutoffEventId: string | null;
+  upgrade: UpgradeMetrics | null;
 }
 
 export interface TrainResult {
@@ -278,7 +307,7 @@ function innerSelect(
 /** The eligible rows, latest sample per article, and the skip counts (spec 06 §8.1). */
 export function eligibleRows(
   samples: readonly TrainingSample[],
-  elig: { now: Date; historyDays: number; ratingSha: string | null },
+  elig: EligibilityOpts,
 ): { rows: TrainingRow[]; skipped: Record<string, number> } {
   const skipped: Record<string, number> = {};
   const bump = (reason: string): void => {
@@ -351,7 +380,7 @@ function setup(
   const cfg = args.config;
   const mc = cfg.model;
   const research = opts.mode === 'research';
-  const elig = { now: args.now, historyDays: mc.historyDays, ratingSha: args.ratingSha };
+  const elig = eligibilityOf(args);
   const { rows, skipped } = eligibleRows(args.samples, elig);
   const explicitRows = rows.filter((r) => r.s.explicit);
   const nPos = explicitRows.filter((r) => r.s.y === 1).length;
@@ -371,10 +400,12 @@ function setup(
     research,
     contextSha: null,
     ratingSha: args.ratingSha,
+    familySha: args.ratingSha === null ? null : args.familySha,
     featureSpecSha: FEATURE_SPEC_V1_SHA,
     eligibleSetSha:
       sha === 'none' ? '' : sha === 'compute' ? eligibleSetSha(args.samples, elig) : sha,
     feedbackCutoffEventId: args.feedbackCutoffEventId,
+    upgrade: null,
   };
   const ctx: Ctx = { cfg, held: args.heldCards, grid: mc.lambdaGrid };
   const minimums = minimumReasons(metrics, mc);
@@ -404,11 +435,7 @@ export function trainingFolds(args: TrainArgs, opts: { mode: 'production' | 'res
 
 /** The `eligibleSetSha` of the training's samples (spec 06 §8.3), for {@link finishTraining}. */
 export function trainingSetSha(args: TrainArgs): string {
-  return eligibleSetSha(args.samples, {
-    now: args.now,
-    historyDays: args.config.model.historyDays,
-    ratingSha: args.ratingSha,
-  });
+  return eligibleSetSha(args.samples, eligibilityOf(args));
 }
 
 /**
@@ -550,6 +577,52 @@ export function finishTraining(
     );
     metrics.cvAuc = cvAucOf();
     metrics.cvLogloss = ys.length > 0 ? logLoss(probs, ys) : null;
+
+    if (!research && args.ratingSha !== null) {
+      const currentSha = args.ratingSha;
+      const mask: boolean[] = [];
+      for (let f = 0; f < folds.length; f += 1) {
+        rows.forEach((r, i) => {
+          if (plan.folds[i] === f && r.s.explicit) mask.push(r.f.ratingSha === currentSha);
+        });
+      }
+      if (mask.length !== ys.length) {
+        throw new Error('upgrade guard: fold rows are not aligned with the validation arrays');
+      }
+      const hasOld = rows.some((r) => r.f.ratingSha !== currentSha);
+      const idx = mask.flatMap((m, i) => (m ? [i] : []));
+      const nPos = idx.filter((i) => ys[i] === 1).length;
+      const n = idx.length;
+      if (hasOld && n >= mc.minExplicit && nPos >= mc.minEachClass && n - nPos >= mc.minEachClass) {
+        const cv = aucScorer(
+          idx.map((i) => probs[i] as number),
+          idx.map((i) => ys[i] as number),
+        );
+        const bs = aucScorer(
+          idx.map((i) => baseScores[i] as number),
+          idx.map((i) => ys[i] as number),
+        );
+        const deltaCi = groupedBootstrapCi(
+          idx.map((i) => groups[i] as string),
+          (m) => {
+            const a = cv(m);
+            const b = bs(m);
+            return a === null || b === null ? null : a - b;
+          },
+          `${seed}|upgrade`,
+        );
+        metrics.upgrade = {
+          ratingSha: currentSha,
+          n,
+          nPos,
+          nNeg: n - nPos,
+          cvAuc: cv(),
+          baselineAuc: bs(),
+          deltaCi,
+          regressed: deltaCi !== null && deltaCi[1] < -mc.maxBaselineDrop,
+        };
+      }
+    }
   }
   metrics.lambda = lambda;
 
@@ -560,7 +633,7 @@ export function finishTraining(
   const heldById = new Map(args.heldCards.map((h) => [h.cardId, h]));
   if (args.ratingSha !== null) {
     metrics.contextSha = modelContextSha({
-      ratingSha: args.ratingSha,
+      familySha: args.familySha,
       featureSpecSha: FEATURE_SPEC_V1_SHA,
       strengthWeights: cfg.strengthWeights,
       modelConfig: mc,

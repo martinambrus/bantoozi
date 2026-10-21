@@ -33,11 +33,10 @@ export type EligibilityReason =
   | 'incomplete_coverage'
   | 'no_positive_cards';
 
-export interface EligibilityOpts {
-  now: Date;
-  historyDays: number;
-  ratingSha: string | null;
-}
+export type EligibilityOpts = { now: Date; historyDays: number } & (
+  | { ratingSha: null }
+  | { ratingSha: string; familySha: string; families: Readonly<Record<string, string>> }
+);
 
 export interface Consent {
   implicitFeedback: boolean;
@@ -52,7 +51,7 @@ export interface HeldCard {
 }
 
 export interface ContextInput {
-  ratingSha: string;
+  familySha: string;
   featureSpecSha: string;
   strengthWeights: RankerConfig['strengthWeights'];
   modelConfig: RankerConfig['model'];
@@ -78,15 +77,33 @@ export interface StoredModel {
   [extra: string]: unknown;
 }
 
-export interface TrainArgs {
+export type TrainArgs = {
   samples: TrainingSample[];
   now: Date;
   config: RankerConfig;
   heldCards: HeldCard[];
-  ratingSha: string | null;
   consent: Consent;
   seedMaterial: string;
   feedbackCutoffEventId: string | null;
+} & (
+  | { ratingSha: null }
+  | { ratingSha: string; familySha: string; families: Readonly<Record<string, string>> }
+);
+
+/**
+ * The T3 upgrade guard's evidence: the pooled out-of-fold model and cards-only AUCs restricted to the
+ * explicit rows carrying the current exact rating sha, and the 95 % grouped-bootstrap interval of
+ * their difference. `regressed` iff the interval's upper bound is below `-maxBaselineDrop`.
+ */
+export interface UpgradeMetrics {
+  ratingSha: string;
+  n: number;
+  nPos: number;
+  nNeg: number;
+  cvAuc: number | null;
+  baselineAuc: number | null;
+  deltaCi: [number, number] | null;
+  regressed: boolean;
 }
 
 export interface TrainMetrics {
@@ -103,6 +120,10 @@ export interface TrainMetrics {
   baselineLogloss: number | null;
   research: boolean;
   contextSha: string | null;
+  ratingSha: string | null;
+  familySha: string | null;
+  /** `null` whenever the guard was not evaluated. */
+  upgrade: UpgradeMetrics | null;
 }
 
 export interface TrainResult {
@@ -121,10 +142,11 @@ export interface Api {
   groupFolds(samples: TrainingSample[], k: number, seed: string): number[];
   chooseLambda(lossByLambda: { lambda: number; loss: number }[]): number;
   modelContextSha(input: ContextInput): string;
+  eligibilityOf(args: TrainArgs): EligibilityOpts;
   trainUserModel(args: TrainArgs, opts: { mode: 'production' | 'research' }): TrainResult;
   decideActivation(
     candidate: TrainResult,
-    current: { currentRatingSha: string; currentContextSha: string },
+    current: { currentFamilySha: string; currentContextSha: string },
   ): { activate: boolean; reasons: string[] };
   scoreModel(
     model: StoredModel,

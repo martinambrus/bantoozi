@@ -170,6 +170,7 @@
       "worse_logloss": "Its predictions were less reliable than those of your interests alone.",
       "rating_fingerprint_changed": "Your ratings changed while it was learning, so it will try again.",
       "context_changed": "Your interests or settings changed while it was learning, so it will try again.",
+      "upgrade_regression": "After an update to how articles are read, it predicted your newest ratings worse than your interests alone.",
       "unknown": "The result was not clear enough to switch it on."
     },
     "deactivated": "Switched off on {{date}}: {{reason}}",

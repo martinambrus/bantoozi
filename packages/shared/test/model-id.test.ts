@@ -8,6 +8,8 @@ import {
   JEV_LATEST_ALIAS,
   MODEL_ID_PATTERN,
   MODEL_UNAVAILABLE_DETAIL,
+  modelFamily,
+  sameModelFamily,
 } from '../src/index.js';
 
 describe('Jev model ids', () => {
@@ -69,4 +71,68 @@ describe('Jev model ids', () => {
     expect(MODEL_ID_PATTERN.test('a b')).toBe(false);
     expect(MODEL_ID_PATTERN.test('a'.repeat(65))).toBe(false);
   });
+});
+
+describe('JEV-4 modelFamily', () => {
+  it.each([
+    ['jev-1.13.0', 'jev-1'],
+    ['jev-1.14.0', 'jev-1'],
+    ['jev-1.14.0-rc1', 'jev-1'],
+    ['jev-1.0.0+build', 'jev-1'],
+    ['jev-2.0.0', 'jev-2'],
+    ['jev-10.2.3', 'jev-10'],
+  ])('F1 %s is in family %s', (id, family) => {
+    expect(modelFamily(id)).toBe(family);
+  });
+
+  it.each([
+    'jev-latest',
+    'jev-1',
+    'jev-1.13',
+    'Jev-1.13.0',
+    'jev-fake',
+    'gpt-4-1.0.0',
+    'foo-1.2.3',
+    '',
+  ])('F2 %j is its own family', (id) => {
+    expect(modelFamily(id)).toBe(id);
+  });
+
+  it('F3 answers long crafted ids in linear time (CodeQL js/polynomial-redos)', () => {
+    for (const crafted of [`a${'-0.0.0'.repeat(20_000)}!`, `jev-1.0.0-${'a.'.repeat(20_000)}!`]) {
+      const started = performance.now();
+      expect(modelFamily(crafted)).toBe(crafted);
+      expect(performance.now() - started).toBeLessThan(200);
+    }
+  });
+});
+
+describe('JEV-4 sameModelFamily', () => {
+  it.each([
+    ['jev-1.13.0', 'jev-1.14.0'],
+    ['jev-1.14.0-rc1', 'jev-1.9.9'],
+    ['jev-2.0.0', 'jev-2.7.1'],
+    ['jev-latest', 'jev-latest'],
+    ['jev-test-1', 'jev-test-1'],
+    ['foo-1.2.3', 'foo-1.2.3'],
+  ])('S1 %s and %s are one family', (a, b) => {
+    expect(sameModelFamily(a, b)).toBe(true);
+    expect(sameModelFamily(b, a)).toBe(true);
+  });
+
+  it.each([
+    ['jev-1.13.0', 'jev-2.0.0'],
+    ['jev-1', 'jev-1.13.0'],
+    ['jev-latest', 'jev-1.14.0'],
+    ['jev-test-1', 'jev-test-2'],
+    ['foo-1.2.3', 'foo-1.3.0'],
+    ['foo-1.2.3', 'jev-1.2.3'],
+    ['', 'jev-1.13.0'],
+  ])(
+    'S2 %s and %s are different families (an own-family id never merges with a release family)',
+    (a, b) => {
+      expect(sameModelFamily(a, b)).toBe(false);
+      expect(sameModelFamily(b, a)).toBe(false);
+    },
+  );
 });

@@ -251,6 +251,12 @@ strictly (the API answers 500 on ratings and Analyze, the worker cannot start). 
 `UPDATE settings SET value = value - 'alias' WHERE key = 'engine.model_pin'`. A release older than JEV-2 also refuses
 `TYPESAFE_MODEL=jev-latest` and ignores a stored one.
 
+**Rolling back past JEV-4 (D-275, D-276).** Older code computes exact-sha model contexts and a learn input hash
+without the family sha: stored models read `incompatible` and retrain once; samples of an earlier Jev release become
+ineligible again. `engine.rating_fingerprints` is ignored by older code and harmless. Before a Jev upgrade, check that
+the registry holds the current fingerprint (`SELECT value FROM settings WHERE key = 'engine.rating_fingerprints'`):
+a JEV-4 worker registers it at start.
+
 **Rolling back past M8b.** A release older than M8b ignores the runtime settings that Admin → Settings stores
 (it reads only the env file), and it requires `ADMIN_EMAILS`. **Before rolling back to such a release, copy every
 UI-stored runtime value back into `$BANTOOZI_ENV`**, otherwise the old release silently runs with the older env

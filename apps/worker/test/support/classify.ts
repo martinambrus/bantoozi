@@ -65,7 +65,11 @@ import {
 import { facetFeatures } from '../../src/classify/features.js';
 import { buildState, modelInput } from '../../src/classify/model-input.js';
 import type { TranslationDeps } from '../../src/classify/translation.js';
-import { createWorkerDeps, type WorkerDeps } from '../../src/handlers/deps.js';
+import {
+  createWorkerDeps,
+  type ClassificationDeps,
+  type WorkerDeps,
+} from '../../src/handlers/deps.js';
 import {
   createHandlers,
   dispatch,
@@ -944,6 +948,7 @@ export class ClassifyHarness {
     userId: string,
     feedId: string,
     articleId: string,
+    model: string = PRIMARY_MODEL,
   ): Promise<{ requestId: string; snapshot: AnalysisInputSnapshot }> {
     const config = await loadClassificationConfig(this.db, this.settingsEnv);
     const article = await loadClassificationArticle(this.db, articleId);
@@ -958,7 +963,7 @@ export class ClassifyHarness {
         context.cards.map((card) => card.cardId),
       ),
       config,
-      primaryModel: PRIMARY_MODEL,
+      primaryModel: model,
       capturedAt: new Date(),
     });
     // As the API's capture marks a selection made before the article's extraction.
@@ -1214,6 +1219,44 @@ export class ClassifyHarness {
     where: (payload: Record<string, unknown>) => boolean = () => true,
     context: Partial<JobContext> = {},
   ): Promise<number> {
+    return this.runWith(this.handlers, queue, where, context);
+  }
+
+  /** Handlers of a worker whose pinned primary model is `primaryModel`. */
+  handlersFor(primaryModel: string): HandlerMap {
+    return createHandlers({
+      ...this.deps,
+      classification: { ...(this.deps.classification as ClassificationDeps), primaryModel },
+    });
+  }
+
+  /** `run` through a worker whose pinned primary model is `primaryModel` (the router answers as `router.model`). */
+  runAs(
+    primaryModel: string,
+    queue: QueueName,
+    where: (payload: Record<string, unknown>) => boolean = () => true,
+  ): Promise<number> {
+    return this.runWith(this.handlersFor(primaryModel), queue, where, {});
+  }
+
+  /** `dispatch` through a worker whose pinned primary model is `primaryModel`. */
+  async dispatchAs<Q extends QueueName>(
+    primaryModel: string,
+    queue: Q,
+    payload: JobPayloadInput<Q>,
+  ): Promise<void> {
+    await dispatch(this.handlersFor(primaryModel), queue, parseJobPayload(queue, payload), {
+      queue,
+      jobId: 'direct',
+    });
+  }
+
+  private async runWith(
+    handlers: HandlerMap,
+    queue: QueueName,
+    where: (payload: Record<string, unknown>) => boolean,
+    context: Partial<JobContext>,
+  ): Promise<number> {
     let ran = 0;
     for (let round = 0; round < 25; round += 1) {
       const pending = await this.owner.query<{ id: string; payload: Record<string, unknown> }>(
@@ -1227,7 +1270,7 @@ export class ClassifyHarness {
         await this.owner.query('UPDATE job_outbox SET delivered_at = now() WHERE id = $1', [
           row.id,
         ]);
-        await dispatch(this.handlers, queue, parseJobPayload(queue, row.payload), {
+        await dispatch(handlers, queue, parseJobPayload(queue, row.payload), {
           queue,
           jobId: row.id,
           ...context,

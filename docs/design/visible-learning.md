@@ -177,23 +177,26 @@ an assumption until one real Jev answer is recorded.
   Any other id is its own family, including an alias, so an alias can never merge families.
 - **Two fingerprints.** The exact rating fingerprint stays and is still stamped everywhere: snapshots, requests,
   model metrics. New: `familySha` is the same hash with `engine.model_pin.model` replaced by its family.
-- **Registry.** `rating_fingerprints(sha PK, family_sha, settings jsonb, first_seen_at)` holds settings only, no
-  user data, and needs no RLS. The API and the worker insert-or-ignore and both read it. Whoever computes the
-  current fingerprint registers it, with an in-process cache per value.
+- **Registry** (as built, D-275). `settings['engine.rating_fingerprints']` =
+  `{<exact sha>: {family, settings, firstSeenAt}}`, at most 64 entries (other families evicted first, oldest first,
+  never the current sha), written only by the worker (start-up, `user.learn`, `house.nightly-learn`) and read
+  leniently. No migration and no table: another branch owned the next migration number. The family sha is
+  domain-separated (`{family}` for a release, `{id}` otherwise); every model-id comparison uses `sameModelFamily`.
 - **Where families replace exact matches.**
   - `sampleEligibility` compares `family(sample.ratingSha) === currentFamilySha`, using a sha → family map
     loaded once per run. An unregistered sha stays incompatible, as today.
-  - `modelContextSha` and `decideActivation` use the family sha. The learn `inputSha` keeps the exact sha, so an
-    upgrade retrains once on the same samples.
+  - `modelContextSha` and `decideActivation` use the family sha. The learn `inputSha` keeps the exact sha and also
+    carries the family sha (D-276), so an upgrade or the deploy retrains once on the same samples.
   - `analysis.process` accepts a frozen model of the primary model's family and records the answering model in
     its result. Across families it ends `context_unavailable` as today.
   - `GET /me/learning`, the feed agreement (D-236) and the card hints (D-241, D-244) share the trainer's
     eligibility; each call site must pass the family map.
 - **Upgrade guard.** When the exact sha changes inside a family, each active personal model keeps scoring. Once
   at least `model.minExplicit` explicit samples (`minEachClass` per class) carry the new exact sha, `user.learn`
-  compares the active model's AUC on them with the cards baseline on the same samples. If it falls below
-  baseline − `model.maxBaselineDrop`, the model is deactivated (`upgrade_regression`), and training uses the new
-  exact sha only until a model activates again.
+  compares the candidate's out-of-fold AUC on them with the cards baseline on the same samples. As built (D-277),
+  it trips only when the upper end of the 95% bootstrap interval of the difference is below
+  −`model.maxBaselineDrop` (the point rule tripped healthy models 22–50% of the time); the model is deactivated
+  (`upgrade_regression`) and training uses the new exact sha only until the exact sha changes (D-278).
 - **Deploy effect.** The context formula changes once, so every active model is retrained at its next learn run
   on the same samples and reactivates.
 - **Owner data.** After OPS-1 the exact sha is `22190257…` again, and its 3,907 samples stay eligible across this
@@ -342,7 +345,7 @@ migrations at a time (CLAUDE.md). Commits: `<task-id>: <summary>`.
 adopt a new version before JEV-4 is merged, or an upgrade resets training again. The other phases follow and can
 overlap where they add no migration.
 
-### Phase 1: Jev alias, families and guardrails (migrations 0033: `engine_calls.kind` `model_probe`; 0034: `rating_fingerprints`)
+### Phase 1: Jev alias, families and guardrails (migration 0033: `engine_calls.kind` `model_probe`)
 
 | ID | Task | Needs | Lane | Done when |
 |---|---|---|---|---|
@@ -354,7 +357,7 @@ overlap where they add no migration.
 | JEV-5 | Admin: alias option, resolution display, Check now, save-time probe, impact text in the confirmation | JEV-1, JEV-2 | C | Saving an id the probe answers with another id is refused with the answered id; `jev-latest` shows its resolution; the editor is covered by an e2e test |
 | JEV-7 | Docs: specs 04 §1.2/§3/§5, 05 §2, 06 §8.1–§8.5, 08 §3/§9, 11 §6.1/§8; PLAN §2 decision 8; DECISIONS; RUNBOOK (alias upgrades, rollback) | all | lead | — |
 
-### Phase 2: Word estimates (migration 0035: `user_estimate_models`, `score_source` `estimate`)
+### Phase 2: Word estimates (migration 0034: `user_estimate_models`, `score_source` `estimate`)
 
 | ID | Task | Needs | Lane | Done when |
 |---|---|---|---|---|
@@ -365,7 +368,7 @@ overlap where they add no migration.
 | EST-5 | Web: outlined estimated tiers, Why this? estimate section, Settings toggle, en/sk strings; optional New-lane sort | EST-4 | C | Component tests; an e2e smoke: after 10 ratings in a Training feed, tier 2 shows estimated rows |
 | EST-6 | Docs: spec 06 §2/§8.6 (new)/§11, 02, 08, 09; PLAN §2 decision 9; DECISIONS | all | lead | — |
 
-### Phase 3: Visible progress (migration 0036: `user_learning_history`)
+### Phase 3: Visible progress (migration 0035: `user_learning_history`)
 
 | ID | Task | Needs | Lane | Done when |
 |---|---|---|---|---|
@@ -375,7 +378,7 @@ overlap where they add no migration.
 | PRG-4 | Learning curve and milestones in Settings → Personal learning | PRG-1 | C | Renders from history fixtures in both themes; accessible table fallback |
 | PRG-5 | Docs: specs 08 §3, 09 §5/§7, 02; DECISIONS | all | lead | — |
 
-### Phase 4: "Show fewer like these?" (migration 0037: `dislike_pattern_offers`)
+### Phase 4: "Show fewer like these?" (migration 0036: `dislike_pattern_offers`)
 
 | ID | Task | Needs | Lane | Done when |
 |---|---|---|---|---|

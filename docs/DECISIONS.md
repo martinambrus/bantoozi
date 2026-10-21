@@ -2875,3 +2875,37 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   hazard: the pin's `alias` (RUNBOOK §3). Known limitations: a fresh install that follows the alias before its first
   resolution stamps ratings with the alias fingerprint (they have no facets anyway); `jev-1.13.0` ↔ `jev-latest`
   still asks for the rebuild acknowledgement (JEV-5); an eval replay with the alias fails closed.
+- D-275: 2026-10-21 (JEV-4 of docs/design/visible-learning.md; owner decision 3 of 2026-10-20) — Fingerprint
+  families. `modelFamily(id)` is `jev-<major>` for a concrete Jev release, any other id is its own family; the family
+  sha is the rating fingerprint with the pinned model replaced by `{family}` (release) or `{id}` (anything else), so an
+  alias or `jev-1` never merges with a release family. Samples are eligible with the exact current sha or a sha
+  registered to the current family; the model context and activation use the family sha. Deviation from design §4.2:
+  the registry is the worker-written settings key `engine.rating_fingerprints` (cap 64, other families evicted first,
+  lenient reader healed by the next write), not a table, so JEV-4 needs no migration; registration at worker start,
+  in `user.learn` and in `house.nightly-learn`; the API, the seed, the loaders and the bench never write it. On the
+  owner's data a simulated 1.13 → 1.14 change keeps all 4,167 eligible samples (0 if the old sha is not registered).
+- D-276: 2026-10-21 (JEV-4) — The learn input hash carries the family sha besides the exact sha and the manifest.
+  Without it the deploy changes the context formula while the input hash stays, and `user.learn` deactivates every
+  model as `incompatible` without retraining. With it each active model retrains once, byte-equal, at its next run
+  and reactivates; until then it scores nothing (cards only).
+- D-277: 2026-10-21 (JEV-4; deviates from design §4.2's point rule) — The upgrade guard is significance-gated: on the
+  explicit rows carrying the current exact sha (only when older exact shas coexist, ≥ `model.minExplicit` rows with
+  ≥ `model.minEachClass` per class) it compares the candidate's out-of-fold AUC with the cards-only AUC and trips
+  when the upper end of the 95% grouped-bootstrap interval of the difference is below `−model.maxBaselineDrop`. The
+  point rule tripped a healthy model 22–50% of the time at n = 30; the interval rule trips 0.8–5% by n = 200 and a
+  decisive drift at n = 30. Metrics `upgrade` and `familySha`.
+- D-278: 2026-10-21 (JEV-4; deviates from "until a model activates again") — Strict training after a guard trip
+  admits only the current exact sha and lasts until the exact sha changes, with the marker `strictRatingSha` on every
+  strict attempt; pooling again after a strict model activated would re-admit the rows the guard rejected and
+  flip-flop. A superseded run applies no guard effect; the guard deactivation skips the staleness check so the reason
+  stays `upgrade_regression`.
+- D-279: 2026-10-21 (JEV-4) — `analysis.process` accepts a request frozen under another release of the primary
+  model's major (another major, an alias or a non-Jev id stays `context_unavailable`), records the answering model in
+  `result_snapshot.model`, tags stage results with their model (`stage_results.model`, absent = the frozen model) and
+  drops the enrich/cards/l2 entries of another model; cache reuse compares with the primary model. `requestRatingSha`
+  accepts the same-family model pair and still returns the exact current fingerprint.
+- D-280: 2026-10-21 (JEV-4) — Known, not changed: ratings captured while the rebuild after a pin change runs have no
+  facets (capture and `modelEligible` compare answers with the exact pin model; pre-existing for every pin change); a
+  fingerprint current only between two worker starts without a learn run is not registered (JEV-3 registers the
+  outgoing model before adopting); `GET /me/learning.deactivated` reads the newest model row, so `upgrade_regression`
+  shows through `lastAttempt` only (PRG-2).

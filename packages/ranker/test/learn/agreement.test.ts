@@ -10,9 +10,24 @@ import {
   trainUserModel,
 } from '../../src/index.js';
 import type { RawFeatureSnapshot, TrainingSample } from '../../src/index.js';
-import { CFG, drivenSamples, NOW, RATING_SHA, sample, trainArgs } from './support/synth.js';
+import {
+  CFG,
+  drivenSamples,
+  FAMILIES,
+  FAMILY_SHA,
+  NOW,
+  RATING_SHA,
+  sample,
+  trainArgs,
+} from './support/synth.js';
 
-const ELIG = { now: NOW, historyDays: CFG.model.historyDays, ratingSha: RATING_SHA };
+const ELIG = {
+  now: NOW,
+  historyDays: CFG.model.historyDays,
+  ratingSha: RATING_SHA,
+  familySha: FAMILY_SHA,
+  families: FAMILIES,
+};
 
 function rowsOf(samples: TrainingSample[]) {
   return eligibleRows(samples, ELIG).rows;

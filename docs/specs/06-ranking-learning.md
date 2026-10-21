@@ -480,10 +480,17 @@ evidence rules. Compatibility is checked at two levels:
 - **Rating fingerprint** (`rating_sha`): the feature spec, the model engine/version and the active
   question/state/translation manifests, including language modes and the card text mode, that is,
   whatever changes the meaning of every answer. A feedback snapshot is used for training only while
-  its fingerprint equals the current one (§8.2). Card ids, strengths and scopes are not part of it. The model that counts
+  its fingerprint equals the current one or belongs to the current fingerprint's family (§8.2, next bullet). Card ids, strengths and scopes are not part of it. The model that counts
   is `engine.model_pin.model`, always a concrete id; the pin's `alias` is not hashed, so following `jev-latest` while it
   resolves to the same version leaves the fingerprint unchanged (D-274).
-- **Model context** (`metrics.context_sha`): the rating fingerprint, the `strengthWeights` and
+- **Fingerprint family** (`family sha`, D-275): the rating fingerprint hashed with `engine.model_pin.model` replaced by
+  its family: `jev-<major>` for a concrete Jev release (`jev-1.13.0`, `jev-1.14.0-rc1`), the id itself for any other id
+  (an alias such as `jev-latest`, `jev-1`, a vendor id), domain-separated so a release never merges with another major
+  or with an own-family id. Snapshots and models stay compatible across releases of one major; the exact fingerprint
+  is still stamped into every snapshot. The worker records each exact fingerprint it sees as current in
+  `settings['engine.rating_fingerprints']` (`{exact sha: {family, settings, firstSeenAt}}`, at most 64; at worker
+  start, in `user.learn` and in `house.nightly-learn`); a sha that is neither current nor registered is incompatible.
+- **Model context** (`metrics.context_sha`): the rating fingerprint's family sha, the `strengthWeights` and
   `model` config the model was trained with, both behavioral-consent flags, and for each own card
   input its card id, strength, scope and current question hash (`card_input_sha256`, spec 05 §2). The
   model scores only while the context computed from the current state equals the stored one. A
@@ -624,12 +631,13 @@ Q11 is resolved: enable inference explicitly per feed; only new arrivals are aut
 Older articles require explicit selection, and no learned-model threshold changes that mode.
 
 Only surviving samples with snapshot and feedback timestamps within the last **180 days** whose
-`specSha` and `ratingSha` match the current feature spec and rating fingerprint (§8.1) are used.
+`specSha` matches the current feature spec and whose `ratingSha` equals the current rating fingerprint or is
+registered in its family (§8.1) are used (strict training, §8.3, admits the exact fingerprint only).
 Card changes never discard samples: a sample keeps the card answers and strengths it was captured
 with, so adding, removing, re-weighting, rescoping or editing a card, adding an example or accepting
-a library update keeps the user's training history. A new engine version, question set, translation
+a library update keeps the user's training history. A Jev release of another major, a question set, translation
 setting or card text mode changes the meaning of every answer, so it returns the user to cards-only
-ranking until enough compatible feedback exists.
+ranking until enough compatible feedback exists; a new release of the same major keeps the samples (D-275).
 
 ### 8.3 Training (`trainUserModel(samples, now)`, pure)
 
@@ -685,6 +693,15 @@ ranking until enough compatible feedback exists.
 - **Retention:** keep the active version plus the 3 newest other versions. Store attempt cutoff and
   rejection reason even when activation fails; no change repeatedly retrains the same data.
 
+**Upgrade guard** (D-277). When the eligible samples carry more than one exact fingerprint and at least
+`model.minExplicit` explicit samples (≥ `model.minEachClass` of each class) carry the current one, the candidate's
+out-of-fold AUC and the cards-only AUC are compared on exactly those samples. If the upper end of the 95%
+grouped-bootstrap interval of (model AUC − cards AUC) is below `−model.maxBaselineDrop`, the candidate is rejected
+with `upgrade_regression`, the active model is deactivated with the same reason and training becomes **strict**:
+only samples carrying the current exact fingerprint are eligible, every attempt records `strictRatingSha`, and strict
+lasts until the exact fingerprint changes (D-278). Metrics add `familySha` and
+`upgrade = {ratingSha, n, nPos, nNeg, cvAuc, baselineAuc, deltaCi, regressed} | null`.
+
 ### 8.4 When to train (`user.learn {userId}`)
 
 - The API enqueues after **at least** `max(model.retrainEvery, ⌈model.retrainFraction × n⌉)`
@@ -723,9 +740,15 @@ ranking until enough compatible feedback exists.
   activation also enqueues `user.suggest`. A failure to train must not suppress future retries after
   new evidence arrives.
 
+`user.learn` registers the current fingerprint when it is missing (own transaction). The learn input hash covers the
+exact sha, the family sha and the sample manifest, so a deploy that changes the context formula retrains each active
+model once on the same samples (D-276). A guard trip stores the attempt as rejected with the strict marker,
+deactivates the active model (`upgrade_regression`, no staleness check afterwards), fires the model-off rank intent
+and enqueues the strict run; a superseded run applies no guard effect.
+
 ### 8.5 Learning status and feed agreement (read-only, D-236, D-237)
 
-`GET /me/learning` (spec 08 §3) reports, computed live from the same samples and eligibility as the
+`GET /me/learning` (spec 08 §3) reports, computed live from the same samples and eligibility (including strict training) as the
 trainer (`eligibleRows`, `learningCounts`): the effective activation thresholds, the current
 eligible explicit counts, the active model (version, `trained_at`), the newest non-superseded
 attempt with its rejection reasons, and a deactivation when no model is active. It writes nothing.

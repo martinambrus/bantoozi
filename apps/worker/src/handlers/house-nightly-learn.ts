@@ -1,12 +1,12 @@
 import {
   listNightlyLearnUsers,
-  loadModelState,
   retryTransaction,
   updateSettingLocked,
   workerOutbox,
 } from '@bantoozi/db';
 import { buildJobIntent, parseSetting } from '@bantoozi/shared';
 
+import { ensureFingerprintRegistered } from '../learn/fingerprints.js';
 import { loadLearnInputs } from '../learn/inputs.js';
 import { loadRankerSettings } from '../rank/settings.js';
 import { nowOf, type WorkerDeps } from './deps.js';
@@ -32,6 +32,11 @@ export function createNightlyLearnHandler(deps: WorkerDeps): QueueHandler<'house
   return async () => {
     const now = nowOf(deps);
     const day = now.toISOString().slice(0, 10);
+    await ensureFingerprintRegistered(
+      deps.db,
+      { settingsEnv: deps.settingsEnv, primaryModel: deps.classification?.primaryModel ?? '' },
+      now,
+    );
     const { config } = await loadRankerSettings(deps.db);
     // Paged by the wider of the learn history and the suggestion like window, so an active user with
     // no model still reaches `user.suggest`; learn change detection is unaffected (it uses eligibility).
@@ -52,8 +57,7 @@ export function createNightlyLearnHandler(deps: WorkerDeps): QueueHandler<'house
       const changed = new Map<string, string>();
       for (const user of page) {
         const inputs = await loadLearnInputs(deps.db, deps, user.userId, now);
-        const state = await loadModelState(deps.db, user.userId);
-        if (state.latestTerminal?.metrics['inputSha'] !== inputs.inputSha)
+        if (inputs.modelState.latestTerminal?.metrics['inputSha'] !== inputs.inputSha)
           changed.set(user.userId, inputs.inputSha);
       }
       await retryTransaction(deps.db, async (tx) => {

@@ -6,9 +6,12 @@ import {
   ExplainSchema,
   canonicalJson,
   enqueueLearn,
+  isConcreteJevModel,
   mergeRankerConfig,
+  modelFamily,
   readUserPreferences,
   retrainThreshold,
+  sameModelFamily,
   type ArticleListItem,
   type CardTextMode,
   type Explain,
@@ -75,7 +78,7 @@ export const FEATURE_SNAPSHOT_SPEC_SHA = createHash('sha256')
   .digest('hex');
 
 /** The settings whose change alters the meaning of every answer (spec 06 §8.1 rating fingerprint). */
-const RATING_FINGERPRINT_SETTINGS = [
+export const RATING_FINGERPRINT_SETTINGS = [
   'engine.model_pin',
   'question_sets.active',
   'language_modes',
@@ -137,16 +140,42 @@ export function effectiveRatingSettings(
   };
 }
 
+const hashFingerprint = (settings: Record<string, unknown>): string =>
+  createHash('sha256')
+    .update(canonicalJson({ specSha: FEATURE_SNAPSHOT_SPEC_SHA, settings }))
+    .digest('hex');
+
+/** A rating fingerprint: the exact sha, the family sha and the effective settings they hash. */
+export interface RatingFingerprint {
+  sha: string;
+  familySha: string;
+  settings: Record<string, unknown>;
+}
+
+/** The exact and family rating fingerprints of already-read stored settings. */
+export function ratingFingerprintOf(
+  stored: ReadonlyMap<string, unknown>,
+  defaults: RatingDefaults,
+): RatingFingerprint {
+  const settings = effectiveRatingSettings(stored, defaults);
+  const { model, ...pinRest } = objectOf(settings['engine.model_pin']);
+  const id = String(model);
+  return {
+    sha: hashFingerprint(settings),
+    familySha: hashFingerprint({
+      ...settings,
+      'engine.model_pin': {
+        ...(isConcreteJevModel(id) ? { family: modelFamily(id) } : { id }),
+        ...pinRest,
+      },
+    }),
+    settings,
+  };
+}
+
 /** The rating fingerprint of already-read stored settings. */
 function ratingShaOf(stored: ReadonlyMap<string, unknown>, defaults: RatingDefaults): string {
-  return createHash('sha256')
-    .update(
-      canonicalJson({
-        specSha: FEATURE_SNAPSHOT_SPEC_SHA,
-        settings: effectiveRatingSettings(stored, defaults),
-      }),
-    )
-    .digest('hex');
+  return ratingFingerprintOf(stored, defaults).sha;
 }
 
 /**
@@ -1472,7 +1501,7 @@ interface RatingTarget {
 /**
  * The rating fingerprint to record for a rating that carries a selected-analysis request but no
  * live features, or null when the request was frozen under another manifest than the locked
- * settings now stamping it (active enrich/match sets, pinned model, the article language's mode,
+ * settings now stamping it (active enrich/match sets, a pinned model of another family, the article language's mode,
  * card text mode): its result must not stand in for the rater's snapshot. Settings without a stored
  * value (model pin, language mode) keep their environment default, which the fingerprint cannot
  * have changed; a manifest field the snapshot lacks is not a disagreement.
@@ -1494,18 +1523,22 @@ async function requestRatingSha(
           objectField(effectiveRatingSettings(stored, defaults)['language_modes'], lang),
         ) ?? 'native');
   const model = effectiveModel(stored, defaults) || null;
-  const checks: [unknown, string | null][] = [
+  const checks: [unknown, string | null, boolean?][] = [
     [objectField(objectField(frozenSets, 'enrich'), 'id'), textOrNull(objectField(sets, 'enrich'))],
     [objectField(objectField(frozenSets, 'match'), 'id'), textOrNull(objectField(sets, 'match'))],
     [objectField(snapshot, 'languageMode'), mode],
-    [objectField(objectField(snapshot, 'model'), 'model'), model],
+    [objectField(objectField(snapshot, 'model'), 'model'), model, true],
     [
       objectField(snapshot, 'cardTextMode'),
       textOrNull(effectiveRatingSettings(stored, defaults)['card_text_mode']) ?? 'as_written',
     ],
   ];
-  for (const [frozen, current] of checks) {
-    if (frozen !== undefined && current !== null && textOrNull(frozen) !== current) return null;
+  for (const [frozen, current, family] of checks) {
+    if (frozen === undefined || current === null) continue;
+    const frozenText = textOrNull(frozen);
+    if (frozenText === current) continue;
+    if (family && frozenText !== null && sameModelFamily(frozenText, current)) continue;
+    return null;
   }
   return ratingShaOf(stored, defaults);
 }

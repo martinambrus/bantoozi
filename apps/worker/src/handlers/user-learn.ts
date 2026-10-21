@@ -1,10 +1,10 @@
 import {
   deactivateUserModels,
   insertUserModel,
-  loadModelState,
   lockLearnUser,
   pruneUserModels,
   recordRankIntents,
+  registerRatingFingerprint,
   retryTransaction,
   workerOutbox,
   type StoredModelRow,
@@ -62,6 +62,8 @@ function train(trainer: Trainer, userId: string, inputs: LearnInputs): Promise<T
       config: inputs.config,
       heldCards: inputs.held,
       ratingSha: inputs.ratingSha,
+      familySha: inputs.familySha,
+      families: inputs.families,
       consent: inputs.consent,
       seedMaterial: `learn:${userId}:${inputs.eligibleSetSha}`,
       feedbackCutoffEventId: inputs.cutoffEventId,
@@ -75,6 +77,7 @@ function attemptMetrics(
   trainedOn: LearnInputs,
   status: 'activated' | 'rejected' | 'superseded',
   reason: string | null,
+  strictMarker = trainedOn.strict,
 ) {
   const heldById = new Map(trainedOn.held.map((card) => [card.cardId, card]));
   return {
@@ -85,6 +88,8 @@ function attemptMetrics(
     inputSha: trainedOn.inputSha,
     contextSha: result.metrics.contextSha,
     ratingSha: trainedOn.ratingSha,
+    familySha: trainedOn.familySha,
+    ...(strictMarker ? { strictRatingSha: trainedOn.ratingSha } : {}),
     ownInputs: (result.model?.ownInputs ?? []).flatMap((id) => {
       const card = heldById.get(id);
       return card === undefined ? [] : [card];
@@ -108,11 +113,14 @@ export function createUserLearnHandler(deps: WorkerDeps): QueueHandler<'user.lea
   return async ({ userId }) => {
     const prepared = await retryTransaction(deps.db, async (tx) => {
       if (!(await lockLearnUser(tx, userId, 'share'))) return null;
-      const inputs = await loadLearnInputs(tx, deps, userId, nowOf(deps));
-      return { inputs, state: await loadModelState(tx, userId) };
+      return loadLearnInputs(tx, deps, userId, nowOf(deps));
     });
     if (prepared === null) return;
-    const { inputs, state } = prepared;
+    const inputs = prepared;
+    const state = inputs.modelState;
+    if (!inputs.registered) {
+      await registerRatingFingerprint(deps.db, inputs.fingerprint, nowOf(deps));
+    }
     const unchanged = state.latestTerminal?.metrics['inputSha'] === inputs.inputSha;
     if (unchanged && (state.active === null || modelStaleness(inputs, state.active) === null)) {
       return;
@@ -122,11 +130,12 @@ export function createUserLearnHandler(deps: WorkerDeps): QueueHandler<'user.lea
     const outcome = await retryTransaction(deps.db, async (tx) => {
       if (!(await lockLearnUser(tx, userId, 'update'))) return 'gone';
       const fresh = await loadLearnInputs(tx, deps, userId, nowOf(deps));
-      const current = await loadModelState(tx, userId);
+      const current = fresh.modelState;
       const sender = workerOutbox(tx);
       const keep = fresh.config.model.keepVersions;
       let activated = false;
       let deactivated = false;
+      let guarded = false;
       let version = current.latest?.version ?? 0;
 
       const duplicate = current.latestTerminal?.metrics['inputSha'] === inputs.inputSha;
@@ -161,9 +170,10 @@ export function createUserLearnHandler(deps: WorkerDeps): QueueHandler<'user.lea
           model === null
             ? { activate: false, reasons: result.activation.reasons }
             : decideActivation(result, {
-                currentRatingSha: fresh.ratingSha,
+                currentFamilySha: fresh.familySha,
                 currentContextSha: currentContextSha(fresh, model.featureSpecSha, model.ownInputs),
               });
+        guarded = result.activation.reasons.includes('upgrade_regression');
         if (decision.activate) {
           deactivated = await deactivateUserModels(tx, userId);
           activated = true;
@@ -176,11 +186,22 @@ export function createUserLearnHandler(deps: WorkerDeps): QueueHandler<'user.lea
             inputs,
             decision.activate ? 'activated' : 'rejected',
             decision.activate ? null : decision.reasons.join(','),
+            inputs.strict || guarded,
           ),
         });
+        if (guarded) {
+          deactivated =
+            (await deactivateUserModels(tx, userId, {
+              at: nowOf(deps),
+              reason: 'upgrade_regression',
+            })) || deactivated;
+          await enqueueLearn(sender, { userId });
+        }
       }
       const stale =
-        activated || current.active === null ? null : modelStaleness(fresh, current.active);
+        activated || guarded || current.active === null
+          ? null
+          : modelStaleness(fresh, current.active);
       if (stale !== null) {
         deactivated = await deactivateUserModels(tx, userId, { at: nowOf(deps), reason: stale });
       }
