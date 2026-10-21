@@ -29,6 +29,7 @@ import { credentialResolverFromConfig } from './credentials/resolver.js';
 import { createWorkerEngineRouter } from './engine-router.js';
 import { createModelProber } from './model-probe.js';
 import { recordModelPin } from './model-pin.js';
+import { enqueueModelWatchNow } from './model-watch.js';
 import {
   MODEL_RESOLVE_RETRY_MS,
   MODEL_RESOLVE_TIMEOUT_MS,
@@ -361,6 +362,9 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
     const pin = await recordModelPin(db, processPin, now());
     if (pin.changed)
       logger.info({}, 'engine model pin changed: re-enrichment and re-matching enqueued');
+    if (modelState.kind === 'resolved' && modelState.source === 'stored') {
+      await enqueueModelWatchNow(db);
+    }
   }
 
   let pendingRestart = false;

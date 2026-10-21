@@ -1,12 +1,7 @@
-import {
-  activeAdminEmails,
-  readStoredSetting,
-  retryTransaction,
-  updateSettingLocked,
-} from '@bantoozi/db';
+import { readStoredSetting, retryTransaction, updateSettingLocked } from '@bantoozi/db';
 import { parseSetting } from '@bantoozi/shared';
-import type { EmailMessage, Mailer } from '@bantoozi/shared/server';
 
+import { alertRecipients, deliver } from '../alerts/mail.js';
 import {
   BACKUP_MEMO_KEY,
   POOL_MEMO_KEY,
@@ -30,45 +25,6 @@ import { recordHouseProgress } from './house-purge-auth.js';
 import type { QueueHandler } from './index.js';
 
 const JOB = 'house.alerts' as const;
-
-/**
- * Alert recipients (M8b-T7): the active admins in the database; `ADMIN_EMAILS` only while there is
- * none. A failed lookup also falls back to the list rather than dropping the alerts.
- */
-async function alertRecipients(deps: WorkerDeps): Promise<readonly string[]> {
-  try {
-    const emails = await activeAdminEmails(deps.db);
-    if (emails.length > 0) return emails;
-  } catch (error) {
-    deps.logger.warn(
-      { job: JOB, error: safeText(error instanceof Error ? error.message : error, 200) },
-      'admin recipients lookup failed; using ADMIN_EMAILS',
-    );
-  }
-  return deps.adminEmails ?? [];
-}
-
-/** Sends one message to each admin; delivered when at least one address accepted it. Never throws. */
-async function deliver(
-  deps: WorkerDeps,
-  mailer: Mailer,
-  admins: readonly string[],
-  content: Pick<EmailMessage, 'subject' | 'text'>,
-): Promise<boolean> {
-  let accepted = 0;
-  for (const to of admins) {
-    try {
-      await mailer.send({ to, ...content });
-      accepted += 1;
-    } catch (error) {
-      deps.logger.warn(
-        { job: JOB, error: safeText(error instanceof Error ? error.message : error, 200) },
-        'alert email not delivered',
-      );
-    }
-  }
-  return accepted > 0;
-}
 
 /**
  * `house.alerts` (every 5 minutes, spec 11 §6, §6.1): evaluates every alert rule and mails

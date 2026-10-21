@@ -1,4 +1,9 @@
-import { retryTransaction, updateSettingLocked, type Database } from '@bantoozi/db';
+import {
+  retryTransaction,
+  updateSettingLocked,
+  type Database,
+  type Transaction,
+} from '@bantoozi/db';
 import { EngineModelResolutionSchema, type EngineModelResolution } from '@bantoozi/shared';
 
 export const MODEL_RESOLVE_TIMEOUT_MS = 30_000;
@@ -19,10 +24,12 @@ export interface ModelResolutionInput {
 /**
  * Records what an alias resolved to in `engine.model_resolution` under the row lock. The same model
  * only moves `checkedAt`; another model moves the old one to `previous` and reports the change.
+ * `onChange` runs in the same transaction, after the row is updated, when a concrete model was replaced.
  */
 export async function recordModelResolution(
   db: Database,
   input: ModelResolutionInput,
+  onChange?: (tx: Transaction, change: { from: string; to: string }) => Promise<void>,
 ): Promise<{ changed: boolean; previous?: string }> {
   const at = input.now.toISOString();
   const fresh = EngineModelResolutionSchema.parse({
@@ -49,6 +56,9 @@ export async function recordModelResolution(
         return { ...fresh, previous: { model: stored.model, until: at } };
       },
     );
+    if (onChange !== undefined && result.previous !== undefined) {
+      await onChange(tx, { from: result.previous, to: fresh.model });
+    }
     return result;
   });
 }

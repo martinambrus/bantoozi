@@ -11,6 +11,7 @@ import { createCardBackfillHandler } from './card-backfill.js';
 import type { WorkerDeps } from './deps.js';
 import { createFeedFetchHandler } from './feed-fetch.js';
 import { createFeedScheduleHandler } from './feed-schedule.js';
+import { createModelWatchHandler } from './house-model-watch.js';
 import { createModelProbeHandler } from './model-probe.js';
 import { createModelProber } from '../model-probe.js';
 import { createProviderValidateHandler } from './provider-validate.js';
@@ -118,6 +119,7 @@ export const DRAFT_QUEUES = ['card.draft'] as const satisfies readonly QueueName
 export const PROVIDER_QUEUES = [
   'provider.validate',
   'engine.model-probe',
+  'house.model-watch',
 ] as const satisfies readonly QueueName[];
 
 /**
@@ -256,6 +258,27 @@ export function createHandlers(deps: WorkerDeps): HandlerMap {
                 logger: deps.logger,
                 ...(deps.now === undefined ? {} : { now: deps.now }),
               }),
+            }),
+          ),
+          'house.model-watch': implemented(
+            createModelWatchHandler({
+              db: deps.db,
+              logger: deps.logger,
+              prober: createModelProber({
+                ledger: providerValidation.router,
+                credentials: providerValidation.credentials,
+                config: providerValidation.config,
+                logger: deps.logger,
+                ...(deps.now === undefined ? {} : { now: deps.now }),
+              }),
+              configuredModel: async () =>
+                deps.runtimeSettings === undefined
+                  ? providerValidation.config.typesafeModel
+                  : (await deps.runtimeSettings.get()).values.typesafeModel,
+              settingsEnv: deps.settingsEnv,
+              mailer: deps.mailer,
+              adminEmails: deps.adminEmails,
+              ...(deps.now === undefined ? {} : { now: deps.now }),
             }),
           ),
         }),
