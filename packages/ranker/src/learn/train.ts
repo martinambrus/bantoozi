@@ -12,18 +12,33 @@ import {
   compareSamples,
   eligibleSetSha,
   sampleEligibility,
+  type EligibilityOpts,
   type TrainingSample,
 } from './samples.js';
 
-export interface TrainArgs {
+/** The rating scope of a training: no rating checks, or the exact sha with its family map. */
+export type RatingScope =
+  | { ratingSha: null }
+  | { ratingSha: string; familySha: string; families: Readonly<Record<string, string>> };
+
+export type TrainArgs = {
   samples: TrainingSample[];
   now: Date;
   config: ReadonlyRankerConfig;
   heldCards: HeldCard[];
-  ratingSha: string | null;
   consent: Consent;
   seedMaterial: string;
   feedbackCutoffEventId: string | null;
+} & RatingScope;
+
+/** The eligibility scope of a training's arguments; the one place that builds it. */
+export function eligibilityOf(
+  args: { now: Date; config: { model: { historyDays: number } } } & RatingScope,
+): EligibilityOpts {
+  const base = { now: args.now, historyDays: args.config.model.historyDays };
+  return args.ratingSha === null
+    ? { ...base, ratingSha: null }
+    : { ...base, ratingSha: args.ratingSha, familySha: args.familySha, families: args.families };
 }
 
 export type ConfidenceInterval = [number, number] | null;
@@ -44,6 +59,7 @@ export interface TrainMetrics {
   research: boolean;
   contextSha: string | null;
   ratingSha: string | null;
+  familySha: string | null;
   featureSpecSha: string;
   eligibleSetSha: string;
   feedbackCutoffEventId: string | null;
@@ -278,7 +294,7 @@ function innerSelect(
 /** The eligible rows, latest sample per article, and the skip counts (spec 06 §8.1). */
 export function eligibleRows(
   samples: readonly TrainingSample[],
-  elig: { now: Date; historyDays: number; ratingSha: string | null },
+  elig: EligibilityOpts,
 ): { rows: TrainingRow[]; skipped: Record<string, number> } {
   const skipped: Record<string, number> = {};
   const bump = (reason: string): void => {
@@ -351,7 +367,7 @@ function setup(
   const cfg = args.config;
   const mc = cfg.model;
   const research = opts.mode === 'research';
-  const elig = { now: args.now, historyDays: mc.historyDays, ratingSha: args.ratingSha };
+  const elig = eligibilityOf(args);
   const { rows, skipped } = eligibleRows(args.samples, elig);
   const explicitRows = rows.filter((r) => r.s.explicit);
   const nPos = explicitRows.filter((r) => r.s.y === 1).length;
@@ -371,6 +387,7 @@ function setup(
     research,
     contextSha: null,
     ratingSha: args.ratingSha,
+    familySha: args.ratingSha === null ? null : args.familySha,
     featureSpecSha: FEATURE_SPEC_V1_SHA,
     eligibleSetSha:
       sha === 'none' ? '' : sha === 'compute' ? eligibleSetSha(args.samples, elig) : sha,
@@ -404,11 +421,7 @@ export function trainingFolds(args: TrainArgs, opts: { mode: 'production' | 'res
 
 /** The `eligibleSetSha` of the training's samples (spec 06 §8.3), for {@link finishTraining}. */
 export function trainingSetSha(args: TrainArgs): string {
-  return eligibleSetSha(args.samples, {
-    now: args.now,
-    historyDays: args.config.model.historyDays,
-    ratingSha: args.ratingSha,
-  });
+  return eligibleSetSha(args.samples, eligibilityOf(args));
 }
 
 /**
@@ -560,7 +573,7 @@ export function finishTraining(
   const heldById = new Map(args.heldCards.map((h) => [h.cardId, h]));
   if (args.ratingSha !== null) {
     metrics.contextSha = modelContextSha({
-      ratingSha: args.ratingSha,
+      familySha: args.familySha,
       featureSpecSha: FEATURE_SPEC_V1_SHA,
       strengthWeights: cfg.strengthWeights,
       modelConfig: mc,

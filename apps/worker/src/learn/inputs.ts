@@ -3,7 +3,9 @@ import {
   loadLearnConsent,
   loadLearnSamples,
   loadRankCards,
-  readRatingFingerprint,
+  loadModelState,
+  readRatingFingerprintState,
+  type RatingFingerprint,
   type Executor,
   type LearnSample,
 } from '@bantoozi/db';
@@ -13,8 +15,10 @@ import {
   compareSamples,
   sampleEligibility,
   eligibleSetSha,
+  eligibilityOf,
   type Consent,
   type HeldCard,
+  type ReadonlyRankerConfig,
   type TrainingSample,
 } from '@bantoozi/ranker';
 import type { RankerConfig } from '@bantoozi/shared';
@@ -29,6 +33,15 @@ import { loadRankerSettings } from '../rank/settings.js';
 export interface LearnInputs {
   now: Date;
   ratingSha: string;
+  familySha: string;
+  /** The sha to family map eligibility used; empty in strict mode. */
+  families: Record<string, string>;
+  /** The latest attempt marked this exact sha strict: only rows carrying it are eligible. */
+  strict: boolean;
+  /** Whether the current exact sha is in the registry. */
+  registered: boolean;
+  fingerprint: RatingFingerprint;
+  modelState: Awaited<ReturnType<typeof loadModelState>>;
   config: RankerConfig;
   consent: Consent;
   samples: LearnSample[];
@@ -56,10 +69,19 @@ export async function loadLearnInputs(
   const consent: Consent = await loadLearnConsent(db, userId);
 
   const classification = await loadClassificationConfig(db, deps.settingsEnv);
-  const ratingSha = await readRatingFingerprint(
+  const state = await readRatingFingerprintState(
     db,
     ratingDefaults(classification, deps.classification?.primaryModel ?? ''),
   );
+  const { sha: ratingSha, familySha } = state;
+  const fingerprint: RatingFingerprint = {
+    sha: state.sha,
+    familySha: state.familySha,
+    settings: state.settings,
+  };
+  const modelState = await loadModelState(db, userId);
+  const strict = modelState.latestTerminal?.metrics['strictRatingSha'] === ratingSha;
+  const families = strict ? {} : state.families;
   const cards = await loadRankCards(db, userId);
   const cardInputs = await loadCardInputs(
     db,
@@ -80,7 +102,7 @@ export async function loadLearnInputs(
         ];
   });
 
-  const opts = { now, historyDays: config.model.historyDays, ratingSha };
+  const opts = eligibilityOf({ now, config, ratingSha, familySha, families });
   const training = samples as unknown as TrainingSample[];
   const eligible = samples.filter((_, i) => sampleEligibility(training[i]!, opts).ok);
   const setSha = eligibleSetSha(training, opts);
@@ -102,6 +124,7 @@ export async function loadLearnInputs(
   const inputSha = canonicalSha256({
     eligibleManifest: manifest,
     ratingSha,
+    familySha,
     featureSpecSha: FEATURE_SPEC_V1_SHA,
     cards: held.filter((card) => inSnapshots.has(card.cardId)),
     strengthWeights: config.strengthWeights,
@@ -111,6 +134,12 @@ export async function loadLearnInputs(
   return {
     now,
     ratingSha,
+    familySha,
+    families,
+    strict,
+    registered: state.registered,
+    fingerprint,
+    modelState,
     config,
     consent,
     samples,
@@ -124,13 +153,13 @@ export async function loadLearnInputs(
 
 /** The model context (spec 06 §8.1) the current state implies for the own inputs `ownIds`. */
 export function currentContextSha(
-  inputs: Pick<LearnInputs, 'ratingSha' | 'config' | 'consent' | 'held'>,
+  inputs: Pick<LearnInputs, 'familySha' | 'consent' | 'held'> & { config: ReadonlyRankerConfig },
   featureSpecSha: string,
   ownIds: readonly string[],
 ): string {
   const own = new Set(ownIds);
   return modelContextSha({
-    ratingSha: inputs.ratingSha,
+    familySha: inputs.familySha,
     featureSpecSha,
     strengthWeights: inputs.config.strengthWeights,
     modelConfig: inputs.config.model,

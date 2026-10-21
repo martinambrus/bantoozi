@@ -5,7 +5,8 @@ import {
   listTrainingFeeds,
   loadLearnSamples,
   loadModelState,
-  readRatingFingerprint,
+  RATING_FINGERPRINT_STATE_KEYS,
+  ratingFingerprintStateOf,
   readStoredSettings,
   tenantUserId,
   type RatingDefaults,
@@ -50,19 +51,23 @@ export async function loadLearningStatus(
     'engine.circuit',
     'engine.model_pin',
     'house.progress',
+    ...RATING_FINGERPRINT_STATE_KEYS,
   ]);
   const { config } = resolveRankerSettings({
     thresholds: stored.get('ranker.thresholds'),
     settingsVersion: stored.get('ranker.settings_version'),
   });
-  const ratingSha = await readRatingFingerprint(tx, defaults);
+  const fingerprint = ratingFingerprintStateOf(stored, defaults);
+  const state = await loadModelState(tx, userId);
+  const strict = state.latestTerminal?.metrics['strictRatingSha'] === fingerprint.sha;
   const { samples } = await loadLearnSamples(tx, { userId, now });
   const { rows } = eligibleRows(samples as unknown as TrainingSample[], {
     now,
     historyDays: config.model.historyDays,
-    ratingSha,
+    ratingSha: fingerprint.sha,
+    familySha: fingerprint.familySha,
+    families: strict ? {} : fingerprint.families,
   });
-  const state = await loadModelState(tx, userId);
 
   const attempt = state.latestTerminal;
   const attemptStatus = attempt?.metrics['status'];

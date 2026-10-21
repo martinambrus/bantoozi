@@ -13,6 +13,7 @@ export * from './mutations.js';
 export * from './plans.js';
 export * from './quotas.js';
 export * from './rate-limit.js';
+export * from './rating-fingerprints.js';
 export * from './rules.js';
 export * from './sessions.js';
 export * from './setup.js';

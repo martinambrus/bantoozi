@@ -6,7 +6,9 @@ import {
   ExplainSchema,
   canonicalJson,
   enqueueLearn,
+  isConcreteJevModel,
   mergeRankerConfig,
+  modelFamily,
   readUserPreferences,
   retrainThreshold,
   type ArticleListItem,
@@ -75,7 +77,7 @@ export const FEATURE_SNAPSHOT_SPEC_SHA = createHash('sha256')
   .digest('hex');
 
 /** The settings whose change alters the meaning of every answer (spec 06 §8.1 rating fingerprint). */
-const RATING_FINGERPRINT_SETTINGS = [
+export const RATING_FINGERPRINT_SETTINGS = [
   'engine.model_pin',
   'question_sets.active',
   'language_modes',
@@ -137,16 +139,42 @@ export function effectiveRatingSettings(
   };
 }
 
+const hashFingerprint = (settings: Record<string, unknown>): string =>
+  createHash('sha256')
+    .update(canonicalJson({ specSha: FEATURE_SNAPSHOT_SPEC_SHA, settings }))
+    .digest('hex');
+
+/** A rating fingerprint: the exact sha, the family sha and the effective settings they hash. */
+export interface RatingFingerprint {
+  sha: string;
+  familySha: string;
+  settings: Record<string, unknown>;
+}
+
+/** The exact and family rating fingerprints of already-read stored settings. */
+export function ratingFingerprintOf(
+  stored: ReadonlyMap<string, unknown>,
+  defaults: RatingDefaults,
+): RatingFingerprint {
+  const settings = effectiveRatingSettings(stored, defaults);
+  const { model, ...pinRest } = objectOf(settings['engine.model_pin']);
+  const id = String(model);
+  return {
+    sha: hashFingerprint(settings),
+    familySha: hashFingerprint({
+      ...settings,
+      'engine.model_pin': {
+        ...(isConcreteJevModel(id) ? { family: modelFamily(id) } : { id }),
+        ...pinRest,
+      },
+    }),
+    settings,
+  };
+}
+
 /** The rating fingerprint of already-read stored settings. */
 function ratingShaOf(stored: ReadonlyMap<string, unknown>, defaults: RatingDefaults): string {
-  return createHash('sha256')
-    .update(
-      canonicalJson({
-        specSha: FEATURE_SNAPSHOT_SPEC_SHA,
-        settings: effectiveRatingSettings(stored, defaults),
-      }),
-    )
-    .digest('hex');
+  return ratingFingerprintOf(stored, defaults).sha;
 }
 
 /**

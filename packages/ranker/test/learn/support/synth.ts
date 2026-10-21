@@ -9,6 +9,14 @@ import type { HeldCard, TrainArgs, TrainingSample } from './api.js';
 
 export const NOW = new Date('2026-10-10T12:00:00Z');
 export const RATING_SHA = 'a'.repeat(64);
+export const FAMILY_SHA = 'f'.repeat(64);
+/** A second exact sha of the same family (another release of the model). */
+export const OTHER_RATING_SHA = '9'.repeat(64);
+/** The registry as the loader hands it over: both exact shas belong to {@link FAMILY_SHA}. */
+export const FAMILIES: Readonly<Record<string, string>> = {
+  [RATING_SHA]: FAMILY_SHA,
+  [OTHER_RATING_SHA]: FAMILY_SHA,
+};
 export const CFG = DEFAULT_RANKER_CONFIG;
 export const CONSENT = { implicitFeedback: false, implicitNegative: false };
 export const DAY = 86_400_000;
@@ -34,6 +42,7 @@ export interface SnapOpts {
   facets?: Record<string, number>;
   ageHours?: number;
   clusterId?: string | null;
+  ratingSha?: string;
 }
 
 /** A valid raw snapshot with 44 valid facets and the four synthetic cards. */
@@ -44,7 +53,7 @@ export function snapshot(feedbackAt: Date, o: SnapOpts = {}): RawFeatureSnapshot
   const p = (v: number | null | undefined, d: number): number | null => (v === undefined ? d : v);
   return {
     specSha: RAW_SNAPSHOT_SPEC_SHA,
-    ratingSha: RATING_SHA,
+    ratingSha: o.ratingSha ?? RATING_SHA,
     snapshotAt: new Date(feedbackAt.getTime() - 60_000).toISOString(),
     cards: [
       {
@@ -154,9 +163,11 @@ export function trainArgs(samples: TrainingSample[], over: Partial<TrainArgs> = 
     config: CFG,
     heldCards: HELD,
     ratingSha: RATING_SHA,
+    familySha: FAMILY_SHA,
+    families: FAMILIES,
     consent: CONSENT,
     seedMaterial: 'user-1|ctx|cutoff-1',
     feedbackCutoffEventId: '5000',
     ...over,
-  };
+  } as TrainArgs;
 }

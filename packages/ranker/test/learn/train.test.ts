@@ -22,6 +22,8 @@ import {
   CONSENT,
   DAY,
   drivenSamples,
+  FAMILIES,
+  FAMILY_SHA,
   HELD,
   NOW,
   noiseSamples,
@@ -31,7 +33,13 @@ import {
   trainArgs,
 } from './support/synth.js';
 
-const ELIG = { now: NOW, historyDays: 180, ratingSha: RATING_SHA };
+const ELIG = {
+  now: NOW,
+  historyDays: 180,
+  ratingSha: RATING_SHA,
+  familySha: FAMILY_SHA,
+  families: FAMILIES,
+};
 
 function withFeatures(
   s: TrainingSample,
@@ -477,8 +485,8 @@ describe('own-input weight growth', () => {
 });
 
 describe('decideActivation', () => {
-  const ctx = (): { currentRatingSha: string; currentContextSha: string } => ({
-    currentRatingSha: RATING_SHA,
+  const ctx = (): { currentFamilySha: string; currentContextSha: string } => ({
+    currentFamilySha: FAMILY_SHA,
     currentContextSha: goodResult().metrics.contextSha ?? 'missing',
   });
 
@@ -487,7 +495,7 @@ describe('decideActivation', () => {
   });
 
   it('rating_fingerprint_changed', () => {
-    const d = api.decideActivation(goodResult(), { ...ctx(), currentRatingSha: 'd'.repeat(64) });
+    const d = api.decideActivation(goodResult(), { ...ctx(), currentFamilySha: 'd'.repeat(64) });
     expect(d.activate).toBe(false);
     expect(d.reasons).toContain('rating_fingerprint_changed');
   });
@@ -521,7 +529,7 @@ describe('decideActivation', () => {
 
 describe('modelContextSha', () => {
   const base: ContextInput = {
-    ratingSha: RATING_SHA,
+    familySha: FAMILY_SHA,
     featureSpecSha: FEATURE_SPEC_V1_SHA,
     strengthWeights: CFG.strengthWeights,
     modelConfig: CFG.model,
@@ -545,7 +553,7 @@ describe('modelContextSha', () => {
       { ...base, consent: { ...CONSENT, implicitFeedback: true } },
       { ...base, consent: { ...CONSENT, implicitNegative: true } },
       { ...base, modelConfig: { ...CFG.model, minCvAuc: 0.65 } },
-      { ...base, ratingSha: 'f'.repeat(64) },
+      { ...base, familySha: 'd'.repeat(64) },
       { ...base, ownInputs: [{ ...ownA, strength: 'like' }, ...base.ownInputs.slice(1)] },
       { ...base, ownInputs: [{ ...ownA, cardInputSha256: 'x' }, ...base.ownInputs.slice(1)] },
       { ...base, ownInputs: [{ ...ownA, scopeFeedId: '9' }, ...base.ownInputs.slice(1)] },

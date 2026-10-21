@@ -2,6 +2,7 @@ import {
   auc,
   baselineScore,
   eligibleRows,
+  type RatingScope,
   feedAgreement,
   groupedBootstrapCi,
   sampleFeedIds,
@@ -46,6 +47,13 @@ export interface AgreementReplay {
   raters: RaterAgreement[];
 }
 
+/** The scope in which the samples' own rating sha is the only (and its own family's) one. */
+function ownScope(sha: string | null): RatingScope {
+  return sha === null
+    ? { ratingSha: null }
+    : { ratingSha: sha, familySha: sha, families: { [sha]: sha } };
+}
+
 function ratingTime(sample: TrainingSample): number {
   return sample.feedbackAt.getTime();
 }
@@ -61,7 +69,7 @@ function laterAgreement(
   const { rows } = eligibleRows(feed, {
     now: last === undefined ? new Date(0) : last.feedbackAt,
     historyDays: config.model.historyDays,
-    ratingSha: last?.features?.ratingSha ?? null,
+    ...ownScope(last?.features?.ratingSha ?? null),
   });
   const mine = rows.filter((r) => r.s.explicit && after.has(r.s.articleId));
   const scores = mine.map((r) => baselineScore(r, config));
@@ -91,7 +99,7 @@ function replayFeed(
     const { rows } = eligibleRows(prefix, {
       now: last === undefined ? new Date(0) : last.feedbackAt,
       historyDays: config.model.historyDays,
-      ratingSha,
+      ...ownScope(ratingSha),
     });
     return { ...feedAgreement(rows, feedId, config, `${seed}|${k}`), sha: ratingSha };
   };

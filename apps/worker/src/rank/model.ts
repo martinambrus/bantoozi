@@ -2,7 +2,7 @@ import {
   loadActiveUserModel,
   loadLearnConsent,
   loadRankCards,
-  readRatingFingerprint,
+  readCurrentRatingFingerprint,
   type RatingDefaults,
   type ActiveModelRow,
   type Executor,
@@ -111,7 +111,7 @@ export async function loadRankModelState(
   });
   const contextSha = currentContextSha(
     {
-      ratingSha: await readRatingFingerprint(db, input.ratingDefaults),
+      familySha: (await readCurrentRatingFingerprint(db, input.ratingDefaults)).familySha,
       config: input.config,
       consent: await loadLearnConsent(db, input.userId),
       held,

@@ -40,3 +40,15 @@ export function isPinnedModel(model: string): boolean {
 export function isConcreteJevModel(model: string): boolean {
   return CONCRETE_JEV_MODEL.test(model);
 }
+
+/** The upgrade family of a model id: `jev-<major>` for a concrete Jev release, any other id is its own family. */
+export function modelFamily(model: string): string {
+  return isConcreteJevModel(model) ? model.slice(0, model.indexOf('.')) : model;
+}
+
+/** Whether two model ids share an upgrade family: equal ids, or two concrete Jev releases of one major. */
+export function sameModelFamily(a: string, b: string): boolean {
+  return (
+    a === b || (isConcreteJevModel(a) && isConcreteJevModel(b) && modelFamily(a) === modelFamily(b))
+  );
+}

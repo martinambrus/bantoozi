@@ -34,11 +34,14 @@ export type EligibilityReason =
   | 'incomplete_coverage'
   | 'no_positive_cards';
 
-export interface EligibilityOpts {
-  now: Date;
-  historyDays: number;
-  ratingSha: string | null;
-}
+/**
+ * The eligibility scope: a null `ratingSha` skips the spec and rating checks; otherwise a sample is
+ * rating-compatible with the exact sha or with any sha `families` maps to `familySha`.
+ */
+export type EligibilityOpts = { now: Date; historyDays: number } & (
+  | { ratingSha: null }
+  | { ratingSha: string; familySha: string; families: Readonly<Record<string, string>> }
+);
 
 export function isValidFeatureFacets(facets: unknown): facets is Record<string, number> {
   if (typeof facets !== 'object' || facets === null || Array.isArray(facets)) return false;
@@ -47,20 +50,38 @@ export function isValidFeatureFacets(facets: unknown): facets is Record<string, 
   );
 }
 
+function ratingScopeOf(opts: EligibilityOpts): { familySha: string; families: object } | null {
+  if (opts.ratingSha === null) return null;
+  const scope = opts as { familySha?: unknown; families?: unknown };
+  if (
+    typeof scope.familySha !== 'string' ||
+    typeof scope.families !== 'object' ||
+    scope.families === null
+  ) {
+    throw new TypeError('sampleEligibility: a rating sha needs familySha and families');
+  }
+  return { familySha: scope.familySha, families: scope.families };
+}
+
 /**
  * Whether a sample may be trained on (spec 06 §8.1-8.2): a stored event-time snapshot of the current
- * raw snapshot spec and rating fingerprint (both checks are skipped for a null `ratingSha`), within the
+ * raw snapshot spec and rating fingerprint family (both checks are skipped for a null `ratingSha`), within the
  * history window, with valid typesafe facets and complete positive-card coverage. Never reconstructs.
  */
 export function sampleEligibility(
   s: TrainingSample,
   opts: EligibilityOpts,
 ): { ok: true } | { ok: false; reason: EligibilityReason } {
+  const scope = ratingScopeOf(opts);
   const f = s.features;
   if (f === null) return { ok: false, reason: 'missing_snapshot' };
-  if (opts.ratingSha !== null) {
+  if (scope !== null) {
     if (f.specSha !== RAW_SNAPSHOT_SPEC_SHA) return { ok: false, reason: 'spec_sha_mismatch' };
-    if (f.ratingSha !== opts.ratingSha) return { ok: false, reason: 'rating_sha_mismatch' };
+    const sha = f.ratingSha;
+    const compatible =
+      sha === opts.ratingSha ||
+      (Object.hasOwn(scope.families, sha) && Reflect.get(scope.families, sha) === scope.familySha);
+    if (!compatible) return { ok: false, reason: 'rating_sha_mismatch' };
   }
   const cutoff = opts.now.getTime() - opts.historyDays * DAY_MS;
   const snapshotAt = typeof f.snapshotAt === 'string' ? Date.parse(f.snapshotAt) : Number.NaN;

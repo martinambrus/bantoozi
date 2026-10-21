@@ -196,7 +196,7 @@ for (const mode of modes.length === 0 ? ['rank'] : modes) {
     });
     const loaded = performance.now();
     console.log(
-      `  learn inputs: ${inputs.samples.length} samples in ${(loaded - t0).toFixed(0)} ms`,
+      `  learn inputs: ${inputs.samples.length} samples, eligible: ${inputs.eligible.length}, in ${(loaded - t0).toFixed(0)} ms`,
     );
     const args = {
       samples: inputs.samples as unknown as TrainingSample[],
@@ -204,6 +204,8 @@ for (const mode of modes.length === 0 ? ['rank'] : modes) {
       config: inputs.config,
       heldCards: inputs.held,
       ratingSha: inputs.ratingSha,
+      familySha: inputs.familySha,
+      families: inputs.families,
       consent: inputs.consent,
       seedMaterial: `learn:${userId}:${inputs.eligibleSetSha}`,
       feedbackCutoffEventId: inputs.cutoffEventId,

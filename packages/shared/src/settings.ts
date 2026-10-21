@@ -116,6 +116,20 @@ export const EngineModelProbesSchema = z
   .refine((probes) => Object.keys(probes).length <= ENGINE_MODEL_PROBES_MAX, 'too many probes');
 export type EngineModelProbes = z.infer<typeof EngineModelProbesSchema>;
 
+/** Key of the worker-written registry of rating fingerprints (JEV-4). */
+export const RATING_FINGERPRINTS_KEY = 'engine.rating_fingerprints';
+/** The registry keeps at most this many fingerprints. */
+export const RATING_FINGERPRINTS_MAX = 64;
+const sha256Hex = z.string().regex(/^[0-9a-f]{64}$/);
+/** One registered exact rating fingerprint: its family sha, effective settings and first sighting. */
+export const RatingFingerprintEntrySchema = z
+  .object({ family: sha256Hex, settings: JsonObjectSchema, firstSeenAt: iso })
+  .strict();
+export type RatingFingerprintEntry = z.infer<typeof RatingFingerprintEntrySchema>;
+/** `settings['engine.rating_fingerprints']`: exact rating sha to its entry. */
+export const RatingFingerprintsSchema = z.record(sha256Hex, RatingFingerprintEntrySchema);
+export type RatingFingerprints = z.infer<typeof RatingFingerprintsSchema>;
+
 const houseProgressEntry = z
   .object({
     cursor: JsonValueSchema.optional(),
@@ -275,6 +289,11 @@ export const SETTINGS = {
   'engine.model_probe': def({
     schema: EngineModelProbesSchema,
     defaultValue: () => undefined,
+    writers: ['worker'],
+  }),
+  [RATING_FINGERPRINTS_KEY]: def({
+    schema: RatingFingerprintsSchema,
+    defaultValue: () => ({}),
     writers: ['worker'],
   }),
   'engine.typesafe_model': def({
