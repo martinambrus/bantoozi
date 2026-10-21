@@ -14,6 +14,7 @@ import {
   HOUSE_CRON_SCHEDULES,
   HOUSE_PROGRESS_CURSORS,
   HostHealthDetailSchema,
+  isModelAlias,
   readSetting,
   utcDay,
   type SettingKey,
@@ -75,21 +76,35 @@ const duration = (ms: number): string => {
   return `${Math.round(ms / (24 * HOUR))} days`;
 };
 
+async function modelParts(context: RuleContext): Promise<string[]> {
+  const parts: string[] = [];
+  const configured =
+    (await bestEffort(() => read(context, 'engine.typesafe_model'))) ??
+    context.deps.classification?.primaryModel;
+  if (configured !== undefined) parts.push(`Configured model: ${configured}.`);
+  if (configured !== undefined && isModelAlias(configured)) {
+    const resolution = await bestEffort(() => read(context, 'engine.model_resolution'));
+    if (resolution !== undefined && resolution.alias === 'jev-latest')
+      parts.push(`Resolved model: ${resolution.model}.`);
+  }
+  const pinned = (await bestEffort(() => read(context, 'engine.model_pin')))?.model;
+  if (pinned !== undefined) parts.push(`Pinned model: ${pinned}.`);
+  const check = (await bestEffort(() => read(context, 'engine.model_watch')))?.lastCheck;
+  if (check !== undefined && !check.ok)
+    parts.push(`Last model check failed: ${safeText(check.error ?? 'unknown')} at ${check.at}.`);
+  return parts;
+}
+
 /** A TypeSafe outage the breaker never sees: at least 3 failed classification requests and no ok call in 30 minutes. */
 async function outageWithoutBreaker(context: RuleContext): Promise<Condition[]> {
   const outage = await bestEffort(() =>
     typesafeClassificationOutage(context.deps.db, context.now, ALERT_THRESHOLDS.breakerOpenMs),
   );
   if (outage === undefined || outage.okCalls > 0 || outage.failedRequests < 3) return [];
-  const configured =
-    (await bestEffort(() => read(context, 'engine.typesafe_model'))) ??
-    context.deps.classification?.primaryModel;
-  const pinned = (await bestEffort(() => read(context, 'engine.model_pin')))?.model;
   const parts = [
     `No TypeSafe classification call succeeded in the last 30 minutes (${outage.failedRequests} failed requests${outage.lastFailureAt === null ? '' : `; last failure ${outage.lastFailureAt.toISOString()}`}).`,
   ];
-  if (configured !== undefined) parts.push(`Configured model: ${configured}.`);
-  if (pinned !== undefined) parts.push(`Pinned model: ${pinned}.`);
+  parts.push(...(await modelParts(context)));
   return [
     {
       key: 'engine.breaker',
@@ -128,10 +143,6 @@ const breakerRule: AlertRule = {
     const failure = await bestEffort(() =>
       latestTypesafeFailure(context.deps.db, context.now, new Date(startMs - 10 * MINUTE)),
     );
-    const configured =
-      (await bestEffort(() => read(context, 'engine.typesafe_model'))) ??
-      context.deps.classification?.primaryModel;
-    const pinned = (await bestEffort(() => read(context, 'engine.model_pin')))?.model;
     const parts = [
       `The decision engine has been failing for ${duration(failingMs)} (since ${start}; breaker ${breaker.state}, ${breaker.reopenCount} re-opens).`,
     ];
@@ -140,8 +151,7 @@ const breakerRule: AlertRule = {
         `Last TypeSafe failure: ${failure.status}${failure.detail === null ? '' : ` ${failure.detail}`}${failure.model === null ? '' : ` on ${failure.model}`} at ${failure.at.toISOString()}.`,
       );
     }
-    if (configured !== undefined) parts.push(`Configured model: ${configured}.`);
-    if (pinned !== undefined) parts.push(`Pinned model: ${pinned}.`);
+    parts.push(...(await modelParts(context)));
     return [
       {
         key: 'engine.breaker',
@@ -172,7 +182,13 @@ const mismatchRule: AlertRule = {
       {
         key: 'engine.model_mismatch',
         title: 'Jev answered with another model',
-        detail: safeText(`Jev named another model than requested: ${pairs.join('; ')}.`, 600),
+        detail: safeText(
+          [
+            `Jev named another model than requested: ${pairs.join('; ')}.`,
+            ...(await modelParts(context)),
+          ].join(' '),
+          600,
+        ),
       },
     ];
   },
