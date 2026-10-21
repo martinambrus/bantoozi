@@ -246,7 +246,7 @@ an assumption until one real Jev answer is recorded.
   630 KB of JSON. Scoring costs 60–80 µs per article.
 - **Gate.** At least `estimate.minRatings` (10) explicit ratings, with at least `estimate.minEachClass` (3) of
   each class. These live in a new `RankerConfig.estimate` block with defaults; no G1 is needed.
-- **Storage** (migration):
+- **Storage** (migration 0034):
   - `user_estimate_models(user_id, version, trained_at, n, n_pos, n_neg, intercept, weights jsonb, platt jsonb,
     metrics jsonb)`, with tenant RLS like `user_models`; the newest 2 are kept.
   - `user_article.score_source` also allows `estimate`.
@@ -272,6 +272,32 @@ an assumption until one real Jev answer is recorded.
   - Score sort orders them by P together with analysed rows.
   - Unscoped lanes keep their rule: `new` rows never enter For you or Maybe.
   - Optional: a Score/Date control in the global New lane (`newSort`, default `date`).
+- **As built (EST-2…EST-4, D-281…D-285).**
+  - Storage: `user_estimate_models` also stores `spec` (a model of another spec is retrained, never scored);
+    `intercept` is `double precision`; the API role has SELECT only. Migration 0034 (not 0035) also replaces
+    `rank_covered()`, so a pending estimate refresh is not "a rank on its way".
+  - Job: `stately`, concurrency 2, debounced 20 s with pg-boss leading + trailing job semantics; an input hash
+    (`ESTIMATE_SPEC`, options, sorted samples) makes a repeated run a no-op; training runs on the CPU pool. Below the
+    gate stored models are deleted. Triggers: a reader action that changed a rating value or time
+    (`ratingValueChanged`), an account restore, a change of `prefs.estimates`, and the rank handler's self-heal (no
+    model while the gate is open, or a model of another spec), which also backfills existing raters. Ratings aging
+    out of the window, merges and admin changes of `estimate.*` do not retrain (found, not fixed).
+  - Ranking: exit 1b fires `[inference_not_requested, estimate]`, exits 2 and 4d `[estimate]`; floors, caps,
+    boosts and must cards never lift an estimate. Exit 2 is unreachable through the worker (1b fires first). The
+    estimate model is not part of `contextSha`. Top words are shown as the article's own words; `f:` is excluded.
+  - Refresh: `user.rank {estimate: {version?, up?, down?}}` (keys `rank-est:` / `rank-est-cont:`), one page of up to
+    20,000 window rows with lane `new` and source `none`/`estimate`, no BM25 corpus query. A row is written when its
+    tier, rules or labels differ or P moves ≥ 0.01. `lastRun` counts written unread rows with a null tier as 1, so
+    the first model's `movedUp` counts every newly estimated row at tier ≥ 2 (PRG-3 shows no notice without an
+    earlier `lastRun`). Measured on a seeded test database (12,700 estimate rows + 3,500 analysed): 2.7 s first,
+    1.9 s nudged, 1.8 s unchanged.
+  - Reading: a stored estimate keeps its lane `new`, tier and P in every view (the neutral projection's one
+    exception; a hide rule still wins). Story folding ignores an estimate's P. Unscoped lanes and counts are
+    unchanged (S19 overlay test). Dataset digests include P and tier, so refreshes cause more `STALE_CURSOR` /
+    `dataset_changed` (accepted; PRG-3 is the planned UX). `GET /me/learning.estimates {n, auc, trainedAt, lastRun}
+    | null`. The estimate does not depend on the Jev model: a model change leaves it untouched.
+  - Release order: EST-2…EST-4 ship with EST-5; a cached older web bundle rejects `source: 'estimate'` until the
+    D-163 reload bar.
 - **Web.**
   - Estimated tiers are drawn as outlined dots labelled "Estimated".
   - Why this? explains "Estimated from the words of articles you rated" and lists the top words.

@@ -2909,3 +2909,32 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   fingerprint current only between two worker starts without a learn run is not registered (JEV-3 registers the
   outgoing model before adopting); `GET /me/learning.deactivated` reads the newest model row, so `upgrade_regression`
   shows through `lastAttempt` only (PRG-2).
+- D-281: 2026-10-21 (EST-2 of docs/design/visible-learning.md) — Word estimates: storage and job.
+  `user_estimate_models` (migration 0034; adds `spec` to the design's columns, `intercept double precision`, the
+  newest 2 kept, SELECT only for the API role, tenant RLS). `user.estimate` is `stately`, concurrency 2, debounced
+  20 s; pg-boss runs a slot's first job at once plus one trailing job, so "a burst trains once" means one outbox row
+  and training only when the input hash (`ESTIMATE_SPEC`, options, sorted samples) changed. Training runs on the CPU
+  pool (event loop 335 ms → 11 ms at 5,000 ratings). Below the gate stored models are deleted. The job trains
+  whatever `prefs.estimates` says.
+- D-282: 2026-10-21 (EST-2, EST-3) — Estimate triggers: a reader action that changed a rating's value or time
+  (`ReaderRankChange.ratingValueChanged`; hiding an unrated article does not count), its undo, an account restore, a
+  change of `prefs.estimates` (also a full rank), and a self-heal in the rank handler (no model while the gate is
+  open, or a model of another spec), which also backfills existing raters. Deviation: no nightly sweep, so ratings
+  aging out of the window, article merges and admin changes of `estimate.*` retrain only at the next trigger.
+- D-283: 2026-10-21 (EST-3) — Estimates at the unscored exits 1b, 2 and 4d: rules `[inference_not_requested,
+  estimate]` at 1b and `[estimate]` otherwise; lane stays `new`; floors, caps, boosts and must cards never lift an
+  estimate; exit 2 is unreachable through the worker; top words are the article's own words without the `f:` feature;
+  the estimate model is not part of `contextSha` (it would dirty every analysed row at each training);
+  `RANKER_VERSION` 4.
+- D-284: 2026-10-21 (EST-3) — The estimate refresh: `user.rank {estimate}` (keys `rank-est:`/`rank-est-cont:`), one page
+  of up to 20,000 window rows with lane `new` and source `none`/`estimate`, no BM25 corpus; writes only when the
+  result stays `none`/`estimate` in lane `new` and tier, rules or labels differ or P moves ≥ 0.01; `lastRun` on the
+  model version it scored with (null tier counts as 1, so a first model's `movedUp` counts every newly estimated row
+  at tier ≥ 2); `rank_covered()` ignores the intent; the dirty-set recheck covers `none` and `estimate`. Measured
+  2.7 s / 1.9 s / 1.8 s (first, nudged, unchanged) for 12,700 rows on a seeded test database (target 5 s).
+- D-285: 2026-10-21 (EST-4) — Reading estimates: the neutral projection keeps a stored estimate's lane `new`, tier and
+  P in every view (a hide rule still wins), so D-248's scoped filter lists a Training feed's estimated rows at tier ≥
+  `minTier` and its badge equals the list; story folding ignores an estimate's P; unscoped lanes and counts are
+  unchanged (S19 overlay test); refreshes change dataset digests (more `STALE_CURSOR`, accepted);
+  `GET /me/learning.estimates`. Version skew as in D-272: a web bundle older than this release rejects
+  `source: 'estimate'` until the D-163 reload bar, so EST-2…EST-4 are released with EST-5.

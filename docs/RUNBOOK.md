@@ -251,6 +251,13 @@ strictly (the API answers 500 on ratings and Analyze, the worker cannot start). 
 `UPDATE settings SET value = value - 'alias' WHERE key = 'engine.model_pin'`. A release older than JEV-2 also refuses
 `TYPESAFE_MODEL=jev-latest` and ignores a stored one.
 
+**Rolling back past EST-2…EST-4 (D-281…D-285).** Migration 0034 is expand-only, but an older release rejects rows with
+`score_source = 'estimate'` and a stored `ranker.thresholds.estimate` (ranking stops with `RankerSettingsError`).
+Before starting it: `UPDATE settings SET value = value - 'estimate' WHERE key = 'ranker.thresholds'` (when set) and
+`UPDATE user_article SET lane = 'new', score_source = 'none', tier = NULL, p_like = NULL, explain = NULL,
+rules_fired = '{}', scored_at = NULL WHERE score_source = 'estimate'` (the next rank re-ranks them). Deploying it:
+run the migrate job before the worker starts (it creates the `user.estimate` queue).
+
 **Rolling back past JEV-4 (D-275, D-276).** Older code computes exact-sha model contexts and a learn input hash
 without the family sha: stored models read `incompatible` and retrain once; samples of an earlier Jev release become
 ineligible again. `engine.rating_fingerprints` is ignored by older code and harmless. Before a Jev upgrade, check that

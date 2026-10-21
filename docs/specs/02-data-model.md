@@ -128,6 +128,7 @@ sequences have no default API grant.
 | `user_article` | `INSERT (user_id, article_id, opened_at, read_at, rating, reason, rated_at, dwell_ms, bookmarked_at, archived_at, label_ids, feedback_prompted_at, state_version)`; `UPDATE` on those reader-state columns except the primary key, plus `label_suggestions` | rating/read/bookmark actions; ranking columns are worker-only |
 | `card_suggestions` | `UPDATE (dismissed_at)` | dismiss suggestion |
 | `user_models` | no writes | worker alone trains and activates models |
+| `user_estimate_models` | no writes (SELECT only) | worker alone trains word estimates (spec 06 §8.6, D-281; migration 0034) |
 | `bookmark_snapshot_pins` | `INSERT` only | vetted bookmark/undo repository pins original snapshot through the ten-minute undo deadline: only the `previous_snapshot_id` that `clear_bookmark_snapshot` returned in the same transaction, never a caller-chosen snapshot |
 | `analysis_requests` | `INSERT (id, user_id, feed_id, article_id, article_revision, inference_version, input_snapshot, input_sha)` only | exact selected-article manual authorization; validated immutable snapshot, worker owns completion |
 | `card_drafts` | `INSERT (id, user_id, article_ids, locale)`, `SELECT`, `DELETE` | card drafts for the editor (D-240, migration 0025); the worker answers them |
@@ -1224,7 +1225,7 @@ CREATE TABLE user_article (
   tier               smallint NULL CHECK (tier BETWEEN 1 AND 5),
   p_like             real NULL CHECK (p_like BETWEEN 0 AND 1),
   score_source       text NOT NULL DEFAULT 'none'
-                       CHECK (score_source IN ('none','cards','model','degraded')),
+                       CHECK (score_source IN ('none','cards','model','degraded','estimate')),
   rules_fired        text[] NOT NULL DEFAULT '{}',
   explain            jsonb NULL,                  -- spec 06 §6
   label_suggestions  bigint[] NOT NULL DEFAULT '{}',
