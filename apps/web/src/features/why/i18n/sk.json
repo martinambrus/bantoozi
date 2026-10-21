@@ -16,6 +16,7 @@
   "source": {
     "cards": "Vyhodnotené podľa vašich kariet záujmov.",
     "model": "Vyhodnotené vaším osobným modelom, ktorý sa učí z toho, čo čítate a hodnotíte.",
+    "estimate": "Odhad podľa slov článkov, ktoré ste hodnotili.",
     "degraded": "Vyhodnotené podľa kľúčových slov, pretože služba analýzy nebola dostupná.",
     "none": "Tento článok nevyhodnotila žiadna karta záujmu ani model.",
     "notRequested": "Klasifikácia sa pre tento článok nevyžiadala, preto nemá skóre."

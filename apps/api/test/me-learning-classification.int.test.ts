@@ -281,6 +281,6 @@ describe('GET /me/learning classification', () => {
       'since',
       'state',
     ]);
-    expect(Object.keys(first).sort()).toEqual(['classification', 'feeds', 'model']);
+    expect(Object.keys(first).sort()).toEqual(['classification', 'estimates', 'feeds', 'model']);
   });
 });

@@ -16,6 +16,7 @@
   "source": {
     "cards": "Scored from your interest cards.",
     "model": "Scored by your personal model, which learns from what you read and rate.",
+    "estimate": "Estimated from the words of articles you rated.",
     "degraded": "Scored by keywords, because the analysis service wasn't available.",
     "none": "No interest card or model has scored this article.",
     "notRequested": "Classification wasn't requested for this article, so it has no score."

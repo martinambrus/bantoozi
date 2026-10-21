@@ -48,6 +48,9 @@ import { toDate, toDateOrNull, type RawTimestamp } from '../timestamps.js';
  *    of an in-scope training/active subscription covers its revision (spec 05 §1.1). An ineligible
  *    row is neutral: lane `new` (or `hidden` when the stored result came from an explicit hide/mute
  *    rule, which the ranker applies before admission), no P, tier or suggestions, and no folding.
+ *    The exception is a stored word estimate (`score_source = 'estimate'`, lane `new`): it keeps
+ *    its tier and P, and its explanation is rebuilt without cards, so a Training or Off feed lists
+ *    and counts it by tier. It never wins the representative of a story over an analysed member.
  * 4. **Folding**: foldable rows (eligible, clustered, carried by a feed with `allow_duplicates =
  *    false`) of one story collapse into their best visible member, before the lane filter.
  * 5. Lane, status and tier filters; sort; keyset pagination.
@@ -254,8 +257,8 @@ async function projectionCtes(tx: TenantTx, input: ProjectionInput): Promise<SQL
              CASE WHEN el.eligible THEN coalesce(ua.lane, 'new')
                   WHEN ua.lane = 'hidden' AND ua.rules_fired[1] ~ ${HIDE_RULE_PATTERN} THEN 'hidden'
                   ELSE 'new' END AS lane,
-             CASE WHEN el.eligible THEN ua.p_like END AS p_like,
-             CASE WHEN el.eligible THEN ua.tier END AS tier,
+             CASE WHEN el.eligible OR ua.score_source = 'estimate' THEN ua.p_like END AS p_like,
+             CASE WHEN el.eligible OR ua.score_source = 'estimate' THEN ua.tier END AS tier,
              -- An archived row is outside the rank window (spec 06 §7 step 2): no run re-ranks it,
              -- so it never waits for one.
              (el.eligible AND ua.archived_at IS NULL AND (ua.article_id IS NULL
@@ -311,7 +314,7 @@ function laneRowsCtes(
       SELECT vis.*, row_number() OVER (
                PARTITION BY view_key,
                             CASE WHEN foldable THEN story_cluster_id ELSE -article_id END
-               ORDER BY p_like DESC NULLS LAST, arrival ASC, article_id ASC) AS rn
+               ORDER BY (CASE WHEN score_source = 'estimate' THEN NULL ELSE p_like END) DESC NULLS LAST, arrival ASC, article_id ASC) AS rn
         FROM vis),
     rows AS (
       SELECT ranked.*, foldable AS folded FROM ranked
@@ -1019,6 +1022,7 @@ type ItemRow = {
   ua_lane: Lane | null;
   tier: number | null;
   p_like: number | null;
+  score_source: string | null;
   rules_fired: string[] | null;
   explain: unknown;
   label_ids: string[] | null;
@@ -1069,6 +1073,28 @@ function projectRank(row: ItemRow, eligible: boolean): ProjectedRank {
   }
   const hideCode = row.rules_fired?.[0];
   const hidden = row.ua_lane === 'hidden' && hideCode !== undefined && HIDE_RULE.test(hideCode);
+  if (!hidden && row.score_source === 'estimate' && row.tier !== null && row.p_like !== null) {
+    return {
+      lane: 'new',
+      tier: row.tier,
+      pLike: row.p_like,
+      explain:
+        explain === null || explain.source !== 'estimate'
+          ? null
+          : {
+              v: 1,
+              inputs: { ...explain.inputs },
+              source: 'estimate',
+              p: explain.p,
+              lane: 'new',
+              tier: explain.tier,
+              cards: [],
+              rules: [{ code: 'inference_not_requested' }, { code: 'estimate' }],
+              ...(explain.estimate === undefined ? {} : { estimate: explain.estimate }),
+            },
+      labelSuggestions: [],
+    };
+  }
   const lane: Lane = hidden ? 'hidden' : 'new';
   const rule =
     hidden && hideCode !== undefined
@@ -1189,7 +1215,7 @@ async function loadItemRows(
            a.content_revision::text AS content_revision, a.pipeline_state,
            f.id::text AS feed_id, coalesce(s.title_override, f.title, f.url) AS feed_title,
            f.icon_url AS feed_icon, f.site_url AS feed_site_url, s.inference_mode AS sub_mode,
-           ua.lane AS ua_lane, ua.tier, ua.p_like, ua.rules_fired, ua.explain,
+           ua.lane AS ua_lane, ua.tier, ua.p_like, ua.score_source, ua.rules_fired, ua.explain,
            ua.label_ids::text[] AS label_ids, ua.label_suggestions::text[] AS label_suggestions,
            ua.rating, ua.reason, ua.read_at, ua.bookmarked_at, ua.archived_at,
            ua.state_version::text AS state_version, ua.bookmark_capture_status AS capture_status,
