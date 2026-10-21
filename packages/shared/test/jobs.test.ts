@@ -58,6 +58,7 @@ const SPEC_03_QUEUES: Record<string, number> = {
   'house.nightly-learn': 1,
   'house.metrics': 1,
   'house.alerts': 1,
+  'house.model-watch': 1,
   'provider.validate': 1,
   'engine.model-probe': 1,
   'house.reenrich': 1,
@@ -128,6 +129,7 @@ describe('jobs registry (spec 03 §2)', () => {
       'house.nightly-learn': { cron: '0 1 * * *', everyMs: 86_400_000 },
       'house.metrics': { cron: '10 0 * * *', everyMs: 86_400_000 },
       'house.alerts': { cron: '*/5 * * * *', everyMs: 300_000 },
+      'house.model-watch': { cron: '35 */6 * * *', everyMs: 21_600_000 },
     });
     expect(Object.keys(HOUSE_CRON_SCHEDULES).sort()).toEqual([...HOUSE_CRON_QUEUES].sort());
     for (const queue of Object.keys(HOUSE_CRON_SCHEDULES)) {

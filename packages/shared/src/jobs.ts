@@ -82,6 +82,7 @@ export const HOUSE_CRON_QUEUES = [
   'house.nightly-learn',
   'house.metrics',
   'house.alerts',
+  'house.model-watch',
 ] as const;
 export type HouseCronQueue = (typeof HOUSE_CRON_QUEUES)[number];
 
@@ -562,6 +563,9 @@ export const enqueueProviderValidate = (s: JobSender, p: JobPayloadInput<'provid
   enqueue(s, 'provider.validate', p);
 export const enqueueModelProbe = (s: JobSender, p: JobPayloadInput<'engine.model-probe'>) =>
   enqueue(s, 'engine.model-probe', p);
+/** Asks the worker to probe `jev-latest` now (Admin "Check now", worker start, the retired-model trigger). */
+export const enqueueModelWatch = (s: JobSender, o?: EnqueueOptions) =>
+  enqueue(s, 'house.model-watch', {}, o);
 export const enqueueReenrich = (s: JobSender, p: JobPayloadInput<'house.reenrich'>) =>
   enqueue(s, 'house.reenrich', p);
 export const enqueueTranslateCards = (s: JobSender, p: JobPayloadInput<'house.translate-cards'>) =>
@@ -605,6 +609,7 @@ export const HOUSE_CRON_SCHEDULES: Readonly<Partial<Record<HouseCronQueue, House
     'house.nightly-learn': { cron: '0 1 * * *', everyMs: DAY_MS },
     'house.metrics': { cron: '10 0 * * *', everyMs: DAY_MS },
     'house.alerts': { cron: '*/5 * * * *', everyMs: 5 * 60_000 },
+    'house.model-watch': { cron: '35 */6 * * *', everyMs: 6 * 60 * 60_000 },
   });
 
 /** Jobs that persist progress in `settings['house.progress']` (spec 02 §2, spec 11 §6). */
