@@ -2,6 +2,7 @@
  * `@bantoozi/testing` — test-only helpers (spec 01 §2): per-worktree test databases, the fixture
  * HTTP server and (from M0-T5) data factories. Never imported by production code.
  */
+import { queueRegistryKey } from './test-db/queue-registry.js';
 import { computeTemplateHash } from './test-db/template-hash.js';
 import {
   createTestDatabase,
@@ -20,6 +21,7 @@ export * from './fake-typesafe.js';
 export * from './fixture-server.js';
 export * from './fixtures.js';
 export * from './load-feeds.js';
+export * from './test-db/queue-registry.js';
 export * from './test-db/template-hash.js';
 export * from './test-db/test-db.js';
 
@@ -38,6 +40,7 @@ export async function setupTestDatabase(options: SetupTestDatabaseOptions): Prom
   const hash = await computeTemplateHash({
     migrationsDir: options.migrationsDir,
     pgBossVersion: options.pgBossVersion,
+    extra: queueRegistryKey(),
   });
   const template = await ensureTemplate({
     hash,
