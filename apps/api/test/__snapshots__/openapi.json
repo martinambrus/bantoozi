@@ -7484,6 +7484,7 @@
                             "cards",
                             "model",
                             "degraded",
+                            "estimate",
                             "none"
                           ]
                         },
@@ -7674,6 +7675,47 @@
                             },
                             "top": {
                               "maxItems": 3,
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "feature": {
+                                    "type": "string",
+                                    "maxLength": 200
+                                  },
+                                  "label": {
+                                    "type": "string",
+                                    "maxLength": 200
+                                  },
+                                  "contribution": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "feature",
+                                  "label",
+                                  "contribution"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "version",
+                            "top"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "estimate": {
+                          "type": "object",
+                          "properties": {
+                            "version": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            },
+                            "top": {
+                              "maxItems": 10,
                               "type": "array",
                               "items": {
                                 "type": "object",

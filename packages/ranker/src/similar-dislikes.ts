@@ -51,10 +51,15 @@ export function stemToken(token: string): string {
     : token;
 }
 
+/** Title words before stemming: price segment stripped, tokenized. */
+export function similarityWords(title: string | null): string[] {
+  if (title === null) return [];
+  return tokenize(stripPrice(title));
+}
+
 /** Title tokens for the similarity check: price segment stripped, tokenized, long tokens stemmed. */
 export function similarityTokens(title: string | null): string[] {
-  if (title === null) return [];
-  return tokenize(stripPrice(title)).map(stemToken);
+  return similarityWords(title).map(stemToken);
 }
 
 /** One rated article of the card, with its similarity tokens. */

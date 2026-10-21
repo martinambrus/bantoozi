@@ -23,7 +23,7 @@ export interface FiredRule {
 export interface LanePolicyInput {
   /** The base probability of §2 step 4 (after quality demotions), in [0, 1]. */
   p: number;
-  source: Exclude<ScoreSource, 'none'>;
+  source: Exclude<ScoreSource, 'none' | 'estimate'>;
   /** The user's coverage of their applicable positive cards (`matchCoverage`). */
   coverage: MatchCoverage;
   /** The item's cluster has a member the user read in the window (§2 step 6i). */

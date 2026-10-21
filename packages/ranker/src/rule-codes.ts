@@ -19,6 +19,7 @@ export const RULE_CODES = {
   seenStory: 'seen_story',
   pendingCards: 'pending_cards',
   inferenceNotRequested: 'inference_not_requested',
+  estimate: 'estimate',
 } as const;
 
 /** `mute_keyword:<value>`. */

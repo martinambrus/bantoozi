@@ -1,3 +1,4 @@
+import { scoreVersion } from '@bantoozi/ranker';
 import { createArticle, createFeed, createSubscription } from '@bantoozi/testing';
 
 import {
@@ -19,7 +20,7 @@ export const DAY = 24 * HOUR;
 export const ago = (ms: number): Date => new Date(Date.now() - ms);
 
 /** `scoreVersion(0)`: no `ranker.settings_version` row is stored in the test database. */
-export const CURRENT_SCORE_VERSION = '3:0';
+export const CURRENT_SCORE_VERSION = scoreVersion(0);
 
 export interface Reader {
   user: TestUser;
@@ -124,7 +125,7 @@ export interface ExplainInput {
   lane: string;
   tier: number | null;
   contentRevision?: string;
-  source?: 'cards' | 'model' | 'degraded' | 'none';
+  source?: 'cards' | 'model' | 'degraded' | 'estimate' | 'none';
   decidingCardId?: string;
   cards?: { id: string; title: string; strength: string; p: number; engine: string }[];
   rules?: { code: string; ruleId?: string }[];
@@ -155,6 +156,8 @@ export interface RankInput {
   tier?: number | null;
   explain?: Record<string, unknown> | null;
   rulesFired?: string[];
+  /** Default: `cards`, or `none` without a P. */
+  source?: 'cards' | 'model' | 'degraded' | 'estimate' | 'none';
   /** Default: the current score version (not outdated). */
   scoreVersion?: string;
 }
@@ -189,7 +192,7 @@ export async function rank(
       input.lane,
       p,
       tier,
-      p === null ? 'none' : 'cards',
+      input.source ?? (p === null ? 'none' : 'cards'),
       input.rulesFired ?? [],
       explain === null ? null : JSON.stringify(explain),
       input.scoreVersion ?? CURRENT_SCORE_VERSION,
