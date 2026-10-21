@@ -147,6 +147,12 @@
     "factor": "{{phrase}}: {{direction}}",
     "note": "Ide o súvislosti, ktoré sa model naučil, nie o dôvody."
   },
+  "estimate": {
+    "heading": "Slová za týmto odhadom",
+    "raised": "Zvýšili odhad",
+    "lowered": "Znížili odhad",
+    "note": "Ide o vzorce v článkoch, ktoré ste hodnotili, nie o dôvody."
+  },
   "actions": {
     "heading": "Čo môžete urobiť",
     "makeCard": "Vytvoriť kartu z tohto",
