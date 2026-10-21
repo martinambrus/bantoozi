@@ -170,6 +170,7 @@
       "worse_logloss": "Jeho predpovede boli menej spoľahlivé než predpovede samotných vašich záujmov.",
       "rating_fingerprint_changed": "Vaše hodnotenia sa počas učenia zmenili, preto to skúsi znova.",
       "context_changed": "Vaše záujmy alebo nastavenia sa počas učenia zmenili, preto to skúsi znova.",
+      "upgrade_regression": "Po aktualizácii čítania článkov predpovedal vaše najnovšie hodnotenia horšie než samotné vaše záujmy.",
       "unknown": "Výsledok nebol dosť jednoznačný na zapnutie."
     },
     "deactivated": "Vypnutý {{date}}: {{reason}}",

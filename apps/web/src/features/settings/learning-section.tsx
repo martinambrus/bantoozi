@@ -19,6 +19,7 @@ const REASONS = [
   'worse_logloss',
   'rating_fingerprint_changed',
   'context_changed',
+  'upgrade_regression',
 ] as const;
 
 function LearningPaused({ classification }: { classification: LearningStatus['classification'] }) {

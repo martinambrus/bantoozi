@@ -8,6 +8,7 @@ export interface ActivationInput {
   cvLogloss: number | null;
   baselineAuc: number | null;
   baselineLogloss: number | null;
+  upgrade?: { regressed: boolean } | null;
 }
 
 /** The minimum-evidence reasons of spec 06 §8.3 (explicit count, then class counts). */
@@ -28,6 +29,7 @@ export function qualityReasons(m: ActivationInput, cfg: ReadonlyRankerConfig['mo
   if (m.cvLogloss === null || (m.baselineLogloss !== null && m.cvLogloss > m.baselineLogloss)) {
     reasons.push('worse_logloss');
   }
+  if (m.upgrade?.regressed === true) reasons.push('upgrade_regression');
   return reasons;
 }
 

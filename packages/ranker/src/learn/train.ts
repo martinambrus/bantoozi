@@ -43,6 +43,18 @@ export function eligibilityOf(
 
 export type ConfidenceInterval = [number, number] | null;
 
+/** The post-upgrade comparison of the model against the interest cards on the current-fingerprint ratings. */
+export interface UpgradeMetrics {
+  ratingSha: string;
+  n: number;
+  nPos: number;
+  nNeg: number;
+  cvAuc: number | null;
+  baselineAuc: number | null;
+  deltaCi: [number, number] | null;
+  regressed: boolean;
+}
+
 export interface TrainMetrics {
   skipped: Record<string, number>;
   nExplicit: number;
@@ -63,6 +75,7 @@ export interface TrainMetrics {
   featureSpecSha: string;
   eligibleSetSha: string;
   feedbackCutoffEventId: string | null;
+  upgrade: UpgradeMetrics | null;
 }
 
 export interface TrainResult {
@@ -392,6 +405,7 @@ function setup(
     eligibleSetSha:
       sha === 'none' ? '' : sha === 'compute' ? eligibleSetSha(args.samples, elig) : sha,
     feedbackCutoffEventId: args.feedbackCutoffEventId,
+    upgrade: null,
   };
   const ctx: Ctx = { cfg, held: args.heldCards, grid: mc.lambdaGrid };
   const minimums = minimumReasons(metrics, mc);
@@ -563,6 +577,52 @@ export function finishTraining(
     );
     metrics.cvAuc = cvAucOf();
     metrics.cvLogloss = ys.length > 0 ? logLoss(probs, ys) : null;
+
+    if (!research && args.ratingSha !== null) {
+      const currentSha = args.ratingSha;
+      const mask: boolean[] = [];
+      for (let f = 0; f < folds.length; f += 1) {
+        rows.forEach((r, i) => {
+          if (plan.folds[i] === f && r.s.explicit) mask.push(r.f.ratingSha === currentSha);
+        });
+      }
+      if (mask.length !== ys.length) {
+        throw new Error('upgrade guard: fold rows are not aligned with the validation arrays');
+      }
+      const hasOld = rows.some((r) => r.f.ratingSha !== currentSha);
+      const idx = mask.flatMap((m, i) => (m ? [i] : []));
+      const nPos = idx.filter((i) => ys[i] === 1).length;
+      const n = idx.length;
+      if (hasOld && n >= mc.minExplicit && nPos >= mc.minEachClass && n - nPos >= mc.minEachClass) {
+        const cv = aucScorer(
+          idx.map((i) => probs[i] as number),
+          idx.map((i) => ys[i] as number),
+        );
+        const bs = aucScorer(
+          idx.map((i) => baseScores[i] as number),
+          idx.map((i) => ys[i] as number),
+        );
+        const deltaCi = groupedBootstrapCi(
+          idx.map((i) => groups[i] as string),
+          (m) => {
+            const a = cv(m);
+            const b = bs(m);
+            return a === null || b === null ? null : a - b;
+          },
+          `${seed}|upgrade`,
+        );
+        metrics.upgrade = {
+          ratingSha: currentSha,
+          n,
+          nPos,
+          nNeg: n - nPos,
+          cvAuc: cv(),
+          baselineAuc: bs(),
+          deltaCi,
+          regressed: deltaCi !== null && deltaCi[1] < -mc.maxBaselineDrop,
+        };
+      }
+    }
   }
   metrics.lambda = lambda;
 

@@ -77,6 +77,7 @@ function attemptMetrics(
   trainedOn: LearnInputs,
   status: 'activated' | 'rejected' | 'superseded',
   reason: string | null,
+  strictMarker = trainedOn.strict,
 ) {
   const heldById = new Map(trainedOn.held.map((card) => [card.cardId, card]));
   return {
@@ -88,7 +89,7 @@ function attemptMetrics(
     contextSha: result.metrics.contextSha,
     ratingSha: trainedOn.ratingSha,
     familySha: trainedOn.familySha,
-    ...(trainedOn.strict ? { strictRatingSha: trainedOn.ratingSha } : {}),
+    ...(strictMarker ? { strictRatingSha: trainedOn.ratingSha } : {}),
     ownInputs: (result.model?.ownInputs ?? []).flatMap((id) => {
       const card = heldById.get(id);
       return card === undefined ? [] : [card];
@@ -134,6 +135,7 @@ export function createUserLearnHandler(deps: WorkerDeps): QueueHandler<'user.lea
       const keep = fresh.config.model.keepVersions;
       let activated = false;
       let deactivated = false;
+      let guarded = false;
       let version = current.latest?.version ?? 0;
 
       const duplicate = current.latestTerminal?.metrics['inputSha'] === inputs.inputSha;
@@ -171,6 +173,7 @@ export function createUserLearnHandler(deps: WorkerDeps): QueueHandler<'user.lea
                 currentFamilySha: fresh.familySha,
                 currentContextSha: currentContextSha(fresh, model.featureSpecSha, model.ownInputs),
               });
+        guarded = result.activation.reasons.includes('upgrade_regression');
         if (decision.activate) {
           deactivated = await deactivateUserModels(tx, userId);
           activated = true;
@@ -183,11 +186,22 @@ export function createUserLearnHandler(deps: WorkerDeps): QueueHandler<'user.lea
             inputs,
             decision.activate ? 'activated' : 'rejected',
             decision.activate ? null : decision.reasons.join(','),
+            inputs.strict || guarded,
           ),
         });
+        if (guarded) {
+          deactivated =
+            (await deactivateUserModels(tx, userId, {
+              at: nowOf(deps),
+              reason: 'upgrade_regression',
+            })) || deactivated;
+          await enqueueLearn(sender, { userId });
+        }
       }
       const stale =
-        activated || current.active === null ? null : modelStaleness(fresh, current.active);
+        activated || guarded || current.active === null
+          ? null
+          : modelStaleness(fresh, current.active);
       if (stale !== null) {
         deactivated = await deactivateUserModels(tx, userId, { at: nowOf(deps), reason: stale });
       }

@@ -1,6 +1,8 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import en from '../../src/features/settings/i18n/en.json' with { type: 'json' };
+import sk from '../../src/features/settings/i18n/sk.json' with { type: 'json' };
 import { makeMe } from '../session/fixtures.js';
 import { cardDraftRoutes } from '../interests/support.js';
 import { LEARNING, makeAgreement, makeLearning } from '../learning/fixtures.js';
@@ -58,6 +60,40 @@ describe('the personal learning section', () => {
     expect(reasons.getByText(/not enough likes or dislikes/i)).toBeVisible();
     expect(reasons.getByText(/did not predict your ratings well enough/i)).toBeVisible();
     expect(reasons.getByText(/not clear enough/i)).toBeVisible();
+  });
+
+  it('explains an upgrade regression in plain words', async () => {
+    await open({
+      active: null,
+      lastAttempt: {
+        at: '2026-10-08T22:30:00.000Z',
+        status: 'rejected',
+        reasons: ['upgrade_regression'],
+        cvAuc: 0.8,
+        baselineAuc: 0.78,
+      },
+    });
+
+    const reasons = within(
+      learning().getByRole('list', { name: "Last attempt didn't switch it on:" }),
+    );
+    expect(reasons.getAllByRole('listitem')).toHaveLength(1);
+    expect(
+      reasons.getByText(
+        'After an update to how articles are read, it predicted your newest ratings worse than your interests alone.',
+      ),
+    ).toBeVisible();
+  });
+
+  it('defines the upgrade regression sentence in both languages', () => {
+    const reasonsOf = (bundle: unknown): Record<string, string> =>
+      (bundle as { learning: { reasons: Record<string, string> } }).learning.reasons;
+    expect(reasonsOf(en)['upgrade_regression']).toBe(
+      'After an update to how articles are read, it predicted your newest ratings worse than your interests alone.',
+    );
+    expect(reasonsOf(sk)['upgrade_regression']).toBe(
+      'Po aktualizácii čítania článkov predpovedal vaše najnovšie hodnotenia horšie než samotné vaše záujmy.',
+    );
   });
 
   it('says when the model was switched off and why', async () => {
