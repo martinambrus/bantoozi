@@ -199,3 +199,21 @@ export async function countEstimateRatings(
   const nNeg = Number(result.rows[0]?.n_neg ?? 0);
   return { n: nPos + nNeg, nPos, nNeg };
 }
+
+/**
+ * Stores the outcome of the latest estimate refresh in the metrics of the model version it scored
+ * with (`metrics.lastRun`, other keys kept): `movedUp` and `movedDown` count the unread rows whose
+ * tier rose or fell. True when the version still exists.
+ */
+export async function recordEstimateLastRun(
+  db: Executor,
+  userId: string,
+  version: number,
+  lastRun: { at: string; movedUp: number; movedDown: number },
+): Promise<boolean> {
+  const result = await db.execute(sql`
+    UPDATE user_estimate_models
+       SET metrics = metrics || jsonb_build_object('lastRun', ${JSON.stringify(lastRun)}::jsonb)
+     WHERE user_id = ${userId}::uuid AND version = ${version}`);
+  return (result.rowCount ?? 0) > 0;
+}
