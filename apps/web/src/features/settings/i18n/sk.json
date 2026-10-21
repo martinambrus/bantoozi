@@ -96,6 +96,10 @@
       "label": "Navrhnúť naučenie záujmu po hodnotení",
       "hint": "Po ohodnotení článku ponúkne jeho pridanie ako príkladu k záujmu, ktorému zodpovedal. Nič sa nezmení, kým to neprijmete."
     },
+    "estimates": {
+      "label": "Odhadovať neanalyzované články",
+      "hint": "Neanalyzovanému článku priradí úroveň podľa slov článkov, ktoré hodnotíte, takže ho zahŕňa aj zoradenie podľa skóre a minimálna úroveň kanála. Takéto články sú označené ako Odhad. Nič sa neanalyzuje ani neodosiela AI službe."
+    },
     "quality": {
       "intro": "Auto zapne filter po tom, čo v priebehu 90 dní trikrát označíte články z rovnakého dôvodu ako nechcené. Zapnuté ho uplatňuje vždy. Vypnuté ho neuplatňuje nikdy.",
       "auto": "Auto",
@@ -157,6 +161,11 @@
       "model_upgrade": "Analýza po aktualizácii dobieha (od {{date}}). Vaše hodnotenia sa uchovajú a analyzujú sa po dokončení.",
       "model_upgrade_nodate": "Analýza po aktualizácii dobieha. Vaše hodnotenia sa uchovajú a analyzujú sa po dokončení."
     },
+    "estimates_one": "Odhady podľa slov sú natrénované na {{count}} hodnotenie (aktualizované {{date}}).",
+    "estimates_few": "Odhady podľa slov sú natrénované na {{count}} hodnotenia (aktualizované {{date}}).",
+    "estimates_many": "Odhady podľa slov sú natrénované na {{count}} hodnotenia (aktualizované {{date}}).",
+    "estimates_other": "Odhady podľa slov sú natrénované na {{count}} hodnotení (aktualizované {{date}}).",
+    "estimatesOff": "Sú vypnuté v sekcii Predvoľby čítania, takže neanalyzované články sa neodhadujú.",
     "explicit": "{{explicit}} z {{min}} hodnotení",
     "likes": "{{likes}} z {{min}} „páči sa mi“",
     "dislikes": "{{dislikes}} z {{min}} „nepáči sa mi“",

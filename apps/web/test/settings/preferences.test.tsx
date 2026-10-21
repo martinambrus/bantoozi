@@ -41,6 +41,8 @@ interface Case {
   pick?: string;
   /** What `preferences` must hold in the one PATCH the change sends. */
   patch: NonNullable<MePatch['preferences']>;
+  /** The switch state after the change, when it is not the patched value itself. */
+  checked?: boolean;
   /** Words from the explanation next to the control. */
   explains: string;
 }
@@ -116,6 +118,13 @@ const CASES: Case[] = [
     kind: 'switch',
     patch: { exampleSuggestions: false },
     explains: 'Nothing changes unless you accept',
+  },
+  {
+    label: 'Estimate unanalysed articles',
+    kind: 'switch',
+    patch: { estimates: 'off' },
+    checked: false,
+    explains: 'Nothing is analysed or sent to an AI service',
   },
   {
     label: 'Learn from how I read',
@@ -194,12 +203,11 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
     it('has one control for each preference that is not the theme, the folder order or onboarding', async () => {
       await openSettings();
 
-      // `estimates` has no control yet: it arrives with the Settings task EST-5.
       const wanted = leaves(DEFAULT_USER_PREFERENCES).filter(
-        (path) => !['theme', 'folderOrder', 'onboardingCompletedAt', 'estimates'].includes(path),
+        (path) => !['theme', 'folderOrder', 'onboardingCompletedAt'].includes(path),
       );
       expect(CASES.flatMap((item) => leaves(item.patch)).sort()).toEqual(wanted.sort());
-      expect(prefs().getAllByRole('switch')).toHaveLength(9);
+      expect(prefs().getAllByRole('switch')).toHaveLength(10);
       expect(prefs().getAllByRole('radiogroup')).toHaveLength(12);
       for (const item of CASES) expect(control(item)).toBeVisible();
     });
@@ -368,7 +376,7 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
         await waitFor(() =>
           expect(toggle(item.label)).toHaveAttribute(
             'aria-checked',
-            String(Object.values(item.patch)[0]),
+            String(item.checked ?? Object.values(item.patch)[0]),
           ),
         );
       } else {
@@ -377,6 +385,24 @@ describe('reading preferences (spec 09 §7, spec 08 §3.1)', () => {
         );
       }
       await waitFor(() => expect(control(item)).toHaveAccessibleDescription(saved));
+    });
+
+    it('switches the word estimates off and on again, on by default', async () => {
+      const { user, calls } = await openSettings();
+      const name = 'Estimate unanalysed articles';
+
+      expect(toggle(name)).toHaveAttribute('aria-checked', 'true');
+      await user.click(toggle(name));
+      await waitFor(() => expect(toggle(name)).toHaveAttribute('aria-checked', 'false'));
+      await waitFor(() => expect(toggle(name)).toHaveAccessibleDescription(saved));
+      await user.click(toggle(name));
+      await waitFor(() => expect(calls('PATCH /me')).toHaveLength(2));
+
+      expect(bodiesOf(calls('PATCH /me'))).toEqual([
+        { preferences: { estimates: 'off' } },
+        { preferences: { estimates: 'on' } },
+      ]);
+      await waitFor(() => expect(toggle(name)).toHaveAttribute('aria-checked', 'true'));
     });
 
     it('sends the request the way every mutation of the app is sent', async () => {
