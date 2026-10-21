@@ -98,7 +98,7 @@
     },
     "estimates": {
       "label": "Odhadovať neanalyzované články",
-      "hint": "Neanalyzovanému článku priradí úroveň podľa slov článkov, ktoré hodnotíte, takže ho zahŕňa aj zoradenie podľa skóre a minimálna úroveň kanála. Takéto články sú označené ako Odhad. Nič sa neanalyzuje ani neodosiela AI službe."
+      "hint": "Neanalyzovanému článku priradí úroveň podľa slov článkov, ktoré hodnotíte, takže ho zahŕňajú aj zoradenie podľa skóre a minimálna úroveň kanála. Takéto články sú označené ako Odhad. Nič sa neanalyzuje ani neodosiela AI službe."
     },
     "quality": {
       "intro": "Auto zapne filter po tom, čo v priebehu 90 dní trikrát označíte články z rovnakého dôvodu ako nechcené. Zapnuté ho uplatňuje vždy. Vypnuté ho neuplatňuje nikdy.",
