@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   isConcreteJevModel,
+  isCurrentAnswerModel,
   isModelAlias,
   isModelUnavailableDetail,
   isPinnedModel,
@@ -135,4 +136,33 @@ describe('JEV-4 sameModelFamily', () => {
       expect(sameModelFamily(b, a)).toBe(false);
     },
   );
+});
+
+describe('JEV-3 isCurrentAnswerModel', () => {
+  it.each([
+    ['jev-1.13.0', 'jev-1.14.0'],
+    ['jev-1.14.0', 'jev-1.13.0'],
+    ['jev-1.14.0-rc1', 'jev-1.13.0'],
+    ['jev-1.14.0', 'jev-1.14.0'],
+    ['jev-test-1', 'jev-test-1'],
+    ['', ''],
+  ])('A1 an answer of %s counts for a reader pinned to %s', (answer, pin) => {
+    expect(isCurrentAnswerModel(answer, pin)).toBe(true);
+  });
+
+  it.each([
+    ['jev-2.0.0', 'jev-1.14.0'],
+    ['jev-1.14.0', 'jev-2.0.0'],
+    ['jev-latest', 'jev-1.14.0'],
+    ['jev-1', 'jev-1.14.0'],
+    ['jev-other', 'jev-1.14.0'],
+    ['older-model', 'jev-test-1'],
+    ['jev-1.13.0', 'jev-test-1'],
+    ['', 'jev-1.14.0'],
+    [null, 'jev-1.14.0'],
+    [undefined, 'jev-1.14.0'],
+    [null, ''],
+  ])('A2 an answer of %s does not count for a reader pinned to %s', (answer, pin) => {
+    expect(isCurrentAnswerModel(answer, pin)).toBe(false);
+  });
 });
