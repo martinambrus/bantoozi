@@ -7,6 +7,7 @@ import {
   canonicalJson,
   enqueueLearn,
   isConcreteJevModel,
+  isCurrentAnswerModel,
   mergeRankerConfig,
   modelFamily,
   readUserPreferences,
@@ -751,8 +752,9 @@ interface FeatureCapture {
  * The event-time feature snapshot of one article (spec 06 §8.2), built before the action applies.
  * `cards` lists every interest card the user holds that applies to the item — positive and never,
  * unscoped or scoped to an authorized carrier — with its strength now and its current-revision
- * answer (`p: null` when it has no usable answer; `prefilter` is unknown). `values` holds the raw
- * observed inputs and the story group. Without an authorized carrier (no valid inputs) the
+ * answer (`p: null` when it has no usable answer; `prefilter` is unknown). An answer counts as
+ * usable when its model is the pin or another release of the pin's Jev major. `values` holds the
+ * raw observed inputs and the story group. Without an authorized carrier (no valid inputs) the
  * snapshot is `null`; a rating on an older saved snapshot never borrows current features either.
  */
 async function captureFeatures(
@@ -872,11 +874,11 @@ async function captureFeatures(
   const facetsCurrent =
     current !== null &&
     row.facets_state_sha256 === current.enrichStateSha256 &&
-    row.facets_model === model;
+    isCurrentAnswerModel(row.facets_model, model);
   const usable = (card: (typeof cards.rows)[number]): boolean =>
     card.p !== null &&
     current !== null &&
-    card.model === model &&
+    isCurrentAnswerModel(card.model, model) &&
     card.state_sha256 === current.stateSha256 &&
     card.card_input_sha256 === current.cardInputSha256.get(card.id);
   return {
