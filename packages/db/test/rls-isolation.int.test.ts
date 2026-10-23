@@ -234,6 +234,15 @@ const PER_USER_TABLES: PerUserTable[] = [
     update: (u) => ['UPDATE user_estimate_models SET n = n WHERE user_id = $1', [u]],
   },
   {
+    table: 'user_learning_history',
+    may: { insert: false, update: false, delete: false },
+    insert: (u) => [
+      `INSERT INTO user_learning_history (user_id, kind, n) VALUES ($1, 'estimate', 0)`,
+      [u],
+    ],
+    update: (u) => ['UPDATE user_learning_history SET n = n WHERE user_id = $1', [u]],
+  },
+  {
     table: 'api_mutations',
     may: { insert: true, update: true, delete: true },
     insert: (u) => [
@@ -486,6 +495,13 @@ async function seed(owner: pg.Pool): Promise<Fixtures> {
     `INSERT INTO user_estimate_models (user_id, version, spec, n, n_pos, n_neg, intercept, weights, platt, metrics)
      VALUES ($1, 1, 'estimate-v1', 12, 7, 5, 0.25, '{"alpha": 0.5}', '{"a": 1, "b": 0}', '{"inputSha": "a"}'),
             ($2, 1, 'estimate-v1', 14, 8, 6, -0.25, '{"beta": -0.5}', '{"a": 2, "b": 1}', '{"inputSha": "b"}')`,
+    [a, b],
+  );
+
+  await owner.query(
+    `INSERT INTO user_learning_history (user_id, kind, n, auc, baseline_auc, activated, turned_on, engine_model)
+     VALUES ($1, 'model', 40, 0.71, 0.66, true, true, 'jev-a'),
+            ($2, 'estimate', 25, 0.62, NULL, false, true, NULL)`,
     [a, b],
   );
 

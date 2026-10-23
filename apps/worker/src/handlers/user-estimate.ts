@@ -1,4 +1,5 @@
 import {
+  appendLearningHistory,
   deleteEstimateModels,
   insertEstimateModel,
   loadEstimateState,
@@ -70,6 +71,19 @@ export function createUserEstimateHandler(deps: WorkerDeps): QueueHandler<'user.
       ) {
         return 'duplicate';
       }
+      const ratedThrough = ratings.reduce<Date | null>(
+        (max, r) => (max === null || r.ratedAt > max ? r.ratedAt : max),
+        null,
+      );
+      const previous =
+        current !== null && current.spec === ESTIMATE_SPEC
+          ? new Date(String(current.metrics['ratedThrough'] ?? ''))
+          : null;
+      const fromRatings =
+        ratedThrough !== null &&
+        previous !== null &&
+        !Number.isNaN(previous.getTime()) &&
+        ratedThrough > previous;
       await insertEstimateModel(tx, {
         userId,
         spec: model.spec,
@@ -79,9 +93,22 @@ export function createUserEstimateHandler(deps: WorkerDeps): QueueHandler<'user.
         intercept: model.intercept,
         weights: model.weights,
         platt: model.platt,
-        metrics: { ...model.metrics, inputSha, options },
+        metrics: {
+          ...model.metrics,
+          inputSha,
+          options,
+          ratedThrough: ratedThrough?.toISOString() ?? null,
+          fromRatings,
+        },
       });
       await pruneEstimateModels(tx, userId, KEEP_VERSIONS);
+      await appendLearningHistory(tx, {
+        userId,
+        kind: 'estimate',
+        n: model.metrics.n,
+        auc: model.metrics.auc,
+        turnedOn: current === null || current.spec !== ESTIMATE_SPEC,
+      });
       await enqueueRank(workerOutbox(tx), { userId, reason: 'estimate', estimate: {} });
       return 'trained';
     });

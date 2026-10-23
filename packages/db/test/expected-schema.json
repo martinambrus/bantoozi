@@ -3688,6 +3688,38 @@
       "indexes": {},
       "rls": { "forced": true }
     },
+    "user_learning_history": {
+      "columns": {
+        "id": { "type": "bigint", "nullable": false, "default": null, "identity": "always" },
+        "user_id": { "type": "uuid", "nullable": false, "default": null },
+        "at": { "type": "timestamp with time zone", "nullable": false, "default": "now()" },
+        "kind": { "type": "text", "nullable": false, "default": null },
+        "n": { "type": "integer", "nullable": false, "default": null },
+        "auc": { "type": "double precision", "nullable": true, "default": null },
+        "baseline_auc": { "type": "double precision", "nullable": true, "default": null },
+        "activated": { "type": "boolean", "nullable": false, "default": "false" },
+        "turned_on": { "type": "boolean", "nullable": false, "default": "false" },
+        "engine_model": { "type": "text", "nullable": true, "default": null }
+      },
+      "primaryKey": ["id"],
+      "unique": [],
+      "checks": ["kind IN ('model','estimate')", "n >= 0"],
+      "foreignKeys": [
+        {
+          "columns": ["user_id"],
+          "references": "users(id)",
+          "onDelete": "CASCADE",
+          "deferrable": false
+        }
+      ],
+      "indexes": {
+        "user_learning_history_user_idx": {
+          "unique": false,
+          "definition": "(user_id, at DESC, id DESC)"
+        }
+      },
+      "rls": { "forced": true }
+    },
     "user_models": {
       "columns": {
         "user_id": {
@@ -4194,6 +4226,14 @@
       "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
     },
     {
+      "table": "user_learning_history",
+      "name": "user_learning_history_tenant",
+      "command": "ALL",
+      "roles": ["public"],
+      "using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid"
+    },
+    {
       "table": "api_mutations",
       "name": "api_mutations_tenant",
       "command": "ALL",
@@ -4317,6 +4357,7 @@
         "user_cards": ["SELECT", "INSERT", "UPDATE", "DELETE"],
         "user_estimate_models": ["SELECT"],
         "user_feed_preferences": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+        "user_learning_history": ["SELECT"],
         "user_labels": ["SELECT", "INSERT", "UPDATE", "DELETE"],
         "user_models": ["SELECT"],
         "user_rules": ["SELECT", "INSERT", "UPDATE", "DELETE"],
