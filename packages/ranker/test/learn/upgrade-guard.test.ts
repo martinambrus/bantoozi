@@ -57,13 +57,15 @@ describe('upgrade guard: decisive drift', () => {
     expect(new Set(result.activation.reasons).size).toBe(result.activation.reasons.length);
   });
 
-  it('is robust across seeds (not a borderline fixture)', () => {
-    for (const seed of ['drift-b', 'drift-c', 'drift-d']) {
+  // One training per test: three in one test exceeded the timeout under CI coverage.
+  it.each(['drift-b', 'drift-c', 'drift-d'])(
+    'is robust across seeds (not a borderline fixture): %s',
+    (seed) => {
       const r = run(driftFixture(seed));
       expect(upgradeOf(r).regressed).toBe(true);
       expect(r.activation.reasons).toContain('upgrade_regression');
-    }
-  });
+    },
+  );
 
   it('keeps the whole-set quality metrics untouched by the guard', () => {
     expect(result.metrics.nExplicit).toBe(430);
