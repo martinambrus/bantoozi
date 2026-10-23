@@ -159,10 +159,16 @@ export function createProviderValidateHandler(
   const now = deps.now ?? (() => new Date());
   const random = deps.random ?? Math.random;
   const production = config.nodeEnv === 'production';
-  const lanes: Partial<Record<CredentialProvider, ProbeLane>> = {
-    ...optionalLane('typesafe', () => typesafeLane()),
-    ...optionalLane('ollama', () => ollamaLane()),
+  const builders: Record<CredentialProvider, () => ProbeLane> = {
+    typesafe: () => typesafeLane(),
+    ollama: () => ollamaLane(),
   };
+  laneFor('typesafe');
+  laneFor('ollama');
+
+  function laneFor(provider: CredentialProvider): ProbeLane | undefined {
+    return optionalLane(provider, builders[provider])[provider];
+  }
 
   function optionalLane(
     provider: CredentialProvider,
@@ -392,7 +398,7 @@ export function createProviderValidateHandler(
     signal: AbortSignal,
   ): Promise<ValidationResult | null> {
     const fingerprint = providerConfigFingerprint(provider, config);
-    const lane = lanes[provider];
+    const lane = laneFor(provider);
     if (lane === undefined) {
       return result('pending', 'not_configured', { configFingerprint: fingerprint, attempts: 0 });
     }

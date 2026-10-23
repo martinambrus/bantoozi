@@ -793,3 +793,54 @@ describe('provider.validate (spec 04 §1.2 step 2)', () => {
     });
   });
 });
+
+describe('provider.validate reads the Jev price of the moment', () => {
+  it('a price changed in the live config applies to the next validation', async () => {
+    const live: { -readonly [K in keyof TestConfig]: TestConfig[K] } = testConfig({
+      typesafePricePerMtokUsd: 1,
+    });
+    const credentials = resolver();
+    const router = createWorkerEngineRouter({
+      db,
+      config: live,
+      credentials,
+      logger,
+      random: () => 0,
+    });
+    const handle = createProviderValidateHandler({
+      db,
+      router,
+      credentials,
+      config: live,
+      logger,
+      random: () => 0,
+    });
+    const validate = (version: string) =>
+      handle(
+        { provider: 'typesafe', candidateVersion: version },
+        { queue: 'provider.validate', jobId: 'test' },
+      );
+
+    await validate(await stage('typesafe', JEV_KEY));
+    live.typesafePricePerMtokUsd = 10;
+    await validate(await stage('typesafe', JEV_KEY));
+
+    const tokens = conservativeRequestTokens(PROBE_STATE, TYPESAFE_PROBE_QUESTIONS);
+    expect(tokens).toBe(173);
+    const reserved = await reservations();
+    expect(reserved.map((r) => r.reserved_usd)).toEqual([0.000173, 0.00173]);
+    const [first, second] = await calls();
+    expect(Number(second?.cost_usd) / Number(first?.cost_usd)).toBeCloseTo(10, 6);
+
+    live.typesafePricePerMtokUsd = 200;
+    const sent = jev.requests.length;
+    const version = await stage('typesafe', JEV_KEY);
+    await validate(version);
+    expect(await metadata('typesafe')).toMatchObject({
+      candidateVersion: version,
+      candidateStatus: 'pending',
+      lastErrorCode: 'probe_budget_exceeded',
+    });
+    expect(jev.requests).toHaveLength(sent);
+  });
+});
