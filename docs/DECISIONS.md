@@ -2971,3 +2971,12 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   aborts when registration throws.
 - D-292: 2026-10-21 (JEV-3) — The test template database hash also covers the pg-boss queue registry, so a queue added
   without a migration never meets a template another worktree built without it.
+- D-293: 2026-10-21 (EST-5 of docs/design/visible-learning.md) — Word estimates on the web. An estimated row is
+  recognised as lane `new` with a `tier` (the list DTO has no source field; nothing else yields that pair). The marker
+  sits in the row's chip line: one hollow ring per tier plus "Estimated", a button that opens Why this? (a labelled
+  image without a handler); analysed rows get no rings. Why this? adds "Words behind this estimate" from
+  `explain.estimate.top` (no raw keys, duplicates merged, the article's `lang`). Settings: `prefs.estimates` as a switch
+  in "Feedback and learning" and a one-line status in Personal learning. `newSort` skipped (it needs an API change).
+  Known, not changed: an estimated row is one 44 px chip line taller; the New lane's empty text still says "scored";
+  offline lists carry no tier, so no marker; a second tab keeps its loaded list until refreshed. E2E scenario 12
+  (`word-estimates.pw.ts`) proves the loop on the real API and worker.

@@ -145,6 +145,12 @@
     "factor": "{{phrase}}: {{direction}}",
     "note": "These are associations the model has learned, not reasons."
   },
+  "estimate": {
+    "heading": "Words behind this estimate",
+    "raised": "Raised the estimate",
+    "lowered": "Lowered the estimate",
+    "note": "These are patterns in the articles you rated, not reasons."
+  },
   "actions": {
     "heading": "What you can do",
     "makeCard": "Make a card from this",

@@ -9,6 +9,10 @@
     "overDailyCapHint_few": "Automatická analýza tohto zdroja sa zastaví po {{cap}} nových článkoch za deň. Vyberte článok a analyzujte ho aj tak.",
     "overDailyCapHint_many": "Automatická analýza tohto zdroja sa zastaví po {{cap}} nových článkoch za deň. Vyberte článok a analyzujte ho aj tak.",
     "overDailyCapHint_other": "Automatická analýza tohto zdroja sa zastaví po {{cap}} nových článkoch za deň. Vyberte článok a analyzujte ho aj tak.",
+    "estimated": {
+      "label": "Odhad",
+      "name": "Odhad, úroveň {{tier}} z 5"
+    },
     "analysis": {
       "pending": "Čaká na analýzu",
       "running": "Analyzuje sa",

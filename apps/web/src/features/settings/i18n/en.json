@@ -96,6 +96,10 @@
       "label": "Suggest teaching an interest after a rating",
       "hint": "After you rate an article, offer to add it as an example to the interest that matched it. Nothing changes unless you accept."
     },
+    "estimates": {
+      "label": "Estimate unanalysed articles",
+      "hint": "Gives an article that has not been analysed a tier from the words of the articles you rate, so the score order and the minimum tier of a feed include it. These articles are marked Estimated. Nothing is analysed or sent to an AI service."
+    },
     "quality": {
       "intro": "Auto turns a filter on after you dislike three articles for that reason within 90 days. On always applies it. Off never does.",
       "auto": "Auto",
@@ -157,6 +161,9 @@
       "model_upgrade": "Analysis is catching up after an update (since {{date}}). Your ratings are kept and analysed when it finishes.",
       "model_upgrade_nodate": "Analysis is catching up after an update. Your ratings are kept and analysed when it finishes."
     },
+    "estimates_one": "Word estimates are trained on {{count}} rating (updated {{date}}).",
+    "estimates_other": "Word estimates are trained on {{count}} ratings (updated {{date}}).",
+    "estimatesOff": "They are switched off in Reading preferences, so unanalysed articles are not estimated.",
     "explicit": "{{explicit}} of {{min}} ratings",
     "likes": "{{likes}} of {{min}} likes",
     "dislikes": "{{dislikes}} of {{min}} dislikes",

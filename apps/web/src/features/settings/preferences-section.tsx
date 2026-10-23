@@ -73,6 +73,20 @@ function ToggleSetting({ id, text }: { id: ToggleId; text: string }) {
   );
 }
 
+function EstimatesSetting() {
+  const { t } = useTranslation('settings');
+  const setting = useSetting('estimates', t('preferences.estimates.hint'));
+  return (
+    <Switch
+      label={t('preferences.estimates.label')}
+      checked={setting.value === 'on'}
+      onCheckedChange={(checked) => setting.change(checked ? 'on' : 'off')}
+      hint={setting.hint}
+      error={setting.error}
+    />
+  );
+}
+
 function ChoiceSetting<Id extends ChoiceId>({
   id,
   text,
@@ -194,6 +208,7 @@ export function PreferencesSection() {
               <ToggleSetting id="implicitNegative" text="implicitNegative" />
               <ChoiceSetting id="feedbackPrompt" text="feedbackPrompt" options={FEEDBACK_PROMPTS} />
               <ToggleSetting id="exampleSuggestions" text="exampleSuggestions" />
+              <EstimatesSetting />
             </Group>
             <Group title={t('preferences.groups.quality')} intro={t('preferences.quality.intro')}>
               <ChoiceSetting

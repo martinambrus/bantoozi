@@ -143,7 +143,7 @@ login without leaking the previous account's UI. Slow classification leaves arti
 - **Sidebar feed rows:**
   - Feeds with `status = quarantined` show a warning dot; `dead` feeds show a red banner in the feed view.
   - Sidebar lanes: **For you**, **Maybe** (badge: "help me learn"), **Everything else** (collapsible,
-    hidden when `prefs.hideEverything`), **New** (not scored yet), **Bookmarks**.
+    hidden when `prefs.hideEverything`), **New** (not analysed yet; includes articles that only have a word estimate), **Bookmarks**.
   - A visible "Show hidden" entry in the reader's More menu opens `/read/hidden`. It shows Why this?
     and distinguishes "Hidden by you" (`archivedAt`) from Never/block/mute/demotion rules. "Unhide"
     clears only the explicit archive via `/unhide`; rule-driven exclusions link to the responsible
@@ -165,7 +165,8 @@ login without leaking the previous account's UI. Slow classification leaves arti
 - **List header:**
   - the tier slider (1–5, FeedIt's) filtering `for_you`/`maybe` by minimum tier; its value is saved to
     `prefs.defaultTier`. In a feed, folder or label view that shows all its lanes it filters every row
-    (never-analysed ones go at tier 2 and up) and is saved to its own `prefs.feedMinTier` (default 1; D-248)
+    (an unanalysed article stays only when its word estimate is at or above the tier, spec 06 §8.6; one
+    without an estimate goes at tier 2 and up) and is saved to its own `prefs.feedMinTier` (default 1; D-248)
   - sort toggle (score/date): in For you (`prefs.sort`), and in a feed, folder or label view that shows
     all its lanes, with its own preference (`prefs.feedSort`, default date; D-247). A scoped view narrowed
     to For you uses `prefs.sort`; Maybe, Everything else, New, Bookmarks and Hidden have no sort control
@@ -191,6 +192,11 @@ login without leaking the previous account's UI. Slow classification leaves arti
   actions when no usable URL exists. Show missing-image/author/date fallbacks without broken controls.
 - **Translated items:** a subtle "translated" marker. A toggle shows the English translation of the
   title and excerpt when available.
+- **Estimated items** (D-293): an article with no card or model score but a word estimate (spec 06 §8.6) reaches the
+  web as lane `new` with a `tier`; no other row has that pair. Its chip line shows a chip with one hollow ring per tier
+  (1 to 5) and the word "Estimated", named "Estimated, tier 3 of 5, Why this?", which opens Why this? (a labelled image
+  where the row has no Why this? handler). Analysed rows show no rings; the "Not analyzed" badge stays. Offline list
+  copies carry no lane or tier, so they show no chip.
 - **Untrained items:** show "Not analyzed" and retain normal read/rate/bookmark actions. An Active
   feed's arrival kept out by the daily cap (`analysis.overDailyCap`, D-252) shows "Not analyzed – over
   daily budget" with a tooltip naming the cap and "Select it to analyze it anyway"; it stays selectable. In a feed
@@ -308,7 +314,10 @@ on Like there. Where `+` itself needs Shift (US English), typing `+` likes and h
 Rendered from `explain` (spec 06 §6.2):
 
 1. **Verdict line:** "For you · 91 % · tier 5", with the source (cards / your personal model /
-   keyword fallback).
+   keyword fallback / "Estimated from the words of articles you rated."). For source `estimate` with words, a
+   **Words behind this estimate** section follows: the article's words that raised and lowered the estimate
+   (`explain.estimate.top`, at most 5 each, strongest first, each once, in the article's language, never feature keys)
+   in two labelled lists, with the note "These are patterns in the articles you rated, not reasons." (D-293).
 2. **Your interests:** the cards with probability bars, sorted by p. Each row has:
    - **Not really about this** → `POST /cards/:id/examples {articleId, side:'no'}`, which forks the card (new id: the client updates its cache) and shows
      "Learned: this isn't *EV battery tech*"
@@ -478,6 +487,12 @@ reports capture failures/partial snapshots and includes retained bookmark bodies
 
 ---
 
+
+Word estimates (D-293): Reading preferences → "Feedback and learning" has the switch "Estimate unanalysed articles"
+(`prefs.estimates`, on by default; its hint says the tier comes from the words of rated articles, that score order
+and a feed's minimum tier include it, that such rows are marked Estimated and that nothing is sent to an AI service).
+Personal learning shows "Word estimates are trained on N ratings (updated <date>)." when `GET /me/learning.estimates`
+is not null, plus a hint while `prefs.estimates` is off.
 ## 8. Admin UI
 
 Plain tables and forms, no polish needed:
@@ -596,6 +611,12 @@ JSON log's `msg` to a file, the spec reads the setup token from it, completes `/
     metadata cannot bypass the check; an old request alone cannot publish. A library update changes only a
     holder who explicitly applies it and never silently modifies a private fork. Assigning a neutral
     label does not count as a positive rating or enable inference.
+12. **Word estimates** (`word-estimates.pw.ts`, sorted last because it leaves articles in the shared feed): in a
+    Training feed thirteen articles arrive and ten are rated (five likes, five dislikes). No model exists at nine
+    ratings; the model and its refresh exist after ten (polled). The unrated rows are lane `new` with tier 5 and tier
+    1, never analysed; the tier-2 list and its count hold exactly the estimated rows at tier ≥ 2; For you and Maybe lack
+    them. The feed shows the outlined marker, Why this? lists the API's words, the slider at 2 hides only the low
+    estimate, and the Settings switch turns estimates off and on again. axe and the 44 px gate pass in both schemes.
 
 **PWA check** (M6-T8, a separate `pwa.pw.ts`; Lighthouse ≥ 12 no longer has a PWA category). It uses
 `chromium.launchPersistentContext(tmpDir, { channel: 'chromium' })`, because the default headless

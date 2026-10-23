@@ -3,6 +3,7 @@ import type { ArticleListItem, Explain } from '@bantoozi/shared';
 import { QueryState } from '../../components/states/query-state.js';
 import { AboutArticle } from './about-article.js';
 import { Actions } from './actions.js';
+import { EstimateWords } from './estimate-words.js';
 import { InterestList } from './interest-list.js';
 import { PersonalModel } from './personal-model.js';
 import { RulesApplied } from './rules-applied.js';
@@ -10,13 +11,24 @@ import { useArticleDetail } from './use-article-detail.js';
 import { useDemotions } from './use-demotions.js';
 import { NotAnalyzed, Verdict } from './verdict.js';
 
-function Findings({ articleId, explain }: { articleId: string; explain: Explain | null }) {
+function Findings({
+  articleId,
+  explain,
+  lang,
+}: {
+  articleId: string;
+  explain: Explain | null;
+  lang?: string | undefined;
+}) {
   // The meters and the rules offer changes to the same demotions.
   const demotions = useDemotions();
   if (explain === null) return <NotAnalyzed />;
   return (
     <>
       <Verdict explain={explain} />
+      {explain.source === 'estimate' && explain.estimate !== undefined ? (
+        <EstimateWords estimate={explain.estimate} lang={lang} />
+      ) : null}
       <InterestList articleId={articleId} cards={explain.cards} />
       {explain.facets === undefined ? null : (
         <AboutArticle facets={explain.facets} demotions={demotions} />
@@ -41,7 +53,9 @@ export function Explanation({ item, sourceFeedId, saved }: ExplanationProps) {
   return (
     <div className="flex flex-col gap-6">
       <QueryState query={detail}>
-        {(loaded) => <Findings articleId={item.id} explain={loaded.explain} />}
+        {(loaded) => (
+          <Findings articleId={item.id} explain={loaded.explain} lang={item.lang ?? undefined} />
+        )}
       </QueryState>
       <Actions item={item} />
     </div>

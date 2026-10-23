@@ -85,6 +85,19 @@ function LearningStatusLines({ model }: { model: LearningStatus['model'] }) {
   );
 }
 
+function WordEstimates({ estimates }: { estimates: LearningStatus['estimates'] }) {
+  const { t, i18n } = useTranslation('settings');
+  const me = useMe();
+  if (estimates === null) return null;
+  const date = formatDate(estimates.trainedAt, i18n.language, me.timezone);
+  return (
+    <div className="flex flex-col gap-2 text-sm">
+      <p>{t('learning.estimates', { count: estimates.n, date })}</p>
+      {me.preferences.estimates === 'off' ? <Hint>{t('learning.estimatesOff')}</Hint> : null}
+    </div>
+  );
+}
+
 /** The training feeds whose likes the cards miss, each with the offer to make an interest from them. */
 function InterestsToAdd({ feeds }: { feeds: readonly LearningFeedAgreement[] }) {
   const { t } = useTranslation('settings');
@@ -143,10 +156,11 @@ export function LearningSection() {
   return (
     <SettingsSection title={t('learning.title')} description={t('learning.description')}>
       <QueryState query={learning}>
-        {({ model, feeds, classification }) => (
+        {({ model, feeds, classification, estimates }) => (
           <div className="flex flex-col gap-4">
             <LearningPaused classification={classification} />
             <LearningStatusLines model={model} />
+            <WordEstimates estimates={estimates} />
             <InterestsToAdd feeds={feeds} />
             <TopicsToAvoid feeds={feeds} />
           </div>
