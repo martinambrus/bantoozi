@@ -15,6 +15,7 @@ import {
   isModelAlias,
   EngineModelPinSchema,
   type EngineModelProbe,
+  type EngineModelResolution,
   type RuntimeSettingsSnapshot,
   type RuntimeSettingsValues,
 } from '@bantoozi/shared';
@@ -37,7 +38,9 @@ import {
 import {
   MODEL_RESOLVE_RETRY_MS,
   MODEL_RESOLVE_TIMEOUT_MS,
-  recordModelResolution,
+  readResolutionState,
+  recordStartResolution,
+  resolutionInForce,
   type ModelState,
 } from './model-resolution.js';
 
@@ -304,26 +307,37 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
   let modelState: ModelState;
   let lastAttempt = now().getTime();
   let values = boot.values;
-  if (alias === undefined) {
-    modelState = { kind: 'concrete', model: configured };
-  } else if (boot.values.typesafeResolvedModel !== null) {
-    modelState = {
-      kind: 'resolved',
-      alias,
-      model: boot.values.typesafeResolvedModel,
-      source: 'stored',
-    };
-  } else if (options.recordPin === false) {
-    modelState = { kind: 'unresolved', alias, reason: 'not_resolved' };
-  } else {
-    const probed = await probeAlias(alias);
+  /** The stored row a start found dormant: it is replaced, never adopted, once Jev answers. */
+  let dormantRow: EngineModelResolution | undefined;
+  const resolveByProbe = async (name: string): Promise<ModelState> => {
+    const probed = await probeAlias(name);
     lastAttempt = now().getTime();
     if ('model' in probed) {
-      await recordModelResolution(db, { alias, model: probed.model, now: now() });
-      modelState = { kind: 'resolved', alias, model: probed.model, source: 'probed' };
+      const record = await recordStartResolution(db, {
+        alias: name,
+        model: probed.model,
+        now: now(),
+        dormant: dormantRow,
+      });
+      return { kind: 'resolved', alias: name, model: record.model, source: 'probed' };
+    }
+    logger.warn({ alias: name, code: probed.reason }, 'the model alias could not be resolved');
+    return { kind: 'unresolved', alias: name, reason: probed.reason };
+  };
+  if (alias === undefined) {
+    modelState = { kind: 'concrete', model: configured };
+  } else if (options.recordPin === false) {
+    modelState =
+      boot.values.typesafeResolvedModel !== null
+        ? { kind: 'resolved', alias, model: boot.values.typesafeResolvedModel, source: 'stored' }
+        : { kind: 'unresolved', alias, reason: 'not_resolved' };
+  } else {
+    const state = await readResolutionState(db);
+    if (state.row !== null && resolutionInForce(state.row, state.pin, now().getTime())) {
+      modelState = { kind: 'resolved', alias, model: state.row.model, source: 'stored' };
     } else {
-      logger.warn({ alias, code: probed.reason }, 'the model alias could not be resolved');
-      modelState = { kind: 'unresolved', alias, reason: probed.reason };
+      if (state.row !== null) dormantRow = state.row;
+      modelState = await resolveByProbe(alias);
     }
   }
   if (modelState.kind === 'resolved') {
@@ -414,12 +428,15 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
   let exiting = false;
   let warnedFor: string | undefined;
   let retrying = false;
+  /** The alias resolved after an unresolved start: this process keeps its state until restarted. */
+  let awaitingRestart = false;
   let closed = false;
   const selfRestart = config.nodeEnv === 'production' && options.selfRestart !== false;
 
   async function retryResolution(): Promise<void> {
     if (
       modelState.kind !== 'unresolved' ||
+      awaitingRestart ||
       options.recordPin === false ||
       retrying ||
       exiting ||
@@ -431,13 +448,20 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
     retrying = true;
     try {
       lastAttempt = now().getTime();
+      const state = await readResolutionState(db);
+      if (state.row !== null && resolutionInForce(state.row, state.pin, now().getTime())) {
+        awaitingRestart = true;
+        return;
+      }
       const probed = await probeAlias(modelState.alias);
       if ('model' in probed && !closed) {
-        await recordModelResolution(db, {
+        await recordStartResolution(db, {
           alias: modelState.alias,
           model: probed.model,
           now: now(),
+          dormant: state.row ?? undefined,
         });
+        awaitingRestart = true;
       }
     } catch (error) {
       logger.warn({ err: error }, 'the model alias retry failed');
@@ -451,7 +475,7 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
     inner.invalidate();
     const snapshot = await settings.get();
     const effective = restartFingerprint(snapshot.values);
-    pendingRestart = effective !== fingerprint;
+    pendingRestart = effective !== fingerprint || awaitingRestart;
     if (pendingRestart && selfRestart) {
       if (!exiting) {
         exiting = true;
@@ -470,7 +494,9 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
       warnedFor = effective;
       logger.warn(
         { pendingRestart: true },
-        'restart-class setting changed: restart this worker to apply it',
+        awaitingRestart
+          ? 'the model alias has resolved: restart this worker to apply it'
+          : 'restart-class setting changed: restart this worker to apply it',
       );
     }
     return { pendingRestart, exiting };
