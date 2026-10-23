@@ -6,11 +6,12 @@ import { failure } from '../api/fake-fetch.js';
 import { bodyOf, renderApp, type ApiRouteHandler } from '../support/app.js';
 import {
   RUNTIME_DEFAULTS,
+  modelServer,
   patchAnswer,
   runtimeRoutes,
   type RuntimeFixture,
 } from './m8b-t10-support.js';
-import { adminMe, unhandledGuard } from './support.js';
+import { T1, adminMe, freshProbes, unhandledGuard } from './support.js';
 
 /**
  * M8b-T10 ruler (spec 09 §8). Conventions fixed by this ruler, in the order the implementer meets
@@ -279,16 +280,32 @@ describe('M8b-T10 source badge, default and reset', () => {
 });
 
 describe('M8b-T10 acknowledgement for model and fallback changes', () => {
-  it('cannot save a model change until the replay acknowledgement is ticked, then sends acknowledge', async () => {
-    const app = await open({}, { [PATCH]: (request) => patchAnswer(bodyOf(request) as never) });
+  /** A model server whose status holds a fresh confirming probe of each of `models`. */
+  const withProbes = (models: string[], saved = 'jev-1.13.0') =>
+    modelServer({
+      setting: { value: saved, source: saved === 'jev-1.13.0' ? 'env' : 'stored' },
+      pin: { model: saved, since: T1 },
+      probes: freshProbes(...models),
+      impact: { at: T1, activeModels: 2 },
+    });
 
-    await fill(app, MODEL, 'jev-1.14.0');
+  it('cannot save a model change to another family until the replay acknowledgement is ticked, then sends acknowledge', async () => {
+    const model = withProbes(['jev-2.0.0']);
+    const app = await open(
+      {},
+      { ...model.routes(), [PATCH]: (request) => patchAnswer(bodyOf(request) as never) },
+    );
+
+    await fill(app, MODEL, 'jev-2.0.0');
     await app.user.click(save(MODEL));
 
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('dialog', {
+      name: 'This change re-enriches the corpus',
+    });
     expect(within(dialog).getByText(/eval replay/)).toBeVisible();
     expect(within(dialog).getByText(/jev-1\.13\.0/)).toBeVisible();
-    expect(within(dialog).getByText(/jev-1\.14\.0/)).toBeVisible();
+    expect(within(dialog).getByText(/jev-2\.0\.0/)).toBeVisible();
+    expect(dialog).toHaveTextContent("2 users' personal models restart from new ratings.");
     const confirm = within(dialog).getByRole('button', { name: 'Confirm and save' });
     expect(confirm).toBeDisabled();
     await app.user.click(confirm);
@@ -301,13 +318,33 @@ describe('M8b-T10 acknowledgement for model and fallback changes', () => {
     await app.user.click(confirm);
 
     await vi.waitFor(() => expect(app.calls(PATCH)).toHaveLength(1));
-    expect(bodyOf(app.calls(PATCH)[0]!)).toEqual({ [MODEL]: 'jev-1.14.0', acknowledge: true });
+    expect(bodyOf(app.calls(PATCH)[0]!)).toEqual({ [MODEL]: 'jev-2.0.0', acknowledge: true });
     await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(app.calls('POST /admin/engine/model-probe')).toHaveLength(0);
+  });
+
+  it('needs no tick for another release of the same family: the kept dialog, and no acknowledge', async () => {
+    const model = withProbes(['jev-1.14.0']);
+    const app = await open(
+      {},
+      { ...model.routes(), [PATCH]: (request) => patchAnswer(bodyOf(request) as never) },
+    );
+
+    await fill(app, MODEL, 'jev-1.14.0');
+    await app.user.click(save(MODEL));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Change the Jev release?' });
+    expect(within(dialog).queryByRole('checkbox')).toBeNull();
+    await app.user.click(within(dialog).getByRole('button', { name: 'Confirm and save' }));
+
+    await vi.waitFor(() => expect(app.calls(PATCH)).toHaveLength(1));
+    expect(bodyOf(app.calls(PATCH)[0]!)).toEqual({ [MODEL]: 'jev-1.14.0' });
   });
 
   it('keeps the edit and sends nothing when the dialog is cancelled', async () => {
-    const app = await open();
-    await fill(app, MODEL, 'jev-1.14.0');
+    const model = withProbes(['jev-2.0.0']);
+    const app = await open({}, model.routes());
+    await fill(app, MODEL, 'jev-2.0.0');
     await app.user.click(save(MODEL));
 
     await app.user.click(
@@ -315,13 +352,17 @@ describe('M8b-T10 acknowledgement for model and fallback changes', () => {
     );
 
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(control(MODEL)).toHaveValue('jev-1.14.0');
+    expect(control(MODEL)).toHaveValue('jev-2.0.0');
     expect(app.calls(PATCH)).toHaveLength(0);
   });
 
-  it('asks again for each later model change (the tick is not remembered)', async () => {
-    const app = await open({}, { [PATCH]: (request) => patchAnswer(bodyOf(request) as never) });
-    await fill(app, MODEL, 'jev-1.14.0');
+  it('asks again for each later model change to another family (the tick is not remembered)', async () => {
+    const model = withProbes(['jev-2.0.0', 'jev-3.0.0']);
+    const app = await open(
+      {},
+      { ...model.routes(), [PATCH]: (request) => patchAnswer(bodyOf(request) as never) },
+    );
+    await fill(app, MODEL, 'jev-2.0.0');
     await app.user.click(save(MODEL));
     let dialog = await screen.findByRole('dialog');
     await app.user.click(
@@ -331,7 +372,7 @@ describe('M8b-T10 acknowledgement for model and fallback changes', () => {
     await vi.waitFor(() => expect(app.calls(PATCH)).toHaveLength(1));
     await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
-    await fill(app, MODEL, 'jev-1.15.0');
+    await fill(app, MODEL, 'jev-3.0.0');
     await app.user.click(save(MODEL));
 
     dialog = await screen.findByRole('dialog');
@@ -376,14 +417,18 @@ describe('M8b-T10 acknowledgement for model and fallback changes', () => {
     });
   });
 
-  it('gates a reset of a stored model too, and sends null with the acknowledgement', async () => {
-    const fixture = { stored: { [MODEL]: 'jev-1.14.0' } };
+  it('gates a reset of a stored model of another family too, and sends null with the acknowledgement', async () => {
+    const fixture = { stored: { [MODEL]: 'jev-2.0.0' } };
+    const model = withProbes(['jev-1.13.0'], 'jev-2.0.0');
     const app = await open(fixture, {
+      ...model.routes(),
       [PATCH]: (request) => patchAnswer(bodyOf(request) as never, fixture),
     });
 
     await app.user.click(reset(MODEL));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('dialog', {
+      name: 'This change re-enriches the corpus',
+    });
     expect(app.calls(PATCH)).toHaveLength(0);
     await app.user.click(
       within(dialog).getByRole('checkbox', { name: 'I ran eval replay and it passed' }),
@@ -392,6 +437,23 @@ describe('M8b-T10 acknowledgement for model and fallback changes', () => {
 
     await vi.waitFor(() => expect(app.calls(PATCH)).toHaveLength(1));
     expect(bodyOf(app.calls(PATCH)[0]!)).toEqual({ [MODEL]: null, acknowledge: true });
+  });
+
+  it('resets a stored model of the same family without the acknowledgement', async () => {
+    const fixture = { stored: { [MODEL]: 'jev-1.14.0' } };
+    const model = withProbes(['jev-1.13.0'], 'jev-1.14.0');
+    const app = await open(fixture, {
+      ...model.routes(),
+      [PATCH]: (request) => patchAnswer(bodyOf(request) as never, fixture),
+    });
+
+    await app.user.click(reset(MODEL));
+    const dialog = await screen.findByRole('dialog', { name: 'Change the Jev release?' });
+    expect(within(dialog).queryByRole('checkbox')).toBeNull();
+    await app.user.click(within(dialog).getByRole('button', { name: 'Confirm and save' }));
+
+    await vi.waitFor(() => expect(app.calls(PATCH)).toHaveLength(1));
+    expect(bodyOf(app.calls(PATCH)[0]!)).toEqual({ [MODEL]: null });
   });
 
   it('shows the dialog when the server asks for confirmation (409 confirmation_required) and then resends with acknowledge', async () => {

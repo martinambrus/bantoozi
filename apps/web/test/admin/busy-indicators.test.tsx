@@ -4,7 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { json } from '../api/fake-fetch.js';
 import { gate } from '../interests/support.js';
 import { bodyOf, renderApp, type ApiRouteHandler } from '../support/app.js';
-import { patchAnswer, runtimeRoutes, worker, type RuntimeFixture } from './m8b-t10-support.js';
+import {
+  modelServer,
+  patchAnswer,
+  runtimeRoutes,
+  worker,
+  type RuntimeFixture,
+} from './m8b-t10-support.js';
 import {
   SETTINGS_VALUES,
   T1,
@@ -12,6 +18,7 @@ import {
   adminMe,
   adminRoutes,
   breaker,
+  freshProbes,
   makeFeed,
   makeOverview,
   makeSettings,
@@ -306,9 +313,11 @@ describe('runtime editor busy states', () => {
 
   it('keeps the confirmation dialog open, with Confirm busy, until the save is answered', async () => {
     const held = gate();
+    const model = modelServer({ probes: freshProbes('jev-2.0.0') });
     const app = await open(
       '/admin/settings',
       {
+        ...model.routes(),
         'PATCH /admin/settings': async (request) => {
           await held.opened;
           return patchAnswer(bodyOf(request) as Record<string, unknown>);
@@ -317,7 +326,7 @@ describe('runtime editor busy states', () => {
       {},
     );
     await screen.findByRole('group', { name: 'engine.typesafe_model' });
-    await type(app, 'engine.typesafe_model', 'jev-1.14.0');
+    await type(app, 'engine.typesafe_model', 'jev-2.0.0');
     await app.user.click(saveButton('engine.typesafe_model'));
     const dialog = await screen.findByRole('dialog');
     await app.user.click(
