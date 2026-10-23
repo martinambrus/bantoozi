@@ -3,7 +3,12 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { QUEUE_NAMES, QUEUES } from '@bantoozi/shared';
+import {
+  QUEUE_NAMES,
+  QUEUES,
+  STALE_GUARDED_QUEUES,
+  STALE_WORKER_RETRY_DELAY_SECONDS,
+} from '@bantoozi/shared';
 import PgBoss from 'pg-boss';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -130,6 +135,20 @@ describe('migrate job', () => {
         worker_dml: true,
       });
     }
+  });
+
+  it('converges a cleared retry delay of the stale-guarded queues on the next run', async () => {
+    await ctx.owner.query('UPDATE pgboss.queue SET retry_delay = NULL WHERE name = ANY($1)', [
+      [...STALE_GUARDED_QUEUES],
+    ]);
+    await runMigrations({ databaseUrl: ctx.testDb.urls.owner });
+    const rows = await ctx.owner.query<{ name: string; retry_delay: number | null }>(
+      'SELECT name, retry_delay FROM pgboss.queue WHERE name = ANY($1) ORDER BY name COLLATE "C"',
+      [[...STALE_GUARDED_QUEUES]],
+    );
+    expect(rows.rows).toHaveLength(STALE_GUARDED_QUEUES.length);
+    for (const row of rows.rows)
+      expect(row.retry_delay, row.name).toBe(STALE_WORKER_RETRY_DELAY_SECONDS);
   });
 
   it('keeps pg-boss away from the API role, which sees aggregate counts only', async () => {

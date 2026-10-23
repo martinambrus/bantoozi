@@ -10,6 +10,8 @@ import {
   MODEL_JOB_EXPIRE_SECONDS,
   QUEUES,
   QUEUE_NAMES,
+  STALE_GUARDED_QUEUES,
+  STALE_WORKER_RETRY_DELAY_SECONDS,
   buildJobIntent,
   enqueueAnalysis,
   enqueueEnrich,
@@ -21,6 +23,7 @@ import {
   resolveWorkerQueues,
   type JobIntent,
   type JobSender,
+  type QueueCreateOptions,
 } from '../src/index.js';
 
 const USER = '0190d4a7-1234-7abc-8def-0123456789ab';
@@ -294,5 +297,18 @@ describe('jobs registry (spec 03 §2)', () => {
     ]);
     await expect(enqueueFetch(sender, { feedId: 'x' })).rejects.toThrow();
     expect(intents).toHaveLength(6);
+  });
+
+  it('retries a guarded stage job after the stale-worker delay, flat', () => {
+    expect(STALE_WORKER_RETRY_DELAY_SECONDS).toBe(30);
+    for (const queue of STALE_GUARDED_QUEUES) {
+      const options: QueueCreateOptions = QUEUES[queue].options;
+      expect(options.retryDelay, queue).toBe(STALE_WORKER_RETRY_DELAY_SECONDS);
+      expect(options.retryBackoff, queue).toBeUndefined();
+    }
+    const others = QUEUE_NAMES.filter(
+      (q) => !(STALE_GUARDED_QUEUES as readonly string[]).includes(q),
+    ).filter((q) => (QUEUES[q].options as QueueCreateOptions).retryDelay === 30);
+    expect(others.sort()).toEqual(['article.capture-bookmark', 'article.extract']);
   });
 });

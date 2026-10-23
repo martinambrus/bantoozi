@@ -4,17 +4,19 @@ import {
   shareLockStoredSetting,
   type Executor,
 } from '@bantoozi/db';
+import { STALE_WORKER_RETRY_DELAY_SECONDS } from '@bantoozi/shared';
 
 import type { ClassificationDeps } from './handlers/deps.js';
 
 /**
  * A worker whose process values are not the current ones (M8b-T5, PR #28 round 4): a restart-class
  * setting or the model pin moved, so this process, which has not restarted yet, must neither ask its
- * old model nor write its answers. The job fails and the queue retries it after `retryDelaySeconds`,
- * by when a drained worker has restarted.
+ * old model nor write its answers. The job fails and the queue retries it after `retryDelaySeconds`
+ * (the `retryDelay` of every queue in `STALE_GUARDED_QUEUES`), by when a drained worker has
+ * restarted. `analysis.process` does not throw: it reschedules the request itself.
  */
 export class StaleWorkerError extends Error {
-  readonly retryDelaySeconds = 30;
+  readonly retryDelaySeconds = STALE_WORKER_RETRY_DELAY_SECONDS;
 
   constructor(
     readonly processModel: string,
