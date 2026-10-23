@@ -326,36 +326,50 @@ describe('outbox relay with a missing pg-boss queue', () => {
     await runMigrations({ databaseUrl: testDb.urls.owner });
   });
 
-  it('keeps the intent as queue_missing, logs once per queue and delivers after the queue returns', async () => {
-    await dropQueue();
-    await enqueue('user.estimate', { userId });
-    const missingQueues = new Set<string>();
-    const { logs, logger } = recording();
-    for (let i = 0; i < 3; i += 1) {
-      await expireLeasesAndMakeDue();
-      expect(await relayOnce(db, broker, { handlers, logger, missingQueues })).toMatchObject({
-        claimed: 1,
-        delivered: 0,
-        retained: 1,
-      });
-    }
-    const [row] = await outbox();
-    expect(row).toMatchObject({ delivered: false, last_error: 'queue_missing', attempts: 3 });
-    const errors = logs.filter((l) => l.level === 'error');
-    expect(errors).toHaveLength(1);
-    expect(JSON.stringify(errors[0])).toContain('user.estimate');
-    expect(await jobs('user.estimate')).toEqual([]);
+  // The three shapes of send: a debounced stately queue, a keyed stately one and a queue without a key.
+  it.each([
+    ['user.estimate', { userId }],
+    ['article.extract', { articleId: '1' }],
+    ['house.purge-auth', {}],
+  ] as const)(
+    'keeps the %s intent as queue_missing, logs once per queue and delivers after the queue returns',
+    async (queue, payload) => {
+      const stage = implementing(queue);
+      await owner.query('DELETE FROM pgboss.job');
+      await owner.query('SELECT pgboss.delete_queue($1)', [queue]);
+      await enqueue(queue, payload as never);
+      const missingQueues = new Set<string>();
+      const { logs, logger } = recording();
+      for (let i = 0; i < 3; i += 1) {
+        await expireLeasesAndMakeDue();
+        expect(
+          await relayOnce(db, broker, { handlers: stage, logger, missingQueues }),
+        ).toMatchObject({
+          claimed: 1,
+          delivered: 0,
+          retained: 1,
+        });
+      }
+      const [row] = await outbox();
+      expect(row).toMatchObject({ delivered: false, last_error: 'queue_missing', attempts: 3 });
+      const errors = logs.filter((l) => l.level === 'error');
+      expect(errors).toHaveLength(1);
+      expect(JSON.stringify(errors[0])).toContain(queue);
+      expect(await jobs(queue)).toEqual([]);
 
-    await runMigrations({ databaseUrl: testDb.urls.owner });
-    await expireLeasesAndMakeDue();
-    expect(await relayOnce(db, broker, { handlers, logger, missingQueues })).toMatchObject({
-      delivered: 1,
-    });
-    expect((await outbox())[0]?.delivered).toBe(true);
-    expect(await jobs('user.estimate')).toHaveLength(1);
-    expect(logs.filter((l) => l.level === 'info')).toHaveLength(1);
-    expect(logs.filter((l) => l.level === 'error')).toHaveLength(1);
-  });
+      await runMigrations({ databaseUrl: testDb.urls.owner });
+      await expireLeasesAndMakeDue();
+      expect(await relayOnce(db, broker, { handlers: stage, logger, missingQueues })).toMatchObject(
+        {
+          delivered: 1,
+        },
+      );
+      expect((await outbox())[0]?.delivered).toBe(true);
+      expect(await jobs(queue)).toHaveLength(1);
+      expect(logs.filter((l) => l.level === 'info')).toHaveLength(1);
+      expect(logs.filter((l) => l.level === 'error')).toHaveLength(1);
+    },
+  );
 
   it('the relay loop logs the missing queue once, not on every pass', async () => {
     await dropQueue();

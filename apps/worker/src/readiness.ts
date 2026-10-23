@@ -1,4 +1,4 @@
-import { listPgBossQueueNames, type Executor } from '@bantoozi/db';
+import { PG_BOSS_CRON_QUEUE, listPgBossQueueNames, type Executor } from '@bantoozi/db';
 import { QUEUE_NAMES, type QueueName } from '@bantoozi/shared';
 import type { NodeEnv } from '@bantoozi/shared/server';
 
@@ -25,10 +25,17 @@ export const QUEUES_MISSING_KEY = 'queues.missing';
 
 const NAMED_AT_MOST = 10;
 
-/** The registry queues that pg-boss does not hold, in registry order. */
+/**
+ * The queues the migrate job leaves behind and the worker cannot create: every registry queue, then
+ * pg-boss's internal cron queue (migration 0017, D-142), without which `boss.schedule` succeeds and
+ * no cron ever fires.
+ */
+export const REQUIRED_QUEUES: readonly string[] = [...QUEUE_NAMES, PG_BOSS_CRON_QUEUE];
+
+/** The required queues that pg-boss does not hold, in registry order. */
 export async function missingRegistryQueues(
   db: Executor,
-  queues: readonly string[] = QUEUE_NAMES,
+  queues: readonly string[] = REQUIRED_QUEUES,
 ): Promise<string[]> {
   const present = new Set(await listPgBossQueueNames(db));
   return queues.filter((name) => !present.has(name));
@@ -42,7 +49,7 @@ function nameQueues(missing: readonly string[]): string {
 }
 
 function missingMessage(missing: readonly string[]): string {
-  return `pg-boss queues missing: ${nameQueues(missing)} (${missing.length}) — run the migrate job (pnpm db:migrate); the worker never creates queues`;
+  return `pg-boss queues missing: ${nameQueues(missing)} (${missing.length}) — run the migrate job (pnpm db:migrate, or the deploy's migration step); the worker never creates queues`;
 }
 
 export interface QueueReadiness {

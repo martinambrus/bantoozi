@@ -1,4 +1,10 @@
-import { MIGRATIONS_FOLDER, PG_BOSS_VERSION, createDatabase, runMigrations } from '@bantoozi/db';
+import {
+  MIGRATIONS_FOLDER,
+  PG_BOSS_CRON_QUEUE,
+  PG_BOSS_VERSION,
+  createDatabase,
+  runMigrations,
+} from '@bantoozi/db';
 import { dropCreatedTestDatabases, setupTestDatabase, type TestDatabase } from '@bantoozi/testing';
 import pg from 'pg';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -64,6 +70,30 @@ describe('missingRegistryQueues', () => {
     await dropQueue('user.estimate');
     expect(await missingRegistryQueues(db)).toEqual(['user.estimate']);
     await runMigrations({ databaseUrl: testDb.urls.owner });
+    expect(await missingRegistryQueues(db)).toEqual([]);
+  });
+});
+
+describe("pg-boss's internal cron queue", () => {
+  it('is required too: without it boss.schedule succeeds and no cron ever fires', async () => {
+    expect(await missingRegistryQueues(db)).toEqual([]);
+    await dropQueue(PG_BOSS_CRON_QUEUE);
+    try {
+      expect(await missingRegistryQueues(db)).toEqual([PG_BOSS_CRON_QUEUE]);
+      const { logs, logger } = recording();
+      const readiness = await startQueueReadiness({ db, logger, intervalMs: 3_600_000 });
+      try {
+        expect(count(logs, 'error')).toBe(1);
+        expect(readiness.problems()[0]?.message).toContain(PG_BOSS_CRON_QUEUE);
+      } finally {
+        readiness.stop();
+      }
+    } finally {
+      // Migration 0017 created it (the migrate job does not create it again).
+      await owner.query(
+        `SELECT pgboss.create_queue('${PG_BOSS_CRON_QUEUE}', '{"policy":"standard"}'::json)`,
+      );
+    }
     expect(await missingRegistryQueues(db)).toEqual([]);
   });
 });
