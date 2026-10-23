@@ -231,4 +231,72 @@ describe('provider.validate with the configured model jev-latest', () => {
     await handler({ typesafeModel: ALIAS })('typesafe', next);
     expect(await typesafe()).toMatchObject({ candidateVersion: next, candidateStatus: 'valid' });
   });
+  describe('V4 a model the provider no longer serves says nothing about the key', () => {
+    const RETIRED = 'jev-1.12.0';
+    const engineStatuses = async () =>
+      (await owner.query<{ status: string }>(`SELECT status FROM engine_calls`)).rows.map(
+        (r) => r.status,
+      );
+
+    async function expectInconclusive() {
+      const version = await stage('typesafe', JEV_KEY);
+      await handler({ typesafeModel: RETIRED })('typesafe', version);
+      expect(jev.requests).toHaveLength(1);
+      expect(await typesafe()).toMatchObject({
+        candidateVersion: version,
+        candidateStatus: 'pending',
+        lastErrorCode: 'model_unavailable',
+        validatedAt: null,
+      });
+      expect((await typesafe()).candidateValidation).toMatchObject({
+        model: RETIRED,
+        attempts: 1,
+        errorCode: 'model_unavailable',
+      });
+      expect(await engineStatuses()).toEqual(['error']);
+      return version;
+    }
+
+    it('404 model_not_found records pending/model_unavailable after one request; validating again with a served model is valid', async () => {
+      const version = await expectInconclusive();
+      jev.requests.splice(0);
+      await handler({ typesafeModel: CONCRETE })('typesafe', version);
+      expect(await typesafe()).toMatchObject({
+        candidateVersion: version,
+        candidateStatus: 'valid',
+        lastErrorCode: null,
+      });
+    });
+
+    it('410 records pending/model_unavailable', async () => {
+      jev.setOptions({
+        statusOverride: () => ({ status: 410, body: { error: { code: 'gone' } } }),
+      });
+      await expectInconclusive();
+    });
+
+    it('400 invalid_model records pending/model_unavailable', async () => {
+      jev.setOptions({
+        statusOverride: () => ({ status: 400, body: { error: { code: 'invalid_model' } } }),
+      });
+      await expectInconclusive();
+    });
+
+    it.each([
+      [404, { error: { code: 'not_found' } }],
+      [402, { error: { code: 'payment_required' } }],
+    ])(
+      'control: a bare %i without a model code stays invalid/provider_error',
+      async (status, body) => {
+        jev.setOptions({ statusOverride: () => ({ status, body }) });
+        const version = await stage('typesafe', JEV_KEY);
+        await handler({ typesafeModel: RETIRED })('typesafe', version);
+        expect(jev.requests).toHaveLength(1);
+        expect(await typesafe()).toMatchObject({
+          candidateStatus: 'invalid',
+          lastErrorCode: 'provider_error',
+        });
+      },
+    );
+  });
 });

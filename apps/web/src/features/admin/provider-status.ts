@@ -69,4 +69,5 @@ export const KNOWN_ERROR_CODES: readonly string[] = [
   'provider_error',
   'cost_overrun',
   'credential_unavailable',
+  'model_unavailable',
 ];

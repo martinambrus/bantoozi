@@ -247,6 +247,7 @@
       "provider_error": "Poskytovateľ počas overovania vrátil chybu.",
       "cost_overrun": "Testovacie volanie stálo viac, než sa čakalo, a bolo zastavené. Overte znova.",
       "credential_unavailable": "Worker nedokázal načítať pripravený kľúč. Overte znova alebo pripravte kľúč znova.",
+      "model_unavailable": "Poskytovateľ nemá nastavený model, preto sa kľúč nedal otestovať. Vyberte dostupný model v Nastaveniach a potom overte znova.",
       "unknown": "Overenie sa zastavilo s kódom {{code}}."
     },
     "keyLabel": "Nový kľúč API pre {{provider}}",

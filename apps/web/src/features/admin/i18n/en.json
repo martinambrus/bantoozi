@@ -241,6 +241,7 @@
       "provider_error": "The provider returned an error during validation.",
       "cost_overrun": "The test call cost more than expected and was stopped. Validate again.",
       "credential_unavailable": "The worker could not load the staged key. Validate again, or stage the key again.",
+      "model_unavailable": "The provider does not serve the configured model, so the key could not be tested. Choose an available model in Settings, then validate again.",
       "unknown": "Validation stopped with the code {{code}}."
     },
     "keyLabel": "New API key for {{provider}}",
