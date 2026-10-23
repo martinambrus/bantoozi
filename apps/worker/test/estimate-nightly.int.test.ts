@@ -1,3 +1,4 @@
+import { ESTIMATE_SPEC } from '@bantoozi/ranker';
 import { parseJobPayload } from '@bantoozi/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -102,6 +103,7 @@ describe('house.nightly-learn estimate sweep', () => {
     expect(await nightlyFor(userId)).toHaveLength(1);
     await h.dispatch('user.estimate', { userId });
     expect(await w.models(userId)).toEqual([]);
+    expect(await nightlyFor(userId)).toHaveLength(0);
 
     await h.deleteSetting('ranker.thresholds');
     const small = await w.reader(4, 3);
@@ -176,6 +178,7 @@ describe('house.nightly-learn estimate sweep', () => {
     expect(await nightlyFor(userId)).toHaveLength(1);
     await h.dispatch('user.estimate', { userId });
     expect(await w.models(userId)).toEqual([]);
+    expect(await nightlyFor(userId)).toHaveLength(0);
   });
 
   it('C6 a changed rated article and a lost carrier subscription both re-train', async () => {
@@ -268,5 +271,19 @@ describe('house.nightly-learn estimate sweep', () => {
     }
     expect(result.examined).toBeGreaterThanOrEqual(5);
     expect(result.enqueued).toBeGreaterThanOrEqual(5);
+  });
+
+  it('C10 a stored model of another spec is woken once, retrained, and the sweep then converges', async () => {
+    const userId = await trained(6, 6);
+    expect(await nightlyFor(userId)).toHaveLength(0);
+    await h.owner.query(
+      `UPDATE user_estimate_models SET spec = 'estimate-v0:old' WHERE user_id = $1`,
+      [userId],
+    );
+    expect(await nightlyFor(userId)).toHaveLength(1);
+    await h.dispatch('user.estimate', { userId });
+    const models = await w.models(userId);
+    expect(models.map((m) => m.spec)).toEqual(['estimate-v0:old', ESTIMATE_SPEC]);
+    expect(await nightlyFor(userId)).toHaveLength(0);
   });
 });
