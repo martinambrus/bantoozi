@@ -296,6 +296,11 @@ an assumption until one real Jev answer is recorded.
     unchanged (S19 overlay test). Dataset digests include P and tier, so refreshes cause more `STALE_CURSOR` /
     `dataset_changed` (accepted; PRG-3 is the planned UX). `GET /me/learning.estimates {n, auc, trainedAt, lastRun}
     | null`. The estimate does not depend on the Jev model: a model change leaves it untouched.
+  - Debounce precisely: the trailing job exists only when a rating arrives after the leading job started, and it starts
+    at the next 20 s boundary, so a model exists 2–23 s (about 30 s end to end) after the last rating.
+  - Web as built (EST-5, D-293): the outlined-ring chip in the row's chip line, the Why this? word lists, the Settings
+    switch and a trained-on line. `newSort` was not built (it needs an account preference and an API change; the list
+    API already honours `sort=score` on lane `new`).
   - Release order: EST-2…EST-4 ship with EST-5; a cached older web bundle rejects `source: 'estimate'` until the
     D-163 reload bar.
 - **Web.**
