@@ -258,6 +258,11 @@ when personal models restart (another major). Check now works only while the set
 switching a concrete id to `jev-latest` while an older `engine.model_resolution` is stored makes a restarting worker
 pin that release first (one extra rebuild) before the watch adopts Jev's answer. An older release ignores
 `engine.model_impact`.
+**A queue is missing (D-300).** A worker started on a database where `pnpm db:migrate` was not run after a queue was
+added logs one error naming the queue, reports `queues.missing` in its heartbeat problems (raw in
+`GET /admin/settings`, not yet shown in Admin) and keeps working; the relay keeps the intents with
+`last_error = 'queue_missing'`. Run the migrate job; the worker notices within 30 s. A missing cron queue still stops
+the worker at start ("Queue X not found").
 
 **Jev upgrades while following `jev-latest` (D-286).** After the mail "Jev X → Y" the workers restart on their own in
 production; in development restart the worker (Admin → Workers shows `pendingRestart`). No evaluation replay ran:

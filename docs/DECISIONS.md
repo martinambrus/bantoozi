@@ -3036,3 +3036,36 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   /fake/options {models}`; `null` clears; every table must contain `jev-fake`, which the e2e worker asks for all its life); hooks
   `seedActiveUserModel`, `clearSeededUserModels`, `clearModelState`; `apps/web/e2e/admin-model.pw.ts`; `admin-settings.pw.ts` no longer
   changes the model (it would need a probe).
+- D-300: 2026-10-23 (FNF-VL-3; amends D-282: the nightly sweep now covers the triggers D-282 lacked) — Estimate sweep and queue readiness. (1) `house.nightly-learn` ends with an estimate
+  sweep (`apps/worker/src/estimate/sweep.ts`): it pages the live users who hold a stored estimate model or have at
+  least `estimate.minRatings` explicit ratings in the `model.historyDays` window (its own candidate query,
+  `listEstimateSweepUsers`; the learn candidates and the learn sweep are unchanged, so an inactive reader whose
+  ratings all aged out is still reached and loses the model) and records `user.estimate` for each user whose
+  `estimateAction` is `train` or `delete`. `user.estimate` takes the same decision from the same code
+  (`apps/worker/src/estimate/inputs.ts`): the job stays the authority, the sweep only decides whom to wake, and a
+  reader whose check throws is logged and skipped. Because the decision is the exact input hash, a changed
+  `estimate.minRatings`/`estimate.minEachClass` retrains every holder once (the options are part of the hash), a
+  gate that closes deletes the model, and a rating aging out retrains a rolling-window reader about nightly (a new
+  version and one refresh rank, D-284: 1.8-2.7 s for 12,700 rows). Measured on a test database seeded like the
+  owner's (5,000 ratings, one reader) plus 100 readers of 30-60 ratings and 20 below the gate: the sweep takes
+  183-198 ms (owner 47-49 ms, the 100 small readers 136-147 ms), the whole nightly run 717-803 ms against 563-870 ms
+  for the learn loop alone; delivering 101 retrains after a threshold change takes about 1.1 s. Known, not
+  changed: every retrain moves most scores because `fitLogistic` reshuffles by sample count (a trainer property
+  that rating bursts already trigger); the admin PATCH of `ranker.thresholds` does not enqueue `user.estimate` (as it
+  does `user.learn`), so a threshold change waits for the next 01:00 UTC run; merges, unsubscribes and title edits
+  record no `user.estimate` either (the sweep covers them within 24 h). (2) A worker whose database lacks a queue
+  the migrate job creates (`pnpm db:migrate` was not run after the queue was added) reports it and keeps working:
+  `startQueueReadiness` (`apps/worker/src/readiness.ts`) compares `QUEUE_NAMES` plus pg-boss's internal cron queue
+  `__pgboss__send-it` (migration 0017, D-142; absent, `boss.schedule` succeeds and no cron ever fires) with
+  `pgboss.queue` at start, logs one error naming the queues, keeps a `queues.missing` problem in the heartbeat
+  `runtime.problems` (raw in `GET /admin/settings` `workers[].problems`; the Admin page does not show it yet) and
+  re-reads every 30 s until they exist. The relay no longer files the `null` send of a missing queue as
+  `singleton_conflict`: when no equivalent job is pending it checks `pgboss.queue`, keeps the intent as
+  `last_error = 'queue_missing'` with a 60 s retry, logs one error per queue and one info when the queue is back
+  (a started worker was run against a test database to confirm: one error before "worker started", the problem in
+  the first heartbeat, three attempts and one relay error, then delivery and a cleared problem after the migrate
+  job). The migrate job (`packages/db/src/migrate/migrate.ts`) now also calls `pgboss.create_queue` for the internal
+  cron queue on every run, so the "run the migrate job" advice is true for it (before, only migration 0017 created
+  it). The worker never creates queues and never refuses to start, production included (refusing like
+  `assertProductionReady` does for stubs would stop every queue for one missing one; an owner choice); a missing
+  CRON queue still aborts the start at `boss.schedule()` ("Queue X not found"), now after the readiness error.
