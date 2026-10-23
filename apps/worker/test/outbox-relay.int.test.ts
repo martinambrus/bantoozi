@@ -12,7 +12,7 @@ import { buildJobIntent, type JobPayloadInput, type QueueName } from '@bantoozi/
 import { dropCreatedTestDatabases, setupTestDatabase, type TestDatabase } from '@bantoozi/testing';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { pgBossBroker, registerHandlers } from '../src/boss.js';
 import { HANDLERS, type HandlerMap } from '../src/handlers/index.js';
@@ -300,5 +300,99 @@ describe('consumer registration', () => {
     } finally {
       await consumer.stop({ graceful: false, wait: true });
     }
+  });
+});
+
+describe('outbox relay with a missing pg-boss queue', () => {
+  const userId = '0190a8e6-7d5b-7c2e-9f3a-1b2c3d4e5f60';
+  const handlers = implementing('user.estimate');
+
+  function recording() {
+    const logs: { level: 'info' | 'warn' | 'error'; obj: object; msg: string }[] = [];
+    const logger = {
+      info: (obj: object, msg: string) => logs.push({ level: 'info', obj, msg }),
+      warn: (obj: object, msg: string) => logs.push({ level: 'warn', obj, msg }),
+      error: (obj: object, msg: string) => logs.push({ level: 'error', obj, msg }),
+    };
+    return { logs, logger };
+  }
+
+  async function dropQueue() {
+    await owner.query('DELETE FROM pgboss.job');
+    await owner.query("SELECT pgboss.delete_queue('user.estimate')");
+  }
+
+  afterEach(async () => {
+    await runMigrations({ databaseUrl: testDb.urls.owner });
+  });
+
+  // The three shapes of send: a debounced stately queue, a keyed stately one and a queue without a key.
+  it.each([
+    ['user.estimate', { userId }],
+    ['article.extract', { articleId: '1' }],
+    ['house.purge-auth', {}],
+  ] as const)(
+    'keeps the %s intent as queue_missing, logs once per queue and delivers after the queue returns',
+    async (queue, payload) => {
+      const stage = implementing(queue);
+      await owner.query('DELETE FROM pgboss.job');
+      await owner.query('SELECT pgboss.delete_queue($1)', [queue]);
+      await enqueue(queue, payload as never);
+      const missingQueues = new Set<string>();
+      const { logs, logger } = recording();
+      for (let i = 0; i < 3; i += 1) {
+        await expireLeasesAndMakeDue();
+        expect(
+          await relayOnce(db, broker, { handlers: stage, logger, missingQueues }),
+        ).toMatchObject({
+          claimed: 1,
+          delivered: 0,
+          retained: 1,
+        });
+      }
+      const [row] = await outbox();
+      expect(row).toMatchObject({ delivered: false, last_error: 'queue_missing', attempts: 3 });
+      const errors = logs.filter((l) => l.level === 'error');
+      expect(errors).toHaveLength(1);
+      expect(JSON.stringify(errors[0])).toContain(queue);
+      expect(await jobs(queue)).toEqual([]);
+
+      await runMigrations({ databaseUrl: testDb.urls.owner });
+      await expireLeasesAndMakeDue();
+      expect(await relayOnce(db, broker, { handlers: stage, logger, missingQueues })).toMatchObject(
+        {
+          delivered: 1,
+        },
+      );
+      expect((await outbox())[0]?.delivered).toBe(true);
+      expect(await jobs(queue)).toHaveLength(1);
+      expect(logs.filter((l) => l.level === 'info')).toHaveLength(1);
+      expect(logs.filter((l) => l.level === 'error')).toHaveLength(1);
+    },
+  );
+
+  it('the relay loop logs the missing queue once, not on every pass', async () => {
+    await dropQueue();
+    await enqueue('user.estimate', { userId });
+    const { logs, logger } = recording();
+    const loop = startOutboxRelay(db, broker, {
+      handlers,
+      logger,
+      intervalMs: 50,
+      missingQueueRetrySeconds: 0,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await loop.stop();
+    expect(logs.filter((l) => l.level === 'error')).toHaveLength(1);
+    expect((await outbox())[0]?.last_error).toBe('queue_missing');
+    expect((await outbox())[0]?.attempts).toBeGreaterThan(1);
+  });
+
+  it('a singleton conflict on an existing queue stays singleton_conflict', async () => {
+    const h = implementing('article.enrich');
+    await boss.send('article.enrich', { articleId: '8' }, { singletonKey: 'enrich:8' });
+    await enqueue('article.enrich', { articleId: '8', priority: 'interactive' }, '1');
+    await relayOnce(db, broker, { handlers: h, logger: silent, missingQueues: new Set() });
+    expect((await outbox())[0]?.last_error).toBe('singleton_conflict');
   });
 });

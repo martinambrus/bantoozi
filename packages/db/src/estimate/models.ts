@@ -217,3 +217,27 @@ export async function recordEstimateLastRun(
      WHERE user_id = ${userId}::uuid AND version = ${version}`);
   return (result.rowCount ?? 0) > 0;
 }
+
+/**
+ * A page of the nightly estimate sweep candidates: live users in id order after `after` who hold a
+ * stored estimate model, or who have at least `minRatings` explicit ratings since `since` (counted
+ * with an inner LIMIT, so a heavy rater costs `minRatings` index rows, not all of them).
+ */
+export async function listEstimateSweepUsers(
+  db: Executor,
+  input: { after: string | null; limit: number; since: Date; minRatings: number },
+): Promise<string[]> {
+  const result = await db.execute<{ id: string }>(sql`
+    SELECT u.id::text AS id
+      FROM users u
+     WHERE u.deleted_at IS NULL
+       AND (${input.after}::uuid IS NULL OR u.id > ${input.after}::uuid)
+       AND (EXISTS (SELECT 1 FROM user_estimate_models m WHERE m.user_id = u.id)
+         OR (SELECT count(*) FROM (
+               SELECT 1 FROM user_article ua
+                WHERE ua.user_id = u.id AND ua.rating IN (1, -1)
+                  AND ua.rated_at >= ${input.since.toISOString()}::timestamptz
+                LIMIT ${input.minRatings}) r) >= ${input.minRatings})
+     ORDER BY u.id LIMIT ${input.limit}`);
+  return result.rows.map((row) => row.id);
+}

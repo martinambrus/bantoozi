@@ -194,6 +194,18 @@ export async function hasPendingEquivalentJob(
   return result.rows.length > 0;
 }
 
+/** The names of the queues pg-boss holds (`pgboss.queue`; the worker role may read it). */
+export async function listPgBossQueueNames(db: Executor): Promise<string[]> {
+  const result = await db.execute<{ name: string }>(sql`SELECT name FROM pgboss.queue`);
+  return result.rows.map((row) => row.name);
+}
+
+/** Whether pg-boss holds a queue of this name (a send to a missing queue inserts nothing). */
+export async function pgBossQueueExists(db: Executor, name: string): Promise<boolean> {
+  const result = await db.execute(sql`SELECT 1 FROM pgboss.queue WHERE name = ${name} LIMIT 1`);
+  return result.rows.length > 0;
+}
+
 /**
  * Age in seconds of the oldest due, undelivered intent (the relay warns above 5 minutes; spec 11
  * §6.1 "Pipeline backlog"). An intent delayed on purpose (an origin cooldown, a merge retry after
