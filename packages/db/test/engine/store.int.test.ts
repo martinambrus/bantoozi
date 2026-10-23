@@ -873,9 +873,25 @@ describe('authorization rechecks at admission (spec 04 §1.1)', () => {
     // Only the lease's own token admits: another token, or a malformed one, is refused (D-90).
     expect(await reserveProbe(probe(newUuid()))).toBeNull();
     expect(await reserveProbe(probe('not-a-token'))).toBeNull();
-    // A probe reservation needs the probe authorization, and vice versa for other kinds.
+    // A probe reservation needs the probe authorization, and the probe authorization admits no
+    // other kind.
     const article = await automaticDemand();
     expect(await reserveProbe(article.authorization)).toBeNull();
+    const otherKinds: CallKind[] = [
+      'enrich',
+      'match',
+      'cluster',
+      'suggest',
+      'translate',
+      'eval',
+      'card_draft',
+      'model_probe',
+    ];
+    const admitted: CallKind[] = [];
+    for (const kind of otherKinds) {
+      if ((await reserveProbe(first, kind)) !== null) admitted.push(kind);
+    }
+    expect(admitted, 'kinds admitted under a probe authorization').toEqual([]);
     await ctx.owner.query(
       `UPDATE provider_credentials SET validation_until = now() - interval '1 second'
         WHERE provider = 'ollama'`,

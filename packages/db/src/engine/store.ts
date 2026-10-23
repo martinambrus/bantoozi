@@ -404,10 +404,14 @@ export function createPgEngineStore(db: Database, options: PgEngineStoreOptions)
       if (input.userId !== undefined && !isUuid(input.userId)) {
         throw new RangeError('userId must be a UUID');
       }
-      // Eval spend is exempt from the production budget, and probes have their own purpose: each
-      // needs its own authorization type.
+      // Eval spend is exempt from the production budget, and probes have their own purpose: each of
+      // eval, credential_probe, card_draft and model_probe needs its own authorization type, and
+      // that type admits only its kind.
       if ((input.kind === 'eval') !== (input.authorization.type === 'eval')) return null;
-      if (input.kind === 'credential_probe' && input.authorization.type !== 'credential_probe') {
+      if (
+        (input.kind === 'credential_probe') !==
+        (input.authorization.type === 'credential_probe')
+      ) {
         return null;
       }
       // A card draft's demand is its pending draft row, and nothing else (D-240).
