@@ -774,7 +774,7 @@ describe('the states of the list', () => {
     ['for_you', '/read/for_you', "You're all caught up", 'New articles that match your interests'],
     ['maybe', '/read/maybe', 'Nothing to decide', 'Articles Bantoozi is unsure about'],
     ['everything', '/read/everything', 'Nothing else to read', "Articles that don't match"],
-    ['new', '/read/new', 'No new articles', "Articles that haven't been scored yet"],
+    ['new', '/read/new', 'No new articles', "Articles that haven't been analyzed yet"],
     ['bookmarks', '/read/bookmarks', 'No bookmarks yet', 'Bookmark an article'],
     ['hidden', '/read/hidden', 'Nothing is hidden', 'Articles you hide'],
     ['a feed', '/read/feed/7', 'No unread articles', 'Everything in this view has been read'],
@@ -784,6 +784,23 @@ describe('the states of the list', () => {
     expect(await screen.findByText(title)).toBeVisible();
     expect(screen.getByText(new RegExp(body))).toBeVisible();
     expect(screen.queryByRole('article')).toBeNull();
+  });
+
+  it.each<[string, 'en' | 'sk', string]>([
+    [
+      'English',
+      'en',
+      "Articles that haven't been analyzed yet will show up here. Some carry an estimate from the words of articles you rated.",
+    ],
+    [
+      'Slovak',
+      'sk',
+      'Články, ktoré ešte neboli analyzované, sa zobrazia tu. Niektoré majú odhad podľa slov článkov, ktoré ste ohodnotili.',
+    ],
+  ])('explains the empty New lane in full in %s', async (_name, locale, body) => {
+    await open({ path: '/read/new', items: [], me: makeMe({ locale }) });
+
+    expect(await screen.findByText(body)).toBeVisible();
   });
 
   it('says why an empty feed has no articles when its fetch fails (D-267)', async () => {

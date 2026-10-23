@@ -158,7 +158,7 @@
     },
     "new": {
       "title": "No new articles",
-      "body": "Articles that haven't been scored yet will show up here."
+      "body": "Articles that haven't been analyzed yet will show up here. Some carry an estimate from the words of articles you rated."
     },
     "bookmarks": {
       "title": "No bookmarks yet",

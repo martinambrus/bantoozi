@@ -180,7 +180,7 @@
     },
     "new": {
       "title": "Žiadne nové články",
-      "body": "Články, ktoré ešte neboli ohodnotené, sa zobrazia tu."
+      "body": "Články, ktoré ešte neboli analyzované, sa zobrazia tu. Niektoré majú odhad podľa slov článkov, ktoré ste ohodnotili."
     },
     "bookmarks": {
       "title": "Zatiaľ žiadne záložky",
