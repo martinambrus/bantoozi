@@ -166,8 +166,10 @@ an assumption until one real Jev answer is recorded.
     `settings['engine.model_probe']` for the UI to poll.
   - Without one, `PATCH /admin/settings` answers 409 `model_probe_required`, or `model_probe_failed` with the
     answered id.
-  - The eval-replay acknowledgement stays for changes to a concrete id; alias-driven upgrades need none
-    (decision 2).
+  - The eval-replay acknowledgement stays only for a change that restarts personal models (another family); a
+    change inside one major or between a release and the alias that resolves to it needs none (as built, D-295;
+    deviates from "stays for changes to a concrete id"). Check now is `POST /admin/engine/model-check`; N is the
+    worker-written `engine.model_impact` (D-296).
   - The confirmation states the impact from §4.2: same family → "Ratings and personal models are kept; the
     14-day window is analysed again"; another family → "N users' personal models restart".
 

@@ -2980,3 +2980,59 @@ commit. Locked decisions (PLAN.md §2) are never changed here.
   Known, not changed: an estimated row is one 44 px chip line taller; the New lane's empty text still says "scored";
   offline lists carry no tier, so no marker; a second tab keeps its loaded list until refreshed. E2E scenario 12
   (`word-estimates.pw.ts`) proves the loop on the real API and worker.
+- D-294: 2026-10-23 (JEV-5 of docs/design/visible-learning.md) — A change of the effective `engine.typesafe_model` needs a probe. `PATCH
+  /admin/settings` refuses it unless `settings['engine.model_probe']` holds a probe of exactly the NEW value that is at most 10 minutes old
+  by the API clock (up to 60 s ahead is tolerated), `ok`, and answered that exact id (for `jev-latest`: a concrete Jev release):
+  `409 CONFLICT` with `details {reason: 'model_probe_required', model}`, or `{reason: 'model_probe_failed', model, answered?, error, at}` for a
+  fresh probe that did not confirm it (the refusal names the answered id). A reset (`null`) is a change to the environment default and is
+  gated on a probe of that id; a patch whose effective value stays equal, a no-op and a replay (same Idempotency-Key) are not gated. The gate
+  runs after the schema rules (production alias/pinned rule) and before the acknowledgement; it is checked again under the settings lock.
+  Ids outside `MODEL_ID_PATTERN` answer 400 (a probe can never exist for them). Rows are read leniently (a malformed row or probe entry
+  counts as absent; entries whose `requested` differs from the key are dropped; the newest 10 are kept). The rules are one pure module read by
+  the API and the web editor (`packages/shared/src/model-impact.ts`: `judgeModelProbe`, `concreteModelOf`, `modelChangeImpact`,
+  `modelPathImpact`, `planModelChange`). Changing the model now needs a live worker and a working Jev key (a keyless instance can only change
+  it through the env file).
+- D-295: 2026-10-23 (JEV-5; supersedes D-274's limitation "jev-1.13.0 ↔ jev-latest still asks for the rebuild acknowledgement"; deviates from design §4.1 "the acknowledgement stays for changes to a concrete id", follows the task) — The
+  eval-replay acknowledgement for `engine.typesafe_model` stays only when the change restarts personal models. Impact of moving from the
+  concrete model in use to the concrete model the change settles on: `none` (the same concrete model, e.g. `jev-1.13.0` ↔ `jev-latest`
+  while it resolves to 1.13.0: nothing is rebuilt; removes the D-274 known limitation), `kept` (another release of the same Jev major:
+  ratings and personal models are kept, the 14-day window is analysed again) and `restart` (another family, or no model known). Only
+  `restart` answers `409 confirmation_required` without `acknowledge: true`; `llm_fallback_enabled` and `ollama_models` are unchanged. The
+  model in use is the effective setting itself when concrete; for `jev-latest` the stored `engine.model_resolution`, else the pin. Switching
+  the alias on with a stored resolution that differs from the probe's answer counts the stale resolution as a step of the path (a worker
+  started on the alias uses the stored resolution at any age before it asks Jev again: pin moves to it, then the watch adopts the answer),
+  so the text is truthful; the hazard itself (a stale resolution is adopted by a restarting worker) is not fixed (see found-not-fixed).
+  Known limitation: the base is the setting, not the pin; while a restart is pending (production: under a minute; development without
+  self-restart: until the worker is restarted) a second change can hide that pin-to-target is a restart.
+- D-296: 2026-10-23 (JEV-5) — `settings['engine.model_impact']` = `{at, activeModels}`, written only by the worker in the transaction that
+  records a model probe (`recordModelProbe`; a failing count rolls both keys back). The API cannot count other tenants' `user_models` under
+  row-level security and no migration was allowed, so the worker role (BYPASSRLS) counts live users with an active personal model
+  (`countActiveUserModels`; deleted users excluded); `at` is the probe's `at`, so under concurrent recorders it can be older than the newest
+  probe. It is a separate key because an older release rejects extra fields of the strict `engine.model_probe` schema and would reset that
+  record. It is "N" of the confirmation "N users' personal models restart"; null (an older worker) shows the line without a number; users with
+  ratings but no model yet also lose old-family samples and are not counted.
+- D-297: 2026-10-23 (JEV-5) — Admin routes. `GET /admin/engine/model` (status: `now` = API clock, `setting {value, source}`, `resolution`, `pin`
+  mapped to `{model, alias?, since}`, `watch.lastCheck`, `probes`, `impact`), `POST /admin/engine/model-probe {model}` (202; validated like the
+  setting in the server's mode, so production refuses `jev-beta` before it costs money; enqueues `engine.model-probe`) and `POST
+  /admin/engine/model-check` (202, "Check now": enqueues `house.model-watch`; `409 {reason: 'not_following_alias'}` unless the setting is
+  `jev-latest`, because the watch does nothing otherwise). Both POSTs share the rate group `admin-model-probe`, 30 per hour per admin. The
+  worker's `house.model-watch` now invalidates its settings cache before reading the configured model, so Check now right after saving the
+  alias is not lost to the 10 s cache. The editor judges freshness on the API clock only (`now`), reuses a probe up to 8 minutes old, polls
+  every 1.5 s for at most 90 s and posts one probe per Save click. Correction to D-286: `engine.model_watch.lastCheck.at` moves on every watch
+  run that probes (success or failure); `engine.model_resolution.checkedAt` moves only when the probe succeeds; a run that finds the setting
+  not following the alias moves neither.
+- D-298: 2026-10-23 (JEV-5, bundled found-not-fixed items 1, 3, 4, 5, 6 of the JEV-1/2 driver) — (1) A model the provider no longer serves
+  (`model_unavailable:http_<status>` from the Jev engine) leaves the validated candidate `pending` with error code `model_unavailable`
+  instead of `invalid/provider_error`; a bare 404 without a model code, 402, 405, 409, redirects and invalid request settings stay
+  `invalid` (D-62 list amended). The Ollama lane has the same problem for an unknown model (not changed). (3) `credentials:status`,
+  `credentials:validate` (after the run) and `credentials:activate` use the effective configuration (stored runtime settings over the env),
+  the one validation records; the keyring and the env keys stay on the env. (4) `provider.validate` builds its probe lane per validation,
+  so a changed Jev price applies to the next one. (5) The worker credential resolver (`useActive`, `useCandidate`) checks the caller's
+  signal before the read, races the read against the abort and fails with the new unavailable reason `cancelled`; the router answers
+  `cancelled` (not `no_key`, which handlers defer for ten minutes), the model prober records `timeout` and the validator `pending/timeout`.
+  apps/eval keeps its own resolver. (6) The worker-start probe and the unresolved 5-minute retry record their result (also failures and the
+  30 s deadline: synthetic `timeout`/`internal_error`) in `engine.model_probe`; a stored resolution means no boot probe and no record.
+- D-299: 2026-10-23 (JEV-5) — Test infrastructure: the fake TypeSafe `models` table is reachable from the E2E control API (`POST
+  /fake/options {models}`; `null` clears; every table must contain `jev-fake`, which the e2e worker asks for all its life); hooks
+  `seedActiveUserModel`, `clearSeededUserModels`, `clearModelState`; `apps/web/e2e/admin-model.pw.ts`; `admin-settings.pw.ts` no longer
+  changes the model (it would need a probe).

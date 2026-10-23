@@ -508,10 +508,15 @@ Plain tables and forms, no polish needed:
 - **Settings:** JSON editors with validation per key for the older keys. The thirteen runtime keys
   (spec 02 §2) have typed editors in groups (Decision engine, LLM fallback, Ingestion and fetching, API,
   Translation): number, text, switch and megabyte fields instead of JSON. Each shows its **source**
-  (stored, environment or last good value) and the default, with a Reset that stores `null`. Changing the
-  Jev model, the fallback switch or the Ollama models first opens an **acknowledgement dialog** that states
-  the change and its cost (the corpus is enriched and matched again) and requires ticking "I ran eval replay
-  and it passed"; the PATCH then carries `acknowledge: true` (spec 08 §9). An **Applied by workers** panel
+  (stored, environment or last good value) and the default, with a Reset that stores `null`. The Jev model
+  has its own editor (D-294…D-297): "Follow the newest Jev (jev-latest)" or "Use one release"; for the alias
+  "Resolves to {model} · checked {time}" and **Check now**. Save proves the new value with a probe (reused up to 8
+  minutes old by the API clock, else one probe polled for up to 90 s), refuses with what Jev answered, then confirms
+  the impact: nothing rebuilt / "Ratings and personal models are kept; the 14-day window is analysed again" / "N
+  users' personal models restart from new ratings", with the "I ran eval replay and it passed" tick only for a
+  restart. Changing the fallback switch or the Ollama models first opens an **acknowledgement dialog** that states
+  the change and its cost (the corpus is enriched and matched again) and requires the same tick; the PATCH then
+  carries `acknowledge: true` (spec 08 §9). An **Applied by workers** panel
   lists the live workers, how many wait for a restart (`pendingRestart`) and any value a worker rejected.
   Server rejections (`details.key`, the LibreTranslate probe) are shown at the key they concern.
 - **Provider accounts:** dedicated Jev and Ollama credential panels, separate from JSON settings.
