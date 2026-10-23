@@ -1,0 +1,26 @@
+{
+  "chip": {
+    "label": "Učenie odhadov pre tento zdroj",
+    "gate_one": "Ohodnoťte ešte {{count}} článok, aby sa zapli odhady",
+    "gate_few": "Ohodnoťte ešte {{count}} články, aby sa zapli odhady",
+    "gate_many": "Ohodnoťte ešte {{count}} článku, aby sa zapli odhady",
+    "gate_other": "Ohodnoťte ešte {{count}} článkov, aby sa zapli odhady",
+    "starting": "Odhady sa spúšťajú",
+    "off": "Odhady sú vypnuté",
+    "on": "Odhady zapnuté",
+    "rated_one": "{{count}} hodnotenie v tomto zdroji",
+    "rated_few": "{{count}} hodnotenia v tomto zdroji",
+    "rated_many": "{{count}} hodnotenia v tomto zdroji",
+    "rated_other": "{{count}} hodnotení v tomto zdroji",
+    "ratedAll_one": "z {{count}} hodnotenia",
+    "ratedAll_few": "z {{count}} hodnotení",
+    "ratedAll_many": "z {{count}} hodnotenia",
+    "ratedAll_other": "z {{count}} hodnotení",
+    "quality": "kvalita {{value}}",
+    "qualityHelp": "Kvalita je to, ako často odhady zaradia článok, ktorý sa vám páčil, nad taký, ktorý sa vám nepáčil, overené na vašich skorších hodnoteniach. Náhodný tip by dosiahol 50 %.",
+    "qualityHelpLabel": "Čo znamená kvalita?",
+    "interestsAgree": "Záujmy sa zhodujú na {{value}} · pripravené od {{threshold}}",
+    "interestsReady": "Pripravené na automatickú klasifikáciu",
+    "enable": "Zapnúť"
+  }
+}

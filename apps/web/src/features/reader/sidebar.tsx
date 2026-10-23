@@ -35,8 +35,8 @@ import { VisuallyHidden } from '../../components/visually-hidden.js';
 import { useAccountId, useMe } from '../../session/context.js';
 import { LabelDot } from '../article/label-dot.js';
 import { useLabels } from '../article/use-labels.js';
-import { EnableAutomaticDialog } from '../feeds/enable-automatic-dialog.js';
 import { FeedFavicon } from '../feeds/feed-favicon.js';
+import { ReadyForAutomatic } from '../feeds/ready-for-automatic.js';
 import { FeedSettingsSheet } from '../feeds/feed-settings-sheet.js';
 import { ClassificationBadge } from '../feeds/feed-status.js';
 import { displayTitle, groupByFolder, type FolderGroup } from '../feeds/folders.js';
@@ -249,39 +249,6 @@ function useTrainingFeeds(
   }, [training, learning.data, subscriptions]);
 }
 
-function ReadyForAutomatic({
-  subscription,
-  agreement,
-}: {
-  subscription: Subscription;
-  agreement: LearningFeedAgreement;
-}) {
-  const { t } = useTranslation('feeds');
-  const [asking, setAsking] = useState(false);
-  const name = displayTitle(subscription);
-  return (
-    <div className="flex flex-wrap items-center gap-2 ps-4 pt-1">
-      <span className="text-sm text-slate-600 dark:text-slate-300">
-        {t('agreement.short.ready')}
-      </span>
-      <Button
-        size="sm"
-        variant="secondary"
-        aria-label={t('agreement.enableLabel', { title: name })}
-        onClick={() => setAsking(true)}
-      >
-        {t('agreement.enable')}
-      </Button>
-      <EnableAutomaticDialog
-        open={asking}
-        onClose={() => setAsking(false)}
-        subscription={subscription}
-        agreement={agreement}
-      />
-    </div>
-  );
-}
-
 // `.group` is the feed's row: away from it and without the focus, the button folds to nothing.
 // Tailwind finds only whole class names in the source, so each one is written out.
 const SETTINGS_BUTTON = cx(
@@ -441,7 +408,9 @@ function FeedLink({
       </div>
       {badgeBelow ? <div className="ps-4">{badge}</div> : null}
       {agreement?.status !== 'ready' ? null : (
-        <ReadyForAutomatic subscription={subscription} agreement={agreement} />
+        <div className="ps-4 pt-1">
+          <ReadyForAutomatic subscription={subscription} agreement={agreement} />
+        </div>
       )}
     </li>
   );

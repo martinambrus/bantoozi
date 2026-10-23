@@ -1,0 +1,20 @@
+{
+  "chip": {
+    "label": "Estimate learning for this feed",
+    "gate_one": "Rate {{count}} more article to turn on estimates",
+    "gate_other": "Rate {{count}} more articles to turn on estimates",
+    "starting": "Estimates are starting",
+    "off": "Estimates are off",
+    "on": "Estimates on",
+    "rated_one": "{{count}} rated in this feed",
+    "rated_other": "{{count}} rated in this feed",
+    "ratedAll_one": "from {{count}} rating",
+    "ratedAll_other": "from {{count}} ratings",
+    "quality": "quality {{value}}",
+    "qualityHelp": "Quality is how often the estimates put an article you liked above one you disliked, checked against your earlier ratings. Guessing would score 50%.",
+    "qualityHelpLabel": "What does quality mean?",
+    "interestsAgree": "Interests agree {{value}} · ready at {{threshold}}",
+    "interestsReady": "Ready for automatic classification",
+    "enable": "Enable"
+  }
+}

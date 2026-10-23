@@ -1,14 +1,17 @@
 import type { Subscription } from '@bantoozi/shared';
-import { useId, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { invalidateCoalesced } from '../../api/coalesced-invalidate.js';
 import { isApiError } from '../../api/errors.js';
 import { useApiMutation } from '../../api/mutation.js';
 import { routes } from '../../api/routes.js';
 import { Button } from '../../components/button.js';
 import { errorMessage } from '../../components/error-message.js';
 import { formatDate } from '../../i18n/dates.js';
-import { useMe } from '../../session/context.js';
+import { useAccountId, useMe } from '../../session/context.js';
+import { learningKey } from '../learning/use-learning.js';
 import { ClassificationBadge } from './feed-status.js';
 import { InlineAlert } from './inline-alert.js';
 import { useSubscriptionsCache } from './subscriptions.js';
@@ -33,23 +36,37 @@ const CHOICES: Record<Mode, ReadonlyArray<{ mode: Mode; label: string }>> = {
 export function ClassificationControls({ subscription }: { subscription: Subscription }) {
   const { t, i18n } = useTranslation('feeds');
   const me = useMe();
+  const queryClient = useQueryClient();
+  const accountId = useAccountId();
   const cache = useSubscriptionsCache();
   const headingId = useId();
   const [changedTo, setChangedTo] = useState<Mode | null>(null);
   const [stale, setStale] = useState(false);
+  const choices = useRef<HTMLDivElement>(null);
   // The list learns the outcome even when the answer comes after these controls are gone (their
   // sheet was closed); only what they say about it needs them. Only the classification is taken
   // from the answer: a settings save made while it was on its way is newer than the rest of it.
   const change = useApiMutation(routes.subscriptionsSetInference, {
     onSuccess: ({ subscription: updated }) => {
       cache.mergeInference(updated);
+      invalidateCoalesced(queryClient, learningKey(accountId));
     },
     onError: (error) => {
       if (isStale(error)) void cache.refresh();
     },
   });
 
-  const { feed, inferenceMode: mode } = subscription;
+  // The button that was pressed is gone once the list shows the new mode: the focus moves to the
+  // first of the new choices instead of dropping to the page.
+  const { inferenceMode: mode } = subscription;
+  useEffect(() => {
+    if (changedTo !== mode || change.isPending) return;
+    if (document.activeElement === null || document.activeElement === document.body) {
+      choices.current?.querySelector('button')?.focus();
+    }
+  }, [changedTo, mode, change.isPending]);
+
+  const { feed } = subscription;
 
   function switchTo(next: Mode) {
     if (change.isPending) return;
@@ -90,7 +107,7 @@ export function ClassificationControls({ subscription }: { subscription: Subscri
           {t('classification.switchBack')}
         </p>
       )}
-      <div className="flex flex-wrap gap-2">
+      <div ref={choices} className="flex flex-wrap gap-2">
         {CHOICES[mode].map((choice) => (
           <Button
             key={choice.mode}

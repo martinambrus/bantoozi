@@ -17,6 +17,7 @@ import { Spinner } from '../../components/spinner.js';
 import { Switch } from '../../components/switch.js';
 import { useMe } from '../../session/context.js';
 import { ClassificationBadge } from '../feeds/feed-status.js';
+import { FeedLearningChip } from '../learning/feed-learning-chip.js';
 import { MarkAllRead } from './mark-all-read.js';
 import { MoreMenu } from './more-menu.js';
 import { SCOPED_LANES, type ScopedLane } from './lanes.js';
@@ -163,6 +164,7 @@ export function ReaderHeader({
             {t('header.rankingPending')}
           </p>
         ) : null}
+        {subscription === undefined ? null : <FeedLearningChip subscription={subscription} />}
         <div className="flex w-full flex-wrap items-center gap-2 sm:ms-auto sm:w-auto">
           <Button variant="secondary" loading={refreshing} onClick={refresh}>
             <RefreshIcon className="size-4" />
