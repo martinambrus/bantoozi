@@ -1,6 +1,6 @@
 import { createDatabase, readRatingFingerprint } from '@bantoozi/db';
 import { FEATURE_SPEC_V1_FACET_NAMES, RAW_SNAPSHOT_SPEC_SHA } from '@bantoozi/ranker';
-import { LearningStatusSchema } from '@bantoozi/shared';
+import { hasAgreement, LearningStatusSchema } from '@bantoozi/shared';
 import { createArticle, createCard, createFeed, createSubscription } from '@bantoozi/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -36,7 +36,8 @@ afterAll(async () => {
 async function status(user: TestUser) {
   const res = await apiClient(h.server, user).get('/me/learning');
   expect(res.statusCode, res.body).toBe(200);
-  return LearningStatusSchema.parse(res.json());
+  const parsed = LearningStatusSchema.parse(res.json());
+  return { ...parsed, feeds: parsed.feeds.filter(hasAgreement) };
 }
 
 async function subscribe(

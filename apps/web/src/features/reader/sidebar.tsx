@@ -1,4 +1,5 @@
 import {
+  hasAgreement,
   normalizeText,
   type ArticleCounts,
   type LearningFeedAgreement,
@@ -241,6 +242,7 @@ function useTrainingFeeds(
     );
     return new Map(
       (training ? (learning.data?.feeds ?? []) : [])
+        .filter(hasAgreement)
         .filter((agreement) => trainingIds.has(agreement.feedId))
         .map((agreement) => [agreement.feedId, agreement]),
     );

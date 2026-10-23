@@ -8,7 +8,7 @@ import {
   type RatingDefaults,
 } from '@bantoozi/db';
 import { FEATURE_SPEC_V1_FACET_NAMES, RAW_SNAPSHOT_SPEC_SHA } from '@bantoozi/ranker';
-import { canonicalJson, LearningStatusSchema } from '@bantoozi/shared';
+import { canonicalJson, hasAgreement, LearningStatusSchema } from '@bantoozi/shared';
 import { createArticle, createCard, createFeed, createSubscription } from '@bantoozi/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -108,7 +108,8 @@ async function fingerprints() {
 async function status(user: TestUser) {
   const res = await apiClient(h.server, user).get('/me/learning');
   expect(res.statusCode, res.body).toBe(200);
-  return LearningStatusSchema.parse(res.json());
+  const parsed = LearningStatusSchema.parse(res.json());
+  return { ...parsed, feeds: parsed.feeds.filter(hasAgreement) };
 }
 
 async function trainingFeed(user: TestUser): Promise<{ feedId: string; cardId: string }> {

@@ -1,4 +1,4 @@
-import type { LearningFeedAgreement, LearningStatus } from '@bantoozi/shared';
+import { hasAgreement, type LearningFeedAgreement, type LearningStatus } from '@bantoozi/shared';
 import { useTranslation } from 'react-i18next';
 
 import { InfoIcon } from '../../components/icons.js';
@@ -161,8 +161,8 @@ export function LearningSection() {
             <LearningPaused classification={classification} />
             <LearningStatusLines model={model} />
             <WordEstimates estimates={estimates} />
-            <InterestsToAdd feeds={feeds} />
-            <TopicsToAvoid feeds={feeds} />
+            <InterestsToAdd feeds={feeds.filter(hasAgreement)} />
+            <TopicsToAvoid feeds={feeds.filter(hasAgreement)} />
           </div>
         )}
       </QueryState>

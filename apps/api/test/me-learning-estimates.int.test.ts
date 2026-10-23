@@ -74,9 +74,39 @@ describe('GET /me/learning estimates', () => {
       n: 23,
       auc: 0.71,
       trainedAt: TRAINED_AT.toISOString(),
-      lastRun: LAST_RUN,
+      lastRun: { ...LAST_RUN, fromRatings: false },
     });
     expect(LearningStatusSchema.parse(raw).estimates).toEqual(raw.estimates);
+  });
+
+  it('marks a run that followed new ratings (metrics.fromRatings) and reads anything else as false', async () => {
+    for (const [stored, expected] of [
+      [true, true],
+      [false, false],
+      ['true', false],
+      [1, false],
+      [undefined, false],
+    ] as const) {
+      const user = await createTestUser(h);
+      await storeModel(user, {
+        metrics: {
+          auc: 0.71,
+          lastRun: LAST_RUN,
+          ...(stored === undefined ? {} : { fromRatings: stored }),
+        },
+      });
+      const { raw } = await read(user);
+      expect(raw.estimates, String(stored)).toMatchObject({
+        lastRun: { ...LAST_RUN, fromRatings: expected },
+      });
+    }
+  });
+
+  it('does not report fromRatings without a lastRun', async () => {
+    const user = await createTestUser(h);
+    await storeModel(user, { metrics: { auc: 0.71, fromRatings: true } });
+    const { raw } = await read(user);
+    expect(raw.estimates).toMatchObject({ n: 23, lastRun: null });
   });
 
   it('reads lastRun as null, and still answers 200, when the stored value is malformed', async () => {

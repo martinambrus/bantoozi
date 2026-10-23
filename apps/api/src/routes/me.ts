@@ -2,6 +2,7 @@ import { PassThrough } from 'node:stream';
 
 import { withTenant } from '@bantoozi/db';
 import {
+  LearningHistorySchema,
   LearningStatusSchema,
   MeExportSchema,
   MePatchSchema,
@@ -12,7 +13,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 
 import { ratingDefaultsFor } from '../services/analysis.js';
-import { loadLearningStatus } from '../services/learning.js';
+import { loadLearningHistoryStatus, loadLearningStatus } from '../services/learning.js';
 import { applyMePatch, loadMe, softDeleteAccount, writeExport } from '../services/me.js';
 import { liveTypesafeModel } from '../services/runtime.js';
 
@@ -80,6 +81,18 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
       const defaults = ratingDefaultsFor(config, await liveTypesafeModel(app.services));
       return request.withTx((tx) => loadLearningStatus(tx, clock.now(), defaults));
     },
+  );
+
+  app.get(
+    '/learning/history',
+    {
+      schema: {
+        tags: ['me'],
+        summary: 'Personal learning history',
+        response: { 200: LearningHistorySchema },
+      },
+    },
+    async (request) => request.withTx((tx) => loadLearningHistoryStatus(tx)),
   );
 
   app.get(
