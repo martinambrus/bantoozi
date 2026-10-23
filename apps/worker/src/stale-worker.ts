@@ -106,3 +106,23 @@ export async function lockWorkerCurrent(
   await shareLockStoredSetting(tx, 'engine.model_resolution');
   return staleness(tx, classification);
 }
+
+/**
+ * Whether this process's restart-class view is still the current one, for a pin write. Only the
+ * restart keys are share-locked (an admin save waits for the transaction); the pin row is taken
+ * `FOR UPDATE` afterwards and the resolution row is only read, per the lock order restart keys <
+ * pin < resolution < watch.
+ */
+export async function lockRestartCurrent(
+  tx: Executor,
+  classification: Pick<ClassificationDeps, 'currentness'>,
+): Promise<boolean> {
+  await shareLockSettings(
+    tx,
+    RESTART_SETTING_KEYS.map((key) => ({ key, initial: null })),
+  );
+  const currentness = classification.currentness;
+  return currentness === undefined
+    ? true
+    : (await currentness.restartFingerprint(tx)) === currentness.fingerprint;
+}

@@ -1,4 +1,10 @@
-import { retryTransaction, updateSettingLocked, workerOutbox, type Database } from '@bantoozi/db';
+import {
+  retryTransaction,
+  updateSettingLocked,
+  workerOutbox,
+  type Database,
+  type Transaction,
+} from '@bantoozi/db';
 import { buildJobIntent, parseSetting } from '@bantoozi/shared';
 
 /** The pin a worker derives from its config: `llm` exists only while the fallback is on. */
@@ -17,13 +23,15 @@ const llmKey = (llm: WorkerModelPin['llm']): string | null =>
  * fallback state advances `since` and enqueues `house.reenrich` and `house.rematch` once (the
  * pin's `since` is the intent revision, so a later change is not coalesced with a pending one) through
  * the outbox in the same transaction; a missing row is inserted without an enqueue. Other stored
- * keys (`laya`) are kept.
+ * keys (`laya`) are kept. `options.isCurrent` is a compare-and-set against the process's own view:
+ * when it answers false inside the transaction nothing is written or enqueued (`skipped`).
  */
 export async function recordModelPin(
   db: Database,
   pin: WorkerModelPin,
   now: Date,
-): Promise<{ changed: boolean }> {
+  options: { isCurrent?: (tx: Transaction) => Promise<boolean> } = {},
+): Promise<{ changed: boolean; skipped?: true }> {
   const since = now.toISOString();
   const fresh = parseSetting('engine.model_pin', {
     model: pin.model,
@@ -31,7 +39,10 @@ export async function recordModelPin(
     ...(pin.llm ? { llm: pin.llm } : {}),
     since,
   });
-  return retryTransaction(db, async (tx) => {
+  return retryTransaction(db, async (tx): Promise<{ changed: boolean; skipped?: true }> => {
+    if (options.isCurrent !== undefined && !(await options.isCurrent(tx))) {
+      return { changed: false, skipped: true };
+    }
     let changed = false;
     await updateSettingLocked(tx, 'engine.model_pin', fresh, (current) => {
       if (current === undefined || current === null) return fresh;

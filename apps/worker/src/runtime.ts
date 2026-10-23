@@ -30,6 +30,7 @@ import { credentialResolverFromConfig } from './credentials/resolver.js';
 import { createWorkerEngineRouter } from './engine-router.js';
 import { createModelProber, recordModelProbe } from './model-probe.js';
 import { recordModelPin } from './model-pin.js';
+import { lockRestartCurrent } from './stale-worker.js';
 import {
   MODEL_WATCH_TRIGGER_GAP_MS,
   enqueueModelWatchNow,
@@ -416,10 +417,17 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
   };
 
   if (options.recordPin !== false && modelState.kind !== 'unresolved') {
-    const pin = await recordModelPin(db, processPin, now());
-    if (pin.changed)
+    const pin = await recordModelPin(db, processPin, now(), {
+      isCurrent: (tx) => lockRestartCurrent(tx, models.classification),
+    });
+    if (pin.skipped) {
+      logger.warn(
+        {},
+        "this worker's settings are out of date: the model pin is left to the restarted worker",
+      );
+    } else if (pin.changed)
       logger.info({}, 'engine model pin changed: re-enrichment and re-matching enqueued');
-    if (modelState.kind === 'resolved' && modelState.source === 'stored') {
+    if (!pin.skipped && modelState.kind === 'resolved' && modelState.source === 'stored') {
       await enqueueModelWatchNow(db);
     }
   }
