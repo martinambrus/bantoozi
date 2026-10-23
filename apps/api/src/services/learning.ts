@@ -5,6 +5,7 @@ import {
   countEstimateRatings,
   listSubscribedFeedIds,
   listTrainingFeeds,
+  loadLastDeactivation,
   loadLearningHistory,
   loadEstimateState,
   loadLearnSamples,
@@ -103,16 +104,15 @@ export async function loadLearningStatus(
         }
       : null;
 
-  const reason = state.latest?.metrics['deactivatedReason'];
-  const deactivatedAt = text(state.latest?.metrics['deactivatedAt']);
+  const stamp = state.active === null ? await loadLastDeactivation(tx, userId) : null;
   const deactivated =
-    state.active === null &&
-    deactivatedAt !== null &&
-    (reason === 'incompatible' || reason === 'lost_evidence')
+    stamp !== null && (stamp.reason === 'incompatible' || stamp.reason === 'lost_evidence')
       ? {
-          at: deactivatedAt,
+          at: stamp.at,
           reason:
-            reason === 'incompatible' ? ('incompatible' as const) : ('lost_evidence' as const),
+            stamp.reason === 'incompatible'
+              ? ('incompatible' as const)
+              : ('lost_evidence' as const),
         }
       : null;
 

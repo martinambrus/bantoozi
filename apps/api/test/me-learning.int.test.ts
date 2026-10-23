@@ -460,4 +460,129 @@ describe('GET /me/learning', () => {
       reason: 'lost_evidence',
     });
   });
+
+  it('keeps reporting the deactivation after a newer attempt was stored without a model (task item 1)', async () => {
+    const user = await createTestUser(h);
+    const trained = new Date(Date.now() - 2 * 86_400_000);
+    const deactivatedAt = new Date(Date.now() - 86_400_000);
+    await storeModel(
+      user,
+      1,
+      false,
+      {
+        status: 'activated',
+        reason: null,
+        attemptAt: trained.toISOString(),
+        cvAuc: 0.74,
+        baselineAuc: 0.7,
+        deactivatedAt: deactivatedAt.toISOString(),
+        deactivatedReason: 'incompatible',
+      },
+      trained,
+    );
+    await storeModel(
+      user,
+      2,
+      false,
+      { status: 'rejected', reason: 'insufficient_explicit', attemptAt: new Date().toISOString() },
+      new Date(),
+    );
+    const { model } = await status(user);
+    expect(model.active).toBeNull();
+    expect(model.lastAttempt).toMatchObject({ status: 'rejected' });
+    expect(model.deactivated).toEqual({
+      at: deactivatedAt.toISOString(),
+      reason: 'incompatible',
+    });
+  });
+
+  it('reports the newest stamp when several versions carry one', async () => {
+    const user = await createTestUser(h);
+    const first = new Date(Date.now() - 4 * 86_400_000);
+    const second = new Date(Date.now() - 2 * 86_400_000);
+    const stamp = (at: Date, reason: string) => ({
+      status: 'activated',
+      reason: null,
+      attemptAt: at.toISOString(),
+      deactivatedAt: new Date(at.getTime() + 3_600_000).toISOString(),
+      deactivatedReason: reason,
+    });
+    await storeModel(user, 1, false, stamp(first, 'incompatible'), first);
+    await storeModel(user, 2, false, stamp(second, 'lost_evidence'), second);
+    await storeModel(
+      user,
+      3,
+      false,
+      { status: 'rejected', reason: 'low_auc', attemptAt: new Date().toISOString() },
+      new Date(),
+    );
+    const { model } = await status(user);
+    expect(model.deactivated).toEqual({
+      at: new Date(second.getTime() + 3_600_000).toISOString(),
+      reason: 'lost_evidence',
+    });
+  });
+
+  it('reports no deactivation once a model is active again, whatever older versions carry', async () => {
+    const user = await createTestUser(h);
+    const first = new Date(Date.now() - 3 * 86_400_000);
+    const second = new Date(Date.now() - 86_400_000);
+    await storeModel(
+      user,
+      1,
+      false,
+      {
+        status: 'activated',
+        reason: null,
+        attemptAt: first.toISOString(),
+        deactivatedAt: new Date(first.getTime() + 3_600_000).toISOString(),
+        deactivatedReason: 'lost_evidence',
+      },
+      first,
+    );
+    await storeModel(
+      user,
+      2,
+      true,
+      { status: 'activated', reason: null, attemptAt: second.toISOString(), cvAuc: 0.74 },
+      second,
+    );
+    const { model } = await status(user);
+    expect(model.active).toEqual({ version: 2, since: second.toISOString() });
+    expect(model.deactivated).toBeNull();
+  });
+
+  it('does not show a deactivation whose reason the reader is not told about (the newest stamp wins)', async () => {
+    const user = await createTestUser(h);
+    const first = new Date(Date.now() - 4 * 86_400_000);
+    const second = new Date(Date.now() - 2 * 86_400_000);
+    await storeModel(
+      user,
+      1,
+      false,
+      {
+        status: 'activated',
+        reason: null,
+        attemptAt: first.toISOString(),
+        deactivatedAt: new Date(first.getTime() + 3_600_000).toISOString(),
+        deactivatedReason: 'lost_evidence',
+      },
+      first,
+    );
+    await storeModel(
+      user,
+      2,
+      false,
+      {
+        status: 'rejected',
+        reason: 'upgrade_regression',
+        attemptAt: second.toISOString(),
+        deactivatedAt: new Date(second.getTime() + 3_600_000).toISOString(),
+        deactivatedReason: 'upgrade_regression',
+      },
+      second,
+    );
+    const { model } = await status(user);
+    expect(model.deactivated).toBeNull();
+  });
 });
