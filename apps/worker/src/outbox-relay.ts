@@ -4,6 +4,7 @@ import {
   failOutboxIntent,
   hasPendingEquivalentJob,
   oldestPendingOutboxAgeSeconds,
+  pgBossQueueExists,
   outboxRetryDelaySeconds,
   type ClaimedIntent,
   type Database,
@@ -38,6 +39,10 @@ export interface RelayOptions {
   leaseSeconds?: number;
   /** Retry delay of intents whose stage is still a stub. */
   unavailableRetrySeconds?: number;
+  /** Retry delay of intents whose pg-boss queue does not exist yet. */
+  missingQueueRetrySeconds?: number;
+  /** Queues already reported missing (one error each); a delivery removes its queue. */
+  missingQueues?: Set<string>;
   logger?: RelayLogger;
 }
 
@@ -70,6 +75,7 @@ export async function relayOnce(
     limit: options.batchSize ?? 100,
     leaseSeconds: options.leaseSeconds ?? 60,
   });
+  const missingQueues = options.missingQueues ?? new Set<string>();
   const report: RelayReport = {
     claimed: claimed.length,
     delivered: 0,
@@ -78,7 +84,7 @@ export async function relayOnce(
     lost: 0,
   };
   for (const intent of claimed) {
-    const outcome = await relayIntent(db, broker, intent, options);
+    const outcome = await relayIntent(db, broker, intent, options, missingQueues);
     report[outcome] += 1;
   }
   return report;
@@ -89,6 +95,7 @@ async function relayIntent(
   broker: JobBroker,
   intent: ClaimedIntent,
   options: RelayOptions,
+  missingQueues: Set<string>,
 ): Promise<Outcome> {
   const keep = async (outcome: 'retained' | 'failed', error: string, retryInSeconds: number) =>
     (await failOutboxIntent(db, intent, { error, retryInSeconds })) ? outcome : 'lost';
@@ -134,7 +141,22 @@ async function relayIntent(
             singletonKey.startsWith(FULL_RANK_KEY_PREFIX) ||
             singletonKey.startsWith(ESTIMATE_RANK_KEY_PREFIX),
         }));
-      if (!equivalent) return await keep('retained', 'singleton_conflict', CONFLICT_RETRY_SECONDS);
+      if (!equivalent) {
+        if (!(await pgBossQueueExists(db, queue))) {
+          if (!missingQueues.has(queue)) {
+            missingQueues.add(queue);
+            options.logger?.error(
+              { intentId: intent.id, queue },
+              'pg-boss queue is missing: run the migrate job (pnpm db:migrate); its intents stay in the outbox',
+            );
+          }
+          return await keep('retained', 'queue_missing', options.missingQueueRetrySeconds ?? 60);
+        }
+        return await keep('retained', 'singleton_conflict', CONFLICT_RETRY_SECONDS);
+      }
+    }
+    if (missingQueues.delete(queue)) {
+      options.logger?.info({ queue }, 'pg-boss queue is back: its outbox intents are delivered');
     }
     return (await completeOutboxIntent(db, intent)) ? 'delivered' : 'lost';
   } catch (error) {
@@ -163,6 +185,7 @@ export function startOutboxRelay(
 ): RelayLoop {
   const intervalMs = Math.min(options.intervalMs ?? 1000, 1000);
   const batchSize = options.batchSize ?? 100;
+  const missingQueues = options.missingQueues ?? new Set<string>();
   let stopped = false;
   let wake: (() => void) | undefined;
   let lastAgeCheck = 0;
@@ -178,7 +201,7 @@ export function startOutboxRelay(
     while (!stopped) {
       let busy = false;
       try {
-        const report = await relayOnce(db, broker, options);
+        const report = await relayOnce(db, broker, { ...options, missingQueues });
         busy = report.claimed === batchSize;
         if (Date.now() - lastAgeCheck > 60_000) {
           lastAgeCheck = Date.now();

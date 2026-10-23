@@ -27,7 +27,7 @@ import { ensureFingerprintRegistered, guardedRegistration } from './learn/finger
 import { poolEstimateTrainer } from './estimate/trainer.js';
 import { poolTrainer } from './learn/trainer.js';
 import { startOutboxRelay } from './outbox-relay.js';
-import { assertProductionReady } from './readiness.js';
+import { assertProductionReady, startQueueReadiness } from './readiness.js';
 import { createWorkerRuntime } from './runtime.js';
 import { createShutdownGate } from './shutdown-gate.js';
 import { verifyQuestionSets } from './seed.js';
@@ -66,6 +66,7 @@ await verifyQuestionSets(db).catch((error: unknown) => {
   logger.error({ err: error }, 'stored question sets do not match this worker (run pnpm db:seed)');
   throw error;
 });
+const queueReadiness = await startQueueReadiness({ db, logger });
 
 // The runtime builds the models from the effective settings and records the engine model pin under
 // its row lock (a changed pin enqueues the model rebuild once); it checks restart-class changes.
@@ -173,6 +174,7 @@ async function stop(signal: string): Promise<void> {
     await health?.close();
     await relay?.stop();
     await boss?.stop({ graceful: true, timeout: 20_000, wait: true });
+    queueReadiness.stop();
     await heartbeat?.stop();
     await models.close();
     await cpuPool.close();
@@ -194,7 +196,10 @@ try {
       ...(config.ollamaApiKey ? (['ollama'] as const) : []),
     ],
     logger,
-    runtime: () => ({ ...runtime.heartbeatRuntime() }),
+    runtime: () => {
+      const r = runtime.heartbeatRuntime();
+      return { ...r, problems: [...r.problems, ...queueReadiness.problems()] };
+    },
     poolStats: () => ({
       total: pool.totalCount,
       idle: pool.idleCount,
