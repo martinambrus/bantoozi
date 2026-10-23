@@ -9,6 +9,7 @@ import { useSubscriptions } from '../feeds/subscriptions.js';
 import { UncoveredSuggestion, UnwantedSuggestion } from '../learning/agreement-text.js';
 import { LearningPaused } from '../learning/learning-paused.js';
 import { useLearning } from '../learning/use-learning.js';
+import { LearningHistory } from './learning-history.js';
 import { Hint, SettingsSection } from './section.js';
 
 const REASONS = [
@@ -144,6 +145,7 @@ export function LearningSection() {
             <LearningPaused classification={classification} />
             <LearningStatusLines model={model} />
             <WordEstimates estimates={estimates} />
+            <LearningHistory />
             <InterestsToAdd feeds={feeds.filter(hasAgreement)} />
             <TopicsToAvoid feeds={feeds.filter(hasAgreement)} />
           </div>

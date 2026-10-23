@@ -188,7 +188,57 @@
       "lost_evidence": "niektoré hodnotenia, z ktorých sa učil, sú preč"
     },
     "uncoveredTitle": "Záujmy na pridanie",
-    "unwantedTitle": "Témy, ktorým sa vyhnúť"
+    "unwantedTitle": "Témy, ktorým sa vyhnúť",
+    "history": {
+      "title": "Krivka učenia",
+      "description": "Ako dobre každá aktualizácia predpovedala vaše hodnotenia: ako často zaradila článok, ktorý sa vám páčil, nad taký, ktorý sa vám nepáčil. 50 % je náhodný tip, 100 % dokonalý výsledok.",
+      "empty": "Zatiaľ nie sú zaznamenané žiadne aktualizácie. Objavia sa po spracovaní vašich prvých hodnotení.",
+      "single": "Zatiaľ je zaznamenaná jedna aktualizácia. Krivka sa zobrazí po ďalšej.",
+      "chartTitle": "Krivka učenia: kvalita každej aktualizácie",
+      "summary_one": "{{count}} aktualizácia od {{from}} do {{to}}",
+      "summary_few": "{{count}} aktualizácie od {{from}} do {{to}}",
+      "summary_many": "{{count}} aktualizácie od {{from}} do {{to}}",
+      "summary_other": "{{count}} aktualizácií od {{from}} do {{to}}",
+      "ratings_one": "{{count}} hodnotenie",
+      "ratings_few": "{{count}} hodnotenia",
+      "ratings_many": "{{count}} hodnotenia",
+      "ratings_other": "{{count}} hodnotení",
+      "quality": "kvalita {{value}}",
+      "legend": "Posledná kvalita každej čiary",
+      "scrubber": "Aktualizácia",
+      "rough": "Aktualizácie z menej ako 30 hodnotení sú len hrubé.",
+      "capped": "Staršie aktualizácie sa neuchovávajú.",
+      "series": {
+        "model": "Osobný model",
+        "estimate": "Odhady podľa slov",
+        "baseline": "Samotné vaše záujmy"
+      },
+      "milestones": {
+        "title": "Medzníky",
+        "estimatesOn": "Odhady zapnuté",
+        "modelOn": "Osobný model zapnutý",
+        "updated": "Analýza aktualizovaná"
+      },
+      "result": {
+        "on": "Zapnuté",
+        "off": "Nezapnuté"
+      },
+      "yes": "Áno",
+      "no": "Nie",
+      "table": {
+        "show": "Zobraziť ako tabuľku",
+        "hide": "Skryť tabuľku",
+        "caption": "Aktualizácie učenia, od najnovšej",
+        "columns": {
+          "date": "Dátum",
+          "update": "Aktualizácia",
+          "ratings": "Hodnotenia",
+          "quality": "Kvalita",
+          "interestsAlone": "Samotné vaše záujmy",
+          "switchedOn": "Zapnuté"
+        }
+      }
+    }
   },
   "sessions": {
     "title": "Relácie",
