@@ -135,7 +135,11 @@ export function FeedLearningChip({ subscription }: { subscription: Subscription 
       <p className="flex flex-wrap items-center">
         {parts.map((part, index) => (
           <Fragment key={index}>
-            {index === 0 ? null : <span aria-hidden="true">{' · '}</span>}
+            {index === 0 ? null : (
+              <span aria-hidden="true" className="px-1.5">
+                {' · '}
+              </span>
+            )}
             {part}
           </Fragment>
         ))}
