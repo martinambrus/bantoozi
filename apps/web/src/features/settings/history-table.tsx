@@ -1,12 +1,13 @@
 import type { LearningHistoryItem } from '@bantoozi/shared';
 import { useTranslation } from 'react-i18next';
 
+import { FOCUS_RING, cx } from '../../components/cx.js';
 import { formatDate } from '../../i18n/dates.js';
 import { useMe } from '../../session/context.js';
 import { NO_VALUE, formatQuality, readoutOf } from '../learning/history-model.js';
 
-const HEAD = 'px-3 py-2 text-start font-medium';
-const CELL = 'px-3 py-2 tabular-nums';
+const HEAD = 'whitespace-nowrap px-3 py-2 text-start font-medium';
+const CELL = 'whitespace-nowrap px-3 py-2 tabular-nums';
 
 /** Every update, newest first: the same numbers as the chart, for reading and for screen readers. */
 export function HistoryTable({ items }: { items: readonly LearningHistoryItem[] }) {
@@ -15,7 +16,13 @@ export function HistoryTable({ items }: { items: readonly LearningHistoryItem[] 
   const count = new Intl.NumberFormat(i18n.language);
   const columns = ['date', 'update', 'ratings', 'quality', 'interestsAlone', 'switchedOn'] as const;
   return (
-    <div className="overflow-x-auto">
+    // A table wider than a phone scrolls inside this region, which the keyboard can reach.
+    <div
+      role="region"
+      aria-label={t('learning.history.table.caption')}
+      tabIndex={0}
+      className={cx('overflow-x-auto', FOCUS_RING)}
+    >
       <table className="w-full text-sm">
         <caption className="sr-only">{t('learning.history.table.caption')}</caption>
         <thead className="border-b border-slate-300 dark:border-slate-600">
