@@ -2,6 +2,7 @@ import type { APIRequestContext } from '@playwright/test';
 
 import { callJson } from '../support/api.js';
 import type { Control } from '../support/control.js';
+import { countExtracted } from '../support/pipeline.js';
 import { expect } from '../support/test.js';
 
 /**
@@ -128,23 +129,17 @@ export function articleDetail(
   });
 }
 
-/** Waits until the worker has extracted at least `count` pages of the feed. */
+/** Waits until the worker has extracted, or gone further, at least `count` pages of the feed. */
 export async function waitForExtraction(
   control: Control,
   feedUrl: string,
   count: number,
 ): Promise<void> {
   await expect
-    .poll(
-      async () =>
-        (await control.articleStates(feedUrl)).filter(
-          (state) => state.pipelineState === 'extracted',
-        ).length,
-      {
-        message: `${count} extracted pages of ${feedUrl}`,
-        timeout: 45_000,
-        intervals: [500, 1_000],
-      },
-    )
+    .poll(async () => countExtracted(await control.articleStates(feedUrl)), {
+      message: `${count} extracted pages of ${feedUrl}`,
+      timeout: 45_000,
+      intervals: [500, 1_000],
+    })
     .toBeGreaterThanOrEqual(count);
 }
