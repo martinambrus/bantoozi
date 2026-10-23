@@ -36,6 +36,16 @@ export async function lockLearnUser(
   return result.rows.length > 0;
 }
 
+/** Live users with an active personal model: the models a change of Jev family restarts (JEV-5). */
+export async function countActiveUserModels(db: Executor): Promise<number> {
+  const result = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n
+      FROM user_models m
+      JOIN users u ON u.id = m.user_id
+     WHERE m.active AND u.deleted_at IS NULL`);
+  return result.rows[0]?.n ?? 0;
+}
+
 /** The active `user_models` row with everything scoring needs (spec 06 §8.3). */
 export interface ActiveModelRow {
   version: number;

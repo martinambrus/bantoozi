@@ -92,7 +92,13 @@ const flipTo = (latest: string) => fake.setOptions({ models: fakeTable(latest) }
 async function aliasWorld(): Promise<void> {
   await resetWorld(h);
   await h.owner.query(`DELETE FROM settings WHERE key = ANY($1::text[])`, [
-    ['engine.model_watch', 'engine.model_probe', 'house.progress', 'engine.rating_fingerprints'],
+    [
+      'engine.model_watch',
+      'engine.model_probe',
+      'engine.model_impact',
+      'house.progress',
+      'engine.rating_fingerprints',
+    ],
   ]);
   await h.owner.query('DELETE FROM engine_calls');
   await h.owner.query('DELETE FROM engine_reservations');

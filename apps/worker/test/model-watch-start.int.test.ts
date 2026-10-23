@@ -12,7 +12,15 @@ import {
   type ModelProbeSeam,
   type WorkerRuntimeLike,
 } from './support/m8b-t5-world.js';
-import { ALIAS, NOW, enqueueWatchNow, iso, watchIntents } from './support/model-watch-world.js';
+import {
+  ALIAS,
+  NOW,
+  enqueueWatchNow,
+  impactOf,
+  iso,
+  probeOf,
+  watchIntents,
+} from './support/model-watch-world.js';
 
 /**
  * JEV-3 U1 (harness brief S1..S4): a worker that starts on a stored resolution of `jev-latest` asks
@@ -109,6 +117,18 @@ describe('S2: starts that ask for no watch run', () => {
     const runtime = await boot({ modelProbe: refusing() });
     expect(runtime.modelState).toMatchObject({ kind: 'unresolved' });
     expect(await watchIntents(h.owner)).toEqual([]);
+  });
+
+  it('records the refused start probe as internal_error with its impact', async () => {
+    await useAlias(false);
+    const runtime = await boot({ modelProbe: refusing() });
+    expect(runtime.modelState).toMatchObject({ kind: 'unresolved' });
+    expect(await probeOf(h.owner)).toMatchObject({
+      requested: ALIAS,
+      ok: false,
+      error: 'internal_error',
+    });
+    expect(await impactOf(h.owner)).toMatchObject({ activeModels: 0 });
   });
 
   it('a resolution made by the start probe (source probed)', async () => {

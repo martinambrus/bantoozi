@@ -75,6 +75,7 @@ beforeEach(async () => {
       'engine.model_resolution',
       'engine.model_watch',
       'engine.model_probe',
+      'engine.model_impact',
       'house.progress',
       'engine.rating_fingerprints',
       'engine.circuit',

@@ -27,7 +27,7 @@ import {
 } from './classification-deps.js';
 import { credentialResolverFromConfig } from './credentials/resolver.js';
 import { createWorkerEngineRouter } from './engine-router.js';
-import { createModelProber } from './model-probe.js';
+import { createModelProber, recordModelProbe } from './model-probe.js';
 import { recordModelPin } from './model-pin.js';
 import {
   MODEL_WATCH_TRIGGER_GAP_MS,
@@ -244,12 +244,26 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
   const resolveTimeoutMs = options.resolveTimeoutMs ?? MODEL_RESOLVE_TIMEOUT_MS;
   const resolveRetryMs = options.resolveRetryMs ?? MODEL_RESOLVE_RETRY_MS;
 
+  async function recordProbe(probe: EngineModelProbe): Promise<void> {
+    if (options.recordPin === false) return;
+    try {
+      await recordModelProbe(db, probe);
+    } catch (error) {
+      logger.warn(
+        { err: error, model: probe.requested },
+        'the model probe result could not be recorded',
+      );
+    }
+  }
+
   /** One bounded probe of the alias; the concrete id it answered, or the reason it did not. */
   async function probeAlias(requested: string): Promise<{ model: string } | { reason: string }> {
     const signal = AbortSignal.timeout(resolveTimeoutMs);
     const deadline = new Promise<never>((_, reject) => {
       signal.addEventListener('abort', () => reject(new Error('timeout')), { once: true });
     });
+    let result: EngineModelProbe | undefined;
+    let thrown = 'probe_failed';
     try {
       const probe =
         options.modelProbe ??
@@ -269,14 +283,22 @@ export async function createWorkerRuntime(options: WorkerRuntimeOptions): Promis
             now,
           }).probe(model, { signal: probeSignal });
         });
-      const result = await Promise.race([probe(requested, signal), deadline]);
-      if (result.ok && result.answered !== undefined && isConcreteJevModel(result.answered)) {
-        return { model: result.answered };
-      }
-      return { reason: result.error ?? 'not_concrete' };
+      result = await Promise.race([probe(requested, signal), deadline]);
     } catch (error) {
-      return { reason: error instanceof Error ? error.message : 'probe_failed' };
+      thrown = error instanceof Error ? error.message : 'probe_failed';
     }
+    await recordProbe(
+      result ?? {
+        requested,
+        ok: false,
+        at: now().toISOString(),
+        error: signal.aborted ? 'timeout' : 'internal_error',
+      },
+    );
+    if (result?.ok && result.answered !== undefined && isConcreteJevModel(result.answered)) {
+      return { model: result.answered };
+    }
+    return { reason: result === undefined ? thrown : (result.error ?? 'not_concrete') };
   }
 
   let modelState: ModelState;
