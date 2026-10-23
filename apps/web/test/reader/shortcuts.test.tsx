@@ -6,6 +6,7 @@ import { makeDetail, makeLabel, restoreVisibility, setVisibility } from '../arti
 import { makeMe } from '../session/fixtures.js';
 import { bodyOf, type ApiRouteHandler } from '../support/app.js';
 import { drawerRoutes, makeExplain } from '../why/support.js';
+import { holdExits } from './exit-hold.js';
 import {
   BOOKMARK,
   DWELL,
@@ -328,6 +329,7 @@ describe('o and Enter', () => {
 describe('+ = and - with Shift', () => {
   it.each([['+'], ['=']])('%s likes the current article', async (key) => {
     const app = await openReader();
+    holdExits();
     await app.user.keyboard('j');
 
     await app.user.keyboard(key);
@@ -341,6 +343,7 @@ describe('+ = and - with Shift', () => {
 
   it('+ again takes the like back, as the button does', async () => {
     const app = await openReader();
+    holdExits();
     await app.user.keyboard('j');
     await app.user.keyboard('+');
     await waitFor(() => expect(app.calls(RATE)).toHaveLength(1));
@@ -350,6 +353,27 @@ describe('+ = and - with Shift', () => {
 
     await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
     expect(bodyOf(app.calls(RATE)[1]!)).toMatchObject({ rating: null });
+  });
+
+  it('+ after the liked row has left likes the article the focus moved to', async () => {
+    const app = await openReader();
+    const exits = holdExits();
+    await app.user.keyboard('j');
+    await app.user.keyboard('+');
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(1));
+    await waitFor(() => expect(likeOf('Article 1')).toHaveAttribute('aria-pressed', 'true'));
+    expect(exits.held()).toBe(1);
+
+    await exits.release();
+    await waitFor(() => {
+      expect(screen.queryByRole('article', { name: 'Article 1' })).toBeNull();
+      expect(title(2)).toHaveFocus();
+    });
+    await app.user.keyboard('+');
+
+    await waitFor(() => expect(app.calls(RATE)).toHaveLength(2));
+    expect(app.calls(RATE)[1]!.pathname).toBe('/api/v1/articles/2/rating');
+    expect(bodyOf(app.calls(RATE)[1]!)).toMatchObject({ rating: 1 });
   });
 
   it('- holds a dislike for the reason bar, and a digit picks the reason', async () => {
