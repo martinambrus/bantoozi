@@ -40,6 +40,29 @@ describe('migrate job', () => {
     expect(result).toEqual({ pgBoss: 'current', migrationsApplied: 0, queues: QUEUE_NAMES.length });
   });
 
+  it("re-creates pg-boss's internal cron queue when it went missing", async () => {
+    await ctx.owner.query('SELECT pgboss.delete_queue($1)', [PG_BOSS_CRON_QUEUE]);
+    const gone = await ctx.owner.query('SELECT 1 FROM pgboss.queue WHERE name = $1', [
+      PG_BOSS_CRON_QUEUE,
+    ]);
+    expect(gone.rowCount).toBe(0);
+    await runMigrations({ databaseUrl: ctx.testDb.urls.owner });
+    const back = await ctx.owner.query<{
+      policy: string;
+      partition_owner: string;
+      worker_dml: boolean;
+    }>(
+      `SELECT q.policy, pg_get_userbyid(c.relowner) AS partition_owner,
+              has_table_privilege('bantoozi_worker', c.oid, 'SELECT, INSERT, UPDATE, DELETE') AS worker_dml
+         FROM pgboss.queue q JOIN pg_class c ON c.relname = q.partition_name
+        WHERE q.name = $1`,
+      [PG_BOSS_CRON_QUEUE],
+    );
+    expect(back.rows).toEqual([
+      { policy: 'standard', partition_owner: 'bantoozi_owner', worker_dml: true },
+    ]);
+  });
+
   it('records every bundled migration, so readiness is green', async () => {
     const journal = readMigrationJournal(MIGRATIONS_FOLDER);
     const applied = await ctx.owner.query<{ n: number }>(

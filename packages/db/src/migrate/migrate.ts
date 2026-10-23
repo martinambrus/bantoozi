@@ -165,5 +165,12 @@ async function createQueues(client: pg.Client): Promise<number> {
     await boss.createQueue(name, { name, ...options });
     await boss.updateQueue(name, { name, ...options });
   }
+  // pg-boss's own cron queue (migration 0017) is not in the registry. `create_queue` does nothing when it
+  // exists, so one that went missing comes back with the next run: the worker cannot create it, and its
+  // readiness check tells the operator to run this job (D-142).
+  await client.query(`SELECT ${PG_BOSS_SCHEMA}.create_queue($1, $2::json)`, [
+    PG_BOSS_CRON_QUEUE,
+    '{"policy":"standard"}',
+  ]);
   return QUEUE_NAMES.length;
 }
