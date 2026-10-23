@@ -655,6 +655,21 @@ const CASES: Record<string, Case> = {
     adminApi.post('/admin/translations/reprocess', { reasons: ['cap'] }),
   'POST /admin/engine/reset-breaker': async () =>
     adminApi.post('/admin/engine/reset-breaker', { engine: 'typesafe' }),
+  'POST /admin/engine/model-probe': async () =>
+    adminApi.post('/admin/engine/model-probe', { model: 'jev-latest' }),
+  'POST /admin/engine/model-check': async () => {
+    // A check is queued only while the effective setting is the alias; a server built after the
+    // row exists reads it without waiting for another process's cache.
+    await h.owner.query(
+      `INSERT INTO settings (key, value) VALUES ('engine.typesafe_model', '"jev-latest"'::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+    );
+    try {
+      return await apiClient(await h.buildAnother(), admin).post('/admin/engine/model-check', {});
+    } finally {
+      await h.owner.query(`DELETE FROM settings WHERE key = 'engine.typesafe_model'`);
+    }
+  },
   'PUT /admin/engine/credentials/:provider': async () => {
     await h.owner.query('DELETE FROM provider_credentials');
     return adminApi.put('/admin/engine/credentials/typesafe', {

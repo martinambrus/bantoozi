@@ -40,6 +40,7 @@ import {
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 
 import type { ApiConfig } from '../../context.js';
+import { MODEL_STATE_KEYS, gateModelChange, readModelState } from '../../services/model-state.js';
 import {
   auditLog,
   freshWorkerRuntimeDefaults,
@@ -73,16 +74,18 @@ const isRuntimeKey = (key: string): key is RuntimeSettingKey =>
   (RUNTIME_SETTING_KEYS as readonly string[]).includes(key);
 type BaseKey = Exclude<AdminSettingKey, RuntimeSettingKey>;
 const BASE_KEYS = ADMIN_PATCHABLE_SETTING_KEYS.filter((key): key is BaseKey => !isRuntimeKey(key));
-const STORED_KEYS = [...ADMIN_PATCHABLE_SETTING_KEYS, VERSION_KEY];
+const STORED_KEYS = [...ADMIN_PATCHABLE_SETTING_KEYS, VERSION_KEY, ...MODEL_STATE_KEYS];
 
-/** Changing these re-enriches and re-matches the corpus, so the admin must confirm (M8b-T2). */
+/**
+ * Changing these re-enriches and re-matches the corpus, so the admin must confirm (M8b-T2). The
+ * TypeSafe model is not here: its confirmation depends on the probe (`gateModelChange`).
+ */
 const MODEL_AFFECTING: readonly RuntimeSettingKey[] = [
-  'engine.typesafe_model',
   'engine.llm_fallback_enabled',
   'engine.ollama_models',
 ];
 
-function runtimeContext(config: ApiConfig): RuntimeSettingsContext {
+export function runtimeContext(config: ApiConfig): RuntimeSettingsContext {
   return {
     production: config.nodeEnv === 'production',
     providerHostAllowlist: config.providerHostAllowlist,
@@ -223,6 +226,8 @@ interface RuntimePlan {
   /** The effective value of every runtime key once the patch is applied. */
   next: Record<RuntimeSettingKey, unknown>;
   needsAcknowledge: boolean;
+  /** The effective TypeSafe model before and after, when the patch changes it. */
+  modelChange: { from: string; to: string } | null;
 }
 
 /** Validates the patched runtime keys (production rules included) and works out what changes. */
@@ -235,6 +240,7 @@ function planRuntime(
   const next = { ...state.values };
   const changed: RuntimeSettingKey[] = [];
   const effective: RuntimeSettingKey[] = [];
+  let modelChange: RuntimePlan['modelChange'] = null;
   for (const key of RUNTIME_SETTING_KEYS) {
     const raw = patch[key];
     if (raw === undefined) continue;
@@ -255,17 +261,36 @@ function planRuntime(
         ? Boolean(value) !== Boolean(state.values[key])
         : differs;
     if (affects) effective.push(key);
+    if (key === 'engine.typesafe_model' && differs) {
+      modelChange = { from: String(state.values[key] ?? ''), to: String(value) };
+    }
     if (differs || (checked.value === null && state.hasRow.has(key))) changed.push(key);
   }
   const fallbackOn = Boolean(next['engine.llm_fallback_enabled']);
   const needsAcknowledge = effective.some(
     (key) => MODEL_AFFECTING.includes(key) && (key !== 'engine.ollama_models' || fallbackOn),
   );
-  return { stored, changed, next, needsAcknowledge };
+  return { stored, changed, next, needsAcknowledge, modelChange };
 }
 
-function requireAcknowledge(plan: RuntimePlan, acknowledged: boolean | undefined): void {
-  if (plan.needsAcknowledge && acknowledged !== true) {
+type ModelGate = ReturnType<typeof gateModelChange>;
+
+function gateModel(
+  plan: RuntimePlan,
+  rows: readonly StoredSettingRow[],
+  nowMs: number,
+): ModelGate | null {
+  if (plan.modelChange === null) return null;
+  const { from, to } = plan.modelChange;
+  return gateModelChange(readModelState(rows), from, to, nowMs);
+}
+
+function requireAcknowledge(
+  plan: RuntimePlan,
+  acknowledged: boolean | undefined,
+  gate: ModelGate | null,
+): void {
+  if ((plan.needsAcknowledge || gate?.impact === 'restart') && acknowledged !== true) {
     throw new AppError(
       'CONFLICT',
       'This change re-enriches and re-matches the corpus; confirm it',
@@ -396,15 +421,16 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
         if (saved !== null) return saved;
         const { acknowledge, ...patch } = request.body;
 
-        const { before, beforeRuntime } = await request.withTx(async (tx) => {
+        const { rows, before, beforeRuntime } = await request.withTx(async (tx) => {
           const rows = await readSettingRows(tx, STORED_KEYS);
           return {
+            rows,
             before: effectiveValues(rows, deps.env),
             beforeRuntime: await readRuntime(tx, rows, deps, deps.now()),
           };
         });
         const plan = planRuntime(patch, beforeRuntime, deps.ctx);
-        requireAcknowledge(plan, acknowledge);
+        requireAcknowledge(plan, acknowledge, gateModel(plan, rows, deps.now().getTime()));
         const preview = { ...before.values, ...patch, ...plan.next } as AdminSettingsValues;
         validateMerged(preview);
         const ltChanged = plan.changed.includes(LT_KEY);
@@ -439,7 +465,7 @@ export const settingsRoutes: FastifyPluginAsyncZod = async (app) => {
           const current = effectiveValues(rows, deps.env);
           const currentRuntime = await readRuntime(tx, rows, deps, now);
           const runtimePlan = planRuntime(patch, currentRuntime, deps.ctx);
-          requireAcknowledge(runtimePlan, acknowledge);
+          requireAcknowledge(runtimePlan, acknowledge, gateModel(runtimePlan, rows, now.getTime()));
           const next = { ...current.values, ...patch, ...runtimePlan.next } as AdminSettingsValues;
           validateMerged(next);
           const baseChanged = changedKeys(current.values, patch);
