@@ -501,7 +501,7 @@ const SYLLABLES = (() => {
   return out;
 })();
 
-function vocabulary(size: number): string[] {
+export function vocabulary(size: number): string[] {
   const rand = seededRandom('scale-vocabulary');
   const words = new Set<string>();
   while (words.size < size) {
@@ -543,7 +543,7 @@ interface Text {
   lean: -1 | 0 | 1;
 }
 
-function textGenerator(words: readonly string[], seed: string) {
+export function textGenerator(words: readonly string[], seed: string) {
   const rand = seededRandom(seed);
   const draw = zipf(words.length, rand);
   const word = () => words[draw()] ?? 'baba';

@@ -1,27 +1,21 @@
 import {
   deleteEstimateModels,
   insertEstimateModel,
-  loadEstimateRatings,
   loadEstimateState,
   lockEstimateUser,
   pruneEstimateModels,
   retryTransaction,
   workerOutbox,
 } from '@bantoozi/db';
-import {
-  DEFAULT_ESTIMATE_OPTIONS,
-  ESTIMATE_SPEC,
-  estimateGate,
-  estimateInputSha,
-} from '@bantoozi/ranker';
+import { ESTIMATE_SPEC } from '@bantoozi/ranker';
 import { enqueueRank } from '@bantoozi/shared';
 
+import { estimateAction, loadEstimateInputs } from '../estimate/inputs.js';
 import { inlineEstimateTrainer } from '../estimate/trainer.js';
 import { loadRankerSettings } from '../rank/settings.js';
 import { nowOf, type WorkerDeps } from './deps.js';
 import type { QueueHandler } from './index.js';
 
-const DAY_MS = 86_400_000;
 const KEEP_VERSIONS = 2;
 
 /**
@@ -34,30 +28,21 @@ export function createUserEstimateHandler(deps: WorkerDeps): QueueHandler<'user.
   return async ({ userId }) => {
     const now = nowOf(deps);
     const { config } = await loadRankerSettings(deps.db);
-    const options = {
-      ...DEFAULT_ESTIMATE_OPTIONS,
-      minRatings: config.estimate.minRatings,
-      minEachClass: config.estimate.minEachClass,
-    };
-    const since = new Date(now.getTime() - config.model.historyDays * DAY_MS);
-    const ratings = await loadEstimateRatings(deps.db, userId, since);
-    const inputSha = estimateInputSha(ratings, options);
-    const state = await loadEstimateState(deps.db, userId);
+    const inputs = await loadEstimateInputs(deps.db, userId, config, now);
+    const { ratings, options, inputSha } = inputs;
     const finish = (outcome: string) =>
       deps.logger.info({ job: 'user.estimate', userId, outcome }, 'estimate finished');
 
-    if (state !== null && state.spec === ESTIMATE_SPEC && state.metrics['inputSha'] === inputSha) {
+    const action = estimateAction(inputs);
+    if (action === 'unchanged') {
       finish('unchanged');
       return;
     }
-
-    const nPos = ratings.filter((r) => r.rating === 1).length;
-    const counts = { n: ratings.length, nPos, nNeg: ratings.length - nPos };
-    if (!estimateGate(counts, options).open) {
-      if (state === null) {
-        finish('closed');
-        return;
-      }
+    if (action === 'idle') {
+      finish('closed');
+      return;
+    }
+    if (action === 'delete') {
       const outcome = await retryTransaction(deps.db, async (tx) => {
         if (!(await lockEstimateUser(tx, userId))) return 'gone';
         if ((await deleteEstimateModels(tx, userId)) === 0) return 'closed';

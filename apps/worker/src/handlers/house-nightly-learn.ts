@@ -6,6 +6,7 @@ import {
 } from '@bantoozi/db';
 import { buildJobIntent, parseSetting } from '@bantoozi/shared';
 
+import { enqueueStaleEstimates } from '../estimate/sweep.js';
 import { ensureFingerprintRegistered, guardedRegistration } from '../learn/fingerprints.js';
 import { loadLearnInputs } from '../learn/inputs.js';
 import { loadRankerSettings } from '../rank/settings.js';
@@ -26,7 +27,9 @@ const SUGGEST_LIKE_WINDOW_DAYS = 30;
  * user with feedback in the history window, or user with any stored model, recomputes the input manifest
  * (implicit evidence, preferences, 180-day expiry included) and enqueues `user.learn` only when it
  * differs from the latest attempt's; users active in the last 7 days also get `user.suggest`, once
- * per day. Records the run in `settings['house.progress']`.
+ * per day. Afterwards it sweeps the word estimates (spec 06 §8.6): `user.estimate` is recorded for each
+ * reader whose stored model, or missing one, went stale untriggered (a rating aging out, a merge, a
+ * subscription or threshold change). Records the run in `settings['house.progress']`.
  */
 export function createNightlyLearnHandler(deps: WorkerDeps): QueueHandler<'house.nightly-learn'> {
   return async () => {
@@ -89,6 +92,7 @@ export function createNightlyLearnHandler(deps: WorkerDeps): QueueHandler<'house
       if (page.length < NIGHTLY_LEARN_PAGE) break;
       after = page[page.length - 1]?.userId ?? null;
     }
+    const estimate = await enqueueStaleEstimates(deps, { now, config });
     await retryTransaction(deps.db, (tx) =>
       updateSettingLocked(tx, 'house.progress', {}, (current) => {
         const progress = parseSetting('house.progress', current ?? {});
@@ -98,6 +102,6 @@ export function createNightlyLearnHandler(deps: WorkerDeps): QueueHandler<'house
         });
       }),
     );
-    deps.logger.info({ job: JOB, examined, learn }, 'nightly learn enqueued');
+    deps.logger.info({ job: JOB, examined, learn, estimate }, 'nightly learn enqueued');
   };
 }
